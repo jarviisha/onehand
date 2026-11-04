@@ -14,6 +14,15 @@ use crate::config::AgentSpec;
 #[serde(transparent)]
 pub struct HostSession(pub String);
 
+impl HostSession {
+    /// When the session started, in unix seconds, and its place among those
+    /// that started that second: the host names one `<secs>-<counter>`.
+    pub fn started(&self) -> (u64, u64) {
+        let (secs, n) = self.0.split_once('-').unwrap_or((&self.0, ""));
+        (secs.parse().unwrap_or(0), n.parse().unwrap_or(0))
+    }
+}
+
 /// A host binary's build id.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(transparent)]

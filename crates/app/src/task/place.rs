@@ -202,7 +202,8 @@ pub(super) fn ended(
                 | E::StopRefused(_)
                 | E::Fork(_)
                 | E::HostSession(_)
-                | E::HostBusy { .. } => {}
+                | E::HostBusy
+                | E::RestartHost(_) => {}
             }
         },
     );

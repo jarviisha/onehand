@@ -1,6 +1,7 @@
-use super::{HostFailure, Slots, bundled_binary_in};
+use super::{HOST_IDLE_POLL, HostFailure, Slots, Waits, bundled_binary_in, waiting_line};
 use futures::FutureExt as _;
 use futures::executor::block_on;
+use onehand_core::host::wire::HostSession;
 use onehand_core::workspace::HostName;
 use std::cell::RefCell;
 use std::sync::Arc;
@@ -106,4 +107,81 @@ fn a_late_attach_leaves_a_restart_in_its_place() {
         .ok()
         .unwrap();
     assert!(Arc::ptr_eq(&now.0, &restarted));
+}
+
+/// Long enough that a host is not asked over and over while its sessions
+/// work, short enough that a turn ending is followed soon after.
+#[test]
+fn a_busy_host_is_asked_again_every_fifteen_seconds() {
+    assert_eq!(HOST_IDLE_POLL, std::time::Duration::from_secs(15));
+}
+
+#[test]
+fn the_waiting_line_counts_the_sessions_and_names_the_host() {
+    let host = HostName("vps".into());
+    assert_eq!(
+        waiting_line(&host, 1),
+        "Waiting for 1 session on vps to finish before restarting its host service onto this build"
+    );
+    assert_eq!(
+        waiting_line(&host, 3),
+        "Waiting for 3 sessions on vps to finish before restarting its host service onto this build"
+    );
+}
+
+fn busy(host: &HostName, ids: &[&str]) -> Result<(), HostFailure> {
+    Err(HostFailure::Busy {
+        host: host.clone(),
+        busy: ids.iter().map(|id| HostSession((*id).into())).collect(),
+    })
+}
+
+/// A busy host waits, once however often it is found busy; the first attach
+/// that lands releases everything waiting on it, once.
+#[test]
+fn a_busy_host_waits_until_an_attach_lands() {
+    let host = HostName("vps".into());
+    let mut waits = Waits::default();
+    assert!(
+        waits.ended(&host).is_none(),
+        "nothing waits on an idle host"
+    );
+    assert!(waits.heard(&host, &busy(&host, &["1-1"])), "a wait begins");
+    assert!(
+        !waits.heard(&host, &busy(&host, &["1-1", "2-1"])),
+        "the same wait"
+    );
+    assert_eq!(waits.busy(&host).len(), 2, "the latest sessions said");
+    let (a, b) = (waits.ended(&host).unwrap(), waits.ended(&host).unwrap());
+    assert!(a.clone().now_or_never().is_none());
+    // One poll per wait.
+    assert!(waits.poll(&host));
+    assert!(!waits.poll(&host));
+    // A host that cannot be reached still waits.
+    waits.heard(&host, &Err::<(), _>(HostFailure::Other("gone".into())));
+    assert!(b.clone().now_or_never().is_none());
+
+    waits.heard(&host, &Ok(()));
+    assert!(a.now_or_never().is_some() && b.now_or_never().is_some());
+    assert!(waits.ended(&host).is_none(), "released once");
+    assert!(waits.busy(&host).is_empty());
+    // A later busy is a new wait, polled anew.
+    assert!(waits.heard(&host, &busy(&host, &["3-1"])));
+    assert!(waits.poll(&host));
+}
+
+/// Restart now's yes ends the wait as any attach that lands does: the
+/// restart's attach is one.
+#[test]
+fn a_restart_that_lands_ends_the_wait() {
+    let host = HostName("vps".into());
+    let mut waits = Waits::default();
+    waits.heard(&host, &busy(&host, &["1-1"]));
+    let ended = waits.ended(&host).unwrap();
+    // Another host's attach releases nothing here.
+    waits.heard(&HostName("other".into()), &Ok(()));
+    assert!(ended.clone().now_or_never().is_none());
+    // `hosts::restart` lands on this build.
+    waits.heard(&host, &Ok(()));
+    assert!(ended.now_or_never().is_some());
 }

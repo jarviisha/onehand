@@ -9,6 +9,11 @@
 //! The attach is tokio I/O (an ssh child and the task that owns its stream),
 //! so it runs on the ACP runtime and its result crosses back on a oneshot,
 //! which the caller awaits in `cx.spawn`.
+//!
+//! A host found running another build with sessions mid-turn is waited on,
+//! once per host: asked again every [`HOST_IDLE_POLL`] until an attach lands,
+//! which the service's own restart once nothing is busy makes the first
+//! time it can. Whatever waited on the host then carries on.
 
 use crate::state::Shared;
 use futures::FutureExt as _;
@@ -23,12 +28,17 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::time::Duration;
+
+/// How often a host kept waiting by its busy sessions is attached again.
+pub(crate) const HOST_IDLE_POLL: Duration = Duration::from_secs(15);
 
 /// Why a host could not be attached.
 #[derive(Clone, Debug)]
 pub(crate) enum HostFailure {
-    /// The host runs another build, with these sessions mid-turn; it was left
-    /// alone until the person agrees to stop them.
+    /// The host runs another build, with these sessions mid-turn; it is
+    /// left alone and waited on until they are done, or the person agrees to
+    /// stop them.
     Busy {
         host: HostName,
         busy: Vec<HostSession>,
@@ -40,13 +50,116 @@ pub(crate) enum HostFailure {
 /// The process's attaches, one per host.
 pub(crate) struct Hosts {
     slots: Slots<HostConn>,
+    /// Read and written on the UI thread alone, never across an await.
+    waits: Rc<RefCell<Waits>>,
 }
 
 impl Hosts {
     pub(crate) fn new() -> Self {
         Self {
             slots: Slots::new(|conn: &HostConn| !conn.is_closed()),
+            waits: Rc::default(),
         }
+    }
+}
+
+/// The end of the wait on `host`, its busy sessions gone idle or its service
+/// restarted by a yes; `None` when nothing keeps it waiting. Starts the
+/// wait's poll, once.
+pub(crate) fn idle(cx: &App, host: &HostName) -> Option<impl Future<Output = ()> + use<>> {
+    let waits = Shared::global(cx).hosts.waits.clone();
+    let ended = waits.borrow().ended(host)?;
+    if waits.borrow_mut().poll(host) {
+        let (host, ended) = (host.clone(), ended.clone());
+        cx.spawn(async move |cx| {
+            loop {
+                cx.background_executor().timer(HOST_IDLE_POLL).await;
+                if ended.clone().now_or_never().is_some() {
+                    return;
+                }
+                // What it comes to is heard by the attach itself.
+                let attaching = cx.update(|cx| conn(cx, &host));
+                let _ = attaching.await;
+            }
+        })
+        .detach();
+    }
+    Some(ended.map(drop))
+}
+
+/// The sessions mid-turn on `host`, as it last said, while it is waited on.
+pub(crate) fn busy(cx: &App, host: &HostName) -> Vec<HostSession> {
+    Shared::global(cx).hosts.waits.borrow().busy(host).to_vec()
+}
+
+/// What is said wherever something waits on `host`'s `n` busy sessions.
+pub(crate) fn waiting_line(host: &HostName, n: usize) -> String {
+    let sessions = match n {
+        1 => "session",
+        _ => "sessions",
+    };
+    format!(
+        "Waiting for {n} {sessions} on {host} to finish before restarting its host service \
+         onto this build"
+    )
+}
+
+/// Hosts kept waiting by their busy sessions, one wait each.
+#[derive(Default)]
+struct Waits(BTreeMap<HostName, Wait>);
+
+struct Wait {
+    busy: Vec<HostSession>,
+    /// Dropped with the wait, which is what ends `ended` for every waiter.
+    _end: oneshot::Sender<()>,
+    ended: future::Shared<oneshot::Receiver<()>>,
+    polling: bool,
+}
+
+impl Waits {
+    /// What an attach to `host` came to: a busy host waits, with the
+    /// sessions it said; one that lands ends the wait. Whether a wait began.
+    fn heard<C>(&mut self, host: &HostName, result: &Result<C, HostFailure>) -> bool {
+        match result {
+            Ok(_) => {
+                self.0.remove(host);
+                false
+            }
+            Err(HostFailure::Busy { busy, .. }) => match self.0.get_mut(host) {
+                Some(wait) => {
+                    wait.busy = busy.clone();
+                    false
+                }
+                None => {
+                    let (end, ended) = oneshot::channel();
+                    let wait = Wait {
+                        busy: busy.clone(),
+                        _end: end,
+                        ended: ended.shared(),
+                        polling: false,
+                    };
+                    self.0.insert(host.clone(), wait);
+                    true
+                }
+            },
+            // Unreachable for now: still waited on.
+            Err(HostFailure::Other(_)) => false,
+        }
+    }
+
+    fn ended(&self, host: &HostName) -> Option<future::Shared<oneshot::Receiver<()>>> {
+        self.0.get(host).map(|wait| wait.ended.clone())
+    }
+
+    fn busy(&self, host: &HostName) -> &[HostSession] {
+        self.0.get(host).map_or(&[], |wait| &wait.busy)
+    }
+
+    /// Whether `host`'s wait has yet to be polled; it is from now on.
+    fn poll(&mut self, host: &HostName) -> bool {
+        self.0
+            .get_mut(host)
+            .is_some_and(|wait| !std::mem::replace(&mut wait.polling, true))
     }
 }
 
@@ -60,7 +173,8 @@ pub(crate) fn conn(
 }
 
 /// A new attach to `host` whose service is restarted onto this build
-/// whatever is mid-turn there: what follows a person agreeing to a `Busy`.
+/// whatever is mid-turn there: what follows a person agreeing to stop the
+/// sessions a host is waited on for.
 pub(crate) fn restart(
     cx: &App,
     host: &HostName,
@@ -98,7 +212,8 @@ fn attach_with(
     fresh: bool,
 ) -> impl Future<Output = Result<HostConn, HostFailure>> + use<> {
     let shared = Shared::global(cx);
-    shared.hosts.slots.get(host, fresh, || {
+    let waits = shared.hosts.waits.clone();
+    let attempt = shared.hosts.slots.get(host, fresh, || {
         let (tx, rx) = oneshot::channel();
         let attaching = attach(host.clone(), fresh);
         shared.acp.spawn(async move {
@@ -113,7 +228,13 @@ fn attach_with(
             })
         }
         .boxed_local()
-    })
+    });
+    let host = host.clone();
+    async move {
+        let result = attempt.await;
+        waits.borrow_mut().heard(&host, &result);
+        result
+    }
 }
 
 /// Install the service on `host` if it is not there, then attach to it; with

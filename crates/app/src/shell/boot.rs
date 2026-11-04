@@ -257,9 +257,8 @@ impl Shell {
                     }
                     E::ShowTasks(filter) => shell.show_tasks(filter.clone(), window, cx),
                     E::ShowSchedules(only) => shell.show_schedules(only.clone(), window, cx),
-                    E::HostBusy { uid, host, busy } => {
-                        shell.ask_host_restart(*uid, host.clone(), busy, window, cx)
-                    }
+                    E::HostBusy { uid, host } => shell.host_busy(*uid, host.clone(), window, cx),
+                    E::RestartHost(host) => shell.ask_restart_host(host.clone(), window, cx),
                     E::RunCheck => {
                         let active = shell.window.workspace.active_root;
                         if let Some(root) = shell.local_root(active).map(|p| p.to_path_buf()) {

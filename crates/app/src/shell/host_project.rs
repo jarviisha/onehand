@@ -1,5 +1,5 @@
-//! Adding a project on a host, and the question asked before a host's service
-//! is restarted onto this build.
+//! Adding a project on a host, what waits here on a host's busy sessions, and
+//! the question asked before a host's service is restarted onto this build.
 
 use super::Shell;
 use super::confirm::Confirm;
@@ -12,7 +12,6 @@ use onehand_core::host::wire::HostSession;
 use onehand_core::workspace::HostName;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::rc::{Rc, Weak};
 
 /// The add-a-project-on-a-host form, while it is up. `Some` on the shell is
 /// what puts it on screen.
@@ -26,8 +25,10 @@ pub(crate) struct HostProjectDraft {
     /// the reader has started answering it.
     pub(crate) error: Option<String>,
     /// The attach under way, by [`HostFlow::attempt`]: attaching to the host
-    /// and asking it about the folder.
+    /// and asking it about the folder, or waiting on the host's sessions.
     attempt: Option<u64>,
+    /// The host the attach waits on, its busy sessions to go idle.
+    pub(crate) waiting: Option<HostName>,
     _typing: [Subscription; 2],
 }
 
@@ -37,74 +38,58 @@ impl HostProjectDraft {
     }
 }
 
-/// What waits on a yes to a host's restart question.
+/// What waits on a host's busy sessions going idle.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Want {
     /// The session that was not attached, restarted.
     Session(u64),
-    /// The form's *Add*, carried on.
-    Add,
+    /// The form's *Add*, on this attempt, carried on.
+    Add(u64),
     /// The project page's list of the host's sessions, asked again.
     Page,
 }
 
-/// The restart questions on screen, one per host, and the count that tells
-/// one attach of the form from the next.
+/// What waits here on each host kept waiting by its busy sessions, and the
+/// count that tells one attach of the form from the next. The wait itself
+/// is the process's, in [`hosts`]; this is the window's share of it.
 #[derive(Default)]
 pub(super) struct HostFlow {
-    /// What each host's question answers for. `alive` is dropped with the
-    /// question: its answer holds the one strong count, and the dialog drops
-    /// the answer when it goes, however it was put away.
-    asked: BTreeMap<HostName, Asked>,
+    waiting: BTreeMap<HostName, Waiting>,
     attempts: u64,
 }
 
-struct Asked {
+/// The sessions to restart and the form's attempt to carry on, once a
+/// host's wait ends. A page on that host lists again whatever waited.
+#[derive(Debug, Default, PartialEq)]
+struct Waiting {
     uids: Vec<u64>,
-    add: bool,
-    alive: Weak<()>,
+    add: Option<u64>,
 }
 
 impl HostFlow {
-    /// Add `want` to the question on screen for `host`; or, when there is
-    /// none, start one and hand back what keeps it alive, for the question's
-    /// answer to hold.
-    fn join(&mut self, host: &HostName, want: Want) -> Option<Rc<()>> {
-        let live = self
-            .asked
-            .get(host)
-            .is_some_and(|asked| asked.alive.strong_count() > 0);
-        let fresh = (!live).then(|| {
-            let alive = Rc::new(());
-            let asked = Asked {
-                uids: Vec::new(),
-                add: false,
-                alive: Rc::downgrade(&alive),
-            };
-            self.asked.insert(host.clone(), asked);
-            alive
-        });
-        let asked = self.asked.get_mut(host)?;
+    /// Add `want` to what waits here on `host`: `true` when nothing did, so
+    /// the end of the host's wait is still to be listened for.
+    fn join(&mut self, host: &HostName, want: Want) -> bool {
+        let fresh = !self.waiting.contains_key(host);
+        let waiting = self.waiting.entry(host.clone()).or_default();
         match want {
-            Want::Session(uid) => asked.uids.push(uid),
-            Want::Add => asked.add = true,
-            // Every landed restart lists the page again.
-            Want::Page => {}
+            Want::Session(uid) if !waiting.uids.contains(&uid) => waiting.uids.push(uid),
+            Want::Session(_) | Want::Page => {}
+            Want::Add(attempt) => waiting.add = Some(attempt),
         }
         fresh
     }
 
-    /// What `host`'s question answered for, once: its sessions, and whether
-    /// the form's *Add* waits on it.
-    fn take(&mut self, host: &HostName) -> Option<(Vec<u64>, bool)> {
-        self.asked.remove(host).map(|asked| (asked.uids, asked.add))
+    /// What waited here on `host`, once.
+    fn take(&mut self, host: &HostName) -> Option<Waiting> {
+        self.waiting.remove(host)
     }
 
-    /// The form went away: no question on screen carries its *Add* on, so
-    /// a form opened again is never committed by a yes asked for this one.
+    /// The form went away: no wait carries its *Add* on, so a form opened
+    /// again is never committed by a wait that ended for this one.
     fn forget_add(&mut self) {
-        for asked in self.asked.values_mut() {
-            asked.add = false;
+        for waiting in self.waiting.values_mut() {
+            waiting.add = None;
         }
     }
 
@@ -115,17 +100,8 @@ impl HostFlow {
     }
 }
 
-/// Mark the form busy on a fresh attempt while a restart it waits on runs,
-/// when it waits on one and is still up: the attempt the restart lands on.
-fn hold(flow: &mut HostFlow, add: bool, form: Option<&mut Option<u64>>) -> Option<u64> {
-    let form = form.filter(|_| add)?;
-    let attempt = flow.attempt();
-    *form = Some(attempt);
-    Some(attempt)
-}
-
-/// Let the form go from `held` as its restart lands, if that is still the
-/// attempt it waits on: `true` when the form is the one that waited.
+/// Let the form go from `held` as its host's wait ends, if that is still
+/// the attempt it waits on: `true` when the form is the one that waited.
 fn release(form: &mut Option<u64>, held: Option<u64>) -> bool {
     match held {
         Some(held) if landed_on(*form, held) => {
@@ -142,9 +118,9 @@ fn landed_on(current: Option<u64>, landed: u64) -> bool {
     current == Some(landed)
 }
 
-/// Whether a yes still has to restart the service: an earlier yes may have
-/// put it on this build already, and restarting it again would stop what
-/// that one started.
+/// Whether a yes still has to restart the service: the wait may have ended
+/// since the question was asked, and restarting it again would stop what
+/// that started.
 fn needs_restart<C>(attached: &Result<C, HostFailure>) -> bool {
     match attached {
         Err(HostFailure::Busy { .. }) => true,
@@ -167,7 +143,7 @@ fn restart_ask(host: &HostName, busy: &[HostSession]) -> Confirm {
     Confirm {
         id: "restart-host",
         title: format!("Restart the host service on {host}?").into(),
-        description: busy_body(host, busy).into(),
+        description: busy_body(host, busy, onehand_core::chat::now_secs()).into(),
         act: "Restart",
         ..Default::default()
     }
@@ -207,13 +183,14 @@ impl Shell {
             folder,
             error: None,
             attempt: None,
+            waiting: None,
             _typing: typing,
         });
         cx.notify();
     }
 
     /// Put the form away. An attach under way goes on, and what it finds is
-    /// dropped: it is about a form no longer there. So is a restart question
+    /// dropped: it is about a form no longer there. So is the end of a wait
     /// it waits on, for the form.
     pub(crate) fn cancel_host_project(&mut self, cx: &mut Context<Self>) {
         self.host_flow.forget_add();
@@ -243,6 +220,7 @@ impl Shell {
         if let Some(draft) = self.host_project.as_mut() {
             draft.error = None;
             draft.attempt = Some(attempt);
+            draft.waiting = None;
         }
         cx.notify();
         let (host, path) = (HostName(host), PathBuf::from(folder));
@@ -298,70 +276,102 @@ impl Shell {
                 draft.error = Some(format!("There is no folder {} on {host}", path.display()));
             }
             Err(HostFailure::Other(why)) => draft.error = Some(why),
-            // Closes nothing: the form waits under the question, and a yes
-            // carries on with the same names.
-            Err(HostFailure::Busy { host, busy }) => {
-                self.offer_restart(host, &busy, Want::Add, window, cx);
+            // The form stays busy on this attempt while the host waits, and
+            // carries on with the same names once it is done.
+            Err(HostFailure::Busy { host, .. }) => {
+                draft.attempt = Some(attempt);
+                draft.waiting = Some(host.clone());
+                self.wait_on_host(host, Want::Add(attempt), window, cx);
             }
         }
         cx.notify();
     }
 
     /// Session `uid` was not attached, or with no `uid` the project page
-    /// could not list, because `host` runs another build with `busy`
-    /// mid-turn: ask whether to restart its service, and on a yes, restart it
-    /// and then the session, or list the page again.
-    pub(super) fn ask_host_restart(
+    /// could not list, because `host` runs another build with sessions
+    /// mid-turn: restart the session, or list the page again, once the host
+    /// is done waiting.
+    pub(super) fn host_busy(
         &mut self,
         uid: Option<u64>,
         host: HostName,
-        busy: &[HostSession],
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let want = uid.map_or(Want::Page, Want::Session);
-        self.offer_restart(host, busy, want, window, cx);
+        self.wait_on_host(host, want, window, cx);
     }
 
-    /// Ask whether to restart `host`'s service for `want`, or add `want` to
-    /// the question already asking it: one yes answers for every session
-    /// and form that waits on that host.
-    fn offer_restart(
+    /// Add `want` to what waits on `host` here, listening for the end of the
+    /// host's wait when nothing here did yet.
+    fn wait_on_host(
         &mut self,
         host: HostName,
-        busy: &[HostSession],
         want: Want,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(alive) = self.host_flow.join(&host, want) else {
+        if !self.host_flow.join(&host, want) {
+            return;
+        }
+        let idle = hosts::idle(cx, &host);
+        cx.spawn_in(window, async move |shell, cx| {
+            // `None`: an attach has landed since, and nothing waits.
+            if let Some(idle) = idle {
+                idle.await;
+            }
+            shell
+                .update_in(cx, |shell: &mut Self, window, cx| {
+                    shell.host_idle(&host, window, cx)
+                })
+                .ok();
+        })
+        .detach();
+    }
+
+    /// `host`'s service is on this build: carry on with what waited on it.
+    fn host_idle(&mut self, host: &HostName, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(waiting) = self.host_flow.take(host) else {
             return;
         };
-        let ask = restart_ask(&host, busy);
+        let add = self.host_project.as_mut().is_some_and(|draft| {
+            let released = release(&mut draft.attempt, waiting.add);
+            if released {
+                draft.waiting = None;
+            }
+            released
+        });
+        for uid in waiting.uids {
+            self.restart_now(uid, true, window, cx);
+        }
+        // A page on a host lists again whatever waited: its sessions are
+        // what the wait changed.
+        self.chat.update(cx, |pane, cx| pane.list_host_sessions(cx));
+        if add {
+            self.commit_host_project(window, cx);
+        }
+        cx.notify();
+    }
+
+    /// *Restart now*, wherever something waits on `host`: ask before its
+    /// service is restarted onto this build, stopping its busy sessions.
+    pub(crate) fn ask_restart_host(
+        &mut self,
+        host: HostName,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let ask = restart_ask(&host, &hosts::busy(cx, &host));
         self.confirm(ask, window, cx, move |shell, window, cx| {
-            // Held here, so the question counts as asked while it is up.
-            let _ = &alive;
-            shell.restart_agreed(&host, window, cx);
+            shell.restart_agreed(host.clone(), window, cx);
         });
     }
 
     /// The person said yes to restarting `host`'s service. Attached first,
-    /// and restarted only if it is still busy: an earlier yes may have
-    /// restarted it already.
-    fn restart_agreed(&mut self, host: &HostName, window: &mut Window, cx: &mut Context<Self>) {
-        let Some((uids, add)) = self.host_flow.take(host) else {
-            return;
-        };
-        // The form waits through the restart as through its own attach: its
-        // *Add* loading and refused, and what lands matched to this attempt.
-        let held = hold(
-            &mut self.host_flow,
-            add,
-            self.host_project.as_mut().map(|draft| &mut draft.attempt),
-        );
-        cx.notify();
-        let attaching = hosts::conn(cx, host);
-        let host = host.clone();
+    /// and restarted only if it is still busy. An attach that lands ends the
+    /// host's wait, and what waited carries on from there.
+    fn restart_agreed(&mut self, host: HostName, window: &mut Window, cx: &mut Context<Self>) {
+        let attaching = hosts::conn(cx, &host);
         cx.spawn_in(window, async move |shell, cx| {
             let mut attached = attaching.await;
             if needs_restart(&attached) {
@@ -370,54 +380,36 @@ impl Shell {
                 };
                 attached = restarting.await;
             }
-            shell
-                .update_in(cx, |shell: &mut Self, window, cx| {
-                    shell.restart_landed(uids, held, attached.map(drop), window, cx)
-                })
-                .ok();
+            if let Err(failure) = attached {
+                shell
+                    .update_in(cx, |shell: &mut Self, window, cx| {
+                        shell.restart_failed(&host, failure, window, cx)
+                    })
+                    .ok();
+            }
         })
         .detach();
     }
 
-    /// The service is on this build, or could not be put there: carry on
-    /// with what waited on it, or say why not. `held` is the form's attempt
-    /// when its *Add* waited; a form cancelled or opened again since did not.
-    fn restart_landed(
+    /// Say why `host`'s service could not be restarted, once: on the form
+    /// when it waits on that host, else in a toast. Whatever waits goes on
+    /// waiting.
+    fn restart_failed(
         &mut self,
-        uids: Vec<u64>,
-        held: Option<u64>,
-        done: Result<(), HostFailure>,
+        host: &HostName,
+        failure: HostFailure,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let add = self
+        let why = restart_failure(failure);
+        let form = self
             .host_project
             .as_mut()
-            .is_some_and(|draft| release(&mut draft.attempt, held));
-        match done {
-            Ok(()) => {
-                for uid in uids {
-                    self.restart_now(uid, true, window, cx);
-                }
-                // A page on a host lists again whichever restart it waited
-                // on: its sessions are what a restart changes.
-                self.chat.update(cx, |pane, cx| pane.list_host_sessions(cx));
-                if add {
-                    self.commit_host_project(window, cx);
-                }
-            }
-            // Said once: on the form, when it waited on this and is still
-            // up, else in a toast.
-            Err(failure) => {
-                let why = restart_failure(failure);
-                match self.host_project.as_mut().filter(|_| add) {
-                    Some(draft) => draft.error = Some(why),
-                    None => window.push_notification(
-                        crate::toast::failed("Restarting the host service", why),
-                        cx,
-                    ),
-                }
-            }
+            .filter(|draft| draft.waiting.as_ref() == Some(host));
+        match form {
+            Some(draft) => draft.error = Some(why),
+            None => window
+                .push_notification(crate::toast::failed("Restarting the host service", why), cx),
         }
         cx.notify();
     }

@@ -104,7 +104,8 @@ pub(crate) fn start(
             | ChatEvent::StopRefused(_)
             | ChatEvent::Fork(_)
             | ChatEvent::HostSession(_)
-            | ChatEvent::HostBusy { .. } => return,
+            | ChatEvent::HostBusy
+            | ChatEvent::RestartHost(_) => return,
         };
         feed(&id, input, cx);
     });

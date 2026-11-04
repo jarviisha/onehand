@@ -134,7 +134,13 @@ pub(super) async fn host_events(
             if let Err((_, carried, _, _)) = decided {
                 carry(carried, session, cx);
             }
-            return crate::acp::ended(ending_for(failure, session, cx));
+            return match failure {
+                HostFailure::Other(why) => crate::acp::ended(why),
+                HostFailure::Busy { host, busy } => {
+                    wait(host, busy.len(), session, cx);
+                    crate::acp::silent()
+                }
+            };
         }
     };
     let start = match decided {
@@ -202,24 +208,19 @@ pub(crate) async fn list(conn: HostConn, cx: &mut AsyncApp) -> Result<Vec<Sessio
     })
 }
 
-/// The sentence a failed attach ends the session on. A busy host is also
-/// told to the pane, which asks whether to restart it.
-fn ending_for(
-    failure: HostFailure,
-    session: &WeakEntity<ChatSession>,
-    cx: &mut AsyncApp,
-) -> String {
-    match failure {
-        HostFailure::Other(why) => why,
-        HostFailure::Busy { host, busy } => {
-            let _ = session.update(cx, |_, cx| cx.emit(ChatEvent::HostBusy { busy }));
-            busy_line(&host)
-        }
-    }
-}
-
-/// What is said of `host` running another build with sessions mid-turn,
-/// wherever an attach to it was turned down for it.
-pub(crate) fn busy_line(host: &HostName) -> String {
-    format!("{host} runs another build of the host service, with sessions mid-turn")
+/// Say on the session that it waits on `host`'s `n` busy sessions, as a
+/// line of its own rather than a failure: once they are done, it is
+/// restarted, and nothing has to be tried again by hand.
+fn wait(host: HostName, n: usize, session: &WeakEntity<ChatSession>, cx: &mut AsyncApp) {
+    let _ = session.update(cx, |session, cx| {
+        let line = crate::hosts::waiting_line(&host, n);
+        session
+            .chat
+            .items
+            .push(onehand_core::chat::ChatItem::notice(line));
+        session.host_wait = Some(host);
+        cx.emit(ChatEvent::HostBusy);
+        cx.emit(ChatEvent::Appended);
+        cx.notify();
+    });
 }

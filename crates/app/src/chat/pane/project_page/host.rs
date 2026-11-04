@@ -32,7 +32,15 @@ const HOST_SESSIONS_CAP: usize = 50;
 
 /// What the host said about its sessions in the page's folder: `None` until
 /// the first answer lands, then the list or why there is none.
-pub(in crate::chat::pane) type Listed = Option<Result<Vec<SessionInfo>, String>>;
+pub(in crate::chat::pane) type Listed = Option<Result<Vec<SessionInfo>, Unlisted>>;
+
+/// Why the host listed nothing.
+pub(in crate::chat::pane) enum Unlisted {
+    /// What went wrong, naming the host.
+    Failed(String),
+    /// The host runs another build with sessions mid-turn, and is waited on.
+    Waiting,
+}
 
 /// Where the page's folder is, as its head says it: `<host>:<path>` for one
 /// on a host, whose path this machine's home says nothing about; else the
@@ -57,17 +65,10 @@ pub(super) fn host_rows<'a>(
     cap: usize,
 ) -> (Vec<&'a SessionInfo>, usize) {
     let mut here: Vec<&SessionInfo> = list.iter().filter(|info| info.cwd == cwd).collect();
-    here.sort_by_key(|info| std::cmp::Reverse(started(&info.session)));
+    here.sort_by_key(|info| std::cmp::Reverse(info.session.started()));
     let left_out = here.len().saturating_sub(cap);
     here.truncate(cap);
     (here, left_out)
-}
-
-/// When a host session started and its place among those that started that
-/// second: its id is `<unix secs>-<counter>`.
-fn started(id: &HostSession) -> (u64, u64) {
-    let (secs, n) = id.0.split_once('-').unwrap_or((&id.0, ""));
-    (secs.parse().unwrap_or(0), n.parse().unwrap_or(0))
 }
 
 /// The session among `convs` (each by uid, folder and host) already on host
@@ -130,17 +131,12 @@ impl ChatPane {
                 project.listing = false;
                 project.listed = Some(match listed {
                     Ok(all) => Ok(all),
-                    Err(HostFailure::Other(why)) => Err(why),
-                    // The shell asks whether to restart the service; a yes
-                    // lists again.
-                    Err(HostFailure::Busy { host, busy }) => {
-                        let why = crate::chat::session::busy_line(&host);
-                        cx.emit(ChatPaneEvent::HostBusy {
-                            uid: None,
-                            host,
-                            busy,
-                        });
-                        Err(why)
+                    Err(HostFailure::Other(why)) => Err(Unlisted::Failed(why)),
+                    // The shell waits with the host and lists again once
+                    // it is done.
+                    Err(HostFailure::Busy { host, .. }) => {
+                        cx.emit(ChatPaneEvent::HostBusy { uid: None, host });
+                        Err(Unlisted::Waiting)
                     }
                 });
                 cx.notify();
@@ -162,6 +158,19 @@ pub(super) fn refresh(host: &HostName, listing: bool, cx: &mut Context<ChatPane>
             pane.list_host_sessions(cx);
         }))
         .into_any_element()
+}
+
+/// *Restart now*, for what waits on `host`'s busy sessions: the shell asks
+/// before the service is restarted.
+fn restart_now(host: &HostName, cx: &mut Context<ChatPane>) -> gpui_component::button::Button {
+    let host = host.clone();
+    crate::controls::action("host-sessions-restart")
+        .secondary()
+        .short()
+        .label("Restart now")
+        .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
+            cx.emit(ChatPaneEvent::RestartHost(host.clone()));
+        }))
 }
 
 /// The box of the host's sessions in `cwd`, each row attaching to its
@@ -194,20 +203,13 @@ pub(super) fn host_sessions(
                 .child(Spinner::new().xsmall().color(muted))
                 .child(format!("Attaching to {host}…")),
         ),
-        Some(Err(why)) => card.child(
-            div()
-                .h_flex()
-                .items_center()
-                .gap_2()
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .text_xs()
-                        .text_color(crate::theme::status_ink(cx).warning)
-                        .child(why.clone()),
-                )
-                .child(
+        // A condition standing under the box's title, and what answers it
+        // beside it.
+        Some(Err(unlisted)) => {
+            let (said, ink, answer) = match unlisted {
+                Unlisted::Failed(why) => (
+                    why.clone(),
+                    crate::theme::status_ink(cx).danger,
                     crate::controls::action("host-sessions-retry")
                         .secondary()
                         .short()
@@ -217,7 +219,26 @@ pub(super) fn host_sessions(
                             pane.list_host_sessions(cx);
                         })),
                 ),
-        ),
+                Unlisted::Waiting => (
+                    crate::hosts::waiting_line(host, crate::hosts::busy(cx, host).len()),
+                    muted,
+                    restart_now(host, cx),
+                ),
+            };
+            card.child(
+                div()
+                    .h_flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(onehand_ui::status_line(said, ink)),
+                    )
+                    .child(answer),
+            )
+        }
         Some(Ok(_)) if rows.is_empty() => {
             card.child(line().child(format!("No sessions on {host} for this folder yet")))
         }
@@ -228,7 +249,7 @@ pub(super) fn host_sessions(
         rows.into_iter().enumerate().map(|(i, info)| {
             let agent = SharedString::from(info.agent.clone());
             let session = info.session.clone();
-            let since = onehand_core::rel_time(now, started(&info.session).0);
+            let since = onehand_core::rel_time(now, info.session.started().0);
             let (state, ink) = match info.busy {
                 true => ("running", running),
                 false if info.ended => ("ended", muted),

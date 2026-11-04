@@ -315,6 +315,12 @@ pub(crate) fn ended(why: String) -> Events {
     rx
 }
 
+/// Events that end at once, saying nothing: for a session that says why
+/// itself.
+pub(crate) fn silent() -> Events {
+    events().0
+}
+
 /// A new pair: the events the UI holds, and the forwarder's two ends.
 fn events() -> (Events, mpsc::Sender<AcpEvent>, oneshot::Sender<()>) {
     let (tx, rx) = mpsc::channel(EVENT_BUFFER);

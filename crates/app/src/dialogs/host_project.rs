@@ -4,18 +4,22 @@
 use super::{field, footer_row, title_row};
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
+use crate::controls::Short as _;
 use crate::controls::text_input;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, ClickEvent, Context, ParentElement, Styled, Window, div};
 use gpui_component::button::ButtonVariants;
 use gpui_component::dialog::Dialog;
+use gpui_component::{ActiveTheme as _, StyledExt as _};
 use onehand_core::host::wire::HostSession;
 use onehand_core::workspace::HostName;
 use onehand_ui::Tall as _;
 
 /// Why *Add* refuses while the host attaches and answers.
 const ATTACHING: &str = "Attaching to the host";
+/// Why *Add* refuses while the host's busy sessions are waited on.
+const WAITING: &str = "Waiting for the host's sessions to finish";
 
 /// How many of a busy host's sessions the restart question names.
 const BUSY_NAMED: usize = 5;
@@ -38,12 +42,16 @@ pub(crate) fn add_refusal(host: &str, folder: &str) -> Option<&'static str> {
 }
 
 /// What the restart question says: the host, and its mid-turn sessions by
-/// the host's own ids, five of them and then how many more.
-pub(crate) fn busy_body(host: &HostName, busy: &[HostSession]) -> String {
+/// when they started (as of `now`, in unix seconds), five of them and then
+/// how many more.
+pub(crate) fn busy_body(host: &HostName, busy: &[HostSession], now: u64) -> String {
     let mut names = busy
         .iter()
         .take(BUSY_NAMED)
-        .map(|id| id.0.as_str())
+        .map(|id| {
+            let since = onehand_core::rel_time(now, id.started().0);
+            format!("a session started {since}")
+        })
         .collect::<Vec<_>>()
         .join(", ");
     let more = busy.len().saturating_sub(BUSY_NAMED);
@@ -68,11 +76,21 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
     };
     let (host, folder) = (draft.host.clone(), draft.folder.clone());
     let (error, busy) = (draft.error.clone(), draft.busy());
-    let refusal = match busy {
-        true => Some(ATTACHING),
-        false => add_refusal(&host.read(cx).value(), &folder.read(cx).value()),
+    let waiting = draft.waiting.clone();
+    let refusal = match (&waiting, busy) {
+        (Some(_), _) => Some(WAITING),
+        (None, true) => Some(ATTACHING),
+        (None, false) => add_refusal(&host.read(cx).value(), &folder.read(cx).value()),
     };
     let danger = crate::theme::status_ink(cx).danger;
+    let muted = cx.theme().muted_foreground;
+    // What it waits on, said where its failures are, with what ends it.
+    let waiting = waiting.map(|on| {
+        let line = crate::hosts::waiting_line(&on, crate::hosts::busy(cx, &on).len());
+        (on, line)
+    });
+    let shell = cx.entity().downgrade();
+    let waits = waiting.is_some();
 
     Dialog::new(cx)
         .w(super::form_width(window))
@@ -98,6 +116,33 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
                 .when_some(error.clone(), |form, why| {
                     form.child(div().text_xs().text_color(danger).child(why))
                 })
+                .when_some(waiting.clone(), |form, (on, line)| {
+                    let shell = shell.clone();
+                    let restart = crate::controls::action("host-project-restart")
+                        .short()
+                        .secondary()
+                        .label("Restart now")
+                        .on_click(move |_: &ClickEvent, window, cx| {
+                            let on = on.clone();
+                            let _ = shell
+                                .update(cx, |shell, cx| shell.ask_restart_host(on, window, cx));
+                        });
+                    form.child(
+                        div()
+                            .h_flex()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .text_xs()
+                                    .text_color(muted)
+                                    .child(line),
+                            )
+                            .child(restart),
+                    )
+                })
         })
         .footer(
             footer_row()
@@ -116,7 +161,7 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
                         .tall()
                         .primary()
                         .label("Add")
-                        .loading(busy)
+                        .loading(busy && !waits)
                         .refuses(refusal)
                         .on_click(
                             cx.listener(|shell: &mut Shell, _: &ClickEvent, window, cx| {

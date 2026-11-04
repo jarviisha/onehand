@@ -347,15 +347,17 @@ impl ChatPane {
                             on.session = Some(id.clone());
                         }
                     }
-                    ChatEvent::HostBusy { busy } => {
+                    ChatEvent::HostBusy => {
                         if let Some(on) = pane.conversations.get(&uid).and_then(|c| c.host.as_ref())
                         {
                             cx.emit(ChatPaneEvent::HostBusy {
                                 uid: Some(uid),
                                 host: on.host.clone(),
-                                busy: busy.clone(),
                             });
                         }
+                    }
+                    ChatEvent::RestartHost(host) => {
+                        cx.emit(ChatPaneEvent::RestartHost(host.clone()));
                     }
                 }
                 cx.notify();

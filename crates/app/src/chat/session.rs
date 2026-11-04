@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-pub(crate) use host::{BeginOnHost, Carried, HostBegin, busy_line, list as host_list};
+pub(crate) use host::{BeginOnHost, Carried, HostBegin, list as host_list};
 use host::{Source, host_events, new_chat};
 
 mod cards;
@@ -150,11 +150,12 @@ pub enum ChatEvent {
     Fork(onehand_core::chat::TranscriptItemId),
     /// The host named the session this one reads.
     HostSession(onehand_core::host::wire::HostSession),
-    /// The host runs another build, with these sessions mid-turn, so it was
-    /// not attached; whether to restart it is the person's to say.
-    HostBusy {
-        busy: Vec<onehand_core::host::wire::HostSession>,
-    },
+    /// The host runs another build, with sessions mid-turn, so this one was
+    /// not attached: it waits for them, and is restarted once they are done.
+    HostBusy,
+    /// *Restart now*, pressed on the line saying this session waits on the
+    /// host named.
+    RestartHost(onehand_core::workspace::HostName),
 }
 
 /// The widget behind one question field's free-text box, and the subscription
@@ -194,6 +195,9 @@ pub struct ChatSession {
     _token: Option<crate::control::Token>,
     /// Whether the agent runs on a host, where a fork is not offered yet.
     pub(crate) on_host: bool,
+    /// The host this session waits on, its busy sessions to go idle: what
+    /// its last line offers *Restart now* for.
+    pub(crate) host_wait: Option<onehand_core::workspace::HostName>,
     /// Parsed markdown, keyed by [`MdId`]; the `usize` is how many bytes of the
     /// model's `source` are already in the state.
     ///
@@ -414,6 +418,7 @@ impl ChatSession {
                 chat,
                 started,
                 on_host: host,
+                host_wait: None,
                 _token: token,
                 md: HashMap::new(),
                 images: RefCell::new(HashMap::new()),

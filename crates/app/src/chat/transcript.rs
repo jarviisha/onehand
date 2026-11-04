@@ -12,8 +12,10 @@
 //! The caps below are correctness, not tuning.
 
 use super::session::ChatSession;
+use crate::controls::Short as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Entity, IntoElement, ParentElement, Styled, Window, div};
+use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::{ChatItem, NoticeLevel, TranscriptItemId};
 
@@ -203,7 +205,13 @@ pub fn item(
                 NoticeLevel::Info => false,
             };
             let detail = detail.as_deref().map(|detail| (session, target, detail));
-            notice(text, *level, past, restart, detail, cx).into_any_element()
+            // A session kept waiting by its host's busy sessions offers to
+            // restart that host's service now, in place of the key that
+            // would only find it waiting again.
+            match lost.then(|| session.read(cx).host_wait.clone()).flatten() {
+                Some(host) => host_waiting(text, session, host, cx),
+                None => notice(text, *level, past, restart, detail, cx).into_any_element(),
+            }
         }
     };
 
@@ -343,6 +351,35 @@ fn notice_divider(
         // by word.
         .children(restart.map(restart_line))
         .children(detail(ink))
+        .into_any_element()
+}
+
+/// The line saying the session waits on `host`'s busy sessions, with
+/// *Restart now* under it: the shell asks before the service is restarted.
+fn host_waiting(
+    text: &str,
+    session: &Entity<ChatSession>,
+    host: onehand_core::workspace::HostName,
+    cx: &App,
+) -> gpui::AnyElement {
+    let session = session.clone();
+    let restart = crate::controls::action("host-restart-now")
+        .secondary()
+        .short()
+        .label("Restart now")
+        .on_click(move |_, _, cx| {
+            let host = host.clone();
+            session.update(cx, |_, cx| {
+                cx.emit(super::session::ChatEvent::RestartHost(host))
+            });
+        });
+    div()
+        .v_flex()
+        .items_center()
+        .gap_1()
+        .w_full()
+        .child(notice_divider(text, None, |_| None, cx))
+        .child(restart)
         .into_any_element()
 }
 

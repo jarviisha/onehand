@@ -1,4 +1,4 @@
-use super::{HostFlow, Want, hold, landed_on, needs_restart, release};
+use super::{HostFlow, Waiting, Want, landed_on, needs_restart, release};
 use crate::hosts::HostFailure;
 use onehand_core::workspace::HostName;
 
@@ -9,38 +9,37 @@ fn a_yes_restarts_the_service_only_while_it_is_still_busy() {
         busy: Vec::new(),
     });
     assert!(needs_restart(&busy));
-    // Already on this build, since an earlier yes: nothing to stop.
+    // Done waiting since the question was asked: nothing to stop.
     assert!(!needs_restart(&Ok::<(), HostFailure>(())));
     assert!(!needs_restart(&Err::<(), _>(HostFailure::Other(
         "gone".into()
     ))));
 }
 
+/// What waits on a host here is gathered once per host, and the end of
+/// its wait is listened for once.
 #[test]
-fn one_question_per_host_gathers_every_session_that_waits_on_it() {
+fn one_wait_per_host_gathers_everything_that_waits_on_it() {
     let (a, b) = (HostName("a".into()), HostName("b".into()));
     let mut flow = HostFlow::default();
-    let asked = flow.join(&a, Want::Session(1));
-    assert!(asked.is_some());
-    assert!(flow.join(&a, Want::Session(2)).is_none());
-    assert!(flow.join(&a, Want::Add).is_none());
-    // Another host is another question.
-    let other = flow.join(&b, Want::Session(3));
-    assert!(other.is_some());
-    assert_eq!(flow.take(&a), Some((vec![1, 2], true)));
-    assert_eq!(flow.take(&a), None);
-    assert_eq!(flow.take(&b), Some((vec![3], false)));
-}
-
-#[test]
-fn a_question_put_away_unanswered_is_asked_again() {
-    let host = HostName("a".into());
-    let mut flow = HostFlow::default();
-    let asked = flow.join(&host, Want::Session(1));
-    // Kept: the dialog, and the answer it held, are gone.
-    drop(asked);
-    assert!(flow.join(&host, Want::Session(2)).is_some());
-    assert_eq!(flow.take(&host), Some((vec![2], false)));
+    assert!(flow.join(&a, Want::Session(1)), "listened for");
+    assert!(!flow.join(&a, Want::Session(2)));
+    assert!(!flow.join(&a, Want::Session(2)), "a session once");
+    assert!(!flow.join(&a, Want::Add(7)));
+    assert!(!flow.join(&a, Want::Page));
+    // Another host is another wait.
+    assert!(flow.join(&b, Want::Page));
+    assert_eq!(
+        flow.take(&a),
+        Some(Waiting {
+            uids: vec![1, 2],
+            add: Some(7),
+        })
+    );
+    assert_eq!(flow.take(&a), None, "released once");
+    assert_eq!(flow.take(&b), Some(Waiting::default()));
+    // Busy again later: listened for anew.
+    assert!(flow.join(&a, Want::Page));
 }
 
 #[test]
@@ -55,36 +54,37 @@ fn an_answer_lands_only_on_the_attempt_that_asked() {
     assert!(!landed_on(None, first));
 }
 
+/// The form waits on its own attempt; one opened again since waits on
+/// another, and the end of the first's wait does not carry it on.
 #[test]
-fn the_form_waits_through_the_restart_its_add_asked_for() {
+fn the_form_is_carried_on_only_by_the_wait_it_joined() {
     let mut flow = HostFlow::default();
-    let mut form = None;
-    // Only when the question carries the form's Add, and the form is up.
-    assert_eq!(hold(&mut flow, false, Some(&mut form)), None);
+    let held = flow.attempt();
+    let mut form = Some(held);
+    assert!(release(&mut form, Some(held)));
     assert_eq!(form, None);
-    assert_eq!(hold(&mut flow, true, None), None);
-    let held = hold(&mut flow, true, Some(&mut form));
-    assert!(held.is_some());
-    assert_eq!(form, held);
-    assert!(release(&mut form, held));
-    assert_eq!(form, None);
-    // A form opened again since waits on its own attempt, not this one.
     let mut reopened = Some(flow.attempt());
-    assert!(!release(&mut reopened, held));
+    assert!(!release(&mut reopened, Some(held)));
     assert!(reopened.is_some());
     assert!(!release(&mut reopened, None));
 }
 
 #[test]
-fn a_cancelled_form_is_not_carried_on_by_an_old_yes() {
+fn a_cancelled_form_is_not_carried_on_by_an_old_wait() {
     let (a, b) = (HostName("a".into()), HostName("b".into()));
     let mut flow = HostFlow::default();
-    let _asked_a = flow.join(&a, Want::Add);
-    let _asked_b = flow.join(&b, Want::Session(1));
-    assert!(flow.join(&b, Want::Add).is_none());
+    flow.join(&a, Want::Add(1));
+    flow.join(&b, Want::Session(1));
+    flow.join(&b, Want::Add(1));
     flow.forget_add();
-    // The questions stay up for the sessions they hold; the form is off them,
-    // so a form opened again is not committed by a yes asked for this one.
-    assert_eq!(flow.take(&a), Some((vec![], false)));
-    assert_eq!(flow.take(&b), Some((vec![1], false)));
+    // The waits go on for the sessions they hold; the form is off them, so
+    // a form opened again is not committed by one that ended for this one.
+    assert_eq!(flow.take(&a), Some(Waiting::default()));
+    assert_eq!(
+        flow.take(&b),
+        Some(Waiting {
+            uids: vec![1],
+            add: None,
+        })
+    );
 }
