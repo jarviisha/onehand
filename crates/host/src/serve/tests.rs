@@ -45,6 +45,10 @@ impl Laptop {
     }
 }
 
+fn terms_in() -> Arc<Mutex<Terms>> {
+    Arc::new(Mutex::new(Terms::new("/bin/sh".into(), None)))
+}
+
 /// A hub whose agents come up at once, say one chunk, and run on.
 fn hub_in(dir: &Path) -> Arc<Mutex<Hub>> {
     let connector: Connector = Arc::new(|_launch, _opts| {
@@ -74,7 +78,7 @@ async fn a_watch_is_answered_after_its_replay_and_a_second_attach_kicks_the_firs
     let socket = dir.join("s.sock");
     let listener = UnixListener::bind(&socket).unwrap();
     let hub = hub_in(&dir);
-    let service = tokio::spawn(accept(listener, hub, Build("b1".into())));
+    let service = tokio::spawn(accept(listener, hub, terms_in(), Build("b1".into())));
 
     let mut first = Laptop::new(&socket).await;
     first
@@ -153,7 +157,13 @@ async fn shutdown_answers_done_and_asks_for_the_exit() {
         call: Call::Shutdown,
     })
     .unwrap();
-    assert!(answer(&hub_in(&dir), &Build("b1".into()), &out, &ask));
+    assert!(answer(
+        &hub_in(&dir),
+        &terms_in(),
+        &Build("b1".into()),
+        &out,
+        &ask
+    ));
     assert!(matches!(
         lines.try_recv(),
         Ok(FromHost::Answer {
@@ -174,7 +184,13 @@ async fn probe_answers_whether_a_folder_is_there() {
             call: Call::Probe { path },
         })
         .unwrap();
-        assert!(!answer(&hub_in(&dir), &Build("b1".into()), &out, &ask));
+        assert!(!answer(
+            &hub_in(&dir),
+            &terms_in(),
+            &Build("b1".into()),
+            &out,
+            &ask
+        ));
         assert!(matches!(
             lines.try_recv(),
             Ok(FromHost::Answer {
@@ -195,7 +211,13 @@ async fn ask_file(
     call: Call,
 ) -> Result<Reply, String> {
     let ask = serde_json::to_string(&Question { id, call }).unwrap();
-    assert!(!answer(&hub_in(dir), &Build("b1".into()), out, &ask));
+    assert!(!answer(
+        &hub_in(dir),
+        &terms_in(),
+        &Build("b1".into()),
+        out,
+        &ask
+    ));
     match tokio::time::timeout(Duration::from_secs(5), lines.recv())
         .await
         .expect("an answer in time")
@@ -348,7 +370,7 @@ async fn a_slow_call_holds_up_no_other() {
     let (out, mut lines) = mpsc::unbounded_channel();
     for (id, call) in [(1, Call::GitStatus { root: dir.clone() }), (2, Call::List)] {
         let ask = serde_json::to_string(&Question { id, call }).unwrap();
-        answer(&hub_in(&dir), &Build("b1".into()), &out, &ask);
+        answer(&hub_in(&dir), &terms_in(), &Build("b1".into()), &out, &ask);
     }
     let mut ids = Vec::new();
     for _ in 0..2 {
