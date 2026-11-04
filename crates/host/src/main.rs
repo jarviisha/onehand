@@ -9,6 +9,7 @@ mod attach;
 mod files;
 mod hub;
 mod serve;
+mod terms;
 
 use std::path::PathBuf;
 use std::process::ExitCode;

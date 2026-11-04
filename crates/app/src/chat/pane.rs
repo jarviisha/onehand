@@ -205,10 +205,6 @@ pub struct ProjectFacts {
     pub check: bool,
     /// Removing it asks first, which its menu's ellipsis says.
     pub asks: bool,
-    /// On this machine, so there is a terminal to open and a `git status` to
-    /// refresh. A folder on a host has neither, nor a repository, a check or
-    /// an unattended switch.
-    pub local: bool,
 }
 
 impl ProjectFacts {
@@ -224,7 +220,6 @@ impl ProjectFacts {
             unattended: (local && !root.transient).then_some(root.unattended),
             check: local && root.check.is_some(),
             asks: false,
-            local,
         }
     }
 }

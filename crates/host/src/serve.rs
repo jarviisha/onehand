@@ -24,6 +24,7 @@ use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
 
 use crate::hub::{lock, Connector, Hub};
+use crate::terms::{self, Terms};
 
 static LOG: OnceLock<Mutex<File>> = OnceLock::new();
 
@@ -86,14 +87,23 @@ pub(crate) async fn run(dir: PathBuf, build: Build) -> ExitCode {
     // Bound first, so an attach waiting on the socket connects while this runs.
     let path = login_path().await;
     let connector: Connector = Arc::new(|launch, opts| acp::connect(launch, opts).boxed());
+    let shell = std::env::var_os("SHELL")
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "/bin/sh".into());
+    let terms = Arc::new(Mutex::new(Terms::new(shell, path.clone())));
     let mut hub = Hub::new(dir, path, connector);
     hub.load();
     let hub = Arc::new(Mutex::new(hub));
-    accept(listener, hub, build).await
+    accept(listener, hub, terms, build).await
 }
 
 /// Take each attach as it comes, telling the one before it that it was taken over.
-async fn accept(listener: UnixListener, hub: Arc<Mutex<Hub>>, build: Build) -> ! {
+async fn accept(
+    listener: UnixListener,
+    hub: Arc<Mutex<Hub>>,
+    terms: Arc<Mutex<Terms>>,
+    build: Build,
+) -> ! {
     let mut current: Option<(UnboundedSender<FromHost>, JoinHandle<()>)> = None;
     loop {
         let stream = match listener.accept().await {
@@ -110,11 +120,13 @@ async fn accept(listener: UnixListener, hub: Arc<Mutex<Hub>>, build: Build) -> !
                 let _ = task.await;
             }
             lock(&hub).unwatch_all();
+            terms::lock(&terms).unwatch_all();
         }
         let (out, lines) = mpsc::unbounded_channel();
         let task = tokio::spawn(connection(
             stream,
             hub.clone(),
+            terms.clone(),
             build.clone(),
             out.clone(),
             lines,
@@ -204,6 +216,7 @@ fn after_marker(output: &[u8]) -> Option<&[u8]> {
 async fn connection(
     stream: UnixStream,
     hub: Arc<Mutex<Hub>>,
+    terms: Arc<Mutex<Terms>>,
     build: Build,
     out: UnboundedSender<FromHost>,
     mut lines: UnboundedReceiver<FromHost>,
@@ -216,7 +229,7 @@ async fn connection(
                 let Ok(Some(ask)) = ask else { break };
                 // Answered whole, a Watch after its replay, before the next ask
                 // is read: the laptop tells whose replay is whose by that order.
-                let exit = answer(&hub, &build, &out, &ask);
+                let exit = answer(&hub, &terms, &build, &out, &ask);
                 if exit {
                     flush(&mut write, &mut lines).await;
                     log("shut down by request");
@@ -227,12 +240,20 @@ async fn connection(
                 }
             }
             Some(line) = lines.recv() => {
-                let kicked = match &line {
-                    FromHost::Kicked => true,
-                    FromHost::Answer { .. } | FromHost::Replay { .. } | FromHost::Entry { .. } => false,
+                let (kicked, output) = match &line {
+                    FromHost::Kicked => (true, None),
+                    FromHost::TermOutput { term, data } => (false, Some((*term, data.0.len()))),
+                    FromHost::Answer { .. }
+                    | FromHost::Replay { .. }
+                    | FromHost::Entry { .. }
+                    | FromHost::TermExit { .. } => (false, None),
                 };
                 if send(&mut write, &line).await.is_err() || kicked {
                     return;
+                }
+                // Written, so the terminal's reader may go on if it waits for it.
+                if let Some((term, n)) = output {
+                    terms::lock(&terms).sent(term, n, &out);
                 }
             }
         }
@@ -240,11 +261,13 @@ async fn connection(
     // The laptop went away: say what was already queued, then stop watching for it.
     flush(&mut write, &mut lines).await;
     lock(&hub).unwatch_all();
+    terms::lock(&terms).unwatch_all();
 }
 
 /// Answer one line; whether the service should now exit.
 fn answer(
     hub: &Arc<Mutex<Hub>>,
+    terms: &Arc<Mutex<Terms>>,
     build: &Build,
     out: &UnboundedSender<FromHost>,
     line: &str,
@@ -299,6 +322,21 @@ fn answer(
             });
             return false;
         }
+        Call::TermOpen { cwd, cols, rows } => {
+            Terms::open(terms, cwd, cols, rows).map(|term| Reply::TermOpened { term })
+        }
+        Call::TermList => Ok(Reply::Terms(terms::lock(terms).list())),
+        // Answered after its replay, which is already on `out`.
+        Call::TermWatch { term } => terms::lock(terms)
+            .watch(term, out.clone())
+            .map(|()| Reply::Done),
+        Call::TermWrite { term, data } => {
+            terms::lock(terms).write(term, data.0).map(|()| Reply::Done)
+        }
+        Call::TermResize { term, cols, rows } => terms::lock(terms)
+            .resize(term, cols, rows)
+            .map(|()| Reply::Done),
+        Call::TermClose { term } => terms::lock(terms).close(term).map(|()| Reply::Done),
     };
     let _ = out.send(FromHost::Answer { id, result });
     exit

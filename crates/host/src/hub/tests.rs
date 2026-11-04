@@ -101,7 +101,10 @@ async fn entries(lines: &mut mpsc::UnboundedReceiver<FromHost>, n: usize) -> Vec
             FromHost::Entry { seq, entry, .. } => out.push((seq, entry)),
             // Each watch's replay starts with one.
             FromHost::Replay { .. } => {}
-            FromHost::Answer { .. } | FromHost::Kicked => panic!("a sink only carries entries"),
+            FromHost::Answer { .. }
+            | FromHost::Kicked
+            | FromHost::TermOutput { .. }
+            | FromHost::TermExit { .. } => panic!("a sink only carries entries"),
         }
     }
     out
@@ -549,7 +552,10 @@ async fn recorded_entries_carry_their_time() {
         match line {
             FromHost::Entry { at, .. } => times.push(at),
             FromHost::Replay { .. } => {}
-            FromHost::Answer { .. } | FromHost::Kicked => panic!("a sink only carries entries"),
+            FromHost::Answer { .. }
+            | FromHost::Kicked
+            | FromHost::TermOutput { .. }
+            | FromHost::TermExit { .. } => panic!("a sink only carries entries"),
         }
     }
     // The replayed Ready, then the live chunk.

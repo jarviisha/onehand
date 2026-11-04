@@ -177,7 +177,6 @@ fn project_menu(
         unattended,
         check: _,
         asks: _,
-        local,
     }: ProjectFacts,
     asks: bool,
     shell: WeakEntity<Shell>,
@@ -248,18 +247,15 @@ fn project_menu(
                 },
             ))
         })
-        // A folder on a host has no shell here yet.
-        .when(local, |menu| {
-            menu.item(crate::controls::menu_item("Open terminal").on_click(
-                move |_, window, cx: &mut App| {
-                    terminal
-                        .update(cx, |shell: &mut Shell, cx| {
-                            shell.open_terminal_in(root_idx, window, cx);
-                        })
-                        .ok();
-                },
-            ))
-        })
+        .item(crate::controls::menu_item("Open terminal").on_click(
+            move |_, window, cx: &mut App| {
+                terminal
+                    .update(cx, |shell: &mut Shell, cx| {
+                        shell.open_terminal_in(root_idx, window, cx);
+                    })
+                    .ok();
+            },
+        ))
         .item(crate::controls::menu_item("Copy project path").on_click(
             move |_, window, cx: &mut App| {
                 copy.update(cx, |shell: &mut Shell, cx| {

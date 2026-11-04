@@ -12,6 +12,7 @@ use gpui::{App, AppContext as _, Entity, SharedString, Window};
 use gpui_component::ActiveTheme as _;
 use gpui_terminal::{ColorPalette, TerminalConfig, TerminalView};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem as _};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -33,7 +34,9 @@ pub enum Program {
     Neovim,
 }
 
-/// One live PTY: its grid, the child, and the handle that resizes it.
+/// One live terminal: its grid and, for a PTY of this machine, the child and
+/// the handle that resizes it. A tab fed by a stream ([`stream_tab`]) has
+/// neither: its program runs elsewhere.
 ///
 /// The fields are private on purpose: what an owner needs is [`Self::view`] to
 /// render and the value itself to keep alive, and a `child` reachable from
@@ -49,8 +52,8 @@ pub struct PtyTab {
     /// `Arc<Mutex<_>>` rather than owned outright — see [`spawn_pty`]. The
     /// callback is `Send + Sync`, and a `Mutex` is what makes a `MasterPty`
     /// that is only `Send` usable from one.
-    pty: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
-    /// Always there until [`Drop`] hands it to the thread that reaps it.
+    pty: Option<Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>>,
+    /// A PTY's, until [`Drop`] hands it to the thread that reaps it.
     child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
 }
 
@@ -92,6 +95,7 @@ impl PtyTab {
         #[cfg(unix)]
         let foreground = self
             .pty
+            .as_ref()?
             .lock()
             .ok()?
             .process_group_leader()
@@ -253,17 +257,7 @@ fn command(program: Program) -> Result<(CommandBuilder, SharedString), String> {
 /// than to either panel, and a second copy of them is a second copy to keep in
 /// step.
 ///
-/// The font family is taken from the resolved theme rather than assumed. A
-/// family name is only a request and a missing one fails silently, and this is
-/// the sharpest case there is: the grid is *measured* from a shaped glyph, so a
-/// family that does not resolve does not merely change the typeface — the cell
-/// is sized from one font while the row is drawn in another and every column
-/// lands past its glyph.
-///
-/// `on_exit` is how the owner learns the child is gone. **It has to be told**:
-/// nothing else notices. The grid keeps rendering the last screen the child
-/// drew, which after `:q` or `exit` is an empty one with a cursor on it, and the
-/// tab sits there taking keystrokes nothing will ever read.
+/// `on_exit` runs once the child is gone (see [`grid`]).
 pub fn spawn_pty(
     cwd: &PathBuf,
     program: Program,
@@ -272,13 +266,7 @@ pub fn spawn_pty(
     cx: &mut App,
     on_exit: impl Fn(&mut Window, &mut App) + 'static,
 ) -> Result<PtyTab, String> {
-    let config = TerminalConfig {
-        scrollback: SCROLLBACK,
-        font_size,
-        colors: terminal_palette(surface, cx),
-        font_family: cx.theme().mono_font_family.to_string(),
-        ..TerminalConfig::default()
-    };
+    let config = grid_config(font_size, surface, cx);
     // Opened at the config's own grid size so the PTY and the client-side grid
     // start out agreeing. Neither number survives the first paint -- that is
     // where the real geometry is measured and pushed through the resize callback
@@ -306,7 +294,100 @@ pub fn spawn_pty(
     let writer = pty.master.take_writer().map_err(|e| e.to_string())?;
     let reader = pty.master.try_clone_reader().map_err(|e| e.to_string())?;
     let master = Arc::new(Mutex::new(pty.master));
-    let view = cx.new(|cx| {
+    let resize = {
+        let master = master.clone();
+        move |cols: usize, rows: usize| {
+            if let Ok(master) = master.lock() {
+                // A failed resize is not worth tearing the tab down for:
+                // the grid has already resized, so the panel stays
+                // usable and only the child's idea of its size is stale.
+                let _ = master.resize(PtySize {
+                    rows: rows as u16,
+                    cols: cols as u16,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                });
+            }
+        }
+    };
+    let view = grid(writer, reader, config, resize, cx, on_exit);
+    Ok(PtyTab {
+        view,
+        label,
+        pty: Some(master),
+        child: Some(child),
+    })
+}
+
+/// A tab whose program runs somewhere else: `reader` gives what it prints,
+/// `writer` takes what is typed, and `on_resize` hears every new size in
+/// cells. `on_exit` runs once the reader ends.
+///
+/// No child and no PTY of its own, so it reports no process, never
+/// [`PtyTab::finished`], and dropping it ends nothing: the program is
+/// whoever is at the stream's other end to stop.
+#[allow(clippy::too_many_arguments)]
+pub fn stream_tab(
+    label: SharedString,
+    reader: impl Read + Send + 'static,
+    writer: impl Write + Send + 'static,
+    on_resize: impl Fn(usize, usize) + Send + Sync + 'static,
+    font_size: gpui::Pixels,
+    surface: gpui::Hsla,
+    cx: &mut App,
+    on_exit: impl Fn(&mut Window, &mut App) + 'static,
+) -> PtyTab {
+    let config = grid_config(font_size, surface, cx);
+    let view = grid(writer, reader, config, on_resize, cx, on_exit);
+    PtyTab {
+        view,
+        label,
+        pty: None,
+        child: None,
+    }
+}
+
+/// The size in cells a grid starts at, before its first paint measures the
+/// room it is given.
+pub fn start_size() -> (u16, u16) {
+    let config = TerminalConfig::default();
+    (config.cols as u16, config.rows as u16)
+}
+
+/// The config every grid starts from.
+///
+/// The font family is taken from the resolved theme rather than assumed. A
+/// family name is only a request and a missing one fails silently, and this is
+/// the sharpest case there is: the grid is *measured* from a shaped glyph, so a
+/// family that does not resolve does not merely change the typeface — the cell
+/// is sized from one font while the row is drawn in another and every column
+/// lands past its glyph.
+fn grid_config(font_size: gpui::Pixels, surface: gpui::Hsla, cx: &App) -> TerminalConfig {
+    TerminalConfig {
+        scrollback: SCROLLBACK,
+        font_size,
+        colors: terminal_palette(surface, cx),
+        font_family: cx.theme().mono_font_family.to_string(),
+        ..TerminalConfig::default()
+    }
+}
+
+/// The grid over `reader` and `writer`, with the hooks every tab needs
+/// whatever feeds it.
+///
+/// `on_exit` is how the owner learns the program is gone. **It has to be
+/// told**: nothing else notices. The grid keeps rendering the last screen the
+/// program drew, which after `:q` or `exit` is an empty one with a cursor on
+/// it, and the tab sits there taking keystrokes nothing will ever read.
+fn grid(
+    writer: impl Write + Send + 'static,
+    reader: impl Read + Send + 'static,
+    config: TerminalConfig,
+    on_resize: impl Fn(usize, usize) + Send + Sync + 'static,
+    cx: &mut App,
+    on_exit: impl Fn(&mut Window, &mut App) + 'static,
+) -> Entity<TerminalView> {
+    cx.new(|cx| {
         TerminalView::new(writer, reader, config, cx)
             // The one thing the vendored view cannot do for itself.
             //
@@ -322,22 +403,7 @@ pub fn spawn_pty(
             //
             // This also covers zoom for free: a font-size change re-measures the
             // cell, which changes the cell count, which comes back through here.
-            .with_resize_callback({
-                let master = master.clone();
-                move |cols, rows| {
-                    if let Ok(master) = master.lock() {
-                        // A failed resize is not worth tearing the tab down for:
-                        // the grid has already resized, so the panel stays
-                        // usable and only the child's idea of its size is stale.
-                        let _ = master.resize(PtySize {
-                            rows: rows as u16,
-                            cols: cols as u16,
-                            pixel_width: 0,
-                            pixel_height: 0,
-                        });
-                    }
-                }
-            })
+            .with_resize_callback(on_resize)
             // The other thing the grid cannot do for itself, and the app is the
             // right half to do it: the clipboard belongs to the desktop session,
             // not to one tab.
@@ -385,12 +451,6 @@ pub fn spawn_pty(
                     window.defer(cx, move |window, cx| on_exit(window, cx));
                 }
             })
-    });
-    Ok(PtyTab {
-        view,
-        label,
-        pty: master,
-        child: Some(child),
     })
 }
 
@@ -464,16 +524,4 @@ pub fn terminal_palette(surface: gpui::Hsla, cx: &App) -> ColorPalette {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::foreground_busy;
-
-    /// A shell at its prompt is its own foreground group; a command in front
-    /// is a different one; and a terminal that will not say is neither.
-    #[test]
-    fn busy_is_a_foreground_group_other_than_the_shell() {
-        assert_eq!(foreground_busy(Some(100), Some(100)), Some(false));
-        assert_eq!(foreground_busy(Some(100), Some(240)), Some(true));
-        assert_eq!(foreground_busy(Some(100), None), None);
-        assert_eq!(foreground_busy(None, Some(240)), None);
-    }
-}
+mod tests;

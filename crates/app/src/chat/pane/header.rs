@@ -545,7 +545,6 @@ fn project_menu(
         unattended,
         check: _,
         asks,
-        local: _,
     }: ProjectFacts,
     pane: Entity<ChatPane>,
 ) -> impl Fn(

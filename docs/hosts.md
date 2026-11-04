@@ -5,9 +5,9 @@ project's sessions and their agents, and keeps them going while the laptop is of
 attaches, reads each session back from the host's journal and shows it in the chat pane as it
 shows a local one.
 
-**A host project is sessions, files and git status, for now.** Its folder lives on the host and the
-laptop holds no copy of it: the file tree, the editor and git status read it there, but no terminal
-reaches it yet, and nothing of onehand's own work (tools, workflows, tasks, issues, unattended runs, worktrees, the check command) runs on
+**A host project is sessions, files, git status and terminals, for now.** Its folder lives on the
+host and the laptop holds no copy of it: the file tree, the editor and git status read it there and
+its terminals run there, but nothing of onehand's own work (tools, workflows, tasks, issues, unattended runs, worktrees, the check command) runs on
 it. What is refused, and how, is under *What a host project does not do*.
 
 ## A host
@@ -63,7 +63,9 @@ Every attach opens by exchanging builds (`client::attach`):
 
 - **The same build:** attached.
 - **Another build, nothing mid-turn:** the old service is shut down and the attach made again, onto
-  this build.
+  this build. **The host's terminals end with it, unasked:** the build check counts only sessions
+  mid-turn, and a service that exits closes every terminal, so each shell is hung up and takes the
+  command it runs with it.
 - **Another build with sessions mid-turn:** the host is left alone and the attach fails as busy.
   **The laptop waits for those sessions to go idle**, once per host however many sessions, pages
   and forms wait on it (`Waits` in `crates/app/src/hosts.rs`): it attaches again every 15 s
@@ -210,14 +212,40 @@ Every attach opens by exchanging builds (`client::attach`):
   stale save is a conflict as a local one is. A failure reads *On <host>: …*.
 - **A file link pressed in a host session opens in the editor**, as a local one does.
 - **Refresh Git status** is offered on a host project, in the rail's menu and the project page's.
-  *Open terminal* is not.
+  **Open terminal** is offered in the rail's menu, as for every project (the project page's menu
+  leaves it out for every project); it opens the dock on the host's terminals (see below).
+
+## Terminals
+
+- **The host runs the shell** (`crates/host/src/terms.rs`): `$SHELL -l`, or `/bin/sh -l`, in the
+  project's folder, with `TERM=xterm-256color`, `COLORTERM=truecolor` and the service's login
+  `PATH`. The laptop's dock draws it (`crates/app/src/terminal/host.rs`) and sends keys, resizes
+  and closes over the attach (`crates/core/src/host/client/terms.rs`).
+- **Each terminal keeps its last 1 MiB of raw output.** A watch replays what is kept, then goes
+  live. A replay of a buffer that dropped older output starts with *[Earlier output was not
+  kept]*.
+- **A program printing faster than the attach carries its output is slowed down,** as in a
+  terminal of this machine: past 256 KiB queued for the attach and not yet written to it
+  (`TERM_IN_FLIGHT`), the host stops reading the terminal until the attach catches up. A terminal
+  nobody watches is never held up; it keeps its last 1 MiB as above.
+- **Terminals run on while the laptop is away.** Showing the dock on a host project, on arrival
+  or by opening it, lists that folder's terminals on the host and opens a tab for each; with none
+  and the dock open, it starts one. Meanwhile the dock says *Attaching to <host>…*, and a failure
+  or a busy host shows as it does in the Workbench (`attach_waiting`, `crates/app/src/hosts.rs`).
+- **A newer watch takes a terminal over.** With two windows on one host project, the other
+  window's tab ends, and it comes back when that window shows the project or opens the dock again.
+- **Close against exit.** Closing a host tab always asks *Close this terminal?*, because the dock
+  cannot tell whether a command is running. Closing ends the shell on the host (SIGHUP, a grace
+  period, then SIGKILL) and the terminal leaves the list at once. A tab whose stream ended (the
+  shell exited, the connection was lost, a newer watch took over) leaves the dock, a tab not on
+  screen when it is next selected, and closes nothing on the host. Quitting, removing the project and a lost connection never close a host
+  terminal.
+- **No removal warning.** Host tabs report no running processes to the removal warnings.
 
 ## What a host project does not do
 
 Refused or left out, each in one place:
 
-- **The terminal** shows *Terminals on a host come later* in place of its content, and *Open
-  terminal* leaves the project's menus.
 - **Markdown, Neovim, Issues and Plugins** are not offered in the Workbench on a host project.
 - **Worktrees, the check command and unattended runs** are not offered: *New worktree…*, *Work an
   issue…*, the unattended switch, *Run check* and the *Check command* field are absent, and the
@@ -236,7 +264,6 @@ Refused or left out, each in one place:
 The steps of the design still to come, each its own change; the gaps they leave meanwhile are in
 [known-gaps.md](known-gaps.md):
 
-- **The rest of a host project:** the terminal on the host.
 - **The host's own UI:** picking a host from `~/.ssh/config`, browsing the host's folders, cloning,
   re-attaching by itself with a backoff, and reading a host's sessions while it is not attached,
   from a copy the laptop keeps.

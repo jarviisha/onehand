@@ -250,8 +250,18 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **No tool answers a card, a permission or an approval, and none cuts a worktree.** Both are on
   purpose: only a person answers what an agent parked, and the lead cuts its worktrees with git.
   The cap of four sessions per caller is not raised for leads either.
-- **A host project has no terminal.** The terminal says *Terminals on a host come later*. It needs
-  the host to serve PTYs ([hosts.md](hosts.md#not-built)).
+- **A host terminal's tab gone with a lost connection comes back only when the project is shown
+  or the dock opened again.**
+- **Restarting the host service onto another build ends every host terminal without asking.** The
+  build check and the restart question count only sessions mid-turn, and a service that exits
+  hangs up each terminal's shell and the command in it. Counting the host's terminals as busy, so
+  that a host with terminals asks first, is not built.
+- **Two windows on one host project take the terminal from each other:** a newer watch wins and
+  the other window's tab ends.
+- **After a host project is removed, its tabs' reader threads stay blocked** until the terminal
+  prints, exits or the attach ends.
+- **A background job that keeps a closed terminal's PTY open keeps its reader thread on the
+  host.**
 - **Markdown, Neovim, Issues and Plugins are not offered on a host project.** Markdown would need
   its document index walked on the host; Neovim, Issues and Plugins are this machine's.
 - **A host call times out after 30 s**, so a git status slower than that reads as no status.
