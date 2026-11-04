@@ -34,9 +34,12 @@ fn one_wait_per_host_gathers_everything_that_waits_on_it() {
     assert!(!flow.join(&a, Want::Page));
     // Another host is another wait.
     assert!(flow.join(&b, Want::Page));
-    assert_eq!(held(flow.take(&a)), Some((vec![1, 2], Some(7), true)));
-    assert_eq!(held(flow.take(&a)), None, "released once");
-    assert_eq!(held(flow.take(&b)), Some((vec![], None, true)));
+    assert_eq!(
+        held(flow.take(&a, false)),
+        Some((vec![1, 2], Some(7), true))
+    );
+    assert_eq!(held(flow.take(&a, false)), None, "released once");
+    assert_eq!(held(flow.take(&b, false)), Some((vec![], None, true)));
     // Busy again later: listened for anew.
     assert!(flow.join(&a, Want::Page));
 }
@@ -78,8 +81,8 @@ fn a_cancelled_form_is_not_carried_on_by_an_old_wait() {
     flow.forget_add();
     // The waits go on for the sessions they hold; the form is off them, so
     // a form opened again is not committed by one that ended for this one.
-    assert_eq!(held(flow.take(&a)), Some((vec![], None, false)));
-    assert_eq!(held(flow.take(&b)), Some((vec![1], None, false)));
+    assert_eq!(held(flow.take(&a, false)), Some((vec![], None, false)));
+    assert_eq!(held(flow.take(&b, false)), Some((vec![1], None, false)));
 }
 
 /// What no longer waits goes, and a host nothing here waits on is let go,
@@ -95,10 +98,29 @@ fn what_stops_waiting_is_let_go() {
     // Session 2 closed, the page left, the form put away.
     flow.prune(|_, want| match want {
         Want::Session(uid) => uid == 1,
-        Want::Page | Want::Add(_) => false,
+        Want::Page | Want::Add(_) | Want::Back(_) | Want::PageBack => false,
     });
     assert!(!flow.waiting.contains_key(&b), "nothing waits on b here");
-    assert_eq!(held(flow.take(&a)), Some((vec![1], None, false)));
+    assert_eq!(held(flow.take(&a, false)), Some((vec![1], None, false)));
+    assert!(flow.is_empty());
+}
+
+/// What waits on a lost host being back is a wait of its own beside the busy
+/// one, listened for once per host and let go as the others are.
+#[test]
+fn a_wait_on_a_host_being_back_stands_apart_from_its_busy_wait() {
+    let a = HostName("a".into());
+    let mut flow = HostFlow::default();
+    assert!(flow.join(&a, Want::Back(1)), "listened for");
+    assert!(!flow.join(&a, Want::Back(1)), "a session once");
+    assert!(!flow.join(&a, Want::PageBack));
+    assert!(flow.join(&a, Want::Session(2)), "the busy wait is another");
+    flow.prune(|_, want| match want {
+        Want::Back(_) | Want::Session(_) => true,
+        Want::PageBack | Want::Page | Want::Add(_) => false,
+    });
+    assert_eq!(held(flow.take(&a, true)), Some((vec![1], None, false)));
+    assert_eq!(held(flow.take(&a, false)), Some((vec![2], None, false)));
     assert!(flow.is_empty());
 }
 

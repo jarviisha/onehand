@@ -14,6 +14,11 @@
 //! once per host: asked again every [`HOST_IDLE_POLL`] until an attach lands,
 //! which the service's own restart once nothing is busy makes the first
 //! time it can. Whatever waited on the host then carries on.
+//!
+//! A connection that goes without another machine taking the host is lost:
+//! it is attached again by itself, with a backoff from [`RECONNECT_FIRST`] to
+//! [`RECONNECT_MAX`], for as long as anything listens. One taken by another
+//! machine is that machine's, and only a person attaches to it again.
 
 use crate::state::Shared;
 use futures::FutureExt as _;
@@ -34,6 +39,34 @@ use std::time::Duration;
 
 /// How often a host kept waiting by its busy sessions is attached again.
 pub(crate) const HOST_IDLE_POLL: Duration = Duration::from_secs(15);
+
+/// How long after a connection is lost it is first attached again.
+pub(crate) const RECONNECT_FIRST: Duration = Duration::from_secs(2);
+
+/// The longest a lost host goes between attaches, the wait doubling up to it.
+pub(crate) const RECONNECT_MAX: Duration = Duration::from_secs(60);
+
+/// How long to wait before the next attach to a lost host, `prev` the wait
+/// before the last miss, if there was one.
+pub(crate) fn next_delay(prev: Option<Duration>) -> Duration {
+    prev.map_or(RECONNECT_FIRST, |prev| (prev * 2).min(RECONNECT_MAX))
+}
+
+/// What this run knows of its attach to a host.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum HostState {
+    /// Never attached this run, nor tried.
+    Unknown,
+    /// A first attach, or a person's after the host was taken, under way;
+    /// or the host found running another build, which its wait follows.
+    Attaching,
+    Live,
+    /// Its connection went, or no attach reaches it, for why: attached again
+    /// by itself while anything listens.
+    Lost(String),
+    /// Another machine attached, which holds the host now.
+    Taken,
+}
 
 /// Why a host could not be attached.
 #[derive(Clone, Debug)]
@@ -105,6 +138,79 @@ pub(crate) fn idle(cx: &App, host: &HostName) -> Option<impl Future<Output = Wai
     })
 }
 
+/// The end of the wait for lost `host` to be attached again: `Ok` once an
+/// attach lands, `Err(why)` once the host turns out taken, or running another
+/// build, which its busy wait then follows. `None` unless the host is lost.
+/// As [`idle`], the future listens for as long as it lives, and the loop of
+/// attaches, started with the first listener, stops with the last.
+pub(crate) fn back(cx: &App, host: &HostName) -> Option<impl Future<Output = WaitEnd> + use<>> {
+    settle(cx, host);
+    let waits = Shared::global(cx).hosts.waits.clone();
+    let ended = waits.borrow_mut().listen_back(host)?;
+    let listening = Listening {
+        waits: waits.clone(),
+        host: host.clone(),
+        ended: ended.clone(),
+    };
+    if waits.borrow_mut().poll_back(host) {
+        let (host, ended) = (host.clone(), ended.clone());
+        cx.spawn(async move |cx| {
+            let mut delay = None;
+            loop {
+                let wait = next_delay(delay);
+                delay = Some(wait);
+                cx.background_executor().timer(wait).await;
+                if !waits.borrow().polling_back(&host, &ended) {
+                    return;
+                }
+                // What it comes to is heard by the attach itself.
+                let attaching = cx.update(|cx| attach_with(cx, &host, false, true));
+                let _ = attaching.await;
+            }
+        })
+        .detach();
+    }
+    Some(async move {
+        let _listening = listening;
+        ended.await.unwrap_or(Ok(()))
+    })
+}
+
+/// What this run knows of its attach to `host`.
+pub(crate) fn state(cx: &App, host: &HostName) -> HostState {
+    settle(cx, host);
+    Shared::global(cx).hosts.waits.borrow().state(host)
+}
+
+/// A live host whose connection has closed is lost, or taken, from now on,
+/// whether or not the watch on its closing has crossed back yet.
+fn settle(cx: &App, host: &HostName) {
+    let hosts = &Shared::global(cx).hosts;
+    let Ok(mut waits) = hosts.waits.try_borrow_mut() else {
+        return;
+    };
+    if waits.state(host) != HostState::Live {
+        return;
+    }
+    if let Some(conn) = hosts.slots.ready(host).filter(HostConn::is_closed) {
+        waits.closed(host, conn.taken());
+    }
+}
+
+/// `host`'s connection closed, `taken` by another machine or not: unless a
+/// newer attach is up, the host is lost or taken from now on.
+fn closed(cx: &mut App, host: &HostName, taken: bool) {
+    if live(cx, host).is_some() {
+        return;
+    }
+    Shared::global(cx)
+        .hosts
+        .waits
+        .borrow_mut()
+        .closed(host, taken);
+    cx.refresh_windows();
+}
+
 /// One listener to a host's wait, counted while it lives.
 struct Listening {
     waits: Rc<RefCell<Waits>>,
@@ -144,11 +250,14 @@ pub(crate) fn waiting_line(host: &HostName, n: usize) -> String {
 pub(crate) const HOST_UNREACHABLE_POLLS: u32 = 2;
 
 /// Hosts found busy, with the sessions they said, and the waits listened
-/// to on them, one each.
+/// to on them, one each; what is known of each host's attach, and the waits
+/// for lost ones to be attached again.
 #[derive(Default)]
 struct Waits {
     busy: BTreeMap<HostName, Vec<HostSession>>,
     waits: BTreeMap<HostName, Wait>,
+    states: BTreeMap<HostName, HostState>,
+    backs: BTreeMap<HostName, Wait>,
 }
 
 struct Wait {
@@ -166,16 +275,28 @@ impl Waits {
     /// made it: a busy host is kept with the sessions it said; one that
     /// lands ends the wait, and one that could not reach the host ends it
     /// on why, at once, or from the poll after a few misses in a row.
+    ///
+    /// The host is live once an attach lands, which also ends a wait for it
+    /// to be back; one found busy ends that wait on why, the busy wait taking
+    /// over; one out of reach leaves it lost, the wait going on.
     fn heard<C>(&mut self, host: &HostName, result: &Result<C, HostFailure>, polled: bool) {
         match result {
-            Ok(_) => self.end(host, Ok(())),
+            Ok(_) => {
+                self.states.insert(host.clone(), HostState::Live);
+                self.end(host, Ok(()));
+                end_in(&mut self.backs, host, Ok(()));
+            }
             Err(HostFailure::Busy { busy, .. }) => {
+                self.states.insert(host.clone(), HostState::Attaching);
+                end_in(&mut self.backs, host, Err(waiting_line(host, busy.len())));
                 self.busy.insert(host.clone(), busy.clone());
                 if let Some(wait) = self.waits.get_mut(host) {
                     wait.missed = 0;
                 }
             }
             Err(HostFailure::Other(why)) => {
+                self.states
+                    .insert(host.clone(), HostState::Lost(why.clone()));
                 let missed = self.waits.get_mut(host).map_or(0, |wait| {
                     wait.missed += 1;
                     wait.missed
@@ -189,9 +310,56 @@ impl Waits {
 
     fn end(&mut self, host: &HostName, how: WaitEnd) {
         self.busy.remove(host);
-        if let Some(wait) = self.waits.remove(host) {
-            let _ = wait.end.send(how);
+        end_in(&mut self.waits, host, how);
+    }
+
+    /// What is known of `host`'s attach.
+    fn state(&self, host: &HostName) -> HostState {
+        self.states.get(host).cloned().unwrap_or(HostState::Unknown)
+    }
+
+    /// An attach to `host` has started: a first, or a person's to a host
+    /// taken; a lost host stays lost until one lands.
+    fn attaching(&mut self, host: &HostName) {
+        match self.state(host) {
+            HostState::Unknown | HostState::Taken => {
+                self.states.insert(host.clone(), HostState::Attaching);
+            }
+            HostState::Attaching | HostState::Live | HostState::Lost(_) => {}
         }
+    }
+
+    /// `host`'s connection closed: taken by another machine, which ends any
+    /// wait for it to be back, or lost.
+    fn closed(&mut self, host: &HostName, taken: bool) {
+        let state = match taken {
+            true => {
+                let why = format!("{host} was attached from another machine");
+                end_in(&mut self.backs, host, Err(why));
+                HostState::Taken
+            }
+            false => HostState::Lost(format!("lost the connection to {host}")),
+        };
+        self.states.insert(host.clone(), state);
+    }
+
+    /// One more listener to the wait for lost `host` to be back; `None`
+    /// unless it is lost.
+    fn listen_back(&mut self, host: &HostName) -> Option<Ended> {
+        match self.state(host) {
+            HostState::Lost(_) => Some(join_in(&mut self.backs, host)),
+            HostState::Unknown | HostState::Attaching | HostState::Live | HostState::Taken => None,
+        }
+    }
+
+    /// Whether the loop of `host`'s wait to be back has yet to start.
+    fn poll_back(&mut self, host: &HostName) -> bool {
+        poll_in(&mut self.backs, host)
+    }
+
+    /// Whether the loop of the wait `ended` for `host` to be back goes on.
+    fn polling_back(&self, host: &HostName, ended: &Ended) -> bool {
+        polling_in(&self.backs, host, ended)
     }
 
     /// One more listener to `host`'s wait, made with the first; `None` when
@@ -201,35 +369,17 @@ impl Waits {
         if !self.busy.contains_key(host) {
             return None;
         }
-        let wait = self.waits.entry(host.clone()).or_insert_with(|| {
-            let (end, ended) = oneshot::channel();
-            Wait {
-                end,
-                ended: ended.shared(),
-                listeners: 0,
-                polling: false,
-                missed: 0,
-            }
-        });
-        wait.listeners += 1;
-        Some(wait.ended.clone())
+        Some(join_in(&mut self.waits, host))
     }
 
-    /// A listener to the wait `ended` went; with the last, the wait goes,
-    /// and what the host said with it.
+    /// A listener to the wait `ended`, on busy sessions or for the host to
+    /// be back, went; with the last, the wait goes, and with a busy one what
+    /// the host said.
     fn leave(&mut self, host: &HostName, ended: &Ended) {
-        let Some(wait) = self
-            .waits
-            .get_mut(host)
-            .filter(|wait| wait.ended.ptr_eq(ended))
-        else {
-            return;
-        };
-        wait.listeners = wait.listeners.saturating_sub(1);
-        if wait.listeners == 0 {
-            self.waits.remove(host);
+        if leave_in(&mut self.waits, host, ended) {
             self.busy.remove(host);
         }
+        leave_in(&mut self.backs, host, ended);
     }
 
     /// The sessions `host` said were mid-turn, while it is waited on.
@@ -242,22 +392,69 @@ impl Waits {
 
     /// Whether `host`'s wait has yet to be polled; it is from now on.
     fn poll(&mut self, host: &HostName) -> bool {
-        self.waits
-            .get_mut(host)
-            .is_some_and(|wait| !std::mem::replace(&mut wait.polling, true))
+        poll_in(&mut self.waits, host)
     }
 
     /// Whether the poll of the wait `ended` goes on: that wait still stands.
     fn polling(&self, host: &HostName, ended: &Ended) -> bool {
-        self.waits
-            .get(host)
-            .is_some_and(|wait| wait.polling && wait.ended.ptr_eq(ended))
+        polling_in(&self.waits, host, ended)
     }
 
     /// Whether anything waits on `host`.
     fn waited(&self, host: &HostName) -> bool {
         self.waits.contains_key(host)
     }
+}
+
+/// End `host`'s wait in `waits`, if one stands, as `how`.
+fn end_in(waits: &mut BTreeMap<HostName, Wait>, host: &HostName, how: WaitEnd) {
+    if let Some(wait) = waits.remove(host) {
+        let _ = wait.end.send(how);
+    }
+}
+
+/// One more listener to `host`'s wait in `waits`, made with the first.
+fn join_in(waits: &mut BTreeMap<HostName, Wait>, host: &HostName) -> Ended {
+    let wait = waits.entry(host.clone()).or_insert_with(|| {
+        let (end, ended) = oneshot::channel();
+        Wait {
+            end,
+            ended: ended.shared(),
+            listeners: 0,
+            polling: false,
+            missed: 0,
+        }
+    });
+    wait.listeners += 1;
+    wait.ended.clone()
+}
+
+/// A listener to the wait `ended` in `waits` went: `true` when it was the
+/// last, and the wait went with it.
+fn leave_in(waits: &mut BTreeMap<HostName, Wait>, host: &HostName, ended: &Ended) -> bool {
+    let Some(wait) = waits.get_mut(host).filter(|wait| wait.ended.ptr_eq(ended)) else {
+        return false;
+    };
+    wait.listeners = wait.listeners.saturating_sub(1);
+    if wait.listeners > 0 {
+        return false;
+    }
+    waits.remove(host);
+    true
+}
+
+/// Whether `host`'s wait in `waits` has yet to be polled; it is from now on.
+fn poll_in(waits: &mut BTreeMap<HostName, Wait>, host: &HostName) -> bool {
+    waits
+        .get_mut(host)
+        .is_some_and(|wait| !std::mem::replace(&mut wait.polling, true))
+}
+
+/// Whether the poll of the wait `ended` in `waits` goes on.
+fn polling_in(waits: &BTreeMap<HostName, Wait>, host: &HostName, ended: &Ended) -> bool {
+    waits
+        .get(host)
+        .is_some_and(|wait| wait.polling && wait.ended.ptr_eq(ended))
 }
 
 /// The attach to `host`: the one already up, the attempt already under
@@ -420,11 +617,29 @@ fn attach_with(
     let shared = Shared::global(cx);
     let waits = shared.hosts.waits.clone();
     let attempt = shared.hosts.slots.get(host, fresh, || {
+        waits.borrow_mut().attaching(host);
         let (tx, rx) = oneshot::channel();
+        // Sent once a connection that landed closes, with whether it was taken.
+        let (closed_tx, closed_rx) = oneshot::channel();
         let attaching = attach(host.clone(), fresh);
         shared.acp.spawn(async move {
-            let _ = tx.send(attaching.await);
+            let result = attaching.await;
+            let conn = result.as_ref().ok().cloned();
+            let _ = tx.send(result);
+            if let Some(conn) = conn {
+                conn.wait_closed().await;
+                let _ = closed_tx.send(conn.taken());
+            }
         });
+        cx.spawn({
+            let host = host.clone();
+            async move |cx| {
+                if let Ok(taken) = closed_rx.await {
+                    cx.update(|cx| closed(cx, &host, taken));
+                }
+            }
+        })
+        .detach();
         let host = host.clone();
         async move {
             rx.await.unwrap_or_else(|_| {
@@ -436,9 +651,11 @@ fn attach_with(
         .boxed_local()
     });
     let host = host.clone();
+    let cx = cx.to_async();
     async move {
         let result = attempt.await;
         waits.borrow_mut().heard(&host, &result, polled);
+        cx.update(|cx| cx.refresh_windows());
         result
     }
 }
@@ -574,6 +791,14 @@ impl<C: Clone + 'static> Slots<C> {
             result
         }
         .boxed_local()
+    }
+
+    /// The connection `host`'s slot holds ready, whether or not it is up.
+    fn ready(&self, host: &HostName) -> Option<C> {
+        match self.map.borrow().get(host)? {
+            Slot::Ready(conn) => Some(conn.clone()),
+            Slot::Attaching(_) => None,
+        }
     }
 
     /// What `host`'s slot has worth reusing: a live connection, or an attempt

@@ -95,6 +95,7 @@ pub(crate) fn word(signal: Option<SessionSignal>) -> &'static str {
 pub(crate) fn state_word(signal: Option<SessionSignal>, host: Option<&str>) -> String {
     match (signal, host) {
         (Some(SessionSignal::HostWait), Some(host)) => format!("Waiting for {host}"),
+        (Some(SessionSignal::HostLost), Some(host)) => format!("Not connected to {host}"),
         _ => word(signal).to_string(),
     }
 }

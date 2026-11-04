@@ -1,5 +1,6 @@
-//! Adding a project on a host, what waits here on a host's busy sessions, and
-//! the question asked before a host's service is restarted onto this build.
+//! Adding a project on a host, what waits here on a host's busy sessions or
+//! on a lost host being back, and the question asked before a host's service
+//! is restarted onto this build.
 
 use super::Shell;
 use super::confirm::Confirm;
@@ -63,7 +64,8 @@ impl HostProjectDraft {
     }
 }
 
-/// What waits on a host's busy sessions going idle.
+/// What waits on a host's busy sessions going idle, or on a lost host being
+/// attached again.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Want {
     /// The session that was not attached, restarted.
@@ -72,6 +74,22 @@ enum Want {
     Add(u64),
     /// The project page's list of the host's sessions, asked again.
     Page,
+    /// The session out of reach of its lost host, restarted once it is back.
+    Back(u64),
+    /// The project page showing what it kept of a lost host's sessions,
+    /// listed again once it is back.
+    PageBack,
+}
+
+impl Want {
+    /// Whether it waits on the host being back rather than on its busy
+    /// sessions.
+    fn back(self) -> bool {
+        match self {
+            Want::Back(_) | Want::PageBack => true,
+            Want::Session(_) | Want::Add(_) | Want::Page => false,
+        }
+    }
 }
 
 /// What waits here on each host kept waiting by its busy sessions, and the
@@ -80,6 +98,9 @@ enum Want {
 #[derive(Default)]
 pub(super) struct HostFlow {
     waiting: BTreeMap<HostName, Waiting>,
+    /// What waits on each lost host being back, kept apart: a host is lost
+    /// or busy, and the two waits end differently.
+    back: BTreeMap<HostName, Waiting>,
     attempts: u64,
 }
 
@@ -98,26 +119,38 @@ impl HostFlow {
     /// Add `want` to what waits here on `host`: `true` when nothing did, so
     /// the end of the host's wait is still to be listened for.
     fn join(&mut self, host: &HostName, want: Want) -> bool {
-        let fresh = !self.waiting.contains_key(host);
-        let waiting = self.waiting.entry(host.clone()).or_default();
+        let map = self.map(want.back());
+        let fresh = !map.contains_key(host);
+        let waiting = map.entry(host.clone()).or_default();
         match want {
-            Want::Session(uid) if !waiting.uids.contains(&uid) => waiting.uids.push(uid),
-            Want::Session(_) => {}
-            Want::Page => waiting.page = true,
+            Want::Session(uid) | Want::Back(uid) if !waiting.uids.contains(&uid) => {
+                waiting.uids.push(uid)
+            }
+            Want::Session(_) | Want::Back(_) => {}
+            Want::Page | Want::PageBack => waiting.page = true,
             Want::Add(attempt) => waiting.add = Some(attempt),
         }
         fresh
     }
 
-    /// What waited here on `host`, once.
-    fn take(&mut self, host: &HostName) -> Option<Waiting> {
-        self.waiting.remove(host)
+    /// The waits on hosts being back, or on busy sessions.
+    fn map(&mut self, back: bool) -> &mut BTreeMap<HostName, Waiting> {
+        match back {
+            true => &mut self.back,
+            false => &mut self.waiting,
+        }
+    }
+
+    /// What waited here on `host`, once: on its being back, or on its busy
+    /// sessions.
+    fn take(&mut self, host: &HostName, back: bool) -> Option<Waiting> {
+        self.map(back).remove(host)
     }
 
     /// Hold the listening to `host`'s wait, for as long as something here
     /// waits on it.
-    fn listen(&mut self, host: &HostName, listening: gpui::Task<()>) {
-        if let Some(waiting) = self.waiting.get_mut(host) {
+    fn listen(&mut self, host: &HostName, back: bool, listening: gpui::Task<()>) {
+        if let Some(waiting) = self.map(back).get_mut(host) {
             waiting._listening = Some(listening);
         }
     }
@@ -132,10 +165,15 @@ impl HostFlow {
             waiting.page = waiting.page && still(host, Want::Page);
             !waiting.uids.is_empty() || waiting.add.is_some() || waiting.page
         });
+        self.back.retain(|host, waiting| {
+            waiting.uids.retain(|uid| still(host, Want::Back(*uid)));
+            waiting.page = waiting.page && still(host, Want::PageBack);
+            !waiting.uids.is_empty() || waiting.page
+        });
     }
 
     fn is_empty(&self) -> bool {
-        self.waiting.is_empty()
+        self.waiting.is_empty() && self.back.is_empty()
     }
 
     /// The form went away: no wait carries its *Add* on, so a form opened
@@ -480,6 +518,20 @@ impl Shell {
         self.wait_on_host(host, want, window, cx);
     }
 
+    /// Session `uid` is out of reach of `host`, or with no `uid` the project
+    /// page shows what it kept of it: restart the session, or list the page
+    /// again, once the host is attached again.
+    pub(super) fn host_lost(
+        &mut self,
+        uid: Option<u64>,
+        host: HostName,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let want = uid.map_or(Want::PageBack, Want::Back);
+        self.wait_on_host(host, want, window, cx);
+    }
+
     /// Add `want` to what waits on `host` here, listening for the end of the
     /// host's wait when nothing here did yet.
     fn wait_on_host(
@@ -492,23 +544,82 @@ impl Shell {
         if !self.host_flow.join(&host, want) {
             return;
         }
-        let idle = hosts::idle(cx, &host);
-        let listening = cx.spawn_in(window, {
-            let host = host.clone();
-            async move |shell, cx| {
-                // `None`: an attach has landed since, and nothing waits.
-                let end = match idle {
-                    Some(idle) => idle.await,
-                    None => Ok(()),
-                };
-                shell
-                    .update_in(cx, |shell: &mut Self, window, cx| {
-                        shell.host_idle(&host, end, window, cx)
-                    })
-                    .ok();
+        let back = want.back();
+        let listening = match back {
+            true => {
+                let lost = hosts::back(cx, &host);
+                cx.spawn_in(window, {
+                    let host = host.clone();
+                    async move |shell, cx| {
+                        // `None`: the host is not lost, attached since or
+                        // taken, which the end reads.
+                        let end = match lost {
+                            Some(lost) => lost.await,
+                            None => Ok(()),
+                        };
+                        shell
+                            .update(cx, |shell: &mut Self, cx| shell.host_back(&host, end, cx))
+                            .ok();
+                    }
+                })
+            }
+            false => {
+                let idle = hosts::idle(cx, &host);
+                cx.spawn_in(window, {
+                    let host = host.clone();
+                    async move |shell, cx| {
+                        // `None`: an attach has landed since, and nothing waits.
+                        let end = match idle {
+                            Some(idle) => idle.await,
+                            None => Ok(()),
+                        };
+                        shell
+                            .update_in(cx, |shell: &mut Self, window, cx| {
+                                shell.host_idle(&host, end, window, cx)
+                            })
+                            .ok();
+                    }
+                })
+            }
+        };
+        self.host_flow.listen(&host, back, listening);
+    }
+
+    /// The wait for lost `host` to be back ended. Attached again, or found
+    /// running another build, each session that waited is restarted and the
+    /// page lists again: on a busy host, that is what puts them on its busy
+    /// wait. Taken by another machine, nothing attaches again by itself: the
+    /// sessions end on why, and the page says it.
+    fn host_back(&mut self, host: &HostName, end: hosts::WaitEnd, cx: &mut Context<Self>) {
+        let Some(waiting) = self.host_flow.take(host, true) else {
+            return;
+        };
+        let taken = match hosts::state(cx, host) {
+            hosts::HostState::Taken => end.err(),
+            hosts::HostState::Unknown
+            | hosts::HostState::Attaching
+            | hosts::HostState::Live
+            | hosts::HostState::Lost(_) => None,
+        };
+        self.chat.update(cx, |pane, cx| match taken {
+            None => {
+                for uid in &waiting.uids {
+                    pane.restart(*uid, false, cx);
+                }
+                if waiting.page {
+                    pane.list_host_sessions(cx);
+                }
+            }
+            Some(why) => {
+                for uid in &waiting.uids {
+                    pane.host_back_failed(*uid, &why, cx);
+                }
+                if waiting.page {
+                    pane.host_page_taken(host, &why, cx);
+                }
             }
         });
-        self.host_flow.listen(&host, listening);
+        cx.notify();
     }
 
     /// Let go of what no longer waits here on a host: a session closed or
@@ -519,6 +630,7 @@ impl Shell {
         }
         let pane = self.chat.read(cx);
         let page = pane.page_waits_on();
+        let away = pane.page_away_on();
         let form = self
             .host_project
             .as_ref()
@@ -527,6 +639,8 @@ impl Shell {
             Want::Session(uid) => pane.host_wait(uid, cx).as_ref() == Some(host),
             Want::Add(attempt) => form == Some((host, attempt)),
             Want::Page => page == Some(host),
+            Want::Back(uid) => pane.host_lost(uid, cx).as_ref() == Some(host),
+            Want::PageBack => away == Some(host),
         });
     }
 
@@ -539,7 +653,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(waiting) = self.host_flow.take(host) else {
+        let Some(waiting) = self.host_flow.take(host, false) else {
             return;
         };
         let add = self.host_project.as_mut().is_some_and(|draft| {
@@ -567,7 +681,7 @@ impl Shell {
                         pane.host_wait_failed(*uid, &why, cx);
                     }
                     if waiting.page {
-                        pane.host_page_failed(host, &why, cx);
+                        pane.host_page_failed(host, cx);
                     }
                 });
                 if let Some(draft) = self.host_project.as_mut().filter(|_| add) {

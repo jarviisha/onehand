@@ -99,10 +99,29 @@ impl ChatPane {
         }
     }
 
-    /// The wait for `host` ended on `why`: a page waiting on it says so as
-    /// any failure to list, with *Try again*.
-    pub(crate) fn host_page_failed(&mut self, host: &HostName, why: &str, cx: &mut Context<Self>) {
-        if self.page_waits_on() != Some(host) {
+    /// The host the page on screen shows what it kept of, out of reach.
+    pub(crate) fn page_away_on(&self) -> Option<&HostName> {
+        let project = self.empty.as_ref()?;
+        match project.listed {
+            Some(Err(Unlisted::Away { .. })) => project.host.as_ref(),
+            Some(Ok(_) | Err(Unlisted::Failed(_) | Unlisted::Waiting)) | None => None,
+        }
+    }
+
+    /// The wait for `host`'s busy sessions ended, the host out of reach: a
+    /// page waiting on it lists again, which shows what it kept of the host
+    /// and waits for it to be back.
+    pub(crate) fn host_page_failed(&mut self, host: &HostName, cx: &mut Context<Self>) {
+        if self.page_waits_on() == Some(host) {
+            self.list_host_sessions(cx);
+        }
+    }
+
+    /// The wait for `host` to be back ended on `why`, another machine having
+    /// taken it: a page showing what it kept says so as any failure to list,
+    /// with *Try again*, rather than that it tries again.
+    pub(crate) fn host_page_taken(&mut self, host: &HostName, why: &str, cx: &mut Context<Self>) {
+        if self.page_away_on() != Some(host) {
             return;
         }
         if let Some(project) = self.empty.as_mut() {
@@ -179,7 +198,14 @@ impl ChatPane {
                 project.listing = false;
                 project.listed = Some(match listed {
                     Ok(all) => Ok(all),
-                    Err(HostFailure::Other(why)) => Err(Unlisted::Away { why, kept }),
+                    // The shell lists again once the host is back.
+                    Err(HostFailure::Other(why)) => {
+                        cx.emit(ChatPaneEvent::HostLost {
+                            uid: None,
+                            host: host.clone(),
+                        });
+                        Err(Unlisted::Away { why, kept })
+                    }
                     // The shell waits with the host and lists again once
                     // it is done.
                     Err(HostFailure::Busy { host, .. }) => {
@@ -240,7 +266,11 @@ pub(super) fn host_sessions(
     let (rows, left_out) = shown.map_or((Vec::new(), 0), |all| {
         host_rows(all, cwd, HOST_SESSIONS_CAP)
     });
-    let count = shown.map(|_| rows.len() + left_out);
+    // Away with nothing kept for this folder says so, rather than a count
+    // of none.
+    let away = matches!(listed, Some(Err(Unlisted::Away { .. })));
+    let none_kept = away && rows.is_empty();
+    let count = shown.filter(|_| !none_kept).map(|_| rows.len() + left_out);
     let now = onehand_core::chat::now_secs();
     let card = page_card(format!("Sessions on {host}"), count, None, cx);
     // How many sessions the host is waited on for: none once the wait has
@@ -309,6 +339,9 @@ pub(super) fn host_sessions(
                     )
                     .child(answer),
             )
+            .when(none_kept, |card| {
+                card.child(line().child("No sessions kept on this machine for this folder"))
+            })
         }
         Some(Ok(_)) if rows.is_empty() => {
             card.child(line().child(format!("No sessions on {host} for this folder yet")))

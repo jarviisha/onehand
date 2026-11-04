@@ -369,6 +369,13 @@ impl HostConn {
         self.cmds.is_closed()
     }
 
+    /// Resolves once the task that owns the stream has ended, as
+    /// [`Self::is_closed`] then says; to be awaited on the runtime.
+    pub fn wait_closed(&self) -> impl std::future::Future<Output = ()> + Send + 'static {
+        let cmds = self.cmds.clone();
+        async move { cmds.closed().await }
+    }
+
     /// Whether the host closed this connection because another machine
     /// attached, rather than the link going away.
     pub fn taken(&self) -> bool {
@@ -606,6 +613,9 @@ async fn pump<R, W>(
             }
         }
     };
+    // Closed before anyone is told, so whoever reads the end of a watch
+    // finds the connection closed, and why from `taken`.
+    cmds.close();
     for (_, w) in watchers {
         own(&w.tx, AcpEvent::Disconnected(why.clone()));
     }

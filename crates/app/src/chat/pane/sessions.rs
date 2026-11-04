@@ -323,15 +323,24 @@ impl ChatPane {
                     // stand on the rail as a session holding someone else's
                     // history with no agent behind it. A host session read
                     // from this machine's copy is out of reach, not lost:
-                    // nothing is announced.
-                    ChatEvent::Disconnected => match session.read(cx).chat.fork_failure() {
-                        Some(why) => cx.emit(ChatPaneEvent::ForkFailed {
-                            uid: Some(uid),
-                            why,
-                        }),
-                        None if session.read(cx).host_offline.is_some() => {}
-                        None => pane.link_lost_detached(uid, &agent, &root_label, cx),
-                    },
+                    // nothing is announced, and it is restarted once the
+                    // host is back.
+                    ChatEvent::Disconnected => {
+                        let session = session.read(cx);
+                        let (failed, offline) =
+                            (session.chat.fork_failure(), session.host_offline.clone());
+                        match (failed, offline) {
+                            (Some(why), _) => cx.emit(ChatPaneEvent::ForkFailed {
+                                uid: Some(uid),
+                                why,
+                            }),
+                            (None, Some(host)) => cx.emit(ChatPaneEvent::HostLost {
+                                uid: Some(uid),
+                                host,
+                            }),
+                            (None, None) => pane.link_lost_detached(uid, &agent, &root_label, cx),
+                        }
+                    }
                     ChatEvent::Fork(target) => pane.begin_fork(uid, *target, cx),
                     ChatEvent::Appended => {}
                     ChatEvent::PickRefused(why) => {
@@ -521,8 +530,10 @@ impl ChatPane {
         // instead of starting the conversation again inside it.
         let stored = self.session_of(uid).and_then(|s| {
             s.update(cx, |s, _| {
-                // Its line about waiting is over with the restart.
+                // Its line about waiting, or about being out of reach, is
+                // over with the restart.
                 s.forget_host_wait();
+                s.forget_host_offline();
                 s.chat.take_snapshot()
             })
         });
@@ -771,6 +782,7 @@ impl ChatPane {
         let chat = &session.chat;
         SessionSignal::pick(
             session.host_wait.is_some(),
+            session.host_offline.is_some(),
             chat.link,
             chat.failed(),
             chat.awaiting_permission() || crate::task::waits_on_person(uid, cx),
@@ -787,6 +799,30 @@ impl ChatPane {
         };
         session.update(cx, |session, cx| {
             if session.forget_host_wait() {
+                let lost = onehand_core::acp::AcpEvent::Disconnected(why.to_string());
+                session.chat.apply(lost);
+                cx.emit(ChatEvent::Appended);
+                cx.notify();
+            }
+        });
+    }
+
+    /// The host session `uid` is out of reach of, until it is back.
+    pub(crate) fn host_lost(&self, uid: u64, cx: &App) -> Option<HostName> {
+        let conv = self.conversations.get(&uid)?;
+        conv.session()?.read(cx).host_offline.clone()
+    }
+
+    /// The wait for `uid`'s host to be back ended on `why`, the host taken
+    /// by another machine: it ends as a lost agent does, which Restart tries
+    /// again.
+    pub(crate) fn host_back_failed(&mut self, uid: u64, why: &str, cx: &mut Context<Self>) {
+        let Some(session) = self.session_of(uid) else {
+            return;
+        };
+        session.update(cx, |session, cx| {
+            if session.host_offline.is_some() {
+                session.forget_host_offline();
                 let lost = onehand_core::acp::AcpEvent::Disconnected(why.to_string());
                 session.chat.apply(lost);
                 cx.emit(ChatEvent::Appended);

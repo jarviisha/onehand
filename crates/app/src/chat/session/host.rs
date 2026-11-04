@@ -9,8 +9,8 @@ use crate::acp::{Events, HostStart};
 use crate::hosts::HostFailure;
 use crate::state::Shared;
 use gpui::{AsyncApp, WeakEntity};
-use onehand_core::acp::Opening;
-use onehand_core::chat::{Chat, ChatItem, ConversationSnapshot};
+use onehand_core::acp::{AcpEvent, Opening};
+use onehand_core::chat::{Chat, ConversationSnapshot};
 use onehand_core::config::AgentSpec;
 use onehand_core::host::client::{HostConn, HostError};
 use onehand_core::host::copy;
@@ -228,6 +228,9 @@ pub(super) async fn host_events(
             }
         }
     };
+    let _ = session.update(cx, |session, _| {
+        session.host_conn = Some((host.clone(), conn.clone()));
+    });
     let (events, told) = cx.update(|cx| {
         Shared::global(cx)
             .acp
@@ -280,12 +283,36 @@ fn offline(
         for event in copy::events(kept) {
             session.chat.apply(event);
         }
-        session.chat.items.push(ChatItem::notice(line));
+        session.chat.say_host_wait(line);
         session.host_offline = Some(host);
         session.sync_md(cx);
         cx.emit(ChatEvent::Appended);
         cx.notify();
     });
+}
+
+/// Whether `event` ends the session's watch because the connection to its
+/// host was lost, closed without another machine taking it: then the session
+/// says it is out of reach, rather than that its agent went, and keeps what
+/// it has until the host is back. Decided on the connection, never on words.
+pub(super) fn went_away(session: &mut ChatSession, event: &AcpEvent) -> bool {
+    if !matches!(event, AcpEvent::Disconnected(_)) {
+        return false;
+    }
+    let Some((host, _)) = session
+        .host_conn
+        .as_ref()
+        .filter(|(_, conn)| conn.is_closed() && !conn.taken())
+    else {
+        return false;
+    };
+    let host = host.clone();
+    let now = onehand_core::chat::now_secs();
+    session
+        .chat
+        .say_host_wait(offline_line(&host, Some(now), now));
+    session.host_offline = Some(host);
+    true
 }
 
 /// Say on the session that it waits on `host`'s `n` busy sessions, as a

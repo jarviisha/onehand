@@ -1,6 +1,6 @@
 use super::{
-    HOST_IDLE_POLL, HOST_UNREACHABLE_POLLS, HostFailure, Slots, Waits, bundled_binary_in,
-    waiting_line,
+    HOST_IDLE_POLL, HOST_UNREACHABLE_POLLS, HostFailure, HostState, RECONNECT_FIRST, RECONNECT_MAX,
+    Slots, Waits, bundled_binary_in, next_delay, waiting_line,
 };
 use futures::FutureExt as _;
 use futures::executor::block_on;
@@ -262,4 +262,98 @@ fn a_wait_outlives_a_blip_but_not_a_host_gone() {
     let ended = waits.listen(&host).unwrap();
     waits.heard(&host, &gone(), false);
     assert_eq!(ended.now_or_never(), Some(Ok(Err("gone".to_string()))));
+}
+
+/// Two seconds after a connection goes, then twice as long each miss, never
+/// more than a minute apart.
+#[test]
+fn next_delay_doubles_to_the_cap() {
+    use std::time::Duration;
+    assert_eq!(RECONNECT_FIRST, Duration::from_secs(2));
+    assert_eq!(RECONNECT_MAX, Duration::from_secs(60));
+    assert_eq!(next_delay(None), RECONNECT_FIRST);
+    let mut delay = None;
+    let mut said = Vec::new();
+    for _ in 0..8 {
+        let next = next_delay(delay);
+        said.push(next.as_secs());
+        delay = Some(next);
+    }
+    assert_eq!(said, [2, 4, 8, 16, 32, 60, 60, 60]);
+}
+
+/// A host another machine attached to is that machine's now: nothing here
+/// attaches to it again by itself.
+#[test]
+fn taken_never_reconnects() {
+    let host = HostName("vps".into());
+    let mut waits = Waits::default();
+    assert_eq!(waits.state(&host), HostState::Unknown);
+    waits.attaching(&host);
+    assert_eq!(waits.state(&host), HostState::Attaching);
+    waits.heard(&host, &Ok(()), false);
+    assert_eq!(waits.state(&host), HostState::Live);
+    waits.closed(&host, true);
+    assert_eq!(waits.state(&host), HostState::Taken);
+    assert!(
+        waits.listen_back(&host).is_none(),
+        "no loop on a taken host"
+    );
+}
+
+/// A connection lost is attached again while anything listens: misses never
+/// end the wait, the last listener going does, and an attach that lands
+/// releases every listener.
+#[test]
+fn lost_is_listened_to_until_the_last_listener_goes() {
+    let host = HostName("vps".into());
+    let mut waits = Waits::default();
+    assert!(
+        waits.listen_back(&host).is_none(),
+        "never attached: not lost"
+    );
+    waits.heard(&host, &Ok(()), false);
+    assert!(waits.listen_back(&host).is_none(), "live: not lost");
+    waits.closed(&host, false);
+    assert_eq!(
+        waits.state(&host),
+        HostState::Lost("lost the connection to vps".into())
+    );
+    let (a, b) = (
+        waits.listen_back(&host).unwrap(),
+        waits.listen_back(&host).unwrap(),
+    );
+    assert!(a.ptr_eq(&b), "one loop");
+    assert!(waits.poll_back(&host));
+    assert!(!waits.poll_back(&host), "one loop per host");
+    let gone = || Err::<(), _>(HostFailure::Other("gone".into()));
+    for _ in 0..5 {
+        waits.heard(&host, &gone(), true);
+    }
+    assert!(a.clone().now_or_never().is_none(), "misses never end it");
+    assert!(matches!(waits.state(&host), HostState::Lost(_)));
+    waits.leave(&host, &a);
+    assert!(waits.polling_back(&host, &b), "one still listens");
+    waits.leave(&host, &b);
+    assert!(!waits.polling_back(&host, &b), "the loop stops");
+    // Still lost: one listening again starts a new loop.
+    let c = waits.listen_back(&host).unwrap();
+    assert!(!c.ptr_eq(&b));
+    assert!(waits.poll_back(&host));
+    waits.heard(&host, &Ok(()), true);
+    assert_eq!(c.now_or_never(), Some(Ok(Ok(()))));
+    assert_eq!(waits.state(&host), HostState::Live);
+}
+
+/// A lost host found running another build hands over to the busy wait.
+#[test]
+fn a_lost_host_found_busy_ends_the_loop_on_why() {
+    let host = HostName("vps".into());
+    let mut waits = Waits::default();
+    waits.heard(&host, &Ok(()), false);
+    waits.closed(&host, false);
+    let back = waits.listen_back(&host).unwrap();
+    waits.heard(&host, &busy(&host, &["1-1"]), true);
+    assert!(matches!(back.now_or_never(), Some(Ok(Err(_)))));
+    assert!(waits.listen(&host).is_some(), "the busy wait takes over");
 }

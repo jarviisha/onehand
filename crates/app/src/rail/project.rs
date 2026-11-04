@@ -463,6 +463,22 @@ pub(super) fn project_row(
     let host = root
         .on_host()
         .map(|host| SharedString::from(host.to_string()));
+    // Out of reach of its host: attached again by itself while lost, never
+    // while another machine holds it. Nothing before a first attach.
+    let unreached = root
+        .on_host()
+        .and_then(|host| match crate::hosts::state(cx, host) {
+            crate::hosts::HostState::Lost(_) => {
+                Some(format!("Not connected to {host}; trying again"))
+            }
+            crate::hosts::HostState::Taken => {
+                Some(format!("{host} was attached from another machine"))
+            }
+            crate::hosts::HostState::Unknown
+            | crate::hosts::HostState::Attaching
+            | crate::hosts::HostState::Live => None,
+        });
+    let unreached_ink = cx.theme().muted_foreground;
     let mut hint = project_hint(
         &root.label,
         git.as_ref(),
@@ -582,6 +598,24 @@ pub(super) fn project_row(
                                 Tooltip::new(place.clone()).build(window, cx)
                             }))
                             .child(host),
+                    )
+                })
+                .when_some(unreached, |row, said| {
+                    let tip = SharedString::from(said);
+                    row.child(
+                        div()
+                            .id(("project-unreached", root_idx))
+                            .flex_none()
+                            .role(gpui::accesskit::Role::Image)
+                            .aria_label(tip.clone())
+                            .tooltip(covered_tip(&key, move |window, cx| {
+                                Tooltip::new(tip.clone()).build(window, cx)
+                            }))
+                            .child(
+                                Icon::new(crate::icons::Icon::Unplug)
+                                    .xsmall()
+                                    .text_color(unreached_ink),
+                            ),
                     )
                 })
                 .when_some(git, |row, git| {

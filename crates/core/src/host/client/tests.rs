@@ -934,6 +934,28 @@ async fn a_connection_says_it_is_closed_once_its_stream_ends() {
     panic!("the connection never said it was closed");
 }
 
+/// A watch that ends with its stream finds the connection already closed,
+/// and `wait_closed` resolves: the app decides from the connection, never
+/// from the words, whether it was lost.
+#[tokio::test]
+async fn a_watch_ends_on_a_connection_already_closed() {
+    let (conn, host) = pair();
+    let mut watch = conn.watch(&s1(), None);
+    drop(host);
+    loop {
+        match watch.next().await {
+            Some(AcpEvent::Disconnected(_)) => break,
+            Some(_) => {}
+            None => panic!("the watch ended unsaid"),
+        }
+    }
+    assert!(conn.is_closed());
+    assert!(!conn.taken());
+    tokio::time::timeout(Duration::from_secs(1), conn.wait_closed())
+        .await
+        .unwrap();
+}
+
 /// A connection the host closed because another machine attached says it
 /// was taken; one whose link merely went away does not.
 #[tokio::test]
