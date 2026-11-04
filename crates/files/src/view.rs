@@ -12,9 +12,9 @@ use gpui::{
 };
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::gitstat::{FileChange, GitStatus};
-use onehand_core::tree::{self, FileTree};
-use onehand_ui::{hint, mark_slot, status_ink, tokens, tree_row};
-use onehand_workbench::{Ask, Request};
+use onehand_core::tree::{FileTree, TreeEntry};
+use onehand_ui::{hint, mark_slot, status_ink, status_line, tokens, tree_row};
+use onehand_workbench::{Ask, Disk, Request};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -27,6 +27,13 @@ use std::path::{Path, PathBuf};
 pub(crate) struct FilesView {
     root: Option<PathBuf>,
     trees: HashMap<PathBuf, FileTree>,
+    /// Where each root's files are read from.
+    disks: HashMap<PathBuf, Disk>,
+    /// The last listing that could not be read, by the root it belongs to,
+    /// and why. Drawn in place of that root's rows: a tree with a folder
+    /// silently missing reads as a folder that is empty. Cleared by the next
+    /// listing of that root that lands.
+    failed: Option<(PathBuf, String)>,
     git: HashMap<PathBuf, GitStatus>,
     /// How a click on a file reaches the mode that edits files. Opening one is
     /// the quick editor's business, and this tree has no way to reach it.
@@ -41,6 +48,8 @@ impl FilesView {
         cx.new(|_| Self {
             root: None,
             trees: HashMap::new(),
+            disks: HashMap::new(),
+            failed: None,
             git: HashMap::new(),
             ask,
             active: None,
@@ -55,8 +64,12 @@ impl FilesView {
         }
     }
 
-    /// Point the tree at a project root, seeding it on first sight.
-    pub(crate) fn set_root(&mut self, root: &Path, cx: &mut Context<Self>) {
+    /// Point the tree at a project root and the disk its files are on,
+    /// seeding it on first sight.
+    pub(crate) fn set_root(&mut self, root: &Path, disk: &Disk, cx: &mut Context<Self>) {
+        // Kept even for the root already on screen: a host's attach can be
+        // replaced while its project stays.
+        self.disks.insert(root.to_path_buf(), disk.clone());
         if self.root.as_deref() == Some(root) {
             return;
         }
@@ -74,7 +87,11 @@ impl FilesView {
 
     pub(crate) fn forget_root(&mut self, root: &Path, cx: &mut Context<Self>) {
         self.trees.remove(root);
+        self.disks.remove(root);
         self.git.remove(root);
+        if self.failed.as_ref().is_some_and(|(at, _)| at == root) {
+            self.failed = None;
+        }
         if self.root.as_deref() == Some(root) {
             self.root = None;
         }
@@ -117,23 +134,46 @@ impl FilesView {
         let Some(root) = self.root.clone() else {
             return;
         };
+        let Some(disk) = self.disks.get(&root).cloned() else {
+            return;
+        };
         cx.spawn(async move |view, cx| {
-            let (listing, cut) = cx
+            let read = cx
                 .background_executor()
                 .spawn({
                     let dir = dir.clone();
-                    async move { tree::read_dir_sorted(&dir) }
+                    async move { disk.read_dir(&dir) }
                 })
                 .await;
             let _ = view.update(cx, |view: &mut Self, cx| {
-                if let Some(tree) = view.trees.get_mut(&root) {
-                    tree.cut.insert(dir.clone(), cut);
-                    tree.listings.insert(dir, listing);
+                match read {
+                    Ok((listing, cut)) => {
+                        if view.failed.as_ref().is_some_and(|(at, _)| *at == root) {
+                            view.failed = None;
+                        }
+                        if let Some(tree) = view.trees.get_mut(&root) {
+                            tree.cut.insert(dir.clone(), cut);
+                            tree.listings.insert(dir, listing);
+                        }
+                    }
+                    Err(why) => view.failed = Some((root, why)),
                 }
                 cx.notify();
             });
         })
         .detach();
+    }
+
+    /// A row pressed: a folder folds or unfolds, a file opens beside the tree.
+    ///
+    /// By the kind the listing gave, not by asking the disk again: that would
+    /// be a stat on the UI loop, and a host's path is not on this machine.
+    fn click(&mut self, entry: &TreeEntry, window: &mut Window, cx: &mut Context<Self>) {
+        if entry.is_dir {
+            self.toggle_dir(entry.path.clone(), cx);
+        } else {
+            (self.ask)(&Request::OpenFile(&entry.path), window, cx);
+        }
     }
 
     /// Fold or unfold a directory. Expanding rescans — a cached listing can be
@@ -169,6 +209,13 @@ impl Render for FilesView {
         let Some(tree) = self.trees.get(&root) else {
             return hint("No project selected", cx).into_any_element();
         };
+        if let Some((_, why)) = self.failed.as_ref().filter(|(at, _)| *at == root) {
+            return div()
+                .flex_1()
+                .min_h_0()
+                .child(status_line(why.clone(), status_ink(cx).danger))
+                .into_any_element();
+        }
         // Until the root's first listing lands there is nothing to draw, and a
         // blank panel reads as an empty project.
         if !tree.listings.contains_key(&root) {
@@ -182,9 +229,8 @@ impl Render for FilesView {
                 tree,
                 self.git.get(&root),
                 self.active.as_deref(),
-                self.ask.clone(),
-                cx.listener(|view: &mut Self, dir: &PathBuf, _, cx| {
-                    view.toggle_dir(dir.clone(), cx)
+                cx.listener(|view: &mut Self, entry: &TreeEntry, window, cx| {
+                    view.click(entry, window, cx)
                 }),
                 cx,
             ))
@@ -217,12 +263,11 @@ fn rows(
     tree: &FileTree,
     git: Option<&GitStatus>,
     active: Option<&Path>,
-    ask: Ask,
-    on_toggle: impl Fn(&PathBuf, &mut Window, &mut App) + 'static,
+    on_click: impl Fn(&TreeEntry, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> gpui::AnyElement {
     let (rows, left_out) = tree.visible_rows(root);
-    let on_toggle = std::rc::Rc::new(on_toggle);
+    let on_click = std::rc::Rc::new(on_click);
     let muted = cx.theme().muted_foreground;
 
     div()
@@ -233,8 +278,7 @@ fn rows(
         .overflow_y_scroll()
         .children(rows.into_iter().enumerate().map(|(i, row)| {
             let entry = row.entry;
-            let (toggle, ask) = (on_toggle.clone(), ask.clone());
-            let path = entry.path.clone();
+            let click = on_click.clone();
             let expanded = tree.expanded.contains(&entry.path);
             let picked = active == Some(entry.path.as_path());
 
@@ -291,12 +335,9 @@ fn rows(
                             })
                         }),
                 )
-                .on_click(move |_, window, cx: &mut App| {
-                    if entry_is_dir(&path) {
-                        toggle(&path, window, cx);
-                    } else {
-                        ask(&Request::OpenFile(&path), window, cx);
-                    }
+                .on_click({
+                    let entry = entry.clone();
+                    move |_, window, cx: &mut App| click(&entry, window, cx)
                 })
         }))
         // The cap is core's, and a tree that silently stops is a tree the user
@@ -314,10 +355,5 @@ fn rows(
         .into_any_element()
 }
 
-/// Whether the click target is a directory.
-///
-/// Read back from the path rather than captured from the row: the closure
-/// outlives this frame's borrow of the tree.
-fn entry_is_dir(path: &Path) -> bool {
-    path.is_dir()
-}
+#[cfg(test)]
+mod tests;

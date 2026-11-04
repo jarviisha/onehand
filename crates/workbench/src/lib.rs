@@ -17,6 +17,9 @@
 #![warn(unreachable_pub)]
 
 use gpui::{AnyView, App, Pixels, Window};
+/// Where a mode's files are, re-exported so a mode that reads none of them
+/// still names the type its `set_root` is handed without depending on core.
+pub use onehand_core::disk::Disk;
 use onehand_core::gitstat::GitStatus;
 use onehand_core::task::work::IssueWork;
 use std::collections::HashMap;
@@ -76,6 +79,12 @@ pub struct WorkbenchModeSpec {
     /// container while the cell stays put and every column lands past its own
     /// character. Such a mode takes its reading size some other way.
     pub rem_zoom: bool,
+    /// Whether this mode is offered on a project whose files are on a host.
+    ///
+    /// Only a mode that reads and writes through the [`Disk`] it is handed
+    /// can be: one that reads this machine's disk itself, or starts a program
+    /// here, would show or change the wrong files.
+    pub on_host: bool,
 }
 
 impl WorkbenchModeSpec {
@@ -87,6 +96,7 @@ impl WorkbenchModeSpec {
             label,
             key_context: WORKBENCH_KEY_CONTEXT,
             rem_zoom: true,
+            on_host: false,
         }
     }
 
@@ -97,6 +107,15 @@ impl WorkbenchModeSpec {
             label,
             key_context: TERMINAL_KEY_CONTEXT,
             rem_zoom: false,
+            on_host: false,
+        }
+    }
+
+    /// The same mode, offered on a host's project too.
+    pub const fn on_host(self) -> Self {
+        Self {
+            on_host: true,
+            ..self
         }
     }
 }
@@ -117,12 +136,13 @@ pub trait WorkbenchMode {
     /// The body, drawn while this mode is the one showing.
     fn view(&self) -> AnyView;
 
-    /// Point this mode at a project root.
+    /// Point this mode at a project root, and the disk its files are on.
     ///
     /// Every mode here is per root, so this is not a request that one of them
     /// takes and the rest ignore — it is told to all of them, and the reply is
-    /// nothing because there is nothing to decide.
-    fn set_root(&mut self, _root: &Path, _cx: &mut App) {}
+    /// nothing because there is nothing to decide. A mode that touches no
+    /// files ignores the disk.
+    fn set_root(&mut self, _root: &Path, _disk: &Disk, _cx: &mut App) {}
 
     /// Drop everything held for a root that has left the workspace.
     fn forget_root(&mut self, _root: &Path, _cx: &mut App) {}

@@ -308,8 +308,11 @@ impl Workbench {
             return;
         }
         self.root = Some(root.clone());
+        // Every project's files are on this machine until a host's project
+        // is handed its own disk.
+        let disk = onehand_workbench::Disk::Local;
         for mode in &mut self.modes {
-            mode.set_root(&root, cx);
+            mode.set_root(&root, &disk, cx);
         }
         cx.notify();
     }

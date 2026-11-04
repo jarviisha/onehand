@@ -23,3 +23,9 @@ gpui-component = { workspace = true, features = [
     "tree-sitter-markdown", "tree-sitter-toml", "tree-sitter-yaml",
     "tree-sitter-bash", "tree-sitter-css", "tree-sitter-html",
 ] }
+
+[dev-dependencies]
+# `TestAppContext`, to drive the view the way the panel does.
+gpui = { workspace = true, features = ["test-support"] }
+# The runtime a host disk's calls are polled on.
+tokio = { version = "1", features = ["rt"] }

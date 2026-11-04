@@ -14,3 +14,9 @@ onehand-ui = { path = "../ui" }
 onehand-core = { path = "../core" }
 gpui.workspace = true
 gpui-component.workspace = true
+
+[dev-dependencies]
+# `TestAppContext`, to drive the view the way the panel does.
+gpui = { workspace = true, features = ["test-support"] }
+# The runtime a host disk's calls are polled on.
+tokio = { version = "1", features = ["rt"] }
