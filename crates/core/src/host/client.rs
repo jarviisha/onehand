@@ -71,7 +71,7 @@ fn on_host(host: &str, e: HostError) -> HostError {
     match e {
         HostError::Unreachable(why) => HostError::Unreachable(on(why)),
         HostError::Protocol(why) => HostError::Protocol(on(why)),
-        e @ HostError::Unsupported(_) => e,
+        HostError::Unsupported(why) => HostError::Unsupported(on(why)),
         e @ HostError::Busy { .. } => e,
     }
 }

@@ -767,11 +767,15 @@ async fn open_errors_name_the_host() {
     );
 }
 
-/// A failure of a call names the host but a busy one, which is said where
+/// Every failure of a call names the host but a busy one, which is said where
 /// the attach was turned down.
 #[test]
-fn open_errors_but_busy_name_the_host() {
+fn every_open_error_but_busy_names_the_host() {
     let named = |e| on_host("vps", e).to_string();
+    assert_eq!(
+        named(HostError::Unsupported("Plan9 mips".into())),
+        "On vps: Plan9 mips"
+    );
     assert_eq!(named(HostError::Unreachable("gone".into())), "On vps: gone");
     assert_eq!(named(HostError::Protocol("no".into())), "On vps: no");
     let busy = HostError::Busy {
