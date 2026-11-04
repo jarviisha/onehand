@@ -310,6 +310,9 @@ impl Shell {
                 mount_terminal(area, &terminal, height, window, cx);
                 cx.notify();
             });
+            // A host keeps its project's shells while the dock is away, and
+            // may have started more since: they are asked for again.
+            self.terminal.update(cx, |panel, cx| panel.show_host(cx));
             cx.notify();
             return;
         }

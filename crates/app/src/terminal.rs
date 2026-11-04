@@ -253,9 +253,10 @@ impl TerminalPanel {
     /// host keeps for it are asked for, and opened as tabs.
     pub fn set_root(&mut self, root: PathBuf, host: Option<HostName>, cx: &mut Context<Self>) {
         let home = (host, root);
-        // A shell asked for on another project is not one asked for here.
+        // What was asked of another project's host, and a shell asked for
+        // there, are not this one's.
         if self.root.as_ref() != Some(&home) {
-            self.host.open_after = None;
+            self.host = host::Reach::default();
         }
         self.root = Some(home);
         self.show_host(cx);

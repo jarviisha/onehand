@@ -13,18 +13,15 @@
 
 use super::{Home, TerminalPanel};
 use crate::controls::Short as _;
-use crate::hosts::{self, HostFailure};
-use crate::state::Shared;
-use futures::channel::oneshot;
+use crate::hosts;
 use gpui::{
-    AnyElement, AnyWindowHandle, App, AppContext as _, Context, IntoElement, ParentElement,
+    AnyElement, AnyWindowHandle, AppContext as _, Context, IntoElement, ParentElement,
     SharedString, Styled, Task, Window, div,
 };
 use gpui_component::StyledExt as _;
 use gpui_component::button::ButtonVariants as _;
 use onehand_core::host::client::HostConn;
-use onehand_core::host::wire::HostTerm;
-use std::future::Future;
+use onehand_core::host::wire::{HostTerm, TermInfo};
 
 /// How the attach for the host project on screen is coming along.
 #[derive(Default)]
@@ -64,17 +61,20 @@ impl TerminalPanel {
     /// for its folder, attaching first when the attach is not up: saying
     /// meanwhile what it waits on and, if it fails, why. A busy host is
     /// waited on as everywhere else. What lands for a project no longer on
-    /// screen is dropped.
-    pub(super) fn show_host(&mut self, cx: &mut Context<Self>) {
+    /// screen is dropped. Asked on arriving at the project and on showing the
+    /// dock; while one ask is under way another is not made.
+    pub(crate) fn show_host(&mut self, cx: &mut Context<Self>) {
         let Some((home, host)) = self.on_host() else {
             self.host = Reach::default();
             return;
         };
-        let open_after = self.host.open_after.take();
-        let said = hosts::live(cx, &host)
-            .is_none()
-            .then(|| Said::Waiting(format!("Attaching to {host}…").into()));
-        let asking = cx.spawn(async move |panel, cx| {
+        if self.host.asking.is_some() {
+            return;
+        }
+        if hosts::live(cx, &host).is_none() {
+            self.host.said = Some(Said::Waiting(format!("Attaching to {host}…").into()));
+        }
+        self.host.asking = Some(cx.spawn(async move |panel, cx| {
             let say = |said: Said, cx: &mut gpui::AsyncApp| {
                 let _ = panel.update(cx, |panel: &mut Self, cx| {
                     if panel.root.as_ref() == Some(&home) {
@@ -83,45 +83,25 @@ impl TerminalPanel {
                     }
                 });
             };
-            loop {
-                let attached = cx.update(|cx| hosts::conn(cx, &host)).await;
-                let why: String = match attached {
-                    Ok(conn) => {
-                        let asking = conn.clone();
-                        let listed = cx
-                            .update(|cx| on_runtime(cx, async move { asking.term_list().await }))
-                            .await;
-                        let _ = panel.update(cx, |panel: &mut Self, cx| {
-                            panel.listed(home, conn, listed, cx)
-                        });
-                        return;
-                    }
-                    Err(HostFailure::Busy { host: on, busy }) => {
-                        say(
-                            Said::Waiting(hosts::waiting_line(&on, busy.len()).into()),
-                            cx,
-                        );
-                        // None: an attach landed since, which the next turn takes.
-                        let Some(idle) = cx.update(|cx| hosts::idle(cx, &host)) else {
-                            continue;
-                        };
-                        match idle.await {
-                            Ok(()) => continue,
-                            Err(why) => why,
-                        }
-                    }
-                    Err(HostFailure::Other(why)) => why,
-                };
-                say(Said::Failed(why.into()), cx);
-                let _ = panel.update(cx, |panel: &mut Self, _| panel.host.asking = None);
-                return;
+            let waiting =
+                |line: String, cx: &mut gpui::AsyncApp| say(Said::Waiting(line.into()), cx);
+            match hosts::attach_waiting(&host, cx, waiting).await {
+                Ok(conn) => {
+                    let asking = conn.clone();
+                    let listed = cx
+                        .update(|cx| hosts::on_runtime(cx, async move { asking.term_list().await }))
+                        .await
+                        .map_err(|e| e.to_string());
+                    let _ = panel.update(cx, |panel: &mut Self, cx| {
+                        panel.listed(home, conn, listed, cx)
+                    });
+                }
+                Err(why) => {
+                    say(Said::Failed(why.into()), cx);
+                    let _ = panel.update(cx, |panel: &mut Self, _| panel.host.asking = None);
+                }
             }
-        });
-        self.host = Reach {
-            said,
-            asking: Some(asking),
-            open_after,
-        };
+        }));
     }
 
     /// The host's terminals, asked over `conn`, have landed: each one in this
@@ -131,13 +111,13 @@ impl TerminalPanel {
         &mut self,
         home: Home,
         conn: HostConn,
-        listed: Result<Vec<onehand_core::host::wire::TermInfo>, String>,
+        listed: Result<Vec<TermInfo>, String>,
         cx: &mut Context<Self>,
     ) {
         if self.root.as_ref() != Some(&home) {
             return;
         }
-        let open_after = self.host.open_after.take();
+        let asked = self.host.open_after.take();
         self.host = Reach::default();
         let terms = match listed {
             Ok(terms) => terms,
@@ -154,22 +134,27 @@ impl TerminalPanel {
         if let Some(set) = self.shells.get_mut(&home) {
             set.drop_where(|_, tab| tab.on_host.as_ref().is_some_and(|(c, _)| c.is_closed()));
         }
-        for info in terms.into_iter().filter(|info| info.cwd == home.1) {
-            let shown = self.shells.get(&home).is_some_and(|set| {
-                set.tabs
-                    .iter()
-                    .any(|tab| tab.on_host.as_ref().is_some_and(|(_, t)| *t == info.term))
-            });
-            if !shown {
-                self.add_host_tab(home.clone(), conn.clone(), info.term, cx);
-            }
+        let shown = self.host_terms(&home);
+        let (add, open) = from_listing(&terms, &home.1, &shown, asked.is_some());
+        for term in add {
+            self.add_host_tab(home.clone(), conn.clone(), term, cx);
         }
-        if let Some(window) = open_after
-            && !self.has_shell()
+        if let Some(window) = asked
+            && open
         {
             self.open_on_host(window, cx);
         }
         cx.notify();
+    }
+
+    /// The host terminals `home` shows as tabs.
+    fn host_terms(&self, home: &Home) -> Vec<HostTerm> {
+        self.shells.get(home).map_or_else(Vec::new, |set| {
+            set.tabs
+                .iter()
+                .filter_map(|tab| tab.on_host.as_ref().map(|(_, term)| *term))
+                .collect()
+        })
     }
 
     /// Start a shell in the host project on screen. While its terminals are
@@ -189,9 +174,9 @@ impl TerminalPanel {
         };
         let (cols, rows) = onehand_terminal_ui::start_size();
         let (asking, cwd) = (conn.clone(), home.1.clone());
-        let opening = on_runtime(cx, async move { asking.term_open(cwd, cols, rows).await });
+        let opening = hosts::on_runtime(cx, async move { asking.term_open(cwd, cols, rows).await });
         cx.spawn(async move |panel, cx| {
-            let opened = opening.await;
+            let opened = opening.await.map_err(|e| e.to_string());
             let _ = cx.update_window(window, |_, window, cx| {
                 panel.update(cx, |panel: &mut Self, cx| {
                     panel.opened(home, conn, opened, window, cx)
@@ -218,6 +203,8 @@ impl TerminalPanel {
             return;
         }
         match opened {
+            // Already a tab: a listing landed while it was being started.
+            Ok(term) if self.host_terms(&home).contains(&term) => {}
             Ok(term) => {
                 let held_focus = self.focus_handle.contains_focused(window, cx)
                     || self.focus_handle.is_focused(window);
@@ -247,6 +234,8 @@ impl TerminalPanel {
         let panel = cx.entity().downgrade();
         let resize = conn.clone();
         let ended = home.clone();
+        // The id the tab is pushed with below.
+        let id = self.shells.entry(home.clone()).or_default().next;
         let tab = onehand_terminal_ui::stream_tab(
             "shell".into(),
             conn.term_watch(term),
@@ -257,7 +246,7 @@ impl TerminalPanel {
             cx,
             move |window, cx| {
                 let _ = panel.update(cx, |panel: &mut Self, cx| {
-                    panel.stream_ended(&ended, term, window, cx)
+                    panel.stream_ended(&ended, id, window, cx)
                 });
             },
         );
@@ -269,21 +258,15 @@ impl TerminalPanel {
         cx.notify();
     }
 
-    /// The stream of `term` ended: its tab goes, and nothing is asked of the
+    /// The stream of tab `id` ended: that tab goes, and nothing is asked of the
     /// host. Focus moves only when it was inside the dock, as for a shell of
     /// this machine that exits.
-    fn stream_ended(
-        &mut self,
-        home: &Home,
-        term: HostTerm,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn stream_ended(&mut self, home: &Home, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         let held_focus = self.focus_handle.contains_focused(window, cx);
         let Some(set) = self.shells.get_mut(home) else {
             return;
         };
-        let gone = set.drop_where(|_, tab| tab.on_host.as_ref().is_some_and(|(_, t)| *t == term));
+        let gone = set.drop_where(|_, tab| tab.id == id);
         if gone && held_focus && self.root.as_ref() == Some(home) {
             self.focus_active(window, cx);
         }
@@ -321,19 +304,20 @@ impl TerminalPanel {
     }
 }
 
-/// `work` run on the ACP runtime, its error in words, awaited from the UI
-/// thread.
-fn on_runtime<T, F>(cx: &App, work: F) -> impl Future<Output = Result<T, String>> + use<T, F>
-where
-    T: Send + 'static,
-    F: Future<Output = Result<T, onehand_core::host::client::HostError>> + Send + 'static,
-{
-    let (tx, rx) = oneshot::channel();
-    Shared::global(cx).acp.spawn(async move {
-        let _ = tx.send(work.await.map_err(|e| e.to_string()));
-    });
-    async move {
-        rx.await
-            .unwrap_or_else(|_| Err("the question was dropped".to_string()))
-    }
+/// What a listing of the host's terminals comes to for the folder `folder`,
+/// whose tabs already show `shown`: the terminals to add as tabs, and whether
+/// to start one because a shell was `asked` for and there is none.
+pub(super) fn from_listing(
+    listed: &[TermInfo],
+    folder: &std::path::Path,
+    shown: &[HostTerm],
+    asked: bool,
+) -> (Vec<HostTerm>, bool) {
+    let add: Vec<HostTerm> = listed
+        .iter()
+        .filter(|info| info.cwd == folder && !shown.contains(&info.term))
+        .map(|info| info.term)
+        .collect();
+    let open = asked && shown.is_empty() && add.is_empty();
+    (add, open)
 }

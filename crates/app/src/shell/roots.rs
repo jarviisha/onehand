@@ -293,52 +293,32 @@ impl Shell {
                     .active_root()
                     .is_some_and(|root| root.on_host() == Some(&host) && root.path == path)
             };
-            loop {
-                let attached = cx.update(|cx| crate::hosts::disk(cx, &host)).await;
-                let why: String = match attached {
-                    Ok(disk) => {
-                        let path = path.clone();
-                        let _ = shell.update(cx, |shell, cx| {
-                            if shown(shell) {
-                                shell
-                                    .workbench
-                                    .update(cx, |panel, cx| panel.set_root(path, disk, cx));
-                            }
-                        });
-                        return;
-                    }
-                    Err(crate::hosts::HostFailure::Busy {
-                        host: busy_on,
-                        busy,
-                    }) => {
-                        let line = crate::hosts::waiting_line(&busy_on, busy.len());
-                        let _ = shell.update(cx, |shell, cx| {
-                            if shown(shell) {
-                                shell.workbench.update(cx, |panel, cx| {
-                                    panel.refuse(Some(Refusal::Waiting(line.into())), cx)
-                                });
-                            }
-                        });
-                        // None: an attach landed since, which the next turn takes.
-                        let Some(idle) = cx.update(|cx| crate::hosts::idle(cx, &host)) else {
-                            continue;
-                        };
-                        match idle.await {
-                            Ok(()) => continue,
-                            Err(why) => why,
-                        }
-                    }
-                    Err(crate::hosts::HostFailure::Other(why)) => why,
-                };
+            let waiting = |line: String, cx: &mut gpui::AsyncApp| {
                 let _ = shell.update(cx, |shell, cx| {
                     if shown(shell) {
                         shell.workbench.update(cx, |panel, cx| {
-                            panel.refuse(Some(Refusal::Failed(why.into())), cx)
+                            panel.refuse(Some(Refusal::Waiting(line.into())), cx)
                         });
                     }
                 });
-                return;
-            }
+            };
+            let attached = crate::hosts::attach_waiting(&host, cx, waiting).await;
+            let _ = shell.update(cx, |shell, cx| {
+                if !shown(shell) {
+                    return;
+                }
+                match attached {
+                    Ok(conn) => {
+                        let disk = crate::hosts::disk_over(cx, conn);
+                        shell
+                            .workbench
+                            .update(cx, |panel, cx| panel.set_root(path.clone(), disk, cx));
+                    }
+                    Err(why) => shell.workbench.update(cx, |panel, cx| {
+                        panel.refuse(Some(Refusal::Failed(why.into())), cx)
+                    }),
+                }
+            });
         }));
     }
 

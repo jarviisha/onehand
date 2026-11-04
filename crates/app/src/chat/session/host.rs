@@ -8,7 +8,6 @@ use super::{ChatEvent, ChatSession};
 use crate::acp::{Events, HostStart};
 use crate::hosts::HostFailure;
 use crate::state::Shared;
-use futures::channel::oneshot;
 use gpui::{AsyncApp, WeakEntity};
 use onehand_core::acp::Opening;
 use onehand_core::chat::{Chat, ConversationSnapshot};
@@ -195,17 +194,8 @@ fn carry(
 
 /// What the host lists, read on the ACP runtime.
 pub(crate) async fn list(conn: HostConn, cx: &mut AsyncApp) -> Result<Vec<SessionInfo>, HostError> {
-    let (tx, rx) = oneshot::channel();
-    cx.update(|cx| {
-        Shared::global(cx).acp.spawn(async move {
-            let _ = tx.send(conn.list().await);
-        })
-    });
-    rx.await.unwrap_or_else(|_| {
-        Err(HostError::Unreachable(
-            "the question to the host was dropped".into(),
-        ))
-    })
+    cx.update(|cx| crate::hosts::on_runtime(cx, async move { conn.list().await }))
+        .await
 }
 
 /// Say on the session that it waits on `host`'s `n` busy sessions, as a

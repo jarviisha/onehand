@@ -19,7 +19,7 @@ use crate::state::Shared;
 use futures::FutureExt as _;
 use futures::channel::oneshot;
 use futures::future::{self, Either, LocalBoxFuture};
-use gpui::App;
+use gpui::{App, AsyncApp};
 use onehand_core::disk::{Disk, HostDisk};
 use onehand_core::host::client::{self, HostConn, HostError};
 use onehand_core::host::wire::{HostSession, build_id};
@@ -282,14 +282,51 @@ pub(crate) fn disk_over(cx: &App, conn: HostConn) -> Disk {
     Disk::Host(HostDisk::new(conn, Shared::global(cx).acp.handle()))
 }
 
-/// `host`'s files, attaching for them as [`conn`] does.
-pub(crate) fn disk(
-    cx: &App,
+/// The attach to `host`, as [`conn`] makes it, waiting out a host found
+/// busy: `waiting` is handed the line to say each time it is, and the attach
+/// is made again once its sessions are done. `Err` is why it could not be
+/// had, in words a person reads.
+pub(crate) async fn attach_waiting(
     host: &HostName,
-) -> impl Future<Output = Result<Disk, HostFailure>> + use<> {
-    let attaching = attach_with(cx, host, false, false);
-    let rt = Shared::global(cx).acp.handle();
-    async move { Ok(Disk::Host(HostDisk::new(attaching.await?, rt))) }
+    cx: &mut AsyncApp,
+    waiting: impl Fn(String, &mut AsyncApp),
+) -> Result<HostConn, String> {
+    loop {
+        match cx.update(|cx| conn(cx, host)).await {
+            Ok(conn) => return Ok(conn),
+            Err(HostFailure::Busy { host: on, busy }) => {
+                waiting(waiting_line(&on, busy.len()), cx);
+                // None: an attach landed since, which the next turn takes.
+                if let Some(idle) = cx.update(|cx| idle(cx, host)) {
+                    idle.await?;
+                }
+            }
+            Err(HostFailure::Other(why)) => return Err(why),
+        }
+    }
+}
+
+/// `work`, a call over a host's attach, run on the ACP runtime and awaited
+/// from the UI thread.
+pub(crate) fn on_runtime<T, F>(
+    cx: &App,
+    work: F,
+) -> impl Future<Output = Result<T, HostError>> + use<T, F>
+where
+    T: Send + 'static,
+    F: Future<Output = Result<T, HostError>> + Send + 'static,
+{
+    let (tx, rx) = oneshot::channel();
+    Shared::global(cx).acp.spawn(async move {
+        let _ = tx.send(work.await);
+    });
+    async move {
+        rx.await.unwrap_or_else(|_| {
+            Err(HostError::Unreachable(
+                "the question to the host was dropped".into(),
+            ))
+        })
+    }
 }
 
 /// Whether anything waits on `host`'s busy sessions.
@@ -314,20 +351,12 @@ pub(crate) fn is_dir(
     conn: HostConn,
     path: PathBuf,
 ) -> impl Future<Output = Result<bool, HostFailure>> + use<> {
-    let (tx, rx) = oneshot::channel();
-    Shared::global(cx).acp.spawn(async move {
-        let _ = tx.send(conn.is_dir(&path).await);
-    });
+    let asking = on_runtime(cx, async move { conn.is_dir(&path).await });
     let host = host.clone();
     async move {
-        match rx.await {
-            Ok(found) => found.map_err(|e| {
-                HostFailure::Other(format!("Could not ask {host} about the folder: {e}"))
-            }),
-            Err(_) => Err(HostFailure::Other(format!(
-                "Could not ask {host} about the folder: the question was dropped"
-            ))),
-        }
+        asking
+            .await
+            .map_err(|e| HostFailure::Other(format!("Could not ask {host} about the folder: {e}")))
     }
 }
 

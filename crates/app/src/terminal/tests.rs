@@ -186,3 +186,46 @@ mod on_host {
         let_go(&panel, recorded, cx);
     }
 }
+
+/// A listing of a host's terminals becomes tabs for the terminals in the
+/// project's folder not already shown, and a shell asked for is started only
+/// when there is none at all.
+#[test]
+fn a_listing_adds_its_folders_terminals_and_opens_one_only_when_none() {
+    use super::host::from_listing;
+    use onehand_core::host::wire::{HostTerm, TermInfo};
+    use std::path::{Path, PathBuf};
+
+    let info = |term, cwd: &str| TermInfo {
+        term: HostTerm(term),
+        cwd: PathBuf::from(cwd),
+    };
+    let folder = Path::new("/srv/app");
+    let listed = [
+        info(1, "/srv/app"),
+        info(2, "/srv/other"),
+        info(3, "/srv/app"),
+    ];
+    // Another folder's terminal is not this project's; one already a tab is
+    // not added twice; and with some found, none is started.
+    assert_eq!(
+        from_listing(&listed, folder, &[HostTerm(1)], true),
+        (vec![HostTerm(3)], false)
+    );
+    assert_eq!(
+        from_listing(&listed, folder, &[], true),
+        (vec![HostTerm(1), HostTerm(3)], false)
+    );
+    // None in this folder: one is started if it was asked for, else none.
+    let elsewhere = [info(2, "/srv/other")];
+    assert_eq!(from_listing(&elsewhere, folder, &[], true), (vec![], true));
+    assert_eq!(
+        from_listing(&elsewhere, folder, &[], false),
+        (vec![], false)
+    );
+    // A tab already open is a shell: none is started beside it.
+    assert_eq!(
+        from_listing(&elsewhere, folder, &[HostTerm(1)], true),
+        (vec![], false)
+    );
+}
