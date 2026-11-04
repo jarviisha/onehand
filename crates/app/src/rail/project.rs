@@ -562,9 +562,10 @@ pub(super) fn project_row(
             })),
         )
         .child(
-            // Shrinks, by its host or its branch alone: everything else on it
-            // keeps its width, and that one truncates once the name is down to
-            // its minimum. A folder on a host has no branch here.
+            // Shrinks, by its host and its branch alone: everything else on it
+            // keeps its width, and those truncate once the name is down to its
+            // minimum. A folder on a host names its host first, then its branch
+            // once that is read over the host's attach.
             div()
                 .h_flex()
                 .items_center()
