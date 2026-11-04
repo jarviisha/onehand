@@ -15,7 +15,7 @@ use onehand_core::gitstat::{FileChange, GitStatus};
 use onehand_core::tree::{FileTree, TreeEntry};
 use onehand_ui::{hint, mark_slot, status_ink, status_line, tokens, tree_row};
 use onehand_workbench::{Ask, Disk, Request};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 /// The tree of every project root this window has visited, and the one on
@@ -29,11 +29,12 @@ pub(crate) struct FilesView {
     trees: HashMap<PathBuf, FileTree>,
     /// Where each root's files are read from.
     disks: HashMap<PathBuf, Disk>,
-    /// The last listing that could not be read, by the root it belongs to,
-    /// and why. Drawn in place of that root's rows: a tree with a folder
-    /// silently missing reads as a folder that is empty. Cleared by the next
-    /// listing of that root that lands.
-    failed: Option<(PathBuf, String)>,
+    /// The folders whose listing could not be read, by root, and why: a
+    /// folder silently missing reads as a folder that is empty. Kept per
+    /// folder because a rescan lists the root and every open folder at once,
+    /// and the root listing must not answer a folder's failure. Cleared when
+    /// that folder lists, or is folded away.
+    failed: HashMap<PathBuf, BTreeMap<PathBuf, String>>,
     git: HashMap<PathBuf, GitStatus>,
     /// How a click on a file reaches the mode that edits files. Opening one is
     /// the quick editor's business, and this tree has no way to reach it.
@@ -49,7 +50,7 @@ impl FilesView {
             root: None,
             trees: HashMap::new(),
             disks: HashMap::new(),
-            failed: None,
+            failed: HashMap::new(),
             git: HashMap::new(),
             ask,
             active: None,
@@ -89,9 +90,7 @@ impl FilesView {
         self.trees.remove(root);
         self.disks.remove(root);
         self.git.remove(root);
-        if self.failed.as_ref().is_some_and(|(at, _)| at == root) {
-            self.failed = None;
-        }
+        self.failed.remove(root);
         if self.root.as_deref() == Some(root) {
             self.root = None;
         }
@@ -145,23 +144,41 @@ impl FilesView {
                     async move { disk.read_dir(&dir) }
                 })
                 .await;
-            let _ = view.update(cx, |view: &mut Self, cx| {
-                match read {
-                    Ok((listing, cut)) => {
-                        if view.failed.as_ref().is_some_and(|(at, _)| *at == root) {
-                            view.failed = None;
-                        }
-                        if let Some(tree) = view.trees.get_mut(&root) {
-                            tree.cut.insert(dir.clone(), cut);
-                            tree.listings.insert(dir, listing);
-                        }
-                    }
-                    Err(why) => view.failed = Some((root, why)),
-                }
-                cx.notify();
-            });
+            let _ = view.update(cx, |view: &mut Self, cx| view.listed(root, dir, read, cx));
         })
         .detach();
+    }
+
+    /// One folder's listing landed, or said why it could not.
+    fn listed(
+        &mut self,
+        root: PathBuf,
+        dir: PathBuf,
+        read: Result<(Vec<TreeEntry>, usize), String>,
+        cx: &mut Context<Self>,
+    ) {
+        match read {
+            Ok((listing, cut)) => {
+                self.unfail(&root, &dir);
+                if let Some(tree) = self.trees.get_mut(&root) {
+                    tree.cut.insert(dir.clone(), cut);
+                    tree.listings.insert(dir, listing);
+                }
+            }
+            Err(why) => {
+                self.failed.entry(root).or_default().insert(dir, why);
+            }
+        }
+        cx.notify();
+    }
+
+    fn unfail(&mut self, root: &Path, dir: &Path) {
+        if let Some(failed) = self.failed.get_mut(root) {
+            failed.remove(dir);
+            if failed.is_empty() {
+                self.failed.remove(root);
+            }
+        }
     }
 
     /// A row pressed: a folder folds or unfolds, a file opens beside the tree.
@@ -196,6 +213,9 @@ impl FilesView {
             .unwrap_or(false);
         if expanding {
             self.scan(dir, cx);
+        } else {
+            // Folded away, its failure has nothing left on screen to explain.
+            self.unfail(&root, &dir);
         }
         cx.notify();
     }
@@ -209,22 +229,31 @@ impl Render for FilesView {
         let Some(tree) = self.trees.get(&root) else {
             return hint("No project selected", cx).into_any_element();
         };
-        if let Some((_, why)) = self.failed.as_ref().filter(|(at, _)| *at == root) {
-            return div()
-                .flex_1()
-                .min_h_0()
-                .child(status_line(why.clone(), status_ink(cx).danger))
-                .into_any_element();
+        // One line, the first failure's: a folded folder takes its failure
+        // with it, so the next one shows once the first is answered.
+        let failure = self
+            .failed
+            .get(&root)
+            .and_then(|failed| failed.values().next())
+            .map(|why| status_line(why.clone(), status_ink(cx).danger));
+        // A root that never listed has no rows for the line to sit under.
+        if !tree.listings.contains_key(&root)
+            && let Some(failure) = failure
+        {
+            return div().flex_1().min_h_0().child(failure).into_any_element();
         }
         // Until the root's first listing lands there is nothing to draw, and a
         // blank panel reads as an empty project.
         if !tree.listings.contains_key(&root) {
             return hint("Reading the project's files…", cx).into_any_element();
         }
+        // The failure stands under the rows rather than over them, so the
+        // folder it names can still be folded away.
         div()
             .flex_1()
             .min_h_0()
-            .child(rows(
+            .v_flex()
+            .child(div().flex_1().min_h_0().child(rows(
                 &root,
                 tree,
                 self.git.get(&root),
@@ -233,7 +262,8 @@ impl Render for FilesView {
                     view.click(entry, window, cx)
                 }),
                 cx,
-            ))
+            )))
+            .children(failure)
             .into_any_element()
     }
 }
