@@ -43,6 +43,9 @@ pub(crate) struct Carried {
     pub(crate) stored: Option<ConversationSnapshot>,
     /// The prompts the old session had sent.
     pub(crate) sent: usize,
+    /// Whether the restart follows the host service's own, which ended every
+    /// session it ran: one on screen with nothing carried had not shown yet.
+    pub(crate) after_service: bool,
 }
 
 /// Where a session's events come from.
@@ -73,8 +76,10 @@ pub(super) enum Restarted {
 /// session it was on: read again while the host runs it, with nothing
 /// carried, since its journal is the whole transcript; otherwise opened on
 /// the agent's own conversation (or a fresh one), with what was carried to
-/// adopt until the agent's replay lands. An ended one with nothing carried
-/// is read from its journal instead, so it is shown rather than replaced.
+/// adopt until the agent's replay lands. An ended one with nothing carried,
+/// after the host service's own restart, is read from its journal instead,
+/// so it is shown rather than replaced; any other restart with nothing
+/// carried had an agent that never got going, and tries again.
 ///
 /// A host that could not say what it runs ends the restart on why, with what
 /// was carried handed back to keep on screen: opening anyway could start a
@@ -90,10 +95,10 @@ pub(super) fn host_restart(
         Ok(Some(info)) if !info.ended => {
             Restarted::Begin(HostStart::Watch(info.session.clone()), None)
         }
-        // Ended with nothing carried: the session never showed here (the
-        // restart that ended it came first), so its journal is read rather
-        // than a blank one opened.
-        Ok(Some(info)) if carried.stored.is_none() => {
+        // Ended with nothing carried by the service's restart: the session
+        // never showed here (that restart came first), so its journal is
+        // read rather than a blank one opened.
+        Ok(Some(info)) if carried.stored.is_none() && carried.after_service => {
             Restarted::Begin(HostStart::Watch(info.session.clone()), None)
         }
         Ok(Some(_) | None) => {
@@ -167,7 +172,11 @@ pub(super) async fn host_events(
 
 /// Put what a restart took back into the session: the prompts it had sent
 /// and the conversation it showed.
-fn carry(Carried { stored, sent }: Carried, session: &WeakEntity<ChatSession>, cx: &mut AsyncApp) {
+fn carry(
+    Carried { stored, sent, .. }: Carried,
+    session: &WeakEntity<ChatSession>,
+    cx: &mut AsyncApp,
+) {
     let _ = session.update(cx, |session, cx| {
         if sent > 0 {
             session.chat.carry_sent(sent);

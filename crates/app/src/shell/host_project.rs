@@ -397,7 +397,7 @@ impl Shell {
         match done {
             Ok(()) => {
                 for uid in uids {
-                    self.restart_now(uid, window, cx);
+                    self.restart_now(uid, true, window, cx);
                 }
                 // A page on a host lists again whichever restart it waited
                 // on: its sessions are what a restart changes.

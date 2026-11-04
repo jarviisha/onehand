@@ -24,6 +24,7 @@ fn carried() -> Carried {
     Carried {
         stored: chat.take_snapshot(),
         sent: 2,
+        after_service: false,
     }
 }
 
@@ -76,6 +77,7 @@ fn restart_resumes_an_ended_host_session() {
         Carried {
             stored: None,
             sent: 0,
+            after_service: false,
         },
         PathBuf::from("/srv/app"),
         AgentSpec::default(),
@@ -91,10 +93,10 @@ fn restart_resumes_an_ended_host_session() {
     ));
 }
 
-/// One the host lists as ended, with nothing carried (a session pressed on
-/// the project page and restarted by a host service restart before it ever
-/// showed), is read from its journal rather than opened blank; a later
-/// Restart resumes it from what that journal showed.
+/// One the host lists as ended, with nothing carried, after the host's
+/// service restarted (a session pressed on the project page and restarted
+/// by that before it ever showed), is read from its journal rather than
+/// opened blank; a later Restart resumes it from what that journal showed.
 #[test]
 fn restart_reads_an_ended_host_session_when_nothing_was_carried() {
     let info = listed(true);
@@ -103,6 +105,7 @@ fn restart_reads_an_ended_host_session_when_nothing_was_carried() {
         Carried {
             stored: None,
             sent: 0,
+            after_service: true,
         },
         PathBuf::from("/srv/app"),
         AgentSpec::default(),
@@ -114,6 +117,36 @@ fn restart_reads_an_ended_host_session_when_nothing_was_carried() {
         "an ended session with nothing carried is read from its journal"
     );
     assert!(carry.is_none(), "its journal is the whole transcript");
+}
+
+/// Any other restart of an ended session with nothing carried (its agent was
+/// not found, or died before it named a conversation) opens a fresh one: a
+/// journal that ended so would only be read again, ended, at every Restart.
+#[test]
+fn an_ordinary_restart_of_an_ended_session_with_nothing_carried_opens_anew() {
+    let info = listed(true);
+    let Restarted::Begin(start, _) = host_restart(
+        Ok(Some(&info)),
+        Carried {
+            stored: None,
+            sent: 0,
+            after_service: false,
+        },
+        PathBuf::from("/srv/app"),
+        AgentSpec::default(),
+    ) else {
+        panic!("the host listed it");
+    };
+    assert!(
+        matches!(
+            &start,
+            HostStart::Open {
+                opening: Opening::Fresh,
+                ..
+            }
+        ),
+        "an ordinary restart opens anew"
+    );
 }
 
 /// A host that cannot say what it runs ends the restart, saying why, rather

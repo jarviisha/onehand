@@ -288,11 +288,11 @@ fn only_a_restart_rewatches_a_host_session() {
     };
     let id = HostSession("h-1".into());
 
-    let (begin, start) = host_begin(Start::Restart(snapshot()), Some(&id), 3);
+    let (begin, start) = host_begin(Start::Restart(snapshot(), true), Some(&id), 3);
     assert!(matches!(
         &begin,
         HostBegin::Rewatch(known, carried)
-            if *known == id && carried.stored.is_some() && carried.sent == 3
+            if *known == id && carried.stored.is_some() && carried.sent == 3 && carried.after_service
     ));
     assert!(matches!(start, Start::Fresh), "nothing adopted at once");
 
@@ -301,9 +301,9 @@ fn only_a_restart_rewatches_a_host_session() {
     assert!(matches!(begin, HostBegin::Open));
     assert!(matches!(start, Start::Resume(_)));
 
-    let (begin, start) = host_begin(Start::Restart(None), None, 0);
+    let (begin, start) = host_begin(Start::Restart(None, false), None, 0);
     assert!(matches!(begin, HostBegin::Open));
-    assert!(matches!(start, Start::Restart(None)));
+    assert!(matches!(start, Start::Restart(None, false)));
 
     let (begin, start) = host_begin(Start::Watch(id.clone()), None, 0);
     assert!(matches!(&begin, HostBegin::Watch(known) if *known == id));

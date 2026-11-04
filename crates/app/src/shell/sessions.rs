@@ -627,7 +627,7 @@ impl Shell {
             return;
         };
         if !self.chat.read(cx).turn_in_flight(uid, cx) {
-            self.restart_now(uid, window, cx);
+            self.restart_now(uid, false, window, cx);
             return;
         }
         let label = self.session_label(uid, cx);
@@ -641,13 +641,23 @@ impl Shell {
         // By uid: the question is about the session it was asked on,
         // whichever one shows by the time it is answered.
         self.confirm(ask, window, cx, move |shell, window, cx| {
-            shell.restart_now(uid, window, cx)
+            shell.restart_now(uid, false, window, cx)
         });
     }
 
-    /// Restart session `uid`'s adapter, no question asked.
-    pub(super) fn restart_now(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
-        match self.chat.update(cx, |pane, cx| pane.restart(uid, cx)) {
+    /// Restart session `uid`'s adapter, no question asked; `after_service`
+    /// when its host's service has just been restarted onto this build.
+    pub(super) fn restart_now(
+        &mut self,
+        uid: u64,
+        after_service: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match self
+            .chat
+            .update(cx, |pane, cx| pane.restart(uid, after_service, cx))
+        {
             crate::chat::pane::Restart::Restarted => {
                 window.push_notification(crate::toast::info("Restarting the agent"), cx);
             }

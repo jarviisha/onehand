@@ -230,8 +230,8 @@ impl ChatPane {
             root.clone(),
             &spec,
             match &start {
-                Start::Fresh | Start::Watch(_) | Start::Restart(None) => Opening::Fresh,
-                Start::Resume(stored) | Start::Restart(Some(stored)) => {
+                Start::Fresh | Start::Watch(_) | Start::Restart(None, _) => Opening::Fresh,
+                Start::Resume(stored) | Start::Restart(Some(stored), _) => {
                     Opening::Resume(stored.session_id.clone())
                 }
                 Start::Fork(staged) => Opening::Fork {
@@ -256,8 +256,8 @@ impl ChatPane {
         // parses the markdown being adopted, and a transcript whose blocks
         // are unparsed draws its own source.
         match start {
-            Start::Fresh | Start::Watch(_) | Start::Restart(None) => {}
-            Start::Resume(stored) | Start::Restart(Some(stored)) => {
+            Start::Fresh | Start::Watch(_) | Start::Restart(None, _) => {}
+            Start::Resume(stored) | Start::Restart(Some(stored), _) => {
                 session.update(cx, |session, cx| session.adopt(stored, cx))
             }
             Start::Fork(staged) => {
@@ -486,7 +486,8 @@ impl ChatPane {
         .detach();
     }
 
-    /// Restart session `uid`'s adapter on the same conversation.
+    /// Restart session `uid`'s adapter on the same conversation;
+    /// `after_service` when its host's service has just been restarted.
     ///
     /// Dropping the old session is what kills the old adapter (its pump task
     /// owns the event stream), so this cannot leave two processes replaying
@@ -497,7 +498,7 @@ impl ChatPane {
     ///
     /// Mid-turn this throws away the turn the user is waiting on; asking
     /// first is the caller's, through [`Self::turn_in_flight`].
-    pub fn restart(&mut self, uid: u64, cx: &mut Context<Self>) -> Restart {
+    pub fn restart(&mut self, uid: u64, after_service: bool, cx: &mut Context<Self>) -> Restart {
         // The session is looked up twice rather than held across the whole
         // function, and neither look-up is a clone. A cloned handle is a second
         // strong reference to the old session, and the old adapter only dies
@@ -518,7 +519,7 @@ impl ChatPane {
             .and_then(|s| s.update(cx, |s, _| s.chat.take_snapshot()));
         // `connect_as` drops the old adapter before spawning the new one, so
         // nothing here has to take the session apart first.
-        self.connect_as(uid, Start::Restart(stored), cx);
+        self.connect_as(uid, Start::Restart(stored, after_service), cx);
         Restart::Restarted
     }
 
@@ -861,13 +862,20 @@ pub(super) fn host_begin(
 ) -> (HostBegin, Start) {
     match (start, known) {
         (Start::Watch(id), _) => (HostBegin::Watch(id), Start::Fresh),
-        (Start::Restart(stored), Some(id)) => (
-            HostBegin::Rewatch(id.clone(), Carried { stored, sent }),
+        (Start::Restart(stored, after_service), Some(id)) => (
+            HostBegin::Rewatch(
+                id.clone(),
+                Carried {
+                    stored,
+                    sent,
+                    after_service,
+                },
+            ),
             Start::Fresh,
         ),
         // Adopted as a local fork is, so the refusal ends it as a failed one.
         (start @ Start::Fork(_), _) => (HostBegin::Refuse("Not on a host yet"), start),
-        (start @ (Start::Fresh | Start::Resume(_) | Start::Restart(_)), _) => {
+        (start @ (Start::Fresh | Start::Resume(_) | Start::Restart(..)), _) => {
             (HostBegin::Open, start)
         }
     }
@@ -897,6 +905,7 @@ pub(super) enum Start {
     /// On a host session the host already keeps.
     Watch(HostSession),
     /// Again on what it was on, the conversation taken from the session
-    /// being replaced: a restart.
-    Restart(Option<onehand_core::chat::ConversationSnapshot>),
+    /// being replaced: a restart; `true` when it follows the host service's
+    /// own restart.
+    Restart(Option<onehand_core::chat::ConversationSnapshot>, bool),
 }
