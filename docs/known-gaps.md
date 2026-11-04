@@ -289,11 +289,6 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **A host session restarting onto a session the host still runs is blank for a moment.** The
   transcript is drawn from the journal alone, so it is empty until the replay arrives. Keeping
   the old one on screen meanwhile would draw every item twice once the replay lands.
-- **A busy host can be asked about more than once, or not at all.** The project's page asks whether to
-  restart a host on another build each time it shows while the host stays busy, and a session
-  whose attach was turned down in the moment the question closed after *Keep* ends on the busy
-  line without being asked; its next restart asks again. Remembering a *Keep* per host would
-  quiet the page, and holding the question until its close has finished would catch the late one.
 - **The rows of a host project's sessions take no keyboard focus**, as the rows of a local
   project page's Tasks and Schedules boxes do not; they are reached by pointer only. Making each box row a tab
   stop with `Enter` opening it would fix all three.

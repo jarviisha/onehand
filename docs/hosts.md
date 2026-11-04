@@ -60,17 +60,23 @@ Every attach opens by exchanging builds (`client::attach`):
 - **Another build, nothing mid-turn:** the old service is shut down and the attach made again, onto
   this build.
 - **Another build with sessions mid-turn:** the host is left alone and the attach fails as busy.
-  The window asks one question per host, however many sessions, pages and forms are waiting on it
-  (`HostFlow`, `crates/app/src/shell/host_project.rs`): *Restart the host service on <host>?*,
-  saying that the host runs another build of the host service, naming up to five of the mid-turn
-  sessions by the host's ids and how many more, and that restarting stops them; *Restart* or
-  keep. A yes attaches again, restarts the service whatever is mid-turn only if the host is still
-  busy (`client::restart`), then restarts each session that waited, lists the page again and
-  carries on with the form's *Add*, unless that form was put away or added its project since
-  (a form opened again is never added by an older yes). A failed restart says why once: inline on a form still up,
-  else a toast, *Restarting the host service failed: …*. Kept, the session that asked ends on
-  *<host> runs another build of the host service, with sessions mid-turn*, and its next restart
-  asks again.
+  **The laptop waits for those sessions to go idle**, once per host however many sessions, pages
+  and forms wait on it (`Waits` in `crates/app/src/hosts.rs`): it attaches again every 15 s
+  (`HOST_IDLE_POLL`), and the first attach that lands, which restarts the idle service onto this
+  build by itself, ends the wait. Each window keeps what waits there (`HostFlow`,
+  `crates/app/src/shell/host_project.rs`) and, once the wait ends, restarts each session that
+  waited (as after a service restart), lists the page again and carries on with the form's *Add*,
+  unless that form was put away or added its project since (a form opened again is never added by
+  an older wait). Meanwhile each says *Waiting for N sessions on <host> to finish before
+  restarting its host service onto this build*, with *Restart now*: a session as a line in its
+  transcript (a notice, not a failure), the page and the form in their own places.
+- **Restart now** asks one question, *Restart the host service on <host>?*, saying that the host
+  runs another build of the host service, naming up to five of the mid-turn sessions by when they
+  started (*a session started 3m ago*) and how many more, and that restarting stops them;
+  *Restart* or keep. A yes attaches again and restarts the service whatever is mid-turn only if
+  the host is still busy (`client::restart`); that attach landing ends the wait as above. A failed
+  restart says why once: inline on a form waiting on that host, else a toast, *Restarting the
+  host service failed: …*; what waits goes on waiting. Kept, nothing changes, and the wait goes on.
 - A service that restarts reads its sessions back from their journals, listed as ended; a session
   it had running ends on *The host service stopped while this session was running*.
 
@@ -84,7 +90,8 @@ Every attach opens by exchanging builds (`client::attach`):
   the folder is a directory there (`hosts::is_dir`, the wire's `Probe`), then adds the project and
   selects it. A failure stands once, inline under the fields: the attach's own words, *Could not
   ask <host> about the folder: …*, or *There is no folder <path> on <host>*. A host on another
-  build asks the restart question over the form, which stays busy until the answer lands.
+  build with sessions mid-turn keeps the form waiting, *Add* refused, with the waiting line and
+  *Restart now* in place of a failure; the wait's end carries the *Add* on.
 - **Adding one that is already there selects it.** A root is told apart by host and path together
   (`Workspace::add_host_root`); a host's path is kept as typed, never resolved on this machine.
 - **Kept in `onehand-workspace.toml` as `<host>:<path>`**, one string in `roots` and, keyed the
@@ -100,7 +107,8 @@ Every attach opens by exchanging builds (`client::attach`):
 - **A new session on a host project opens on the host.** The laptop sends the agent's spec with
   its `env` cleared, since a laptop's variable names a laptop path or a secret; the host resolves
   the agent against its own PATH and the account signed in there, and the laptop's
-  `AgentSpec::launch` never runs. An agent the host cannot start says so prefixed *On <host>:*.
+  `AgentSpec::launch` never runs. Whatever an open runs into there is prefixed *On <host>:*, an
+  agent the host cannot start among it.
   The warm adapter is not started for a host project.
 - **The project's page lists the host's sessions on that folder** (`HostConn::list`, filtered by
   folder; `crates/app/src/chat/pane/project_page/host.rs`), newest first, capped at 50
@@ -114,10 +122,12 @@ Every attach opens by exchanging builds (`client::attach`):
 - **Restart** re-watches the session if the host still runs it, its journal being the whole
   transcript. A session the host has ended opens a new host session resuming the agent's own
   conversation (`Opening::Resume` with the agent's session id from the transcript), or a fresh one
-  when there is none, with the old transcript kept on screen until the agent's replay lands. One
-  the host has ended with nothing on screen to carry (a session pressed on the page whose attach a
-  service restart ended first) is read from its journal instead, so it shows rather than a blank
-  new one; its next Restart resumes it. A host that cannot say what it runs ends the restart on *Could not read the sessions on <host>: …*
+  when there is none, with the old transcript kept on screen until the agent's replay lands. After
+  the host service's own restart, one the host has ended with nothing on screen to carry (a
+  session pressed on the page whose attach that restart ended first) is read from its journal
+  instead, so it shows rather than a blank new one; its next Restart resumes it. Any other
+  Restart of an ended session with nothing carried (its agent was not found, or died before
+  naming a conversation) opens a fresh one. A host that cannot say what it runs ends the restart on *Could not read the sessions on <host>: …*
   rather than risk a second session beside one still running.
 - **Nothing of a host session is written on this machine:** its chat has no store, so the host's
   journal is the only copy, and the header's past conversations, which are this machine's, are not

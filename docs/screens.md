@@ -289,8 +289,11 @@ dragged height kept).
   the running ink while mid-turn, or *ended* at the edge), a press attaching to it in the pane, or
   showing the session already attached to it there; capped at 50 with *N more on this host*.
   *Attaching to <host>…* with a spinner while it waits; *No sessions on <host> for this folder
-  yet* at none; a failure says why in the warning ink with *Try again* (secondary); a host on
-  another build asks whether to restart its service, and a yes lists again.
+  yet* at none; a failure says why as a status line in the danger ink with *Try again*
+  (secondary) beside it; a host on another build with sessions mid-turn says *Waiting for N
+  sessions on <host> to finish before restarting its host service onto this build* as a status
+  line in the muted ink with *Restart now* (secondary) beside it, and lists again once it is
+  done.
 - *Workspace overview* shows, under its head (*Overview*), across all projects, the boxes *Waiting
   on you* (runs waiting for an answer or an approval, and sessions waiting, failed, finished or
   lost) and *Working*, then *Projects* as a grid of tiles (not drawn without projects), then the

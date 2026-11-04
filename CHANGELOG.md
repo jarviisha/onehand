@@ -57,8 +57,9 @@ minor bump may break any of them.
   updates it on the host itself.
 - A project can live on a host: *Add a project on a host…* on the rail names the host and the
   folder there. Its sessions run on the host and show in the chat pane, read back from the
-  host's journal with their times; its page lists the host's sessions on that folder, and a
-  host on another build asks before its service is restarted. Files, the editor, git and the
+  host's journal with their times; its page lists the host's sessions on that folder. A host
+  on another build with sessions mid-turn is waited on until they finish, then restarted onto
+  this build; *Restart now* asks before stopping them. Files, the editor, git and the
   terminal on a host, and onehand's tools, workflows, tasks, issues and unattended runs for a
   host project, are not built yet.
 

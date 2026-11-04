@@ -139,7 +139,11 @@ These come from the repository's invariants (AGENTS.md).
   installs its own build beside the old one. If the old service has no busy session it restarts
   on the new one. If it has, the laptop says so, waits for those sessions to go idle, and offers
   a restart that names the sessions it would stop. My call: a mismatched service is never killed
-  silently.
+  silently. As built, the wait is one per host: the laptop attaches again every 15 s, and the
+  first attach that lands (the idle service restarted onto the new build) ends it, carrying on
+  whatever waited. Meanwhile each waiting session, page and form says how many sessions it waits
+  for, with *Restart now*, which asks the one question that may stop them, naming each by when
+  it started.
 - **What it owns:** the ACP connections (core's `acp::connect`, spawned on the host, so the agent's
   `fs/*` and `terminal/create` requests are served on the host's disk); each session's **journal**;
   the PTYs for the terminal dock; and file reads, writes, directory listings and git status for its
@@ -199,8 +203,9 @@ Decided with the owner.
 
 My call, from the owner's rule that they install and sign in agents on the host themselves.
 
-- **The laptop sends only which agent to run.** For a built-in agent it sends the preset id; for a
-  declared agent, the entry's command and args.
+- **The laptop sends the agent's `AgentSpec` with its `env` cleared** (changed with the owner,
+  2026-11-04): for a built-in agent the host resolves the preset by its id; a declared agent runs
+  by the entry's command and args.
 - **The host resolves the agent on its own.** It turns the preset id into a launch the way the
   laptop does (`AgentSpec::launch`), against the host's PATH, using the host user's own
   environment. Fetching the pinned adapter through `npx` happens on the host as it does locally,
@@ -322,12 +327,13 @@ These form a sequence, and each step is useful on its own:
 1. The host service and the protocol for sessions only: install, start, attach, version handshake,
    sessions and transcripts that survive a detach. A host project appears with its sessions.
    Built in two parts: 1a, the host service and the laptop's client (built); 1b, host projects in
-   the window (built). Two calls changed on the way: the laptop keeps no copy of a host session's
-   transcript yet (that waits for step 3), and a host root is kept as `<host>:<path>` in the
-   workspace file. As built: `docs/hosts.md`.
+   the window (built). Calls changed on the way: the laptop keeps no copy of a host session's
+   transcript yet (that waits for step 3); a host root is kept as `<host>:<path>` in the
+   workspace file; and typing a host and a folder came forward into this step, from step 3. As
+   built: `docs/hosts.md`.
 2. The rest of a host project: file tree, editor, git status, terminal dock.
 3. The host UI: picking or typing a host, opening a folder on it, cloning, showing a host that is
-   not connected.
+   not connected, and the laptop's own copy of host transcripts for reading while not attached.
 4. The permission bypass switch.
 5. Offloaded projects in mirror mode, with the key, plus *Send to host*.
 6. Branch mode.
