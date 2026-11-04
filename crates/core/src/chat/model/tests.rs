@@ -3384,3 +3384,24 @@ fn the_host_wait_line_is_taken_back_alone() {
     chat.unsay_host_wait();
     assert!(said(&chat).contains(&"Waiting".to_string()));
 }
+
+/// A link cut without a disconnect's words settles what it left running as
+/// a disconnect does, but says nothing failed: a session out of reach of its
+/// host is not a lost agent.
+#[test]
+fn a_cut_link_settles_without_saying_it_failed() {
+    let (mut chat, _rx) = chat_with_tx();
+    chat.busy = true;
+    chat.apply(AcpEvent::ThoughtChunk("weighing it".into()));
+    let items = chat.items.len();
+    chat.link_cut();
+    assert_eq!(chat.link, Link::Lost);
+    assert!(chat.tx.is_none(), "nothing can be answered over it");
+    assert!(!chat.busy);
+    assert!(!chat.failed());
+    assert_eq!(chat.items.len(), items, "nothing said");
+    let Some(ChatItem::Thought(th)) = chat.items.first() else {
+        panic!("the thought is gone");
+    };
+    assert!(!th.is_running());
+}

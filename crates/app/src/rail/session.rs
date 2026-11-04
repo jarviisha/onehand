@@ -286,7 +286,8 @@ pub(super) fn session_row(
     let (shell, hover) = (cx.entity().downgrade(), hover_fill(cx));
     let label = SharedString::from(match (signal, host) {
         (Some(SessionSignal::HostLost), Some(host)) => {
-            format!("Not connected to {host}; trying again")
+            let host = onehand_core::workspace::HostName(host.to_string());
+            crate::hosts::not_connected(&host, crate::hosts::retrying(cx, &host))
         }
         _ => format!("{}: {}", super::model::word(signal), signal_hint(signal)),
     });

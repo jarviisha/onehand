@@ -1,5 +1,6 @@
 use super::host::{
-    Carried, OfflineStart, Restarted, host_restart, new_chat, offline_line, offline_start,
+    Carried, OfflineStart, Restarted, connection_lost, host_restart, new_chat, offline_line,
+    offline_start,
 };
 use crate::acp::HostStart;
 use crate::hosts::HostFailure;
@@ -202,6 +203,20 @@ fn offline_start_reads_the_copy_only_when_there_is_one() {
     };
     assert_eq!(offline_start(3, &busy), OfflineStart::Wait);
     assert_eq!(offline_start(0, &busy), OfflineStart::Wait);
+    // A host refused reads the copy too; that it is not waited on is the
+    // caller's.
+    let refused = HostFailure::Refused("vps is not a machine this build runs on".into());
+    assert_eq!(offline_start(3, &refused), OfflineStart::Read);
+    assert_eq!(offline_start(0, &refused), OfflineStart::End);
+}
+
+/// A watch ends on a lost connection only when the connection closed without
+/// another machine taking the host; open, the session itself ended.
+#[test]
+fn a_watch_ended_by_a_lost_connection_is_told_from_the_others() {
+    assert!(connection_lost(true, false));
+    assert!(!connection_lost(true, true), "taken");
+    assert!(!connection_lost(false, false), "the session's own end");
 }
 
 /// The copy's notice says how recent it is when its entries kept a time, and

@@ -118,14 +118,22 @@ impl ChatPane {
     }
 
     /// The wait for `host` to be back ended on `why`, another machine having
-    /// taken it: a page showing what it kept says so as any failure to list,
-    /// with *Try again*, rather than that it tries again.
-    pub(crate) fn host_page_taken(&mut self, host: &HostName, why: &str, cx: &mut Context<Self>) {
+    /// taken it or the host refused: a page showing what it kept goes on
+    /// showing it, with `why` under the line, which no longer says it tries
+    /// again.
+    pub(crate) fn host_page_unreached(
+        &mut self,
+        host: &HostName,
+        why: &str,
+        cx: &mut Context<Self>,
+    ) {
         if self.page_away_on() != Some(host) {
             return;
         }
-        if let Some(project) = self.empty.as_mut() {
-            project.listed = Some(Err(Unlisted::Failed(why.to_string())));
+        if let Some(Some(Err(Unlisted::Away { why: said, .. }))) =
+            self.empty.as_mut().map(|project| &mut project.listed)
+        {
+            *said = why.to_string();
             cx.notify();
         }
     }
@@ -180,7 +188,7 @@ impl ChatPane {
                         .detach();
                     Vec::new()
                 }
-                Err(HostFailure::Other(_)) => {
+                Err(HostFailure::Other(_) | HostFailure::Refused(_)) => {
                     let host = host.clone();
                     cx.background_executor()
                         .spawn(async move { copy::load_list(&root, &host) })
@@ -198,14 +206,25 @@ impl ChatPane {
                 project.listing = false;
                 project.listed = Some(match listed {
                     Ok(all) => Ok(all),
-                    // The shell lists again once the host is back.
-                    Err(HostFailure::Other(why)) => {
-                        cx.emit(ChatPaneEvent::HostLost {
-                            uid: None,
-                            host: host.clone(),
-                        });
-                        Err(Unlisted::Away { why, kept })
-                    }
+                    // The shell lists again once the host is back. A host
+                    // still attached that could not list is a failure of
+                    // its own, which waiting would only ask again at once.
+                    Err(HostFailure::Other(why)) => match crate::hosts::state(cx, &host) {
+                        crate::hosts::HostState::Lost(_) => {
+                            cx.emit(ChatPaneEvent::HostLost {
+                                uid: None,
+                                host: host.clone(),
+                            });
+                            Err(Unlisted::Away { why, kept })
+                        }
+                        crate::hosts::HostState::Unknown
+                        | crate::hosts::HostState::Attaching
+                        | crate::hosts::HostState::Live
+                        | crate::hosts::HostState::Taken => Err(Unlisted::Failed(why)),
+                    },
+                    // Refused is never tried again by itself: what was kept
+                    // is shown, and *Try again* is the person's.
+                    Err(HostFailure::Refused(why)) => Err(Unlisted::Away { why, kept }),
                     // The shell waits with the host and lists again once
                     // it is done.
                     Err(HostFailure::Busy { host, .. }) => {
@@ -313,7 +332,7 @@ pub(super) fn host_sessions(
                     None,
                 ),
                 Unlisted::Away { why, .. } => (
-                    format!("Not connected to {host}; trying again"),
+                    crate::hosts::not_connected(host, crate::hosts::retrying(cx, host)),
                     muted,
                     retry(),
                     Some(why.clone()),

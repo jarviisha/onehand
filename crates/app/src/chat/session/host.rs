@@ -80,8 +80,8 @@ pub(super) enum OfflineStart {
 pub(super) fn offline_start(kept: usize, failure: &HostFailure) -> OfflineStart {
     match failure {
         HostFailure::Busy { .. } => OfflineStart::Wait,
-        HostFailure::Other(_) if kept == 0 => OfflineStart::End,
-        HostFailure::Other(_) => OfflineStart::Read,
+        HostFailure::Other(_) | HostFailure::Refused(_) if kept == 0 => OfflineStart::End,
+        HostFailure::Other(_) | HostFailure::Refused(_) => OfflineStart::Read,
     }
 }
 
@@ -171,7 +171,7 @@ pub(super) async fn host_events(
                 Ok(HostStart::Open { .. }) => None,
             };
             let kept = match (&failure, known) {
-                (HostFailure::Other(_), Some(id)) => {
+                (HostFailure::Other(_) | HostFailure::Refused(_), Some(id)) => {
                     let host = host.clone();
                     cx.background_executor()
                         .spawn(
@@ -179,22 +179,35 @@ pub(super) async fn host_events(
                         )
                         .await
                 }
-                (HostFailure::Other(_) | HostFailure::Busy { .. }, _) => Vec::new(),
+                (HostFailure::Other(_) | HostFailure::Refused(_) | HostFailure::Busy { .. }, _) => {
+                    Vec::new()
+                }
             };
             return match offline_start(kept.len(), &failure) {
                 // The copy is the whole transcript, prompts and all, so what
                 // a re-watch carried is left out rather than shown twice.
-                OfflineStart::Read => {
-                    offline(host, &kept, session, cx);
-                    crate::acp::silent()
-                }
+                // A host refused is not waited on: what was kept is shown,
+                // and the session ends on why, as a lost agent Restart tries
+                // again.
+                OfflineStart::Read => match failure {
+                    HostFailure::Refused(why) => {
+                        offline(host, &kept, false, session, cx);
+                        crate::acp::ended(why)
+                    }
+                    HostFailure::Other(_) | HostFailure::Busy { .. } => {
+                        offline(host, &kept, true, session, cx);
+                        crate::acp::silent()
+                    }
+                },
                 OfflineStart::End | OfflineStart::Wait => {
                     // No journal follows, so a re-watch's copy is kept on screen.
                     if let Err((_, carried, _, _)) = decided {
                         carry(carried, session, cx);
                     }
                     match failure {
-                        HostFailure::Other(why) => crate::acp::ended(why),
+                        HostFailure::Other(why) | HostFailure::Refused(why) => {
+                            crate::acp::ended(why)
+                        }
                         HostFailure::Busy { host, busy } => {
                             wait(host, busy.len(), session, cx);
                             crate::acp::silent()
@@ -267,13 +280,14 @@ pub(crate) async fn list(conn: HostConn, cx: &mut AsyncApp) -> Result<Vec<Sessio
         .await
 }
 
-/// Show what this machine kept of the session's journal, with the line
-/// saying so. Applied to the chat directly rather than sent down the events,
+/// Show what this machine kept of the session's journal, and, `away`, the
+/// line saying it is out of reach until the host is back. Applied to the chat directly rather than sent down the events,
 /// so nothing that hears a session (a desktop notice, a run) takes the old
 /// turns for new ones.
 fn offline(
     host: HostName,
     kept: &onehand_core::host::journal::Entries,
+    away: bool,
     session: &WeakEntity<ChatSession>,
     cx: &mut AsyncApp,
 ) {
@@ -283,8 +297,10 @@ fn offline(
         for event in copy::events(kept) {
             session.chat.apply(event);
         }
-        session.chat.say_host_wait(line);
-        session.host_offline = Some(host);
+        if away {
+            session.chat.say_host_wait(line);
+            session.host_offline = Some(host);
+        }
         session.sync_md(cx);
         cx.emit(ChatEvent::Appended);
         cx.notify();
@@ -295,6 +311,9 @@ fn offline(
 /// host was lost, closed without another machine taking it: then the session
 /// says it is out of reach, rather than that its agent went, and keeps what
 /// it has until the host is back. Decided on the connection, never on words.
+///
+/// What the link left running settles as on any disconnect, its cards no
+/// longer offering answers, but nothing says the agent went.
 pub(super) fn went_away(session: &mut ChatSession, event: &AcpEvent) -> bool {
     if !matches!(event, AcpEvent::Disconnected(_)) {
         return false;
@@ -302,17 +321,25 @@ pub(super) fn went_away(session: &mut ChatSession, event: &AcpEvent) -> bool {
     let Some((host, _)) = session
         .host_conn
         .as_ref()
-        .filter(|(_, conn)| conn.is_closed() && !conn.taken())
+        .filter(|(_, conn)| connection_lost(conn.is_closed(), conn.taken()))
     else {
         return false;
     };
     let host = host.clone();
     let now = onehand_core::chat::now_secs();
+    session.chat.link_cut();
     session
         .chat
         .say_host_wait(offline_line(&host, Some(now), now));
     session.host_offline = Some(host);
     true
+}
+
+/// Whether a watch that ended did so because its connection was lost: closed,
+/// and not by the host handing it to another machine. Open, it was the
+/// session's own end.
+pub(super) fn connection_lost(closed: bool, taken: bool) -> bool {
+    closed && !taken
 }
 
 /// Say on the session that it waits on `host`'s `n` busy sessions, as a

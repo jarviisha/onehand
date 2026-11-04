@@ -17,11 +17,13 @@ fn a_missing_bundled_binary_is_said_plainly() {
     let found = bundled_binary_in(&dir);
     let _ = std::fs::remove_dir_all(&dir);
     match found {
-        Err(HostFailure::Other(text)) => assert_eq!(
+        Err(HostFailure::Refused(text)) => assert_eq!(
             text,
             "onehand-host is not beside onehand; build it with `cargo build -p onehand-host`"
         ),
-        Ok(_) | Err(HostFailure::Busy { .. }) => panic!("expected the missing binary's words"),
+        Ok(_) | Err(HostFailure::Busy { .. } | HostFailure::Other(_)) => {
+            panic!("expected the missing binary's words, refused")
+        }
     }
 }
 
@@ -356,4 +358,60 @@ fn a_lost_host_found_busy_ends_the_loop_on_why() {
     waits.heard(&host, &busy(&host, &["1-1"]), true);
     assert!(matches!(back.now_or_never(), Some(Ok(Err(_)))));
     assert!(waits.listen(&host).is_some(), "the busy wait takes over");
+}
+
+/// A host this build cannot attach to, or no service binary to attach with,
+/// is never tried again by itself: it is not lost, and a wait for it to be
+/// back, or on its busy sessions, ends on why.
+#[test]
+fn a_refused_host_is_not_retried() {
+    let host = HostName("vps".into());
+    let refused = || {
+        Err::<(), _>(HostFailure::Refused(
+            "vps is not a machine this build runs on".into(),
+        ))
+    };
+    let mut waits = Waits::default();
+    waits.heard(&host, &refused(), false);
+    assert_eq!(waits.state(&host), HostState::Unknown);
+    assert!(waits.listen_back(&host).is_none(), "never looped on");
+
+    waits.heard(&host, &Ok(()), false);
+    waits.closed(&host, false);
+    let back = waits.listen_back(&host).unwrap();
+    assert!(waits.retrying(&host));
+    waits.heard(&host, &refused(), true);
+    assert_eq!(
+        back.now_or_never(),
+        Some(Ok(Err(
+            "vps is not a machine this build runs on".to_string()
+        )))
+    );
+    assert!(!waits.retrying(&host));
+    assert!(waits.listen_back(&host).is_none());
+
+    waits.heard(&host, &busy(&host, &["1-1"]), false);
+    let idle = waits.listen(&host).unwrap();
+    waits.heard(&host, &refused(), true);
+    assert!(
+        matches!(idle.now_or_never(), Some(Ok(Err(_)))),
+        "the busy wait ends too"
+    );
+}
+
+/// What is known of a host changes only when it does, so windows are drawn
+/// again only then.
+#[test]
+fn only_a_change_of_state_is_told() {
+    let host = HostName("vps".into());
+    let mut waits = Waits::default();
+    assert!(waits.attaching(&host));
+    assert!(!waits.attaching(&host));
+    assert!(waits.heard(&host, &Ok(()), false));
+    assert!(!waits.heard(&host, &Ok(()), false));
+    assert!(waits.closed(&host, false));
+    assert!(!waits.closed(&host, false));
+    let gone = || Err::<(), _>(HostFailure::Other("gone".into()));
+    assert!(waits.heard(&host, &gone(), true), "a new why is news");
+    assert!(!waits.heard(&host, &gone(), true));
 }

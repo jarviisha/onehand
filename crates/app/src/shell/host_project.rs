@@ -247,13 +247,38 @@ fn landed_on(current: Option<u64>, landed: u64) -> bool {
     current == Some(landed)
 }
 
+/// Why what waited on `host` being back ends rather than carries on, given
+/// what is known of it now, whether it was last found busy, and how the wait
+/// ended; `None` to restart and list again. A host taken by another machine
+/// is never attached again by itself, however the wait ended. One found busy
+/// carries on, which puts what waited on its busy wait; any other end, a
+/// host refused, is why.
+fn back_failure(
+    host: &HostName,
+    state: &hosts::HostState,
+    busy: bool,
+    end: hosts::WaitEnd,
+) -> Option<String> {
+    match state {
+        hosts::HostState::Taken => Some(format!("{host} was attached from another machine")),
+        hosts::HostState::Unknown
+        | hosts::HostState::Attaching
+        | hosts::HostState::Live
+        | hosts::HostState::Lost(_) => match end {
+            Ok(()) => None,
+            Err(_) if busy => None,
+            Err(why) => Some(why),
+        },
+    }
+}
+
 /// Whether a yes still has to restart the service: the wait may have ended
 /// since the question was asked, and restarting it again would stop what
 /// that started.
 fn needs_restart<C>(attached: &Result<C, HostFailure>) -> bool {
     match attached {
         Err(HostFailure::Busy { .. }) => true,
-        Ok(_) | Err(HostFailure::Other(_)) => false,
+        Ok(_) | Err(HostFailure::Other(_) | HostFailure::Refused(_)) => false,
     }
 }
 
@@ -262,7 +287,7 @@ fn needs_restart<C>(attached: &Result<C, HostFailure>) -> bool {
 /// why, and one still busy ends none.
 fn said_by_wait(waited: bool, failure: &HostFailure) -> bool {
     match failure {
-        HostFailure::Other(_) => waited,
+        HostFailure::Other(_) | HostFailure::Refused(_) => waited,
         HostFailure::Busy { .. } => false,
     }
 }
@@ -270,7 +295,7 @@ fn said_by_wait(waited: bool, failure: &HostFailure) -> bool {
 /// What a restart that failed says.
 fn restart_failure(failure: HostFailure) -> String {
     match failure {
-        HostFailure::Other(why) => why,
+        HostFailure::Other(why) | HostFailure::Refused(why) => why,
         HostFailure::Busy { host, .. } => {
             format!("{host} still runs another build of the host service")
         }
@@ -491,7 +516,7 @@ impl Shell {
                 self.host_flow.forget_add();
                 self.open_host_root(host, path, window, cx);
             }
-            Err(HostFailure::Other(why)) => draft.error = Some(why),
+            Err(HostFailure::Other(why) | HostFailure::Refused(why)) => draft.error = Some(why),
             // The form stays busy on this attempt while the host waits, and
             // carries on with the same names once it is done.
             Err(HostFailure::Busy { host, .. }) => {
@@ -588,20 +613,19 @@ impl Shell {
     /// The wait for lost `host` to be back ended. Attached again, or found
     /// running another build, each session that waited is restarted and the
     /// page lists again: on a busy host, that is what puts them on its busy
-    /// wait. Taken by another machine, nothing attaches again by itself: the
-    /// sessions end on why, and the page says it.
+    /// wait. Taken by another machine, or refused, nothing attaches again by
+    /// itself: the sessions end on why, and the page says it.
     fn host_back(&mut self, host: &HostName, end: hosts::WaitEnd, cx: &mut Context<Self>) {
         let Some(waiting) = self.host_flow.take(host, true) else {
             return;
         };
-        let taken = match hosts::state(cx, host) {
-            hosts::HostState::Taken => end.err(),
-            hosts::HostState::Unknown
-            | hosts::HostState::Attaching
-            | hosts::HostState::Live
-            | hosts::HostState::Lost(_) => None,
-        };
-        self.chat.update(cx, |pane, cx| match taken {
+        let failed = back_failure(
+            host,
+            &hosts::state(cx, host),
+            hosts::found_busy(cx, host),
+            end,
+        );
+        self.chat.update(cx, |pane, cx| match failed {
             None => {
                 for uid in &waiting.uids {
                     pane.restart(*uid, false, cx);
@@ -615,7 +639,7 @@ impl Shell {
                     pane.host_back_failed(*uid, &why, cx);
                 }
                 if waiting.page {
-                    pane.host_page_taken(host, &why, cx);
+                    pane.host_page_unreached(host, &why, cx);
                 }
             }
         });

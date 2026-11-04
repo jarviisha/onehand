@@ -478,19 +478,7 @@ impl Chat {
                 if std::mem::take(&mut self.forking) {
                     self.fork_failed = Some(e.clone());
                 }
-                // A thought cut off with the adapter is over, not still running.
-                self.finalize_thought();
-                self.tx = None;
-                // Picks sent over the lost connection are answered by nothing.
-                self.picks_out.clear();
-                self.link = Link::Lost;
-                self.cut_off = self.busy;
-                self.busy = false;
-                // No live adapter to answer — but the cards must not keep
-                // offering buttons whose rpc ids died with the connection.
-                self.cancel_pending_permissions(false);
-                self.settle_lost_link();
-                self.forget_activity();
+                self.link_cut();
                 // No key in the words: the front end names the one its keymap
                 // binds, which the person may have changed.
                 let text = self
@@ -512,6 +500,26 @@ impl Chat {
             cycle_ended,
             stop_refused,
         }
+    }
+
+    /// The link to the agent is gone: what it left running settles, and
+    /// nothing it offered can be answered any more. Says nothing of why: a
+    /// disconnect says that, and a session only out of reach of its host
+    /// says something else.
+    pub fn link_cut(&mut self) {
+        // A thought cut off with the adapter is over, not still running.
+        self.finalize_thought();
+        self.tx = None;
+        // Picks sent over the lost connection are answered by nothing.
+        self.picks_out.clear();
+        self.link = Link::Lost;
+        self.cut_off = self.busy;
+        self.busy = false;
+        // No live adapter to answer — but the cards must not keep
+        // offering buttons whose rpc ids died with the connection.
+        self.cancel_pending_permissions(false);
+        self.settle_lost_link();
+        self.forget_activity();
     }
 
     /// The mode the agent says is in force, as confirmed.

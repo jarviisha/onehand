@@ -468,9 +468,10 @@ pub(super) fn project_row(
     let unreached = root
         .on_host()
         .and_then(|host| match crate::hosts::state(cx, host) {
-            crate::hosts::HostState::Lost(_) => {
-                Some(format!("Not connected to {host}; trying again"))
-            }
+            crate::hosts::HostState::Lost(_) => Some(crate::hosts::not_connected(
+                host,
+                crate::hosts::retrying(cx, host),
+            )),
             crate::hosts::HostState::Taken => {
                 Some(format!("{host} was attached from another machine"))
             }
