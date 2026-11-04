@@ -1,5 +1,6 @@
-//! The form that adds a project whose folder is on a host, and the words of
-//! the question asked when that host runs another build.
+//! The form that adds a project whose folder is on a host, already there or
+//! cloned there, and the words of the question asked when that host runs
+//! another build.
 
 use super::{field, footer_row, title_row};
 use crate::controls::Named as _;
@@ -7,7 +8,7 @@ use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::Short as _;
 use crate::controls::text_input;
-use crate::shell::{Browse, Shell};
+use crate::shell::{Browse, Shell, Way};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, ClickEvent, Context, InteractiveElement as _, IntoElement, ParentElement,
@@ -16,7 +17,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants;
 use gpui_component::dialog::Dialog;
 use gpui_component::{ActiveTheme as _, IconName, StyledExt as _};
-use onehand_core::host::wire::HostSession;
+use onehand_core::host::wire::{HostSession, clone_name};
 use onehand_core::tree::TreeEntry;
 use onehand_core::workspace::HostName;
 use onehand_ui::Tall as _;
@@ -46,6 +47,32 @@ pub(crate) fn add_refusal(host: &str, folder: &str) -> Option<&'static str> {
     } else {
         None
     }
+}
+
+/// Why *Clone* cannot go yet, from what the three fields hold: the host,
+/// a repository whose name says what folder it makes, and the folder to
+/// make it in, from `/` for *Add*'s reason.
+pub(crate) fn clone_refusal(host: &str, repo: &str, into: &str) -> Option<&'static str> {
+    let (repo, into) = (repo.trim(), into.trim());
+    if host.trim().is_empty() {
+        Some("Name the host")
+    } else if repo.is_empty() {
+        Some("Name the repository")
+    } else if clone_name(repo).is_none() {
+        Some("Cannot tell the repository's name from this URL")
+    } else if into.is_empty() {
+        Some("Name the folder to clone into")
+    } else if !into.starts_with('/') {
+        Some("The folder starts at /")
+    } else {
+        None
+    }
+}
+
+/// The folder a clone of `repo` into `into` makes, as git names it: `None`
+/// when the URL says no name.
+pub(crate) fn clone_target(repo: &str, into: &Path) -> Option<PathBuf> {
+    Some(into.join(clone_name(repo.trim())?))
 }
 
 /// How many hosts the menu beside *Host* offers.
@@ -128,18 +155,36 @@ pub(crate) fn busy_body(host: &HostName, busy: &[HostSession], now: u64) -> Stri
 /// **No trigger**, for the rename's reason: the rail's rows are rebuilt every
 /// frame, and the shell decides whether the form exists.
 ///
-/// Two fields, so it stands at a form's width with a form's controls.
+/// Two ways, *Open a folder* and *Clone a repository*, over two or three
+/// fields, so it stands at a form's width with a form's controls. The ways
+/// share *Host* and the folder field, which a clone calls *Into*, so a
+/// switch keeps what was typed.
 pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Dialog {
     let Some(draft) = shell.host_project() else {
         return Dialog::new(cx);
     };
-    let (host, folder) = (draft.host.clone(), draft.folder.clone());
-    let (error, busy) = (draft.error.clone(), draft.busy());
+    let (host, folder, repo) = (draft.host.clone(), draft.folder.clone(), draft.repo.clone());
+    let (error, busy, way) = (draft.error.clone(), draft.busy(), draft.way);
     let waiting = draft.waiting.clone();
-    let refusal = match (&waiting, busy) {
-        (Some(_), _) => Some(WAITING),
-        (None, true) => Some(ATTACHING),
-        (None, false) => add_refusal(&host.read(cx).value(), &folder.read(cx).value()),
+    let refusal = match (&waiting, busy, way) {
+        (Some(_), _, _) => Some(WAITING),
+        (None, true, _) => Some(ATTACHING),
+        (None, false, Way::Folder) => add_refusal(&host.read(cx).value(), &folder.read(cx).value()),
+        (None, false, Way::Clone) => clone_refusal(
+            &host.read(cx).value(),
+            &repo.read(cx).value(),
+            &folder.read(cx).value(),
+        ),
+    };
+    let (folder_label, folder_about) = match way {
+        Way::Folder => ("Folder", "The project's folder on that host, from /"),
+        Way::Clone => ("Into", "The folder on that host to clone into, from /"),
+    };
+    // A clone says what it is doing while it runs, as it can run minutes.
+    let act = match way {
+        Way::Folder => "Add",
+        Way::Clone if busy && waiting.is_none() => "Cloning…",
+        Way::Clone => "Clone",
     };
     let danger = crate::theme::status_ink(cx).danger;
     let muted = cx.theme().muted_foreground;
@@ -161,8 +206,23 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
         .w(super::form_width(window))
         .close_button(false)
         .content(move |content, _, cx: &mut App| {
+            let ways = onehand_ui::switch(
+                "host-project-way",
+                &["Open a folder".into(), "Clone a repository".into()],
+                usize::from(way == Way::Clone),
+                onehand_ui::ControlSize::Tall,
+                {
+                    let shell = shell.clone();
+                    move |at: &usize, _, cx: &mut App| {
+                        let way = if *at == 0 { Way::Folder } else { Way::Clone };
+                        let _ = shell.update(cx, |shell, cx| shell.pick_way(way, cx));
+                    }
+                },
+                cx,
+            );
             content
                 .child(title_row("Add a project on a host", cx))
+                .child(ways)
                 .child(field(
                     "Host",
                     crate::settings::about("An alias from your SSH config, or user@machine"),
@@ -175,9 +235,19 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
                         }),
                     cx,
                 ))
+                .when(way == Way::Clone, |form| {
+                    form.child(field(
+                        "Repository",
+                        crate::settings::about(
+                            "A git URL the host can clone with its own credentials",
+                        ),
+                        text_input(&repo, cx).tall(),
+                        cx,
+                    ))
+                })
                 .child(field(
-                    "Folder",
-                    crate::settings::about("The project's folder on that host, from /"),
+                    folder_label,
+                    crate::settings::about(folder_about),
                     div()
                         .h_flex()
                         .gap_2()
@@ -258,7 +328,7 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
                     crate::controls::action("add-host-project")
                         .tall()
                         .primary()
-                        .label("Add")
+                        .label(act)
                         .loading(busy && !waits)
                         .refuses(refusal)
                         .on_click(

@@ -122,6 +122,19 @@ Every attach opens by exchanging builds (`client::attach`):
   pressed becomes *Folder* and is listed in turn; a failure is the list's own line in the danger
   ink. Typing in *Host* drops the list, and a newer listing drops the one under way
   (`browse_host_folders`, `crates/app/src/shell/host_project.rs`).
+- **Two ways:** a switch at the top of the form, *Open a folder* / *Clone a repository*
+  (`Way`), picked while no attach runs. Switching keeps *Host* and the folder field, and drops a
+  failure shown.
+- **Clone a repository:** *Host*, *Repository* (*A git URL the host can clone with its own
+  credentials*) and *Into* (*The folder on that host to clone into, from /*), the *Folder* field
+  relabelled, which *Browse* fills as it fills *Folder*. *Clone* refuses with *Name the host*,
+  *Name the repository*, *Cannot tell the repository's name from this URL* (`wire::clone_name`),
+  *Name the folder to clone into* or *The folder starts at /* (`clone_refusal`), and reads
+  *Cloning…* while it runs. It attaches as *Add* does, the busy-host wait included, asks the host
+  whether the clone's folder (`clone_target`, *Into* joined with the repository's name) is there
+  already, then has the host clone (`HostConn::clone_repo`) and adds that folder. A failure
+  stands inline: *There is already <path> on <host>*, or *Could not clone on <host>: <why>*,
+  git's last line without its `fatal:`.
 - **Add** trims both fields, attaches (installing the service if needed), asks the host whether
   the folder is a directory there (`hosts::is_dir`, the wire's `Probe`), then adds the project and
   selects it. A failure stands once, inline under the fields: the attach's own words, *Could not

@@ -1,5 +1,6 @@
 use super::{
-    BROWSE_CAP, HOST_CHOICES_CAP, add_refusal, browse_refusal, browse_rows, busy_body, host_choices,
+    BROWSE_CAP, HOST_CHOICES_CAP, add_refusal, browse_refusal, browse_rows, busy_body,
+    clone_refusal, clone_target, host_choices,
 };
 use onehand_core::host::wire::HostSession;
 use onehand_core::tree::TreeEntry;
@@ -125,4 +126,44 @@ fn browse_refuses_while_the_form_waits_or_attaches_or_names_no_host() {
     assert_eq!(browse_refusal("  ", false, false), Some("Name the host"));
     assert_eq!(browse_refusal("box", true, false), Some(super::ATTACHING));
     assert_eq!(browse_refusal("", true, true), Some(super::WAITING));
+}
+
+#[test]
+fn clone_refuses_until_it_knows_the_repository_and_where_from_the_root() {
+    let url = "https://github.com/o/repo.git";
+    assert_eq!(clone_refusal(" ", url, "/srv"), Some("Name the host"));
+    assert_eq!(
+        clone_refusal("box", " ", "/srv"),
+        Some("Name the repository")
+    );
+    assert_eq!(
+        clone_refusal("box", "https://github.com/", "/srv"),
+        Some("Cannot tell the repository's name from this URL")
+    );
+    assert_eq!(
+        clone_refusal("box", url, " "),
+        Some("Name the folder to clone into")
+    );
+    assert_eq!(
+        clone_refusal("box", url, "~/src"),
+        Some("The folder starts at /")
+    );
+    assert_eq!(clone_refusal("box", url, "/srv"), None);
+    assert_eq!(
+        clone_refusal(" box ", " git@github.com:o/repo.git ", " /srv "),
+        None
+    );
+}
+
+#[test]
+fn clone_target_joins_the_name() {
+    assert_eq!(
+        clone_target("git@github.com:o/repo.git", Path::new("/srv")),
+        Some(PathBuf::from("/srv/repo"))
+    );
+}
+
+#[test]
+fn clone_target_none_for_a_bare_host() {
+    assert_eq!(clone_target("https://github.com", Path::new("/srv")), None);
 }

@@ -393,6 +393,23 @@ pub(crate) fn home(
     }
 }
 
+/// Have the host reached over `conn` `git clone` `url` into `into`, on the
+/// ACP runtime.
+pub(crate) fn clone_repo(
+    cx: &App,
+    conn: HostConn,
+    url: String,
+    into: PathBuf,
+) -> impl Future<Output = Result<(), String>> + use<> {
+    let host = conn.host().to_string();
+    let asking = on_runtime(cx, async move { conn.clone_repo(&url, &into).await });
+    async move {
+        asking
+            .await
+            .map_err(|e| format!("Could not clone on {host}: {e}"))
+    }
+}
+
 /// `polled` when a wait's poll asks, whose misses count up before they end it.
 fn attach_with(
     cx: &App,
