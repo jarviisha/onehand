@@ -211,3 +211,74 @@ fn an_image_is_written_as_a_base64_string() {
     assert!(v["Image"].is_string());
     round_trip(c);
 }
+
+fn permission_with(options: &[(&str, &str)]) -> PermissionRequest {
+    PermissionRequest {
+        options: options
+            .iter()
+            .map(|(id, kind)| PermissionOption {
+                id: (*id).into(),
+                name: (*id).into(),
+                kind: (*kind).into(),
+            })
+            .collect(),
+        ..sample_permission()
+    }
+}
+
+#[test]
+fn a_permission_is_allowed_once_before_always() {
+    let req = permission_with(&[("r", "reject_once"), ("a", "allow_always"), ("o", "allow_once")]);
+    assert!(matches!(req.bypass_answer(),
+        Some(AcpRequest::PermissionResponse { option_id: Some(id), .. }) if id == "o"));
+    let req = permission_with(&[("r", "reject_once"), ("a", "allow_always")]);
+    assert!(matches!(req.bypass_answer(),
+        Some(AcpRequest::PermissionResponse { option_id: Some(id), .. }) if id == "a"));
+}
+
+#[test]
+fn a_permission_with_no_allow_is_left_alone() {
+    assert!(permission_with(&[("r", "reject_once")])
+        .bypass_answer()
+        .is_none());
+}
+
+#[test]
+fn a_question_is_answered_in_its_other_box_and_text_fields() {
+    let mut form = sample_elicitation();
+    form.fields.push(ElicitField {
+        key: "q1".into(),
+        title: None,
+        description: None,
+        kind: ElicitKind::Text,
+        custom_key: None,
+    });
+    let AcpRequest::ElicitationResponse {
+        rpc_id,
+        outcome: ElicitOutcome::Accept(pairs),
+    } = form.bypass_answer()
+    else {
+        panic!("not an accept");
+    };
+    assert_eq!(rpc_id, serde_json::json!("e1"));
+    assert_eq!(
+        pairs,
+        vec![
+            ("k_custom".into(), ElicitValue::Text(BYPASS_ANSWER.into())),
+            ("q1".into(), ElicitValue::Text(BYPASS_ANSWER.into())),
+        ]
+    );
+}
+
+#[test]
+fn a_form_with_nowhere_to_write_is_declined() {
+    let mut form = sample_elicitation();
+    form.fields[0].custom_key = None;
+    assert!(matches!(
+        form.bypass_answer(),
+        AcpRequest::ElicitationResponse {
+            outcome: ElicitOutcome::Decline,
+            ..
+        }
+    ));
+}

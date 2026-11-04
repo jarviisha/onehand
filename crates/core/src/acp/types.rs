@@ -392,6 +392,21 @@ impl PermissionRequest {
     }
 }
 
+impl PermissionRequest {
+    /// What a host answers by itself while nobody watches: its narrowest
+    /// grant, once before always. None when the agent offers no grant, which
+    /// leaves the card for a person.
+    pub fn bypass_answer(&self) -> Option<AcpRequest> {
+        let allow = self
+            .keyed(PermissionWeight::AllowOnce)
+            .or_else(|| self.keyed(PermissionWeight::AllowAlways))?;
+        Some(AcpRequest::PermissionResponse {
+            rpc_id: self.rpc_id.clone(),
+            option_id: Some(allow.id.clone()),
+        })
+    }
+}
+
 /// How a subagent's session ended, as the adapter reports it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SubagentEnd {
@@ -538,6 +553,37 @@ pub struct Elicitation {
     pub fields: Vec<ElicitField>,
     /// The subagent session that asks, when it is not the root session.
     pub child: Option<String>,
+}
+
+/// What a host tells an agent that asks a question while nobody watches.
+pub const BYPASS_ANSWER: &str = "Nobody is watching this session to answer. Decide on your own \
+judgement and carry on, and in your reply say what you chose and why.";
+
+impl Elicitation {
+    /// What a host answers by itself while nobody watches: [`BYPASS_ANSWER`]
+    /// in every question's free text, a select's *Other* box or a text field.
+    /// A choice is never picked for the agent. A form with nowhere to write is
+    /// declined, which tells the agent to carry on without an answer.
+    pub fn bypass_answer(&self) -> AcpRequest {
+        let answers: Vec<(String, ElicitValue)> = self
+            .fields
+            .iter()
+            .filter_map(|f| match (&f.kind, &f.custom_key) {
+                (ElicitKind::Text, _) => Some(f.key.clone()),
+                (_, Some(other)) => Some(other.clone()),
+                (_, None) => None,
+            })
+            .map(|key| (key, ElicitValue::Text(BYPASS_ANSWER.into())))
+            .collect();
+        let outcome = match answers.is_empty() {
+            true => ElicitOutcome::Decline,
+            false => ElicitOutcome::Accept(answers),
+        };
+        AcpRequest::ElicitationResponse {
+            rpc_id: self.rpc_id.clone(),
+            outcome,
+        }
+    }
 }
 
 /// One answer value in the response `content` map.

@@ -111,6 +111,7 @@ struct Answer {
     term_opened: Option<HostTerm>,
     terms: Option<Vec<TermInfo>>,
     held: Option<()>,
+    bypass: Option<bool>,
 }
 
 impl Answer {
@@ -129,6 +130,7 @@ impl Answer {
             term_opened: None,
             terms: None,
             held: None,
+            bypass: None,
         };
         match reply {
             Reply::Welcome { build, busy } => answer.welcome = Some((build, busy)),
@@ -144,6 +146,7 @@ impl Answer {
             Reply::TermOpened { term } => answer.term_opened = Some(term),
             Reply::Terms(terms) => answer.terms = Some(terms),
             Reply::Held => answer.held = Some(()),
+            Reply::Bypass { on } => answer.bypass = Some(on),
         }
         answer
     }
@@ -248,28 +251,34 @@ impl Watcher {
             // fails drops the copy, and the next watch fills it again.
             let _ = copy.append(seq, at, &entry);
         }
-        let event = match entry {
+        let events = match entry {
             Entry::Ready(ready) if self.replaying => {
                 self.ready = Some(ready);
                 return true;
             }
-            Entry::Ready(ready) => connected(live(forwarders, me, session), ready),
-            entry @ (Entry::Event(_) | Entry::Request(_)) => {
-                // Only `Ready` has no event; it is handled above.
-                let Some(event) = super::copy::as_event(entry) else {
-                    return true;
-                };
-                event
+            Entry::Ready(ready) => vec![connected(live(forwarders, me, session), ready)],
+            // A card the host answered goes with its answer, both sent here
+            // at once, so a chat never takes the card alone and says it waits.
+            entry @ (Entry::Event(_) | Entry::Request(_) | Entry::Answered { .. }) => {
+                super::copy::as_event(entry)
             }
         };
-        let ended = matches!(event, AcpEvent::Disconnected(_));
+        if events.is_empty() {
+            return true;
+        }
         // 0 is a line that kept no time: the chat stamps it now.
         if at != 0 && self.said_at != Some(at) {
             self.said_at = Some(at);
             let _ = self.tx.unbounded_send(AcpEvent::At(at));
         }
-        // A session that ended says so once, and its watch ends with it.
-        self.tx.unbounded_send(event).is_ok() && !ended
+        for event in events {
+            let ended = matches!(event, AcpEvent::Disconnected(_));
+            // A session that ended says so once, and its watch ends with it.
+            if self.tx.unbounded_send(event).is_err() || ended {
+                return false;
+            }
+        }
+        true
     }
 }
 
