@@ -5,9 +5,9 @@ project's sessions and their agents, and keeps them going while the laptop is of
 attaches, reads each session back from the host's journal and shows it in the chat pane as it
 shows a local one.
 
-**A host project is sessions only, for now.** Its folder lives on the host and the laptop holds no
-copy of it: no file tree, editor, git status or terminal reaches it yet, and nothing of onehand's
-own work (tools, workflows, tasks, issues, unattended runs, worktrees, the check command) runs on
+**A host project is sessions, files and git status, for now.** Its folder lives on the host and the
+laptop holds no copy of it: the file tree, the editor and git status read it there, but no terminal
+reaches it yet, and nothing of onehand's own work (tools, workflows, tasks, issues, unattended runs, worktrees, the check command) runs on
 it. What is refused, and how, is under *What a host project does not do*.
 
 ## A host
@@ -165,14 +165,48 @@ Every attach opens by exchanging builds (`client::attach`):
   until the next one. Live entries carry their time too. A prompt typed here is stamped with this
   machine's clock.
 
+## Files and git status
+
+- **One seam, `Disk`** (`crates/core/src/disk.rs`): this machine's disk or a host's. The Files
+  view, the editor and the git sweep call its five blocking methods (list a folder, read, save,
+  git status) and do not know which they have. A host's call goes over the attach
+  (`crates/core/src/host/client/files.rs`), where the host runs the same tree, editor and git
+  functions on its own disk (`crates/host/src/files.rs`), answered off its stream loop so a slow
+  one holds up no other call.
+- **Only the Editor, with Files, is offered on a host project.** Markdown, Neovim, Issues and
+  Plugins are not in the Workbench's strip (`on_host` on `WorkbenchModeSpec`,
+  `crates/workbench/src/lib.rs`; `offered` in `crates/app/src/workbench/panel.rs`); an active mode
+  that is not offered gives way to the first that is.
+- **The Workbench attaches when a host root is shown** (`show_host_files`,
+  `crates/app/src/shell/roots.rs`). Meanwhile it says *Attaching to <host>…*; on a host on another
+  build with sessions mid-turn it says the waiting line and carries on when the wait ends; a
+  failure stands as a line with *Try again*, which attaches again. With an attach already live the
+  files show at once, with no waiting line.
+- **A dropped attach is made again only when it is needed:** on window activation and at a turn's
+  end, and only when the connection the Workbench shows has closed (`Workbench::lost_host`). One
+  still attaching, or whose attach failed, is left to that attach or to *Try again*.
+- **Git status is read for a host root only while its attach is live** (`hosts::live`,
+  `crates/app/src/shell/git_sweep.rs`), in the same pass as the local roots and kept by path, so
+  opening the window never attaches to every host. A host that is not attached shows no git
+  status until it is shown.
+- **A folder that cannot be read** says *Could not read <folder> on <host>: …* under the rows
+  (`crates/files/src/view.rs`), and the line clears when that folder lists or is folded. A host
+  that dropped says so the same way and never draws an empty tree that looks real.
+- **A buffer saves only to the machine it was read from:** each Editor buffer keeps the `Disk` it
+  was read through (`crates/editor/src/buffers.rs`), so a save never lands on the other side of a
+  local and a host project on one path. The mtime guard runs on the host, against its clock, and a
+  stale save is a conflict as a local one is. A failure reads *On <host>: …*.
+- **A file link pressed in a host session opens in the editor**, as a local one does.
+- **Refresh Git status** is offered on a host project, in the rail's menu and the project page's.
+  *Open terminal* is not.
+
 ## What a host project does not do
 
 Refused or left out, each in one place:
 
-- **The Workbench and the terminal** show *Files and terminals on a host come later* in place of
-  their content, and the Workbench offers no mode; a file link pressed in a host session is an
-  info toast with the same words. *Open terminal* and *Refresh Git status* leave the project's
-  menus. No git status is read for it.
+- **The terminal** shows *Terminals on a host come later* in place of its content, and *Open
+  terminal* leaves the project's menus.
+- **Markdown, Neovim, Issues and Plugins** are not offered in the Workbench on a host project.
 - **Worktrees, the check command and unattended runs** are not offered: *New worktree…*, *Work an
   issue…*, the unattended switch, *Run check* and the *Check command* field are absent, and the
   Settings list of unattended projects leaves it out.
@@ -190,8 +224,7 @@ Refused or left out, each in one place:
 The steps of the design still to come, each its own change; the gaps they leave meanwhile are in
 [known-gaps.md](known-gaps.md):
 
-- **The rest of a host project:** the file tree, the editor, git status and the terminal on the
-  host.
+- **The rest of a host project:** the terminal on the host.
 - **The host's own UI:** picking a host from `~/.ssh/config`, browsing the host's folders, cloning,
   re-attaching by itself with a backoff, and reading a host's sessions while it is not attached,
   from a copy the laptop keeps.

@@ -250,11 +250,11 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **No tool answers a card, a permission or an approval, and none cuts a worktree.** Both are on
   purpose: only a person answers what an agent parked, and the lead cuts its worktrees with git.
   The cap of four sessions per caller is not raised for leads either.
-- **A host project has no files, editor, git status or terminal.** The host service serves only
-  sessions so far; the Workbench and the terminal say *Files and terminals on a host come later*,
-  and a file link in a host session opens nothing. They need the host to serve directory
-  listings, reads, writes, git status and PTYs, behind the few blocking functions in core the
-  tree, the editor and git already go through ([hosts.md](hosts.md#not-built)).
+- **A host project has no terminal.** The terminal says *Terminals on a host come later*. It needs
+  the host to serve PTYs ([hosts.md](hosts.md#not-built)).
+- **Markdown, Neovim, Issues and Plugins are not offered on a host project.** Markdown would need
+  its document index walked on the host; Neovim, Issues and Plugins are this machine's.
+- **A host call times out after 30 s**, so a git status slower than that reads as no status.
 - **A lost host is not attached again by itself.** A dropped connection ends every session watched
   over it, and each comes back only when restarted; a host that is not attached shows nothing of
   its sessions, since the laptop keeps no copy of their transcripts. Both need a re-attach with a
@@ -262,7 +262,11 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **A local and a host project on one path share the rail's state for that path.** Their fold, their
   place in the order the rail keeps, the keyboard's row and the terminal dock's open state are kept
   by path alone, so folding one folds the other. Pins, unattended runs and check commands are kept
-  per host and path. Fixing it means keying that state by the pair, as the workspace file is.
+  per host and path. The Workbench's per-path state is shared too: removing the host project
+  forgets, and counts in its unsaved warning, the local one's Editor buffers and Files tree, and a
+  file reopened from the other side's tab shows that machine's text (a save still goes only to the
+  machine the buffer was read from). The window's git status is keyed by path as well. Fixing it
+  means keying that state by the pair, as the workspace file is.
 - **A replayed session's durations read short, and one turn can mix two clocks.** A thought's or a
   tool's elapsed time is measured as it arrives, so a replay that delivers a whole turn at once
   reads it as taking no time, and a tool's settle time is when the replay reached it. A prompt

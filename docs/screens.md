@@ -233,8 +233,9 @@ dragged height kept).
   and *Activity N* (the history). Sections are parted by space, not rules. ⋯ ▸ *Open in Issues* and
   *Review…* open it on the Issues page, the latter with its review open.
 - Hiding a dock keeps its buffers and processes; the terminal's open state follows the project.
-- On a project on a host, the Workbench (with no modes in its strip) and the terminal each show
-  the hint *Files and terminals on a host come later* in place of their content.
+- On a project on a host, the Workbench offers the Editor (with Files) only, and says *Attaching to
+  <host>…* or a standing failure with *Try again* until the host answers; the terminal shows the
+  hint *Terminals on a host come later* in place of its content.
 - **The workers' region**, in the Workbench's place and never beside it: opening one puts the
   other away, a caret in the one leaving going to the lead's composer and the one arriving taking
   none; hiding the region gives the Workbench back as it was, and while it shows the layout saves

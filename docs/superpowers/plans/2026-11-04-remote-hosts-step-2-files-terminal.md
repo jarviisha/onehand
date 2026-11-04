@@ -225,6 +225,8 @@ Each PR goes through review, then CI, then the owner's merge.
 **Interfaces:**
 - Consumes: Task 1's `Disk`/`HostDisk`, and Task 3's `set_root(&Path, &Disk, cx)` and `WorkbenchModeSpec.on_host`.
 
+> As built: three of the four Shell tests below became panel-level tests, and the real attach to `local` was not written, because no test can build a Shell.
+
 - [ ] **Step 1: Write the failing tests**
   - Panel, `a_host_root_offers_only_modes_that_run_there`: modes Editor (`on_host`) and Markdown (not). `set_root(p, host_disk)` with Markdown active switches to Editor, and the mode list holds Editor alone. `set_root(p, Disk::Local)` offers both again.
   - Shell, `a_host_root_on_the_host_local_shows_its_tree`: a root on the host `local` (the 1b tests already attach to it) with a tempdir holding `x.txt`. Arriving at it ends with the Workbench not refused and Files listing `x.txt`. Use the existing host-test helpers in `shell/tests.rs`; if none attach for real, gate this one as the 1b smoke tests are gated.
