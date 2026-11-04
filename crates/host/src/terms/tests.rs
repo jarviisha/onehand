@@ -25,7 +25,14 @@ fn wait_for(lines: &mut UnboundedReceiver<FromHost>, term: HostTerm, want: &str)
                     return text;
                 }
             }
-            Ok(_) => {}
+            Ok(
+                FromHost::TermOutput { .. }
+                | FromHost::Answer { .. }
+                | FromHost::Replay { .. }
+                | FromHost::Entry { .. }
+                | FromHost::Kicked
+                | FromHost::TermExit { .. },
+            ) => {}
             Err(_) => std::thread::sleep(Duration::from_millis(10)),
         }
     }
@@ -156,4 +163,83 @@ fn a_terminal_runs_in_its_folder() {
     wait_for(&mut lines, term, &dir.display().to_string());
     lock(&terms).close(term).unwrap();
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn in_flight(terms: &Mutex<Terms>, term: HostTerm) -> Option<usize> {
+    lock(terms).map[&term].watcher.as_ref().map(|w| w.in_flight)
+}
+
+/// Poll `done` every 10 ms, failing after 5 s.
+fn until(what: &str, mut done: impl FnMut() -> bool) {
+    let start = Instant::now();
+    while !done() {
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "{what} not in time"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// The bytes of every line queued so far.
+fn drain(lines: &mut UnboundedReceiver<FromHost>) -> usize {
+    let mut n = 0;
+    while let Ok(line) = lines.try_recv() {
+        match line {
+            FromHost::TermOutput { data, .. } => n += data.0.len(),
+            FromHost::Answer { .. }
+            | FromHost::Replay { .. }
+            | FromHost::Entry { .. }
+            | FromHost::Kicked
+            | FromHost::TermExit { .. } => {}
+        }
+    }
+    n
+}
+
+#[test]
+fn a_watcher_that_falls_behind_holds_the_reader_at_the_cap() {
+    let terms = terms();
+    let term = open(&terms, std::env::temp_dir());
+    let (out, mut lines) = mpsc::unbounded_channel();
+    lock(&terms).watch(term, out.clone()).unwrap();
+    lock(&terms).write(term, b"yes\n".to_vec()).unwrap();
+
+    // Nothing is written to the attach, so the reader stops one read past the cap.
+    until("the cap", || in_flight(&terms, term) > Some(TERM_IN_FLIGHT));
+    let kept = lock(&terms).map[&term].kept.len();
+    for _ in 0..20 {
+        assert!(in_flight(&terms, term) <= Some(TERM_IN_FLIGHT + READ_CHUNK));
+        assert_eq!(lock(&terms).map[&term].kept.len(), kept);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    // Written out: it goes on, up to the cap again.
+    let n = drain(&mut lines);
+    lock(&terms).sent(term, n, &out);
+    until("more output", || lock(&terms).map[&term].kept.len() > kept);
+    until("the cap again", || {
+        in_flight(&terms, term) > Some(TERM_IN_FLIGHT)
+    });
+    assert!(!lock(&terms).map[&term].dropped);
+
+    // Unwatched: it runs free, and `kept` fills up to its own cap.
+    lock(&terms).unwatch_all();
+    until("a full buffer", || lock(&terms).map[&term].dropped);
+    lock(&terms).close(term).unwrap();
+}
+
+#[test]
+fn a_watcher_whose_attach_is_gone_lets_the_reader_go() {
+    let terms = terms();
+    let term = open(&terms, std::env::temp_dir());
+    let (out, lines) = mpsc::unbounded_channel();
+    lock(&terms).watch(term, out).unwrap();
+    lock(&terms).write(term, b"yes\n".to_vec()).unwrap();
+    until("the cap", || in_flight(&terms, term) > Some(TERM_IN_FLIGHT));
+    // The attach's queue goes with it, and nobody unwatches.
+    drop(lines);
+    until("a full buffer", || lock(&terms).map[&term].dropped);
+    assert_eq!(in_flight(&terms, term), None);
+    lock(&terms).close(term).unwrap();
 }

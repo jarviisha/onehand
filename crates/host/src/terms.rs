@@ -7,7 +7,8 @@ use std::collections::{HashMap, VecDeque};
 use std::ffi::OsString;
 use std::io::{Read as _, Write as _};
 use std::path::PathBuf;
-use std::sync::{mpsc as std_mpsc, Arc, Mutex, MutexGuard};
+use std::sync::{mpsc as std_mpsc, Arc, Condvar, Mutex, MutexGuard};
+use std::time::Duration;
 
 use onehand_core::host::wire::{Bytes, FromHost, HostTerm, TermInfo};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
@@ -19,6 +20,19 @@ pub(crate) const TERM_KEEP: usize = 1024 * 1024;
 /// Said first in a replay whose start was trimmed away.
 pub(crate) const NOT_KEPT: &str = "\r\n[Earlier output was not kept]\r\n";
 
+/// How many bytes of a terminal's output may be queued for its watcher and
+/// not yet written to the attach. Past it the terminal's reader waits, so a
+/// program printing faster than the link carries it is slowed down, as in a
+/// real terminal, instead of piling its output up in the service.
+pub(crate) const TERM_IN_FLIGHT: usize = 256 * 1024;
+
+/// How much the reader takes from the PTY at a time.
+const READ_CHUNK: usize = 8192;
+
+/// How often a reader held up by a watcher checks that the watcher's attach
+/// is still there, in case it went away without the reader being woken.
+const LOST_CHECK: Duration = Duration::from_secs(1);
+
 pub(crate) struct Terms {
     next: u64,
     map: HashMap<HostTerm, Term>,
@@ -26,6 +40,8 @@ pub(crate) struct Terms {
     shell: OsString,
     /// The login shell's `PATH`, for the shell's environment.
     path: Option<OsString>,
+    /// Woken whenever a reader held up by its watcher may go on.
+    space: Arc<Condvar>,
 }
 
 struct Term {
@@ -40,7 +56,13 @@ struct Term {
     /// Whether output was trimmed from the front of `kept`.
     dropped: bool,
     /// The one watch output goes to; a newer watch replaces it.
-    watcher: Option<UnboundedSender<FromHost>>,
+    watcher: Option<Watcher>,
+}
+
+struct Watcher {
+    sink: UnboundedSender<FromHost>,
+    /// Bytes of output put on `sink` and not yet written to the attach.
+    in_flight: usize,
 }
 
 impl Terms {
@@ -50,6 +72,7 @@ impl Terms {
             map: HashMap::new(),
             shell,
             path,
+            space: Arc::new(Condvar::new()),
         }
     }
 
@@ -136,23 +159,45 @@ impl Terms {
         sink: UnboundedSender<FromHost>,
     ) -> Result<(), String> {
         let t = self.map.get_mut(&term).ok_or_else(|| unknown(term))?;
+        // The same attach watching again shares its queue, and so its count.
+        let mut in_flight = t
+            .watcher
+            .take()
+            .filter(|w| w.sink.same_channel(&sink))
+            .map_or(0, |w| w.in_flight);
+        // A reader held up by the watcher this one replaces must look again.
+        self.space.notify_all();
         let mut replay = Vec::with_capacity(t.kept.len() + NOT_KEPT.len());
         if t.dropped {
             replay.extend_from_slice(NOT_KEPT.as_bytes());
         }
         replay.extend(t.kept.iter());
         if !replay.is_empty() {
+            let replay_len = replay.len();
             let line = FromHost::TermOutput {
                 term,
                 data: Bytes(replay),
             };
             if sink.send(line).is_err() {
-                t.watcher = None;
                 return Ok(());
             }
+            in_flight += replay_len;
         }
-        t.watcher = Some(sink);
+        t.watcher = Some(Watcher { sink, in_flight });
         Ok(())
+    }
+
+    /// `n` bytes of `term`'s output went out to the attach behind `sink`,
+    /// so its reader may go on if it waits for them.
+    pub(crate) fn sent(&mut self, term: HostTerm, n: usize, sink: &UnboundedSender<FromHost>) {
+        let Some(w) = self.map.get_mut(&term).and_then(|t| t.watcher.as_mut()) else {
+            return;
+        };
+        // Output written for an attach that no longer watches counts for nothing.
+        if w.sink.same_channel(sink) {
+            w.in_flight = w.in_flight.saturating_sub(n);
+            self.space.notify_all();
+        }
     }
 
     pub(crate) fn write(&self, term: HostTerm, data: Vec<u8>) -> Result<(), String> {
@@ -176,9 +221,10 @@ impl Terms {
     /// or have a job holding the PTY open: either way it is listed no more.
     pub(crate) fn close(&mut self, term: HostTerm) -> Result<(), String> {
         let mut t = self.map.remove(&term).ok_or_else(|| unknown(term))?;
-        if let Some(sink) = t.watcher.take() {
-            let _ = sink.send(FromHost::TermExit { term });
+        if let Some(w) = t.watcher.take() {
+            let _ = w.sink.send(FromHost::TermExit { term });
         }
+        self.space.notify_all();
         // On a thread: the kill sends SIGHUP, gives the shell a moment to
         // leave on its own, then sends SIGKILL; the wait reaps it.
         // ponytail: a background job that keeps the PTY open outlives the
@@ -195,13 +241,14 @@ impl Terms {
         for t in self.map.values_mut() {
             t.watcher = None;
         }
+        self.space.notify_all();
     }
 }
 
 /// Keep and pass on what `term` prints until it ends, then say so, let it go
 /// and reap its shell.
 fn read(terms: &Mutex<Terms>, term: HostTerm, mut reader: Box<dyn std::io::Read + Send>) {
-    let mut buf = [0u8; 8192];
+    let mut buf = [0u8; READ_CHUNK];
     loop {
         let n = match reader.read(&mut buf) {
             Ok(0) => break,
@@ -214,23 +261,45 @@ fn read(terms: &Mutex<Terms>, term: HostTerm, mut reader: Box<dyn std::io::Read 
             return;
         };
         keep(&mut t.kept, &mut t.dropped, &buf[..n]);
-        if let Some(sink) = &t.watcher {
+        if let Some(w) = &mut t.watcher {
             let line = FromHost::TermOutput {
                 term,
                 data: Bytes(buf[..n].to_vec()),
             };
-            if sink.send(line).is_err() {
+            if w.sink.send(line).is_err() {
                 t.watcher = None;
+            } else {
+                w.in_flight += n;
             }
+        }
+        // The wait lets the lock go, so the attach can count its writes down,
+        // and a new watch, an unwatch or a close can wake it.
+        let space = this.space.clone();
+        while held_up(&this, term) {
+            this = space
+                .wait_timeout(this, LOST_CHECK)
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
         }
     }
     let gone = lock(terms).map.remove(&term);
     if let Some(mut t) = gone {
-        if let Some(sink) = t.watcher.take() {
-            let _ = sink.send(FromHost::TermExit { term });
+        if let Some(w) = t.watcher.take() {
+            let _ = w.sink.send(FromHost::TermExit { term });
         }
         let _ = t.child.wait();
     }
+}
+
+/// Whether `term`'s reader must wait for its watcher's attach to catch up.
+/// With no watcher, or one whose attach is gone, it never waits: `kept` is
+/// capped on its own.
+fn held_up(terms: &Terms, term: HostTerm) -> bool {
+    terms
+        .map
+        .get(&term)
+        .and_then(|t| t.watcher.as_ref())
+        .is_some_and(|w| w.in_flight > TERM_IN_FLIGHT && !w.sink.is_closed())
 }
 
 /// Append `data` to `kept`, trimming its front to `TERM_KEEP` and noting so.

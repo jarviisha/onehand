@@ -18,6 +18,9 @@ fn busy_is_a_foreground_group_other_than_the_shell() {
 /// told once. A tab fed by a stream has no process here.
 #[gpui::test]
 fn a_stream_tab_shows_what_its_reader_gives_and_exits_at_eof(cx: &mut TestAppContext) {
+    // The reader runs on a thread of its own, and a wake from it is activity
+    // the test executor refuses unless parking is allowed.
+    cx.executor().allow_parking();
     cx.update(gpui_component::init);
     let exits = Rc::new(Cell::new(0));
     let tab = cx.update(|cx| {
@@ -33,11 +36,13 @@ fn a_stream_tab_shows_what_its_reader_gives_and_exits_at_eof(cx: &mut TestAppCon
             move |_, _| exits.set(exits.get() + 1),
         )
     });
-    // The reader runs on a thread of its own, and a wake from it is activity
-    // the test executor refuses: it is let finish before the grid first looks.
-    std::thread::sleep(std::time::Duration::from_millis(50));
     let view = tab.view().clone();
     cx.add_window(|window, cx| Root::new(view.clone(), window, cx));
+    let start = std::time::Instant::now();
+    while exits.get() == 0 && start.elapsed() < std::time::Duration::from_secs(5) {
+        cx.run_until_parked();
+        std::thread::yield_now();
+    }
     cx.run_until_parked();
     assert_eq!(exits.get(), 1);
     cx.update(|cx| assert!(view.read(cx).row_text(0).contains("hello")));

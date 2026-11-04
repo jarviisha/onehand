@@ -240,16 +240,20 @@ async fn connection(
                 }
             }
             Some(line) = lines.recv() => {
-                let kicked = match &line {
-                    FromHost::Kicked => true,
+                let (kicked, output) = match &line {
+                    FromHost::Kicked => (true, None),
+                    FromHost::TermOutput { term, data } => (false, Some((*term, data.0.len()))),
                     FromHost::Answer { .. }
                     | FromHost::Replay { .. }
                     | FromHost::Entry { .. }
-                    | FromHost::TermOutput { .. }
-                    | FromHost::TermExit { .. } => false,
+                    | FromHost::TermExit { .. } => (false, None),
                 };
                 if send(&mut write, &line).await.is_err() || kicked {
                     return;
+                }
+                // Written, so the terminal's reader may go on if it waits for it.
+                if let Some((term, n)) = output {
+                    terms::lock(&terms).sent(term, n, &out);
                 }
             }
         }

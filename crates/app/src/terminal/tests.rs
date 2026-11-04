@@ -91,10 +91,9 @@ mod on_host {
     /// read and written over a connection that writes down what it is told.
     ///
     /// The grid reads its stream on a thread of its own, and a wake from it
-    /// is activity the test executor refuses. So a stream is only ended
-    /// before the grid's reader is first polled ([`ended_early`]) or after
-    /// its tab is gone.
+    /// is activity the test executor refuses unless parking is allowed.
     fn dock(cx: &mut TestAppContext) -> (Entity<TerminalPanel>, WindowHandle<Root>, Recorded) {
+        cx.executor().allow_parking();
         cx.update(gpui_component::init);
         let panel = cx.update(TerminalPanel::new);
         let window = cx.add_window({
@@ -108,14 +107,6 @@ mod on_host {
             panel.add_host_tab(home, conn, TERM, cx);
         });
         (panel, window, recorded)
-    }
-
-    /// End the tab's stream and let its reader thread finish before the
-    /// grid's task first looks: reading what was fired drops the watch's end.
-    fn ended_early(recorded: &Recorded) -> Vec<Call> {
-        let fired = recorded.fired();
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        fired
     }
 
     /// Let the tab go, then the connection, so the reader's end wakes nothing.
@@ -132,7 +123,22 @@ mod on_host {
             .iter()
             .filter_map(|call| match call {
                 Call::TermClose { term } => Some(*term),
-                _ => None,
+                Call::Hello { .. }
+                | Call::Shutdown
+                | Call::List
+                | Call::Open { .. }
+                | Call::Watch { .. }
+                | Call::Request { .. }
+                | Call::Probe { .. }
+                | Call::ReadDir { .. }
+                | Call::ReadFile { .. }
+                | Call::SaveFile { .. }
+                | Call::GitStatus { .. }
+                | Call::TermOpen { .. }
+                | Call::TermList
+                | Call::TermWatch { .. }
+                | Call::TermWrite { .. }
+                | Call::TermResize { .. } => None,
             })
             .collect()
     }
@@ -143,13 +149,15 @@ mod on_host {
     fn a_host_tab_that_exits_closes_nothing_on_the_host(cx: &mut TestAppContext) {
         let (panel, _window, recorded) = dock(cx);
         assert!(panel.read_with(cx, |panel, _| panel.has_shell()));
-        let mut fired = ended_early(&recorded);
-        for _ in 0..200 {
+        // Reading what was fired drops the watch's end, which ends the stream.
+        let mut fired = recorded.fired();
+        let start = std::time::Instant::now();
+        while start.elapsed() < std::time::Duration::from_secs(5) {
             cx.run_until_parked();
             if !panel.read_with(cx, |panel, _| panel.has_shell()) {
                 break;
             }
-            std::thread::sleep(std::time::Duration::from_millis(5));
+            std::thread::yield_now();
         }
         assert!(!panel.read_with(cx, |panel, _| panel.has_shell()));
         fired.extend(recorded.fired());
