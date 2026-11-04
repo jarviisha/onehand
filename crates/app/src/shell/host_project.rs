@@ -156,6 +156,16 @@ fn needs_restart<C>(attached: &Result<C, HostFailure>) -> bool {
     }
 }
 
+/// Whether a failed restart is already said where the wait it ended was
+/// waited on, so nothing else says it: a host out of reach ends its wait on
+/// why, and one still busy ends none.
+fn said_by_wait(waited: bool, failure: &HostFailure) -> bool {
+    match failure {
+        HostFailure::Other(_) => waited,
+        HostFailure::Busy { .. } => false,
+    }
+}
+
 /// What a restart that failed says.
 fn restart_failure(failure: HostFailure) -> String {
     match failure {
@@ -445,8 +455,10 @@ impl Shell {
 
     /// The person said yes to restarting `host`'s service. Attached first,
     /// and restarted only if it is still busy. An attach that lands ends the
-    /// host's wait, and what waited carries on from there.
+    /// host's wait, and what waited carries on from there; one that cannot
+    /// reach the host ends it on why.
     fn restart_agreed(&mut self, host: HostName, window: &mut Window, cx: &mut Context<Self>) {
+        let waited = hosts::waited(cx, &host);
         let attaching = hosts::conn(cx, &host);
         cx.spawn_in(window, async move |shell, cx| {
             let mut attached = attaching.await;
@@ -459,7 +471,7 @@ impl Shell {
             if let Err(failure) = attached {
                 shell
                     .update_in(cx, |shell: &mut Self, window, cx| {
-                        shell.restart_failed(&host, failure, window, cx)
+                        shell.restart_failed(&host, waited, failure, window, cx)
                     })
                     .ok();
             }
@@ -467,16 +479,22 @@ impl Shell {
         .detach();
     }
 
-    /// Say why `host`'s service could not be restarted, once: on the form
-    /// when it waits on that host, else in a toast. Whatever waits goes on
-    /// waiting.
+    /// Say why `host`'s service could not be restarted, once. A host out of
+    /// reach ended the wait on it with that reason, and every place that
+    /// waited says it already; one still busy goes on waiting, and is said
+    /// on the form when it waits on that host, else in a toast, as is any
+    /// failure with nothing waiting.
     fn restart_failed(
         &mut self,
         host: &HostName,
+        waited: bool,
         failure: HostFailure,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if said_by_wait(waited, &failure) {
+            return;
+        }
         let why = restart_failure(failure);
         let form = self
             .host_project

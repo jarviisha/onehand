@@ -64,11 +64,13 @@ Every attach opens by exchanging builds (`client::attach`):
   and forms wait on it (`Waits` in `crates/app/src/hosts.rs`): it attaches again every 15 s
   (`HOST_IDLE_POLL`), and the first attach that lands, which restarts the idle service onto this
   build by itself, ends the wait. An attach that cannot reach the host ends it too, on that
-  failure: a waiting session ends as a lost one does (*Disconnected: …*, which Restart tries
+  failure (from the poll only after two misses in a row, `HOST_UNREACHABLE_POLLS`, so a blip
+  does not; from anything else at once): a waiting session ends as a lost one does (*Disconnected: …*, which Restart tries
   again), the page shows its failed line with *Try again*, and the form its inline error. The
   wait lasts only while something listens to it: once every session, page and form that waited
   has gone (closed, left, put away, or its window closed), the wait and its poll stop, and the
-  next busy attach starts them again. Each window keeps what waits there (`HostFlow`,
+  next listener to a host found busy starts them again; a host found busy with nobody listening
+  (a restart's first look) is not waited on. Each window keeps what waits there (`HostFlow`,
   `crates/app/src/shell/host_project.rs`) and, once the wait ends, restarts each session that
   waited (as after a service restart), lists the page again and carries on with the form's *Add*,
   unless that form was put away or added its project since (a form opened again is never added by
@@ -84,8 +86,12 @@ Every attach opens by exchanging builds (`client::attach`):
   started (*a session started 3m ago*) and how many more, and that restarting stops them;
   *Restart* or keep. A yes attaches again and restarts the service whatever is mid-turn only if
   the host is still busy (`client::restart`); that attach landing ends the wait as above. A failed
-  restart says why once: inline on a form waiting on that host, else a toast, *Restarting the
-  host service failed: …*; what waits goes on waiting. Kept, nothing changes, and the wait goes on.
+  restart is said once. A host out of reach ends the wait with its reason, *Could not attach to
+  <host>: …*, said at each place that waited and nowhere else. A host still busy goes on waiting,
+  and the failure is said inline on a form waiting on that host, else in a toast, *Restarting the
+  host service failed: …*, as is a failure with nothing waiting. On a waiting session the rail's
+  menu reads *Restart the host service…*, and it asks this question. Kept, nothing changes, and
+  the wait goes on.
 - A service that restarts reads its sessions back from their journals, listed as ended; a session
   it had running ends on *The host service stopped while this session was running*.
 

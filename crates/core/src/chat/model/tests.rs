@@ -3353,3 +3353,34 @@ fn a_resume_that_fails_again_keeps_its_own_notice() {
         .count();
     assert_eq!(again, 1, "and this resume's own line stays beside it");
 }
+
+/// The line saying a session waits on its host is taken back alone: a
+/// notice after it, or one of the same words said otherwise, stays.
+#[test]
+fn the_host_wait_line_is_taken_back_alone() {
+    let mut chat = Chat::new(1, PathBuf::from("/w"), "a".into(), None);
+    chat.items.push(ChatItem::notice("earlier"));
+    chat.say_host_wait("Waiting for 1 session on vps".into());
+    chat.items.push(ChatItem::notice("after"));
+    chat.unsay_host_wait();
+    let said = |chat: &Chat| -> Vec<String> {
+        chat.items
+            .iter()
+            .filter_map(|item| match item {
+                ChatItem::Notice { text, .. } => Some(text.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(said(&chat), ["earlier", "after"]);
+    // Once only, and never a line it did not put.
+    chat.items
+        .insert(1, ChatItem::notice("Waiting for 1 session on vps"));
+    chat.unsay_host_wait();
+    assert_eq!(said(&chat).len(), 3);
+    // Moved from where it was put: left alone.
+    chat.say_host_wait("Waiting".into());
+    chat.items.insert(0, ChatItem::notice("first"));
+    chat.unsay_host_wait();
+    assert!(said(&chat).contains(&"Waiting".to_string()));
+}

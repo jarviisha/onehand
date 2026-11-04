@@ -94,7 +94,9 @@ its place in *Recent activity*), so a lead never reads as failed for a worker th
 its state its line counts *N workers need you* (a worker needing input, failed or disconnected)
 in the warning ink. The *Needs attention* filter and a folded project's badge read the most urgent
 state of the lead and its workers (by that order: lost, failed, needs input, running, done
-unread), and *N need attention* counts a worker waiting on the person. A worktree project holding
+unread, then waiting for its host, the calmest), and *N need attention* counts a worker waiting on
+the person; a session waiting for its host is never counted, since it moves on by itself. Its
+row's menu reads *Restart the host service…* in place of *Restart the agent*. A worktree project holding
 nothing but such workers is left out with them. When the lead closes or is lost, its workers are
 listed again under their project.
 

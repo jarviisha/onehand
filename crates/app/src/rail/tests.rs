@@ -648,20 +648,23 @@ fn meta_counts_waiting_workers() {
 fn the_waiting_ink_lands_on_the_count_for_every_state() {
     use super::model::{waiting_span, workers_said};
     use SessionSignal::*;
-    for signal in [
-        None,
-        Some(Busy),
-        Some(AwaitingUser),
-        Some(Failed),
-        Some(Lost),
-        Some(UnseenTurn),
+    for (signal, host) in [
+        (None, None),
+        (Some(Busy), None),
+        (Some(AwaitingUser), None),
+        (Some(Failed), None),
+        (Some(Lost), None),
+        (Some(UnseenTurn), None),
+        // Its word names the host, so the count starts further on.
+        (Some(HostWait), Some("vps")),
+        (Some(HostWait), None),
     ] {
         for waiting in [1, 3] {
-            let line = meta(signal, None, 2, 1, waiting, "claude", 5);
-            let span = waiting_span(signal, None, waiting).unwrap();
+            let line = meta(signal, host, 2, 1, waiting, "claude", 5);
+            let span = waiting_span(signal, host, waiting).unwrap();
             assert_eq!(line[span].to_string(), workers_said(waiting).unwrap());
         }
-        assert_eq!(waiting_span(signal, None, 0), None);
+        assert_eq!(waiting_span(signal, host, 0), None);
     }
 }
 

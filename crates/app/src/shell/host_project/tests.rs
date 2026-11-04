@@ -1,4 +1,4 @@
-use super::{HostFlow, Waiting, Want, landed_on, needs_restart, release};
+use super::{HostFlow, Waiting, Want, landed_on, needs_restart, release, said_by_wait};
 
 /// What a host's waiting holds, to compare.
 fn held(waiting: Option<Waiting>) -> Option<(Vec<u64>, Option<u64>, bool)> {
@@ -100,4 +100,18 @@ fn what_stops_waiting_is_let_go() {
     assert!(!flow.waiting.contains_key(&b), "nothing waits on b here");
     assert_eq!(held(flow.take(&a)), Some((vec![1], None, false)));
     assert!(flow.is_empty());
+}
+
+/// A failed restart that ended a wait is said where the wait was, once;
+/// with nothing waiting, or a host still busy, it is said on its own.
+#[test]
+fn a_failed_restart_is_said_once() {
+    let gone = HostFailure::Other("Could not attach to box: gone".into());
+    let busy = HostFailure::Busy {
+        host: HostName("box".into()),
+        busy: Vec::new(),
+    };
+    assert!(said_by_wait(true, &gone), "the wait ended on it: no toast");
+    assert!(!said_by_wait(false, &gone), "nothing waited: a toast");
+    assert!(!said_by_wait(true, &busy), "still waiting: said on its own");
 }

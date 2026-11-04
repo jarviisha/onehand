@@ -213,11 +213,9 @@ pub(crate) async fn list(conn: HostConn, cx: &mut AsyncApp) -> Result<Vec<Sessio
 /// restarted, and nothing has to be tried again by hand.
 fn wait(host: HostName, n: usize, session: &WeakEntity<ChatSession>, cx: &mut AsyncApp) {
     let _ = session.update(cx, |session, cx| {
-        let line = crate::hosts::waiting_line(&host, n);
         session
             .chat
-            .items
-            .push(onehand_core::chat::ChatItem::notice(line));
+            .say_host_wait(crate::hosts::waiting_line(&host, n));
         session.host_wait = Some(host);
         cx.emit(ChatEvent::HostBusy);
         cx.emit(ChatEvent::Appended);

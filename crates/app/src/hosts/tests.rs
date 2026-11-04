@@ -1,4 +1,7 @@
-use super::{HOST_IDLE_POLL, HostFailure, Slots, Waits, bundled_binary_in, waiting_line};
+use super::{
+    HOST_IDLE_POLL, HOST_UNREACHABLE_POLLS, HostFailure, Slots, Waits, bundled_binary_in,
+    waiting_line,
+};
 use futures::FutureExt as _;
 use futures::executor::block_on;
 use onehand_core::host::wire::HostSession;
@@ -146,23 +149,23 @@ fn a_busy_host_waits_until_an_attach_lands() {
         waits.listen(&host).is_none(),
         "nothing waits on an idle host"
     );
-    waits.heard(&host, &busy(&host, &["1-1"]));
-    waits.heard(&host, &busy(&host, &["1-1", "2-1"]));
-    assert_eq!(waits.busy(&host).len(), 2, "the latest sessions said");
+    waits.heard(&host, &busy(&host, &["1-1"]), false);
+    waits.heard(&host, &busy(&host, &["1-1", "2-1"]), false);
     let (a, b) = (waits.listen(&host).unwrap(), waits.listen(&host).unwrap());
+    assert_eq!(waits.busy(&host).len(), 2, "the latest sessions said");
     assert!(a.ptr_eq(&b), "one wait");
     assert!(a.clone().now_or_never().is_none());
     // One poll per wait.
     assert!(waits.poll(&host));
     assert!(!waits.poll(&host));
 
-    waits.heard(&host, &Ok(()));
+    waits.heard(&host, &Ok(()), false);
     assert_eq!(a.now_or_never(), Some(Ok(Ok(()))));
     assert_eq!(b.now_or_never(), Some(Ok(Ok(()))));
     assert!(waits.listen(&host).is_none(), "released once");
     assert!(waits.busy(&host).is_empty());
     // A later busy is a new wait, polled anew.
-    waits.heard(&host, &busy(&host, &["3-1"]));
+    waits.heard(&host, &busy(&host, &["3-1"]), false);
     assert!(waits.listen(&host).is_some());
     assert!(waits.poll(&host));
 }
@@ -173,13 +176,13 @@ fn a_busy_host_waits_until_an_attach_lands() {
 fn a_restart_that_lands_ends_the_wait() {
     let host = HostName("vps".into());
     let mut waits = Waits::default();
-    waits.heard(&host, &busy(&host, &["1-1"]));
+    waits.heard(&host, &busy(&host, &["1-1"]), false);
     let ended = waits.listen(&host).unwrap();
     // Another host's attach releases nothing here.
-    waits.heard(&HostName("other".into()), &Ok(()));
+    waits.heard(&HostName("other".into()), &Ok(()), false);
     assert!(ended.clone().now_or_never().is_none());
     // `hosts::restart` lands on this build.
-    waits.heard(&host, &Ok(()));
+    waits.heard(&host, &Ok(()), false);
     assert_eq!(ended.now_or_never(), Some(Ok(Ok(()))));
 }
 
@@ -189,9 +192,13 @@ fn a_restart_that_lands_ends_the_wait() {
 fn an_unreachable_host_releases_its_waiters_with_the_failure() {
     let host = HostName("vps".into());
     let mut waits = Waits::default();
-    waits.heard(&host, &busy(&host, &["1-1"]));
+    waits.heard(&host, &busy(&host, &["1-1"]), false);
     let ended = waits.listen(&host).unwrap();
-    waits.heard(&host, &Err::<(), _>(HostFailure::Other("gone".into())));
+    waits.heard(
+        &host,
+        &Err::<(), _>(HostFailure::Other("gone".into())),
+        false,
+    );
     assert_eq!(ended.now_or_never(), Some(Ok(Err("gone".to_string()))));
     assert!(waits.listen(&host).is_none(), "the wait is over");
 }
@@ -202,7 +209,7 @@ fn an_unreachable_host_releases_its_waiters_with_the_failure() {
 fn the_wait_ends_with_its_last_listener() {
     let host = HostName("vps".into());
     let mut waits = Waits::default();
-    waits.heard(&host, &busy(&host, &["1-1"]));
+    waits.heard(&host, &busy(&host, &["1-1"]), false);
     let (a, b) = (waits.listen(&host).unwrap(), waits.listen(&host).unwrap());
     assert!(waits.poll(&host));
     waits.leave(&host, &a);
@@ -212,9 +219,47 @@ fn the_wait_ends_with_its_last_listener() {
     assert!(waits.busy(&host).is_empty(), "the wait is gone");
     assert!(waits.listen(&host).is_none());
     // A leave for a wait already gone touches the next one not at all.
-    waits.heard(&host, &busy(&host, &["2-1"]));
+    waits.heard(&host, &busy(&host, &["2-1"]), false);
     let c = waits.listen(&host).unwrap();
     waits.leave(&host, &a);
     assert!(waits.poll(&host), "polled anew");
     assert!(waits.polling(&host, &c));
+}
+
+/// Being found busy makes no wait by itself: only a listener does, so an
+/// attach nobody waits on (a restart's first look) leaves nothing behind.
+#[test]
+fn a_busy_host_nobody_listens_to_is_not_waited_on() {
+    let host = HostName("vps".into());
+    let mut waits = Waits::default();
+    waits.heard(&host, &busy(&host, &["1-1"]), false);
+    assert!(!waits.waited(&host));
+    assert!(!waits.poll(&host), "nothing to poll");
+    assert!(waits.listen(&host).is_some());
+    assert!(waits.waited(&host));
+}
+
+/// One poll that misses the host is a blip; enough in a row end the wait
+/// on why. A miss outside the poll (Restart now) ends it at once.
+#[test]
+fn a_wait_outlives_a_blip_but_not_a_host_gone() {
+    assert_eq!(HOST_UNREACHABLE_POLLS, 2);
+    let host = HostName("vps".into());
+    let gone = || Err::<(), _>(HostFailure::Other("gone".into()));
+    let mut waits = Waits::default();
+    waits.heard(&host, &busy(&host, &["1-1"]), false);
+    let ended = waits.listen(&host).unwrap();
+    waits.heard(&host, &gone(), true);
+    assert!(ended.clone().now_or_never().is_none(), "a blip");
+    // Found busy again: the count starts over.
+    waits.heard(&host, &busy(&host, &["1-1"]), true);
+    waits.heard(&host, &gone(), true);
+    assert!(ended.clone().now_or_never().is_none());
+    waits.heard(&host, &gone(), true);
+    assert_eq!(ended.now_or_never(), Some(Ok(Err("gone".to_string()))));
+
+    waits.heard(&host, &busy(&host, &["2-1"]), false);
+    let ended = waits.listen(&host).unwrap();
+    waits.heard(&host, &gone(), false);
+    assert_eq!(ended.now_or_never(), Some(Ok(Err("gone".to_string()))));
 }

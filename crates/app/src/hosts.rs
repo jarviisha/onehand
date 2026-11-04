@@ -90,7 +90,7 @@ pub(crate) fn idle(cx: &App, host: &HostName) -> Option<impl Future<Output = Wai
                     return;
                 }
                 // What it comes to is heard by the attach itself.
-                let attaching = cx.update(|cx| conn(cx, &host));
+                let attaching = cx.update(|cx| attach_with(cx, &host, false, true));
                 let _ = attaching.await;
             }
         })
@@ -137,85 +137,124 @@ pub(crate) fn waiting_line(host: &HostName, n: usize) -> String {
     )
 }
 
-/// Hosts kept waiting by their busy sessions, one wait each.
+/// How many polls in a row may fail to reach a waited host before its wait
+/// ends on why: one is a blip, a host gone stays gone.
+pub(crate) const HOST_UNREACHABLE_POLLS: u32 = 2;
+
+/// Hosts found busy, with the sessions they said, and the waits listened
+/// to on them, one each.
 #[derive(Default)]
-struct Waits(BTreeMap<HostName, Wait>);
+struct Waits {
+    busy: BTreeMap<HostName, Vec<HostSession>>,
+    waits: BTreeMap<HostName, Wait>,
+}
 
 struct Wait {
-    busy: Vec<HostSession>,
     /// Sent when the wait ends; dropped unsent with its last listener.
     end: oneshot::Sender<WaitEnd>,
     ended: Ended,
     listeners: usize,
     polling: bool,
+    /// Polls in a row that could not reach the host.
+    missed: u32,
 }
 
 impl Waits {
-    /// What an attach to `host` came to: a busy host waits, with the
-    /// sessions it said; one that lands ends the wait, and one that could
-    /// not reach the host ends it on why.
-    fn heard<C>(&mut self, host: &HostName, result: &Result<C, HostFailure>) {
+    /// What an attach to `host` came to, `polled` when the wait's own poll
+    /// made it: a busy host is kept with the sessions it said; one that
+    /// lands ends the wait, and one that could not reach the host ends it
+    /// on why, at once, or from the poll after a few misses in a row.
+    fn heard<C>(&mut self, host: &HostName, result: &Result<C, HostFailure>, polled: bool) {
         match result {
             Ok(_) => self.end(host, Ok(())),
-            Err(HostFailure::Other(why)) => self.end(host, Err(why.clone())),
-            Err(HostFailure::Busy { busy, .. }) => match self.0.get_mut(host) {
-                Some(wait) => wait.busy = busy.clone(),
-                None => {
-                    let (end, ended) = oneshot::channel();
-                    let wait = Wait {
-                        busy: busy.clone(),
-                        end,
-                        ended: ended.shared(),
-                        listeners: 0,
-                        polling: false,
-                    };
-                    self.0.insert(host.clone(), wait);
+            Err(HostFailure::Busy { busy, .. }) => {
+                self.busy.insert(host.clone(), busy.clone());
+                if let Some(wait) = self.waits.get_mut(host) {
+                    wait.missed = 0;
                 }
-            },
+            }
+            Err(HostFailure::Other(why)) => {
+                let missed = self.waits.get_mut(host).map_or(0, |wait| {
+                    wait.missed += 1;
+                    wait.missed
+                });
+                if !polled || missed >= HOST_UNREACHABLE_POLLS {
+                    self.end(host, Err(why.clone()));
+                }
+            }
         }
     }
 
     fn end(&mut self, host: &HostName, how: WaitEnd) {
-        if let Some(wait) = self.0.remove(host) {
+        self.busy.remove(host);
+        if let Some(wait) = self.waits.remove(host) {
             let _ = wait.end.send(how);
         }
     }
 
-    /// One more listener to `host`'s wait, and its end; `None` when there
-    /// is no wait.
+    /// One more listener to `host`'s wait, made with the first; `None` when
+    /// the host is not known busy. A wait is only ever made here, so none
+    /// stands with nobody listening.
     fn listen(&mut self, host: &HostName) -> Option<Ended> {
-        let wait = self.0.get_mut(host)?;
+        if !self.busy.contains_key(host) {
+            return None;
+        }
+        let wait = self.waits.entry(host.clone()).or_insert_with(|| {
+            let (end, ended) = oneshot::channel();
+            Wait {
+                end,
+                ended: ended.shared(),
+                listeners: 0,
+                polling: false,
+                missed: 0,
+            }
+        });
         wait.listeners += 1;
         Some(wait.ended.clone())
     }
 
-    /// A listener to the wait `ended` went; with the last, the wait goes.
+    /// A listener to the wait `ended` went; with the last, the wait goes,
+    /// and what the host said with it.
     fn leave(&mut self, host: &HostName, ended: &Ended) {
-        let Some(wait) = self.0.get_mut(host).filter(|wait| wait.ended.ptr_eq(ended)) else {
+        let Some(wait) = self
+            .waits
+            .get_mut(host)
+            .filter(|wait| wait.ended.ptr_eq(ended))
+        else {
             return;
         };
         wait.listeners = wait.listeners.saturating_sub(1);
         if wait.listeners == 0 {
-            self.0.remove(host);
+            self.waits.remove(host);
+            self.busy.remove(host);
         }
     }
 
+    /// The sessions `host` said were mid-turn, while it is waited on.
     fn busy(&self, host: &HostName) -> &[HostSession] {
-        self.0.get(host).map_or(&[], |wait| &wait.busy)
+        match self.waits.contains_key(host) {
+            true => self.busy.get(host).map_or(&[], Vec::as_slice),
+            false => &[],
+        }
     }
 
     /// Whether `host`'s wait has yet to be polled; it is from now on.
     fn poll(&mut self, host: &HostName) -> bool {
-        self.0
+        self.waits
             .get_mut(host)
             .is_some_and(|wait| !std::mem::replace(&mut wait.polling, true))
     }
 
     /// Whether the poll of the wait `ended` goes on: that wait still stands.
     fn polling(&self, host: &HostName, ended: &Ended) -> bool {
-        self.0
+        self.waits
             .get(host)
             .is_some_and(|wait| wait.polling && wait.ended.ptr_eq(ended))
+    }
+
+    /// Whether anything waits on `host`.
+    fn waited(&self, host: &HostName) -> bool {
+        self.waits.contains_key(host)
     }
 }
 
@@ -225,7 +264,12 @@ pub(crate) fn conn(
     cx: &App,
     host: &HostName,
 ) -> impl Future<Output = Result<HostConn, HostFailure>> + use<> {
-    attach_with(cx, host, false)
+    attach_with(cx, host, false, false)
+}
+
+/// Whether anything waits on `host`'s busy sessions.
+pub(crate) fn waited(cx: &App, host: &HostName) -> bool {
+    Shared::global(cx).hosts.waits.borrow().waited(host)
 }
 
 /// A new attach to `host` whose service is restarted onto this build
@@ -235,7 +279,7 @@ pub(crate) fn restart(
     cx: &App,
     host: &HostName,
 ) -> impl Future<Output = Result<HostConn, HostFailure>> + use<> {
-    attach_with(cx, host, true)
+    attach_with(cx, host, true, false)
 }
 
 /// Whether `path` is a folder on `host`, asked over `conn` on the ACP runtime.
@@ -262,10 +306,12 @@ pub(crate) fn is_dir(
     }
 }
 
+/// `polled` when a wait's poll asks, whose misses count up before they end it.
 fn attach_with(
     cx: &App,
     host: &HostName,
     fresh: bool,
+    polled: bool,
 ) -> impl Future<Output = Result<HostConn, HostFailure>> + use<> {
     let shared = Shared::global(cx);
     let waits = shared.hosts.waits.clone();
@@ -288,7 +334,7 @@ fn attach_with(
     let host = host.clone();
     async move {
         let result = attempt.await;
-        waits.borrow_mut().heard(&host, &result);
+        waits.borrow_mut().heard(&host, &result, polled);
         result
     }
 }
@@ -319,8 +365,8 @@ async fn attach(host: HostName, fresh: bool) -> Result<HostConn, HostFailure> {
 /// What a person reads of `e`, an attach to `host` that failed.
 fn failure(host: &HostName, e: HostError) -> HostFailure {
     match e {
-        HostError::Unreachable(why) | HostError::Protocol(why) => {
-            HostFailure::Other(format!("Could not attach to {host}: {why}"))
+        e @ (HostError::Unreachable(_) | HostError::Protocol(_)) => {
+            HostFailure::Other(format!("Could not attach to {host}: {e}"))
         }
         HostError::Unsupported(uname) => HostFailure::Other(format!(
             "{host} is not a machine this build runs on: {uname}"
