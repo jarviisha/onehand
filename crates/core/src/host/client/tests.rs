@@ -1094,3 +1094,50 @@ fn a_recording_connection_keeps_what_was_fired_and_needs_no_runtime() {
     ));
     assert!(recorded.fired().is_empty());
 }
+
+#[tokio::test]
+async fn home_reads_the_reply() {
+    let (conn, mut host) = pair();
+    let asking = tokio::spawn(async move { conn.home().await });
+    let Question { id, call } = host.ask().await;
+    assert!(matches!(call, Call::Home), "{call:?}");
+    host.answer(id, Reply::Home("/home/me".into())).await;
+    assert_eq!(asking.await.unwrap().unwrap(), Path::new("/home/me"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn clone_waits_past_ask_wait() {
+    let (conn, mut host) = pair();
+    let cloning = tokio::spawn(async move {
+        conn.clone_repo("https://x/o/repo.git", Path::new("/srv/repo"))
+            .await
+    });
+    let Question { id, call } = host.ask().await;
+    assert!(
+        matches!(&call, Call::Clone { url, into }
+            if url == "https://x/o/repo.git" && into == Path::new("/srv/repo")),
+        "{call:?}"
+    );
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    host.answer(id, Reply::Done).await;
+    assert!(cloning.await.unwrap().is_ok());
+}
+
+#[tokio::test]
+async fn a_refused_clone_names_the_host() {
+    let (conn, mut host) = pair();
+    let cloning = tokio::spawn(async move {
+        conn.clone_repo("https://x/o/repo.git", Path::new("/srv/repo"))
+            .await
+    });
+    let Question { id, .. } = host.ask().await;
+    host.send(FromHost::Answer {
+        id,
+        result: Err("there is already /srv/repo".into()),
+    })
+    .await;
+    match cloning.await.unwrap() {
+        Err(HostError::Protocol(why)) => assert_eq!(why, "On vps: there is already /srv/repo"),
+        other => panic!("{other:?}"),
+    }
+}

@@ -134,6 +134,8 @@ mod on_host {
                 | Call::ReadFile { .. }
                 | Call::SaveFile { .. }
                 | Call::GitStatus { .. }
+                | Call::Home
+                | Call::Clone { .. }
                 | Call::TermOpen { .. }
                 | Call::TermList
                 | Call::TermWatch { .. }

@@ -117,6 +117,13 @@ pub enum Call {
     GitStatus {
         root: PathBuf,
     },
+    /// The host user's home folder.
+    Home,
+    /// `git clone` `url` into `into`, an absolute path that does not exist yet.
+    Clone {
+        url: String,
+        into: PathBuf,
+    },
     TermOpen {
         cwd: PathBuf,
         cols: u16,
@@ -170,6 +177,7 @@ pub enum Reply {
     Saved(SaveOutcome),
     /// None when the folder is not in a repository.
     Git(Option<GitStatus>),
+    Home(PathBuf),
     TermOpened {
         term: HostTerm,
     },
@@ -286,6 +294,21 @@ pub fn busy_after(busy: bool, entry: &Entry) -> bool {
             | AcpEvent::At(_) => busy,
         },
     }
+}
+
+/// The folder a clone of `url` is named by: its last segment after `/` or
+/// `:`, without a trailing `/` or `.git`. None when that leaves no name, as
+/// for a URL that names only a server.
+pub fn clone_name(url: &str) -> Option<String> {
+    // The server of `scheme://server/path` is never the name.
+    let path = match url.split_once("://") {
+        Some((_, rest)) => rest.split_once('/').map_or("", |(_, path)| path),
+        None => url,
+    };
+    let path = path.trim_end_matches('/');
+    let last = path.rsplit(['/', ':']).next().unwrap_or(path);
+    let name = last.strip_suffix(".git").unwrap_or(last);
+    (!matches!(name, "" | "." | "..")).then(|| name.to_string())
 }
 
 /// The build id of a host binary: FNV-1a 64 over its bytes, as 16 hex digits.

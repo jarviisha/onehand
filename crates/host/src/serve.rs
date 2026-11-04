@@ -312,9 +312,12 @@ fn answer(
         call @ (Call::ReadDir { .. }
         | Call::ReadFile { .. }
         | Call::SaveFile { .. }
-        | Call::GitStatus { .. }) => {
-            // Off the loop: a big folder or a slow repository must not hold
-            // up the asks behind it, and the answer goes out when it is done.
+        | Call::GitStatus { .. }
+        | Call::Home
+        | Call::Clone { .. }) => {
+            // Off the loop: a big folder, a slow repository or a clone must
+            // not hold up the asks behind it, and the answer goes out when it
+            // is done.
             let out = out.clone();
             tokio::task::spawn_blocking(move || {
                 let result = crate::files::answer(call);
