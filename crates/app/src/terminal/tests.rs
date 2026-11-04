@@ -138,6 +138,7 @@ mod on_host {
                 | Call::Clone { .. }
                 | Call::TermOpen { .. }
                 | Call::TermList
+                | Call::Bypass { .. }
                 | Call::TermWatch { .. }
                 | Call::TermWrite { .. }
                 | Call::TermResize { .. } => None,

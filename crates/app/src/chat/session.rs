@@ -541,7 +541,8 @@ impl ChatSession {
                                     next = events.next().now_or_never().flatten();
                                 }
                             }
-                            if let Some(ask) = asked.filter(|_| session.chat.awaiting_permission()) {
+                            if let Some(ask) = asked.filter(|_| session.chat.awaiting_permission())
+                            {
                                 cx.emit(ChatEvent::AwaitingUser(ask));
                             }
                             if changed {

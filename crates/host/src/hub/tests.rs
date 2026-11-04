@@ -631,7 +631,10 @@ fn asking(rpc: u64) -> AcpEvent {
         tool_call_id: None,
         kind: onehand_core::acp::ToolKind::Other,
         title: "run it".into(),
-        options: vec![option("always", "allow_always"), option("once", "allow_once")],
+        options: vec![
+            option("always", "allow_always"),
+            option("once", "allow_once"),
+        ],
         child: None,
     })
 }
@@ -660,10 +663,7 @@ async fn a_card_is_answered_while_the_switch_is_on() {
     let live = entries(&mut lines, 2).await;
     assert!(matches!(
         &live[1].1,
-        Entry::Answered {
-            card: Some(AcpEvent::Permission(_)),
-            ..
-        }
+        Entry::Answered { card: Some(card), .. } if matches!(**card, AcpEvent::Permission(_))
     ));
     assert!(matches!(
         last_line(&hub, &fake.session),

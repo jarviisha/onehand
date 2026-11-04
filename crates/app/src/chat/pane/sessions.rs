@@ -609,6 +609,7 @@ impl ChatPane {
             history: host.is_some().then(Vec::new),
             listed: None,
             listing: false,
+            bypass: None,
             asked: 0,
             host,
             // They arrive from the shell a moment later, on the same switch

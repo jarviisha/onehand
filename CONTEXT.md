@@ -300,6 +300,12 @@ only what it lacks. The host's journal stays the truth: a copy that disagrees is
 again.
 _Avoid_: cache, backup, mirror (that is an offloaded project's folder)
 
+**Permission bypass**:
+A host project's switch, on by default, under which the host service answers every card its
+sessions park: a permission is allowed, and a question is told to decide on its own and say what
+it chose. Kept on the host, so it holds while the laptop is away.
+_Avoid_: auto-approve, YOLO mode
+
 **Build**:
 Which copy of the host service a host runs, named by a hash of the binary itself. The laptop puts
 its own build on a host beside any other, and restarts the service onto it only when no session

@@ -185,12 +185,20 @@ fn the_switch_calls_round_trip() {
         cwd: "/srv/app".into(),
         on: None,
     });
-    assert!(matches!(call, Call::Bypass { cwd, on: None } if cwd == std::path::Path::new("/srv/app")));
+    assert!(
+        matches!(call, Call::Bypass { cwd, on: None } if cwd == std::path::Path::new("/srv/app"))
+    );
     let call = round_trips(&Call::Bypass {
         cwd: "/srv/app".into(),
         on: Some(false),
     });
-    assert!(matches!(call, Call::Bypass { on: Some(false), .. }));
+    assert!(matches!(
+        call,
+        Call::Bypass {
+            on: Some(false),
+            ..
+        }
+    ));
     assert!(matches!(
         round_trips(&Reply::Bypass { on: true }),
         Reply::Bypass { on: true }

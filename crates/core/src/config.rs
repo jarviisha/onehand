@@ -686,7 +686,7 @@ pub(crate) fn migrate_dir_blocking(
 /// not waited for, so a crash immediately after one can leave the previous
 /// version in place. That costs the newest save; it cannot cost a readable
 /// file, which is the property worth paying an extra wait per write for.
-pub(crate) fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
+pub fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
     static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     // Through a symlink to the file it names: renaming over the link would
     // replace it with a plain file, and whatever keeps the real one (a

@@ -1,6 +1,6 @@
 # Remote hosts: sessions that live on a machine reached over SSH
 
-Status: design, decided with the owner on 2026-11-03; steps 1 to 3 built (see *Order of work*).
+Status: design, decided with the owner on 2026-11-03; steps 1 to 4 built (see *Order of work*).
 
 ## Why
 
@@ -354,7 +354,7 @@ These form a sequence, and each step is useful on its own:
    not connected, and the laptop's own copy of host transcripts for reading while not attached.
    Built in two parts: 3a, the form (pick a host, browse its folders, clone; built, #287); 3b,
    re-attaching by itself and the laptop's copy (built). As built: `docs/hosts.md`.
-4. The permission bypass switch.
+4. The permission bypass switch (built). As built: `docs/hosts.md`.
 5. Offloaded projects in mirror mode, with the key, plus *Send to host*.
 6. Branch mode.
 

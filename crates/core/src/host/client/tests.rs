@@ -1332,7 +1332,10 @@ async fn bypass_asks_and_reads_the_answer() {
 
     let setting = tokio::spawn(async move { conn.set_bypass(Path::new("/srv/app"), true).await });
     let Question { id, call } = host.ask().await;
-    assert!(matches!(&call, Call::Bypass { on: Some(true), .. }), "{call:?}");
+    assert!(
+        matches!(&call, Call::Bypass { on: Some(true), .. }),
+        "{call:?}"
+    );
     host.answer(id, Reply::Bypass { on: true }).await;
     assert!(setting.await.unwrap().unwrap());
 }

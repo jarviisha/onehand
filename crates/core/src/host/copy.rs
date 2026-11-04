@@ -177,9 +177,11 @@ pub(super) fn as_event(entry: Entry) -> Vec<AcpEvent> {
         Entry::Ready(_) => vec![],
         Entry::Event(event) => vec![event],
         Entry::Request(request) => vec![AcpEvent::Echo(request)],
-        Entry::Answered { card, answer } => {
-            card.into_iter().chain([AcpEvent::Echo(answer)]).collect()
-        }
+        Entry::Answered { card, answer } => card
+            .map(|card| *card)
+            .into_iter()
+            .chain([AcpEvent::Echo(answer)])
+            .collect(),
     }
 }
 

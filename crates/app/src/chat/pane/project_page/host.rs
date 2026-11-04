@@ -163,15 +163,35 @@ impl ChatPane {
         project.asked = asked;
         project.listing = true;
         cx.notify();
+        let path = project.path.clone();
         let attaching = crate::hosts::conn(cx, &host);
         cx.spawn(async move |pane, cx| {
-            let listed = match attaching.await {
-                Ok(conn) => crate::chat::session::host_list(conn, cx)
-                    .await
-                    .map_err(|e| {
-                        HostFailure::Other(format!("Could not read the sessions on {host}: {e}"))
-                    }),
-                Err(failure) => Err(failure),
+            let (listed, bypass) = match attaching.await {
+                Ok(conn) => {
+                    let listed = crate::chat::session::host_list(conn.clone(), cx)
+                        .await
+                        .map_err(|e| {
+                            HostFailure::Other(format!(
+                                "Could not read the sessions on {host}: {e}"
+                            ))
+                        });
+                    // ponytail: a switch that could not be read is not drawn,
+                    // and the next listing reads it again.
+                    let bypass = match &listed {
+                        Ok(_) => cx
+                            .update(|cx| {
+                                crate::hosts::on_runtime(
+                                    cx,
+                                    async move { conn.bypass(&path).await },
+                                )
+                            })
+                            .await
+                            .ok(),
+                        Err(_) => None,
+                    };
+                    (listed, bypass)
+                }
+                Err(failure) => (Err(failure), None),
             };
             // Each list read is kept, and the last one kept is what the page
             // shows while the host cannot be attached.
@@ -204,6 +224,7 @@ impl ChatPane {
                     return;
                 };
                 project.listing = false;
+                project.bypass = bypass;
                 project.listed = Some(match listed {
                     Ok(all) => Ok(all),
                     // The shell lists again once the host is back. A host
@@ -242,6 +263,97 @@ impl ChatPane {
 }
 
 /// *Refresh*, for the page's head: ask the host again.
+/// The page's *Settings* on a host: whether the host answers the folder's
+/// cards by itself, with what that costs said under it, always.
+pub(super) fn bypass_box(host: &HostName, on: bool, cx: &mut Context<ChatPane>) -> AnyElement {
+    let cost = format!(
+        "While on, the host allows every permission an agent asks for, and tells it to decide \
+         its own questions and say what it chose. An agent can then do anything the host's user \
+         can on {host}, git push and deleting files included. Off, cards wait for you."
+    );
+    page_card("Settings", None, None, cx)
+        .child(
+            div()
+                .v_flex()
+                .gap_1()
+                .child(
+                    div().h_flex().child(
+                        div().flex_none().cursor_pointer().child(
+                            onehand_ui::toggle("host-bypass", on)
+                                .label("Answer cards on the host")
+                                .on_click(cx.listener(|pane, on: &bool, window, cx| {
+                                    pane.set_host_bypass(*on, window, cx)
+                                })),
+                        ),
+                    ),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(cost),
+                ),
+        )
+        .into_any_element()
+}
+
+impl ChatPane {
+    /// Turn the host's answering of the page folder's cards on or off. Shown
+    /// at once; the host's answer is what stays, and a failure puts the switch
+    /// back and says why.
+    fn set_host_bypass(&mut self, on: bool, window: &mut gpui::Window, cx: &mut Context<Self>) {
+        let Some(project) = self.empty.as_mut() else {
+            return;
+        };
+        let (Some(host), Some(was)) = (project.host.clone(), project.bypass) else {
+            return;
+        };
+        project.bypass = Some(on);
+        cx.notify();
+        let (path, asked) = (project.path.clone(), project.asked);
+        let attaching = crate::hosts::conn(cx, &host);
+        cx.spawn_in(window, async move |pane, cx| {
+            let set = match attaching.await {
+                Ok(conn) => {
+                    let at = path.clone();
+                    cx.update(|_, cx| {
+                        crate::hosts::on_runtime(cx, async move { conn.set_bypass(&at, on).await })
+                    })
+                    .map_err(|e| e.to_string())?
+                    .await
+                    .map_err(|e| e.to_string())
+                }
+                Err(
+                    HostFailure::Other(why) | HostFailure::Refused(why) | HostFailure::Taken(why),
+                ) => Err(why),
+                Err(HostFailure::Busy { host, .. }) => {
+                    Err(format!("{host} is waiting for its sessions to finish"))
+                }
+            };
+            pane.update_in(cx, |pane, window, cx| {
+                let Some(project) = pane
+                    .empty
+                    .as_mut()
+                    .filter(|project| project.asked == asked && project.path == path)
+                else {
+                    return;
+                };
+                project.bypass = Some(set.as_ref().copied().unwrap_or(was));
+                if let Err(why) = set {
+                    gpui_component::WindowExt::push_notification(
+                        window,
+                        onehand_ui::toast::failed(&format!("Changing the switch on {host}"), why),
+                        cx,
+                    );
+                }
+                cx.notify();
+            })
+            .map_err(|e| e.to_string())
+        })
+        .detach();
+    }
+}
+
 pub(super) fn refresh(host: &HostName, listing: bool, cx: &mut Context<ChatPane>) -> AnyElement {
     crate::controls::action("host-sessions-refresh")
         .tall_icon()

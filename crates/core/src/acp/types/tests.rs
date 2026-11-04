@@ -228,7 +228,11 @@ fn permission_with(options: &[(&str, &str)]) -> PermissionRequest {
 
 #[test]
 fn a_permission_is_allowed_once_before_always() {
-    let req = permission_with(&[("r", "reject_once"), ("a", "allow_always"), ("o", "allow_once")]);
+    let req = permission_with(&[
+        ("r", "reject_once"),
+        ("a", "allow_always"),
+        ("o", "allow_once"),
+    ]);
     assert!(matches!(req.bypass_answer(),
         Some(AcpRequest::PermissionResponse { option_id: Some(id), .. }) if id == "o"));
     let req = permission_with(&[("r", "reject_once"), ("a", "allow_always")]);

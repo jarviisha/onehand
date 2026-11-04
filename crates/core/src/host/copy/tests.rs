@@ -204,7 +204,7 @@ fn an_answered_card_reads_as_the_card_then_its_echo() {
         outcome: crate::acp::ElicitOutcome::Decline,
     };
     let events = as_event(Entry::Answered {
-        card: Some(card),
+        card: Some(Box::new(card)),
         answer: answer.clone(),
     });
     assert!(matches!(
@@ -213,5 +213,9 @@ fn an_answered_card_reads_as_the_card_then_its_echo() {
     ));
     let events = as_event(Entry::Answered { card: None, answer });
     assert!(matches!(events.as_slice(), [AcpEvent::Echo(_)]));
-    assert!(as_event(Entry::Ready(Readiness { resumed: false, forkable: false })).is_empty());
+    assert!(as_event(Entry::Ready(Readiness {
+        resumed: false,
+        forkable: false
+    }))
+    .is_empty());
 }

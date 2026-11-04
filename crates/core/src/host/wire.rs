@@ -258,7 +258,7 @@ pub enum Entry {
     /// here when it is journaled in the same line, so a laptop takes the two
     /// at once; none when it was journaled earlier, while it waited.
     Answered {
-        card: Option<AcpEvent>,
+        card: Option<Box<AcpEvent>>,
         answer: AcpRequest,
     },
 }

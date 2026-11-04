@@ -360,7 +360,8 @@ impl Hub {
                 .map(|(id, _)| id.clone())
                 .collect();
             for id in waiting {
-                let parked = std::mem::take(&mut self.sessions.get_mut(&id).expect("listed").parked);
+                let parked =
+                    std::mem::take(&mut self.sessions.get_mut(&id).expect("listed").parked);
                 for card in parked {
                     match self.answer(&id, &card) {
                         Some(answer) => self.record(&id, Entry::Answered { card: None, answer }),
@@ -383,7 +384,7 @@ impl Hub {
             Some(answer) => self.record(
                 session,
                 Entry::Answered {
-                    card: Some(card.event()),
+                    card: Some(Box::new(card.event())),
                     answer,
                 },
             ),
@@ -536,13 +537,11 @@ fn end_journal(dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Keep `bypass` whole through a temporary file; its set once written.
+/// Keep `bypass` whole, so a service that stops mid-write reads the last one;
+/// its set once written.
 fn write_bypass(dir: &Path, bypass: &Bypass) -> std::io::Result<BTreeSet<PathBuf>> {
-    let bytes = serde_json::to_vec(bypass).map_err(std::io::Error::other)?;
-    fs::create_dir_all(dir)?;
-    let tmp = dir.join(format!("{BYPASS}.tmp"));
-    fs::write(&tmp, bytes)?;
-    fs::rename(&tmp, dir.join(BYPASS))?;
+    let text = serde_json::to_string(bypass).map_err(std::io::Error::other)?;
+    onehand_core::config::write_atomic(&dir.join(BYPASS), &text)?;
     Ok(bypass.off.clone())
 }
 

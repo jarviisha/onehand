@@ -300,7 +300,7 @@ dragged height kept).
   `~/`), its git line once read over a live attach (none while a local project on the same path
   is in the workspace), and *Refresh* (a quiet icon) before *New session*; under it one box,
   *Sessions on <host>* with its count, in place of *Past conversations*, and neither *Tasks*,
-  *Schedules* nor *Settings*, which are this machine's: a row per session the host keeps in that
+  *Schedules*, which are this machine's: a row per session the host keeps in that
   folder, newest first (its agent, then *started 3m ago* or *started just now*, and *running*, in
   the running ink while mid-turn, or *ended* at the edge), a press attaching to it in the pane, or
   showing the session already attached to it there; capped at 50 with *N more on this host*.
@@ -314,7 +314,12 @@ dragged height kept).
   machine, through the same rows and cap: a muted status line *Not connected to <host>* (with *;
   trying again* while that is so), the failure's words under it in the muted ink, and *Try again*
   (secondary) beside them; with nothing kept for the folder the box says *No sessions kept on this
-  machine for this folder*.
+  machine for this folder*. Under it, once the host has said it over a live attach, the box
+  *Settings* holds one switch, *Answer cards on the host*, and under it, always, in the muted
+  ink: *While on, the host allows every permission an agent asks for, and tells it to decide its
+  own questions and say what it chose. An agent can then do anything the host's user can on
+  <host>, git push and deleting files included. Off, cards wait for you.* The rail marks it
+  neither on nor off.
 - *Workspace overview* shows, under its head (*Overview*), across all projects, the boxes *Waiting
   on you* (runs waiting for an answer or an approval, and sessions waiting, failed, finished or
   lost) and *Working*, then *Projects* as a grid of tiles (not drawn without projects), then the
