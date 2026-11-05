@@ -23,6 +23,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+mod branch;
+pub(crate) use branch::{offload_branch_to, track_branch, update_host};
+
 /// How often an offloaded project whose host holds the code is checked for
 /// being done there, while the host is attached: a session no window shows
 /// sends no turn end here.
@@ -47,6 +50,9 @@ pub(crate) struct Offload {
     pub(crate) moving: Option<Moving>,
     /// Why the last move did not go, in a person's words, until one does.
     pub(crate) failed: Option<String>,
+    /// On a branch: no key and no lock, and `state` is never kept. `Up` is
+    /// the host being updated from here, `Back` its branch being fetched.
+    pub(crate) branch: Option<branch::BranchState>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -59,13 +65,24 @@ impl Offload {
     /// Whether this machine's writers are off: the host holds the code, it is
     /// on its way up, or what was kept has not been read yet.
     pub(crate) fn locked(&self) -> bool {
-        self.moving == Some(Moving::Up) || self.state.as_ref().is_none_or(|s| s.key == Holder::Host)
+        self.branch.is_none()
+            && (self.moving == Some(Moving::Up)
+                || self.state.as_ref().is_none_or(|s| s.key == Holder::Host))
     }
 
     /// Whether the code is this machine's, settled: what *Run here again*
     /// needs.
     pub(crate) fn here(&self) -> bool {
-        self.moving.is_none() && self.state.as_ref().is_some_and(|s| s.key == Holder::Laptop)
+        self.moving.is_none()
+            && (self.branch.is_some()
+                || self.state.as_ref().is_some_and(|s| s.key == Holder::Laptop))
+    }
+
+    /// Whether a prompt to a session of it sends the code up first: this
+    /// machine holds it, or as far as anything here knows, and nothing moves
+    /// it now. Never on a branch, whose host works on what it has.
+    pub(crate) fn sends_up(&self) -> bool {
+        self.branch.is_none() && self.moving.is_none() && !self.locked()
     }
 }
 
@@ -120,7 +137,7 @@ pub(crate) fn sending_line_for(cx: &App, path: &Path) -> String {
 /// as anything here knows, and nothing else moves it now. Claimed at once, so
 /// a second press waits on this send rather than starting one of its own.
 pub(crate) fn claim_send(cx: &mut App, path: &Path) -> bool {
-    if !get(cx, path).is_some_and(|o| o.moving.is_none() && !o.locked()) {
+    if !get(cx, path).is_some_and(Offload::sends_up) {
         return false;
     }
     cx.update_global::<Offloads, _>(|all, _| {
@@ -138,22 +155,18 @@ pub(crate) fn track(cx: &mut App, path: PathBuf, host: HostName, state: Option<O
     if get(cx, &path).is_some() && state.is_none() {
         return;
     }
-    let first = cx.default_global::<Offloads>()._poll.is_none();
-    let polling = first.then(|| cx.spawn(async move |cx| poll(cx).await));
     let read = state.is_none();
-    let offloads = cx.global_mut::<Offloads>();
-    offloads.roots.insert(
+    keep(
+        cx,
         path.clone(),
         Offload {
             host,
             state,
             moving: None,
             failed: None,
+            branch: None,
         },
     );
-    if polling.is_some() {
-        offloads._poll = polling;
-    }
     if !read {
         return;
     }
@@ -177,6 +190,17 @@ pub(crate) fn track(cx: &mut App, path: PathBuf, host: HostName, state: Option<O
         });
     })
     .detach();
+}
+
+/// Keep `o` for `path`, starting the poll with the first one kept.
+fn keep(cx: &mut App, path: PathBuf, o: Offload) {
+    let first = cx.default_global::<Offloads>()._poll.is_none();
+    let polling = first.then(|| cx.spawn(async move |cx| poll(cx).await));
+    let offloads = cx.global_mut::<Offloads>();
+    offloads.roots.insert(path, o);
+    if polling.is_some() {
+        offloads._poll = polling;
+    }
 }
 
 /// Stop keeping `path`: it runs here again, or left the workspace.
@@ -629,33 +653,40 @@ async fn bring_back(
 
 /// Check `path` now, as a turn of a session on it ends.
 pub(crate) fn check_soon(cx: &mut App, path: PathBuf) {
-    if get(cx, &path).is_none() {
+    let Some(o) = get(cx, &path) else {
         return;
+    };
+    match o.branch.is_some() {
+        true => cx.spawn(async move |cx| branch::refresh(cx, path).await),
+        false => cx.spawn(async move |cx| check_back(cx, path).await),
     }
-    cx.spawn(async move |cx| check_back(cx, path).await)
-        .detach();
+    .detach();
 }
 
 /// Every [`OFFLOAD_POLL`], each folder whose host holds the code is checked,
-/// while the host is attached.
+/// and each one on a branch has its branch fetched if it moved, while the
+/// host is attached: an attach that lands is caught up with by the next.
 async fn poll(cx: &mut AsyncApp) {
     loop {
         cx.background_executor().timer(OFFLOAD_POLL).await;
-        let due: Vec<PathBuf> = cx.update(|cx| {
+        let due: Vec<(PathBuf, bool)> = cx.update(|cx| {
             cx.try_global::<Offloads>().map_or_else(Vec::new, |all| {
                 all.roots
                     .iter()
                     .filter(|(_, o)| {
-                        o.moving.is_none()
-                            && o.state.as_ref().is_some_and(|s| s.key == Holder::Host)
-                            && hosts::live(cx, &o.host).is_some()
+                        let due = o.branch.is_some()
+                            || o.state.as_ref().is_some_and(|s| s.key == Holder::Host);
+                        o.moving.is_none() && due && hosts::live(cx, &o.host).is_some()
                     })
-                    .map(|(path, _)| path.clone())
+                    .map(|(path, o)| (path.clone(), o.branch.is_some()))
                     .collect()
             })
         });
-        for path in due {
-            check_back(cx, path).await;
+        for (path, on_branch) in due {
+            match on_branch {
+                true => branch::refresh(cx, path).await,
+                false => check_back(cx, path).await,
+            }
         }
     }
 }
@@ -672,6 +703,7 @@ mod tests {
             state: key.map(fresh),
             moving,
             failed: None,
+            branch: None,
         }
     }
 
@@ -688,6 +720,24 @@ mod tests {
         assert!(kept(Some(Holder::Laptop), None).here());
         assert!(!kept(Some(Holder::Laptop), Some(Moving::Up)).here());
         assert!(!kept(Some(Holder::Host), None).here());
+    }
+
+    /// On a branch nothing here is ever locked or sent up before a prompt,
+    /// whatever was kept; it runs here again whenever nothing moves it.
+    #[test]
+    fn a_branch_is_never_locked() {
+        let on_branch = |moving| Offload {
+            branch: Some(super::branch::BranchState {
+                name: "onehand/box".into(),
+                ahead: None,
+            }),
+            ..kept(None, moving)
+        };
+        assert!(!on_branch(None).locked());
+        assert!(!on_branch(Some(Moving::Up)).locked());
+        assert!(on_branch(None).here());
+        assert!(!on_branch(Some(Moving::Back)).here());
+        assert!(!on_branch(None).sends_up());
     }
 
     #[test]

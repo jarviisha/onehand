@@ -393,21 +393,24 @@ impl Shell {
     /// Keep every offloaded root of this window, and tell the Workbench and
     /// the terminal which folders are locked; only when that changed.
     pub(super) fn sync_offload(&mut self, cx: &mut Context<Self>) {
-        let kept: Vec<_> = self
+        let kept: Vec<(PathBuf, Offloaded)> = self
             .window
             .workspace
             .roots
             .iter()
-            .filter_map(|r| Some((r.path.clone(), r.offload.as_ref()?.host.clone())))
+            .filter_map(|r| Some((r.path.clone(), r.offload.clone()?)))
             .collect();
         let offloaded: HashMap<PathBuf, String> = kept
             .iter()
-            .map(|(path, host)| (path.clone(), host.0.clone()))
+            .map(|(path, on)| (path.clone(), on.host.0.clone()))
             .collect();
         self.workbench
             .update(cx, |panel, cx| panel.set_offloaded(&offloaded, cx));
-        for (path, host) in kept {
-            offload::track(cx, path, host, None);
+        for (path, on) in kept {
+            match on.branch {
+                Some(branch) => offload::track_branch(cx, path, on.host, branch),
+                None => offload::track(cx, path, on.host, None),
+            }
         }
         let locks: HashMap<PathBuf, String> = offload::lock_lines(cx)
             .into_iter()
