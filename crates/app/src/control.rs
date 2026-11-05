@@ -391,7 +391,7 @@ fn perform_now(
             && control::pick_project(&hosted, named).is_ok()
         {
             return Err(format!(
-                "{named} is on a host; onehand's tools do not reach it yet"
+                "{named} runs its sessions on a host; onehand's tools do not reach it yet"
             ));
         }
     }

@@ -92,9 +92,17 @@ fn an_update_merges_and_a_conflict_leaves_the_branch_as_it_was() {
     let third = push(&laptop, &mirror);
     let why = update_blocking(&mirror, BRANCH, &third).unwrap_err();
     assert!(why.contains("conflict") && why.contains("a.txt"), "{why}");
+    assert!(why.ends_with("the host's branch is as it was"), "{why}");
     assert_eq!(head_blocking(&mirror, BRANCH), Some(before));
     assert!(!mirror.join(".git/MERGE_HEAD").exists());
     assert_eq!(run_git(&mirror, &["status", "--porcelain"]), "");
+    // Work left uncommitted goes onto the branch first, and the refusal says so.
+    commit_here(&mirror, "a.txt", "host's again\n");
+    fs::write(mirror.join("left.txt"), "left\n").unwrap();
+    commit_here(&laptop, "a.txt", "laptop's again\n");
+    let fourth = push(&laptop, &mirror);
+    let why = update_blocking(&mirror, BRANCH, &fourth).unwrap_err();
+    assert!(why.ends_with("the branch is as it was after that"), "{why}");
 }
 
 #[test]
