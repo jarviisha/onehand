@@ -54,6 +54,11 @@ pub(crate) use workspace::ellipsize_front;
 /// name.
 const INDENT: Rems = rems(1. + 0.5);
 
+/// How far left of a worker's row the rule tying it to its lead runs: under
+/// the middle of the lead's mark, which the row's inset and half the mark's
+/// slot put that far back from the worker's own edge.
+const LEAD_RULE: Rems = rems(0.5);
+
 /// How often a session's age is said again: the finest unit it is said in.
 const AGE_TICK: std::time::Duration = std::time::Duration::from_secs(60);
 
@@ -175,7 +180,7 @@ impl List {
     fn of(shell: &Shell, cx: &App) -> Self {
         let workspace = &shell.workspace_window().workspace;
         let roots = &workspace.roots;
-        let items: Vec<Item> = roots
+        let mut items: Vec<Item> = roots
             .iter()
             .enumerate()
             .flat_map(|(root, project)| {
@@ -202,15 +207,16 @@ impl List {
                     in_turn: row.in_turn,
                     lead: crate::control::lead_of(s.uid),
                     waiting: 0,
+                    under: None,
                     host: roots[root].session_host().map(|(host, _)| host.to_string()),
                 }
             })
             .collect();
         let waiting = model::attention_count(&items);
-        let had: Vec<usize> = items.iter().map(|item| item.root).collect();
-        let items = model::fold_workers(items);
-        // A worktree holding only hidden workers is theirs, not the person's.
-        let emptied = model::emptied(&had, &items);
+        model::nest_workers(&mut items);
+        // A worktree holding only workers drawn under their lead is theirs,
+        // not the person's.
+        let emptied = model::emptied(&items);
         let names: Vec<&str> = roots.iter().map(|root| root.label.as_str()).collect();
         let order: Vec<usize> = workspace
             .display_order()
@@ -291,9 +297,10 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
                 },
                 cx,
             ),
-            Row::Session { item, flat } => {
+            Row::Session { item, flat, nested } => {
                 let it = &list.items[item];
-                let who = match flat {
+                // A worker's project is its lead's tree, so it names its agent.
+                let who = match flat && !nested {
                     true => workspace.roots[it.root].label.as_str(),
                     false => it.agent.as_str(),
                 };
@@ -301,6 +308,7 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
                     it,
                     who,
                     flat,
+                    nested,
                     session::Mark {
                         shown: shown == Some((it.root, it.session)),
                         at: keyed && state.cursor == Some(Cursor::Session(it.uid)),
