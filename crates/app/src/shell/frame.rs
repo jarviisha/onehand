@@ -79,8 +79,6 @@ const MENUS: &[(&str, &[Item])] = &[
     (
         "Session",
         &[
-            Some(("show_workers", "Show the workers")),
-            None,
             Some((RESTART, "Restart the agent")),
             Some((CLOSE_SESSION, "Close the session")),
         ],

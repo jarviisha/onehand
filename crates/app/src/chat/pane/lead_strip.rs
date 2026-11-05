@@ -5,13 +5,24 @@
 //! under the lead in the rail would show it.
 
 use super::over_composer::over_composer;
-use super::workers::urgency;
 use super::{ChatPane, ChatPaneEvent, SessionSignal};
+use crate::control::Worker;
 use gpui::{
-    Context, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement as _,
+    App, Context, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement as _,
     Styled, div,
 };
 use gpui_component::{ActiveTheme as _, StyledExt as _};
+use std::cmp::Ordering;
+
+/// Which of two states is the more urgent, by the signal's own order; no
+/// state at all is the least.
+fn urgency(a: Option<SessionSignal>, b: Option<SessionSignal>) -> Ordering {
+    match a == b {
+        true => Ordering::Equal,
+        false if SessionSignal::most_urgent(a.into_iter().chain(b)) == a => Ordering::Less,
+        false => Ordering::Greater,
+    }
+}
 
 /// One count per state that has any, most urgent first.
 fn summary(signals: &[Option<SessionSignal>]) -> Vec<(Option<SessionSignal>, usize)> {
@@ -37,6 +48,29 @@ fn waiting_first(workers: &[(u64, Option<SessionSignal>)]) -> Option<u64> {
 }
 
 impl ChatPane {
+    /// The workers of the lead on screen that this pane holds, opening or
+    /// open, in the order the lead opened them.
+    fn lead_workers(&self) -> Vec<Worker> {
+        let Some(lead) = self.active else {
+            return Vec::new();
+        };
+        crate::control::workers_of(lead)
+            .into_iter()
+            .filter(|worker| self.conversations.contains_key(&worker.uid))
+            .collect()
+    }
+
+    /// What a worker, or the lead, is called: as the rail names it.
+    pub(super) fn worker_name(&self, uid: u64, cx: &App) -> String {
+        let agent = self
+            .conversations
+            .get(&uid)
+            .map(|conv| conv.spec.name.clone())
+            .unwrap_or_default();
+        let title = self.title_for(uid, cx);
+        crate::rail::session_label(title.as_deref(), &agent).to_string()
+    }
+
     /// The strip over the lead's composer, while the lead on screen has
     /// workers.
     pub(super) fn lead_strip(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {

@@ -4,7 +4,7 @@ use super::{
     ToggleMaximize, ToggleRail, ToggleTerminal, ToggleWorkbench, ToggleWorkbenchVisibility, ZoomIn,
     ZoomOut, ZoomReset,
 };
-use super::{FocusedPanel, SelectSession, Shell, ShowWorkers, ZoomStep};
+use super::{FocusedPanel, SelectSession, Shell, ZoomStep};
 use crate::state::Shared;
 use crate::workbench::{EDITOR_MODE, MARKDOWN_MODE};
 use gpui::{
@@ -21,7 +21,6 @@ impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.apply_presentation(window, cx);
         self.apply_terminal_height(window, cx);
-        self.follow_workers(window, cx);
         self.sync_docks_open(cx);
         // A panel maximized in the app direction is the whole window: the rail
         // is not rendered at all rather than rendered at zero width, so
@@ -80,17 +79,6 @@ impl Render for Shell {
             .on_action(
                 cx.listener(|shell: &mut Self, _: &OpenSettings, window, cx| {
                     shell.open_settings(window, cx);
-                }),
-            )
-            .on_action(
-                cx.listener(|shell: &mut Self, _: &ShowWorkers, window, cx| {
-                    shell.show_workers(None, false, window, cx);
-                    if shell.workers_open(cx) {
-                        shell.chat.update(cx, |pane, cx| {
-                            pane.workers_shown(cx);
-                            pane.focus_workers_list(window, cx);
-                        });
-                    }
                 }),
             )
             .on_action(cx.listener(

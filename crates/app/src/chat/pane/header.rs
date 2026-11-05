@@ -76,8 +76,7 @@ impl ChatPane {
     /// control sits on the side of what it acts on: the way back to a hidden
     /// rail at the row's left edge, the side the rail returns to, and the
     /// right-hand end reading outward from the name — the past conversations
-    /// and closing the session, which act on the session the name names, then
-    /// the workers' toggle for the region beside the conversation. The dots are
+    /// and closing the session, which act on the session the name names. The dots are
     /// the row's one menu mark, and everything behind them is something done
     /// to the conversation the name beside them is.
     fn header_row(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -190,8 +189,7 @@ impl ChatPane {
             // Only while there is a session to end, and *before* the docks
             // rather than last: the cluster reads outward from the name by
             // what each control is about -- this and the past conversations
-            // act on the session the name names, the workers' toggle on the
-            // region beside it -- and the row's far edge, where a pointer drifts, is
+            // act on the session the name names -- and the row's far edge, where a pointer drifts, is
             // the wrong seat for the one control that ends something. It keeps the
             // conversation -- the transcript is written at the end of every turn
             // and closing costs nothing that is not already on disk -- which is
@@ -214,11 +212,6 @@ impl ChatPane {
                             cx.emit(ChatPaneEvent::CloseSession);
                         })),
                 )
-            })
-            // The workers' region, which takes the Workbench's place. The
-            // docks' own toggles are the title bar's.
-            .when(self.page.is_none(), |row| {
-                row.children(self.workers_control(cx))
             })
     }
 

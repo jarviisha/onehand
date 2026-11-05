@@ -15,7 +15,7 @@ the menu gives it and with the key the keymap binds: *File* holds *New session*,
 this project…*, *Save the open file* and *Open Settings*; *View* the rail's, the Workbench's and
 the terminal's toggles, *Open Editor*, *Open Markdown*, *Open Neovim*, maximizing the focused panel
 and its zoom; *Go* the search, the composer, Tasks, Schedules and stepping through sessions;
-*Session* *Show the workers*, *Restart the agent* and *Close the session*. A menu offers nothing no
+*Session* *Restart the agent* and *Close the session*. A menu offers nothing no
 key reaches. Centred in the room left and narrowing with it, the search over session
 titles and project names, the library's edged field at `.short()` with its key's hint (`Ctrl+K`
 outside a terminal, showing a hidden rail); what it narrows is the rail's list, so typing into it
@@ -137,9 +137,7 @@ one item and never the turn, 12 listed and then *N more*; when an item ends, the
 notice of how and after how long: *Background work finished after 2m 14s: npm test*, an error when it
 failed, *interrupted* when the agent went away first); past conversations (not on a host session,
 whose conversations are not kept on this machine) and *Close session* (only while a session
-shows); last, while the session on screen leads workers, its workers, a
-warning dot on it while one waits on the person and the region is closed. The docks' toggles are
-the title bar's. On the overview, Tasks, Issues,
+shows). The docks' toggles are the title bar's. On the overview, Tasks, Issues,
 Workflows, Schedules and Settings, which name themselves in their head, it carries no name; none of these has a dots menu. As the pane narrows, the name gives way
 first, down to a minimum. Without a session it carries no name, the page naming the project, but
 keeps the project's dots menu, holding the project's actions but *New session* and *Open
@@ -210,7 +208,7 @@ leads workers, the lead's strip stands on the card, narrower than it, one line a
 (a waiting card's foot then runs under the strip rather than the card): *N
 workers*, a count per state that has any, most urgent first, in its mark and ink, and at the end,
 in the warning ink, *<name> needs you* for the most urgent worker waiting on the person, when one
-does. It stays while the workers' region shows. Pressed, the most urgent worker shows in the pane.
+does. Pressed, the most urgent worker shows in the pane.
 While the session on screen is a worker leading none, a band stands there on the same surface instead: *<lead>
 is coordinating this worker* and *Back to lead*, which shows the lead (*Its lead* and no button
 while the lead is a session of another window); once the person has sent the worker a prompt, *You hold this
@@ -270,38 +268,6 @@ dragged height kept).
   has this project's code until its sessions finish; edits are off meanwhile*. A Files row's
   right-click menu holds *Send to <host>*, whoever holds the code; a toast says *Sent <name> to
   <host>* or why not.
-- **The workers' region**, in the Workbench's place and never beside it: opening one puts the
-  other away, a caret in the one leaving going to the lead's composer and the one arriving taking
-  none; hiding the region gives the Workbench back as it was, and while it shows the layout saves
-  the Workbench's state, not the region's. It shows the workers of the lead on screen, follows the lead on screen, and closes on a
-  session without workers or a page. Its strip: *Workers · N*, maximize, hide.
-  - **The list**, pinned under the strip and never scrolled away: a row per worker, at most four
-    (the cap): its mark, name, state, age, the lead's last turn and its background count, and
-    under them what it waits on in the warning ink, else what it is doing, *Stop* on one whose
-    turn runs; the picked one in the selected step. Ordered by urgency
-    (failed or disconnected, needs input, running or connecting, done, idle; ties as the lead
-    opened them) when the region opens and when a worker is picked by a press or from elsewhere;
-    in between, and while `↑`/`↓` walk it, a row that changes state changes in place and does not
-    move. A worker starting to wait moves nothing, picks
-    nothing and opens nothing: its row turns to *Needs input* with the command under it.
-  - **The picked worker's detail** fills the rest, the most urgent picked when the region opens.
-    Its head: its state mark (a spinner while it connects, with nothing under it yet), name, the
-    state's word in its ink, its folder's last component (the whole path on hover), *held by you*
-    while the person holds it, *Write to <name>…* (the name up to its first ` · `), *Stop* while
-    a turn runs, and `⋯` (*Give back to the lead* while offered, *Send the last prompt again* after
-    a failure, *Close*). Under it the oldest card it waits on, the ones behind peeking over it and its head saying how
-    many wait, bounded by
-    the detail's own height, then its whole transcript,
-    scrolling, following the newest output. No composer until *Write to …*: then one at the foot,
-    with *Send*, *Stop* and *Queue* and nothing else; sending or `Esc` closes it, the draft kept.
-  - **The keys.** Opened by the pointer the region takes no caret. *Show the workers*
-    (`Ctrl+Shift+Y`) opens it with the caret on the list: `↑`/`↓` pick the row above or below,
-    `Enter` opens *Write to …*, `Esc` gives the caret to the lead's composer. While the caret is
-    in the region, `Alt+Y`/`Alt+A`/`Alt+N` answer the picked worker's card, and nothing when it
-    waits on none.
-  - A caret in a composer that leaves (closed, its lead gone) goes to the lead's composer first. A
-    worker asked for anywhere (its row, the lead's strip, a toast, the remote bridge) shows itself
-    in the pane, as any session; the region then closes, a worker leading none. Not saved.
 
 ## Pages without a session
 
