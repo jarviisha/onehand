@@ -11,10 +11,6 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   on some surfaces they land on, held at `HUE_INK` in `crates/app/src/theme.rs`. For a control:
   the focus ring, the library's grey, at about 2.5 on the light page. Fixing them means changing
   the library's values, which this palette does not do.
-- **The newest terminal tab is not scrolled into view.** Past the width of the strip a new shell can
-  be the active one with its tab off the end of the list: the grid is right, the strip is behind.
-  Fixing it means a `ScrollHandle` on the panel, and `scroll_to_item` on a tab that has never been
-  painted needs deferring past the frame that first draws it.
 - **Some window behaviour has no automated test**: Settings' drafts kept across leaving the page,
   a failed write said once, and the keyboard handed back when a dialog closes. The app runs
   window tests through gpui's harness (the terminal dock, the Workbench panel), but none covers

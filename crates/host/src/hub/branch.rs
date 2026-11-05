@@ -101,7 +101,7 @@ pub(crate) fn update_blocking(mirror: &Path, branch: &str, commit: &str) -> Resu
              left as it is"
         ));
     }
-    commit_left(mirror)?;
+    let left = commit_left(mirror)?;
     let merged = run(mirror, &["merge", "-q", "--no-edit", commit])?;
     if merged.status.success() {
         return Ok(());
@@ -122,9 +122,18 @@ pub(crate) fn update_blocking(mirror: &Path, branch: &str, commit: &str) -> Resu
     if files.len() > CONFLICTS_NAMED {
         named.push_str(&format!(" and {} more", files.len() - CONFLICTS_NAMED));
     }
+    // What was left uncommitted went onto the branch before the merge, and
+    // stays there: said, so "as it was" never hides a new commit.
+    let branch_now = match left {
+        true => {
+            "the work left on the host's branch was committed first, and the branch is as \
+                 it was after that"
+        }
+        false => "the host's branch is as it was",
+    };
     Err(format!(
-        "Merging this machine's commit into {branch} stopped on a conflict in: {named}; the \
-         host's branch is as it was"
+        "Merging this machine's commit into {branch} stopped on a conflict in: {named}; \
+         {branch_now}"
     ))
 }
 

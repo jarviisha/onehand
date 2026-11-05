@@ -25,8 +25,8 @@ use crate::controls::Short as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
-    div,
+    IntoElement, ParentElement, Render, ScrollHandle, SharedString, StatefulInteractiveElement,
+    Styled, Window, div,
 };
 use gpui_base::dock::{Panel, PanelEvent};
 use gpui_component::button::ButtonVariants as _;
@@ -157,6 +157,11 @@ pub struct TerminalPanel {
     watching: bool,
     /// The folders here nothing may be typed into now, with why.
     locked: HashMap<PathBuf, String>,
+    /// The tab strip's scroll, and the project, tab and count it was last
+    /// scrolled for: a new or chosen shell is brought into view once, so
+    /// the strip stays where the pointer scrolled it until the next.
+    tab_scroll: ScrollHandle,
+    tab_shown: Option<(Home, usize, usize)>,
 }
 
 /// How often the watch asks the shells whether a command is in front.
@@ -180,6 +185,8 @@ impl TerminalPanel {
             maximized: false,
             running_seen: false,
             watching: false,
+            tab_scroll: ScrollHandle::new(),
+            tab_shown: None,
             locked: HashMap::new(),
         })
     }
@@ -612,6 +619,16 @@ impl TerminalPanel {
             return onehand_ui::hint("No project selected", cx);
         }
 
+        let (active, count) = self
+            .active_set()
+            .map_or((0, 0), |set| (set.active, set.tabs.len()));
+        // Kept until a frame has laid the tab out, so a tab drawn for the
+        // first time is reached a frame later.
+        let shown = self.root.clone().map(|root| (root, active, count));
+        if shown != self.tab_shown {
+            self.tab_scroll.scroll_to_item(active);
+            self.tab_shown = shown;
+        }
         let set = self.active_set().filter(|set| !set.tabs.is_empty());
         let active = set.map_or(0, |set| set.active);
         let body = set
@@ -658,6 +675,7 @@ impl TerminalPanel {
                     .child(
                         div()
                             .id("terminal-tab-list")
+                            .track_scroll(&self.tab_scroll)
                             .h_flex()
                             .flex_1()
                             .min_w_0()

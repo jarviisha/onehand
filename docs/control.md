@@ -90,8 +90,9 @@ answer, and exits.
   drive: a Resume or Retry a person presses later shows, as theirs does. A person still sees the
   toasts the launcher's start shows (queued, over the cap).
 - A project is named by its name or its path. A name two projects share is refused, naming both.
-- **The tools reach only the projects on this machine.** A project on a host is not listed, and a
-  call naming it is refused with `<project> is on a host; onehand's tools do not reach it yet`
+- **The tools reach only the projects whose sessions run on this machine.** A project on a host,
+  or one offloaded to a host, is not listed, and a call naming it is refused with `<project> runs
+  its sessions on a host; onehand's tools do not reach it yet`
   rather than said not to exist ([hosts.md](hosts.md)). A host session's agent is given no token.
 - Every list answers at most 50 lines and ends `… and N more not listed` when it was cut.
 - `open_file` takes an absolute path without `..`, inside the project on screen; another

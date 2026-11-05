@@ -222,7 +222,7 @@ dragged height kept).
   Workbench's: *← Conversation* while it has the area, the modes as tabs
   (Editor, Markdown, Issues, Plugins only where a Claude Code agent is set up when the window
   opens, Neovim; a select under 26rem), maximize, hide. The terminal's:
-  shell tabs (each capped in width, scrolling, so none is left out), `+`, maximize, hide. File
+  shell tabs (each capped in width, scrolling, so none is left out, the chosen one brought into view), `+`, maximize, hide. File
   tabs never shrink: the newest that fit stay, the current one among them, and the older ones
   go into an *N more* menu after them.
 - A list beside its detail (files, documents, issues) only while the dock holds both; else one at a
