@@ -101,12 +101,14 @@ it. What is refused, and how, is under *What a host project does not do*.
 Every attach opens by exchanging builds (`client::attach`):
 
 - **The same build:** attached.
-- **Another build, nothing mid-turn:** the old service is shut down and the attach made again, onto
-  this build. **The host's terminals end with it, unasked:** the build check counts only sessions
-  mid-turn, and a service that exits closes every terminal, so each shell is hung up and takes the
-  command it runs with it.
-- **Another build with sessions mid-turn:** the host is left alone and the attach fails as busy.
-  **The laptop waits for those sessions to go idle**, once per host however many sessions, pages
+- **Another build, nothing mid-turn and no terminal open:** the old service is shut down and the
+  attach made again, onto this build.
+- **Another build with sessions mid-turn or terminals open:** the host is left alone and the
+  attach fails as busy, since a service that exits closes every terminal, hanging up each shell,
+  an idle one included, and the command it runs (the hello's `terms`). **The laptop waits for
+  those sessions to go idle and those terminals to close** (which, since it has no attach to the
+  host meanwhile, it cannot do itself: a terminal closes from a laptop on the host's build, or by
+  its shell exiting), once per host however many sessions, pages
   and forms wait on it (`Waits` in `crates/app/src/hosts.rs`): it attaches again every 15 s
   (`HOST_IDLE_POLL`), and the first attach that lands, which restarts the idle service onto this
   build by itself, ends the wait. An attach that cannot reach the host ends it too, on that
@@ -121,7 +123,9 @@ Every attach opens by exchanging builds (`client::attach`):
   waited (as after a service restart), lists the page again and carries on with the form's *Add*,
   unless that form was put away or added its project since (a form opened again is never added by
   an older wait). Meanwhile each says *Waiting for N sessions on <host> to finish before
-  restarting its host service onto this build*, with *Restart now*: a session as a line in its
+  restarting its host service onto this build* (with terminals, *Waiting for N terminals on
+  <host> to close…*, or *N sessions to finish and N terminals to close on <host>…*), with
+  *Restart now*: a session as a line in its
   transcript (a notice, not a failure), the page and the form in their own places, each only
   while the host is waited on for some. A waiting session is not lost: the rail draws it calm,
   *Waiting for <host>*, never as needing attention, and Restart on it asks the restart question
@@ -129,7 +133,8 @@ Every attach opens by exchanging builds (`client::attach`):
   carries on.
 - **Restart now** asks one question, *Restart the host service on <host>?*, saying that the host
   runs another build of the host service, naming up to five of the mid-turn sessions by when they
-  started (*a session started 3m ago*) and how many more, and that restarting stops them;
+  started (*a session started 3m ago*) and how many more, and how many terminals are open, and
+  that restarting stops the sessions and closes the terminals;
   *Restart* or keep. A yes attaches again and restarts the service whatever is mid-turn only if
   the host is still busy (`client::restart`); that attach landing ends the wait as above. A failed
   restart is said once. A host out of reach ends the wait with its reason, *Could not attach to

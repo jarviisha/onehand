@@ -221,8 +221,8 @@ pub(super) async fn host_events(
                         HostFailure::Other(why)
                         | HostFailure::Refused(why)
                         | HostFailure::Taken(why) => crate::acp::ended(why),
-                        HostFailure::Busy { host, busy } => {
-                            wait(host, busy.len(), session, cx);
+                        HostFailure::Busy { host, busy, terms } => {
+                            wait(host, busy.len(), terms, session, cx);
                             crate::acp::silent()
                         }
                     }
@@ -355,14 +355,20 @@ pub(super) fn connection_lost(closed: bool, taken: bool) -> bool {
     closed && !taken
 }
 
-/// Say on the session that it waits on `host`'s `n` busy sessions, as a
-/// line of its own rather than a failure: once they are done, it is
-/// restarted, and nothing has to be tried again by hand.
-fn wait(host: HostName, n: usize, session: &WeakEntity<ChatSession>, cx: &mut AsyncApp) {
+/// Say on the session that it waits on `host`'s `n` busy sessions and
+/// `terms` open terminals, as a line of its own rather than a failure: once
+/// they are done, it is restarted, and nothing has to be tried again by hand.
+fn wait(
+    host: HostName,
+    n: usize,
+    terms: usize,
+    session: &WeakEntity<ChatSession>,
+    cx: &mut AsyncApp,
+) {
     let _ = session.update(cx, |session, cx| {
         session
             .chat
-            .say_host_wait(crate::hosts::waiting_line(&host, n));
+            .say_host_wait(crate::hosts::waiting_line(&host, n, terms));
         session.host_wait = Some(host);
         cx.emit(ChatEvent::HostBusy);
         cx.emit(ChatEvent::Appended);

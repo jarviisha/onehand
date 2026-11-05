@@ -97,7 +97,7 @@ pub(super) async fn restart_over(
 ) -> Result<HostConn, HostError> {
     let (conn, said) = attach()?;
     let stop = async {
-        let (theirs, _) = hello(&conn, build, true).await?;
+        let (theirs, _, _) = hello(&conn, build, true).await?;
         if theirs == *build {
             return Ok(false);
         }
@@ -110,7 +110,7 @@ pub(super) async fn restart_over(
     let _ = tokio::time::timeout(SHUTDOWN_WAIT, conn.cmds.closed()).await;
     let (conn, said) = attach()?;
     let again = async {
-        let (theirs, _) = hello(&conn, build, true).await?;
+        let (theirs, _, _) = hello(&conn, build, true).await?;
         if theirs == *build {
             Ok(())
         } else {
@@ -177,19 +177,20 @@ pub(super) enum Settled {
     Restarted,
 }
 
-/// Say hello as `build`; a service on another build with nothing mid-turn is
-/// told to shut down, so the next attach starts this one.
+/// Say hello as `build`; a service on another build with nothing mid-turn
+/// and no terminal open is told to shut down, so the next attach starts this
+/// one: a shutdown ends both, so either leaves it alone.
 pub(super) async fn settle(
     conn: &HostConn,
     build: &Build,
     take: bool,
 ) -> Result<Settled, HostError> {
-    let (theirs, busy) = hello(conn, build, take).await?;
+    let (theirs, busy, terms) = hello(conn, build, take).await?;
     if theirs == *build {
         return Ok(Settled::Same);
     }
-    if !busy.is_empty() {
-        return Err(busy_host(theirs, busy));
+    if !busy.is_empty() || terms > 0 {
+        return Err(busy_host(theirs, busy, terms));
     }
     conn.ask_for(Call::Shutdown, |a| a.done).await?;
     Ok(Settled::Restarted)
@@ -202,11 +203,11 @@ pub(super) async fn settle_again(
     build: &Build,
     take: bool,
 ) -> Result<(), HostError> {
-    let (theirs, busy) = hello(conn, build, take).await?;
+    let (theirs, busy, terms) = hello(conn, build, take).await?;
     if theirs == *build {
         Ok(())
-    } else if !busy.is_empty() {
-        Err(busy_host(theirs, busy))
+    } else if !busy.is_empty() || terms > 0 {
+        Err(busy_host(theirs, busy, terms))
     } else {
         Err(HostError::Protocol(format!(
             "the host came back on build {theirs}, not {build}"
@@ -214,13 +215,13 @@ pub(super) async fn settle_again(
     }
 }
 
-/// Say hello as `build`, taking the host or not; the host's build, and its
-/// sessions mid-turn.
+/// Say hello as `build`, taking the host or not; the host's build, its
+/// sessions mid-turn and how many terminals it has open.
 pub(super) async fn hello(
     conn: &HostConn,
     build: &Build,
     take: bool,
-) -> Result<(Build, Vec<HostSession>), HostError> {
+) -> Result<(Build, Vec<HostSession>, usize), HostError> {
     let hello = Call::Hello {
         build: build.clone(),
         take,
@@ -268,7 +269,8 @@ fn run_id() -> String {
     format!("{}-{nanos}", std::process::id())
 }
 
-/// A host on build `build` that was left alone for the sessions in `busy`.
-fn busy_host(build: Build, busy: Vec<HostSession>) -> HostError {
-    HostError::Busy { build, busy }
+/// A host on build `build` that was left alone for the sessions in `busy`
+/// and its `terms` open terminals.
+fn busy_host(build: Build, busy: Vec<HostSession>, terms: usize) -> HostError {
+    HostError::Busy { build, busy, terms }
 }

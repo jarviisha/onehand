@@ -326,8 +326,8 @@ impl ChatPane {
                 Err(
                     HostFailure::Other(why) | HostFailure::Refused(why) | HostFailure::Taken(why),
                 ) => Err(why),
-                Err(HostFailure::Busy { host, .. }) => {
-                    Err(format!("{host} is waiting for its sessions to finish"))
+                Err(HostFailure::Busy { host, busy, terms }) => {
+                    Err(crate::hosts::waiting_line(&host, busy.len(), terms))
                 }
             };
             pane.update_in(cx, |pane, window, cx| {
@@ -409,10 +409,11 @@ pub(super) fn host_sessions(
     let card = page_card(format!("Sessions on {host}"), count, None, cx);
     // How many sessions the host is waited on for: none once the wait has
     // ended and the list is asked again, which reads as attaching.
-    let waited = crate::hosts::busy(cx, host).len();
+    let (waited, terms) = crate::hosts::busy(cx, host);
+    let (waited, terms) = (waited.len(), terms);
     let attaching = match listed {
         None => true,
-        Some(Err(Unlisted::Waiting)) => waited == 0,
+        Some(Err(Unlisted::Waiting)) => waited == 0 && terms == 0,
         Some(Ok(_) | Err(Unlisted::Failed(_) | Unlisted::Away { .. })) => false,
     };
     let card = match listed {
@@ -453,7 +454,7 @@ pub(super) fn host_sessions(
                     Some(why.clone()),
                 ),
                 Unlisted::Waiting => (
-                    crate::hosts::waiting_line(host, waited),
+                    crate::hosts::waiting_line(host, waited, terms),
                     muted,
                     restart_now(host, cx),
                     None,

@@ -52,10 +52,12 @@ pub enum HostError {
     Unreachable(String),
     /// The host is not one this build can run on (`uname -sm` said this).
     Unsupported(String),
-    /// The host runs another build, with these sessions mid-turn; it was left alone.
+    /// The host runs another build, with these sessions mid-turn or `terms`
+    /// terminals open, which a restart would end; it was left alone.
     Busy {
         build: Build,
         busy: Vec<HostSession>,
+        terms: usize,
     },
     /// The host refused a call or answered something unexpected, or the
     /// binary to install could not be read here.
@@ -99,7 +101,7 @@ const ASK_WAIT: Duration = Duration::from_secs(30);
 /// What an answer carries, in the slot of its kind; every other slot is empty.
 /// A call takes the slot it expects, and finds any other answer unexpected.
 struct Answer {
-    welcome: Option<(Build, Vec<HostSession>)>,
+    welcome: Option<(Build, Vec<HostSession>, usize)>,
     sessions: Option<Vec<SessionInfo>>,
     opened: Option<HostSession>,
     done: Option<()>,
@@ -138,7 +140,7 @@ impl Answer {
             mirror_files: None,
         };
         match reply {
-            Reply::Welcome { build, busy } => answer.welcome = Some((build, busy)),
+            Reply::Welcome { build, busy, terms } => answer.welcome = Some((build, busy, terms)),
             Reply::Sessions(sessions) => answer.sessions = Some(sessions),
             Reply::Opened { session } => answer.opened = Some(session),
             Reply::Done => answer.done = Some(()),

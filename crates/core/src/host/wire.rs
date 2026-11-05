@@ -201,10 +201,13 @@ pub enum Call {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Reply {
-    /// `busy` holds the ids of the sessions that are mid-turn.
+    /// `busy` holds the ids of the sessions that are mid-turn, `terms` how
+    /// many terminals are open: a restart ends both.
     Welcome {
         build: Build,
         busy: Vec<HostSession>,
+        #[serde(default)]
+        terms: usize,
     },
     Sessions(Vec<SessionInfo>),
     Opened {

@@ -142,7 +142,7 @@ async fn a_watch_is_answered_after_its_replay_and_a_second_attach_kicks_the_firs
     assert!(first.line().await.is_none());
     assert!(matches!(
         second.line().await,
-        Some(FromHost::Answer { id: 1, result: Ok(Reply::Welcome { build, busy }) })
+        Some(FromHost::Answer { id: 1, result: Ok(Reply::Welcome { build, busy, terms: 0 }) })
             if build.0 == "b1" && busy.is_empty()
     ));
     service.abort();
@@ -510,5 +510,29 @@ async fn the_switch_is_on_until_set_off() {
     assert!(!ask(2, Some(false)));
     assert!(!ask(3, None));
     assert!(ask(4, Some(true)));
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// The hello says how many terminals are open, since a restart ends them.
+#[tokio::test]
+async fn the_hello_counts_the_open_terminals() {
+    let dir = std::env::temp_dir().join(format!("onehand-hello-terms-{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let (hub, terms) = (hub_in(&dir), terms_in());
+    Terms::open(&terms, dir.clone(), 80, 24).unwrap();
+    let (out, mut lines) = mpsc::unbounded_channel();
+    let ask = serde_json::to_string(&Question {
+        id: 1,
+        call: hello(true, "one"),
+    })
+    .unwrap();
+    assert!(!answer(&hub, &terms, &Build("b1".into()), &out, &ask));
+    assert!(matches!(
+        lines.try_recv(),
+        Ok(FromHost::Answer {
+            id: 1,
+            result: Ok(Reply::Welcome { terms: 1, .. })
+        })
+    ));
     let _ = fs::remove_dir_all(&dir);
 }

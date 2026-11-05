@@ -235,12 +235,21 @@ fn a_busy_host_is_asked_again_every_fifteen_seconds() {
 fn the_waiting_line_counts_the_sessions_and_names_the_host() {
     let host = HostName("vps".into());
     assert_eq!(
-        waiting_line(&host, 1),
+        waiting_line(&host, 1, 0),
         "Waiting for 1 session on vps to finish before restarting its host service onto this build"
     );
     assert_eq!(
-        waiting_line(&host, 3),
+        waiting_line(&host, 3, 0),
         "Waiting for 3 sessions on vps to finish before restarting its host service onto this build"
+    );
+    assert_eq!(
+        waiting_line(&host, 0, 1),
+        "Waiting for 1 terminal on vps to close before restarting its host service onto this build"
+    );
+    assert_eq!(
+        waiting_line(&host, 2, 3),
+        "Waiting for 2 sessions to finish and 3 terminals to close on vps before restarting its \
+         host service onto this build"
     );
 }
 
@@ -248,6 +257,7 @@ fn busy(host: &HostName, ids: &[&str]) -> Result<(), HostFailure> {
     Err(HostFailure::Busy {
         host: host.clone(),
         busy: ids.iter().map(|id| HostSession((*id).into())).collect(),
+        terms: 0,
     })
 }
 
@@ -264,7 +274,7 @@ fn a_busy_host_waits_until_an_attach_lands() {
     waits.heard(&host, &busy(&host, &["1-1"]), false);
     waits.heard(&host, &busy(&host, &["1-1", "2-1"]), false);
     let (a, b) = (waits.listen(&host).unwrap(), waits.listen(&host).unwrap());
-    assert_eq!(waits.busy(&host).len(), 2, "the latest sessions said");
+    assert_eq!(waits.busy(&host).0.len(), 2, "the latest sessions said");
     assert!(a.ptr_eq(&b), "one wait");
     assert!(a.clone().now_or_never().is_none());
     // One poll per wait.
@@ -275,7 +285,7 @@ fn a_busy_host_waits_until_an_attach_lands() {
     assert_eq!(a.now_or_never(), Some(Ok(Ok(()))));
     assert_eq!(b.now_or_never(), Some(Ok(Ok(()))));
     assert!(waits.listen(&host).is_none(), "released once");
-    assert!(waits.busy(&host).is_empty());
+    assert!(waits.busy(&host).0.is_empty());
     // A later busy is a new wait, polled anew.
     waits.heard(&host, &busy(&host, &["3-1"]), false);
     assert!(waits.listen(&host).is_some());
@@ -328,7 +338,7 @@ fn the_wait_ends_with_its_last_listener() {
     assert!(waits.polling(&host, &b), "one still listens");
     waits.leave(&host, &b);
     assert!(!waits.polling(&host, &b), "no poll");
-    assert!(waits.busy(&host).is_empty(), "the wait is gone");
+    assert!(waits.busy(&host).0.is_empty(), "the wait is gone");
     assert!(waits.listen(&host).is_none());
     // A leave for a wait already gone touches the next one not at all.
     waits.heard(&host, &busy(&host, &["2-1"]), false);

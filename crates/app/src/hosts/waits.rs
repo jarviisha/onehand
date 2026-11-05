@@ -47,7 +47,8 @@ pub(crate) const HOST_UNREACHABLE_POLLS: u32 = 2;
 /// for lost ones to be attached again.
 #[derive(Default)]
 pub(super) struct Waits {
-    busy: BTreeMap<HostName, Vec<HostSession>>,
+    /// The sessions mid-turn, and how many terminals are open.
+    busy: BTreeMap<HostName, (Vec<HostSession>, usize)>,
     waits: BTreeMap<HostName, Wait>,
     states: BTreeMap<HostName, HostState>,
     backs: BTreeMap<HostName, Wait>,
@@ -99,10 +100,11 @@ impl Waits {
                 end_in(&mut self.backs, host, Err(why.clone()));
                 self.set(host, HostState::Taken)
             }
-            Err(HostFailure::Busy { busy, .. }) => {
+            Err(HostFailure::Busy { busy, terms, .. }) => {
                 let changed = self.set(host, HostState::Attaching);
-                end_in(&mut self.backs, host, Err(waiting_line(host, busy.len())));
-                self.busy.insert(host.clone(), busy.clone());
+                let line = waiting_line(host, busy.len(), *terms);
+                end_in(&mut self.backs, host, Err(line));
+                self.busy.insert(host.clone(), (busy.clone(), *terms));
                 if let Some(wait) = self.waits.get_mut(host) {
                     wait.missed = 0;
                 }
@@ -141,7 +143,7 @@ impl Waits {
     }
 
     /// Whether `host` was last found running another build with sessions
-    /// mid-turn, which its busy wait follows.
+    /// mid-turn or terminals open, which its busy wait follows.
     pub(super) fn found_busy(&self, host: &HostName) -> bool {
         self.busy.contains_key(host)
     }
@@ -220,10 +222,13 @@ impl Waits {
     }
 
     /// The sessions `host` said were mid-turn, while it is waited on.
-    pub(super) fn busy(&self, host: &HostName) -> &[HostSession] {
+    pub(super) fn busy(&self, host: &HostName) -> (&[HostSession], usize) {
         match self.waits.contains_key(host) {
-            true => self.busy.get(host).map_or(&[], Vec::as_slice),
-            false => &[],
+            true => self
+                .busy
+                .get(host)
+                .map_or((&[], 0), |(busy, terms)| (busy.as_slice(), *terms)),
+            false => (&[], 0),
         }
     }
 

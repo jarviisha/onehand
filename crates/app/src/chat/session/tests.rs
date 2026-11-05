@@ -200,6 +200,7 @@ fn offline_start_reads_the_copy_only_when_there_is_one() {
     let busy = HostFailure::Busy {
         host: onehand_core::workspace::HostName("vps".into()),
         busy: Vec::new(),
+        terms: 0,
     };
     assert_eq!(offline_start(3, &busy), OfflineStart::Wait);
     assert_eq!(offline_start(0, &busy), OfflineStart::Wait);

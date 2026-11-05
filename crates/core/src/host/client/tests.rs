@@ -211,9 +211,14 @@ async fn open_clears_env() {
     assert_eq!(opened.await.unwrap().0, "s9");
 }
 
-/// A host on build `theirs`, with `busy` mid-turn, answering every `Hello`
-/// and counting the `Shutdown`s it is sent until the laptop goes.
-fn fake_host(theirs: &str, busy: Vec<HostSession>) -> (HostConn, tokio::task::JoinHandle<usize>) {
+/// A host on build `theirs`, with `busy` mid-turn and `terms` terminals
+/// open, answering every `Hello` and counting the `Shutdown`s it is sent
+/// until the laptop goes.
+fn fake_host(
+    theirs: &str,
+    busy: Vec<HostSession>,
+    terms: usize,
+) -> (HostConn, tokio::task::JoinHandle<usize>) {
     let (conn, mut host) = pair();
     let theirs = theirs.to_string();
     let fake = tokio::spawn(async move {
@@ -224,6 +229,7 @@ fn fake_host(theirs: &str, busy: Vec<HostSession>) -> (HostConn, tokio::task::Jo
                 Call::Hello { .. } => Reply::Welcome {
                     build: build(&theirs),
                     busy: busy.clone(),
+                    terms,
                 },
                 Call::Shutdown => {
                     shutdowns += 1;
@@ -242,7 +248,15 @@ async fn settle_against(
     theirs: &str,
     busy: Vec<HostSession>,
 ) -> (Result<Settled, HostError>, usize) {
-    let (conn, fake) = fake_host(theirs, busy);
+    settle_with_terms(theirs, busy, 0).await
+}
+
+async fn settle_with_terms(
+    theirs: &str,
+    busy: Vec<HostSession>,
+    terms: usize,
+) -> (Result<Settled, HostError>, usize) {
+    let (conn, fake) = fake_host(theirs, busy, terms);
     let settled = settle(&conn, &build("ours"), true).await;
     drop(conn);
     (settled, fake.await.unwrap())
@@ -260,9 +274,25 @@ async fn mismatch_with_busy_sessions_refuses() {
     let (settled, shutdowns) = settle_against("old", vec![s1()]).await;
     assert!(matches!(
         settled,
-        Err(HostError::Busy { build, busy }) if build.0 == "old" && busy == [s1()]
+        Err(HostError::Busy { build, busy, terms: 0 }) if build.0 == "old" && busy == [s1()]
     ));
     assert_eq!(shutdowns, 0);
+}
+
+/// A restart would hang up every shell open there, an idle one included.
+#[tokio::test]
+async fn mismatch_with_terminals_open_refuses() {
+    let (settled, shutdowns) = settle_with_terms("old", vec![], 2).await;
+    assert!(matches!(
+        settled,
+        Err(HostError::Busy { busy, terms: 2, .. }) if busy.is_empty()
+    ));
+    assert_eq!(shutdowns, 0);
+    let (settled, _) = settle_with_terms("ours", vec![], 2).await;
+    assert!(
+        matches!(settled, Ok(Settled::Same)),
+        "the same build is attached"
+    );
 }
 
 #[tokio::test]
@@ -274,13 +304,13 @@ async fn mismatch_idle_shuts_down_and_reattaches() {
 
 #[tokio::test]
 async fn after_a_restart_another_build_is_a_fault_not_a_second_shutdown() {
-    let (conn, fake) = fake_host("old", vec![]);
+    let (conn, fake) = fake_host("old", vec![], 0);
     let again = settle_again(&conn, &build("ours"), true).await;
     drop(conn);
     assert!(matches!(again, Err(HostError::Protocol(why)) if why.contains("old")));
     assert_eq!(fake.await.unwrap(), 0);
 
-    let (conn, fake) = fake_host("ours", vec![]);
+    let (conn, fake) = fake_host("ours", vec![], 0);
     assert!(settle_again(&conn, &build("ours"), true).await.is_ok());
     drop(conn);
     assert_eq!(fake.await.unwrap(), 0);
@@ -827,6 +857,7 @@ fn every_open_error_but_busy_names_the_host() {
     let busy = HostError::Busy {
         build: Build("old".into()),
         busy: Vec::new(),
+        terms: 0,
     };
     assert_eq!(named(busy), "the host runs another build (old)");
 }
@@ -857,6 +888,7 @@ fn service(theirs: &str, busy: Vec<HostSession>, shutdowns: Arc<AtomicUsize>) ->
                     let welcome = Reply::Welcome {
                         build: theirs.clone(),
                         busy: busy.clone(),
+                        terms: 0,
                     };
                     host.answer(id, welcome).await;
                 }

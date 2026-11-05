@@ -314,11 +314,11 @@ fn restart_failure(failure: HostFailure) -> String {
 }
 
 /// The question asked before `host`'s service is restarted, stopping `busy`.
-fn restart_ask(host: &HostName, busy: &[HostSession]) -> Confirm {
+fn restart_ask(host: &HostName, busy: &[HostSession], terms: usize) -> Confirm {
     Confirm {
         id: "restart-host",
         title: format!("Restart the host service on {host}?").into(),
-        description: busy_body(host, busy, onehand_core::chat::now_secs()).into(),
+        description: busy_body(host, busy, terms, onehand_core::chat::now_secs()).into(),
         act: "Restart",
         ..Default::default()
     }
@@ -543,7 +543,7 @@ impl Shell {
 
     /// Session `uid` was not attached, or with no `uid` the project page
     /// could not list, because `host` runs another build with sessions
-    /// mid-turn: restart the session, or list the page again, once the host
+    /// mid-turn or terminals open: restart the session, or list the page again, once the host
     /// is done waiting.
     pub(super) fn host_busy(
         &mut self,
@@ -737,7 +737,8 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let ask = restart_ask(&host, &hosts::busy(cx, &host));
+        let (busy, terms) = hosts::busy(cx, &host);
+        let ask = restart_ask(&host, &busy, terms);
         self.confirm(ask, window, cx, move |shell, window, cx| {
             shell.restart_agreed(host.clone(), window, cx);
         });
