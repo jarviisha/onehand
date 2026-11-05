@@ -46,6 +46,7 @@ pub(crate) fn track_branch(cx: &mut App, path: PathBuf, host: HostName, branch: 
         state: None,
         moving: None,
         failed: None,
+        refused: false,
         branch: Some(BranchState {
             name: branch,
             ahead: None,

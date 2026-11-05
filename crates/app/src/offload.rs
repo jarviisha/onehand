@@ -51,6 +51,9 @@ pub(crate) struct Offload {
     pub(crate) moving: Option<Moving>,
     /// Why the last move did not go, in a person's words, until one does.
     pub(crate) failed: Option<String>,
+    /// Its host refused the poll's attach (no service it can run, say): not
+    /// attached by the poll again until the person checks again.
+    pub(crate) refused: bool,
     /// On a branch: no key and no lock, and `state` is never kept. `Up` is
     /// the host being updated from here, `Back` its branch being fetched.
     pub(crate) branch: Option<branch::BranchState>,
@@ -104,11 +107,11 @@ impl Offload {
         self.branch.is_none() && self.moving == Some(Moving::Up)
     }
 
-    /// Whether the poll checks it now, its host attached or not (`live`): a
-    /// branch is counted either way, since a merge here changes the count
-    /// with no host; a mirror only when its host holds the code and is there.
     /// What the poll does with this folder now: `live` is whether its host
-    /// is attached, `taken` whether another machine holds it.
+    /// is attached, `taken` whether another machine holds it. A branch is
+    /// counted either way, since a merge here changes the count with no host;
+    /// a mirror only when its host holds the code, attaching first when it
+    /// is not attached.
     pub(crate) fn due(&self, live: bool, taken: bool) -> Option<Due> {
         if self.moving.is_some() {
             return None;
@@ -120,8 +123,8 @@ impl Offload {
         match (held, live) {
             (false, _) => None,
             (true, true) => Some(Due::Back),
-            // A failure standing on the page waits for the person.
-            (true, false) if taken || self.failed.is_some() => None,
+            // A refusal waits for the person: trying cannot change it.
+            (true, false) if taken || self.refused => None,
             (true, false) => Some(Due::Attach),
         }
     }
@@ -214,6 +217,7 @@ pub(crate) fn track(cx: &mut App, path: PathBuf, host: HostName, state: Option<O
             state,
             moving: None,
             failed: None,
+            refused: false,
             branch: None,
         },
     );
@@ -504,6 +508,7 @@ fn landed(o: &mut Offload, came: Came) {
         Ok(Some(state)) => {
             o.state = Some(state);
             o.failed = None;
+            o.refused = false;
         }
         Ok(None) => {}
         Err((why, state)) => {
@@ -522,7 +527,14 @@ pub(crate) async fn check_again(cx: &mut AsyncApp, path: PathBuf) {
         return;
     };
     match attach(cx, &host).await {
-        Ok(_) => check_back(cx, path).await,
+        Ok(_) => {
+            // Attached: whatever stood in the way of reaching the host is gone.
+            update(cx, &path, |o| {
+                o.failed = None;
+                o.refused = false;
+            });
+            check_back(cx, path).await
+        }
         Err(why) => {
             update(cx, &path, |o| o.failed = Some(why));
         }
@@ -744,26 +756,43 @@ async fn poll(cx: &mut AsyncApp) {
                     .iter()
                     .filter_map(|(path, o)| {
                         let live = hosts::live(cx, &o.host).is_some();
-                        let taken = matches!(hosts::state(cx, &o.host), hosts::HostState::Taken);
+                        let taken = match hosts::state(cx, &o.host) {
+                            hosts::HostState::Taken => true,
+                            hosts::HostState::Unknown
+                            | hosts::HostState::Attaching
+                            | hosts::HostState::Live
+                            | hosts::HostState::Lost(_) => false,
+                        };
                         Some((path.clone(), o.host.clone(), o.due(live, taken)?))
                     })
                     .collect()
             })
         });
+        // A host not reached once this pass is not tried again for its other
+        // folders: each try could wait out ssh's connect.
+        let mut unreached = std::collections::HashSet::new();
         for (path, host, due) in due {
+            if due == Due::Attach && unreached.contains(&host) {
+                continue;
+            }
             match due {
                 Due::Branch => branch::refresh(cx, path).await,
                 Due::Back => check_back(cx, path).await,
                 Due::Attach => match cx.update(|cx| hosts::conn_quietly(cx, &host)).await {
                     Ok(_) => check_back(cx, path).await,
                     Err(HostFailure::Refused(why)) => {
-                        update(cx, &path, |o| o.failed = Some(why));
+                        update(cx, &path, |o| {
+                            o.failed = Some(why);
+                            o.refused = true;
+                        });
                     }
                     // Out of reach, busy or taken: the next poll tries again,
                     // or finds it taken and leaves it.
                     Err(
                         HostFailure::Other(_) | HostFailure::Busy { .. } | HostFailure::Taken(_),
-                    ) => {}
+                    ) => {
+                        unreached.insert(host);
+                    }
                 },
             }
         }
@@ -782,6 +811,7 @@ mod tests {
             state: key.map(fresh),
             moving,
             failed: None,
+            refused: false,
             branch: None,
         }
     }
@@ -832,18 +862,24 @@ mod tests {
     }
 
     /// A host holding the code is attached by the poll itself, unless another
-    /// machine holds it or a failure on the page waits for the person.
+    /// machine holds it or it refused the poll's attach.
     #[test]
     fn the_poll_attaches_for_code_its_host_holds() {
         let held = kept(Some(Holder::Host), None);
         assert_eq!(held.due(false, false), Some(Due::Attach));
         assert_eq!(held.due(false, true), None);
-        let failed = Offload {
-            failed: Some("onehand-host is missing".into()),
+        let refused = Offload {
+            refused: true,
             ..kept(Some(Holder::Host), None)
         };
-        assert_eq!(failed.due(false, false), None);
-        assert_eq!(failed.due(true, false), Some(Due::Back));
+        assert_eq!(refused.due(false, false), None);
+        assert_eq!(refused.due(true, false), Some(Due::Back));
+        // A failure that may pass, the network gone, say, is tried again.
+        let failed = Offload {
+            failed: Some("Could not ask box about its copy".into()),
+            ..kept(Some(Holder::Host), None)
+        };
+        assert_eq!(failed.due(false, false), Some(Due::Attach));
         assert_eq!(
             kept(Some(Holder::Host), Some(Moving::Back)).due(false, false),
             None
