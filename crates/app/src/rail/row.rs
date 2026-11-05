@@ -119,13 +119,6 @@ pub(super) fn faded(
     rest: Hsla,
     hovered: Hsla,
 ) -> Stateful<Div> {
-    fn toward(surface: Hsla) -> gpui::Background {
-        gpui::linear_gradient(
-            90.,
-            gpui::linear_color_stop(surface.alpha(0.), 0.),
-            gpui::linear_color_stop(surface, 1.),
-        )
-    }
     div()
         .id(id)
         .relative()
@@ -134,16 +127,27 @@ pub(super) fn faded(
         .overflow_hidden()
         .whitespace_nowrap()
         .child(text)
-        .child(
-            div()
-                .absolute()
-                .top_0()
-                .bottom_0()
-                .right_0()
-                .w(FADE_W)
-                .bg(toward(rest))
-                .group_hover(group, move |fade| fade.bg(toward(hovered))),
+        .child(fade_band(group, rest, hovered).right_0())
+}
+
+/// A band fading from nothing into the row's fill, `rest`, or `hovered`
+/// while the pointer is on `group`: placed by the caller, at the edge where
+/// what lies under it is cut.
+pub(super) fn fade_band(group: SharedString, rest: Hsla, hovered: Hsla) -> Div {
+    fn toward(surface: Hsla) -> gpui::Background {
+        gpui::linear_gradient(
+            90.,
+            gpui::linear_color_stop(surface.alpha(0.), 0.),
+            gpui::linear_color_stop(surface, 1.),
         )
+    }
+    div()
+        .absolute()
+        .top_0()
+        .bottom_0()
+        .w(FADE_W)
+        .bg(toward(rest))
+        .group_hover(group, move |fade| fade.bg(toward(hovered)))
 }
 
 /// The row whose hover actions the pointer is on, by the row's group, if

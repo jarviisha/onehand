@@ -1,6 +1,6 @@
 use super::row::{
-    DragGhost, MAX_BRANCH_W, ProjectDrag, covered_tip, covering, faded, hover_fill, key_ring,
-    labelled, menu_button, project_key, row_control, row_inks, row_surfaces,
+    DragGhost, MAX_BRANCH_W, ProjectDrag, covered_tip, covering, fade_band, faded, hover_fill,
+    key_ring, labelled, menu_button, project_key, row_control, row_inks, row_surfaces,
 };
 use super::session::{signal_hint, status_mark};
 use crate::chat::pane::{ProjectFacts, SessionSignal};
@@ -473,14 +473,10 @@ pub(super) fn project_row(
             // Shrinks, by its host and its branch alone: everything else on it
             // keeps its width, and those truncate once the name is down to its
             // minimum. A folder on a host names its host first, then its branch
-            // once that is read over the host's attach. Hidden, its room kept,
-            // while the row's actions stand in its place: wider than they are,
-            // it would show a cut sliver beside them.
+            // once that is read over the host's attach.
             div()
                 .h_flex()
                 .items_center()
-                .when(ring, |d| d.invisible())
-                .group_hover(key.clone(), |s| s.invisible())
                 .min_w_0()
                 .gap_1()
                 .text_xs()
@@ -641,6 +637,10 @@ pub(super) fn project_row(
                 .bg(rest)
                 .when(!ring, |d| d.invisible())
                 .group_hover(key.clone(), move |s| s.visible().bg(hovered))
+                // What of the meta they leave uncovered fades into them
+                // rather than ending on a cut glyph, and still answers the
+                // pointer.
+                .child(fade_band(key.clone(), rest, hovered).right_full())
                 .child(labelled(
                     ("project-new-name", root_idx),
                     "New session in this project",
