@@ -258,6 +258,16 @@ pub(crate) fn taken_line(host: &HostName) -> String {
     format!("{host} was attached from another machine")
 }
 
+/// An attach to `host` made by itself, for work nobody is watching: as
+/// [`conn`], but a host another machine holds is left to it, and a failure
+/// to reach it is a blip as a poll's is.
+pub(crate) fn conn_quietly(
+    cx: &App,
+    host: &HostName,
+) -> impl Future<Output = Result<HostConn, HostFailure>> + use<> {
+    attach_with(cx, host, false, true)
+}
+
 /// The attach to `host`: the one already up, the attempt already under
 /// way, or a new attach (installing the service first when it is not there).
 pub(crate) fn conn(

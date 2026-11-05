@@ -56,6 +56,17 @@ pub(crate) struct Offload {
     pub(crate) branch: Option<branch::BranchState>,
 }
 
+/// What the poll does with one folder.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Due {
+    /// Count and fetch its host's branch.
+    Branch,
+    /// Check its code, the host attached.
+    Back,
+    /// Attach to its host, then check its code.
+    Attach,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Moving {
     Up,
@@ -96,9 +107,23 @@ impl Offload {
     /// Whether the poll checks it now, its host attached or not (`live`): a
     /// branch is counted either way, since a merge here changes the count
     /// with no host; a mirror only when its host holds the code and is there.
-    pub(crate) fn due(&self, live: bool) -> bool {
-        let mirror_due = self.state.as_ref().is_some_and(|s| s.key == Holder::Host) && live;
-        self.moving.is_none() && (self.branch.is_some() || mirror_due)
+    /// What the poll does with this folder now: `live` is whether its host
+    /// is attached, `taken` whether another machine holds it.
+    pub(crate) fn due(&self, live: bool, taken: bool) -> Option<Due> {
+        if self.moving.is_some() {
+            return None;
+        }
+        if self.branch.is_some() {
+            return Some(Due::Branch);
+        }
+        let held = self.state.as_ref().is_some_and(|s| s.key == Holder::Host);
+        match (held, live) {
+            (false, _) => None,
+            (true, true) => Some(Due::Back),
+            // A failure standing on the page waits for the person.
+            (true, false) if taken || self.failed.is_some() => None,
+            (true, false) => Some(Due::Attach),
+        }
     }
 }
 
@@ -703,25 +728,43 @@ pub(crate) fn check_soon(cx: &mut App, path: PathBuf) {
 }
 
 /// Every [`OFFLOAD_POLL`], each folder whose host holds the code is checked,
-/// while the host is attached; each one on a branch is counted, and its
-/// branch fetched if it moved while the host is attached: an attach that
-/// lands is caught up with by the next.
+/// attaching to the host by itself when it is not attached, so the code
+/// comes back with nothing of the project on screen; each one on a branch is
+/// counted, and its branch fetched if it moved while the host is attached.
+///
+/// The attach made here never takes a host another machine holds, and one
+/// the host refuses stands on the project's page, not tried again until the
+/// person checks again: trying cannot change it.
 async fn poll(cx: &mut AsyncApp) {
     loop {
         cx.background_executor().timer(OFFLOAD_POLL).await;
-        let due: Vec<(PathBuf, bool)> = cx.update(|cx| {
+        let due: Vec<(PathBuf, HostName, Due)> = cx.update(|cx| {
             cx.try_global::<Offloads>().map_or_else(Vec::new, |all| {
                 all.roots
                     .iter()
-                    .filter(|(_, o)| o.due(hosts::live(cx, &o.host).is_some()))
-                    .map(|(path, o)| (path.clone(), o.branch.is_some()))
+                    .filter_map(|(path, o)| {
+                        let live = hosts::live(cx, &o.host).is_some();
+                        let taken = matches!(hosts::state(cx, &o.host), hosts::HostState::Taken);
+                        Some((path.clone(), o.host.clone(), o.due(live, taken)?))
+                    })
                     .collect()
             })
         });
-        for (path, on_branch) in due {
-            match on_branch {
-                true => branch::refresh(cx, path).await,
-                false => check_back(cx, path).await,
+        for (path, host, due) in due {
+            match due {
+                Due::Branch => branch::refresh(cx, path).await,
+                Due::Back => check_back(cx, path).await,
+                Due::Attach => match cx.update(|cx| hosts::conn_quietly(cx, &host)).await {
+                    Ok(_) => check_back(cx, path).await,
+                    Err(HostFailure::Refused(why)) => {
+                        update(cx, &path, |o| o.failed = Some(why));
+                    }
+                    // Out of reach, busy or taken: the next poll tries again,
+                    // or finds it taken and leaves it.
+                    Err(
+                        HostFailure::Other(_) | HostFailure::Busy { .. } | HostFailure::Taken(_),
+                    ) => {}
+                },
             }
         }
     }
@@ -729,7 +772,7 @@ async fn poll(cx: &mut AsyncApp) {
 
 #[cfg(test)]
 mod tests {
-    use super::{Moving, Offload, fresh};
+    use super::{Due, Moving, Offload, fresh};
     use onehand_core::host::wire::Holder;
     use onehand_core::workspace::HostName;
 
@@ -779,11 +822,32 @@ mod tests {
         assert!(!on_branch(Some(Moving::Up)).going_up());
         assert!(kept(Some(Holder::Laptop), Some(Moving::Up)).going_up());
         // Counted with or without its host: a merge here shows at once.
-        assert!(on_branch(None).due(false));
-        assert!(!on_branch(Some(Moving::Back)).due(true));
-        assert!(!kept(Some(Holder::Host), None).due(false));
-        assert!(kept(Some(Holder::Host), None).due(true));
-        assert!(!kept(Some(Holder::Laptop), None).due(true));
+        assert_eq!(on_branch(None).due(false, false), Some(Due::Branch));
+        assert_eq!(on_branch(Some(Moving::Back)).due(true, false), None);
+        assert_eq!(
+            kept(Some(Holder::Host), None).due(true, false),
+            Some(Due::Back)
+        );
+        assert_eq!(kept(Some(Holder::Laptop), None).due(true, false), None);
+    }
+
+    /// A host holding the code is attached by the poll itself, unless another
+    /// machine holds it or a failure on the page waits for the person.
+    #[test]
+    fn the_poll_attaches_for_code_its_host_holds() {
+        let held = kept(Some(Holder::Host), None);
+        assert_eq!(held.due(false, false), Some(Due::Attach));
+        assert_eq!(held.due(false, true), None);
+        let failed = Offload {
+            failed: Some("onehand-host is missing".into()),
+            ..kept(Some(Holder::Host), None)
+        };
+        assert_eq!(failed.due(false, false), None);
+        assert_eq!(failed.due(true, false), Some(Due::Back));
+        assert_eq!(
+            kept(Some(Holder::Host), Some(Moving::Back)).due(false, false),
+            None
+        );
     }
 
     /// An update's failure stands until the next update, whatever a fetch

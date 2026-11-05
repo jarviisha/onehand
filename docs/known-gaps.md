@@ -351,9 +351,6 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **A past conversation from before a project was offloaded opens readable, but its agent cannot
   carry it on:** it resumes on the host, which has no record of it, and fails there. A new session
   is the way to go on.
-- **The code comes back only while its host is attached.** A check never attaches by itself, so an
-  offloaded project whose sessions nobody shows stays locked until its page or a session on it is
-  shown, or *Check again* is pressed.
 - **An offloaded project's prompt queued behind a turn can be refused by the host** when the code
   came back at that turn's end before the queued prompt went: the transcript says to send it
   again, and sending it again sends the code up first.
@@ -381,5 +378,6 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **A sync mode changes only through *Run here again*** and offloading again.
 - **The branch count on a project's page waits for the next check** (a turn's end, or the 30 s
   check); showing the page does not fetch.
-- **Offloaded projects are checked one after another,** so one copy that hangs holds back the
-  checks of the others. The code comes back at a turn end or the 30 s check, not at an attach.
+- **Offloaded projects are checked one after another,** so one copy, or one attach to a host out
+  of reach, that hangs holds back the checks of the others. The code comes back at a turn end or
+  the 30 s check, not at an attach.
