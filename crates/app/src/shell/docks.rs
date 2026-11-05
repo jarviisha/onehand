@@ -451,11 +451,7 @@ impl Shell {
     /// the opposite of what it does. Guarded inside each panel, because this is
     /// called on paths that run whether or not anything changed and a panel
     /// notifying redraws the window.
-    pub(super) fn set_app_maximized(
-        &mut self,
-        panel: Option<FocusedPanel>,
-        cx: &mut Context<Self>,
-    ) {
+    fn set_app_maximized(&mut self, panel: Option<FocusedPanel>, cx: &mut Context<Self>) {
         self.app_maximized = panel;
         let terminal = panel == Some(FocusedPanel::Terminal);
         self.terminal.update(cx, |terminal_panel, cx| {

@@ -76,9 +76,9 @@ impl ChatPane {
     /// control sits on the side of what it acts on: the way back to a hidden
     /// rail at the row's left edge, the side the rail returns to, and the
     /// right-hand end reading outward from the name — the past conversations
-    /// and closing the session, which act on the session the name names. The dots are
-    /// the row's one menu mark, and everything behind them is something done
-    /// to the conversation the name beside them is.
+    /// and closing the session, which act on the session the name names. The
+    /// dots are the row's one menu mark, and everything behind them is
+    /// something done to the conversation the name beside them is.
     fn header_row(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let chat = self.active_chat(cx);
         // Unnamed until its first prompt, a conversation is called by the
@@ -189,11 +189,12 @@ impl ChatPane {
             // Only while there is a session to end, and *before* the docks
             // rather than last: the cluster reads outward from the name by
             // what each control is about -- this and the past conversations
-            // act on the session the name names -- and the row's far edge, where a pointer drifts, is
-            // the wrong seat for the one control that ends something. It keeps the
-            // conversation -- the transcript is written at the end of every turn
-            // and closing costs nothing that is not already on disk -- which is
-            // why it can be a control on the row while deleting stays behind the
+            // act on the session the name names -- and the row's far edge,
+            // where a pointer drifts, is the wrong seat for the one control
+            // that ends something. It keeps the conversation -- the
+            // transcript is written at the end of every turn and closing
+            // costs nothing that is not already on disk -- which is why it
+            // can be a control on the row while deleting stays behind the
             // name, two presses and a warning away.
             .when(live, |header| {
                 header.child(

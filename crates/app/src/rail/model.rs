@@ -92,7 +92,7 @@ pub(crate) fn needs_attention(signal: Option<SessionSignal>) -> bool {
 
 /// What a session's state is called on its row; a session with no signal is
 /// idle.
-pub(crate) fn word(signal: Option<SessionSignal>) -> &'static str {
+pub(super) fn word(signal: Option<SessionSignal>) -> &'static str {
     signal.map_or("Idle", SessionSignal::word)
 }
 
@@ -106,7 +106,7 @@ pub(crate) fn state_word(signal: Option<SessionSignal>, host: Option<&str>) -> S
 }
 
 /// The age as the row says it: `now`, `4m`, `2h`, `3d`.
-pub(crate) fn age_label(minutes: u64) -> String {
+pub(super) fn age_label(minutes: u64) -> String {
     match minutes {
         0 => "now".into(),
         m if m < 60 => format!("{m}m"),
