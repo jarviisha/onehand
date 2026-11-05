@@ -118,7 +118,12 @@ fn branch_box(path: &Path, on: BranchBox, cx: &mut Context<ChatPane>) -> Div {
                 cx,
             ))
             .children(branch_line(&name, branch.ahead).map(|text| line(text, cx)))
-            .children(failed.map(|why| div().text_xs().text_color(danger).child(why)))
+            .children(
+                [branch.refused.clone(), failed]
+                    .into_iter()
+                    .flatten()
+                    .map(|why| div().text_xs().text_color(danger).child(why)),
+            )
             .child(div().pt_2().child(update))
             .child(div().text_xs().text_color(muted).child(format!(
                 "Merges this folder's last commit into {name}; what is not committed stays here"

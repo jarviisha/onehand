@@ -24,6 +24,9 @@ pub(crate) struct BranchState {
     /// The commits the branch, as fetched, has that `HEAD` does not; `None`
     /// until first counted.
     pub(crate) ahead: Option<usize>,
+    /// Why the last *Update host from laptop* did not land, until one does:
+    /// a fetch after it says nothing of it.
+    pub(crate) refused: Option<String>,
 }
 
 /// The branch mirror's name on the host, beside the mirror a project with a
@@ -46,6 +49,7 @@ pub(crate) fn track_branch(cx: &mut App, path: PathBuf, host: HostName, branch: 
         branch: Some(BranchState {
             name: branch,
             ahead: None,
+            refused: None,
         }),
     };
     keep(cx, path.clone(), o);
@@ -146,20 +150,31 @@ fn claim(cx: &mut AsyncApp, path: &Path, moving: Moving) -> Option<(HostName, St
     .flatten()
 }
 
-/// Keep what a fetch or an update came to, the branch no longer moving.
-fn land(cx: &mut AsyncApp, path: &Path, counted: Result<usize, String>) {
-    update(cx, path, |o| {
-        o.moving = None;
-        match counted {
-            Ok(ahead) => {
-                if let Some(branch) = o.branch.as_mut() {
-                    branch.ahead = Some(ahead);
-                }
-                o.failed = None;
-            }
-            Err(why) => o.failed = Some(why),
+/// Keep what a fetch (`Back`) or an update (`Up`) came to, the branch no
+/// longer moving. Each failure goes only with its own kind's next success:
+/// an update's conflict stands through the fetches the poll makes after it.
+pub(super) fn landed_on(o: &mut Offload, by: Moving, counted: Result<usize, String>) {
+    o.moving = None;
+    let Some(branch) = o.branch.as_mut() else {
+        return;
+    };
+    match (by, counted) {
+        (Moving::Up, Ok(ahead)) => {
+            branch.ahead = Some(ahead);
+            branch.refused = None;
+            o.failed = None;
         }
-    });
+        (Moving::Up, Err(why)) => branch.refused = Some(why),
+        (Moving::Back, Ok(ahead)) => {
+            branch.ahead = Some(ahead);
+            o.failed = None;
+        }
+        (Moving::Back, Err(why)) => o.failed = Some(why),
+    }
+}
+
+fn land(cx: &mut AsyncApp, path: &Path, by: Moving, counted: Result<usize, String>) {
+    update(cx, path, |o| landed_on(o, by, counted));
 }
 
 /// Fetch `path`'s branch if its host moved it, then count what it has to
@@ -171,12 +186,12 @@ pub(crate) async fn refresh(cx: &mut AsyncApp, path: PathBuf) {
     let state = match cx.update(|cx| hosts::live(cx, &host)) {
         Some(conn) => match mirror(cx, &conn, &path, &branch).await {
             Ok(state) => Some(state),
-            Err(why) => return land(cx, &path, Err(why)),
+            Err(why) => return land(cx, &path, Moving::Back, Err(why)),
         },
         None => None,
     };
     let counted = fetch_and_count(cx, &path, &host, &branch, state.as_ref()).await;
-    land(cx, &path, counted);
+    land(cx, &path, Moving::Back, counted);
 }
 
 /// *Update host from laptop*: this folder's commit merged into the host's
@@ -197,5 +212,5 @@ pub(crate) async fn update_host(cx: &mut AsyncApp, path: PathBuf) {
         fetch_and_count(cx, &path, &host, &branch, Some(&state)).await
     }
     .await;
-    land(cx, &path, counted);
+    land(cx, &path, Moving::Up, counted);
 }

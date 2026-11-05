@@ -85,6 +85,21 @@ impl Offload {
     pub(crate) fn sends_up(&self) -> bool {
         self.branch.is_none() && self.moving.is_none() && !self.locked()
     }
+
+    /// Whether its code is on its way up before a prompt now, which holds
+    /// the prompt: never on a branch, whose update sends nothing ahead of
+    /// one (the host refuses a prompt while it merges).
+    pub(crate) fn going_up(&self) -> bool {
+        self.branch.is_none() && self.moving == Some(Moving::Up)
+    }
+
+    /// Whether the poll checks it now, its host attached or not (`live`): a
+    /// branch is counted either way, since a merge here changes the count
+    /// with no host; a mirror only when its host holds the code and is there.
+    pub(crate) fn due(&self, live: bool) -> bool {
+        let mirror_due = self.state.as_ref().is_some_and(|s| s.key == Holder::Host) && live;
+        self.moving.is_none() && (self.branch.is_some() || mirror_due)
+    }
 }
 
 /// What stands under a locked project's editor and terminals.
@@ -126,7 +141,7 @@ pub(crate) fn lock_lines(cx: &App) -> HashMap<PathBuf, String> {
 
 /// The prompt's wait while `path`'s code goes up to its host.
 pub(crate) fn sending(cx: &App, path: &Path) -> Option<String> {
-    let o = get(cx, path).filter(|o| o.moving == Some(Moving::Up))?;
+    let o = get(cx, path).filter(|o| o.going_up())?;
     Some(sending_line(&o.host))
 }
 
@@ -674,8 +689,9 @@ pub(crate) fn check_soon(cx: &mut App, path: PathBuf) {
 }
 
 /// Every [`OFFLOAD_POLL`], each folder whose host holds the code is checked,
-/// and each one on a branch has its branch fetched if it moved, while the
-/// host is attached: an attach that lands is caught up with by the next.
+/// while the host is attached; each one on a branch is counted, and its
+/// branch fetched if it moved while the host is attached: an attach that
+/// lands is caught up with by the next.
 async fn poll(cx: &mut AsyncApp) {
     loop {
         cx.background_executor().timer(OFFLOAD_POLL).await;
@@ -683,11 +699,7 @@ async fn poll(cx: &mut AsyncApp) {
             cx.try_global::<Offloads>().map_or_else(Vec::new, |all| {
                 all.roots
                     .iter()
-                    .filter(|(_, o)| {
-                        let due = o.branch.is_some()
-                            || o.state.as_ref().is_some_and(|s| s.key == Holder::Host);
-                        o.moving.is_none() && due && hosts::live(cx, &o.host).is_some()
-                    })
+                    .filter(|(_, o)| o.due(hosts::live(cx, &o.host).is_some()))
                     .map(|(path, o)| (path.clone(), o.branch.is_some()))
                     .collect()
             })
@@ -740,6 +752,7 @@ mod tests {
             branch: Some(super::branch::BranchState {
                 name: "onehand/box".into(),
                 ahead: None,
+                refused: None,
             }),
             ..kept(None, moving)
         };
@@ -748,6 +761,46 @@ mod tests {
         assert!(on_branch(None).here());
         assert!(!on_branch(Some(Moving::Back)).here());
         assert!(!on_branch(None).sends_up());
+        // Updating the host from here sends nothing before a prompt.
+        assert!(!on_branch(Some(Moving::Up)).going_up());
+        assert!(kept(Some(Holder::Laptop), Some(Moving::Up)).going_up());
+        // Counted with or without its host: a merge here shows at once.
+        assert!(on_branch(None).due(false));
+        assert!(!on_branch(Some(Moving::Back)).due(true));
+        assert!(!kept(Some(Holder::Host), None).due(false));
+        assert!(kept(Some(Holder::Host), None).due(true));
+        assert!(!kept(Some(Holder::Laptop), None).due(true));
+    }
+
+    /// An update's failure stands until the next update, whatever a fetch
+    /// says meanwhile; a fetch's own failure goes with the next fetch.
+    #[test]
+    fn an_update_failure_outlives_a_fetch() {
+        use super::branch::{BranchState, landed_on};
+        let mut o = Offload {
+            branch: Some(BranchState {
+                name: "onehand/box".into(),
+                ahead: None,
+                refused: None,
+            }),
+            ..kept(None, Some(Moving::Up))
+        };
+        landed_on(&mut o, Moving::Up, Err("conflict in a.rs".into()));
+        o.moving = Some(Moving::Back);
+        landed_on(&mut o, Moving::Back, Ok(2));
+        let branch = o.branch.as_ref().unwrap();
+        assert_eq!(branch.refused.as_deref(), Some("conflict in a.rs"));
+        assert_eq!(branch.ahead, Some(2));
+        o.moving = Some(Moving::Back);
+        landed_on(&mut o, Moving::Back, Err("fetch failed".into()));
+        assert_eq!(o.failed.as_deref(), Some("fetch failed"));
+        o.moving = Some(Moving::Back);
+        landed_on(&mut o, Moving::Back, Ok(2));
+        assert_eq!(o.failed, None);
+        o.moving = Some(Moving::Up);
+        landed_on(&mut o, Moving::Up, Ok(0));
+        assert_eq!(o.branch.as_ref().unwrap().refused, None);
+        assert_eq!(o.moving, None);
     }
 
     #[test]
