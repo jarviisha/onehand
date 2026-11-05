@@ -415,7 +415,7 @@ Refused or left out, each in one place:
   issue…*, the unattended switch, *Run check* and the *Check command* field are absent, and the
   Settings list of unattended projects leaves it out.
 - **The Tasks, Issues, Workflows and Schedules pages** leave it out, and starting a workflow on it
-  is a warning toast, *<project> is on a host; workflows do not run there yet*. The workspace
+  is a warning toast, *<project> runs its sessions on a host; workflows do not run there yet*. The workspace
   overview keeps it: its tile reads *On <host>*, then its git status when it has one, counts its
   sessions only, and is not one of the overview's project filters.
 - **onehand's tools** do not list it, and a call naming it is refused, *<project> is on a host;
