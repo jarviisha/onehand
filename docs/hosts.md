@@ -492,15 +492,17 @@ sessions work on a branch of their own, and the code moves by git alone over the
   that commit and checks it out, or, once the branch has started, commits what was left and
   merges the commit in. A merge that conflicts is undone and says so, naming up to ten files:
   *Merging this machine's commit into <branch> stopped on a conflict in: …; the host's branch is
-  as it was*. A mirror whose HEAD is not on its branch is left as it is.
+  as it was*. A mirror whose HEAD is not on its branch, or that the agent left in the middle of a
+  merge, a cherry-pick, a revert or a rebase, is left as it is and the update refused. What the
+  laptop sends must be a commit id, never a name git could take for one of its options.
 - **No agent works under a merge.** An update is refused while a session there works (mid-turn,
   or with work running aside), and while it runs a prompt there is refused, *The host's branch
   is being updated from the laptop; send the prompt again in a moment*.
 - **A turn's end commits what it left** onto the branch (`git add -A`, then *Work left at a
   turn's end*), as onehand (`onehand <onehand@onehand.invalid>`, whatever the host's git
   identity), so nothing an agent did waits uncommitted for the laptop. The host's `.gitignore`
-  keeps build output out. A mirror on another branch, or mid-merge, is not committed to, and
-  `host.log` says so. Every git write to branch mirrors goes one at a time.
+  keeps build output out. A mirror on another branch, or in the middle of a merge, a
+  cherry-pick, a revert or a rebase, is not committed to, and `host.log` says so. Every git write to branch mirrors goes one at a time.
 - **Back, only a remote-tracking ref.** The laptop fetches the branch into
   `refs/remotes/onehand/<host>` (`fetch_blocking`, forced, no tags), which no branch here is, so
   a fetch never moves a branch of the person's, nor refuses on the one checked out; it adds no

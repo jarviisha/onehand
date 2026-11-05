@@ -80,6 +80,12 @@ pub(super) fn head_blocking(mirror: &Path, branch: &str) -> Option<String> {
 /// from it, checked out, or it is merged into the branch once what was left
 /// there is committed. A merge that conflicts is undone and named.
 pub(crate) fn update_blocking(mirror: &Path, branch: &str, commit: &str) -> Result<(), String> {
+    // The laptop sends what `rev-parse` gave it; anything else could read
+    // as one of git's options.
+    let id = matches!(commit.len(), 40 | 64) && commit.chars().all(|c| c.is_ascii_hexdigit());
+    if !id {
+        return Err(format!("{commit} is not a commit"));
+    }
     let _writing = GIT_WRITES.lock().unwrap_or_else(|e| e.into_inner());
     if head_blocking(mirror, branch).is_none() {
         return ok(mirror, &["checkout", "-q", "-b", branch, commit]).map(drop);
@@ -87,6 +93,12 @@ pub(crate) fn update_blocking(mirror: &Path, branch: &str, commit: &str) -> Resu
     if !on_branch(mirror, branch) {
         return Err(format!(
             "The host's copy is not on {branch}; it was left as it is"
+        ));
+    }
+    if mid_operation(mirror) {
+        return Err(format!(
+            "The host's copy is in the middle of a merge or a cherry-pick on {branch}; it was \
+             left as it is"
         ));
     }
     commit_left(mirror)?;
@@ -118,14 +130,31 @@ pub(crate) fn update_blocking(mirror: &Path, branch: &str, commit: &str) -> Resu
 
 /// Commit what is left in `mirror` onto `branch`, at a turn's end: whether
 /// anything was. Nothing while the mirror is on another branch, or in the
-/// middle of a merge or a rebase: the agent left it so, and it is its to
-/// finish.
+/// middle of a merge, a cherry-pick or a rebase: the agent left it so, and
+/// it is its to finish.
 pub(super) fn commit_left_blocking(mirror: &Path, branch: &str) -> Result<bool, String> {
     let _writing = GIT_WRITES.lock().unwrap_or_else(|e| e.into_inner());
-    if !on_branch(mirror, branch) || mirror.join(".git").join("MERGE_HEAD").exists() {
+    if !on_branch(mirror, branch) || mid_operation(mirror) {
         return Ok(false);
     }
     commit_left(mirror)
+}
+
+/// Whether the agent left `mirror` in the middle of something git would
+/// conclude with whatever is there, conflict markers and all: a merge, a
+/// cherry-pick, a revert or a rebase, or files still unmerged.
+pub(super) fn mid_operation(mirror: &Path) -> bool {
+    let git_dir = mirror.join(".git");
+    let pending = [
+        "MERGE_HEAD",
+        "CHERRY_PICK_HEAD",
+        "REVERT_HEAD",
+        "rebase-merge",
+        "rebase-apply",
+        "sequencer",
+    ];
+    pending.iter().any(|name| git_dir.join(name).exists())
+        || ok(mirror, &["ls-files", "-u"]).is_ok_and(|unmerged| !unmerged.is_empty())
 }
 
 /// Whether `mirror`'s HEAD is `branch`.

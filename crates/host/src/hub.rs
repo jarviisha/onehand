@@ -543,6 +543,10 @@ impl Hub {
                     "session {session}: its mirror is not on {branch}, so its turn's end was not \
                  committed"
                 )),
+                Ok(false) if branch::mid_operation(&mirror) => log(&format!(
+                    "session {session}: its mirror is in the middle of a merge or a \
+                     cherry-pick, so its turn's end was not committed"
+                )),
                 Ok(false) => {}
                 Err(e) => log(&format!(
                     "session {session}: what its turn left was not committed: {e}"

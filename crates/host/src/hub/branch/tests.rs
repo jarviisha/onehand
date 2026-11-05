@@ -152,3 +152,67 @@ fn two_commits_at_once_both_land() {
     let tracked = run_git(&mirror, &["ls-files"]);
     assert!(tracked.contains("0.txt") && tracked.contains("1.txt"));
 }
+
+/// The mirror left by the agent in a merge that conflicts, on its branch.
+fn mid_merge(name: &str) -> PathBuf {
+    let (laptop, mirror) = laptop_and_mirror(name);
+    let first = push(&laptop, &mirror);
+    update_blocking(&mirror, BRANCH, &first).unwrap();
+    run_git(&mirror, &["checkout", "-q", "-b", "side"]);
+    commit_here(&mirror, "a.txt", "side\n");
+    run_git(&mirror, &["checkout", "-q", BRANCH]);
+    commit_here(&mirror, "a.txt", "branch\n");
+    let merged = Command::new("git")
+        .args(["-c", "user.name=t", "-c", "user.email=t@t", "-C"])
+        .arg(&mirror)
+        .args(["merge", "-q", "side"])
+        .output()
+        .unwrap();
+    assert!(!merged.status.success());
+    mirror
+}
+
+#[test]
+fn an_update_leaves_an_operation_the_agent_left_half_done() {
+    let mirror = mid_merge("half-merge");
+    let before = head_blocking(&mirror, BRANCH).unwrap();
+    let laptop = mirror.parent().unwrap().join("laptop");
+    let commit = push(&laptop, &mirror);
+    let why = update_blocking(&mirror, BRANCH, &commit).unwrap_err();
+    assert!(why.contains("in the middle of"), "{why}");
+    assert_eq!(head_blocking(&mirror, BRANCH), Some(before));
+    assert!(mirror.join(".git/MERGE_HEAD").exists());
+}
+
+#[test]
+fn a_turn_end_leaves_a_cherry_pick_half_done() {
+    let (laptop, mirror) = laptop_and_mirror("half-pick");
+    let first = push(&laptop, &mirror);
+    update_blocking(&mirror, BRANCH, &first).unwrap();
+    run_git(&mirror, &["checkout", "-q", "-b", "side"]);
+    commit_here(&mirror, "a.txt", "side\n");
+    let picked = run_git(&mirror, &["rev-parse", "HEAD"]);
+    run_git(&mirror, &["checkout", "-q", BRANCH]);
+    commit_here(&mirror, "a.txt", "branch\n");
+    let before = head_blocking(&mirror, BRANCH).unwrap();
+    let _ = Command::new("git")
+        .args(["-c", "user.name=t", "-c", "user.email=t@t", "-C"])
+        .arg(&mirror)
+        .args(["cherry-pick", &picked])
+        .output()
+        .unwrap();
+    assert!(mirror.join(".git/CHERRY_PICK_HEAD").exists());
+    assert_eq!(commit_left_blocking(&mirror, BRANCH), Ok(false));
+    assert_eq!(head_blocking(&mirror, BRANCH), Some(before));
+}
+
+#[test]
+fn an_update_takes_only_a_commit_id() {
+    let (laptop, mirror) = laptop_and_mirror("not-an-id");
+    let first = push(&laptop, &mirror);
+    update_blocking(&mirror, BRANCH, &first).unwrap();
+    for bad in ["-", "--help", "HEAD", "main"] {
+        let why = update_blocking(&mirror, BRANCH, bad).unwrap_err();
+        assert!(why.contains("is not a commit"), "{bad}: {why}");
+    }
+}
