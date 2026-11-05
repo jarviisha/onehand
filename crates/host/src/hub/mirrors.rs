@@ -2,6 +2,10 @@
 //! side may change its code, and how many prompts went to it. The host is the
 //! one to say who holds the key, so a prompt and the key's way back to the
 //! laptop never cross: it refuses whichever comes second.
+//!
+//! **A branch mirror has no key.** It works on a branch of its own, which
+//! the laptop fetches; it is made with the key on the host's side, so its
+//! prompts go through, and the key is never handed back.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -24,6 +28,9 @@ pub(super) struct Mirror {
     owner: String,
     key: Holder,
     generation: u64,
+    /// The branch a branch mirror works on; none for one with a key.
+    #[serde(default)]
+    pub(super) branch: Option<String>,
 }
 
 pub(super) type Mirrors = Result<BTreeMap<PathBuf, Mirror>, String>;
@@ -43,6 +50,14 @@ pub(super) fn load(dir: &Path) -> Mirrors {
     })
 }
 
+/// A branch the laptop may name for a branch mirror: `onehand/` and one
+/// plain name.
+fn branch_name(branch: &str) -> bool {
+    branch
+        .strip_prefix("onehand/")
+        .is_some_and(|name| plain(name) && !name.contains("..") && !name.ends_with(".lock"))
+}
+
 /// A name the laptop or the host may put in a path as one part of it.
 fn plain(name: &str) -> bool {
     !name.is_empty()
@@ -54,11 +69,19 @@ fn plain(name: &str) -> bool {
 }
 
 impl Hub {
-    /// The attached laptop's mirror called `name`, made the first time.
-    pub(crate) fn mirror(&mut self, name: &str) -> Result<MirrorState, String> {
+    /// The attached laptop's mirror called `name`, made the first time: with
+    /// `branch`, a repository of its own that works on that branch.
+    pub(crate) fn mirror(
+        &mut self,
+        name: &str,
+        branch: Option<&str>,
+    ) -> Result<MirrorState, String> {
         let owner = self.owner()?;
         if !plain(name) {
             return Err(format!("{name} cannot name a mirror"));
+        }
+        if let Some(branch) = branch.filter(|b| !branch_name(b)) {
+            return Err(format!("{branch} cannot name a mirror's branch"));
         }
         let path = self.dir.join(MIRRORS_DIR).join(&owner).join(name);
         let mut mirrors = self.mirrors.clone()?;
@@ -68,10 +91,17 @@ impl Hub {
             None => {
                 fs::create_dir_all(&path)
                     .map_err(|e| format!("Could not make {}: {e}", path.display()))?;
+                if branch.is_some() {
+                    super::branch::init_blocking(&path)?;
+                }
                 let mirror = Mirror {
                     owner,
-                    key: Holder::Laptop,
+                    key: match branch {
+                        Some(_) => Holder::Host,
+                        None => Holder::Laptop,
+                    },
                     generation: 0,
+                    branch: branch.map(str::to_string),
                 };
                 mirrors.insert(path.clone(), mirror);
                 self.keep(mirrors)?;
@@ -94,6 +124,12 @@ impl Hub {
         let mirror = mirrors.get_mut(path).ok_or_else(|| unknown(path))?;
         if mirror.owner != owner {
             return Err(elsewhere(path));
+        }
+        if mirror.branch.is_some() {
+            return Err(format!(
+                "{} has no key; it works on a branch",
+                path.display()
+            ));
         }
         if to == Holder::Laptop {
             if self.working(path) {
@@ -131,6 +167,13 @@ impl Hub {
         let (path, _) = self.mirror_of(cwd)?;
         let mut mirrors = self.mirrors.clone()?;
         let mirror = mirrors.get_mut(&path).ok_or_else(|| unknown(cwd))?;
+        if self.updating.contains(&path) {
+            return Err(
+                "The host's branch is being updated from the laptop; send the prompt again in a \
+                 moment"
+                    .into(),
+            );
+        }
         if mirror.key == Holder::Laptop {
             return Err(
                 "The laptop holds this project's code; send the prompt again to send it up first"
@@ -139,6 +182,45 @@ impl Hub {
         }
         mirror.generation += 1;
         self.keep(mirrors)
+    }
+
+    /// Start updating the branch mirror at `path` from the laptop: its
+    /// branch, once nothing works there and no update runs. Until
+    /// [`Hub::end_update`], a prompt to it is refused, so no agent works
+    /// while git merges under it.
+    pub(crate) fn begin_update(&mut self, path: &Path) -> Result<String, String> {
+        let owner = self.owner()?;
+        let mirror = self
+            .mirrors
+            .as_ref()?
+            .get(path)
+            .ok_or_else(|| unknown(path))?;
+        if mirror.owner != owner {
+            return Err(elsewhere(path));
+        }
+        let Some(branch) = mirror.branch.clone() else {
+            return Err(format!("{} has no branch to update", path.display()));
+        };
+        if self.working(path) {
+            return Err("Sessions are still working on the host".into());
+        }
+        if !self.updating.insert(path.to_path_buf()) {
+            return Err("The host's branch is being updated already".into());
+        }
+        Ok(branch)
+    }
+
+    pub(crate) fn end_update(&mut self, path: &Path) {
+        self.updating.remove(path);
+    }
+
+    /// The branch mirror `cwd` lies in, and its branch, if it does.
+    pub(super) fn branch_of(&self, cwd: &Path) -> Option<(PathBuf, String)> {
+        if !self.in_mirrors(cwd) {
+            return None;
+        }
+        let (path, mirror) = self.mirror_of(cwd).ok()?;
+        Some((path, mirror.branch.clone()?))
     }
 
     /// The mirror `path` lies in, and the path it is kept under.
@@ -151,7 +233,7 @@ impl Hub {
             .ok_or_else(|| unknown(path))
     }
 
-    fn mirror_state(&self, path: &Path) -> Result<MirrorState, String> {
+    pub(crate) fn mirror_state(&self, path: &Path) -> Result<MirrorState, String> {
         let mirror = self
             .mirrors
             .as_ref()?
@@ -162,7 +244,12 @@ impl Hub {
             key: mirror.key,
             generation: mirror.generation,
             working: self.working(path),
-            head: None,
+            // ponytail: one git read under the hub's lock; cache it if
+            // mirror calls ever queue behind it.
+            head: mirror
+                .branch
+                .as_deref()
+                .and_then(|branch| super::branch::head_blocking(path, branch)),
         })
     }
 

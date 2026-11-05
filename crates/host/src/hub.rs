@@ -25,6 +25,8 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::serve::{log, unix_secs};
 
+mod branch;
+pub(crate) use branch::update_blocking;
 mod mirrors;
 
 /// How a session's agent is reached: `acp::connect` in production, a fake in tests.
@@ -91,6 +93,8 @@ pub(crate) struct Hub {
     /// and lost is not taken for a folder never switched.
     off: Result<BTreeSet<PathBuf>, String>,
     mirrors: mirrors::Mirrors,
+    /// The branch mirrors being updated from the laptop now.
+    updating: BTreeSet<PathBuf>,
     /// The laptop the attach being served named, which its mirrors are kept for.
     pub(crate) laptop: Option<String>,
 }
@@ -105,6 +109,7 @@ impl Hub {
             counter: 0,
             off: Ok(BTreeSet::new()),
             mirrors: Ok(BTreeMap::new()),
+            updating: BTreeSet::new(),
             laptop: None,
         }
     }
@@ -475,6 +480,13 @@ impl Hub {
         };
         s.busy = busy_after(s.busy, &entry);
         aside_after(&mut s.aside, &entry);
+        let cwd = s.cwd.clone();
+        if matches!(entry, Entry::Event(AcpEvent::TurnEnded { .. })) {
+            self.commit_left_soon(session, &cwd);
+        }
+        let Some(s) = self.sessions.get_mut(session) else {
+            return;
+        };
         // A card answered by the host is never answered again.
         match &entry {
             Entry::Answered { answer, .. } => s.answered.extend(answers(answer).cloned()),
@@ -514,6 +526,29 @@ impl Hub {
                 s.watcher = None;
             }
         }
+    }
+
+    /// At a turn's end in a branch mirror, commit what the turn left onto
+    /// its branch, off the hub's lock: nothing the agent did is lost before
+    /// the laptop fetches it.
+    fn commit_left_soon(&self, session: &HostSession, cwd: &Path) {
+        let Some((mirror, branch)) = self.branch_of(cwd) else {
+            return;
+        };
+        let session = session.clone();
+        std::thread::spawn(
+            move || match branch::commit_left_blocking(&mirror, &branch) {
+                Ok(true) => {}
+                Ok(false) if !branch::on_branch(&mirror, &branch) => log(&format!(
+                    "session {session}: its mirror is not on {branch}, so its turn's end was not \
+                 committed"
+                )),
+                Ok(false) => {}
+                Err(e) => log(&format!(
+                    "session {session}: what its turn left was not committed: {e}"
+                )),
+            },
+        );
     }
 
     fn end(&mut self, session: &HostSession) {

@@ -86,11 +86,7 @@ impl HostConn {
     }
 
     /// This laptop's mirror called `name`, made on first use.
-    pub async fn mirror(
-        &self,
-        name: &str,
-        branch: Option<&str>,
-    ) -> Result<MirrorState, HostError> {
+    pub async fn mirror(&self, name: &str, branch: Option<&str>) -> Result<MirrorState, HostError> {
         let call = Call::Mirror {
             name: name.into(),
             branch: branch.map(str::to_string),
@@ -124,11 +120,7 @@ impl HostConn {
 
     /// Bring `commit`, already pushed into the branch mirror at `path`, onto
     /// its branch. A merge may take a while on a big repository.
-    pub async fn mirror_update(
-        &self,
-        path: &Path,
-        commit: &str,
-    ) -> Result<MirrorState, HostError> {
+    pub async fn mirror_update(&self, path: &Path, commit: &str) -> Result<MirrorState, HostError> {
         let call = Call::MirrorUpdate {
             path: path.to_path_buf(),
             commit: commit.into(),

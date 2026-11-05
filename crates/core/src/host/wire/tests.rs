@@ -216,10 +216,9 @@ fn the_switch_calls_round_trip() {
 fn an_older_mirror_call_still_reads() {
     let call: Call = serde_json::from_str(r#"{"mirror":{"name":"m"}}"#).unwrap();
     assert!(matches!(call, Call::Mirror { branch: None, .. }));
-    let state: MirrorState = serde_json::from_str(
-        r#"{"path":"/m","key":"host","generation":3,"working":false}"#,
-    )
-    .unwrap();
+    let state: MirrorState =
+        serde_json::from_str(r#"{"path":"/m","key":"host","generation":3,"working":false}"#)
+            .unwrap();
     assert_eq!(state.head, None);
     let update = Call::MirrorUpdate {
         path: "/m".into(),

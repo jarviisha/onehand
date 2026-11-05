@@ -451,8 +451,31 @@ fn answer(
         }
         // On the loop, as the switch is: each touches one small file, and the
         // key's check and its change must not let a prompt in between.
-        Call::Mirror { name, branch: _ } => lock(hub).mirror(&name).map(Reply::Mirror),
-        Call::MirrorUpdate { .. } => Err("This host cannot update a branch yet".into()),
+        Call::Mirror { name, branch } => lock(hub)
+            .mirror(&name, branch.as_deref())
+            .map(Reply::Mirror),
+        // Checked and marked on the loop, so no prompt slips in before the
+        // merge; the merge itself off it, as a file call is.
+        Call::MirrorUpdate { path, commit } => {
+            let branch = match lock(hub).begin_update(&path) {
+                Ok(branch) => branch,
+                Err(e) => {
+                    let _ = out.send(FromHost::Answer { id, result: Err(e) });
+                    return false;
+                }
+            };
+            let (hub, out) = (hub.clone(), out.clone());
+            tokio::task::spawn_blocking(move || {
+                let merged = crate::hub::update_blocking(&path, &branch, &commit);
+                let mut hub = lock(&hub);
+                hub.end_update(&path);
+                let result = merged
+                    .and_then(|()| hub.mirror_state(&path))
+                    .map(Reply::Mirror);
+                let _ = out.send(FromHost::Answer { id, result });
+            });
+            return false;
+        }
         Call::MirrorKey {
             path,
             to,
