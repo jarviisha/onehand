@@ -15,13 +15,10 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   be the active one with its tab off the end of the list: the grid is right, the strip is behind.
   Fixing it means a `ScrollHandle` on the panel, and `scroll_to_item` on a tab that has never been
   painted needs deferring past the frame that first draws it.
-- **A document's first heading is bold**, where every other heading in the app is semibold at
-  most. The Markdown renderer picks each heading level's weight itself, and its style lets a caller
-  size a level but not weigh one; the Markdown mode and an issue's description both draw through it.
-  Changing it means a patch to the renderer.
 - **Some window behaviour has no automated test**: Settings' drafts kept across leaving the page,
-  a failed write said once, and the keyboard handed back when a dialog closes. Each needs a window
-  to run in, and the app runs no GPUI test harness; they are checked by hand.
+  a failed write said once, and the keyboard handed back when a dialog closes. The app runs
+  window tests through gpui's harness (the terminal dock, the Workbench panel), but none covers
+  these; they are checked by hand.
 - **A submenu's row is lettered a step larger.** The library draws it itself, past `menu_row`,
   at its own size, so *Change scope* in the Plugins mode's ⋯ stands a step over the rows around
   it. Fixing it means submenus of the app's own. For the same reason a group's heading in a menu
@@ -71,12 +68,14 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   nothing else. Rebuilding it means per-occurrence offsets through the markdown renderer, which is
   the same span machinery a drag-selection across blocks would need; the two should be built
   together or not at all.
-- **A lost adapter is reported by the rail's mark alone.** Nothing else on screen says it: the
-  conversation header used to carry the same condition in words, and the badge that did went with
-  everything else that row was saying twice. It is deliberately kept off the desktop too — an agent
-  that has stopped answering is a standing condition rather than news, and a notification for one
-  would fire again on every reconnection attempt. So with the rail hidden (`Ctrl+Shift+B`) or a panel
-  maximized, a dead agent is announced nowhere at all. The two ways out, neither taken yet, are to put
+- **A lost adapter is reported by the rail's mark and its own transcript alone.** The transcript
+  ends on a *Disconnected* notice with the Restart key, and the remote chat hears of it where one
+  is set up; the conversation header used to carry the same condition in words, and the badge
+  that did went with everything else that row was saying twice. It is deliberately kept off the
+  desktop too — an agent that has stopped answering is a standing condition rather than news, and
+  a notification for one would fire again on every reconnection attempt. So with the rail hidden
+  (`Ctrl+Shift+B`) or a panel maximized, a dead agent in a session not on screen is announced
+  nowhere in the window. The two ways out, neither taken yet, are to put
   the mark back on the header for that one condition — not the whole badge, since what the badge
   otherwise said is on the running line already — or to let this one kind of news reach the desktop
   after all, which means deciding how often it may repeat.
@@ -117,7 +116,8 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   `editor::save_blocking` rather than in a renderer. A *suggested commit
   message* is absent for a different reason — writing one means asking the
   model, and the mechanical sentence a renderer could manage ("Update 3 files")
-  is worse than none; there is no commit path either, only `gitstat`'s read.
+  is worse than none; there is no commit path for a turn's work either, only `gitstat`'s read
+  (a host's branch mirror commits what a turn left, but on the host, not here).
   And `Deleted` is a **guess**: a file emptied and a file removed arrive as the
   same thing, a diff section whose new text is empty, so the letter on the row
   reads the commoner of the two while the counts and the bar stay right either
@@ -142,23 +142,23 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   outside its bubble rather than over the one short sentence it is offering.
 
   **Two ways out exist, and both were weighed and declined for now.** The component library does
-  ship a selectable plain-text control — `Editor` (and `TextArea`) with `.readonly(true)`, which
+  ship a selectable plain-text control — `Editor` (and `Textarea`) with `.readonly(true)`, which
   *"keeps the normal appearance and still can be focused, selected and copied, it only rejects the
   changes made by the user"* — and with `.appearance(false)` and no explicit height it would sit in
   a bubble and grow with its text. What it costs is an `Entity<EditorState>` per prompt cached on
-  the session (today that cache holds a handful of live cards, not every message of a long
-  conversation), a click on a prompt taking focus off the composer, and selection that still stops
+  the session (beside the `TextViewState` it already keeps for each block of prose), a click on a
+  prompt taking focus off the composer, and selection that still stops
   at each block's edge — a diff stays unselectable either way.
 
   The thorough one is `gpui_base::TextSelectionHandle` with `TextSelectionRegistration` /
   `TextSelectionRun`: a document-wide selection spanning arbitrary elements, which is what
-  `TextView` itself is built on, and under which sit `gpui::InteractiveText` and
-  `TextLayout::index_for_position` — where `vendor/gpui-terminal` gets its own. It keeps the diff's
+  `TextView` itself is built on, on top of `TextLayout::index_for_position`. It keeps the diff's
   columns, needs no per-message state and steals no focus, and costs one custom element: a hitbox,
   runs projected from a `TextLayout`, and the highlight painted behind the glyphs.
 - **`path:line:col` tokens in agent prose are not clickable.** The transcript renders prose through
-  `TextView::markdown` and does not scan it for path tokens. Only a tool card's path header opens a
-  file, and it carries no line — ACP's diff payload has no hunk offsets. Core holds no parser for
+  a cached markdown `TextViewState` and does not scan it for path tokens. Only a tool card's path
+  header opens a file, and it carries no line — ACP's diff payload has no hunk offsets, and core
+  does not read a tool call's `locations`. Core holds no parser for
   these tokens either: the feature is the detection pass, and a parser written ahead of it is a
   guess at an interface nobody has designed.
 - **A fenced code block inside prose has no header, and cannot fold independently.** What the
@@ -176,8 +176,9 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   *before* the built-in conversion and can intercept `mdast::Node::Code`, and
   `markdown_block_renderer` then draws it — that is the supported hook, and `SyntaxHighlighter` is
   public so highlighting survives. What does not is selection: the element that carries it,
-  `text::Inline`, is `pub(crate)`, so a hand-rolled block would draw `StyledText` and lose the drag.
-  Trading a header for the ability to select code is the wrong way round.
+  `gpui_base`'s text `Inline`, is private, so a hand-rolled block keeps the drag only through the
+  custom selection element described above. Trading a header for the ability to select code is
+  the wrong way round.
 
   **The comment scope cannot be retinted either.** `TextViewStyle::highlight_theme` is a public
   field, but `ThemeStyle::color` inside it is private with no setter and no constructor — reachable
@@ -202,8 +203,9 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   a row, and a submenu's row is the library's own.
 - **Settings has no interface size**, and no editor or terminal font size of its own; no
   Comfortable / Compact density; no recorder that takes a pressed key combination (a shortcut is
-  typed as text); no page gathering what unattended runs need; and no export or import of the
-  whole configuration. Connections lists connectors and their sign-in only; managing MCP servers
+  typed as text); no page of its own for what unattended runs need (a section of Workspace holds
+  their switches); and no export or import of the whole configuration. Connections lists
+  connectors, their sign-in and outside control only; managing MCP servers
   would be a group of its own. There is no search across Settings, and none is planned.
 - **A forge's own issue says nothing of its work in the Issues tab or on the Issues page.** Only
   issues a project keeps
@@ -239,17 +241,18 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   Keeping them would mean the relation on disk, keyed by the conversation, the worker's project
   kept rather than transient, and the lead switched on again taking its workers back.
 - **A lead cannot close a worker, nor pick a model per turn.** A finished worker holds its place
-  under the cap until the person closes it; the refusal names the four. A worker runs on the model
-  it was opened with; a model per turn needs agents that change model inside a session.
+  under the cap until the person closes it; the refusal lists the four open. A worker runs on the
+  model it was opened with; a model per turn needs agents that change model inside a session.
 - **Only a session's agent leads.** An outside program may open sessions but never workers, since
   it has no session to own them by; owning what it opened for as long as its connection lasts is
   not built.
-- **A worker is seen only in the lead's strip and the workers' region**, never inside the lead's
-  conversation, and the region's state (which worker is picked, a composer open) is not saved. A
+- **A worker is seen only in the lead's strip and the workers' region** (the lead's rail row
+  counts those that need the person), never inside the lead's conversation, and the region's
+  state (which worker is picked, a composer open) is not saved. A
   worker's compact composer has no `@` or `/` completion and no `+` menu.
 - **No tool answers a card, a permission or an approval, and none cuts a worktree.** Both are on
   purpose: only a person answers what an agent parked, and the lead cuts its worktrees with git.
-  The cap of four sessions per caller is not raised for leads either.
+  The cap of four sessions a session's agent may open is not raised for leads either.
 - **A host terminal's tab gone with a lost connection comes back only when the project is shown
   or the dock opened again.**
 - **Restarting the host service onto another build ends every host terminal without asking.** The
@@ -272,8 +275,6 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **A host that is not supported, or whose `onehand-host` is missing, is not tried again,** and
   its project row shows no mark. Trying again cannot change it; a person's Restart or *Try again*
   does after the binary is there.
-- **A run's task driver sees a lost host session as disconnected,** though it will restart by
-  itself when the host is back. A run on it is treated as gone.
 - **The laptop's copies are never pruned.** A copy of a session the host has long since dropped,
   or of a project removed here, stays under `hosts/` until a person deletes it.
 - **The permission bypass is changed only while the host is attached:** the page draws no switch
@@ -297,7 +298,8 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   typed here is stamped with this machine's clock and the entries after it with the host's. The
   journal keeps each entry's second, so the fix is measuring those from the times the replay says
   rather than from when they arrive.
-- **onehand's own work does not reach a host project.** No tool lists or reaches it, and no
+- **onehand's own work does not reach a host project or an offloaded one**
+  (`ProjectRoot::runs_here`). No tool lists or reaches it, and no
   workflow, task, issue, schedule, unattended run, worktree or check command runs on it; the
   Telegram bridge does not offer it either. Each reads files, runs git or starts a process on this
   machine, and needs the host to do that work instead.
@@ -318,9 +320,9 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   starts the agent anyway, so a session closed before it was up leaves one idle agent on the host,
   listed on the project's page and attachable again. Cancelling an open needs a call the host
   service does not take yet.
-- **The rows of a host project's sessions take no keyboard focus**, as the rows of a local
-  project page's Tasks and Schedules boxes do not; they are reached by pointer only. Making each box row a tab
-  stop with `Enter` opening it would fix all three.
+- **The rows of the host's sessions on a host or offloaded project's page take no keyboard
+  focus**, as the rows of a local project page's Tasks and Schedules boxes do not; they are
+  reached by pointer only. Making each box row a tab stop with `Enter` opening it would fix all three.
 - **A clone running past 15 minutes reads as failed on the laptop while git may go on.** The
   laptop gives up waiting after `CLONE_WAIT`, but the host service sets no deadline of its own on
   `git clone`, so the clone can finish there, leaving the folder, which the form's next *Clone*
@@ -335,16 +337,23 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   everything under it. What it sent is not remembered, so a file git ignores is not kept in step.
 - **The manifest is each file's size and modification time.** A file touched without being
   changed stops a copy back as a change would; hashing the files would close that.
+- **An edit landing while the code comes back is written over.** The copy back checks for changes
+  here first, then copies; a file saved between the check and `rsync` reaching it takes the
+  host's version, and so does one saved between a backup and *Take the host's code*.
+- **Every copy reads every file on both ends** (`rsync --checksum`), `.git/objects` included, so a
+  big repository's copy up and back takes a while each time; skipping the objects from the
+  checksum is the way out if it is felt.
 - **`.git` objects are never pruned on the way back.** A commit only this machine had keeps its
   objects, and so does one the host dropped; `git gc` here clears them.
 - **A backup holds this machine's versions, not a way back.** Restoring one after *Take the host's
-  code* is copying its files over by hand; backups are never cleared.
+  code* is copying its files over by hand; backups are never cleared. A backup skips a link to a
+  folder, and does not keep `.git/logs`.
 - **A past conversation from before a project was offloaded opens readable, but its agent cannot
   carry it on:** it resumes on the host, which has no record of it, and fails there. A new session
   is the way to go on.
 - **The code comes back only while its host is attached.** A check never attaches by itself, so an
   offloaded project whose sessions nobody shows stays locked until its page or a session on it is
-  shown.
+  shown, or *Check again* is pressed.
 - **An offloaded project's prompt queued behind a turn can be refused by the host** when the code
   came back at that turn's end before the queued prompt went: the transcript says to send it
   again, and sending it again sends the code up first.
@@ -363,6 +372,8 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **An agent that leaves its host's branch gets no turn-end commit.** A branch mirror whose HEAD
   is on another branch, or mid-merge, cherry-pick or rebase, is left as the agent left it, and
   *Update host from laptop* refuses until it is back on its branch.
+- **The host's own git settings can fail *Update host from laptop*.** The merge runs with the
+  host account's global git config, so a `merge.ff=only` or a hooks path set there can refuse it.
 - **A branch mirror holds only the history of this folder's last commit:** the laptop's other
   branches, its tags and its `origin` are not there, so an agent cannot fetch or push from it.
 - **The host's branch's ref here is never pruned,** nor the branch mirror: *Run here again*
