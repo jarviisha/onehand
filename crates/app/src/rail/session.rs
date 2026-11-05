@@ -149,16 +149,19 @@ fn session_menu(
     uid: u64,
     resend: bool,
     host_wait: bool,
+    host: Option<SharedString>,
     shell: WeakEntity<Shell>,
 ) -> impl Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + use<> {
-    move |menu, _, _: &mut App| {
-        let (again, rename, restart, export, close) = (
+    move |menu, _, cx: &mut App| {
+        let (again, rename, restart, export, close, end) = (
+            shell.clone(),
             shell.clone(),
             shell.clone(),
             shell.clone(),
             shell.clone(),
             shell.clone(),
         );
+        let danger = crate::theme::status_ink(cx).danger;
         menu.when(resend, |menu| {
             menu.item(
                 crate::controls::menu_item(RESEND).on_click(move |_, _, cx: &mut App| {
@@ -219,6 +222,21 @@ fn session_menu(
                     .ok();
             },
         ))
+        // On a host, closing only stops watching; this stops its agent there.
+        .when_some(host.clone(), |menu, host| {
+            let words = SharedString::from(format!("End on {host}…"));
+            menu.item(
+                crate::controls::menu_row(move |_, _| {
+                    div().text_color(danger).child(words.clone())
+                })
+                .on_click(move |_, window, cx: &mut App| {
+                    end.update(cx, |shell: &mut Shell, cx| {
+                        shell.ask_end_session(uid, window, cx);
+                    })
+                    .ok();
+                }),
+            )
+        })
     }
 }
 
@@ -259,6 +277,7 @@ pub(super) fn session_row(
     let group = SharedString::from(format!("rail-session-{uid}"));
     let title = SharedString::from(item.title.clone());
     let host = item.host.as_deref();
+    let host_name = host.map(SharedString::from);
     let facts = SharedString::from(meta(
         signal,
         host,
@@ -336,7 +355,15 @@ pub(super) fn session_row(
                         menu_button(
                             row_control(("session-menu", uid), IconName::Ellipsis, cx),
                             "What can be done with this session",
-                            session_menu(root, session, uid, mark.resend, host_wait, shell.clone()),
+                            session_menu(
+                                root,
+                                session,
+                                uid,
+                                mark.resend,
+                                host_wait,
+                                host_name.clone(),
+                                shell.clone(),
+                            ),
                         ),
                     ),
                 )),
@@ -395,9 +422,15 @@ pub(super) fn session_row(
             })
         })
         .context_menu(move |menu, window, cx| {
-            session_menu(root, session, uid, mark.resend, host_wait, shell.clone())(
-                menu, window, cx,
-            )
+            session_menu(
+                root,
+                session,
+                uid,
+                mark.resend,
+                host_wait,
+                host_name.clone(),
+                shell.clone(),
+            )(menu, window, cx)
         })
         .into_any_element()
 }

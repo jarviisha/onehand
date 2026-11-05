@@ -1107,3 +1107,27 @@ fn a_mirror_kept_before_branches_reads_as_mirror_mode() {
     let kept = super::mirrors::load(&dir).unwrap();
     assert!(kept[std::path::Path::new("/m")].branch.is_none());
 }
+
+/// The laptop ends a session: its agent's stream is dropped, the journal
+/// says why, and it is listed ended; ending it again changes nothing.
+#[tokio::test]
+async fn a_session_the_laptop_ends_stops_its_agent() {
+    let (hub, opened) = hub("end");
+    let fake = open(&hub, &opened, true);
+    let mut lines = watch(&hub, &fake.session);
+    assert_eq!(kinds(&entries(&mut lines, 1).await), ["ready"]);
+    hub.lock().unwrap().end_session(&fake.session).unwrap();
+    let got = entries(&mut lines, 1).await;
+    assert_eq!(kinds(&got), ["event:Disconnected"]);
+    settle().await;
+    assert!(
+        fake.events.is_closed(),
+        "the agent's stream went with its task"
+    );
+    assert!(hub.lock().unwrap().list()[0].ended);
+    assert_eq!(hub.lock().unwrap().end_session(&fake.session), Ok(()));
+    let refused = hub.lock().unwrap().request(&fake.session, prompt("go"));
+    assert_eq!(refused, Err("this session has ended".to_string()));
+    let unknown = hub.lock().unwrap().end_session(&HostSession("nope".into()));
+    assert!(unknown.is_err());
+}

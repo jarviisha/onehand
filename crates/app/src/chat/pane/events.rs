@@ -109,6 +109,16 @@ pub enum ChatPaneEvent {
     /// trigger-less dialog it lives in and the reset-to-derived-title rule, and
     /// the rail's own *Rename…* goes to the same place.
     Rename,
+    /// End the session on screen on its host, asked first: its agent stops
+    /// there, where closing it only stops watching it.
+    EndOnHost,
+    /// End host session `session` on `host`, called `label`, listed on the
+    /// project page, asked first.
+    EndHostSession {
+        host: onehand_core::workspace::HostName,
+        session: onehand_core::host::wire::HostSession,
+        label: String,
+    },
     /// Delete the conversation showing — the directory on disk, and with it the
     /// session that is writing to it.
     ///

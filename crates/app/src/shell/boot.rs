@@ -197,6 +197,22 @@ impl Shell {
                     E::Restart => shell.restart_session(window, cx),
                     E::CloseSession => shell.close_active_session(window, cx),
                     E::Rename => shell.rename_active_session(window, cx),
+                    E::EndHostSession {
+                        host,
+                        session,
+                        label,
+                    } => shell.ask_end_on_host(
+                        host.clone(),
+                        session.clone(),
+                        label.clone(),
+                        window,
+                        cx,
+                    ),
+                    E::EndOnHost => {
+                        if let Some(uid) = shell.active_session_uid() {
+                            shell.ask_end_session(uid, window, cx);
+                        }
+                    }
                     E::DeleteConversation(dir) => {
                         shell.confirm_delete_conversation(dir.clone(), window, cx)
                     }

@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 use super::{Call, HostConn, HostError};
 use crate::editor::SaveOutcome;
 use crate::gitstat::GitStatus;
-use crate::host::wire::{Holder, MirrorState};
+use crate::host::wire::{Holder, HostSession, MirrorState};
 use crate::tree::TreeEntry;
 
 /// How long a clone may take: a big repository over a slow link takes
@@ -60,6 +60,14 @@ impl HostConn {
             root: root.to_path_buf(),
         };
         self.ask_for(call, |a| a.git).await
+    }
+
+    /// End `session` on the host: its agent stops there.
+    pub async fn end_session(&self, session: &HostSession) -> Result<(), HostError> {
+        let call = Call::End {
+            session: session.clone(),
+        };
+        self.ask_for(call, |a| a.done).await
     }
 
     /// The host user's home folder.

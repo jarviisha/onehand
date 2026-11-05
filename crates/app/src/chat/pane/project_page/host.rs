@@ -16,6 +16,7 @@ use gpui::{
     SharedString, StatefulInteractiveElement as _, Styled as _, div,
 };
 use gpui_component::button::ButtonVariants as _;
+use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme as _, Icon, Sizable as _, StyledExt as _};
 use onehand_core::host::copy::{self, copies_dir};
@@ -23,6 +24,7 @@ use onehand_core::host::wire::{HostSession, SessionInfo};
 use onehand_core::workspace::HostName;
 use onehand_ui::TallIcon as _;
 use std::path::Path;
+use std::rc::Rc;
 
 /// How many of a host's sessions in one folder the page lists.
 ///
@@ -145,6 +147,22 @@ impl ChatPane {
             .iter()
             .map(|(uid, conv)| (*uid, conv.root.as_path(), conv.host.as_ref()));
         watching_uid(convs, root, host, id)
+    }
+
+    /// The session here already attached to host session `id` on `host`,
+    /// in whichever folder.
+    pub(crate) fn watching_on(&self, host: &HostName, id: &HostSession) -> Option<u64> {
+        self.conversations.iter().find_map(|(uid, conv)| {
+            let on = conv.host.as_ref()?;
+            (&on.host == host && on.session.as_ref() == Some(id)).then_some(*uid)
+        })
+    }
+
+    /// The host and host session session `uid` watches, once the host has
+    /// said which.
+    pub(crate) fn host_session_of(&self, uid: u64) -> Option<(HostName, HostSession)> {
+        let on = self.conversations.get(&uid)?.host.as_ref()?;
+        Some((on.host.clone(), on.session.clone()?))
     }
 
     /// Ask the host the page stands on for its sessions, off the UI loop.
@@ -496,6 +514,38 @@ pub(super) fn host_sessions(
                 // prompt is still running there.
                 false => ("running", muted),
             };
+            let group = SharedString::from(format!("host-session-{i}"));
+            let watch = {
+                let (pane, agent, session) = (cx.entity(), agent.clone(), session.clone());
+                Rc::new(
+                    move |_: &gpui::ClickEvent, _: &mut gpui::Window, cx: &mut gpui::App| {
+                        let (agent, session) = (agent.clone(), session.clone());
+                        pane.update(cx, |_: &mut ChatPane, cx| {
+                            cx.emit(ChatPaneEvent::WatchHostSession { agent, session });
+                        });
+                    },
+                ) as onehand_ui::Press
+            };
+            let mut acts = vec![onehand_ui::RowAct::new("Attach", watch)];
+            // An ended one has no agent left there to stop.
+            if !info.ended {
+                let words = format!("End on {host}…");
+                let (pane, host, session) = (cx.entity(), host.clone(), session.clone());
+                let label = format!("{agent} (started {since})");
+                let end = Rc::new(
+                    move |_: &gpui::ClickEvent, _: &mut gpui::Window, cx: &mut gpui::App| {
+                        let event = ChatPaneEvent::EndHostSession {
+                            host: host.clone(),
+                            session: session.clone(),
+                            label: label.clone(),
+                        };
+                        pane.update(cx, |_: &mut ChatPane, cx| cx.emit(event));
+                    },
+                ) as onehand_ui::Press;
+                acts.push(onehand_ui::RowAct::new(words, end).danger());
+            }
+            let acts: Rc<[onehand_ui::RowAct]> = acts.into();
+            let menu_acts = acts.clone();
             onehand_ui::row(false, cx)
                 .id(("host-session", i))
                 .h_flex()
@@ -503,6 +553,7 @@ pub(super) fn host_sessions(
                 .gap_2()
                 .w_full()
                 .rounded_none()
+                .group(group.clone())
                 .child(div().flex_1().min_w_0().truncate().child(agent.clone()))
                 .child(
                     div()
@@ -525,6 +576,22 @@ pub(super) fn host_sessions(
                         session: session.clone(),
                     });
                 }))
+                // The press on ⋯ stays its own, or it also attaches.
+                .child(
+                    div()
+                        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .child(onehand_ui::hover_slot(
+                            group,
+                            false,
+                            onehand_ui::row_more(
+                                format!("host-session-more-{i}"),
+                                "Session actions",
+                                acts,
+                                cx,
+                            ),
+                        )),
+                )
+                .context_menu(move |menu, _, cx| onehand_ui::row_menu_items(menu, &menu_acts, cx))
                 .into_any_element()
         }),
         cx,
