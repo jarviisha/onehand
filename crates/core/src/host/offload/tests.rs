@@ -193,6 +193,8 @@ fn coming_back_brings_the_hosts_work_and_keeps_a_commit_only_here() {
         &mirror,
         &listed,
         &sent,
+        &changes,
+        &project.parent().unwrap().join("backup"),
         &keep_of(&project),
     );
     assert!(
@@ -376,6 +378,7 @@ fn an_edit_landing_while_the_code_comes_is_put_back_and_stops_the_copy() {
     let sent = send_up_blocking(&local(), &project, &mirror, &Manifest::default()).unwrap();
     fs::write(mirror.join("a.txt"), "host a").unwrap();
     fs::write(mirror.join("c.txt"), "host c").unwrap();
+    fs::remove_file(mirror.join("new.txt")).unwrap();
     let listed = listed_blocking(&mirror).unwrap();
     let mut list = listed.clone();
     list.extend(sent.gone(&listed));
@@ -384,14 +387,16 @@ fn an_edit_landing_while_the_code_comes_is_put_back_and_stops_the_copy() {
     let before = stamps(&project, &list);
     fs::write(project.join("a.txt"), "mine a").unwrap();
     fs::write(project.join("b.txt"), "mine b").unwrap();
-    touch_later(&project.join("a.txt"));
-    touch_later(&project.join("b.txt"));
+    fs::write(project.join("new.txt"), "mine new").unwrap();
+    for name in ["a.txt", "b.txt", "new.txt"] {
+        touch_later(&project.join(name));
+    }
     let keep = keep_of(&project);
-    let back = copy_back(&local(), &project, &mirror, &listed, &sent, &before, &keep).unwrap();
+    let back = copy_back(&local(), &project, &mirror, &list, &before, &keep).unwrap();
     let Back::Raced(manifest, changes) = back else {
         panic!("an edit made while the code came is never written over: {back:?}");
     };
-    let raced = vec![PathBuf::from("a.txt"), PathBuf::from("b.txt")];
+    let raced: Vec<PathBuf> = ["a.txt", "b.txt", "new.txt"].map(PathBuf::from).into();
     assert_eq!(changes.files, raced);
     assert_eq!(fs::read_to_string(project.join("a.txt")).unwrap(), "mine a");
     assert_eq!(fs::read_to_string(project.join("b.txt")).unwrap(), "mine b");
@@ -400,4 +405,38 @@ fn an_edit_landing_while_the_code_comes_is_put_back_and_stops_the_copy() {
     // Checked again, the folder reads changed in exactly those.
     let again = manifest.changes(&Manifest::read_blocking(&project).unwrap());
     assert_eq!(again.files, raced);
+    // Taking the host's code then deletes the one the host deleted.
+    let into = project.parent().unwrap().join("backup");
+    let took = take_back_blocking(
+        &local(),
+        &project,
+        &mirror,
+        &listed,
+        &manifest,
+        &again,
+        &into,
+        &keep,
+    )
+    .unwrap();
+    assert!(matches!(took, Back::Came(_)), "{took:?}");
+    assert!(!project.join("new.txt").exists());
+    assert_eq!(fs::read_to_string(project.join("a.txt")).unwrap(), "host a");
+    assert_eq!(
+        fs::read_to_string(into.join("new.txt")).unwrap(),
+        "mine new"
+    );
+}
+
+#[test]
+fn files_left_by_a_copy_that_did_not_finish_are_never_cleared() {
+    let project = repo("back-left");
+    let mirror = mirror_of(&project);
+    let sent = send_up_blocking(&local(), &project, &mirror, &Manifest::default()).unwrap();
+    let keep = keep_of(&project);
+    fs::create_dir_all(&keep).unwrap();
+    fs::write(keep.join("a.txt"), "only copy").unwrap();
+    let listed = listed_blocking(&mirror).unwrap();
+    let back = bring_back_blocking(&local(), &project, &mirror, &listed, &sent, &keep);
+    assert!(back.unwrap_err().contains("did not finish"));
+    assert_eq!(fs::read_to_string(keep.join("a.txt")).unwrap(), "only copy");
 }

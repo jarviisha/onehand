@@ -260,45 +260,64 @@ pub fn bring_back_blocking(
     }
     // Held against the folder as it was checked, so an edit landing since
     // is told apart however soon after.
-    copy_back(addr, folder, mirror, listed, sent, &now.files, keep)
+    let mut list = listed.to_vec();
+    list.extend(sent.gone(listed));
+    copy_back(addr, folder, mirror, &list, &now.files, keep)
 }
 
-/// Bring the mirror's code back over the folder as it is now, once it was
-/// checked or the person said so and what changed was backed up.
-///
-/// **An edit landing while the code comes is never lost.** What rsync writes
-/// over or deletes goes to `keep` (a scratch folder on this machine, emptied
-/// first and removed after), and a file there that is not as it stood just
-/// before the copy was changed here meanwhile: it is put back, and the copy
-/// ends [`Back::Raced`] on it. Under `.git` nothing is put back: a commit
-/// made here in that moment keeps its objects, not its ref.
+/// Bring the mirror's code back over what changed here, once the person
+/// said so: `changes` are copied into `into` first, then the code comes as
+/// on any copy back, held against the folder as it was read before the
+/// backup, so an edit landing since is put back too.
+#[allow(clippy::too_many_arguments)]
 pub fn take_back_blocking(
     addr: &HostAddr,
     folder: &Path,
     mirror: &Path,
     listed: &[PathBuf],
     sent: &Manifest,
+    changes: &Changes,
+    into: &Path,
     keep: &Path,
 ) -> Result<Back, String> {
     let mut list = listed.to_vec();
     list.extend(sent.gone(listed));
     let before = stamps(folder, &list);
-    copy_back(addr, folder, mirror, listed, sent, &before, keep)
+    backup_blocking(folder, changes, into)?;
+    copy_back(addr, folder, mirror, &list, &before, keep)
 }
 
-/// The copy back itself, held against `before`, the folder as last read.
+/// The copy back itself, of `list`, held against `before`, the folder as
+/// last read.
+///
+/// **An edit landing while the code comes is never lost.** What rsync writes
+/// over or deletes goes to `keep` (a scratch folder on this machine, removed
+/// once done), and a file there that is not as `before` had it was changed
+/// here meanwhile: it is put back, and the copy ends [`Back::Raced`] on it.
+/// A `keep` still holding files is never emptied: a copy that did not finish
+/// left them, and they may be the only ones there are. Under `.git` nothing
+/// is put back: a commit made here in that moment keeps its objects, not its
+/// ref.
+// ponytail: rsync moves the old file aside, then its own into place; a file
+// made anew at that path in between is written over with nothing kept.
 fn copy_back(
     addr: &HostAddr,
     folder: &Path,
     mirror: &Path,
-    listed: &[PathBuf],
-    sent: &Manifest,
+    list: &[PathBuf],
     before: &BTreeMap<PathBuf, (u64, i128)>,
     keep: &Path,
 ) -> Result<Back, String> {
-    let mut list = listed.to_vec();
-    list.extend(sent.gone(listed));
     let fail = |e: std::io::Error| format!("Could not use {}: {e}", keep.display());
+    let mut left = Vec::new();
+    walk(keep, Path::new(""), &mut left);
+    if !left.is_empty() {
+        return Err(format!(
+            "A copy back that did not finish left files in {}; look through them and remove \
+             the folder, then check again",
+            keep.display()
+        ));
+    }
     if keep.exists() {
         std::fs::remove_dir_all(keep).map_err(fail)?;
     }
@@ -306,7 +325,7 @@ fn copy_back(
     let copied = rsync(
         addr,
         &["--backup", &backup],
-        &list,
+        list,
         &remote(addr, mirror),
         &local_src(folder),
     );
@@ -321,10 +340,11 @@ fn copy_back(
         true => Ok(Back::Came(manifest)),
         false => {
             raced.sort();
-            // Held against the host's code, each reads as changed here.
+            // Held against the host's code, each reads as changed here, and
+            // stays listed, so a take still deletes one the host deleted.
             let mut came = manifest;
             for rel in &raced {
-                came.files.remove(rel);
+                came.files.insert(rel.clone(), (u64::MAX, 0));
             }
             let files = raced;
             Ok(Back::Raced(
@@ -447,7 +467,7 @@ pub fn send_path_blocking(
 /// Copy each of `changes`' files as it is in `folder` now into `into`, at its
 /// place there, and the refs that moved as `refs.txt`; `into` once done.
 /// A file gone from `folder` has nothing to keep.
-pub fn backup_blocking(folder: &Path, changes: &Changes, into: &Path) -> Result<PathBuf, String> {
+fn backup_blocking(folder: &Path, changes: &Changes, into: &Path) -> Result<PathBuf, String> {
     let fail = |e: std::io::Error| format!("Could not back up to {}: {e}", into.display());
     std::fs::create_dir_all(into).map_err(fail)?;
     for rel in &changes.files {

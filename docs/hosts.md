@@ -477,7 +477,8 @@ the folder here).
   `coming-back` in the project's storage, and a file there that is not as the folder was read just
   before goes back in place over the host's version; the copy then stands stopped on those files
   (`Back::Raced`), held against the host's code, so the box lists only them. Nothing under `.git`
-  is put back. A backup (`backup_blocking`) copies the changed files as they are, `refs.txt`
+  is put back. A `coming-back` a copy that did not finish left files in is never emptied: the next
+  copy refuses, naming it, until the person has looked through it and removed it. A backup (`backup_blocking`) copies the changed files as they are, `refs.txt`
   of `HEAD` and every ref when refs moved (the objects stay, since `.git` comes back without
   deleting), and `.git/index` or `.git/config` when what is staged or the settings changed. The laptop keeps it with who holds the key, when the code last moved and what stopped a
   copy back in `offload.json` in the project's storage (`OffloadState`).

@@ -637,10 +637,9 @@ async fn bring_back(
                 offload::bring_back_blocking(&addr, &folder, &at, &listed, &manifest, &keep)?,
                 backup,
             ) {
-                (Back::Stopped(changes), Some(into)) => {
-                    offload::backup_blocking(&folder, &changes, &into)?;
-                    offload::take_back_blocking(&addr, &folder, &at, &listed, &manifest, &keep)
-                }
+                (Back::Stopped(changes), Some(into)) => offload::take_back_blocking(
+                    &addr, &folder, &at, &listed, &manifest, &changes, &into, &keep,
+                ),
                 (back, _) => Ok(back),
             }
         })
