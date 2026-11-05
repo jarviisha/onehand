@@ -17,11 +17,15 @@ use onehand_core::acp::{
 };
 use onehand_core::config::{AgentSpec, Launch};
 use onehand_core::host::journal::{self, Journal, Mark};
-use onehand_core::host::wire::{busy_after, Entry, FromHost, HostSession, Readiness, SessionInfo};
+use onehand_core::host::wire::{
+    aside_after, busy_after, Entry, FromHost, HostSession, Readiness, SessionInfo,
+};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::serve::{log, unix_secs};
+
+mod mirrors;
 
 /// How a session's agent is reached: `acp::connect` in production, a fake in tests.
 pub(crate) type Connector =
@@ -70,6 +74,8 @@ struct Session {
     /// The rpc ids of the cards the host answered itself.
     answered: Vec<serde_json::Value>,
     busy: bool,
+    /// The background work and subagents it has running, by id.
+    aside: BTreeSet<String>,
     ended: bool,
 }
 
@@ -84,6 +90,9 @@ pub(crate) struct Hub {
     /// read, in which case every folder's cards wait: a choice kept on disk
     /// and lost is not taken for a folder never switched.
     off: Result<BTreeSet<PathBuf>, String>,
+    mirrors: mirrors::Mirrors,
+    /// The laptop the attach being served named, which its mirrors are kept for.
+    pub(crate) laptop: Option<String>,
 }
 
 impl Hub {
@@ -95,6 +104,8 @@ impl Hub {
             sessions: BTreeMap::new(),
             counter: 0,
             off: Ok(BTreeSet::new()),
+            mirrors: Ok(BTreeMap::new()),
+            laptop: None,
         }
     }
 
@@ -116,6 +127,7 @@ impl Hub {
             log(&why);
             why
         });
+        self.mirrors = mirrors::load(&self.dir);
         let dirs = match fs::read_dir(self.dir.join("sessions")) {
             Ok(dirs) => dirs,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
@@ -142,6 +154,7 @@ impl Hub {
         mut agent: AgentSpec,
         opening: Opening,
     ) -> Result<HostSession, String> {
+        lock(hub).may_use(&cwd)?;
         // The laptop clears it already; its variables name the laptop's paths.
         agent.env.clear();
         // Only the id is taken with the hub locked: the launch and the files
@@ -189,6 +202,7 @@ impl Hub {
                 parked: Vec::new(),
                 answered: Vec::new(),
                 busy: false,
+                aside: BTreeSet::new(),
                 ended: false,
             },
         );
@@ -238,8 +252,12 @@ impl Hub {
             .sessions
             .get_mut(session)
             .ok_or_else(|| unknown(session))?;
-        s.watcher = None;
-        Ok(s.dir.clone())
+        let (dir, cwd) = (s.dir.clone(), s.cwd.clone());
+        self.may_use(&cwd)?;
+        if let Some(s) = self.sessions.get_mut(session) {
+            s.watcher = None;
+        }
+        Ok(dir)
     }
 
     /// Send `Replay`, `entries` (the journal up to `mark`) and whatever was
@@ -304,6 +322,9 @@ impl Hub {
         if s.ended {
             return Err(ENDED.into());
         }
+        let cwd = s.cwd.clone();
+        self.may_use(&cwd)?;
+        let s = self.sessions.get_mut(session).expect("found above");
         // A card has one answer: one the host gave already wins, and the
         // person's goes nowhere rather than reach the agent a second time.
         let rpc = answers(&request);
@@ -313,6 +334,10 @@ impl Hub {
         let Some(tx) = s.tx.clone() else {
             return Err("the agent is still starting".into());
         };
+        if matches!(request, AcpRequest::Prompt { .. }) {
+            self.prompt_to(&cwd)?;
+        }
+        let s = self.sessions.get_mut(session).expect("found above");
         if let Some(rpc) = rpc {
             s.parked.retain(|card| card.rpc() != rpc);
         }
@@ -449,6 +474,7 @@ impl Hub {
             return;
         };
         s.busy = busy_after(s.busy, &entry);
+        aside_after(&mut s.aside, &entry);
         // A card answered by the host is never answered again.
         match &entry {
             Entry::Answered { answer, .. } => s.answered.extend(answers(answer).cloned()),
@@ -494,6 +520,7 @@ impl Hub {
         if let Some(s) = self.sessions.get_mut(session) {
             s.ended = true;
             s.busy = false;
+            s.aside.clear();
             s.tx = None;
             s.journal = None;
             s.parked.clear();
@@ -528,6 +555,7 @@ fn load(id: &str, dir: &Path) -> Result<Session, String> {
         parked: Vec::new(),
         answered: Vec::new(),
         busy: false,
+        aside: BTreeSet::new(),
         ended: true,
     })
 }

@@ -7,6 +7,7 @@ use std::time::{Duration, SystemTime};
 use super::{Call, HostConn, HostError};
 use crate::editor::SaveOutcome;
 use crate::gitstat::GitStatus;
+use crate::host::wire::{Holder, MirrorState};
 use crate::tree::TreeEntry;
 
 /// How long a clone may take: a big repository over a slow link takes
@@ -79,6 +80,36 @@ impl HostConn {
             on: Some(on),
         };
         self.ask_for(call, |a| a.bypass).await
+    }
+
+    /// This laptop's mirror called `name`, made on first use.
+    pub async fn mirror(&self, name: &str) -> Result<MirrorState, HostError> {
+        let call = Call::Mirror { name: name.into() };
+        self.ask_for(call, |a| a.mirror).await
+    }
+
+    /// Hand the key of the mirror at `path` to `to`; refused for the laptop
+    /// while something works there or a prompt went there since `generation`.
+    pub async fn mirror_key(
+        &self,
+        path: &Path,
+        to: Holder,
+        generation: u64,
+    ) -> Result<MirrorState, HostError> {
+        let call = Call::MirrorKey {
+            path: path.to_path_buf(),
+            to,
+            generation,
+        };
+        self.ask_for(call, |a| a.mirror).await
+    }
+
+    /// The files of the mirror at `path` its copy carries, relative to it.
+    pub async fn mirror_files(&self, path: &Path) -> Result<Vec<PathBuf>, HostError> {
+        let call = Call::MirrorFiles {
+            path: path.to_path_buf(),
+        };
+        self.ask_for(call, |a| a.mirror_files).await
     }
 
     /// Have the host `git clone` `url` into `into`, which must not exist yet.

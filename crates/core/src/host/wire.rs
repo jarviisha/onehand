@@ -169,6 +169,23 @@ pub enum Call {
         cwd: PathBuf,
         on: Option<bool>,
     },
+    /// This laptop's mirror called `name`, made on first use; refused when
+    /// another laptop owns it.
+    Mirror {
+        name: String,
+    },
+    /// Hand the mirror at `path`'s key to `to`. To the laptop only while
+    /// nothing works there and no prompt went to it since `generation`.
+    MirrorKey {
+        path: PathBuf,
+        to: Holder,
+        generation: u64,
+    },
+    /// What the mirror at `path` holds, as its copy is listed: the files git
+    /// does not ignore, relative to it.
+    MirrorFiles {
+        path: PathBuf,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -210,6 +227,28 @@ pub enum Reply {
     Bypass {
         on: bool,
     },
+    Mirror(MirrorState),
+    MirrorFiles(Vec<PathBuf>),
+}
+
+/// Which side may change an offloaded project's code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Holder {
+    Laptop,
+    Host,
+}
+
+/// A mirror as the host has it now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MirrorState {
+    /// Absolute, on the host.
+    pub path: PathBuf,
+    pub key: Holder,
+    /// Moved on by every prompt sent to a session there.
+    pub generation: u64,
+    /// Whether a session there is mid-turn or has work running aside.
+    pub working: bool,
 }
 
 /// What the host sends, one per line.
@@ -331,6 +370,55 @@ pub fn busy_after(busy: bool, entry: &Entry) -> bool {
             | AcpEvent::Echo(_)
             | AcpEvent::At(_) => busy,
         },
+    }
+}
+
+/// Update `aside`, the ids of the background work and subagents a session
+/// has running, after `entry`; work that outlives its turn still writes files.
+pub fn aside_after(aside: &mut std::collections::BTreeSet<String>, entry: &Entry) {
+    let Entry::Event(event) = entry else { return };
+    match event {
+        AcpEvent::Background(crate::acp::BackgroundReport::Spawned { id, .. }) => {
+            aside.insert(format!("bg:{id}"));
+        }
+        AcpEvent::Background(crate::acp::BackgroundReport::Ended { id, .. }) => {
+            aside.remove(&format!("bg:{id}"));
+        }
+        AcpEvent::SubagentSpawned { id, .. } => {
+            aside.insert(format!("sub:{id}"));
+        }
+        AcpEvent::SubagentEnded { id, .. } => {
+            aside.remove(&format!("sub:{id}"));
+        }
+        AcpEvent::Disconnected(_) => aside.clear(),
+        AcpEvent::Connected { .. }
+        | AcpEvent::SessionId(_)
+        | AcpEvent::AgentChunk { .. }
+        | AcpEvent::ThoughtChunk(_)
+        | AcpEvent::UserChunk(_)
+        | AcpEvent::ToolCall(_)
+        | AcpEvent::ToolUpdate(_)
+        | AcpEvent::Plan(_)
+        | AcpEvent::Usage(_)
+        | AcpEvent::InChild { .. }
+        | AcpEvent::StopRefused { .. }
+        | AcpEvent::Permission(_)
+        | AcpEvent::Elicitation(_)
+        | AcpEvent::AvailableCommands(_)
+        | AcpEvent::Modes { .. }
+        | AcpEvent::ModeChanged(_)
+        | AcpEvent::PickConfirmed { .. }
+        | AcpEvent::PickRefused { .. }
+        | AcpEvent::ConfigOptions(_)
+        | AcpEvent::TerminalOutput { .. }
+        | AcpEvent::TerminalExit { .. }
+        | AcpEvent::TurnEnded { .. }
+        | AcpEvent::Error { .. }
+        | AcpEvent::Interrupted
+        | AcpEvent::LoginRequired { .. }
+        | AcpEvent::Notice(_)
+        | AcpEvent::Echo(_)
+        | AcpEvent::At(_) => {}
     }
 }
 

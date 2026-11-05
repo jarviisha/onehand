@@ -306,6 +306,8 @@ async fn connection(
     out: UnboundedSender<FromHost>,
     mut lines: UnboundedReceiver<FromHost>,
 ) {
+    // The one attach served names the laptop its mirrors are kept for.
+    lock(&hub).laptop = laptop(&first);
     if answer(&hub, &terms, &build, &out, &first) {
         shut_down(&mut write, &mut lines).await;
     }
@@ -406,7 +408,12 @@ fn answer(
         | Call::SaveFile { .. }
         | Call::GitStatus { .. }
         | Call::Home
-        | Call::Clone { .. }) => {
+        | Call::Clone { .. }
+        | Call::MirrorFiles { .. }) => {
+            if let Err(e) = touched(&call).map_or(Ok(()), |path| lock(hub).may_use(path)) {
+                let _ = out.send(FromHost::Answer { id, result: Err(e) });
+                return false;
+            }
             // Off the loop: a big folder, a slow repository or a clone must
             // not hold up the asks behind it, and the answer goes out when it
             // is done.
@@ -417,9 +424,10 @@ fn answer(
             });
             return false;
         }
-        Call::TermOpen { cwd, cols, rows } => {
-            Terms::open(terms, cwd, cols, rows).map(|term| Reply::TermOpened { term })
-        }
+        Call::TermOpen { cwd, cols, rows } => lock(hub)
+            .may_use(&cwd)
+            .and_then(|()| Terms::open(terms, cwd, cols, rows))
+            .map(|term| Reply::TermOpened { term }),
         Call::TermList => Ok(Reply::Terms(terms::lock(terms).list())),
         // Answered after its replay, which is already on `out`.
         Call::TermWatch { term } => terms::lock(terms)
@@ -441,9 +449,48 @@ fn answer(
             }
             .map(|on| Reply::Bypass { on })
         }
+        // On the loop, as the switch is: each touches one small file, and the
+        // key's check and its change must not let a prompt in between.
+        Call::Mirror { name } => lock(hub).mirror(&name).map(Reply::Mirror),
+        Call::MirrorKey {
+            path,
+            to,
+            generation,
+        } => lock(hub)
+            .mirror_key(&path, to, generation)
+            .map(Reply::Mirror),
     };
     let _ = out.send(FromHost::Answer { id, result });
     exit
+}
+
+/// The folder or file a file call reaches, which may lie in a mirror.
+fn touched(call: &Call) -> Option<&Path> {
+    match call {
+        Call::ReadDir { path }
+        | Call::ReadFile { path }
+        | Call::SaveFile { path, .. }
+        | Call::MirrorFiles { path } => Some(path),
+        Call::GitStatus { root } => Some(root),
+        Call::Clone { into, .. } => Some(into),
+        Call::Hello { .. }
+        | Call::Shutdown
+        | Call::List
+        | Call::Open { .. }
+        | Call::Watch { .. }
+        | Call::Request { .. }
+        | Call::Probe { .. }
+        | Call::Home
+        | Call::TermOpen { .. }
+        | Call::TermList
+        | Call::TermWatch { .. }
+        | Call::TermWrite { .. }
+        | Call::TermResize { .. }
+        | Call::TermClose { .. }
+        | Call::Bypass { .. }
+        | Call::Mirror { .. }
+        | Call::MirrorKey { .. } => None,
+    }
 }
 
 /// Write every line already queued.

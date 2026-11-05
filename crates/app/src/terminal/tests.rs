@@ -139,6 +139,9 @@ mod on_host {
                 | Call::TermOpen { .. }
                 | Call::TermList
                 | Call::Bypass { .. }
+                | Call::Mirror { .. }
+                | Call::MirrorKey { .. }
+                | Call::MirrorFiles { .. }
                 | Call::TermWatch { .. }
                 | Call::TermWrite { .. }
                 | Call::TermResize { .. } => None,

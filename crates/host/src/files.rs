@@ -1,5 +1,5 @@
 //! The file calls: a folder's listing, a file to read or save, a folder's git
-//! status, the user's home folder, a clone. Each touches the disk, so the
+//! status, the user's home folder, a clone, a mirror's files. Each touches the disk, so the
 //! service runs them off its connection loop and a slow one holds nothing
 //! else up.
 
@@ -41,6 +41,9 @@ pub(crate) fn answer(call: Call) -> Result<Reply, String> {
             clone(&url, &into)?;
             Reply::Done
         }
+        Call::MirrorFiles { path } => {
+            Reply::MirrorFiles(onehand_core::host::offload::listed_blocking(&path)?)
+        }
         Call::Hello { .. }
         | Call::Shutdown
         | Call::List
@@ -54,7 +57,9 @@ pub(crate) fn answer(call: Call) -> Result<Reply, String> {
         | Call::TermWrite { .. }
         | Call::TermResize { .. }
         | Call::TermClose { .. }
-        | Call::Bypass { .. } => return Err("not a file call".into()),
+        | Call::Bypass { .. }
+        | Call::Mirror { .. }
+        | Call::MirrorKey { .. } => return Err("not a file call".into()),
     };
     serde_json::to_vec(&reply).map_err(|e| format!("the reply cannot be sent: {e}"))?;
     Ok(reply)
