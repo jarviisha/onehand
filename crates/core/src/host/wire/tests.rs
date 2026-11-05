@@ -209,3 +209,23 @@ fn the_switch_calls_round_trip() {
     });
     assert!(matches!(line, Entry::Answered { card: None, .. }));
 }
+
+/// A laptop or a host from before branch mirrors still reads, and is read,
+/// as mirror mode.
+#[test]
+fn an_older_mirror_call_still_reads() {
+    let call: Call = serde_json::from_str(r#"{"mirror":{"name":"m"}}"#).unwrap();
+    assert!(matches!(call, Call::Mirror { branch: None, .. }));
+    let state: MirrorState =
+        serde_json::from_str(r#"{"path":"/m","key":"host","generation":3,"working":false}"#)
+            .unwrap();
+    assert_eq!(state.head, None);
+    let update = Call::MirrorUpdate {
+        path: "/m".into(),
+        commit: "abc".into(),
+    };
+    assert!(matches!(
+        round_trips(&update),
+        Call::MirrorUpdate { commit, .. } if commit == "abc"
+    ));
+}

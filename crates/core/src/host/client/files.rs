@@ -14,6 +14,9 @@ use crate::tree::TreeEntry;
 /// minutes, and one stuck asking for credentials must still end.
 const CLONE_WAIT: Duration = Duration::from_secs(15 * 60);
 
+/// How long a branch mirror's update may take on the host.
+const MERGE_WAIT: Duration = Duration::from_secs(5 * 60);
+
 impl HostConn {
     /// The `ssh` destination this connection reaches.
     pub fn host(&self) -> &str {
@@ -83,8 +86,11 @@ impl HostConn {
     }
 
     /// This laptop's mirror called `name`, made on first use.
-    pub async fn mirror(&self, name: &str) -> Result<MirrorState, HostError> {
-        let call = Call::Mirror { name: name.into() };
+    pub async fn mirror(&self, name: &str, branch: Option<&str>) -> Result<MirrorState, HostError> {
+        let call = Call::Mirror {
+            name: name.into(),
+            branch: branch.map(str::to_string),
+        };
         self.ask_for(call, |a| a.mirror).await
     }
 
@@ -110,6 +116,16 @@ impl HostConn {
             path: path.to_path_buf(),
         };
         self.ask_for(call, |a| a.mirror_files).await
+    }
+
+    /// Bring `commit`, already pushed into the branch mirror at `path`, onto
+    /// its branch. A merge may take a while on a big repository.
+    pub async fn mirror_update(&self, path: &Path, commit: &str) -> Result<MirrorState, HostError> {
+        let call = Call::MirrorUpdate {
+            path: path.to_path_buf(),
+            commit: commit.into(),
+        };
+        self.ask_for_within(call, MERGE_WAIT, |a| a.mirror).await
     }
 
     /// Have the host `git clone` `url` into `into`, which must not exist yet.

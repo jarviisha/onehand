@@ -170,9 +170,12 @@ pub enum Call {
         on: Option<bool>,
     },
     /// This laptop's mirror called `name`, made on first use; refused when
-    /// another laptop owns it.
+    /// another laptop owns it. With `branch`, one made now works on that
+    /// branch and has no key; an older laptop sends none.
     Mirror {
         name: String,
+        #[serde(default)]
+        branch: Option<String>,
     },
     /// Hand the mirror at `path`'s key to `to`. To the laptop only while
     /// nothing works there and no prompt went to it since `generation`.
@@ -185,6 +188,13 @@ pub enum Call {
     /// does not ignore, relative to it.
     MirrorFiles {
         path: PathBuf,
+    },
+    /// Bring `commit`, pushed into the branch mirror at `path`, onto its
+    /// branch: the branch starts from it, or it is merged in. Refused while
+    /// something works there.
+    MirrorUpdate {
+        path: PathBuf,
+        commit: String,
     },
 }
 
@@ -249,6 +259,10 @@ pub struct MirrorState {
     pub generation: u64,
     /// Whether a session there is mid-turn or has work running aside.
     pub working: bool,
+    /// A branch mirror's branch, as the commit it is now; none for a mirror
+    /// with a key, or a branch not started yet.
+    #[serde(default)]
+    pub head: Option<String>,
 }
 
 /// What the host sends, one per line.

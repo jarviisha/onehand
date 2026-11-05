@@ -793,11 +793,11 @@ fn attached(hub: &Arc<Mutex<Hub>>, laptop: &str) {
 async fn a_mirror_is_made_once_for_its_laptop_and_refused_to_another() {
     let (hub, opened) = hub("mirror-owner");
     attached(&hub, "laptop-a");
-    let made = hub.lock().unwrap().mirror("proj-1").unwrap();
+    let made = hub.lock().unwrap().mirror("proj-1", None).unwrap();
     assert!(made.path.is_dir());
     assert_eq!(made.key, Holder::Laptop);
-    assert_eq!(hub.lock().unwrap().mirror("proj-1").unwrap(), made);
-    assert!(hub.lock().unwrap().mirror("../up").is_err());
+    assert_eq!(hub.lock().unwrap().mirror("proj-1", None).unwrap(), made);
+    assert!(hub.lock().unwrap().mirror("../up", None).is_err());
     attached(&hub, "laptop-b");
     let refused = Hub::open(&hub, made.path.clone(), agent(), Opening::Fresh);
     assert!(refused
@@ -817,7 +817,7 @@ async fn a_mirror_is_made_once_for_its_laptop_and_refused_to_another() {
 async fn a_prompt_is_refused_while_the_laptop_holds_the_key() {
     let (hub, opened) = hub("mirror-prompt");
     attached(&hub, "laptop-a");
-    let mirror = hub.lock().unwrap().mirror("proj").unwrap();
+    let mirror = hub.lock().unwrap().mirror("proj", None).unwrap();
     let mut fake = open_in(&hub, &opened, &mirror.path);
     settle().await;
     let refused = hub.lock().unwrap().request(&fake.session, prompt("go"));
@@ -833,7 +833,7 @@ async fn a_prompt_is_refused_while_the_laptop_holds_the_key() {
         .request(&fake.session, prompt("go"))
         .unwrap();
     assert!(matches!(fake.request().await, AcpRequest::Prompt { .. }));
-    let now = hub.lock().unwrap().mirror("proj").unwrap();
+    let now = hub.lock().unwrap().mirror("proj", None).unwrap();
     assert_eq!(now.generation, mirror.generation + 1);
     assert!(now.working);
 }
@@ -842,7 +842,7 @@ async fn a_prompt_is_refused_while_the_laptop_holds_the_key() {
 async fn the_key_comes_back_only_when_nothing_works_and_no_prompt_went_since() {
     let (hub, opened) = hub("mirror-back");
     attached(&hub, "laptop-a");
-    let mirror = hub.lock().unwrap().mirror("proj").unwrap();
+    let mirror = hub.lock().unwrap().mirror("proj", None).unwrap();
     let fake = open_in(&hub, &opened, &mirror.path);
     settle().await;
     let path = mirror.path.clone();
@@ -854,7 +854,7 @@ async fn the_key_comes_back_only_when_nothing_works_and_no_prompt_went_since() {
         .unwrap()
         .request(&fake.session, prompt("go"))
         .unwrap();
-    let seen = hub.lock().unwrap().mirror("proj").unwrap().generation;
+    let seen = hub.lock().unwrap().mirror("proj", None).unwrap().generation;
     // Mid-turn: refused.
     assert!(hub
         .lock()
@@ -873,7 +873,7 @@ async fn the_key_comes_back_only_when_nothing_works_and_no_prompt_went_since() {
         },
     ));
     settle().await;
-    assert!(hub.lock().unwrap().mirror("proj").unwrap().working);
+    assert!(hub.lock().unwrap().mirror("proj", None).unwrap().working);
     assert!(hub
         .lock()
         .unwrap()
@@ -904,7 +904,7 @@ async fn the_key_comes_back_only_when_nothing_works_and_no_prompt_went_since() {
 async fn the_mirrors_survive_a_restart_and_an_unreadable_file_refuses() {
     let (hub, _opened) = hub("mirror-keep");
     attached(&hub, "laptop-a");
-    let mirror = hub.lock().unwrap().mirror("proj").unwrap();
+    let mirror = hub.lock().unwrap().mirror("proj", None).unwrap();
     let path = mirror.path.clone();
     hub.lock()
         .unwrap()
@@ -915,13 +915,13 @@ async fn the_mirrors_survive_a_restart_and_an_unreadable_file_refuses() {
     let (hub, _opened) = hub_on(dir.clone());
     attached(&hub, "laptop-a");
     assert_eq!(
-        hub.lock().unwrap().mirror("proj").unwrap().key,
+        hub.lock().unwrap().mirror("proj", None).unwrap().key,
         Holder::Host
     );
     std::fs::write(dir.join("mirrors.json"), "not json").unwrap();
     let (hub, _opened) = hub_on(dir);
     attached(&hub, "laptop-a");
-    assert!(hub.lock().unwrap().mirror("proj").is_err());
+    assert!(hub.lock().unwrap().mirror("proj", None).is_err());
     assert!(hub.lock().unwrap().may_use(&path).is_err());
 }
 
@@ -929,7 +929,7 @@ async fn the_mirrors_survive_a_restart_and_an_unreadable_file_refuses() {
 async fn another_laptop_reaches_nothing_in_a_mirror_however_it_is_spelled() {
     let (hub, opened) = hub("mirror-spelled");
     attached(&hub, "laptop-a");
-    let mirror = hub.lock().unwrap().mirror("proj").unwrap();
+    let mirror = hub.lock().unwrap().mirror("proj", None).unwrap();
     let fake = open_in(&hub, &opened, &mirror.path);
     settle().await;
     std::fs::create_dir_all(mirror.path.join("src")).unwrap();
@@ -963,4 +963,147 @@ async fn another_laptop_reaches_nothing_in_a_mirror_however_it_is_spelled() {
         .unwrap()
         .may_use(std::path::Path::new("/tmp"))
         .is_ok());
+}
+
+const BRANCH: &str = "onehand/box";
+
+/// Git in `dir` as a test's laptop.
+fn run_git(dir: &std::path::Path, args: &[&str]) -> String {
+    let out = std::process::Command::new("git")
+        .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+        .args(["-c", "commit.gpgsign=false", "-C"])
+        .arg(dir)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "git {args:?}: {out:?}");
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+/// A laptop repository beside `mirror`, its HEAD pushed in; the commit.
+fn pushed_into(mirror: &std::path::Path) -> String {
+    let laptop = mirror.parent().unwrap().join("laptop-repo");
+    let _ = std::fs::remove_dir_all(&laptop);
+    std::fs::create_dir_all(&laptop).unwrap();
+    run_git(&laptop, &["init", "-q", "-b", "main"]);
+    std::fs::write(laptop.join("a.txt"), "a\n").unwrap();
+    run_git(&laptop, &["add", "."]);
+    run_git(&laptop, &["commit", "-q", "-m", "one"]);
+    let to = mirror.to_str().unwrap();
+    run_git(
+        &laptop,
+        &["push", "-q", "-f", to, "HEAD:refs/onehand/laptop"],
+    );
+    run_git(&laptop, &["rev-parse", "HEAD"])
+}
+
+#[tokio::test]
+async fn a_branch_mirror_starts_on_the_laptops_commit_and_has_no_key() {
+    let (hub, opened) = hub("branch-mirror");
+    attached(&hub, "laptop-a");
+    let made = hub
+        .lock()
+        .unwrap()
+        .mirror("proj.branch", Some(BRANCH))
+        .unwrap();
+    assert_eq!(made.head, None);
+    let commit = pushed_into(&made.path);
+    let path = hub.lock().unwrap().begin_update(&made.path).unwrap();
+    assert_eq!(path, BRANCH);
+    super::branch::update_blocking(&made.path, BRANCH, &commit).unwrap();
+    hub.lock().unwrap().end_update(&made.path);
+    let now = hub
+        .lock()
+        .unwrap()
+        .mirror("proj.branch", Some(BRANCH))
+        .unwrap();
+    assert_eq!(now.head, Some(commit));
+    let refused = hub
+        .lock()
+        .unwrap()
+        .mirror_key(&made.path, Holder::Laptop, now.generation);
+    assert!(refused.unwrap_err().contains("has no key"));
+    // A prompt goes through: there is no key to wait on.
+    let fake = open_in(&hub, &opened, &made.path);
+    settle().await;
+    hub.lock()
+        .unwrap()
+        .request(&fake.session, prompt("go"))
+        .unwrap();
+    // A mirror with a key is not a branch mirror to update.
+    let keyed = hub.lock().unwrap().mirror("proj", None).unwrap();
+    assert!(hub.lock().unwrap().begin_update(&keyed.path).is_err());
+}
+
+#[tokio::test]
+async fn a_prompt_while_updating_is_refused() {
+    let (hub, opened) = hub("branch-updating");
+    attached(&hub, "laptop-a");
+    let made = hub
+        .lock()
+        .unwrap()
+        .mirror("proj.branch", Some(BRANCH))
+        .unwrap();
+    let fake = open_in(&hub, &opened, &made.path);
+    settle().await;
+    hub.lock().unwrap().begin_update(&made.path).unwrap();
+    // One update at a time.
+    assert!(hub.lock().unwrap().begin_update(&made.path).is_err());
+    let refused = hub.lock().unwrap().request(&fake.session, prompt("go"));
+    assert!(refused.unwrap_err().contains("being updated"));
+    hub.lock().unwrap().end_update(&made.path);
+    hub.lock()
+        .unwrap()
+        .request(&fake.session, prompt("go"))
+        .unwrap();
+    // Mid-turn now: an update waits for the turn.
+    let busy = hub.lock().unwrap().begin_update(&made.path);
+    assert!(busy.unwrap_err().contains("still working"));
+}
+
+#[tokio::test]
+async fn a_turn_end_in_a_branch_mirror_commits_what_was_left() {
+    let (hub, opened) = hub("branch-turn");
+    attached(&hub, "laptop-a");
+    let made = hub
+        .lock()
+        .unwrap()
+        .mirror("proj.branch", Some(BRANCH))
+        .unwrap();
+    let commit = pushed_into(&made.path);
+    super::branch::update_blocking(&made.path, BRANCH, &commit).unwrap();
+    let fake = open_in(&hub, &opened, &made.path);
+    settle().await;
+    hub.lock()
+        .unwrap()
+        .request(&fake.session, prompt("go"))
+        .unwrap();
+    std::fs::write(made.path.join("made.txt"), "agent\n").unwrap();
+    fake.push(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    let mut moved = false;
+    for _ in 0..100 {
+        settle().await;
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        if run_git(&made.path, &["status", "--porcelain"]).is_empty() {
+            moved = true;
+            break;
+        }
+    }
+    assert!(moved, "the turn's end committed nothing");
+    assert!(run_git(&made.path, &["ls-files"]).contains("made.txt"));
+}
+
+#[test]
+fn a_mirror_kept_before_branches_reads_as_mirror_mode() {
+    let dir = scratch("branch-old-mirrors");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("mirrors.json"),
+        r#"{"/m":{"owner":"laptop-a","key":"host","generation":2}}"#,
+    )
+    .unwrap();
+    let kept = super::mirrors::load(&dir).unwrap();
+    assert!(kept[std::path::Path::new("/m")].branch.is_none());
 }
