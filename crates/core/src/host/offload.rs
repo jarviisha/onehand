@@ -219,6 +219,10 @@ pub fn send_up_blocking(
 pub enum Back {
     /// Something changed in the folder since `sent`; nothing was copied.
     Stopped(Changes),
+    /// The code came, but these files were changed here while it came: each
+    /// was put back as it was here, over the host's version, so the folder
+    /// is the manifest's code with them as this machine left them.
+    Raced(Manifest, Changes),
     /// The code came; the folder as it is now. Kept as the manifest whatever
     /// the key's hand-back says after: the folder holds this code now.
     Came(Manifest),
@@ -231,16 +235,16 @@ pub enum Back {
 /// does not) counts as changed, so it is never written over unasked. `.git`
 /// comes back without deleting, so a commit only this folder had keeps its
 /// objects.
-// ponytail: an edit landing between the check and rsync writing that file is
-// written over; `--backup-dir` on the way back would keep it.
 pub fn bring_back_blocking(
     addr: &HostAddr,
     folder: &Path,
     mirror: &Path,
     listed: &[PathBuf],
     sent: &Manifest,
+    keep: &Path,
 ) -> Result<Back, String> {
-    let mut changes = sent.changes(&Manifest::read_blocking(folder)?);
+    let now = Manifest::read_blocking(folder)?;
+    let mut changes = sent.changes(&now);
     for rel in listed {
         let unknown = rel.as_os_str() != GIT_DIR
             && !sent.files.contains_key(rel)
@@ -254,22 +258,162 @@ pub fn bring_back_blocking(
         changes.files.sort();
         return Ok(Back::Stopped(changes));
     }
-    take_back_blocking(addr, folder, mirror, listed, sent).map(Back::Came)
+    // Held against the folder as it was checked, so an edit landing since
+    // is told apart however soon after.
+    copy_back(addr, folder, mirror, listed, sent, &now.files, keep)
 }
 
-/// Bring the mirror's code back over whatever changed here, once the person
-/// said so and what changed was backed up.
+/// Bring the mirror's code back over the folder as it is now, once it was
+/// checked or the person said so and what changed was backed up.
+///
+/// **An edit landing while the code comes is never lost.** What rsync writes
+/// over or deletes goes to `keep` (a scratch folder on this machine, emptied
+/// first and removed after), and a file there that is not as it stood just
+/// before the copy was changed here meanwhile: it is put back, and the copy
+/// ends [`Back::Raced`] on it. Under `.git` nothing is put back: a commit
+/// made here in that moment keeps its objects, not its ref.
 pub fn take_back_blocking(
     addr: &HostAddr,
     folder: &Path,
     mirror: &Path,
     listed: &[PathBuf],
     sent: &Manifest,
-) -> Result<Manifest, String> {
+    keep: &Path,
+) -> Result<Back, String> {
     let mut list = listed.to_vec();
     list.extend(sent.gone(listed));
-    rsync(addr, &[], &list, &remote(addr, mirror), &local_src(folder))?;
-    Manifest::read_blocking(folder)
+    let before = stamps(folder, &list);
+    copy_back(addr, folder, mirror, listed, sent, &before, keep)
+}
+
+/// The copy back itself, held against `before`, the folder as last read.
+fn copy_back(
+    addr: &HostAddr,
+    folder: &Path,
+    mirror: &Path,
+    listed: &[PathBuf],
+    sent: &Manifest,
+    before: &BTreeMap<PathBuf, (u64, i128)>,
+    keep: &Path,
+) -> Result<Back, String> {
+    let mut list = listed.to_vec();
+    list.extend(sent.gone(listed));
+    let fail = |e: std::io::Error| format!("Could not use {}: {e}", keep.display());
+    if keep.exists() {
+        std::fs::remove_dir_all(keep).map_err(fail)?;
+    }
+    let backup = format!("--backup-dir={}", keep.display());
+    let copied = rsync(
+        addr,
+        &["--backup", &backup],
+        &list,
+        &remote(addr, mirror),
+        &local_src(folder),
+    );
+    // Put back before anything else, a failed copy included: a kept file is
+    // the only one there is.
+    let raced = put_back(folder, keep, before);
+    copied?;
+    let mut raced = raced?;
+    let manifest = Manifest::read_blocking(folder)?;
+    let _ = std::fs::remove_dir_all(keep);
+    match raced.is_empty() {
+        true => Ok(Back::Came(manifest)),
+        false => {
+            raced.sort();
+            // Held against the host's code, each reads as changed here.
+            let mut came = manifest;
+            for rel in &raced {
+                came.files.remove(rel);
+            }
+            let files = raced;
+            Ok(Back::Raced(
+                came,
+                Changes {
+                    files,
+                    refs: Vec::new(),
+                },
+            ))
+        }
+    }
+}
+
+/// Each of `list` that is here, outside `.git`, by its size and time.
+fn stamps(folder: &Path, list: &[PathBuf]) -> BTreeMap<PathBuf, (u64, i128)> {
+    list.iter()
+        .filter(|rel| !rel.starts_with(GIT_DIR))
+        .filter_map(|rel| {
+            let meta = std::fs::symlink_metadata(folder.join(rel)).ok()?;
+            Some((rel.clone(), stamp(&meta)))
+        })
+        .collect()
+}
+
+/// Move back into `folder` each file in `keep` that is not as `before` had
+/// it: changed here while the copy ran. The rest of `keep` is left to go.
+fn put_back(
+    folder: &Path,
+    keep: &Path,
+    before: &BTreeMap<PathBuf, (u64, i128)>,
+) -> Result<Vec<PathBuf>, String> {
+    let mut kept = Vec::new();
+    walk(keep, Path::new(""), &mut kept);
+    let mut raced = Vec::new();
+    for rel in kept {
+        if rel.starts_with(GIT_DIR) {
+            continue;
+        }
+        let from = keep.join(&rel);
+        let Ok(meta) = std::fs::symlink_metadata(&from) else {
+            continue;
+        };
+        if before.get(&rel) == Some(&stamp(&meta)) {
+            continue;
+        }
+        let to = folder.join(&rel);
+        let fail = |e: std::io::Error| {
+            format!(
+                "{} changed here while the code came back; it is kept in {}: {e}",
+                rel.display(),
+                from.display()
+            )
+        };
+        if let Some(dir) = to.parent() {
+            std::fs::create_dir_all(dir).map_err(fail)?;
+        }
+        // Copied, not moved: `keep` may be on another file system. The time
+        // goes with it, so the file reads as this machine left it.
+        let _ = std::fs::remove_file(&to);
+        if meta.is_symlink() {
+            let target = std::fs::read_link(&from).map_err(fail)?;
+            std::os::unix::fs::symlink(target, &to).map_err(fail)?;
+        } else {
+            std::fs::copy(&from, &to).map_err(fail)?;
+            let file = std::fs::File::options()
+                .write(true)
+                .open(&to)
+                .map_err(fail)?;
+            file.set_modified(meta.modified().map_err(fail)?)
+                .map_err(fail)?;
+        }
+        raced.push(rel);
+    }
+    Ok(raced)
+}
+
+/// Every file and link under `dir`, relative to it, into `out`.
+fn walk(dir: &Path, rel: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir.join(rel)) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let rel = rel.join(entry.file_name());
+        match entry.file_type() {
+            Ok(t) if t.is_dir() => walk(dir, &rel, out),
+            Ok(_) => out.push(rel),
+            Err(_) => {}
+        }
+    }
 }
 
 /// Copy `rel`, a file or a folder with all under it, ignored or not, from

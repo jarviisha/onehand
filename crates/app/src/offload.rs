@@ -551,6 +551,11 @@ pub(crate) async fn take_over(
     };
     let said = match &came {
         Ok(Some(state)) if state.key == Holder::Laptop => Ok(!here),
+        // Files changed here after the backup was made: kept as they are.
+        Ok(Some(state)) if state.stopped.is_some() => Err(
+            "Files changed here while the code came back; they stay as this machine has them"
+                .to_string(),
+        ),
         Ok(Some(_)) => Err(format!(
             "{host} kept the code; the next check brings it back"
         )),
@@ -622,17 +627,19 @@ async fn bring_back(
     let (addr, folder, at) = (host.addr(), path.to_path_buf(), mirror.path.clone());
     let manifest = sent.clone();
     let backup = backup.map(Path::to_path_buf);
+    // What the copy writes over waits here until it is known not to be an
+    // edit made meanwhile.
+    let keep = storage_for(path).join("coming-back");
     let back = cx
         .background_executor()
         .spawn(async move {
             match (
-                offload::bring_back_blocking(&addr, &folder, &at, &listed, &manifest)?,
+                offload::bring_back_blocking(&addr, &folder, &at, &listed, &manifest, &keep)?,
                 backup,
             ) {
                 (Back::Stopped(changes), Some(into)) => {
                     offload::backup_blocking(&folder, &changes, &into)?;
-                    offload::take_back_blocking(&addr, &folder, &at, &listed, &manifest)
-                        .map(Back::Came)
+                    offload::take_back_blocking(&addr, &folder, &at, &listed, &manifest, &keep)
                 }
                 (back, _) => Ok(back),
             }
@@ -645,6 +652,14 @@ async fn bring_back(
         Back::Stopped(changes) => OffloadState {
             key: Holder::Host,
             manifest: sent,
+            moved: now,
+            stopped: Some(changes),
+        },
+        // The host's code is here but for what changed here as it came: held
+        // against that code, those stop it as any change here does.
+        Back::Raced(manifest, changes) => OffloadState {
+            key: Holder::Host,
+            manifest,
             moved: now,
             stopped: Some(changes),
         },

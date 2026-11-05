@@ -337,9 +337,9 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   everything under it. What it sent is not remembered, so a file git ignores is not kept in step.
 - **The manifest is each file's size and modification time.** A file touched without being
   changed stops a copy back as a change would; hashing the files would close that.
-- **An edit landing while the code comes back is written over.** The copy back checks for changes
-  here first, then copies; a file saved between the check and `rsync` reaching it takes the
-  host's version, and so does one saved between a backup and *Take the host's code*.
+- **A commit made here while the code comes back loses its ref.** A file saved meanwhile is put
+  back and stops the copy, but nothing under `.git` is: the commit keeps its objects, and the ref
+  takes the host's.
 - **Every copy reads every file on both ends** (`rsync --checksum`), `.git/objects` included, so a
   big repository's copy up and back takes a while each time; skipping the objects from the
   checksum is the way out if it is felt.
