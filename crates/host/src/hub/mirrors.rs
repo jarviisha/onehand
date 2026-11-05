@@ -162,6 +162,7 @@ impl Hub {
             key: mirror.key,
             generation: mirror.generation,
             working: self.working(path),
+            head: None,
         })
     }
 

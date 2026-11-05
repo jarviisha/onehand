@@ -230,7 +230,7 @@ async fn mirror_of(
     path: &Path,
 ) -> Result<MirrorState, String> {
     let (conn, name, host) = (conn.clone(), stem_for(path), conn.host().to_string());
-    cx.update(|cx| hosts::on_runtime(cx, async move { conn.mirror(&name).await }))
+    cx.update(|cx| hosts::on_runtime(cx, async move { conn.mirror(&name, None).await }))
         .await
         .map_err(|e| format!("Could not ask {host} about its copy: {e}"))
 }

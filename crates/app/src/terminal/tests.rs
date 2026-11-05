@@ -142,6 +142,7 @@ mod on_host {
                 | Call::Mirror { .. }
                 | Call::MirrorKey { .. }
                 | Call::MirrorFiles { .. }
+                | Call::MirrorUpdate { .. }
                 | Call::TermWatch { .. }
                 | Call::TermWrite { .. }
                 | Call::TermResize { .. } => None,

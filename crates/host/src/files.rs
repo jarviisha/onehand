@@ -59,7 +59,8 @@ pub(crate) fn answer(call: Call) -> Result<Reply, String> {
         | Call::TermClose { .. }
         | Call::Bypass { .. }
         | Call::Mirror { .. }
-        | Call::MirrorKey { .. } => return Err("not a file call".into()),
+        | Call::MirrorKey { .. }
+        | Call::MirrorUpdate { .. } => return Err("not a file call".into()),
     };
     serde_json::to_vec(&reply).map_err(|e| format!("the reply cannot be sent: {e}"))?;
     Ok(reply)

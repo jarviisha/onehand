@@ -451,7 +451,8 @@ fn answer(
         }
         // On the loop, as the switch is: each touches one small file, and the
         // key's check and its change must not let a prompt in between.
-        Call::Mirror { name } => lock(hub).mirror(&name).map(Reply::Mirror),
+        Call::Mirror { name, branch: _ } => lock(hub).mirror(&name).map(Reply::Mirror),
+        Call::MirrorUpdate { .. } => Err("This host cannot update a branch yet".into()),
         Call::MirrorKey {
             path,
             to,
@@ -470,7 +471,8 @@ fn touched(call: &Call) -> Option<&Path> {
         Call::ReadDir { path }
         | Call::ReadFile { path }
         | Call::SaveFile { path, .. }
-        | Call::MirrorFiles { path } => Some(path),
+        | Call::MirrorFiles { path }
+        | Call::MirrorUpdate { path, .. } => Some(path),
         Call::GitStatus { root } => Some(root),
         Call::Clone { into, .. } => Some(into),
         Call::Hello { .. }
