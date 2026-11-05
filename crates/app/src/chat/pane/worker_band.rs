@@ -52,9 +52,8 @@ impl ChatPane {
         let held = crate::control::workers_of(lead)
             .into_iter()
             .find(|worker| worker.uid == uid)
-            .and_then(|worker| worker.sent)
             .zip(self.session_of(uid))
-            .is_some_and(|(sent, session)| session.read(cx).chat.prompted_since(sent));
+            .is_some_and(|(worker, session)| worker.held(&session.read(cx).chat));
         let offered = crate::control::give_back_offered(uid, prompts(self, cx), cx);
         let lead_here = self.conversations.contains_key(&lead);
         let name = lead_here.then(|| self.worker_name(lead, cx));

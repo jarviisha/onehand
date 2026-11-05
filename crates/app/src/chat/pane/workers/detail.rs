@@ -146,10 +146,7 @@ impl ChatPane {
         let name = self.worker_name(uid, cx);
         let short = SharedString::from(format!("Write to {}…", short_name(&name)));
         let chat = self.session_of(uid).map(|session| &session.read(cx).chat);
-        let held = worker
-            .sent
-            .zip(chat)
-            .is_some_and(|(sent, chat)| chat.prompted_since(sent));
+        let held = chat.is_some_and(|chat| worker.held(chat));
         let prompts = chat.map_or(0, |chat| chat.prompts_sent);
         let in_turn = chat.is_some_and(|chat| chat.busy);
         let give_back = crate::control::give_back_offered(uid, prompts, cx);

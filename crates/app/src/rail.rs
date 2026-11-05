@@ -641,9 +641,9 @@ impl Shell {
             None => None,
         }
         .or_else(|| {
-            let root = workspace.active_root()?;
-            root.active_session()
-                .and_then(|session| self.home_of(session.uid))
+            workspace.active_root()?;
+            self.active_session_uid()
+                .and_then(|uid| self.home_of(uid))
                 .or(Some(workspace.active_root))
         })
     }

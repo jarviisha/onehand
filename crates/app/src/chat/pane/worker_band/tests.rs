@@ -11,12 +11,13 @@ fn a_worker_its_lead_holds_names_the_lead_and_the_way_back() {
     );
 }
 
-/// A lead in another window: named, but not a session this window shows.
+/// A lead in another window: this pane knows no name for it, and it is not
+/// a session this window shows.
 #[test]
-fn a_lead_elsewhere_is_named_without_the_way_back() {
+fn a_lead_elsewhere_is_said_without_the_way_back() {
     assert_eq!(
-        band(Some("Refactor"), false, false, false),
-        ("Refactor is coordinating this worker".to_string(), None)
+        band(None, false, false, false),
+        ("Its lead is coordinating this worker".to_string(), None)
     );
 }
 
@@ -37,10 +38,11 @@ fn a_held_worker_not_offered_back_says_only_that() {
     );
 }
 
+/// Held, the lead's name no longer matters: the band speaks of the person.
 #[test]
-fn a_lead_with_no_name_here_is_still_said() {
+fn a_held_worker_of_a_lead_elsewhere_says_only_that() {
     assert_eq!(
-        band(None, false, false, false),
-        ("Its lead is coordinating this worker".to_string(), None)
+        band(None, true, false, false),
+        ("You hold this worker".to_string(), None)
     );
 }
