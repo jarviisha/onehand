@@ -36,7 +36,8 @@ impl ChatPane {
             stack: pinned,
             tucked,
         } = self.pinned(session, room.well, window, cx);
-        let lead = self.lead_strip(cx);
+        // A worker's band, else a lead's strip: a worker leads none.
+        let lead = self.worker_band(cx).or_else(|| self.lead_strip(cx));
         // **A waiting card's foot runs under the composer**, which is drawn
         // after it and opaque, so the composer reads as laid over the card.
         // The column's gap goes too, or the two would stand apart. While

@@ -40,6 +40,7 @@ mod runs;
 mod sessions;
 mod step_strip;
 mod titles;
+mod worker_band;
 mod workers;
 pub use events::{ChatPaneEvent, ProjectAction, Restart, SessionSignal};
 use header::Archives;

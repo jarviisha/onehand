@@ -1,16 +1,13 @@
 //! The lead's strip: one line on a surface of its own above the lead's
 //! composer, narrower than it, while the lead on screen has workers. It
 //! counts them, a count per state, and names the most urgent one waiting on
-//! the person. Pressed, the workers' region shows with that worker picked.
-//!
-//! **It stays while the region shows**: one line, which says what waits
-//! without the person turning to the region. **The pointer leaves the caret
-//! where it was**: the press is kept from the pane, which would take focus.
+//! the person. Pressed, the most urgent worker shows in the pane, as its row
+//! under the lead in the rail would show it.
 
 use super::workers::urgency;
 use super::{ChatPane, ChatPaneEvent, SessionSignal};
 use gpui::{
-    Context, InteractiveElement, IntoElement, MouseButton, ParentElement,
+    App, Context, Div, InteractiveElement, IntoElement, ParentElement, Stateful,
     StatefulInteractiveElement as _, Styled, div,
 };
 use gpui_component::{ActiveTheme as _, StyledExt as _};
@@ -38,6 +35,26 @@ fn waiting_first(workers: &[(u64, Option<SessionSignal>)]) -> Option<u64> {
         .map(|(uid, _)| *uid)
 }
 
+/// The surface a line over the composer stands on: one row, narrower than
+/// the composer, edged and lifted as the card it stands on, open at its foot
+/// where the card's own edge closes it.
+pub(super) fn over_composer(id: &'static str, cx: &App) -> Stateful<Div> {
+    div()
+        .id(id)
+        .h_flex()
+        .items_center()
+        .gap_2()
+        .h(onehand_ui::tokens::ROW_H)
+        .px_3()
+        .bg(crate::theme::raised(cx))
+        .border_t_1()
+        .border_x_1()
+        .border_color(cx.theme().input)
+        .shadow(crate::theme::composer_lift(cx))
+        .rounded_t(cx.theme().radius)
+        .text_size(onehand_ui::tokens::CHROME_TEXT)
+}
+
 impl ChatPane {
     /// The strip over the lead's composer, while the lead on screen has
     /// workers.
@@ -56,31 +73,13 @@ impl ChatPane {
         let waiting = waiting_first(&workers).map(|uid| self.worker_name(uid, cx));
         let muted = cx.theme().muted_foreground;
         let line =
-            div()
-                .id("lead-strip")
-                .h_flex()
-                .items_center()
-                .gap_2()
-                .h(onehand_ui::tokens::ROW_H)
-                .px_3()
-                // Edged and lifted as the card it stands on, open at its foot
-                // where the card's own edge closes it.
-                .bg(crate::theme::raised(cx))
-                .border_t_1()
-                .border_x_1()
-                .border_color(cx.theme().input)
-                .shadow(crate::theme::composer_lift(cx))
-                .rounded_t(cx.theme().radius)
-                .text_size(onehand_ui::tokens::CHROME_TEXT)
+            over_composer("lead-strip", cx)
                 .text_color(muted)
                 .cursor_pointer()
                 // A press answers the pointer as a line row does: its ink lifts.
                 .hover(|line| line.text_color(cx.theme().foreground))
-                // Kept from the pane, which takes focus on a press: the caret
-                // stays where it was.
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
-                    cx.emit(ChatPaneEvent::ShowWorker(most_urgent));
+                    cx.emit(ChatPaneEvent::ShowSession(most_urgent));
                 }))
                 .child(div().flex_none().text_color(cx.theme().foreground).child(
                     match workers.len() {

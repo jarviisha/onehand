@@ -75,9 +75,9 @@ pub enum ChatPaneEvent {
     /// The region's maximize, which the shell carries out as it does a
     /// dock's.
     MaximizeWorkers,
-    /// The lead's strip pressed: the workers' region shown at that worker
-    /// picked, the caret left where it was.
-    ShowWorker(u64),
+    /// A session asked for from the pane: the lead's strip pressed for its
+    /// most urgent worker, or a worker's band for its lead.
+    ShowSession(u64),
     /// *Close* in a worker's block: its session closed as the rail closes
     /// one, by the shell that owns the row.
     CloseWorker(u64),
