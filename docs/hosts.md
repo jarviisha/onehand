@@ -473,7 +473,12 @@ the folder here).
   at. **The copy back checks first** (`bring_back_blocking`) and copies nothing when anything
   changed, a file the mirror carries that is here and was never sent (one this machine's git
   ignores and the host's does not) counting as changed; `take_back_blocking` is the copy a person
-  agreed to. A backup (`backup_blocking`) copies the changed files as they are, `refs.txt`
+  agreed to. **An edit landing while it copies is put back:** what rsync writes over waits in
+  `coming-back` in the project's storage, and a file there that is not as the folder was read just
+  before goes back in place over the host's version; the copy then stands stopped on those files
+  (`Back::Raced`), held against the host's code, so the box lists only them. Nothing under `.git`
+  is put back. A `coming-back` a copy that did not finish left files in is never emptied: the next
+  copy refuses, naming it, until the person has looked through it and removed it. A backup (`backup_blocking`) copies the changed files as they are, `refs.txt`
   of `HEAD` and every ref when refs moved (the objects stay, since `.git` comes back without
   deleting), and `.git/index` or `.git/config` when what is staged or the settings changed. The laptop keeps it with who holds the key, when the code last moved and what stopped a
   copy back in `offload.json` in the project's storage (`OffloadState`).
@@ -547,7 +552,9 @@ In the window (`crates/app/src/offload.rs`, `crates/app/src/shell/offload.rs`):
   folder, `backups/<date-time>` in the project's storage (`offload::backup_dir`); yes checks once
   more, backs up what changed then (a list that grew since the box was drawn is backed up whole),
   takes the host's code over it (`take_back_blocking`) and hands the key back as any copy back
-  does. A toast says where the backup is; a failure stands in the *On <host>* box.
+  does. A toast says where the backup is; a failure stands in the *On <host>* box. A file
+  changed here after the backup stays as it is and stops the copy again, *Files changed here
+  while the code came back; they stay as this machine has them*.
 - **Send to <host>**, on a row of the Files tree of an offloaded project (its right-click menu,
   `crates/files/src/view.rs`, raising `Request::SendToHost`), copies that file, or that folder
   with everything under it, ignored files included, to the same place in the mirror
