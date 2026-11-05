@@ -316,15 +316,7 @@ impl Shell {
         let Some(root) = self.window.workspace.active_root() else {
             return Vec::new();
         };
-        // A worker of a lead in this window is reached through its lead.
-        let live: Vec<u64> = root
-            .sessions
-            .iter()
-            .map(|s| s.uid)
-            .filter(|uid| {
-                crate::control::lead_of(*uid).is_none_or(|lead| self.locate(lead).is_none())
-            })
-            .collect();
+        let live: Vec<u64> = root.sessions.iter().map(|s| s.uid).collect();
         let mut order: Vec<u64> = self
             .mru
             .get(&root.path)
