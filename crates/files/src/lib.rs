@@ -64,6 +64,11 @@ impl WorkbenchMode for Mode {
                 self.view.update(cx, |view, cx| view.set_git(git, cx));
                 true
             }
+            Request::Offloaded(roots) => {
+                self.view
+                    .update(cx, |view, cx| view.set_offloaded(roots, cx));
+                true
+            }
             Request::Rescan => {
                 self.view.update(cx, |view, cx| view.rescan(cx));
                 true

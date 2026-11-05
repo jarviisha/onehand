@@ -138,6 +138,7 @@ impl Workbench {
         match request {
             Request::OpenFile(path) => self.open_file(path, window, cx),
             Request::RestartAgent => cx.emit(WorkbenchEvent::RestartAgent),
+            Request::SendToHost(path) => cx.emit(WorkbenchEvent::SendToHost(path.to_path_buf())),
             // The caret is the panel's half of reaping: a view dropped while it
             // holds focus leaves the window pointing at an element no frame
             // contains, and GPUI resolves a key along the path down to the
@@ -421,6 +422,11 @@ impl Workbench {
         cx.notify();
     }
 
+    /// Tell every mode which folders are offloaded, and to which host.
+    pub fn set_offloaded(&mut self, roots: &HashMap<PathBuf, String>, cx: &mut Context<Self>) {
+        self.broadcast(&Request::Offloaded(roots), cx);
+    }
+
     pub fn set_git(&mut self, git: HashMap<PathBuf, GitStatus>, cx: &mut Context<Self>) {
         self.broadcast(&Request::SetGit(&git), cx);
         cx.notify();
@@ -552,6 +558,8 @@ pub enum WorkbenchEvent {
     /// The project on screen could not be shown, and the person asked to
     /// try again.
     TryAgain,
+    /// Send this path of an offloaded project to its host.
+    SendToHost(PathBuf),
 }
 
 impl EventEmitter<WorkbenchEvent> for Workbench {}

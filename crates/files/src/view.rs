@@ -10,10 +10,11 @@ use gpui::{
     App, AppContext as _, Context, Entity, InteractiveElement, IntoElement, ParentElement, Render,
     StatefulInteractiveElement, Styled, Window, div,
 };
+use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::gitstat::{FileChange, GitStatus};
 use onehand_core::tree::{FileTree, TreeEntry};
-use onehand_ui::{hint, mark_slot, status_ink, status_line, tokens, tree_row};
+use onehand_ui::{hint, mark_slot, menu_item, status_ink, status_line, tokens, tree_row};
 use onehand_workbench::{Ask, Disk, Request};
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -42,6 +43,9 @@ pub(crate) struct FilesView {
     /// The file open in the editor beside the tree: its row is the tree's
     /// selected one, as the open document is the Markdown list's.
     active: Option<PathBuf>,
+    /// The offloaded roots, each with its host: a row of one offers to send
+    /// itself there.
+    offloaded: HashMap<PathBuf, String>,
 }
 
 impl FilesView {
@@ -54,6 +58,7 @@ impl FilesView {
             git: HashMap::new(),
             ask,
             active: None,
+            offloaded: HashMap::new(),
         })
     }
 
@@ -95,6 +100,17 @@ impl FilesView {
             self.root = None;
         }
         cx.notify();
+    }
+
+    pub(crate) fn set_offloaded(
+        &mut self,
+        roots: &HashMap<PathBuf, String>,
+        cx: &mut Context<Self>,
+    ) {
+        if &self.offloaded != roots {
+            self.offloaded = roots.clone();
+            cx.notify();
+        }
     }
 
     pub(crate) fn set_git(&mut self, git: &HashMap<PathBuf, GitStatus>, cx: &mut Context<Self>) {
@@ -261,6 +277,10 @@ impl Render for FilesView {
                 cx.listener(|view: &mut Self, entry: &TreeEntry, window, cx| {
                     view.click(entry, window, cx)
                 }),
+                self.offloaded.get(&root).map(|host| Send {
+                    host: host.clone(),
+                    ask: self.ask.clone(),
+                }),
                 cx,
             )))
             .children(failure)
@@ -280,6 +300,12 @@ fn change_color(change: FileChange, cx: &App) -> gpui::Hsla {
     }
 }
 
+/// A row's *Send to <host>*, on an offloaded root.
+struct Send {
+    host: String,
+    ask: Ask,
+}
+
 /// The trailing slot a row's change mark stands in, held on every row so the
 /// marks run down one column.
 const MARK_W: gpui::Rems = gpui::rems(1.);
@@ -294,8 +320,10 @@ fn rows(
     git: Option<&GitStatus>,
     active: Option<&Path>,
     on_click: impl Fn(&TreeEntry, &mut Window, &mut App) + 'static,
+    send: Option<Send>,
     cx: &App,
 ) -> gpui::AnyElement {
+    let send = send.map(std::rc::Rc::new);
     let (rows, left_out) = tree.visible_rows(root);
     let on_click = std::rc::Rc::new(on_click);
     let muted = cx.theme().muted_foreground;
@@ -368,6 +396,20 @@ fn rows(
                 .on_click({
                     let entry = entry.clone();
                     move |_, window, cx: &mut App| click(&entry, window, cx)
+                })
+                // Only on an offloaded root; the library opens no menu for
+                // an empty list.
+                .context_menu({
+                    let (send, path) = (send.clone(), entry.path.clone());
+                    move |menu, _, _| match &send {
+                        Some(send) => {
+                            let (ask, path) = (send.ask.clone(), path.clone());
+                            menu.item(menu_item(format!("Send to {}", send.host)).on_click(
+                                move |_, window, cx| ask(&Request::SendToHost(&path), window, cx),
+                            ))
+                        }
+                        None => menu,
+                    }
                 })
         }))
         // The cap is core's, and a tree that silently stops is a tree the user

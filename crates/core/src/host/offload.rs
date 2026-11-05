@@ -325,6 +325,15 @@ pub fn backup_blocking(folder: &Path, changes: &Changes, into: &Path) -> Result<
         }
         std::fs::write(into.join("refs.txt"), text).map_err(fail)?;
     }
+    // What is staged and the repository's settings are written over too, so
+    // they are kept as they are, at their place under `.git`.
+    for name in ["index", "config"] {
+        let from = folder.join(GIT_DIR).join(name);
+        if changes.refs.iter().any(|r| r == name) && from.is_file() {
+            std::fs::create_dir_all(into.join(GIT_DIR)).map_err(fail)?;
+            std::fs::copy(&from, into.join(GIT_DIR).join(name)).map_err(fail)?;
+        }
+    }
     Ok(into.to_path_buf())
 }
 

@@ -221,6 +221,23 @@ fn a_backup_holds_exactly_the_changed_files_and_the_refs() {
     assert!(!into.join("new.txt").exists());
     let refs = fs::read_to_string(into.join("refs.txt")).unwrap();
     assert!(refs.contains("refs/heads/main"));
+    assert!(!into.join(".git").exists());
+}
+
+#[test]
+fn a_backup_keeps_the_index_and_the_settings_when_they_changed() {
+    let project = repo("backup-git");
+    let into = project.parent().unwrap().join("backup-git-into");
+    let changes = Changes {
+        files: vec![],
+        refs: vec!["index".into(), "config".into()],
+    };
+    backup_blocking(&project, &changes, &into).unwrap();
+    assert_eq!(
+        fs::read(into.join(".git/config")).unwrap(),
+        fs::read(project.join(".git/config")).unwrap()
+    );
+    assert!(into.join(".git/index").is_file());
 }
 
 #[test]

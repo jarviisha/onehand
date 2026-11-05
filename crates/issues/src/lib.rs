@@ -214,6 +214,8 @@ fn handle(view: &Entity<IssuesView>, request: &Request<'_>, cx: &mut App) -> boo
         | Request::SetFontSize(_)
         | Request::AgentStarted(_)
         | Request::RestartAgent
-        | Request::Locked(_) => false,
+        | Request::Locked(_)
+        | Request::Offloaded(_)
+        | Request::SendToHost(_) => false,
     }
 }

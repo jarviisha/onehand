@@ -253,7 +253,9 @@ dragged height kept).
 - On an offloaded project the Workbench and the terminal dock are this machine's, as on any local
   project. While its host holds the code, the editor's buffers are read only, *Save* writes
   nothing, Neovim and the shells take no typing, and each says under it, in the muted ink, *<host>
-  has this project's code until its sessions finish; edits are off meanwhile*.
+  has this project's code until its sessions finish; edits are off meanwhile*. A Files row's
+  right-click menu holds *Send to <host>*, whoever holds the code; a toast says *Sent <name> to
+  <host>* or why not.
 - **The workers' region**, in the Workbench's place and never beside it: opening one puts the
   other away, a caret in the one leaving going to the lead's composer and the one arriving taking
   none; hiding the region gives the Workbench back as it was, and while it shows the layout saves
@@ -335,9 +337,15 @@ dragged height kept).
   then the box *On <host>*: where the code is (*The code is here; it goes to <host> with the next
   prompt*, *<host> has this project's code until its sessions finish; edits are off meanwhile*,
   *Sending the code to <host>…*, *Bringing the code back from <host>…*, or, in the warning ink,
-  *Bringing the code back stopped: N things changed here while <host> held the code, and <host>
-  keeps it meanwhile*), *Last moved <when>* under it in the muted ink, and a move that failed in
-  the danger ink; then *Settings* with the host's switch, as on a host project. No *Tasks*,
+  *<host> keeps the code until bringing it back is settled*), *Last moved <when>* under it in the
+  muted ink, and a move that failed in the danger ink; under it, while a copy back stands stopped,
+  the box *Bringing the code back stopped*: *These changed on this machine while <host> held the
+  code:*, then what changed, a line each, files first and then refs in words (*HEAD*, *Branch
+  <name>*, *Tag <name>*, *What is staged*, *The repository's settings*), at most 50 (*N more not
+  shown*), then *Check again* and *Take the host's code…* (both secondary, refusing while the
+  code moves; *Check again* spins while it checks). *Take the host's code…* asks *Take <host>'s
+  code over these changes?*, naming the backup folder, and toasts where the backup is; then
+  *Settings* with the host's switch, as on a host project. No *Tasks*,
   *Schedules* or check command.
 - The offload form, from *Offload to a host…*: the title *Offload <project> to a host*, a muted
   line saying what it does (its new sessions on the host, its files, terminal and git here, the

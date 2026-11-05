@@ -271,6 +271,109 @@ impl Shell {
         cx.notify();
     }
 
+    /// *Take the host's code*, on a project whose copy back stopped: asked
+    /// first, naming where this machine's versions of what changed go.
+    pub(crate) fn ask_take_host_code(
+        &mut self,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(o) = offload::get(cx, &path) else {
+            return;
+        };
+        let host = o.host.clone();
+        let into = offload::backup_dir(&path);
+        let ask = super::confirm::Confirm {
+            id: "take-host-code",
+            title: format!("Take {host}'s code over these changes?").into(),
+            description: format!(
+                "This machine's versions of what changed are copied to {} first; then \
+                 {host}'s code is brought back over them.",
+                into.display()
+            )
+            .into(),
+            act: "Take the host's code",
+            ..Default::default()
+        };
+        self.confirm(ask, window, cx, move |shell, window, cx| {
+            shell.take_host_code(path.clone(), host.clone(), into.clone(), window, cx)
+        });
+    }
+
+    fn take_host_code(
+        &mut self,
+        path: PathBuf,
+        host: HostName,
+        into: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.spawn_in(window, async move |_, cx| {
+            let took = offload::take_over(cx, path, into.clone()).await;
+            // A failure stands on the project's page, where it was pressed.
+            let Ok(()) = took else {
+                return;
+            };
+            let at = into.clone();
+            let backed = cx
+                .background_executor()
+                .spawn(async move { at.is_dir() })
+                .await;
+            let _ = cx.update(|window, cx| {
+                let toast = match backed {
+                    true => crate::toast::success(format!(
+                        "Took {host}'s code; this machine's versions are in {}",
+                        into.display()
+                    )),
+                    false => crate::toast::success(format!(
+                        "Took {host}'s code; nothing here had changed any more"
+                    )),
+                };
+                window.push_notification(toast, cx);
+            });
+        })
+        .detach();
+    }
+
+    /// *Send to <host>* on `path`, a file or folder of an offloaded project:
+    /// copied to the same place in its copy on the host, whoever holds the
+    /// code, and how it went said in a toast.
+    pub(crate) fn send_to_host(
+        &mut self,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((folder, host, mirror)) = self.window.workspace.roots.iter().find_map(|r| {
+            let (host, mirror) = r.offload.clone()?;
+            path.starts_with(&r.path)
+                .then(|| (r.path.clone(), host, mirror))
+        }) else {
+            return;
+        };
+        let rel = path.strip_prefix(&folder).unwrap_or(&path).to_path_buf();
+        let name = path.file_name().map_or_else(
+            || path.display().to_string(),
+            |n| n.to_string_lossy().into_owned(),
+        );
+        let addr = host.addr();
+        let sending = cx.background_executor().spawn(async move {
+            onehand_core::host::offload::send_path_blocking(&addr, &folder, &mirror, &rel)
+        });
+        cx.spawn_in(window, async move |_, cx| {
+            let sent = sending.await;
+            let _ = cx.update(|window, cx| {
+                let toast = match sent {
+                    Ok(()) => crate::toast::success(format!("Sent {name} to {host}")),
+                    Err(why) => crate::toast::failed(&format!("Sending {name} to {host}"), why),
+                };
+                window.push_notification(toast, cx);
+            });
+        })
+        .detach();
+    }
+
     /// Keep every offloaded root of this window, and tell the Workbench and
     /// the terminal which folders are locked; only when that changed.
     pub(super) fn sync_offload(&mut self, cx: &mut Context<Self>) {
@@ -281,6 +384,12 @@ impl Shell {
             .iter()
             .filter_map(|r| Some((r.path.clone(), r.offload.clone()?.0)))
             .collect();
+        let offloaded: HashMap<PathBuf, String> = kept
+            .iter()
+            .map(|(path, host)| (path.clone(), host.0.clone()))
+            .collect();
+        self.workbench
+            .update(cx, |panel, cx| panel.set_offloaded(&offloaded, cx));
         for (path, host) in kept {
             offload::track(cx, path, host, None);
         }
