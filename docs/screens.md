@@ -76,8 +76,8 @@ and *Run here again* on an offloaded one while this machine holds its code, or, 
 while the branch is not being fetched or updated.
 Narrowed, the name keeps a minimum and the branch, or the host, gives way first. Its chevron alone
 folds it (not during a search); the rest of the row shows the project's last session, or its page,
-which then fills the row. `+` and `⋯` show on hover and on the keyboard's row, right-click opens the
-same menu. A session row, indented under its project: its state mark, title and `⋯` (on hover, on
+which then fills the row. `+` and `⋯` show on hover and on the keyboard's row, in the place of its
+meta, which is hidden meanwhile; right-click opens the same menu. A session row, indented under its project: its state mark, title and `⋯` (on hover, on
 the keyboard's row, always on the one shown), and under them `state · agent · age` (*waiting Nm*
 while it needs input, a card or its run's approval, the state's word in its ink while it waits on the
 person; *Running · N in background · M subagents · agent · age* while background work outlives the

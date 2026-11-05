@@ -473,10 +473,14 @@ pub(super) fn project_row(
             // Shrinks, by its host and its branch alone: everything else on it
             // keeps its width, and those truncate once the name is down to its
             // minimum. A folder on a host names its host first, then its branch
-            // once that is read over the host's attach.
+            // once that is read over the host's attach. Hidden, its room kept,
+            // while the row's actions stand in its place: wider than they are,
+            // it would show a cut sliver beside them.
             div()
                 .h_flex()
                 .items_center()
+                .when(ring, |d| d.invisible())
+                .group_hover(key.clone(), |s| s.invisible())
                 .min_w_0()
                 .gap_1()
                 .text_xs()
