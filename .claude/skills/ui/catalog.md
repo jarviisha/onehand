@@ -89,6 +89,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A prompt | the library's `Bubble` with `BubbleVariant::Muted`, its size on a `BubbleContent` | `crates/app/src/chat/transcript/user.rs` |
 | Transcript sizes | the constants | `crates/app/src/chat/transcript/metrics.rs` |
 | The composer card | `card` | `crates/app/src/chat/composer/card.rs` |
+| A line over the composer (a lead's strip, a worker's band) | `over_composer(id, cx)`: one `ROW_H` row on the raised surface, edged and lifted as the card, open at its foot | `crates/app/src/chat/pane/lead_strip.rs` |
 | An attached file's plate (a picture's preview), pressable; a picture whole in a dialog | `plate`, `opens`; `show_image` | `crates/app/src/chat/transcript/user.rs`, `image_view.rs` |
 | The composer popup and its parts | `popup_surface`, `popup_header`, `popup_title`, `candidate_row`, `choice_row` | `crates/app/src/chat/composer/popup.rs`, `rows.rs` |
 | A rail row's fills, inks and controls | `row_surfaces`, `row_inks`, `hover_fill`, `chosen_fill`, `key_ring`, `row_control`, `meta_control`, `menu_button` | `crates/app/src/rail/row.rs` |
