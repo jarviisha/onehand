@@ -180,11 +180,15 @@ mod tests {
         // A lock goes with the open file, and a child another test forks
         // meanwhile holds a copy of it until it execs: let go is let go
         // within a moment, not at the instant of the drop.
+        // The lock taken is the one held: let go between the try that saw it
+        // free and a second try, a fork could take it again.
         let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        while try_lock(&dir).is_err() && std::time::Instant::now() < until {
+        let mut again = try_lock(&dir);
+        while again.is_err() && std::time::Instant::now() < until {
             std::thread::sleep(std::time::Duration::from_millis(10));
+            again = try_lock(&dir);
         }
-        assert!(try_lock(&dir).is_ok());
+        assert!(again.is_ok());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
