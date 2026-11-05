@@ -1,13 +1,20 @@
-//! The project page's box on an offloaded project: which side holds its code
-//! and when the code last moved.
+//! The project page's boxes on an offloaded project: which side holds its
+//! code and when the code last moved, and, while a copy back stands stopped,
+//! what changed here and the two ways to settle it.
 
-use super::super::ChatPane;
+use super::super::{ChatPane, ChatPaneEvent};
+use crate::controls::{Refuses as _, Short as _};
 use crate::offload::{Moving, Offload};
 use crate::page_parts::page_card;
-use gpui::{App, Div, ParentElement as _, Styled as _, div};
+use gpui::{App, Context, Div, IntoElement as _, ParentElement as _, Styled as _, div};
+use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme as _, StyledExt as _};
+use onehand_core::host::offload::Changes;
 use onehand_core::host::wire::Holder;
 use std::path::Path;
+
+/// How many of a stopped copy's changes the box lists.
+const STOPPED_CAP: usize = 50;
 
 /// What the box says first: where the code is, or where it is going.
 fn holder_line(o: &Offload) -> String {
@@ -20,21 +27,41 @@ fn holder_line(o: &Offload) -> String {
             (Holder::Laptop, _) => {
                 format!("The code is here; it goes to {host} with the next prompt")
             }
-            (Holder::Host, Some(changes)) => {
-                let n = changes.files.len() + changes.refs.len();
-                format!(
-                    "Bringing the code back stopped: {n} {} changed here while {host} held \
-                     the code, and {host} keeps it meanwhile",
-                    if n == 1 { "thing" } else { "things" }
-                )
+            (Holder::Host, Some(_)) => {
+                format!("{host} keeps the code until bringing it back is settled")
             }
             (Holder::Host, None) => crate::offload::lock_line(host),
         },
     }
 }
 
-/// The box *On <host>*, for the offloaded project at `path`.
-pub(super) fn offload_box(path: &Path, cx: &mut gpui::Context<ChatPane>) -> Option<Div> {
+/// A stopped copy's changes in a person's words, files first: a ref by the
+/// branch or tag it is, the index and the settings by what they hold.
+fn changed_lines(changes: &Changes) -> Vec<String> {
+    let refs = changes.refs.iter().map(|r| match r.as_str() {
+        "index" => "What is staged".to_string(),
+        "config" => "The repository's settings".to_string(),
+        "HEAD" => "HEAD".to_string(),
+        other => match (
+            other.strip_prefix("refs/heads/"),
+            other.strip_prefix("refs/tags/"),
+        ) {
+            (Some(branch), _) => format!("Branch {branch}"),
+            (_, Some(tag)) => format!("Tag {tag}"),
+            _ => other.to_string(),
+        },
+    });
+    changes
+        .files
+        .iter()
+        .map(|f| f.display().to_string())
+        .chain(refs)
+        .collect()
+}
+
+/// The box *On <host>*, for the offloaded project at `path`, and the box
+/// *Bringing the code back stopped* under it while that stands.
+pub(super) fn offload_box(path: &Path, cx: &mut Context<ChatPane>) -> Option<Div> {
     let o = crate::offload::get(cx, path)?;
     let muted = cx.theme().muted_foreground;
     let line = |text: String, cx: &App| {
@@ -43,8 +70,12 @@ pub(super) fn offload_box(path: &Path, cx: &mut gpui::Context<ChatPane>) -> Opti
             .text_color(cx.theme().foreground)
             .child(text)
     };
-    let stopped = o.state.as_ref().is_some_and(|s| s.stopped.is_some());
-    let ink = match stopped {
+    let stopped = o
+        .state
+        .as_ref()
+        .filter(|s| s.key == Holder::Host)
+        .and_then(|s| s.stopped.clone());
+    let ink = match stopped.is_some() {
         true => crate::theme::status_ink(cx).warning,
         false => cx.theme().foreground,
     };
@@ -52,19 +83,108 @@ pub(super) fn offload_box(path: &Path, cx: &mut gpui::Context<ChatPane>) -> Opti
     let now = onehand_core::chat::now_secs();
     let failed = o.failed.clone();
     let danger = crate::theme::status_ink(cx).danger;
-    Some(
-        page_card(format!("On {}", o.host), None, None, cx).child(
-            div()
-                .v_flex()
-                .gap_1()
-                .child(line(holder_line(o), cx).text_color(ink))
-                .children(moved.map(|at| {
-                    div()
-                        .text_xs()
-                        .text_color(muted)
-                        .child(format!("Last moved {}", onehand_core::rel_time(now, at)))
-                }))
-                .children(failed.map(|why| div().text_xs().text_color(danger).child(why))),
-        ),
-    )
+    let (host, moving) = (o.host.clone(), o.moving);
+    let on = page_card(format!("On {host}"), None, None, cx).child(
+        div()
+            .v_flex()
+            .gap_1()
+            .child(line(holder_line(o), cx).text_color(ink))
+            .children(moved.map(|at| {
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(format!("Last moved {}", onehand_core::rel_time(now, at)))
+            }))
+            .children(failed.map(|why| div().text_xs().text_color(danger).child(why))),
+    );
+    let stopped_box = stopped.map(|changes| {
+        let all = changed_lines(&changes);
+        let left_out = all.len().saturating_sub(STOPPED_CAP);
+        let busy = moving.is_some().then_some("The code is on its way");
+        let check = crate::controls::action("offload-check-again")
+            .secondary()
+            .short()
+            .label("Check again")
+            .loading(moving == Some(Moving::Back))
+            .refuses(busy)
+            .on_click(cx.listener({
+                let path = path.to_path_buf();
+                move |_: &mut ChatPane, _, _, cx| {
+                    let path = path.clone();
+                    cx.spawn(async move |_, cx| crate::offload::check_again(cx, path).await)
+                        .detach();
+                }
+            }));
+        let take = crate::controls::action("offload-take-host-code")
+            .secondary()
+            .short()
+            .label("Take the host's code…")
+            .refuses(busy)
+            .on_click(cx.listener({
+                let path = path.to_path_buf();
+                move |_: &mut ChatPane, _, _, cx| {
+                    cx.emit(ChatPaneEvent::TakeHostCode(path.clone()));
+                }
+            }));
+        page_card("Bringing the code back stopped", None, None, cx)
+            .child(line(
+                format!("These changed on this machine while {host} held the code:"),
+                cx,
+            ))
+            .child(
+                div().v_flex().children(
+                    all.into_iter()
+                        .take(STOPPED_CAP)
+                        .map(|item| line(item, cx).min_w_0().truncate()),
+                ),
+            )
+            .children((left_out > 0).then(|| {
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(format!("{left_out} more not shown"))
+            }))
+            .child(
+                div()
+                    .h_flex()
+                    .gap_2()
+                    .child(check)
+                    .child(take)
+                    .into_any_element(),
+            )
+    });
+    Some(div().v_flex().gap_4().child(on).children(stopped_box))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::changed_lines;
+    use onehand_core::host::offload::Changes;
+
+    #[test]
+    fn a_stopped_copy_says_files_then_refs_in_words() {
+        let changes = Changes {
+            files: vec!["src/a.rs".into()],
+            refs: vec![
+                "HEAD".into(),
+                "refs/heads/main".into(),
+                "refs/tags/v1".into(),
+                "refs/remotes/origin/main".into(),
+                "index".into(),
+                "config".into(),
+            ],
+        };
+        assert_eq!(
+            changed_lines(&changes),
+            [
+                "src/a.rs",
+                "HEAD",
+                "Branch main",
+                "Tag v1",
+                "refs/remotes/origin/main",
+                "What is staged",
+                "The repository's settings",
+            ]
+        );
+    }
 }

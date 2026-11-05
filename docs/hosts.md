@@ -428,7 +428,7 @@ Refused or left out, each in one place:
 A folder on this machine whose sessions run on a host, against a copy of it the host keeps, its
 **mirror**. Its tree, editor, terminal and git stay this machine's (`ProjectRoot::session_host`,
 `crates/core/src/workspace.rs`, gives a session its host and the mirror; `local_path` still names
-the folder here). Settling a copy back that stopped and *Send to <host>* are not built yet.
+the folder here).
 
 - **This laptop has an id of its own,** made once and kept in `laptop-id` in the config directory
   (`laptop`, `crates/core/src/host/client/attach.rs`), and named in every hello. A mirror belongs
@@ -473,8 +473,9 @@ the folder here). Settling a copy back that stopped and *Send to <host>* are not
   at. **The copy back checks first** (`bring_back_blocking`) and copies nothing when anything
   changed, a file the mirror carries that is here and was never sent (one this machine's git
   ignores and the host's does not) counting as changed; `take_back_blocking` is the copy a person
-  agreed to. A backup copies the changed files as they are, and `refs.txt` when refs
-  moved. The laptop keeps it with who holds the key, when the code last moved and what stopped a
+  agreed to. A backup (`backup_blocking`) copies the changed files as they are, `refs.txt`
+  of `HEAD` and every ref when refs moved (the objects stay, since `.git` comes back without
+  deleting), and `.git/index` or `.git/config` when what is staged or the settings changed. The laptop keeps it with who holds the key, when the code last moved and what stopped a
   copy back in `offload.json` in the project's storage (`OffloadState`).
 
 In the window (`crates/app/src/offload.rs`, `crates/app/src/shell/offload.rs`):
@@ -507,6 +508,19 @@ In the window (`crates/app/src/offload.rs`, `crates/app/src/shell/offload.rs`):
   does not do*), its Workbench aside: workflows, tasks, schedules, unattended runs, worktrees, the
   check command, onehand's tools and the remote bridge reach only a project whose sessions run here
   (`ProjectRoot::runs_here`).
+- **Settling a copy back that stopped.** The project page's box *Bringing the code back stopped*
+  lists what changed here. *Check again* attaches if need be and checks as a turn end does; a
+  file added here and removed again, or one deleted and restored, lets the code come (an edit
+  undone still reads as a change, the manifest holding sizes and times). *Take the host's code…* asks first, naming the backup
+  folder, `backups/<date-time>` in the project's storage (`offload::backup_dir`); yes checks once
+  more, backs up what changed then (a list that grew since the box was drawn is backed up whole),
+  takes the host's code over it (`take_back_blocking`) and hands the key back as any copy back
+  does. A toast says where the backup is; a failure stands in the *On <host>* box.
+- **Send to <host>**, on a row of the Files tree of an offloaded project (its right-click menu,
+  `crates/files/src/view.rs`, raising `Request::SendToHost`), copies that file, or that folder
+  with everything under it, ignored files included, to the same place in the mirror
+  (`send_path_blocking`), whoever holds the key. A toast says how it went; nothing is remembered,
+  so a file git ignores is not kept in step after that.
 - **Run here again**, offered only while this machine holds the code, lets the project's host
   sessions go here (they run on there until they end) and clears `offloaded`. The mirror and
   `offload.json` stay, so a later offload sends only what changed.
@@ -518,6 +532,5 @@ The steps of the design still to come, each its own change; the gaps they leave 
 cloning (*Adding a host project*), and re-attaching by itself and the laptop's copy (*Attach and
 detach*, *The laptop's copy*); so is the permission bypass.
 
-- **The rest of offloaded projects:** settling a copy back that stopped, and *Send to <host>*.
-  Offloading, the key and the lock are built (*Offloaded projects*). Then a branch mode with no
-  key.
+- **A branch mode with no key** for offloaded projects. Offloading, the key, the lock, settling a
+  copy back that stopped and *Send to <host>* are built (*Offloaded projects*).

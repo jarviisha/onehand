@@ -207,4 +207,8 @@ pub enum ChatPaneEvent {
     /// its busy sessions, which is the person's to agree to, in a dialog of
     /// the shell's.
     RestartHost(onehand_core::workspace::HostName),
+    /// *Take the host's code* on the offloaded project at this folder, whose
+    /// copy back stopped: writing over what changed here is the person's to
+    /// agree to, in a dialog of the shell's.
+    TakeHostCode(std::path::PathBuf),
 }

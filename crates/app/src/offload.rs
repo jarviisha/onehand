@@ -407,36 +407,143 @@ pub(crate) async fn check_back(cx: &mut AsyncApp, path: PathBuf) {
         return;
     };
     let came = match cx.update(|cx| hosts::live(cx, &host)) {
-        Some(conn) => bring_back(cx, &conn, &path, &host, sent).await,
+        Some(conn) => bring_back(cx, &conn, &path, &host, sent, None).await,
         None => Ok(None),
     };
+    update(cx, &path, |o| landed(o, came));
+}
+
+/// What a copy back's end leaves: the code settled, and why it failed if it did.
+type Came = Result<Option<OffloadState>, (String, Option<Box<OffloadState>>)>;
+
+/// Keep what a copy back `came` to, the code no longer moving.
+fn landed(o: &mut Offload, came: Came) {
+    o.moving = None;
+    match came {
+        // Still stopped: nothing moved, and why the last try failed stands.
+        Ok(Some(mut state)) if state.stopped.is_some() => {
+            if let Some(was) = &o.state {
+                state.moved = was.moved;
+            }
+            o.state = Some(state);
+        }
+        Ok(Some(state)) => {
+            o.state = Some(state);
+            o.failed = None;
+        }
+        Ok(None) => {}
+        Err((why, state)) => {
+            if let Some(state) = state {
+                o.state = Some(*state);
+            }
+            o.failed = Some(why);
+        }
+    }
+}
+
+/// Check `path` again because the person asked, attaching to its host if
+/// it is not attached: why not, on its page, when that fails.
+pub(crate) async fn check_again(cx: &mut AsyncApp, path: PathBuf) {
+    let Some(host) = update(cx, &path, |o| o.host.clone()) else {
+        return;
+    };
+    match attach(cx, &host).await {
+        Ok(_) => check_back(cx, path).await,
+        Err(why) => {
+            update(cx, &path, |o| o.failed = Some(why));
+        }
+    }
+}
+
+/// Where this machine's versions of what changed go before the host's code
+/// is taken over them: a folder of their own in the project's storage, named
+/// for when.
+pub(crate) fn backup_dir(path: &Path) -> PathBuf {
+    let when = chrono::Local::now().format("%Y-%m-%d-%H%M%S").to_string();
+    storage_for(path).join("backups").join(when)
+}
+
+/// Take the host's code over what changed here since it went, once the
+/// person said so: what changed is copied into `into` first, then the code
+/// comes and the key comes back as on any copy back. `Ok(false)` when the
+/// host said this machine held the code already: nothing was taken, and
+/// what changed here stays. `Err` why not, said on the project's page too,
+/// nothing here written over.
+pub(crate) async fn take_over(
+    cx: &mut AsyncApp,
+    path: PathBuf,
+    into: PathBuf,
+) -> Result<bool, String> {
+    let claimed = update(cx, &path, |o| {
+        let state = o.state.as_ref().filter(|s| s.key == Holder::Host)?;
+        if o.moving.is_some() {
+            return None;
+        }
+        let sent = state.manifest.clone();
+        o.moving = Some(Moving::Back);
+        Some((o.host.clone(), sent))
+    });
+    let Some(Some((host, sent))) = claimed else {
+        let why = "The code was moving; check again, then take it".to_string();
+        update(cx, &path, |o| o.failed = Some(why.clone()));
+        return Err(why);
+    };
+    // Asked first, so a host that hands the code back without a copy is
+    // told apart from one whose code came.
+    let (came, here) = match attach(cx, &host).await {
+        Ok(conn) => match mirror_of(cx, &conn, &path).await {
+            Ok(mirror) => (
+                bring_back(cx, &conn, &path, &host, sent, Some(&into)).await,
+                mirror.key == Holder::Laptop,
+            ),
+            Err(why) => (Err((why, None)), false),
+        },
+        Err(why) => (Err((why, None)), false),
+    };
+    let said = match &came {
+        Ok(Some(state)) if state.key == Holder::Laptop => Ok(!here),
+        Ok(Some(_)) => Err(format!(
+            "{host} kept the code; the next check brings it back"
+        )),
+        Ok(None) => Err(format!(
+            "{host} is working on the code again; wait for it to finish"
+        )),
+        Err((why, _)) => Err(why.clone()),
+    };
+    // Once the backup is made, a failure after it still says where it is:
+    // this machine's versions may now be only there.
+    let at = into.clone();
+    let backed = cx
+        .background_executor()
+        .spawn(async move { at.is_dir() })
+        .await;
+    let said = said.map_err(|why| match backed {
+        true => format!("{why}; this machine's versions are in {}", into.display()),
+        false => why,
+    });
+    // Said once, on the project's page where it was pressed.
     update(cx, &path, |o| {
-        o.moving = None;
-        match came {
-            Ok(Some(state)) => {
-                o.state = Some(state);
-                o.failed = None;
-            }
-            Ok(None) => {}
-            Err((why, state)) => {
-                if let Some(state) = state {
-                    o.state = Some(*state);
-                }
-                o.failed = Some(why);
-            }
+        landed(o, came);
+        if let Err(why) = &said {
+            o.failed = Some(why.clone());
         }
     });
+    said
 }
 
 /// The copy back: the state to keep after it, `None` when the host still
 /// works on the code; or why it failed, with what to keep then.
+///
+/// With `backup`, the person said to take the host's code over what changed
+/// here: what changed is copied there first, and the code comes over it.
 async fn bring_back(
     cx: &mut AsyncApp,
     conn: &onehand_core::host::client::HostConn,
     path: &Path,
     host: &HostName,
     sent: Manifest,
-) -> Result<Option<OffloadState>, (String, Option<Box<OffloadState>>)> {
+    backup: Option<&Path>,
+) -> Came {
     let fail = |why: String| (why, None);
     let mirror = mirror_of(cx, conn, path).await.map_err(fail)?;
     // Only this machine hands the key back to itself, after the copy back:
@@ -465,9 +572,22 @@ async fn bring_back(
     };
     let (addr, folder, at) = (host.addr(), path.to_path_buf(), mirror.path.clone());
     let manifest = sent.clone();
+    let backup = backup.map(Path::to_path_buf);
     let back = cx
         .background_executor()
-        .spawn(async move { offload::bring_back_blocking(&addr, &folder, &at, &listed, &manifest) })
+        .spawn(async move {
+            match (
+                offload::bring_back_blocking(&addr, &folder, &at, &listed, &manifest)?,
+                backup,
+            ) {
+                (Back::Stopped(changes), Some(into)) => {
+                    offload::backup_blocking(&folder, &changes, &into)?;
+                    offload::take_back_blocking(&addr, &folder, &at, &listed, &manifest)
+                        .map(Back::Came)
+                }
+                (back, _) => Ok(back),
+            }
+        })
         .await
         .map_err(fail)?;
     let now = onehand_core::chat::now_secs();

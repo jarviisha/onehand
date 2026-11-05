@@ -289,6 +289,14 @@ pub enum Request<'a> {
     /// Broadcast whenever the set changes, whole, so a folder left out is
     /// one that may be written again.
     Locked(&'a HashMap<PathBuf, String>),
+    /// The offloaded project folders, each with the host its sessions run
+    /// on. Broadcast whenever the set changes, whole.
+    Offloaded(&'a HashMap<PathBuf, String>),
+    /// Copy this file, or this folder with everything under it, ignored
+    /// files included, to the same place in its offloaded project's copy on
+    /// the host. Only ever travels **upward**: the shell knows the host and
+    /// the copy, and says how it went.
+    SendToHost(&'a Path),
 }
 
 /// How a mode reaches back into the panel.

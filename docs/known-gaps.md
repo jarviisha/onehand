@@ -331,10 +331,14 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **The host menu reads a plain subset of `~/.ssh/config`.** An `Include` globs only `*` in the
   file name, not `?` or `[]`, and the hosts of a `Match` block are not offered; an alias ssh would
   resolve that way is typed instead.
-- **Settling a copy back that stopped, and *Send to <host>*, are not built yet.** A project whose
-  copy back stopped stays with its host, its rail mark in the warning ink and its page saying how
-  many things changed, and is checked again every 30 s and at each turn end, so putting the change
-  here back lets the code come.
+- ***Send to <host>* takes one row.** The Files tree has no multi-selection; a folder carries
+  everything under it. What it sent is not remembered, so a file git ignores is not kept in step.
+- **The manifest is each file's size and modification time.** A file touched without being
+  changed stops a copy back as a change would; hashing the files would close that.
+- **`.git` objects are never pruned on the way back.** A commit only this machine had keeps its
+  objects, and so does one the host dropped; `git gc` here clears them.
+- **A backup holds this machine's versions, not a way back.** Restoring one after *Take the host's
+  code* is copying its files over by hand; backups are never cleared.
 - **A past conversation from before a project was offloaded opens readable, but its agent cannot
   carry it on:** it resumes on the host, which has no record of it, and fails there. A new session
   is the way to go on.
