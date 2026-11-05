@@ -1,6 +1,6 @@
 use super::model::{
-    Filter, Item, Row, SESSION_CAP, Shape, age_label, attention_count, badge, meta, order, rows,
-    toggle_attention, visible,
+    Filter, Item, Place, Row, SESSION_CAP, Shape, age_label, attention_count, badge, meta, order,
+    rows, toggle_attention, visible,
 };
 use super::model::{emptied, nest_workers};
 use super::project::{GitLine, auto_status, project_hint, run_on};
@@ -230,16 +230,8 @@ fn the_tree_draws_open_projects_with_their_sessions_and_ends_on_the_add_rows() {
                 root: 1,
                 open: true
             },
-            Row::Session {
-                item: 4,
-                flat: false,
-                nested: false
-            },
-            Row::Session {
-                item: 5,
-                flat: false,
-                nested: false
-            },
+            session(4, false, false),
+            session(5, false, false),
             Row::Gap,
             Row::Project {
                 root: 2,
@@ -266,16 +258,8 @@ fn a_search_opens_every_project_that_matches_and_drops_the_rest() {
                 root: 1,
                 open: true
             },
-            Row::Session {
-                item: 4,
-                flat: false,
-                nested: false
-            },
-            Row::Session {
-                item: 5,
-                flat: false,
-                nested: false
-            },
+            session(4, false, false),
+            session(5, false, false),
             Row::AddProject,
             Row::AddHostProject,
         ]
@@ -301,16 +285,8 @@ fn a_flat_list_names_no_projects_and_says_when_nothing_matches() {
     assert_eq!(
         rows,
         vec![
-            Row::Session {
-                item: 0,
-                flat: true,
-                nested: false
-            },
-            Row::Session {
-                item: 2,
-                flat: true,
-                nested: false
-            },
+            session(0, true, false),
+            session(2, true, false),
             Row::AddProject,
             Row::AddHostProject,
         ]
@@ -629,7 +605,10 @@ fn nested(mut items: Vec<Item>) -> Vec<Item> {
 }
 
 fn session(item: usize, flat: bool, nested: bool) -> Row {
-    Row::Session { item, flat, nested }
+    Row::Session {
+        item,
+        place: Place { flat, nested },
+    }
 }
 
 #[test]
@@ -730,7 +709,7 @@ fn a_folded_project_hides_the_tree_and_badges_it_once() {
     assert!(
         !rows
             .iter()
-            .any(|row| matches!(row, Row::Session { nested: true, .. }))
+            .any(|row| matches!(row, Row::Session { place, .. } if place.nested))
     );
 }
 
@@ -848,4 +827,24 @@ fn the_needs_attention_filter_lists_the_lead_with_its_tree() {
         &shape(Filter::NeedsAttention, "", &|_| true, &|_| false),
     );
     assert_eq!(rows[..2], [session(0, true, false), session(1, true, true)]);
+}
+
+#[test]
+fn a_row_s_place_sets_its_indent_its_name_and_its_drag() {
+    let place = |flat, nested| Place { flat, nested };
+    assert_eq!(
+        [
+            place(false, false),
+            place(false, true),
+            place(true, false),
+            place(true, true)
+        ]
+        .map(|p| (p.depth(), p.names_project(), p.drags())),
+        [
+            (1, false, true),
+            (2, false, false),
+            (0, true, false),
+            (1, false, false)
+        ]
+    );
 }

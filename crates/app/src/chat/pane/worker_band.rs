@@ -3,7 +3,7 @@
 //! it and the way to give it back. It stands where a lead's strip stands, on
 //! the same surface, and gives way to it on a worker that leads workers.
 
-use super::lead_strip::over_composer;
+use super::over_composer::over_composer;
 use super::{ChatPane, ChatPaneEvent};
 use crate::controls::Short as _;
 use gpui::{App, Context, IntoElement, ParentElement, Styled, div};
@@ -17,24 +17,35 @@ pub(super) enum BandAct {
     GiveBack,
 }
 
-/// The band's words and its button: `lead` the lead's name when this pane
-/// knows it, `held` whether the person holds the worker, `offered` whether
-/// giving it back is, and `lead_here` whether the lead is a session this
-/// window can show.
-pub(super) fn band(
-    lead: Option<&str>,
-    held: bool,
-    offered: bool,
-    lead_here: bool,
-) -> (String, Option<BandAct>) {
-    match held {
-        true => (
+impl BandAct {
+    fn label(self) -> &'static str {
+        match self {
+            BandAct::BackToLead => "Back to lead",
+            BandAct::GiveBack => "Give back to the lead",
+        }
+    }
+}
+
+/// Who a worker answers to now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Standing<'a> {
+    /// Its lead holds it: named when the lead is a session this window shows,
+    /// else unnamed, as this pane knows no other's.
+    Coordinated { lead: Option<&'a str> },
+    /// The person holds it, `offered` whether giving it back is.
+    Held { offered: bool },
+}
+
+/// The band's words and its button.
+pub(super) fn band(standing: Standing) -> (String, Option<BandAct>) {
+    match standing {
+        Standing::Held { offered } => (
             "You hold this worker".into(),
             offered.then_some(BandAct::GiveBack),
         ),
-        false => (
+        Standing::Coordinated { lead } => (
             format!("{} is coordinating this worker", lead.unwrap_or("Its lead")),
-            lead_here.then_some(BandAct::BackToLead),
+            lead.map(|_| BandAct::BackToLead),
         ),
     }
 }
@@ -54,20 +65,25 @@ impl ChatPane {
             .find(|worker| worker.uid == uid)
             .zip(self.session_of(uid))
             .is_some_and(|(worker, session)| worker.held(&session.read(cx).chat));
-        let offered = crate::control::give_back_offered(uid, prompts(self, cx), cx);
-        let lead_here = self.conversations.contains_key(&lead);
-        let name = lead_here.then(|| self.worker_name(lead, cx));
-        let (words, act) = band(name.as_deref(), held, offered, lead_here);
+        let name = self
+            .conversations
+            .contains_key(&lead)
+            .then(|| self.worker_name(lead, cx));
+        let standing = match held {
+            true => Standing::Held {
+                offered: crate::control::give_back_offered(uid, prompts(self, cx), cx),
+            },
+            false => Standing::Coordinated {
+                lead: name.as_deref(),
+            },
+        };
+        let (words, act) = band(standing);
         let button = act.map(|act| {
-            let label = match act {
-                BandAct::BackToLead => "Back to lead",
-                BandAct::GiveBack => "Give back to the lead",
-            };
             crate::controls::action(("worker-band", uid))
                 // Beside a sentence, so never a ghost.
                 .secondary()
                 .short()
-                .label(label)
+                .label(act.label())
                 .on_click(cx.listener(move |pane: &mut Self, _, _, cx| match act {
                     BandAct::BackToLead => cx.emit(ChatPaneEvent::ShowSession(lead)),
                     BandAct::GiveBack => {

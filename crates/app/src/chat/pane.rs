@@ -32,6 +32,7 @@ pub(crate) use header::LIVE_DOT;
 mod history;
 mod lead_strip;
 mod offload_send;
+mod over_composer;
 mod overlay;
 mod pages;
 mod project_page;

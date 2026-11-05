@@ -292,18 +292,16 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
                 },
                 cx,
             ),
-            Row::Session { item, flat, nested } => {
+            Row::Session { item, place } => {
                 let it = &list.items[item];
-                // A worker's project is its lead's tree, so it names its agent.
-                let who = match flat && !nested {
+                let who = match place.names_project() {
                     true => workspace.roots[it.root].label.as_str(),
                     false => it.agent.as_str(),
                 };
                 session::session_row(
                     it,
                     who,
-                    flat,
-                    nested,
+                    place,
                     session::Mark {
                         shown: shown == Some((it.root, it.session)),
                         at: keyed && state.cursor == Some(Cursor::Session(it.uid)),

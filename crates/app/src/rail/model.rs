@@ -65,7 +65,9 @@ pub(super) struct Item {
     /// For a lead, the workers under it waiting on the person.
     pub(super) waiting: usize,
     /// For a worker whose lead is listed, the lead's index among the items:
-    /// it is drawn under the lead, wherever its own project is.
+    /// it is drawn under the lead, wherever its own project is. Set by
+    /// [`nest_workers`] over the items as they stay: nothing reorders them
+    /// after, as lists sort indices into them instead.
     pub(super) under: Option<usize>,
     /// The host its project is on, which a session waiting for it names.
     pub(super) host: Option<String>,
@@ -203,6 +205,9 @@ pub(super) fn visible(
 }
 
 /// The workers listed under the item at `lead`, in the order it opened them.
+// ponytail: a scan of every item per lead, quadratic in a window's sessions;
+// group the workers by lead once in `nest_workers` if a window ever holds
+// hundreds.
 fn workers_under(items: &[Item], lead: usize) -> impl Iterator<Item = usize> + '_ {
     let mut mine: Vec<usize> = (0..items.len())
         .filter(|w| items[*w].under == Some(lead))
@@ -302,9 +307,7 @@ pub(super) enum Row {
     },
     Session {
         item: usize,
-        flat: bool,
-        /// A worker drawn under its lead's row.
-        nested: bool,
+        place: Place,
     },
     /// An open project with no sessions.
     Empty,
@@ -318,6 +321,35 @@ pub(super) enum Row {
     AddProject,
     /// The list's last row: the way to grow it with a folder on a host.
     AddHostProject,
+}
+
+/// Where a session's row stands: in a flat list or a project's tree, and
+/// under its lead or not.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct Place {
+    pub(super) flat: bool,
+    /// A worker drawn under its lead's row.
+    pub(super) nested: bool,
+}
+
+impl Place {
+    /// How many indents its row is set in: one under its project, one more
+    /// under its lead.
+    pub(super) fn depth(self) -> u8 {
+        u8::from(!self.flat) + u8::from(self.nested)
+    }
+
+    /// Whether its line names its project rather than its agent: in a flat
+    /// list, unless it stands under its lead, whose tree is its project.
+    pub(super) fn names_project(self) -> bool {
+        self.flat && !self.nested
+    }
+
+    /// Whether it is dragged to reorder: only a project's own rows, as a
+    /// worker's place follows its lead's.
+    pub(super) fn drags(self) -> bool {
+        !self.flat && !self.nested
+    }
 }
 
 /// What the rows are built from, besides the sessions.
@@ -399,13 +431,14 @@ fn capped(
     for item in sessions.into_iter().take(cap) {
         rows.push(Row::Session {
             item,
-            flat,
-            nested: false,
+            place: Place {
+                flat,
+                nested: false,
+            },
         });
         rows.extend(workers_under(items, item).map(|item| Row::Session {
             item,
-            flat,
-            nested: true,
+            place: Place { flat, nested: true },
         }));
     }
     if hidden > 0 {

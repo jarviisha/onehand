@@ -86,6 +86,10 @@ says it is a worker and which lead coordinates it.
   the lead's project, *New* beside a worker on screen starts in the lead's project (never the
   worker's transient worktree, which is not saved), and closing the worker on screen shows its
   lead. A worker that leads workers shows the lead's strip, not the band.
+- **A worker's row names its agent**, in a flat list too, where other rows name their project:
+  its project is its lead's tree, and mostly a worktree nobody else sees.
+- **The lead's strip takes the caret** like any press now: it shows another session, whose
+  composer gets the caret as arriving at any session gives it.
 - **Arrival:** `Shell::turn_to_lead` goes, so arriving at a worker shows it; `mru_order` stops
   filtering workers (`Ctrl+Tab` stays per project, so it reaches only a worker sharing the
   project); `release_workers` on close is reviewed with the region's removal.

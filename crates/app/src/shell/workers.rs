@@ -20,6 +20,12 @@ pub(super) fn region_closes(page: bool, has_workers: bool) -> bool {
     page || !has_workers
 }
 
+/// The project a session stands under, from where it is (`own`) and where
+/// its lead is in this window (`lead`), each a project and a place.
+pub(super) fn home(own: Option<(usize, usize)>, lead: Option<(usize, usize)>) -> Option<usize> {
+    lead.or(own).map(|(root, _)| root)
+}
+
 impl Shell {
     /// Where session `uid` is in the workspace: its project and its place.
     pub(super) fn locate(&self, uid: u64) -> Option<(usize, usize)> {
@@ -40,10 +46,8 @@ impl Shell {
     /// worker whose lead is in this window, else its own. A worker's own is
     /// mostly a worktree kept for it alone, which nothing else belongs in.
     pub(crate) fn home_of(&self, uid: u64) -> Option<usize> {
-        crate::control::lead_of(uid)
-            .and_then(|lead| self.locate(lead))
-            .or_else(|| self.locate(uid))
-            .map(|(root, _)| root)
+        let lead = crate::control::lead_of(uid).and_then(|lead| self.locate(lead));
+        home(self.locate(uid), lead)
     }
 }
 

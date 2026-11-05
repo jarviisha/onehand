@@ -270,8 +270,7 @@ const LEAD_RULE: gpui::Rems = rems(0.5);
 pub(super) fn session_row(
     item: &Item,
     who: &str,
-    flat: bool,
-    nested: bool,
+    place: super::model::Place,
     mark: Mark,
     cx: &mut Context<Shell>,
 ) -> AnyElement {
@@ -328,11 +327,9 @@ pub(super) fn session_row(
         // under the name. The row's fill starts past the fold control's
         // column, so a chosen row carries no empty band on its left. A worker
         // is set in once more, under its lead's title.
-        .ml(rems(
-            super::INDENT.0 * (usize::from(!flat) + usize::from(nested)) as f32,
-        ))
+        .ml(rems(super::INDENT.0 * f32::from(place.depth())))
         // A rule down from the lead's mark ties a worker to it.
-        .when(nested, |row| {
+        .when(place.nested, |row| {
             row.child(
                 div()
                     .absolute()
@@ -415,7 +412,7 @@ pub(super) fn session_row(
         )
         .when(mark.at, |row| row.child(key_ring(cx)))
         // A worker's place follows its lead, so it is not dragged.
-        .when(!flat && !nested, |row| {
+        .when(place.drags(), |row| {
             let (target, ghost) = (shell.clone(), SharedString::from(item.title.clone()));
             row.on_drag(
                 SessionDrag {
