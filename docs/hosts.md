@@ -557,12 +557,30 @@ In the window (`crates/app/src/offload.rs`, `crates/app/src/shell/offload.rs`):
   sessions go here (they run on there until they end) and clears `offloaded`. The mirror and
   `offload.json` stay, so a later offload sends only what changed.
 
+On a branch (`crates/app/src/offload/branch.rs`), the window's side of a branch mirror:
+
+- **Picked in the offload form**, *Into this folder* (the mirror with a key, the default) or *On
+  a branch*, and kept beside `offloaded` as `offloaded_branches` (the branch, by root; a file
+  from before reads as a mirror). It changes only by *Run here again* and offloading again; each
+  way has a mirror of its own on the host (the branch's is named `<stem>.branch`), so neither
+  touches the other's code.
+- **Offloading** attaches, asks for the branch mirror, and, unless its branch started already
+  (offloaded before), pushes this folder's last commit to start it; then fetches it. `rsync` is
+  not needed. A folder with no commit is refused.
+- **No key and no lock:** nothing here is locked, a prompt goes at once with nothing sent first,
+  no copy comes back, and `offload.json` is neither read nor written.
+- **Fetched when it moved:** at a turn's end of a session on it here, and with the 30 s check
+  while its host is attached, the laptop asks the host for the branch's commit and fetches only
+  when it differs from the ref here, then counts what it has to merge. A check never attaches; with
+  the host away it counts what was fetched. The count is the page box's line and the rail's
+  merge mark.
+- **Update host from laptop**, in the *On <host>* box: attaches, refuses while a session there
+  works (*Wait for the sessions on <host> to finish*), pushes this folder's last commit and has
+  the host merge it, then fetches and counts again. A failure, a conflict among them, stands in
+  the box; success says nothing but the count.
+- **Run here again** is offered whenever the branch is not being fetched or updated, and leaves
+  the mirror, the host's branch and the ref here as they are.
+
 ## Not built
 
-The steps of the design still to come, each its own change; the gaps they leave meanwhile are in
-[known-gaps.md](known-gaps.md). The host's own UI is built: picking a host, browsing its folders and
-cloning (*Adding a host project*), and re-attaching by itself and the laptop's copy (*Attach and
-detach*, *The laptop's copy*); so is the permission bypass.
-
-- **A branch mode with no key** for offloaded projects. Offloading, the key, the lock, settling a
-  copy back that stopped and *Send to <host>* are built (*Offloaded projects*).
+Every step of the design is built; what each leaves out is in [known-gaps.md](known-gaps.md).

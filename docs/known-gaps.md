@@ -360,5 +360,15 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **A key handed to the host whose answer was lost** leaves this machine holding it as far as it
   knows: the next prompt finds the host holding it and goes without sending, so edits made here
   meanwhile reach the host only once the code has come back (it stops on them, safely).
+- **An agent that leaves its host's branch gets no turn-end commit.** A branch mirror whose HEAD
+  is on another branch, or mid-merge, cherry-pick or rebase, is left as the agent left it, and
+  *Update host from laptop* refuses until it is back on its branch.
+- **A branch mirror holds only the history of this folder's last commit:** the laptop's other
+  branches, its tags and its `origin` are not there, so an agent cannot fetch or push from it.
+- **The host's branch's ref here is never pruned,** nor the branch mirror: *Run here again*
+  leaves both.
+- **A sync mode changes only through *Run here again*** and offloading again.
+- **The branch count on a project's page waits for the next check** (a turn's end, or the 30 s
+  check while its host is attached); showing the page does not fetch.
 - **Offloaded projects are checked one after another,** so one copy that hangs holds back the
   checks of the others. The code comes back at a turn end or the 30 s check, not at an attach.
