@@ -95,6 +95,17 @@ it. What is refused, and how, is under *What a host project does not do*.
 - **Detaching never stops anything on the host.** Closing a host session in the window, removing
   its project, or quitting onehand lets go of the watch; the session and its agent run on there,
   and the project's page lists it.
+- **Ending one does.** *End on <host>…*, in a host session's `⋯` on the rail, in the
+  conversation's dots menu, and on a running row of the project page's *Sessions on <host>* (its
+  `⋯` and right-click), asks *End <session> on <host>?* (*Its agent stops there, and a running
+  turn is lost. The conversation stays readable on the project page.*), then sends `End`: the
+  host drops the task driving the agent, which kills the agent's process, journals *the session
+  was ended from the laptop* as its `Disconnected`, and lists it ended (`Hub::end_session`,
+  `crates/app/src/shell/host_end.rs`). A session in another laptop's mirror is refused, as a
+  request to it is. Here, the session watching it closes first, then the page lists again; a
+  failure is a toast, *Ending <session> on <host> failed: …*, and the session stays on the page
+  to attach to. A session the host has not named yet has nothing there to end, and says so. A
+  turn ended halfway in a branch mirror is not committed then; the next update commits it.
 
 ## Builds and the restart offer
 

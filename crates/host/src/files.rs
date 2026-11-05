@@ -49,6 +49,7 @@ pub(crate) fn answer(call: Call) -> Result<Reply, String> {
         | Call::List
         | Call::Open { .. }
         | Call::Watch { .. }
+        | Call::End { .. }
         | Call::Request { .. }
         | Call::Probe { .. }
         | Call::TermOpen { .. }

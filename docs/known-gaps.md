@@ -306,9 +306,6 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **A host session cannot be forked**, *Not on a host yet*: a fork opens a new agent session from
   the old one's history, which on a host means a fork the host service carries out on its own
   journal and agent.
-- **A host session is never ended from the window.** Closing it, removing its project or quitting
-  only stops watching it; it runs on with its agent and stays on its project's page. The host
-  service takes no call that stops a session.
 - **A host session restarting onto a session the host still runs is blank for a moment.** The
   transcript is drawn from the journal alone, and the copy is yielded only once the host's replay
   begins, so it is empty until then. Keeping the old one on screen meanwhile would draw every item

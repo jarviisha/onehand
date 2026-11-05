@@ -128,6 +128,7 @@ mod on_host {
                 | Call::List
                 | Call::Open { .. }
                 | Call::Watch { .. }
+                | Call::End { .. }
                 | Call::Request { .. }
                 | Call::Probe { .. }
                 | Call::ReadDir { .. }

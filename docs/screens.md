@@ -113,7 +113,8 @@ in the warning ink. The *Needs attention* filter and a folded project's badge re
 state of the lead and its workers (by that order: lost, failed, needs input, running, done
 unread, then waiting for its host, the calmest), and *N need attention* counts a worker waiting on
 the person; a session waiting for its host is never counted, since it moves on by itself. Its
-row's menu reads *Restart the host service…* in place of *Restart the agent*. A worktree project holding
+row's menu reads *Restart the host service…* in place of *Restart the agent*. A host session's row
+menu ends on *End on <host>…*, in the danger ink, after *Close session*. A worktree project holding
 nothing but such workers is left out with them. When the lead closes or is lost, its workers are
 listed again under their project.
 
@@ -122,7 +123,7 @@ listed again under their project.
 Left to right: the show-rail button (only while the rail is hidden); the conversation's name, medium
 weight; a dots menu (*Rename…*, *Export as Markdown…*; *Resume in this session…*, refused mid-turn,
 and *Restart the agent*; *Delete conversation* in the danger tint, refused until the first turn
-ends); a spacer; *N in background* (only while the session's agent has work running in the
+ends, and on a host's session *End on <host>…* in the danger tint after it); a spacer; *N in background* (only while the session's agent has work running in the
 background: a menu of each item's name, its kind and how long it has run, each row stopping that
 one item and never the turn, 12 listed and then *N more*; when an item ends, the transcript keeps a
 notice of how and after how long: *Background work finished after 2m 14s: npm test*, an error when it
@@ -317,7 +318,8 @@ dragged height kept).
   *Schedules*, which are this machine's: a row per session the host keeps in that
   folder, newest first (its agent, then *started 3m ago* or *started just now*, and *running*, in
   the running ink while mid-turn, or *ended* at the edge), a press attaching to it in the pane, or
-  showing the session already attached to it there; capped at 50 with *N more on this host*.
+  showing the session already attached to it there, and a `⋯` on hover, its right-click the same:
+  *Attach*, then, unless it ended, *End on <host>…* in the danger ink; capped at 50 with *N more on this host*.
   *Attaching to <host>…* with a spinner while it waits; *No sessions on <host> for this folder
   yet* at none; a failure says why as a status line in the danger ink with *Try again*
   (secondary) beside it; a host on another build with sessions mid-turn says *Waiting for N

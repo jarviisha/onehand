@@ -395,6 +395,8 @@ fn answer(
             agent,
             opening,
         } => Hub::open(hub, cwd, agent, opening).map(|session| Reply::Opened { session }),
+        // On the loop: it marks the session and drops its agent's task.
+        Call::End { session } => lock(hub).end_session(&session).map(|()| Reply::Done),
         Call::Watch { session, after } => {
             Hub::watch(hub, &session, after, out.clone()).map(|()| Reply::Done)
         }
@@ -504,6 +506,7 @@ fn touched(call: &Call) -> Option<&Path> {
         | Call::List
         | Call::Open { .. }
         | Call::Watch { .. }
+        | Call::End { .. }
         | Call::Request { .. }
         | Call::Probe { .. }
         | Call::Home

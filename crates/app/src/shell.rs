@@ -27,6 +27,7 @@ mod drafts;
 mod fork;
 mod frame;
 mod git_sweep;
+mod host_end;
 mod host_project;
 pub(crate) use host_project::{Browse, Way};
 pub(crate) use offload::offload_refusal;

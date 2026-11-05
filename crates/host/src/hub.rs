@@ -39,6 +39,9 @@ const ATTACHMENTS_DROPPED: &str =
 /// What a session's stream ending says when the agent did not say why.
 const CLOSED: &str = "The agent's connection closed";
 
+/// What ends a session the laptop ended.
+const ENDED_HERE: &str = "the session was ended from the laptop";
+
 /// What ends a session a service before this one left running.
 const STOPPED: &str = "The host service stopped while this session was running";
 
@@ -79,6 +82,9 @@ struct Session {
     /// The background work and subagents it has running, by id.
     aside: BTreeSet<String>,
     ended: bool,
+    /// The task driving its agent, which owns the agent's stream: aborting it
+    /// drops the stream, and with it the agent's process.
+    drive: Option<tokio::task::AbortHandle>,
 }
 
 pub(crate) struct Hub {
@@ -195,7 +201,10 @@ impl Hub {
             dirs: vec![],
         };
         let events = connector(launch, opts);
-        lock(hub).sessions.insert(
+        // Spawned with the hub held, so the session is never without its
+        // task's handle: an `End` between the two would leave its agent up.
+        let mut this = lock(hub);
+        this.sessions.insert(
             id.clone(),
             Session {
                 dir,
@@ -209,9 +218,14 @@ impl Hub {
                 busy: false,
                 aside: BTreeSet::new(),
                 ended: false,
+                drive: None,
             },
         );
-        tokio::spawn(drive(hub.clone(), id.clone(), events));
+        let task = tokio::spawn(drive(hub.clone(), id.clone(), events));
+        if let Some(s) = this.sessions.get_mut(&id) {
+            s.drive = Some(task.abort_handle());
+        }
+        drop(this);
         Ok(id)
     }
 
@@ -555,9 +569,31 @@ impl Hub {
         );
     }
 
+    /// End `session` because the laptop asked: its agent is stopped and the
+    /// journal says so. Refused for a session in another laptop's mirror, as
+    /// a request to it is; one already ended is left as it is.
+    pub(crate) fn end_session(&mut self, session: &HostSession) -> Result<(), String> {
+        let s = self.sessions.get(session).ok_or_else(|| unknown(session))?;
+        if s.ended {
+            return Ok(());
+        }
+        let cwd = s.cwd.clone();
+        self.may_use(&cwd)?;
+        if let Some(drive) = self.sessions.get_mut(session).and_then(|s| s.drive.take()) {
+            drive.abort();
+        }
+        self.record(
+            session,
+            Entry::Event(AcpEvent::Disconnected(ENDED_HERE.into())),
+        );
+        self.end(session);
+        Ok(())
+    }
+
     fn end(&mut self, session: &HostSession) {
         if let Some(s) = self.sessions.get_mut(session) {
             s.ended = true;
+            s.drive = None;
             s.busy = false;
             s.aside.clear();
             s.tx = None;
@@ -596,6 +632,7 @@ fn load(id: &str, dir: &Path) -> Result<Session, String> {
         busy: false,
         aside: BTreeSet::new(),
         ended: true,
+        drive: None,
     })
 }
 

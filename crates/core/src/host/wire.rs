@@ -112,6 +112,11 @@ pub enum Call {
         session: HostSession,
         request: AcpRequest,
     },
+    /// End `session`: its agent is stopped, and its journal says why. One
+    /// already ended is `Done` too.
+    End {
+        session: HostSession,
+    },
     /// Whether `path` is a folder on the host.
     Probe {
         path: PathBuf,

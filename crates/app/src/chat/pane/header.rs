@@ -413,6 +413,11 @@ impl ChatPane {
         };
         let project = project.map(|project| project.facts);
         let this = cx.entity();
+        // A host's session is ended there, which closing it here is not.
+        let on_host = self
+            .active_conversation()
+            .and_then(|conv| conv.host.as_ref())
+            .map(|on| on.host.clone());
 
         // The same small ghost button as the rest of the header's controls,
         // so one row keeps one kind of control. The menu goes through the
@@ -442,8 +447,9 @@ impl ChatPane {
                 move |menu, _, cx| {
                     let danger = crate::theme::status_ink(cx).danger;
                     let (rename, export, history) = (this.clone(), this.clone(), this.clone());
-                    let (restart, remove) = (this.clone(), this.clone());
+                    let (restart, remove, end) = (this.clone(), this.clone(), this.clone());
                     let archive = archive.clone();
+                    let on_host = on_host.clone();
                     menu.item(crate::controls::menu_item("Rename…").on_click(
                         move |_, _, cx: &mut App| {
                             rename.update(cx, |_: &mut Self, cx| cx.emit(ChatPaneEvent::Rename));
@@ -520,6 +526,19 @@ impl ChatPane {
                             });
                         }),
                     )
+                    .when_some(on_host, |menu, host| {
+                        let words = gpui::SharedString::from(format!("End on {host}…"));
+                        menu.item(
+                            crate::controls::menu_row(move |_, _| {
+                                div().text_color(danger).child(words.clone())
+                            })
+                            .on_click(move |_, _, cx: &mut App| {
+                                end.update(cx, |_: &mut Self, cx| {
+                                    cx.emit(ChatPaneEvent::EndOnHost)
+                                });
+                            }),
+                        )
+                    })
                 },
             ),
         };
