@@ -1,7 +1,7 @@
 //! The form that offloads a project to a host: its new sessions run there,
 //! on a copy of its folder the host keeps.
 
-use super::host_project::{host_choices, host_menu};
+use super::host_project::{PickHost, host_choices, host_menu};
 use super::{field, footer_row, title_row};
 use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
@@ -47,7 +47,7 @@ pub(crate) fn offload(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -
                 let weak = weak.clone();
                 Rc::new(move |host: String, window: &mut Window, cx: &mut App| {
                     let _ = weak.update(cx, |shell, cx| shell.pick_offload_host(host, window, cx));
-                }) as Rc<dyn Fn(String, &mut Window, &mut App)>
+                }) as PickHost
             };
             content
                 .child(title_row(title.clone(), cx))

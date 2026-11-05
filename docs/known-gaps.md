@@ -331,3 +331,21 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **The host menu reads a plain subset of `~/.ssh/config`.** An `Include` globs only `*` in the
   file name, not `?` or `[]`, and the hosts of a `Match` block are not offered; an alias ssh would
   resolve that way is typed instead.
+- **Settling a copy back that stopped, and *Send to <host>*, are not built yet.** A project whose
+  copy back stopped stays with its host, its rail mark in the warning ink and its page saying how
+  many things changed, and is checked again every 30 s and at each turn end, so putting the change
+  here back lets the code come.
+- **A past conversation from before a project was offloaded opens readable, but its agent cannot
+  carry it on:** it resumes on the host, which has no record of it, and fails there. A new session
+  is the way to go on.
+- **The code comes back only while its host is attached.** A check never attaches by itself, so an
+  offloaded project whose sessions nobody shows stays locked until its page or a session on it is
+  shown.
+- **An offloaded project's prompt queued behind a turn can be refused by the host** when the code
+  came back at that turn's end before the queued prompt went: the transcript says to send it
+  again, and sending it again sends the code up first.
+- **A locked shell drops what is typed, and what a program asks of the terminal too** (a cursor
+  query, say), which a program waiting on its answer notices. The lock is at the writer, which
+  both pass through.
+- **Removing an offloaded project from the workspace does not stop its code coming back** to the
+  folder once the host is done; nothing else is done to the folder.

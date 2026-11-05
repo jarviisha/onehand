@@ -2,8 +2,8 @@ use super::fork::StagedFork;
 use super::project_page::EmptyProject;
 use super::{ChatPane, ChatPaneEvent, ProjectFacts, Restart, SessionSignal, switching_away};
 use crate::chat::composer::Composer;
-use crate::chat::conversation::OnHost;
 use crate::chat::conversation::{Conversation, SessionPhase};
+use crate::chat::conversation::{HostAt, OnHost};
 use crate::chat::session::{BeginOnHost, Carried, ChatEvent, ChatSession, HostBegin};
 use gpui::{App, Context, Entity, Focusable, SharedString, Window};
 use onehand_core::acp::Opening;
@@ -24,7 +24,7 @@ impl ChatPane {
         &mut self,
         uid: u64,
         root: PathBuf,
-        host: Option<(HostName, PathBuf)>,
+        host: Option<HostAt>,
         spec: &AgentSpec,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -593,7 +593,7 @@ impl ChatPane {
     /// about the pane except which one it is offering.
     pub fn clear_active(
         &mut self,
-        root: Option<(SharedString, PathBuf, Option<(HostName, PathBuf)>)>,
+        root: Option<(SharedString, PathBuf, Option<HostAt>)>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -982,7 +982,7 @@ pub(super) fn host_begin(
 /// watches when that is known before it starts: so a second press on the
 /// same listed session finds this one at once. A fork opens its own.
 pub(super) fn opening_host(
-    host: Option<(HostName, PathBuf)>,
+    host: Option<HostAt>,
     watch: Option<&HostSession>,
     forking: bool,
 ) -> Option<OnHost> {

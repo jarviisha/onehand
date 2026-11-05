@@ -40,6 +40,9 @@ pub(crate) struct OnHost {
     pub(crate) session: Option<HostSession>,
 }
 
+/// A host and the folder there a project's sessions run in.
+pub(crate) type HostAt = (HostName, PathBuf);
+
 pub struct Conversation {
     /// The project root this session's agent runs in, and the agent it runs.
     ///

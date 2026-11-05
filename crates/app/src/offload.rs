@@ -320,7 +320,7 @@ pub(crate) async fn send_up(cx: &mut AsyncApp, path: PathBuf) -> Result<(), Stri
             }
             Err((why, state)) => {
                 if let Some(state) = state {
-                    o.state = Some(state.clone());
+                    o.state = Some((**state).clone());
                 }
                 o.failed = Some(why.clone());
             }
@@ -335,7 +335,7 @@ async fn send_up_with(
     path: &Path,
     host: &HostName,
     sent: Manifest,
-) -> Result<OffloadState, (String, Option<OffloadState>)> {
+) -> Result<OffloadState, (String, Option<Box<OffloadState>>)> {
     let conn = attach(cx, host).await.map_err(|why| (why, None))?;
     let mirror = mirror_of(cx, &conn, path)
         .await
@@ -350,7 +350,7 @@ async fn send_up_with(
         let kept = save(path, &state);
         return kept
             .map(|()| state.clone())
-            .map_err(|why| (why, Some(state)));
+            .map_err(|why| (why, Some(Box::new(state))));
     }
     let (addr, folder, at) = (host.addr(), path.to_path_buf(), mirror.path.clone());
     let manifest = cx
@@ -372,8 +372,11 @@ async fn send_up_with(
     let kept = save(path, &state);
     match (handed, kept) {
         (Ok(_), Ok(())) => Ok(state),
-        (Err(why), _) => Err((format!("{host} did not take the code: {why}"), Some(state))),
-        (Ok(_), Err(why)) => Err((why, Some(state))),
+        (Err(why), _) => Err((
+            format!("{host} did not take the code: {why}"),
+            Some(Box::new(state)),
+        )),
+        (Ok(_), Err(why)) => Err((why, Some(Box::new(state)))),
     }
 }
 
@@ -407,7 +410,7 @@ pub(crate) async fn check_back(cx: &mut AsyncApp, path: PathBuf) {
             Ok(None) => {}
             Err((why, state)) => {
                 if let Some(state) = state {
-                    o.state = Some(state);
+                    o.state = Some(*state);
                 }
                 o.failed = Some(why);
             }
@@ -423,7 +426,7 @@ async fn bring_back(
     path: &Path,
     host: &HostName,
     sent: Manifest,
-) -> Result<Option<OffloadState>, (String, Option<OffloadState>)> {
+) -> Result<Option<OffloadState>, (String, Option<Box<OffloadState>>)> {
     let fail = |why: String| (why, None);
     let mirror = mirror_of(cx, conn, path).await.map_err(fail)?;
     // Only this machine hands the key back to itself, after the copy back:
@@ -436,7 +439,7 @@ async fn bring_back(
             moved: onehand_core::chat::now_secs(),
             stopped: None,
         };
-        save(path, &state).map_err(|why| (why, Some(state.clone())))?;
+        save(path, &state).map_err(|why| (why, Some(Box::new(state.clone()))))?;
         return Ok(Some(state));
     }
     if mirror.working {
@@ -473,7 +476,7 @@ async fn bring_back(
                 moved: now,
                 stopped: None,
             };
-            save(path, &came).map_err(|why| (why, Some(came.clone())))?;
+            save(path, &came).map_err(|why| (why, Some(Box::new(came.clone()))))?;
             match hand_key(cx, conn, &mirror.path, Holder::Laptop, mirror.generation).await {
                 Ok(_) => OffloadState {
                     key: Holder::Laptop,
@@ -484,7 +487,7 @@ async fn bring_back(
             }
         }
     };
-    save(path, &state).map_err(|why| (why, Some(state.clone())))?;
+    save(path, &state).map_err(|why| (why, Some(Box::new(state.clone()))))?;
     Ok(Some(state))
 }
 
