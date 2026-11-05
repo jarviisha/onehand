@@ -83,6 +83,10 @@ impl ChatPane {
         }
         self.leave_page(window, cx);
         self.page = None;
+        // The project's page is made again when the pane next stands on it,
+        // so it reads its lists anew: a session closed meanwhile is among its
+        // past conversations, or its host's sessions.
+        self.empty = None;
         self.active = Some(uid);
         // The header's menu is about the project, so it follows the project
         // rather than the session: switching between two sessions of one root

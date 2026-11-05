@@ -1,6 +1,6 @@
 use super::row::{
-    DragGhost, MAX_BRANCH_W, ProjectDrag, covered_tip, covering, faded, hover_fill, key_ring,
-    labelled, menu_button, project_key, row_control, row_inks, row_surfaces,
+    DragGhost, MAX_BRANCH_W, ProjectDrag, covered_tip, covering, fade_band, faded, hover_fill,
+    key_ring, labelled, menu_button, project_key, row_control, row_inks, row_surfaces,
 };
 use super::session::{signal_hint, status_mark};
 use crate::chat::pane::{ProjectFacts, SessionSignal};
@@ -637,6 +637,10 @@ pub(super) fn project_row(
                 .bg(rest)
                 .when(!ring, |d| d.invisible())
                 .group_hover(key.clone(), move |s| s.visible().bg(hovered))
+                // What of the meta they leave uncovered fades into them
+                // rather than ending on a cut glyph, and still answers the
+                // pointer.
+                .child(fade_band(key.clone(), rest, hovered).right_full())
                 .child(labelled(
                     ("project-new-name", root_idx),
                     "New session in this project",

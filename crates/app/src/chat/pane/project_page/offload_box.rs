@@ -124,7 +124,7 @@ fn branch_box(path: &Path, on: BranchBox, cx: &mut Context<ChatPane>) -> Div {
                     .flatten()
                     .map(|why| div().text_xs().text_color(danger).child(why)),
             )
-            .child(div().pt_2().child(update))
+            .child(div().h_flex().pt_2().child(update))
             .child(div().text_xs().text_color(muted).child(format!(
                 "Merges this folder's last commit into {name}; what is not committed stays here"
             ))),
