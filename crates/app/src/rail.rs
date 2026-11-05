@@ -54,11 +54,6 @@ pub(crate) use workspace::ellipsize_front;
 /// name.
 const INDENT: Rems = rems(1. + 0.5);
 
-/// How far left of a worker's row the rule tying it to its lead runs: under
-/// the middle of the lead's mark, which the row's inset and half the mark's
-/// slot put that far back from the worker's own edge.
-const LEAD_RULE: Rems = rems(0.5);
-
 /// How often a session's age is said again: the finest unit it is said in.
 const AGE_TICK: std::time::Duration = std::time::Duration::from_secs(60);
 

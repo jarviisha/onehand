@@ -5,9 +5,10 @@
 
 use super::lead_strip::over_composer;
 use super::{ChatPane, ChatPaneEvent};
-use crate::controls::{Quiet as _, Short as _};
+use crate::controls::Short as _;
 use gpui::{App, Context, IntoElement, ParentElement, Styled, div};
 use gpui_component::ActiveTheme as _;
+use gpui_component::button::ButtonVariants as _;
 
 /// What the band's one button does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,7 +65,8 @@ impl ChatPane {
                 BandAct::GiveBack => "Give back to the lead",
             };
             crate::controls::action(("worker-band", uid))
-                .quiet(cx)
+                // Beside a sentence, so never a ghost.
+                .secondary()
                 .short()
                 .label(label)
                 .on_click(cx.listener(move |pane: &mut Self, _, _, cx| match act {

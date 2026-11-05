@@ -254,6 +254,11 @@ pub(super) struct Mark {
     pub(super) resend: bool,
 }
 
+/// How far left of a worker's row the rule tying it to its lead runs: under
+/// the middle of the lead's mark, which the row's inset and half the mark's
+/// slot put that far back from the worker's own edge.
+const LEAD_RULE: gpui::Rems = rems(0.5);
+
 /// A session: its mark, its title and `⋯`, and under the title
 /// `state · who · age`, who being the agent, or the project in a flat list,
 /// the state's word in its own ink while it waits on the person. Over the end
@@ -333,7 +338,7 @@ pub(super) fn session_row(
                     .absolute()
                     .top_0()
                     .bottom_0()
-                    .left(rems(-super::LEAD_RULE.0))
+                    .left(rems(-LEAD_RULE.0))
                     .w_px()
                     .bg(cx.theme().border),
             )
