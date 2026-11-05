@@ -312,9 +312,21 @@ impl Shell {
         cx.spawn_in(window, async move |_, cx| {
             let took = offload::take_over(cx, path, into.clone()).await;
             // A failure stands on the project's page, where it was pressed.
-            let Ok(()) = took else {
+            let Ok(taken) = took else {
                 return;
             };
+            if !taken {
+                let _ = cx.update(|window, cx| {
+                    window.push_notification(
+                        crate::toast::info(format!(
+                            "{host} had given the code back already; nothing was taken, and \
+                             what changed here stays"
+                        )),
+                        cx,
+                    );
+                });
+                return;
+            }
             let at = into.clone();
             let backed = cx
                 .background_executor()

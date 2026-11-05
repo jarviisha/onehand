@@ -465,13 +465,15 @@ pub(crate) fn backup_dir(path: &Path) -> PathBuf {
 
 /// Take the host's code over what changed here since it went, once the
 /// person said so: what changed is copied into `into` first, then the code
-/// comes and the key comes back as on any copy back. `Err` why not, said on
-/// the project's page too, nothing here written over.
+/// comes and the key comes back as on any copy back. `Ok(false)` when the
+/// host said this machine held the code already: nothing was taken, and
+/// what changed here stays. `Err` why not, said on the project's page too,
+/// nothing here written over.
 pub(crate) async fn take_over(
     cx: &mut AsyncApp,
     path: PathBuf,
     into: PathBuf,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let claimed = update(cx, &path, |o| {
         let state = o.state.as_ref().filter(|s| s.key == Holder::Host)?;
         if o.moving.is_some() {
@@ -486,12 +488,20 @@ pub(crate) async fn take_over(
         update(cx, &path, |o| o.failed = Some(why.clone()));
         return Err(why);
     };
-    let came = match attach(cx, &host).await {
-        Ok(conn) => bring_back(cx, &conn, &path, &host, sent, Some(&into)).await,
-        Err(why) => Err((why, None)),
+    // Asked first, so a host that hands the code back without a copy is
+    // told apart from one whose code came.
+    let (came, here) = match attach(cx, &host).await {
+        Ok(conn) => match mirror_of(cx, &conn, &path).await {
+            Ok(mirror) => (
+                bring_back(cx, &conn, &path, &host, sent, Some(&into)).await,
+                mirror.key == Holder::Laptop,
+            ),
+            Err(why) => (Err((why, None)), false),
+        },
+        Err(why) => (Err((why, None)), false),
     };
     let said = match &came {
-        Ok(Some(state)) if state.key == Holder::Laptop => Ok(()),
+        Ok(Some(state)) if state.key == Holder::Laptop => Ok(!here),
         Ok(Some(_)) => Err(format!(
             "{host} kept the code; the next check brings it back"
         )),
