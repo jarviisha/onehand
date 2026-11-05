@@ -7,7 +7,7 @@ use gpui::{AppContext as _, Context, Entity, Focusable as _, Subscription, Task,
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputEvent, InputState};
 use onehand_core::host::sshconf;
-use onehand_core::workspace::HostName;
+use onehand_core::workspace::{HostName, Offloaded};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -226,7 +226,11 @@ impl Shell {
         for uid in here {
             self.drop_session(uid, cx);
         }
-        self.window.workspace.roots[idx].offload = Some((host.clone(), mirror.clone()));
+        self.window.workspace.roots[idx].offload = Some(Offloaded {
+            host: host.clone(),
+            mirror: mirror.clone(),
+            branch: None,
+        });
         offload::track(cx, path, host, Some(state));
         self.save_workspace_soon(cx);
         self.show_active_session(window, cx);
@@ -246,7 +250,7 @@ impl Shell {
         let Some(root) = self.window.workspace.roots.get(idx) else {
             return;
         };
-        let Some((host, _)) = root.offload.clone() else {
+        let Some(host) = root.offload.as_ref().map(|on| on.host.clone()) else {
             return;
         };
         let path = root.path.clone();
@@ -358,7 +362,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         let Some((folder, host, mirror)) = self.window.workspace.roots.iter().find_map(|r| {
-            let (host, mirror) = r.offload.clone()?;
+            let Offloaded { host, mirror, .. } = r.offload.clone()?;
             path.starts_with(&r.path)
                 .then(|| (r.path.clone(), host, mirror))
         }) else {
@@ -394,7 +398,7 @@ impl Shell {
             .workspace
             .roots
             .iter()
-            .filter_map(|r| Some((r.path.clone(), r.offload.clone()?.0)))
+            .filter_map(|r| Some((r.path.clone(), r.offload.as_ref()?.host.clone())))
             .collect();
         let offloaded: HashMap<PathBuf, String> = kept
             .iter()

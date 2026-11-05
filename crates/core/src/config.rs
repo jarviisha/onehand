@@ -464,6 +464,10 @@ pub struct WorkspaceConfig {
     /// Roots offloaded to a host, by root, each valued `<host>:<mirror>`: the
     /// host its sessions run on and the mirror they run in there.
     pub offloaded: std::collections::BTreeMap<PathBuf, String>,
+    /// Of those, the ones on a branch, by root, each valued with the branch
+    /// its host's sessions work on; a root offloaded and not here is a
+    /// mirror, as every one kept before branches is.
+    pub offloaded_branches: std::collections::BTreeMap<PathBuf, String>,
 }
 
 /// The window's panel arrangement, as far as anything outside the front end
