@@ -162,14 +162,13 @@ minor bump may break any of them.
   project, its history the conversation's up to just before that prompt and the prompt in its
   composer to send again or rewrite. The original conversation is left as it is, and files are not
   rolled back.
-- A session whose agent opens workers is their lead: the workers leave the rail, the lead's row
-  keeps its own state and counts *N workers need you*, and a workers' region in the Workbench's
-  place lists every worker, most urgent first, over the picked one's card and live transcript;
-  *Write to …* opens a composer for it only when asked. One line above the lead's composer
-  counts them, how they stand and who needs you; pressed, it shows the region at that worker, and
-  `Ctrl+Shift+Y` puts the caret on the region's list. Writing to a worker takes it from the lead;
-  *Give back to the lead* in its menu returns it. A lead closing puts its workers back in
-  the rail.
+- A session whose agent opens workers is their lead: the rail lists its workers under its row,
+  whatever project they run in, and the lead's row keeps its own state and counts *N workers need
+  you*. A worker opens in the agent pane as any session, a band over its composer naming the lead
+  that coordinates it, with *Back to lead*. One line above the lead's composer counts its
+  workers, how they stand and who needs you; pressed, it shows the most urgent one. Writing to a
+  worker takes it from the lead; *Give back to the lead* on its band returns it. A lead closing
+  puts its workers back under their own project.
 - A permission card shows its command whole up to about ten lines, then *Show all N lines*,
   rather than in a box that scrolls.
 - A worker is named for what it works on when its lead gives a name, else for its folder, never

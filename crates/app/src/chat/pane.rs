@@ -42,12 +42,10 @@ mod sessions;
 mod step_strip;
 mod titles;
 mod worker_band;
-mod workers;
 pub use events::{ChatPaneEvent, ProjectAction, Restart, SessionSignal};
 use header::Archives;
 pub use pages::PageKind;
 use project_page::EmptyProject;
-pub use workers::{WorkersBack, WorkersDown, WorkersUp, WorkersWrite};
 
 /// A page drawn in place of a conversation, about more than one project:
 /// every one a view of its own, held by the window, so what it holds
@@ -244,8 +242,6 @@ impl ProjectFacts {
 pub struct DocksOpen {
     pub terminal: bool,
     pub workbench: bool,
-    /// The workers' region, in the Workbench's place.
-    pub workers: bool,
 }
 
 pub struct ChatPane {
@@ -356,8 +352,6 @@ pub struct ChatPane {
     /// is silent: focus handed to an input that is not on screen leaves the
     /// window with nothing focused at all.
     composer_drawn: bool,
-    /// The workers' region, drawn here and mounted in a dock panel.
-    workers: workers::Workers,
     /// When the turn on screen started, and the ticker keeping its clock true.
     ///
     /// **Stamped here because the model does not carry it.** A turn's start is
@@ -447,7 +441,6 @@ impl ChatPane {
                 git: None,
                 composer_h: Default::default(),
                 composer_drawn: false,
-                workers: workers::Workers::new(cx.focus_handle(), cx.focus_handle()),
                 turn_began: None,
                 ticker: None,
             }

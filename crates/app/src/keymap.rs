@@ -336,8 +336,16 @@ const RENAMED: &[(&str, &str)] = &[("run_pipeline", "run_workflow")];
 /// Ids of commands that are gone, whose overrides are dropped for the same
 /// reason. `paste` attached an image or file pasted into the composer; the
 /// field now hands every paste to the composer itself, so it was the field's
-/// own `Ctrl+V` under another name.
-const RETIRED: &[&str] = &["paste"];
+/// own `Ctrl+V` under another name. The workers' commands went with the region
+/// they acted in: a worker is a session in the pane now.
+const RETIRED: &[&str] = &[
+    "paste",
+    "show_workers",
+    "workers_list_up",
+    "workers_list_down",
+    "workers_list_write",
+    "workers_list_back",
+];
 
 fn rename_old_ids(overrides: &mut Overrides) {
     for (old, new) in RENAMED {
@@ -424,6 +432,7 @@ mod tests {
         let keys = |k: &str| vec![k.to_string()];
         let mut saved = Overrides::from([
             ("paste".to_string(), keys("ctrl-alt-v")),
+            ("show_workers".to_string(), keys("ctrl-alt-y")),
             ("run_workflow".to_string(), keys("ctrl-alt-w")),
         ]);
         rename_old_ids(&mut saved);

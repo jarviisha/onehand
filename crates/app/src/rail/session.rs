@@ -241,7 +241,7 @@ fn session_menu(
 }
 
 /// The words of the action that sends a failed turn's prompt again.
-pub(crate) const RESEND: &str = "Send the last prompt again";
+pub(super) const RESEND: &str = "Send the last prompt again";
 
 /// How a session row stands: the one on screen, the one the keyboard is on.
 pub(super) struct Mark {

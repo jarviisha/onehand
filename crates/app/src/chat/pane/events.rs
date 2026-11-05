@@ -68,19 +68,9 @@ pub enum ChatPaneEvent {
     /// window's chrome, and a dock panel has no business reaching outside the
     /// dock to draw it.
     ShowRail,
-    /// The workers' button in the header, or the hide on the region's strip:
-    /// the region takes the Workbench's place in the window's dock, or gives
-    /// it back.
-    ToggleWorkers,
-    /// The region's maximize, which the shell carries out as it does a
-    /// dock's.
-    MaximizeWorkers,
     /// A session asked for from the pane: the lead's strip pressed for its
     /// most urgent worker, or a worker's band for its lead.
     ShowSession(u64),
-    /// *Close* in a worker's block: its session closed as the rail closes
-    /// one, by the shell that owns the row.
-    CloseWorker(u64),
     /// Restart the agent on the conversation showing.
     ///
     /// Announced rather than done here even though the pane owns the adapter:

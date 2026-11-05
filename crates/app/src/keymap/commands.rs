@@ -83,7 +83,7 @@ pub const COMMANDS: &[Command] = &[
         "Save the open file",
         ["ctrl-s"],
         SaveFile,
-        "Shell && !Terminal && !Dialog && !Settings && !Workers",
+        "Shell && !Terminal && !Dialog && !Settings",
         "Outside terminal"
     ),
     command!(
@@ -193,44 +193,6 @@ pub const COMMANDS: &[Command] = &[
         crate::rail::RailPrev,
         "Shell && !Terminal && !Dialog",
         "Outside terminal"
-    ),
-    command!(
-        "show_workers",
-        "Show the workers",
-        ["ctrl-shift-y"],
-        crate::shell::ShowWorkers
-    ),
-    command!(
-        "workers_list_up",
-        "Pick the worker above",
-        ["up"],
-        crate::chat::pane::WorkersUp,
-        "WorkersList && !Input && !Dialog",
-        "Workers' list"
-    ),
-    command!(
-        "workers_list_down",
-        "Pick the worker below",
-        ["down"],
-        crate::chat::pane::WorkersDown,
-        "WorkersList && !Input && !Dialog",
-        "Workers' list"
-    ),
-    command!(
-        "workers_list_write",
-        "Write to the picked worker",
-        ["enter"],
-        crate::chat::pane::WorkersWrite,
-        "WorkersList && !Input && !Dialog",
-        "Workers' list"
-    ),
-    command!(
-        "workers_list_back",
-        "Back to the lead's composer",
-        ["escape"],
-        crate::chat::pane::WorkersBack,
-        "WorkersList && !Input && !Dialog",
-        "Workers' list"
     ),
     command!(
         "rail_open",
@@ -493,7 +455,7 @@ pub const COMMANDS: &[Command] = &[
         "Allow the permission once, from anywhere in the conversation",
         ["alt-y"],
         crate::chat::transcript::PinnedAllow,
-        "(Chat || Workers) && !Dialog",
+        "Chat && !Dialog",
         "Permission card"
     ),
     command!(
@@ -501,7 +463,7 @@ pub const COMMANDS: &[Command] = &[
         "Always allow the permission, from anywhere in the conversation",
         ["alt-a"],
         crate::chat::transcript::PinnedAlways,
-        "(Chat || Workers) && !Dialog",
+        "Chat && !Dialog",
         "Permission card"
     ),
     command!(
@@ -509,7 +471,7 @@ pub const COMMANDS: &[Command] = &[
         "Deny the permission, from anywhere in the conversation",
         ["alt-n"],
         crate::chat::transcript::PinnedDeny,
-        "(Chat || Workers) && !Dialog",
+        "Chat && !Dialog",
         "Permission card"
     ),
     command!(

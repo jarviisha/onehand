@@ -41,11 +41,11 @@ mod row;
 mod search;
 mod session;
 mod workspace;
-pub(crate) use model::{age_label, needs_attention, word};
+pub(crate) use model::needs_attention;
 pub use project::{pick_item, unattended_item};
-pub(crate) use row::{key_ring, page_fill};
+pub(crate) use row::page_fill;
 pub(crate) use search::search_field;
-pub(crate) use session::{RESEND, session_label, signal_mark, status_icon, word_ink};
+pub(crate) use session::{session_label, signal_mark, status_icon, word_ink};
 pub(crate) use workspace::ellipsize_front;
 
 /// How far a session row is set in under its project: one mark's slot, the
@@ -110,8 +110,6 @@ impl RailState {
                     if shell.rail_shown() {
                         cx.notify();
                     }
-                    // The workers' list says ages too.
-                    shell.tick_worker_ages(cx);
                 });
                 if alive.is_err() {
                     break;

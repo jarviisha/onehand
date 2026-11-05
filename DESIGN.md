@@ -57,7 +57,7 @@ mono font.
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ o onehand  File View Go Session  [ Search...  ^K ]  term wb    _  []  x  │
 ├──────────────────┬────────────────────────────────────┬──────────────────┤
-│ W Workspace   v <│ Title (...)    past close workers  │ modes   max hide │
+│ W Workspace   v <│ Title (...)            past close  │ modes   max hide │
 │ [    New     | v]│                                    │                  │
 │ Overview         │ workflow > step > step   Stop      │                  │
 │ Tasks         2  │                                    │                  │
@@ -88,8 +88,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   a page that names itself in its head.
 - **Step strip**: a run's steps under the header, while it drives the session on screen.
 - **Composer**: the input surface under the transcript, and what waits pinned above it.
-- **Docks**: the Workbench and the terminal, bare panels flush with their docks, each opening on a tab bar; a lead's
-  workers' region takes the Workbench's place, never beside it.
+- **Docks**: the Workbench and the terminal, bare panels flush with their docks, each opening on a tab bar.
 - **Pages without a session**: a project's page, the overview, Tasks, Issues and Workflows.
 - **Settings**: a page of its own, a nav column beside the sub-page it shows.
 - **Status bar**: the branch.
@@ -308,7 +307,7 @@ danger ink.
 
 **The composer is the input surface**, a role of its own rather than a box or a field: a card
 edged in `input` at `radius`, standing off the page on its own fill (`theme::raised`) and a light
-lift (`composer_lift`), showing focus by the caret alone; what waits on it (the workers' line, the
+lift (`composer_lift`), showing focus by the caret alone; what waits on it (a lead's strip or a worker's band, the
 strip of queued and staged things, over any waiting card) takes the same edge. Its pickers (the model, the effort, the mode, *Fast*, the
 branch) are `.short()` ghosts with a caret whatever they hold (*Fast* is its bolt alone, lit in
 the warning ink while fast, as a mode switched on is, and as a toggle opens no menu and carries none), where a picker elsewhere takes

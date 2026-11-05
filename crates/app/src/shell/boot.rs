@@ -36,7 +36,6 @@ impl Shell {
             panel.set_storage(workspace.storage_dir.as_deref(), cx)
         });
         let terminal = TerminalPanel::new(cx);
-        let workers_panel = cx.new(|cx| crate::chat::workers_panel::WorkersPanel::new(&chat, cx));
         let issues_page = Self::new_issues_page(tell, cx);
         let workflows_page = crate::workflows_page::WorkflowsPage::new(cx);
         cx.subscribe_in(
@@ -165,16 +164,7 @@ impl Shell {
                     E::WorkTreeTouched => shell.refresh_worktree(cx),
                     E::AgentStarted => shell.sync_agent_started(cx),
                     E::ShowRail => shell.show_rail(window, cx),
-                    E::ToggleWorkers => shell.toggle_workers(window, cx),
                     E::ShowSession(uid) => shell.show_session(*uid, window, cx),
-                    E::MaximizeWorkers => {
-                        shell.toggle_maximize_panel(FocusedPanel::Workers, window, cx)
-                    }
-                    E::CloseWorker(uid) => {
-                        if let Some((root, session)) = shell.locate(*uid) {
-                            shell.close_session(root, session, window, cx);
-                        }
-                    }
                     // Every one of these acts on the selected project, because
                     // the page that offers them is what shows when the selected
                     // project has nothing running in it.
@@ -310,13 +300,6 @@ impl Shell {
             shell.prune_host_waits(cx);
             let sessions = shell.rail_sessions(cx);
             if sessions != shell.rail_sessions {
-                // The workers' list says a worker's age by the rail's own
-                // clock.
-                let since = sessions
-                    .iter()
-                    .map(|(uid, row)| (*uid, row.since))
-                    .collect();
-                shell.chat.update(cx, |pane, _| pane.set_since(since));
                 shell.rail_sessions = sessions;
                 cx.notify();
             }
@@ -558,9 +541,6 @@ impl Shell {
             dock,
             chat,
             workbench,
-            workers_panel,
-            right: super::workers::RightPanel::Workbench,
-            workbench_under: false,
             issues_page,
             workflows_page,
             schedules_page: crate::schedules_page::SchedulesPage::new(cx),
