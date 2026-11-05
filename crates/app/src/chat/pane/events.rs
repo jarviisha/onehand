@@ -37,6 +37,10 @@ pub enum ProjectAction {
     RenameBranch,
     CopyPath,
     RefreshGit,
+    /// Run its new sessions on a host, on a copy of its folder there.
+    Offload,
+    /// Run an offloaded project's new sessions here again.
+    RunHere,
     /// Drop it from the workspace. The shell still guards this behind a second
     /// press while anything is running in it.
     Remove,

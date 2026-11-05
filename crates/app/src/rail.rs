@@ -202,7 +202,7 @@ impl List {
                     in_turn: row.in_turn,
                     lead: crate::control::lead_of(s.uid),
                     waiting: 0,
-                    host: roots[root].on_host().map(ToString::to_string),
+                    host: roots[root].session_host().map(|(host, _)| host.to_string()),
                 }
             })
             .collect();

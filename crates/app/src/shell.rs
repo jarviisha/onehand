@@ -29,8 +29,10 @@ mod frame;
 mod git_sweep;
 mod host_project;
 pub(crate) use host_project::{Browse, Way};
+pub(crate) use offload::offload_refusal;
 mod issue_work;
 mod issues_page;
+mod offload;
 mod presentation;
 mod remote_runs;
 mod render;
@@ -271,6 +273,11 @@ pub struct Shell {
     host_project: Option<host_project::HostProjectDraft>,
     /// The restart questions asked of hosts, and the form's attaches.
     host_flow: host_project::HostFlow,
+    /// The offload form, while it is up.
+    offload_draft: Option<offload::OffloadDraft>,
+    /// The folders of this window's offloaded projects whose writers are
+    /// off, with the line said under them, as last told to the docks.
+    offload_locks: HashMap<PathBuf, String>,
     /// The open-issue picker, while it is on screen. Opened from a project's
     /// menu, which is gone by the time the list arrives, so this being `Some`
     /// is what puts the dialog up — like the rename and the worktree forms.

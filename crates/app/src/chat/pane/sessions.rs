@@ -2,8 +2,8 @@ use super::fork::StagedFork;
 use super::project_page::EmptyProject;
 use super::{ChatPane, ChatPaneEvent, ProjectFacts, Restart, SessionSignal, switching_away};
 use crate::chat::composer::Composer;
-use crate::chat::conversation::OnHost;
 use crate::chat::conversation::{Conversation, SessionPhase};
+use crate::chat::conversation::{HostAt, OnHost};
 use crate::chat::session::{BeginOnHost, Carried, ChatEvent, ChatSession, HostBegin};
 use gpui::{App, Context, Entity, Focusable, SharedString, Window};
 use onehand_core::acp::Opening;
@@ -18,17 +18,20 @@ impl ChatPane {
     /// Show `uid`'s conversation, spawning its adapter the first time.
     ///
     /// Lazy on purpose: a workspace with a dozen roots must not launch a dozen
-    /// agent processes at boot. `host` is the host the project lives on.
+    /// agent processes at boot. `host` is the host the project's sessions run
+    /// on, and the folder they run in there.
     pub fn show(
         &mut self,
         uid: u64,
         root: PathBuf,
-        host: Option<HostName>,
+        host: Option<HostAt>,
         spec: &AgentSpec,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let on_host = host.is_some();
+        // A host project keeps none of its conversations here; an offloaded
+        // one keeps those it had before it went.
+        let kept_here = host.as_ref().is_none_or(|(_, cwd)| *cwd != root);
         // Taken before the map is touched, and taken whatever happens next: a
         // request to open onto one particular archive belongs to the one `show`
         // it was made for, and a session switched away from and back to must not
@@ -85,7 +88,7 @@ impl ChatPane {
         // rather than the session: switching between two sessions of one root
         // reads the same list and does not re-read it. A host's session lists
         // nothing of this machine's.
-        if !on_host {
+        if kept_here {
             self.follow_archives(&root, cx);
         }
         if window.is_window_active()
@@ -203,15 +206,15 @@ impl ChatPane {
             .map_or(0, |session| session.read(cx).chat.prompts_sent);
         let (on_host, start) = match &conv.host {
             None => (None, start),
-            Some(OnHost { host, session }) => {
+            Some(OnHost { host, cwd, session }) => {
                 let (begin, start) = host_begin(start, session.as_ref(), sent_before);
                 // A re-watch counts the prompts again as its journal replays
                 // them; what it carries is for an open in its place.
                 if matches!(begin, HostBegin::Rewatch(..)) {
                     sent_before = 0;
                 }
-                let host = host.clone();
-                (Some(BeginOnHost { host, begin }), start)
+                let (host, cwd) = (host.clone(), cwd.clone());
+                (Some(BeginOnHost { host, cwd, begin }), start)
             }
         };
         // Its names too: a worker's stand-in is never saved, and a name its
@@ -280,6 +283,11 @@ impl ChatPane {
                     // Work the agent did between turns is saved and said as a
                     // turn's is.
                     ChatEvent::CycleEnded | ChatEvent::TurnEnded => {
+                        // An offloaded project's code may come back now.
+                        if session.read(cx).on_host {
+                            let root = session.read(cx).chat.root.clone();
+                            crate::offload::check_soon(cx, root);
+                        }
                         Self::archive_detached(uid, &session, cx);
                         pane.turn_ended_detached(uid, &agent, &root_label, cx);
                         // The turn that just ended is what wrote the archive, so
@@ -585,40 +593,53 @@ impl ChatPane {
     /// about the pane except which one it is offering.
     pub fn clear_active(
         &mut self,
-        root: Option<(SharedString, PathBuf, Option<HostName>)>,
+        root: Option<(SharedString, PathBuf, Option<HostAt>)>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let standing_in = self
             .empty
             .as_ref()
-            .map(|project| (&project.path, &project.host));
+            .map(|project| (&project.path, project.on_host()));
         let unchanged = self.active.is_none()
             && self.page.is_none()
-            && standing_in == root.as_ref().map(|(_, path, host)| (path, host));
+            && standing_in
+                == root
+                    .as_ref()
+                    .map(|(_, path, host)| (path, host.as_ref().map(|(h, c)| (h, c.as_path()))));
         if unchanged {
             return;
         }
         self.leave_page(window, cx);
         self.page = None;
-        self.empty = root.map(|(label, path, host)| EmptyProject {
-            label,
-            path,
-            // A folder on a host keeps none of its conversations here; the
-            // host lists its sessions instead.
-            history: host.is_some().then(Vec::new),
-            listed: None,
-            listing: false,
-            bypass: None,
-            asked: 0,
-            host,
-            // They arrive from the shell a moment later, on the same switch
-            // that brought this page up. Defaulting to "not pinned, not a
-            // repository, no switch offered" is what a menu drawn in that
-            // moment can honestly say.
-            facts: ProjectFacts::default(),
-            check_input: None,
-            rows: super::project_page::home_rows(cx),
+        self.empty = root.map(|(label, path, on)| {
+            // An offloaded project's sessions run in its mirror there.
+            let mirror = on
+                .as_ref()
+                .filter(|(_, cwd)| *cwd != path)
+                .map(|(_, cwd)| cwd.clone());
+            let host = on.map(|(host, _)| host);
+            EmptyProject {
+                label,
+                // A folder on a host keeps none of its conversations here; the
+                // host lists its sessions instead. An offloaded one keeps those
+                // it had before it went.
+                history: (host.is_some() && mirror.is_none()).then(Vec::new),
+                path,
+                mirror,
+                listed: None,
+                listing: false,
+                bypass: None,
+                asked: 0,
+                host,
+                // They arrive from the shell a moment later, on the same switch
+                // that brought this page up. Defaulting to "not pinned, not a
+                // repository, no switch offered" is what a menu drawn in that
+                // moment can honestly say.
+                facts: ProjectFacts::default(),
+                check_input: None,
+                rows: super::project_page::home_rows(cx),
+            }
         });
         self.scan_project_history(cx);
         self.list_host_sessions(cx);
@@ -683,6 +704,12 @@ impl ChatPane {
             let composer = composer.read(cx);
             (composer.text(cx), composer.attachments.clone())
         };
+        // An offloaded project's code goes up before its prompt, and the
+        // prompt waits in the composer meanwhile: sent once the host holds
+        // the code, kept there when it could not get it.
+        if Self::code_first(session, composer, (&text, &staged), window, cx) {
+            return;
+        }
         // Clear only on a prompt that went somewhere -- sent, or queued behind
         // the turn that is running. A refused one (no agent yet, an unreadable
         // attachment) must not silently eat what the user typed or staged.
@@ -955,12 +982,13 @@ pub(super) fn host_begin(
 /// watches when that is known before it starts: so a second press on the
 /// same listed session finds this one at once. A fork opens its own.
 pub(super) fn opening_host(
-    host: Option<HostName>,
+    host: Option<HostAt>,
     watch: Option<&HostSession>,
     forking: bool,
 ) -> Option<OnHost> {
-    host.map(|host| OnHost {
+    host.map(|(host, cwd)| OnHost {
         host,
+        cwd,
         session: watch.filter(|_| !forking).cloned(),
     })
 }

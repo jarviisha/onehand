@@ -48,6 +48,7 @@ fn a_host_session_already_watched_in_its_folder_is_found() {
     let on = |host: &HostName, id: Option<&str>| {
         Some(OnHost {
             host: host.clone(),
+            cwd: "/srv/app".into(),
             session: id.map(|id| HostSession(id.into())),
         })
     };

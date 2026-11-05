@@ -56,10 +56,14 @@ impl Shell {
             );
             return;
         };
-        let Some(root) = root.local_path().map(std::path::Path::to_path_buf) else {
+        let Some(root) = root
+            .local_path()
+            .filter(|_| root.runs_here())
+            .map(std::path::Path::to_path_buf)
+        else {
             window.push_notification(
                 crate::toast::warning(format!(
-                    "{} is on a host; workflows do not run there yet",
+                    "{} runs its sessions on a host; workflows do not run there yet",
                     root.label
                 )),
                 cx,

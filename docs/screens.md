@@ -65,7 +65,12 @@ once read over a live attach, and is absent while a local project on the same pa
 workspace. After the host's name a muted plug mark stands while the host is not connected, its hover
 *Not connected to <host>; trying again* while it is being tried again, else *Not connected to
 <host>*, or *<host> was attached from another machine* when another machine took it; nothing is
-drawn while it is attached, being attached, never tried, or refused.
+drawn while it is attached, being attached, never tried, or refused. An offloaded project's row is
+a local one's, its unattended pill gone; while its host holds the code a lock mark stands in its
+meta, in the muted ink, its hover *<host> has the code until its sessions finish*, or in the
+warning ink, *Bringing the code back from <host> stopped: something changed here meanwhile*. Nothing
+marks it while this machine holds the code. Its menu reads *Offload to a host…* on a local project,
+and *Run here again* on an offloaded one while this machine holds its code.
 Narrowed, the name keeps a minimum and the branch, or the host, gives way first. Its chevron alone
 folds it (not during a search); the rest of the row shows the project's last session, or its page,
 which then fills the row. `+` and `⋯` show on hover and on the keyboard's row, right-click opens the
@@ -245,6 +250,10 @@ dragged height kept).
 - On a project on a host, the Workbench offers the Editor (with Files) only, and says *Attaching to
   <host>…* or a standing failure with *Try again* until the host answers; the terminal dock shows
   the host's terminals, with the same waiting line while it attaches.
+- On an offloaded project the Workbench and the terminal dock are this machine's, as on any local
+  project. While its host holds the code, the editor's buffers are read only, *Save* writes
+  nothing, Neovim and the shells take no typing, and each says under it, in the muted ink, *<host>
+  has this project's code until its sessions finish; edits are off meanwhile*.
 - **The workers' region**, in the Workbench's place and never beside it: opening one puts the
   other away, a caret in the one leaving going to the lead's composer and the one arriving taking
   none; hiding the region gives the Workbench back as it was, and while it shows the layout saves
@@ -320,6 +329,27 @@ dragged height kept).
   own questions and say what it chose. An agent can then do anything the host's user can on
   <host>, git push and deleting files included. Off, cards wait for you.* The rail marks it
   neither on nor off.
+- An offloaded project shows a local project's head, its path this machine's, with *Refresh*
+  before *New session*; under it *Sessions on <host>* as on a host project, for the sessions in
+  its mirror; then *Past conversations*, those it had here before it went, which open readable;
+  then the box *On <host>*: where the code is (*The code is here; it goes to <host> with the next
+  prompt*, *<host> has this project's code until its sessions finish; edits are off meanwhile*,
+  *Sending the code to <host>…*, *Bringing the code back from <host>…*, or, in the warning ink,
+  *Bringing the code back stopped: N things changed here while <host> held the code, and <host>
+  keeps it meanwhile*), *Last moved <when>* under it in the muted ink, and a move that failed in
+  the danger ink; then *Settings* with the host's switch, as on a host project. No *Tasks*,
+  *Schedules* or check command.
+- The offload form, from *Offload to a host…*: the title *Offload <project> to a host*, a muted
+  line saying what it does (its new sessions on the host, its files, terminal and git here, the
+  code coming back when the host's sessions finish, its open sessions closed), *Host* with the
+  menu of hosts beside it, as the host project form's; *Cancel* and *Offload*, which refuses until
+  a host is named and while a session here is mid-turn (*Wait for N sessions here to finish*), and
+  reads *Sending <project> to <host>…* while the code goes. What failed stands under *Host* in the
+  danger ink.
+- A prompt to a session of an offloaded project while this machine holds the code waits in the
+  composer while the code goes up: the transcript says *Sending the code to <host>…*, *Send*
+  refuses with the same words, and the prompt goes once the host holds the code. A failure is a
+  toast, *Sending the code to the host failed*, the prompt left in the composer.
 - *Workspace overview* shows, under its head (*Overview*), across all projects, the boxes *Waiting
   on you* (runs waiting for an answer or an approval, and sessions waiting, failed, finished or
   lost) and *Working*, then *Projects* as a grid of tiles (not drawn without projects), then the

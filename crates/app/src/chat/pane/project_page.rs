@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 mod host;
+mod offload_box;
 mod schedules_box;
 use schedules_box::schedules_box;
 
@@ -43,8 +44,12 @@ pub(super) struct EmptyProject {
     /// Where it is, which is what its archived conversations are keyed by --
     /// and what tells one scan's answer from another's.
     pub(super) path: PathBuf,
-    /// The host the folder is on; `None` for one on this machine.
+    /// The host the folder's sessions run on; `None` for one whose sessions
+    /// run here.
     pub(super) host: Option<onehand_core::workspace::HostName>,
+    /// The mirror an offloaded project's sessions run in on `host`; `None`
+    /// for a host's own folder, whose sessions run in `path`.
+    pub(super) mirror: Option<PathBuf>,
     /// Its past conversations, across every agent. `None` while the scan is
     /// still running, which is a different thing from a project that has none:
     /// one is a wait and the other is an answer.
@@ -73,6 +78,19 @@ pub(super) struct EmptyProject {
     /// row is a tab stop, so the keyboard reaches its *Delete…* as the pointer
     /// does.
     pub(super) rows: Vec<FocusHandle>,
+}
+
+impl EmptyProject {
+    /// The folder its sessions run in on its host: the mirror of an
+    /// offloaded project, else its own path.
+    pub(super) fn cwd(&self) -> &std::path::Path {
+        self.mirror.as_deref().unwrap_or(&self.path)
+    }
+
+    /// Its host and that folder, when its sessions run on one.
+    pub(super) fn on_host(&self) -> Option<(&onehand_core::workspace::HostName, &std::path::Path)> {
+        Some((self.host.as_ref()?, self.cwd()))
+    }
 }
 
 /// The focus handles for the page's listed conversations, one per row it can
@@ -155,7 +173,7 @@ impl ChatPane {
         let Some(path) = self
             .empty
             .as_ref()
-            .filter(|project| project.host.is_none())
+            .filter(|project| project.host.is_none() || project.mirror.is_some())
             .map(|project| project.path.clone())
         else {
             return;
@@ -345,7 +363,7 @@ impl ChatPane {
         let root = project.path.clone();
         let checking = crate::task::checking(&root, cx);
         let path = host::place(
-            project.host.as_ref(),
+            project.host.as_ref().filter(|_| project.mirror.is_none()),
             &project.path,
             std::env::home_dir().as_deref(),
         );
@@ -527,12 +545,19 @@ impl ChatPane {
             .v_flex()
             .gap_4()
             .w_full()
-            .child(match &project.host {
-                Some(host) => {
-                    host::host_sessions(host, &project.path, &project.listed, project.listing, cx)
-                }
-                None => history,
-            })
+            .children(project.host.as_ref().map(|host| {
+                host::host_sessions(host, project.cwd(), &project.listed, project.listing, cx)
+            }))
+            // An offloaded project's conversations from before it went stay
+            // readable here, under the host's.
+            .children((project.host.is_none() || project.mirror.is_some()).then_some(history))
+            .children(
+                project
+                    .mirror
+                    .is_some()
+                    .then(|| offload_box::offload_box(&project.path, cx))
+                    .flatten(),
+            )
             .children(tasks)
             .children(schedules)
             .children(settings)

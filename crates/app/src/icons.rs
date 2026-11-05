@@ -203,6 +203,10 @@ icons! {
         // by itself. The bundled set draws no plug, cloud or signal of any
         // kind; its `triangle-alert` is a failure, which this is not.
         Unplug,
+        // An offloaded project whose code its host holds, its writers here
+        // off until the host's sessions finish. The bundled set draws no lock
+        // or key of any kind; its `eye-off` says hidden, which this is not.
+        Lock,
     ],
     checked_in: [
         ArrowUpLight => "arrow-up-light",

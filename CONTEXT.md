@@ -276,6 +276,24 @@ _Avoid_: server, remote, cloud, VPS (one kind of host)
 A project whose folder lives on a host; its sessions run there. The laptop holds no copy of it.
 _Avoid_: remote project
 
+**Offloaded project**:
+A project whose folder is on this machine and whose sessions run on a host, against that host's
+mirror of it. Its tree, editor, terminal and git stay this machine's. Offloading converts the
+project in place; *Run here again* puts it back.
+_Avoid_: remote project, synced project
+
+**Mirror**:
+The host's copy of an offloaded project's folder, which its sessions there run in: what git does
+not ignore, plus `.git`. It belongs to the laptop that made it, and stays on the host when the
+project runs here again.
+_Avoid_: clone (that is git's), copy (that is a host session's journal kept here)
+
+**Key**:
+Which side may change an offloaded project's code: this machine, or the host. It goes to the host
+with the code before a prompt, and comes back with the code once nothing works on it there. While
+the host holds it, this machine's editor, terminals and git actions on the project are off.
+_Avoid_: lock (that is what holding it does here), owner (that is the laptop a mirror belongs to)
+
 **Host service**:
 The onehand process on a host, with no window. It runs that host's sessions and their agents,
 keeps a journal for each, and carries on with nobody attached. One per user on a host.

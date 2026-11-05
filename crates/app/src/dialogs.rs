@@ -26,6 +26,7 @@ mod agent;
 mod branch;
 mod host_project;
 mod issue;
+mod offload;
 
 pub use agent::agent_form;
 
@@ -38,6 +39,7 @@ pub(crate) use host_project::{
 
 pub use issue::pick_issue;
 pub(crate) use issue::{PickJudged, issue_row, issue_workflow_menu, page_row};
+pub(crate) use offload::offload;
 
 /// How tall a form's details field stands: a paragraph in view.
 const DETAILS_H: gpui::Rems = gpui::rems(8.);

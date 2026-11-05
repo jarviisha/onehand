@@ -349,8 +349,11 @@ fn dirty_dot(cx: &App) -> gpui::Div {
 ///
 /// At the code size in rems, over the library's in pixels, so the panel's
 /// zoom reaches it.
-pub(crate) fn body(state: &Entity<EditorState>) -> impl IntoElement + use<> {
+///
+/// `locked`: read only, its folder's code being elsewhere for now.
+pub(crate) fn body(state: &Entity<EditorState>, locked: bool) -> impl IntoElement + use<> {
     Editor::new(state)
+        .readonly(locked)
         .appearance(false)
         .h_full()
         .text_size(onehand_ui::tokens::CODE_TEXT)

@@ -426,7 +426,9 @@ Refused or left out, each in one place:
 ## Offloaded projects
 
 A folder on this machine whose sessions run on a host, against a copy of it the host keeps, its
-**mirror**. Only the host's side and the copy are built so far; the window does not offer it yet.
+**mirror**. Its tree, editor, terminal and git stay this machine's (`ProjectRoot::session_host`,
+`crates/core/src/workspace.rs`, gives a session its host and the mirror; `local_path` still names
+the folder here). Settling a copy back that stopped and *Send to <host>* are not built yet.
 
 - **This laptop has an id of its own,** made once and kept in `laptop-id` in the config directory
   (`laptop`, `crates/core/src/host/client/attach.rs`), and named in every hello. A mirror belongs
@@ -475,6 +477,40 @@ A folder on this machine whose sessions run on a host, against a copy of it the 
   moved. The laptop keeps it with who holds the key, when the code last moved and what stopped a
   copy back in `offload.json` in the project's storage (`OffloadState`).
 
+In the window (`crates/app/src/offload.rs`, `crates/app/src/shell/offload.rs`):
+
+- **Offloading converts the project in place.** *Offload to a host…*, in a local project's menu on
+  the rail and on its page, opens a form naming the host (its menu as *Add a project on a host*'s).
+  *Offload* checks `rsync` on both ends, attaches, asks the host for the mirror and sends the code
+  up, then closes the project's sessions here (refused while one is mid-turn; their conversations
+  stay among its past ones) and keeps `offloaded` in the workspace file, the root valued
+  `<host>:<mirror>`. The key stays here until the first prompt. A mirror whose code the host
+  holds already is not sent over. New sessions open on the host, in the mirror.
+- **The key on send.** A prompt to a session of an offloaded project while this machine holds the
+  code waits: the code goes up, the key goes to the host with the generation it had, and then the
+  prompt goes. A second press waits on the same send. A failure is a toast and leaves the prompt
+  in the composer and the key here; a manifest of code that went up is kept whatever the key's
+  hand-over said. With the key on the host the prompt goes at once.
+- **The code comes back** when a turn of a session on it ends here, and every 30 s
+  (`OFFLOAD_POLL`) while the host is attached: the host asked whether anything works in the
+  mirror, then `bring_back_blocking`, then the key handed back with the generation seen before the
+  copy. A stop keeps the changes and the key on the host; a refused hand-back keeps the new
+  manifest and the key on the host, and the next check copies again. Nothing is said on success.
+- **The lock** holds while the host holds the key, while the code goes up, and until what was kept
+  has been read: the editor's buffers are read only and *Save* writes nothing, the project's shells
+  and its Neovim drop what is typed (at the writer, `onehand_terminal_ui::PtyTab::set_locked`, so
+  a paste and an input method's commit are dropped too), and the project's git actions that write
+  (*New worktree…*, *Rename branch…*) are not offered, nor taken. It holds in every window
+  holding the folder. An `offload.json` that cannot be read is taken for the host holding the
+  code, so the next check asks the host and a copy back stops rather than writes.
+- **What an offloaded project does not do** is what a host project does not (*What a host project
+  does not do*), its Workbench aside: workflows, tasks, schedules, unattended runs, worktrees, the
+  check command, onehand's tools and the remote bridge reach only a project whose sessions run here
+  (`ProjectRoot::runs_here`).
+- **Run here again**, offered only while this machine holds the code, lets the project's host
+  sessions go here (they run on there until they end) and clears `offloaded`. The mirror and
+  `offload.json` stay, so a later offload sends only what changed.
+
 ## Not built
 
 The steps of the design still to come, each its own change; the gaps they leave meanwhile are in
@@ -482,7 +518,6 @@ The steps of the design still to come, each its own change; the gaps they leave 
 cloning (*Adding a host project*), and re-attaching by itself and the laptop's copy (*Attach and
 detach*, *The laptop's copy*); so is the permission bypass.
 
-- **Offloaded projects in the window:** offloading a project, its sessions on the mirror, the
-  code going up before a prompt and coming back when the host is done, the lock while the host
-  holds the key, settling a copy back that stopped, and *Send to <host>*. The host's side and the
-  copy are built (*Offloaded projects*). Then a branch mode with no key.
+- **The rest of offloaded projects:** settling a copy back that stopped, and *Send to <host>*.
+  Offloading, the key and the lock are built (*Offloaded projects*). Then a branch mode with no
+  key.

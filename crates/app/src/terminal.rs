@@ -18,6 +18,7 @@
 //! is a view of one rather than its owner.
 
 mod host;
+mod lock;
 
 use crate::controls::Named as _;
 use crate::controls::Short as _;
@@ -154,6 +155,8 @@ pub struct TerminalPanel {
     /// Whether the watch on [`Self::running`] is going: from the first shell
     /// opened until no project has one left.
     watching: bool,
+    /// The folders here nothing may be typed into now, with why.
+    locked: HashMap<PathBuf, String>,
 }
 
 /// How often the watch asks the shells whether a command is in front.
@@ -177,6 +180,7 @@ impl TerminalPanel {
             maximized: false,
             running_seen: false,
             watching: false,
+            locked: HashMap::new(),
         })
     }
 
@@ -308,6 +312,7 @@ impl TerminalPanel {
         match spawned {
             Ok(shell) => {
                 self.shells.entry(home).or_default().push(shell, None);
+                self.apply_locks();
                 self.status = None;
                 self.watch_running(cx);
             }
@@ -774,6 +779,7 @@ impl TerminalPanel {
                     .child(view)
                     .into_any_element()
             }))
+            .children(self.locked_line(cx))
             // No shells on this root. **The strip above stays**, and that is the
             // whole point of putting this here rather than returning early: the
             // way out of the dock lives on that row, so closing the last shell

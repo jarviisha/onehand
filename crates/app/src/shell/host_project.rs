@@ -459,7 +459,7 @@ impl Shell {
             .workspace
             .roots
             .iter()
-            .filter_map(|root| root.on_host())
+            .filter_map(|root| root.session_host().map(|(host, _)| host))
         {
             if !used.contains(host) {
                 used.push(host.clone());

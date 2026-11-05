@@ -28,13 +28,20 @@ use onehand_core::host::wire::HostSession;
 use onehand_core::workspace::HostName;
 use std::path::PathBuf;
 
-/// The host a session's agent runs on, and the host's name for the session
-/// once the host has said it.
+/// The host a session's agent runs on, the folder it runs in there, and the
+/// host's name for the session once the host has said it.
+///
+/// The folder is the project's own for a host project, and its mirror for an
+/// offloaded one, whose project is still known here by its folder here.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct OnHost {
     pub(crate) host: HostName,
+    pub(crate) cwd: PathBuf,
     pub(crate) session: Option<HostSession>,
 }
+
+/// A host and the folder there a project's sessions run in.
+pub(crate) type HostAt = (HostName, PathBuf);
 
 pub struct Conversation {
     /// The project root this session's agent runs in, and the agent it runs.

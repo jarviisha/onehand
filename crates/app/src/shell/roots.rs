@@ -23,12 +23,17 @@ impl Shell {
             return;
         };
         let status = self.window.git_of(root);
-        let facts = crate::chat::pane::ProjectFacts {
+        let mut facts = crate::chat::pane::ProjectFacts {
             asks: !self
                 .removal_losses(self.window.workspace.active_root, cx)
                 .is_empty(),
             ..crate::chat::pane::ProjectFacts::of(root, status.is_some())
         };
+        // *Run here again* only while this machine holds the code.
+        let here = crate::offload::get(cx, &root.path).is_some_and(crate::offload::Offload::here);
+        if facts.offload == Some(true) && !here {
+            facts.offload = None;
+        }
         // The same line the rail prints beside the project's name, from core's
         // own rule rather than composed again here.
         let line = status.map(|status| gpui::SharedString::from(status.label()));
@@ -187,7 +192,18 @@ impl Shell {
             .active_session()
             .map(|session| (session.uid, session.spec.clone()));
         let host = root.on_host().cloned();
-        let local = root.local_path().map(Path::to_path_buf);
+        // Where its sessions run: a host project's own folder, or an
+        // offloaded one's mirror. The panels beside the chat read `host`,
+        // so an offloaded project's files and shells stay this machine's.
+        let on = root
+            .session_host()
+            .map(|(host, cwd)| (host.clone(), cwd.to_path_buf()));
+        // A check command is this machine's to run, on a folder whose
+        // sessions run here too.
+        let local = root
+            .local_path()
+            .filter(|_| root.runs_here())
+            .map(Path::to_path_buf);
         // Editor tabs and the file tree are per root, so the Workbench follows
         // the selection rather than mixing two projects' state. A folder on a
         // host has its files read, and its shells run, over the host's attach.
@@ -217,7 +233,7 @@ impl Shell {
             // conversation is that project's own past ones, and they are keyed
             // by where the project is rather than by what it is called.
             self.chat.update(cx, |pane, cx| {
-                pane.clear_active(Some((label, path.clone(), host)), window, cx)
+                pane.clear_active(Some((label, path.clone(), on)), window, cx)
             });
             // After, never before: `clear_active` builds the page's state fresh
             // for the project being arrived at, so anything pushed into the old
@@ -237,7 +253,7 @@ impl Shell {
             return;
         };
         self.chat.update(cx, |pane, cx| {
-            pane.show(uid, path.clone(), host, &spec, window, cx);
+            pane.show(uid, path.clone(), on, &spec, window, cx);
             pane.release_workers(cx);
             if region_caret {
                 pane.reclaim_focus(window, cx);
@@ -532,6 +548,11 @@ impl Shell {
     /// asked and nothing on screen moved.
     pub(super) fn forget_root(&mut self, idx: usize, cx: &mut Context<Self>) {
         let path = self.window.workspace.roots[idx].path.clone();
+        // Its code is no longer checked for here; offloaded again, it comes
+        // back as any does.
+        if self.window.workspace.roots[idx].offload.is_some() {
+            crate::offload::forget(cx, &path);
+        }
         // Sessions go first: dropping a chat session is what kills its adapter,
         // and the workspace tree is where their uids are recorded.
         let uids: Vec<u64> = self.window.workspace.roots[idx]

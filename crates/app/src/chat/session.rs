@@ -411,7 +411,10 @@ impl ChatSession {
                 (Source::Local(events), started, Some(token))
             }
             Some(on_host) => {
-                let begin = (on_host, root.clone(), spec.clone(), opening);
+                // The host's folder, which for an offloaded project is its
+                // mirror rather than `root`.
+                let cwd = on_host.cwd.clone();
+                let begin = (on_host, cwd, spec.clone(), opening);
                 (
                     Source::Host(Box::new(begin)),
                     std::time::Instant::now(),

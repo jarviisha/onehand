@@ -545,6 +545,7 @@ fn project_menu(
         unattended,
         check: _,
         asks,
+        offload,
     }: ProjectFacts,
     pane: Entity<ChatPane>,
 ) -> impl Fn(
@@ -599,6 +600,14 @@ fn project_menu(
             crate::controls::menu_item("Refresh Git status")
                 .on_click(act(ProjectAction::RefreshGit, pane.clone())),
         )
+        .when_some(offload, |menu, back| {
+            menu.item(match back {
+                true => crate::controls::menu_item("Run here again")
+                    .on_click(act(ProjectAction::RunHere, pane.clone())),
+                false => crate::controls::menu_item("Offload to a host…")
+                    .on_click(act(ProjectAction::Offload, pane.clone())),
+            })
+        })
         .separator()
         .item(
             crate::controls::menu_row(move |_, _| {

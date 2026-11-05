@@ -24,7 +24,7 @@ impl Shell {
             .workspace
             .roots
             .get(root_idx)
-            .is_none_or(|root| root.transient || root.on_host().is_some())
+            .is_none_or(|root| root.transient || !root.runs_here())
         {
             return;
         }
@@ -84,7 +84,7 @@ impl Shell {
             .roots
             .iter()
             .enumerate()
-            .filter(|(_, root)| !root.transient && root.on_host().is_none())
+            .filter(|(_, root)| !root.transient && root.runs_here())
             .map(|(i, root)| (i, SharedString::from(root.label.clone()), root.unattended))
             .collect()
     }
@@ -114,8 +114,9 @@ impl Shell {
             .workspace
             .roots
             .iter()
-            // A host's sessions occupy no folder here.
-            .filter(|root| root.on_host().is_none())
+            // A host's sessions occupy no folder here, nor do an offloaded
+            // project's, which run in its mirror there.
+            .filter(|root| root.runs_here())
             .map(|root| (root.path.clone(), root.sessions.len()))
             .collect()
     }
@@ -135,12 +136,13 @@ impl Shell {
     /// go looking on disk for what was said in it, and for onehand's tools. A
     /// folder on a host has nothing here either can reach.
     pub fn remote_roots(&self) -> Vec<(PathBuf, String)> {
-        self.roots_where(|root| root.on_host().is_none())
+        self.roots_where(|root| root.runs_here())
     }
 
-    /// The projects on a host, which onehand's tools refuse by name.
+    /// The projects on a host, or offloaded to one, which onehand's tools
+    /// refuse by name.
     pub fn host_roots(&self) -> Vec<(PathBuf, String)> {
-        self.roots_where(|root| root.on_host().is_some())
+        self.roots_where(|root| !root.runs_here())
     }
 
     fn roots_where(
@@ -189,7 +191,7 @@ impl Shell {
             .workspace
             .display_order()
             .into_iter()
-            .filter(|&i| roots[i].unattended && !roots[i].transient && roots[i].on_host().is_none())
+            .filter(|&i| roots[i].unattended && !roots[i].transient && roots[i].runs_here())
             .map(|i| self.project_for_runs(&roots[i].path))
             .collect()
     }

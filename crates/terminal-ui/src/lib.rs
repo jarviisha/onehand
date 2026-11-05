@@ -14,6 +14,7 @@ use gpui_terminal::{ColorPalette, TerminalConfig, TerminalView};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem as _};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// Scrollback kept per terminal: history is bytes in RAM per tab, and nobody
@@ -55,9 +56,50 @@ pub struct PtyTab {
     pty: Option<Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>>,
     /// A PTY's, until [`Drop`] hands it to the thread that reaps it.
     child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
+    /// Whether what is typed is dropped rather than written to the program.
+    shut: Arc<AtomicBool>,
+}
+
+/// The writer under a grid, dropping everything while its tab is locked.
+///
+/// At the writer, not at the keys, so typing, a paste and what an input
+/// method commits are all stopped in one place: each reaches the program
+/// through here and nowhere else.
+struct Gated<W> {
+    inner: W,
+    shut: Arc<AtomicBool>,
+}
+
+impl<W: Write> Write for Gated<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self.shut.load(Ordering::Relaxed) {
+            true => Ok(buf.len()),
+            false => self.inner.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+/// `writer`, gated by a fresh switch, open.
+fn gated(writer: impl Write + Send + 'static) -> (impl Write + Send + 'static, Arc<AtomicBool>) {
+    let shut = Arc::new(AtomicBool::new(false));
+    let gate = Gated {
+        inner: writer,
+        shut: shut.clone(),
+    };
+    (gate, shut)
 }
 
 impl PtyTab {
+    /// Drop what is typed into this tab while `locked`, rather than writing it
+    /// to its program; what the program prints is still drawn.
+    pub fn set_locked(&self, locked: bool) {
+        self.shut.store(locked, Ordering::Relaxed);
+    }
+
     /// The grid, to mount.
     pub fn view(&self) -> &Entity<TerminalView> {
         &self.view
@@ -310,12 +352,14 @@ pub fn spawn_pty(
             }
         }
     };
+    let (writer, shut) = gated(writer);
     let view = grid(writer, reader, config, resize, cx, on_exit);
     Ok(PtyTab {
         view,
         label,
         pty: Some(master),
         child: Some(child),
+        shut,
     })
 }
 
@@ -338,12 +382,14 @@ pub fn stream_tab(
     on_exit: impl Fn(&mut Window, &mut App) + 'static,
 ) -> PtyTab {
     let config = grid_config(font_size, surface, cx);
+    let (writer, shut) = gated(writer);
     let view = grid(writer, reader, config, on_resize, cx, on_exit);
     PtyTab {
         view,
         label,
         pty: None,
         child: None,
+        shut,
     }
 }
 

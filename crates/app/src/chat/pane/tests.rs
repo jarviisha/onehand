@@ -321,24 +321,28 @@ fn a_watched_host_session_knows_its_id_from_the_start() {
     use onehand_core::workspace::HostName;
 
     let (host, id) = (HostName("box".into()), HostSession("100-1".into()));
+    let cwd = std::path::PathBuf::from("/srv/app");
     assert_eq!(
-        opening_host(Some(host.clone()), Some(&id), false),
+        opening_host(Some((host.clone(), cwd.clone())), Some(&id), false),
         Some(OnHost {
             host: host.clone(),
+            cwd: cwd.clone(),
             session: Some(id.clone())
         })
     );
     assert_eq!(
-        opening_host(Some(host.clone()), Some(&id), true),
+        opening_host(Some((host.clone(), cwd.clone())), Some(&id), true),
         Some(OnHost {
             host: host.clone(),
+            cwd: cwd.clone(),
             session: None
         })
     );
     assert_eq!(
-        opening_host(Some(host.clone()), None, false),
+        opening_host(Some((host.clone(), cwd.clone())), None, false),
         Some(OnHost {
             host,
+            cwd,
             session: None
         })
     );

@@ -7,9 +7,9 @@ use gpui::{
     AnyWindowHandle, App, AppContext as _, Context, Entity, Focusable as _, IntoElement,
     ParentElement, Render, SharedString, Styled, Window, div,
 };
-use gpui_component::StyledExt;
 use gpui_component::WindowExt as _;
 use gpui_component::input::InputEvent;
+use gpui_component::{ActiveTheme as _, StyledExt};
 use onehand_core::editor::SaveOutcome;
 use onehand_ui::{hint, status_ink, status_line};
 use onehand_workbench::Disk;
@@ -68,6 +68,9 @@ pub(crate) struct EditorView {
     /// last measured: the strip leads with the way back to the tree then,
     /// rather than the toggle that hides it.
     alone: bool,
+    /// The folders whose files may not be written now, with why: their
+    /// buffers are read only, a save is refused, and the line says so.
+    locked: HashMap<PathBuf, String>,
 }
 
 impl EditorView {
@@ -85,7 +88,16 @@ impl EditorView {
             tree_shown: true,
             detail: false,
             alone: false,
+            locked: HashMap::new(),
         })
+    }
+
+    /// Which folders may not be written now, whole.
+    pub(crate) fn set_locked(&mut self, locks: &HashMap<PathBuf, String>, cx: &mut Context<Self>) {
+        if self.locked != *locks {
+            self.locked = locks.clone();
+            cx.notify();
+        }
     }
 
     pub(crate) fn set_root(&mut self, root: &Path, disk: &Disk, cx: &mut Context<Self>) {
@@ -281,6 +293,10 @@ impl EditorView {
         // and let the one in flight land first (see `saving`).
         if let Some(again) = self.saving.get_mut(&uid) {
             *again = true;
+            return;
+        }
+        // The line under the body already says why.
+        if self.locked.contains_key(&root) {
             return;
         }
         let Some(buffers) = self.buffers.get(&root) else {
@@ -548,6 +564,7 @@ impl Render for EditorView {
         // with no way back.
         let empty = RootBuffers::default();
         let buffers = self.buffers.get(root).unwrap_or(&empty);
+        let locked = self.locked.get(root).cloned();
         let active = buffers.tabs.active_file().map(|f| f.uid);
         let buffer = active.and_then(|uid| buffers.buffer(uid)).cloned();
         let strip = tab_strip(
@@ -585,7 +602,7 @@ impl Render for EditorView {
             Some(state) => div()
                 .flex_1()
                 .min_h_0()
-                .child(body(&state))
+                .child(body(&state, locked.is_some()))
                 .into_any_element(),
         };
 
@@ -604,6 +621,7 @@ impl Render for EditorView {
                     .clone()
                     .map(|status| status_line(status, status_ink(cx).warning)),
             )
+            .children(locked.map(|why| status_line(why, cx.theme().muted_foreground)))
     }
 }
 
