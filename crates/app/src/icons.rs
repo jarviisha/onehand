@@ -207,6 +207,10 @@ icons! {
         // off until the host's sessions finish. The bundled set draws no lock
         // or key of any kind; its `eye-off` says hidden, which this is not.
         Lock,
+        // An offloaded project on a branch whose host made commits this
+        // machine has not merged yet. The branch mark already means cutting a
+        // project onto a branch; what waits on the person is the merge.
+        GitMerge,
     ],
     checked_in: [
         ArrowUpLight => "arrow-up-light",

@@ -69,8 +69,11 @@ drawn while it is attached, being attached, never tried, or refused. An offloade
 a local one's, its unattended pill gone; while its host holds the code a lock mark stands in its
 meta, in the muted ink, its hover *<host> has the code until its sessions finish*, or in the
 warning ink, *Bringing the code back from <host> stopped: something changed here meanwhile*. Nothing
-marks it while this machine holds the code. Its menu reads *Offload to a host…* on a local project,
-and *Run here again* on an offloaded one while this machine holds its code.
+marks it while this machine holds the code. One on a branch is never locked; while the host's
+branch has commits its own does not, a merge mark stands in its meta in the muted ink, its hover
+*onehand/<host> on <host> has N commits to merge*. Its menu reads *Offload to a host…* on a local project,
+and *Run here again* on an offloaded one while this machine holds its code, or, on a branch,
+while the branch is not being fetched or updated.
 Narrowed, the name keeps a minimum and the branch, or the host, gives way first. Its chevron alone
 folds it (not during a search); the rest of the row shows the project's last session, or its page,
 which then fills the row. `+` and `⋯` show on hover and on the keyboard's row, right-click opens the
@@ -346,10 +349,18 @@ dragged height kept).
   code moves; *Check again* spins while it checks). *Take the host's code…* asks *Take <host>'s
   code over these changes?*, naming the backup folder, and toasts where the backup is; then
   *Settings* with the host's switch, as on a host project. No *Tasks*,
-  *Schedules* or check command.
-- The offload form, from *Offload to a host…*: the title *Offload <project> to a host*, a muted
-  line saying what it does (its new sessions on the host, its files, terminal and git here, the
-  code coming back when the host's sessions finish, its open sessions closed), *Host* with the
+  *Schedules* or check command. On a branch the box *On <host>* reads instead *Sessions on <host>
+  work on onehand/<host>; this folder stays yours*, then, once counted, *onehand/<host> has N
+  commits this branch does not* (or *has nothing this branch does not*), a failure in the danger
+  ink, *Update host from laptop* (secondary, spinning while it runs, refusing while the branch is
+  fetched), and under it in the muted ink *Merges this folder's last commit into onehand/<host>;
+  what is not committed stays here*; no stopped box.
+- The offload form, from *Offload to a host…*: the title *Offload <project> to a host*, a switch
+  *Into this folder* / *On a branch* (the first by default), a muted line saying what the picked
+  way does (its new sessions on the host, its files, terminal and git here, its open sessions
+  closed; and either the code coming back into the folder when the host's sessions finish, edits
+  waiting meanwhile, or the branch it works on, named from *Host*, started from the last commit,
+  fetched here for the person to merge), *Host* with the
   menu of hosts beside it, as the host project form's; *Cancel* and *Offload*, which refuses until
   a host is named and while a session here is mid-turn (*Wait for N sessions here to finish*), and
   reads *Sending <project> to <host>…* while the code goes. What failed stands under *Host* in the

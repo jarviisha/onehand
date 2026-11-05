@@ -231,6 +231,7 @@ fn workspace_config_roundtrips() {
         unattended: Vec::new(),
         checks: Default::default(),
         offloaded: Default::default(),
+        offloaded_branches: Default::default(),
     };
     let text = toml::to_string_pretty(&cfg).unwrap();
     let back: WorkspaceConfig = toml::from_str(&text).unwrap();
@@ -249,6 +250,7 @@ fn workspace_config_save_load_to_dir() {
         unattended: Vec::new(),
         checks: Default::default(),
         offloaded: Default::default(),
+        offloaded_branches: Default::default(),
     };
     cfg.save_to(&dir).unwrap();
     assert_eq!(WorkspaceConfig::load_from(&dir), WorkspaceLoad::Found(cfg));

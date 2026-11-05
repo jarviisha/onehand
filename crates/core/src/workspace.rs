@@ -75,10 +75,22 @@ pub struct ProjectRoot {
     /// The command a workflow's work here must pass before it goes further:
     /// the app runs it itself rather than taking the agent's word for it.
     pub check: Option<String>,
-    /// The host this folder's sessions run on, and the mirror of it they run
-    /// in there, while it is offloaded. Only a folder on this machine is
-    /// offloaded: its tree, editor, terminal and git stay this machine's.
-    pub offload: Option<(HostName, PathBuf)>,
+    /// Where this folder's sessions run while it is offloaded. Only a folder
+    /// on this machine is offloaded: its tree, editor, terminal and git stay
+    /// this machine's.
+    pub offload: Option<Offloaded>,
+}
+
+/// An offloaded folder's host, its mirror there, and how its code comes back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Offloaded {
+    pub host: HostName,
+    /// Absolute, on the host.
+    pub mirror: PathBuf,
+    /// The branch the host's sessions work on, in branch mode: no key, the
+    /// branch fetched here for the person to merge. None for a mirror whose
+    /// code comes back into the folder, one side holding it at a time.
+    pub branch: Option<String>,
 }
 
 impl ProjectRoot {
@@ -114,7 +126,7 @@ impl ProjectRoot {
     pub fn session_host(&self) -> Option<(&HostName, &Path)> {
         match (&self.host, &self.offload) {
             (Some(host), _) => Some((host, &self.path)),
-            (None, Some((host, mirror))) => Some((host, mirror)),
+            (None, Some(on)) => Some((&on.host, &on.mirror)),
             (None, None) => None,
         }
     }
@@ -320,11 +332,22 @@ impl Workspace {
             .into_iter()
             .map(|(path, check)| (key(path), check))
             .collect();
+        let mut branches = cfg.offloaded_branches;
         let offloaded: Vec<_> = cfg
             .offloaded
             .into_iter()
             .filter_map(|(path, on)| match parse_root_key(Path::new(&on)) {
-                (Some(host), mirror) => Some((key(path), (host, mirror))),
+                (Some(host), mirror) => {
+                    let branch = branches.remove(&path);
+                    Some((
+                        key(path),
+                        Offloaded {
+                            host,
+                            mirror,
+                            branch,
+                        },
+                    ))
+                }
                 (None, _) => None,
             })
             .collect();
@@ -398,8 +421,16 @@ impl Workspace {
                 .iter()
                 .filter(|root| root.host.is_none())
                 .filter_map(|root| {
-                    let (host, mirror) = root.offload.as_ref()?;
-                    Some((root_key_of(root), host_path(Some(host), mirror)))
+                    let on = root.offload.as_ref()?;
+                    Some((root_key_of(root), host_path(Some(&on.host), &on.mirror)))
+                })
+                .collect(),
+            offloaded_branches: kept
+                .iter()
+                .filter(|root| root.host.is_none())
+                .filter_map(|root| {
+                    let branch = root.offload.as_ref()?.branch.clone()?;
+                    Some((root_key_of(root), branch))
                 })
                 .collect(),
         }

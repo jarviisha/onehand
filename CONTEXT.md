@@ -288,6 +288,23 @@ not ignore, plus `.git`. It belongs to the laptop that made it, and stays on the
 project runs here again.
 _Avoid_: clone (that is git's), copy (that is a host session's journal kept here)
 
+**Sync mode**:
+How an offloaded project's code comes back, picked when it is offloaded: *into this folder*, a
+mirror with a key, or *on a branch*. Changing it means running the project here again first.
+_Avoid_: sync strategy, mode (alone, it names the Workbench's)
+
+**Branch mode**:
+The sync mode with no key: the host's sessions work on the host's branch in a mirror of its own,
+and this machine's folder is never locked. Its code goes up only on *Update host from laptop*, as
+its last commit merged into that branch.
+_Avoid_: branch sync, PR mode
+
+**Host's branch**:
+`onehand/<host>`, the branch an offloaded project's sessions work on in branch mode. The host
+commits what each turn leaves onto it; this machine fetches it into the remote-tracking ref of
+that name, and merging it is the person's.
+_Avoid_: remote branch (that is any `origin/…`), work branch
+
 **Key**:
 Which side may change an offloaded project's code: this machine, or the host. It goes to the host
 with the code before a prompt, and comes back with the code once nothing works on it there. While

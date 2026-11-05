@@ -360,6 +360,21 @@ pub(super) fn project_row(
         };
         (SharedString::from(tip), stopped)
     });
+    // An offloaded project on a branch, while its host's branch has commits
+    // this one does not: calm, since merging waits on nothing but the person.
+    let to_merge = root
+        .offload
+        .as_ref()
+        .and_then(|_| crate::offload::get(cx, &root.path))
+        .and_then(|o| {
+            let branch = o.branch.as_ref()?;
+            let ahead = branch.ahead.filter(|n| *n > 0)?;
+            Some(SharedString::from(crate::offload::merge_line(
+                &branch.name,
+                &o.host,
+                ahead,
+            )))
+        });
     let mut hint = project_hint(
         &root.label,
         git.as_ref(),
@@ -514,6 +529,23 @@ pub(super) fn project_row(
                                 Tooltip::new(tip.clone()).build(window, cx)
                             }))
                             .child(Icon::new(crate::icons::Icon::Lock).xsmall().text_color(ink)),
+                    )
+                })
+                .when_some(to_merge, |row, tip| {
+                    row.child(
+                        div()
+                            .id(("project-to-merge", root_idx))
+                            .flex_none()
+                            .role(gpui::accesskit::Role::Image)
+                            .aria_label(tip.clone())
+                            .tooltip(covered_tip(&key, move |window, cx| {
+                                Tooltip::new(tip.clone()).build(window, cx)
+                            }))
+                            .child(
+                                Icon::new(crate::icons::Icon::GitMerge)
+                                    .xsmall()
+                                    .text_color(unreached_ink),
+                            ),
                     )
                 })
                 .when_some(git, |row, git| {

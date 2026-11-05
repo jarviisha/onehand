@@ -1,7 +1,6 @@
 # Remote hosts: sessions that live on a machine reached over SSH
 
-Status: design, decided with the owner on 2026-11-03; steps 1 to 5 built, step 6 under way (see
-*Order of work*).
+Status: design, decided with the owner on 2026-11-03; every step built (see *Order of work*).
 
 ## Why
 
@@ -361,7 +360,7 @@ These form a sequence, and each step is useful on its own:
    with the key and the lock (built); 5c, settling a stopped copy back and *Send to host* (built). As built:
    `docs/hosts.md`.
 6. Branch mode. Built in two parts: 6a, branch mirrors on the host and the laptop's git (built);
-   6b, branch mode in the window. Decided with the owner on 2026-11-05: the mode is picked in the
+   6b, branch mode in the window (built). Decided with the owner on 2026-11-05: the mode is picked in the
    offload form (mirror by default) and changed only by running the project here again; the
    host's branch lands here as the remote-tracking ref `onehand/<host>`; its commits not yet
    merged are counted on the project's page and marked calmly on the rail. As built:

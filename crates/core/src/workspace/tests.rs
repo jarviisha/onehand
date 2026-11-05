@@ -346,6 +346,7 @@ fn from_config_dedupes_and_follows_active_path() {
         unattended: Vec::new(),
         checks: Default::default(),
         offloaded: Default::default(),
+        offloaded_branches: Default::default(),
     };
     let ws = Workspace::from_config(cfg, PathBuf::from("/store"));
     assert_eq!(ws.roots.len(), 2);
@@ -399,6 +400,7 @@ fn a_nonsense_layout_is_clamped_but_its_flags_are_kept() {
         unattended: Vec::new(),
         checks: Default::default(),
         offloaded: Default::default(),
+        offloaded_branches: Default::default(),
     };
     let ws = Workspace::from_config(cfg, PathBuf::from("/store"));
     assert!(ws.layout.workbench_w >= 120.0);
@@ -437,6 +439,7 @@ fn from_config_clamps_out_of_bounds_active() {
         unattended: Vec::new(),
         checks: Default::default(),
         offloaded: Default::default(),
+        offloaded_branches: Default::default(),
     };
     let ws = Workspace::from_config(cfg, PathBuf::from("/store"));
     assert_eq!(ws.active_root, 0);
@@ -592,7 +595,11 @@ fn a_host_folder_is_named_on_its_host() {
 fn an_offloaded_root_is_kept_with_its_host_and_mirror() {
     let mut ws = Workspace::seeded("/a");
     ws.add_root("/b");
-    let on = (HostName("box".into()), PathBuf::from("/srv/mirrors/l/b-1"));
+    let on = Offloaded {
+        host: HostName("box".into()),
+        mirror: PathBuf::from("/srv/mirrors/l/b-1"),
+        branch: None,
+    };
     ws.roots[1].offload = Some(on.clone());
     let cfg = ws.to_config();
     assert_eq!(
@@ -603,9 +610,46 @@ fn an_offloaded_root_is_kept_with_its_host_and_mirror() {
     assert!(back.roots[0].offload.is_none());
     assert_eq!(back.roots[1].offload, Some(on.clone()));
     // Its sessions run in the mirror; its folder stays this machine's.
-    assert_eq!(back.roots[1].session_host(), Some((&on.0, on.1.as_path())));
+    assert_eq!(
+        back.roots[1].session_host(),
+        Some((&on.host, on.mirror.as_path()))
+    );
     assert_eq!(back.roots[1].local_path(), Some(Path::new("/b")));
     assert!(!back.roots[1].runs_here() && back.roots[0].runs_here());
+}
+
+/// A root on a branch keeps its branch beside its host and mirror; one kept
+/// before branches reads as a mirror's.
+#[test]
+fn an_offloaded_root_on_a_branch_keeps_its_branch() {
+    let mut ws = Workspace::seeded("/a");
+    ws.add_root("/b");
+    let on = Offloaded {
+        host: HostName("box".into()),
+        mirror: PathBuf::from("/srv/mirrors/l/b-1.branch"),
+        branch: Some("onehand/box".into()),
+    };
+    ws.roots[1].offload = Some(on.clone());
+    ws.roots[0].offload = Some(Offloaded {
+        branch: None,
+        mirror: PathBuf::from("/srv/mirrors/l/a-1"),
+        ..on.clone()
+    });
+    let cfg = ws.to_config();
+    assert_eq!(
+        cfg.offloaded_branches
+            .get(&PathBuf::from("/b"))
+            .map(String::as_str),
+        Some("onehand/box")
+    );
+    assert!(!cfg.offloaded_branches.contains_key(&PathBuf::from("/a")));
+    let back = Workspace::from_config(cfg.clone(), PathBuf::from("/store"));
+    assert_eq!(back.roots[1].offload, Some(on));
+    assert_eq!(back.roots[0].offload.as_ref().unwrap().branch, None);
+    let mut older = cfg;
+    older.offloaded_branches.clear();
+    let back = Workspace::from_config(older, PathBuf::from("/store"));
+    assert_eq!(back.roots[1].offload.as_ref().unwrap().branch, None);
 }
 
 #[test]

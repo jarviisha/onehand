@@ -211,4 +211,7 @@ pub enum ChatPaneEvent {
     /// copy back stopped: writing over what changed here is the person's to
     /// agree to, in a dialog of the shell's.
     TakeHostCode(std::path::PathBuf),
+    /// *Update host from laptop* on the offloaded project at this folder, on
+    /// a branch: its last commit merged into the host's branch.
+    UpdateHost(std::path::PathBuf),
 }
