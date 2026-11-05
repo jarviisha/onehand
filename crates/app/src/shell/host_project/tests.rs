@@ -15,6 +15,7 @@ fn a_yes_restarts_the_service_only_while_it_is_still_busy() {
     let busy: Result<(), HostFailure> = Err(HostFailure::Busy {
         host: HostName("box".into()),
         busy: Vec::new(),
+        terms: 0,
     });
     assert!(needs_restart(&busy));
     // Done waiting since the question was asked: nothing to stop.
@@ -135,6 +136,7 @@ fn a_failed_restart_is_said_once() {
     let busy = HostFailure::Busy {
         host: HostName("box".into()),
         busy: Vec::new(),
+        terms: 0,
     };
     assert!(said_by_wait(true, &gone), "the wait ended on it: no toast");
     assert!(!said_by_wait(false, &gone), "nothing waited: a toast");

@@ -35,14 +35,14 @@ fn the_busy_question_names_five_sessions_by_when_they_started() {
     };
     let started = "a session started 2m ago";
     assert_eq!(
-        busy_body(&host, &ids(2), now),
+        busy_body(&host, &ids(2), 0, now),
         format!(
             "box runs another build of the host service, and these sessions are mid-turn: \
              {started}, {started}. Restarting stops them."
         )
     );
     assert_eq!(
-        busy_body(&host, &ids(8), now),
+        busy_body(&host, &ids(8), 0, now),
         format!(
             "box runs another build of the host service, and these sessions are mid-turn: \
              {started}, {started}, {started}, {started}, {started} and 3 more. \
@@ -51,9 +51,20 @@ fn the_busy_question_names_five_sessions_by_when_they_started() {
     );
     let fresh = [HostSession(format!("{now}-1"))];
     assert_eq!(
-        busy_body(&host, &fresh, now),
+        busy_body(&host, &fresh, 0, now),
         "box runs another build of the host service, and these sessions are mid-turn: \
          a session started just now. Restarting stops them."
+    );
+    assert_eq!(
+        busy_body(&host, &[], 1, now),
+        "box runs another build of the host service, and 1 terminal is open there. \
+         Restarting closes it, and ends what runs in it."
+    );
+    assert_eq!(
+        busy_body(&host, &fresh, 2, now),
+        "box runs another build of the host service, these sessions are mid-turn: \
+         a session started just now, and 2 terminals are open there. Restarting stops the \
+         sessions and closes the terminals."
     );
 }
 

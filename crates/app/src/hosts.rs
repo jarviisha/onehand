@@ -48,12 +48,13 @@ pub(crate) const HOST_IDLE_POLL: Duration = Duration::from_secs(15);
 /// Why a host could not be attached.
 #[derive(Clone, Debug)]
 pub(crate) enum HostFailure {
-    /// The host runs another build, with these sessions mid-turn; it is
-    /// left alone and waited on until they are done, or the person agrees to
-    /// stop them.
+    /// The host runs another build, with these sessions mid-turn and
+    /// `terms` terminals open; it is left alone and waited on until they are
+    /// done and closed, or the person agrees to stop them.
     Busy {
         host: HostName,
         busy: Vec<HostSession>,
+        terms: usize,
     },
     /// A sentence a person reads, naming the host.
     Other(String),
@@ -236,21 +237,31 @@ impl Drop for Listening {
     }
 }
 
-/// The sessions mid-turn on `host`, as it last said, while it is waited on.
-pub(crate) fn busy(cx: &App, host: &HostName) -> Vec<HostSession> {
-    Shared::global(cx).hosts.waits.borrow().busy(host).to_vec()
+/// The sessions mid-turn on `host`, and how many terminals it has open, as
+/// it last said, while it is waited on.
+pub(crate) fn busy(cx: &App, host: &HostName) -> (Vec<HostSession>, usize) {
+    let waits = Shared::global(cx).hosts.waits.borrow();
+    let (busy, terms) = waits.busy(host);
+    (busy.to_vec(), terms)
 }
 
-/// What is said wherever something waits on `host`'s `n` busy sessions.
-pub(crate) fn waiting_line(host: &HostName, n: usize) -> String {
-    let sessions = match n {
-        1 => "session",
-        _ => "sessions",
+/// What is said wherever something waits on `host`'s `n` busy sessions and
+/// its `terms` open terminals.
+pub(crate) fn waiting_line(host: &HostName, n: usize, terms: usize) -> String {
+    let plural = |n: usize, one: &str, many: &str| match n {
+        1 => format!("1 {one}"),
+        n => format!("{n} {many}"),
     };
-    format!(
-        "Waiting for {n} {sessions} on {host} to finish before restarting its host service \
-         onto this build"
-    )
+    let what = match (n, terms) {
+        (n, 0) => format!("{} on {host} to finish", plural(n, "session", "sessions")),
+        (0, t) => format!("{} on {host} to close", plural(t, "terminal", "terminals")),
+        (n, t) => format!(
+            "{} to finish and {} to close on {host}",
+            plural(n, "session", "sessions"),
+            plural(t, "terminal", "terminals")
+        ),
+    };
+    format!("Waiting for {what} before restarting its host service onto this build")
 }
 
 /// What is said of `host` once another machine holds it.
@@ -303,8 +314,12 @@ pub(crate) async fn attach_waiting(
     loop {
         match cx.update(|cx| conn(cx, host)).await {
             Ok(conn) => return Ok(conn),
-            Err(HostFailure::Busy { host: on, busy }) => {
-                waiting(waiting_line(&on, busy.len()), cx);
+            Err(HostFailure::Busy {
+                host: on,
+                busy,
+                terms,
+            }) => {
+                waiting(waiting_line(&on, busy.len(), terms), cx);
                 // None: an attach landed since, which the next turn takes.
                 if let Some(idle) = cx.update(|cx| idle(cx, host)) {
                     idle.await?;
@@ -523,9 +538,10 @@ fn failure(host: &HostName, e: HostError) -> HostFailure {
         HostError::Unsupported(uname) => HostFailure::Refused(format!(
             "{host} is not a machine this build runs on: {uname}"
         )),
-        HostError::Busy { busy, .. } => HostFailure::Busy {
+        HostError::Busy { busy, terms, .. } => HostFailure::Busy {
             host: host.clone(),
             busy,
+            terms,
         },
         HostError::Held => HostFailure::Taken(taken_line(host)),
     }

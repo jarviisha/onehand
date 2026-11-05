@@ -382,6 +382,7 @@ fn answer(
                     .filter(|s| s.busy)
                     .map(|s| s.session)
                     .collect(),
+                terms: terms::lock(terms).list().len(),
             })
         }
         Call::Shutdown => {

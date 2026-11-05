@@ -255,12 +255,9 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   The cap of four sessions a session's agent may open is not raised for leads either.
 - **A host terminal's tab gone with a lost connection comes back only when the project is shown
   or the dock opened again.**
-- **Restarting the host service onto another build ends every host terminal without asking.** The
-  build check and the restart question count only sessions mid-turn, and a service that exits
-  hangs up each terminal's shell and the command in it. Counting the host's terminals as busy, so
-  that a host with terminals asks first, is not built. The attach the offload check makes by
-  itself, for a host holding a project's code, restarts it so too, with nothing of that host on
-  screen.
+- **An open host terminal holds a restart onto a new build, an idle shell too.** The host counts
+  its terminals, not what runs in them, so a shell left open waits as a session mid-turn does,
+  until it is closed or *Restart now* is pressed.
 - **Two windows on one host project take the terminal from each other:** a newer watch wins and
   the other window's tab ends.
 - **After a host project is removed, its tabs' reader threads stay blocked** until the terminal

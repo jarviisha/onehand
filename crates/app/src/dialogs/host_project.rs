@@ -131,7 +131,7 @@ pub(crate) fn browse_refusal(host: &str, busy: bool, waiting: bool) -> Option<&'
 /// What the restart question says: the host, and its mid-turn sessions by
 /// when they started (as of `now`, in unix seconds), five of them and then
 /// how many more.
-pub(crate) fn busy_body(host: &HostName, busy: &[HostSession], now: u64) -> String {
+pub(crate) fn busy_body(host: &HostName, busy: &[HostSession], terms: usize, now: u64) -> String {
     let mut names = busy
         .iter()
         .take(BUSY_NAMED)
@@ -145,10 +145,27 @@ pub(crate) fn busy_body(host: &HostName, busy: &[HostSession], now: u64) -> Stri
     if more > 0 {
         names.push_str(&format!(" and {more} more"));
     }
-    format!(
-        "{host} runs another build of the host service, and these sessions are mid-turn: \
-         {names}. Restarting stops them."
-    )
+    let open = match terms {
+        1 => "1 terminal is open there".to_string(),
+        n => format!("{n} terminals are open there"),
+    };
+    match (busy.is_empty(), terms) {
+        (false, 0) => format!(
+            "{host} runs another build of the host service, and these sessions are mid-turn: \
+             {names}. Restarting stops them."
+        ),
+        (true, _) => {
+            let them = if terms == 1 { "it" } else { "them" };
+            format!(
+                "{host} runs another build of the host service, and {open}. Restarting closes \
+                 {them}, and ends what runs in {them}."
+            )
+        }
+        (false, _) => format!(
+            "{host} runs another build of the host service, these sessions are mid-turn: \
+             {names}, and {open}. Restarting stops the sessions and closes the terminals."
+        ),
+    }
 }
 
 /// The add-a-project-on-a-host form.
@@ -193,8 +210,9 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
     // Only while the host is waited on for some: once the wait ends, the
     // form is attaching again.
     let waiting = waiting.and_then(|on| {
-        let n = crate::hosts::busy(cx, &on).len();
-        (n > 0).then(|| (crate::hosts::waiting_line(&on, n), on))
+        let (busy, terms) = crate::hosts::busy(cx, &on);
+        let n = busy.len();
+        (n > 0 || terms > 0).then(|| (crate::hosts::waiting_line(&on, n, terms), on))
     });
     let (choices, more_hosts) = host_choices(draft.aliases.clone(), shell.used_hosts());
     let shell = cx.entity().downgrade();
