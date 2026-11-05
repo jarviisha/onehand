@@ -503,8 +503,9 @@ sessions work on a branch of their own, and the code moves by git alone over the
   merges the commit in. A merge that conflicts is undone and says so, naming up to ten files:
   *Merging this machine's commit into <branch> stopped on a conflict in: …; the host's branch is
   as it was*, or, when what was left was committed first, *…; the work left on the host's branch
-  was committed first, and the branch is as it was after that*. A mirror whose HEAD is not on its branch, or that the agent left in the middle of a
-  merge, a cherry-pick, a revert or a rebase, is left as it is and the update refused. What the
+  was committed first, and the branch is as it was after that*. A mirror whose HEAD is not on its
+  branch, or that the agent left in the middle of a merge, a cherry-pick, a revert or a rebase, is
+  left as it is and the update refused. What the
   laptop sends must be a commit id, never a name git could take for one of its options.
 - **No agent works under a merge.** An update is refused while a session there works (mid-turn,
   or with work running aside), and while it runs a prompt there is refused, *The host's branch

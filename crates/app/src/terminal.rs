@@ -622,8 +622,8 @@ impl TerminalPanel {
         let (active, count) = self
             .active_set()
             .map_or((0, 0), |set| (set.active, set.tabs.len()));
-        // Kept until a frame has laid the tab out, so a tab drawn for the
-        // first time is reached a frame later.
+        // Asked once per change: the strip reaches the tab as it lays it
+        // out, and keeps the asking until a frame has the tab.
         let shown = self.root.clone().map(|root| (root, active, count));
         if shown != self.tab_shown {
             self.tab_scroll.scroll_to_item(active);
