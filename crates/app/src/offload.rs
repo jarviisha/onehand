@@ -294,8 +294,8 @@ async fn attach(
         Err(HostFailure::Other(why) | HostFailure::Refused(why) | HostFailure::Taken(why)) => {
             Err(why)
         }
-        Err(HostFailure::Busy { host, .. }) => {
-            Err(format!("{host} is waiting for its sessions to finish"))
+        Err(HostFailure::Busy { host, busy, terms }) => {
+            Err(crate::hosts::waiting_line(&host, busy.len(), terms))
         }
     }
 }

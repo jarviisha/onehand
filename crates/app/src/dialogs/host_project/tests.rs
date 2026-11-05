@@ -63,7 +63,7 @@ fn the_busy_question_names_five_sessions_by_when_they_started() {
     assert_eq!(
         busy_body(&host, &fresh, 2, now),
         "box runs another build of the host service, these sessions are mid-turn: \
-         a session started just now, and 2 terminals are open there. Restarting stops the \
+         a session started just now; and 2 terminals are open there. Restarting stops the \
          sessions and closes the terminals."
     );
 }

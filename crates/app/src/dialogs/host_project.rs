@@ -163,7 +163,7 @@ pub(crate) fn busy_body(host: &HostName, busy: &[HostSession], terms: usize, now
         }
         (false, _) => format!(
             "{host} runs another build of the host service, these sessions are mid-turn: \
-             {names}, and {open}. Restarting stops the sessions and closes the terminals."
+             {names}; and {open}. Restarting stops the sessions and closes the terminals."
         ),
     }
 }

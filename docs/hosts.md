@@ -106,7 +106,9 @@ Every attach opens by exchanging builds (`client::attach`):
 - **Another build with sessions mid-turn or terminals open:** the host is left alone and the
   attach fails as busy, since a service that exits closes every terminal, hanging up each shell,
   an idle one included, and the command it runs (the hello's `terms`). **The laptop waits for
-  those sessions to go idle and those terminals to close**, once per host however many sessions, pages
+  those sessions to go idle and those terminals to close** (which, since it has no attach to the
+  host meanwhile, it cannot do itself: a terminal closes from a laptop on the host's build, or by
+  its shell exiting), once per host however many sessions, pages
   and forms wait on it (`Waits` in `crates/app/src/hosts.rs`): it attaches again every 15 s
   (`HOST_IDLE_POLL`), and the first attach that lands, which restarts the idle service onto this
   build by itself, ends the wait. An attach that cannot reach the host ends it too, on that

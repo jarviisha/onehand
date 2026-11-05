@@ -543,7 +543,7 @@ impl Shell {
 
     /// Session `uid` was not attached, or with no `uid` the project page
     /// could not list, because `host` runs another build with sessions
-    /// mid-turn: restart the session, or list the page again, once the host
+    /// mid-turn or terminals open: restart the session, or list the page again, once the host
     /// is done waiting.
     pub(super) fn host_busy(
         &mut self,

@@ -143,7 +143,7 @@ impl Waits {
     }
 
     /// Whether `host` was last found running another build with sessions
-    /// mid-turn, which its busy wait follows.
+    /// mid-turn or terminals open, which its busy wait follows.
     pub(super) fn found_busy(&self, host: &HostName) -> bool {
         self.busy.contains_key(host)
     }

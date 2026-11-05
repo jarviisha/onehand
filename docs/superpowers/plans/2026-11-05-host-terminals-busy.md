@@ -12,8 +12,8 @@ count every open host terminal, an idle shell included, as busy: the existing wa
 2. Core: `hello` returns the count; `settle` and `settle_again` treat a host on another build
    with sessions mid-turn *or* terminals open as busy. `HostError::Busy` gains `terms`.
 3. App: `HostFailure::Busy` gains `terms`; the waits keep it beside the sessions.
-   `waiting_line(host, sessions, terms)` says both (*Waiting for 1 session and 2 terminals on
-   box to finish…*); the *Restart now* confirmation (`busy_body`) says the terminals it closes.
+   `waiting_line(host, sessions, terms)` says both (*Waiting for 1 session to finish and 2
+   terminals to close on box…*); the *Restart now* confirmation (`busy_body`) says the terminals it closes.
 4. Tests: host serve answers the count; core settle refuses with terminals only; app words.
 5. Docs: hosts.md (the build check), known-gaps.md drops the entry and its offload-poll note.
 
