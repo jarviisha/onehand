@@ -150,6 +150,16 @@ impl Shell {
     /// it already holds -- so this is reached with a repository in hand and has
     /// no check of its own to make beyond the root still being there.
     pub fn begin_worktree(&mut self, root_idx: usize, window: &mut Window, cx: &mut Context<Self>) {
+        // Not on an offloaded project, whose git is its host's to write.
+        if !self
+            .window
+            .workspace
+            .roots
+            .get(root_idx)
+            .is_some_and(|r| r.runs_here())
+        {
+            return;
+        }
         let Some(root) = self.local_root(root_idx).map(Path::to_path_buf) else {
             return;
         };
@@ -210,6 +220,15 @@ impl Shell {
     /// this one is editing something that does, and a blank field would make the
     /// user retype the part they are keeping to change the part they are not.
     pub fn begin_branch_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Not on an offloaded project, whose git is its host's to write.
+        if !self
+            .window
+            .workspace
+            .active_root()
+            .is_some_and(|r| r.runs_here())
+        {
+            return;
+        }
         let Some(root) = self
             .local_root(self.window.workspace.active_root)
             .map(Path::to_path_buf)

@@ -286,12 +286,14 @@ impl Shell {
         }
         let locks: HashMap<PathBuf, String> = offload::lock_lines(cx)
             .into_iter()
+            // By the folder, whichever window offloaded it: one folder here
+            // holds one copy of its code.
             .filter(|(path, _)| {
                 self.window
                     .workspace
                     .roots
                     .iter()
-                    .any(|r| r.offload.is_some() && r.path == *path)
+                    .any(|r| r.local_path() == Some(path.as_path()))
             })
             .collect();
         if locks != self.offload_locks {

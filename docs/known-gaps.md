@@ -347,5 +347,14 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **A locked shell drops what is typed, and what a program asks of the terminal too** (a cursor
   query, say), which a program waiting on its answer notices. The lock is at the writer, which
   both pass through.
-- **Removing an offloaded project from the workspace does not stop its code coming back** to the
-  folder once the host is done; nothing else is done to the folder.
+- **Removing an offloaded project from the workspace stops its code coming back.** What its host
+  holds stays in the mirror, the key with it; offloading the folder again brings it back as any
+  copy back does.
+- **Offloading is per window.** A folder offloaded in one window is locked in every window holding
+  it, but another window's project on it still runs its sessions, workflows and runs here. One
+  folder open in two windows is rare; refusing the offload then is not built.
+- **A key handed to the host whose answer was lost** leaves this machine holding it as far as it
+  knows: the next prompt finds the host holding it and goes without sending, so edits made here
+  meanwhile reach the host only once the code has come back (it stops on them, safely).
+- **Offloaded projects are checked one after another,** so one copy that hangs holds back the
+  checks of the others. The code comes back at a turn end or the 30 s check, not at an attach.

@@ -167,8 +167,13 @@ pub(crate) fn track(cx: &mut App, path: PathBuf, host: HostName, state: Option<O
             // Nothing kept: the host is asked before any move, so taking the
             // key for this machine's can only make the first prompt ask.
             Ok(state) => o.state = Some(state.unwrap_or_else(|| fresh(Holder::Laptop))),
-            // Kept locked: what holds the code is not known here.
-            Err(why) => o.failed = Some(format!("Could not read what was kept: {why}")),
+            // Taken for the host's, which keeps it locked and lets the next
+            // check ask the host: a copy back held against nothing kept
+            // stops on every file rather than writing over one.
+            Err(why) => {
+                o.state = Some(fresh(Holder::Host));
+                o.failed = Some(format!("Could not read what was kept: {why}"));
+            }
         });
     })
     .detach();
@@ -248,8 +253,13 @@ async fn hand_key(
     .map_err(|e| e.to_string())
 }
 
-fn save(path: &Path, state: &OffloadState) -> Result<(), String> {
-    state.save(&storage_for(path))
+/// Keep `state` for `path`, written on the background executor: the
+/// manifest holds a line per file.
+async fn save(cx: &mut AsyncApp, path: &Path, state: &OffloadState) -> Result<(), String> {
+    let (dir, state) = (storage_for(path), state.clone());
+    cx.background_executor()
+        .spawn(async move { state.save(&dir) })
+        .await
 }
 
 /// Offload `path` to `host`: `rsync` checked on both ends, the mirror asked
@@ -281,7 +291,7 @@ pub(crate) async fn offload_to(
             key: Holder::Host,
             ..kept.unwrap_or_else(|| fresh(Holder::Host))
         };
-        save(&path, &state)?;
+        save(cx, &path, &state).await?;
         return Ok((mirror.path, state));
     }
     let sent = kept.map(|kept| kept.manifest).unwrap_or_default();
@@ -296,7 +306,7 @@ pub(crate) async fn offload_to(
         moved: onehand_core::chat::now_secs(),
         stopped: None,
     };
-    save(&path, &state)?;
+    save(cx, &path, &state).await?;
     Ok((mirror.path, state))
 }
 
@@ -347,7 +357,7 @@ async fn send_up_with(
             moved: onehand_core::chat::now_secs(),
             stopped: None,
         };
-        let kept = save(path, &state);
+        let kept = save(cx, path, &state).await;
         return kept
             .map(|()| state.clone())
             .map_err(|why| (why, Some(Box::new(state))));
@@ -369,7 +379,7 @@ async fn send_up_with(
         moved: onehand_core::chat::now_secs(),
         stopped: None,
     };
-    let kept = save(path, &state);
+    let kept = save(cx, path, &state).await;
     match (handed, kept) {
         (Ok(_), Ok(())) => Ok(state),
         (Err(why), _) => Err((
@@ -439,7 +449,9 @@ async fn bring_back(
             moved: onehand_core::chat::now_secs(),
             stopped: None,
         };
-        save(path, &state).map_err(|why| (why, Some(Box::new(state.clone()))))?;
+        save(cx, path, &state)
+            .await
+            .map_err(|why| (why, Some(Box::new(state.clone()))))?;
         return Ok(Some(state));
     }
     if mirror.working {
@@ -476,7 +488,9 @@ async fn bring_back(
                 moved: now,
                 stopped: None,
             };
-            save(path, &came).map_err(|why| (why, Some(Box::new(came.clone()))))?;
+            save(cx, path, &came)
+                .await
+                .map_err(|why| (why, Some(Box::new(came.clone()))))?;
             match hand_key(cx, conn, &mirror.path, Holder::Laptop, mirror.generation).await {
                 Ok(_) => OffloadState {
                     key: Holder::Laptop,
@@ -487,7 +501,9 @@ async fn bring_back(
             }
         }
     };
-    save(path, &state).map_err(|why| (why, Some(Box::new(state.clone()))))?;
+    save(cx, path, &state)
+        .await
+        .map_err(|why| (why, Some(Box::new(state.clone()))))?;
     Ok(Some(state))
 }
 

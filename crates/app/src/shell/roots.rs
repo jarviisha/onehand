@@ -548,6 +548,11 @@ impl Shell {
     /// asked and nothing on screen moved.
     pub(super) fn forget_root(&mut self, idx: usize, cx: &mut Context<Self>) {
         let path = self.window.workspace.roots[idx].path.clone();
+        // Its code is no longer checked for here; offloaded again, it comes
+        // back as any does.
+        if self.window.workspace.roots[idx].offload.is_some() {
+            crate::offload::forget(cx, &path);
+        }
         // Sessions go first: dropping a chat session is what kills its adapter,
         // and the workspace tree is where their uids are recorded.
         let uids: Vec<u64> = self.window.workspace.roots[idx]

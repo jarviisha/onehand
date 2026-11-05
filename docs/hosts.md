@@ -500,7 +500,9 @@ In the window (`crates/app/src/offload.rs`, `crates/app/src/shell/offload.rs`):
   has been read: the editor's buffers are read only and *Save* writes nothing, the project's shells
   and its Neovim drop what is typed (at the writer, `onehand_terminal_ui::PtyTab::set_locked`, so
   a paste and an input method's commit are dropped too), and the project's git actions that write
-  are not offered, as on a host project.
+  (*New worktree…*, *Rename branch…*) are not offered, nor taken. It holds in every window
+  holding the folder. An `offload.json` that cannot be read is taken for the host holding the
+  code, so the next check asks the host and a copy back stops rather than writes.
 - **What an offloaded project does not do** is what a host project does not (*What a host project
   does not do*), its Workbench aside: workflows, tasks, schedules, unattended runs, worktrees, the
   check command, onehand's tools and the remote bridge reach only a project whose sessions run here
