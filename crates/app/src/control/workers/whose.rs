@@ -23,6 +23,15 @@ pub(crate) struct Worker {
     pub(crate) sent: Option<usize>,
 }
 
+impl Worker {
+    /// Whether the person holds it: a prompt went from them since the lead's
+    /// last, `chat` being the worker's own conversation. A worker still
+    /// opening has had nothing from its lead yet to be taken over from.
+    pub(crate) fn held(&self, chat: &onehand_core::chat::Chat) -> bool {
+        self.sent.is_some_and(|sent| chat.prompted_since(sent))
+    }
+}
+
 /// The lead of session `uid`, while that is a worker.
 pub(crate) fn lead_of(uid: u64) -> Option<u64> {
     lead_in(&sessions(), uid)

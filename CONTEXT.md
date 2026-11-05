@@ -38,7 +38,7 @@ A session whose agent controls onehand and opened other sessions to work for it,
 _Avoid_: parent, manager, orchestrator
 
 **Worker**:
-A session a lead opened with `open_worker`, seen through its lead while the lead is open. The
+A session a lead opened with `open_worker`, listed under its lead while the lead is open. The
 lead holds it until the person sends it a prompt; *Give back to the lead* returns it.
 _Avoid_: child, subagent, job
 

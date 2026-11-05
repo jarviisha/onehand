@@ -1,23 +1,4 @@
-use super::{Arrival, arrival, region_closes};
-
-#[test]
-fn a_plain_session_shows_itself() {
-    assert_eq!(arrival(7, None, false), Arrival::Show);
-}
-
-#[test]
-fn a_worker_shows_its_lead_at_it() {
-    assert_eq!(
-        arrival(7, Some(1), true),
-        Arrival::Lead { lead: 1, worker: 7 }
-    );
-}
-
-/// A lead in another window has nothing here to show it through.
-#[test]
-fn a_worker_whose_lead_is_elsewhere_shows_itself() {
-    assert_eq!(arrival(7, Some(1), false), Arrival::Show);
-}
+use super::{home, region_closes};
 
 #[test]
 fn the_region_follows_a_lead_with_workers() {
@@ -32,4 +13,21 @@ fn the_region_closes_on_a_session_without_workers() {
 #[test]
 fn the_region_closes_on_a_page() {
     assert!(region_closes(true, true));
+}
+
+/// A worker in its worktree (project 3) stands under its lead's project.
+#[test]
+fn a_worker_stands_for_its_lead_s_project() {
+    assert_eq!(home(Some((3, 0)), Some((0, 2))), Some(0));
+}
+
+/// A lead in another window is not here to stand under.
+#[test]
+fn a_worker_of_a_lead_elsewhere_stands_for_its_own() {
+    assert_eq!(home(Some((3, 0)), None), Some(3));
+}
+
+#[test]
+fn a_session_gone_stands_nowhere() {
+    assert_eq!(home(None, None), None);
 }

@@ -175,7 +175,7 @@ impl List {
     fn of(shell: &Shell, cx: &App) -> Self {
         let workspace = &shell.workspace_window().workspace;
         let roots = &workspace.roots;
-        let items: Vec<Item> = roots
+        let mut items: Vec<Item> = roots
             .iter()
             .enumerate()
             .flat_map(|(root, project)| {
@@ -202,15 +202,16 @@ impl List {
                     in_turn: row.in_turn,
                     lead: crate::control::lead_of(s.uid),
                     waiting: 0,
+                    under: None,
                     host: roots[root].session_host().map(|(host, _)| host.to_string()),
                 }
             })
             .collect();
         let waiting = model::attention_count(&items);
-        let had: Vec<usize> = items.iter().map(|item| item.root).collect();
-        let items = model::fold_workers(items);
-        // A worktree holding only hidden workers is theirs, not the person's.
-        let emptied = model::emptied(&had, &items);
+        model::nest_workers(&mut items);
+        // A worktree holding only workers drawn under their lead is theirs,
+        // not the person's.
+        let emptied = model::emptied(&items);
         let names: Vec<&str> = roots.iter().map(|root| root.label.as_str()).collect();
         let order: Vec<usize> = workspace
             .display_order()
@@ -291,16 +292,16 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
                 },
                 cx,
             ),
-            Row::Session { item, flat } => {
+            Row::Session { item, place } => {
                 let it = &list.items[item];
-                let who = match flat {
+                let who = match place.names_project() {
                     true => workspace.roots[it.root].label.as_str(),
                     false => it.agent.as_str(),
                 };
                 session::session_row(
                     it,
                     who,
-                    flat,
+                    place,
                     session::Mark {
                         shown: shown == Some((it.root, it.session)),
                         at: keyed && state.cursor == Some(Cursor::Session(it.uid)),
@@ -624,7 +625,7 @@ gpui::actions!(
 
 impl Shell {
     /// Where *New* starts: the keyboard's project while the list has the
-    /// keyboard, else the one on screen.
+    /// keyboard, else the one on screen; a worker's is its lead's.
     fn rail_target(&self, list: &List, focused: bool) -> Option<usize> {
         let workspace = &self.workspace_window().workspace;
         match self.rail_state().cursor.as_ref().filter(|_| focused) {
@@ -632,11 +633,17 @@ impl Shell {
             Some(Cursor::Session(uid)) => list
                 .items
                 .iter()
-                .find(|item| item.uid == *uid)
-                .map(|item| item.root),
+                .any(|item| item.uid == *uid)
+                .then(|| self.home_of(*uid))
+                .flatten(),
             None => None,
         }
-        .or_else(|| workspace.active_root().map(|_| workspace.active_root))
+        .or_else(|| {
+            workspace.active_root()?;
+            self.active_session_uid()
+                .and_then(|uid| self.home_of(uid))
+                .or(Some(workspace.active_root))
+        })
     }
 
     /// Show a session from its row, and put the rail's keyboard row there,
@@ -701,8 +708,9 @@ impl Shell {
         let roots = &self.workspace_window().workspace.roots;
         let path = match self.rail_state().cursor.clone() {
             Some(Cursor::Project(path)) => path,
-            Some(Cursor::Session(uid)) => match self.find_session(uid) {
-                Some((root, _)) => roots[root].path.clone(),
+            // A worker folds with its lead's project, which it is drawn in.
+            Some(Cursor::Session(uid)) => match self.home_of(uid) {
+                Some(root) => roots[root].path.clone(),
                 None => return,
             },
             None => return,

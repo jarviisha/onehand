@@ -134,7 +134,6 @@ impl Shell {
     /// The body of [`Self::show_active_session`]: every panel pointed at the
     /// active root, and the pane at its session or its project page.
     fn arrive_at_active_root(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let worker = self.turn_to_lead();
         // The lead on screen changing takes the region's caret to the
         // composer of the session now shown, before the region moves on.
         let region_caret = self
@@ -259,11 +258,6 @@ impl Shell {
                 pane.reclaim_focus(window, cx);
             }
         });
-        // A worker asked for is shown in its lead's region, picked, the caret
-        // on the list.
-        if let Some(worker) = worker {
-            self.show_workers(Some(worker), true, window, cx);
-        }
         // After `show`, which is what connects a session shown for the first
         // time — before it, a fresh session has no agent to have started.
         self.sync_agent_started(cx);

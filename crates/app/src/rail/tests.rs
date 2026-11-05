@@ -1,8 +1,8 @@
 use super::model::{
-    Filter, Item, Row, SESSION_CAP, Shape, age_label, attention_count, badge, meta, order, rows,
-    toggle_attention, visible,
+    Filter, Item, Place, Row, SESSION_CAP, Shape, age_label, attention_count, badge, meta, order,
+    rows, toggle_attention, visible,
 };
-use super::model::{emptied, fold_workers};
+use super::model::{emptied, nest_workers};
 use super::project::{GitLine, auto_status, project_hint, run_on};
 use super::row::project_key;
 use super::session::{LABEL_SHAPE_CAP, session_label, signal_hint};
@@ -32,6 +32,7 @@ fn seed() -> Vec<Item> {
         in_turn: false,
         lead: None,
         waiting: 0,
+        under: None,
         host: None,
     };
     vec![
@@ -229,14 +230,8 @@ fn the_tree_draws_open_projects_with_their_sessions_and_ends_on_the_add_rows() {
                 root: 1,
                 open: true
             },
-            Row::Session {
-                item: 4,
-                flat: false
-            },
-            Row::Session {
-                item: 5,
-                flat: false
-            },
+            session(4, false, false),
+            session(5, false, false),
             Row::Gap,
             Row::Project {
                 root: 2,
@@ -263,14 +258,8 @@ fn a_search_opens_every_project_that_matches_and_drops_the_rest() {
                 root: 1,
                 open: true
             },
-            Row::Session {
-                item: 4,
-                flat: false
-            },
-            Row::Session {
-                item: 5,
-                flat: false
-            },
+            session(4, false, false),
+            session(5, false, false),
             Row::AddProject,
             Row::AddHostProject,
         ]
@@ -296,14 +285,8 @@ fn a_flat_list_names_no_projects_and_says_when_nothing_matches() {
     assert_eq!(
         rows,
         vec![
-            Row::Session {
-                item: 0,
-                flat: true
-            },
-            Row::Session {
-                item: 2,
-                flat: true
-            },
+            session(0, true, false),
+            session(2, true, false),
             Row::AddProject,
             Row::AddHostProject,
         ]
@@ -342,6 +325,7 @@ fn a_group_past_the_cap_says_how_many_more_until_shown_whole() {
             in_turn: false,
             lead: None,
             waiting: 0,
+            under: None,
             host: None,
         })
         .collect();
@@ -608,21 +592,57 @@ fn with_workers() -> Vec<Item> {
         in_turn: false,
         lead: Some(1),
         waiting: 0,
+        under: None,
         host: None,
     });
     items
 }
 
+/// Workers linked to their listed lead, as the rail builds them.
+fn nested(mut items: Vec<Item>) -> Vec<Item> {
+    nest_workers(&mut items);
+    items
+}
+
+fn session(item: usize, flat: bool, nested: bool) -> Row {
+    Row::Session {
+        item,
+        place: Place { flat, nested },
+    }
+}
+
 #[test]
-fn a_worker_of_an_open_lead_is_not_listed() {
-    let uids: Vec<u64> = fold_workers(with_workers()).iter().map(|i| i.uid).collect();
-    assert_eq!(uids, vec![1, 6, 3, 4, 5]);
+fn workers_are_listed_under_their_lead_whatever_their_project() {
+    let items = nested(with_workers());
+    let rows = rows(&items, &shape(Filter::ByProject, "", &|_| true, &|_| false));
+    // Under project 0: the lead (item 0), then its workers by uid: 2 (item
+    // 1, its own project) and 7 (item 6, in project 2).
+    assert_eq!(
+        rows[1..5],
+        [
+            session(0, false, false),
+            session(1, false, true),
+            session(6, false, true),
+            session(2, false, false),
+        ]
+    );
+    // Project 2 holds only a nested worker: nothing of it is drawn there.
+    assert!(!rows.contains(&session(6, false, false)));
+    let flat = super::model::rows(&items, &shape(Filter::All, "", &|_| true, &|_| false));
+    assert_eq!(
+        flat[..3],
+        [
+            session(0, true, false),
+            session(1, true, true),
+            session(6, true, true)
+        ]
+    );
 }
 
 #[test]
 fn the_lead_row_keeps_its_own_state_and_counts_its_waiting_workers() {
-    let folded = fold_workers(with_workers());
-    let lead = folded.iter().find(|i| i.uid == 1).unwrap();
+    let items = nested(with_workers());
+    let lead = &items[0];
     assert_eq!(lead.signal, Some(SessionSignal::AwaitingUser));
     assert_eq!(lead.age, 4, "its own age, not a worker's");
     assert_eq!(lead.rolled(), Some(SessionSignal::Failed));
@@ -669,15 +689,27 @@ fn the_waiting_ink_lands_on_the_count_for_every_state() {
 }
 
 #[test]
-fn a_folded_project_shows_an_idle_lead_s_waiting_worker() {
+fn a_folded_project_hides_the_tree_and_badges_it_once() {
     let mut items = seed();
     items[0].signal = None;
     items[1].lead = Some(1);
     items[1].signal = Some(SessionSignal::AwaitingUser);
     items[2].signal = None;
-    assert_eq!(
-        badge(&fold_workers(items), 0),
-        Some(SessionSignal::AwaitingUser)
+    // A worker of the lead's in project 1, which is otherwise quiet.
+    items[4].lead = Some(1);
+    items[4].signal = Some(SessionSignal::Failed);
+    items[5].signal = None;
+    let items = nested(items);
+    assert_eq!(badge(&items, 0), Some(SessionSignal::Failed));
+    assert_eq!(badge(&items, 1), None, "counted through its lead only");
+    let rows = rows(
+        &items,
+        &shape(Filter::ByProject, "", &|r| r != 0, &|_| false),
+    );
+    assert!(
+        !rows
+            .iter()
+            .any(|row| matches!(row, Row::Session { place, .. } if place.nested))
     );
 }
 
@@ -686,53 +718,133 @@ fn a_lead_more_urgent_than_its_workers_keeps_its_own() {
     let mut items = seed();
     items[0].signal = Some(SessionSignal::Lost);
     items[1].lead = Some(1);
-    let folded = fold_workers(items);
-    assert_eq!(folded[0].signal, Some(SessionSignal::Lost));
-    assert_eq!(folded[0].age, 4);
-    assert_eq!(folded[0].waiting, 0);
+    let items = nested(items);
+    assert_eq!(items[0].signal, Some(SessionSignal::Lost));
+    assert_eq!(items[0].age, 4);
+    assert_eq!(items[0].waiting, 0);
 }
 
-/// Counted before the fold: a waiting worker needs attention even unlisted.
 #[test]
 fn a_waiting_worker_counts_as_needing_attention() {
-    let items = with_workers();
-    assert_eq!(attention_count(&items), 3);
-    assert_eq!(attention_count(&fold_workers(seed())), 2);
+    assert_eq!(attention_count(&nested(with_workers())), 3);
+    assert_eq!(attention_count(&seed()), 2);
 }
 
-/// A worker's lead gone, nothing names it any more: it is listed again.
-#[test]
-fn the_workers_come_back_when_the_lead_goes() {
-    let mut items = with_workers();
-    items.remove(0);
-    for item in &mut items {
-        item.lead = None;
-    }
-    assert_eq!(fold_workers(items).len(), 6);
-}
-
-/// A worker whose lead is not in this list (another window's) stays listed.
+/// A worker whose lead is not in this list (another window's) is a row of
+/// its own.
 #[test]
 fn a_worker_of_a_lead_not_listed_stays() {
     let mut items = seed();
     items[1].lead = Some(99);
-    assert_eq!(fold_workers(items).len(), 6);
+    let items = nested(items);
+    assert_eq!(items[1].under, None);
+    assert!(
+        rows(&items, &shape(Filter::ByProject, "", &|_| true, &|_| false))
+            .contains(&session(1, false, false))
+    );
+}
+
+/// A worker that leads workers of its own stays under its lead; its own
+/// workers are rows of their own rather than lost a level down.
+#[test]
+fn nesting_is_one_level_deep() {
+    let mut items = with_workers();
+    items[2].lead = Some(2);
+    let items = nested(items);
+    assert_eq!(items[1].under, Some(0));
+    assert_eq!(items[2].under, None);
 }
 
 #[test]
-fn a_project_left_with_only_hidden_workers_is_emptied() {
-    let had: Vec<usize> = with_workers().iter().map(|i| i.root).collect();
-    let folded = fold_workers(with_workers());
-    assert_eq!(emptied(&had, &folded), vec![2]);
+fn a_project_holding_only_nested_workers_is_emptied() {
+    assert_eq!(emptied(&nested(with_workers())), vec![2]);
 }
 
 #[test]
-fn the_needs_attention_filter_lists_the_lead_of_a_failed_worker() {
+fn the_cap_counts_a_lead_and_its_workers_as_one() {
+    // All in project 0, session 1 the lead of 2 and 6; `extra` more on top.
+    let tree = |extra: u64| {
+        let mut items = seed();
+        for item in &mut items {
+            item.root = 0;
+        }
+        items[1].lead = Some(1);
+        items[2].lead = Some(1);
+        for uid in 10..10 + extra {
+            let mut more = seed().remove(3);
+            more.uid = uid;
+            more.root = 0;
+            items.push(more);
+        }
+        nested(items)
+    };
+    let all = |items: &[Item]| rows(items, &shape(Filter::ByProject, "", &|_| true, &|_| false));
+    // Four top sessions and two workers: six rows, no cap.
+    assert!(
+        !all(&tree(0))
+            .iter()
+            .any(|row| matches!(row, Row::More { .. }))
+    );
+    // Seven top sessions pass the cap of six by one, after a whole tree.
+    let capped = all(&tree(3));
+    assert_eq!(
+        capped[1..4],
+        [
+            session(0, false, false),
+            session(1, false, true),
+            session(2, false, true)
+        ]
+    );
+    assert!(capped.contains(&Row::More {
+        group: Some(0),
+        hidden: 1
+    }));
+}
+
+#[test]
+fn a_search_matching_a_worker_lists_its_lead_and_tree() {
+    let items = nested(with_workers());
+    let rows = rows_for(&items, "Worker");
+    assert_eq!(
+        rows[1..4],
+        [
+            session(0, false, false),
+            session(1, false, true),
+            session(6, false, true)
+        ]
+    );
+}
+
+#[test]
+fn the_needs_attention_filter_lists_the_lead_with_its_tree() {
     let mut items = seed();
     items[0].signal = None;
     items[1].lead = Some(1);
     items[1].signal = Some(SessionSignal::AwaitingUser);
-    let folded = fold_workers(items);
-    let shown = visible(&folded, &PROJECTS, Filter::NeedsAttention, "");
-    assert!(shown.iter().any(|&i| folded[i].uid == 1));
+    let items = nested(items);
+    let rows = rows(
+        &items,
+        &shape(Filter::NeedsAttention, "", &|_| true, &|_| false),
+    );
+    assert_eq!(rows[..2], [session(0, true, false), session(1, true, true)]);
+}
+
+#[test]
+fn a_row_s_place_sets_its_indent_its_name_and_its_drag() {
+    let place = |flat, nested| Place { flat, nested };
+    assert_eq!(
+        [
+            place(false, false),
+            place(false, true),
+            place(true, false),
+            place(true, true)
+        ]
+        .map(|p| (p.depth(), p.names_project(), p.drags())),
+        [
+            (1, false, true),
+            (2, false, false),
+            (0, true, false),
+            (1, false, false)
+        ]
+    );
 }

@@ -48,7 +48,7 @@ pub(super) struct Item {
     pub(super) title: String,
     pub(super) agent: String,
     pub(super) signal: Option<SessionSignal>,
-    /// For a lead, the most urgent state of its unlisted workers.
+    /// For a lead, the most urgent state of the workers listed under it.
     pub(super) workers: Option<SessionSignal>,
     /// When it took its signal, which the latest-first list sorts by.
     pub(super) since: std::time::Instant,
@@ -62,16 +62,21 @@ pub(super) struct Item {
     pub(super) in_turn: bool,
     /// The lead whose worker it is, opening or open.
     pub(super) lead: Option<u64>,
-    /// For a lead, its unlisted workers waiting on the person.
+    /// For a lead, the workers under it waiting on the person.
     pub(super) waiting: usize,
+    /// For a worker whose lead is listed, the lead's index among the items:
+    /// it is drawn under the lead, wherever its own project is. Set by
+    /// [`nest_workers`] over the items as they stay: nothing reorders them
+    /// after, as lists sort indices into them instead.
+    pub(super) under: Option<usize>,
     /// The host its project is on, which a session waiting for it names.
     pub(super) host: Option<String>,
 }
 
 impl Item {
-    /// The most urgent state of itself and its unlisted workers: what the
-    /// attention filter and a folded project read, so a waiting worker still
-    /// shows through its lead.
+    /// The most urgent state of itself and its workers: what the attention
+    /// filter and a folded project read, so a waiting worker shows through
+    /// its lead wherever the tree is folded or filtered.
     pub(super) fn rolled(&self) -> Option<SessionSignal> {
         SessionSignal::most_urgent(self.signal.into_iter().chain(self.workers))
     }
@@ -165,7 +170,9 @@ pub(super) fn waiting_span(
 
 /// The sessions a filter and a query keep, as indices into `items`, in the
 /// order they are listed. The query matches a title or the project's name,
-/// ignoring case; `projects` names each project by its index.
+/// ignoring case; `projects` names each project by its index. Only the top of
+/// each tree is listed here: a lead is kept when it or a worker under it
+/// matches, and its workers follow it in [`rows`].
 pub(super) fn visible(
     items: &[Item],
     projects: &[&str],
@@ -173,14 +180,18 @@ pub(super) fn visible(
     query: &str,
 ) -> Vec<usize> {
     let query = query.trim().to_lowercase();
+    let matches = |s: &Item| {
+        query.is_empty()
+            || s.title.to_lowercase().contains(&query)
+            || projects
+                .get(s.root)
+                .is_some_and(|name| name.to_lowercase().contains(&query))
+    };
     let mut out: Vec<usize> = (0..items.len())
         .filter(|i| {
             let s = &items[*i];
-            (query.is_empty()
-                || s.title.to_lowercase().contains(&query)
-                || projects
-                    .get(s.root)
-                    .is_some_and(|name| name.to_lowercase().contains(&query)))
+            s.under.is_none()
+                && (matches(s) || workers_under(items, *i).any(|w| matches(&items[w])))
                 && (filter != Filter::NeedsAttention || needs_attention(s.rolled()))
         })
         .collect();
@@ -193,31 +204,59 @@ pub(super) fn visible(
     out
 }
 
-/// The list without the workers of a lead it lists. A lead keeps its own
-/// state on its row, so it never reads as failed for a worker that did; it
-/// counts its workers waiting on the person, and rolls up the most urgent
-/// state of itself and them for what looks past the row. A worker whose
-/// lead is not listed stays, as any session.
-pub(super) fn fold_workers(items: Vec<Item>) -> Vec<Item> {
-    let listed: Vec<u64> = items.iter().map(|item| item.uid).collect();
-    let (workers, mut kept): (Vec<Item>, Vec<Item>) = items
-        .into_iter()
-        .partition(|item| item.lead.is_some_and(|lead| listed.contains(&lead)));
-    for lead in &mut kept {
-        let mine = || workers.iter().filter(|w| w.lead == Some(lead.uid));
-        lead.waiting = mine().filter(|w| needs_attention(w.signal)).count();
-        lead.workers = SessionSignal::most_urgent(mine().filter_map(|w| w.signal));
-    }
-    kept
+/// The workers listed under the item at `lead`, in the order it opened them.
+// ponytail: a scan of every item per lead, quadratic in a window's sessions;
+// group the workers by lead once in `nest_workers` if a window ever holds
+// hundreds.
+fn workers_under(items: &[Item], lead: usize) -> impl Iterator<Item = usize> + '_ {
+    let mut mine: Vec<usize> = (0..items.len())
+        .filter(|w| items[*w].under == Some(lead))
+        .collect();
+    mine.sort_by_key(|w| items[*w].uid);
+    mine.into_iter()
 }
 
-/// The projects that had sessions (`before`, each session's project) and
-/// have none left in `after`: a worktree holding only hidden workers.
-pub(super) fn emptied(before: &[usize], after: &[Item]) -> Vec<usize> {
-    let mut roots: Vec<usize> = before
+/// Each worker whose lead is listed linked to it, to be drawn under it. A
+/// lead keeps its own state on its row, so it never reads as failed for a
+/// worker that did; it counts its workers waiting on the person, and rolls
+/// up the most urgent state of itself and them for what looks past the row.
+/// A worker whose lead is not listed stays a row of its own, as any session.
+pub(super) fn nest_workers(items: &mut [Item]) {
+    for w in 0..items.len() {
+        items[w].under = items[w]
+            .lead
+            .and_then(|lead| items.iter().position(|item| item.uid == lead));
+    }
+    // One level only: a worker switched on to lead workers of its own keeps
+    // its place under its lead, and its workers are rows of their own.
+    let nested: Vec<bool> = items.iter().map(|item| item.under.is_some()).collect();
+    for item in items.iter_mut() {
+        if item.under.is_some_and(|lead| nested[lead]) {
+            item.under = None;
+        }
+    }
+    for lead in 0..items.len() {
+        let mine: Vec<Option<SessionSignal>> = items
+            .iter()
+            .filter(|w| w.under == Some(lead))
+            .map(|w| w.signal)
+            .collect();
+        items[lead].waiting = mine.iter().filter(|s| needs_attention(**s)).count();
+        items[lead].workers = SessionSignal::most_urgent(mine.into_iter().flatten());
+    }
+}
+
+/// The projects that have sessions and all of them drawn under a lead
+/// elsewhere: a worktree holding only workers.
+pub(super) fn emptied(items: &[Item]) -> Vec<usize> {
+    let mut roots: Vec<usize> = items
         .iter()
-        .copied()
-        .filter(|root| !after.iter().any(|item| item.root == *root))
+        .map(|item| item.root)
+        .filter(|root| {
+            items
+                .iter()
+                .all(|item| item.root != *root || item.under.is_some())
+        })
         .collect();
     roots.sort_unstable();
     roots.dedup();
@@ -232,7 +271,12 @@ pub(super) fn attention_count(items: &[Item]) -> usize {
 /// person, else running while any session runs, else nothing. Done is not
 /// waiting on anyone.
 pub(super) fn badge(items: &[Item], root: usize) -> Option<SessionSignal> {
-    let mine = || items.iter().filter(move |s| s.root == root);
+    // A worker counts through its lead's rolled state, never twice.
+    let mine = || {
+        items
+            .iter()
+            .filter(move |s| s.root == root && s.under.is_none())
+    };
     SessionSignal::most_urgent(
         mine().filter_map(|s| s.rolled().filter(|&state| needs_attention(Some(state)))),
     )
@@ -263,7 +307,7 @@ pub(super) enum Row {
     },
     Session {
         item: usize,
-        flat: bool,
+        place: Place,
     },
     /// An open project with no sessions.
     Empty,
@@ -277,6 +321,35 @@ pub(super) enum Row {
     AddProject,
     /// The list's last row: the way to grow it with a folder on a host.
     AddHostProject,
+}
+
+/// Where a session's row stands: in a flat list or a project's tree, and
+/// under its lead or not.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct Place {
+    pub(super) flat: bool,
+    /// A worker drawn under its lead's row.
+    pub(super) nested: bool,
+}
+
+impl Place {
+    /// How many indents its row is set in: one under its project, one more
+    /// under its lead.
+    pub(super) fn depth(self) -> u8 {
+        u8::from(!self.flat) + u8::from(self.nested)
+    }
+
+    /// Whether its line names its project rather than its agent: in a flat
+    /// list, unless it stands under its lead, whose tree is its project.
+    pub(super) fn names_project(self) -> bool {
+        self.flat && !self.nested
+    }
+
+    /// Whether it is dragged to reorder: only a project's own rows, as a
+    /// worker's place follows its lead's.
+    pub(super) fn drags(self) -> bool {
+        !self.flat && !self.nested
+    }
 }
 
 /// What the rows are built from, besides the sessions.
@@ -304,7 +377,7 @@ pub(super) fn rows(items: &[Item], shape: &Shape) -> Vec<Row> {
     let shown = visible(items, shape.projects, shape.filter, &query);
     let mut rows = Vec::new();
     if shape.filter != Filter::ByProject {
-        capped(&mut rows, None, shown, true, shape);
+        capped(&mut rows, items, None, shown, true, shape);
     } else {
         for &root in shape.order {
             let mine: Vec<usize> = shown
@@ -327,7 +400,7 @@ pub(super) fn rows(items: &[Item], shape: &Shape) -> Vec<Row> {
             if mine.is_empty() {
                 rows.push(Row::Empty);
             }
-            capped(&mut rows, Some(root), mine, false, shape);
+            capped(&mut rows, items, Some(root), mine, false, shape);
         }
     }
     if rows.is_empty() && (searching || shape.filter != Filter::ByProject) {
@@ -337,10 +410,13 @@ pub(super) fn rows(items: &[Item], shape: &Shape) -> Vec<Row> {
     rows
 }
 
-/// A group's sessions up to [`SESSION_CAP`], and a row saying how many the
-/// cap left out, until the person asks for all of them.
+/// A group's sessions up to [`SESSION_CAP`], each lead followed by its
+/// workers, and a row saying how many the cap left out, until the person asks
+/// for all of them. A lead and its workers count as one, so the cap never
+/// cuts a tree.
 fn capped(
     rows: &mut Vec<Row>,
+    items: &[Item],
     group: Option<usize>,
     sessions: Vec<usize>,
     flat: bool,
@@ -352,12 +428,19 @@ fn capped(
         SESSION_CAP
     };
     let hidden = sessions.len().saturating_sub(cap);
-    rows.extend(
-        sessions
-            .into_iter()
-            .take(cap)
-            .map(|item| Row::Session { item, flat }),
-    );
+    for item in sessions.into_iter().take(cap) {
+        rows.push(Row::Session {
+            item,
+            place: Place {
+                flat,
+                nested: false,
+            },
+        });
+        rows.extend(workers_under(items, item).map(|item| Row::Session {
+            item,
+            place: Place { flat, nested: true },
+        }));
+    }
     if hidden > 0 {
         rows.push(Row::More { group, hidden });
     }

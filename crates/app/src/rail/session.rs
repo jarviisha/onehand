@@ -12,7 +12,7 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, HighlightStyle, Hsla,
     InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
-    Styled, StyledText, WeakEntity, Window, div,
+    Styled, StyledText, WeakEntity, Window, div, rems,
 };
 use gpui_component::menu::{ContextMenuExt as _, PopupMenu};
 use gpui_component::tooltip::Tooltip;
@@ -254,6 +254,11 @@ pub(super) struct Mark {
     pub(super) resend: bool,
 }
 
+/// How far left of a worker's row the rule tying it to its lead runs: under
+/// the middle of the lead's mark, which the row's inset and half the mark's
+/// slot put that far back from the worker's own edge.
+const LEAD_RULE: gpui::Rems = rems(0.5);
+
 /// A session: its mark, its title and `⋯`, and under the title
 /// `state · who · age`, who being the agent, or the project in a flat list,
 /// the state's word in its own ink while it waits on the person. Over the end
@@ -265,7 +270,7 @@ pub(super) struct Mark {
 pub(super) fn session_row(
     item: &Item,
     who: &str,
-    flat: bool,
+    place: super::model::Place,
     mark: Mark,
     cx: &mut Context<Shell>,
 ) -> AnyElement {
@@ -320,8 +325,21 @@ pub(super) fn session_row(
         .py_1()
         // A session's mark stands under its project's folder and its title
         // under the name. The row's fill starts past the fold control's
-        // column, so a chosen row carries no empty band on its left.
-        .when(!flat, |d| d.ml(super::INDENT))
+        // column, so a chosen row carries no empty band on its left. A worker
+        // is set in once more, under its lead's title.
+        .ml(rems(super::INDENT.0 * f32::from(place.depth())))
+        // A rule down from the lead's mark ties a worker to it.
+        .when(place.nested, |row| {
+            row.child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .bottom_0()
+                    .left(rems(-LEAD_RULE.0))
+                    .w_px()
+                    .bg(cx.theme().border),
+            )
+        })
         .px_2()
         .rounded(cx.theme().radius)
         .cursor_pointer()
@@ -393,7 +411,8 @@ pub(super) fn session_row(
                 )),
         )
         .when(mark.at, |row| row.child(key_ring(cx)))
-        .when(!flat, |row| {
+        // A worker's place follows its lead, so it is not dragged.
+        .when(place.drags(), |row| {
             let (target, ghost) = (shell.clone(), SharedString::from(item.title.clone()));
             row.on_drag(
                 SessionDrag {

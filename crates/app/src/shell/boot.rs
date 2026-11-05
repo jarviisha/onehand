@@ -166,7 +166,7 @@ impl Shell {
                     E::AgentStarted => shell.sync_agent_started(cx),
                     E::ShowRail => shell.show_rail(window, cx),
                     E::ToggleWorkers => shell.toggle_workers(window, cx),
-                    E::ShowWorker(uid) => shell.show_workers(Some(*uid), false, window, cx),
+                    E::ShowSession(uid) => shell.show_session(*uid, window, cx),
                     E::MaximizeWorkers => {
                         shell.toggle_maximize_panel(FocusedPanel::Workers, window, cx)
                     }
