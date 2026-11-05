@@ -102,9 +102,10 @@ it. What is refused, and how, is under *What a host project does not do*.
   host drops the task driving the agent, which kills the agent's process, journals *the session
   was ended from the laptop* as its `Disconnected`, and lists it ended (`Hub::end_session`,
   `crates/app/src/shell/host_end.rs`). A session in another laptop's mirror is refused, as a
-  request to it is. Here, the session watching it closes and the page lists again; a failure is a
-  toast, *Ending <session> on <host> failed: …*. A session the host has not named yet has
-  nothing there to end, and says so.
+  request to it is. Here, the session watching it closes first, then the page lists again; a
+  failure is a toast, *Ending <session> on <host> failed: …*, and the session stays on the page
+  to attach to. A session the host has not named yet has nothing there to end, and says so. A
+  turn ended halfway in a branch mirror is not committed then; the next update commits it.
 
 ## Builds and the restart offer
 

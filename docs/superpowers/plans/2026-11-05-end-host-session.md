@@ -18,8 +18,8 @@ conversation header's) and on each running row of the project page's *Sessions o
    is lost. The conversation stays readable on the project page.*, act *End*. A yes attaches,
    ends, closes the session in this window if one watches it, and lists the page again. A
    failure is an error toast, *Ending <label> on <host> failed: <why>*.
-   - Rail session menu and header menu: *End on <host>…*, only on a host session that has its
-     host session id.
+   - Rail session menu and header menu: *End on <host>…* on every host session; one the host has
+     not named yet says it has not started there.
    - Project page rows: a ⋯ in a hover slot and the same acts on right-click (`row_more`,
      `row_menu_items`): *Attach*, then *End on <host>…* in the danger ink while the row is not
      ended.

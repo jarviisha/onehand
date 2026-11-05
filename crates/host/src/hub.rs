@@ -201,7 +201,10 @@ impl Hub {
             dirs: vec![],
         };
         let events = connector(launch, opts);
-        lock(hub).sessions.insert(
+        // Spawned with the hub held, so the session is never without its
+        // task's handle: an `End` between the two would leave its agent up.
+        let mut this = lock(hub);
+        this.sessions.insert(
             id.clone(),
             Session {
                 dir,
@@ -219,9 +222,10 @@ impl Hub {
             },
         );
         let task = tokio::spawn(drive(hub.clone(), id.clone(), events));
-        if let Some(s) = lock(hub).sessions.get_mut(&id) {
+        if let Some(s) = this.sessions.get_mut(&id) {
             s.drive = Some(task.abort_handle());
         }
+        drop(this);
         Ok(id)
     }
 

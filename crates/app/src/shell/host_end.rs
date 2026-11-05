@@ -52,8 +52,10 @@ impl Shell {
         });
     }
 
-    /// End it: the session watching it here closes, and the project page
-    /// reads its list again. A failure is said once, in a toast.
+    /// End it. The session watching it here closes first, so the agent's
+    /// going reads as nothing lost; the project page then reads its list
+    /// again. A failure is said once, in a toast, and the host session is
+    /// still there to attach to from the page.
     fn end_on_host(
         &mut self,
         host: HostName,
@@ -62,6 +64,9 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if let Some(uid) = self.chat.read(cx).watching_on(&host, &session) {
+            self.end_session(uid, window, cx);
+        }
         let attaching = crate::hosts::conn(cx, &host);
         cx.spawn_in(window, async move |shell, cx| {
             let ended = match attaching.await {
@@ -90,10 +95,6 @@ impl Shell {
                         cx,
                     );
                     return;
-                }
-                let watching = shell.chat.read(cx).watching_on(&host, &session);
-                if let Some(uid) = watching {
-                    shell.end_session(uid, window, cx);
                 }
                 shell
                     .chat
