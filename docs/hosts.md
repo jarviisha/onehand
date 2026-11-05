@@ -569,15 +569,17 @@ On a branch (`crates/app/src/offload/branch.rs`), the window's side of a branch 
   not needed. A folder with no commit is refused.
 - **No key and no lock:** nothing here is locked, a prompt goes at once with nothing sent first,
   no copy comes back, and `offload.json` is neither read nor written.
-- **Fetched when it moved:** at a turn's end of a session on it here, and with the 30 s check
-  while its host is attached, the laptop asks the host for the branch's commit and fetches only
-  when it differs from the ref here, then counts what it has to merge. A check never attaches; with
-  the host away it counts what was fetched. The count is the page box's line and the rail's
-  merge mark.
+- **Fetched when it moved:** at a turn's end of a session on it here, and with the 30 s check,
+  the laptop asks an attached host for the branch's commit and fetches only when it differs from
+  the ref here, then counts what it has to merge. A check never attaches; with the host away it
+  counts what was fetched, so a merge made here clears the count by the next check. The count is
+  the page box's line and the rail's merge mark.
 - **Update host from laptop**, in the *On <host>* box: attaches, refuses while a session there
   works (*Wait for the sessions on <host> to finish*), pushes this folder's last commit and has
   the host merge it, then fetches and counts again. A failure, a conflict among them, stands in
-  the box; success says nothing but the count.
+  the box until an update lands, whatever the checks meanwhile; a check's own failure goes with
+  the next check. Success says nothing but the count. While it runs, a prompt to a session on it
+  is not held here; the host refuses it while it merges.
 - **Run here again** is offered whenever the branch is not being fetched or updated, and leaves
   the mirror, the host's branch and the ref here as they are.
 

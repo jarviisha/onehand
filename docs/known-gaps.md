@@ -369,6 +369,6 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   leaves both.
 - **A sync mode changes only through *Run here again*** and offloading again.
 - **The branch count on a project's page waits for the next check** (a turn's end, or the 30 s
-  check while its host is attached); showing the page does not fetch.
+  check); showing the page does not fetch.
 - **Offloaded projects are checked one after another,** so one copy that hangs holds back the
   checks of the others. The code comes back at a turn end or the 30 s check, not at an attach.
