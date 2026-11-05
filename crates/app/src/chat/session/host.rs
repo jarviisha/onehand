@@ -18,9 +18,11 @@ use onehand_core::host::wire::{HostSession, SessionInfo};
 use onehand_core::workspace::HostName;
 use std::path::PathBuf;
 
-/// Which host a session runs on, and how its events begin there.
+/// Which host a session runs on, in which folder there, and how its events
+/// begin there.
 pub(crate) struct BeginOnHost {
     pub(crate) host: HostName,
+    pub(crate) cwd: PathBuf,
     pub(crate) begin: HostBegin,
 }
 
@@ -155,7 +157,7 @@ pub(super) async fn host_events(
     session: &WeakEntity<ChatSession>,
     cx: &mut AsyncApp,
 ) -> Events {
-    let BeginOnHost { host, begin } = on_host;
+    let BeginOnHost { host, begin, .. } = on_host;
     // Either the start, known already, or what a re-watch decides on once
     // the host has said what it runs.
     let decided = match begin {

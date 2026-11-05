@@ -284,6 +284,11 @@ pub enum Request<'a> {
         works: &'a [IssueWork],
         offered: &'a [PathBuf],
     },
+    /// The project folders nothing here may write now, each with the line
+    /// that says why: an offloaded project while its host holds the code.
+    /// Broadcast whenever the set changes, whole, so a folder left out is
+    /// one that may be written again.
+    Locked(&'a HashMap<PathBuf, String>),
 }
 
 /// How a mode reaches back into the panel.

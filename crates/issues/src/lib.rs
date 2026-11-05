@@ -213,6 +213,7 @@ fn handle(view: &Entity<IssuesView>, request: &Request<'_>, cx: &mut App) -> boo
         | Request::SetGit(_)
         | Request::SetFontSize(_)
         | Request::AgentStarted(_)
-        | Request::RestartAgent => false,
+        | Request::RestartAgent
+        | Request::Locked(_) => false,
     }
 }

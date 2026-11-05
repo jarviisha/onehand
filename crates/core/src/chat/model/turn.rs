@@ -22,6 +22,9 @@ pub enum SubmitBlock {
     UnreadableAttachment(String),
     /// No live request channel: still connecting, or the adapter is gone.
     NotConnected,
+    /// The prompt waits on something the front end is doing first, said in
+    /// a person's words: an offloaded project's code on its way to its host.
+    Waiting(String),
 }
 
 impl SubmitBlock {
@@ -32,6 +35,7 @@ impl SubmitBlock {
             Self::Busy => "The agent is still working on the last turn".to_string(),
             Self::UnreadableAttachment(name) => format!("{name} could not be read — remove it"),
             Self::NotConnected => "The agent is not connected".to_string(),
+            Self::Waiting(why) => why.clone(),
         }
     }
 }

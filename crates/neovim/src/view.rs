@@ -10,8 +10,8 @@ use gpui::{
     App, AppContext as _, Context, Entity, FocusHandle, IntoElement, ParentElement, Pixels, Render,
     Styled, Window, div,
 };
-use gpui_component::StyledExt;
 use gpui_component::button::ButtonVariants as _;
+use gpui_component::{ActiveTheme as _, StyledExt};
 use onehand_terminal_ui::{Program, PtyTab, TerminalThemeKey, spawn_pty, terminal_palette};
 use onehand_ui::Short as _;
 use onehand_ui::{action, hint, status_ink, status_line};
@@ -52,6 +52,9 @@ pub(crate) struct NeovimView {
     /// including the one that would reopen this panel. Only the panel knows
     /// whether the caret was inside it.
     ask: Ask,
+    /// The folders nothing may be typed into now, with why: a grid on one
+    /// drops what is typed, and says so under it.
+    locked: HashMap<PathBuf, String>,
 }
 
 impl NeovimView {
@@ -63,6 +66,7 @@ impl NeovimView {
             theme: TerminalThemeKey::current(cx),
             status: None,
             ask,
+            locked: HashMap::new(),
         })
     }
 
@@ -77,6 +81,14 @@ impl NeovimView {
                 })
             })
             .collect()
+    }
+
+    /// Which folders nothing may be typed into now, whole.
+    pub(crate) fn set_locked(&mut self, locks: &HashMap<PathBuf, String>) {
+        self.locked = locks.clone();
+        for (root, tab) in &self.tabs {
+            tab.set_locked(self.locked.contains_key(root));
+        }
     }
 
     pub(crate) fn set_root(&mut self, root: &Path, cx: &mut Context<Self>) {
@@ -123,6 +135,7 @@ impl NeovimView {
         );
         match spawned {
             Ok(tab) => {
+                tab.set_locked(self.locked.contains_key(&root));
                 self.tabs.insert(root, tab);
                 self.status = None;
             }
@@ -205,12 +218,18 @@ impl Render for NeovimView {
                 .as_ref()
                 .is_some_and(|root| !self.tabs.contains_key(root))
         });
+        let locked = self
+            .root
+            .as_ref()
+            .and_then(|root| self.locked.get(root))
+            .cloned();
         div()
             .flex_1()
             .min_h_0()
             .v_flex()
             .child(body)
             .children(failed.map(|status| status_line(status, status_ink(cx).danger)))
+            .children(locked.map(|why| status_line(why, cx.theme().muted_foreground)))
     }
 }
 

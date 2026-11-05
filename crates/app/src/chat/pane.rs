@@ -31,6 +31,7 @@ mod header;
 pub(crate) use header::LIVE_DOT;
 mod history;
 mod lead_strip;
+mod offload_send;
 mod overlay;
 mod pages;
 mod project_page;
@@ -205,6 +206,10 @@ pub struct ProjectFacts {
     pub check: bool,
     /// Removing it asks first, which its menu's ellipsis says.
     pub asks: bool,
+    /// Whether offloading is offered, and which way: `Some(false)` sends a
+    /// folder here to a host, `Some(true)` runs an offloaded one here again,
+    /// offered only while this machine holds its code.
+    pub offload: Option<bool>,
 }
 
 impl ProjectFacts {
@@ -213,13 +218,21 @@ impl ProjectFacts {
     /// both build these and a copy in each is two answers to "is the switch
     /// offered here".
     pub fn of(root: &onehand_core::workspace::ProjectRoot, is_repo: bool) -> Self {
-        let local = root.on_host().is_none();
+        // What acts on the folder by itself reaches only one whose sessions
+        // run here: not a host's, nor an offloaded one's.
+        let local = root.runs_here();
         Self {
             pinned: root.pinned,
             is_repo: local && is_repo,
             unattended: (local && !root.transient).then_some(root.unattended),
             check: local && root.check.is_some(),
             asks: false,
+            offload: match (&root.host, &root.offload) {
+                _ if root.transient => None,
+                (Some(_), _) => None,
+                (None, Some(_)) => Some(true),
+                (None, None) => Some(false),
+            },
         }
     }
 }

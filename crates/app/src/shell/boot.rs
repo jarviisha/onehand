@@ -189,6 +189,8 @@ impl Shell {
                             P::RenameBranch => shell.begin_branch_rename(window, cx),
                             P::CopyPath => shell.copy_root_path(root_idx, window, cx),
                             P::RefreshGit => shell.refresh_git(cx),
+                            P::Offload => shell.begin_offload(root_idx, window, cx),
+                            P::RunHere => shell.run_here_again(root_idx, window, cx),
                             P::Remove => shell.remove_root(root_idx, window, cx),
                         }
                     }
@@ -318,6 +320,15 @@ impl Shell {
             shell.tell_issue_works(cx);
         })
         .detach();
+        // Who holds each offloaded project's code: the lock on the docks,
+        // the rail's mark and the project page's box follow it.
+        cx.default_global::<crate::offload::Offloads>();
+        cx.observe_global::<crate::offload::Offloads>(|shell: &mut Self, cx| {
+            shell.sync_offload(cx);
+        })
+        .detach();
+        // The workspace's own offloaded projects, read once the shell is up.
+        cx.defer_in(window, |shell: &mut Self, _, cx| shell.sync_offload(cx));
         // And with Settings: whether Resume refuses is judged on the agents
         // and modes they hold, so a refusal answered there clears at once.
         cx.observe_global::<crate::state::Shared>(|shell: &mut Self, cx| {
@@ -515,6 +526,8 @@ impl Shell {
             branch_draft: None,
             host_project: None,
             host_flow: Default::default(),
+            offload_draft: None,
+            offload_locks: HashMap::new(),
             issue_picker: None,
             dialog_return: None,
             label_input: cx.new(|cx| InputState::new(window, cx).placeholder("bug")),

@@ -23,6 +23,7 @@ use onehand_core::workspace::HostName;
 use onehand_ui::Tall as _;
 use onehand_ui::TallIcon as _;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 /// Why *Add* refuses while the host attaches and answers.
 const ATTACHING: &str = "Attaching to the host";
@@ -231,7 +232,16 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
                         .gap_2()
                         .child(div().flex_1().min_w_0().child(text_input(&host, cx).tall()))
                         .when(!choices.is_empty(), |row| {
-                            row.child(host_menu(choices.clone(), more_hosts, &shell, cx))
+                            let shell = shell.clone();
+                            row.child(host_menu(
+                                choices.clone(),
+                                more_hosts,
+                                Rc::new(move |host, window, cx| {
+                                    let _ = shell
+                                        .update(cx, |shell, cx| shell.pick_host(host, window, cx));
+                                }),
+                                cx,
+                            ))
                         }),
                     cx,
                 ))
@@ -345,15 +355,14 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
         }))
 }
 
-/// The menu beside *Host*: the hosts to pick from, and how many it leaves
-/// out.
-fn host_menu(
+/// The menu beside a *Host* field: the hosts to pick from, and how many it
+/// leaves out; `pick` is handed the one picked.
+pub(super) fn host_menu(
     choices: Vec<String>,
     more: usize,
-    shell: &WeakEntity<Shell>,
+    pick: Rc<dyn Fn(String, &mut Window, &mut App)>,
     cx: &App,
 ) -> impl IntoElement {
-    let shell = shell.clone();
     crate::controls::menu_below(
         "host-choices",
         crate::controls::action("host-choices-trigger")
@@ -363,13 +372,11 @@ fn host_menu(
             .named("Pick a host"),
         move |mut menu, _, _| {
             for host in &choices {
-                let (host, shell) = (host.clone(), shell.clone());
-                menu = menu.item(crate::controls::menu_item(host.clone()).on_click(
-                    move |_, window, cx: &mut App| {
-                        let host = host.clone();
-                        let _ = shell.update(cx, |shell, cx| shell.pick_host(host, window, cx));
-                    },
-                ));
+                let (host, pick) = (host.clone(), pick.clone());
+                menu = menu.item(
+                    crate::controls::menu_item(host.clone())
+                        .on_click(move |_, window, cx: &mut App| pick(host.clone(), window, cx)),
+                );
             }
             if more > 0 {
                 menu = menu.item(crate::controls::menu_label(format!(

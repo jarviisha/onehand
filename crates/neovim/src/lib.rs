@@ -68,6 +68,10 @@ impl WorkbenchMode for Mode {
                 true
             }
             Request::Reap => self.view.update(cx, |view, cx| view.reap(cx)),
+            Request::Locked(locks) => {
+                self.view.update(cx, |view, _| view.set_locked(locks));
+                true
+            }
             Request::SetFontSize(size) => {
                 self.view
                     .update(cx, |view, cx| view.set_font_size(*size, cx));

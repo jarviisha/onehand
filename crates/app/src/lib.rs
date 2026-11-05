@@ -28,6 +28,7 @@ mod hosts;
 mod icons;
 mod instance;
 mod keymap;
+mod offload;
 mod page_parts;
 mod rail;
 mod remote;

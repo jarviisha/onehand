@@ -372,7 +372,10 @@ impl ChatPane {
         // here because this is the last point both are borrowed at once.
         let blocked = {
             let composer = self.composer.read(cx);
-            chat.submit_blocker(&composer.text(cx), &composer.attachments)
+            // An offloaded project's prompt waits on its code going up.
+            crate::offload::sending(cx, &chat.root)
+                .map(onehand_core::chat::SubmitBlock::Waiting)
+                .or_else(|| chat.submit_blocker(&composer.text(cx), &composer.attachments))
         };
         // Measured last frame. Read once, and turned into one number, because
         // it is the line three separate things rest on -- the last row of the

@@ -85,6 +85,9 @@ impl WorkbenchMode for Mode {
             self.view.update(cx, |view, cx| view.save_active(cx));
             return true;
         }
+        if let Request::Locked(locks) = request {
+            self.view.update(cx, |view, cx| view.set_locked(locks, cx));
+        }
         self.files.handle(request, cx)
     }
 

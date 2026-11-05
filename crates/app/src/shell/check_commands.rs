@@ -33,9 +33,7 @@ impl Shell {
             .roots
             .iter()
             .filter(|root| {
-                !root.transient
-                    && root.on_host().is_none()
-                    && !self.check_inputs.contains_key(&root.path)
+                !root.transient && root.runs_here() && !self.check_inputs.contains_key(&root.path)
             })
             .map(|root| (root.path.clone(), root.check.clone().unwrap_or_default()))
             .collect();

@@ -415,6 +415,12 @@ impl Workbench {
         cx.notify();
     }
 
+    /// Tell every mode which folders it may not write, and why.
+    pub fn set_locked(&mut self, locks: &HashMap<PathBuf, String>, cx: &mut Context<Self>) {
+        self.broadcast(&Request::Locked(locks), cx);
+        cx.notify();
+    }
+
     pub fn set_git(&mut self, git: HashMap<PathBuf, GitStatus>, cx: &mut Context<Self>) {
         self.broadcast(&Request::SetGit(&git), cx);
         cx.notify();

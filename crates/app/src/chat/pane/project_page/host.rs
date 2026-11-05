@@ -163,7 +163,8 @@ impl ChatPane {
         project.asked = asked;
         project.listing = true;
         cx.notify();
-        let path = project.path.clone();
+        // The host's folder: an offloaded project's mirror.
+        let path = project.cwd().to_path_buf();
         let attaching = crate::hosts::conn(cx, &host);
         cx.spawn(async move |pane, cx| {
             let (listed, bypass) = match attaching.await {
@@ -309,7 +310,7 @@ impl ChatPane {
         };
         project.bypass = Some(on);
         cx.notify();
-        let (path, asked) = (project.path.clone(), project.asked);
+        let (path, asked) = (project.cwd().to_path_buf(), project.asked);
         let attaching = crate::hosts::conn(cx, &host);
         cx.spawn_in(window, async move |pane, cx| {
             let set = match attaching.await {
@@ -333,7 +334,7 @@ impl ChatPane {
                 let Some(project) = pane
                     .empty
                     .as_mut()
-                    .filter(|project| project.asked == asked && project.path == path)
+                    .filter(|project| project.asked == asked && project.cwd() == path)
                 else {
                     return;
                 };

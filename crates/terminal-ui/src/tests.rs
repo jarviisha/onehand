@@ -48,3 +48,29 @@ fn a_stream_tab_shows_what_its_reader_gives_and_exits_at_eof(cx: &mut TestAppCon
     cx.update(|cx| assert!(view.read(cx).row_text(0).contains("hello")));
     assert_eq!(tab.process_id(), None);
 }
+
+/// A locked tab's writer drops what it is given, and passes it on again
+/// once unlocked.
+#[test]
+fn a_locked_writer_drops_what_is_typed() {
+    use std::io::Write as _;
+    use std::sync::{Arc, Mutex};
+    struct Sink(Arc<Mutex<Vec<u8>>>);
+    impl std::io::Write for Sink {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let got = Arc::new(Mutex::new(Vec::new()));
+    let (mut writer, shut) = super::gated(Sink(got.clone()));
+    writer.write_all(b"a").unwrap();
+    shut.store(true, std::sync::atomic::Ordering::Relaxed);
+    assert_eq!(writer.write(b"rm -rf\r").unwrap(), 7);
+    shut.store(false, std::sync::atomic::Ordering::Relaxed);
+    writer.write_all(b"b").unwrap();
+    assert_eq!(&*got.lock().unwrap(), b"ab");
+}

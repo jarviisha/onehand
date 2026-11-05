@@ -75,6 +75,10 @@ pub struct ProjectRoot {
     /// The command a workflow's work here must pass before it goes further:
     /// the app runs it itself rather than taking the agent's word for it.
     pub check: Option<String>,
+    /// The host this folder's sessions run on, and the mirror of it they run
+    /// in there, while it is offloaded. Only a folder on this machine is
+    /// offloaded: its tree, editor, terminal and git stay this machine's.
+    pub offload: Option<(HostName, PathBuf)>,
 }
 
 impl ProjectRoot {
@@ -90,6 +94,7 @@ impl ProjectRoot {
             transient: false,
             unattended: false,
             check: None,
+            offload: None,
         }
     }
 
@@ -102,6 +107,24 @@ impl ProjectRoot {
     /// names nothing here for git, a shell or a file read to reach.
     pub fn local_path(&self) -> Option<&Path> {
         self.host.is_none().then_some(self.path.as_path())
+    }
+
+    /// Where this root's sessions run when not here: a host root's own host
+    /// and folder, or an offloaded root's host and its mirror there.
+    pub fn session_host(&self) -> Option<(&HostName, &Path)> {
+        match (&self.host, &self.offload) {
+            (Some(host), _) => Some((host, &self.path)),
+            (None, Some((host, mirror))) => Some((host, mirror)),
+            (None, None) => None,
+        }
+    }
+
+    /// Whether the features that act on this machine's folder by themselves
+    /// (workflows, tasks, schedules, unattended runs, worktrees, the check
+    /// command, the remote bridge) reach it: a folder here whose sessions run
+    /// here too.
+    pub fn runs_here(&self) -> bool {
+        self.host.is_none() && self.offload.is_none()
     }
 
     /// Read the active session, if any. Index is kept in-bounds by mutators.
@@ -205,7 +228,7 @@ pub fn storage_for(root: &Path) -> PathBuf {
 /// then a digest of its whole path. One rule for every such name, so a
 /// workspace's folder and a project's issues can never disagree about which
 /// project a path is.
-pub(crate) fn stem_for(root: &Path) -> String {
+pub fn stem_for(root: &Path) -> String {
     let name = root
         .file_name()
         .map(|s| slug(&s.to_string_lossy()))
@@ -297,8 +320,22 @@ impl Workspace {
             .into_iter()
             .map(|(path, check)| (key(path), check))
             .collect();
+        let offloaded: Vec<_> = cfg
+            .offloaded
+            .into_iter()
+            .filter_map(|(path, on)| match parse_root_key(Path::new(&on)) {
+                (Some(host), mirror) => Some((key(path), (host, mirror))),
+                (None, _) => None,
+            })
+            .collect();
         for root in &mut roots {
             let own = (root.host.clone(), root.path.clone());
+            // Only a folder here is offloaded; a hand-edited entry naming a
+            // host's folder is passed over.
+            root.offload = offloaded
+                .iter()
+                .find(|(k, _)| *k == own && root.host.is_none())
+                .map(|(_, on)| on.clone());
             root.pinned = pinned.contains(&own);
             root.unattended = unattended.contains(&own);
             root.check = checks
@@ -356,6 +393,14 @@ impl Workspace {
             checks: kept
                 .iter()
                 .filter_map(|root| Some((root_key_of(root), root.check.clone()?)))
+                .collect(),
+            offloaded: kept
+                .iter()
+                .filter(|root| root.host.is_none())
+                .filter_map(|root| {
+                    let (host, mirror) = root.offload.as_ref()?;
+                    Some((root_key_of(root), host_path(Some(host), mirror)))
+                })
                 .collect(),
         }
     }

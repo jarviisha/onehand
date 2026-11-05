@@ -345,6 +345,7 @@ fn from_config_dedupes_and_follows_active_path() {
         pinned: Vec::new(),
         unattended: Vec::new(),
         checks: Default::default(),
+        offloaded: Default::default(),
     };
     let ws = Workspace::from_config(cfg, PathBuf::from("/store"));
     assert_eq!(ws.roots.len(), 2);
@@ -397,6 +398,7 @@ fn a_nonsense_layout_is_clamped_but_its_flags_are_kept() {
         pinned: Vec::new(),
         unattended: Vec::new(),
         checks: Default::default(),
+        offloaded: Default::default(),
     };
     let ws = Workspace::from_config(cfg, PathBuf::from("/store"));
     assert!(ws.layout.workbench_w >= 120.0);
@@ -434,6 +436,7 @@ fn from_config_clamps_out_of_bounds_active() {
         pinned: Vec::new(),
         unattended: Vec::new(),
         checks: Default::default(),
+        offloaded: Default::default(),
     };
     let ws = Workspace::from_config(cfg, PathBuf::from("/store"));
     assert_eq!(ws.active_root, 0);
@@ -583,4 +586,40 @@ fn a_host_folder_is_named_on_its_host() {
     let vps = HostName("vps".into());
     assert_eq!(host_path(Some(&vps), Path::new("/srv/app")), "vps:/srv/app");
     assert_eq!(host_path(None, Path::new("/srv/app")), "/srv/app");
+}
+
+#[test]
+fn an_offloaded_root_is_kept_with_its_host_and_mirror() {
+    let mut ws = Workspace::seeded("/a");
+    ws.add_root("/b");
+    let on = (HostName("box".into()), PathBuf::from("/srv/mirrors/l/b-1"));
+    ws.roots[1].offload = Some(on.clone());
+    let cfg = ws.to_config();
+    assert_eq!(
+        cfg.offloaded.get(&PathBuf::from("/b")).map(String::as_str),
+        Some("box:/srv/mirrors/l/b-1")
+    );
+    let back = Workspace::from_config(cfg, PathBuf::from("/store"));
+    assert!(back.roots[0].offload.is_none());
+    assert_eq!(back.roots[1].offload, Some(on.clone()));
+    // Its sessions run in the mirror; its folder stays this machine's.
+    assert_eq!(back.roots[1].session_host(), Some((&on.0, on.1.as_path())));
+    assert_eq!(back.roots[1].local_path(), Some(Path::new("/b")));
+    assert!(!back.roots[1].runs_here() && back.roots[0].runs_here());
+}
+
+#[test]
+fn a_host_root_never_carries_an_offload() {
+    let mut ws = Workspace::seeded("/a");
+    ws.add_host_root(HostName("box".into()), PathBuf::from("/srv/p"));
+    let mut cfg = ws.to_config();
+    cfg.offloaded
+        .insert(PathBuf::from("box:/srv/p"), "box:/srv/m".into());
+    let back = Workspace::from_config(cfg, PathBuf::from("/store"));
+    assert!(back.roots[1].offload.is_none());
+    assert_eq!(
+        back.roots[1].session_host(),
+        Some((&HostName("box".into()), Path::new("/srv/p")))
+    );
+    assert!(back.roots[0].session_host().is_none());
 }

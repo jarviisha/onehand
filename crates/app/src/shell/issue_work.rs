@@ -174,7 +174,7 @@ impl Shell {
             .workspace
             .roots
             .iter()
-            .filter(|root| set_up && !root.transient)
+            .filter(|root| set_up && !root.transient && root.runs_here())
             .filter_map(|root| root.local_path())
             .filter(|path| self.window.git.contains_key(*path))
             .map(Path::to_path_buf)
