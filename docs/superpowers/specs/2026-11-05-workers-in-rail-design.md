@@ -80,7 +80,12 @@ says it is a worker and which lead coordinates it.
 - **Nested rows do not drag** and are not counted in their own project's badge or fold: their
   place, fold and badge follow the lead's project (no double count).
 - **The band when held but not offered** (lead switched off): *You hold this worker*, no
-  button. A lead in another window: the band still names it, without *Back to lead*.
+  button. A lead in another window: *Its lead is coordinating this worker*, without *Back to
+  lead* (this pane does not know the lead's name).
+- **A worker stands for its lead's project** (added after review): folding from its row folds
+  the lead's project, *New* beside a worker on screen starts in the lead's project (never the
+  worker's transient worktree, which is not saved), and closing the worker on screen shows its
+  lead. A worker that leads workers shows the lead's strip, not the band.
 - **Arrival:** `Shell::turn_to_lead` goes, so arriving at a worker shows it; `mru_order` stops
   filtering workers (`Ctrl+Tab` stays per project, so it reaches only a worker sharing the
   project); `release_workers` on close is reviewed with the region's removal.

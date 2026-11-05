@@ -250,8 +250,21 @@ impl Shell {
 
     /// Close session `uid` and its agent, no question asked.
     pub(super) fn end_session(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
+        // A worker on screen closing gives the pane back to its lead rather
+        // than to its worktree, emptied.
+        let shown = self
+            .window
+            .workspace
+            .active_root()
+            .and_then(|root| root.active_session())
+            .is_some_and(|session| session.uid == uid);
+        let lead = crate::control::lead_of(uid).filter(|_| shown);
         if !self.drop_session(uid, cx) {
             return;
+        }
+        if let Some((root, session)) = lead.and_then(|lead| self.locate(lead)) {
+            self.window.workspace.select_root(root);
+            self.window.workspace.select_session(session);
         }
         // No toast: the row leaving the rail and the pane moving to whatever is
         // left say it, where removing a project has to announce itself because
@@ -542,6 +555,7 @@ impl Shell {
         let Some(spec) = Shared::global(cx).agents.get(idx).cloned() else {
             return;
         };
+        self.leave_worker_home();
         let Some(uid) = self.mint_session(spec, window, cx) else {
             return;
         };
@@ -549,6 +563,20 @@ impl Shell {
         self.chat.update(cx, |pane, _| pane.watch_next(uid, id));
         self.show_active_session(window, cx);
         cx.notify();
+    }
+
+    /// Beside a worker on screen, select its lead's project, where a new
+    /// session belongs: the worker's worktree is kept for it alone.
+    fn leave_worker_home(&mut self) {
+        let workspace = &self.window.workspace;
+        let home = workspace
+            .active_root()
+            .and_then(|root| root.active_session())
+            .and_then(|session| self.home_of(session.uid))
+            .filter(|home| *home != workspace.active_root);
+        if let Some(home) = home {
+            self.window.workspace.select_root(home);
+        }
     }
 
     /// Add a session running `spec` on the active root, not yet shown, and
@@ -591,6 +619,7 @@ impl Shell {
             );
             return None;
         };
+        self.leave_worker_home();
         let uid = self.mint_session(spec, window, cx)?;
         if let Some(archive) = archive {
             self.chat

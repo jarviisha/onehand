@@ -118,7 +118,9 @@ tree, which the cap never cuts. The *Needs attention* filter and a folded projec
 most urgent state of the lead and its workers (by that order: lost, failed, needs input, running,
 done unread, then waiting for its host, the calmest), the badge on the lead's project only, and
 *N need attention* counts a worker waiting on the person; a session waiting for its host is never
-counted, since it moves on by itself. A worker whose lead is in another window is a row of its own. Its
+counted, since it moves on by itself. A worker whose lead is in another window is a row of its own.
+A worker stands for its lead's project: folding from its row folds that project, *New* beside a
+worker on screen starts in it, and closing the worker on screen shows its lead. Its
 row's menu reads *Restart the host service…* in place of *Restart the agent*. A host session's row
 menu ends on *End on <host>…*, in the danger ink, after *Close session*. A worktree project holding
 nothing but such workers is left out, and shows no row while one of them is on screen. When the
@@ -209,9 +211,9 @@ leads workers, the lead's strip stands on the card, narrower than it, one line a
 workers*, a count per state that has any, most urgent first, in its mark and ink, and at the end,
 in the warning ink, *<name> needs you* for the most urgent worker waiting on the person, when one
 does. It stays while the workers' region shows. Pressed, the most urgent worker shows in the pane.
-While the session on screen is a worker, a band stands there on the same surface instead: *<lead>
-is coordinating this worker* and *Back to lead*, which shows the lead (the button only while the
-lead is a session of this window); once the person has sent the worker a prompt, *You hold this
+While the session on screen is a worker leading none, a band stands there on the same surface instead: *<lead>
+is coordinating this worker* and *Back to lead*, which shows the lead (*Its lead* and no button
+while the lead is a session of another window); once the person has sent the worker a prompt, *You hold this
 worker* and *Give back to the lead*, the button only while giving back is offered.
 *Run a workflow…* (the `+` menu, the
 keymap, the Workflows page's *Run…*) opens the launcher, and an issue's *Run workflow…* its start

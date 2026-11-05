@@ -1,7 +1,7 @@
 //! The band over a worker's composer: which lead coordinates it and the way
 //! back to that lead, or, once the person has written to it, that they hold
 //! it and the way to give it back. It stands where a lead's strip stands, on
-//! the same surface; a worker leads none, so the two never meet.
+//! the same surface, and gives way to it on a worker that leads workers.
 
 use super::lead_strip::over_composer;
 use super::{ChatPane, ChatPaneEvent};

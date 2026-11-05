@@ -627,7 +627,7 @@ gpui::actions!(
 
 impl Shell {
     /// Where *New* starts: the keyboard's project while the list has the
-    /// keyboard, else the one on screen.
+    /// keyboard, else the one on screen; a worker's is its lead's.
     fn rail_target(&self, list: &List, focused: bool) -> Option<usize> {
         let workspace = &self.workspace_window().workspace;
         match self.rail_state().cursor.as_ref().filter(|_| focused) {
@@ -635,11 +635,17 @@ impl Shell {
             Some(Cursor::Session(uid)) => list
                 .items
                 .iter()
-                .find(|item| item.uid == *uid)
-                .map(|item| item.root),
+                .any(|item| item.uid == *uid)
+                .then(|| self.home_of(*uid))
+                .flatten(),
             None => None,
         }
-        .or_else(|| workspace.active_root().map(|_| workspace.active_root))
+        .or_else(|| {
+            let root = workspace.active_root()?;
+            root.active_session()
+                .and_then(|session| self.home_of(session.uid))
+                .or(Some(workspace.active_root))
+        })
     }
 
     /// Show a session from its row, and put the rail's keyboard row there,
@@ -704,8 +710,9 @@ impl Shell {
         let roots = &self.workspace_window().workspace.roots;
         let path = match self.rail_state().cursor.clone() {
             Some(Cursor::Project(path)) => path,
-            Some(Cursor::Session(uid)) => match self.find_session(uid) {
-                Some((root, _)) => roots[root].path.clone(),
+            // A worker folds with its lead's project, which it is drawn in.
+            Some(Cursor::Session(uid)) => match self.home_of(uid) {
+                Some(root) => roots[root].path.clone(),
                 None => return,
             },
             None => return,

@@ -35,6 +35,16 @@ impl Shell {
                     .map(|si| (ri, si))
             })
     }
+
+    /// The project session `uid` stands under in the rail: its lead's for a
+    /// worker whose lead is in this window, else its own. A worker's own is
+    /// mostly a worktree kept for it alone, which nothing else belongs in.
+    pub(crate) fn home_of(&self, uid: u64) -> Option<usize> {
+        crate::control::lead_of(uid)
+            .and_then(|lead| self.locate(lead))
+            .or_else(|| self.locate(uid))
+            .map(|(root, _)| root)
+    }
 }
 
 impl Shell {
