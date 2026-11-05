@@ -123,7 +123,8 @@ A worker stands for its lead's project: folding from its row folds that project,
 worker on screen starts in it, and closing the worker on screen shows its lead. Its
 row's menu reads *Restart the host service…* in place of *Restart the agent*. A host session's row
 menu ends on *End on <host>…*, in the danger ink, after *Close session*. A worktree project holding
-nothing but such workers is left out, and shows no row while one of them is on screen. When the
+nothing but such workers is left out, and shows no row while one of them is on screen; closing the
+last session of a project added for a worker or a run alone takes that project with it. When the
 lead closes or is lost, its workers are listed again under their project.
 
 ## Agent pane header

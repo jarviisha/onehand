@@ -177,6 +177,8 @@ offered `open_worker`, and `open_session` takes none of its further arguments.
   not trace, such as `systemd --user` or `ssh-agent`, which an agent never is), refuses it as
   unknown, as does a process table that could not be read at all. Nothing is opened either way.
 - A worker whose window closed holds its folder no longer: the next open lets it go.
+- A worker the person closes takes its project with it when that project was added for it and
+  holds nothing else; the worktree stays on disk.
 - The checks read git, the file system and the process table off the UI thread.
 - **The answer comes once the worker is up**, within 120 seconds of the call: its agent connected,
   put in its mode and on its model one pick at a time, each answered, then its prompt accepted.

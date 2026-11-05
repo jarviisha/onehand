@@ -175,3 +175,22 @@ fn a_host_root_reads_its_git_status_unless_a_local_root_has_its_path() {
     let facts = crate::chat::pane::ProjectFacts::of(&ws.roots[2], true);
     assert!(!facts.is_repo);
 }
+
+/// A worker's worktree, added for it alone, goes when its last session
+/// closes; a project the person added stays empty.
+#[test]
+fn a_transient_project_is_left_behind_once_empty() {
+    use onehand_core::config::AgentSpec;
+    use onehand_core::workspace::Workspace;
+    let mut ws = Workspace::seeded("/tmp");
+    let wt = ws
+        .add_transient_root("/tmp/wt", AgentSpec::default(), 7)
+        .unwrap();
+    assert!(!sessions::left_behind(&ws, wt), "a session is still on it");
+    ws.close_session(wt, 0);
+    assert!(sessions::left_behind(&ws, wt));
+    assert!(
+        !sessions::left_behind(&ws, 0),
+        "the person's own project stays"
+    );
+}
