@@ -1,16 +1,19 @@
 //! The project page's boxes on an offloaded project: which side holds its
 //! code and when the code last moved, and, while a copy back stands stopped,
-//! what changed here and the two ways to settle it.
+//! what changed here and the two ways to settle it. On a branch, the one box
+//! says what the host's branch has to merge, and sends this folder's commit
+//! up when asked.
 
 use super::super::{ChatPane, ChatPaneEvent};
 use crate::controls::{Refuses as _, Short as _};
-use crate::offload::{Moving, Offload};
+use crate::offload::{BranchState, Moving, Offload};
 use crate::page_parts::page_card;
 use gpui::{App, Context, Div, IntoElement as _, ParentElement as _, Styled as _, div};
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme as _, StyledExt as _};
 use onehand_core::host::offload::Changes;
 use onehand_core::host::wire::Holder;
+use onehand_core::workspace::HostName;
 use std::path::Path;
 
 /// How many of a stopped copy's changes the box lists.
@@ -59,10 +62,83 @@ fn changed_lines(changes: &Changes) -> Vec<String> {
         .collect()
 }
 
+/// What the host's `branch` has that `HEAD` does not, once counted.
+fn branch_line(branch: &str, ahead: Option<usize>) -> Option<String> {
+    Some(match ahead? {
+        0 => format!("{branch} has nothing this branch does not"),
+        1 => format!("{branch} has 1 commit this branch does not"),
+        n => format!("{branch} has {n} commits this branch does not"),
+    })
+}
+
+/// What the branch box draws, read off the project's entry.
+struct BranchBox {
+    host: HostName,
+    branch: BranchState,
+    moving: Option<Moving>,
+    failed: Option<String>,
+}
+
+/// The box *On <host>* for a project offloaded on `branch`: no key, so
+/// only what its branch has to merge and the way to send this folder up.
+fn branch_box(path: &Path, on: BranchBox, cx: &mut Context<ChatPane>) -> Div {
+    let BranchBox {
+        host,
+        branch,
+        moving,
+        failed,
+    } = on;
+    let name = branch.name.clone();
+    let muted = cx.theme().muted_foreground;
+    let line = |text: String, cx: &App| {
+        div()
+            .text_sm()
+            .text_color(cx.theme().foreground)
+            .child(text)
+    };
+    let danger = crate::theme::status_ink(cx).danger;
+    let update = crate::controls::action("offload-update-host")
+        .secondary()
+        .short()
+        .label("Update host from laptop")
+        .loading(moving == Some(Moving::Up))
+        .refuses((moving == Some(Moving::Back)).then_some("The branch is being fetched"))
+        .on_click(cx.listener({
+            let path = path.to_path_buf();
+            move |_: &mut ChatPane, _, _, cx| {
+                cx.emit(ChatPaneEvent::UpdateHost(path.clone()));
+            }
+        }));
+    page_card(format!("On {host}"), None, None, cx).child(
+        div()
+            .v_flex()
+            .gap_1()
+            .child(line(
+                format!("Sessions on {host} work on {name}; this folder stays yours"),
+                cx,
+            ))
+            .children(branch_line(&name, branch.ahead).map(|text| line(text, cx)))
+            .children(failed.map(|why| div().text_xs().text_color(danger).child(why)))
+            .child(div().pt_2().child(update))
+            .child(div().text_xs().text_color(muted).child(format!(
+                "Merges this folder's last commit into {name}; what is not committed stays here"
+            ))),
+    )
+}
+
 /// The box *On <host>*, for the offloaded project at `path`, and the box
 /// *Bringing the code back stopped* under it while that stands.
 pub(super) fn offload_box(path: &Path, cx: &mut Context<ChatPane>) -> Option<Div> {
     let o = crate::offload::get(cx, path)?;
+    if let Some(branch) = o.branch.clone() {
+        let on = BranchBox {
+            host: o.host.clone(),
+            branch,
+            moving: o.moving,
+            failed: o.failed.clone(),
+        };
+        return Some(branch_box(path, on, cx));
+    }
     let muted = cx.theme().muted_foreground;
     let line = |text: String, cx: &App| {
         div()
@@ -158,7 +234,7 @@ pub(super) fn offload_box(path: &Path, cx: &mut Context<ChatPane>) -> Option<Div
 
 #[cfg(test)]
 mod tests {
-    use super::changed_lines;
+    use super::{branch_line, changed_lines};
     use onehand_core::host::offload::Changes;
 
     #[test]
@@ -185,6 +261,24 @@ mod tests {
                 "What is staged",
                 "The repository's settings",
             ]
+        );
+    }
+
+    #[test]
+    fn the_branch_box_counts_what_is_left_to_merge() {
+        let b = "onehand/box";
+        assert_eq!(branch_line(b, None), None);
+        assert_eq!(
+            branch_line(b, Some(0)).as_deref(),
+            Some("onehand/box has nothing this branch does not")
+        );
+        assert_eq!(
+            branch_line(b, Some(1)).as_deref(),
+            Some("onehand/box has 1 commit this branch does not")
+        );
+        assert_eq!(
+            branch_line(b, Some(3)).as_deref(),
+            Some("onehand/box has 3 commits this branch does not")
         );
     }
 }

@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 mod branch;
+pub(crate) use branch::BranchState;
 pub(crate) use branch::{offload_branch_to, track_branch, update_host};
 
 /// How often an offloaded project whose host holds the code is checked for
@@ -94,6 +95,15 @@ pub(crate) fn lock_line(host: &HostName) -> String {
 /// What a project's rail mark says while its host holds the code.
 pub(crate) fn mark_line(host: &HostName) -> String {
     format!("{host} has the code until its sessions finish")
+}
+
+/// What a project's rail mark says while its host's branch has `ahead`
+/// commits to merge.
+pub(crate) fn merge_line(branch: &str, host: &HostName, ahead: usize) -> String {
+    match ahead {
+        1 => format!("{branch} on {host} has 1 commit to merge"),
+        n => format!("{branch} on {host} has {n} commits to merge"),
+    }
 }
 
 /// `path`'s entry, if it is offloaded.

@@ -23,11 +23,21 @@ pub(crate) struct OffloadDraft {
     pub(crate) error: Option<String>,
     /// The host the code is going to, while it goes.
     pub(crate) sending: Option<HostName>,
+    /// Whether its host's sessions work on a branch of their own rather
+    /// than hand the code back and forth.
+    pub(crate) on_branch: bool,
     /// The aliases of the SSH config, read once as the form opens.
     pub(crate) aliases: Vec<String>,
     _aliases: Task<()>,
     _typing: Subscription,
     _sending: Option<Task<()>>,
+}
+
+/// What an offload that landed keeps of the project: what went, for a
+/// mirror, or the branch its host works on.
+pub(crate) enum Kept {
+    Mirror(onehand_core::host::offload::OffloadState),
+    Branch(String),
 }
 
 /// Why *Offload* cannot go yet: the host is unnamed, or `busy` sessions here
@@ -118,6 +128,7 @@ impl Shell {
             host,
             error: None,
             sending: None,
+            on_branch: false,
             aliases: Vec::new(),
             _aliases: aliases,
             _typing: typing,
@@ -142,6 +153,15 @@ impl Shell {
         }
     }
 
+    /// How the code comes back, picked in the form while nothing is sent.
+    pub(crate) fn pick_offload_mode(&mut self, on_branch: bool, cx: &mut Context<Self>) {
+        if let Some(draft) = self.offload_draft.as_mut().filter(|d| d.sending.is_none()) {
+            draft.on_branch = on_branch;
+            draft.error = None;
+            cx.notify();
+        }
+    }
+
     /// Put the form away. A send under way is dropped with it; what it had
     /// copied stays in the mirror, and the project stays here.
     pub(crate) fn cancel_offload(&mut self, cx: &mut Context<Self>) {
@@ -159,6 +179,7 @@ impl Shell {
         };
         let host = draft.host.read(cx).value().trim().to_string();
         let path = draft.root.clone();
+        let on_branch = draft.on_branch;
         if offload_refusal(&host, self.busy_here(&path, cx)).is_some() {
             return;
         }
@@ -166,7 +187,14 @@ impl Shell {
         let sending = cx.spawn_in(window, {
             let (path, host) = (path.clone(), host.clone());
             async move |shell, cx| {
-                let went = offload::offload_to(cx, path.clone(), host.clone()).await;
+                let went = match on_branch {
+                    true => offload::offload_branch_to(cx, path.clone(), host.clone())
+                        .await
+                        .map(|(mirror, branch)| (mirror, Kept::Branch(branch))),
+                    false => offload::offload_to(cx, path.clone(), host.clone())
+                        .await
+                        .map(|(mirror, state)| (mirror, Kept::Mirror(state))),
+                };
                 let _ = shell.update_in(cx, |shell: &mut Self, window, cx| {
                     shell.offload_landed(path, host, went, window, cx)
                 });
@@ -184,7 +212,7 @@ impl Shell {
         &mut self,
         path: PathBuf,
         host: HostName,
-        went: Result<(PathBuf, onehand_core::host::offload::OffloadState), String>,
+        went: Result<(PathBuf, Kept), String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -192,7 +220,7 @@ impl Shell {
             return;
         };
         draft.sending = None;
-        let (mirror, state) = match went {
+        let (mirror, kept) = match went {
             Ok(went) => went,
             Err(why) => {
                 draft.error = Some(why);
@@ -226,12 +254,19 @@ impl Shell {
         for uid in here {
             self.drop_session(uid, cx);
         }
+        let branch = match &kept {
+            Kept::Branch(branch) => Some(branch.clone()),
+            Kept::Mirror(_) => None,
+        };
         self.window.workspace.roots[idx].offload = Some(Offloaded {
             host: host.clone(),
             mirror: mirror.clone(),
-            branch: None,
+            branch,
         });
-        offload::track(cx, path, host, Some(state));
+        match kept {
+            Kept::Mirror(state) => offload::track(cx, path, host, Some(state)),
+            Kept::Branch(branch) => offload::track_branch(cx, path, host, branch),
+        }
         self.save_workspace_soon(cx);
         self.show_active_session(window, cx);
         self.sync_offload(cx);
@@ -254,13 +289,15 @@ impl Shell {
             return;
         };
         let path = root.path.clone();
-        if !offload::get(cx, &path).is_some_and(offload::Offload::here) {
-            window.push_notification(
-                crate::toast::warning(format!(
-                    "{host} has the code; it runs here again once its sessions finish"
-                )),
-                cx,
-            );
+        let kept = offload::get(cx, &path);
+        if !kept.is_some_and(offload::Offload::here) {
+            let why = match kept.is_some_and(|o| o.branch.is_some()) {
+                true => format!("{host}'s branch is moving; try again once it has"),
+                false => {
+                    format!("{host} has the code; it runs here again once its sessions finish")
+                }
+            };
+            window.push_notification(crate::toast::warning(why), cx);
             return;
         }
         let there: Vec<u64> = root.sessions.iter().map(|s| s.uid).collect();
@@ -348,6 +385,20 @@ impl Shell {
                 };
                 window.push_notification(toast, cx);
             });
+        })
+        .detach();
+    }
+
+    /// *Update host from laptop* on `path`, offloaded on a branch: how it
+    /// went stands on the project's page.
+    pub(crate) fn update_host_from_laptop(
+        &mut self,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.spawn_in(window, async move |_, cx| {
+            offload::update_host(cx, path).await
         })
         .detach();
     }
