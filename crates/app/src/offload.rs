@@ -420,6 +420,13 @@ type Came = Result<Option<OffloadState>, (String, Option<Box<OffloadState>>)>;
 fn landed(o: &mut Offload, came: Came) {
     o.moving = None;
     match came {
+        // Still stopped: nothing moved, and why the last try failed stands.
+        Ok(Some(mut state)) if state.stopped.is_some() => {
+            if let Some(was) = &o.state {
+                state.moved = was.moved;
+            }
+            o.state = Some(state);
+        }
         Ok(Some(state)) => {
             o.state = Some(state);
             o.failed = None;
@@ -475,7 +482,9 @@ pub(crate) async fn take_over(
         Some((o.host.clone(), sent))
     });
     let Some(Some((host, sent))) = claimed else {
-        return Err("The code is on its way already".into());
+        let why = "The code was moving; check again, then take it".to_string();
+        update(cx, &path, |o| o.failed = Some(why.clone()));
+        return Err(why);
     };
     let came = match attach(cx, &host).await {
         Ok(conn) => bring_back(cx, &conn, &path, &host, sent, Some(&into)).await,
@@ -484,13 +493,24 @@ pub(crate) async fn take_over(
     let said = match &came {
         Ok(Some(state)) if state.key == Holder::Laptop => Ok(()),
         Ok(Some(_)) => Err(format!(
-            "A prompt went to {host} meanwhile; it keeps the code"
+            "{host} kept the code; the next check brings it back"
         )),
         Ok(None) => Err(format!(
             "{host} is working on the code again; wait for it to finish"
         )),
         Err((why, _)) => Err(why.clone()),
     };
+    // Once the backup is made, a failure after it still says where it is:
+    // this machine's versions may now be only there.
+    let at = into.clone();
+    let backed = cx
+        .background_executor()
+        .spawn(async move { at.is_dir() })
+        .await;
+    let said = said.map_err(|why| match backed {
+        true => format!("{why}; this machine's versions are in {}", into.display()),
+        false => why,
+    });
     // Said once, on the project's page where it was pressed.
     update(cx, &path, |o| {
         landed(o, came);

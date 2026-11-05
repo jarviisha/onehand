@@ -510,7 +510,8 @@ In the window (`crates/app/src/offload.rs`, `crates/app/src/shell/offload.rs`):
   (`ProjectRoot::runs_here`).
 - **Settling a copy back that stopped.** The project page's box *Bringing the code back stopped*
   lists what changed here. *Check again* attaches if need be and checks as a turn end does; a
-  change put back lets the code come. *Take the host's code…* asks first, naming the backup
+  file added here and removed again, or one deleted and restored, lets the code come (an edit
+  undone still reads as a change, the manifest holding sizes and times). *Take the host's code…* asks first, naming the backup
   folder, `backups/<date-time>` in the project's storage (`offload::backup_dir`); yes checks once
   more, backs up what changed then (a list that grew since the box was drawn is backed up whole),
   takes the host's code over it (`take_back_blocking`) and hands the key back as any copy back
