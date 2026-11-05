@@ -258,7 +258,9 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **Restarting the host service onto another build ends every host terminal without asking.** The
   build check and the restart question count only sessions mid-turn, and a service that exits
   hangs up each terminal's shell and the command in it. Counting the host's terminals as busy, so
-  that a host with terminals asks first, is not built.
+  that a host with terminals asks first, is not built. The attach the offload check makes by
+  itself, for a host holding a project's code, restarts it so too, with nothing of that host on
+  screen.
 - **Two windows on one host project take the terminal from each other:** a newer watch wins and
   the other window's tab ends.
 - **After a host project is removed, its tabs' reader threads stay blocked** until the terminal
@@ -351,9 +353,6 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **A past conversation from before a project was offloaded opens readable, but its agent cannot
   carry it on:** it resumes on the host, which has no record of it, and fails there. A new session
   is the way to go on.
-- **The code comes back only while its host is attached.** A check never attaches by itself, so an
-  offloaded project whose sessions nobody shows stays locked until its page or a session on it is
-  shown, or *Check again* is pressed.
 - **An offloaded project's prompt queued behind a turn can be refused by the host** when the code
   came back at that turn's end before the queued prompt went: the transcript says to send it
   again, and sending it again sends the code up first.
@@ -381,5 +380,9 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **A sync mode changes only through *Run here again*** and offloading again.
 - **The branch count on a project's page waits for the next check** (a turn's end, or the 30 s
   check); showing the page does not fetch.
-- **Offloaded projects are checked one after another,** so one copy that hangs holds back the
-  checks of the others. The code comes back at a turn end or the 30 s check, not at an attach.
+- **A host another machine attached is never attached again by the offload check,** for this
+  run, even after that machine lets it go: a project whose code it holds stays locked until
+  *Check again* or anything else attaches to it.
+- **Offloaded projects are checked one after another,** so one copy, or one attach to a host out
+  of reach, that hangs holds back the checks of the others. The code comes back at a turn end or
+  the 30 s check, not at an attach.

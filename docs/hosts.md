@@ -530,7 +530,9 @@ In the window (`crates/app/src/offload.rs`, `crates/app/src/shell/offload.rs`):
   in the composer and the key here; a manifest of code that went up is kept whatever the key's
   hand-over said. With the key on the host the prompt goes at once.
 - **The code comes back** when a turn of a session on it ends here, and every 30 s
-  (`OFFLOAD_POLL`) while the host is attached: the host asked whether anything works in the
+  (`OFFLOAD_POLL`) while the host holds it, the poll attaching to the host by itself when it is
+  not attached (an attach that never takes a host another machine holds; one the host refuses
+  stands in the *On <host>* box and is not tried again until *Check again*): the host asked whether anything works in the
   mirror, then `bring_back_blocking`, then the key handed back with the generation seen before the
   copy. A stop keeps the changes and the key on the host; a refused hand-back keeps the new
   manifest and the key on the host, and the next check copies again. Nothing is said on success.
