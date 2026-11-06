@@ -84,8 +84,9 @@ draft that phase 1 tried, phase 2 kept, changed or dropped each rule:
   more than one part of a front end, each exactly once. "Driver" became **carrier**.
 - **S8 (enforcement):** visibility only. No guard is added until a mistake recurs, the bar every
   guard in `guards.rs` meets.
-- **New, rule 12:** a model does no I/O. `Chat`'s requests to its agent and its drop save are moving
-  into effects.
+- **New, rule 12:** a model does no I/O and reads no clock. `Chat`'s requests to its agent and its
+  drop save are moving into effects. `Chat` also reads the wall clock and `Instant::now`, which the
+  review after phase 1 found; no phase moves that yet.
 
 
 ## Inventory: what moves where

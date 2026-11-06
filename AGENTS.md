@@ -72,7 +72,7 @@ Availability or installation does not authorize a skill's side effects.
 | Tool or workflow | Fit for this repository |
 |---|---|
 | `ui` | Any visible change (tokens, controls, layout, states, keys and words) and, before it is finished, the checklist and the checks. |
-| `drive` | Only when the owner asks to test in the app: it runs onehand in a headless sway session and drives it end to end. |
+| `drive` | Only when the owner asks to test in the app: it runs onehand in a headless sway session and drives it end to end. Unrelated to a *drive*, the glossary's term. |
 | Matt Pocock review, debugging, domain modeling | Use for the requested concern; keep the existing glossary and document ownership. Tracker/triage workflows publish to this repository's GitHub issues: a spec gets `ready-for-agent`, never `auto` (the trigger label: an unattended run would claim it). A proposal under `docs/proposals/` keeps its own table of which step has a spec. |
 | Matt Pocock `setup-pre-commit`, TypeScript setup | Do not apply npm/Husky/Prettier or TypeScript defaults to this Rust workspace. Use the Makefile and Cargo checks. |
 | `ponytail` | Simplify within the requested behaviour. Preserve the module seams, guards, rendering bounds and deliberate exceptions; fewer files is not a reason to bypass them. |

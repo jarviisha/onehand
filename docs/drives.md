@@ -89,6 +89,7 @@ fn end_batch(&mut self) -> Vec<Effect>;
   answers it (`Next`); how many events a batch takes at most is the carrier's cap.
 - **Effects are ordered.** "Do A, then B once A answers" is A now, and B on A's input.
 - **A drive never reads the clock.** A wait is an `Arm` effect answered by an `Elapsed` input.
+  Its model reads no clock either; `Chat` still does (rule 12).
 - `Effect` and `Input` need not be `Clone` or `PartialEq`; tests compare what they need.
 
 ### 5. A late answer is handled as its effect declares
@@ -173,12 +174,21 @@ is GPUI's (`ChatSession`'s are in `crates/app/src/chat/session/tests.rs`). They 
 - after a session closes, nothing of it stays running and no effect runs for it;
 - deferred work runs after the update that asked for it, never inside it.
 
-### 12. A model does no I/O
+Not built yet for every carrier or every check. `ChatSession`'s tests hold order and exactly
+once, a failed save reaching the drive, the quiet wait and its cancel at the stream's end, and a
+close with a save in flight and a wait armed. Still untested: `SendCode`'s late answer and the
+pane's half of the session (`ChatPane::carry`), deferred work, and the run's carrier
+(`crates/app/src/task/driver.rs`), which has no contract tests yet.
 
-A model changes itself and answers; it sends nothing and writes nothing. Two things in `Chat`
-still do I/O, and are moving into effects:
-- the requests it sends to its agent (`Chat::submit`, `Chat::cancel_turn`);
-- the save its drop writes when a session closes.
+### 12. A model does no I/O and reads no clock
+
+A model changes itself and answers; it sends nothing, writes nothing, and is told the time rather
+than reading it. `Chat` still breaks this in three ways:
+- the requests it sends to its agent (`Chat::submit`, `Chat::cancel_turn`), moving into effects;
+- the save its drop writes when a session closes, moving into effects;
+- the clock: it stamps events, prompts and saves with the wall clock (`chat::store::now_secs`,
+  unless a host said the time), and times running steps with `Instant::now`. No phase moves
+  this yet.
 
 ## A new feature
 
