@@ -3,7 +3,7 @@ use crate::acp::{
     ToolStatus,
 };
 use crate::attachment::AttachmentSnapshot;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::time::Instant;
 
 /// Max bytes of terminal output retained per terminal (tail kept).
@@ -34,13 +34,6 @@ pub struct PermItem {
     pub resolved: Option<String>,
     /// The subagent that asks, by name; `None` when it is the agent itself.
     pub asker: Option<String>,
-    /// Whether the record an answered permission leaves is open to the whole
-    /// command and where it ran.
-    ///
-    /// Held on the item and not on the row that draws it, for the reason every
-    /// other fold in this conversation is: the row is rebuilt from scratch on
-    /// every frame.
-    pub expanded: bool,
 }
 
 impl PermItem {
@@ -90,15 +83,6 @@ pub struct AskItem {
     pub resolved: Option<String>,
     /// Whether the settled record of this exchange is showing its
     /// question-and-answer pairs.
-    ///
-    /// **Only ever read once the form is answered.** While it is open the card
-    /// is on screen whole and there is nothing to unfold; what this folds is
-    /// the record left behind afterwards, which is one line by default and the
-    /// list of what was asked and what was chosen when opened. Held here for
-    /// the reason every other fold in this conversation is: the row is rebuilt
-    /// from scratch on every frame, so a flag owned by the view lasts exactly
-    /// as long as nothing else on screen changes.
-    pub expanded: bool,
     /// Which question the card is showing. A multi-question form renders as a
     /// tab strip (one tab per field) with only the active field's choices
     /// below it — stacking them all made a form taller than the pane, and the
@@ -149,7 +133,6 @@ impl AskItem {
             picked: vec![Vec::new(); n],
             custom: vec![String::new(); n],
             resolved: None,
-            expanded: false,
             tab: 0,
             cursor: 0,
             accepted: false,
@@ -523,8 +506,6 @@ pub struct Thought {
     pub started: Option<Instant>,
     /// Final duration once the thought is done (persisted); `None` while live.
     pub elapsed_secs: Option<u64>,
-    /// What the user chose by opening or closing it; `None` until they do.
-    pub fold: Option<bool>,
 }
 
 impl Thought {
@@ -533,7 +514,6 @@ impl Thought {
             md: Md::parse(s),
             started: Some(Instant::now()),
             elapsed_secs: None,
-            fold: None,
         }
     }
 
@@ -541,11 +521,6 @@ impl Thought {
     /// without a duration does not read as live for the rest of its life.
     pub fn is_running(&self) -> bool {
         self.elapsed_secs.is_none() && self.started.is_some()
-    }
-
-    /// Open while it runs and closed once done, unless the user said otherwise.
-    pub fn is_open(&self) -> bool {
-        self.fold.unwrap_or_else(|| self.is_running())
     }
 }
 
@@ -658,12 +633,14 @@ pub struct ToolItem {
     /// when the tool reports new content, which is exactly where this is
     /// filled.
     pub diff_rows: HashMap<usize, Vec<crate::diff::Row>>,
-    /// What the user chose by opening or closing this card; `None` until
-    /// they do, or until a failure opens it for them.
-    pub(crate) fold: Option<bool>,
-    /// Content sections whose OUT well is un-folded past the threshold,
-    /// keyed by the section's index in `call.content`.
-    pub out_open: HashSet<usize>,
+    /// The step failed while it was being shown, so it opens by itself, to
+    /// what it said before it stopped.
+    ///
+    /// Opened for the reader rather than forced open: a terminal status that
+    /// forced the row open would force it open for ever, so the control that
+    /// shuts it would do nothing in the one state that most wants a way out.
+    /// The reader's own choice, kept by the front end, wins over this.
+    pub(crate) failed_open: bool,
     /// When this step began, for the duration below.
     ///
     /// **Not persisted, and it must not be.** An `Instant` is a reading of a
@@ -722,8 +699,7 @@ impl ToolItem {
             call,
             diff_summary,
             diff_rows,
-            fold: None,
-            out_open: HashSet::new(),
+            failed_open: false,
         }
     }
 
@@ -782,33 +758,23 @@ impl ToolItem {
         self.diff_rows = Self::hunks(&self.call);
         self.diff_summary = Self::summarize_diffs(&self.call, &self.diff_rows);
     }
-    /// Live work starts open and settled work closed; the user's choice,
-    /// once made, wins either way, while it runs too.
-    pub fn is_open(&self) -> bool {
-        self.fold
-            .unwrap_or(matches!(self.call.status, ToolStatus::InProgress))
+    /// Whether the card is open until the reader says otherwise: while it
+    /// runs, and once a failure opened it.
+    pub fn opens_by_itself(&self) -> bool {
+        self.failed_open || matches!(self.call.status, ToolStatus::InProgress)
     }
 }
 
-/// The agent's plan/checklist (Claude Code's TodoWrite) plus its fold state —
-/// one card per turn, replaced in full on every `plan` update.
+/// The agent's plan/checklist (Claude Code's TodoWrite): one card per turn,
+/// its entries replaced in full on every `plan` update. Open until the reader
+/// closes it: a plan is what the turn is working through.
 pub struct PlanItem {
     pub entries: Vec<PlanEntry>,
-    /// The user closed this card.
-    pub(crate) fold: bool,
 }
 
 impl PlanItem {
     pub fn new(entries: Vec<PlanEntry>) -> Self {
-        Self {
-            entries,
-            fold: false,
-        }
-    }
-    /// Open until the user closes it: a plan is what the turn is working
-    /// through, so it stays in sight whether or not a step is running.
-    pub fn is_open(&self) -> bool {
-        !self.fold
+        Self { entries }
     }
 }
 

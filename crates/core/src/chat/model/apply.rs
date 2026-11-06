@@ -359,7 +359,6 @@ impl Chat {
                     req,
                     resolved: None,
                     asker,
-                    expanded: false,
                 }))
             }
             AcpEvent::Elicitation(req) => {
@@ -649,7 +648,7 @@ pub(super) fn tool_call(items: &mut Vec<ChatItem>, tc: ToolCall) {
         let mut item = ToolItem::new(tc);
         // The same rule for a step that arrives already failed, which is how
         // an adapter reports one it never started.
-        item.fold = (item.call.status == ToolStatus::Failed).then_some(true);
+        item.failed_open = item.call.status == ToolStatus::Failed;
         items.push(ChatItem::Tool(item));
     }
 }
@@ -681,16 +680,13 @@ pub(super) fn tool_update(items: &mut Vec<ChatItem>, tu: ToolCallUpdate) {
                     // -- so making them ask is a click charged for the case
                     // that already went badly.
                     //
-                    // Seeded into the fold the user owns rather than
-                    // OR-ed into `is_open`, which is where this was first
-                    // written and is a trap: a terminal status that forces
-                    // the row open forces it open *for ever*, so the
-                    // control that shuts it does nothing and the one state
-                    // that most wants a way out is the one with none.
-                    // Running gets away with the OR because it stops being
-                    // true on its own.
+                    // It opens by itself, and the reader's choice, kept by
+                    // the front end, still wins: a terminal status that
+                    // forced the row open would force it open *for ever*, so
+                    // the control that shuts it would do nothing in the one
+                    // state that most wants a way out.
                     if status == ToolStatus::Failed && t.call.status != ToolStatus::Failed {
-                        t.fold.get_or_insert(true);
+                        t.failed_open = true;
                     }
                     t.call.status = status;
                 }
@@ -760,7 +756,7 @@ pub(super) fn settle_steps(items: &mut [ChatItem]) {
             tool.settle_clock();
             // The same seed a failure arriving as an update leaves, so a
             // reader can see what the step had said before it stopped.
-            tool.fold.get_or_insert(true);
+            tool.failed_open = true;
         }
     }
 }

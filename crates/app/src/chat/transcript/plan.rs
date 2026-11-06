@@ -20,15 +20,15 @@ const MAX_TODO_ITEMS: usize = 50;
 /// The agent's checklist: *Plan* and how much of it is done, opening into a
 /// step per line, each marked by its state.
 ///
-/// Open until the user closes it (`PlanItem::is_open`): it is what the turn is
-/// working through, so it stays in sight.
+/// Open until the user closes it: it is what the turn is working through, so
+/// it stays in sight.
 pub(super) fn plan(
     session: &Entity<ChatSession>,
     p: &PlanItem,
     target: TranscriptItemId,
     cx: &App,
 ) -> impl IntoElement + use<> {
-    let open = p.is_open();
+    let open = session.read(cx).item_is_open(target, true);
     let done = p
         .entries
         .iter()
@@ -44,7 +44,7 @@ pub(super) fn plan(
             let session = session.clone();
             move |_, _, cx: &mut App| {
                 session.update(cx, |s, cx| {
-                    s.chat.chat_mut().toggle_tool(target);
+                    s.toggle_item(target, true);
                     cx.notify();
                 });
             }

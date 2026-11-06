@@ -290,6 +290,8 @@ impl Viewport {
         // Asked with the default in hand, open while anything in the run is
         // running, and answered with the reader's own choice once they made one.
         is_open: impl Fn(TranscriptItemId, bool) -> bool,
+        // One item's fold, asked with what the item does by itself.
+        item_open: impl Fn(TranscriptItemId, bool) -> bool,
         // Asked with the default in hand, since what "untouched" means for a
         // turn summary changes as the conversation grows. See `close_turns`.
         turn_open: impl Fn(TranscriptItemId, bool) -> bool,
@@ -320,7 +322,8 @@ impl Viewport {
                     strip: None,
                     changes: None,
                     open: true,
-                    kind: item(chat, target).map_or(RunKind::Block, single_kind),
+                    kind: item(chat, target)
+                        .map_or(RunKind::Block, |it| single_kind(target, it, &item_open)),
                 },
                 Cluster::Activity { members } => {
                     let anchor = members[0];

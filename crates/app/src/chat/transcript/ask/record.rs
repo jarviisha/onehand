@@ -14,11 +14,12 @@ pub(super) fn ask_record(
     // One question is already said whole by the row; several are a list worth
     // opening, and the count is what says there is one.
     let many = pairs.len() > 1;
+    let open = session.read(cx).item_is_open(target, false);
     let toggle = {
         let session = session.clone();
         move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
             session.update(cx, |s, cx| {
-                s.chat.chat_mut().toggle_ask(target);
+                s.toggle_item(target, false);
                 cx.notify();
             });
         }
@@ -46,14 +47,14 @@ pub(super) fn ask_record(
         }
         false => pill(answer.to_string(), cx).into_any_element(),
     }))
-    .fold(many.then_some(a.expanded));
+    .fold(many.then_some(open));
 
     div()
         .v_flex()
         .w_full()
         .min_w_0()
         .child(activity_row(row, toggle, cx))
-        .when(many && a.expanded, |block| {
+        .when(many && open, |block| {
             block.child(detail_well(
                 div()
                     .v_flex()

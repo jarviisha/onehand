@@ -49,11 +49,12 @@ fn permission_record(
         .iter()
         .find(|option| option.name == choice)
         .is_some_and(|option| option.weight() == PermissionWeight::Deny);
+    let open = session.read(cx).item_is_open(target, false);
     let toggle = {
         let session = session.clone();
         move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
             session.update(cx, |s, cx| {
-                s.chat.chat_mut().toggle_permission(target);
+                s.toggle_item(target, false);
                 cx.notify();
             });
         }
@@ -79,7 +80,7 @@ fn permission_record(
         160,
     ))))
     .meta(Some(pill(choice.to_string(), cx).into_any_element()))
-    .fold(Some(p.expanded));
+    .fold(Some(open));
     let mut row = row;
     row.struck = denied;
 
@@ -88,7 +89,7 @@ fn permission_record(
         .w_full()
         .min_w_0()
         .child(activity_row(row, toggle, cx))
-        .when(p.expanded, |block| {
+        .when(open, |block| {
             // The whole command and where it would have run: the two facts the
             // row cut down to one line, in the one place that has room for
             // them.

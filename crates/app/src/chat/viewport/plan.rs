@@ -202,7 +202,11 @@ pub(super) fn with_record_above(chat: &Chat, plan: &[RunPlan], diverged: usize) 
 /// thought or the one line a settled question or grant leaves. Everything else
 /// is read rather than scanned, including a failed tool: its status is the
 /// reason to stop at it.
-pub(super) fn single_kind(item: &ChatItem) -> RunKind {
+pub(super) fn single_kind(
+    target: TranscriptItemId,
+    item: &ChatItem,
+    open: &impl Fn(TranscriptItemId, bool) -> bool,
+) -> RunKind {
     match item {
         ChatItem::User(_) => RunKind::Prompt,
         ChatItem::Tool(tool) => {
@@ -210,15 +214,15 @@ pub(super) fn single_kind(item: &ChatItem) -> RunKind {
                 tool.call.status,
                 onehand_core::acp::ToolStatus::Completed | onehand_core::acp::ToolStatus::Failed
             );
-            if settled && !tool.is_open() {
+            if settled && !open(target, tool.opens_by_itself()) {
                 RunKind::Compact
             } else {
                 RunKind::Block
             }
         }
-        ChatItem::Thought(thought) if !thought.is_open() => RunKind::Compact,
-        ChatItem::Permission(p) if p.resolved.is_some() && !p.expanded => RunKind::Compact,
-        ChatItem::Ask(a) if a.resolved.is_some() && !a.expanded => RunKind::Compact,
+        ChatItem::Thought(thought) if !open(target, thought.is_running()) => RunKind::Compact,
+        ChatItem::Permission(p) if p.resolved.is_some() && !open(target, false) => RunKind::Compact,
+        ChatItem::Ask(a) if a.resolved.is_some() && !open(target, false) => RunKind::Compact,
         _ => RunKind::Block,
     }
 }

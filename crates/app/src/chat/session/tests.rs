@@ -468,3 +468,93 @@ mod carrier {
         std::fs::remove_file(file).ok();
     }
 }
+
+// What the reader has open, on top of what an item does by itself.
+
+mod folds {
+    use super::super::{ChatSession, Source};
+    use crate::acp::Events;
+    use futures::channel::mpsc;
+    use gpui::{AppContext as _, Entity, TestAppContext};
+    use onehand_core::chat::{Chat, ChatItem, TranscriptItemId};
+    use onehand_core::config::AgentSpec;
+    use std::time::Instant;
+
+    fn session(
+        cx: &mut TestAppContext,
+    ) -> (
+        Entity<ChatSession>,
+        mpsc::Sender<onehand_core::acp::AcpEvent>,
+    ) {
+        let (tx, rx) = mpsc::channel(8);
+        let source = Source::Local(Events::from_channel(rx));
+        let spec = AgentSpec::default();
+        let session = cx.new(|cx| {
+            ChatSession::begin(
+                Chat::default(),
+                &spec,
+                false,
+                source,
+                Instant::now(),
+                None,
+                cx,
+            )
+        });
+        (session, tx)
+    }
+
+    const STEP: TranscriptItemId = TranscriptItemId::Live(0);
+
+    /// **A failure opens a step, and the reader can still shut it.** Were the
+    /// failure to force the row open, the control that shuts it would do
+    /// nothing in the one state that most wants a way out.
+    #[gpui::test]
+    fn a_step_that_opens_by_itself_shuts_when_told_and_stays_shut(cx: &mut TestAppContext) {
+        let (session, _tx) = session(cx);
+        session.update(cx, |s, _| {
+            assert!(s.item_is_open(STEP, true), "open by itself");
+            s.toggle_item(STEP, true);
+            assert!(!s.item_is_open(STEP, true), "shut when told");
+            // What the item does by itself moves on; the reader's choice keeps.
+            assert!(!s.item_is_open(STEP, false));
+            s.toggle_item(STEP, false);
+            assert!(s.item_is_open(STEP, false), "and opens when told");
+        });
+    }
+
+    #[gpui::test]
+    fn output_wells_open_apart_and_move_no_layout(cx: &mut TestAppContext) {
+        let (session, _tx) = session(cx);
+        session.update(cx, |s, _| {
+            let before = s.folds();
+            s.toggle_out(STEP, 0);
+            assert!(s.out_is_open(STEP, 0));
+            assert!(!s.out_is_open(STEP, 1));
+            assert!(!s.item_is_open(STEP, false), "the card itself stays shut");
+            assert_eq!(s.folds(), before, "an output well moves no run");
+            s.toggle_item(STEP, false);
+            assert_eq!(s.folds(), before + 1, "a card's fold does");
+        });
+    }
+
+    /// Kept by position, a choice made before the transcript was numbered
+    /// afresh would land on another item.
+    #[gpui::test]
+    fn a_renumbered_transcript_forgets_what_was_open(cx: &mut TestAppContext) {
+        let (session, _tx) = session(cx);
+        session.update(cx, |s, cx| {
+            let chat = s.chat.chat_mut();
+            chat.say_host_wait("Sending the code".into());
+            chat.items.push(ChatItem::notice("after it".to_string()));
+            let after = TranscriptItemId::Live(1);
+            s.toggle_item(after, false);
+            s.toggle_out(after, 0);
+            s.chat.chat_mut().unsay_host_wait();
+            s.sync_md(cx);
+            // The item moved up to where the line was; its old place is now
+            // nobody's, and what was chosen there is gone with the numbering.
+            assert!(!s.item_is_open(after, false));
+            assert!(!s.out_is_open(after, 0));
+        });
+    }
+}

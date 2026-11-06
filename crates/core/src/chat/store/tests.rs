@@ -663,7 +663,7 @@ fn a_step_saved_running_comes_back_stopped() {
         panic!("the step came back");
     };
     assert_eq!(tool.call.status, ToolStatus::Failed);
-    assert!(!tool.is_open(), "and it is not drawn as running");
+    assert!(!tool.opens_by_itself(), "and it is not drawn as running");
     let _ = std::fs::remove_dir_all(&store);
 }
 

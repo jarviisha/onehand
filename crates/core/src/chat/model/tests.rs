@@ -147,33 +147,6 @@ fn blank_custom_title_is_ignored() {
 }
 
 #[test]
-fn tool_out_sections_fold_independently() {
-    // Two text outputs on one tool must fold independently (per-section
-    // indices in `out_open`), and the whole-card fold is its own flag.
-    let mut chat = Chat::default();
-    chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
-        id: "t1".into(),
-        title: "cmd".into(),
-        description: None,
-        kind: crate::acp::ToolKind::Other,
-        status: ToolStatus::Completed,
-        content: vec![],
-    })));
-    chat.toggle_tool_output(TranscriptItemId::Live(0), 0);
-    let ChatItem::Tool(t) = &chat.items[0] else {
-        panic!()
-    };
-    assert!(t.out_open.contains(&0));
-    assert!(!t.out_open.contains(&1));
-    assert!(!t.is_open(), "completed + unfolded card stays collapsed");
-    chat.toggle_tool(TranscriptItemId::Live(0));
-    let ChatItem::Tool(t) = &chat.items[0] else {
-        panic!()
-    };
-    assert!(t.is_open());
-}
-
-#[test]
 fn only_running_tools_start_open() {
     let call = |status| ToolCall {
         id: "t".into(),
@@ -183,50 +156,31 @@ fn only_running_tools_start_open() {
         status,
         content: vec![],
     };
-    assert!(ToolItem::new(call(ToolStatus::InProgress)).is_open());
-    assert!(!ToolItem::new(call(ToolStatus::Completed)).is_open());
-    assert!(!ToolItem::new(call(ToolStatus::Pending)).is_open());
-    // A failure opens itself too, but through the fold rather than through
-    // this -- see `a_failure_opens_itself_and_can_still_be_shut`.
-    assert!(!ToolItem::new(call(ToolStatus::Failed)).is_open());
+    assert!(ToolItem::new(call(ToolStatus::InProgress)).opens_by_itself());
+    assert!(!ToolItem::new(call(ToolStatus::Completed)).opens_by_itself());
+    assert!(!ToolItem::new(call(ToolStatus::Pending)).opens_by_itself());
+    // A failure opens itself too, but only as it happens, in `apply` -- see
+    // `a_failure_opens_itself`. One read back from disk does not.
+    assert!(!ToolItem::new(call(ToolStatus::Failed)).opens_by_itself());
 }
 
-/// A plan stays open until the user closes it; a thought opens while it
-/// runs and closes once done; a running step can be shut while it runs.
+/// A thought runs open and settles closed: what the reader chooses on top of
+/// that is the front end's.
 #[test]
-fn what_runs_starts_open_and_the_plan_always_does() {
-    assert!(PlanItem::new(Vec::new()).is_open());
-
+fn a_thought_runs_then_settles() {
     let mut chat = Chat::default();
     chat.push_user("go".into(), Vec::new(), crate::chat::store::now_secs());
     chat.apply(AcpEvent::ThoughtChunk("hm".into()));
-    let thinking = |chat: &Chat| match &chat.items[1] {
-        ChatItem::Thought(th) => (th.is_running(), th.is_open()),
+    let running = |chat: &Chat| match &chat.items[1] {
+        ChatItem::Thought(th) => th.is_running(),
         _ => panic!(),
     };
-    assert_eq!(thinking(&chat), (true, true), "a live thought is open");
+    assert!(running(&chat), "a live thought runs");
     chat.apply(AcpEvent::AgentChunk {
         text: "done".into(),
         message: None,
     });
-    assert_eq!(thinking(&chat), (false, false), "and closes once done");
-    chat.toggle_thought(TranscriptItemId::Live(1));
-    assert_eq!(thinking(&chat), (false, true), "the user's open wins");
-
-    chat.apply(AcpEvent::ToolCall(ToolCall {
-        id: "live".into(),
-        title: "cargo test".into(),
-        description: None,
-        kind: crate::acp::ToolKind::Execute,
-        status: ToolStatus::InProgress,
-        content: vec![],
-    }));
-    let at = chat.items.len() - 1;
-    chat.toggle_tool(TranscriptItemId::Live(at));
-    assert!(
-        matches!(&chat.items[at], ChatItem::Tool(t) if !t.is_open()),
-        "a running step shuts when told to"
-    );
+    assert!(!running(&chat), "and settles once the answer starts");
 }
 
 /// The paragraph the footer copies is the turn's last, a blank line inside
@@ -250,28 +204,15 @@ fn the_closing_paragraph_is_the_last_one() {
     assert_eq!(chat.turn_closing(TranscriptItemId::Live(1)), "Then this.");
 }
 
-/// **A failure opens itself, and the user can still shut it.**
-///
-/// The second half is the trap. Written as `is_open() = fold || Failed`,
-/// which is how the running case is written, a terminal status forces the
-/// row open *for ever*: the control that shuts it does nothing, and the one
-/// state that most wants a way out is the one with none. Running gets away
-/// with the OR because it stops being true on its own.
+/// **A failure opens itself**, as it happens: arriving failed, or breaking
+/// mid-turn. That the reader can still shut it is the front end's, which
+/// keeps the reader's choice above this.
 #[test]
-fn a_failure_opens_itself_and_can_still_be_shut() {
+fn a_failure_opens_itself() {
     let mut chat = Chat::default();
-    chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
-        id: "failed".into(),
-        title: "cargo test".into(),
-        description: None,
-        kind: crate::acp::ToolKind::Execute,
-        status: ToolStatus::Failed,
-        content: vec![ToolContent::Text("Exit code 1".into())],
-    })));
-
-    let open = |chat: &Chat| match &chat.items[0] {
-        ChatItem::Tool(tool) => tool.is_open(),
-        _ => false,
+    let opens = |chat: &Chat, at: usize| match &chat.items[at] {
+        ChatItem::Tool(tool) => tool.opens_by_itself(),
+        _ => panic!("not a step"),
     };
     // Arriving already failed is how an adapter reports a step it never
     // started, and it opens on the same rule.
@@ -283,18 +224,8 @@ fn a_failure_opens_itself_and_can_still_be_shut() {
         status: ToolStatus::Failed,
         content: vec![],
     }));
-    let late = chat.items.len() - 1;
-    assert!(
-        matches!(&chat.items[late], ChatItem::Tool(t) if t.is_open()),
-        "a failure opens itself"
-    );
-    chat.toggle_tool(TranscriptItemId::Live(late));
-    assert!(
-        matches!(&chat.items[late], ChatItem::Tool(t) if !t.is_open()),
-        "and shuts when told to"
-    );
+    assert!(opens(&chat, chat.items.len() - 1), "a failure opens itself");
 
-    // And a step that *becomes* a failure mid-turn does the same.
     chat.apply(crate::acp::AcpEvent::ToolCall(ToolCall {
         id: "running".into(),
         title: "cargo test".into(),
@@ -312,24 +243,39 @@ fn a_failure_opens_itself_and_can_still_be_shut() {
             content: None,
         },
     ));
-    let broke = chat.items.len() - 1;
     assert!(
-        matches!(&chat.items[broke], ChatItem::Tool(t) if t.is_open()),
+        opens(&chat, chat.items.len() - 1),
         "a step that breaks opens itself"
     );
-    chat.toggle_tool(TranscriptItemId::Live(broke));
+
+    chat.apply(crate::acp::AcpEvent::ToolCall(ToolCall {
+        id: "done".into(),
+        title: "ls".into(),
+        description: None,
+        kind: crate::acp::ToolKind::Execute,
+        status: ToolStatus::InProgress,
+        content: vec![],
+    }));
+    chat.apply(crate::acp::AcpEvent::ToolUpdate(
+        crate::acp::ToolCallUpdate {
+            id: "done".into(),
+            status: Some(ToolStatus::Completed),
+            title: None,
+            description: None,
+            content: None,
+        },
+    ));
     assert!(
-        matches!(&chat.items[broke], ChatItem::Tool(t) if !t.is_open()),
-        "and shuts when told to"
+        !opens(&chat, chat.items.len() - 1),
+        "a step that finishes closes"
     );
-    let _ = open;
 }
 
 #[test]
 fn plan_updates_replace_in_place_per_turn() {
     // The agent republishes the full checklist on every change: within one
-    // turn the card updates in place (fold survives); a new turn gets its
-    // own card.
+    // turn the card updates in place, so it keeps its place and whatever the
+    // reader chose for it; a new turn gets its own card.
     let entry = |s: &str, st| PlanEntry {
         content: s.into(),
         status: st,
@@ -337,7 +283,6 @@ fn plan_updates_replace_in_place_per_turn() {
     let mut chat = Chat::default();
     chat.push_user("go".into(), Vec::new(), crate::chat::store::now_secs());
     chat.apply(AcpEvent::Plan(vec![entry("a", PlanStatus::Pending)]));
-    chat.toggle_tool(TranscriptItemId::Live(1)); // user closes the card
     chat.apply(AcpEvent::Plan(vec![
         entry("a", PlanStatus::Completed),
         entry("b", PlanStatus::InProgress),
@@ -352,10 +297,9 @@ fn plan_updates_replace_in_place_per_turn() {
         .collect();
     assert_eq!(plans.len(), 1, "same turn replaces in place");
     assert_eq!(plans[0].entries.len(), 2);
-    assert!(plans[0].fold, "user fold survives the update");
     assert!(
-        !plans[0].is_open(),
-        "the user's close wins over a running step"
+        matches!(chat.items[1], ChatItem::Plan(_)),
+        "at the place it was first put"
     );
 
     chat.push_user("next".into(), Vec::new(), crate::chat::store::now_secs());
@@ -1555,7 +1499,6 @@ fn a_question_waits_for_an_answer_and_a_permission_for_approval() {
         req: permission("cargo test"),
         resolved: None,
         asker: None,
-        expanded: false,
     }));
     assert_eq!(
         chat.activity_status().as_deref(),
@@ -1688,7 +1631,6 @@ fn cancelling_resolves_parked_permissions_first() {
         req: permission("rm -rf build"),
         resolved: None,
         asker: None,
-        expanded: false,
     }));
 
     chat.cancel_turn();
@@ -1716,7 +1658,6 @@ fn answering_a_permission_replies_and_records_the_choice() {
         req: permission("rm -rf build"),
         resolved: None,
         asker: None,
-        expanded: false,
     }));
 
     chat.answer_permission(0, "allow-1");
@@ -1749,7 +1690,6 @@ fn copying_a_collapsed_command_takes_all_of_it() {
         req: permission(&script),
         resolved: None,
         asker: None,
-        expanded: false,
     };
 
     assert_eq!(item.command(), script);
@@ -1759,28 +1699,8 @@ fn copying_a_collapsed_command_takes_all_of_it() {
         req: permission(&long_line),
         resolved: None,
         asker: None,
-        expanded: false,
     };
     assert_eq!(one.command(), long_line);
-}
-
-/// Opening is the item's own state, so the card can be rebuilt from
-/// scratch every frame without losing what the reader opened.
-#[test]
-fn opening_a_command_block_survives_in_the_item() {
-    let mut chat = Chat::default();
-    chat.items.push(ChatItem::Permission(PermItem {
-        req: permission(&"echo\n".repeat(20)),
-        resolved: None,
-        asker: None,
-        expanded: false,
-    }));
-
-    chat.toggle_permission(TranscriptItemId::Live(0));
-    let Some(ChatItem::Permission(p)) = chat.items.first() else {
-        panic!("the permission is gone");
-    };
-    assert!(p.expanded);
 }
 
 /// A second click on an answered card would echo an rpc id the adapter has
@@ -1792,7 +1712,6 @@ fn answering_twice_sends_only_once() {
         req: permission("rm -rf build"),
         resolved: None,
         asker: None,
-        expanded: false,
     }));
 
     chat.answer_permission(0, "allow-1");
@@ -2655,32 +2574,22 @@ fn a_stream_that_ends_after_disconnected_changes_nothing() {
     assert_eq!(seen(&chat), before);
 }
 
+/// Taking the host's line back from under what came after it moves those
+/// items up, which renumbers the transcript; taken back from the end, it
+/// moves nothing.
 #[test]
-fn every_fold_moves_the_fold_counter() {
-    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "a".into(), None);
-    chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
-        id: "t".into(),
-        title: "Read a.rs".into(),
-        description: None,
-        kind: crate::acp::ToolKind::Read,
-        status: ToolStatus::Completed,
-        content: Vec::new(),
-    })));
-    chat.items.push(ChatItem::Thought(Thought {
-        md: Md::parse("weighing it up"),
-        started: None,
-        elapsed_secs: Some(3),
-        fold: None,
-    }));
-    let before = chat.folds();
-    chat.toggle_tool(TranscriptItemId::Live(0));
-    chat.toggle_thought(TranscriptItemId::Live(1));
-    chat.toggle_permission(TranscriptItemId::Live(0));
-    chat.toggle_ask(TranscriptItemId::Live(0));
-    assert_eq!(chat.folds(), before + 4);
-    // A tool's output well changes no run's kind, so it leaves the counter.
-    chat.toggle_tool_output(TranscriptItemId::Live(0), 0);
-    assert_eq!(chat.folds(), before + 4);
+fn a_host_line_taken_back_from_under_others_renumbers() {
+    let mut chat = Chat::default();
+    chat.say_host_wait("Sending the code".into());
+    let before = chat.numbering();
+    chat.unsay_host_wait();
+    assert_eq!(chat.numbering(), before, "from the end, nothing moves");
+
+    chat.say_host_wait("Sending the code".into());
+    chat.items.push(ChatItem::notice("after it".to_string()));
+    chat.unsay_host_wait();
+    assert_ne!(chat.numbering(), before);
+    assert_eq!(notices(&chat), ["after it"]);
 }
 
 fn notices(chat: &Chat) -> Vec<String> {
@@ -2897,7 +2806,6 @@ fn the_waiting_line_names_the_oldest_card() {
         req: permission("rm -rf build"),
         resolved: None,
         asker: Some("Explorer".into()),
-        expanded: false,
     }));
     assert_eq!(chat.waiting_line().as_deref(), Some("asks: pick"));
     chat.items.remove(0);
