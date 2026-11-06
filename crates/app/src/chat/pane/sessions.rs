@@ -7,7 +7,7 @@ use crate::chat::conversation::{HostAt, OnHost};
 use crate::chat::session::{BeginOnHost, Carried, ChatEvent, ChatSession, HostBegin};
 use gpui::{App, Context, Entity, Focusable, SharedString, Window};
 use onehand_core::acp::Opening;
-use onehand_core::chat::drive::{Code, Intake, Origin, Signal};
+use onehand_core::chat::drive::{Intake, Origin, Signal};
 use onehand_core::chat::{Chat, ConvMeta};
 use onehand_core::config::AgentSpec;
 use onehand_core::host::wire::HostSession;
@@ -700,11 +700,7 @@ impl ChatPane {
         let Some(session) = self.session_of(uid).cloned() else {
             return;
         };
-        session.update(cx, |session, cx| {
-            if let Some(text) = session.chat.resend_text().map(str::to_string) {
-                session.prompt(&text, &[], Origin::Person, Code::Here, cx);
-            }
-        });
+        session.update(cx, |session, cx| session.resend(cx));
     }
 
     pub(super) fn session(&self) -> Option<Entity<ChatSession>> {

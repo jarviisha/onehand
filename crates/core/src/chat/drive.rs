@@ -352,6 +352,24 @@ impl SessionDrive {
         self.prompt(&held.text, &[], held.origin, Code::Here)
     }
 
+    /// Send the last prompt again, after a turn that failed, as a person's.
+    ///
+    /// Never queued: an error can be said before the turn it ends has
+    /// closed, and a resend queued then would replace a prompt already
+    /// waiting, which the person wrote and did not take back.
+    pub fn resend(&mut self) -> (Intake, Vec<Effect>) {
+        let Some(text) = self.chat.resend_text().map(str::to_string) else {
+            return (Intake::Refused(Refusal::NotTaken), Vec::new());
+        };
+        if self.chat.busy {
+            return (
+                Intake::Refused(Refusal::Blocked(SubmitBlock::Busy)),
+                Vec::new(),
+            );
+        }
+        self.prompt(&text, &[], Origin::Person, Code::Here)
+    }
+
     /// Take the queued prompt back, for a front end putting it back where it
     /// was written.
     pub fn unqueue(&mut self) -> Option<QueuedPrompt> {

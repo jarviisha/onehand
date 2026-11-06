@@ -298,7 +298,12 @@ the last four:
 - A host's lost connection (`host::went_away`) no longer marks the batch changed, so a batch of
   only that event does not resync the parsed markdown.
 
-Each is settled in phase 3: kept and moved into the owning document, or put back.
+Settled on 2026-11-06, at the start of phase 3:
+- Kept: the two first-prompt moments, and the latch being the session's. They move into their
+  owning documents when phase 3 closes.
+- Put back: a resend while a turn runs is refused again (`SessionDrive::resend`, which never
+  queues). The two link cuts outside the drive go through it in phase 3's host-session step,
+  which drops the held prompt and marks the batch changed again.
 
 **Left in the app, inside the slice, for later phases:**
 - the host's lost connection (`host::went_away`, checked before an event reaches the drive);

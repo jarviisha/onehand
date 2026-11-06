@@ -581,6 +581,14 @@ impl ChatSession {
         intake
     }
 
+    /// Send the last prompt again, after a turn that failed; see
+    /// [`SessionDrive::resend`].
+    pub(crate) fn resend(&mut self, cx: &mut Context<Self>) {
+        let (_, fx) = self.chat.resend();
+        self.perform(fx, cx);
+        cx.notify();
+    }
+
     /// Stop the running turn.
     pub(crate) fn stop(&mut self, cx: &mut Context<Self>) {
         let fx = self.chat.stop();

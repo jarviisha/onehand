@@ -558,3 +558,52 @@ fn stop_cancels_the_turn() {
     assert!(matches!(rx.try_recv(), Ok(AcpRequest::Cancel)));
     assert!(drive.cancelled);
 }
+
+// Sending a failed turn's prompt again.
+
+#[test]
+fn a_failed_turns_prompt_goes_again() {
+    let (mut drive, mut rx) = connected();
+    drive.prompt("go", &[], Origin::Person, Code::Here);
+    sent(&mut rx);
+    feed(
+        &mut drive,
+        AcpEvent::TurnEnded {
+            stop_reason: "refusal".into(),
+        },
+    );
+    let (intake, _) = drive.resend();
+    assert_eq!(intake, Intake::Sent);
+    assert_eq!(sent(&mut rx).as_deref(), Some("go"));
+}
+
+#[test]
+fn a_resend_while_the_turn_still_runs_is_refused_and_leaves_what_waits() {
+    let (mut drive, mut rx) = connected();
+    drive.prompt("go", &[], Origin::Person, Code::Here);
+    sent(&mut rx);
+    drive.prompt("waiting", &[], Origin::Person, Code::Here);
+    // An error said before the turn it ends has closed.
+    feed(
+        &mut drive,
+        AcpEvent::Error {
+            text: "overloaded".into(),
+            detail: None,
+        },
+    );
+    assert!(drive.busy && drive.resend_text().is_some());
+    let (intake, _) = drive.resend();
+    assert_eq!(intake, Intake::Refused(Refusal::Blocked(SubmitBlock::Busy)));
+    assert_eq!(
+        drive.queued.as_ref().map(|q| q.text.as_str()),
+        Some("waiting")
+    );
+    assert!(sent(&mut rx).is_none());
+}
+
+#[test]
+fn nothing_failed_nothing_goes_again() {
+    let (mut drive, mut rx) = connected();
+    assert_eq!(drive.resend().0, Intake::Refused(Refusal::NotTaken));
+    assert!(sent(&mut rx).is_none());
+}
