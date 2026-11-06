@@ -835,3 +835,43 @@ fn a_reset_failing_puts_the_given_name_back() {
     });
     assert_eq!(drive.custom_title.as_deref(), Some("mine"));
 }
+
+// A session on a host.
+
+#[test]
+fn a_lost_host_drops_the_held_prompt_and_changes_the_batch() {
+    let (mut drive, tx, mut rx) = connecting();
+    drive.prompt_when_up("go", Origin::Tools);
+    let fx = drive.host_lost("Out of reach of box".into());
+    assert_eq!(names(&fx), ["Appended"]);
+    assert!(drive.held.is_none(), "dropped, as on any lost link");
+    assert_eq!(names(&drive.end_batch()), ["Changed"]);
+    // The same session coming up later sends nothing it was not asked again.
+    feed(
+        &mut drive,
+        AcpEvent::Connected {
+            tx,
+            resumed: false,
+            forkable: false,
+        },
+    );
+    assert!(sent(&mut rx).is_none());
+}
+
+#[test]
+fn what_was_kept_is_read_back_without_a_word_of_turns() {
+    let (mut drive, _rx) = connected();
+    let fx = drive.read_back(
+        [
+            AcpEvent::UserChunk("then".into()),
+            chunk("an old answer"),
+            turn_ends(),
+        ],
+        Some("Out of reach of box".into()),
+    );
+    assert_eq!(names(&fx), ["Changed", "Appended"], "no TurnEnded, no Save");
+    assert!(matches!(
+        drive.items.last(),
+        Some(crate::chat::ChatItem::Notice { text, .. }) if text == "Out of reach of box"
+    ));
+}

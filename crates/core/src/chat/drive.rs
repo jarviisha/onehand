@@ -617,6 +617,7 @@ impl SessionDrive {
 }
 
 mod cards;
+mod host;
 mod settings;
 mod titles;
 

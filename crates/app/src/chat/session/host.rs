@@ -279,7 +279,7 @@ fn carry(
 ) {
     let _ = session.update(cx, |session, cx| {
         if sent > 0 {
-            session.chat.chat_mut().carry_sent(sent);
+            session.chat.carry_sent(sent);
         }
         if let Some(stored) = stored {
             session.adopt(stored, cx);
@@ -307,17 +307,13 @@ fn offline(
     let last = kept.iter().rev().map(|(_, at, _)| *at).find(|at| *at != 0);
     let line = offline_line(&host, last, onehand_core::chat::now_secs());
     let _ = session.update(cx, |session, cx| {
-        for event in copy::events(kept) {
-            session.chat.chat_mut().apply(event);
-        }
+        let fx = session
+            .chat
+            .read_back(copy::events(kept), away.then_some(line));
         if away {
-            session.chat.chat_mut().say_host_wait(line);
             session.host_offline = Some(host);
         }
-        session.sync_md(cx);
-        cx.emit(ChatEvent::Session(
-            onehand_core::chat::drive::Signal::Appended,
-        ));
+        session.perform(fx, cx);
         cx.notify();
     });
 }
@@ -327,28 +323,23 @@ fn offline(
 /// says it is out of reach, rather than that its agent went, and keeps what
 /// it has until the host is back. Decided on the connection, never on words.
 ///
-/// What the link left running settles as on any disconnect, its cards no
-/// longer offering answers, but nothing says the agent went.
-pub(super) fn went_away(session: &mut ChatSession, event: &AcpEvent) -> bool {
+/// The line that says so, for the drive's [`SessionDrive::host_lost`], or
+/// `None` when the event is not such an end.
+///
+/// [`SessionDrive::host_lost`]: onehand_core::chat::SessionDrive::host_lost
+pub(super) fn went_away(session: &mut ChatSession, event: &AcpEvent) -> Option<String> {
     if !matches!(event, AcpEvent::Disconnected(_)) {
-        return false;
+        return None;
     }
-    let Some((host, _)) = session
+    let (host, _) = session
         .host_conn
         .as_ref()
-        .filter(|(_, conn)| connection_lost(conn.is_closed(), conn.taken()))
-    else {
-        return false;
-    };
+        .filter(|(_, conn)| connection_lost(conn.is_closed(), conn.taken()))?;
     let host = host.clone();
     let now = onehand_core::chat::now_secs();
-    session.chat.chat_mut().link_cut();
-    session
-        .chat
-        .chat_mut()
-        .say_host_wait(offline_line(&host, Some(now), now));
+    let line = offline_line(&host, Some(now), now);
     session.host_offline = Some(host);
-    true
+    Some(line)
 }
 
 /// Whether a watch that ended did so because its connection was lost: closed,
@@ -369,15 +360,12 @@ fn wait(
     cx: &mut AsyncApp,
 ) {
     let _ = session.update(cx, |session, cx| {
-        session
+        let fx = session
             .chat
-            .chat_mut()
             .say_host_wait(crate::hosts::waiting_line(&host, n, terms));
         session.host_wait = Some(host);
         cx.emit(ChatEvent::HostBusy);
-        cx.emit(ChatEvent::Session(
-            onehand_core::chat::drive::Signal::Appended,
-        ));
+        session.perform(fx, cx);
         cx.notify();
     });
 }

@@ -2,7 +2,7 @@ use super::Viewport;
 use gpui::{ListOffset, px};
 use onehand_core::acp::{PermissionRequest, ToolCall, ToolKind, ToolStatus};
 use onehand_core::chat::{
-    ActivityGroup, Chat, ChatItem, Md, PermItem, ToolItem, TranscriptItemId, UserMsg,
+    ActivityGroup, Chat, ChatItem, Md, PermItem, SessionDrive, ToolItem, TranscriptItemId, UserMsg,
 };
 use std::path::PathBuf;
 
@@ -445,6 +445,7 @@ fn a_step_settling_at_the_tail_leaves_the_reader_where_they_were() {
     chat.items
         .push(read_with_status("Read src/c.rs", ToolStatus::InProgress));
     chat.busy = true;
+    let mut chat = SessionDrive::new(chat);
 
     let mut viewport = Viewport::default();
     viewport.replan(&chat, 0, |_, open| open, |_, d| d, |_, default| default);
@@ -500,6 +501,7 @@ fn a_row_that_changed_shape_is_told_to_the_list_too() {
     chat.items
         .push(read_with_status("Read src/c.rs", ToolStatus::InProgress));
     chat.busy = true;
+    let mut chat = SessionDrive::new(chat);
 
     let mut viewport = Viewport::default();
     viewport.replan(&chat, 0, |_, open| open, |_, d| d, |_, default| default);
@@ -524,8 +526,14 @@ fn a_row_that_changed_shape_is_told_to_the_list_too() {
 
     // A later replan must not paint over a divergence still owed to the
     // list -- the note is the earliest one, not the newest.
-    chat.items
-        .push(read_with_status("Read src/d.rs", ToolStatus::InProgress));
+    chat.apply(onehand_core::acp::AcpEvent::ToolCall(ToolCall {
+        id: "Read src/d.rs".into(),
+        title: "Read src/d.rs".into(),
+        description: None,
+        kind: ToolKind::Read,
+        status: ToolStatus::InProgress,
+        content: Vec::new(),
+    }));
     viewport.replan(&chat, 0, |_, open| open, |_, d| d, |_, default| default);
     assert_eq!(
         viewport.changed_from, 3,

@@ -132,7 +132,7 @@ impl Chat {
     /// rules for "did this change the transcript" and "did the turn settle"
     /// belong with the reducer that knows them, and a second copy is a second
     /// thing to keep in step.
-    pub fn apply(&mut self, event: AcpEvent) -> ApplyOutcome {
+    pub(crate) fn apply(&mut self, event: AcpEvent) -> ApplyOutcome {
         // Asked of the transcript itself rather than derived from the event's
         // kind. The two agree for every ordinary event, and disagree for the one
         // that matters: a failed resume is announced by a *metadata* event, and
@@ -501,7 +501,7 @@ impl Chat {
     /// nothing it offered can be answered any more. Says nothing of why: a
     /// disconnect says that, and a session only out of reach of its host
     /// says something else.
-    pub fn link_cut(&mut self) {
+    pub(crate) fn link_cut(&mut self) {
         // A thought cut off with the adapter is over, not still running.
         self.finalize_thought();
         self.tx = None;

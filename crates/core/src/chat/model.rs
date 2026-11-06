@@ -328,7 +328,7 @@ impl Chat {
 
     /// Say that the session waits on its host's busy sessions, in a line of
     /// onehand's own that [`Self::unsay_host_wait`] takes back.
-    pub fn say_host_wait(&mut self, text: String) {
+    pub(crate) fn say_host_wait(&mut self, text: String) {
         self.host_wait_line = Some((self.items.len(), text.clone()));
         self.items.push(ChatItem::notice(text));
         self.touch();
@@ -336,7 +336,7 @@ impl Chat {
 
     /// Take back the line [`Self::say_host_wait`] put, if it is still where
     /// it was put, saying what it said; nothing else is touched.
-    pub fn unsay_host_wait(&mut self) {
+    pub(crate) fn unsay_host_wait(&mut self) {
         let Some((at, said)) = self.host_wait_line.take() else {
             return;
         };

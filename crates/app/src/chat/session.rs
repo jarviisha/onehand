@@ -336,19 +336,31 @@ impl EventEmitter<ChatEvent> for ChatSession {}
 impl ChatSession {
     /// Stop waiting for the host, taking back the line that said so:
     /// `true` when it was waiting.
-    pub(crate) fn forget_host_wait(&mut self) -> bool {
+    pub(crate) fn forget_host_wait(&mut self, cx: &mut Context<Self>) -> bool {
         if self.host_wait.take().is_none() {
             return false;
         }
-        self.chat.chat_mut().unsay_host_wait();
+        let fx = self.chat.unsay_host_wait();
+        self.perform(fx, cx);
         true
     }
 
     /// No longer out of reach of its host, taking back the line that said so.
-    pub(crate) fn forget_host_offline(&mut self) {
+    pub(crate) fn forget_host_offline(&mut self, cx: &mut Context<Self>) {
         if self.host_offline.take().is_some() {
-            self.chat.chat_mut().unsay_host_wait();
+            let fx = self.chat.unsay_host_wait();
+            self.perform(fx, cx);
         }
+    }
+
+    /// Fold `event` in as a batch of its own: one this side makes, such as
+    /// the end of a wait that left the session's agent lost.
+    pub(crate) fn fold(&mut self, event: onehand_core::acp::AcpEvent, cx: &mut Context<Self>) {
+        let (fx, _) = self.chat.apply(event);
+        self.perform(fx, cx);
+        let fx = self.chat.end_batch();
+        self.perform(fx, cx);
+        cx.notify();
     }
 }
 
@@ -483,8 +495,9 @@ impl ChatSession {
                             // A watch that ended with its host's connection
                             // says so instead, and is read on from what it
                             // has until the host is back.
-                            if host::went_away(session, &event) {
-                                cx.emit(ChatEvent::Session(Signal::Appended));
+                            if let Some(line) = host::went_away(session, &event) {
+                                let fx = session.chat.host_lost(line);
+                                session.perform(fx, cx);
                                 continue;
                             }
                             let (fx, more) = session.chat.apply(event);

@@ -651,7 +651,7 @@ impl Chat {
     /// Take over the prompts the chat this one restarts had sent, `before`:
     /// a restart builds the chat anew, and a count starting again from
     /// nothing would read a person's next prompt as nobody's.
-    pub fn carry_sent(&mut self, before: usize) {
+    pub(crate) fn carry_sent(&mut self, before: usize) {
         self.prompts_sent += before;
     }
 

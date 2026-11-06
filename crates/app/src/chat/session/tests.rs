@@ -543,13 +543,17 @@ mod folds {
     fn a_renumbered_transcript_forgets_what_was_open(cx: &mut TestAppContext) {
         let (session, _tx) = session(cx);
         session.update(cx, |s, cx| {
-            let chat = s.chat.chat_mut();
-            chat.say_host_wait("Sending the code".into());
-            chat.items.push(ChatItem::notice("after it".to_string()));
+            let fx = s.chat.say_host_wait("Sending the code".into());
+            s.perform(fx, cx);
+            s.chat
+                .chat_mut()
+                .items
+                .push(ChatItem::notice("after it".to_string()));
             let after = TranscriptItemId::Live(1);
             s.toggle_item(after, false);
             s.toggle_out(after, 0);
-            s.chat.chat_mut().unsay_host_wait();
+            let fx = s.chat.unsay_host_wait();
+            s.perform(fx, cx);
             s.sync_md(cx);
             // The item moved up to where the line was; its old place is now
             // nobody's, and what was chosen there is gone with the numbering.
