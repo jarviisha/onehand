@@ -37,7 +37,7 @@ impl ChatPane {
             return false;
         };
         let before = session.read(cx).chat.custom_title.clone();
-        if !session.update(cx, |session, _| session.chat.rename(title)) {
+        if !session.update(cx, |session, _| session.chat.chat_mut().rename(title)) {
             return false;
         }
         self.save_title(uid, before, &session, cx);
@@ -63,7 +63,8 @@ impl ChatPane {
             .title
             .get_or_insert_with(|| onehand_core::saving::Saving::new(before))
             .change(now.clone());
-        let Some(pending) = session.update(cx, |session, _| session.chat.flush_meta()) else {
+        let Some(pending) = session.update(cx, |session, _| session.chat.chat_mut().flush_meta())
+        else {
             return;
         };
         let written = crate::state::Shared::global(cx)
@@ -85,9 +86,9 @@ impl ChatPane {
                 if let Some(session) = conv.session() {
                     session.update(cx, |session, _| match shown {
                         Some(name) => {
-                            session.chat.rename(&name);
+                            session.chat.chat_mut().rename(&name);
                         }
-                        None => session.chat.reset_title(),
+                        None => session.chat.chat_mut().reset_title(),
                     });
                 }
                 cx.emit(ChatPaneEvent::RenameFailed(why));
@@ -104,7 +105,7 @@ impl ChatPane {
             return;
         };
         let before = session.read(cx).chat.custom_title.clone();
-        session.update(cx, |session, _| session.chat.reset_title());
+        session.update(cx, |session, _| session.chat.chat_mut().reset_title());
         self.save_title(uid, before, &session, cx);
         cx.notify();
     }

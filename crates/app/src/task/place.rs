@@ -192,14 +192,19 @@ pub(super) fn ended(
         session,
         move |_, event: &crate::chat::session::ChatEvent, cx| {
             use crate::chat::session::ChatEvent as E;
+            use onehand_core::chat::drive::Signal as S;
             match event {
-                E::TurnEnded | E::Disconnected => on_event(cx),
-                E::Appended
-                | E::AwaitingUser(_)
+                E::Session(S::TurnEnded | S::Disconnected) => on_event(cx),
+                E::Session(
+                    S::Appended
+                    | S::AwaitingUser(_)
+                    | S::PickRefused(_)
+                    | S::CycleEnded
+                    | S::StopRefused(_)
+                    | S::SaveFailed(_)
+                    | S::CodeFailed(_),
+                )
                 | E::OpenFile(_)
-                | E::PickRefused(_)
-                | E::CycleEnded
-                | E::StopRefused(_)
                 | E::Fork(_)
                 | E::HostSession(_)
                 | E::HostBusy

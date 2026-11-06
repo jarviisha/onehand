@@ -18,7 +18,7 @@ pub(super) fn ask_record(
         let session = session.clone();
         move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
             session.update(cx, |s, cx| {
-                s.chat.toggle_ask(target);
+                s.chat.chat_mut().toggle_ask(target);
                 cx.notify();
             });
         }

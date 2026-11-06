@@ -1,5 +1,6 @@
 use super::{ANSWER_TAIL_MAX, ChatPane, QUOTED_PROMPT_MAX, SETTLED};
 use gpui::{App, Context};
+use onehand_core::chat::drive::{Code, Intake, Origin, Refusal};
 use onehand_core::chat::{Away, Chat, ChatItem, Presence, SessionSignal, Telling};
 use onehand_core::remote::types::Button;
 use onehand_core::remote::{Press, press};
@@ -36,29 +37,24 @@ impl ChatPane {
         use crate::remote::Handled;
         let session = self.session_of(uid)?.clone();
         let handled = session.update(cx, |session, cx| {
-            // Read before anything is sent: submitting clears the condition
-            // that would have explained a refusal.
-            let blocker = session.chat.submit_blocker(text, &[]);
-            let taken = session.chat.queued.is_some();
-            match blocker {
-                None if session.submit(text, &[], cx) => Handled::Sent,
-                Some(onehand_core::chat::SubmitBlock::Busy) if taken => Handled::Refused(
+            // A prompt from outside the app never waits on an offloaded
+            // project's code: see `Origin::Remote`.
+            let (intake, _) = session.prompt(text, &[], Origin::Remote, Code::Here, cx);
+            match intake {
+                Intake::Sent => Handled::Sent,
+                Intake::Queued => Handled::Queued,
+                Intake::Refused(Refusal::AlreadyQueued) => Handled::Refused(
                     "a prompt is already waiting behind this turn — send it again once that one \
                      has gone"
                         .to_string(),
                 ),
-                Some(onehand_core::chat::SubmitBlock::Busy) if session.chat.queue(text, &[]) => {
-                    cx.notify();
-                    Handled::Queued
-                }
                 // Everything else is a standing condition the sender has to
                 // hear about in its own words -- an adapter that is not up, a
                 // message with nothing in it.
-                blocker => Handled::Refused(
-                    blocker
-                        .map(|b| b.hint())
-                        .unwrap_or_else(|| "The prompt was not accepted".to_string()),
-                ),
+                Intake::Refused(why) => Handled::Refused(why.hint()),
+                Intake::Held | Intake::Waiting | Intake::CodeFirst => {
+                    Handled::Refused(Refusal::NotTaken.hint())
+                }
             }
         });
         cx.notify();
@@ -138,8 +134,7 @@ impl ChatPane {
                 return format!("Nothing is running on {uid}.");
             }
             let dropped = session.chat.unqueue();
-            session.chat.cancel_turn();
-            cx.notify();
+            session.stop(cx);
             match dropped {
                 None => format!("Stopped {uid}."),
                 Some(pending) => format!(
@@ -408,7 +403,7 @@ impl ChatPane {
     pub fn remote_answer(&mut self, press: Press, cx: &mut Context<Self>) -> Option<String> {
         let session = self.session_of(press.uid())?.clone();
         let said = session.update(cx, |session, cx| {
-            let said = Self::apply_press(&mut session.chat, press);
+            let said = Self::apply_press(session.chat.chat_mut(), press);
             cx.notify();
             said
         });

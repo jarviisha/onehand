@@ -90,19 +90,6 @@ pub struct Conversation {
     /// forgot to say which kind it was would blank a transcript the user was
     /// reading.
     pub was_live: bool,
-    /// The last attempt to write this conversation to disk failed.
-    ///
-    /// Here rather than in a map beside the pane for the same reason everything
-    /// else about a session is: closing one is a single `remove`, and a flag
-    /// filed anywhere else is a flag somebody forgets to clear.
-    ///
-    /// It exists to be a **latch**. The transcript is written at the end of
-    /// every turn, so a standing condition -- a full disk, a directory gone
-    /// read-only -- fails every turn, and saying so every turn is a stream of
-    /// identical messages that buries the first one. Only the change from
-    /// working to failing is worth announcing, and the change back is what arms
-    /// it to speak again.
-    pub archive_failed: bool,
     /// The name the user gave it, shown at once and saved after: what is
     /// put back when the newest rename's write fails. Made at the first
     /// rename, from the name before it.
@@ -152,7 +139,6 @@ impl Conversation {
             unseen: false,
             draft: None,
             was_live: false,
-            archive_failed: false,
             title: None,
         }
     }

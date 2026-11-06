@@ -12,7 +12,8 @@ use gpui::{
 };
 use gpui_component::input::TextareaState;
 use gpui_component::text::TextViewState;
-use onehand_core::chat::{Chat, ChatItem, Md, MdId, TranscriptItemId};
+use onehand_core::chat::drive::{Code, Effect, Input, Intake, Next, Origin, Signal};
+use onehand_core::chat::{ChatItem, Md, MdId, SessionDrive, TranscriptItemId};
 use onehand_core::completion;
 use onehand_core::config::AgentSpec;
 use onehand_core::host::client::HostConn;
@@ -21,7 +22,6 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 pub(crate) use host::{BeginOnHost, Carried, HostBegin, list as host_list};
 use host::{Source, host_events, new_chat};
@@ -126,27 +126,14 @@ fn sniff_image_format(bytes: &[u8]) -> Option<gpui::ImageFormat> {
 const MAX_MENTION_FILES: usize = 5000;
 
 pub enum ChatEvent {
-    /// New content landed; a follower should stay pinned to the tail.
-    Appended,
-    /// A turn settled. The pane decides whether that is worth a badge or a
-    /// desktop notification -- it is the half that knows what is on screen.
-    TurnEnded,
-    /// The agent parked a permission or a question and is waiting on the user.
-    /// The pane decides whether it needs saying outside the window, for the same
-    /// reason it decides that about a finished turn.
-    AwaitingUser(onehand_core::chat::UserAsk),
-    /// The adapter went away. The session stays on screen as read-only history.
-    Disconnected,
+    /// What the session's drive tells whatever watches it: content landed, a
+    /// turn settled, a card waits, the stream ended. The pane decides whether
+    /// a settled turn or a waiting card is worth a badge or a desktop
+    /// notification -- it is the half that knows what is on screen.
+    Session(Signal),
     /// A path in the transcript was clicked. The chat has no business opening
     /// files -- it says what was asked for and the shell decides where it goes.
     OpenFile(std::path::PathBuf),
-    /// The agent refused a pick, put back to what it last confirmed: why.
-    PickRefused(String),
-    /// Work the agent did by itself, between turns, settled: what it wrote is
-    /// safe to save, as a turn's is.
-    CycleEnded,
-    /// The adapter would not stop a background item: why.
-    StopRefused(String),
     /// Fork the conversation from the prompt at this place. A new session is
     /// the shell's to make.
     Fork(onehand_core::chat::TranscriptItemId),
@@ -178,14 +165,12 @@ type AskBox = (usize, usize, String, String);
 /// The most ACP events one update takes, so a flood still yields to a frame.
 const EVENT_BATCH: usize = 64;
 
-/// How long an agent writes nothing, between turns, before what it wrote is
-/// saved. For an agent that never says its own work between turns has
-/// settled: long enough that a burst of output lands as one write, short
-/// enough that closing the window soon after loses nothing.
-const QUIET_SAVE: Duration = Duration::from_secs(3);
-
 pub struct ChatSession {
-    pub chat: Chat,
+    /// The session's drive, which owns its transcript: read through it as
+    /// the transcript, changed through its methods.
+    pub chat: SessionDrive,
+    /// The agent this session runs, as its offer is kept for the next start.
+    agent: AgentSpec,
     /// When this session's adapter was started — for one warmed ahead of the
     /// session, when it was warmed. A restart is a new session, so this is
     /// when the agent now answering started, which is what tells a change to
@@ -324,9 +309,9 @@ pub struct ChatSession {
     /// child (see [`crate::acp::AcpRuntime::connect`]). Nothing else has to
     /// remember to shut an agent down.
     _pump: Task<()>,
-    /// The quiet-save timer, restarted by everything the agent writes between
-    /// turns; replacing it restarts it, dropping it cancels it.
-    _quiet_save: Option<Task<()>>,
+    /// The wait the drive armed; replacing it restarts it, dropping it calls
+    /// it off.
+    _armed: Option<Task<()>>,
 }
 
 impl EventEmitter<ChatEvent> for ChatSession {}
@@ -338,14 +323,14 @@ impl ChatSession {
         if self.host_wait.take().is_none() {
             return false;
         }
-        self.chat.unsay_host_wait();
+        self.chat.chat_mut().unsay_host_wait();
         true
     }
 
     /// No longer out of reach of its host, taking back the line that said so.
     pub(crate) fn forget_host_offline(&mut self) {
         if self.host_offline.take().is_some() {
-            self.chat.unsay_host_wait();
+            self.chat.chat_mut().unsay_host_wait();
         }
     }
 }
@@ -354,34 +339,10 @@ impl ChatSession {
 /// driving the session did, for the person reading it.
 pub(crate) fn note(session: &Entity<ChatSession>, text: String, cx: &mut App) {
     session.update(cx, |session, cx| {
-        session.chat.items.push(ChatItem::notice(text));
-        cx.emit(ChatEvent::Appended);
+        session.chat.chat_mut().items.push(ChatItem::notice(text));
+        cx.emit(ChatEvent::Session(Signal::Appended));
         cx.notify();
     });
-}
-
-/// Wait out `quiet`, then save what the agent wrote between turns if any of
-/// it is still unsaved and settled, and end the cycle it ran by itself. A
-/// cycle a step still in flight holds is looked at again after its wait.
-fn quiet_save(mut quiet: Duration, cx: &mut Context<ChatSession>) -> Task<()> {
-    cx.spawn(async move |session, cx| {
-        loop {
-            cx.background_executor().timer(quiet).await;
-            let again = session.update(cx, |session: &mut ChatSession, cx| {
-                if session.chat.unsaved_between_turns() {
-                    cx.emit(ChatEvent::CycleEnded);
-                }
-                if session.chat.quiet_spell() {
-                    cx.notify();
-                }
-                session.chat.own_cycle_wait()
-            });
-            match again {
-                Ok(Some(wait)) => quiet = wait,
-                _ => return,
-            }
-        }
-    })
 }
 
 impl ChatSession {
@@ -422,171 +383,215 @@ impl ChatSession {
                 )
             }
         };
-        let seen = spec.clone();
 
-        cx.new(|cx| {
-            // `@`-mention candidates. Bounded and off the UI loop: a deep tree
-            // must not stall the first frame.
-            if !host {
-                cx.spawn({
-                    let root = root.clone();
-                    async move |session, cx| {
-                        let files = cx
-                            .background_executor()
-                            .spawn(async move { completion::scan_files(&root, MAX_MENTION_FILES) })
-                            .await;
-                        let _ = session.update(cx, |session: &mut Self, cx| {
-                            session.chat.set_files(files);
-                            cx.notify();
-                        });
-                    }
-                })
-                .detach();
-            }
+        let chat = new_chat(uid, root.clone(), spec, host);
+        cx.new(|cx| Self::begin(chat, spec, host, source, started, token, cx))
+    }
 
-            let chat = new_chat(uid, root, spec, host);
-            Self {
-                chat,
-                started,
-                on_host: host,
-                host_wait: None,
-                host_offline: None,
-                host_conn: None,
-                _token: token,
-                md: HashMap::new(),
-                images: RefCell::new(HashMap::new()),
-                ask_inputs: HashMap::new(),
-                ask_focus: HashMap::new(),
-                perm_focus: HashMap::new(),
-                pinned_keys: (None, false),
-                activity_open: HashMap::new(),
-                section_open: HashSet::new(),
-                prompt_open: HashSet::new(),
-                turn_open: HashMap::new(),
-                file_open: HashMap::new(),
-                subagent_open: HashSet::new(),
-                numbering: 0,
-                _quiet_save: None,
-                _pump: cx.spawn(async move |session, cx| {
-                    let mut events = match source {
-                        Source::Local(events) => events,
-                        Source::Host(begin) => host_events(*begin, &session, cx).await,
-                    };
-                    while let Some(first) = events.next().await {
-                        let delivered = session.update(cx, |session: &mut Self, cx| {
-                            // **Every event already waiting, in one update.** A
-                            // streamed answer is many small chunks, and a render
-                            // plan rebuilt and a frame asked for at each one cost
-                            // the UI thread most when several agents stream at
-                            // once. A batch ends after any event that tells a
-                            // subscriber more than that something was appended,
-                            // so what it reads then is as it was at that event.
-                            let mut next = Some(first);
-                            let mut changed = false;
-                            let mut quiet = false;
-                            let mut asked = None;
-                            let mut taken = 0;
-                            while let Some(event) = next.take() {
-                                taken += 1;
-                                // What the event did is the reducer's answer, not
-                                // a second match on the event here -- two copies
-                                // of "did the turn settle" is one copy too many.
-                                // A watch that ended with its host's
-                                // connection says so instead, and is read
-                                // on from what it has until the host is back.
-                                if host::went_away(session, &event) {
-                                    changed = true;
-                                    cx.emit(ChatEvent::Appended);
-                                    continue;
-                                }
-                                let outcome = session.chat.apply(event);
-                                changed |= outcome.transcript_changed;
-                                quiet |= session.chat.starts_quiet_save(&outcome);
-                                cx.emit(ChatEvent::Appended);
-                                // A cycle ending inside a person's turn is that
-                                // turn's, and the turn's end saves it; one that
-                                // wrote nothing, or nothing settled, says nothing.
-                                let cycle_ended =
-                                    outcome.cycle_ended && session.chat.unsaved_between_turns();
-                                let told = outcome.turn_ended
-                                    || cycle_ended
-                                    || outcome.pick_refused.is_some()
-                                    || outcome.stop_refused.is_some();
-                                // A card is said once the events after it are
-                                // in, as a card the host answered comes with
-                                // its answer and waits on nobody; but before
-                                // anything said of this event, as it was
-                                // asked first.
-                                asked = outcome.asked_user.or(asked);
-                                if let Some(ask) = asked
-                                    .take_if(|_| told)
-                                    .filter(|_| session.chat.awaiting_permission())
-                                {
-                                    cx.emit(ChatEvent::AwaitingUser(ask));
-                                }
-                                if outcome.turn_ended {
-                                    cx.emit(ChatEvent::TurnEnded);
-                                }
-                                if cycle_ended {
-                                    cx.emit(ChatEvent::CycleEnded);
-                                }
-                                if let Some(why) = outcome.stop_refused.clone() {
-                                    cx.emit(ChatEvent::StopRefused(why));
-                                }
-                                if let Some(why) = outcome.pick_refused.clone() {
-                                    cx.emit(ChatEvent::PickRefused(why));
-                                }
-                                // What the agent offers is kept for every start
-                                // that asks before it brings an agent up.
-                                if outcome.offer_changed {
-                                    let offer = session.chat.offer();
-                                    let spec = seen.clone();
-                                    cx.update_global::<Shared, _>(|s, _| s.saw_offer(spec, offer));
-                                }
-                                // A card takes the event after it in, past
-                                // the cap: its answer, when the host gave one.
-                                let card = outcome.asked_user.is_some();
-                                if !told && (taken < EVENT_BATCH || card) {
-                                    // A stream that has ended answers `None`
-                                    // again to the loop's own next wait.
-                                    next = events.next().now_or_never().flatten();
-                                }
-                            }
-                            if let Some(ask) = asked.filter(|_| session.chat.awaiting_permission())
-                            {
-                                cx.emit(ChatEvent::AwaitingUser(ask));
-                            }
-                            if changed {
-                                session.sync_md(cx);
-                            }
-                            // Every batch restarts the wait: a silence is
-                            // counted from the agent's last word.
-                            if session.chat.busy {
-                                session._quiet_save = None;
-                            } else if let Some(wait) = session.chat.own_cycle_wait() {
-                                session._quiet_save = Some(quiet_save(wait, cx));
-                            } else if quiet {
-                                session._quiet_save = Some(quiet_save(QUIET_SAVE, cx));
-                            }
-                            cx.notify();
-                        });
-                        // The entity is gone (session closed, window closed): stop
-                        // pumping so the receiver drops and the adapter follows.
-                        if delivered.is_err() {
-                            return;
-                        }
-                    }
-
-                    // The stream ended, which only this loop knows.
+    /// The session itself, folding `source`'s events into `chat`: what
+    /// [`Self::spawn`] makes once it has an agent to listen to.
+    fn begin(
+        chat: onehand_core::chat::Chat,
+        spec: &AgentSpec,
+        host: bool,
+        source: Source,
+        started: std::time::Instant,
+        token: Option<crate::control::Token>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        // `@`-mention candidates. Bounded and off the UI loop: a deep tree
+        // must not stall the first frame.
+        if !host {
+            cx.spawn({
+                let root = chat.root.clone();
+                async move |session, cx| {
+                    let files = cx
+                        .background_executor()
+                        .spawn(async move { completion::scan_files(&root, MAX_MENTION_FILES) })
+                        .await;
                     let _ = session.update(cx, |session: &mut Self, cx| {
-                        session.chat.stream_ended();
-                        session._quiet_save = None;
-                        cx.emit(ChatEvent::Disconnected);
+                        session.chat.chat_mut().set_files(files);
                         cx.notify();
                     });
-                }),
+                }
+            })
+            .detach();
+        }
+
+        let chat = SessionDrive::new(chat);
+        Self {
+            chat,
+            agent: spec.clone(),
+            started,
+            on_host: host,
+            host_wait: None,
+            host_offline: None,
+            host_conn: None,
+            _token: token,
+            md: HashMap::new(),
+            images: RefCell::new(HashMap::new()),
+            ask_inputs: HashMap::new(),
+            ask_focus: HashMap::new(),
+            perm_focus: HashMap::new(),
+            pinned_keys: (None, false),
+            activity_open: HashMap::new(),
+            section_open: HashSet::new(),
+            prompt_open: HashSet::new(),
+            turn_open: HashMap::new(),
+            file_open: HashMap::new(),
+            subagent_open: HashSet::new(),
+            numbering: 0,
+            _armed: None,
+            _pump: cx.spawn(async move |session, cx| {
+                let mut events = match source {
+                    Source::Local(events) => events,
+                    Source::Host(begin) => host_events(*begin, &session, cx).await,
+                };
+                while let Some(first) = events.next().await {
+                    let delivered = session.update(cx, |session: &mut Self, cx| {
+                        // **Every event already waiting, in one update.** A
+                        // streamed answer is many small chunks, and a render
+                        // plan rebuilt and a frame asked for at each one cost
+                        // the UI thread most when several agents stream at
+                        // once. Where a batch may end is the drive's; how
+                        // many events one update takes at most is ours.
+                        let mut next = Some(first);
+                        let mut taken = 0;
+                        while let Some(event) = next.take() {
+                            taken += 1;
+                            // A watch that ended with its host's connection
+                            // says so instead, and is read on from what it
+                            // has until the host is back.
+                            if host::went_away(session, &event) {
+                                cx.emit(ChatEvent::Session(Signal::Appended));
+                                continue;
+                            }
+                            let (fx, more) = session.chat.apply(event);
+                            session.perform(fx, cx);
+                            let more = match more {
+                                Next::Stop => false,
+                                Next::More => taken < EVENT_BATCH,
+                                Next::PastCap => true,
+                            };
+                            if more {
+                                // A stream that has ended answers `None`
+                                // again to the loop's own next wait.
+                                next = events.next().now_or_never().flatten();
+                            }
+                        }
+                        let fx = session.chat.end_batch();
+                        session.perform(fx, cx);
+                        cx.notify();
+                    });
+                    // The entity is gone (session closed, window closed): stop
+                    // pumping so the receiver drops and the adapter follows.
+                    if delivered.is_err() {
+                        return;
+                    }
+                }
+
+                // The stream ended, which only this loop knows.
+                let _ = session.update(cx, |session: &mut Self, cx| {
+                    let fx = session.chat.handle(Input::StreamEnded);
+                    session.perform(fx, cx);
+                    cx.notify();
+                });
+            }),
+        }
+    }
+
+    /// Carry out what the drive said, in order, and hand back what only the
+    /// caller can do: send an offloaded project's code first, and send the
+    /// person's prompt again from where it waits once it is up.
+    pub(crate) fn perform(&mut self, fx: Vec<Effect>, cx: &mut Context<Self>) -> Vec<Effect> {
+        let mut left = Vec::new();
+        for effect in fx {
+            match effect {
+                Effect::Signal(signal) => cx.emit(ChatEvent::Session(signal)),
+                Effect::Changed => self.sync_md(cx),
+                // What the agent offers is kept for every start that asks
+                // before it brings an agent up.
+                Effect::OfferChanged => {
+                    let (spec, offer) = (self.agent.clone(), self.chat.offer());
+                    cx.update_global::<Shared, _>(|s, _| s.saw_offer(spec, offer));
+                }
+                Effect::Save(write) => {
+                    cx.spawn(async move |session, cx| {
+                        let (result, write) = cx
+                            .background_executor()
+                            .spawn(async move {
+                                let result = onehand_core::chat::commit(&write);
+                                (result.map_err(|e| e.to_string()), write)
+                            })
+                            .await;
+                        // A session closed while its own write was in flight
+                        // has nowhere to file the answer: its drop wrote what
+                        // was left.
+                        let _ = session.update(cx, |session: &mut Self, cx| {
+                            let fx = session.chat.handle(Input::Saved { write, result });
+                            session.perform(fx, cx);
+                        });
+                    })
+                    .detach();
+                }
+                Effect::Arm { token, wait } => {
+                    self._armed = Some(cx.spawn(async move |session, cx| {
+                        cx.background_executor().timer(wait).await;
+                        let _ = session.update(cx, |session: &mut Self, cx| {
+                            let fx = session.chat.handle(Input::Elapsed { token });
+                            session.perform(fx, cx);
+                            cx.notify();
+                        });
+                    }));
+                }
+                Effect::Disarm => self._armed = None,
+                Effect::SendCode { .. } | Effect::PromptAgain => left.push(effect),
             }
-        })
+        }
+        left
+    }
+
+    /// Send `text` with `staged` from `origin`; what became of it, and what
+    /// only the caller can do (see [`Self::perform`]).
+    pub(crate) fn prompt(
+        &mut self,
+        text: &str,
+        staged: &[onehand_core::attachment::StagedAttachment],
+        origin: Origin,
+        code: Code,
+        cx: &mut Context<Self>,
+    ) -> (Intake, Vec<Effect>) {
+        let (intake, fx) = self.chat.prompt(text, staged, origin, code);
+        let left = self.perform(fx, cx);
+        cx.notify();
+        (intake, left)
+    }
+
+    /// Send `text` from `origin` once the agent is up; see
+    /// [`SessionDrive::prompt_when_up`].
+    pub(crate) fn prompt_when_up(
+        &mut self,
+        text: &str,
+        origin: Origin,
+        cx: &mut Context<Self>,
+    ) -> Intake {
+        let (intake, fx) = self.chat.prompt_when_up(text, origin);
+        self.perform(fx, cx);
+        cx.notify();
+        intake
+    }
+
+    /// Stop the running turn.
+    pub(crate) fn stop(&mut self, cx: &mut Context<Self>) {
+        let fx = self.chat.stop();
+        self.perform(fx, cx);
+        cx.notify();
+    }
+
+    /// Write the conversation's name and settings alone.
+    pub(crate) fn save_meta(&mut self, cx: &mut Context<Self>) {
+        let fx = self.chat.save_meta();
+        self.perform(fx, cx);
     }
 
     /// Whether the prompt at `target` is shown whole past its cut.
@@ -599,7 +604,7 @@ impl ChatSession {
         if !self.prompt_open.remove(&target) {
             self.prompt_open.insert(target);
         }
-        self.chat.fold_changed();
+        self.chat.chat_mut().fold_changed();
     }
 
     /// Whether the activity run anchored at `anchor` is showing its steps:
@@ -612,7 +617,7 @@ impl ChatSession {
     /// it goes on to do.
     pub fn set_activity_open(&mut self, anchor: TranscriptItemId, open: bool) {
         self.activity_open.insert(anchor, open);
-        self.chat.fold_changed();
+        self.chat.chat_mut().fold_changed();
     }
 
     /// Whether the section anchored at `anchor` is showing its steps.
@@ -625,7 +630,7 @@ impl ChatSession {
         if !self.section_open.remove(&anchor) {
             self.section_open.insert(anchor);
         }
-        self.chat.fold_changed();
+        self.chat.chat_mut().fold_changed();
     }
 
     /// Whether the turn summary anchored at `anchor` is open, given what it
@@ -638,7 +643,7 @@ impl ChatSession {
     pub fn toggle_turn(&mut self, anchor: TranscriptItemId, default: bool) {
         let now = self.turn_is_open(anchor, default);
         self.turn_open.insert(anchor, !now);
-        self.chat.fold_changed();
+        self.chat.chat_mut().fold_changed();
     }
 
     /// Whether the subagent card `id` shows every step it took.
@@ -651,7 +656,7 @@ impl ChatSession {
         if !self.subagent_open.remove(id) {
             self.subagent_open.insert(id.to_string());
         }
-        self.chat.fold_changed();
+        self.chat.chat_mut().fold_changed();
     }
 
     /// Whether `path`'s diff is showing under the turn anchored at `anchor`.
@@ -678,7 +683,7 @@ impl ChatSession {
             });
             self.file_open.insert(key, rows);
         }
-        self.chat.fold_changed();
+        self.chat.chat_mut().fold_changed();
     }
 
     /// The diff showing under `path`'s row, if it is showing.
@@ -722,7 +727,7 @@ impl ChatSession {
             self.file_open
                 .extend(rows.into_iter().map(|(path, diff)| ((anchor, path), diff)));
         }
-        self.chat.fold_changed();
+        self.chat.chat_mut().fold_changed();
     }
 
     /// Run `f` over the transcript items `body` names.
@@ -791,7 +796,7 @@ impl ChatSession {
         snapshot: onehand_core::chat::ConversationSnapshot,
         cx: &mut Context<Self>,
     ) {
-        self.chat.resume_from(snapshot);
+        self.chat.chat_mut().resume_from(snapshot);
         self.forget_folds();
         self.sync_md(cx);
         cx.notify();
@@ -800,7 +805,7 @@ impl ChatSession {
     /// Start as a fork of another conversation, seeded with its history up to
     /// the point; parsed as an adopted conversation is.
     pub fn adopt_fork(&mut self, seed: onehand_core::chat::ForkSeed, cx: &mut Context<Self>) {
-        self.chat.adopt_fork(seed);
+        self.chat.chat_mut().adopt_fork(seed);
         self.forget_folds();
         self.sync_md(cx);
         cx.notify();
@@ -815,7 +820,7 @@ impl ChatSession {
         self.prompt_open.clear();
         self.turn_open.clear();
         self.file_open.clear();
-        self.chat.fold_changed();
+        self.chat.chat_mut().fold_changed();
     }
 
     /// Reparse whatever grew, drop whatever went away.
@@ -872,32 +877,6 @@ impl ChatSession {
         }
 
         self.md.retain(|id, _| live.contains(id));
-    }
-
-    /// Send the composer's contents as a prompt. Returns whether a turn started.
-    ///
-    /// The guard and the ordering live in [`Chat::submit`], so the view cannot
-    /// come to a different answer than the model about when Send is allowed.
-    pub fn submit(
-        &mut self,
-        text: &str,
-        attachments: &[onehand_core::attachment::StagedAttachment],
-        cx: &mut Context<Self>,
-    ) -> bool {
-        let sent = self.chat.submit(text, attachments);
-        if sent {
-            // A prompt is also what closes a resumed session's replay window,
-            // and closing it can put a whole conversation back on screen -- the
-            // one the adapter started re-delivering and never finished. Those
-            // blocks were taken out of the transcript when the replay began, so
-            // the parse cache dropped them; coming back, they have to be parsed
-            // again or every answer in the conversation draws as its own
-            // markdown source. The event path is covered because the pump syncs
-            // whenever the transcript moved; this path has no event.
-            self.sync_md(cx);
-            cx.notify();
-        }
-        sent
     }
 }
 

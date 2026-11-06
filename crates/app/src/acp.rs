@@ -313,6 +313,16 @@ pub struct Events {
     _held: oneshot::Receiver<()>,
 }
 
+impl Events {
+    /// Events read off `rx`, for a session driven by a test rather than an
+    /// adapter.
+    #[cfg(test)]
+    pub(crate) fn from_channel(rx: mpsc::Receiver<AcpEvent>) -> Self {
+        let (_, held) = oneshot::channel();
+        Self { rx, _held: held }
+    }
+}
+
 impl Stream for Events {
     type Item = AcpEvent;
 

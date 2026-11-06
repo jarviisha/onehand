@@ -449,12 +449,8 @@ impl Chat {
                 // Fold finished terminals into their cards so the `terminals` map
                 // only ever holds live ones (the turn is over → no more updates).
                 self.flatten_exited_terminals();
-                // The archive write is kicked off the UI loop by the app handler
-                // (it builds the snapshot here, then writes on a blocking pool).
-                //
-                // Last, so a prompt written mid-turn opens its own turn against
-                // a conversation that has finished closing the previous one.
-                self.flush_queued();
+                // What waited behind the turn is sent by the session's drive,
+                // once this turn has finished closing.
             }
             // Said by the failure it comes ahead of, so that failure keeps what
             // it is: a turn that failed can be sent again once logged in, and a

@@ -185,12 +185,18 @@ pub(crate) fn sending_line_for(cx: &App, path: &Path) -> String {
     }
 }
 
+/// Whether `path` is offloaded and this machine holds its code, as far as
+/// anything here knows: a prompt to one of its sessions sends the code first.
+pub(crate) fn holds_code(cx: &App, path: &Path) -> bool {
+    get(cx, path).is_some_and(Offload::sends_up)
+}
+
 /// Claim the send of `path`'s code before a prompt to a session of it: `true`
 /// when it is offloaded and this machine holds the code, or holds it as far
 /// as anything here knows, and nothing else moves it now. Claimed at once, so
 /// a second press waits on this send rather than starting one of its own.
 pub(crate) fn claim_send(cx: &mut App, path: &Path) -> bool {
-    if !get(cx, path).is_some_and(Offload::sends_up) {
+    if !holds_code(cx, path) {
         return false;
     }
     cx.update_global::<Offloads, _>(|all, _| {

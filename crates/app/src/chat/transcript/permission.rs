@@ -53,7 +53,7 @@ fn permission_record(
         let session = session.clone();
         move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
             session.update(cx, |s, cx| {
-                s.chat.toggle_permission(target);
+                s.chat.chat_mut().toggle_permission(target);
                 cx.notify();
             });
         }
@@ -372,7 +372,7 @@ pub(in crate::chat) fn answer_pinned(
 fn answer_permission(session: &Entity<ChatSession>, idx: usize, option: &str, cx: &mut App) {
     let option = option.to_string();
     session.update(cx, |s, cx| {
-        s.chat.answer_permission(idx, &option);
+        s.chat.chat_mut().answer_permission(idx, &option);
         cx.notify();
     });
 }

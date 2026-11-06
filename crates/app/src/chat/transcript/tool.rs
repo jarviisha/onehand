@@ -88,7 +88,7 @@ pub(super) fn tool(
         let session = session.clone();
         move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
             session.update(cx, |s, cx| {
-                s.chat.toggle_tool(target);
+                s.chat.chat_mut().toggle_tool(target);
                 cx.notify();
             });
         }
@@ -477,7 +477,7 @@ fn fold_link(
         show_more(("detail-fold", fold_key(target)), label, cx).on_click(
             move |_, _, cx: &mut App| {
                 session.update(cx, |s, cx| {
-                    s.chat.toggle_tool_output(target, 0);
+                    s.chat.chat_mut().toggle_tool_output(target, 0);
                     cx.notify();
                 });
             },

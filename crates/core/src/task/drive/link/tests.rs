@@ -1,0 +1,185 @@
+//! A run and its session, both real, joined by the link alone, with no front
+//! end: a front end's part is only to carry out what comes back.
+
+use super::*;
+use crate::acp::{AcpEvent, AcpRequest, ReqTx};
+use crate::chat::drive::Effect as SessionEffect;
+use crate::chat::Chat;
+use crate::task::drive::Effect;
+use crate::task::Task;
+use crate::workflow::{builtin, Brief, Mark, Setup};
+use std::path::PathBuf;
+
+type Rx = tokio::sync::mpsc::UnboundedReceiver<AcpRequest>;
+
+fn session() -> (SessionDrive, Rx) {
+    let mut session = SessionDrive::new(Chat::default());
+    let (tx, rx): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
+    session.apply(AcpEvent::Connected {
+        tx,
+        resumed: false,
+        forkable: false,
+    });
+    session.end_batch();
+    (session, rx)
+}
+
+fn run() -> (String, Run, Action) {
+    let brief = Brief {
+        title: "Fix the thing".into(),
+        body: "It is broken.".into(),
+        instructions: None,
+    };
+    let setup = Setup {
+        repo: PathBuf::from("/repo"),
+        dir: PathBuf::from("/repo"),
+        branch: None,
+        agent: None,
+        check: Some("make check".into()),
+        mode: None,
+        forge: None,
+    };
+    let task = Task::new("t1".into(), builtin::all().remove(0), brief, setup);
+    let mut run = task.runs[0].clone();
+    let first = run.resume();
+    ("t1".into(), run, first)
+}
+
+/// The two drives and what joins them: the run's effects on its session go
+/// through the link, the session's signals come back through it.
+struct Pair {
+    drive: Drive,
+    session: SessionDrive,
+    rx: Rx,
+    now: Instant,
+}
+
+impl Pair {
+    fn start() -> (Self, Vec<Effect>) {
+        let (mut session, rx) = session();
+        let (task, run, first) = run();
+        let now = Instant::now();
+        let (drive, fx) = start(task, run, first, 0, false, now, Some(&mut session));
+        let mut pair = Self {
+            drive,
+            session,
+            rx,
+            now,
+        };
+        let fx = pair.carry(fx);
+        (pair, fx)
+    }
+
+    /// Tell the run `input`, and carry out what it says on its session.
+    fn on(&mut self, input: Input) -> Vec<Effect> {
+        let fx = on(&mut self.drive, input, Some(&mut self.session), self.now);
+        self.carry(fx)
+    }
+
+    /// Carry out the run's session effects through the link; what is left is
+    /// the front end's (pins, reads, saves, notes).
+    fn carry(&mut self, fx: Vec<Effect>) -> Vec<Effect> {
+        let mut left = Vec::new();
+        for effect in fx {
+            match effect {
+                Effect::Submit(text) => {
+                    let (answer, _) = submit(&mut self.session, &text);
+                    if let Some(input) = answer {
+                        left.extend(self.on(input));
+                    }
+                }
+                Effect::CancelTurn => {
+                    cancel(&mut self.session);
+                }
+                other => left.push(other),
+            }
+        }
+        left
+    }
+
+    /// The agent's event reaches the session, and what the session signals
+    /// reaches the run.
+    fn agent(&mut self, event: AcpEvent) -> Vec<Effect> {
+        let (mut fx, _) = self.session.apply(event);
+        fx.extend(self.session.end_batch());
+        let mut out = Vec::new();
+        for effect in fx {
+            if let SessionEffect::Signal(signal) = effect {
+                if let Some(input) = input_of(&signal, &self.drive, &self.session) {
+                    out.extend(self.on(input));
+                }
+            }
+        }
+        out
+    }
+}
+
+fn mark(head: &str) -> Mark {
+    Mark {
+        head: head.into(),
+        digests: vec!["d0".into()],
+    }
+}
+
+#[test]
+fn a_runs_prompt_reaches_its_session_and_the_turns_end_moves_the_run_on() {
+    let (mut pair, fx) = Pair::start();
+    assert!(fx.iter().any(|e| matches!(e, Effect::Pin { .. })), "{fx:?}");
+    pair.on(Input::Pinned(Ok("c0".into())));
+    pair.on(Input::Measured(Ok(mark("a"))));
+    assert!(
+        matches!(pair.rx.try_recv(), Ok(AcpRequest::Prompt { .. })),
+        "the run's prompt went to the agent"
+    );
+    assert!(pair.session.busy);
+
+    pair.agent(AcpEvent::AgentChunk {
+        text: "The plan.".into(),
+        message: None,
+    });
+    let fx = pair.agent(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    assert!(
+        fx.iter().any(|e| matches!(e, Effect::ReadFacts { .. })),
+        "the turn's end reached the run: {fx:?}"
+    );
+}
+
+#[test]
+fn a_runs_prompt_to_a_busy_session_is_not_taken_and_the_run_hears_it() {
+    let (mut session, _rx) = session();
+    session.prompt("a person's", &[], Origin::Person, Code::Here);
+    let (answer, fx) = submit(&mut session, "the run's");
+    assert_eq!(answer, Some(Input::NotTaken));
+    assert!(fx.is_empty());
+    assert!(session.queued.is_none(), "a run's prompt never queues");
+}
+
+#[test]
+fn a_runs_cancel_leaves_an_idle_session_alone() {
+    let (mut session, mut rx) = session();
+    cancel(&mut session);
+    assert!(rx.try_recv().is_err(), "nothing to cancel");
+    session.prompt("go", &[], Origin::Person, Code::Here);
+    rx.try_recv().ok();
+    cancel(&mut session);
+    assert!(matches!(rx.try_recv(), Ok(AcpRequest::Cancel)));
+}
+
+#[test]
+fn signals_that_move_no_run_are_not_passed_on() {
+    let (pair, _) = Pair::start();
+    for signal in [
+        Signal::CycleEnded,
+        Signal::StopRefused("no".into()),
+        Signal::SaveFailed("disk".into()),
+        Signal::CodeFailed("net".into()),
+    ] {
+        assert_eq!(input_of(&signal, &pair.drive, &pair.session), None);
+    }
+    assert_eq!(
+        input_of(&Signal::TurnEnded, &pair.drive, &pair.session),
+        Some(Input::TurnEnded)
+    );
+}

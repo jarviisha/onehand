@@ -5,6 +5,7 @@
 use super::sessions;
 use super::state::{Found, find};
 use gpui::App;
+use onehand_core::chat::drive::{Code, Intake, Origin};
 use onehand_core::control::turns::{self, Last};
 use std::path::PathBuf;
 
@@ -32,7 +33,10 @@ pub(in crate::control) fn send(
     match turns::send(&worker.read(cx).chat, &last, turn, text)? {
         turns::Send::AlreadySent(turn) => Ok(format!("turn {turn} already sent")),
         turns::Send::Go => {
-            if !worker.update(cx, |worker, cx| worker.submit(text, &[], cx)) {
+            let (intake, _) = worker.update(cx, |worker, cx| {
+                worker.prompt(text, &[], Origin::Tools, Code::Here, cx)
+            });
+            if intake != Intake::Sent {
                 return Err("the prompt was not accepted".to_string());
             }
             let sent = worker.read(cx).chat.prompts_sent;
@@ -66,9 +70,6 @@ pub(in crate::control) fn cancel(
         sent: relation.sent,
     };
     let turn = turns::cancel(&worker.read(cx).chat, &last)?;
-    worker.update(cx, |worker, cx| {
-        worker.chat.cancel_turn();
-        cx.notify();
-    });
+    worker.update(cx, |worker, cx| worker.stop(cx));
     Ok(format!("cancelling turn {turn}"))
 }

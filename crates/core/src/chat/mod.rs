@@ -9,6 +9,7 @@
 
 pub mod activity;
 pub mod attention;
+pub mod drive;
 mod export;
 pub mod model;
 pub mod steps;
@@ -18,6 +19,7 @@ pub use activity::{
     first_line_trunc, group, presentation, ActivityGroup, ActivityKind, Presentation,
 };
 pub use attention::{Attention, Presence, SessionSignal, Telling};
+pub use drive::SessionDrive;
 pub use export::export_markdown;
 pub use model::{
     fork_seed, ApplyOutcome, AskItem, AskRow, Away, BackgroundItem, Chat, ChatItem, ForkPoint,

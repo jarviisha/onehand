@@ -232,6 +232,10 @@ impl Shell {
                         crate::toast::failed("Saving the conversation", why),
                         cx,
                     ),
+                    E::CodeFailed(why) => window.push_notification(
+                        crate::toast::failed("Sending the code to the host", why),
+                        cx,
+                    ),
                     // A warning rather than an error: nothing went wrong and
                     // nothing was lost -- the conversation is exactly where it
                     // was, which is the opposite of the message above.

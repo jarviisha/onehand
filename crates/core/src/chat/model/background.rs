@@ -251,7 +251,7 @@ impl Chat {
     /// The agent has been silent for [`Self::own_cycle_wait`]: its own cycle
     /// is taken to be over, unless a step or a thought it left in flight says
     /// it is not. Whether that changed anything.
-    pub fn quiet_spell(&mut self) -> bool {
+    pub(crate) fn quiet_spell(&mut self) -> bool {
         let over = match self.own_cycle {
             OwnCycle::None => false,
             OwnCycle::Expected => true,
@@ -316,7 +316,7 @@ impl Chat {
     /// does is saved at that word. A turn's end is saved by the turn, and a
     /// report that changed no transcript, or a line onehand wrote itself, is
     /// not the agent writing.
-    pub fn starts_quiet_save(&self, outcome: &ApplyOutcome) -> bool {
+    pub(crate) fn starts_quiet_save(&self, outcome: &ApplyOutcome) -> bool {
         outcome.transcript_changed
             && !outcome.turn_ended
             && !self.busy

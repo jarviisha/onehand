@@ -11,7 +11,7 @@ use super::Tasks;
 use crate::chat::session::{ChatEvent, ChatSession, note};
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Task, WeakEntity};
 use gpui_component::WindowExt as _;
-use onehand_core::task::drive::{Drive, Effect, Input};
+use onehand_core::task::drive::{Drive, Effect, Input, link};
 use onehand_core::task::{Approval, Source, marks};
 use onehand_core::workflow::{Action, Facts, Mark, Outcome, Run, run_command_blocking};
 use std::sync::Arc;
@@ -83,25 +83,17 @@ pub(crate) fn start(
     let id = task.clone();
     let watch = cx.subscribe(session, move |session, event: &ChatEvent, cx| {
         let input = match event {
-            // Most of what a session says is its reply streaming in. Asked
-            // first, read-only, so a chunk that cannot move the run does not
-            // tell every observer of the tasks that they changed.
-            ChatEvent::Appended => {
+            // Which signal moves the run, and which streamed chunk is worth
+            // asking it about, is the link's.
+            ChatEvent::Session(signal) => {
                 let chat = &session.read(cx).chat;
-                if !read(&id, cx, |d| d.drive.heeds_appended(chat)).unwrap_or(false) {
-                    return;
+                match read(&id, cx, |d| link::input_of(signal, &d.drive, chat)).flatten() {
+                    Some(input) => input,
+                    None => return,
                 }
-                Input::Appended
             }
-            ChatEvent::TurnEnded => Input::TurnEnded,
-            ChatEvent::AwaitingUser(_) => Input::AwaitingUser,
-            ChatEvent::Disconnected => Input::Disconnected,
-            ChatEvent::PickRefused(why) => Input::PickRefused(why.clone()),
-            // Between-turn work, a refused stop, a fork asked for and what a
-            // host says of its session move no run.
+            // A fork asked for and what a host says of its session move no run.
             ChatEvent::OpenFile(_)
-            | ChatEvent::CycleEnded
-            | ChatEvent::StopRefused(_)
             | ChatEvent::Fork(_)
             | ChatEvent::HostSession(_)
             | ChatEvent::HostBusy
@@ -115,8 +107,8 @@ pub(crate) fn start(
     let id = task.clone();
     let answered = cx.observe(session, move |session, cx| {
         let chat = &session.read(cx).chat;
-        if read(&id, cx, |d| d.drive.heeds_notified(chat)).unwrap_or(false) {
-            feed(&id, Input::Notified, cx);
+        if let Some(input) = read(&id, cx, |d| link::notified(&d.drive, chat)).flatten() {
+            feed(&id, input, cx);
         }
     });
     // The session went with the run still going: its window or the session
@@ -129,7 +121,7 @@ pub(crate) fn start(
     let issue = super::task(&task, cx).is_some_and(|task| task.issue().is_some());
     let now = Instant::now();
     let (drive, effects) = session.update(cx, |session, _| {
-        Drive::start(
+        link::start(
             task.clone(),
             run,
             first,
@@ -242,7 +234,7 @@ pub(super) fn feed(id: &str, input: Input, cx: &mut App) {
         let d = t.live.get_mut(id)?;
         Some(match d.session() {
             Some(session) => session.update(cx, |session, _| {
-                d.drive.on(input, Some(&mut session.chat), now)
+                link::on(&mut d.drive, input, Some(&mut session.chat), now)
             }),
             None => d.drive.on(input, None, now),
         })
@@ -267,19 +259,25 @@ fn perform(id: &str, effects: Vec<Effect>, cx: &mut App) {
                 Input::TurnRead(Facts::read_blocking(&dir, &from))
             }),
             Effect::Submit(text) => {
-                let taken = session
-                    .is_some_and(|s| s.update(cx, |session, cx| session.submit(&text, &[], cx)));
-                if !taken {
-                    feed(id, Input::NotTaken, cx);
+                let answer = match session {
+                    Some(session) => session.update(cx, |session, cx| {
+                        let (answer, fx) = link::submit(&mut session.chat, &text);
+                        session.perform(fx, cx);
+                        cx.notify();
+                        answer
+                    }),
+                    None => Some(Input::NotTaken),
+                };
+                if let Some(input) = answer {
+                    feed(id, input, cx);
                 }
             }
             Effect::CancelTurn => {
                 if let Some(session) = session {
                     session.update(cx, |session, cx| {
-                        if session.chat.busy {
-                            session.chat.cancel_turn();
-                            cx.notify();
-                        }
+                        let fx = link::cancel(&mut session.chat);
+                        session.perform(fx, cx);
+                        cx.notify();
                     });
                 }
             }

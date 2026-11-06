@@ -279,7 +279,7 @@ fn carry(
 ) {
     let _ = session.update(cx, |session, cx| {
         if sent > 0 {
-            session.chat.carry_sent(sent);
+            session.chat.chat_mut().carry_sent(sent);
         }
         if let Some(stored) = stored {
             session.adopt(stored, cx);
@@ -308,14 +308,16 @@ fn offline(
     let line = offline_line(&host, last, onehand_core::chat::now_secs());
     let _ = session.update(cx, |session, cx| {
         for event in copy::events(kept) {
-            session.chat.apply(event);
+            session.chat.chat_mut().apply(event);
         }
         if away {
-            session.chat.say_host_wait(line);
+            session.chat.chat_mut().say_host_wait(line);
             session.host_offline = Some(host);
         }
         session.sync_md(cx);
-        cx.emit(ChatEvent::Appended);
+        cx.emit(ChatEvent::Session(
+            onehand_core::chat::drive::Signal::Appended,
+        ));
         cx.notify();
     });
 }
@@ -340,9 +342,10 @@ pub(super) fn went_away(session: &mut ChatSession, event: &AcpEvent) -> bool {
     };
     let host = host.clone();
     let now = onehand_core::chat::now_secs();
-    session.chat.link_cut();
+    session.chat.chat_mut().link_cut();
     session
         .chat
+        .chat_mut()
         .say_host_wait(offline_line(&host, Some(now), now));
     session.host_offline = Some(host);
     true
@@ -368,10 +371,13 @@ fn wait(
     let _ = session.update(cx, |session, cx| {
         session
             .chat
+            .chat_mut()
             .say_host_wait(crate::hosts::waiting_line(&host, n, terms));
         session.host_wait = Some(host);
         cx.emit(ChatEvent::HostBusy);
-        cx.emit(ChatEvent::Appended);
+        cx.emit(ChatEvent::Session(
+            onehand_core::chat::drive::Signal::Appended,
+        ));
         cx.notify();
     });
 }

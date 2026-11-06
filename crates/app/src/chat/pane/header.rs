@@ -302,7 +302,9 @@ impl ChatPane {
                                 .child(div().flex_none().child("Stop"))
                         })
                         .on_click(move |_, _, cx: &mut App| {
-                            session.update(cx, |session, _| session.chat.stop_background(&id));
+                            session.update(cx, |session, _| {
+                                session.chat.chat_mut().stop_background(&id)
+                            });
                         }),
                     )
                 });
