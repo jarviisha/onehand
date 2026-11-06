@@ -16,8 +16,8 @@
 //! [`SessionDrive::prompt`], rather than a copy of the sending rule at each.
 //!
 //! **Reads go to the model.** The drive derefs to its [`Chat`]; what a front
-//! end draws, it reads there. A change to the session comes through a method
-//! here, or, for what no method here covers yet, through [`SessionDrive::chat_mut`].
+//! end draws, it reads there. Every change to the session comes through a
+//! method here; a front end has no way to the model's mutators.
 //!
 //! **A batch of events.** The agent streams many small events, and a front end
 //! repaints once per batch rather than once per event. Where a batch may end
@@ -287,8 +287,9 @@ impl SessionDrive {
         }
     }
 
-    /// The session's model, for a change no method here covers yet.
-    pub fn chat_mut(&mut self) -> &mut Chat {
+    /// The session's model, changed directly: for the run's drive, which puts
+    /// a step's mode and picks in force on its session through their link.
+    pub(crate) fn chat_mut(&mut self) -> &mut Chat {
         &mut self.chat
     }
 

@@ -476,7 +476,7 @@ mod folds {
     use crate::acp::Events;
     use futures::channel::mpsc;
     use gpui::{AppContext as _, Entity, TestAppContext};
-    use onehand_core::chat::{Chat, ChatItem, TranscriptItemId};
+    use onehand_core::chat::{Chat, TranscriptItemId};
     use onehand_core::config::AgentSpec;
     use std::time::Instant;
 
@@ -545,10 +545,8 @@ mod folds {
         session.update(cx, |s, cx| {
             let fx = s.chat.say_host_wait("Sending the code".into());
             s.perform(fx, cx);
-            s.chat
-                .chat_mut()
-                .items
-                .push(ChatItem::notice("after it".to_string()));
+            let fx = s.chat.note("after it".to_string());
+            s.perform(fx, cx);
             let after = TranscriptItemId::Live(1);
             s.toggle_item(after, false);
             s.toggle_out(after, 0);
