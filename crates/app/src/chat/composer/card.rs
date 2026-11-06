@@ -113,7 +113,9 @@ impl Composer {
                 let session = session.clone();
                 move |_: &crate::shell::CycleMode, _, cx| {
                     session.update(cx, |session, cx| {
-                        if session.chat.chat_mut().cycle_mode().is_some() {
+                        let (moved, fx) = session.chat.cycle_mode();
+                        session.perform(fx, cx);
+                        if moved.is_some() {
                             cx.notify();
                         }
                     });

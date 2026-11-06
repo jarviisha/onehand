@@ -444,7 +444,7 @@ impl Chat {
     }
 
     /// Send one setting pick to the agent.
-    pub fn pick(&mut self, pick: &Pick) {
+    pub(crate) fn pick(&mut self, pick: &Pick) {
         match pick {
             Pick::Mode(id) => self.set_mode(id),
             Pick::Option { id, value } => self.set_config_option(id, value),
@@ -463,7 +463,7 @@ impl Chat {
     /// The sentence it returns is read from the picker itself rather than from
     /// what the caller thought it was choosing, so a reply built from it is
     /// always true about what actually happened.
-    pub fn choose(&mut self, group: &str, choice: usize) -> Option<String> {
+    pub(crate) fn choose(&mut self, group: &str, choice: usize) -> Option<String> {
         let selector = self.selectors().into_iter().find(|s| s.id == group)?;
         let picked = selector.choices.get(choice)?.clone();
         if group == MODE_SELECTOR {
@@ -479,7 +479,7 @@ impl Chat {
     /// Optimistic on purpose — the adapter confirms a mode change in its reply
     /// rather than as a `session/update`, so waiting for an echo would leave
     /// the picker showing the old value until the next turn.
-    pub fn set_mode(&mut self, mode_id: &str) {
+    pub(crate) fn set_mode(&mut self, mode_id: &str) {
         self.send_pick(
             super::MODE_SELECTOR,
             AcpRequest::SetMode(mode_id.to_string()),
@@ -515,7 +515,7 @@ impl Chat {
     /// A mode the list no longer holds — or none at all — steps to the first,
     /// so the key always lands somewhere the picker can show. `None` when the
     /// agent advertises fewer than two modes, since there is nowhere to go.
-    pub fn cycle_mode(&mut self) -> Option<&str> {
+    pub(crate) fn cycle_mode(&mut self) -> Option<&str> {
         if self.modes.len() < 2 {
             return None;
         }
@@ -531,7 +531,7 @@ impl Chat {
 
     /// Pick a config option (model / effort / sub-agent), same contract as
     /// [`Self::set_mode`].
-    pub fn set_config_option(&mut self, config_id: &str, value: &str) {
+    pub(crate) fn set_config_option(&mut self, config_id: &str, value: &str) {
         self.send_pick(
             config_id,
             AcpRequest::SetConfigOption {

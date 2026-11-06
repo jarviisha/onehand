@@ -131,7 +131,8 @@ fn wake(
         Step::Pick(pick) => {
             picked.push(pick.group().to_string());
             session.update(cx, |session, cx| {
-                session.chat.chat_mut().pick(&pick);
+                let fx = session.chat.pick(&pick);
+                session.perform(fx, cx);
                 cx.notify();
             });
             Flow::Again

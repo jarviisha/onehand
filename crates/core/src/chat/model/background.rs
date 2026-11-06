@@ -160,7 +160,7 @@ impl Chat {
 
     /// Ask the adapter to stop one background item. The list follows the
     /// adapter's report that it ended, not this request.
-    pub fn stop_background(&mut self, id: &str) {
+    pub(crate) fn stop_background(&mut self, id: &str) {
         if let Some(tx) = &self.tx {
             let _ = tx.send(AcpRequest::StopBackground { id: id.to_string() });
             self.stop_asked.push(id.to_string());

@@ -475,12 +475,13 @@ impl ChatPane {
             // Not a card, so none of the transcript bookkeeping above applies:
             // what the agent offers is live, and the model refuses a group or a
             // choice that has moved rather than settling for the nearest.
-            Press::Option { group, choice, .. } => (
-                chat.chat_mut().choose(&group, choice).unwrap_or_else(|| {
+            Press::Option { group, choice, .. } => {
+                let (chosen, fx) = chat.choose(&group, choice);
+                let words = chosen.unwrap_or_else(|| {
                     "That isn't offered any more — ask for /options again.".to_string()
-                }),
-                Vec::new(),
-            ),
+                });
+                (words, fx)
+            }
         }
     }
 }
