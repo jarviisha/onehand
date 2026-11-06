@@ -187,8 +187,8 @@ than reading it. `Chat` still breaks this in three ways:
 - the requests it sends to its agent (`Chat::submit`, `Chat::cancel_turn`), moving into effects;
 - the save its drop writes when a session closes, moving into effects;
 - the clock: it stamps events, prompts and saves with the wall clock (`chat::store::now_secs`,
-  unless a host said the time), and times running steps with `Instant::now`. No phase moves
-  this yet.
+  unless a host said the time), and times running steps with `Instant::now`, moving into
+  inputs: the carrier says the time with what it reports.
 
 ## A new feature
 

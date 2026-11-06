@@ -86,7 +86,7 @@ draft that phase 1 tried, phase 2 kept, changed or dropped each rule:
   guard in `guards.rs` meets.
 - **New, rule 12:** a model does no I/O and reads no clock. `Chat`'s requests to its agent and its
   drop save are moving into effects. `Chat` also reads the wall clock and `Instant::now`, which the
-  review after phase 1 found; no phase moves that yet.
+  review after phase 1 found; that moves into inputs in phase 3.
 
 
 ## Inventory: what moves where
@@ -158,6 +158,9 @@ is built*, and AGENTS.md's *Invariants*. The decisions are below.
   waits for the saves in flight (#309).
 - `Chat`'s requests to its agent become an effect (`Effect::Request`), carried out on the
   request channel.
+- `Chat` stops reading the clock. The carrier says the time with each event and command it hands
+  the drive, and the drive passes it to the model; nothing in `chat::model` calls
+  `chat::store::now_secs` or `Instant::now`.
 - The GUI-free I/O moves into its own crate (D5).
 - Then every `Chat` mutator is `pub(crate)`, and `SessionDrive::chat_mut` is gone.
 
@@ -351,6 +354,8 @@ Made on 2026-11-06:
   without its code (#308). Every other path is kept off offloaded projects where projects are
   listed or picked.
 - **Requests to the agent become an effect** (phase 3).
+- **The time is an input:** the model stops reading the clock, and the carrier says the time
+  (phase 3).
 - **Closing is a command** that saves what is left and waits for the saves in flight (phase 3,
   #309).
 
