@@ -127,7 +127,7 @@ impl Chat {
     /// window it would have spoken to is being torn down. The per-turn save
     /// covers the same conversation every turn and does report, so a standing
     /// condition has already been said out loud long before this runs.
-    pub fn save_blocking(&mut self) {
+    fn save_blocking(&mut self) {
         // The adapter goes with the chat, so a card still working never ends;
         // held back, it and everything after it would never be written. Its
         // background work ends here too, and says so.
