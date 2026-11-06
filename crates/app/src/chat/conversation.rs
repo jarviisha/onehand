@@ -90,10 +90,6 @@ pub struct Conversation {
     /// forgot to say which kind it was would blank a transcript the user was
     /// reading.
     pub was_live: bool,
-    /// The name the user gave it, shown at once and saved after: what is
-    /// put back when the newest rename's write fails. Made at the first
-    /// rename, from the name before it.
-    pub title: Option<onehand_core::saving::Saving<Option<String>>>,
 }
 
 /// Where a session is between "the user asked for it" and "it is talking".
@@ -139,7 +135,6 @@ impl Conversation {
             unseen: false,
             draft: None,
             was_live: false,
-            title: None,
         }
     }
 

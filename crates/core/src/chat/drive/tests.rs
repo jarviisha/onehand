@@ -75,6 +75,7 @@ fn names(fx: &[Effect]) -> Vec<String> {
             Effect::Disarm => "Disarm".into(),
             Effect::SendCode { .. } => "SendCode".into(),
             Effect::PromptAgain => "PromptAgain".into(),
+            Effect::SaveTitle { .. } => "SaveTitle".into(),
         })
         .collect()
 }
@@ -741,4 +742,96 @@ fn a_declined_form_sends_no_answer() {
         Some(crate::acp::ElicitOutcome::Decline)
     ));
     assert!(drive.ask_at(one).is_none(), "and the card is settled");
+}
+
+// A conversation's name.
+
+/// A connected session whose conversation is on disk already, as a rename
+/// writes only a conversation that has a file.
+fn written() -> (SessionDrive, Rx) {
+    let (mut drive, rx) = connected();
+    drive.prompt("go", &[], Origin::Person, Code::Here);
+    take_save(feed(&mut drive, turn_ends()));
+    (drive, rx)
+}
+
+fn title_write(fx: &[Effect]) -> Option<(u64, Option<String>)> {
+    fx.iter().find_map(|effect| match effect {
+        Effect::SaveTitle { change, title, .. } => Some((*change, title.clone())),
+        _ => None,
+    })
+}
+
+#[test]
+fn a_rename_shows_at_once_and_is_written() {
+    let (mut drive, _rx) = written();
+    let (renamed, fx) = drive.rename("  the  plan ");
+    assert!(renamed);
+    assert_eq!(drive.custom_title.as_deref(), Some("the plan"));
+    assert_eq!(title_write(&fx), Some((1, Some("the plan".into()))));
+    assert!(!drive.rename("   ").0, "a blank name is not a rename");
+}
+
+#[test]
+fn a_conversation_with_no_file_is_renamed_and_not_written() {
+    let (mut drive, _rx) = connected();
+    let (renamed, fx) = drive.rename("named");
+    assert!(renamed);
+    assert!(title_write(&fx).is_none(), "the first turn's end writes it");
+}
+
+#[test]
+fn the_newest_name_failing_puts_back_the_last_written_once() {
+    let (mut drive, _rx) = written();
+    let (first, _) = title_write(&drive.rename("one").1).unwrap();
+    drive.handle(Input::TitleSaved {
+        change: first,
+        title: Some("one".into()),
+        result: Ok(()),
+    });
+    let (second, title) = title_write(&drive.rename("two").1).unwrap();
+    let fx = drive.handle(Input::TitleSaved {
+        change: second,
+        title,
+        result: Err("read-only".into()),
+    });
+    assert_eq!(names(&fx), ["RenameFailed(\"read-only\")"]);
+    assert_eq!(
+        drive.custom_title.as_deref(),
+        Some("one"),
+        "the last written"
+    );
+}
+
+#[test]
+fn a_name_failing_behind_a_newer_one_changes_nothing() {
+    let (mut drive, _rx) = written();
+    let (first, title) = title_write(&drive.rename("one").1).unwrap();
+    drive.rename("two");
+    let fx = drive.handle(Input::TitleSaved {
+        change: first,
+        title,
+        result: Err("read-only".into()),
+    });
+    assert!(fx.is_empty(), "the newer write carries what is shown");
+    assert_eq!(drive.custom_title.as_deref(), Some("two"));
+}
+
+#[test]
+fn a_reset_failing_puts_the_given_name_back() {
+    let (mut drive, _rx) = written();
+    let (first, title) = title_write(&drive.rename("mine").1).unwrap();
+    drive.handle(Input::TitleSaved {
+        change: first,
+        title,
+        result: Ok(()),
+    });
+    let (reset, title) = title_write(&drive.reset_title()).unwrap();
+    assert!(drive.custom_title.is_none());
+    drive.handle(Input::TitleSaved {
+        change: reset,
+        title,
+        result: Err("gone".into()),
+    });
+    assert_eq!(drive.custom_title.as_deref(), Some("mine"));
 }

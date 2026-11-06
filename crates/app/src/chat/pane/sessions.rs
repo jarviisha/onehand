@@ -257,9 +257,7 @@ impl ChatPane {
             });
         }
         if let Some((custom, stand_in)) = titles {
-            session.update(cx, |session, _| {
-                session.chat.chat_mut().carry_titles(custom, stand_in)
-            });
+            session.update(cx, |session, _| session.chat.carry_titles(custom, stand_in));
         }
         cx.emit(ChatPaneEvent::AgentStarted);
         // The conversation is adopted *before* the adapter's replay lands,
@@ -371,6 +369,10 @@ impl ChatPane {
                     }
                     ChatEvent::Session(Signal::CodeFailed(why)) => {
                         cx.emit(ChatPaneEvent::CodeFailed(why.clone()));
+                    }
+                    ChatEvent::Session(Signal::RenameFailed(why)) => {
+                        cx.emit(ChatPaneEvent::RenameFailed(why.clone()));
+                        cx.notify();
                     }
                     ChatEvent::HostSession(id) => {
                         if let Some(on) = pane

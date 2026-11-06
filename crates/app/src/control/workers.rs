@@ -419,8 +419,7 @@ fn finish(
                 |last| last.to_string_lossy().into_owned(),
             );
             session.update(cx, |session, cx| {
-                session.chat.chat_mut().stand_in_title = Some(folder);
-                session.chat.chat_mut().custom_title = name;
+                session.chat.name_for_folder(folder, name);
                 cx.notify();
             });
             Ok(Started {

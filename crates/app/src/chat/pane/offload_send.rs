@@ -52,7 +52,8 @@ impl ChatPane {
                 | Effect::OfferChanged
                 | Effect::Save(_)
                 | Effect::Arm { .. }
-                | Effect::Disarm => {}
+                | Effect::Disarm
+                | Effect::SaveTitle { .. } => {}
             }
         }
     }

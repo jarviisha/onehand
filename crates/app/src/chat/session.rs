@@ -566,6 +566,30 @@ impl ChatSession {
                     }));
                 }
                 Effect::Disarm => self._armed = None,
+                // Through the one writer every shown-then-saved change goes
+                // through, so a name is written after every name before it.
+                Effect::SaveTitle {
+                    write,
+                    change,
+                    title,
+                } => {
+                    let written = Shared::global(cx).writer.write(move || {
+                        onehand_core::chat::commit(&write).map_err(|why| why.to_string())
+                    });
+                    cx.spawn(async move |session, cx| {
+                        let result = written.await;
+                        let _ = session.update(cx, |session: &mut Self, cx| {
+                            let fx = session.chat.handle(Input::TitleSaved {
+                                change,
+                                title,
+                                result,
+                            });
+                            session.perform(fx, cx);
+                            cx.notify();
+                        });
+                    })
+                    .detach();
+                }
                 Effect::SendCode { .. } | Effect::PromptAgain => left.push(effect),
             }
         }
@@ -613,6 +637,22 @@ impl ChatSession {
     /// Stop the running turn.
     pub(crate) fn stop(&mut self, cx: &mut Context<Self>) {
         let fx = self.chat.stop();
+        self.perform(fx, cx);
+        cx.notify();
+    }
+
+    /// Name the conversation `title`; whether anything changed. See
+    /// [`SessionDrive::rename`].
+    pub(crate) fn rename(&mut self, title: &str, cx: &mut Context<Self>) -> bool {
+        let (renamed, fx) = self.chat.rename(title);
+        self.perform(fx, cx);
+        cx.notify();
+        renamed
+    }
+
+    /// Drop the name a person gave, back to the automatic one.
+    pub(crate) fn reset_title(&mut self, cx: &mut Context<Self>) {
+        let fx = self.chat.reset_title();
         self.perform(fx, cx);
         cx.notify();
     }

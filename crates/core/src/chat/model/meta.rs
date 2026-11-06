@@ -302,7 +302,7 @@ impl Chat {
     /// Commit a user-entered title. Whitespace is normalized so a value pasted
     /// from multiple lines still behaves like a single-line header label.
     /// Blank input is ignored; Reset is an explicit separate action.
-    pub fn rename(&mut self, title: &str) -> bool {
+    pub(crate) fn rename(&mut self, title: &str) -> bool {
         let title = title.split_whitespace().collect::<Vec<_>>().join(" ");
         if title.is_empty() {
             return false;
@@ -314,13 +314,13 @@ impl Chat {
     /// Take over the titles of the chat this one restarts: a restart builds
     /// the chat anew, and a name not yet written down, or a stand-in that
     /// never is, would otherwise give way to the prompt's.
-    pub fn carry_titles(&mut self, custom: Option<String>, stand_in: Option<String>) {
+    pub(crate) fn carry_titles(&mut self, custom: Option<String>, stand_in: Option<String>) {
         self.custom_title = self.custom_title.take().or(custom);
         self.stand_in_title = stand_in;
     }
 
     /// Return to the title that stands when nobody named the conversation.
-    pub fn reset_title(&mut self) {
+    pub(crate) fn reset_title(&mut self) {
         self.custom_title = None;
     }
     /// Every picker the agent offers, mode and config options alike, as one

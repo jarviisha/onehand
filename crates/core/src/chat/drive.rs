@@ -133,6 +133,9 @@ pub enum Signal {
     SaveFailed(String),
     /// An offloaded project's code could not go up: why.
     CodeFailed(String),
+    /// The conversation's newest name could not be written, and the last
+    /// one written is back: why.
+    RenameFailed(String),
 }
 
 /// One thing the drive asks its front end to do, in the order given.
@@ -162,6 +165,17 @@ pub enum Effect {
     SendCode { token: u64 },
     /// The code is up: send the person's prompt again, from where it waits.
     PromptAgain,
+    /// Write the conversation's name and settings, after every name written
+    /// before it, and report [`Input::TitleSaved`] with `change` and `title`.
+    ///
+    /// A late answer is **recorded**: the write landed or it did not, and
+    /// only the newest change's failure puts a name back, since a newer
+    /// write carries the name on screen.
+    SaveTitle {
+        write: Box<PendingWrite>,
+        change: u64,
+        title: Option<String>,
+    },
 }
 
 /// What the front end reports back.
@@ -182,6 +196,12 @@ pub enum Input {
     },
     /// The agent's stream ended.
     StreamEnded,
+    /// The name written for `change`, `title`, landed, or why not.
+    TitleSaved {
+        change: u64,
+        title: Option<String>,
+        result: Result<(), String>,
+    },
 }
 
 /// Whether a batch of events may take another.
@@ -224,6 +244,9 @@ pub struct SessionDrive {
     held: Option<Held>,
     /// The last save failed: the next failure is not said again.
     save_failed: bool,
+    /// The name shown and the one last written, once a person named the
+    /// conversation here.
+    title: Option<crate::saving::Saving<Option<String>>>,
     batch: Batch,
 }
 
@@ -243,6 +266,7 @@ impl SessionDrive {
             sending: None,
             held: None,
             save_failed: false,
+            title: None,
             batch: Batch::default(),
         }
     }
@@ -488,6 +512,11 @@ impl SessionDrive {
                 fx.push(Effect::Signal(Signal::Disconnected));
                 fx
             }
+            Input::TitleSaved {
+                change,
+                title,
+                result,
+            } => self.title_saved(change, title, result),
         }
     }
 
@@ -589,6 +618,7 @@ impl SessionDrive {
 
 mod cards;
 mod settings;
+mod titles;
 
 #[cfg(test)]
 mod tests;

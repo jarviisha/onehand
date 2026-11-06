@@ -89,7 +89,7 @@ impl Chat {
     ///
     /// `None` for a conversation with nothing on disk yet. Metadata by itself
     /// would put an empty conversation in the list.
-    pub fn flush_meta(&mut self) -> Option<PendingWrite> {
+    pub(crate) fn flush_meta(&mut self) -> Option<PendingWrite> {
         if self.persisted == 0 {
             return None;
         }

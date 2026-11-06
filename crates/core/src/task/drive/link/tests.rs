@@ -175,6 +175,7 @@ fn signals_that_move_no_run_are_not_passed_on() {
         Signal::StopRefused("no".into()),
         Signal::SaveFailed("disk".into()),
         Signal::CodeFailed("net".into()),
+        Signal::RenameFailed("disk".into()),
     ] {
         assert_eq!(input_of(&signal, &pair.drive, &pair.session), None);
     }

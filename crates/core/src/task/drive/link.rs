@@ -51,12 +51,13 @@ pub fn input_of(signal: &Signal, drive: &Drive, session: &SessionDrive) -> Optio
         Signal::AwaitingUser(_) => Some(Input::AwaitingUser),
         Signal::Disconnected => Some(Input::Disconnected),
         Signal::PickRefused(why) => Some(Input::PickRefused(why.clone())),
-        // Between-turn work, a refused stop, and what a save or a code send
-        // came to move no run.
+        // Between-turn work, a refused stop, and what a save, a code send or
+        // a rename came to move no run.
         Signal::CycleEnded
         | Signal::StopRefused(_)
         | Signal::SaveFailed(_)
-        | Signal::CodeFailed(_) => None,
+        | Signal::CodeFailed(_)
+        | Signal::RenameFailed(_) => None,
     }
 }
 
