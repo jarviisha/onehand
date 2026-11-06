@@ -9,6 +9,16 @@ use onehand_core::gitstat;
 use onehand_core::host::wire::HostSession;
 use std::path::PathBuf;
 
+/// Whether the project at `root` is left with nothing a person keeps: one
+/// added for a worker or a run alone, never saved, whose last session closed.
+/// Its row would stand for nothing, so it goes with that session.
+pub(super) fn left_behind(workspace: &onehand_core::workspace::Workspace, root: usize) -> bool {
+    workspace
+        .roots
+        .get(root)
+        .is_some_and(|root| root.transient && root.sessions.is_empty())
+}
+
 impl Shell {
     /// What the rail draws on a session row.
     ///
@@ -254,8 +264,12 @@ impl Shell {
         // than to its worktree, emptied.
         let shown = self.active_session_uid() == Some(uid);
         let lead = crate::control::lead_of(uid).filter(|_| shown);
+        let root = self.locate(uid).map(|(root, _)| root);
         if !self.drop_session(uid, cx) {
             return;
+        }
+        if let Some(root) = root.filter(|&root| left_behind(&self.window.workspace, root)) {
+            self.forget_root(root, cx);
         }
         if let Some((root, session)) = lead.and_then(|lead| self.locate(lead)) {
             self.window.workspace.select_root(root);
