@@ -29,7 +29,7 @@
 
 use super::model::{Chat, Link, QueuedPrompt, SubmitBlock, UserAsk};
 use super::store::PendingWrite;
-use crate::acp::AcpEvent;
+use crate::acp::{AcpEvent, AcpRequest};
 use crate::attachment::StagedAttachment;
 use std::time::Duration;
 
@@ -165,6 +165,13 @@ pub enum Effect {
     SendCode { token: u64 },
     /// The code is up: send the person's prompt again, from where it waits.
     PromptAgain,
+    /// Send `request` to the agent on its channel
+    /// ([`Chat::agent_channel`]), in the order given.
+    ///
+    /// Not answered: whether the link was up was asked before this was
+    /// queued, and a channel that closed as it went is the agent's stream
+    /// ending, which the stream says itself.
+    Request(AcpRequest),
     /// Write the conversation's name and settings, after every name written
     /// before it, and report [`Input::TitleSaved`] with `change` and `title`.
     ///
@@ -316,6 +323,17 @@ impl SessionDrive {
         origin: Origin,
         code: Code,
     ) -> (Intake, Vec<Effect>) {
+        let (intake, fx) = self.intake(text, staged, origin, code);
+        (intake, self.sent(fx))
+    }
+
+    fn intake(
+        &mut self,
+        text: &str,
+        staged: &[StagedAttachment],
+        origin: Origin,
+        code: Code,
+    ) -> (Intake, Vec<Effect>) {
         // Read before sending: a send that went clears what refused it.
         let blocker = self.chat.submit_blocker(text, staged);
         if origin == Origin::Person {
@@ -420,7 +438,13 @@ impl SessionDrive {
     /// Stop the running turn.
     pub fn stop(&mut self) -> Vec<Effect> {
         self.chat.cancel_turn();
-        Vec::new()
+        self.sent(Vec::new())
+    }
+
+    /// `fx`, then what the model queued for the agent meanwhile.
+    pub(crate) fn sent(&mut self, mut fx: Vec<Effect>) -> Vec<Effect> {
+        fx.extend(self.chat.take_requests().into_iter().map(Effect::Request));
+        fx
     }
 
     /// Fold one event in.
@@ -488,7 +512,7 @@ impl SessionDrive {
             (false, true) => Next::PastCap,
             (false, false) => Next::More,
         };
-        (fx, next)
+        (self.sent(fx), next)
     }
 
     /// Close the batch [`Self::apply`] has been folding.

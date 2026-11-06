@@ -7,7 +7,7 @@
 //! — a composer buffer, scroll offsets, find state, parsed-markdown or texture
 //! caches — belongs to that front end, not here.
 
-use crate::acp::{ConfigOption, Mode, ReqTx, SlashCommand};
+use crate::acp::{AcpRequest, ConfigOption, Mode, ReqTx, SlashCommand};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -143,7 +143,14 @@ pub struct Chat {
     /// concatenate into one).
     user_chunk_open: bool,
     /// The live request channel once `Connected`; `None` while not running.
+    ///
+    /// Held to know the link is up, and handed to the front end that sends:
+    /// the model itself sends nothing.
     pub(crate) tx: Option<ReqTx>,
+    /// What is to go to the agent, in order, taken by the session's drive
+    /// and sent by its front end. Only queued while the link is up, as a
+    /// request into no channel reaches nobody.
+    pub(super) outbox: Vec<AcpRequest>,
     /// Whether the adapter is coming up, live, or gone. See [`Link`].
     pub link: Link,
     /// A turn is in flight (Send becomes Stop).
@@ -310,6 +317,24 @@ impl Chat {
 
     /// Say that the session waits on its host's busy sessions, in a line of
     /// onehand's own that [`Self::unsay_host_wait`] takes back.
+    /// Queue `request` for the agent, if the link is up.
+    pub(crate) fn request(&mut self, request: AcpRequest) {
+        if self.tx.is_some() {
+            self.outbox.push(request);
+        }
+    }
+
+    /// What was queued for the agent since last asked, in order.
+    pub(crate) fn take_requests(&mut self) -> Vec<AcpRequest> {
+        std::mem::take(&mut self.outbox)
+    }
+
+    /// The channel to the agent, for the front end that sends what the
+    /// session's drive queued: `None` while the link is down.
+    pub fn agent_channel(&self) -> Option<&ReqTx> {
+        self.tx.as_ref()
+    }
+
     pub(crate) fn say_host_wait(&mut self, text: String) {
         self.host_wait_line = Some((self.items.len(), text.clone()));
         self.items.push(ChatItem::notice(text));

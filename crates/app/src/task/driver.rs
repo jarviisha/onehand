@@ -120,8 +120,8 @@ pub(crate) fn start(
     });
     let issue = super::task(&task, cx).is_some_and(|task| task.issue().is_some());
     let now = Instant::now();
-    let (drive, effects) = session.update(cx, |session, _| {
-        link::start(
+    let (drive, effects) = session.update(cx, |session, cx| {
+        let (drive, effects, asked) = link::start(
             task.clone(),
             run,
             first,
@@ -129,7 +129,9 @@ pub(crate) fn start(
             issue,
             now,
             Some(&mut session.chat),
-        )
+        );
+        session.perform(asked, cx);
+        (drive, effects)
     });
     let driven = Driven {
         drive,
@@ -233,8 +235,10 @@ pub(super) fn feed(id: &str, input: Input, cx: &mut App) {
     let effects = cx.update_global::<Tasks, _>(|t, cx| {
         let d = t.live.get_mut(id)?;
         Some(match d.session() {
-            Some(session) => session.update(cx, |session, _| {
-                link::on(&mut d.drive, input, Some(&mut session.chat), now)
+            Some(session) => session.update(cx, |session, cx| {
+                let (effects, asked) = link::on(&mut d.drive, input, Some(&mut session.chat), now);
+                session.perform(asked, cx);
+                effects
             }),
             None => d.drive.on(input, None, now),
         })

@@ -597,6 +597,13 @@ impl ChatSession {
                     }));
                 }
                 Effect::Disarm => self._armed = None,
+                // A channel that closed as it went is the stream ending, which
+                // the pump hears and says.
+                Effect::Request(request) => {
+                    if let Some(tx) = self.chat.agent_channel() {
+                        let _ = tx.send(request);
+                    }
+                }
                 // Through the one writer every shown-then-saved change goes
                 // through, so a name is written after every name before it.
                 Effect::SaveTitle {

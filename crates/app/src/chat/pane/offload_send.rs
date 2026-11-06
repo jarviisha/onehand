@@ -53,7 +53,8 @@ impl ChatPane {
                 | Effect::Save(_)
                 | Effect::Arm { .. }
                 | Effect::Disarm
-                | Effect::SaveTitle { .. } => {}
+                | Effect::SaveTitle { .. }
+                | Effect::Request(_) => {}
             }
         }
     }

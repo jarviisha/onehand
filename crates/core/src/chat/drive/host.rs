@@ -24,7 +24,7 @@ impl SessionDrive {
         if let Some(line) = away {
             self.chat.say_host_wait(line);
         }
-        vec![Effect::Changed, Effect::Signal(Signal::Appended)]
+        self.sent(vec![Effect::Changed, Effect::Signal(Signal::Appended)])
     }
 
     /// Say on the session, in `line`, that it waits on its host: out of
@@ -39,7 +39,7 @@ impl SessionDrive {
     /// it was put.
     pub fn unsay_host_wait(&mut self) -> Vec<Effect> {
         self.chat.unsay_host_wait();
-        Vec::new()
+        self.sent(Vec::new())
     }
 
     /// The connection to the session's host was lost, in a batch of events:

@@ -481,7 +481,8 @@ impl Chat {
 
     /// Send a pick for `group` to the agent, counted until it answers.
     fn send_pick(&mut self, group: &str, request: AcpRequest) {
-        let sent = self.tx.as_ref().is_some_and(|tx| tx.send(request).is_ok());
+        let sent = self.tx.is_some();
+        self.request(request);
         if sent {
             *self.picks_out.entry(group.to_string()).or_default() += 1;
         }

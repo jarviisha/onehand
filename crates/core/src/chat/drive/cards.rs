@@ -13,7 +13,7 @@ impl SessionDrive {
     /// would echo an id the agent no longer holds.
     pub fn answer_permission(&mut self, idx: usize, option_id: &str) -> Vec<Effect> {
         self.chat.answer_permission(idx, option_id);
-        Vec::new()
+        self.sent(Vec::new())
     }
 
     /// Pick `option` of `field` on the open question at `idx`, toggling it on
@@ -22,14 +22,14 @@ impl SessionDrive {
     /// decide, so the pick answers it: whether it did.
     pub fn ask_pick(&mut self, idx: usize, field: usize, option: usize) -> (bool, Vec<Effect>) {
         let Some(ask) = self.chat.ask_at_mut(idx) else {
-            return (false, Vec::new());
+            return (false, self.sent(Vec::new()));
         };
         ask.toggle(field, option);
         let quick = ask.is_quick();
         if quick {
             self.chat.answer_ask(idx, false);
         }
-        (quick, Vec::new())
+        (quick, self.sent(Vec::new()))
     }
 
     /// Type `text` as the answer to `field` of the open question at `idx`; a
@@ -38,7 +38,7 @@ impl SessionDrive {
         if let Some(ask) = self.chat.ask_at_mut(idx) {
             ask.set_custom(field, text);
         }
-        Vec::new()
+        self.sent(Vec::new())
     }
 
     /// Pass on `field` of the open question at `idx`, dropping what it held.
@@ -52,11 +52,11 @@ impl SessionDrive {
             .ask_at_mut(idx)
             .is_none_or(|ask| ask.skip_field(field));
         if !last {
-            return (Some(field + 1), Vec::new());
+            return (Some(field + 1), self.sent(Vec::new()));
         }
         let answered = self.chat.ask_at(idx).is_some_and(|ask| ask.has_answer());
         self.chat.answer_ask(idx, !answered);
-        (None, Vec::new())
+        (None, self.sent(Vec::new()))
     }
 
     /// Move the open question at `idx` on from `field`, a multi-select left
@@ -68,10 +68,10 @@ impl SessionDrive {
             .ask_at_mut(idx)
             .is_none_or(|ask| ask.advance(field));
         if !last {
-            return (Some(field + 1), Vec::new());
+            return (Some(field + 1), self.sent(Vec::new()));
         }
         self.chat.answer_ask(idx, false);
-        (None, Vec::new())
+        (None, self.sent(Vec::new()))
     }
 
     /// Send the open question at `idx` as it stands, once any of it holds an
@@ -80,12 +80,12 @@ impl SessionDrive {
         if self.chat.ask_at(idx).is_some_and(|ask| ask.has_answer()) {
             self.chat.answer_ask(idx, false);
         }
-        Vec::new()
+        self.sent(Vec::new())
     }
 
     /// Decline the open question at `idx`: the agent goes on with no answer.
     pub fn ask_decline(&mut self, idx: usize) -> Vec<Effect> {
         self.chat.answer_ask(idx, true);
-        Vec::new()
+        self.sent(Vec::new())
     }
 }

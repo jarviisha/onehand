@@ -129,13 +129,13 @@ fn background_outlives_the_turn() {
 
 #[test]
 fn stop_background_asks_the_adapter_and_leaves_the_list() {
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     let mut chat = Chat::default();
     chat.tx = Some(tx);
     chat.apply(spawned("t1"));
     chat.stop_background("t1");
     assert!(matches!(
-        rx.try_recv(),
+        recv(&mut chat),
         Ok(AcpRequest::StopBackground { id }) if id == "t1"
     ));
     assert_eq!(chat.background().len(), 1, "the adapter's report ends it");
@@ -838,4 +838,13 @@ fn running_since_leaves_out_older_background_work() {
     chat.apply(spawned("build"));
     assert!(chat.running_since(Some(since)));
     chat.store = None;
+}
+
+/// The next request the chat queued for its agent, read off as its front
+/// end would send it on the channel.
+fn recv(chat: &mut Chat) -> Result<AcpRequest, ()> {
+    match chat.outbox.is_empty() {
+        true => Err(()),
+        false => Ok(chat.outbox.remove(0)),
+    }
 }

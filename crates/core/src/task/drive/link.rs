@@ -13,7 +13,8 @@ use crate::chat::drive::{Code, Effect as SessionEffect, Intake, Origin, SessionD
 use crate::workflow::{Action, Run};
 use std::time::Instant;
 
-/// Start driving `run` on `session`: what [`Drive::start`] answers.
+/// Start driving `run` on `session`: what [`Drive::start`] answers, and what
+/// putting the first step's settings in force asks of the session.
 #[allow(clippy::too_many_arguments)]
 pub fn start(
     task: String,
@@ -22,20 +23,33 @@ pub fn start(
     pinned: usize,
     issue: bool,
     now: Instant,
-    session: Option<&mut SessionDrive>,
-) -> (Drive, Vec<super::Effect>) {
-    let chat = session.map(SessionDrive::chat_mut);
-    Drive::start(task, run, first, pinned, issue, now, chat)
+    mut session: Option<&mut SessionDrive>,
+) -> (Drive, Vec<super::Effect>, Vec<SessionEffect>) {
+    let chat = session.as_deref_mut().map(SessionDrive::chat_mut);
+    let (drive, fx) = Drive::start(task, run, first, pinned, issue, now, chat);
+    (drive, fx, asked_of(session))
 }
 
-/// Tell `drive` what happened, with its session as it stands.
+/// Tell `drive` what happened, with its session as it stands: what the run
+/// does next, and what that asks of the session.
 pub fn on(
     drive: &mut Drive,
     input: Input,
-    session: Option<&mut SessionDrive>,
+    mut session: Option<&mut SessionDrive>,
     now: Instant,
-) -> Vec<super::Effect> {
-    drive.on(input, session.map(SessionDrive::chat_mut), now)
+) -> (Vec<super::Effect>, Vec<SessionEffect>) {
+    let fx = drive.on(
+        input,
+        session.as_deref_mut().map(SessionDrive::chat_mut),
+        now,
+    );
+    (fx, asked_of(session))
+}
+
+/// What the run's drive queued for the agent on its session: a step's mode
+/// and picks.
+fn asked_of(session: Option<&mut SessionDrive>) -> Vec<SessionEffect> {
+    session.map_or_else(Vec::new, |session| session.sent(Vec::new()))
 }
 
 /// What `signal`, from the session `drive` runs on, tells the run, if

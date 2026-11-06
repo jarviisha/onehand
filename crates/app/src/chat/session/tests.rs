@@ -358,6 +358,26 @@ mod carrier {
         assert_eq!(seen.iter().filter(|s| **s == Signal::TurnEnded).count(), 1);
     }
 
+    /// What the drive asks of the agent is sent on its channel, in order:
+    /// the prompt, then the stop.
+    #[gpui::test]
+    fn requests_reach_the_agent_in_order(cx: &mut TestAppContext) {
+        let (session, mut tx, _) = driven(cx, Chat::default());
+        let mut rx = up(&mut tx);
+        cx.run_until_parked();
+        prompt(&session, cx);
+        session.update(cx, |s, cx| s.stop(cx));
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(onehand_core::acp::AcpRequest::Prompt { text, .. }) if text == "go"
+        ));
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(onehand_core::acp::AcpRequest::Cancel)
+        ));
+        assert!(rx.try_recv().is_err(), "each once");
+    }
+
     #[gpui::test]
     fn a_failed_save_reaches_the_drive_and_is_said_once(cx: &mut TestAppContext) {
         let (chat, file) = unwritable();

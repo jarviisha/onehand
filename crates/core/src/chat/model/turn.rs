@@ -92,12 +92,10 @@ impl Chat {
         let name = p.option_name(option_id);
         let rpc_id = p.req.rpc_id.clone();
 
-        if let Some(tx) = &self.tx {
-            let _ = tx.send(AcpRequest::PermissionResponse {
-                rpc_id,
-                option_id: Some(option_id.to_string()),
-            });
-        }
+        self.request(AcpRequest::PermissionResponse {
+            rpc_id,
+            option_id: Some(option_id.to_string()),
+        });
         self.resolve_permission(idx, name);
     }
 
@@ -169,9 +167,7 @@ impl Chat {
         let rpc_id = a.req.rpc_id.clone();
         let summary = a.summary();
         a.settle(if skip { "Skipped".into() } else { summary }, !skip);
-        if let Some(tx) = &self.tx {
-            let _ = tx.send(AcpRequest::ElicitationResponse { rpc_id, outcome });
-        }
+        self.request(AcpRequest::ElicitationResponse { rpc_id, outcome });
         self.touch();
     }
 
@@ -245,9 +241,7 @@ impl Chat {
     pub(crate) fn cancel_turn(&mut self) {
         self.cancelled = true;
         self.cancel_pending_permissions(false);
-        if let Some(tx) = &self.tx {
-            let _ = tx.send(AcpRequest::Cancel);
-        }
+        self.request(AcpRequest::Cancel);
     }
 
     /// Answer every still-pending permission with the `cancelled` outcome and
@@ -309,8 +303,8 @@ impl Chat {
             }
             match it {
                 ChatItem::Permission(p) if p.resolved.is_none() => {
-                    if let Some(tx) = &self.tx {
-                        let _ = tx.send(AcpRequest::PermissionResponse {
+                    if self.tx.is_some() {
+                        self.outbox.push(AcpRequest::PermissionResponse {
                             rpc_id: p.req.rpc_id.clone(),
                             option_id: None,
                         });
@@ -321,8 +315,8 @@ impl Chat {
                 // tool call blocks on our answer. `Cancel` (not `Decline`)
                 // aborts that tool call, which is what a cancelled turn means.
                 ChatItem::Ask(a) if a.resolved.is_none() => {
-                    if let Some(tx) = &self.tx {
-                        let _ = tx.send(AcpRequest::ElicitationResponse {
+                    if self.tx.is_some() {
+                        self.outbox.push(AcpRequest::ElicitationResponse {
                             rpc_id: a.req.rpc_id.clone(),
                             outcome: ElicitOutcome::Cancel,
                         });
@@ -431,11 +425,12 @@ impl Chat {
                 })
                 .collect(),
         };
-        // Send *before* recording the turn locally: a dead channel must not
-        // leave a prompt in the transcript that no agent ever received.
-        if self.tx.as_ref().is_none_or(|tx| tx.send(request).is_err()) {
+        // Refused *before* recording the turn locally: a link that is down
+        // must not leave a prompt in the transcript that no agent received.
+        if self.tx.is_none() {
             return false;
         }
+        self.request(request);
         // Typed here and now, whatever a replay before it said of its own times.
         self.begin_turn(
             text.to_string(),

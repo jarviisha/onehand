@@ -2,19 +2,138 @@ use super::*;
 use crate::acp::{
     AcpRequest, ConfigChoice, ConfigOption, PermissionOption, PermissionRequest, ReqTx, Usage,
 };
+use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::rc::Rc;
 
-type Rx = tokio::sync::mpsc::UnboundedReceiver<AcpRequest>;
+/// What a session sent its agent, read off in order as a channel is.
+#[derive(Clone, Default)]
+struct Rx(Rc<RefCell<VecDeque<AcpRequest>>>);
+
+impl Rx {
+    fn try_recv(&mut self) -> Result<AcpRequest, ()> {
+        self.0.borrow_mut().pop_front().ok_or(())
+    }
+}
+
+/// A drive with the one part of a front end these tests need: every request
+/// it answers is taken off, as its carrier sends it to the agent. Its methods
+/// stand in front of the drive's own of the same name.
+struct Front {
+    drive: SessionDrive,
+    sent: Rx,
+}
+
+impl std::ops::Deref for Front {
+    type Target = SessionDrive;
+    fn deref(&self) -> &SessionDrive {
+        &self.drive
+    }
+}
+
+impl std::ops::DerefMut for Front {
+    fn deref_mut(&mut self) -> &mut SessionDrive {
+        &mut self.drive
+    }
+}
+
+impl Front {
+    fn new(drive: SessionDrive) -> (Self, Rx) {
+        let sent = Rx::default();
+        (
+            Self {
+                drive,
+                sent: sent.clone(),
+            },
+            sent,
+        )
+    }
+
+    fn take(&self, fx: &[Effect]) {
+        for effect in fx {
+            if let Effect::Request(request) = effect {
+                self.sent.0.borrow_mut().push_back(request.clone());
+            }
+        }
+    }
+
+    fn prompt(
+        &mut self,
+        text: &str,
+        staged: &[StagedAttachment],
+        origin: Origin,
+        code: Code,
+    ) -> (Intake, Vec<Effect>) {
+        let out = self.drive.prompt(text, staged, origin, code);
+        self.take(&out.1);
+        out
+    }
+
+    fn prompt_when_up(&mut self, text: &str, origin: Origin) -> (Intake, Vec<Effect>) {
+        let out = self.drive.prompt_when_up(text, origin);
+        self.take(&out.1);
+        out
+    }
+
+    fn resend(&mut self) -> (Intake, Vec<Effect>) {
+        let out = self.drive.resend();
+        self.take(&out.1);
+        out
+    }
+
+    fn stop(&mut self) -> Vec<Effect> {
+        let out = self.drive.stop();
+        self.take(&out);
+        out
+    }
+
+    fn apply(&mut self, event: AcpEvent) -> (Vec<Effect>, Next) {
+        let out = self.drive.apply(event);
+        self.take(&out.0);
+        out
+    }
+
+    fn ask_pick(&mut self, idx: usize, field: usize, option: usize) -> (bool, Vec<Effect>) {
+        let out = self.drive.ask_pick(idx, field, option);
+        self.take(&out.1);
+        out
+    }
+
+    fn ask_skip(&mut self, idx: usize, field: usize) -> (Option<usize>, Vec<Effect>) {
+        let out = self.drive.ask_skip(idx, field);
+        self.take(&out.1);
+        out
+    }
+
+    fn ask_advance(&mut self, idx: usize, field: usize) -> (Option<usize>, Vec<Effect>) {
+        let out = self.drive.ask_advance(idx, field);
+        self.take(&out.1);
+        out
+    }
+
+    fn ask_submit(&mut self, idx: usize) -> Vec<Effect> {
+        let out = self.drive.ask_submit(idx);
+        self.take(&out);
+        out
+    }
+
+    fn ask_decline(&mut self, idx: usize) -> Vec<Effect> {
+        let out = self.drive.ask_decline(idx);
+        self.take(&out);
+        out
+    }
+}
 
 /// A connected session that keeps a transcript, and what it sends.
 ///
 /// The store is a path nothing can be written to: a save is only built here,
 /// and the drop that writes the rest fails there, as it may.
-fn connected() -> (SessionDrive, Rx) {
+fn connected() -> (Front, Rx) {
     let store = PathBuf::from("/nonexistent/onehand-drive-tests");
     let chat = Chat::new(1, PathBuf::from("/repo"), "agent".into(), Some(store));
-    let mut drive = SessionDrive::new(chat);
-    let (tx, rx): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
+    let (mut drive, rx) = Front::new(SessionDrive::new(chat));
+    let (tx, _): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
     feed(
         &mut drive,
         AcpEvent::Connected {
@@ -29,7 +148,7 @@ fn connected() -> (SessionDrive, Rx) {
 
 /// One event in its own batch, as a front end with nothing else waiting
 /// would fold it: what the event said, then what the batch's end said.
-fn feed(drive: &mut SessionDrive, event: AcpEvent) -> Vec<Effect> {
+fn feed(drive: &mut Front, event: AcpEvent) -> Vec<Effect> {
     let (mut fx, _) = drive.apply(event);
     fx.extend(drive.end_batch());
     fx
@@ -63,9 +182,11 @@ fn permission() -> PermissionRequest {
     }
 }
 
-/// Effects as names, for asserting their order.
+/// Effects as names, for asserting their order. Requests to the agent are
+/// left out: they are read off what was sent.
 fn names(fx: &[Effect]) -> Vec<String> {
     fx.iter()
+        .filter(|effect| !matches!(effect, Effect::Request(_)))
         .map(|effect| match effect {
             Effect::Signal(signal) => format!("{signal:?}"),
             Effect::Changed => "Changed".into(),
@@ -76,6 +197,7 @@ fn names(fx: &[Effect]) -> Vec<String> {
             Effect::SendCode { .. } => "SendCode".into(),
             Effect::PromptAgain => "PromptAgain".into(),
             Effect::SaveTitle { .. } => "SaveTitle".into(),
+            Effect::Request(_) => unreachable!("left out above"),
         })
         .collect()
 }
@@ -310,9 +432,9 @@ fn only_a_person_waits_on_the_code() {
 
 // A first prompt held until the agent is up.
 
-fn connecting() -> (SessionDrive, ReqTx, Rx) {
-    let mut drive = SessionDrive::new(Chat::default());
-    let (tx, rx): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
+fn connecting() -> (Front, ReqTx, Rx) {
+    let (mut drive, rx) = Front::new(SessionDrive::new(Chat::default()));
+    let (tx, _): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
     drive.chat_mut().store = None;
     (drive, tx, rx)
 }
@@ -606,7 +728,7 @@ fn nothing_failed_nothing_goes_again() {
 
 /// A question parked on a running turn, of one single-select field, or of a
 /// single-select then a multi-select: its live index.
-fn ask(drive: &mut SessionDrive, two: bool) -> usize {
+fn ask(drive: &mut Front, two: bool) -> usize {
     use crate::acp::{ElicitChoice, ElicitField, ElicitKind, Elicitation};
     let choice = |v: &str| ElicitChoice {
         value: v.into(),
@@ -741,7 +863,7 @@ fn a_declined_form_sends_no_answer() {
 
 /// A connected session whose conversation is on disk already, as a rename
 /// writes only a conversation that has a file.
-fn written() -> (SessionDrive, Rx) {
+fn written() -> (Front, Rx) {
     let (mut drive, rx) = connected();
     drive.prompt("go", &[], Origin::Person, Code::Here);
     take_save(feed(&mut drive, turn_ends()));
@@ -872,7 +994,7 @@ fn what_was_kept_is_read_back_without_a_word_of_turns() {
 // Closing with a save on its way.
 
 /// A session on a store that can be written, under a directory of its own.
-fn on_disk(name: &str) -> (SessionDrive, Rx, PathBuf) {
+fn on_disk(name: &str) -> (Front, Rx, PathBuf) {
     let store =
         std::env::temp_dir().join(format!("onehand-drive-close-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&store);
@@ -882,8 +1004,8 @@ fn on_disk(name: &str) -> (SessionDrive, Rx, PathBuf) {
         "agent".into(),
         Some(store.clone()),
     );
-    let mut drive = SessionDrive::new(chat);
-    let (tx, rx): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
+    let (mut drive, rx) = Front::new(SessionDrive::new(chat));
+    let (tx, _): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
     feed(
         &mut drive,
         AcpEvent::Connected {
@@ -896,7 +1018,7 @@ fn on_disk(name: &str) -> (SessionDrive, Rx, PathBuf) {
     (drive, rx, store)
 }
 
-fn turn(drive: &mut SessionDrive, prompt: &str, answer: &str) -> Vec<Effect> {
+fn turn(drive: &mut Front, prompt: &str, answer: &str) -> Vec<Effect> {
     drive.prompt(prompt, &[], Origin::Person, Code::Here);
     feed(drive, chunk(answer));
     feed(drive, turn_ends())
