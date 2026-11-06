@@ -58,11 +58,11 @@ gets without code of its own.
 
 | What a run needs | What answers it |
 |---|---|
-| Run the steps and judge each turn by its gates | the workflow engine (`onehand_core::workflow::Run`) and its one driver (`crate::task::driver`) |
+| Run the steps and judge each turn by its gates | the workflow engine (`onehand_core::workflow::Run`) and the run's drive (`onehand_core::task::drive`) and carrier (`crate::task::driver`) |
 | Keep the run, list it, stop, resume and retry it | a task (`onehand_core::task::Task`, `Source::Issue`) on the Tasks page |
 | One task at a time in a checkout | `crate::task::request` and its queue |
 | A session on a named project, connected and not shown | `Shell::run_unattended` → `Workspace::add_transient_root` + `ChatPane::open_unshown` — **not** `Shell::start_session`, see *A run does not take the window* |
-| Stop asking for permission | `Setup::mode`, set by the driver through `Chat::set_mode` when the agent first comes up |
+| Stop asking for permission | `Setup::mode`, set by the run's drive through `Chat::set_mode` when the agent first comes up |
 | An isolated checkout | `worktree::branch_off_blocking` (plus a start point, see *Base branch*), `worktree_dir`, `validate_branch` |
 | Find a window that holds a project | the walk over `Shared::windows` every remote path does |
 | Talk to GitHub | the `gh` CLI, shelled out blocking like `gitstat` and `worktree` already do, behind `onehand_core::connector::Connector` in `crates/github` |
@@ -403,7 +403,7 @@ looks for the next issue then, rather than at the next tick
 **The transcript is the run's log**, in short lines, one fact each. A remark in
 the transcript is one line down the middle of the column, cut where the column
 ends. A run opens on which issue and how it was chosen, then the branch and what
-it was cut from, then the worktree's folder (`unattended::opening`). The driver
+it was cut from, then the worktree's folder (`unattended::opening`). The run's drive
 then says when the mode is set, each step, each command, and how the run ended.
 A found run's project is dropped when it ends, so its last line is only read by
 somebody who opened it in time; the report on the issue is the record that
@@ -440,7 +440,7 @@ claimed, commented on and worked.
 
 **`mode` is the adapter's id, not ours.** Modes come back from `session/new` and
 are the adapter's to name, so the config names one rather than the app mapping a
-word of its own onto a moving set. It is the run's `Setup::mode`, and the driver
+word of its own onto a moving set. It is the run's `Setup::mode`, and the run's drive
 puts the agent in it when the agent first comes up, before the first prompt. An
 id the agent does not offer fails the run — a run that silently fell back to the
 mode that asks questions would park on the first write.
@@ -513,7 +513,7 @@ a deliberate one, not a list of whatever was once approved by hand.
 4. **One timeout per run, counting working time, and it cancels.** An agent
    that neither finishes nor asks is the expensive failure, and it is the one
    nobody is watching for. `[unattended] timeout` is put over the workflow's
-   own, and the driver keeps it per run rather than per turn, because a turn
+   own, and the run's drive keeps it per run rather than per turn, because a turn
    that ends is progress and a run is what is being bounded. **Time spent
    waiting on a person does not count** (`unattended::Budget`): a run standing
    still because nobody has answered yet is not the failure the timeout is for.
@@ -533,7 +533,7 @@ a deliberate one, not a list of whatever was once approved by hand.
    finish quotes what its last step ended on, which is where that question is.
 7. **A person acting in the session takes it over.** The run's session is in the
    rail and can be opened and typed into. The moment a prompt comes from
-   anywhere but the driver — the composer, or a chat on the remote bridge that
+   anywhere but the run's drive — the composer, or a chat on the remote bridge that
    `/use`d it, since which channel it came through changes nothing about who is
    now driving — the run ends as taken over: no cancel, no close. From then on
    it is an ordinary session, and whatever it produces is that person's, not
@@ -677,7 +677,7 @@ step and pauses nothing.
 
 ## The report
 
-A run's end is kept as a `PendingReport` the moment the driver ends it
+A run's end is kept as a `PendingReport` the moment the run's drive ends it
 (`unattended::keep`): the run, its outcome, whether it asked its agent anything,
 what its last step ended on, and the question of a card still waiting. When its
 task has given its place up and pinned its last mark, `unattended::ended` drops
@@ -843,7 +843,7 @@ accumulate one row per issue ever worked.
 ## Not built, on purpose
 
 - **Parking a run while its status checks run.** Its session stays open and the
-  driver looks at the pull request every minute; restarting onehand cuts the wait
+  run's drive looks at the pull request every minute; restarting onehand cuts the wait
   off like any other step, and *Resume* waits afresh. Park it with no session when idle
   adapters are seen to cost something. Repairs are bounded by the workflow's
   `misses`, not by a count of their own, and the same check failing twice is not

@@ -33,7 +33,7 @@ How the repository is held together:
 
 The features that span core and app, each as built:
 
-- [docs/workflows.md](docs/workflows.md): workflows, the run engine and its one carrier.
+- [docs/workflows.md](docs/workflows.md): workflows, the run engine, and the run's drive and carrier.
 - [docs/tasks.md](docs/tasks.md): the Tasks page and the task model behind it.
 - [docs/unattended.md](docs/unattended.md): unattended runs end to end.
 - [docs/agents.md](docs/agents.md): built-in and declared agents, presets and their migration.
@@ -150,11 +150,11 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   Claude Code's plugins, which the `claude-plugins` crate manages.
 - **Rules and what happens next live in core, never in the app.** What is true is the model's
   (`Chat::apply`, `GitStatus::label`); what happens next is a drive's (`SessionDrive`,
-  `task::Drive`), and the app's carriers only carry it out. Every change to application state
-  goes through a drive, with no exceptions; reads go to the model. A model's mutators are
-  `pub(crate)`, and new code adds no call to `SessionDrive::chat_mut`. The app matches on
-  core's enums, never on the labels core shows. The standard is
-  [docs/drives.md](docs/drives.md).
+  `task::Drive`), and the app's carriers only carry it out. New code changes application state
+  only through a drive, with no exceptions, and adds no call to `SessionDrive::chat_mut`; reads
+  go to the model. Older code is moved phase by phase: until its phase, a model mutator may still
+  be `pub` and an entity may still hold state outside a drive. The app matches on core's enums,
+  never on the labels core shows. The standard is [docs/drives.md](docs/drives.md).
 - **`crates/app/src/guards.rs` checks recurring violations rustc cannot catch.** These source
   scans are partial checks, not proof of every rule. Their coverage and review gaps are in
   [docs/rules-and-gotchas.md](docs/rules-and-gotchas.md#guard-coverage).
@@ -166,8 +166,8 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 ## GPUI model
 
 - State lives in entities (`Entity<T>`), which mutate via `cx.update`/`cx.listener` and publish
-  with `cx.notify()`. An entity holding application state holds it as a drive, and carries out
-  what the drive answers. A panel asks its owner for things by emitting an event (`EventEmitter` +
+  with `cx.notify()`. A new entity holding application state holds it as a drive, and carries
+  out what the drive answers. A panel asks its owner for things by emitting an event (`EventEmitter` +
   `cx.subscribe`). For example, the chat emits `ChatPaneEvent::OpenFile` and the shell decides
   where it goes.
 - An entity renders where it is mounted, once. Updating an entity that is already being updated

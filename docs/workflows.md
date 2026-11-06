@@ -1,6 +1,6 @@
 # Workflows
 
-How a workflow is written, checked and run: the file, the engine and the one driver.
+How a workflow is written, checked and run: the file, the engine, and the run's drive and its carrier.
 
 A run takes a brief through the steps of a workflow: an agent step prompts the
 session and is judged by gates onehand checks itself, a command step runs a command in the work, an
@@ -24,9 +24,9 @@ worktree's branch to the forge. The words are defined in [CONTEXT.md](../CONTEXT
 | Task files, their ordered writer, the move of `pipeline-runs/` | [crates/core/src/task/files.rs](../crates/core/src/task/files.rs) |
 | The queue: one task per place | [crates/core/src/task/queue.rs](../crates/core/src/task/queue.rs) |
 | Marks pinned as commits under `refs/onehand/` | [crates/core/src/task/marks.rs](../crates/core/src/task/marks.rs) |
-| The one driver: what it decides | [crates/core/src/task/drive.rs](../crates/core/src/task/drive.rs) |
+| The run's drive: what it decides | [crates/core/src/task/drive.rs](../crates/core/src/task/drive.rs) |
 | A visit's settings put in force before its first prompt | [crates/core/src/task/drive/settings.rs](../crates/core/src/task/drive/settings.rs) |
-| The one driver: what the app carries out for it | [crates/app/src/task/driver.rs](../crates/app/src/task/driver.rs) |
+| The run's carrier: what the app carries out for it | [crates/app/src/task/driver.rs](../crates/app/src/task/driver.rs) |
 | Each step's settings judged before a start | [crates/core/src/preflight/settings.rs](../crates/core/src/preflight/settings.rs) |
 | The `Tasks` global: requests, the queue, unfinished tasks | [crates/app/src/task.rs](../crates/app/src/task.rs) |
 | Workflows on offer | [crates/app/src/workflow.rs](../crates/app/src/workflow.rs) |
@@ -206,7 +206,7 @@ one line per gate saying what onehand will check.
 
 ## The engine
 
-`workflow::Run` is the only place a transition is decided. The driver reports what happened —
+`workflow::Run` is the only place a transition is decided. The run's drive reports what happened —
 `measured`, `turn_ended`, `command_finished`, `approved`, `revised`, `forge_done`, `status_checks_seen`,
 `stopped`, `failed`, `resume` — and gets back the next `Action`: `Measure`, `Prompt`, `RunCommand`,
 `AwaitApproval`, `Push`, `OpenPullRequest`, `AwaitStatusChecks`, `Finish` or `Idle` (the report did not
@@ -260,20 +260,20 @@ the run's history, capped at 200.
   must not pass as finished work. **`resume` keeps the step's mark**, so work done before a restart
   still counts in that step.
 
-## The driver
+## The drive and its carrier
 
-The driver decides in core and acts in the app. `onehand_core::task::drive::Drive` is told what
+The run's drive decides in core, and its carrier acts in the app. `onehand_core::task::drive::Drive` is told what
 happened (an `Input`) with the run's session as it stands, and answers with what to do (`Effect`s):
 pin, measure, read the work, send a prompt, run a command, call the forge, watch the status checks,
 arm the clock, say something, save, finish. It has no timer or I/O of its own, so every rule below
-is tested in core. The app's driver (`crate::task::driver`) maps the session's events onto inputs,
+is tested in core. The carrier (`crate::task::driver`) maps the session's events onto inputs,
 carries out the effects and brings their results back. The mode and the settings picks are made on
 the session's `Chat` by the drive itself, since the next pick is planned against what is still
 waiting.
 
 The `Tasks` global (`crate::task::Tasks`) holds every run under way by its task id (a check's run
 has no session);
-`crate::workflow::Workflows` keeps only the workflows on offer. The driver subscribes to the
+`crate::workflow::Workflows` keeps only the workflows on offer. The carrier subscribes to the
 session and maps its events onto the engine:
 
 | Event | Report |
@@ -359,17 +359,17 @@ a step is a new visit, and resuming closes the cut-off visit as `interrupted` an
 step. **Each visit's start and end is pinned as a commit** (`task::marks::pin_blocking`): the work
 as it stands, untracked files included and ignored ones left out, committed from a temporary
 index so the person's own index is untouched, and kept under
-`refs/onehand/tasks/<task>/<run>/<visit>/<start|end>` so `git gc` keeps it. The driver pins before
+`refs/onehand/tasks/<task>/<run>/<visit>/<start|end>` so `git gc` keeps it. The drive pins before
 it carries out a step's first action, so the start mark lands before the prompt or command touches
 the work; one commit serves a visit's end and the next one's start. A mark that cannot be pinned is
 logged and left out, and never stops a run: gates read `Mark` and `Facts`, not the pinned commits. While a mark is
 being pinned, an approval or a revision waits for it and for the action it holds back, so nothing
 moves the run on under that action; replayed, it still carries the visit it was drawn from, so a
-second press held behind the first finds that visit closed. The driver routes a press by the
+second press held behind the first finds that visit closed. The drive routes a press by the
 task, not the session, so a window other than the session's can make it, and the run's clock goes
 on only once the engine took the press. A Stop, the timeout or any other ending waits for the pin too,
 and then runs instead of that action, with its cancel of the turn: a prompt is never sent to a run
-already said to be over, and no ending races the pin. A driver
+already said to be over, and no ending races the pin. A drive
 taking a run up counts as pinned only the marks up to the last one that landed
 (`Run::pinned_count`), so a mark the app quit before pinning is pinned on resume.
 
@@ -465,7 +465,7 @@ and each config option with its values. It is kept per agent spec (its command a
 compared whole) for the life of the process (`Shared::offers_seen`). A spec edited since is another
 spec, so what was learned of it stops counting; a restart forgets, so an upgraded adapter is never
 judged by an old list. Only a list that is current blocks; otherwise the mode is *not known yet*,
-and the driver's check when the agent comes up stays the authority. An option's values are only
+and the drive's check when the agent comes up stays the authority. An option's values are only
 certain under the model the agent was running when they were learned, the step's or one a person
 picked in the composer, so a step is judged on its other options' values only where an id is
 missing, and the run's own check at the step decides the rest.

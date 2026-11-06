@@ -31,7 +31,9 @@ effects. An exception list is a judgement every contributor makes differently, a
 that is pure today and gains I/O tomorrow changes inside its drive while its callers stay.
 
 `SessionDrive::chat_mut` is the one way around this rule. It exists for code that has not moved
-yet, and new code adds no call to it.
+yet, and new code adds no call to it. Two kinds of call remain: the app's, which phase 3 gives
+methods, and `task::drive::link`'s, which hands the run's drive its session's `Chat` to put the
+step's mode and picks in force (rule 10).
 
 ### 2. Reads go to the model
 
@@ -136,6 +138,11 @@ A model's methods that change application state are `pub(crate)`, so only drives
 call them, and core exports drives and the model's read side. A call from the app to
 `Chat::submit` does not compile, and `dead_code` finds a mutator no drive uses.
 
+Built so far for what phase 1 moved: `Chat`'s `submit`, `queue`, `unqueue`, `cancel_turn`,
+`flush`, `unflush`, `stream_ended`, `quiet_spell` and `starts_quiet_save`. Every other mutator
+(`apply`, `pick`, `rename`, `answer_ask` and the rest) is still `pub`, reached through `chat_mut`
+until its phase moves it.
+
 No guard backs this up yet: a guard is added once the same mistake has been made in several
 places, as every guard in `crates/app/src/guards.rs` was.
 
@@ -151,6 +158,10 @@ A drive never holds another. Where one drive's effects become another's commands
 signals another's inputs, is behaviour too. So it is a GUI-free module of core tested with the
 real drives on both sides, as `task::drive::link` joins a run and its session. A GPUI subscriber
 that routes between drives is a rule in the wrong place.
+
+Not met yet in one place: the run's drive is handed its session's `Chat` through the link and
+changes it directly (`Chat::pick`, `Chat::set_mode`), rather than through `SessionDrive`'s
+methods. Phase 4 decides whether a drive may change another drive's model.
 
 ### 11. Every carrier is tested against its contract
 

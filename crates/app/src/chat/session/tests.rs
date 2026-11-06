@@ -380,9 +380,12 @@ mod carrier {
         std::fs::remove_file(file).ok();
     }
 
+    /// The save is carried out and its answer comes back: the store cannot
+    /// be written, so the answer is a failure the drive says.
     #[gpui::test]
     fn the_quiet_wait_runs_out_into_a_save(cx: &mut TestAppContext) {
-        let (session, mut tx, seen) = driven(cx, Chat::default());
+        let (chat, file) = unwritable();
+        let (session, mut tx, seen) = driven(cx, chat);
         let _rx = up(&mut tx);
         cx.run_until_parked();
         tx.try_send(AcpEvent::AgentChunk {
@@ -395,6 +398,15 @@ mod carrier {
         cx.executor().advance_clock(QUIET_SAVE * 2);
         cx.run_until_parked();
         assert_eq!(count(&seen, &Signal::CycleEnded), 1, "{:?}", seen.borrow());
+        let failed = seen
+            .borrow()
+            .iter()
+            .filter(|s| matches!(s, Signal::SaveFailed(_)))
+            .count();
+        assert_eq!(failed, 1, "{:?}", seen.borrow());
+        drop(session);
+        cx.run_until_parked();
+        std::fs::remove_file(file).ok();
     }
 
     #[gpui::test]
@@ -420,17 +432,39 @@ mod carrier {
     #[gpui::test]
     fn a_closed_session_leaves_nothing_running(cx: &mut TestAppContext) {
         let (chat, file) = unwritable();
-        let (session, mut tx, _) = driven(cx, chat);
+        let (session, mut tx, seen) = driven(cx, chat);
         let _rx = up(&mut tx);
         cx.run_until_parked();
         prompt(&session, cx);
         turn(&mut tx);
-        // Closed with its save in flight, and a wait armed.
+        tx.try_send(AcpEvent::AgentChunk {
+            text: "by itself".into(),
+            message: None,
+        })
+        .unwrap();
+        // One task at a time, which moves no clock, until the pump has folded
+        // all three: the turn's save is on its way and a quiet wait is armed.
+        while session.read_with(cx, |s, _| s._armed.is_none()) {
+            assert!(cx.executor().tick(), "the pump stalled");
+        }
+        let failed = |seen: &Seen| {
+            seen.borrow()
+                .iter()
+                .filter(|s| matches!(s, Signal::SaveFailed(_)))
+                .count()
+        };
+        assert_eq!(failed(&seen), 0, "the save has not answered yet");
         drop(session);
+        // An entity is released when the app next flushes its effects, as
+        // any update does.
+        cx.update(|_| {});
         cx.run_until_parked();
         cx.executor().advance_clock(QUIET_SAVE * 2);
         cx.run_until_parked();
         assert!(tx.is_closed(), "the pump went with the session");
+        // Neither the wait nor the save's answer ran anything for it.
+        assert_eq!(count(&seen, &Signal::CycleEnded), 0, "{:?}", seen.borrow());
+        assert_eq!(failed(&seen), 0, "{:?}", seen.borrow());
         std::fs::remove_file(file).ok();
     }
 }

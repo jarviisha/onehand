@@ -95,9 +95,8 @@ row is re-audited at the start of its phase. Line counts are at `6f92ab49`.
 
 | Area | Core has | App decides today | Target drive |
 |---|---|---|---|
-| Session: intake | `Chat::submit`, `queue`, `submit_blocker` | `chat/pane/sessions.rs` (`submit_from`), `chat/pane/bridge.rs` (`remote_prompt`), `chat/pane/offload_send.rs`, the `submit` calls in `control/workers*`, `task/driver.rs`, `shell/issue_work.rs` | `SessionDrive::prompt` |
-| Session: events and saving | `Chat::apply`, `flush`, `flush_meta`, `starts_quiet_save`, `own_cycle_wait` | `chat/session.rs` pump (batch signals, quiet save, `saw_offer`, host gone, stream end); `chat/pane/sessions.rs` subscriber (save on turn and cycle end, offload check, archive refresh) | `SessionDrive::feed` / `handle` |
-| Session: telling | `attention` (`telling`, `Away`), `remote::Chats::announcement` | `chat/pane/bridge.rs` (`turn_ended_detached`, `awaiting_user_detached`, `link_lost_detached`), desktop notifications | `SessionDrive` effects `Tell`, with `Input::Shown` |
+| Session: events and saving, what phase 1 left | `SessionDrive::apply`, `handle`, `save_meta` | `chat/session.rs` pump (`host::went_away`, checked before an event reaches the drive); `chat/pane/sessions.rs` subscriber (offload check, archive refresh); the rename's own save (`chat/pane/titles.rs`) | `SessionDrive::apply` / `handle` |
+| Session: telling | `attention` (`telling`, `Away`), `remote::Chats::announcement` | `chat/pane/bridge.rs` (`turn_ended_detached`, `awaiting_user_detached`, `link_lost_detached`), desktop notifications | `SessionDrive` signals, with `Input::Shown` |
 | Session: cards, picks, stop | `answer_permission`, `answer_ask`, `pick`, `set_mode`, `cancel_turn`, `stop_background` | called straight from the transcript, header and remote paths | `SessionDrive` methods |
 | Session: lifecycle | `Chat` construction, `resume_from`, `adopt_fork`, `rename`, the workspace tree | `chat/session.rs` (`spawn`, `adopt`), `chat/pane/sessions.rs` (phases, `close`), `shell/sessions.rs` (946 lines), `shell/fork.rs`, `chat/session/host.rs` | `SessionDrive` + a workspace drive |
 | Task runs | `task::Drive`, `task::queue`, `workflow::Run` | `task/driver.rs` (already a carrier), `task/approval.rs`, `task/place.rs` | `task::Drive` (D2) |
@@ -274,11 +273,28 @@ that behaviour depends on enters as an input) covered it; its example did not.
 - It is not a forwarding layer for what it covers. It does look like one at the 61 `chat_mut`
   sites, until phase 3 gives them methods.
 
-**Behaviour changed:** none intended.
+**Behaviour changed:** none intended. These differ from before; the review after phase 1 found
+the last four:
 - Issue work's first prompt is decided on the event that connects the agent, not on the first
-  session event after it: the same moment in practice.
+  session event after it: the same moment in practice. To a session already up it goes at once,
+  where before it waited for the session's next event.
 - A session that onehand's tools open for an agent sends its first prompt through the same
-  "once up" path as issue work.
+  "once up" path as issue work. It goes inside the event that connects the agent, not after the
+  rest of that batch; the handshake says `Connected` last, so this is the same moment in
+  practice.
+- The held first prompt is dropped only when an event the drive folds leaves the link lost. A link
+  cut outside the drive (`host::went_away`, the pane's `Disconnected` for a host gone) leaves it
+  held, to go if the same session comes up again; before, it was dropped at the first change
+  that left the agent not connecting. One prompt is held at a time, and a second replaces it.
+- Resending a failed turn's prompt goes in as a person's prompt. While a turn still runs (an
+  error said mid-turn, before the turn's end), it now queues, replacing a prompt already waiting;
+  before, it was refused.
+- The save-failure latch is the session's, not the conversation's, so a restart of the agent arms
+  it again: a store still failing is said once more after a restart.
+- A host's lost connection (`host::went_away`) no longer marks the batch changed, so a batch of
+  only that event does not resync the parsed markdown.
+
+Each is settled in phase 3: kept and moved into the owning document, or put back.
 
 **Left in the app, inside the slice, for later phases:**
 - the host's lost connection (`host::went_away`, checked before an event reaches the drive);
