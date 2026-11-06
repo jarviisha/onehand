@@ -1,0 +1,20 @@
+[package]
+name = "onehand-io"
+version = "0.1.0"
+edition = "2024"
+description = "The runtimes onehand's I/O runs on, apart from the window that draws it"
+license = "MIT OR Apache-2.0"
+
+# GUI-free, as core is: a front end other than GPUI takes this crate as it is.
+# Core dictates no runtime; this is where the runtime is chosen.
+
+[dependencies]
+onehand-core = { path = "../core" }
+# The agent's serve loop is tokio-based, so it is polled on a tokio runtime of
+# its own here, whatever executor the front end runs on.
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "time"] }
+# `Stream` and the channel events cross on: neither tokio's nor any front
+# end's executor's.
+futures = "0.3"
+# The `mcpServers` entries an agent is started with.
+serde_json = "1"

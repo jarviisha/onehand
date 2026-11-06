@@ -24,6 +24,7 @@ path = "src/main.rs"
 
 [dependencies]
 onehand-core = { path = "../core" }
+onehand-io = { path = "../io" }
 onehand-workbench = { path = "../workbench" }
 onehand-ui = { path = "../ui" }
 onehand-terminal-ui = { path = "../terminal-ui" }

@@ -5,7 +5,6 @@
 //! a host session's events exactly as it reads a local adapter's.
 
 use super::{ChatEvent, ChatSession};
-use crate::acp::{Events, HostStart};
 use crate::hosts::HostFailure;
 use crate::state::Shared;
 use gpui::{AsyncApp, WeakEntity};
@@ -16,6 +15,7 @@ use onehand_core::host::client::{HostConn, HostError};
 use onehand_core::host::copy;
 use onehand_core::host::wire::{HostSession, SessionInfo};
 use onehand_core::workspace::HostName;
+use onehand_io::acp::{Events, HostStart};
 use std::path::PathBuf;
 
 /// Which host a session runs on, in which folder there, and how its events
@@ -161,7 +161,7 @@ pub(super) async fn host_events(
     // Either the start, known already, or what a re-watch decides on once
     // the host has said what it runs.
     let decided = match begin {
-        HostBegin::Refuse(why) => return crate::acp::ended(why.into()),
+        HostBegin::Refuse(why) => return onehand_io::acp::ended(why.into()),
         HostBegin::Open => Ok(HostStart::Open { cwd, spec, opening }),
         HostBegin::Watch(id) => Ok(HostStart::Watch(id)),
         HostBegin::Rewatch(id, carried) => Err((id, carried, cwd, spec)),
@@ -205,11 +205,11 @@ pub(super) async fn host_events(
                 OfflineStart::Read => match failure {
                     HostFailure::Refused(why) | HostFailure::Taken(why) => {
                         offline(host, &kept, false, session, cx);
-                        crate::acp::ended(why)
+                        onehand_io::acp::ended(why)
                     }
                     HostFailure::Other(_) | HostFailure::Busy { .. } => {
                         offline(host, &kept, true, session, cx);
-                        crate::acp::silent()
+                        onehand_io::acp::silent()
                     }
                 },
                 OfflineStart::End | OfflineStart::Wait => {
@@ -220,10 +220,10 @@ pub(super) async fn host_events(
                     match failure {
                         HostFailure::Other(why)
                         | HostFailure::Refused(why)
-                        | HostFailure::Taken(why) => crate::acp::ended(why),
+                        | HostFailure::Taken(why) => onehand_io::acp::ended(why),
                         HostFailure::Busy { host, busy, terms } => {
                             wait(host, busy.len(), terms, session, cx);
-                            crate::acp::silent()
+                            onehand_io::acp::silent()
                         }
                     }
                 }
@@ -249,7 +249,7 @@ pub(super) async fn host_events(
                 }
                 Restarted::Ended(why, carried) => {
                     carry(carried, session, cx);
-                    return crate::acp::ended(why);
+                    return onehand_io::acp::ended(why);
                 }
             }
         }

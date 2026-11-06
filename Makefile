@@ -42,7 +42,7 @@ OURS := -p onehand -p onehand-core -p onehand-workbench -p onehand-ui \
 	-p onehand-terminal-ui -p onehand-github -p onehand-telegram \
 	-p onehand-editor \
 	-p onehand-files -p onehand-issues -p onehand-markdown -p onehand-neovim -p onehand-claude-plugins \
-	-p onehand-host
+	-p onehand-host -p onehand-io
 
 .DEFAULT_GOAL := help
 

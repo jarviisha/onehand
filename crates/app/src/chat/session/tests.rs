@@ -2,13 +2,13 @@ use super::host::{
     Carried, OfflineStart, Restarted, connection_lost, host_restart, new_chat, offline_line,
     offline_start,
 };
-use crate::acp::HostStart;
 use crate::hosts::HostFailure;
 use onehand_core::acp::Opening;
 use onehand_core::chat::drive::Effect;
 use onehand_core::chat::{ChatItem, SessionDrive};
 use onehand_core::config::AgentSpec;
 use onehand_core::host::wire::{HostSession, SessionInfo};
+use onehand_io::acp::HostStart;
 use std::path::PathBuf;
 
 fn listed(ended: bool) -> SessionInfo {
@@ -252,13 +252,13 @@ fn the_offline_line_says_how_recent_the_copy_is() {
 
 mod carrier {
     use super::super::{ChatEvent, ChatSession, Source};
-    use crate::acp::Events;
     use futures::channel::mpsc;
     use gpui::{AppContext as _, Entity, TestAppContext};
     use onehand_core::acp::{AcpEvent, ReqTx};
     use onehand_core::chat::Chat;
     use onehand_core::chat::drive::{Code, Origin, QUIET_SAVE, Signal};
     use onehand_core::config::AgentSpec;
+    use onehand_io::acp::Events;
     use std::cell::RefCell;
     use std::path::PathBuf;
     use std::rc::Rc;
@@ -496,11 +496,11 @@ mod carrier {
 
 mod folds {
     use super::super::{ChatSession, Source};
-    use crate::acp::Events;
     use futures::channel::mpsc;
     use gpui::{AppContext as _, Entity, TestAppContext};
     use onehand_core::chat::{Chat, TranscriptItemId};
     use onehand_core::config::AgentSpec;
+    use onehand_io::acp::Events;
     use std::time::Instant;
 
     fn session(

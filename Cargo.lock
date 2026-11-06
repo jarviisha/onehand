@@ -4546,6 +4546,7 @@ dependencies = [
  "onehand-core",
  "onehand-editor",
  "onehand-github",
+ "onehand-io",
  "onehand-issues",
  "onehand-markdown",
  "onehand-neovim",
@@ -4631,6 +4632,16 @@ dependencies = [
  "onehand-core",
  "portable-pty",
  "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "onehand-io"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "onehand-core",
  "serde_json",
  "tokio",
 ]

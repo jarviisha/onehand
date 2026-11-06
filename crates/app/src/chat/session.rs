@@ -335,7 +335,7 @@ pub struct ChatSession {
     /// Held rather than detached so the adapter's lifetime is tied to this
     /// entity's: dropping the session drops the task, which drops the event
     /// receiver, which makes the bridge's forwarder stop polling and kill the
-    /// child (see [`crate::acp::AcpRuntime::connect`]). Nothing else has to
+    /// child (see [`onehand_io::acp::AcpRuntime::connect`]). Nothing else has to
     /// remember to shut an agent down.
     _pump: Task<()>,
     /// The wait the drive armed; replacing it restarts it, dropping it calls

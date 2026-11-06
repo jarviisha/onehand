@@ -12,6 +12,7 @@ members = [
     "crates/files",
     "crates/github",
     "crates/host",
+    "crates/io",
     "crates/issues",
     "crates/markdown",
     "crates/neovim",

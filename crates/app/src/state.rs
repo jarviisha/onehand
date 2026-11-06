@@ -6,11 +6,11 @@
 //! one `onehand-core` already models, so the tree logic is used as it is rather
 //! than reinterpreted here.
 
-use crate::acp::AcpRuntime;
 use gpui::{App, Global};
 use onehand_core::config::{AgentSpec, AppConfig, AppState, Appearance};
 use onehand_core::gitstat::GitStatus;
 use onehand_core::workspace::{ProjectRoot, Workspace};
+use onehand_io::acp::AcpRuntime;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -68,7 +68,7 @@ pub struct Shared {
     /// Recently opened storage directories, most-recent-first.
     pub recents: AppState,
     /// The tokio runtime every ACP adapter runs on (see [`crate::acp`]).
-    pub acp: AcpRuntime,
+    pub acp: AcpRuntime<crate::control::Token>,
     /// The one connection to each host, shared by every window's projects there.
     pub hosts: crate::hosts::Hosts,
     /// The channel a device outside this machine reaches the app through.
@@ -145,7 +145,8 @@ impl Shared {
             recents: AppState::load(),
             // A runtime this process cannot start means no agent can ever run,
             // which is the whole app -- there is nothing useful to degrade to.
-            acp: AcpRuntime::new().expect("failed to start the agent runtime"),
+            acp: AcpRuntime::new(crate::control::Token::mint)
+                .expect("failed to start the agent runtime"),
             hosts: crate::hosts::Hosts::new(),
             // Started separately, after the global exists: bringing a channel up
             // means reading a credential and spawning a poll, and neither of
