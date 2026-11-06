@@ -8,8 +8,8 @@ type Rx = tokio::sync::mpsc::UnboundedReceiver<AcpRequest>;
 
 /// A connected session that keeps a transcript, and what it sends.
 ///
-/// The store is a path nothing is written to: a save is only built here, and
-/// the drop that would write the rest is told there is nowhere to write.
+/// The store is a path nothing can be written to: a save is only built here,
+/// and the drop that writes the rest fails there, as it may.
 fn connected() -> (SessionDrive, Rx) {
     let store = PathBuf::from("/nonexistent/onehand-drive-tests");
     let chat = Chat::new(1, PathBuf::from("/repo"), "agent".into(), Some(store));
@@ -101,13 +101,6 @@ fn take_save(fx: Vec<Effect>) -> Box<PendingWrite> {
             _ => None,
         })
         .expect("a save")
-}
-
-impl Drop for SessionDrive {
-    fn drop(&mut self) {
-        // Nowhere to write: see `connected`.
-        self.chat.store = None;
-    }
 }
 
 // Intake, by origin.
@@ -874,4 +867,124 @@ fn what_was_kept_is_read_back_without_a_word_of_turns() {
         drive.items.last(),
         Some(crate::chat::ChatItem::Notice { text, .. }) if text == "Out of reach of box"
     ));
+}
+
+// Closing with a save on its way.
+
+/// A session on a store that can be written, under a directory of its own.
+fn on_disk(name: &str) -> (SessionDrive, Rx, PathBuf) {
+    let store =
+        std::env::temp_dir().join(format!("onehand-drive-close-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&store);
+    let chat = Chat::new(
+        1,
+        PathBuf::from("/repo"),
+        "agent".into(),
+        Some(store.clone()),
+    );
+    let mut drive = SessionDrive::new(chat);
+    let (tx, rx): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
+    feed(
+        &mut drive,
+        AcpEvent::Connected {
+            tx,
+            resumed: false,
+            forkable: false,
+        },
+    );
+    feed(&mut drive, AcpEvent::SessionId("s1".into()));
+    (drive, rx, store)
+}
+
+fn turn(drive: &mut SessionDrive, prompt: &str, answer: &str) -> Vec<Effect> {
+    drive.prompt(prompt, &[], Origin::Person, Code::Here);
+    feed(drive, chunk(answer));
+    feed(drive, turn_ends())
+}
+
+/// What the file says, prompts and answers alike, once each in order.
+fn written_lines(store: &std::path::Path) -> Vec<String> {
+    let dir = crate::chat::store::conv_dir(store, "s1");
+    std::fs::read_to_string(dir.join("items.jsonl"))
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
+/// **#309.** A session closed while its last turn's save is on its way, and
+/// that save failing then: the turn is on disk all the same, as the close
+/// wrote the whole transcript rather than what came after that save.
+#[test]
+fn a_session_closed_with_a_save_on_its_way_keeps_that_turn_if_the_save_fails() {
+    let (mut drive, _rx, store) = on_disk("fails");
+    let first = take_save(turn(&mut drive, "one", "first answer"));
+    crate::chat::store::commit(&first).unwrap();
+    drive.handle(Input::Saved {
+        write: first,
+        result: Ok(()),
+    });
+    // The second turn's save is on its way, and never lands.
+    let _lost = take_save(turn(&mut drive, "two", "second answer"));
+    drop(drive);
+    let lines = written_lines(&store);
+    assert!(
+        lines.iter().any(|l| l.contains("second answer")),
+        "{lines:?}"
+    );
+    assert!(
+        lines.iter().any(|l| l.contains("first answer")),
+        "{lines:?}"
+    );
+    let _ = std::fs::remove_dir_all(&store);
+}
+
+/// And that save landing late, after the close wrote the whole file, adds
+/// nothing a second time.
+#[test]
+fn a_save_landing_after_the_close_wrote_the_whole_file_adds_nothing_twice() {
+    let (mut drive, _rx, store) = on_disk("lands");
+    let first = take_save(turn(&mut drive, "one", "first answer"));
+    crate::chat::store::commit(&first).unwrap();
+    drive.handle(Input::Saved {
+        write: first,
+        result: Ok(()),
+    });
+    let late = take_save(turn(&mut drive, "two", "second answer"));
+    drop(drive);
+    let closed = written_lines(&store);
+    crate::chat::store::commit(&late).unwrap();
+    assert_eq!(
+        written_lines(&store),
+        closed,
+        "the late save's lines are in it"
+    );
+    assert_eq!(
+        closed
+            .iter()
+            .filter(|l| l.contains("second answer"))
+            .count(),
+        1
+    );
+    let _ = std::fs::remove_dir_all(&store);
+}
+
+/// With nothing on its way, a close writes only what is left, as ever.
+#[test]
+fn a_session_closed_with_nothing_on_its_way_adds_only_the_rest() {
+    let (mut drive, _rx, store) = on_disk("idle");
+    let first = take_save(turn(&mut drive, "one", "first answer"));
+    crate::chat::store::commit(&first).unwrap();
+    drive.handle(Input::Saved {
+        write: first,
+        result: Ok(()),
+    });
+    let before = written_lines(&store);
+    drop(drive);
+    assert_eq!(
+        written_lines(&store),
+        before,
+        "nothing left, nothing written"
+    );
+    let _ = std::fs::remove_dir_all(&store);
 }

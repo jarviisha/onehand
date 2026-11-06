@@ -244,10 +244,25 @@ pub struct SessionDrive {
     held: Option<Held>,
     /// The last save failed: the next failure is not said again.
     save_failed: bool,
+    /// How many saves are on their way and not answered yet.
+    saving: usize,
     /// The name shown and the one last written, once a person named the
     /// conversation here.
     title: Option<crate::saving::Saving<Option<String>>>,
     batch: Batch,
+}
+
+/// **Closing honours the saves still on their way.** The model writes what is
+/// left as it goes, from the mark the newest save moved; were a save still on
+/// its way to fail after that, its turn would be in neither write. So a
+/// session closed with one on its way writes the whole transcript instead,
+/// and the store drops the lines of any save built before that write lands.
+impl Drop for SessionDrive {
+    fn drop(&mut self) {
+        if self.saving > 0 {
+            self.chat.write_whole();
+        }
+    }
 }
 
 impl std::ops::Deref for SessionDrive {
@@ -266,6 +281,7 @@ impl SessionDrive {
             sending: None,
             held: None,
             save_failed: false,
+            saving: 0,
             title: None,
             batch: Batch::default(),
         }
@@ -531,20 +547,23 @@ impl SessionDrive {
     /// flight at once cannot both carry the same turn; the writing itself is
     /// the front end's, off its UI thread.
     fn save(&mut self) -> Option<Effect> {
-        self.chat.flush().map(|write| Effect::Save(Box::new(write)))
+        let write = self.chat.flush()?;
+        self.saving += 1;
+        Some(Effect::Save(Box::new(write)))
     }
 
     /// Write the conversation's name and settings alone: a rename, which can
     /// come mid-turn, when a line written would be a step not yet finished.
     pub fn save_meta(&mut self) -> Vec<Effect> {
-        self.chat
-            .flush_meta()
-            .map(|write| Effect::Save(Box::new(write)))
-            .into_iter()
-            .collect()
+        let Some(write) = self.chat.flush_meta() else {
+            return Vec::new();
+        };
+        self.saving += 1;
+        vec![Effect::Save(Box::new(write))]
     }
 
     fn saved(&mut self, write: &PendingWrite, result: Result<(), String>) -> Vec<Effect> {
+        self.saving = self.saving.saturating_sub(1);
         match result {
             Ok(()) => {
                 self.save_failed = false;
@@ -618,6 +637,7 @@ impl SessionDrive {
 
 mod cards;
 mod host;
+mod life;
 mod settings;
 mod titles;
 

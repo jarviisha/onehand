@@ -23,7 +23,7 @@ pub fn commit(write: &PendingWrite) -> std::io::Result<()> {
     // key is the conversation itself, so unlike a check on which window holds
     // what, it cannot fail to notice a second writer.
     let lock = writer_for(&write.dir);
-    let mut newest_landed = lock.lock().unwrap_or_else(|e| e.into_inner());
+    let mut landed = lock.lock().unwrap_or_else(|e| e.into_inner());
 
     std::fs::create_dir_all(&write.dir)?;
     if !write.blobs.is_empty() {
@@ -50,7 +50,13 @@ pub fn commit(write: &PendingWrite) -> std::io::Result<()> {
         let mut body = write.lines.join("\n");
         body.push('\n');
         crate::config::write_atomic(&items, &body)?;
-    } else if !write.rewrite && !write.lines.is_empty() {
+        landed.rewrite = landed.rewrite.max(write.meta.read_at);
+    } else if !write.rewrite && !write.lines.is_empty() && write.meta.read_at > landed.rewrite {
+        // Lines built before a whole-file write that has since landed are in
+        // it: added again, they would stand twice. That is what lets a session
+        // closed with a save still on its way write the whole file rather than
+        // the rest after that save, which would lose the save's turn if it then
+        // failed.
         // Opened fresh and closed each time, and written in one call: appending
         // is then a single operation the kernel does not split, so two
         // processes adding to one conversation interleave whole turns rather
@@ -81,10 +87,10 @@ pub fn commit(write: &PendingWrite) -> std::io::Result<()> {
 
     // Metadata read before what already landed would put its older count,
     // preview and name back over the newer ones: only its date is kept.
-    let stale = write.meta.read_at < *newest_landed;
+    let stale = write.meta.read_at < landed.meta;
     write_meta(&write.dir, &write.meta, stale)?;
     if !stale {
-        *newest_landed = write.meta.read_at;
+        landed.meta = write.meta.read_at;
     }
     Ok(())
 }
@@ -173,15 +179,19 @@ pub fn delete(dir: &Path) -> std::io::Result<()> {
     }
 }
 
+/// What landed last in one conversation directory, by
+/// [`MetaWrite::read_at`]: its newest metadata, and its newest whole-file
+/// write.
+#[derive(Default)]
+struct Landed {
+    meta: u64,
+    rewrite: u64,
+}
+
 /// The lock for one conversation directory, made on first use.
-///
-/// What it holds is the [`MetaWrite::read_at`] of the newest metadata
-/// written there.
-fn writer_for(dir: &Path) -> Arc<Mutex<u64>> {
-    static WRITERS: OnceLock<Mutex<HashMap<PathBuf, Arc<Mutex<u64>>>>> = OnceLock::new();
+fn writer_for(dir: &Path) -> Arc<Mutex<Landed>> {
+    static WRITERS: OnceLock<Mutex<HashMap<PathBuf, Arc<Mutex<Landed>>>>> = OnceLock::new();
     let map = WRITERS.get_or_init(|| Mutex::new(HashMap::new()));
     let mut map = map.lock().unwrap_or_else(|e| e.into_inner());
-    map.entry(dir.to_path_buf())
-        .or_insert_with(|| Arc::new(Mutex::new(0)))
-        .clone()
+    map.entry(dir.to_path_buf()).or_default().clone()
 }

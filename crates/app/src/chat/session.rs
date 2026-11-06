@@ -219,6 +219,18 @@ pub struct ChatSession {
     ///
     /// One box per field, so moving between a form's questions does not rewrite
     /// one box under the user.
+    /// The project's files, root-relative, for `@`-mention completion: what
+    /// the composer offers, read off disk once when the session opens, and
+    /// so this side's. None for a session on a host.
+    pub files: Vec<String>,
+    /// The directories [`Self::files`] passes through, with what is under
+    /// each: derived once, where the list changes once, rather than in the
+    /// popup on every keystroke and every streamed frame.
+    pub folders: Vec<(String, usize)>,
+    /// Whether the scan that fills [`Self::files`] has finished. An empty
+    /// list is not a list that has not arrived: one means there is nothing
+    /// here to name, the other that the popup is still looking.
+    pub files_scanned: bool,
     /// Where the reader is on each open question card, by its live index:
     /// which question shows and the keyboard's row. View state, pruned with
     /// the boxes once a card is answered.
@@ -368,8 +380,8 @@ impl ChatSession {
 /// driving the session did, for the person reading it.
 pub(crate) fn note(session: &Entity<ChatSession>, text: String, cx: &mut App) {
     session.update(cx, |session, cx| {
-        session.chat.chat_mut().items.push(ChatItem::notice(text));
-        cx.emit(ChatEvent::Session(Signal::Appended));
+        let fx = session.chat.note(text);
+        session.perform(fx, cx);
         cx.notify();
     });
 }
@@ -439,7 +451,9 @@ impl ChatSession {
                         .spawn(async move { completion::scan_files(&root, MAX_MENTION_FILES) })
                         .await;
                     let _ = session.update(cx, |session: &mut Self, cx| {
-                        session.chat.chat_mut().set_files(files);
+                        session.folders = completion::folders(&files);
+                        session.files = files;
+                        session.files_scanned = true;
                         cx.notify();
                     });
                 }
@@ -461,6 +475,9 @@ impl ChatSession {
             images: RefCell::new(HashMap::new()),
             ask_inputs: HashMap::new(),
             ask_places: HashMap::new(),
+            files: Vec::new(),
+            folders: Vec::new(),
+            files_scanned: false,
             ask_focus: HashMap::new(),
             perm_focus: HashMap::new(),
             pinned_keys: (None, false),
@@ -559,8 +576,9 @@ impl ChatSession {
                             })
                             .await;
                         // A session closed while its own write was in flight
-                        // has nowhere to file the answer: its drop wrote what
-                        // was left.
+                        // has nowhere to file the answer: its drop wrote the
+                        // whole transcript, and the store keeps this write's
+                        // lines from standing twice.
                         let _ = session.update(cx, |session: &mut Self, cx| {
                             let fx = session.chat.handle(Input::Saved { write, result });
                             session.perform(fx, cx);
@@ -721,18 +739,18 @@ impl ChatSession {
         snapshot: onehand_core::chat::ConversationSnapshot,
         cx: &mut Context<Self>,
     ) {
-        self.chat.chat_mut().resume_from(snapshot);
+        let fx = self.chat.resume(snapshot);
         self.forget_folds();
-        self.sync_md(cx);
+        self.perform(fx, cx);
         cx.notify();
     }
 
     /// Start as a fork of another conversation, seeded with its history up to
     /// the point; parsed as an adopted conversation is.
     pub fn adopt_fork(&mut self, seed: onehand_core::chat::ForkSeed, cx: &mut Context<Self>) {
-        self.chat.chat_mut().adopt_fork(seed);
+        let fx = self.chat.fork(seed);
         self.forget_folds();
-        self.sync_md(cx);
+        self.perform(fx, cx);
         cx.notify();
     }
 

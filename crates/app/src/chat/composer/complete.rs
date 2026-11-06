@@ -377,13 +377,15 @@ impl Composer {
         let Some(trigger) = &self.trigger else {
             return (Vec::new(), 0);
         };
-        let chat = &session.read(cx).chat;
+        let entity = session;
+        let session = entity.read(cx);
+        let chat = &session.chat;
         match trigger.kind {
             TriggerKind::File => {
                 let artifacts = chat.artifacts(MAX_ARTIFACT_SCAN);
                 let (found, held) = completion::mentions(
-                    &chat.files,
-                    &chat.folders,
+                    &session.files,
+                    &session.folders,
                     &artifacts,
                     query,
                     MAX_COMPLETION_ROWS,
@@ -461,7 +463,7 @@ impl Composer {
                 // something a hand learns the position of; put under a list of
                 // unknown length it is somewhere different every time.
                 let mut rows: Vec<Row> = Vec::new();
-                let mut own = act_rows(query, session, cx).into_iter();
+                let mut own = act_rows(query, entity, cx).into_iter();
                 if let Some(first) = own.next() {
                     rows.push(Row {
                         group: Some("Composer".into()),

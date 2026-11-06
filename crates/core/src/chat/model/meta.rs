@@ -213,14 +213,6 @@ pub struct SelectorChoice {
 }
 
 impl Chat {
-    /// Take the project's files, as the scan for `@`-mentions found them,
-    /// with the folders they pass through, and know the scan is over.
-    pub fn set_files(&mut self, files: Vec<String>) {
-        self.folders = crate::completion::folders(&files);
-        self.files = files;
-        self.files_scanned = true;
-    }
-
     /// The adapter's event stream is over: no turn runs and the link is
     /// lost.
     ///

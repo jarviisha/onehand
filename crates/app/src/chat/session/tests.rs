@@ -27,7 +27,7 @@ fn carried() -> Carried {
     let mut chat = new_chat(1, PathBuf::from("/srv/app"), &AgentSpec::default(), true);
     chat.session_id = Some("acp-1".into());
     Carried {
-        stored: chat.take_snapshot(),
+        stored: onehand_core::chat::SessionDrive::new(chat).take_snapshot(),
         sent: 2,
         after_service: false,
     }

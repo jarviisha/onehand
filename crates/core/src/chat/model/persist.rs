@@ -139,6 +139,16 @@ impl Chat {
         }
     }
 
+    /// Write the whole transcript at the next save, over the file, rather than
+    /// what came after the mark: for a session closed with a save still on its
+    /// way, whose turn that save would lose if it then failed. Never for a
+    /// transcript read back only to its bound, as the file is longer than it.
+    pub(crate) fn write_whole(&mut self) {
+        if !self.bounded {
+            self.rewrite = true;
+        }
+    }
+
     /// Lift this conversation out, leaving the chat empty — the handoff a
     /// restart makes to the session replacing it.
     ///
@@ -146,7 +156,7 @@ impl Chat {
     /// came from is about to be dropped, and a drop still holding these items
     /// would write them a second time. It carries the mark with it, so the
     /// replacement continues the same file rather than starting one.
-    pub fn take_snapshot(&mut self) -> Option<ConversationSnapshot> {
+    pub(crate) fn take_snapshot(&mut self) -> Option<ConversationSnapshot> {
         let session_id = self.session_id.clone()?;
         // The adapter that would end a working card is the one being
         // replaced; carried over working, it would hold every save back. Its
@@ -306,7 +316,7 @@ impl Chat {
     /// `last_activity` and the rail dates the session from the moment it was
     /// reopened rather than from its last real turn; forget the mark and the
     /// conversation is written to its own file a second time.
-    pub fn resume_from(&mut self, snapshot: ConversationSnapshot) {
+    pub(crate) fn resume_from(&mut self, snapshot: ConversationSnapshot) {
         self.bounded = !snapshot.complete;
         self.custom_title = snapshot.title;
         self.last_activity = Some(snapshot.updated);

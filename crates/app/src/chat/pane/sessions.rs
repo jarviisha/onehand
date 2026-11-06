@@ -471,7 +471,7 @@ impl ChatPane {
                 // over with the restart.
                 s.forget_host_wait(cx);
                 s.forget_host_offline(cx);
-                s.chat.chat_mut().take_snapshot()
+                s.chat.take_snapshot()
             })
         });
         // `connect_as` drops the old adapter before spawning the new one, so

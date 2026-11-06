@@ -283,7 +283,7 @@ fn only_a_restart_rewatches_a_host_session() {
     let snapshot = || {
         let mut chat = Chat::new(1, std::path::PathBuf::from("/srv/app"), "c".into(), None);
         chat.session_id = Some("acp-1".into());
-        chat.take_snapshot()
+        onehand_core::chat::SessionDrive::new(chat).take_snapshot()
     };
     let id = HostSession("h-1".into());
 
