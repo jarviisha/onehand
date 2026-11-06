@@ -1,3 +1,4 @@
+use super::Now;
 use crate::acp::{
     ElicitKind, ElicitValue, Elicitation, PermissionRequest, PlanEntry, ToolCall, ToolContent,
     ToolStatus,
@@ -507,11 +508,18 @@ pub struct Thought {
 }
 
 impl Thought {
-    pub(super) fn live(s: &str) -> Self {
+    pub(super) fn live(s: &str, now: Option<Now>) -> Self {
         Self {
             md: Md::parse(s),
-            started: Some(Instant::now()),
+            started: now.map(|now| now.at),
             elapsed_secs: None,
+        }
+    }
+
+    /// Stamp the thought with how long it ran, to `now`.
+    pub(super) fn seal(&mut self, now: Option<Now>) {
+        if self.elapsed_secs.is_none() {
+            self.elapsed_secs = Some(took(self.started, now));
         }
     }
 
@@ -675,22 +683,38 @@ pub struct ToolItem {
 impl ToolItem {
     /// Stop the step's clock, once: a later update to a settled step must not
     /// restart it.
-    pub(crate) fn settle_clock(&mut self) {
+    pub(crate) fn settle_clock(&mut self, now: Option<Now>) {
         if self.elapsed_secs.is_none() {
-            self.elapsed_secs = Some(self.started.map(|s| s.elapsed().as_secs()).unwrap_or(0));
-            self.settled_at = Some(crate::chat::store::now_secs());
+            self.elapsed_secs = Some(took(self.started, now));
+            self.settled_at = now.map(|now| now.secs);
         }
+    }
+
+    /// Start the step's clock at `now`. Only work that has not finished gets
+    /// a start: a step that arrives already settled was timed by whoever ran
+    /// it, and stamping it here would measure the moment it reached this
+    /// process.
+    pub(super) fn started_at(mut self, now: Option<Now>) -> Self {
+        let running = matches!(
+            self.call.status,
+            ToolStatus::Pending | ToolStatus::InProgress
+        );
+        if running && self.started.is_none() {
+            self.started = now.map(|now| now.at);
+        }
+        self
     }
 
     pub fn new(call: ToolCall) -> Self {
         let diff_rows = Self::hunks(&call);
         let diff_summary = Self::summarize_diffs(&call, &diff_rows);
-        let running = matches!(call.status, ToolStatus::Pending | ToolStatus::InProgress);
         Self {
             // Only work that has not finished gets a start: a step that arrives
             // already settled was timed by whoever ran it, and stamping it here
             // would measure the moment it reached this process.
-            started: running.then(Instant::now),
+            // Started by whoever folds it in, from the time it was told: see
+            // `started_at`.
+            started: None,
             elapsed_secs: None,
             settled_at: None,
             exit_code: None,
@@ -902,4 +926,11 @@ impl ChatItem {
             detail,
         }
     }
+}
+
+/// Whole seconds from `started` to `now`, or none where either is unknown.
+pub(super) fn took(started: Option<Instant>, now: Option<Now>) -> u64 {
+    started.zip(now).map_or(0, |(started, now)| {
+        now.at.saturating_duration_since(started).as_secs()
+    })
 }

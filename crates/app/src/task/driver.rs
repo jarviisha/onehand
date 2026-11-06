@@ -265,7 +265,8 @@ fn perform(id: &str, effects: Vec<Effect>, cx: &mut App) {
             Effect::Submit(text) => {
                 let answer = match session {
                     Some(session) => session.update(cx, |session, cx| {
-                        let (answer, fx) = link::submit(&mut session.chat, &text);
+                        let (answer, fx) =
+                            link::submit(&mut session.chat, &text, crate::chat::session::now());
                         session.perform(fx, cx);
                         cx.notify();
                         answer

@@ -17,6 +17,14 @@ impl Rx {
     }
 }
 
+/// The time now, as a front end reads it for the drive.
+fn now() -> Now {
+    Now {
+        secs: crate::chat::now_secs(),
+        at: std::time::Instant::now(),
+    }
+}
+
 /// A drive with the one part of a front end these tests need: every request
 /// it answers is taken off, as its carrier sends it to the agent. Its methods
 /// stand in front of the drive's own of the same name.
@@ -65,19 +73,19 @@ impl Front {
         origin: Origin,
         code: Code,
     ) -> (Intake, Vec<Effect>) {
-        let out = self.drive.prompt(text, staged, origin, code);
+        let out = self.drive.prompt(text, staged, origin, code, now());
         self.take(&out.1);
         out
     }
 
     fn prompt_when_up(&mut self, text: &str, origin: Origin) -> (Intake, Vec<Effect>) {
-        let out = self.drive.prompt_when_up(text, origin);
+        let out = self.drive.prompt_when_up(text, origin, now());
         self.take(&out.1);
         out
     }
 
     fn resend(&mut self) -> (Intake, Vec<Effect>) {
-        let out = self.drive.resend();
+        let out = self.drive.resend(now());
         self.take(&out.1);
         out
     }
@@ -89,8 +97,30 @@ impl Front {
     }
 
     fn apply(&mut self, event: AcpEvent) -> (Vec<Effect>, Next) {
-        let out = self.drive.apply(event);
+        let out = self.drive.apply(event, now());
         self.take(&out.0);
+        out
+    }
+
+    fn handle(&mut self, input: Input) -> Vec<Effect> {
+        let out = self.drive.handle(input, now());
+        self.take(&out);
+        out
+    }
+
+    fn read_back(
+        &mut self,
+        kept: impl IntoIterator<Item = AcpEvent>,
+        away: Option<String>,
+    ) -> Vec<Effect> {
+        let out = self.drive.read_back(kept, away, now());
+        self.take(&out);
+        out
+    }
+
+    fn host_lost(&mut self, line: String) -> Vec<Effect> {
+        let out = self.drive.host_lost(line, now());
+        self.take(&out);
         out
     }
 
@@ -1109,4 +1139,52 @@ fn a_session_closed_with_nothing_on_its_way_adds_only_the_rest() {
         "nothing left, nothing written"
     );
     let _ = std::fs::remove_dir_all(&store);
+}
+
+// The time, told rather than read.
+
+/// What the session writes down and how long it says a step took come from
+/// the time its front end told it, never from a clock of its own.
+#[test]
+fn a_session_stamps_and_times_by_the_time_it_is_told() {
+    let (mut front, _rx) = connected();
+    let start = std::time::Instant::now();
+    let at = |secs: u64| Now {
+        secs: 1_000 + secs,
+        at: start + std::time::Duration::from_secs(secs),
+    };
+    front
+        .drive
+        .prompt("go", &[], Origin::Person, Code::Here, at(0));
+    let Some(crate::chat::ChatItem::User(prompt)) = front.items.last() else {
+        panic!("no prompt");
+    };
+    assert_eq!(prompt.sent_at, Some(1_000));
+
+    front.drive.apply(
+        AcpEvent::ToolCall(crate::acp::ToolCall {
+            id: "t".into(),
+            title: "cargo test".into(),
+            description: None,
+            kind: crate::acp::ToolKind::Execute,
+            status: crate::acp::ToolStatus::InProgress,
+            content: Vec::new(),
+        }),
+        at(1),
+    );
+    front.drive.apply(
+        AcpEvent::ToolUpdate(crate::acp::ToolCallUpdate {
+            id: "t".into(),
+            status: Some(crate::acp::ToolStatus::Completed),
+            title: None,
+            description: None,
+            content: None,
+        }),
+        at(6),
+    );
+    let Some(crate::chat::ChatItem::Tool(step)) = front.items.last() else {
+        panic!("no step");
+    };
+    assert_eq!(step.elapsed_secs, Some(5), "from 1 to 6, as told");
+    assert_eq!(step.settled_at, Some(1_006));
 }

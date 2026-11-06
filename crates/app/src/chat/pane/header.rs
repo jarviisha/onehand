@@ -251,7 +251,10 @@ impl ChatPane {
             .iter()
             .take(BACKGROUND_MENU_CAP)
             .map(|item| {
-                let aside = format!("{} · {}", item.kind, ran_for(item.started.elapsed()));
+                let aside = match item.started {
+                    Some(started) => format!("{} · {}", item.kind, ran_for(started.elapsed())),
+                    None => item.kind.clone(),
+                };
                 (item.id.clone(), item.name.clone(), aside)
             })
             .collect();

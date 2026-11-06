@@ -10,6 +10,7 @@
 
 use super::{Drive, Input};
 use crate::chat::drive::{Code, Effect as SessionEffect, Intake, Origin, SessionDrive, Signal};
+use crate::chat::Now;
 use crate::workflow::{Action, Run};
 use std::time::Instant;
 
@@ -85,8 +86,12 @@ pub fn notified(drive: &Drive, session: &SessionDrive) -> Option<Input> {
 /// The run's prompt, sent to its session: what the session's carrier does
 /// with it, and what to tell the run when the session did not take it. A
 /// run's prompt never queues.
-pub fn submit(session: &mut SessionDrive, text: &str) -> (Option<Input>, Vec<SessionEffect>) {
-    let (intake, fx) = session.prompt(text, &[], Origin::Run, Code::Here);
+pub fn submit(
+    session: &mut SessionDrive,
+    text: &str,
+    now: Now,
+) -> (Option<Input>, Vec<SessionEffect>) {
+    let (intake, fx) = session.prompt(text, &[], Origin::Run, Code::Here, now);
     ((intake != Intake::Sent).then_some(Input::NotTaken), fx)
 }
 

@@ -23,7 +23,7 @@ pub use drive::SessionDrive;
 pub use export::export_markdown;
 pub use model::{
     fork_seed, ApplyOutcome, AskItem, AskPlace, AskRow, Away, BackgroundItem, Chat, ChatItem,
-    ForkPoint, ForkSeed, Level, Link, Md, MdId, Meter, NoticeLevel, PermItem, PlanItem,
+    ForkPoint, ForkSeed, Level, Link, Md, MdId, Meter, NoticeLevel, Now, PermItem, PlanItem,
     QueuedPrompt, Selector, SelectorChoice, SubagentItem, SubagentState, SubmitBlock, TermView,
     Thought, ToolItem, TranscriptItemId, TurnAnswer, UserAsk, UserMsg, MAX_TERM_BYTES,
     MODE_SELECTOR,

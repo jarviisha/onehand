@@ -27,7 +27,7 @@
 //! with whether the batch may go on ([`Next`]); [`SessionDrive::end_batch`]
 //! closes it. How many events a front end takes at most is its own cap.
 
-use super::model::{Chat, Link, QueuedPrompt, SubmitBlock, UserAsk};
+use super::model::{Chat, Link, Now, QueuedPrompt, SubmitBlock, UserAsk};
 use super::store::PendingWrite;
 use crate::acp::{AcpEvent, AcpRequest};
 use crate::attachment::StagedAttachment;
@@ -322,7 +322,9 @@ impl SessionDrive {
         staged: &[StagedAttachment],
         origin: Origin,
         code: Code,
+        now: Now,
     ) -> (Intake, Vec<Effect>) {
+        self.chat.tell_time(now);
         let (intake, fx) = self.intake(text, staged, origin, code);
         (intake, self.sent(fx))
     }
@@ -379,12 +381,21 @@ impl SessionDrive {
     ///
     /// Issue work's prompt goes only to a session nobody has prompted yet: a
     /// person who wrote first is driving it.
-    pub fn prompt_when_up(&mut self, text: &str, origin: Origin) -> (Intake, Vec<Effect>) {
+    pub fn prompt_when_up(
+        &mut self,
+        text: &str,
+        origin: Origin,
+        now: Now,
+    ) -> (Intake, Vec<Effect>) {
+        self.chat.tell_time(now);
         match self.chat.link {
-            Link::Connected => self.prompt_held(Held {
-                text: text.to_string(),
-                origin,
-            }),
+            Link::Connected => self.prompt_held(
+                Held {
+                    text: text.to_string(),
+                    origin,
+                },
+                now,
+            ),
             Link::Connecting => {
                 self.held = Some(Held {
                     text: text.to_string(),
@@ -399,7 +410,7 @@ impl SessionDrive {
         }
     }
 
-    fn prompt_held(&mut self, held: Held) -> (Intake, Vec<Effect>) {
+    fn prompt_held(&mut self, held: Held, now: Now) -> (Intake, Vec<Effect>) {
         let untouched =
             !self.chat.busy && self.chat.prompts_sent == 0 && self.chat.queued.is_none();
         if held.origin == Origin::Issue && !untouched {
@@ -408,7 +419,7 @@ impl SessionDrive {
                 Vec::new(),
             );
         }
-        self.prompt(&held.text, &[], held.origin, Code::Here)
+        self.prompt(&held.text, &[], held.origin, Code::Here, now)
     }
 
     /// Send the last prompt again, after a turn that failed, as a person's.
@@ -416,7 +427,8 @@ impl SessionDrive {
     /// Never queued: an error can be said before the turn it ends has
     /// closed, and a resend queued then would replace a prompt already
     /// waiting, which the person wrote and did not take back.
-    pub fn resend(&mut self) -> (Intake, Vec<Effect>) {
+    pub fn resend(&mut self, now: Now) -> (Intake, Vec<Effect>) {
+        self.chat.tell_time(now);
         let Some(text) = self.chat.resend_text().map(str::to_string) else {
             return (Intake::Refused(Refusal::NotTaken), Vec::new());
         };
@@ -426,7 +438,7 @@ impl SessionDrive {
                 Vec::new(),
             );
         }
-        self.prompt(&text, &[], Origin::Person, Code::Here)
+        self.prompt(&text, &[], Origin::Person, Code::Here, now)
     }
 
     /// Take the queued prompt back, for a front end putting it back where it
@@ -448,7 +460,8 @@ impl SessionDrive {
     }
 
     /// Fold one event in.
-    pub fn apply(&mut self, event: AcpEvent) -> (Vec<Effect>, Next) {
+    pub fn apply(&mut self, event: AcpEvent, now: Now) -> (Vec<Effect>, Next) {
+        self.chat.tell_time(now);
         let outcome = self.chat.apply(event);
         let mut fx = vec![Effect::Signal(Signal::Appended)];
         // Last of a turn's end, so a prompt written mid-turn opens its own
@@ -464,7 +477,7 @@ impl SessionDrive {
         }
         if let Some(held) = self.held.take_if(|_| self.chat.link != Link::Connecting) {
             if self.chat.link == Link::Connected {
-                fx.extend(self.prompt_held(held).1);
+                fx.extend(self.prompt_held(held, now).1);
             }
         }
         self.batch.changed |= outcome.transcript_changed;
@@ -538,7 +551,8 @@ impl SessionDrive {
     }
 
     /// What the front end reports back.
-    pub fn handle(&mut self, input: Input) -> Vec<Effect> {
+    pub fn handle(&mut self, input: Input, now: Now) -> Vec<Effect> {
+        self.chat.tell_time(now);
         match input {
             Input::Saved { write, result } => self.saved(&write, result),
             Input::Elapsed { token } => self.elapsed(token),

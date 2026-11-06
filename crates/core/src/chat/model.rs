@@ -10,6 +10,7 @@
 use crate::acp::{AcpRequest, ConfigOption, Mode, ReqTx, SlashCommand};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Instant;
 
 mod apply;
 mod background;
@@ -87,6 +88,15 @@ enum Replay {
 }
 
 /// Per-session chat state (keyed by session uid in `App`).
+/// The time, as a front end read it and told it: the wall clock, in seconds
+/// since the epoch, for what is written down, and an instant, for how long a
+/// step or a thought took. The model reads no clock of its own.
+#[derive(Debug, Clone, Copy)]
+pub struct Now {
+    pub secs: u64,
+    pub at: Instant,
+}
+
 #[derive(Default)]
 pub struct Chat {
     /// The owning session's uid. Scopes this chat's widget ids (the composer
@@ -147,6 +157,9 @@ pub struct Chat {
     /// Held to know the link is up, and handed to the front end that sends:
     /// the model itself sends nothing.
     pub(crate) tx: Option<ReqTx>,
+    /// The time last told, by whatever drives the session. Untold, the wall
+    /// clock reads as the epoch and nothing is timed.
+    told: Option<Now>,
     /// What is to go to the agent, in order, taken by the session's drive
     /// and sent by its front end. Only queued while the link is up, as a
     /// request into no channel reaches nobody.
@@ -289,9 +302,20 @@ impl Chat {
         chat
     }
 
-    /// When the event being applied happened: the host's word for it, or now.
+    /// When the event being applied happened: the host's word for it, or the
+    /// time last told.
     fn event_time(&self) -> u64 {
-        self.clock.unwrap_or_else(crate::chat::store::now_secs)
+        self.clock.unwrap_or_else(|| self.wall())
+    }
+
+    /// Tell the model what time it is, ahead of what it is told next.
+    pub(crate) fn tell_time(&mut self, now: Now) {
+        self.told = Some(now);
+    }
+
+    /// The wall clock as last told, in seconds since the epoch.
+    fn wall(&self) -> u64 {
+        self.told.map_or(0, |now| now.secs)
     }
 
     /// The transcript's current revision. See the field.

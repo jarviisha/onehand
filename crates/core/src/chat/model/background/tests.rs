@@ -369,6 +369,7 @@ fn settled_chat() -> Chat {
         "Codex".into(),
         Some(PathBuf::from("/store")),
     );
+    told(&mut chat);
     chat.session_id = Some("sid-1".into());
     chat.link = Link::Connected;
     chat.items.push(ChatItem::User(UserMsg::text("go")));
@@ -835,6 +836,7 @@ fn running_since_leaves_out_older_background_work() {
     let since = Instant::now();
     assert!(chat.running());
     assert!(!chat.running_since(Some(since)));
+    told(&mut chat);
     chat.apply(spawned("build"));
     assert!(chat.running_since(Some(since)));
     chat.store = None;
@@ -847,4 +849,12 @@ fn recv(chat: &mut Chat) -> Result<AcpRequest, ()> {
         true => Err(()),
         false => Ok(chat.outbox.remove(0)),
     }
+}
+
+/// The time now, told to a chat as its drive would before what it folds.
+fn told(chat: &mut Chat) {
+    chat.tell_time(crate::chat::Now {
+        secs: crate::chat::now_secs(),
+        at: std::time::Instant::now(),
+    });
 }

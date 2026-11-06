@@ -169,6 +169,7 @@ fn only_running_tools_start_open() {
 #[test]
 fn a_thought_runs_then_settles() {
     let mut chat = Chat::default();
+    told(&mut chat);
     chat.push_user("go".into(), Vec::new(), crate::chat::store::now_secs());
     chat.apply(AcpEvent::ThoughtChunk("hm".into()));
     let running = |chat: &Chat| match &chat.items[1] {
@@ -2816,6 +2817,7 @@ fn the_waiting_line_names_the_oldest_card() {
 fn connected_chat() -> (Chat, tokio::sync::mpsc::UnboundedReceiver<AcpRequest>) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let mut chat = Chat::default();
+    told(&mut chat);
     chat.apply(AcpEvent::Connected {
         tx,
         resumed: false,
@@ -3292,4 +3294,12 @@ fn recv(chat: &mut Chat) -> Result<AcpRequest, ()> {
         true => Err(()),
         false => Ok(chat.outbox.remove(0)),
     }
+}
+
+/// The time now, told to a chat as its drive would before what it folds.
+fn told(chat: &mut Chat) {
+    chat.tell_time(crate::chat::Now {
+        secs: crate::chat::now_secs(),
+        at: std::time::Instant::now(),
+    });
 }

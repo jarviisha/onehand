@@ -27,7 +27,7 @@ fn carried() -> Carried {
     let mut chat = new_chat(1, PathBuf::from("/srv/app"), &AgentSpec::default(), true);
     chat.session_id = Some("acp-1".into());
     Carried {
-        stored: onehand_core::chat::SessionDrive::new(chat).take_snapshot(),
+        stored: onehand_core::chat::SessionDrive::new(chat).take_snapshot(super::now()),
         sent: 2,
         after_service: false,
     }
@@ -187,9 +187,12 @@ fn a_host_chat_has_no_store() {
         chat.session_id = Some("acp-1".into());
         chat.items.push(ChatItem::notice("said".to_string()));
         let mut drive = SessionDrive::new(chat);
-        let (fx, _) = drive.apply(onehand_core::acp::AcpEvent::TurnEnded {
-            stop_reason: "end_turn".into(),
-        });
+        let (fx, _) = drive.apply(
+            onehand_core::acp::AcpEvent::TurnEnded {
+                stop_reason: "end_turn".into(),
+            },
+            super::now(),
+        );
         fx.iter().any(|effect| matches!(effect, Effect::Save(_)))
     };
     assert!(!saves(true), "a host chat writes nothing");

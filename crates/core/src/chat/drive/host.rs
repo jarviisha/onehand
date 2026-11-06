@@ -6,6 +6,7 @@
 
 use super::{Effect, SessionDrive, Signal};
 use crate::acp::AcpEvent;
+use crate::chat::Now;
 
 impl SessionDrive {
     /// Show what this machine kept of the session's journal, folded into the
@@ -17,7 +18,9 @@ impl SessionDrive {
         &mut self,
         kept: impl IntoIterator<Item = AcpEvent>,
         away: Option<String>,
+        now: Now,
     ) -> Vec<Effect> {
+        self.chat.tell_time(now);
         for event in kept {
             self.chat.apply(event);
         }
@@ -47,7 +50,8 @@ impl SessionDrive {
     /// and `line` says the session is out of reach rather than that its agent
     /// went. A first prompt held for the agent is dropped, as on any lost
     /// link, and the batch has changed.
-    pub fn host_lost(&mut self, line: String) -> Vec<Effect> {
+    pub fn host_lost(&mut self, line: String, now: Now) -> Vec<Effect> {
+        self.chat.tell_time(now);
         self.chat.link_cut();
         self.chat.say_host_wait(line);
         self.held = None;

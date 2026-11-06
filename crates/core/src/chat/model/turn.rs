@@ -4,7 +4,6 @@ use super::items::{
 use super::{Chat, Link, Replay};
 use crate::acp::{AcpRequest, Attachment, ElicitOutcome, ToolStatus};
 use crate::attachment::{AttachmentDelivery, AttachmentSnapshot, StagedAttachment};
-use crate::chat::store;
 
 /// Why a composed prompt cannot be sent right now.
 ///
@@ -268,7 +267,7 @@ impl Chat {
     /// than one saying it is unclear. This is the same answer
     /// `cancel_pending_permissions` gives a dangling card one line above.
     pub(super) fn settle_running_steps(&mut self) {
-        super::apply::settle_steps(&mut self.items);
+        super::apply::settle_steps(&mut self.items, self.told);
     }
 
     ///
@@ -439,7 +438,7 @@ impl Chat {
                 .cloned()
                 .map(StagedAttachment::snapshot)
                 .collect(),
-            store::now_secs(),
+            self.wall(),
         );
         true
     }

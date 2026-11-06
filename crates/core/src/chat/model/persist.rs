@@ -55,7 +55,8 @@ impl Chat {
         let mut write = self.meta_write(total)?;
         // Only a save that added messages moves the conversation's date -- see
         // the field on the file for why the list must not reorder otherwise.
-        write.meta.updated = (!lines.is_empty()).then(store::now_secs);
+        let wall = self.wall();
+        write.meta.updated = (!lines.is_empty()).then_some(wall);
         write.lines = lines;
         write.blobs = blobs;
         write.from = from;
@@ -195,7 +196,7 @@ impl Chat {
         Some(ConversationSnapshot {
             session_id,
             title: self.custom_title.clone(),
-            updated: self.last_activity.unwrap_or_else(store::now_secs),
+            updated: self.last_activity.unwrap_or(self.wall()),
             // The file's own, and the file keeps it: a snapshot passing through
             // memory has no business telling a conversation when it began.
             prefs: self.prefs(),

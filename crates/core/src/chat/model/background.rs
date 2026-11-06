@@ -8,7 +8,7 @@
 //! ended and for how long, so a conversation read back later still shows it.
 
 use super::items::{ChatItem, NoticeLevel};
-use super::{ApplyOutcome, Chat, Link, Replay};
+use super::{ApplyOutcome, Chat, Link, Now, Replay};
 use crate::acp::{
     AcpRequest, BackgroundEnd, BackgroundReport, LimitStatus, RateLimit, ToolStatus, Usage,
 };
@@ -21,7 +21,9 @@ pub struct BackgroundItem {
     pub id: String,
     pub name: String,
     pub kind: String,
-    pub started: Instant,
+    /// When it started, from the time the session was told; `None` where
+    /// that was never told.
+    pub started: Option<Instant>,
 }
 
 /// What the agent does by itself between turns. No adapter says when such a
@@ -126,8 +128,13 @@ const NAME_CHARS: usize = 80;
 
 /// The transcript's line for a background item that is over: `ended` says
 /// how, `level` how loudly.
-fn ended_line(item: &BackgroundItem, ended: &str, level: NoticeLevel) -> ChatItem {
-    let took = crate::duration(item.started.elapsed().as_secs());
+fn ended_line(
+    item: &BackgroundItem,
+    ended: &str,
+    level: NoticeLevel,
+    now: Option<Now>,
+) -> ChatItem {
+    let took = crate::duration(super::items::took(item.started, now));
     let mut text = format!("Background work {ended} after {took}");
     // A name that only repeats the kind (the fallback) is no name.
     if item.name != item.kind {
@@ -219,7 +226,10 @@ impl Chat {
     /// [`Self::running`], counting only background work started at `since` or
     /// later; all of it with no `since`.
     pub fn running_since(&self, since: Option<Instant>) -> bool {
-        let fresh = |item: &BackgroundItem| since.is_none_or(|since| item.started >= since);
+        // One whose start was never told is counted, as it may be fresh.
+        let fresh = |item: &BackgroundItem| {
+            since.is_none_or(|since| item.started.is_none_or(|started| started >= since))
+        };
         self.busy
             || self.background.iter().any(fresh)
             || self.subagents_working() > 0
@@ -342,7 +352,7 @@ impl Chat {
                     id,
                     name,
                     kind,
-                    started: Instant::now(),
+                    started: self.told.map(|now| now.at),
                 });
                 (None, false)
             }
@@ -354,9 +364,15 @@ impl Chat {
                 };
                 let item = self.background.remove(at);
                 let line = match end {
-                    BackgroundEnd::Completed => ended_line(&item, "finished", NoticeLevel::Info),
-                    BackgroundEnd::Failed => ended_line(&item, "failed", NoticeLevel::Error),
-                    BackgroundEnd::Stopped => ended_line(&item, "stopped", NoticeLevel::Info),
+                    BackgroundEnd::Completed => {
+                        ended_line(&item, "finished", NoticeLevel::Info, self.told)
+                    }
+                    BackgroundEnd::Failed => {
+                        ended_line(&item, "failed", NoticeLevel::Error, self.told)
+                    }
+                    BackgroundEnd::Stopped => {
+                        ended_line(&item, "stopped", NoticeLevel::Info, self.told)
+                    }
                 };
                 (Some(line), asked)
             }
@@ -381,7 +397,7 @@ impl Chat {
         self.interrupt_subagents();
         if !self.background.is_empty() {
             for item in std::mem::take(&mut self.background) {
-                let line = ended_line(&item, "interrupted", NoticeLevel::Info);
+                let line = ended_line(&item, "interrupted", NoticeLevel::Info, self.told);
                 self.items.push(line);
             }
             self.touch();

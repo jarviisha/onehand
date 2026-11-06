@@ -15,11 +15,14 @@ type Rx = tokio::sync::mpsc::UnboundedReceiver<AcpRequest>;
 fn session() -> (SessionDrive, Rx) {
     let mut session = SessionDrive::new(Chat::default());
     let (tx, rx): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
-    session.apply(AcpEvent::Connected {
-        tx,
-        resumed: false,
-        forkable: false,
-    });
+    session.apply(
+        AcpEvent::Connected {
+            tx,
+            resumed: false,
+            forkable: false,
+        },
+        now(),
+    );
     session.end_batch();
     (session, rx)
 }
@@ -91,7 +94,7 @@ impl Pair {
         for effect in fx {
             match effect {
                 Effect::Submit(text) => {
-                    let (answer, fx) = submit(&mut self.session, &text);
+                    let (answer, fx) = submit(&mut self.session, &text, now());
                     self.send(fx);
                     if let Some(input) = answer {
                         left.extend(self.on(input));
@@ -110,7 +113,7 @@ impl Pair {
     /// The agent's event reaches the session, and what the session signals
     /// reaches the run.
     fn agent(&mut self, event: AcpEvent) -> Vec<Effect> {
-        let (mut fx, _) = self.session.apply(event);
+        let (mut fx, _) = self.session.apply(event, now());
         fx.extend(self.session.end_batch());
         let mut out = Vec::new();
         let (requests, fx): (Vec<_>, Vec<_>) = fx
@@ -135,6 +138,13 @@ fn send(session: &SessionDrive, fx: Vec<SessionEffect>) {
         if let (SessionEffect::Request(request), Some(tx)) = (effect, session.agent_channel()) {
             let _ = tx.send(request);
         }
+    }
+}
+
+fn now() -> crate::chat::Now {
+    crate::chat::Now {
+        secs: crate::chat::now_secs(),
+        at: Instant::now(),
     }
 }
 
@@ -173,8 +183,8 @@ fn a_runs_prompt_reaches_its_session_and_the_turns_end_moves_the_run_on() {
 #[test]
 fn a_runs_prompt_to_a_busy_session_is_not_taken_and_the_run_hears_it() {
     let (mut session, _rx) = session();
-    session.prompt("a person's", &[], Origin::Person, Code::Here);
-    let (answer, fx) = submit(&mut session, "the run's");
+    session.prompt("a person's", &[], Origin::Person, Code::Here, now());
+    let (answer, fx) = submit(&mut session, "the run's", now());
     assert_eq!(answer, Some(Input::NotTaken));
     assert!(fx.is_empty());
     assert!(session.queued.is_none(), "a run's prompt never queues");
@@ -186,7 +196,7 @@ fn a_runs_cancel_leaves_an_idle_session_alone() {
     let fx = cancel(&mut session);
     send(&session, fx);
     assert!(rx.try_recv().is_err(), "nothing to cancel");
-    let (_, fx) = session.prompt("go", &[], Origin::Person, Code::Here);
+    let (_, fx) = session.prompt("go", &[], Origin::Person, Code::Here, now());
     send(&session, fx);
     rx.try_recv().ok();
     let fx = cancel(&mut session);

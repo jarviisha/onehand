@@ -309,7 +309,7 @@ fn offline(
     let _ = session.update(cx, |session, cx| {
         let fx = session
             .chat
-            .read_back(copy::events(kept), away.then_some(line));
+            .read_back(copy::events(kept), away.then_some(line), super::now());
         if away {
             session.host_offline = Some(host);
         }

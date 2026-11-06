@@ -2,7 +2,7 @@ use super::items::{
     AskItem, ChatItem, Md, NoticeLevel, PermItem, PlanItem, Thought, ToolItem, UserMsg,
     MAX_TERM_BYTES,
 };
-use super::{Chat, Link, Replay};
+use super::{Chat, Link, Now, Replay};
 use crate::acp::{AcpEvent, PlanEntry, ToolCall, ToolCallUpdate, ToolContent, ToolStatus};
 
 /// What applying one event did, for the front end that has to react to it.
@@ -293,11 +293,11 @@ impl Chat {
             AcpEvent::ToolCall(tc) => {
                 self.consume_replay();
                 self.finalize_thought();
-                tool_call(&mut self.items, tc);
+                tool_call(&mut self.items, tc, self.told);
             }
             AcpEvent::ToolUpdate(tu) => {
                 self.consume_replay();
-                tool_update(&mut self.items, tu);
+                tool_update(&mut self.items, tu, self.told);
             }
             AcpEvent::Plan(entries) => {
                 self.consume_replay();
@@ -596,13 +596,16 @@ impl Chat {
         match self.items.last_mut() {
             // Append only to a still-running thought; a finalized one starts anew.
             Some(ChatItem::Thought(th)) if th.elapsed_secs.is_none() => th.md.push(s),
-            _ => self.items.push(ChatItem::Thought(Thought::live(s))),
+            _ => {
+                let thought = Thought::live(s, self.told);
+                self.items.push(ChatItem::Thought(thought));
+            }
         }
     }
 
     /// Stamp the trailing thought's duration once non-thought content follows it.
     fn finalize_thought(&mut self) {
-        seal_thought(&mut self.items);
+        seal_thought(&mut self.items, self.told);
     }
 
     fn push_user_chunk(&mut self, s: &str) {
@@ -615,17 +618,14 @@ impl Chat {
 }
 
 /// Stamp the trailing thought of `items` with its duration.
-pub(super) fn seal_thought(items: &mut [ChatItem]) {
+pub(super) fn seal_thought(items: &mut [ChatItem], now: Option<Now>) {
     if let Some(ChatItem::Thought(th)) = items.last_mut() {
-        if th.elapsed_secs.is_none() {
-            let secs = th.started.map(|s| s.elapsed().as_secs()).unwrap_or(0);
-            th.elapsed_secs = Some(secs);
-        }
+        th.seal(now);
     }
 }
 
 /// Draw a tool call, or update its card when the id is already on screen.
-pub(super) fn tool_call(items: &mut Vec<ChatItem>, tc: ToolCall) {
+pub(super) fn tool_call(items: &mut Vec<ChatItem>, tc: ToolCall, now: Option<Now>) {
     // A call announced again under an id already on screen is the same step,
     // said over: it updates its card rather than drawing a second one.
     let known = items.iter_mut().rev().find_map(|item| match item {
@@ -643,9 +643,10 @@ pub(super) fn tool_call(items: &mut Vec<ChatItem>, tc: ToolCall) {
                 description: tc.description,
                 content: Some(tc.content),
             },
+            now,
         );
     } else {
-        let mut item = ToolItem::new(tc);
+        let mut item = ToolItem::new(tc).started_at(now);
         // The same rule for a step that arrives already failed, which is how
         // an adapter reports one it never started.
         item.failed_open = item.call.status == ToolStatus::Failed;
@@ -661,7 +662,7 @@ pub(super) fn tool_call(items: &mut Vec<ChatItem>, tc: ToolCall) {
 /// Claude's adapter drops the spawning `Agent` call from the parent yet
 /// still sends bare updates for its id, which would otherwise draw an
 /// empty "Used tool" row that later turns failed.
-pub(super) fn tool_update(items: &mut Vec<ChatItem>, tu: ToolCallUpdate) {
+pub(super) fn tool_update(items: &mut Vec<ChatItem>, tu: ToolCallUpdate, now: Option<Now>) {
     for item in items.iter_mut().rev() {
         if let ChatItem::Tool(t) = item {
             if t.call.id == tu.id {
@@ -671,7 +672,7 @@ pub(super) fn tool_update(items: &mut Vec<ChatItem>, tu: ToolCallUpdate) {
                     // which there are several, since content arrives after
                     // the status does -- must not restart the clock.
                     if !matches!(status, ToolStatus::Pending | ToolStatus::InProgress) {
-                        t.settle_clock();
+                        t.settle_clock(now);
                     }
                     // **A failure opens itself, and can still be shut.**
                     // The one thing a reader needs from a settled step is
@@ -711,14 +712,15 @@ pub(super) fn tool_update(items: &mut Vec<ChatItem>, tu: ToolCallUpdate) {
     if !readable {
         return;
     }
-    items.push(ChatItem::Tool(ToolItem::new(ToolCall {
+    let item = ToolItem::new(ToolCall {
         id: tu.id,
         title: tu.title.unwrap_or_default(),
         description: tu.description,
         kind: crate::acp::ToolKind::Other,
         status: tu.status.unwrap_or(ToolStatus::InProgress),
         content: tu.content.unwrap_or_default(),
-    })));
+    });
+    items.push(ChatItem::Tool(item.started_at(now)));
 }
 
 /// Fold a `plan` update into the transcript: the agent republishes the
@@ -740,7 +742,7 @@ pub(super) fn plan(items: &mut Vec<ChatItem>, entries: Vec<PlanEntry>) {
 }
 
 /// Fail every step still running in `items`: nothing will settle it now.
-pub(super) fn settle_steps(items: &mut [ChatItem]) {
+pub(super) fn settle_steps(items: &mut [ChatItem], now: Option<Now>) {
     for item in items {
         if let ChatItem::Tool(tool) = item {
             if !matches!(
@@ -753,7 +755,7 @@ pub(super) fn settle_steps(items: &mut [ChatItem]) {
             // Timed here for the same reason a settling update is: this is
             // the moment the step stopped, and a step that never settles
             // has no duration at all.
-            tool.settle_clock();
+            tool.settle_clock(now);
             // The same seed a failure arriving as an update leaves, so a
             // reader can see what the step had said before it stopped.
             tool.failed_open = true;

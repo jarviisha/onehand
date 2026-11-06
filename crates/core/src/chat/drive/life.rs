@@ -5,7 +5,7 @@
 use super::{Effect, SessionDrive, Signal};
 use crate::chat::model::ChatItem;
 use crate::chat::store::ConversationSnapshot;
-use crate::chat::ForkSeed;
+use crate::chat::{ForkSeed, Now};
 
 impl SessionDrive {
     /// Start as the conversation `snapshot` holds: its transcript, its mark
@@ -25,7 +25,8 @@ impl SessionDrive {
     /// Hand the conversation on to the session that restarts this one: a
     /// move, carrying the mark in the file, so this one's drop does not write
     /// it a second time and the next continues the same file.
-    pub fn take_snapshot(&mut self) -> Option<ConversationSnapshot> {
+    pub fn take_snapshot(&mut self, now: Now) -> Option<ConversationSnapshot> {
+        self.chat.tell_time(now);
         self.chat.take_snapshot()
     }
 

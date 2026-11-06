@@ -460,15 +460,16 @@ fn a_step_settling_at_the_tail_leaves_the_reader_where_they_were() {
 
     // The tool settles. It was in the cluster already, so the only thing
     // that changes is what that cluster's one line says about itself.
-    chat.apply(onehand_core::acp::AcpEvent::ToolUpdate(
-        onehand_core::acp::ToolCallUpdate {
+    chat.apply(
+        onehand_core::acp::AcpEvent::ToolUpdate(onehand_core::acp::ToolCallUpdate {
             id: "Read src/c.rs".to_string(),
             status: Some(ToolStatus::Completed),
             title: None,
             description: None,
             content: None,
-        },
-    ));
+        }),
+        crate::chat::session::now(),
+    );
     viewport.replan(&chat, 0, |_, open| open, |_, d| d, |_, default| default);
     let state = viewport.list_state(true, ROOM);
 
@@ -512,28 +513,32 @@ fn a_row_that_changed_shape_is_told_to_the_list_too() {
 
     // The read settles. It is alone between two paragraphs either way, so
     // it stays one run and only what its line says changes.
-    chat.apply(onehand_core::acp::AcpEvent::ToolUpdate(
-        onehand_core::acp::ToolCallUpdate {
+    chat.apply(
+        onehand_core::acp::AcpEvent::ToolUpdate(onehand_core::acp::ToolCallUpdate {
             id: "Read src/c.rs".to_string(),
             status: Some(ToolStatus::Completed),
             title: None,
             description: None,
             content: None,
-        },
-    ));
+        }),
+        crate::chat::session::now(),
+    );
     viewport.replan(&chat, 0, |_, open| open, |_, d| d, |_, default| default);
     assert_eq!(viewport.changed_from, 3, "the row that changed shape");
 
     // A later replan must not paint over a divergence still owed to the
     // list -- the note is the earliest one, not the newest.
-    chat.apply(onehand_core::acp::AcpEvent::ToolCall(ToolCall {
-        id: "Read src/d.rs".into(),
-        title: "Read src/d.rs".into(),
-        description: None,
-        kind: ToolKind::Read,
-        status: ToolStatus::InProgress,
-        content: Vec::new(),
-    }));
+    chat.apply(
+        onehand_core::acp::AcpEvent::ToolCall(ToolCall {
+            id: "Read src/d.rs".into(),
+            title: "Read src/d.rs".into(),
+            description: None,
+            kind: ToolKind::Read,
+            status: ToolStatus::InProgress,
+            content: Vec::new(),
+        }),
+        crate::chat::session::now(),
+    );
     viewport.replan(&chat, 0, |_, open| open, |_, d| d, |_, default| default);
     assert_eq!(
         viewport.changed_from, 3,
