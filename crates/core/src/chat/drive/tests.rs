@@ -607,3 +607,138 @@ fn nothing_failed_nothing_goes_again() {
     assert_eq!(drive.resend().0, Intake::Refused(Refusal::NotTaken));
     assert!(sent(&mut rx).is_none());
 }
+
+// Answering cards.
+
+/// A question parked on a running turn, of one single-select field, or of a
+/// single-select then a multi-select: its live index.
+fn ask(drive: &mut SessionDrive, two: bool) -> usize {
+    use crate::acp::{ElicitChoice, ElicitField, ElicitKind, Elicitation};
+    let choice = |v: &str| ElicitChoice {
+        value: v.into(),
+        label: v.to_uppercase(),
+        description: None,
+    };
+    let field = |key: &str, kind| ElicitField {
+        key: key.into(),
+        title: None,
+        description: None,
+        kind,
+        custom_key: None,
+    };
+    let mut fields = vec![field(
+        "q0",
+        ElicitKind::Select(vec![choice("a"), choice("b")]),
+    )];
+    if two {
+        fields.push(field(
+            "q1",
+            ElicitKind::MultiSelect(vec![choice("x"), choice("y")]),
+        ));
+    }
+    drive.prompt("go", &[], Origin::Person, Code::Here);
+    feed(
+        drive,
+        AcpEvent::Elicitation(Elicitation {
+            rpc_id: serde_json::Value::from(9),
+            tool_call_id: None,
+            message: "pick".into(),
+            fields,
+            child: None,
+        }),
+    );
+    drive.items.len() - 1
+}
+
+fn answered(rx: &mut Rx) -> Option<crate::acp::ElicitOutcome> {
+    std::iter::from_fn(|| rx.try_recv().ok()).find_map(|request| match request {
+        AcpRequest::ElicitationResponse { outcome, .. } => Some(outcome),
+        _ => None,
+    })
+}
+
+#[test]
+fn a_pick_answers_a_one_question_form_and_only_that() {
+    let (mut drive, mut rx) = connected();
+    let one = ask(&mut drive, false);
+    assert!(drive.ask_pick(one, 0, 1).0, "nothing left to decide");
+    assert!(matches!(
+        answered(&mut rx),
+        Some(crate::acp::ElicitOutcome::Accept(_))
+    ));
+
+    let (mut drive, mut rx) = connected();
+    let two = ask(&mut drive, true);
+    assert!(!drive.ask_pick(two, 0, 1).0);
+    assert!(
+        answered(&mut rx).is_none(),
+        "a second question is still open"
+    );
+}
+
+#[test]
+fn skipping_walks_on_and_the_last_skip_sends_what_the_rest_hold() {
+    let (mut drive, mut rx) = connected();
+    let two = ask(&mut drive, true);
+    drive.ask_pick(two, 0, 0);
+    assert_eq!(drive.ask_skip(two, 0).0, Some(1), "the next question shows");
+    // The pick above was dropped with the skip, so nothing is left: declined.
+    assert_eq!(drive.ask_skip(two, 1).0, None);
+    assert!(matches!(
+        answered(&mut rx),
+        Some(crate::acp::ElicitOutcome::Decline)
+    ));
+
+    let (mut drive, mut rx) = connected();
+    let two = ask(&mut drive, true);
+    drive.ask_pick(two, 0, 0);
+    assert_eq!(drive.ask_advance(two, 0).0, Some(1));
+    assert_eq!(drive.ask_skip(two, 1).0, None);
+    assert!(
+        matches!(
+            answered(&mut rx),
+            Some(crate::acp::ElicitOutcome::Accept(_))
+        ),
+        "the answer above the skipped question is sent"
+    );
+}
+
+#[test]
+fn moving_on_from_the_last_question_sends_the_form() {
+    let (mut drive, mut rx) = connected();
+    let two = ask(&mut drive, true);
+    drive.ask_pick(two, 0, 1);
+    drive.ask_advance(two, 0);
+    assert_eq!(drive.ask_advance(two, 1).0, None);
+    assert!(matches!(
+        answered(&mut rx),
+        Some(crate::acp::ElicitOutcome::Accept(_))
+    ));
+}
+
+#[test]
+fn a_form_is_sent_only_once_it_holds_an_answer() {
+    let (mut drive, mut rx) = connected();
+    let two = ask(&mut drive, true);
+    drive.ask_submit(two);
+    assert!(answered(&mut rx).is_none());
+    drive.ask_type(two, 0, "mine".into());
+    assert!(drive.ask_at(two).is_some_and(|a| a.custom[0] == "mine"));
+    drive.ask_submit(two);
+    assert!(matches!(
+        answered(&mut rx),
+        Some(crate::acp::ElicitOutcome::Accept(_))
+    ));
+}
+
+#[test]
+fn a_declined_form_sends_no_answer() {
+    let (mut drive, mut rx) = connected();
+    let one = ask(&mut drive, false);
+    drive.ask_decline(one);
+    assert!(matches!(
+        answered(&mut rx),
+        Some(crate::acp::ElicitOutcome::Decline)
+    ));
+    assert!(drive.ask_at(one).is_none(), "and the card is settled");
+}

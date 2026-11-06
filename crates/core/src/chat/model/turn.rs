@@ -82,7 +82,7 @@ impl Chat {
     /// `resolve_permission` — it is three steps that must all happen, in order,
     /// on the one path where getting it wrong leaves the agent parked
     /// forever. One method is one chance to get it wrong.
-    pub fn answer_permission(&mut self, idx: usize, option_id: &str) {
+    pub(crate) fn answer_permission(&mut self, idx: usize, option_id: &str) {
         let Some(ChatItem::Permission(p)) = self.items.get(idx) else {
             return;
         };
@@ -101,9 +101,9 @@ impl Chat {
         self.resolve_permission(idx, name);
     }
 
-    /// The still-open question at `idx`, mutable — the option clicks and typed
-    /// "Other" text edit it in place before it's submitted.
-    pub fn ask_at_mut(&mut self, idx: usize) -> Option<&mut AskItem> {
+    /// The still-open question at `idx`, mutable, for the drive's answers to
+    /// edit in place before it is sent.
+    pub(crate) fn ask_at_mut(&mut self, idx: usize) -> Option<&mut AskItem> {
         match self.items.get_mut(idx) {
             Some(ChatItem::Ask(a)) if a.resolved.is_none() => Some(a),
             _ => None,
@@ -111,8 +111,8 @@ impl Chat {
     }
 
     /// The same question, read-only — what a key press asks before it acts, so
-    /// that where the cursor is and what row a number names are answered by the
-    /// model rather than recomputed at the keyboard.
+    /// that what row a number names is answered by the model rather than
+    /// recomputed at the keyboard.
     pub fn ask_at(&self, idx: usize) -> Option<&AskItem> {
         match self.items.get(idx) {
             Some(ChatItem::Ask(a)) if a.resolved.is_none() => Some(a),
@@ -157,7 +157,7 @@ impl Chat {
 
     /// Answer the question at `idx` and settle its card. `Decline` is the Skip
     /// button: the model is told the user passed and the turn carries on.
-    pub fn answer_ask(&mut self, idx: usize, skip: bool) {
+    pub(crate) fn answer_ask(&mut self, idx: usize, skip: bool) {
         let Some(a) = self.ask_at_mut(idx) else {
             return;
         };

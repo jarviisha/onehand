@@ -24,8 +24,8 @@ pub use background::{BackgroundItem, Level, Meter};
 pub use fork::{fork_seed, ForkPoint, ForkSeed};
 pub(crate) use items::line_change_counts;
 pub use items::{
-    AskItem, AskRow, ChatItem, Md, MdId, NoticeLevel, PermItem, PlanItem, Thought, ToolItem,
-    TranscriptItemId, TurnAnswer, UserMsg, MAX_TERM_BYTES,
+    AskItem, AskPlace, AskRow, ChatItem, Md, MdId, NoticeLevel, PermItem, PlanItem, Thought,
+    ToolItem, TranscriptItemId, TurnAnswer, UserMsg, MAX_TERM_BYTES,
 };
 pub(crate) use meta::summarize_title;
 pub use meta::{Selector, SelectorChoice, MODE_SELECTOR};

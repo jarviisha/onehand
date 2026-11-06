@@ -373,7 +373,7 @@ pub(in crate::chat) fn answer_pinned(
 fn answer_permission(session: &Entity<ChatSession>, idx: usize, option: &str, cx: &mut App) {
     let option = option.to_string();
     session.update(cx, |s, cx| {
-        s.chat.chat_mut().answer_permission(idx, &option);
+        s.answer_permission(idx, &option, cx);
         cx.notify();
     });
 }

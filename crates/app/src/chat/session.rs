@@ -219,6 +219,10 @@ pub struct ChatSession {
     ///
     /// One box per field, so moving between a form's questions does not rewrite
     /// one box under the user.
+    /// Where the reader is on each open question card, by its live index:
+    /// which question shows and the keyboard's row. View state, pruned with
+    /// the boxes once a card is answered.
+    ask_places: HashMap<usize, onehand_core::chat::AskPlace>,
     ask_inputs: HashMap<(usize, usize), AskInput>,
     /// The card of a parked question, keyed by its live item index.
     ///
@@ -444,6 +448,7 @@ impl ChatSession {
             md: HashMap::new(),
             images: RefCell::new(HashMap::new()),
             ask_inputs: HashMap::new(),
+            ask_places: HashMap::new(),
             ask_focus: HashMap::new(),
             perm_focus: HashMap::new(),
             pinned_keys: (None, false),

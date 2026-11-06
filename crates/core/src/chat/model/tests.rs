@@ -876,11 +876,12 @@ fn ask_item() -> AskItem {
 #[test]
 fn tab_clamps_and_answered_tracks_picks_and_text() {
     let mut a = ask_item();
-    assert_eq!(a.active_field(), 0);
-    a.tab = 1;
-    assert_eq!(a.active_field(), 1);
-    a.tab = 9; // a stale cursor never points off the end of the form
-    assert_eq!(a.active_field(), 1);
+    let mut place = AskPlace::default();
+    assert_eq!(place.active_field(&a), 0);
+    place.go_to(1);
+    assert_eq!(place.active_field(&a), 1);
+    place.go_to(9); // a stale place never points off the end of the form
+    assert_eq!(place.active_field(&a), 1);
 
     assert!(!a.field_answered(0) && !a.field_answered(1));
     a.toggle(1, 0);
@@ -966,7 +967,6 @@ fn skipping_drops_the_answer_and_walks_on() {
     a.set_custom(0, "mine".into());
     // Not stepped over: a half-typed line left behind would be sent.
     assert!(!a.skip_field(0), "there is a question after this one");
-    assert_eq!(a.tab, 1);
     assert!(!a.field_answered(0));
     assert_eq!(a.custom[0], "");
     // The last question has nowhere to walk to, so skipping it settles the
@@ -977,17 +977,23 @@ fn skipping_drops_the_answer_and_walks_on() {
 #[test]
 fn a_tab_jumped_back_to_still_holds_its_answer() {
     let mut a = ask_item();
+    let mut place = AskPlace::default();
     a.toggle(0, 1);
-    a.go_to(1);
+    place.go_to(1);
+    place.move_cursor(&a, 1, 1);
     a.toggle(1, 0);
-    a.go_to(0);
+    place.go_to(0);
     assert_eq!(a.picked[0], vec![1], "the earlier pick survived the trip");
-    assert_eq!(a.cursor, 0, "and the keyboard starts at the top of it");
+    assert_eq!(
+        place.cursor_row(&a, 0),
+        Some(AskRow::Choice(0)),
+        "and the keyboard starts at the top of it"
+    );
 }
 
 #[test]
 fn the_cursor_walks_the_choices_and_the_typed_answer_as_one_list() {
-    let mut a = ask_item();
+    let a = ask_item();
     // Two choices and an "Other" box.
     assert_eq!(a.row_count(0), 3);
     assert_eq!(a.row(0, 2), Some(AskRow::Custom));
@@ -996,19 +1002,19 @@ fn the_cursor_walks_the_choices_and_the_typed_answer_as_one_list() {
     assert_eq!(a.row_count(1), 2);
     assert_eq!(a.row(1, 2), None);
 
-    assert_eq!(a.cursor_row(0), Some(AskRow::Choice(0)));
-    a.move_cursor(0, 1);
-    assert_eq!(a.cursor_row(0), Some(AskRow::Choice(1)));
-    a.move_cursor(0, 1);
-    assert_eq!(a.cursor_row(0), Some(AskRow::Custom));
-    a.move_cursor(0, 1);
-    assert_eq!(a.cursor_row(0), Some(AskRow::Choice(0)), "it wraps");
-    a.move_cursor(0, -1);
-    assert_eq!(a.cursor_row(0), Some(AskRow::Custom), "both ways");
-    // A cursor left past the end of a shorter question lands on its last
-    // row rather than on nothing.
-    assert_eq!(a.cursor, 2);
-    assert_eq!(a.cursor_row(1), Some(AskRow::Choice(1)));
+    let mut place = AskPlace::default();
+    assert_eq!(place.cursor_row(&a, 0), Some(AskRow::Choice(0)));
+    place.move_cursor(&a, 0, 1);
+    assert_eq!(place.cursor_row(&a, 0), Some(AskRow::Choice(1)));
+    place.move_cursor(&a, 0, 1);
+    assert_eq!(place.cursor_row(&a, 0), Some(AskRow::Custom));
+    place.move_cursor(&a, 0, 1);
+    assert_eq!(place.cursor_row(&a, 0), Some(AskRow::Choice(0)), "it wraps");
+    place.move_cursor(&a, 0, -1);
+    assert_eq!(place.cursor_row(&a, 0), Some(AskRow::Custom), "both ways");
+    // A cursor left past the end of a shorter question (on row 2 of the
+    // first) lands on its last row rather than on nothing.
+    assert_eq!(place.cursor_row(&a, 1), Some(AskRow::Choice(1)));
 }
 
 #[test]
