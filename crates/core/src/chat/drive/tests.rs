@@ -1,5 +1,7 @@
 use super::*;
-use crate::acp::{AcpRequest, PermissionOption, PermissionRequest, ReqTx, Usage};
+use crate::acp::{
+    AcpRequest, ConfigChoice, ConfigOption, PermissionOption, PermissionRequest, ReqTx, Usage,
+};
 use std::path::PathBuf;
 
 type Rx = tokio::sync::mpsc::UnboundedReceiver<AcpRequest>;
@@ -393,12 +395,58 @@ fn a_card_takes_the_next_event_past_the_cap_and_is_said_at_the_batch_end() {
 #[test]
 fn a_card_asked_in_a_batch_that_tells_is_said_before_what_ends_it() {
     let (mut drive, _rx) = connected();
+    feed(
+        &mut drive,
+        AcpEvent::ConfigOptions(vec![ConfigOption {
+            id: "effort".into(),
+            name: "Effort".into(),
+            category: None,
+            current: Some("low".into()),
+            choices: ["low", "high"]
+                .into_iter()
+                .map(|value| ConfigChoice {
+                    value: value.into(),
+                    name: value.into(),
+                    description: None,
+                })
+                .collect(),
+        }]),
+    );
+    drive.chat_mut().set_config_option("effort", "high");
+    drive.prompt("go", &[], Origin::Person, Code::Here);
+    let (_, next) = drive.apply(AcpEvent::Permission(permission()));
+    assert_eq!(next, Next::PastCap);
+    // The refusal tells a watcher something and ends the batch; the card,
+    // still waiting, was asked first and is said first.
+    let (fx, next) = drive.apply(AcpEvent::PickRefused {
+        group: "effort".into(),
+        why: "not on this plan".into(),
+    });
+    assert_eq!(next, Next::Stop);
+    assert_eq!(
+        names(&fx),
+        [
+            "Appended",
+            "AwaitingUser(Permission)",
+            "PickRefused(\"not on this plan\")"
+        ]
+    );
+    assert!(
+        !names(&drive.end_batch()).contains(&"AwaitingUser(Permission)".to_string()),
+        "and only once"
+    );
+}
+
+#[test]
+fn a_card_the_turns_end_cancelled_is_not_said() {
+    let (mut drive, _rx) = connected();
     drive.prompt("go", &[], Origin::Person, Code::Here);
     drive.apply(AcpEvent::Permission(permission()));
     // A turn that ends with the card unanswered cancels it, so nothing waits
     // and nothing is said: the card went with the turn.
     let (fx, _) = drive.apply(turn_ends());
     assert_eq!(names(&fx), ["Appended", "Save", "TurnEnded"]);
+    assert!(!names(&drive.end_batch()).contains(&"AwaitingUser(Permission)".to_string()));
 }
 
 #[test]

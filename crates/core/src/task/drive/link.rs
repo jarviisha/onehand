@@ -67,7 +67,7 @@ pub fn notified(drive: &Drive, session: &SessionDrive) -> Option<Input> {
     drive.heeds_notified(session).then_some(Input::Notified)
 }
 
-/// The run's prompt, sent to its session: what the session's driver does
+/// The run's prompt, sent to its session: what the session's carrier does
 /// with it, and what to tell the run when the session did not take it. A
 /// run's prompt never queues.
 pub fn submit(session: &mut SessionDrive, text: &str) -> (Option<Input>, Vec<SessionEffect>) {

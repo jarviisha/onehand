@@ -1,7 +1,7 @@
 # Tasks
 
 The Tasks page and the task model behind it, as built. [workflows.md](workflows.md) holds the
-engine and the driver, and [unattended.md](unattended.md) the issue a task can work.
+engine and the run's drive and carrier, and [unattended.md](unattended.md) the issue a task can work.
 
 ## What a person gets
 
@@ -384,7 +384,7 @@ migration it protects.
   it and then asks (the launcher, *Run check*, an unattended claim); Retry, Resume and a review's
   answer ask for an existing one. A free place starts the task at once (`Shell::drive_task`); a taken one queues it and
   says so in a notification. A task already running or waiting is left alone.
-- **The driver stays the only code that turns session events into reports.** It gained two
+- **The run's drive and carrier stay the only code that turns session events into reports.** They gained two
   duties: pinning the work at every boundary a step change crosses, before the step's first action,
   and handing an ended run to the global. That one keeps the place until the session's turn is over
   (or its agent or session goes), pins the last end mark, then releases the place and starts the
@@ -395,15 +395,15 @@ migration it protects.
   (core): by group, finished rows by when they last moved, newest first, every other group by
   when the task was made, oldest first. The rail's count is `task::attention`, counted from the same
   rows. `Tasks::working` says what a task does: queued, waiting (an approval or an unanswered card
-  on its live driver), or running (a live driver, a place held, a check running).
+  on its live drive), or running (a live drive, a place held, a check running).
 - **Stop goes through `task::stop_task`**, whatever the task does: a queued one is called off, a
-  live driver is stopped, and a running check has its command called off. A task that ended but
+  live drive is stopped, and a running check has its command called off. A task that ended but
   still holds its place, its session's turn not yet over, has nothing to stop, and its row offers
   no *Stop*.
 - **The check command as a task** (`Task::check`) is a run of a template named *Check* with one
   command step whose `on_fail` is empty, so a failure ends the run failed. The template is made on
   the spot and never saved or validated. *Run check* on the project page keeps the task and asks
-  for its place like any other. It runs on the same driver as every run, with no session: a drive
+  for its place like any other. It runs on the same drive as every run, with no session: a drive
   started without one (`Drive::start` with no chat) arms no timeout and carries out only what needs
   no session. It pins the start mark, runs the command with a cancel flag, reports
   `command_finished` (passed on the exit status alone, so a folder outside git or a repository with
@@ -415,7 +415,7 @@ migration it protects.
   global, and has its marks dropped off the UI thread; a failure is logged. How many went is counted
   per project since boot only.
 - **An unattended run is a task of its own source** (`Source::Issue`). Its session is started off
-  screen, its run is driven by the same driver, and when its place is freed the issue is told how
+  screen, its run is driven by the same drive and carrier, and when its place is freed the issue is told how
   it ended through the reports the task keeps (`crate::unattended::ended`).
 - **After a restart nothing starts by itself.** A task that was running or queued comes back
   interrupted, under *Needs attention*, and waits for Resume.
