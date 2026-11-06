@@ -1,79 +1,97 @@
 //! An offloaded project's prompt, which waits for the project's code to go
 //! up to its host first.
+//!
+//! Whether it waits is the session's drive's; what is here is where the code
+//! stands, the send itself, and the composer the prompt waits in.
 
 use super::ChatPane;
 use crate::chat::composer::Composer;
-use crate::chat::session::{ChatEvent, ChatSession};
+use crate::chat::session::ChatSession;
 use gpui::{App, Entity, Window};
-use onehand_core::attachment::StagedAttachment;
-use std::path::PathBuf;
+use onehand_core::chat::drive::{Code, Effect, Input};
 
 impl ChatPane {
-    /// Whether the prompt `(text, staged)` for `session` waits on its
-    /// project's code: refused while that goes up, or sent once it has. A
-    /// prompt that could go at once, or a session not on a host, is left to
-    /// be sent as any is.
-    pub(super) fn code_first(
-        session: &Entity<ChatSession>,
-        composer: &Entity<Composer>,
-        (text, staged): (&str, &[StagedAttachment]),
-        window: &mut Window,
-        cx: &mut App,
-    ) -> bool {
-        if !session.read(cx).on_host {
-            return false;
+    /// Where the code of `session`'s project stands, for a person's prompt.
+    pub(super) fn code_at(session: &Entity<ChatSession>, cx: &App) -> Code {
+        let session = session.read(cx);
+        if !session.on_host {
+            return Code::Here;
         }
-        let root = session.read(cx).chat.root.clone();
-        // Refused while it goes: the host would refuse the prompt anyway.
-        if crate::offload::sending(cx, &root).is_some() {
-            return true;
+        let root = &session.chat.root;
+        if crate::offload::sending(cx, root).is_some() {
+            return Code::Going;
         }
-        let blocked = session.read(cx).chat.submit_blocker(text, staged);
-        if blocked.is_some() || !crate::offload::claim_send(cx, &root) {
-            return false;
+        match crate::offload::holds_code(cx, root) {
+            true => Code::MustGo {
+                line: crate::offload::sending_line_for(cx, root),
+            },
+            false => Code::Here,
         }
-        Self::send_code_then(session, composer, root, text.to_string(), window, cx);
-        true
     }
 
-    /// Send `root`'s code to its host, then the prompt `text` the composer
-    /// holds, if it still holds it: one moved to another session stays a
-    /// draft there, to send again.
-    fn send_code_then(
+    /// Carry out what only the pane can of a person's prompt to `session`,
+    /// whose words were `text`: the code sent first, and the prompt sent again
+    /// from the composer once the code is up.
+    pub(super) fn carry(
         session: &Entity<ChatSession>,
         composer: &Entity<Composer>,
-        root: PathBuf,
         text: String,
+        fx: Vec<Effect>,
         window: &mut Window,
         cx: &mut App,
     ) {
+        for effect in fx {
+            match effect {
+                Effect::SendCode { token } => {
+                    Self::send_code(session, composer, text.clone(), token, window, cx)
+                }
+                Effect::PromptAgain => Self::submit_from(session, composer, window, cx),
+                // The session carried these out itself.
+                Effect::Signal(_)
+                | Effect::Changed
+                | Effect::OfferChanged
+                | Effect::Save(_)
+                | Effect::Arm { .. }
+                | Effect::Disarm => {}
+            }
+        }
+    }
+
+    /// Send the project's code to its host, then tell the session what came
+    /// of it, and whether the composer still holds the prompt `text`: one
+    /// moved to another session stays a draft there, to send again.
+    fn send_code(
+        session: &Entity<ChatSession>,
+        composer: &Entity<Composer>,
+        text: String,
+        token: u64,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let root = session.read(cx).chat.root.clone();
+        // Claimed at once, so a second press waits on this send rather than
+        // starting one of its own.
+        let claimed = crate::offload::claim_send(cx, &root);
         let (session, composer) = (session.clone(), composer.clone());
-        let line = crate::offload::sending_line_for(cx, &root);
-        session.update(cx, |session, cx| {
-            session.chat.say_host_wait(line);
-            cx.emit(ChatEvent::Appended);
-            cx.notify();
-        });
         window
             .spawn(cx, async move |cx| {
-                let went = crate::offload::send_up(cx, root).await;
+                let result = match claimed {
+                    true => crate::offload::send_up(cx, root).await,
+                    false => Err("The code is no longer this machine's to send".into()),
+                };
                 let _ = cx.update(|window, cx| {
-                    session.update(cx, |session, cx| {
-                        session.chat.unsay_host_wait();
-                        cx.emit(ChatEvent::Appended);
+                    let still = composer.read(cx).text(cx) == text;
+                    let left = session.update(cx, |session, cx| {
+                        let fx = session.chat.handle(Input::CodeSent {
+                            token,
+                            result,
+                            still,
+                        });
+                        let left = session.perform(fx, cx);
                         cx.notify();
+                        left
                     });
-                    match went {
-                        Ok(()) if composer.read(cx).text(cx) == text => {
-                            Self::submit_from(&session, &composer, window, cx)
-                        }
-                        Ok(()) => {}
-                        Err(why) => gpui_component::WindowExt::push_notification(
-                            window,
-                            crate::toast::failed("Sending the code to the host", why),
-                            cx,
-                        ),
-                    }
+                    Self::carry(&session, &composer, text, left, window, cx);
                 });
             })
             .detach();

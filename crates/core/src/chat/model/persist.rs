@@ -24,7 +24,7 @@ impl Chat {
     /// The mark moves here, as the save is *built* rather than when it lands,
     /// so a second save started before the first has finished finds nothing
     /// left to add instead of adding it twice.
-    pub fn flush(&mut self) -> Option<PendingWrite> {
+    pub(crate) fn flush(&mut self) -> Option<PendingWrite> {
         // Nothing is written while a replay is in flight. What `items` holds
         // then is a re-delivery of lines that are already on disk, at indices
         // that mean a different thing on each side of the comparison.
@@ -74,7 +74,7 @@ impl Chat {
     /// ponytail: a save built after this one and already landed is sent again,
     /// so a turn can appear twice; that takes two saves in flight across a disk
     /// failure, and a duplicate is the recoverable half of that trade.
-    pub fn unflush(&mut self, write: &PendingWrite) {
+    pub(crate) fn unflush(&mut self, write: &PendingWrite) {
         self.persisted = self.persisted.min(write.from);
         self.rewrite |= write.rewrite;
     }

@@ -200,7 +200,7 @@ impl AskForm<'_> {
                     // the view.
                     .on_click(move |_, _, cx: &mut App| {
                         session.update(cx, |s, cx| {
-                            if let Some(item) = s.chat.ask_at_mut(idx) {
+                            if let Some(item) = s.chat.chat_mut().ask_at_mut(idx) {
                                 item.go_to(f);
                             }
                             cx.notify();

@@ -228,7 +228,7 @@ impl Chat {
     /// nothing then. It is for the one place that knows the stream is *over*:
     /// a turn left mid-flight would otherwise show Stop for ever, and a rail
     /// dot that waits on an event goes missing the day it is not emitted.
-    pub fn stream_ended(&mut self) {
+    pub(crate) fn stream_ended(&mut self) {
         self.busy = false;
         self.link = super::Link::Lost;
         self.settle_lost_link();

@@ -225,7 +225,7 @@ impl Composer {
             Pick::Mode(id) => {
                 let id = id.clone();
                 session.update(cx, |session, cx| {
-                    session.chat.set_mode(&id);
+                    session.chat.chat_mut().set_mode(&id);
                     cx.notify();
                 });
                 self.close_overlay(cx);
@@ -234,7 +234,10 @@ impl Composer {
             Pick::Config { config_id, value } => {
                 let (config_id, value) = (config_id.clone(), value.clone());
                 session.update(cx, |session, cx| {
-                    session.chat.set_config_option(&config_id, &value);
+                    session
+                        .chat
+                        .chat_mut()
+                        .set_config_option(&config_id, &value);
                     cx.notify();
                 });
                 self.close_overlay(cx);
@@ -287,6 +290,7 @@ impl Composer {
         session.update(cx, |session, cx| {
             session
                 .chat
+                .chat_mut()
                 .set_config_option(&toggle.config_id, &toggle.flip_to);
             cx.notify();
         });

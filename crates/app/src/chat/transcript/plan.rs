@@ -44,7 +44,7 @@ pub(super) fn plan(
             let session = session.clone();
             move |_, _, cx: &mut App| {
                 session.update(cx, |s, cx| {
-                    s.chat.toggle_tool(target);
+                    s.chat.chat_mut().toggle_tool(target);
                     cx.notify();
                 });
             }

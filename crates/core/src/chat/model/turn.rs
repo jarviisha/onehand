@@ -242,7 +242,7 @@ impl Chat {
     /// rail dot stays stuck on "waiting for you". Ordering this correctly is
     /// exactly the kind of thing a second front end gets wrong, so it lives
     /// here rather than in either one.
-    pub fn cancel_turn(&mut self) {
+    pub(crate) fn cancel_turn(&mut self) {
         self.cancelled = true;
         self.cancel_pending_permissions(false);
         if let Some(tx) = &self.tx {
@@ -437,7 +437,7 @@ impl Chat {
     ///
     /// Replaces whatever was queued: one prompt is waiting, and the second one
     /// written is the one the user means.
-    pub fn queue(&mut self, text: &str, staged: &[StagedAttachment]) -> bool {
+    pub(crate) fn queue(&mut self, text: &str, staged: &[StagedAttachment]) -> bool {
         if !self.busy || self.prompt_blocker(text, staged).is_some() {
             return false;
         }
@@ -450,21 +450,8 @@ impl Chat {
 
     /// Take the queued prompt back, for a front end putting it back in its
     /// composer.
-    pub fn unqueue(&mut self) -> Option<QueuedPrompt> {
+    pub(crate) fn unqueue(&mut self) -> Option<QueuedPrompt> {
         self.queued.take()
-    }
-
-    /// Send whatever was waiting for this turn to end.
-    ///
-    /// A failed send leaves the prompt queued rather than dropping it: the
-    /// adapter dying is not the user's cue to retype what they wrote.
-    pub(super) fn flush_queued(&mut self) {
-        let Some(pending) = self.queued.take() else {
-            return;
-        };
-        if !self.submit(&pending.text, &pending.attachments) {
-            self.queued = Some(pending);
-        }
     }
 
     /// Stage a user prompt locally (called when the user submits), with any
@@ -474,7 +461,7 @@ impl Chat {
     ///
     /// `staged` is borrowed rather than consumed so a refusal costs the caller
     /// nothing to recover from.
-    pub fn submit(&mut self, text: &str, staged: &[StagedAttachment]) -> bool {
+    pub(crate) fn submit(&mut self, text: &str, staged: &[StagedAttachment]) -> bool {
         if self.submit_blocker(text, staged).is_some() {
             return false;
         }

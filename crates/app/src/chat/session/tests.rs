@@ -5,7 +5,8 @@ use super::host::{
 use crate::acp::HostStart;
 use crate::hosts::HostFailure;
 use onehand_core::acp::Opening;
-use onehand_core::chat::ChatItem;
+use onehand_core::chat::drive::Effect;
+use onehand_core::chat::{ChatItem, SessionDrive};
 use onehand_core::config::AgentSpec;
 use onehand_core::host::wire::{HostSession, SessionInfo};
 use std::path::PathBuf;
@@ -179,14 +180,20 @@ fn a_host_chat_has_no_store() {
         name: "claude".into(),
         ..AgentSpec::default()
     };
-    let mut on_host = new_chat(1, PathBuf::from("/srv/app"), &spec, true);
-    let mut local = new_chat(2, PathBuf::from("/tmp/app"), &spec, false);
-    for chat in [&mut on_host, &mut local] {
+    // A turn's end is when a transcript is written. The write is only built
+    // here, and building it moves the mark, so the drop writes nothing either.
+    let saves = |on_host: bool| {
+        let mut chat = new_chat(1, PathBuf::from("/srv/app"), &spec, on_host);
         chat.session_id = Some("acp-1".into());
         chat.items.push(ChatItem::notice("said".to_string()));
-    }
-    assert!(on_host.flush().is_none(), "a host chat writes nothing");
-    assert!(local.flush().is_some(), "a local chat writes its turn");
+        let mut drive = SessionDrive::new(chat);
+        let (fx, _) = drive.apply(onehand_core::acp::AcpEvent::TurnEnded {
+            stop_reason: "end_turn".into(),
+        });
+        fx.iter().any(|effect| matches!(effect, Effect::Save(_)))
+    };
+    assert!(!saves(true), "a host chat writes nothing");
+    assert!(saves(false), "a local chat writes its turn");
 }
 
 /// A host out of reach shows what the laptop kept of the session when it
@@ -235,4 +242,195 @@ fn the_offline_line_says_how_recent_the_copy_is() {
         "Not connected to vps. This is the copy kept on this machine; \
          it carries on once the host is back"
     );
+}
+
+// The session's driver: what it does with the drive's effects, held to its
+// contract with a test context and a channel standing in for the adapter.
+
+mod driver {
+    use super::super::{ChatEvent, ChatSession, Source};
+    use crate::acp::Events;
+    use futures::channel::mpsc;
+    use gpui::{AppContext as _, Entity, TestAppContext};
+    use onehand_core::acp::{AcpEvent, ReqTx};
+    use onehand_core::chat::Chat;
+    use onehand_core::chat::drive::{Code, Origin, QUIET_SAVE, Signal};
+    use onehand_core::config::AgentSpec;
+    use std::cell::RefCell;
+    use std::path::PathBuf;
+    use std::rc::Rc;
+    use std::time::Instant;
+
+    type Seen = Rc<RefCell<Vec<Signal>>>;
+
+    /// A session folding what is sent on the returned channel into `chat`,
+    /// and every signal it gave, in order.
+    fn driven(
+        cx: &mut TestAppContext,
+        chat: Chat,
+    ) -> (Entity<ChatSession>, mpsc::Sender<AcpEvent>, Seen) {
+        let (tx, rx) = mpsc::channel(64);
+        let source = Source::Local(Events::from_channel(rx));
+        let spec = AgentSpec::default();
+        let session =
+            cx.new(|cx| ChatSession::begin(chat, &spec, false, source, Instant::now(), None, cx));
+        let seen = Seen::default();
+        let heard = seen.clone();
+        cx.update(|cx| {
+            cx.subscribe(&session, move |_, event: &ChatEvent, _| {
+                if let ChatEvent::Session(signal) = event {
+                    heard.borrow_mut().push(signal.clone());
+                }
+            })
+            .detach()
+        });
+        (session, tx, seen)
+    }
+
+    /// The agent comes up, and the session names its conversation.
+    fn up(
+        tx: &mut mpsc::Sender<AcpEvent>,
+    ) -> tokio::sync::mpsc::UnboundedReceiver<onehand_core::acp::AcpRequest> {
+        let (req, rx): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
+        tx.try_send(AcpEvent::Connected {
+            tx: req,
+            resumed: false,
+            forkable: false,
+        })
+        .unwrap();
+        tx.try_send(AcpEvent::SessionId("s1".into())).unwrap();
+        rx
+    }
+
+    fn prompt(session: &Entity<ChatSession>, cx: &mut TestAppContext) {
+        session.update(cx, |session, cx| {
+            session.prompt("go", &[], Origin::Person, Code::Here, cx);
+        });
+    }
+
+    fn turn(tx: &mut mpsc::Sender<AcpEvent>) {
+        tx.try_send(AcpEvent::AgentChunk {
+            text: "done".into(),
+            message: None,
+        })
+        .unwrap();
+        tx.try_send(AcpEvent::TurnEnded {
+            stop_reason: "end_turn".into(),
+        })
+        .unwrap();
+    }
+
+    fn count(seen: &Seen, wanted: &Signal) -> usize {
+        seen.borrow().iter().filter(|s| *s == wanted).count()
+    }
+
+    /// A chat whose transcript cannot be written: its store is under a
+    /// file, so no directory can be made there.
+    fn unwritable() -> (Chat, PathBuf) {
+        let file = std::env::temp_dir().join(format!(
+            "onehand-driver-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::write(&file, b"").unwrap();
+        let store = file.join("conversations");
+        (
+            Chat::new(1, PathBuf::from("/repo"), "agent".into(), Some(store)),
+            file,
+        )
+    }
+
+    #[gpui::test]
+    fn signals_reach_watchers_in_order_and_once(cx: &mut TestAppContext) {
+        let (session, mut tx, seen) = driven(cx, Chat::default());
+        let _rx = up(&mut tx);
+        cx.run_until_parked();
+        prompt(&session, cx);
+        turn(&mut tx);
+        cx.run_until_parked();
+        let seen = seen.borrow();
+        let tail = &seen[seen.len() - 3..];
+        assert_eq!(
+            tail,
+            [Signal::Appended, Signal::Appended, Signal::TurnEnded],
+            "{seen:?}"
+        );
+        assert_eq!(seen.iter().filter(|s| **s == Signal::TurnEnded).count(), 1);
+    }
+
+    #[gpui::test]
+    fn a_failed_save_reaches_the_drive_and_is_said_once(cx: &mut TestAppContext) {
+        let (chat, file) = unwritable();
+        let (session, mut tx, seen) = driven(cx, chat);
+        let _rx = up(&mut tx);
+        cx.run_until_parked();
+        for _ in 0..2 {
+            prompt(&session, cx);
+            turn(&mut tx);
+            cx.run_until_parked();
+        }
+        let said = seen
+            .borrow()
+            .iter()
+            .filter(|s| matches!(s, Signal::SaveFailed(_)))
+            .count();
+        assert_eq!(said, 1, "{:?}", seen.borrow());
+        drop(session);
+        cx.run_until_parked();
+        std::fs::remove_file(file).ok();
+    }
+
+    #[gpui::test]
+    fn the_quiet_wait_runs_out_into_a_save(cx: &mut TestAppContext) {
+        let (session, mut tx, seen) = driven(cx, Chat::default());
+        let _rx = up(&mut tx);
+        cx.run_until_parked();
+        tx.try_send(AcpEvent::AgentChunk {
+            text: "by itself".into(),
+            message: None,
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert!(session.read_with(cx, |s, _| s._armed.is_some()));
+        cx.executor().advance_clock(QUIET_SAVE * 2);
+        cx.run_until_parked();
+        assert_eq!(count(&seen, &Signal::CycleEnded), 1, "{:?}", seen.borrow());
+    }
+
+    #[gpui::test]
+    fn a_stream_that_ends_calls_off_the_wait_and_its_answer(cx: &mut TestAppContext) {
+        let (session, mut tx, seen) = driven(cx, Chat::default());
+        let _rx = up(&mut tx);
+        cx.run_until_parked();
+        tx.try_send(AcpEvent::AgentChunk {
+            text: "by itself".into(),
+            message: None,
+        })
+        .unwrap();
+        cx.run_until_parked();
+        drop(tx);
+        cx.run_until_parked();
+        assert!(session.read_with(cx, |s, _| s._armed.is_none()));
+        cx.executor().advance_clock(QUIET_SAVE * 2);
+        cx.run_until_parked();
+        assert_eq!(count(&seen, &Signal::CycleEnded), 0);
+        assert_eq!(count(&seen, &Signal::Disconnected), 1);
+    }
+
+    #[gpui::test]
+    fn a_closed_session_leaves_nothing_running(cx: &mut TestAppContext) {
+        let (chat, file) = unwritable();
+        let (session, mut tx, _) = driven(cx, chat);
+        let _rx = up(&mut tx);
+        cx.run_until_parked();
+        prompt(&session, cx);
+        turn(&mut tx);
+        // Closed with its save in flight, and a wait armed.
+        drop(session);
+        cx.run_until_parked();
+        cx.executor().advance_clock(QUIET_SAVE * 2);
+        cx.run_until_parked();
+        assert!(tx.is_closed(), "the pump went with the session");
+        std::fs::remove_file(file).ok();
+    }
 }

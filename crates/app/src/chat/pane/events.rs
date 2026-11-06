@@ -153,6 +153,9 @@ pub enum ChatPaneEvent {
     /// re-entered, a conversation that fails to save is gone. Every other write
     /// in the app says so when it fails; this one used to fail in silence.
     ArchiveFailed(String),
+    /// An offloaded project's code could not go up ahead of a prompt, and
+    /// why; the prompt stays where it was written.
+    CodeFailed(String),
     /// A conversation the user asked to delete is still there, and why.
     ///
     /// Its own variant rather than a second use of the one above, because the

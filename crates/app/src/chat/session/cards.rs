@@ -89,7 +89,7 @@ impl ChatSession {
                 match ev {
                     InputEvent::Change => {
                         let text = state.read(cx).value().to_string();
-                        if let Some(a) = s.chat.ask_at_mut(idx) {
+                        if let Some(a) = s.chat.chat_mut().ask_at_mut(idx) {
                             a.set_custom(field, text);
                         }
                         cx.notify();
@@ -100,8 +100,12 @@ impl ChatSession {
                     // typed and nothing picked sends nothing -- an empty accept
                     // is an answer the agent cannot read.
                     InputEvent::PressEnter { shift: false, .. } => {
-                        if s.chat.ask_at_mut(idx).is_some_and(|a| a.has_answer()) {
-                            s.chat.answer_ask(idx, false);
+                        if s.chat
+                            .chat_mut()
+                            .ask_at_mut(idx)
+                            .is_some_and(|a| a.has_answer())
+                        {
+                            s.chat.chat_mut().answer_ask(idx, false);
                         }
                         cx.notify();
                     }
@@ -212,7 +216,7 @@ impl ChatSession {
     /// a time, the box goes on showing words nothing will send — which is the
     /// one thing a form must never do.
     pub fn clear_ask_input(&mut self, idx: usize, field: usize, window: &mut Window, cx: &mut App) {
-        if let Some(a) = self.chat.ask_at_mut(idx) {
+        if let Some(a) = self.chat.chat_mut().ask_at_mut(idx) {
             a.set_custom(field, String::new());
         }
         let state = self.ask_inputs.get(&(idx, field)).map(|i| i.state.clone());

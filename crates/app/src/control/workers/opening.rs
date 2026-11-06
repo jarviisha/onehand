@@ -17,6 +17,7 @@ use crate::chat::session::ChatSession;
 use futures::StreamExt as _;
 use futures::future::select;
 use gpui::{App, AsyncApp, WeakEntity};
+use onehand_core::chat::drive::{Code, Intake, Origin};
 use onehand_core::control::open::{Step, step};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -130,7 +131,7 @@ fn wake(
         Step::Pick(pick) => {
             picked.push(pick.group().to_string());
             session.update(cx, |session, cx| {
-                session.chat.pick(&pick);
+                session.chat.chat_mut().pick(&pick);
                 cx.notify();
             });
             Flow::Again
@@ -167,13 +168,12 @@ fn ready(
         .ok_or("the session was closed before it was ready")?;
     if let Some(prompt) = &open.prompt {
         session.update(cx, |session, cx| {
-            // Read before sending: a send that went clears what refused it.
-            let blocker = session.chat.submit_blocker(prompt, &[]);
-            match session.submit(prompt, &[], cx) {
-                true => Ok(()),
-                false => Err(blocker
-                    .map(|why| why.hint())
-                    .unwrap_or_else(|| "the prompt was not accepted".to_string())),
+            match session.prompt(prompt, &[], Origin::Tools, Code::Here, cx).0 {
+                Intake::Sent => Ok(()),
+                Intake::Refused(why) => Err(why.hint()),
+                Intake::Queued | Intake::Held | Intake::Waiting | Intake::CodeFirst => {
+                    Err("the prompt was not accepted".to_string())
+                }
             }
         })?;
     }

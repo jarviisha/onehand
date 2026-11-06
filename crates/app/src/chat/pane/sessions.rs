@@ -7,6 +7,7 @@ use crate::chat::conversation::{HostAt, OnHost};
 use crate::chat::session::{BeginOnHost, Carried, ChatEvent, ChatSession, HostBegin};
 use gpui::{App, Context, Entity, Focusable, SharedString, Window};
 use onehand_core::acp::Opening;
+use onehand_core::chat::drive::{Code, Intake, Origin, Signal};
 use onehand_core::chat::{Chat, ConvMeta};
 use onehand_core::config::AgentSpec;
 use onehand_core::host::wire::HostSession;
@@ -251,10 +252,14 @@ impl ChatPane {
             cx,
         );
         if sent_before > 0 {
-            session.update(cx, |session, _| session.chat.carry_sent(sent_before));
+            session.update(cx, |session, _| {
+                session.chat.chat_mut().carry_sent(sent_before)
+            });
         }
         if let Some((custom, stand_in)) = titles {
-            session.update(cx, |session, _| session.chat.carry_titles(custom, stand_in));
+            session.update(cx, |session, _| {
+                session.chat.chat_mut().carry_titles(custom, stand_in)
+            });
         }
         cx.emit(ChatPaneEvent::AgentStarted);
         // The conversation is adopted *before* the adapter's replay lands,
@@ -284,15 +289,14 @@ impl ChatPane {
             &session,
             move |pane: &mut Self, session, event: &ChatEvent, cx| {
                 match event {
-                    // Work the agent did between turns is saved and said as a
-                    // turn's is.
-                    ChatEvent::CycleEnded | ChatEvent::TurnEnded => {
+                    // Work the agent did between turns is said as a turn's
+                    // is; the drive has saved both.
+                    ChatEvent::Session(Signal::CycleEnded | Signal::TurnEnded) => {
                         // An offloaded project's code may come back now.
                         if session.read(cx).on_host {
                             let root = session.read(cx).chat.root.clone();
                             crate::offload::check_soon(cx, root);
                         }
-                        Self::archive_detached(uid, &session, cx);
                         pane.turn_ended_detached(uid, &agent, &root_label, cx);
                         // The turn that just ended is what wrote the archive, so
                         // this is the moment a conversation first exists on disk
@@ -300,7 +304,7 @@ impl ChatPane {
                         pane.refresh_archives(cx);
                         cx.emit(ChatPaneEvent::WorkTreeTouched);
                     }
-                    ChatEvent::AwaitingUser(ask) => {
+                    ChatEvent::Session(Signal::AwaitingUser(ask)) => {
                         // **An agent that has stopped outranks a list the user
                         // left open.** The popup is drawn over the pinned
                         // cards, so a card arriving while one is up would park
@@ -337,7 +341,7 @@ impl ChatPane {
                     // from this machine's copy is out of reach, not lost:
                     // nothing is announced, and it is restarted once the
                     // host is back.
-                    ChatEvent::Disconnected => {
+                    ChatEvent::Session(Signal::Disconnected) => {
                         let session = session.read(cx);
                         let (failed, offline) =
                             (session.chat.fork_failure(), session.host_offline.clone());
@@ -354,13 +358,19 @@ impl ChatPane {
                         }
                     }
                     ChatEvent::Fork(target) => pane.begin_fork(uid, *target, cx),
-                    ChatEvent::Appended => {}
-                    ChatEvent::PickRefused(why) => {
+                    ChatEvent::Session(Signal::Appended) => {}
+                    ChatEvent::Session(Signal::PickRefused(why)) => {
                         cx.emit(ChatPaneEvent::PickRefused(why.clone()));
                         cx.notify();
                     }
-                    ChatEvent::StopRefused(why) => {
+                    ChatEvent::Session(Signal::StopRefused(why)) => {
                         cx.emit(ChatPaneEvent::StopRefused(why.clone()));
+                    }
+                    ChatEvent::Session(Signal::SaveFailed(why)) => {
+                        cx.emit(ChatPaneEvent::ArchiveFailed(why.clone()));
+                    }
+                    ChatEvent::Session(Signal::CodeFailed(why)) => {
+                        cx.emit(ChatPaneEvent::CodeFailed(why.clone()));
                     }
                     ChatEvent::HostSession(id) => {
                         if let Some(on) = pane
@@ -427,91 +437,6 @@ impl ChatPane {
         self.conversations.get_mut(&self.active?)
     }
 
-    /// Write a finished turn to the conversation's file, off the UI loop.
-    ///
-    /// The transcript is written at the end of *every* turn rather than only
-    /// when the session is dropped, so a crash -- or any exit where GPUI does
-    /// not run entity drops -- costs the turn in flight instead of the whole
-    /// conversation.
-    ///
-    /// Split in two: preparing the write needs the transcript and so stays on
-    /// the UI thread, while the writing itself goes to the background executor.
-    /// Preparing is what moves the conversation's mark, so two of these in
-    /// flight at once cannot both carry the same turn.
-    ///
-    /// The result is carried back rather than dropped: this is the only save in
-    /// the app whose failure the user could not recover from by redoing the
-    /// action, so it is the last one that should have been silent. `uid` is what
-    /// the answer comes home to -- the write outlives the turn that started it,
-    /// and by the time it lands the session may not even be the one on screen.
-    fn archive_detached(uid: u64, session: &Entity<ChatSession>, cx: &mut Context<Self>) {
-        // `None` while the session has nowhere to write, no id, or nothing new
-        // -- which is what keeps a session nobody used from standing in the
-        // list beside conversations that were had.
-        let Some(pending) = session.update(cx, |session, _| session.chat.flush()) else {
-            return;
-        };
-        Self::commit_detached(uid, pending, cx);
-    }
-
-    /// Write only what a conversation is *called* and what it is set to.
-    ///
-    /// Kept apart from the turn's own write because a rename can happen in the
-    /// middle of one, and a line written mid-turn describes a tool call that has
-    /// not finished -- which nothing would ever revisit, since the turn's save
-    /// writes only what came after it.
-    pub(super) fn archive_meta_detached(
-        uid: u64,
-        session: &Entity<ChatSession>,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(pending) = session.update(cx, |session, _| session.chat.flush_meta()) else {
-            return;
-        };
-        Self::commit_detached(uid, pending, cx);
-    }
-
-    /// Hand a prepared write to the background executor and bring the answer
-    /// back to the session it belongs to.
-    fn commit_detached(
-        uid: u64,
-        pending: onehand_core::chat::PendingWrite,
-        cx: &mut Context<Self>,
-    ) {
-        cx.spawn(async move |pane, cx| {
-            let written = cx
-                .background_executor()
-                .spawn(async move { (onehand_core::chat::commit(&pending), pending) })
-                .await;
-            let _ = pane.update(cx, |pane: &mut Self, cx| {
-                // A session closed while its own write was in flight has
-                // nowhere to file the answer, and nothing left to tell.
-                let Some(conv) = pane.conversations.get_mut(&uid) else {
-                    return;
-                };
-                match written {
-                    (Ok(()), _) => conv.archive_failed = false,
-                    (Err(e), pending) => {
-                        // The mark moved when the save was built; handed back,
-                        // the next save carries what this one could not.
-                        if let Some(session) = conv.session() {
-                            session.update(cx, |session, _| session.chat.unflush(&pending));
-                        }
-                        // Only the edge. A directory that has gone read-only
-                        // fails at the end of every turn, and one message per
-                        // turn is how the first one gets lost.
-                        let first = !conv.archive_failed;
-                        conv.archive_failed = true;
-                        if first {
-                            cx.emit(ChatPaneEvent::ArchiveFailed(e.to_string()));
-                        }
-                    }
-                }
-            });
-        })
-        .detach();
-    }
-
     /// Restart session `uid`'s adapter on the same conversation;
     /// `after_service` when its host's service has just been restarted.
     ///
@@ -546,7 +471,7 @@ impl ChatPane {
                 // over with the restart.
                 s.forget_host_wait();
                 s.forget_host_offline();
-                s.chat.take_snapshot()
+                s.chat.chat_mut().take_snapshot()
             })
         });
         // `connect_as` drops the old adapter before spawning the new one, so
@@ -708,24 +633,20 @@ impl ChatPane {
         // An offloaded project's code goes up before its prompt, and the
         // prompt waits in the composer meanwhile: sent once the host holds
         // the code, kept there when it could not get it.
-        if Self::code_first(session, composer, (&text, &staged), window, cx) {
-            return;
-        }
+        let code = Self::code_at(session, cx);
+        let (intake, left) = session.update(cx, |session, cx| {
+            session.prompt(&text, &staged, Origin::Person, code, cx)
+        });
         // Clear only on a prompt that went somewhere -- sent, or queued behind
         // the turn that is running. A refused one (no agent yet, an unreadable
         // attachment) must not silently eat what the user typed or staged.
-        let taken = session.update(cx, |session, cx| {
-            session.submit(&text, &staged, cx) || {
-                let queued = session.chat.queue(&text, &staged);
-                if queued {
-                    cx.notify();
-                }
-                queued
+        match intake {
+            Intake::Sent | Intake::Queued => {
+                composer.update(cx, |composer, cx| composer.clear(window, cx))
             }
-        });
-        if taken {
-            composer.update(cx, |composer, cx| composer.clear(window, cx));
+            Intake::Held | Intake::Waiting | Intake::CodeFirst | Intake::Refused(_) => {}
         }
+        Self::carry(session, composer, text, left, window, cx);
     }
 
     /// Put the queued prompt back in the composer.
@@ -765,10 +686,7 @@ impl ChatPane {
     }
 
     pub(super) fn cancel(session: &Entity<ChatSession>, cx: &mut App) {
-        session.update(cx, |session, cx| {
-            session.chat.cancel_turn();
-            cx.notify();
-        });
+        session.update(cx, |session, cx| session.stop(cx));
     }
 
     /// Whether session `uid` has a failed turn whose prompt can go again.
@@ -784,7 +702,7 @@ impl ChatPane {
         };
         session.update(cx, |session, cx| {
             if let Some(text) = session.chat.resend_text().map(str::to_string) {
-                session.submit(&text, &[], cx);
+                session.prompt(&text, &[], Origin::Person, Code::Here, cx);
             }
         });
     }
@@ -829,8 +747,10 @@ impl ChatPane {
         session.update(cx, |session, cx| {
             if session.forget_host_wait() {
                 let lost = onehand_core::acp::AcpEvent::Disconnected(why.to_string());
-                session.chat.apply(lost);
-                cx.emit(ChatEvent::Appended);
+                session.chat.chat_mut().apply(lost);
+                cx.emit(ChatEvent::Session(
+                    onehand_core::chat::drive::Signal::Appended,
+                ));
                 cx.notify();
             }
         });
@@ -853,8 +773,10 @@ impl ChatPane {
             if session.host_offline.is_some() {
                 session.forget_host_offline();
                 let lost = onehand_core::acp::AcpEvent::Disconnected(why.to_string());
-                session.chat.apply(lost);
-                cx.emit(ChatEvent::Appended);
+                session.chat.chat_mut().apply(lost);
+                cx.emit(ChatEvent::Session(
+                    onehand_core::chat::drive::Signal::Appended,
+                ));
                 cx.notify();
             }
         });

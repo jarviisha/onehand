@@ -207,7 +207,7 @@ pub(super) fn thought(
         let session = session.clone();
         move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
             session.update(cx, |s, cx| {
-                s.chat.toggle_thought(target);
+                s.chat.chat_mut().toggle_thought(target);
                 cx.notify();
             });
         }

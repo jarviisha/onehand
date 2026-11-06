@@ -1239,31 +1239,6 @@ fn a_user_chunk_from_the_agent_is_not_a_prompt_sent() {
     assert_eq!(chat.prompts_sent, 1, "but nobody sent it");
 }
 
-/// A prompt written mid-turn goes when the turn does -- and only then, and
-/// only once. Flushed anywhere but at the end of a turn it either races the
-/// turn it was queued behind or never leaves at all.
-#[test]
-fn a_queued_prompt_goes_out_when_the_turn_ends() {
-    let (mut chat, mut rx) = chat_with_tx();
-    assert!(chat.submit("first", &[]));
-    assert!(chat.busy);
-    assert!(matches!(rx.try_recv(), Ok(AcpRequest::Prompt { .. })));
-
-    assert!(chat.queue("second", &[]), "a turn in flight is what queues");
-    assert!(rx.try_recv().is_err(), "queued is not sent");
-    assert_eq!(chat.items.len(), 1, "and not in the transcript either");
-
-    chat.apply(AcpEvent::TurnEnded {
-        stop_reason: String::new(),
-    });
-    assert!(matches!(
-        rx.try_recv(),
-        Ok(AcpRequest::Prompt { text, .. }) if text == "second"
-    ));
-    assert!(chat.busy, "the queued prompt opened its own turn");
-    assert!(chat.queued.is_none(), "and left the queue empty");
-}
-
 /// The queue is for the one blocker that time fixes. Everything else is
 /// still a refusal, or a prompt would sit waiting for a turn to end and
 /// then be refused all over again, silently.
@@ -2912,25 +2887,6 @@ fn a_merged_answer_keeps_its_latest_id() {
 
 /// One rule for "a person prompted since the lead's last": what was sent,
 /// not what waits in the queue.
-#[test]
-fn prompted_since_counts_what_went_not_what_waits() {
-    let (tx, _rx): (crate::acp::ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
-    let mut chat = Chat::default();
-    chat.apply(AcpEvent::Connected {
-        tx,
-        resumed: false,
-        forkable: false,
-    });
-    assert!(chat.submit("lead", &[]));
-    let sent = chat.prompts_sent;
-    assert!(chat.queue("person", &[]));
-    assert!(!chat.prompted_since(sent));
-    chat.apply(AcpEvent::TurnEnded {
-        stop_reason: "end_turn".into(),
-    });
-    assert!(chat.prompted_since(sent));
-}
-
 /// The oldest card is the one a worker's row says it waits on.
 #[test]
 fn the_waiting_line_names_the_oldest_card() {

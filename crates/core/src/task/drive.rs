@@ -26,6 +26,7 @@ use crate::unattended::Budget;
 use crate::workflow::{Action, ApprovalAt, Failure, Outcome, Run, Stop};
 use std::time::{Duration, Instant};
 
+pub mod link;
 mod settings;
 mod signals;
 

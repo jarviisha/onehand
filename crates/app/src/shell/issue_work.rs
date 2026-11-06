@@ -6,7 +6,7 @@ use super::Shell;
 use crate::chat::session::ChatEvent;
 use gpui::{Context, SharedString, Window};
 use gpui_component::WindowExt as _;
-use onehand_core::chat::Link;
+use onehand_core::chat::drive::Origin;
 use std::path::Path;
 
 impl Shell {
@@ -43,16 +43,13 @@ impl Shell {
             );
             return;
         };
-        let (prompt, workbench) = (prompt.to_string(), self.workbench.downgrade());
-        let (mut sent, mut told) = (false, false);
+        // Sent once the agent is up, unless a person prompted it first.
+        session.update(cx, |session, cx| {
+            session.prompt_when_up(prompt, Origin::Issue, cx)
+        });
+        let workbench = self.workbench.downgrade();
+        let mut told = false;
         cx.subscribe(&session, move |_, session, _: &ChatEvent, cx| {
-            let chat = &session.read(cx).chat;
-            if !sent && chat.link == Link::Connected {
-                sent = true;
-                if !chat.busy && chat.prompts_sent == 0 && chat.queued.is_none() {
-                    session.update(cx, |session, cx| session.submit(&prompt, &[], cx));
-                }
-            }
             let Some(id) = session.read(cx).chat.session_id.clone().filter(|_| !told) else {
                 return;
             };

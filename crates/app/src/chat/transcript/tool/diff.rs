@@ -79,7 +79,7 @@ pub(super) fn diff_detail(
                             .label("Load diff")
                             .on_click(move |_, _, cx: &mut App| {
                                 session.update(cx, |s, cx| {
-                                    s.chat.toggle_tool_output(target, 0);
+                                    s.chat.chat_mut().toggle_tool_output(target, 0);
                                     cx.notify();
                                 });
                             }),

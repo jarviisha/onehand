@@ -27,8 +27,10 @@ impl ChatPane {
         let Some(conv) = self.conversations.get(&uid) else {
             return;
         };
-        if let Some(session) = conv.session() {
-            Self::archive_meta_detached(uid, &session.clone(), cx);
+        // Its name and settings, written alone: this can come mid-turn, when
+        // a line written would be a step not yet finished.
+        if let Some(session) = conv.session().cloned() {
+            session.update(cx, |session, cx| session.save_meta(cx));
         }
         let (root, agent) = (conv.root.clone(), conv.spec.name.clone());
         cx.spawn(async move |pane, cx| {

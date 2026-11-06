@@ -16,14 +16,12 @@ use super::{Answer, OPENED_CAP, sessions};
 use crate::chat::session::ChatSession;
 use crate::shell::Shell;
 use gpui::{App, Entity};
-use onehand_core::chat::model::Link;
+use onehand_core::chat::drive::Origin;
 use onehand_core::control;
 use onehand_core::worktree::occupants::{self, Occupants};
 use onehand_core::worktree::worker::{self, Repo};
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 
 /// The folders workers are opening or open on, each by its canonical path.
 #[derive(Default)]
@@ -118,7 +116,11 @@ pub(super) fn open_plain(
     let name = spec.name.clone();
     let (_, session) = start(shell, dir, spec, Vec::new(), caller, cx)?;
     if let Some(prompt) = prompt {
-        send_when_connected(session, prompt, cx);
+        // As a person would after watching it connect; dropped if it never
+        // comes up.
+        session.update(cx, |session, cx| {
+            session.prompt_when_up(&prompt, Origin::Tools, cx)
+        });
     }
     Ok(format!(
         "Opened a session with {name} on {project}. It is in the rail, not shown"
@@ -417,8 +419,8 @@ fn finish(
                 |last| last.to_string_lossy().into_owned(),
             );
             session.update(cx, |session, cx| {
-                session.chat.stand_in_title = Some(folder);
-                session.chat.custom_title = name;
+                session.chat.chat_mut().stand_in_title = Some(folder);
+                session.chat.chat_mut().custom_title = name;
                 cx.notify();
             });
             Ok(Started {
@@ -493,34 +495,6 @@ fn start(
         sessions().opened.entry(*uid).or_default().push(started.0);
     }
     Ok(started)
-}
-
-/// Send `prompt` as `session`'s first message once its agent is up, as a
-/// person would after watching it connect; dropped if it never comes up.
-fn send_when_connected(session: Entity<ChatSession>, prompt: String, cx: &mut App) {
-    // A warm adapter can be up before anything is watching for it.
-    if session.read(cx).chat.link == Link::Connected {
-        session.update(cx, |session, cx| session.submit(&prompt, &[], cx));
-        return;
-    }
-    let held: Rc<RefCell<Option<gpui::Subscription>>> = Rc::default();
-    let hold = held.clone();
-    *held.borrow_mut() = Some(cx.observe(&session, move |session, cx| {
-        let link = session.read(cx).chat.link;
-        if link == Link::Connecting {
-            return;
-        }
-        let (prompt, hold) = (prompt.clone(), hold.clone());
-        // Deferred: the observer runs while the session's change is still
-        // being flushed. Once only: dropping the subscription ends it.
-        // The first change to land takes it; any queued behind it finds it gone.
-        cx.defer(move |cx| {
-            let first = hold.borrow_mut().take().is_some();
-            if first && link == Link::Connected {
-                session.update(cx, |session, cx| session.submit(&prompt, &[], cx));
-            }
-        });
-    }));
 }
 
 mod opening;
