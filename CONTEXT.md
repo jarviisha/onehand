@@ -346,3 +346,30 @@ Which copy of the host service a host runs, named by a hash of the binary itself
 its own build on a host beside any other, and restarts the service onto it only when no session
 there is mid-turn.
 _Avoid_: version
+
+## How onehand is built
+
+**Drive**:
+The part of core that decides what happens next for one thing, a session or a run: it is told
+commands and what came of its effects, and answers with effects. It does no I/O and holds no
+timer.
+_Avoid_: controller, service, manager, orchestrator, use case
+
+**Carrier**:
+What carries out a drive's effects in one front end and reports what came of them; it decides
+nothing.
+_Avoid_: driver, adapter (that is an agent's), glue, bridge (that is the remote bridge)
+
+**Effect**:
+One thing a drive asks its carrier to do: a write, a send, a wait, a signal to whatever watches.
+_Avoid_: action (that is a run engine's), command (that is what a drive is told)
+
+**Application state**:
+A fact about the work, which changes what onehand does or must read the same from every front
+end: a queued prompt, a card's answer, a setting. Every change to it goes through a drive.
+_Avoid_: model state, business state
+
+**View state**:
+How one viewer looks at the work, which changes nothing onehand does: what is open, scrolled to
+or focused. It stays in the front end, kept across restarts or not.
+_Avoid_: UI state

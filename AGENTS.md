@@ -25,13 +25,15 @@ How the repository is held together:
 - **Every UI change** follows the `ui` skill and answers its checklist before it is finished.
   Read [.claude/skills/ui/](.claude/skills/ui/) when your host does not load skills.
   Contract-only work follows the skill's contract path; it does not imply a UI migration.
+- [docs/drives.md](docs/drives.md): drives and carriers, the standard for where behaviour lives;
+  **every change that adds or moves behaviour** follows it.
 - [docs/rules-and-gotchas.md](docs/rules-and-gotchas.md): the full reasons behind the short rules
   and gotchas below.
 - [docs/known-gaps.md](docs/known-gaps.md): what this build deliberately does not do yet, and why.
 
 The features that span core and app, each as built:
 
-- [docs/workflows.md](docs/workflows.md): workflows, the run engine and its one driver.
+- [docs/workflows.md](docs/workflows.md): workflows, the run engine and its one carrier.
 - [docs/tasks.md](docs/tasks.md): the Tasks page and the task model behind it.
 - [docs/unattended.md](docs/unattended.md): unattended runs end to end.
 - [docs/agents.md](docs/agents.md): built-in and declared agents, presets and their migration.
@@ -146,10 +148,13 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 - **There is no plugin system.** Every crate is compiled into the one binary and composed by
   hand in `crates/app/src/features.rs`; nothing is loaded at run time. "Plugins" in the UI means
   Claude Code's plugins, which the `claude-plugins` crate manages.
-- **Shared rules live in core, not per call site** (e.g. `GitStatus::label`, `Chat::apply`,
-  `AppConfig::update_in_place`, `Chats::reconcile`). A rule belongs in core when two call sites
-  share it, when a second front end (the remote bridge) could need it, or when it wants a test
-  without a GUI. The app matches on core's enums, never on the labels core shows.
+- **Rules and what happens next live in core, never in the app.** What is true is the model's
+  (`Chat::apply`, `GitStatus::label`); what happens next is a drive's (`SessionDrive`,
+  `task::Drive`), and the app's carriers only carry it out. Every change to application state
+  goes through a drive, with no exceptions; reads go to the model. A model's mutators are
+  `pub(crate)`, and new code adds no call to `SessionDrive::chat_mut`. The app matches on
+  core's enums, never on the labels core shows. The standard is
+  [docs/drives.md](docs/drives.md).
 - **`crates/app/src/guards.rs` checks recurring violations rustc cannot catch.** These source
   scans are partial checks, not proof of every rule. Their coverage and review gaps are in
   [docs/rules-and-gotchas.md](docs/rules-and-gotchas.md#guard-coverage).
@@ -161,7 +166,8 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 ## GPUI model
 
 - State lives in entities (`Entity<T>`), which mutate via `cx.update`/`cx.listener` and publish
-  with `cx.notify()`. A panel asks its owner for things by emitting an event (`EventEmitter` +
+  with `cx.notify()`. An entity holding application state holds it as a drive, and carries out
+  what the drive answers. A panel asks its owner for things by emitting an event (`EventEmitter` +
   `cx.subscribe`). For example, the chat emits `ChatPaneEvent::OpenFile` and the shell decides
   where it goes.
 - An entity renders where it is mounted, once. Updating an entity that is already being updated

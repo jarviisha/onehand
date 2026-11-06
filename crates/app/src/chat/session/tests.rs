@@ -244,10 +244,10 @@ fn the_offline_line_says_how_recent_the_copy_is() {
     );
 }
 
-// The session's driver: what it does with the drive's effects, held to its
+// The session's carrier: what it does with the drive's effects, held to its
 // contract with a test context and a channel standing in for the adapter.
 
-mod driver {
+mod carrier {
     use super::super::{ChatEvent, ChatSession, Source};
     use crate::acp::Events;
     use futures::channel::mpsc;
@@ -328,7 +328,7 @@ mod driver {
     /// file, so no directory can be made there.
     fn unwritable() -> (Chat, PathBuf) {
         let file = std::env::temp_dir().join(format!(
-            "onehand-driver-test-{}-{:?}",
+            "onehand-carrier-test-{}-{:?}",
             std::process::id(),
             std::thread::current().id()
         ));
