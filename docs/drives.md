@@ -30,10 +30,10 @@ There are no exceptions, not even for a change that only forwards to the model a
 effects. An exception list is a judgement every contributor makes differently, and a feature
 that is pure today and gains I/O tomorrow changes inside its drive while its callers stay.
 
-`SessionDrive::chat_mut` is the one way around this rule. It exists for code that has not moved
-yet, and new code adds no call to it. Two kinds of call remain: the app's, which phase 3 gives
-methods, and `task::drive::link`'s, which hands the run's drive its session's `Chat` to put the
-step's mode and picks in force (rule 10).
+A front end has no way around this rule for a session: `SessionDrive::chat_mut` is
+crate-private, and the app changes a session only through the drive's methods. Inside core,
+`task::drive::link` uses it to hand the run's drive its session's `Chat`, to put a step's mode
+and picks in force (rule 10); new code adds no other call.
 
 ### 2. Reads go to the model
 
@@ -70,13 +70,13 @@ view state of its own.
 
 ```rust
 // Commands, from the UI, the remote bridge, onehand's tools or another drive's link: methods.
-fn prompt(&mut self, text: &str, staged: &[StagedAttachment], origin: Origin, code: Code)
+fn prompt(&mut self, text: &str, staged: &[StagedAttachment], origin: Origin, code: Code, now: Now)
     -> (Intake, Vec<Effect>);
 fn stop(&mut self) -> Vec<Effect>;
 // What the world reports back: one `Input` enum.
-fn handle(&mut self, input: Input) -> Vec<Effect>;
+fn handle(&mut self, input: Input, now: Now) -> Vec<Effect>;
 // A stream, one event at a time, and the end of the batch it came in.
-fn apply(&mut self, event: AcpEvent) -> (Vec<Effect>, Next);
+fn apply(&mut self, event: AcpEvent, now: Now) -> (Vec<Effect>, Next);
 fn end_batch(&mut self) -> Vec<Effect>;
 ```
 
@@ -88,8 +88,9 @@ fn end_batch(&mut self) -> Vec<Effect>;
 - **A stream is folded one event at a time.** Where a batch may end is behaviour, so `apply`
   answers it (`Next`); how many events a batch takes at most is the carrier's cap.
 - **Effects are ordered.** "Do A, then B once A answers" is A now, and B on A's input.
-- **A drive never reads the clock.** A wait is an `Arm` effect answered by an `Elapsed` input.
-  Its model reads no clock either; `Chat` still does (rule 12).
+- **A drive never reads the clock.** A wait is an `Arm` effect answered by an `Elapsed` input,
+  and what may stamp or time something is told the time (`Now`), which the carrier reads.
+  Its model reads no clock either (rule 12).
 - `Effect` and `Input` need not be `Clone` or `PartialEq`; tests compare what they need.
 
 ### 5. A late answer is handled as its effect declares
@@ -108,8 +109,10 @@ Each effect that is answered declares, in its own doc, which of these its late a
 - Only a *drop* answer needs a token to tell it apart: a *record* answer carries what it is
   about.
 - Calling an act off is its own effect, and never stands in for the answer that says it is over.
-- Closing honours the answers still on their way: a session closed while its turn's save is in
-  flight waits for that save. Not built yet; today that answer is lost with the session (#309).
+- Closing honours the answers still on their way. A session closed while a save is in flight
+  cannot wait for it, since its drive goes with it; so it writes the whole transcript instead,
+  and the store drops the lines of any save built before that write lands. Restarting a session
+  with a save in flight does not do this yet: the snapshot handed on carries the moved mark.
 
 ### 6. A failure is an input
 
@@ -139,10 +142,8 @@ A model's methods that change application state are `pub(crate)`, so only drives
 call them, and core exports drives and the model's read side. A call from the app to
 `Chat::submit` does not compile, and `dead_code` finds a mutator no drive uses.
 
-Built so far for what phase 1 moved: `Chat`'s `submit`, `queue`, `unqueue`, `cancel_turn`,
-`flush`, `unflush`, `stream_ended`, `quiet_spell` and `starts_quiet_save`. Every other mutator
-(`apply`, `pick`, `rename`, `answer_ask` and the rest) is still `pub`, reached through `chat_mut`
-until its phase moves it.
+Built for `Chat`: every method that changes it is `pub(crate)`. The other models are not there
+yet; each phase that moves one makes its mutators `pub(crate)`.
 
 No guard backs this up yet: a guard is added once the same mistake has been made in several
 places, as every guard in `crates/app/src/guards.rs` was.
@@ -175,20 +176,20 @@ is GPUI's (`ChatSession`'s are in `crates/app/src/chat/session/tests.rs`). They 
 - deferred work runs after the update that asked for it, never inside it.
 
 Not built yet for every carrier or every check. `ChatSession`'s tests hold order and exactly
-once, a failed save reaching the drive, the quiet wait and its cancel at the stream's end, and a
-close with a save in flight and a wait armed. Still untested: `SendCode`'s late answer and the
-pane's half of the session (`ChatPane::carry`), deferred work, and the run's carrier
-(`crates/app/src/task/driver.rs`), which has no contract tests yet.
+once, requests reaching the agent in order, a failed save reaching the drive, the quiet wait and
+its cancel at the stream's end, and a close with a save in flight and a wait armed. Still
+untested: `SendCode`'s late answer and the pane's half of the session (`ChatPane::carry`),
+`SaveTitle` (written on the ordered writer's own thread, which GPUI's test scheduler does not
+wait for), deferred work, and the run's carrier (`crates/app/src/task/driver.rs`), which has no
+contract tests yet.
 
 ### 12. A model does no I/O and reads no clock
 
 A model changes itself and answers; it sends nothing, writes nothing, and is told the time rather
-than reading it. `Chat` still breaks this in three ways:
-- the requests it sends to its agent (`Chat::submit`, `Chat::cancel_turn`), moving into effects;
-- the save its drop writes when a session closes, moving into effects;
-- the clock: it stamps events, prompts and saves with the wall clock (`chat::store::now_secs`,
-  unless a host said the time), and times running steps with `Instant::now`, moving into
-  inputs: the carrier says the time with what it reports.
+than reading it. `Chat` queues what is to go to its agent, which its drive hands on as
+`Effect::Request`, and stamps and times by the `Now` its drive was told. One thing in it still
+does I/O: the save its drop writes when a session closes, synchronously, on the thread that
+drops it.
 
 ## A new feature
 

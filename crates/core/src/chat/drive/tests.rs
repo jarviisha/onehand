@@ -1064,7 +1064,7 @@ fn written_lines(store: &std::path::Path) -> Vec<String> {
         .collect()
 }
 
-/// **#309.** A session closed while its last turn's save is on its way, and
+/// A session closed while its last turn's save is on its way, and
 /// that save failing then: the turn is on disk all the same, as the close
 /// wrote the whole transcript rather than what came after that save.
 #[test]
