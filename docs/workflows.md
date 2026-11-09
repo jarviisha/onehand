@@ -267,9 +267,10 @@ happened (an `Input`) with the run's session as it stands, and answers with what
 pin, measure, read the work, send a prompt, run a command, call the forge, watch the status checks,
 arm the clock, say something, save, finish. It has no timer or I/O of its own, so every rule below
 is tested in core. The carrier (`crate::task::carrier`) maps the session's events onto inputs,
-carries out the effects and brings their results back. The mode and the settings picks are made on
-the session's `Chat` by the drive itself, since the next pick is planned against what is still
-waiting.
+carries out the effects and brings their results back. The drive decides the mode and the settings
+picks against its session's `Chat`, which it only reads; the link makes each through the session's
+own drive (`SessionDrive::pick`) before anything else reaches the run, and the next is planned once
+the agent has answered.
 
 The `Tasks` global (`crate::task::Tasks`) holds every run under way by its task id (a check's run
 has no session);

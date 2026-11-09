@@ -24,11 +24,12 @@ pub fn start(
     pinned: usize,
     issue: bool,
     now: Instant,
-    mut session: Option<&mut SessionDrive>,
+    session: Option<&mut SessionDrive>,
 ) -> (RunDrive, Vec<super::Effect>, Vec<SessionEffect>) {
-    let chat = session.as_deref_mut().map(SessionDrive::chat_mut);
-    let (drive, fx) = RunDrive::start(task, run, first, pinned, issue, now, chat);
-    (drive, fx, asked_of(session))
+    let chat = session.as_deref().map(|session| &**session);
+    let (mut drive, fx) = RunDrive::start(task, run, first, pinned, issue, now, chat);
+    let asked = asked_of(&mut drive, session);
+    (drive, fx, asked)
 }
 
 /// Tell `drive` what happened, with its session as it stands: what the run
@@ -46,17 +47,21 @@ pub fn handle(
 /// run does next, and what that asks of the session.
 pub fn command(
     drive: &mut RunDrive,
-    mut session: Option<&mut SessionDrive>,
-    give: impl FnOnce(&mut RunDrive, Option<&mut Chat>) -> Vec<super::Effect>,
+    session: Option<&mut SessionDrive>,
+    give: impl FnOnce(&mut RunDrive, Option<&Chat>) -> Vec<super::Effect>,
 ) -> (Vec<super::Effect>, Vec<SessionEffect>) {
-    let fx = give(drive, session.as_deref_mut().map(SessionDrive::chat_mut));
-    (fx, asked_of(session))
+    let fx = give(drive, session.as_deref().map(|session| &**session));
+    (fx, asked_of(drive, session))
 }
 
-/// What the run's drive queued for the agent on its session: a step's mode
-/// and picks.
-fn asked_of(session: Option<&mut SessionDrive>) -> Vec<SessionEffect> {
-    session.map_or_else(Vec::new, |session| session.sent(Vec::new()))
+/// What the run's drive asked of its session, its mode and a step's picks,
+/// made through the session's own drive: what that asks of the session's
+/// carrier. Without a session there is nothing to pick on.
+fn asked_of(drive: &mut RunDrive, session: Option<&mut SessionDrive>) -> Vec<SessionEffect> {
+    let picks = drive.take_picks();
+    session.map_or_else(Vec::new, |session| {
+        picks.iter().flat_map(|pick| session.pick(pick)).collect()
+    })
 }
 
 /// What `signal`, from the session `drive` runs on, tells the run, if

@@ -5,7 +5,7 @@
 use super::{settings, Effect, RunDrive};
 use crate::chat::{Chat, Link};
 use crate::preflight::{found_late, mode_refused, About};
-use crate::workflow::{Action, Outcome, Stop};
+use crate::workflow::{Action, Outcome, Pick, Stop};
 use std::time::Instant;
 
 /// The longest answer kept from a turn. An answer the length of a book is cut
@@ -17,7 +17,7 @@ impl RunDrive {
     pub(super) fn carry_out(
         &mut self,
         action: Action,
-        chat: Option<&mut Chat>,
+        chat: Option<&Chat>,
         now: Instant,
         fx: &mut Vec<Effect>,
     ) {
@@ -123,13 +123,7 @@ impl RunDrive {
     }
 
     /// Send `text`, or keep it until the agent is up.
-    pub(super) fn send(
-        &mut self,
-        text: String,
-        chat: &mut Chat,
-        now: Instant,
-        fx: &mut Vec<Effect>,
-    ) {
+    pub(super) fn send(&mut self, text: String, chat: &Chat, now: Instant, fx: &mut Vec<Effect>) {
         if chat.link != Link::Connected {
             self.pending = Some(text);
             return;
@@ -154,7 +148,7 @@ impl RunDrive {
     /// Whether the prompt may go: an agent that does not offer the mode fails
     /// the run, since one left in the mode that asks before every edit would
     /// park at the first.
-    fn came_up(&mut self, chat: &mut Chat, now: Instant, fx: &mut Vec<Effect>) -> bool {
+    fn came_up(&mut self, chat: &Chat, now: Instant, fx: &mut Vec<Effect>) -> bool {
         if std::mem::replace(&mut self.up, true) {
             return true;
         }
@@ -174,7 +168,7 @@ impl RunDrive {
             });
             return false;
         }
-        chat.set_mode(&mode);
+        self.picks.push(Pick::Mode(mode.clone()));
         self.mode_out = Some(mode.clone());
         fx.push(Effect::Note(format!("Mode {mode} set")));
         self.start_settings(chat, Some(mode));
@@ -207,7 +201,7 @@ impl RunDrive {
     /// and let its place go. Nothing is done after this.
     pub(super) fn finish(
         &mut self,
-        chat: Option<&mut Chat>,
+        chat: Option<&Chat>,
         outcome: Outcome,
         now: Instant,
         fx: &mut Vec<Effect>,

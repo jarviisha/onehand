@@ -44,7 +44,7 @@ impl RunDrive {
     pub(super) fn act(
         &mut self,
         action: Action,
-        chat: Option<&mut Chat>,
+        chat: Option<&Chat>,
         now: Instant,
         fx: &mut Vec<Effect>,
     ) {
@@ -69,7 +69,7 @@ impl RunDrive {
     pub(super) fn landed(
         &mut self,
         pinned: Result<String, String>,
-        chat: Option<&mut Chat>,
+        chat: Option<&Chat>,
         now: Instant,
         fx: &mut Vec<Effect>,
     ) {
@@ -85,19 +85,18 @@ impl RunDrive {
         // An ending asked meanwhile wins over the action, which would only
         // start work on a run that is over; the first one asked is its
         // reason, and the rest find nothing left to do.
-        let mut chat = chat;
         if let Some(at) = held.iter().position(|(ends, _)| *ends) {
             let (_, ending) = held.swap_remove(at);
             return self.replay(ending, chat, now, fx);
         }
-        self.carry_out(action, chat.as_deref_mut(), now, fx);
+        self.carry_out(action, chat, now, fx);
         // In the order asked; one that starts another pin holds the rest.
         for (_, then) in held {
-            self.replay(then, chat.as_deref_mut(), now, fx);
+            self.replay(then, chat, now, fx);
         }
     }
 
-    fn replay(&mut self, held: Held, chat: Option<&mut Chat>, now: Instant, fx: &mut Vec<Effect>) {
+    fn replay(&mut self, held: Held, chat: Option<&Chat>, now: Instant, fx: &mut Vec<Effect>) {
         match held {
             Held::Answer(answer) => self.answer(answer, chat, now, fx),
             Held::Cut(stop) => self.cut(stop, chat, now, fx),

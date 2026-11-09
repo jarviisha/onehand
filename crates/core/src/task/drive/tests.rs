@@ -78,8 +78,7 @@ impl Rig {
 
     fn start_run(run: Run, first: Action, (chat, rx): (Chat, RxOf)) -> (Self, Vec<Effect>) {
         let now = Instant::now();
-        let mut chat = chat;
-        let (drive, fx) = RunDrive::start("t1".into(), run, first, 0, false, now, Some(&mut chat));
+        let (drive, fx) = RunDrive::start("t1".into(), run, first, 0, false, now, Some(&chat));
         let mut rig = Self {
             drive,
             chat,
@@ -91,25 +90,29 @@ impl Rig {
     }
 
     fn on(&mut self, input: Input) -> Vec<Effect> {
-        let fx = self.drive.handle(input, Some(&mut self.chat), self.now);
+        let fx = self.drive.handle(input, Some(&self.chat), self.now);
         self.play(&fx);
         fx
     }
 
     fn approve(&mut self, at: ApprovalAt) -> Vec<Effect> {
-        let fx = self.drive.approve(at, Some(&mut self.chat), self.now);
+        let fx = self.drive.approve(at, Some(&self.chat), self.now);
         self.play(&fx);
         fx
     }
 
     fn stop(&mut self) -> Vec<Effect> {
-        let fx = self.drive.stop(Some(&mut self.chat), self.now);
+        let fx = self.drive.stop(Some(&self.chat), self.now);
         self.play(&fx);
         fx
     }
 
     /// What the app does to the session for an effect.
     fn play(&mut self, fx: &[Effect]) {
+        // What the link makes on the session first: the run's mode and picks.
+        for pick in self.drive.take_picks() {
+            self.chat.pick(&pick);
+        }
         for effect in fx {
             match effect {
                 Effect::Submit(text) => {

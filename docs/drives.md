@@ -30,10 +30,9 @@ There are no exceptions, not even for a change that only forwards to the model a
 effects. An exception list is a judgement every contributor makes differently, and a feature
 that is pure today and gains I/O tomorrow changes inside its drive while its callers stay.
 
-A front end has no way around this rule for a session: `SessionDrive::chat_mut` is
-crate-private, and the app changes a session only through the drive's methods. Inside core,
-`task::drive::link` uses it to hand the run's drive its session's `Chat`, to put a step's mode
-and picks in force (rule 10); new code adds no other call.
+A front end has no way around this rule for a session: `SessionDrive` hands out no mutable
+`Chat`, and the app changes a session only through the drive's methods. Inside core no drive
+changes another drive's model either (rule 10).
 
 ### 2. Reads go to the model
 
@@ -161,9 +160,9 @@ signals another's inputs, is behaviour too. So it is a GUI-free module of core t
 real drives on both sides, as `task::drive::link` joins a run and its session. A GPUI subscriber
 that routes between drives is a rule in the wrong place.
 
-Not met yet in one place: the run's drive is handed its session's `Chat` through the link and
-changes it directly (`Chat::pick`, `Chat::set_mode`), rather than through `SessionDrive`'s
-methods. Phase 4 decides whether a drive may change another drive's model.
+**A drive reads another drive's model, and never changes it.** The run's drive reads its
+session's `Chat` and decides the mode and the settings picks to put in force; it keeps them, and
+the link makes each through `SessionDrive::pick` before anything else reaches the run.
 
 ### 11. Every carrier is tested against its contract
 

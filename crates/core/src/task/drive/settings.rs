@@ -51,7 +51,7 @@ fn wanted(d: &RunDrive) -> (Settings, Vec<String>) {
 /// Fail the run on a setting, `why`. A run of an issue pauses unattended
 /// runs too: every later one would fail the same way, each on a fresh issue.
 /// A person's run from the launcher does not.
-fn fail(d: &mut RunDrive, why: String, chat: &mut Chat, now: Instant, fx: &mut Vec<Effect>) {
+fn fail(d: &mut RunDrive, why: String, chat: &Chat, now: Instant, fx: &mut Vec<Effect>) {
     if d.issue {
         let fix = format!(
             "the step settings of workflow `{}` are fixed",
@@ -73,7 +73,7 @@ fn fail(d: &mut RunDrive, why: String, chat: &mut Chat, now: Instant, fx: &mut V
 pub(super) fn settle(
     d: &mut RunDrive,
     text: String,
-    chat: &mut Chat,
+    chat: &Chat,
     now: Instant,
     fx: &mut Vec<Effect>,
 ) -> Option<String> {
@@ -92,7 +92,7 @@ pub(super) fn settle(
 /// pick is answered, plan the next, and send the held prompt when there is
 /// none. Run after everything the same answer emitted, so a refusal has
 /// already failed the run and left nothing to plan.
-pub(super) fn answered(d: &mut RunDrive, chat: &mut Chat, now: Instant, fx: &mut Vec<Effect>) {
+pub(super) fn answered(d: &mut RunDrive, chat: &Chat, now: Instant, fx: &mut Vec<Effect>) {
     // The run's own mode answered and not refused: nothing more of it.
     if !chat.pick_waiting(MODE_SELECTOR) {
         d.mode_out = None;
@@ -126,7 +126,7 @@ pub(super) fn answered(d: &mut RunDrive, chat: &mut Chat, now: Instant, fx: &mut
 /// composer, those restored on reconnecting), is not the run's.
 pub(super) fn refused(
     d: &mut RunDrive,
-    chat: &mut Chat,
+    chat: &Chat,
     why: &str,
     now: Instant,
     fx: &mut Vec<Effect>,
@@ -170,50 +170,52 @@ pub(super) fn refused(
 fn plan(
     d: &mut RunDrive,
     mut picking: Picking,
-    chat: &mut Chat,
+    chat: &Chat,
     now: Instant,
     fx: &mut Vec<Effect>,
 ) -> Option<String> {
     let (want, named) = wanted(d);
     // Whatever was sent before has been answered.
     picking.sent = None;
-    loop {
-        // A pick put in before this one (the run's mode, or one restored on
-        // reconnecting) is answered first, so what is planned against holds.
-        if chat.picks_waiting() {
-            break;
+    // A pick put in before this one (the run's mode, not yet answered or
+    // not yet in the session, or one restored on reconnecting) is answered
+    // first, so what is planned against holds.
+    if chat.picks_waiting() || d.mode_out.is_some() {
+        d.picking = Some(picking);
+        return None;
+    }
+    match next(
+        &want,
+        &named,
+        &chat.offer(),
+        &chat.in_force(),
+        &picking.picked,
+    ) {
+        // Made on the session through the link once this call returns; the
+        // agent answers it before the next is planned.
+        Next::Pick(pick) => {
+            d.picks.push(pick.clone());
+            fx.push(Effect::SessionChanged);
+            picking.picked.push(pick.group().to_string());
+            picking.sent = Some(pick);
+            d.picking = Some(picking);
+            None
         }
-        match next(
-            &want,
-            &named,
-            &chat.offer(),
-            &chat.in_force(),
-            &picking.picked,
-        ) {
-            Next::Pick(pick) => {
-                chat.pick(&pick);
-                fx.push(Effect::SessionChanged);
-                picking.picked.push(pick.group().to_string());
-                picking.sent = Some(pick);
+        Next::Refused(why) => {
+            fail(d, why, chat, now, fx);
+            None
+        }
+        Next::Done => {
+            let held = chat.held();
+            let said = said(&want, &held);
+            d.run.ran_with(held);
+            d.settled = open_visit(d);
+            if !picking.picked.is_empty() {
+                fx.push(Effect::Note(said));
             }
-            Next::Refused(why) => {
-                fail(d, why, chat, now, fx);
-                return None;
-            }
-            Next::Done => {
-                let held = chat.held();
-                let said = said(&want, &held);
-                d.run.ran_with(held);
-                d.settled = open_visit(d);
-                if !picking.picked.is_empty() {
-                    fx.push(Effect::Note(said));
-                }
-                return Some(picking.text);
-            }
+            Some(picking.text)
         }
     }
-    d.picking = Some(picking);
-    None
 }
 
 /// What the visit runs with, as its note says it: what the session holds

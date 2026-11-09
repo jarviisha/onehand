@@ -239,7 +239,7 @@ pub(super) fn feed(id: &str, input: Input, cx: &mut App) {
 fn give(
     id: &str,
     cx: &mut App,
-    command: impl FnOnce(&mut RunDrive, Option<&mut Chat>, Instant) -> Vec<Effect>,
+    command: impl FnOnce(&mut RunDrive, Option<&Chat>, Instant) -> Vec<Effect>,
 ) {
     if !cx.has_global::<Tasks>() {
         return;

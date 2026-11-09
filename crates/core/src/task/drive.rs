@@ -10,10 +10,11 @@
 //! no I/O of its own, so every rule below is a rule a test can hold it to; the
 //! front end does the work and brings back what came of it.
 //!
-//! **The mode and the settings picks are made on the session itself**, here,
-//! as they are decided: the next pick is planned against what the session
-//! says is still waiting, and a pick that has not been made yet would read as
-//! one already answered.
+//! **The mode and the settings picks are asked of the session**, never made
+//! on its model here: the drive reads its session and keeps the picks it
+//! decided ([`RunDrive::take_picks`]), which the link makes through the
+//! session's own drive before anything else reaches the run. The next pick
+//! is planned only once the agent answered the last one.
 //!
 //! **Every Stop goes through the engine the same way.** A person's Stop, a
 //! prompt of their own, the timeout, the agent going and the session closing
@@ -24,7 +25,7 @@
 use crate::chat::{Chat, Link};
 
 use crate::unattended::Budget;
-use crate::workflow::{Action, ApprovalAt, Failure, Run, Stop};
+use crate::workflow::{Action, ApprovalAt, Failure, Pick, Run, Stop};
 use std::time::{Duration, Instant};
 
 pub mod link;
@@ -77,6 +78,8 @@ pub struct RunDrive {
     /// The run's own mode, picked when the agent came up and not yet
     /// answered: a refusal of it is the run's mode refused, not a step's.
     mode_out: Option<String>,
+    /// Picks decided and not yet handed to the session, in order.
+    picks: Vec<Pick>,
     /// The step the transcript was last told of.
     noted: Option<usize>,
     /// How much of the timeout is left; it does not run while a card or an
@@ -111,7 +114,7 @@ impl RunDrive {
         pinned: usize,
         issue: bool,
         now: Instant,
-        chat: Option<&mut Chat>,
+        chat: Option<&Chat>,
     ) -> (Self, Vec<Effect>) {
         let limit = run
             .template
@@ -134,6 +137,7 @@ impl RunDrive {
             settled: None,
             picking: None,
             mode_out: None,
+            picks: Vec::new(),
             noted: None,
             budget: Budget::start(limit, now),
             card: false,
@@ -149,6 +153,12 @@ impl RunDrive {
         }
         drive.act(first, chat, now, &mut fx);
         (drive, fx)
+    }
+
+    /// The picks the run decided since last asked, to be made on its session
+    /// in order before anything else reaches the run.
+    pub(crate) fn take_picks(&mut self) -> Vec<Pick> {
+        std::mem::take(&mut self.picks)
     }
 
     /// The task the run is of.
@@ -214,12 +224,7 @@ impl RunDrive {
 
     /// A person approved what they read at `at`. Held while a mark is
     /// pinned, and refused by the engine once the run no longer waits there.
-    pub fn approve(
-        &mut self,
-        at: ApprovalAt,
-        chat: Option<&mut Chat>,
-        now: Instant,
-    ) -> Vec<Effect> {
+    pub fn approve(&mut self, at: ApprovalAt, chat: Option<&Chat>, now: Instant) -> Vec<Effect> {
         self.command_with(chat, now, |d, chat, now, fx| {
             d.answer(Answer::Approved(at), chat, now, fx);
             fx.push(Effect::Answered);
@@ -232,7 +237,7 @@ impl RunDrive {
         &mut self,
         at: ApprovalAt,
         note: String,
-        chat: Option<&mut Chat>,
+        chat: Option<&Chat>,
         now: Instant,
     ) -> Vec<Effect> {
         self.command_with(chat, now, |d, chat, now, fx| {
@@ -243,7 +248,7 @@ impl RunDrive {
 
     /// A person pressed Stop: the turn under way is cancelled and the run
     /// ends, once a command running has exited.
-    pub fn stop(&mut self, chat: Option<&mut Chat>, now: Instant) -> Vec<Effect> {
+    pub fn stop(&mut self, chat: Option<&Chat>, now: Instant) -> Vec<Effect> {
         self.command_with(chat, now, |d, chat, now, fx| {
             d.cut(Stop::ByPerson, chat, now, fx)
         })
@@ -252,9 +257,9 @@ impl RunDrive {
     /// Do `command`, unless the run has finished, which does nothing more.
     fn command_with(
         &mut self,
-        chat: Option<&mut Chat>,
+        chat: Option<&Chat>,
         now: Instant,
-        command: impl FnOnce(&mut Self, Option<&mut Chat>, Instant, &mut Vec<Effect>),
+        command: impl FnOnce(&mut Self, Option<&Chat>, Instant, &mut Vec<Effect>),
     ) -> Vec<Effect> {
         let mut fx = Vec::new();
         if !self.over {
@@ -265,7 +270,7 @@ impl RunDrive {
 
     /// Something happened: what to do about it. A run that has finished does
     /// nothing more.
-    pub fn handle(&mut self, input: Input, chat: Option<&mut Chat>, now: Instant) -> Vec<Effect> {
+    pub fn handle(&mut self, input: Input, chat: Option<&Chat>, now: Instant) -> Vec<Effect> {
         let mut fx = Vec::new();
         if self.over {
             return fx;
@@ -277,11 +282,7 @@ impl RunDrive {
             | Input::Disconnected
             | Input::PickRefused(_) => self.on_event(input, chat, now, &mut fx),
             Input::Notified => {
-                if self.card
-                    && chat
-                        .as_deref()
-                        .is_some_and(|chat| !chat.awaiting_permission())
-                {
+                if self.card && chat.is_some_and(|chat| !chat.awaiting_permission()) {
                     self.card = false;
                     self.budget.resume(now);
                     fx.push(Effect::Answered);
@@ -365,7 +366,7 @@ impl RunDrive {
     fn ended(
         &mut self,
         stop: Stop,
-        chat: Option<&mut Chat>,
+        chat: Option<&Chat>,
         now: Instant,
         mut fx: Vec<Effect>,
     ) -> Vec<Effect> {
@@ -373,13 +374,7 @@ impl RunDrive {
         fx
     }
 
-    fn on_event(
-        &mut self,
-        input: Input,
-        chat: Option<&mut Chat>,
-        now: Instant,
-        fx: &mut Vec<Effect>,
-    ) {
+    fn on_event(&mut self, input: Input, chat: Option<&Chat>, now: Instant, fx: &mut Vec<Effect>) {
         let Some(chat) = chat else {
             return;
         };
@@ -447,13 +442,7 @@ impl RunDrive {
     /// is pinned, then judged by the engine against the visit it was drawn
     /// from. The clock goes on only once the engine took it, so a refused
     /// press leaves the run waiting as it was.
-    fn answer(
-        &mut self,
-        answer: Answer,
-        chat: Option<&mut Chat>,
-        now: Instant,
-        fx: &mut Vec<Effect>,
-    ) {
+    fn answer(&mut self, answer: Answer, chat: Option<&Chat>, now: Instant, fx: &mut Vec<Effect>) {
         if self.hold(false, Held::Answer(answer.clone())) {
             return;
         }
@@ -470,11 +459,11 @@ impl RunDrive {
     /// Cancel the turn under way and end the run as `stop`, as one call: held
     /// together while a mark is pinned, so the cancel never runs before a
     /// prompt the pin is still holding back.
-    fn cut(&mut self, stop: Stop, chat: Option<&mut Chat>, now: Instant, fx: &mut Vec<Effect>) {
+    fn cut(&mut self, stop: Stop, chat: Option<&Chat>, now: Instant, fx: &mut Vec<Effect>) {
         if self.hold(true, Held::Cut(stop)) {
             return;
         }
-        if chat.as_deref().is_some_and(|chat| chat.busy) {
+        if chat.is_some_and(|chat| chat.busy) {
             fx.push(Effect::CancelTurn);
         }
         self.end(stop, chat, now, fx);
@@ -485,7 +474,7 @@ impl RunDrive {
     /// exited; while a forge call runs, once it has landed. A run said to be
     /// stopped never leaves a build or a test writing to the work behind it.
     /// The first reason given is the one the run ends with.
-    fn end(&mut self, stop: Stop, chat: Option<&mut Chat>, now: Instant, fx: &mut Vec<Effect>) {
+    fn end(&mut self, stop: Stop, chat: Option<&Chat>, now: Instant, fx: &mut Vec<Effect>) {
         if self.hold(true, Held::End(stop)) {
             return;
         }
@@ -503,7 +492,7 @@ impl RunDrive {
     /// Report to the run's engine, then do what it says.
     fn advance(
         &mut self,
-        chat: Option<&mut Chat>,
+        chat: Option<&Chat>,
         now: Instant,
         fx: &mut Vec<Effect>,
         report: impl FnOnce(&mut Run) -> Action,
