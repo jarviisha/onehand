@@ -2,7 +2,7 @@ use super::*;
 use crate::acp::{AcpEvent, ConfigChoice, ConfigOption, Mode, ReqTx};
 use crate::task::Task;
 use crate::workflow::{builtin, Brief, Setup, StepKind, Template};
-use crate::workflow::{CommandResult, Facts, Mark};
+use crate::workflow::{CommandResult, Facts, Mark, Outcome};
 use std::path::PathBuf;
 
 fn brief() -> Brief {
@@ -62,7 +62,7 @@ fn connected() -> (
 
 /// A drive and its session, played the way the app plays them.
 struct Rig {
-    drive: Drive,
+    drive: RunDrive,
     chat: Chat,
     _rx: tokio::sync::mpsc::UnboundedReceiver<crate::acp::AcpRequest>,
     now: Instant,
@@ -79,7 +79,7 @@ impl Rig {
     fn start_run(run: Run, first: Action, (chat, rx): (Chat, RxOf)) -> (Self, Vec<Effect>) {
         let now = Instant::now();
         let mut chat = chat;
-        let (drive, fx) = Drive::start("t1".into(), run, first, 0, false, now, Some(&mut chat));
+        let (drive, fx) = RunDrive::start("t1".into(), run, first, 0, false, now, Some(&mut chat));
         let mut rig = Self {
             drive,
             chat,
@@ -91,7 +91,19 @@ impl Rig {
     }
 
     fn on(&mut self, input: Input) -> Vec<Effect> {
-        let fx = self.drive.on(input, Some(&mut self.chat), self.now);
+        let fx = self.drive.handle(input, Some(&mut self.chat), self.now);
+        self.play(&fx);
+        fx
+    }
+
+    fn approve(&mut self, at: ApprovalAt) -> Vec<Effect> {
+        let fx = self.drive.approve(at, Some(&mut self.chat), self.now);
+        self.play(&fx);
+        fx
+    }
+
+    fn stop(&mut self) -> Vec<Effect> {
+        let fx = self.drive.stop(Some(&mut self.chat), self.now);
         self.play(&fx);
         fx
     }
@@ -170,10 +182,10 @@ fn approval_at(rig: &Rig) -> ApprovalAt {
 fn a_pin_holds_what_is_asked_meanwhile_and_an_ending_wins() {
     let mut rig = at_approval();
     let at = approval_at(&rig);
-    let fx = rig.on(Input::Approved { at });
+    let fx = rig.approve(at);
     assert!(has(&fx, |e| matches!(e, Effect::Pin { .. })), "{fx:?}");
     assert!(!submitted(&fx), "the prompt waits on the pin");
-    assert!(rig.on(Input::Stop).is_empty(), "held while the pin lands");
+    assert!(rig.stop().is_empty(), "held while the pin lands");
     let fx = rig.on(Input::Pinned(Ok("c2".into())));
     assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::ByPerson)));
     assert!(!submitted(&fx), "no prompt to a run said to be over");
@@ -183,7 +195,7 @@ fn a_pin_holds_what_is_asked_meanwhile_and_an_ending_wins() {
 fn a_turn_ending_while_a_pin_is_held_is_not_judged() {
     let mut rig = at_approval();
     let at = approval_at(&rig);
-    rig.on(Input::Approved { at });
+    rig.approve(at);
     let fx = rig.on(Input::TurnEnded);
     assert!(
         !has(&fx, |e| matches!(e, Effect::ReadFacts { .. })),
@@ -199,7 +211,7 @@ fn an_approval_waits_on_a_person_until_answered() {
     let mut rig = at_approval();
     assert!(rig.drive.waits_on_person() && !rig.drive.card());
     let at = approval_at(&rig);
-    rig.on(Input::Approved { at });
+    rig.approve(at);
     assert!(!rig.drive.waits_on_person());
 }
 
@@ -207,11 +219,11 @@ fn an_approval_waits_on_a_person_until_answered() {
 fn an_approval_answers_and_says_so() {
     let mut rig = at_approval();
     let at = approval_at(&rig);
-    let fx = rig.on(Input::Approved { at: at.clone() });
+    let fx = rig.approve(at.clone());
     assert!(has(&fx, |e| matches!(e, Effect::Answered)));
     // A second press of the same approval is judged stale and moves nothing.
     rig.on(Input::Pinned(Ok("c2".into())));
-    let fx = rig.on(Input::Approved { at });
+    let fx = rig.approve(at);
     assert!(
         !has(&fx, |e| matches!(e, Effect::Pin { .. } | Effect::Submit(_))),
         "{fx:?}"
@@ -247,7 +259,7 @@ fn a_stop_while_a_command_runs_waits_for_it() {
         has(&fx, |e| matches!(e, Effect::RunCommand { .. })),
         "{fx:?}"
     );
-    let fx = rig.on(Input::Stop);
+    let fx = rig.stop();
     assert!(has(&fx, |e| matches!(e, Effect::CallOffCommand)));
     assert_eq!(finished(&fx), None, "ended only once the command exits");
     assert!(rig.drive.stopping());
@@ -258,7 +270,7 @@ fn a_stop_while_a_command_runs_waits_for_it() {
 #[test]
 fn the_first_stop_reason_is_the_one_kept() {
     let (mut rig, _) = checking();
-    rig.on(Input::Stop);
+    rig.stop();
     rig.now += Duration::from_secs(60 * 60 * 24);
     rig.on(Input::ClockFired);
     let fx = rig.on(Input::CommandExited(ran(true)));
@@ -302,14 +314,10 @@ fn the_clock_ends_the_run_once_nothing_is_left() {
 #[test]
 fn a_finished_drive_ignores_everything() {
     let (mut rig, _) = checking();
-    rig.on(Input::Stop);
+    rig.stop();
     rig.on(Input::CommandExited(ran(true)));
-    for input in [
-        Input::Stop,
-        Input::TurnEnded,
-        Input::ClockFired,
-        Input::Appended,
-    ] {
+    assert!(rig.stop().is_empty());
+    for input in [Input::TurnEnded, Input::ClockFired, Input::Appended] {
         assert!(rig.on(input).is_empty());
     }
 }
@@ -320,11 +328,11 @@ fn a_gone_session_only_lets_the_run_end() {
     let at = approval_at(&rig);
     let now = rig.now;
     // The session went while the next step's mark was pinned.
-    let fx = rig.drive.on(Input::Approved { at }, None, now);
+    let fx = rig.drive.approve(at, None, now);
     assert!(has(&fx, |e| matches!(e, Effect::Pin { .. })), "{fx:?}");
-    let fx = rig.drive.on(Input::Pinned(Ok("c2".into())), None, now);
+    let fx = rig.drive.handle(Input::Pinned(Ok("c2".into())), None, now);
     assert!(fx.is_empty(), "nothing to prompt: {fx:?}");
-    let fx = rig.drive.on(Input::Stop, None, now);
+    let fx = rig.drive.stop(None, now);
     assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::ByPerson)));
     assert!(
         !has(&fx, |e| matches!(e, Effect::Note(_))),
@@ -667,7 +675,7 @@ fn a_lost_link_ends_the_run() {
 #[test]
 fn a_closed_session_ends_the_run() {
     let mut rig = in_turn();
-    let fx = rig.drive.on(Input::SessionGone, None, rig.now);
+    let fx = rig.drive.handle(Input::SessionGone, None, rig.now);
     assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::Closed)));
 }
 
@@ -724,11 +732,11 @@ fn a_chunk_is_heeded_only_when_it_can_move_the_run() {
 
 // ── A drive without a session: a check ───────────────────────────────────
 
-fn check_drive() -> (Drive, Vec<Effect>) {
+fn check_drive() -> (RunDrive, Vec<Effect>) {
     let task = Task::check("t1".into(), "make check".into(), setup(None));
     let mut run = task.runs[0].clone();
     let first = run.resume();
-    Drive::start("t1".into(), run, first, 0, false, Instant::now(), None)
+    RunDrive::start("t1".into(), run, first, 0, false, Instant::now(), None)
 }
 
 #[test]
@@ -736,16 +744,16 @@ fn a_check_runs_its_command_and_finishes_without_a_session() {
     let (mut drive, fx) = check_drive();
     let now = Instant::now();
     let fx = match has(&fx, |e| matches!(e, Effect::Pin { .. })) {
-        true => drive.on(Input::Pinned(Ok("c0".into())), None, now),
+        true => drive.handle(Input::Pinned(Ok("c0".into())), None, now),
         false => fx,
     };
     assert!(
         has(&fx, |e| matches!(e, Effect::RunCommand { .. })),
         "{fx:?}"
     );
-    let fx = drive.on(Input::CommandExited(ran(true)), None, now);
+    let fx = drive.handle(Input::CommandExited(ran(true)), None, now);
     let fx = match has(&fx, |e| matches!(e, Effect::Pin { .. })) {
-        true => drive.on(Input::Pinned(Ok("c1".into())), None, now),
+        true => drive.handle(Input::Pinned(Ok("c1".into())), None, now),
         false => fx,
     };
     assert_eq!(finished(&fx), Some(&Outcome::Done), "{fx:?}");
@@ -762,8 +770,8 @@ fn a_check_stopped_before_its_command_runs_none() {
     let (mut drive, fx) = check_drive();
     assert!(has(&fx, |e| matches!(e, Effect::Pin { .. })), "{fx:?}");
     let now = Instant::now();
-    assert!(drive.on(Input::Stop, None, now).is_empty());
-    let fx = drive.on(Input::Pinned(Ok("c0".into())), None, now);
+    assert!(drive.stop(None, now).is_empty());
+    let fx = drive.handle(Input::Pinned(Ok("c0".into())), None, now);
     assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::ByPerson)));
     assert!(!has(&fx, |e| matches!(e, Effect::RunCommand { .. })));
 }

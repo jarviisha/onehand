@@ -17,10 +17,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub(crate) mod approval;
-mod driver;
+mod carrier;
 mod listing;
 mod place;
-pub(crate) use driver::{approve, revise, start, stop};
+pub(crate) use carrier::{approve, revise, start, stop};
 pub(crate) use listing::*;
 use place::ended;
 pub(crate) use place::{Placed, fail, release, request, stop_queued, submit, submit_told};
@@ -30,7 +30,7 @@ pub(crate) struct Tasks {
     /// Every task kept, unfinished or history. Empty until the boot read lands.
     tasks: Vec<Task>,
     /// Runs under way, by their task's id; a check's has no session.
-    live: HashMap<String, driver::Driven>,
+    live: HashMap<String, carrier::Driven>,
     queue: queue::Queue,
     /// Where each queued task was asked for, to start it there.
     asked_in: HashMap<String, AnyWindowHandle>,
@@ -145,8 +145,8 @@ impl Tasks {
         }
     }
 
-    /// The driver running task `id`'s run, if one is.
-    fn driven(&self, id: &str) -> Option<&driver::Driven> {
+    /// The carrier running task `id`'s run, if one is.
+    fn driven(&self, id: &str) -> Option<&carrier::Driven> {
         self.live.get(id)
     }
 
@@ -469,7 +469,7 @@ pub(crate) fn stop_task(id: &str, cx: &mut App) {
         return stop_queued(id, cx);
     }
     if t.live.contains_key(id) {
-        driver::stop_task(id, cx);
+        carrier::stop_task(id, cx);
     }
 }
 
@@ -531,7 +531,7 @@ pub(crate) fn drive_check(id: String, window: AnyWindowHandle, cx: &mut App) {
     // Counted from what landed, as a session's run is.
     let from = run.pinned_count();
     let first = run.resume();
-    driver::start_check(id, run, first, from, window, cx);
+    carrier::start_check(id, run, first, from, window, cx);
 }
 
 /// Let go of the finished tasks past what each project keeps: their files,

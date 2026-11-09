@@ -26,7 +26,7 @@ worktree's branch to the forge. The words are defined in [CONTEXT.md](../CONTEXT
 | Marks pinned as commits under `refs/onehand/` | [crates/core/src/task/marks.rs](../crates/core/src/task/marks.rs) |
 | The run's drive: what it decides | [crates/core/src/task/drive.rs](../crates/core/src/task/drive.rs) |
 | A visit's settings put in force before its first prompt | [crates/core/src/task/drive/settings.rs](../crates/core/src/task/drive/settings.rs) |
-| The run's carrier: what the app carries out for it | [crates/app/src/task/driver.rs](../crates/app/src/task/driver.rs) |
+| The run's carrier: what the app carries out for it | [crates/app/src/task/carrier.rs](../crates/app/src/task/carrier.rs) |
 | Each step's settings judged before a start | [crates/core/src/preflight/settings.rs](../crates/core/src/preflight/settings.rs) |
 | The `Tasks` global: requests, the queue, unfinished tasks | [crates/app/src/task.rs](../crates/app/src/task.rs) |
 | Workflows on offer | [crates/app/src/workflow.rs](../crates/app/src/workflow.rs) |
@@ -262,11 +262,11 @@ the run's history, capped at 200.
 
 ## The drive and its carrier
 
-The run's drive decides in core, and its carrier acts in the app. `onehand_core::task::drive::Drive` is told what
+The run's drive decides in core, and its carrier acts in the app. `onehand_core::task::drive::RunDrive` is told what
 happened (an `Input`) with the run's session as it stands, and answers with what to do (`Effect`s):
 pin, measure, read the work, send a prompt, run a command, call the forge, watch the status checks,
 arm the clock, say something, save, finish. It has no timer or I/O of its own, so every rule below
-is tested in core. The carrier (`crate::task::driver`) maps the session's events onto inputs,
+is tested in core. The carrier (`crate::task::carrier`) maps the session's events onto inputs,
 carries out the effects and brings their results back. The mode and the settings picks are made on
 the session's `Chat` by the drive itself, since the next pick is planned against what is still
 waiting.

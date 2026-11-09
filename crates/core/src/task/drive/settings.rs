@@ -8,7 +8,7 @@
 //! One the step only takes from the start and the agent no longer offers is
 //! left as the agent has it.
 
-use super::{Drive, Effect};
+use super::{Effect, RunDrive};
 use crate::chat::{Chat, MODE_SELECTOR};
 use crate::preflight::{found_late, About};
 use crate::workflow::{next, Next, Pick, Settings};
@@ -25,7 +25,7 @@ pub(super) struct Picking {
 }
 
 /// The id of the run's open visit.
-fn open_visit(d: &Drive) -> Option<u32> {
+fn open_visit(d: &RunDrive) -> Option<u32> {
     d.run
         .visits()
         .last()
@@ -35,7 +35,7 @@ fn open_visit(d: &Drive) -> Option<u32> {
 
 /// What the open visit runs with: its step's own settings over the run's
 /// starting ones, and the groups the step names itself.
-fn wanted(d: &Drive) -> (Settings, Vec<String>) {
+fn wanted(d: &RunDrive) -> (Settings, Vec<String>) {
     let start = d.run.started_with.clone().unwrap_or_default();
     d.run
         .current()
@@ -51,7 +51,7 @@ fn wanted(d: &Drive) -> (Settings, Vec<String>) {
 /// Fail the run on a setting, `why`. A run of an issue pauses unattended
 /// runs too: every later one would fail the same way, each on a fresh issue.
 /// A person's run from the launcher does not.
-fn fail(d: &mut Drive, why: String, chat: &mut Chat, now: Instant, fx: &mut Vec<Effect>) {
+fn fail(d: &mut RunDrive, why: String, chat: &mut Chat, now: Instant, fx: &mut Vec<Effect>) {
     if d.issue {
         let fix = format!(
             "the step settings of workflow `{}` are fixed",
@@ -71,7 +71,7 @@ fn fail(d: &mut Drive, why: String, chat: &mut Chat, now: Instant, fx: &mut Vec<
 /// settings are in force. Otherwise it is held until they are, or the run
 /// has failed on one.
 pub(super) fn settle(
-    d: &mut Drive,
+    d: &mut RunDrive,
     text: String,
     chat: &mut Chat,
     now: Instant,
@@ -92,7 +92,7 @@ pub(super) fn settle(
 /// pick is answered, plan the next, and send the held prompt when there is
 /// none. Run after everything the same answer emitted, so a refusal has
 /// already failed the run and left nothing to plan.
-pub(super) fn answered(d: &mut Drive, chat: &mut Chat, now: Instant, fx: &mut Vec<Effect>) {
+pub(super) fn answered(d: &mut RunDrive, chat: &mut Chat, now: Instant, fx: &mut Vec<Effect>) {
     // The run's own mode answered and not refused: nothing more of it.
     if !chat.pick_waiting(MODE_SELECTOR) {
         d.mode_out = None;
@@ -125,7 +125,7 @@ pub(super) fn answered(d: &mut Drive, chat: &mut Chat, now: Instant, fx: &mut Ve
 /// still out, or of a pick the run did not send (a person's in the
 /// composer, those restored on reconnecting), is not the run's.
 pub(super) fn refused(
-    d: &mut Drive,
+    d: &mut RunDrive,
     chat: &mut Chat,
     why: &str,
     now: Instant,
@@ -168,7 +168,7 @@ pub(super) fn refused(
 /// setting not offered, or, with nothing left to pick, record what the
 /// visit runs with and give the prompt back.
 fn plan(
-    d: &mut Drive,
+    d: &mut RunDrive,
     mut picking: Picking,
     chat: &mut Chat,
     now: Instant,

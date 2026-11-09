@@ -420,7 +420,7 @@ impl Shell {
 
     /// Drive task `id`, whose place it now holds: show its project, adding
     /// it back if it left the workspace, start a session on it, and hand both
-    /// to the driver, which starts the task's last run or carries it on from
+    /// to the run's carrier, which starts the task's last run or carries it on from
     /// the step it was at. One that cannot start stays as it was, and its
     /// place passes on.
     /// Says why when it did not start.
@@ -480,7 +480,7 @@ impl Shell {
         };
         if task.source == Source::Check {
             let handle = window.window_handle();
-            // Deferred, as the driver is below: the check reaches into the
+            // Deferred, as the run's carrier is below: the check reaches into the
             // global the shell may be reading from.
             cx.defer(move |cx| crate::task::drive_check(id, handle, cx));
             return Ok(());
@@ -558,7 +558,7 @@ impl Shell {
         // pinned now rather than taken as made.
         let pinned = run.pinned_count();
         let first = run.resume();
-        // Deferred: the driver reaches into the session and the global the
+        // Deferred: the run's carrier reaches into the session and the global the
         // shell is reading from while this runs.
         let handle = window.window_handle();
         cx.defer(move |cx| crate::task::start(uid, &session, handle, id, run, first, pinned, cx));

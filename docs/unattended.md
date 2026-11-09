@@ -58,7 +58,7 @@ gets without code of its own.
 
 | What a run needs | What answers it |
 |---|---|
-| Run the steps and judge each turn by its gates | the workflow engine (`onehand_core::workflow::Run`) and the run's drive (`onehand_core::task::drive`) and carrier (`crate::task::driver`) |
+| Run the steps and judge each turn by its gates | the workflow engine (`onehand_core::workflow::Run`) and the run's drive (`onehand_core::task::drive`) and carrier (`crate::task::carrier`) |
 | Keep the run, list it, stop, resume and retry it | a task (`onehand_core::task::Task`, `Source::Issue`) on the Tasks page |
 | One task at a time in a checkout | `crate::task::request` and its queue |
 | A session on a named project, connected and not shown | `Shell::run_unattended` → `Workspace::add_transient_root` + `ChatPane::open_unshown` — **not** `Shell::start_session`, see *A run does not take the window* |
@@ -91,7 +91,7 @@ background executor, one interval in the config, no cron expressions.
 | `crates/app/src/unattended/report.rs` | `spec_for`, `pause`, `started`, `opening`, and the end: `keep`, `card_question`, `ended`, `deliver`, `deliver_all` |
 | `crates/app/src/task.rs` | `freed`, which calls `unattended::ended`; `update_issue`, `undelivered` |
 | `crates/app/src/task/listing.rs` | `slot_holders`, `issues_waiting`, `live_issues`, `issue_tasks` |
-| `crates/app/src/task/driver.rs` | `came_up` (the mode, the note on the issue), the clock, the take-over |
+| `crates/app/src/task/carrier.rs` | `came_up` (the mode, the note on the issue), the clock, the take-over |
 | `crates/app/src/shell/workflows.rs` | `drive_task`, which brings an issue's run up off screen |
 | `crates/core/src/config.rs` | `UnattendedConfig` |
 | `crates/core/src/workspace.rs` | `ProjectRoot::transient`, left out by `to_config`, and `add_transient_root`, which adds one with its session without selecting it |

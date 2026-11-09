@@ -18,7 +18,7 @@ pub(crate) fn ref_name(task: &str, run: &str, visit: u32, end: bool) -> String {
 }
 
 /// The refs of every boundary of `run`, a run of task `task`, from the
-/// `from`th on: the ones a driver that pinned `from` of them has still to pin.
+/// `from`th on: the ones a drive that pinned `from` of them has still to pin.
 pub fn refs_from(task: &str, run: &Run, from: usize) -> Vec<String> {
     run.boundaries()
         .into_iter()

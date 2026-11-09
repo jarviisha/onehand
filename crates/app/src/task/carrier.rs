@@ -1,6 +1,6 @@
-//! The one driver of every run, as the app carries it out: what the run's
-//! session says goes to its [`Drive`], which decides, and what the drive
-//! says to do is done here — the marks pinned, the prompt sent, the command
+//! The run's carrier: what the run's session says, and what a person
+//! presses, goes to its [`RunDrive`], which decides, and what the drive says
+//! to do is done here — the marks pinned, the prompt sent, the command
 //! run, the forge called, the clock armed — and what came of it goes back.
 //!
 //! Every rule is the drive's (`onehand_core::task::drive`); nothing here
@@ -11,7 +11,8 @@ use super::Tasks;
 use crate::chat::session::{ChatEvent, ChatSession, note};
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Task, WeakEntity};
 use gpui_component::WindowExt as _;
-use onehand_core::task::drive::{Drive, Effect, Input, link};
+use onehand_core::chat::Chat;
+use onehand_core::task::drive::{Effect, Input, RunDrive, link};
 use onehand_core::task::{Approval, Source, marks};
 use onehand_core::workflow::{Action, Facts, Mark, Outcome, Run, run_command_blocking};
 use std::sync::Arc;
@@ -22,7 +23,7 @@ mod forge;
 
 /// A run under way, on a session or, for a check, on none.
 pub(super) struct Driven {
-    drive: Drive,
+    drive: RunDrive,
     /// The session the run is driven on, and its uid; neither for a check.
     session: Option<(u64, WeakEntity<ChatSession>)>,
     /// The window the session is in, or the check was asked from.
@@ -158,7 +159,7 @@ pub(crate) fn start_check(
     window: AnyWindowHandle,
     cx: &mut App,
 ) {
-    let (drive, effects) = Drive::start(
+    let (drive, effects) = RunDrive::start(
         task.clone(),
         run,
         first,
@@ -186,29 +187,31 @@ pub(crate) fn start_check(
 
 /// A person approved what they read, as `approval` names it.
 pub(crate) fn approve(approval: Approval, cx: &mut App) {
-    feed(&approval.task, Input::Approved { at: approval.at }, cx);
+    let at = approval.at;
+    give(&approval.task, cx, move |d, chat, now| {
+        d.approve(at, chat, now)
+    });
 }
 
 /// A person sent what they read, as `approval` names it, back with `note`.
 pub(crate) fn revise(approval: Approval, note: String, cx: &mut App) {
-    let input = Input::Revised {
-        at: approval.at,
-        note,
-    };
-    feed(&approval.task, input, cx);
+    let at = approval.at;
+    give(&approval.task, cx, move |d, chat, now| {
+        d.revise(at, note, chat, now)
+    });
 }
 
 /// A person pressed Stop on the run driven on session `uid`: the turn is
 /// cancelled and the run ends.
 pub(crate) fn stop(uid: u64, cx: &mut App) {
     if let Some(task) = cx.try_global::<Tasks>().and_then(|t| t.task_on(uid)) {
-        feed(&task, Input::Stop, cx);
+        stop_task(&task, cx);
     }
 }
 
 /// A person pressed Stop on task `task`'s run, a check's included.
 pub(super) fn stop_task(task: &str, cx: &mut App) {
-    feed(task, Input::Stop, cx);
+    give(task, cx, |d, chat, now| d.stop(chat, now));
 }
 
 /// Read task `id`'s run. Apart from [`with`] because every event the session
@@ -228,6 +231,16 @@ pub(super) fn with<R>(id: &str, cx: &mut App, act: impl FnOnce(&mut Driven) -> R
 /// Tell task `id`'s run what happened, with its session as it stands, and do
 /// what it says.
 pub(super) fn feed(id: &str, input: Input, cx: &mut App) {
+    give(id, cx, move |d, chat, now| d.handle(input, chat, now));
+}
+
+/// Give task `id`'s run `command`, with its session as it stands, and do
+/// what it says.
+fn give(
+    id: &str,
+    cx: &mut App,
+    command: impl FnOnce(&mut RunDrive, Option<&mut Chat>, Instant) -> Vec<Effect>,
+) {
     if !cx.has_global::<Tasks>() {
         return;
     }
@@ -236,11 +249,14 @@ pub(super) fn feed(id: &str, input: Input, cx: &mut App) {
         let d = t.live.get_mut(id)?;
         Some(match d.session() {
             Some(session) => session.update(cx, |session, cx| {
-                let (effects, asked) = link::on(&mut d.drive, input, Some(&mut session.chat), now);
+                let (effects, asked) =
+                    link::command(&mut d.drive, Some(&mut session.chat), |drive, chat| {
+                        command(drive, chat, now)
+                    });
                 session.perform(asked, cx);
                 effects
             }),
-            None => d.drive.on(input, None, now),
+            None => command(&mut d.drive, None, now),
         })
     });
     if let Some(effects) = effects {

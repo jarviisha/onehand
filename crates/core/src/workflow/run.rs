@@ -34,7 +34,7 @@ pub struct Transition {
     pub why: String,
 }
 
-/// What the driver of a run does next.
+/// What the drive of a run does next.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     /// Read the [`Mark`] of the work and report it to [`Run::measured`].
@@ -587,7 +587,7 @@ impl Run {
         self.finish(Outcome::Stopped(stop))
     }
 
-    /// The driver could not go on, for `why`, which was of `kind`.
+    /// The drive could not go on, for `why`, which was of `kind`.
     pub fn failed(&mut self, why: String, kind: Failure) -> Action {
         if self.over() {
             return Action::Idle;

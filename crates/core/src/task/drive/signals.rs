@@ -1,10 +1,10 @@
-//! What a [`super::Drive`] is told, and what it answers with.
+//! What a [`super::RunDrive`] is told, and what it answers with.
 
-use crate::workflow::{ApprovalAt, CommandResult, Facts, Mark, Outcome, PrOpened, Seen};
+use crate::workflow::{CommandResult, Facts, Mark, Outcome, PrOpened, Seen};
 use std::path::PathBuf;
 use std::time::Duration;
 
-/// What happened, as the driver is told it.
+/// What happened, as the drive is told it.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Input {
     /// The session's transcript grew.
@@ -22,17 +22,6 @@ pub enum Input {
     SessionGone,
     /// Picks were answered: plan the next.
     PicksAnswered,
-    /// A person approved what they read at `at`.
-    Approved {
-        at: ApprovalAt,
-    },
-    /// A person sent what they read at `at` back with `note`.
-    Revised {
-        at: ApprovalAt,
-        note: String,
-    },
-    /// A person pressed Stop.
-    Stop,
     /// The marks asked for landed on this commit, or did not.
     Pinned(Result<String, String>),
     /// Where the step's work starts, or why it could not be read.
@@ -85,7 +74,7 @@ pub enum Effect {
     ArmClock(Duration),
     /// Report this input once the event being handled is over.
     Defer(Input),
-    /// Write the run, as [`Drive::run`] has it, into its task.
+    /// Write the run, as [`RunDrive::run`] has it, into its task.
     Save,
     /// The run waits on a person, or on its status checks: its issue's slot
     /// is free meanwhile.

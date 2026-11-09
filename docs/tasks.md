@@ -257,7 +257,7 @@ an async runtime to core or a GUI dependency to it.
 crates/core (GUI-free, blocking)          crates/app (GPUI)
 ─────────────────────────────────         ──────────────────────────────────────
 workflow::template / validate / store     settings: Workflows
-workflow::run   (the engine;              task::driver      ── session events → reports
+workflow::run   (the engine;              task::carrier     ── session events → reports
                  workflow::Run)                 │  (unchanged in kind: still the only one)
 task            (Task, Run list,                ▼
                  outcome, group rule)     Tasks global on Shared ── one per process

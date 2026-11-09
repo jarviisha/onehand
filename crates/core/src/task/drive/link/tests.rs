@@ -51,7 +51,7 @@ fn run() -> (String, Run, Action) {
 /// The two drives and what joins them: the run's effects on its session go
 /// through the link, the session's signals come back through it.
 struct Pair {
-    drive: Drive,
+    drive: RunDrive,
     session: SessionDrive,
     rx: Rx,
     now: Instant,
@@ -76,7 +76,7 @@ impl Pair {
 
     /// Tell the run `input`, and carry out what it says on its session.
     fn on(&mut self, input: Input) -> Vec<Effect> {
-        let (fx, asked) = on(&mut self.drive, input, Some(&mut self.session), self.now);
+        let (fx, asked) = handle(&mut self.drive, input, Some(&mut self.session), self.now);
         self.send(asked);
         self.carry(fx)
     }

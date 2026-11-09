@@ -56,7 +56,7 @@ impl Run {
 
     /// How many boundaries count as pinned: every one up to the last whose
     /// mark landed. One after it, a mark that failed or that the app quit
-    /// before it landed, is pinned again by the next driver.
+    /// before it landed, is pinned again by the next drive.
     pub fn pinned_count(&self) -> usize {
         let landed: Vec<bool> = self
             .visits

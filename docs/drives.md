@@ -19,8 +19,8 @@ phase; the order, and what each phase moves, is in
 | UI | `crates/app`, `crates/ui`, the Workbench modes' views | everything below, to read | the order of anything |
 
 The first drives are `onehand_core::chat::drive::SessionDrive`, one session, and
-`onehand_core::task::drive::Drive`, one run. `ChatSession` (`crates/app/src/chat/session.rs`)
-is the session's carrier, and `crates/app/src/task/driver.rs` the run's.
+`onehand_core::task::drive::RunDrive`, one run. `ChatSession` (`crates/app/src/chat/session.rs`)
+is the session's carrier, and `crates/app/src/task/carrier.rs` the run's.
 
 ## Rules
 
@@ -180,7 +180,7 @@ once, requests reaching the agent in order, a failed save reaching the drive, th
 its cancel at the stream's end, and a close with a save in flight and a wait armed. Still
 untested: `SendCode`'s late answer and the pane's half of the session (`ChatPane::carry`),
 `SaveTitle` (written on the ordered writer's own thread, which GPUI's test scheduler does not
-wait for), deferred work, and the run's carrier (`crates/app/src/task/driver.rs`), which has no
+wait for), deferred work, and the run's carrier (`crates/app/src/task/carrier.rs`), which has no
 contract tests yet.
 
 ### 12. A model does no I/O and reads no clock
