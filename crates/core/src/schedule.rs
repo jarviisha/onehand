@@ -11,6 +11,7 @@
 //! window and a project no window holds simply waits.
 
 mod cron;
+pub mod drive;
 
 pub use cron::{parse, Cron};
 
@@ -337,6 +338,32 @@ pub fn brief(s: &Schedule) -> Brief {
             instructions: None,
         },
     }
+}
+
+/// What a look moved, onto `kept` as the file holds it now: each looked
+/// schedule's `last_fired` and `said`, and nothing else, so a hand edit
+/// made during the look stands.
+pub fn merge_looked(kept: &mut [Schedule], looked: &[Schedule]) {
+    for kept in kept {
+        if let Some(looked) = looked.iter().find(|s| s.id == kept.id) {
+            kept.last_fired = looked.last_fired;
+            kept.said = looked.said.clone();
+        }
+    }
+}
+
+/// Switch schedule `id` of `all` on (since `since`) or off, or say why it
+/// cannot be.
+pub fn switch(all: &mut [Schedule], id: &str, on: bool, since: u64) -> Result<(), String> {
+    let s = all
+        .iter_mut()
+        .find(|s| s.id == id)
+        .ok_or("that schedule is no longer in the file")?;
+    s.on = on;
+    if on {
+        s.on_since = since;
+    }
+    Ok(())
 }
 
 /// Why schedule `s` cannot be saved, a sentence each; none when it can.
