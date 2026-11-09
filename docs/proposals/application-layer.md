@@ -103,6 +103,7 @@ row is re-audited at the start of its phase. Line counts are at `6f92ab49`.
 
 | Area | Core has | App decides today | Target drive |
 |---|---|---|---|
+| Hosts: what phase 6 left | `HostDrive`, `host::drive`'s rules on a restart and a back wait | `shell/host_project.rs` (`HostFlow`, each window's share of a host's waits), `hosts::attach_waiting` (a busy host waited on, then attached again), `shell/host_end.rs` | `HostDrive`, with the session lifecycle (phase 8) |
 | Session: what phase 6 left | `SessionDrive` (every change to a session, a host's lost connection, what it waits on its host for) | `chat/pane/sessions.rs` subscriber (the archive refresh after a turn; the `Disconnected` arm telling a fork that never opened, a host out of reach and a lost agent apart) | the session lifecycle (phase 8) |
 | Session: telling (phase 7) | `attention` (`telling`, `Away`), `remote::Chats::announcement` | `chat/pane/bridge.rs` (`turn_ended_detached`, `awaiting_user_detached`, `link_lost_detached`), desktop notifications | `SessionDrive` signals, with `Input::Shown` |
 | Session: lifecycle (phase 8) | `SessionDrive::resume`, `fork`, `take_snapshot`, the workspace tree | `chat/session.rs` (`spawn`), `chat/pane/sessions.rs` (phases, `close`), `shell/sessions.rs` (946 lines), `shell/fork.rs` | a workspace drive |
@@ -120,8 +121,10 @@ row is re-audited at the start of its phase. Line counts are at `6f92ab49`.
 `onehand-io` holds the runtimes onehand's I/O runs on, held to core's check (`cargo tree -p
 onehand-io -i gpui-pre` fails, in CI). Phase 3 moved the agent runtime into it (`onehand_io::acp`);
 what an agent is given to reach onehand's tools stays the front end's, through `acp::Pass`. Phase
-6 moved the attach to a host and every call over it (`onehand_io::host`); what follows from an
-attach is `HostDrive`'s. The remote channel's runtime (`remote.rs`) is tangled with `Shared` and
+6 moved the attach to a host and the front end's calls over it (`onehand_io::host`); what follows
+from an attach is `HostDrive`'s. An offloaded project's errands call the host from a blocking body
+in core, polling the runtime's handle the front end passes them, as a host's disk already did
+(`disk::HostDisk`). The remote channel's runtime (`remote.rs`) is tangled with `Shared` and
 GPUI contexts, so its runtime half moves with phase 7. Disk writes and git calls stay blocking functions in core. Core keeps its rule of
 dictating no runtime; this crate is where the runtime is chosen.
 
@@ -252,7 +255,7 @@ Left for later:
   ask waiting on one made by itself and attaching again should it fail, which landing is heard,
   what is known of each host, and the busy and back waits with their clocks and backoff. Its
   carrier (`crates/app/src/hosts.rs`) holds one shared future per attempt, so callers keep awaiting
-  as before (D19). The attach and every call over it are `onehand_io::host` (D5); `HostFailure`
+  as before (D19). The attach and the front end's calls over it are `onehand_io::host` (D5); `HostFailure`
   and the waiting line are core's. The shell's rules on a restart and a back wait
   (`back_failure`, `needs_restart`, `said_by_wait`, `restart_failure`) are core's too.
 - A host's lost connection is decided in the session's drive (D9): the pump tells it how the
@@ -270,6 +273,10 @@ Left for later:
 Left for later:
 - Each window's share of a host's waits (`HostFlow`, `crates/app/src/shell/host_project.rs`) keeps
   its bookkeeping in the shell; the rules it follows are core's.
+- `hosts::attach_waiting` still waits out a busy host and attaches again in the carrier, for the
+  terminal dock, the Workbench and the folder list.
+- The pane still folds a lost agent's end into a session whose wait for its host failed
+  (`host_back_failed`, `host_wait_failed`): the session's lifecycle, phase 8's.
 - How a host session begins (`offline_start`, `host_restart`, `crates/app/src/chat/session/host.rs`)
   and *End on <host>* (`shell/host_end.rs`) are the session's lifecycle, phase 8's.
 - The pane's subscriber still tells a fork that never opened, a host out of reach and a lost agent
