@@ -61,7 +61,7 @@ impl Default for Tasks {
 
 impl Tasks {
     /// No task yet, with their files kept in `dir`.
-    fn in_dir(dir: PathBuf) -> Self {
+    pub(crate) fn in_dir(dir: PathBuf) -> Self {
         Self {
             drive: TasksDrive::default(),
             live: HashMap::new(),

@@ -766,3 +766,6 @@ pub(super) fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
     })
     .detach();
 }
+
+#[cfg(test)]
+mod tests;

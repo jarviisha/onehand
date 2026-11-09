@@ -397,3 +397,6 @@ pub(crate) fn put(all: Vec<Schedule>, cx: &mut App) {
     cx.update_global::<Clock, _>(|c, _| c.all = all);
     cx.refresh_windows();
 }
+
+#[cfg(test)]
+mod tests;
