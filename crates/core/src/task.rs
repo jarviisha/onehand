@@ -181,6 +181,21 @@ impl Task {
         }
     }
 
+    /// A task of `template` on `brief` that works `issue`, its one run not
+    /// started.
+    pub fn of_issue(
+        id: String,
+        template: Template,
+        brief: Brief,
+        setup: Setup,
+        issue: IssueSource,
+    ) -> Self {
+        Self {
+            source: Source::Issue(issue),
+            ..Self::new(id, template, brief, setup)
+        }
+    }
+
     /// A task that runs the project's check `command` once: one command step
     /// that ends the run failed when it fails. Its template is made here,
     /// never saved, and needs no validating.

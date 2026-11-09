@@ -262,14 +262,16 @@ workflow::run   (the engine;              task::carrier     ── the run's car
                  workflow::Run)                 │  session events → the run's drive
 task::drive     (RunDrive: one run)             ▼
 task::tasks     (TasksDrive: every task,  Tasks global ── one per process: carries
-                 the queue, a run's end)        │  the tasks' drive, holds the runs'
-task            (Task, Run list,                ▼
-                 outcome, group rule)     Tasks page in the agent pane, rail row
-task::queue     (who may run where)
+                 the queue, a run's end)        │  the tasks' drive and unattended
+task            (Task, Run list,                │  runs', holds the runs'
+                 outcome, group rule)           ▼
+task::queue     (who may run where)       Tasks page in the agent pane, rail row
 task::files     (Writer, one thread)
 task::marks     (commit objects + refs)
 unattended      (the issue a task works,
-                 its branch and report)
+                 its branch and report;
+                 UnattendedDrive and its
+                 link to the tasks)
 ```
 
 ### Core
@@ -388,13 +390,16 @@ migration it protects.
 ### The app
 
 - **One `Tasks` global** (`crates/app/src/task.rs`) carries the tasks' drive, which holds every
-  task, the queue and the window each queued task was asked from, and holds the runs under way by
+  task, the queue and the window each queued task was asked from, holds unattended runs' drive
+  beside it, joined to it for each call (`unattended::link`), and holds the runs under way by
   task id (each with its session's uid, if it has a session) and what watches the tasks still
   draining. `Workflows` keeps only the workflows on offer.
-- **Every start goes through `task::request`** (`TasksDrive::request`), given the window to speak
-  in (a handle, so nothing that starts a task needs to be inside a window): a new task through
-  `task::submit`, which keeps it and then asks (the launcher, *Run check*, an unattended claim);
-  Retry, Resume and a review's answer ask for an existing one. A free place starts the task at once
+- **Every start goes through `task::request`** (`TasksDrive::request`, through
+  `unattended::link::Joined::request`, which holds an issue's task to the cap on unattended runs),
+  given the window to speak in (a handle, so nothing that starts a task needs to be inside a
+  window): a new task through `task::submit`, which keeps it and then asks (the launcher, *Run
+  check*); an unattended claim's task is kept and asks through the same link; Retry, Resume and a
+  review's answer ask for an existing one. A free place starts the task at once
   (`Shell::drive_task`, as `TasksDrive::begin` says); a taken one queues it and says so in a
   notification. A task already running or waiting is left alone.
 - **The run's drive and carrier stay the only code that turns session events into reports.** They
@@ -430,8 +435,10 @@ migration it protects.
   leaves the drive, and has its marks dropped off the UI thread; a failure is logged. How many went is counted
   per project since boot only.
 - **An unattended run is a task of its own source** (`Source::Issue`). Its session is started off
-  screen, its run is driven by the same drive and carrier, and when its place is freed the issue is told how
-  it ended through the reports the task keeps (`crate::unattended::ended`).
+  screen, its run is driven by the same drive and carrier, and its end is kept as a report in the
+  write that keeps the run (`IssueSource::keep_report`). When its place is freed the issue is told
+  how it ended through the reports the task keeps (`UnattendedDrive::ended`, reached through
+  `unattended::link`).
 - **After a restart nothing starts by itself.** A task that was running or queued comes back
   interrupted, under *Needs attention*, and waits for Resume.
 - **Worktrees are never removed unasked.** A task's worktree may hold unpushed commits. Once its

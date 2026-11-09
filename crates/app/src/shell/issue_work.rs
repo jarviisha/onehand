@@ -165,7 +165,7 @@ impl Shell {
             .collect();
         // The rule the project menu offers *Work an issue…* by: a repository,
         // not a run's own worktree, with unattended runs set up.
-        let set_up = crate::state::Shared::global(cx).unattended.is_some();
+        let set_up = crate::unattended::set_up(cx);
         let offered: Vec<_> = self
             .window
             .workspace

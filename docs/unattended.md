@@ -84,13 +84,16 @@ background executor, one interval in the config, no cron expressions.
 | `crates/core/src/workflow/builtin/issue.toml` | *Work an issue*, the workflow runs use by default |
 | `crates/core/src/connector.rs` | `Connector`, what a run asks of the system a project lives on, and `serving`, which picks the first one that takes a project |
 | `crates/github/src/lib.rs` | the `gh` calls, the `origin` and ssh-alias check, and the account check |
+| `crates/core/src/unattended/drive.rs` (`claiming.rs`, `settings.rs`, `reports.rs`, `blocking.rs`) | `UnattendedDrive`, what happens next: the tick on its clock, the look and the search, the recheck before a claim, the claim and the task it is kept as, a pick refused before its claim, a search asked for now, the cap and the runs still `starting`, a waiting or answered run, the pause, a run's end and its reports sent once each; the bodies its effects run off the UI loop are `blocking` |
+| `crates/core/src/unattended/link.rs` | `Joined`, where unattended runs and the tasks meet: every start held to the cap (`Joined::request`), a claim kept as a task, a review answered, an issue task asking for its place, its end and what it owes its issue |
+| `crates/core/src/task/tasks/link.rs` | `Seen`: the tasks with the runs under way, what each is doing and who holds a slot (`holds_slot`) |
 | `crates/core/src/process.rs` | `output_within`: a command with a limit on its exit *and* its output, stopped with its whole process group |
 | `crates/core/src/task/history.rs` | `over_cap`, which never lets go of a task whose report is unsent |
-| `crates/app/src/unattended.rs` | the tick, which gathers what core decides with and hands it off the UI loop; the cap (`at_cap`, the tasks still `starting`), `waiting` |
-| `crates/app/src/unattended/launch.rs` | `Landed`, a claim paired with the window it was picked in; `start`, which keeps the task and asks for its place; `workflow` and `found`, which read the library |
-| `crates/app/src/unattended/report.rs` | `spec_for`, `pause`, `started`, `opening`, and the end: `keep`, `card_question`, `ended`, `deliver`, `deliver_all` |
-| `crates/app/src/task.rs` | `freed`, which calls `unattended::ended`; `update_issue`, `undelivered` |
-| `crates/app/src/task/listing.rs` | `slot_holders`, `issues_waiting`, `live_issues`, `issue_tasks` |
+| `crates/app/src/unattended.rs` | the carrier: the clock, the look, the claims and the reports carried out off the UI loop, given the projects switched on across every window, the window holding a claimed project, and the workflows and agents on offer; the reads the rows and Settings draw |
+| `crates/app/src/unattended/launch.rs` (`pick.rs`, `answer.rs`) | what a person in a window starts: `start_picked`, `look_now`, and `read_review`, which reads what answering a review is judged on |
+| `crates/app/src/unattended/report.rs` | `spec_for`, `opening`, and `teardown`, a run's project kept or dropped in every window |
+| `crates/app/src/task.rs` | holds the unattended drive beside the tasks' (`set_unattended`, `with_unattended`), joined for each call (`Tasks::joined`) |
+| `crates/app/src/task/listing.rs` | `live_issues`, `issue_tasks` |
 | `crates/app/src/task/carrier.rs` | `came_up` (the mode, the note on the issue), the clock, the take-over |
 | `crates/app/src/shell/workflows.rs` | `drive_task`, which brings an issue's run up off screen |
 | `crates/core/src/config.rs` | `UnattendedConfig` |
@@ -111,8 +114,9 @@ background executor, one interval in the config, no cron expressions.
 
 The split is the one the crate boundary already forces: everything that can be
 decided without a window — which issue, what branch, what the run is asked, what
-the report says, how long `"30m"` is — is core's and is tested there; the app
-holds the parts that need a `Window`, an entity or a timer.
+the report says, how long `"30m"` is, and what happens next — is core's and is
+tested there; the app carries out the drive's effects with what needs a
+`Window`, an entity, a thread or a timer.
 
 ## The name
 
@@ -208,7 +212,7 @@ in the Issues tab's footer), a run looks at the project's own issues alone — t
 forge's are already among them — syncing first so a label added on the forge is
 seen. The claim takes the label off here and the sync takes it off the forge;
 every note is also a comment on the forge's issue, except the one naming the
-run's session (`unattended::started`), which only an issue kept here has
+run's session (`UnattendedDrive::came_up`), which only an issue kept here has
 anywhere to keep and which means nothing on the forge. An issue brought in from
 the forge is taken only if the forge says the user wrote it, the rule the
 forge's own search keeps.
@@ -372,12 +376,12 @@ workflow there is refused before the claim, said as this project's problem
 rather than as something stopping every run.
 
 **`at_once` runs work at a time**, picked and found alike, counted across every
-window (`task::slot_holders`: issue tasks running or queued). A run waiting on
+window (`Seen::holds_slot`: issue tasks running or queued). A run waiting on
 a card or an approval does not count, and starting to wait looks for the next
-issue at once (`unattended::waiting`) rather than at the next tick. A pick while
+issue at once (`UnattendedDrive::waiting`) rather than at the next tick. A pick while
 the cap is reached is refused, and so is a Resume or a Retry of an issue's task
-from the Tasks page (`unattended::over_cap`, asked in `task::request`, which
-every start goes through); a refused Retry drops the run it was about to start.
+from the Tasks page (`UnattendedDrive::over_cap`, asked in
+`unattended::link::Joined::request`, which every start goes through); a refused Retry drops the run it was about to start.
 *Look for an issue now*, in Settings ▸ Workspace, runs the search at once and
 always says what came of it: nothing switched on, the cap reached, what blocks
 every run, or that no issue of yours carries the label.
@@ -398,12 +402,12 @@ tick or a pick, and a Resume or a Retry of an issue's task is held to it as to
 parked or answered for it: a person's answer is what frees one, and the room
 it makes is there at once: answering a card or an approval of an issue's run
 looks for the next issue then, rather than at the next tick
-(`unattended::answered`).
+(`UnattendedDrive::answered`).
 
 **The transcript is the run's log**, in short lines, one fact each. A remark in
 the transcript is one line down the middle of the column, cut where the column
 ends. A run opens on which issue and how it was chosen, then the branch and what
-it was cut from, then the worktree's folder (`unattended::opening`). The run's drive
+it was cut from, then the worktree's folder (`unattended::drive::opening`). The run's drive
 then says when the mode is set, each step, each command, and how the run ended.
 A found run's project is dropped when it ends, so its last line is only read by
 somebody who opened it in time; the report on the issue is the record that
@@ -655,7 +659,7 @@ separate connect timeout: an adapter that never comes up is a run that never
 finishes, and the run's own timeout already bounds that.
 
 **A mode the agent does not offer, or refuses, pauses the feature**, not just the run
-(`unattended::pause`). Every later run would fail the same way on a fresh
+(`UnattendedDrive::pause`). Every later run would fail the same way on a fresh
 issue, each one spending a claim to say so, so the first fails and the tick
 stops until the config is fixed and the app restarted. **That first issue is
 spent only when nothing knew the modes yet**: what the agent offers is learned
@@ -678,9 +682,9 @@ step and pauses nothing.
 ## The report
 
 A run's end is kept as a `PendingReport` the moment the run's drive ends it
-(`unattended::keep`): the run, its outcome, whether it asked its agent anything,
+(`IssueSource::keep_report`, in the very write that keeps the run): the run, its outcome, whether it asked its agent anything,
 what its last step ended on, and the question of a card still waiting. When its
-task has given its place up and pinned its last mark, `unattended::ended` drops
+task has given its place up and pinned its last mark, `UnattendedDrive::ended` drops
 the project unless it was picked by hand or taken over, and the report is sent.
 The verdict is looked for as it is sent, and `report(pending, verdict, branch)`
 is what the issue is told. It opens on the verdict —
@@ -713,11 +717,11 @@ there is no task to keep it in.
 
 **The report is kept before it is sent.** It goes onto the task's
 `IssueSource::unsent`, and the task's file is saved, before anything reaches the
-network: even the verdict is looked for only when the report is sent. `deliver` sends the unsent reports oldest first and drops each only once
+network: even the verdict is looked for only when the report is sent. `UnattendedDrive::deliver` sends the unsent reports oldest first and drops each only once
 the issue has it; the first that fails stops the rest, so the issue never hears
 them out of order. What is left is sent again at every tick, whether or not any
 project is switched on, and at the next
-start (`deliver_all`), and the history cap never removes a task whose report is
+start (`UnattendedDrive::deliver_all`, asked by the tasks' drive once the tasks are read), and the history cap never removes a task whose report is
 unsent. A forge that cannot be reached, or a quit, never loses one.
 
 **What can reach a network cannot hang a run.** Every `gh` call is stopped after
@@ -828,11 +832,13 @@ working.
 
 ## Where it lives
 
-The tick is on `Shared`, one per process, for the reason the remote bridge is
-there: two windows each running a tick would be two agents on one issue. The
-tick therefore has no window, and finds one the way every remote path does — ask
-each window whether it holds the project, and the one that does answers. The
-runs themselves are tasks, in the task global with every other.
+The tick is one per process, for the reason the remote bridge is: two windows
+each running a tick would be two agents on one issue. Its drive is held in the
+task global beside the tasks' drive, since the runs themselves are tasks there
+with every other, and the slots are read from them and their runs. The tick has
+no window, and finds one the way every remote path does — ask each window
+whether it holds the project, and the one that does answers, which the carrier
+tells the drive.
 
 While a run is live the rail shows it: a project for the worktree, with one
 session under it carrying the ordinary signal marks. That is deliberate — an

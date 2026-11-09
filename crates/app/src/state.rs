@@ -104,11 +104,6 @@ pub struct Shared {
     /// owns the receiving end, and dropping that is what tells the channel
     /// nobody is listening.
     pub _remote_pump: Option<gpui::Task<()>>,
-    /// Unattended runs: the tick and the one run it may have going.
-    ///
-    /// Global for the reason the remote bridge is: a tick per window would be
-    /// two agents on one issue. `None` unless the config turned it on.
-    pub unattended: Option<crate::unattended::Unattended>,
     /// What each agent offered when it last came up, by the spec it was
     /// started with, a person's session or a run alike.
     ///
@@ -131,6 +126,18 @@ impl Global for Shared {}
 
 impl Shared {
     pub fn from_config(cfg: AppConfig, config_path: PathBuf) -> Self {
+        Self::with_recents(cfg, config_path, AppState::load())
+    }
+
+    /// The process's state for a test: the default config and no recents,
+    /// so nothing of the person's own state is read.
+    #[cfg(test)]
+    pub(crate) fn for_test() -> Self {
+        let dir = std::env::temp_dir().join("onehand-test-config.toml");
+        Self::with_recents(AppConfig::default(), dir, AppState::default())
+    }
+
+    fn with_recents(cfg: AppConfig, config_path: PathBuf, recents: AppState) -> Self {
         Self {
             appearance: cfg.appearance,
             agents: cfg.agents,
@@ -142,7 +149,7 @@ impl Shared {
             config_saves: Default::default(),
             next_uid: 1,
             windows: Vec::new(),
-            recents: AppState::load(),
+            recents,
             // A runtime this process cannot start means no agent can ever run,
             // which is the whole app -- there is nothing useful to degrade to.
             acp: AcpRuntime::new(crate::control::Token::mint)
@@ -154,7 +161,6 @@ impl Shared {
             remote: crate::remote::RemoteBridge::off(),
             away: false,
             _remote_pump: None,
-            unattended: None,
             offers_seen: Vec::new(),
             agent_checks: Vec::new(),
         }

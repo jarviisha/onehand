@@ -35,13 +35,7 @@ impl<W: Copy> TasksDrive<W> {
                 }));
             }
         }
-        if task.issue().is_some() {
-            fx.push(Effect::Report {
-                task: id.to_string(),
-                run: Box::new(run.clone()),
-                asked,
-            });
-        }
+        self.keep_report(id, &run, asked);
         self.store_run(id, run, &mut fx);
         // A finished schedule's session leaves the rail once the run is let
         // go, so nothing of the run is left listening to it.
@@ -76,6 +70,15 @@ impl<W: Copy> TasksDrive<W> {
         Some(task.clone())
     }
 
+    /// Keep how `run` of task `id` ended for its issue, if it works one, in
+    /// the task itself, so the task's next write holds it before anything is
+    /// sent: `asked` is what a card the run waited on asked.
+    pub(super) fn keep_report(&mut self, id: &str, run: &Run, asked: Option<String>) {
+        if let Some(Source::Issue(issue)) = self.task_mut(id).map(|task| &mut task.source) {
+            issue.keep_report(run, asked);
+        }
+    }
+
     fn store_run(&mut self, id: &str, run: Run, fx: &mut Vec<Effect<W>>) {
         if let Some(task) = self.keep_run(id, run) {
             fx.push(Effect::Save(Box::new(task)));
@@ -106,13 +109,7 @@ impl<W: Copy> TasksDrive<W> {
             return self.release(id, fx);
         };
         run.failed(why, kind);
-        if self.task(id).is_some_and(|task| task.issue().is_some()) {
-            fx.push(Effect::Report {
-                task: id.to_string(),
-                run: Box::new(run.clone()),
-                asked: None,
-            });
-        }
+        self.keep_report(id, &run, None);
         self.store_run(id, run, fx);
         self.let_go(id, fx);
     }

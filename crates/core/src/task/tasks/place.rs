@@ -4,6 +4,7 @@
 
 use super::{Effect, Placed, Signal, TasksDrive};
 use crate::task::queue;
+use crate::task::Task;
 use crate::workflow::Stop;
 use std::path::PathBuf;
 
@@ -114,24 +115,21 @@ impl<W: Copy> TasksDrive<W> {
         // later Retry is a person's, and shows.
         self.off_screen.remove(id);
         self.asked_in.remove(id);
-        let mut dropped = None;
-        if let Some(task) = self.task_mut(id) {
-            dropped = task.take_unbegun();
-            fx.push(Effect::Save(Box::new(task.clone())));
-        }
+        let dropped = self.task_mut(id).and_then(Task::take_unbegun);
         // An issue whose run never began is told it was stopped, or it would
         // stay claimed with nothing after the claim.
-        if let Some(mut run) = dropped {
+        let issue = self.task(id).is_some_and(|task| task.issue().is_some());
+        let told = issue && dropped.is_some();
+        if let Some(mut run) = dropped.filter(|_| issue) {
             // Through the engine, so the stop is in the run's history as any is.
             run.stopped(Stop::ByPerson);
-            if self.task(id).is_some_and(|task| task.issue().is_some()) {
-                fx.push(Effect::Report {
-                    task: id.to_string(),
-                    run: Box::new(run),
-                    asked: None,
-                });
-                fx.push(Effect::Deliver(id.to_string()));
-            }
+            self.keep_report(id, &run, None);
+        }
+        if let Some(task) = self.task(id) {
+            fx.push(Effect::Save(Box::new(task.clone())));
+        }
+        if told {
+            fx.push(Effect::Deliver(id.to_string()));
         }
         fx.extend(self.enforce_cap());
         fx.push(Effect::Refresh);

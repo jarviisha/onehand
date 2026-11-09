@@ -3,7 +3,7 @@
 
 use super::{IssueSource, TrackerRef};
 use crate::connector::{Connector, PrState};
-use crate::workflow::{Brief, Outcome, Stop};
+use crate::workflow::{Brief, Outcome, Run, Stop};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -79,6 +79,24 @@ pub struct PendingReport {
     /// attention, what the issue's text lacks.
     #[serde(default)]
     pub notes: Vec<String>,
+}
+
+impl IssueSource {
+    /// Keep how `run` ended as a report the issue has not been given yet,
+    /// with the question a card still waiting asked (`asked`). What the start
+    /// noted goes into this report and leaves the issue, so only the first
+    /// report says it. Nothing here reaches the network: the report is kept
+    /// in the task's next write, before any delivery is tried.
+    pub(crate) fn keep_report(&mut self, run: &Run, asked: Option<String>) {
+        self.unsent.push(PendingReport {
+            run: run.id.clone(),
+            outcome: run.outcome.clone(),
+            started: run.worked(),
+            ended_on: run.visits().last().and_then(|visit| visit.output.clone()),
+            asked,
+            notes: std::mem::take(&mut self.notes),
+        });
+    }
 }
 
 /// What a run left behind: a pull request on its branch, or how many commits

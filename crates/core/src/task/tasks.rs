@@ -158,13 +158,6 @@ pub enum Effect<W> {
     },
     /// Report this input once the call being handled is over.
     Defer(Input<W>),
-    /// Task `task`, of an issue, ended `run`: keep its report for the issue,
-    /// with the question a card it parked asked (`asked`).
-    Report {
-        task: String,
-        run: Box<Run>,
-        asked: Option<String>,
-    },
     /// Task `task`, of an issue, has let its place go: tell the issue.
     IssueEnded(String),
     /// Send task `task`'s issue the reports it has not been given yet.
@@ -390,11 +383,10 @@ impl<W: Copy> TasksDrive<W> {
             Ok(()) => {
                 let issue = self.task(&id).is_some_and(|task| task.issue().is_some());
                 if let Some(run) = cut_off.filter(|_| issue) {
-                    fx.push(Effect::Report {
-                        task: id.clone(),
-                        run: Box::new(run),
-                        asked: None,
-                    });
+                    self.keep_report(&id, &run, None);
+                    if let Some(task) = self.task(&id) {
+                        fx.push(Effect::Save(Box::new(task.clone())));
+                    }
                     fx.push(Effect::Deliver(id));
                 }
                 fx.extend(self.enforce_cap());
