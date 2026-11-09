@@ -13,9 +13,9 @@ use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Ta
 use gpui_component::WindowExt as _;
 use onehand_core::chat::Chat;
 use onehand_core::task::drive::{Effect, Input, RunDrive, Signal, Timer, link};
-use onehand_core::task::tasks::link as tasks_link;
+use onehand_core::task::tasks::{Start, link as tasks_link};
 use onehand_core::task::{Approval, marks};
-use onehand_core::workflow::{Action, Facts, Mark, Run, run_command_blocking};
+use onehand_core::workflow::{Facts, Mark, Run, run_command_blocking};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
@@ -68,20 +68,17 @@ impl Driven {
     }
 }
 
-/// Drive `run`, the last run of `task`, on session `uid`, starting with
-/// `first`: what [`Run::resume`] said to do. `pinned` boundaries of it had
-/// their mark pinned before.
-#[allow(clippy::too_many_arguments)]
+/// Drive task `task`'s run on session `uid`, from `start`, as the tasks'
+/// drive began it.
 pub(crate) fn start(
     uid: u64,
     session: &Entity<ChatSession>,
     window: AnyWindowHandle,
     task: String,
-    run: Run,
-    first: Action,
-    pinned: usize,
+    start: Start,
     cx: &mut App,
 ) {
+    let Start { run, first, pinned } = start;
     let id = task.clone();
     let watch = cx.subscribe(session, move |session, event: &ChatEvent, cx| {
         let input = match event {
@@ -133,6 +130,8 @@ pub(crate) fn start(
             Some(&mut session.chat),
         );
         session.perform(asked, cx);
+        // Named for the task: what shows it is drawn again.
+        cx.notify();
         (drive, effects)
     });
     let driven = Driven {
@@ -150,16 +149,10 @@ pub(crate) fn start(
     perform(&task, effects, cx);
 }
 
-/// Drive the check `run`, the last run of task `task`, with no session,
-/// starting with `first`; what it found is said in `window`.
-pub(crate) fn start_check(
-    task: String,
-    run: Run,
-    first: Action,
-    pinned: usize,
-    window: AnyWindowHandle,
-    cx: &mut App,
-) {
+/// Drive check task `task`'s run with no session, from `start`; what it
+/// found is said in `window`.
+pub(crate) fn start_check(task: String, start: Start, window: AnyWindowHandle, cx: &mut App) {
+    let Start { run, first, pinned } = start;
     let (drive, effects) = RunDrive::start(
         task.clone(),
         run,

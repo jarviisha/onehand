@@ -226,6 +226,15 @@ pub struct Facts {
     pub shared_checkout: Option<String>,
 }
 
+/// Why a start of `kind` on `facts` is refused: what the first finding that
+/// blocks says, if one does.
+pub fn refusal(kind: Kind, facts: &Facts) -> Option<String> {
+    preflight(kind, facts)
+        .into_iter()
+        .find(|f| f.blocks)
+        .map(|f| f.text)
+}
+
 /// Everything `facts` says about a start of `kind`: blocks first, the
 /// workflow's own problems first among them, then what only informs.
 pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {

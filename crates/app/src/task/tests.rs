@@ -2,7 +2,7 @@
 //! check run with no session, an agent's run on a session, a queued task
 //! stopped or passed over, and a dismiss whose write fails.
 
-use super::{Tasks, add, dismiss, drive_check, resumable_run, retry, start, stop_task};
+use super::{Tasks, add, begin, dismiss, retry, start, start_check, stop_task};
 use crate::chat::session::tests::carrier;
 use gpui::{
     AnyWindowHandle, AppContext as _, BorrowAppContext as _, IntoElement, Render, TestAppContext,
@@ -10,7 +10,7 @@ use gpui::{
 };
 use gpui_component::Root;
 use onehand_core::chat::Chat;
-use onehand_core::task::tasks::Input;
+use onehand_core::task::tasks::{Begin, Input, Start};
 use onehand_core::task::{Group, Task, Working, queue};
 use onehand_core::workflow::{Brief, GateKind, Outcome, Setup, StepKind, StepSpec, Stop, Template};
 use std::path::{Path, PathBuf};
@@ -119,6 +119,20 @@ fn placed(task: Task, window: AnyWindowHandle, cx: &mut TestAppContext) -> Strin
     id
 }
 
+/// Task `id`, holding its place, begun as the tasks' drive begins it.
+fn begun(id: &str, cx: &mut TestAppContext) -> Start {
+    match cx.update(|cx| begin(id, true, cx)) {
+        Begin::Check(start) | Begin::Session { start, .. } => start,
+        Begin::Refused { why, .. } => panic!("not begun: {why}"),
+    }
+}
+
+/// Run check task `id`, which holds its place, saying in `window` how it went.
+fn drive_check(id: String, window: AnyWindowHandle, cx: &mut TestAppContext) {
+    let start = begun(&id, cx);
+    cx.update(|cx| start_check(id, start, window, cx));
+}
+
 fn holds(id: &str, cx: &mut TestAppContext) -> bool {
     cx.update(|cx| cx.global::<Tasks>().drive.queue().holds(id))
 }
@@ -166,7 +180,7 @@ fn a_check_that_passes_ends_done_and_gives_its_place_up(cx: &mut TestAppContext)
         window,
         cx,
     );
-    cx.update(|cx| drive_check(id.clone(), window, cx));
+    drive_check(id.clone(), window, cx);
     settle(cx);
     assert_eq!(kept(&id, cx).outcome(), Some(Outcome::Done));
     assert_eq!(group(&id, cx), Group::Finished);
@@ -183,7 +197,7 @@ fn a_check_that_fails_ends_under_needs_attention(cx: &mut TestAppContext) {
         window,
         cx,
     );
-    cx.update(|cx| drive_check(id.clone(), window, cx));
+    drive_check(id.clone(), window, cx);
     settle(cx);
     let outcome = kept(&id, cx).outcome();
     assert!(
@@ -206,8 +220,9 @@ fn a_check_stopped_before_its_command_starts_never_runs_it(cx: &mut TestAppConte
     let touched = work.join("ran");
     let command = format!("touch {}", touched.display());
     let id = placed(Task::check("3".into(), command, setup(&work)), window, cx);
+    let start = begun(&id, cx);
     cx.update(|cx| {
-        drive_check(id.clone(), window, cx);
+        start_check(id.clone(), start, window, cx);
         stop_task(&id, cx);
     });
     settle(cx);
@@ -267,7 +282,7 @@ fn a_queued_task_with_no_window_to_start_in_is_passed_over(cx: &mut TestAppConte
         window,
         cx
     ));
-    cx.update(|cx| drive_check(first, window, cx));
+    drive_check(first, window, cx);
     settle(cx);
     assert!(!holds("7", cx));
     cx.update(|cx| assert!(!cx.global::<Tasks>().drive.queue().queued("7")));
@@ -345,10 +360,8 @@ fn an_agent_run_goes_from_its_prompt_to_done(cx: &mut TestAppContext) {
         cx,
     );
     let (session, mut tx, _seen) = carrier::driven(cx, Chat::default());
-    let mut run = cx.update(|cx| resumable_run(&id, cx)).unwrap();
-    let pinned = run.pinned_count();
-    let first = run.resume();
-    cx.update(|cx| start(7, &session, window, id.clone(), run, first, pinned, cx));
+    let started = begun(&id, cx);
+    cx.update(|cx| start(7, &session, window, id.clone(), started, cx));
     cx.run_until_parked();
     // Measured and pinned, the prompt waits for the agent.
     let mut requests = carrier::up(&mut tx);
@@ -389,10 +402,8 @@ fn a_stopped_run_holds_its_place_until_its_turn_is_over(cx: &mut TestAppContext)
         cx,
     );
     let (session, mut tx, _seen) = carrier::driven(cx, Chat::default());
-    let mut run = cx.update(|cx| resumable_run(&id, cx)).unwrap();
-    let pinned = run.pinned_count();
-    let first = run.resume();
-    cx.update(|cx| start(8, &session, window, id.clone(), run, first, pinned, cx));
+    let started = begun(&id, cx);
+    cx.update(|cx| start(8, &session, window, id.clone(), started, cx));
     cx.run_until_parked();
     let mut requests = carrier::up(&mut tx);
     cx.run_until_parked();

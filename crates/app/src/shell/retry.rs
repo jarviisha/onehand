@@ -14,9 +14,9 @@ use gpui_component::WindowExt as _;
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme as _, StyledExt as _};
 use onehand_core::preflight;
+use onehand_core::task::Task;
 use onehand_core::task::marks::{self, Against};
 use onehand_core::task::work::Act;
-use onehand_core::task::{Source, Task};
 use onehand_core::workflow::{Changed, Field, Run, Template, WithCurrent};
 use std::cell::Cell;
 use std::path::PathBuf;
@@ -32,33 +32,33 @@ impl Shell {
     /// whether the work moved since the last run left it. A check is retried
     /// at once: it has one step and keeps nothing.
     pub fn begin_retry(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(task) = crate::task::task(&id, cx) else {
-            return;
-        };
-        let Some(last) = task.runs.last() else {
-            return;
-        };
-        // From its one step: a check that passed would otherwise start past it.
-        if task.source == Source::Check {
-            let first = last.template.steps.first().map(|step| step.id.as_str());
-            if crate::task::retry(&id, last.template.clone(), first, None, cx) {
-                crate::task::request(id, window.window_handle(), cx);
-            }
-            return;
-        }
-        self.compare_work(task, Self::confirm_retry, window, cx);
+        self.retry_through(id, Self::confirm_retry, window, cx);
     }
 
     /// Ask whether to retry task `id` with what Settings say now, saying
     /// first what changes, where it starts and what blocks it.
     pub fn begin_retry_current(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(task) = crate::task::task(&id, cx) else {
-            return;
-        };
-        if task.source == Source::Check || task.runs.is_empty() {
-            return self.begin_retry(id, window, cx);
+        self.retry_through(id, Self::confirm_retry_current, window, cx);
+    }
+
+    /// Retry task `id` at once when the tasks' drive does, a check's; else
+    /// compare its work with where its last run left it, then `then`.
+    fn retry_through(
+        &mut self,
+        id: String,
+        then: Then,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match crate::task::retry_at_once(&id, cx) {
+            Some(true) => crate::task::request(id, window.window_handle(), cx),
+            Some(false) => {}
+            None => {
+                if let Some(task) = crate::task::task(&id, cx) {
+                    self.compare_work(task, then, window, cx);
+                }
+            }
         }
-        self.compare_work(task, Self::confirm_retry_current, window, cx);
     }
 
     /// Compare the work with where `task`'s last run left it, and find the
@@ -404,15 +404,10 @@ impl Shell {
 /// A last run that worked on another branch is retried only once that branch
 /// is checked out again: said, and nothing opened.
 fn refused_elsewhere(against: &Option<Against>, window: &mut Window, cx: &mut App) -> bool {
-    let Some(Against::OtherBranch(branch)) = against else {
+    let Some(why) = against.as_ref().and_then(Against::refuses_retry) else {
         return false;
     };
-    window.push_notification(
-        crate::toast::warning(format!(
-            "Check out {branch} again to retry: the last run worked on it"
-        )),
-        cx,
-    );
+    window.push_notification(crate::toast::warning(why), cx);
     true
 }
 

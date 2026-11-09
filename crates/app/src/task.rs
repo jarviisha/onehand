@@ -6,7 +6,7 @@
 //! timer, a window or the disk.
 
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Global, SharedString, Window};
-use onehand_core::task::tasks::{Effect, TasksDrive};
+use onehand_core::task::tasks::{Begin, Effect, Start, TasksDrive};
 use onehand_core::task::work::UnderReview;
 use onehand_core::task::{Task, Working, files};
 use onehand_core::workflow::{Run, Template};
@@ -216,12 +216,6 @@ pub(crate) fn drive_off_screen(id: &str, cx: &mut App) {
     cx.update_global::<Tasks, _>(|t, _| t.drive.drive_off_screen(id));
 }
 
-/// Whether task `id` is to be driven off screen this time, which only its
-/// first drive is: a Resume or Retry a person presses later shows as theirs.
-pub(crate) fn take_off_screen(id: &str, cx: &mut App) -> bool {
-    cx.has_global::<Tasks>() && cx.update_global::<Tasks, _>(|t, _| t.drive.take_off_screen(id))
-}
-
 /// Keep `task`, new, and write it.
 pub(crate) fn add(task: Task, cx: &mut App) {
     with_drive(cx, |d| ((), d.add(task)));
@@ -347,10 +341,7 @@ pub(crate) fn task(id: &str, cx: &App) -> Option<Task> {
 pub(crate) fn resume_refused(task: &Task, cx: &App) -> Option<String> {
     let template = task.runs.last()?.template.clone();
     let facts = crate::unattended::task_facts(task, template, cx);
-    onehand_core::preflight::preflight(onehand_core::preflight::Kind::Resume, &facts)
-        .into_iter()
-        .find(|f| f.blocks)
-        .map(|f| f.text)
+    onehand_core::preflight::refusal(onehand_core::preflight::Kind::Resume, &facts)
 }
 
 /// The title of the task holding `place`, unless that task is `except`: a
@@ -387,6 +378,18 @@ pub(crate) fn retry(
     with_drive(cx, |d| d.retry(id, run, template, from, note)).unwrap_or(false)
 }
 
+/// Retry task `id` at once when it is a check, which has one step and keeps
+/// nothing: whether it was retried, or `None` for a task a person retries
+/// through what the retry would keep.
+pub(crate) fn retry_at_once(id: &str, cx: &mut App) -> Option<bool> {
+    let run = onehand_core::task::new_id();
+    with_drive(cx, |d| match d.retry_at_once(id, run) {
+        Some((made, fx)) => (Some(made), fx),
+        None => (None, Vec::new()),
+    })
+    .flatten()
+}
+
 /// Give task `id` a new run with what Settings say now, as `plan` worked it
 /// out, kept but not started: the caller asks for its place. Whether there
 /// was one to give.
@@ -399,22 +402,28 @@ pub(crate) fn retry_with(
     with_drive(cx, |d| d.retry_with(id, run, plan)).unwrap_or(false)
 }
 
-/// Run check task `id`, whose place it now holds: pin the work, run the
-/// command, and say in `window` how it went. No session: there is no agent
-/// to watch.
-pub(crate) fn drive_check(id: String, window: AnyWindowHandle, cx: &mut App) {
-    let Some(mut run) = resumable_run(&id, cx) else {
-        return not_started(
-            id,
-            "That task has nothing left to run".to_string(),
-            onehand_core::workflow::Failure::Other,
-            cx,
-        );
-    };
-    // Counted from what landed, as a session's run is.
-    let from = run.pinned_count();
-    let first = run.resume();
-    carrier::start_check(id, run, first, from, window, cx);
+/// Begin task `id`, whose place it now holds, its work's folder being there
+/// or not: how it is driven, or why it cannot be.
+pub(crate) fn begin(id: &str, folder_there: bool, cx: &mut App) -> Begin {
+    match cx.has_global::<Tasks>() {
+        true => cx.update_global::<Tasks, _>(|t, _| t.drive.begin(id, folder_there)),
+        false => Begin::Refused {
+            why: "That task has nothing left to run".to_string(),
+            kind: onehand_core::workflow::Failure::Other,
+        },
+    }
+}
+
+/// Task `id`'s session did not start, its agent gone from Settings or not.
+pub(crate) fn session_not_started(id: String, agent_gone: bool, cx: &mut App) {
+    with_drive(cx, |d| ((), d.session_not_started(&id, agent_gone)));
+}
+
+/// Run check task `id` from `start`, whose place it now holds: pin the work,
+/// run the command, and say in `window` how it went. No session: there is no
+/// agent to watch.
+pub(crate) fn start_check(id: String, start: Start, window: AnyWindowHandle, cx: &mut App) {
+    carrier::start_check(id, start, window, cx);
 }
 
 /// Change the issue task `id` works, and write the task.

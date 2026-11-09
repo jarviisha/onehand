@@ -12,10 +12,13 @@
 pub mod drive;
 pub mod files;
 pub mod history;
+mod launch;
 pub mod marks;
 pub mod queue;
 pub mod tasks;
 pub mod work;
+
+pub use launch::{on_agent, Launch};
 
 use crate::unattended::IssueSource;
 use crate::workflow::{

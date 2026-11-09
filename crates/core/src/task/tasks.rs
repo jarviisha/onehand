@@ -29,9 +29,12 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::Duration;
 
+mod begin;
 mod ending;
 pub mod link;
 mod place;
+
+pub use begin::{Begin, Start, SESSION_NOT_STARTED};
 
 /// How long a cancelled turn is waited for before its place is given up
 /// anyway: a turn that never ends would hold the place, and a slot, for good.
@@ -310,7 +313,7 @@ impl<W: Copy> TasksDrive<W> {
     /// Whether task `id` is to be driven off screen this time, which only its
     /// first drive is: a Resume or Retry a person presses later shows as
     /// theirs.
-    pub fn take_off_screen(&mut self, id: &str) -> bool {
+    fn take_off_screen(&mut self, id: &str) -> bool {
         self.off_screen.remove(id)
     }
 

@@ -15,7 +15,13 @@ use crate::workflow::{Action, Run};
 use std::time::Instant;
 
 /// Start driving `run` on `session`: what [`RunDrive::start`] answers, and what
-/// putting the first step's settings in force asks of the session.
+/// naming the session and putting the first step's settings in force ask of
+/// it.
+///
+/// The session is named for the task unless it has a name already, so the
+/// rail tells runs apart rather than calling each by the opening line of its
+/// first prompt. Before that prompt the name is only held, and the first
+/// turn's save writes it.
 #[allow(clippy::too_many_arguments)]
 pub fn start(
     task: String,
@@ -24,12 +30,16 @@ pub fn start(
     pinned: usize,
     issue: bool,
     now: Instant,
-    session: Option<&mut SessionDrive>,
+    mut session: Option<&mut SessionDrive>,
 ) -> (RunDrive, Vec<super::Effect>, Vec<SessionEffect>) {
+    let mut named = Vec::new();
+    if let Some(session) = session.as_deref_mut().filter(|s| s.custom_title.is_none()) {
+        named = session.rename(&run.brief.title).1;
+    }
     let chat = session.as_deref().map(|session| &**session);
     let (mut drive, fx) = RunDrive::start(task, run, first, pinned, issue, now, chat);
-    let asked = asked_of(&mut drive, session);
-    (drive, fx, asked)
+    named.extend(asked_of(&mut drive, session));
+    (drive, fx, named)
 }
 
 /// Tell `drive` what happened, with its session as it stands: what the run

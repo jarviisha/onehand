@@ -262,3 +262,13 @@ fn a_runs_mode_reaches_the_agent_through_the_sessions_drive() {
     assert!(pair.session.pick_waiting(crate::chat::MODE_SELECTOR));
     assert!(!pair.session.busy, "the prompt waits for the mode's answer");
 }
+
+#[test]
+fn a_runs_session_is_named_for_its_task_unless_it_has_a_name() {
+    let (pair, _) = Pair::start();
+    assert_eq!(pair.session.custom_title.as_deref(), Some("Fix the thing"));
+    let (mut session, rx) = session();
+    session.rename("Mine");
+    let (pair, _) = Pair::start_on((session, rx), run());
+    assert_eq!(pair.session.custom_title.as_deref(), Some("Mine"));
+}

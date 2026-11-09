@@ -466,3 +466,61 @@ fn only_a_first_drive_is_off_screen() {
     assert!(tasks.take_off_screen("1"));
     assert!(!tasks.take_off_screen("1"));
 }
+
+#[test]
+fn a_task_begins_as_its_kind_and_a_tools_first_drive_is_off_screen() {
+    let mut tasks = TasksDrive::<Win>::default();
+    tasks.add(check("1", "/a"));
+    tasks.add(titled("2", "Mine", "/b"));
+    tasks.add(titled("3", "A tool's", "/c"));
+    tasks.add(of_issue("4"));
+    tasks.drive_off_screen("3");
+    assert!(matches!(tasks.begin("1", true), Begin::Check(_)));
+    let off = |begun| match begun {
+        Begin::Session { off_screen, .. } => off_screen,
+        other => panic!("{other:?}"),
+    };
+    assert!(!off(tasks.begin("2", true)));
+    assert!(off(tasks.begin("3", true)));
+    // Only its first drive: a Resume a person presses later shows.
+    assert!(!off(tasks.begin("3", true)));
+    assert!(off(tasks.begin("4", true)));
+}
+
+#[test]
+fn a_task_whose_folder_is_gone_or_with_nothing_to_run_is_refused() {
+    let mut tasks = TasksDrive::<Win>::default();
+    tasks.add(titled("1", "Mine", "/b"));
+    assert!(matches!(
+        tasks.begin("1", false),
+        Begin::Refused { why, .. } if why.starts_with("The folder that task works in is gone")
+    ));
+    assert!(matches!(tasks.begin("9", true), Begin::Refused { .. }));
+}
+
+/// A session that did not start because its agent is no longer configured
+/// is what the preflight would have blocked, found late.
+#[test]
+fn a_session_not_started_for_a_gone_agent_fails_as_found_late() {
+    let mut tasks = TasksDrive::<Win>::default();
+    tasks.add(of_issue("1"));
+    ask(&mut tasks, "1", "/a");
+    tasks.session_not_started("1", true);
+    let run = tasks.task("1").unwrap().runs.last().unwrap().clone();
+    assert_eq!(
+        run.failure,
+        Some(crate::preflight::found_late(crate::preflight::About::Agent))
+    );
+}
+
+#[test]
+fn a_check_is_retried_at_once_from_its_one_step_and_others_are_not() {
+    let mut tasks = TasksDrive::<Win>::default();
+    tasks.add(check("1", "/a"));
+    tasks.add(titled("2", "Mine", "/b"));
+    let (made, fx) = tasks.retry_at_once("1", "1b".into()).unwrap();
+    assert!(made);
+    assert_eq!(saves(&fx), 1);
+    assert_eq!(tasks.task("1").unwrap().runs.len(), 2);
+    assert!(tasks.retry_at_once("2", "2b".into()).is_none());
+}

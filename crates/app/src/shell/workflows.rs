@@ -6,9 +6,10 @@ use crate::state::Shared;
 use gpui::{AppContext as _, Context, Entity, SharedString, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputState, TextareaState};
-use onehand_core::preflight::{self, About, found_late};
-use onehand_core::task::{Source, Task};
-use onehand_core::workflow::{self as core, Brief, Failure, Place, Setup, Template};
+use onehand_core::preflight;
+use onehand_core::task::tasks::{Begin, SESSION_NOT_STARTED};
+use onehand_core::task::{Launch, Task};
+use onehand_core::workflow::{self as core, Brief, Failure, Setup, Template};
 use onehand_core::worktree;
 use std::path::PathBuf;
 
@@ -179,14 +180,7 @@ impl Shell {
     /// What the preflight finds of the run the launcher describes.
     pub fn launcher_preflight(&self, cx: &gpui::App) -> Option<Vec<preflight::Finding>> {
         let launcher = self.workflow_launcher.as_ref()?;
-        let entries = crate::workflow::templates(cx);
-        let workflow = match entries.get(launcher.template) {
-            Some(entry) => entry
-                .template
-                .clone()
-                .map_err(|why| format!("{} cannot be read: {why}", entry.name())),
-            None => Err("pick a workflow".to_string()),
-        };
+        let workflow = launcher_workflow(launcher, cx);
         let ground = launcher.ground.as_ref();
         Some(self.run_preflight(&launcher.root, workflow, ground, None, None, cx))
     }
@@ -260,20 +254,21 @@ impl Shell {
 
     /// Start the run the launcher describes, or say on it why not.
     pub fn commit_workflow(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let blocked = self
-            .launcher_preflight(cx)
-            .and_then(|found| found.into_iter().find(|f| f.blocks));
-        if let (Some(block), Some(launcher)) = (blocked, self.workflow_launcher.as_mut()) {
-            launcher.error = Some(block.text);
-            cx.notify();
-            return;
-        }
-        let Some(launcher) = self.workflow_launcher.as_ref().filter(|l| !l.busy) else {
+        let Some(launcher) = self.workflow_launcher.as_ref() else {
             return;
         };
-        let started = self.launch_parts(launcher, cx);
-        let (template, brief, check) = match started {
-            Ok(parts) => parts,
+        let found = self.launcher_preflight(cx).unwrap_or_default();
+        let launch = Launch::new(
+            &found,
+            launcher_workflow(launcher, cx),
+            brief(&launcher.title, &launcher.body, &launcher.instructions, cx),
+            &launcher.root,
+            self.check_of(&launcher.root),
+            first_agent(cx),
+        );
+        let (busy, root) = (launcher.busy, launcher.root.clone());
+        let launch = match launch {
+            Ok(launch) => launch,
             Err(why) => {
                 if let Some(launcher) = self.workflow_launcher.as_mut() {
                     launcher.error = Some(why);
@@ -282,105 +277,57 @@ impl Shell {
                 return;
             }
         };
-        let root = launcher.root.clone();
-        let setup = Setup {
-            repo: root.clone(),
-            dir: root.clone(),
-            branch: None,
-            agent: None,
-            check,
-            mode: None,
-            forge: None,
-        };
-        match template.place {
-            Place::Checkout => {
-                self.workflow_launcher = None;
-                self.start_workflow(setup, template, brief, window, cx);
-            }
-            Place::Worktree => {
-                if let Some(launcher) = self.workflow_launcher.as_mut() {
-                    launcher.busy = true;
-                    launcher.error = None;
+        if busy {
+            return;
+        }
+        if !launch.cuts() {
+            self.workflow_launcher = None;
+            return self.start_launch(launch, window, cx);
+        }
+        if let Some(launcher) = self.workflow_launcher.as_mut() {
+            launcher.busy = true;
+            launcher.error = None;
+        }
+        cx.notify();
+        let title = launch.title().to_string();
+        cx.spawn_in(window, async move |shell, cx| {
+            let made = cx
+                .background_executor()
+                .spawn(async move { cut_worktree_blocking(&root, &title) })
+                .await;
+            let _ = shell.update_in(cx, |shell: &mut Self, window, cx| match made {
+                Ok((dir, branch, forge)) => {
+                    shell.workflow_launcher = None;
+                    shell.window.workspace.add_root(dir.clone());
+                    shell.refresh_git(cx);
+                    shell.save_workspace(window, cx);
+                    let launch = launch.on_worktree(dir, branch, forge);
+                    shell.start_launch(launch, window, cx);
                 }
-                cx.notify();
-                let title = brief.title.clone();
-                cx.spawn_in(window, async move |shell, cx| {
-                    let made = cx
-                        .background_executor()
-                        .spawn(async move { cut_worktree_blocking(&root, &title) })
-                        .await;
-                    let _ = shell.update_in(cx, |shell: &mut Self, window, cx| match made {
-                        Ok((dir, branch, forge)) => {
-                            shell.workflow_launcher = None;
-                            shell.window.workspace.add_root(dir.clone());
-                            shell.refresh_git(cx);
-                            shell.save_workspace(window, cx);
-                            let setup = Setup {
-                                dir,
-                                branch: Some(branch),
-                                forge,
-                                ..setup
-                            };
-                            shell.start_workflow(setup, template, brief, window, cx);
-                        }
-                        // The launcher stays up with what was written in it,
-                        // and the failure is said once.
-                        Err(why) => {
-                            if let Some(launcher) = shell.workflow_launcher.as_mut() {
-                                launcher.busy = false;
-                            }
-                            window.push_notification(
-                                crate::toast::failed("Making the worktree", why),
-                                cx,
-                            );
-                            cx.notify();
-                        }
-                    });
-                })
-                .detach();
-            }
-        }
+                // The launcher stays up with what was written in it, and the
+                // failure is said once.
+                Err(why) => {
+                    if let Some(launcher) = shell.workflow_launcher.as_mut() {
+                        launcher.busy = false;
+                    }
+                    window.push_notification(crate::toast::failed("Making the worktree", why), cx);
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
     }
 
-    /// The template, the brief and the project's check command the launcher
-    /// describes, or why it cannot run.
-    fn launch_parts(
-        &self,
-        launcher: &WorkflowLauncher,
-        cx: &Context<Self>,
-    ) -> Result<(Template, Brief, Option<String>), String> {
-        let entries = crate::workflow::templates(cx);
-        let entry = entries
-            .get(launcher.template)
-            .ok_or_else(|| "Pick a workflow".to_string())?;
-        // What blocks the workflow itself was judged by the preflight first.
-        let template = entry
-            .template
-            .clone()
-            .map_err(|why| format!("{} cannot be read: {why}", entry.name()))?;
-        let brief = brief(&launcher.title, &launcher.body, &launcher.instructions, cx);
-        if brief.title.is_empty() {
-            return Err("Say what to do in the title".to_string());
-        }
-        Ok((template, brief, self.check_of(&launcher.root)))
-    }
-
-    /// Keep a new task of `template` on the project at `setup.dir`, then ask
-    /// for its place: kept first, so one waiting for its place survives a
-    /// restart, as interrupted.
-    fn start_workflow(
-        &mut self,
-        setup: Setup,
-        template: Template,
-        brief: Brief,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let task = new_task(setup, template, brief, cx);
+    /// Keep the new task `launch` describes, then ask for its place: kept
+    /// first, so one waiting for its place survives a restart, as
+    /// interrupted.
+    fn start_launch(&mut self, launch: Launch, window: &mut Window, cx: &mut Context<Self>) {
+        let task = launch.task(onehand_core::task::new_id());
         crate::task::submit(task, window.window_handle(), cx);
     }
 
-    /// [`Self::start_workflow`] for a task started from outside the window:
+    /// A new task of `template` on `setup`, as the launcher starts one, for a
+    /// task started from outside the window:
     /// driven off screen, so nothing the person is looking at moves, and
     /// answering where it landed. Returns its id.
     pub(crate) fn start_workflow_told(
@@ -418,11 +365,11 @@ impl Shell {
         )
     }
 
-    /// Drive task `id`, whose place it now holds: show its project, adding
-    /// it back if it left the workspace, start a session on it, and hand both
-    /// to the run's carrier, which starts the task's last run or carries it on from
-    /// the step it was at. One that cannot start stays as it was, and its
-    /// place passes on.
+    /// Drive task `id`, whose place it now holds, as the tasks' drive begins
+    /// it: show its project, adding it back if it left the workspace, start a
+    /// session on it, and hand both to the run's carrier, which starts the
+    /// task's last run or carries it on from the step it was at. One that
+    /// cannot start is said here, and the drive decides what comes of it.
     /// Says why when it did not start.
     pub fn drive_task(
         &mut self,
@@ -430,85 +377,57 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
-        // Taken first, so a first drive that is refused uses it up as well.
-        let off_screen = crate::task::take_off_screen(&id, cx);
-        let refused = |why: String, kind: Failure, window: &mut Window, cx: &mut Context<Self>| {
-            window.push_notification(crate::toast::warning(why.clone()), cx);
-            // Deferred: handing the place on may start a task in this shell.
-            let (id, said) = (id.clone(), why.clone());
-            cx.defer(move |cx| crate::task::not_started(id, said, kind, cx));
-            Err(why)
+        let refused =
+            |why: String, then: Unstarted, window: &mut Window, cx: &mut Context<Self>| {
+                window.push_notification(crate::toast::warning(why.clone()), cx);
+                // Deferred: handing the place on may start a task in this shell.
+                let id = id.clone();
+                cx.defer(move |cx| match then {
+                    Unstarted::Refused(why, kind) => crate::task::not_started(id, why, kind, cx),
+                    Unstarted::NoSession { agent_gone } => {
+                        crate::task::session_not_started(id, agent_gone, cx)
+                    }
+                });
+                Err(why)
+            };
+        let there = crate::task::resumable_run(&id, cx).is_some_and(|run| run.setup.dir.is_dir());
+        let (start, off_screen, issue) = match crate::task::begin(&id, there, cx) {
+            Begin::Refused { why, kind } => {
+                return refused(why.clone(), Unstarted::Refused(why, kind), window, cx);
+            }
+            Begin::Check(start) => {
+                let handle = window.window_handle();
+                // Deferred, as the run's carrier is below: the check reaches
+                // into the global the shell may be reading from.
+                cx.defer(move |cx| crate::task::start_check(id, start, handle, cx));
+                return Ok(());
+            }
+            Begin::Session {
+                start,
+                off_screen,
+                issue,
+            } => (start, off_screen, issue),
         };
-        let Some(mut run) = crate::task::resumable_run(&id, cx) else {
-            return refused(
-                "That task has nothing left to run".to_string(),
-                Failure::Other,
-                window,
-                cx,
-            );
-        };
-        let dir = run.setup.dir.clone();
-        if !dir.is_dir() {
-            return refused(
-                format!("The folder that task works in is gone: {}", dir.display()),
-                Failure::Other,
-                window,
-                cx,
-            );
-        }
         let Some(task) = crate::task::task(&id, cx) else {
-            return refused(
-                "That task has nothing left to run".to_string(),
-                Failure::Other,
-                window,
-                cx,
-            );
+            return Err("That task is gone".to_string());
         };
-        if task.source == Source::Check {
-            let handle = window.window_handle();
-            // Deferred, as the run's carrier is below: the check reaches into the
-            // global the shell may be reading from.
-            cx.defer(move |cx| crate::task::drive_check(id, handle, cx));
-            return Ok(());
-        }
-        // A snapshot that no longer validates (a later build's rules) is what
-        // the preflight would have blocked, found late.
-        let problems = core::validate(&run.template);
-        if !problems.is_empty() {
-            let said: Vec<String> = problems.iter().map(ToString::to_string).collect();
-            return refused(
-                format!(
-                    "The workflow `{}` no longer validates: {}",
-                    run.template.name,
-                    said.join("; ")
-                ),
-                found_late(About::Workflow),
-                window,
-                cx,
-            );
-        }
-        let mut unstarted = Failure::Other;
-        let session = match (task.issue(), off_screen) {
-            // An issue's run comes up off screen, on a project of its own that
-            // the workspace file never holds unless it was kept, so nothing the
-            // person is looking at moves. One picked by hand too: the person
-            // stays on the issue, which says the run is starting and leads to
-            // its session. A task a tool started too: it is on the Tasks page
-            // and its session in the rail, and the caret stays where it was.
-            (Some(_), _) | (None, true) => {
-                let spec = crate::unattended::spec_for(run.setup.agent.as_deref(), cx);
-                // No agent of that name configured any more is what the
-                // preflight would have blocked.
-                if spec.is_none() {
-                    unstarted = found_late(About::Agent);
-                }
+        let dir = start.run.setup.dir.clone();
+        let mut agent_gone = false;
+        let session = match off_screen {
+            // Nothing the person is looking at moves: an issue's run stays
+            // where the person is, the issue saying the run is starting and
+            // leading to its session; a tool's task is on the Tasks page and
+            // its session in the rail, and the caret stays where it was.
+            true => {
+                let spec = crate::unattended::spec_for(start.run.setup.agent.as_deref(), cx);
+                agent_gone = spec.is_none();
                 let started = spec.and_then(|spec| self.run_unattended(dir, spec, Vec::new(), cx));
-                if let (Some((_, session)), Some(_)) = (&started, task.issue()) {
+                if let (Some((_, session)), true) = (&started, issue) {
                     crate::unattended::opening(&task, session, cx);
                 }
                 started
             }
-            (None, false) => {
+            false => {
                 let idx = self.root_index(&dir).unwrap_or_else(|| {
                     let idx = self.window.workspace.add_root(dir);
                     self.refresh_git(cx);
@@ -516,38 +435,22 @@ impl Shell {
                     idx
                 });
                 self.select_root(idx, window, cx);
-                let agent = run.setup.agent.clone().map(SharedString::from);
+                let agent = start.run.setup.agent.clone().map(SharedString::from);
                 self.start_session(agent, None, window, cx)
                     .and_then(|uid| Some((uid, self.chat.read(cx).session_entity(uid)?)))
             }
         };
         let Some((uid, session)) = session else {
-            return refused(
-                "The task's session did not start".to_string(),
-                unstarted,
-                window,
-                cx,
-            );
+            let why = SESSION_NOT_STARTED.to_string();
+            return refused(why, Unstarted::NoSession { agent_gone }, window, cx);
         };
         // Every drive, a Resume's new session included: what the task was
         // given when it started is what its session may use.
         crate::control::grant(uid, &task.grant);
-        // Named for the task, or every run's session would be called by the
-        // same opening line of its first prompt. Before that prompt the name
-        // is only held, and the first turn's save writes it.
-        self.chat.update(cx, |pane, cx| {
-            if pane.custom_title(uid, cx).is_none() {
-                pane.rename(uid, &task.brief.title, cx);
-            }
-        });
-        // Counted from what landed, so a mark the app quit before pinning is
-        // pinned now rather than taken as made.
-        let pinned = run.pinned_count();
-        let first = run.resume();
-        // Deferred: the run's carrier reaches into the session and the global the
-        // shell is reading from while this runs.
+        // Deferred: the run's carrier reaches into the session and the global
+        // the shell is reading from while this runs.
         let handle = window.window_handle();
-        cx.defer(move |cx| crate::task::start(uid, &session, handle, id, run, first, pinned, cx));
+        cx.defer(move |cx| crate::task::start(uid, &session, handle, id, start, cx));
         Ok(())
     }
 
@@ -575,16 +478,39 @@ impl Shell {
     }
 }
 
+/// What the tasks' drive is told of a task that did not start.
+enum Unstarted {
+    /// It was refused before a session was asked for.
+    Refused(String, Failure),
+    /// Its session did not start, its agent gone from Settings or not.
+    NoSession { agent_gone: bool },
+}
+
 /// A new task of `template` on `setup`, with the agent `setup` names, or the
 /// one a new session takes.
-fn new_task(mut setup: Setup, template: Template, brief: Brief, cx: &gpui::App) -> Task {
-    setup.agent = setup.agent.or_else(|| {
-        Shared::global(cx)
-            .agents
-            .first()
-            .map(|spec| spec.name.clone())
-    });
+fn new_task(setup: Setup, template: Template, brief: Brief, cx: &gpui::App) -> Task {
+    let setup = onehand_core::task::on_agent(setup, first_agent(cx));
     Task::new(onehand_core::task::new_id(), template, brief, setup)
+}
+
+/// The agent a new session takes: the first configured.
+fn first_agent(cx: &gpui::App) -> Option<String> {
+    Shared::global(cx)
+        .agents
+        .first()
+        .map(|spec| spec.name.clone())
+}
+
+/// The workflow the launcher has picked, or why it cannot run.
+fn launcher_workflow(launcher: &WorkflowLauncher, cx: &gpui::App) -> Result<Template, String> {
+    let entries = crate::workflow::templates(cx);
+    match entries.get(launcher.template) {
+        Some(entry) => entry
+            .template
+            .clone()
+            .map_err(|why| format!("{} cannot be read: {why}", entry.name())),
+        None => Err("pick a workflow".to_string()),
+    }
 }
 
 /// A worktree of the repository `root` sits in, cut for a task titled

@@ -60,6 +60,20 @@ pub enum Against {
     OtherBranch(String),
 }
 
+impl Against {
+    /// Why a retry is refused on work standing so: a last run that worked
+    /// on another branch is retried only once that branch is checked out
+    /// again, since marks and outputs read against another would be wrong.
+    pub fn refuses_retry(&self) -> Option<String> {
+        match self {
+            Against::OtherBranch(branch) => Some(format!(
+                "Check out {branch} again to retry: the last run worked on it"
+            )),
+            Against::Same | Against::Changed => None,
+        }
+    }
+}
+
 /// How the work at `dir` stands against the mark `commit`: the branch it
 /// was pinned on, then the commit under it and its files. A mark that names
 /// no branch skips the first. Blocking.
