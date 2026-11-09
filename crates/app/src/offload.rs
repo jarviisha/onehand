@@ -321,3 +321,6 @@ fn tell(cx: &mut App, signal: Signal) {
         }
     });
 }
+
+#[cfg(test)]
+mod tests;

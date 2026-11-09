@@ -515,3 +515,6 @@ fn make(
     .detach();
     attempt.boxed_local()
 }
+
+#[cfg(test)]
+mod tests;
