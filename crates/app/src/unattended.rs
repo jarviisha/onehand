@@ -28,7 +28,7 @@ mod report;
 use launch::{Landed, landed};
 pub use launch::{ReviewRead, look_now, read_review, start_answer, start_picked};
 pub use onehand_core::unattended::{Pickable, Project};
-pub(crate) use report::{deliver, deliver_all, ended, keep, opening, pause, spec_for, started};
+pub(crate) use report::{deliver, deliver_all, ended, opening, pause, spec_for, started};
 
 /// The unattended half of the process: its settings, the claim in flight and
 /// the tick. The runs themselves are tasks, kept with every other.

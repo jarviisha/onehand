@@ -137,7 +137,6 @@ pub(super) fn perform(
                 .detach();
             }
             Effect::Defer(input) => cx.defer(move |cx| feed(input, cx)),
-            Effect::Report { task, run, asked } => crate::unattended::keep(&task, &run, asked, cx),
             Effect::IssueEnded(task) => crate::unattended::ended(&task, cx),
             Effect::Deliver(task) => crate::unattended::deliver(task, cx),
             Effect::DeliverAll => crate::unattended::deliver_all(cx),

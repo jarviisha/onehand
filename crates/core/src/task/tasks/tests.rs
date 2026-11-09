@@ -353,6 +353,48 @@ fn of_issue(id: &str) -> Task {
     }
 }
 
+/// An issue's run that ends keeps its report, the start's notes and a
+/// waiting card's question in it, in the very write that keeps the run, so
+/// no later write of the task can lose it before it is sent.
+#[test]
+fn an_issue_runs_end_is_kept_in_the_write_that_keeps_the_run() {
+    let mut tasks = TasksDrive::default();
+    let mut task = of_issue("1");
+    if let Source::Issue(issue) = &mut task.source {
+        issue.notes = vec!["No acceptance written".into()];
+    }
+    tasks.add(task);
+    ask(&mut tasks, "1", "/a");
+    let mut run = tasks.task("1").unwrap().runs[0].clone();
+    run.outcome = Some(Outcome::Done);
+    let fx = tasks.run_ended(
+        "1",
+        run,
+        usize::MAX,
+        false,
+        Some("Which?".into()),
+        None,
+        WINDOW,
+    );
+    let saves: Vec<_> = fx
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Save(task) => task.issue().cloned(),
+            _ => None,
+        })
+        .collect();
+    let [issue] = saves.as_slice() else {
+        panic!("one write: {fx:?}");
+    };
+    let [report] = issue.unsent.as_slice() else {
+        panic!("one report: {issue:?}");
+    };
+    assert_eq!(report.outcome, Some(Outcome::Done));
+    assert_eq!(report.asked.as_deref(), Some("Which?"));
+    assert_eq!(report.notes, vec!["No acceptance written".to_string()]);
+    assert!(issue.notes.is_empty(), "handed to the first report only");
+}
+
 /// A run that cannot start ends failed when nobody is watching it, an
 /// issue's or a schedule's, and is told; a person's only gives its place on.
 #[test]
@@ -363,17 +405,18 @@ fn a_task_that_cannot_start_fails_only_when_nobody_watches_it() {
     ask(&mut tasks, "1", "/a");
     ask(&mut tasks, "2", "/b");
     let fx = tasks.not_started("1", "no agent".into(), Failure::Other);
-    assert!(has(
-        &fx,
-        |e| matches!(e, Effect::Report { task, .. } if task == "1")
-    ));
-    assert!(has(&fx, |e| *e == Effect::IssueEnded("1".into())));
+    // Its report is in the task that is written, before the issue is told.
+    let saved = fx.iter().position(|e| {
+        matches!(e, Effect::Save(task) if task.id == "1"
+            && task.issue().is_some_and(|issue| issue.unsent.len() == 1))
+    });
+    let told = fx.iter().position(|e| *e == Effect::IssueEnded("1".into()));
+    assert!(saved.is_some() && saved < told, "{fx:?}");
     assert!(matches!(
         tasks.task("1").unwrap().outcome(),
         Some(Outcome::Failed(_))
     ));
-    let fx = tasks.not_started("2", "no agent".into(), Failure::Other);
-    assert!(!has(&fx, |e| matches!(e, Effect::Report { .. })));
+    tasks.not_started("2", "no agent".into(), Failure::Other);
     assert_eq!(tasks.task("2").unwrap().outcome(), None);
     assert_eq!(tasks.working("2"), None);
 }

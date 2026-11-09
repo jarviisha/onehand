@@ -1,8 +1,8 @@
 //! What unattended runs decide today in the app, held before it moves: the
-//! cap and the runs still starting, the report kept and its notes, the pause,
-//! a config that cannot work, and a report delivered once.
+//! cap and the runs still starting, the pause, a config that cannot work, and
+//! a report delivered once.
 
-use super::{Unattended, blocked, deliver, keep, over_cap, pause, placed, slots};
+use super::{Unattended, blocked, deliver, over_cap, pause, placed, slots};
 use crate::state::Shared;
 use crate::task::Tasks;
 use gpui::TestAppContext;
@@ -135,33 +135,6 @@ fn nothing_is_capped_with_unattended_runs_off(cx: &mut TestAppContext) {
         assert_eq!(over_cap("a", cx), None);
         assert!(slots(cx).is_none());
     });
-}
-
-/// A run's end is kept on its issue's task as a report not yet sent, and the
-/// notes its start made go into the first report only.
-#[gpui::test]
-fn a_kept_report_carries_the_starts_notes_once(cx: &mut TestAppContext) {
-    let dir = temp_dir("keep");
-    app(cx, &dir.join("tasks"), Some(unattended(1)));
-    let file = dir.join("issues.json");
-    let mut task = issue_task("a", 1, &file, &dir);
-    if let Source::Issue(issue) = &mut task.source {
-        issue.notes = vec!["No acceptance written".into()];
-    }
-    let run = task.runs[0].clone();
-    cx.update(|cx| crate::task::add(task, cx));
-    cx.update(|cx| keep("a", &run, Some("Which file?".into()), cx));
-    cx.update(|cx| keep("a", &run, None, cx));
-    let issue = issue_of("a", cx);
-    assert!(issue.notes.is_empty(), "handed over: {:?}", issue.notes);
-    let [first, second] = issue.unsent.as_slice() else {
-        panic!("two reports kept: {:?}", issue.unsent);
-    };
-    assert_eq!(first.run, run.id);
-    assert_eq!(first.asked.as_deref(), Some("Which file?"));
-    assert_eq!(first.notes, vec!["No acceptance written".to_string()]);
-    assert!(!first.started, "the run never asked its agent anything");
-    assert!(second.notes.is_empty() && second.asked.is_none());
 }
 
 /// A run that failed on a setting pauses every later one until onehand is
