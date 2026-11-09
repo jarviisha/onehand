@@ -2,6 +2,7 @@ use super::*;
 use crate::acp::{
     AcpRequest, ConfigChoice, ConfigOption, PermissionOption, PermissionRequest, ReqTx, Usage,
 };
+use crate::workspace::HostName;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -111,16 +112,16 @@ impl Front {
     fn read_back(
         &mut self,
         kept: impl IntoIterator<Item = AcpEvent>,
-        away: Option<String>,
+        away: Option<(HostName, Option<u64>)>,
     ) -> Vec<Effect> {
         let out = self.drive.read_back(kept, away, now());
         self.take(&out);
         out
     }
 
-    fn host_lost(&mut self, line: String) -> Vec<Effect> {
-        let out = self.drive.host_lost(line, now());
-        self.take(&out);
+    fn watched(&mut self, event: AcpEvent, link: &HostLink) -> (Vec<Effect>, Next) {
+        let out = self.drive.apply_watched(event, Some(link), now());
+        self.take(&out.0);
         out
     }
 
@@ -1012,9 +1013,21 @@ fn a_reset_failing_puts_the_given_name_back() {
 fn a_lost_host_drops_the_held_prompt_and_changes_the_batch() {
     let (mut drive, tx, mut rx) = connecting();
     drive.prompt_when_up("go", Origin::Tools);
-    let fx = drive.host_lost("Out of reach of box".into());
+    let lost = HostLink {
+        host: HostName("box".into()),
+        closed: true,
+        taken: false,
+    };
+    let (fx, next) = drive.watched(AcpEvent::Disconnected("lost the connection".into()), &lost);
     assert_eq!(names(&fx), ["Appended"]);
+    assert!(matches!(next, Next::Stop), "the batch ends there");
     assert!(drive.held.is_none(), "dropped, as on any lost link");
+    assert_eq!(drive.host_away(), Some(&HostName("box".into())));
+    assert!(matches!(
+        drive.items.last(),
+        Some(crate::chat::ChatItem::Notice { text, .. })
+            if text.starts_with("Not connected to box. This is the copy kept on this machine, up to")
+    ));
     assert_eq!(names(&drive.end_batch()), ["Changed"]);
     // The same session coming up later sends nothing it was not asked again.
     feed(
@@ -1037,13 +1050,67 @@ fn what_was_kept_is_read_back_without_a_word_of_turns() {
             chunk("an old answer"),
             turn_ends(),
         ],
-        Some("Out of reach of box".into()),
+        Some((HostName("box".into()), None)),
     );
     assert_eq!(names(&fx), ["Changed", "Appended"], "no TurnEnded, no Save");
     assert!(matches!(
         drive.items.last(),
-        Some(crate::chat::ChatItem::Notice { text, .. }) if text == "Out of reach of box"
+        Some(crate::chat::ChatItem::Notice { text, .. })
+            if text == "Not connected to box. This is the copy kept on this machine; \
+                        it carries on once the host is back"
     ));
+    assert_eq!(drive.host_away(), Some(&HostName("box".into())));
+    let (was, _) = drive.drive.forget_host_away();
+    assert!(was);
+    assert!(drive.host_away().is_none());
+}
+
+/// A watch that ends with its connection taken by another machine, or on
+/// its own end with the connection open, is folded as any end is: the
+/// session's agent is lost, and nothing waits for the host.
+#[test]
+fn only_a_lost_connection_is_out_of_reach() {
+    for (closed, taken) in [(true, true), (false, false)] {
+        let (mut drive, _rx) = connected();
+        let link = HostLink {
+            host: HostName("box".into()),
+            closed,
+            taken,
+        };
+        drive.watched(AcpEvent::Disconnected("gone".into()), &link);
+        assert!(drive.host_away().is_none(), "{closed} {taken}");
+    }
+}
+
+/// A session waiting on its host's busy sessions says so, and stops
+/// waiting once told; being out of reach is another wait, kept apart.
+#[test]
+fn a_busy_host_is_waited_on_apart_from_one_away() {
+    let (mut drive, _rx) = connected();
+    drive.drive.wait_on_host(HostName("box".into()), 2, 0);
+    assert_eq!(drive.host_waiting(), Some(&HostName("box".into())));
+    assert!(drive.host_away().is_none());
+    assert!(!drive.drive.forget_host_away().0, "not away");
+    assert!(drive.drive.forget_host_wait().0);
+    assert!(drive.host_waiting().is_none());
+    assert!(!drive.drive.forget_host_wait().0, "said once");
+}
+
+/// The copy's notice says how recent it is when its entries kept a time, and
+/// leaves that out when none did.
+#[test]
+fn the_offline_line_says_how_recent_the_copy_is() {
+    let vps = HostName("vps".into());
+    assert_eq!(
+        offline_line(&vps, Some(1_000), 1_000 + 3 * 3600),
+        "Not connected to vps. This is the copy kept on this machine, up to 3h ago; \
+         it carries on once the host is back"
+    );
+    assert_eq!(
+        offline_line(&vps, None, 5_000),
+        "Not connected to vps. This is the copy kept on this machine; \
+         it carries on once the host is back"
+    );
 }
 
 // Closing with a save on its way.

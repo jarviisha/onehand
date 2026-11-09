@@ -12,6 +12,7 @@ use gpui::{
 };
 use gpui_component::input::TextareaState;
 use gpui_component::text::TextViewState;
+use onehand_core::chat::drive::HostLink;
 use onehand_core::chat::drive::{Code, Effect, Input, Intake, Next, Origin, Signal};
 use onehand_core::chat::{ChatItem, Md, MdId, SessionDrive, TranscriptItemId};
 use onehand_core::completion;
@@ -183,13 +184,6 @@ pub struct ChatSession {
     _token: Option<crate::control::Token>,
     /// Whether the agent runs on a host, where a fork is not offered yet.
     pub(crate) on_host: bool,
-    /// The host this session waits on, its busy sessions to go idle: what
-    /// its last line offers *Restart now* for.
-    pub(crate) host_wait: Option<onehand_core::workspace::HostName>,
-    /// The host this session could not be attached on, or lost the
-    /// connection to, its transcript what this machine has of it: not a lost
-    /// agent, only one out of reach, restarted once the host is back.
-    pub(crate) host_offline: Option<onehand_core::workspace::HostName>,
     /// The host and the connection this session's watch is on, which says
     /// whether the watch ended because the connection was lost.
     host_conn: Option<(HostName, HostConn)>,
@@ -349,20 +343,26 @@ impl ChatSession {
     /// Stop waiting for the host, taking back the line that said so:
     /// `true` when it was waiting.
     pub(crate) fn forget_host_wait(&mut self, cx: &mut Context<Self>) -> bool {
-        if self.host_wait.take().is_none() {
-            return false;
-        }
-        let fx = self.chat.unsay_host_wait();
+        let (was, fx) = self.chat.forget_host_wait();
         self.perform(fx, cx);
-        true
+        was
     }
 
-    /// No longer out of reach of its host, taking back the line that said so.
-    pub(crate) fn forget_host_offline(&mut self, cx: &mut Context<Self>) {
-        if self.host_offline.take().is_some() {
-            let fx = self.chat.unsay_host_wait();
-            self.perform(fx, cx);
-        }
+    /// No longer out of reach of its host, taking back the line that said
+    /// so: `true` when it was.
+    pub(crate) fn forget_host_offline(&mut self, cx: &mut Context<Self>) -> bool {
+        let (was, fx) = self.chat.forget_host_away();
+        self.perform(fx, cx);
+        was
+    }
+
+    /// How the connection the session's watch rides stands now.
+    fn host_link(&self) -> Option<HostLink> {
+        self.host_conn.as_ref().map(|(host, conn)| HostLink {
+            host: host.clone(),
+            closed: conn.is_closed(),
+            taken: conn.taken(),
+        })
     }
 
     /// Fold `event` in as a batch of its own: one this side makes, such as
@@ -477,8 +477,6 @@ impl ChatSession {
             agent: spec.clone(),
             started,
             on_host: host,
-            host_wait: None,
-            host_offline: None,
             host_conn: None,
             _token: token,
             md: HashMap::new(),
@@ -519,15 +517,9 @@ impl ChatSession {
                         let mut taken = 0;
                         while let Some(event) = next.take() {
                             taken += 1;
-                            // A watch that ended with its host's connection
-                            // says so instead, and is read on from what it
-                            // has until the host is back.
-                            if let Some(line) = host::went_away(session, &event) {
-                                let fx = session.chat.host_lost(line, now());
-                                session.perform(fx, cx);
-                                continue;
-                            }
-                            let (fx, more) = session.chat.apply(event, now());
+                            let link = session.host_link();
+                            let (fx, more) =
+                                session.chat.apply_watched(event, link.as_ref(), now());
                             session.perform(fx, cx);
                             let more = match more {
                                 Next::Stop => false,

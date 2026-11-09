@@ -1,7 +1,4 @@
-use super::host::{
-    Carried, OfflineStart, Restarted, connection_lost, host_restart, new_chat, offline_line,
-    offline_start,
-};
+use super::host::{Carried, OfflineStart, Restarted, host_restart, new_chat, offline_start};
 use crate::hosts::HostFailure;
 use onehand_core::acp::Opening;
 use onehand_core::chat::drive::Effect;
@@ -219,32 +216,6 @@ fn offline_start_reads_the_copy_only_when_there_is_one() {
     let refused = HostFailure::Refused("vps is not a machine this build runs on".into());
     assert_eq!(offline_start(3, &refused), OfflineStart::Read);
     assert_eq!(offline_start(0, &refused), OfflineStart::End);
-}
-
-/// A watch ends on a lost connection only when the connection closed without
-/// another machine taking the host; open, the session itself ended.
-#[test]
-fn a_watch_ended_by_a_lost_connection_is_told_from_the_others() {
-    assert!(connection_lost(true, false));
-    assert!(!connection_lost(true, true), "taken");
-    assert!(!connection_lost(false, false), "the session's own end");
-}
-
-/// The copy's notice says how recent it is when its entries kept a time, and
-/// leaves that out when none did.
-#[test]
-fn the_offline_line_says_how_recent_the_copy_is() {
-    let vps = onehand_core::workspace::HostName("vps".into());
-    assert_eq!(
-        offline_line(&vps, Some(1_000), 1_000 + 3 * 3600),
-        "Not connected to vps. This is the copy kept on this machine, up to 3h ago; \
-         it carries on once the host is back"
-    );
-    assert_eq!(
-        offline_line(&vps, None, 5_000),
-        "Not connected to vps. This is the copy kept on this machine; \
-         it carries on once the host is back"
-    );
 }
 
 // The session's carrier: what it does with the drive's effects, held to its
@@ -525,7 +496,7 @@ pub(crate) mod carrier {
         drop(tx);
         cx.run_until_parked();
         assert_eq!(
-            session.read_with(cx, |s, _| s.host_offline.clone()),
+            session.read_with(cx, |s, _| s.chat.host_away().cloned()),
             Some(vps)
         );
         let said = notices(&session, cx);
@@ -559,7 +530,10 @@ pub(crate) mod carrier {
         .unwrap();
         drop(tx);
         cx.run_until_parked();
-        assert_eq!(session.read_with(cx, |s, _| s.host_offline.clone()), None);
+        assert_eq!(
+            session.read_with(cx, |s, _| s.chat.host_away().cloned()),
+            None
+        );
         let said = notices(&session, cx);
         assert!(
             !said.iter().any(|line| line.starts_with("Not connected to")),
@@ -643,15 +617,16 @@ mod folds {
     fn a_renumbered_transcript_forgets_what_was_open(cx: &mut TestAppContext) {
         let (session, _tx) = session(cx);
         session.update(cx, |s, cx| {
-            let fx = s.chat.say_host_wait("Sending the code".into());
+            let fx = s
+                .chat
+                .wait_on_host(onehand_core::workspace::HostName("vps".into()), 1, 0);
             s.perform(fx, cx);
             let fx = s.chat.note("after it".to_string());
             s.perform(fx, cx);
             let after = TranscriptItemId::Live(1);
             s.toggle_item(after, false);
             s.toggle_out(after, 0);
-            let fx = s.chat.unsay_host_wait();
-            s.perform(fx, cx);
+            s.forget_host_wait(cx);
             s.sync_md(cx);
             // The item moved up to where the line was; its old place is now
             // nobody's, and what was chosen there is gone with the numbering.

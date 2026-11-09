@@ -208,7 +208,10 @@ pub fn item(
             // A session kept waiting by its host's busy sessions offers to
             // restart that host's service now, in place of the key that
             // would only find it waiting again.
-            match lost.then(|| session.read(cx).host_wait.clone()).flatten() {
+            match lost
+                .then(|| session.read(cx).chat.host_waiting().cloned())
+                .flatten()
+            {
                 Some(host) => host_waiting(text, session, host, cx),
                 None => notice(text, *level, past, restart, detail, cx).into_any_element(),
             }

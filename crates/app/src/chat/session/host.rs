@@ -8,7 +8,7 @@ use super::{ChatEvent, ChatSession};
 use crate::hosts::HostFailure;
 use crate::state::Shared;
 use gpui::{AsyncApp, WeakEntity};
-use onehand_core::acp::{AcpEvent, Opening};
+use onehand_core::acp::Opening;
 use onehand_core::chat::{Chat, ConversationSnapshot};
 use onehand_core::config::AgentSpec;
 use onehand_core::host::client::{HostConn, HostError};
@@ -89,19 +89,6 @@ pub(super) fn offline_start(kept: usize, failure: &HostFailure) -> OfflineStart 
             OfflineStart::Read
         }
     }
-}
-
-/// The line under a host session read from this machine's copy: how recent
-/// the copy is when its entries kept a time, `last` (seconds since the
-/// epoch), and that it carries on once the host is back.
-pub(super) fn offline_line(host: &HostName, last: Option<u64>, now: u64) -> String {
-    let upto = last.map_or_else(String::new, |at| {
-        format!(", up to {}", onehand_core::rel_time(now, at))
-    });
-    format!(
-        "Not connected to {host}. This is the copy kept on this machine{upto}; \
-         it carries on once the host is back"
-    )
 }
 
 /// What a restart on a host comes to.
@@ -305,48 +292,15 @@ fn offline(
     cx: &mut AsyncApp,
 ) {
     let last = kept.iter().rev().map(|(_, at, _)| *at).find(|at| *at != 0);
-    let line = offline_line(&host, last, onehand_core::chat::now_secs());
     let _ = session.update(cx, |session, cx| {
-        let fx = session
-            .chat
-            .read_back(copy::events(kept), away.then_some(line), super::now());
-        if away {
-            session.host_offline = Some(host);
-        }
+        let fx = session.chat.read_back(
+            copy::events(kept),
+            away.then_some((host, last)),
+            super::now(),
+        );
         session.perform(fx, cx);
         cx.notify();
     });
-}
-
-/// Whether `event` ends the session's watch because the connection to its
-/// host was lost, closed without another machine taking it: then the session
-/// says it is out of reach, rather than that its agent went, and keeps what
-/// it has until the host is back. Decided on the connection, never on words.
-///
-/// The line that says so, for the drive's [`SessionDrive::host_lost`], or
-/// `None` when the event is not such an end.
-///
-/// [`SessionDrive::host_lost`]: onehand_core::chat::SessionDrive::host_lost
-pub(super) fn went_away(session: &mut ChatSession, event: &AcpEvent) -> Option<String> {
-    if !matches!(event, AcpEvent::Disconnected(_)) {
-        return None;
-    }
-    let (host, _) = session
-        .host_conn
-        .as_ref()
-        .filter(|(_, conn)| connection_lost(conn.is_closed(), conn.taken()))?;
-    let host = host.clone();
-    let now = onehand_core::chat::now_secs();
-    let line = offline_line(&host, Some(now), now);
-    session.host_offline = Some(host);
-    Some(line)
-}
-
-/// Whether a watch that ended did so because its connection was lost: closed,
-/// and not by the host handing it to another machine. Open, it was the
-/// session's own end.
-pub(super) fn connection_lost(closed: bool, taken: bool) -> bool {
-    closed && !taken
 }
 
 /// Say on the session that it waits on `host`'s `n` busy sessions and
@@ -360,10 +314,7 @@ fn wait(
     cx: &mut AsyncApp,
 ) {
     let _ = session.update(cx, |session, cx| {
-        let fx = session
-            .chat
-            .say_host_wait(crate::hosts::waiting_line(&host, n, terms));
-        session.host_wait = Some(host);
+        let fx = session.chat.wait_on_host(host, n, terms);
         cx.emit(ChatEvent::HostBusy);
         session.perform(fx, cx);
         cx.notify();

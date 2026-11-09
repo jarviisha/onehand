@@ -257,6 +257,8 @@ pub struct SessionDrive {
     /// conversation here.
     title: Option<crate::saving::Saving<Option<String>>>,
     batch: Batch,
+    /// What the session waits on its host for, while it does.
+    hold: Option<host::Hold>,
 }
 
 /// **Closing honours the saves still on their way.** The model writes what is
@@ -291,6 +293,7 @@ impl SessionDrive {
             saving: 0,
             title: None,
             batch: Batch::default(),
+            hold: None,
         }
     }
 
@@ -677,6 +680,7 @@ impl SessionDrive {
 
 mod cards;
 mod host;
+pub use host::{offline_line, HostLink};
 mod life;
 mod settings;
 mod titles;

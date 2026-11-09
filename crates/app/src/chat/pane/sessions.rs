@@ -339,8 +339,10 @@ impl ChatPane {
                     // host is back.
                     ChatEvent::Session(Signal::Disconnected) => {
                         let session = session.read(cx);
-                        let (failed, offline) =
-                            (session.chat.fork_failure(), session.host_offline.clone());
+                        let (failed, offline) = (
+                            session.chat.fork_failure(),
+                            session.chat.host_away().cloned(),
+                        );
                         match (failed, offline) {
                             (Some(why), _) => cx.emit(ChatPaneEvent::ForkFailed {
                                 uid: Some(uid),
@@ -724,8 +726,8 @@ impl ChatPane {
         let session = conv.session()?.read(cx);
         let chat = &session.chat;
         SessionSignal::pick(
-            session.host_wait.is_some(),
-            session.host_offline.is_some(),
+            session.chat.host_waiting().is_some(),
+            session.chat.host_away().is_some(),
             chat.link,
             chat.failed(),
             chat.awaiting_permission() || crate::task::waits_on_person(uid, cx),
@@ -751,7 +753,7 @@ impl ChatPane {
     /// The host session `uid` is out of reach of, until it is back.
     pub(crate) fn host_lost(&self, uid: u64, cx: &App) -> Option<HostName> {
         let conv = self.conversations.get(&uid)?;
-        conv.session()?.read(cx).host_offline.clone()
+        conv.session()?.read(cx).chat.host_away().cloned()
     }
 
     /// The wait for `uid`'s host to be back ended on `why`, the host taken
@@ -762,8 +764,7 @@ impl ChatPane {
             return;
         };
         session.update(cx, |session, cx| {
-            if session.host_offline.is_some() {
-                session.forget_host_offline(cx);
+            if session.forget_host_offline(cx) {
                 let lost = onehand_core::acp::AcpEvent::Disconnected(why.to_string());
                 session.fold(lost, cx);
             }
@@ -773,7 +774,7 @@ impl ChatPane {
     /// The host session `uid` waits on, its busy sessions to finish.
     pub(crate) fn host_wait(&self, uid: u64, cx: &App) -> Option<HostName> {
         let conv = self.conversations.get(&uid)?;
-        conv.session()?.read(cx).host_wait.clone()
+        conv.session()?.read(cx).chat.host_waiting().cloned()
     }
 
     /// How many background items `uid`'s agent has alive, how many subagents
