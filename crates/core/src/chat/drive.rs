@@ -464,6 +464,11 @@ impl SessionDrive {
         self.chat.tell_time(now);
         let outcome = self.chat.apply(event);
         let mut fx = vec![Effect::Signal(Signal::Appended)];
+        // The turn's save is built before what waited behind it goes: built
+        // after, it would write the next prompt as a turn still running,
+        // and the file, written only at its end, would never hear when that
+        // turn finished.
+        let turn_save = outcome.turn_ended.then(|| self.save()).flatten();
         // Last of a turn's end, so a prompt written mid-turn opens its own
         // turn against a conversation that has finished closing the last.
         if outcome.turn_ended {
@@ -502,7 +507,9 @@ impl SessionDrive {
         {
             fx.push(Effect::Signal(Signal::AwaitingUser(ask)));
         }
-        if outcome.turn_ended || cycle_ended {
+        if outcome.turn_ended {
+            fx.extend(turn_save);
+        } else if cycle_ended {
             fx.extend(self.save());
         }
         if outcome.turn_ended {

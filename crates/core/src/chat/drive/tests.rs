@@ -336,6 +336,31 @@ fn a_queued_prompt_goes_out_when_the_turn_ends() {
     assert!(drive.queued.is_none());
 }
 
+/// The turn a queued prompt opens is written whole, when it ends: the save
+/// of the turn before leaves it out, so its line is not frozen on disk while
+/// the turn is still running, without the time it finished.
+#[test]
+fn a_queued_prompt_is_written_with_its_own_turn() {
+    let (mut drive, _rx) = connected();
+    drive.prompt("first", &[], Origin::Person, Code::Here);
+    drive.prompt("second", &[], Origin::Person, Code::Here);
+    let first = take_save(feed(&mut drive, turn_ends()));
+    assert!(drive.busy, "the queued prompt went");
+    assert!(
+        !first.lines.iter().any(|line| line.contains("second")),
+        "{:?}",
+        first.lines
+    );
+
+    let second = take_save(feed(&mut drive, turn_ends()));
+    let line = second
+        .lines
+        .iter()
+        .find(|line| line.contains("\"second\""))
+        .expect("written with its own turn");
+    assert!(line.contains("completed_at"), "{line}");
+}
+
 #[test]
 fn prompted_since_counts_what_went_not_what_waits() {
     let (mut drive, _rx) = connected();
