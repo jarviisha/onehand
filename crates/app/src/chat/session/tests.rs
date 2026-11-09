@@ -490,6 +490,83 @@ pub(crate) mod carrier {
         assert_eq!(failed(&seen), 0, "{:?}", seen.borrow());
         std::fs::remove_file(file).ok();
     }
+
+    /// The text of every notice the session's transcript holds, in order.
+    fn notices(session: &Entity<ChatSession>, cx: &mut TestAppContext) -> Vec<String> {
+        session.read_with(cx, |s, _| {
+            s.chat
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    onehand_core::chat::ChatItem::Notice { text, .. } => Some(text.clone()),
+                    _ => None,
+                })
+                .collect()
+        })
+    }
+
+    /// A watch on a host session that ends with its connection, closed
+    /// without another machine taking it, is out of reach rather than lost:
+    /// the copy's line is said instead of the agent's end, and the session
+    /// stays to be restarted once the host is back.
+    #[gpui::test]
+    fn a_lost_host_connection_is_said_as_out_of_reach(cx: &mut TestAppContext) {
+        use onehand_core::host::client::HostConn;
+        use onehand_core::workspace::HostName;
+        let (session, mut tx, seen) = driven(cx, Chat::default());
+        let _rx = up(&mut tx);
+        cx.run_until_parked();
+        let vps = HostName("vps".into());
+        session.update(cx, |s, _| {
+            s.host_conn = Some((vps.clone(), HostConn::closed("vps")));
+        });
+        tx.try_send(AcpEvent::Disconnected("lost the connection to vps".into()))
+            .unwrap();
+        drop(tx);
+        cx.run_until_parked();
+        assert_eq!(
+            session.read_with(cx, |s, _| s.host_offline.clone()),
+            Some(vps)
+        );
+        let said = notices(&session, cx);
+        assert!(
+            said.last()
+                .is_some_and(|line| line.starts_with("Not connected to vps.")),
+            "{said:?}"
+        );
+        assert!(
+            !said.iter().any(|line| line.contains("lost the connection")),
+            "the agent's end is not said: {said:?}"
+        );
+        assert_eq!(count(&seen, &Signal::Disconnected), 1);
+    }
+
+    /// One taken by another machine is not that: the session ends on why,
+    /// as a lost agent does, and nothing waits for the host to be back.
+    #[gpui::test]
+    fn a_taken_host_connection_ends_the_session(cx: &mut TestAppContext) {
+        use onehand_core::host::client::HostConn;
+        use onehand_core::workspace::HostName;
+        let (session, mut tx, seen) = driven(cx, Chat::default());
+        let _rx = up(&mut tx);
+        cx.run_until_parked();
+        session.update(cx, |s, _| {
+            s.host_conn = Some((HostName("vps".into()), HostConn::taken_from("vps")));
+        });
+        tx.try_send(AcpEvent::Disconnected(
+            "vps was attached from another machine".into(),
+        ))
+        .unwrap();
+        drop(tx);
+        cx.run_until_parked();
+        assert_eq!(session.read_with(cx, |s, _| s.host_offline.clone()), None);
+        let said = notices(&session, cx);
+        assert!(
+            !said.iter().any(|line| line.starts_with("Not connected to")),
+            "{said:?}"
+        );
+        assert_eq!(count(&seen, &Signal::Disconnected), 1);
+    }
 }
 
 // What the reader has open, on top of what an item does by itself.

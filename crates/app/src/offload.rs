@@ -923,6 +923,67 @@ mod tests {
         assert_eq!(o.moving, None);
     }
 
+    /// What a copy back comes to is kept so. Still stopped, the time the
+    /// code last moved and the failure standing are kept; come, the failure
+    /// and a refusal go; with the host still working nothing changes but
+    /// that the code no longer moves; a failure keeps what it says to keep,
+    /// and why.
+    #[test]
+    fn a_copy_back_lands_as_it_came() {
+        use super::landed;
+        use onehand_core::host::offload::Changes;
+        let stopped = |moved| onehand_core::host::offload::OffloadState {
+            moved,
+            stopped: Some(Changes {
+                files: vec!["a.rs".into()],
+                refs: Vec::new(),
+            }),
+            ..fresh(Holder::Host)
+        };
+        let mut o = Offload {
+            failed: Some("was".into()),
+            refused: true,
+            state: Some(stopped(7)),
+            ..kept(Some(Holder::Host), Some(Moving::Back))
+        };
+        landed(&mut o, Ok(Some(stopped(99))));
+        assert_eq!(o.moving, None);
+        assert_eq!(o.state.as_ref().map(|s| s.moved), Some(7));
+        assert_eq!(o.failed.as_deref(), Some("was"));
+        assert!(o.refused);
+
+        o.moving = Some(Moving::Back);
+        landed(&mut o, Ok(None));
+        assert_eq!(o.moving, None);
+        assert_eq!(o.state.as_ref().map(|s| s.moved), Some(7));
+        assert_eq!(o.failed.as_deref(), Some("was"));
+
+        o.moving = Some(Moving::Back);
+        landed(&mut o, Err(("Could not list".into(), None)));
+        assert_eq!(o.failed.as_deref(), Some("Could not list"));
+        assert!(o.state.as_ref().is_some_and(|s| s.stopped.is_some()));
+
+        o.moving = Some(Moving::Back);
+        let came = onehand_core::host::offload::OffloadState {
+            moved: 12,
+            ..fresh(Holder::Laptop)
+        };
+        landed(&mut o, Ok(Some(came)));
+        assert_eq!(o.failed, None);
+        assert!(!o.refused);
+        assert_eq!(
+            o.state.as_ref().map(|s| (s.key, s.moved)),
+            Some((Holder::Laptop, 12))
+        );
+        assert!(o.here());
+
+        o.moving = Some(Moving::Back);
+        let kept_then = fresh(Holder::Host);
+        landed(&mut o, Err(("kept".into(), Some(Box::new(kept_then)))));
+        assert_eq!(o.state.as_ref().map(|s| s.key), Some(Holder::Host));
+        assert!(o.locked());
+    }
+
     #[test]
     fn offloading_waits_on_a_host_and_on_turns_here() {
         use crate::shell::offload_refusal;
