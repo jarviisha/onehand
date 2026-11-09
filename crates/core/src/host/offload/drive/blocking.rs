@@ -15,11 +15,11 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use tokio::runtime::Handle;
 
-/// The attach a errand is handed: `None` when it asked only for one already up
+/// The attach an errand is handed: `None` when it asked only for one already up
 /// and there was none.
 pub type Reached = Result<Option<HostConn>, HostFailure>;
 
-/// Which attach a errand is handed.
+/// Which attach an errand is handed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Reach {
     /// None: it does not call the host.
@@ -307,7 +307,7 @@ impl Errand {
     }
 }
 
-/// The attach a errand that needs one was handed, or why not in a person's
+/// The attach an errand that needs one was handed, or why not in a person's
 /// words.
 fn attached(conn: Reached, host: &HostName) -> Result<HostConn, String> {
     match conn {

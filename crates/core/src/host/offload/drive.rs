@@ -8,7 +8,7 @@
 //! prompt, check after a turn, check again, take the host's code, update the
 //! host, offload a folder, the poll's clock) and is told what came of each
 //! [`Errand`] it hands out ([`Input`]). It reads no disk, no network and no
-//! clock: a errand's body ([`Errand::run`]) does, off the UI loop, over the attach
+//! clock: an errand's body ([`Errand::run`]) does, off the UI loop, over the attach
 //! the front end hands it ([`Reach`]).
 //!
 //! **One per process.** Two windows holding the same folder hold one copy of
@@ -21,7 +21,7 @@
 //! first, so a cache gone stale can only make a move wait, never send old
 //! code up over the host's.
 //!
-//! **Late answers.** A errand's answer is *recorded*: what its body wrote is on
+//! **Late answers.** An errand's answer is *recorded*: what its body wrote is on
 //! disk whatever the drive did since, so it lands on the folder's entry while
 //! the folder is kept, and on nothing once it is not. The poll's clock is
 //! *dropped* past its use: only one is ever armed.
@@ -220,7 +220,7 @@ pub type Came = Result<Option<OffloadState>, (String, Option<Box<OffloadState>>)
 /// to keep then.
 pub type Went = Result<OffloadState, (String, Option<Box<OffloadState>>)>;
 
-/// What a errand came to.
+/// What an errand came to.
 pub enum Input {
     Loaded {
         path: PathBuf,
@@ -490,7 +490,7 @@ impl OffloadDrive {
         Vec::new()
     }
 
-    /// What a errand came to.
+    /// What an errand came to.
     pub fn handle(&mut self, input: Input) -> Vec<Effect> {
         match input {
             Input::Loaded { path, read } => {

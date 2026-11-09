@@ -506,7 +506,7 @@ Made on 2026-11-09, with phase 6's audit:
 Phase 6 changed, on purpose:
 - Putting the offload form away no longer stops a send under way: it runs to its end and keeps
   what went for the next offload. The project stays here, as before.
-- A errand of an offloaded project that panics answers as a failure, *Something went wrong here; try
+- An errand of an offloaded project that panics answers as a failure, *Something went wrong here; try
   again*, rather than leaving its folder claimed.
 - The poll goes through the folders in their path's order, not the map's.
 - An attempt joined by several asks is heard once, as a person's when a person's ask joined it,

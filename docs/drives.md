@@ -208,19 +208,20 @@ listening, a finished run hearing nothing more, the place held while a cancelled
 Stop before a command starts, and a dismiss put back when its write fails. Hosts' carrier
 (`crates/app/src/hosts/tests.rs`) holds a wait's end reaching every listener once and the last
 listener going ending the wait and its clock; offloaded projects'
-(`crates/app/src/offload/tests.rs`) a errand's answer landing once, the poll's clock coming round
-and armed again, an answer reaching its asker once, and a late answer for a folder let go landing
-on nothing. Unattended runs' carrier (`crates/app/src/unattended/tests.rs`) holds its clock coming
-round and armed again, a start over the cap refused where it was asked, a pause, a config that
-cannot work, and a report sent once and dropped once it lands; the clock's
-(`crates/app/src/schedules/tests.rs`) its first look after its wait, a file it cannot read said, a
-look that moves nothing writing nothing, and a failed switch put back. Still untested: `SendCode`'s
-late answer and the pane's half of the session (`ChatPane::carry`), `SaveTitle` (written on the
-ordered writer's own thread, which GPUI's test scheduler does not wait for), deferred work, the
-forge calls (the connectors are the ones built in), a command called off while it runs (the test
-scheduler runs it to its end before a Stop can reach it), and what needs a window's shell: a
-claim's run brought up, a schedule's start, a run's project kept or dropped; and a host's real
-attach, which runs on a runtime GPUI's test scheduler does not drive.
+(`crates/app/src/offload/tests.rs`) an errand's answer landing once, the poll's clock coming round
+and armed again, an answer reaching its asker once, a late answer for a folder let go landing on
+nothing, and keeping a kept folder again telling nobody, so the window's observer settles.
+Unattended runs' carrier (`crates/app/src/unattended/tests.rs`) holds its clock coming round and
+armed again, a start over the cap refused where it was asked, a pause, a config that cannot work,
+and a report sent once and dropped once it lands; the clock's (`crates/app/src/schedules/tests.rs`)
+its first look after its wait, a file it cannot read said, a look that moves nothing writing
+nothing, and a failed switch put back. Still untested: `SendCode`'s late answer and the pane's half
+of the session (`ChatPane::carry`), `SaveTitle` (written on the ordered writer's own thread, which
+GPUI's test scheduler does not wait for), deferred work, the forge calls (the connectors are the
+ones built in), a command called off while it runs (the test scheduler runs it to its end before a
+Stop can reach it), and what needs a window's shell: a claim's run brought up, a schedule's start,
+a run's project kept or dropped; and a host's real attach, which runs on a runtime GPUI's test
+scheduler does not drive.
 
 ### 12. A model does no I/O and reads no clock
 

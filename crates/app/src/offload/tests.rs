@@ -1,4 +1,4 @@
-//! The offloaded projects' carrier against its contract: a errand's answer
+//! The offloaded projects' carrier against its contract: an errand's answer
 //! reaches the drive once, the poll's clock comes round and is armed again,
 //! an answer reaches whoever asked once, and a late answer for a folder no
 //! longer kept lands on nothing. The errands here touch no host: a host's
@@ -147,5 +147,35 @@ fn a_late_answer_for_a_folder_let_go_lands_on_nothing(cx: &mut TestAppContext) {
     });
     cx.run_until_parked();
     assert!(cx.update(|cx| super::get(cx, &path).is_none()));
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+/// A window keeps every offloaded folder again whenever who holds the code
+/// changes, as the shell's observer does: keeping one already kept tells
+/// nobody, so that settles rather than going round for ever.
+#[gpui::test]
+fn keeping_a_kept_folder_again_settles(cx: &mut TestAppContext) {
+    app(cx);
+    let path = folder("settles");
+    let seen = std::rc::Rc::new(std::cell::Cell::new(0));
+    cx.update(|cx| {
+        cx.default_global::<super::Offloads>();
+        let (path, seen) = (path.clone(), seen.clone());
+        cx.observe_global::<super::Offloads>(move |cx| {
+            seen.set(seen.get() + 1);
+            assert!(seen.get() < 50, "the observer never settles");
+            super::track(cx, path.clone(), HostName("vps".into()), None);
+        })
+        .detach();
+    });
+    let state = onehand_core::host::offload::OffloadState {
+        key: onehand_core::host::wire::Holder::Laptop,
+        manifest: Default::default(),
+        moved: 0,
+        stopped: None,
+    };
+    cx.update(|cx| super::track(cx, path.clone(), HostName("vps".into()), Some(state)));
+    cx.run_until_parked();
+    assert!(seen.get() < 5, "{}", seen.get());
     let _ = std::fs::remove_dir_all(&path);
 }

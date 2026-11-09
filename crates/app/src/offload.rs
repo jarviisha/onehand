@@ -143,19 +143,34 @@ pub(crate) fn track(
     host: HostName,
     state: Option<onehand_core::host::offload::OffloadState>,
 ) {
+    if state.is_none() && kept(cx, &path) {
+        return;
+    }
     cx.default_global::<Offloads>();
     drive(cx, |d| d.track(path, host, state));
 }
 
 /// Start keeping `path`, offloaded to `host` on `branch`.
 pub(crate) fn track_branch(cx: &mut App, path: PathBuf, host: HostName, branch: String) {
+    if kept(cx, &path) {
+        return;
+    }
     cx.default_global::<Offloads>();
     drive(cx, |d| d.track_branch(path, host, branch));
 }
 
+/// Whether the drive keeps `path` already, so that keeping it again asks
+/// nothing of it. Asked first because every ask tells the observers, and
+/// the window's own observer keeps every offloaded folder again: asking
+/// regardless would never settle.
+fn kept(cx: &App, path: &Path) -> bool {
+    cx.try_global::<Offloads>()
+        .is_some_and(|all| all.drive.contains_key(path))
+}
+
 /// Stop keeping `path`: it runs here again, or left the workspace.
 pub(crate) fn forget(cx: &mut App, path: &Path) {
-    if cx.try_global::<Offloads>().is_some() {
+    if kept(cx, path) {
         drive(cx, |d| {
             d.forget(path);
             Vec::new()
