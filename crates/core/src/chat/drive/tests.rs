@@ -1,3 +1,4 @@
+use super::host::offline_line;
 use super::*;
 use crate::acp::{
     AcpRequest, ConfigChoice, ConfigOption, PermissionOption, PermissionRequest, ReqTx, Usage,
@@ -1219,6 +1220,46 @@ fn a_session_restarted_with_a_save_on_its_way_keeps_that_turn_if_the_save_fails(
         1,
         "{lines:?}"
     );
+    let _ = std::fs::remove_dir_all(&store);
+}
+
+/// And that save landing late, after the session that carries on wrote the
+/// whole file, adds nothing a second time.
+#[test]
+fn a_save_landing_after_the_restarted_session_wrote_the_whole_file_adds_nothing_twice() {
+    let (mut drive, _rx, store) = on_disk("restart-lands");
+    let first = take_save(turn(&mut drive, "one", "first answer"));
+    crate::chat::store::commit(&first).unwrap();
+    drive.handle(Input::Saved {
+        write: first,
+        result: Ok(()),
+    });
+    let late = take_save(turn(&mut drive, "two", "second answer"));
+    let snapshot = drive.drive.take_snapshot(now()).unwrap();
+    drop(drive);
+    let chat = Chat::new(
+        1,
+        PathBuf::from("/repo"),
+        "agent".into(),
+        Some(store.clone()),
+    );
+    let mut next = SessionDrive::new(chat);
+    next.resume(snapshot);
+    drop(next);
+    let whole = written_lines(&store);
+    crate::chat::store::commit(&late).unwrap();
+    assert_eq!(
+        written_lines(&store),
+        whole,
+        "the late save's lines are in it"
+    );
+    for answer in ["first answer", "second answer"] {
+        assert_eq!(
+            whole.iter().filter(|l| l.contains(answer)).count(),
+            1,
+            "{whole:?}"
+        );
+    }
     let _ = std::fs::remove_dir_all(&store);
 }
 

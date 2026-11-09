@@ -33,7 +33,7 @@ pub struct HostLink {
 /// The line under a host session read from this machine's copy: how recent
 /// the copy is when its entries kept a time, `last` (seconds since the
 /// epoch), and that it carries on once the host is back.
-pub fn offline_line(host: &HostName, last: Option<u64>, now: u64) -> String {
+pub(crate) fn offline_line(host: &HostName, last: Option<u64>, now: u64) -> String {
     let upto = last.map_or_else(String::new, |at| {
         format!(", up to {}", crate::rel_time(now, at))
     });

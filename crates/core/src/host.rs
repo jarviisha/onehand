@@ -15,4 +15,5 @@ pub mod offload;
 pub mod sshconf;
 pub mod wire;
 
-pub use failure::{taken_line, waiting_line, HostFailure};
+pub(crate) use failure::taken_line;
+pub use failure::{waiting_line, HostFailure};

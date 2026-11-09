@@ -19,7 +19,7 @@ use futures::future::{self, LocalBoxFuture};
 use gpui::{App, AsyncApp};
 use onehand_core::disk::{Disk, HostDisk};
 use onehand_core::host::client::{HostConn, HostError};
-use onehand_core::host::drive::{Effect, Got, HostDrive, Kind};
+use onehand_core::host::drive::{Asker, Effect, Got, HostDrive, Input, Kind};
 use onehand_core::host::wire::HostSession;
 use onehand_core::tree::TreeEntry;
 use onehand_core::workspace::HostName;
@@ -102,7 +102,8 @@ fn perform(cx: &mut App, fx: Vec<Effect>) {
                 .spawn(async move |cx| {
                     cx.background_executor().timer(after).await;
                     cx.update(|cx| {
-                        let fx = held(cx).borrow_mut().drive.elapsed(&host, kind, id);
+                        let elapsed = Input::Elapsed { host, kind, id };
+                        let fx = held(cx).borrow_mut().drive.handle(elapsed);
                         perform(cx, fx);
                     });
                 })
@@ -113,7 +114,8 @@ fn perform(cx: &mut App, fx: Vec<Effect>) {
                 cx.spawn(async move |cx| {
                     let _ = attaching.await;
                     cx.update(|cx| {
-                        let fx = held(cx).borrow_mut().drive.polled(&host, kind, id);
+                        let polled = Input::Polled { host, kind, id };
+                        let fx = held(cx).borrow_mut().drive.handle(polled);
                         perform(cx, fx);
                     });
                 })
@@ -189,8 +191,7 @@ fn settle(cx: &App, host: &HostName) {
         return;
     };
     let closed = h.ready(host).filter(|c| c.is_closed()).map(HostConn::taken);
-    // Ends nothing: a live host has no wait for it to be back.
-    let _ = h.drive.settle(host, closed);
+    h.drive.settle(host, closed);
 }
 
 /// Whether lost `host` is being attached again by itself: something listens
@@ -408,11 +409,14 @@ fn attach_with(
     polled: bool,
 ) -> LocalBoxFuture<'static, Result<HostConn, HostFailure>> {
     let held = held(cx);
-    let take = !polled;
+    let by = match polled {
+        true => Asker::Poll,
+        false => Asker::Person,
+    };
     let got = {
         let mut h = held.borrow_mut();
         let alive = h.ready(host).is_some_and(|c| !c.is_closed());
-        h.drive.ask(host, fresh, take, polled, alive)
+        h.drive.ask(host, fresh, by, alive)
     };
     let joined = |made: u64| held.borrow().attempts.get(&made).cloned();
     match got {
@@ -424,8 +428,9 @@ fn attach_with(
             Some(attempt) => attempt.boxed_local(),
             None => future::ready(Err(dropped(host))).boxed_local(),
         },
-        // A person's attach that found one made by itself under way, which
-        // failed: made again, taking the host this time.
+        // The drive's `Wait`: the attempt made by itself is awaited and, as
+        // the drive answered, a person's attach taking the host follows
+        // should it fail.
         Got::Wait(made) => {
             let attempt = joined(made);
             let (host, cx) = (host.clone(), cx.to_async());
@@ -440,7 +445,7 @@ fn attach_with(
             }
             .boxed_local()
         }
-        Got::Make(made) => make(cx, held, host, made, fresh, take),
+        Got::Make(made) => make(cx, held, host, made, fresh, by == Asker::Person),
     }
 }
 
@@ -476,12 +481,20 @@ fn make(
                 let fx = {
                     let mut h = held.borrow_mut();
                     h.attempts.remove(&made);
-                    let told = result.as_ref().map(drop).map_err(Clone::clone);
-                    let landed = h.drive.landed(&host, made, &told);
-                    if let (true, Ok(conn)) = (landed.ready, &result) {
+                    let landed = Input::Landed {
+                        host: host.clone(),
+                        made,
+                        result: result.as_ref().map(drop).map_err(Clone::clone),
+                    };
+                    let fx = h.drive.handle(landed);
+                    // Kept only when the drive holds this attempt as the
+                    // host's now.
+                    if let (Some(true), Ok(conn)) =
+                        (h.drive.ready(&host).map(|m| m == made), &result)
+                    {
                         h.conns.insert(host.clone(), (made, conn.clone()));
                     }
-                    landed.fx
+                    fx
                 };
                 perform(cx, fx);
             });
@@ -506,7 +519,8 @@ fn make(
             if let Ok(taken) = closed.await {
                 cx.update(|cx| {
                     let up = live(cx, &host).is_some();
-                    let fx = self::held(cx).borrow_mut().drive.closed(&host, taken, up);
+                    let closing = Input::Closed { host, taken, up };
+                    let fx = self::held(cx).borrow_mut().drive.handle(closing);
                     perform(cx, fx);
                 });
             }

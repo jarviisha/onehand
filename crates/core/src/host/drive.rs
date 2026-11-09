@@ -41,9 +41,7 @@ use std::time::Duration;
 mod tests;
 mod waits;
 
-pub use waits::{
-    next_delay, HOST_IDLE_POLL, HOST_UNREACHABLE_POLLS, RECONNECT_FIRST, RECONNECT_MAX,
-};
+pub use waits::HOST_IDLE_POLL;
 
 /// How a host's wait ended: its service on this build, or why it could not
 /// be reached.
@@ -88,18 +86,33 @@ pub enum Got {
     Make(u64),
 }
 
+/// Who asks for a host's attach.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Asker {
+    /// A person, or work a person is waiting on: the attach takes the host
+    /// from another machine, and a miss ends a wait at once.
+    Person,
+    /// A wait's own poll, or work nobody watches: made by itself, it leaves
+    /// a host another machine holds to it, and a miss is a blip.
+    Poll,
+}
+
 /// What the drive asks for.
 #[derive(Debug)]
 pub enum Effect {
-    /// Hand over wait `id`'s clock after this long ([`HostDrive::elapsed`]).
+    /// Hand over wait `id`'s clock after this long, as [`Input::Elapsed`].
+    /// A late answer is dropped: a clock whose wait has gone, or been made
+    /// anew, finds no wait of its id and asks for nothing.
     Arm {
         host: HostName,
         kind: Kind,
         id: u64,
         after: Duration,
     },
-    /// Attach to `host` by itself for wait `id`, then say so
-    /// ([`HostDrive::polled`]) whatever it came to.
+    /// Attach to `host` as a poll for wait `id`, then answer
+    /// [`Input::Polled`] whatever it came to. What the attach lands is
+    /// recorded through its own [`Input::Landed`]; the `Polled` answer is
+    /// dropped once the wait has gone, as an `Arm`'s is.
     Attach { host: HostName, kind: Kind, id: u64 },
     /// Wait `id` ended so: tell everything that listens to it.
     Ended { id: u64, how: WaitEnd },
@@ -112,16 +125,33 @@ pub enum Effect {
 enum Slot {
     /// The `made`th attempt's connection.
     Ready(u64),
-    /// The `made`th attempt, under way: whether it takes the host from
-    /// another machine, and whether only a wait's own poll asked for it.
-    Attaching { made: u64, take: bool, polled: bool },
+    /// The `made`th attempt, under way, and who asked for it.
+    Attaching { made: u64, by: Asker },
 }
 
-/// What an attempt's landing came to.
-pub struct Landed {
-    /// Its connection is the host's now.
-    pub ready: bool,
-    pub fx: Vec<Effect>,
+/// What the world reports back.
+pub enum Input {
+    /// The `made`th attempt for `host` landed so. Recorded in its slot while
+    /// the slot is still its own, and heard (what is known of the host) only
+    /// while it is the host's latest: a replaced attempt's late answer is
+    /// dropped. Whether its connection is the host's now is read after, from
+    /// [`HostDrive::ready`].
+    Landed {
+        host: HostName,
+        made: u64,
+        result: Result<(), HostFailure>,
+    },
+    /// The connection a landed attempt made for `host` closed, `taken` by
+    /// another machine or not, and whether a newer one is `up` by then.
+    Closed {
+        host: HostName,
+        taken: bool,
+        up: bool,
+    },
+    /// Wait `id`'s clock came round.
+    Elapsed { host: HostName, kind: Kind, id: u64 },
+    /// The attach wait `id`'s clock asked for came back.
+    Polled { host: HostName, kind: Kind, id: u64 },
 }
 
 /// Every host's attach, and the waits on them.
@@ -135,69 +165,60 @@ pub struct HostDrive {
 }
 
 impl HostDrive {
-    /// The attach to `host`: the one up, if `alive` says its connection still
-    /// has its stream; the attempt under way; or a new one. With `fresh`, a
-    /// new one whatever is there: what follows under way is no longer heard.
-    /// `take` when the ask takes the host from another machine, `polled`
-    /// when only a wait's own poll asks.
-    pub fn ask(
-        &mut self,
-        host: &HostName,
-        fresh: bool,
-        take: bool,
-        polled: bool,
-        alive: bool,
-    ) -> Got {
+    /// The attach to `host` that `by` asks for: the one up, if `alive` says
+    /// its connection still has its stream; the attempt under way; or a new
+    /// one. With `fresh`, a new one whatever is there: what follows under way
+    /// is no longer heard.
+    pub fn ask(&mut self, host: &HostName, fresh: bool, by: Asker, alive: bool) -> Got {
         let found = match fresh {
             true => None,
-            false => self.slots.get_mut(host),
+            false => self.slots.get(host).copied(),
         };
-        match found {
-            Some(Slot::Ready(_)) if alive => return Got::Ready,
-            Some(Slot::Attaching {
-                made, take: takes, ..
-            }) if take && !*takes => return Got::Wait(*made),
-            Some(Slot::Attaching {
-                made,
-                polled: only_polled,
-                ..
-            }) => {
-                // Heard as a person's once a person's ask joins it.
-                *only_polled &= polled;
-                return Got::Join(*made);
-            }
-            Some(Slot::Ready(_)) | None => {}
+        match (found, by) {
+            (Some(Slot::Ready(_)), _) if alive => return Got::Ready,
+            (
+                Some(Slot::Attaching {
+                    made,
+                    by: Asker::Poll,
+                }),
+                Asker::Person,
+            ) => return Got::Wait(made),
+            (Some(Slot::Attaching { made, .. }), _) => return Got::Join(made),
+            (Some(Slot::Ready(_)) | None, _) => {}
         }
         self.made += 1;
         let made = self.made;
         self.latest.insert(host.clone(), made);
         self.slots
-            .insert(host.clone(), Slot::Attaching { made, take, polled });
+            .insert(host.clone(), Slot::Attaching { made, by });
         // Before the first frame that could show it, so nothing to redraw.
         self.waits.attaching(host);
         Got::Make(made)
     }
 
-    /// The `made`th attempt for `host` landed so: kept in its slot while the
-    /// slot is still its own, and heard while it is the host's latest.
-    pub fn landed(
+    /// What the world reported.
+    pub fn handle(&mut self, input: Input) -> Vec<Effect> {
+        match input {
+            Input::Landed { host, made, result } => self.landed(&host, made, &result),
+            Input::Closed { host, taken, up } => self.closed(&host, taken, up),
+            Input::Elapsed { host, kind, id } => self.waits.elapsed(&host, kind, id),
+            Input::Polled { host, kind, id } => self.waits.polled(&host, kind, id),
+        }
+    }
+
+    fn landed(
         &mut self,
         host: &HostName,
         made: u64,
         result: &Result<(), HostFailure>,
-    ) -> Landed {
-        let mut ready = false;
+    ) -> Vec<Effect> {
         let mut polled = false;
-        if let Some(Slot::Attaching {
-            made: m, polled: p, ..
-        }) = self.slots.get(host).copied()
-        {
+        if let Some(Slot::Attaching { made: m, by }) = self.slots.get(host).copied() {
             if m == made {
-                polled = p;
+                polled = by == Asker::Poll;
                 match result {
                     Ok(()) => {
                         self.slots.insert(host.clone(), Slot::Ready(made));
-                        ready = true;
                     }
                     Err(_) => {
                         self.slots.remove(host);
@@ -210,13 +231,10 @@ impl HostDrive {
             fx.push(Effect::Refresh);
         }
         fx.splice(0..0, self.waits.take_ended());
-        Landed { ready, fx }
+        fx
     }
 
-    /// The connection a landed attempt made for `host` closed, `taken` by
-    /// another machine or not: unless a newer one is up (`up`), the host is
-    /// lost or taken from now on.
-    pub fn closed(&mut self, host: &HostName, taken: bool, up: bool) -> Vec<Effect> {
+    fn closed(&mut self, host: &HostName, taken: bool, up: bool) -> Vec<Effect> {
         if up {
             return Vec::new();
         }
@@ -231,14 +249,17 @@ impl HostDrive {
     /// A live host whose connection has closed is lost, or taken, from now
     /// on, whether or not the watch on its closing has been heard yet:
     /// `closed` is whether the connection up has closed, and with it whether
-    /// it was taken.
-    pub fn settle(&mut self, host: &HostName, closed: Option<bool>) -> Vec<Effect> {
-        match (self.waits.state(host), closed) {
-            (HostState::Live, Some(taken)) => {
+    /// it was taken. It ends no wait and asks for nothing: a live host has no
+    /// wait for it to be back, and is drawn again once the closing is heard.
+    pub fn settle(&mut self, host: &HostName, closed: Option<bool>) {
+        let Some(taken) = closed else {
+            return;
+        };
+        match self.waits.state(host) {
+            HostState::Live => {
                 self.waits.closed(host, taken);
-                self.waits.take_ended()
             }
-            _ => Vec::new(),
+            HostState::Unknown | HostState::Attaching | HostState::Lost(_) | HostState::Taken => {}
         }
     }
 
@@ -260,16 +281,6 @@ impl HostDrive {
     /// it, the last.
     pub fn leave(&mut self, host: &HostName, id: u64) -> bool {
         self.waits.leave(host, id)
-    }
-
-    /// Wait `id`'s clock came round.
-    pub fn elapsed(&mut self, host: &HostName, kind: Kind, id: u64) -> Vec<Effect> {
-        self.waits.elapsed(host, kind, id)
-    }
-
-    /// The attach wait `id`'s clock asked for came back.
-    pub fn polled(&mut self, host: &HostName, kind: Kind, id: u64) -> Vec<Effect> {
-        self.waits.polled(host, kind, id)
     }
 
     /// What is known of `host`'s attach.

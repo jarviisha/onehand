@@ -25,7 +25,7 @@ impl OffloadDrive {
     /// Start keeping `path`, offloaded to `host` on `branch`, and count what
     /// it has to merge. A folder already kept is left as it is.
     pub fn track_branch(&mut self, path: PathBuf, host: HostName, branch: String) -> Vec<Effect> {
-        if self.roots.contains_key(&path) {
+        if self.kept_as_is(&path, false) {
             return Vec::new();
         }
         let state = BranchState {

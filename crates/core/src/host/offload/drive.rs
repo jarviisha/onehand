@@ -171,10 +171,15 @@ pub enum Kept {
 
 /// What the drive asks for.
 pub enum Effect {
-    /// Hand over the poll's clock after this long ([`OffloadDrive::elapsed`]).
+    /// Hand over the poll's clock after this long, as [`Input::Elapsed`].
+    /// Only one clock is ever armed, and one coming round while a pass is
+    /// still under way is dropped.
     Arm(Duration),
     /// Run this errand off the UI loop and hand its answer to
-    /// [`OffloadDrive::handle`].
+    /// [`OffloadDrive::handle`]. Its answer is recorded however late: what
+    /// its body wrote is on disk, so it lands on its folder while the folder
+    /// is kept, and on nothing once it is not; a signal it owes is said
+    /// either way.
     Run(Errand),
     Signal(Signal),
 }
@@ -222,6 +227,11 @@ pub type Went = Result<OffloadState, (String, Option<Box<OffloadState>>)>;
 
 /// What an errand came to.
 pub enum Input {
+    /// The poll's clock came round, with how each host of a kept folder
+    /// stands now.
+    Elapsed {
+        seen: HashMap<HostName, HostSeen>,
+    },
     Loaded {
         path: PathBuf,
         read: Result<Option<OffloadState>, String>,
@@ -317,7 +327,7 @@ impl OffloadDrive {
         host: HostName,
         state: Option<OffloadState>,
     ) -> Vec<Effect> {
-        if self.roots.contains_key(&path) && state.is_none() {
+        if self.kept_as_is(&path, state.is_some()) {
             return Vec::new();
         }
         let read = state.is_none();
@@ -326,6 +336,15 @@ impl OffloadDrive {
             fx.push(Effect::Run(Errand::load(path, host)));
         }
         fx
+    }
+
+    /// Whether keeping `path` again, said `anew` with what to keep or not,
+    /// asks nothing of the drive: a folder already kept is left as it is
+    /// unless it is said anew. A front end that tells its observers of every
+    /// change asks this first, or an observer that keeps every folder again
+    /// would never settle.
+    pub fn kept_as_is(&self, path: &Path, anew: bool) -> bool {
+        !anew && self.roots.contains_key(path)
     }
 
     /// Stop keeping `path`: it runs here again, or left the workspace. What
@@ -447,14 +466,17 @@ impl OffloadDrive {
     /// The attach made here never takes a host another machine holds, and
     /// one the host refuses stands on the project's page, not tried again
     /// until the person checks again: trying cannot change it.
-    pub fn elapsed(&mut self, seen: impl Fn(&HostName) -> HostSeen) -> Vec<Effect> {
+    fn elapsed(&mut self, seen: &HashMap<HostName, HostSeen>) -> Vec<Effect> {
         if self.pass.is_some() {
             return Vec::new();
         }
         let mut queue: Vec<(PathBuf, Due)> = self
             .roots
             .iter()
-            .filter_map(|(path, o)| Some((path.clone(), o.due(seen(&o.host))?)))
+            .filter_map(|(path, o)| {
+                let stands = seen.get(&o.host).copied().unwrap_or_default();
+                Some((path.clone(), o.due(stands)?))
+            })
             .collect();
         // In the folders' order, so a pass is the same whatever the map's.
         queue.sort_by(|a, b| a.0.cmp(&b.0));
@@ -493,6 +515,7 @@ impl OffloadDrive {
     /// What an errand came to.
     pub fn handle(&mut self, input: Input) -> Vec<Effect> {
         match input {
+            Input::Elapsed { seen } => self.elapsed(&seen),
             Input::Loaded { path, read } => {
                 if let Some(o) = self.roots.get_mut(&path) {
                     match read {

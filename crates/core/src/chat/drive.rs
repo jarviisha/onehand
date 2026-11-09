@@ -680,7 +680,7 @@ impl SessionDrive {
 
 mod cards;
 mod host;
-pub use host::{offline_line, HostLink};
+pub use host::HostLink;
 mod life;
 mod settings;
 mod titles;

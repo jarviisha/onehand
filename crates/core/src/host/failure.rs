@@ -80,6 +80,6 @@ pub fn waiting_line(host: &HostName, n: usize, terms: usize) -> String {
 }
 
 /// What is said of `host` once another machine holds it.
-pub fn taken_line(host: &HostName) -> String {
+pub(crate) fn taken_line(host: &HostName) -> String {
     format!("{host} was attached from another machine")
 }

@@ -115,24 +115,38 @@ fn drive(cx: &mut App, ask: impl FnOnce(&mut OffloadDrive) -> Vec<Effect>) {
     perform(cx, fx);
 }
 
-/// Ask the drive for something whose answer is awaited: `asked` files the
-/// asker's half where the signal that answers it finds it.
+/// Ask the drive for something whose answer is awaited: `command` says
+/// whether it asked for one, and `asked` files the asker's half where the
+/// signal that answers it finds it, before anything is carried out.
 fn ask<T: 'static>(
     cx: &mut App,
     asked: fn(&mut Offloads) -> &mut Asked<T>,
     path: &Path,
-    command: impl FnOnce(&mut OffloadDrive) -> Vec<Effect>,
-) -> oneshot::Receiver<T> {
-    let (tx, rx) = oneshot::channel();
+    command: impl FnOnce(&mut OffloadDrive) -> (bool, Vec<Effect>),
+) -> Option<oneshot::Receiver<T>> {
     cx.default_global::<Offloads>();
-    cx.update_global::<Offloads, _>(|all, _| {
-        asked(all)
-            .entry(path.to_path_buf())
-            .or_default()
-            .push_back(tx)
+    let (rx, fx) = cx.update_global::<Offloads, _>(|all, _| {
+        let (waits, fx) = command(&mut all.drive);
+        let rx = waits.then(|| {
+            let (tx, rx) = oneshot::channel();
+            asked(all)
+                .entry(path.to_path_buf())
+                .or_default()
+                .push_back(tx);
+            rx
+        });
+        (rx, fx)
     });
-    drive(cx, command);
+    perform(cx, fx);
     rx
+}
+
+/// What an asker hears: the answer, or why there is none.
+async fn heard<T>(rx: Option<oneshot::Receiver<T>>, dropped: &'static str) -> Result<T, String> {
+    match rx {
+        Some(rx) => rx.await.map_err(|_| dropped.to_string()),
+        None => Err(dropped.to_string()),
+    }
 }
 
 /// Start keeping `path`, offloaded to `host`: with `state` when it was just
@@ -143,7 +157,7 @@ pub(crate) fn track(
     host: HostName,
     state: Option<onehand_core::host::offload::OffloadState>,
 ) {
-    if state.is_none() && kept(cx, &path) {
+    if kept_as_is(cx, &path, state.is_some()) {
         return;
     }
     cx.default_global::<Offloads>();
@@ -152,25 +166,24 @@ pub(crate) fn track(
 
 /// Start keeping `path`, offloaded to `host` on `branch`.
 pub(crate) fn track_branch(cx: &mut App, path: PathBuf, host: HostName, branch: String) {
-    if kept(cx, &path) {
+    if kept_as_is(cx, &path, false) {
         return;
     }
     cx.default_global::<Offloads>();
     drive(cx, |d| d.track_branch(path, host, branch));
 }
 
-/// Whether the drive keeps `path` already, so that keeping it again asks
-/// nothing of it. Asked first because every ask tells the observers, and
-/// the window's own observer keeps every offloaded folder again: asking
-/// regardless would never settle.
-fn kept(cx: &App, path: &Path) -> bool {
+/// Whether keeping `path` again asks nothing of the drive, as it says:
+/// asked first, since every ask tells the observers, and the window's own
+/// observer keeps every offloaded folder again.
+fn kept_as_is(cx: &App, path: &Path, anew: bool) -> bool {
     cx.try_global::<Offloads>()
-        .is_some_and(|all| all.drive.contains_key(path))
+        .is_some_and(|all| all.drive.kept_as_is(path, anew))
 }
 
 /// Stop keeping `path`: it runs here again, or left the workspace.
 pub(crate) fn forget(cx: &mut App, path: &Path) {
-    if kept(cx, path) {
+    if kept_as_is(cx, path, false) {
         drive(cx, |d| {
             d.forget(path);
             Vec::new()
@@ -185,20 +198,8 @@ pub(crate) fn send_up(
     cx: &mut App,
     path: &Path,
 ) -> Option<impl Future<Output = Result<(), String>> + use<>> {
-    cx.default_global::<Offloads>();
-    let (claimed, fx) = cx.update_global::<Offloads, _>(|all, _| all.drive.claim_send(path));
-    if !claimed {
-        return None;
-    }
-    let (tx, rx) = oneshot::channel();
-    cx.update_global::<Offloads, _>(|all, _| {
-        all.sends
-            .entry(path.to_path_buf())
-            .or_default()
-            .push_back(tx)
-    });
-    perform(cx, fx);
-    Some(rx.map(|said| said.unwrap_or_else(|_| Err("The send was dropped".into()))))
+    let rx = ask(cx, |all| &mut all.sends, path, |d| d.claim_send(path))?;
+    Some(heard(Some(rx), "The send was dropped").map(Result::flatten))
 }
 
 /// Offload `path` to `host`, into a mirror or `on_branch`: the mirror and
@@ -210,13 +211,13 @@ pub(crate) fn offload(
     on_branch: bool,
 ) -> impl Future<Output = Result<(PathBuf, Kept), String>> + use<> {
     let at = path.clone();
-    ask(
+    let rx = ask(
         cx,
         |all| &mut all.offloads,
         &at,
-        move |d| d.offload(path, host, on_branch),
-    )
-    .map(|said| said.unwrap_or_else(|_| Err("The offload was dropped".into())))
+        move |d| (true, d.offload(path, host, on_branch)),
+    );
+    heard(rx, "The offload was dropped").map(Result::flatten)
 }
 
 /// Take the host's code over what changed here, once the person said so,
@@ -226,13 +227,14 @@ pub(crate) fn take_over(
     path: PathBuf,
     into: PathBuf,
 ) -> impl Future<Output = Result<bool, String>> + use<> {
-    ask(
+    let at = path.clone();
+    let rx = ask(
         cx,
         |all| &mut all.takes,
-        &path.clone(),
-        move |d| d.take_over(&path, into),
-    )
-    .map(|said| said.unwrap_or_else(|_| Err("Taking the code was dropped".into())))
+        &at,
+        move |d| (true, d.take_over(&path, into)),
+    );
+    heard(rx, "Taking the code was dropped").map(Result::flatten)
 }
 
 /// Check `path` again because the person asked.
@@ -277,19 +279,21 @@ fn perform(cx: &mut App, fx: Vec<Effect>) {
 
 /// The poll's clock came round: the drive is told how each host stands.
 fn elapsed(cx: &mut App) {
-    let seen = |cx: &App, host: &HostName| HostSeen {
-        live: hosts::live(cx, host).is_some(),
-        taken: hosts::state(cx, host) == hosts::HostState::Taken,
-    };
-    let mut hosts_seen: HashMap<HostName, HostSeen> = HashMap::new();
-    for o in cx.global::<Offloads>().drive.values() {
-        if !hosts_seen.contains_key(&o.host) {
-            hosts_seen.insert(o.host.clone(), seen(cx, &o.host));
-        }
+    let mut seen: HashMap<HostName, HostSeen> = HashMap::new();
+    let hosts: Vec<HostName> = cx
+        .global::<Offloads>()
+        .drive
+        .values()
+        .map(|o| o.host.clone())
+        .collect();
+    for host in hosts {
+        let stands = HostSeen {
+            live: hosts::live(cx, &host).is_some(),
+            taken: hosts::state(cx, &host) == hosts::HostState::Taken,
+        };
+        seen.insert(host, stands);
     }
-    drive(cx, |d| {
-        d.elapsed(|host| hosts_seen.get(host).copied().unwrap_or_default())
-    });
+    drive(cx, |d| d.handle(Input::Elapsed { seen }));
 }
 
 /// Run `errand` off the UI loop over the attach it asks for, then hand its

@@ -7,7 +7,7 @@ use super::{HostFailure, held, idle, perform, waited};
 use crate::state::Shared;
 use futures::FutureExt as _;
 use gpui::TestAppContext;
-use onehand_core::host::drive::{Got, HOST_IDLE_POLL};
+use onehand_core::host::drive::{Asker, Got, HOST_IDLE_POLL, Input};
 use onehand_core::host::wire::HostSession;
 use onehand_core::workspace::HostName;
 
@@ -26,10 +26,14 @@ fn lands(cx: &mut TestAppContext, result: Result<(), HostFailure>) {
         let fx = {
             let held = held(cx);
             let mut h = held.borrow_mut();
-            let Got::Make(made) = h.drive.ask(&vps(), true, true, false, false) else {
+            let Got::Make(made) = h.drive.ask(&vps(), true, Asker::Person, false) else {
                 unreachable!()
             };
-            h.drive.landed(&vps(), made, &result).fx
+            h.drive.handle(Input::Landed {
+                host: vps(),
+                made,
+                result,
+            })
         };
         perform(cx, fx);
     });

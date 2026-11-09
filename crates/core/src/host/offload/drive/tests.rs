@@ -72,6 +72,14 @@ fn on_branch(moving: Option<Moving>) -> Offload {
     }
 }
 
+/// Every host stands as `seen`.
+fn everywhere(seen: HostSeen) -> HashMap<HostName, HostSeen> {
+    ["vps", "box"]
+        .into_iter()
+        .map(|h| (HostName(h.into()), seen))
+        .collect()
+}
+
 const SEEN: HostSeen = HostSeen {
     live: true,
     taken: false,
@@ -479,10 +487,14 @@ fn the_poll_goes_one_folder_at_a_time() {
         Some(state(Holder::Host)),
     );
     drive.track("/e".into(), vps(), Some(state(Holder::Laptop)));
-    let fx = drive.elapsed(|_| AWAY);
+    let fx = drive.handle(Input::Elapsed {
+        seen: everywhere(AWAY),
+    });
     assert_eq!(names(&fx), ["AttachQuietly"]);
     assert_eq!(
-        names(&drive.elapsed(|_| AWAY)),
+        names(&drive.handle(Input::Elapsed {
+            seen: everywhere(AWAY)
+        })),
         Vec::<&str>::new(),
         "one pass"
     );
@@ -513,7 +525,9 @@ fn the_poll_goes_one_folder_at_a_time() {
 
     // The next pass, every host live: each folder checked over it, one at a
     // time, the refused one too, which an attach that is up reaches.
-    let fx = drive.elapsed(|_| SEEN);
+    let fx = drive.handle(Input::Elapsed {
+        seen: everywhere(SEEN),
+    });
     assert_eq!(names(&fx), ["CheckBack"]);
     let fx = drive.handle(brought("/a", true, Ok(None)));
     assert_eq!(names(&fx), ["CheckBack"]);
@@ -532,7 +546,12 @@ fn the_poll_goes_one_folder_at_a_time() {
         live: false,
         taken: true,
     };
-    assert_eq!(names(&drive.elapsed(|_| taken)), ["Arm"]);
+    assert_eq!(
+        names(&drive.handle(Input::Elapsed {
+            seen: everywhere(taken)
+        })),
+        ["Arm"]
+    );
 }
 
 /// A folder the pass meant to attach for that a turn's end claimed
@@ -540,7 +559,9 @@ fn the_poll_goes_one_folder_at_a_time() {
 #[test]
 fn a_pass_skips_a_folder_already_moving() {
     let mut drive = kept(Holder::Host);
-    let fx = drive.elapsed(|_| AWAY);
+    let fx = drive.handle(Input::Elapsed {
+        seen: everywhere(AWAY),
+    });
     assert_eq!(names(&fx), ["AttachQuietly"]);
     drive.roots.get_mut(Path::new("/a")).unwrap().moving = Some(Moving::Back);
     let fx = drive.handle(Input::Attached {

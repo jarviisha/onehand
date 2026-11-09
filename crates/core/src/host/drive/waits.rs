@@ -12,18 +12,18 @@ use std::time::Duration;
 pub const HOST_IDLE_POLL: Duration = Duration::from_secs(15);
 
 /// How long after a connection is lost it is first attached again.
-pub const RECONNECT_FIRST: Duration = Duration::from_secs(2);
+pub(crate) const RECONNECT_FIRST: Duration = Duration::from_secs(2);
 
 /// The longest a lost host goes between attaches, the wait doubling up to it.
-pub const RECONNECT_MAX: Duration = Duration::from_secs(60);
+pub(crate) const RECONNECT_MAX: Duration = Duration::from_secs(60);
 
 /// How many polls in a row may fail to reach a waited host before its wait
 /// ends on why: one is a blip, a host gone stays gone.
-pub const HOST_UNREACHABLE_POLLS: u32 = 2;
+pub(crate) const HOST_UNREACHABLE_POLLS: u32 = 2;
 
 /// How long to wait before the next attach to a lost host, `prev` the wait
 /// before the last miss, if there was one.
-pub fn next_delay(prev: Option<Duration>) -> Duration {
+pub(crate) fn next_delay(prev: Option<Duration>) -> Duration {
     prev.map_or(RECONNECT_FIRST, |prev| (prev * 2).min(RECONNECT_MAX))
 }
 
