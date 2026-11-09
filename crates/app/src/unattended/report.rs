@@ -130,19 +130,6 @@ pub(crate) fn keep(id: &str, run: &Run, asked: Option<String>, cx: &mut App) {
     });
 }
 
-/// What a card still waiting in `session` asks, in its own words.
-pub(crate) fn card_question(session: &Entity<ChatSession>, cx: &App) -> Option<String> {
-    let chat = &session.read(cx).chat;
-    chat.pending_asks()
-        .last()
-        .map(|(_, ask)| ask.req.message.clone())
-        .or_else(|| {
-            chat.pending_permissions()
-                .last()
-                .map(|(_, permission)| permission.req.title.clone())
-        })
-}
-
 /// Issue task `id`'s run has ended and given its place up: drop its project
 /// unless a person has it, then tell the issue how the run ended.
 pub(crate) fn ended(id: &str, cx: &mut App) {

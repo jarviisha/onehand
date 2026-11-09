@@ -25,10 +25,14 @@ worktree's branch to the forge. The words are defined in [CONTEXT.md](../CONTEXT
 | The queue: one task per place | [crates/core/src/task/queue.rs](../crates/core/src/task/queue.rs) |
 | Marks pinned as commits under `refs/onehand/` | [crates/core/src/task/marks.rs](../crates/core/src/task/marks.rs) |
 | The run's drive: what it decides | [crates/core/src/task/drive.rs](../crates/core/src/task/drive.rs) |
+| What a run holds while a mark is pinned, and what it does for each action | [crates/core/src/task/drive/pin.rs](../crates/core/src/task/drive/pin.rs), [steps.rs](../crates/core/src/task/drive/steps.rs) |
+| A run's forge calls and its looks at the status checks | [crates/core/src/task/drive/forge.rs](../crates/core/src/task/drive/forge.rs) |
+| The tasks' drive: every task, its place, a run's end | [crates/core/src/task/tasks.rs](../crates/core/src/task/tasks.rs) |
+| A new task as the launcher describes it | [crates/core/src/task/launch.rs](../crates/core/src/task/launch.rs) |
 | A visit's settings put in force before its first prompt | [crates/core/src/task/drive/settings.rs](../crates/core/src/task/drive/settings.rs) |
-| The run's carrier: what the app carries out for it | [crates/app/src/task/driver.rs](../crates/app/src/task/driver.rs) |
+| The run's carrier: what the app carries out for it | [crates/app/src/task/carrier.rs](../crates/app/src/task/carrier.rs) |
 | Each step's settings judged before a start | [crates/core/src/preflight/settings.rs](../crates/core/src/preflight/settings.rs) |
-| The `Tasks` global: requests, the queue, unfinished tasks | [crates/app/src/task.rs](../crates/app/src/task.rs) |
+| The `Tasks` global: the tasks' drive carried out, the runs under way | [crates/app/src/task.rs](../crates/app/src/task.rs), [task/place.rs](../crates/app/src/task/place.rs) |
 | Workflows on offer | [crates/app/src/workflow.rs](../crates/app/src/workflow.rs) |
 | Launcher, and driving a task once its place is free | [crates/app/src/shell/workflows.rs](../crates/app/src/shell/workflows.rs) |
 | The Workflows page and its editor | [crates/app/src/workflows_page.rs](../crates/app/src/workflows_page.rs) |
@@ -262,17 +266,22 @@ the run's history, capped at 200.
 
 ## The drive and its carrier
 
-The run's drive decides in core, and its carrier acts in the app. `onehand_core::task::drive::Drive` is told what
-happened (an `Input`) with the run's session as it stands, and answers with what to do (`Effect`s):
-pin, measure, read the work, send a prompt, run a command, call the forge, watch the status checks,
-arm the clock, say something, save, finish. It has no timer or I/O of its own, so every rule below
-is tested in core. The carrier (`crate::task::driver`) maps the session's events onto inputs,
-carries out the effects and brings their results back. The mode and the settings picks are made on
-the session's `Chat` by the drive itself, since the next pick is planned against what is still
-waiting.
+The run's drive decides in core, and its carrier acts in the app. `onehand_core::task::drive::RunDrive` is given a
+person's commands as methods (`approve`, `revise`, `stop`) and told what happened (an `Input`),
+each with the run's session as it stands, and answers with what to do (`Effect`s): pin, measure,
+read the work, send a prompt, run a command, call the forge, arm a clock, say something, save,
+finish. It has no timer or I/O of its own, so every rule below is tested in core. Each effect that
+is answered says what its late answer gets: a pin, a command, a push, opening a pull request and
+taking a draft out of draft are awaited, so a Stop waits for them; a read, a look and a clock are
+dropped; a save is recorded, and a failed one is said once in the run's window until a write lands
+(`Signal::SaveFailed`). The carrier (`crate::task::carrier`) maps the session's events onto inputs,
+carries out the effects and brings their results back. The drive decides the mode and the settings
+picks against its session's `Chat`, which it only reads; the link makes each through the session's
+own drive (`SessionDrive::pick`) before anything else reaches the run, and the next is planned once
+the agent has answered.
 
 The `Tasks` global (`crate::task::Tasks`) holds every run under way by its task id (a check's run
-has no session);
+has no session), beside the tasks' drive, which a run's end is handed to;
 `crate::workflow::Workflows` keeps only the workflows on offer. The carrier subscribes to the
 session and maps its events onto the engine:
 
@@ -287,7 +296,15 @@ session and maps its events onto the engine:
 | *Stop* on the strip | the turn is cancelled, then `stopped(ByPerson)` |
 | The timeout runs out | the turn is cancelled, then `stopped(TimedOut)` |
 | A push or a pull request is done, or fails | `forge_done` |
-| A look at the pull request's status checks, every minute, says something other than pending | `status_checks_seen` |
+| A look at the pull request's status checks, on a clock the drive arms every minute, says something other than pending | `status_checks_seen` |
+
+**The forge is called one call at a time**, each decided by the drive: the push; then the pull
+request on the branch read, taken up when one is open and opened otherwise, unless Stop was pressed
+meanwhile; then, while the status checks run, a look each time the clock the drive armed runs out,
+with the logs of at most three failing checks read for a repair, and a draft taken out of draft
+once they all pass. The carrier only makes each call on the run's connector and reports it back; a
+run whose forge cannot be called at all (no branch of its own, no connector of its name) is told
+so, and fails there.
 
 **Every one of these goes through one `end`, and a step's command is stopped first.** While a
 command runs, the run holds the flag that calls it off (`process::output_until`): ending sets it,

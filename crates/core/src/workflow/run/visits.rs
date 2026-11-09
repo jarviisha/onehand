@@ -12,7 +12,7 @@ impl Run {
     /// Keep the mode and every config option's value the agent came up
     /// running, the first time it comes up in the run: a later call changes
     /// nothing, so a Resume on a new session still finds the first ones.
-    pub fn start_settings(&mut self, settings: Settings) {
+    pub(crate) fn start_settings(&mut self, settings: Settings) {
         if self.started_with.is_none() {
             self.started_with = Some(settings);
         }
@@ -28,7 +28,7 @@ impl Run {
     }
 
     /// What was in force when the open visit's first prompt went.
-    pub fn ran_with(&mut self, settings: Settings) {
+    pub(crate) fn ran_with(&mut self, settings: Settings) {
         if let Some(visit) = self.visits.last_mut().filter(|v| v.ended_at.is_none()) {
             visit.ran_with = Some(settings);
         }
@@ -56,7 +56,7 @@ impl Run {
 
     /// How many boundaries count as pinned: every one up to the last whose
     /// mark landed. One after it, a mark that failed or that the app quit
-    /// before it landed, is pinned again by the next driver.
+    /// before it landed, is pinned again by the next drive.
     pub fn pinned_count(&self) -> usize {
         let landed: Vec<bool> = self
             .visits
@@ -71,7 +71,7 @@ impl Run {
 
     /// `commit` is the work at every boundary from the `from`th on: one
     /// commit serves a visit's end and the next one's start.
-    pub fn pinned(&mut self, commit: &str, from: usize) {
+    pub(crate) fn pinned(&mut self, commit: &str, from: usize) {
         let mut at = 0;
         for visit in &mut self.visits {
             for end in [false, true] {

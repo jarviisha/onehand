@@ -34,7 +34,7 @@ pub struct Transition {
     pub why: String,
 }
 
-/// What the driver of a run does next.
+/// What the drive of a run does next.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     /// Read the [`Mark`] of the work and report it to [`Run::measured`].
@@ -387,7 +387,7 @@ impl Run {
     }
 
     /// The mark asked for: the step's prompt, or the carry-on waiting on it.
-    pub fn measured(&mut self, mark: Mark) -> Action {
+    pub(crate) fn measured(&mut self, mark: Mark) -> Action {
         let Await::Mark(carry) = &self.awaiting else {
             return Action::Idle;
         };
@@ -420,7 +420,7 @@ impl Run {
     }
 
     /// A turn the run sent ended, leaving `facts`, answering `answer`.
-    pub fn turn_ended(&mut self, facts: &Facts, answer: &str) -> Action {
+    pub(crate) fn turn_ended(&mut self, facts: &Facts, answer: &str) -> Action {
         if self.awaiting != Await::Turn {
             return Action::Idle;
         }
@@ -470,7 +470,7 @@ impl Run {
 
     /// The step's command finished as `ran` says, kept on its visit.
     /// Whether it passed is its exit status alone.
-    pub fn command_finished(&mut self, ran: CommandResult) -> Action {
+    pub(crate) fn command_finished(&mut self, ran: CommandResult) -> Action {
         if self.awaiting != Await::Command {
             return Action::Idle;
         }
@@ -488,7 +488,7 @@ impl Run {
     /// The push or the pull request the step asked for is done, with the
     /// pull request it opened or took up, or failed for the reason given. A
     /// failure ends the run: a retry starts at the step again.
-    pub fn forge_done(&mut self, done: Result<Option<PrOpened>, String>) -> Action {
+    pub(crate) fn forge_done(&mut self, done: Result<Option<PrOpened>, String>) -> Action {
         if self.awaiting != Await::Forge {
             return Action::Idle;
         }
@@ -504,7 +504,7 @@ impl Run {
     }
 
     /// What a look at the pull request's status checks found.
-    pub fn status_checks_seen(&mut self, seen: Seen) -> Action {
+    pub(crate) fn status_checks_seen(&mut self, seen: Seen) -> Action {
         if self.awaiting != Await::StatusChecks {
             return Action::Idle;
         }
@@ -554,7 +554,7 @@ impl Run {
 
     /// A person approved what they read at `at`: go on, unless the run no
     /// longer waits there.
-    pub fn approved(&mut self, at: &ApprovalAt) -> Action {
+    pub(crate) fn approved(&mut self, at: &ApprovalAt) -> Action {
         if self.approval_at().as_ref() != Some(at) {
             return Action::Idle;
         }
@@ -563,7 +563,7 @@ impl Run {
 
     /// A person sent the answer they read at `at` back with `note`: the step
     /// it approves runs again, unless the run no longer waits there.
-    pub fn revised(&mut self, at: &ApprovalAt, note: String) -> Action {
+    pub(crate) fn revised(&mut self, at: &ApprovalAt, note: String) -> Action {
         if self.approval_at().as_ref() != Some(at) {
             return Action::Idle;
         }
@@ -580,15 +580,15 @@ impl Run {
 
     /// The run is to stop, for `stop`. **Never judges the turn** that was
     /// under way: a turn cut short could otherwise pass as finished work.
-    pub fn stopped(&mut self, stop: Stop) -> Action {
+    pub(crate) fn stopped(&mut self, stop: Stop) -> Action {
         if self.over() {
             return Action::Idle;
         }
         self.finish(Outcome::Stopped(stop))
     }
 
-    /// The driver could not go on, for `why`, which was of `kind`.
-    pub fn failed(&mut self, why: String, kind: Failure) -> Action {
+    /// The drive could not go on, for `why`, which was of `kind`.
+    pub(crate) fn failed(&mut self, why: String, kind: Failure) -> Action {
         if self.over() {
             return Action::Idle;
         }
@@ -607,7 +607,7 @@ impl Run {
     /// outcome does not come back.
     ///
     /// A run never started starts here.
-    pub fn resume(&mut self) -> Action {
+    pub(crate) fn resume(&mut self) -> Action {
         if self.outcome.as_ref().is_some_and(|o| !o.resumable()) {
             return Action::Idle;
         }

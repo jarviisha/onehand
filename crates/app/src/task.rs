@@ -1,52 +1,43 @@
-//! Tasks, as the app drives them: every task kept, the runs under way, and
-//! the queue each start goes through so one task at a time works in a place.
+//! Tasks, as the app carries them: the tasks' drive, which keeps every task
+//! and decides where each works, and the runs under way, each its own drive.
 //!
-//! Everything a task or a run decides is `onehand_core`'s; what is here is
-//! what needs a session, a timer or a window.
+//! Everything a task or a run decides is `onehand_core`'s
+//! ([`TasksDrive`], `RunDrive`); what is here is what needs a session, a
+//! timer, a window or the disk.
 
-use gpui::{
-    AnyWindowHandle, App, BorrowAppContext as _, Global, SharedString, Subscription, Window,
-};
-use gpui_component::WindowExt as _;
+use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Global, SharedString, Window};
+use onehand_core::task::tasks::{Begin, Effect, Start, TasksDrive};
 use onehand_core::task::work::UnderReview;
-use onehand_core::task::{Group, Task, Working, files, history, marks, queue};
+use onehand_core::task::{Task, Working, files};
 use onehand_core::workflow::{Run, Template};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub(crate) mod approval;
-mod driver;
+mod carrier;
 mod listing;
 mod place;
-pub(crate) use driver::{approve, revise, start, stop};
+pub(crate) use carrier::{approve, revise, start, stop};
 pub(crate) use listing::*;
-use place::ended;
-pub(crate) use place::{Placed, fail, release, request, stop_queued, submit, submit_told};
+pub(crate) use onehand_core::task::tasks::Placed;
+pub(crate) use place::{not_started, request, submit, submit_told};
 
 /// Every task in this process and what each is doing.
 pub(crate) struct Tasks {
-    /// Every task kept, unfinished or history. Empty until the boot read lands.
-    tasks: Vec<Task>,
+    /// Every task kept, the queue, and what ended runs still hold. Empty
+    /// until the boot read lands.
+    drive: TasksDrive<AnyWindowHandle>,
     /// Runs under way, by their task's id; a check's has no session.
-    live: HashMap<String, driver::Driven>,
-    queue: queue::Queue,
-    /// Where each queued task was asked for, to start it there.
-    asked_in: HashMap<String, AnyWindowHandle>,
-    /// Tasks that ended while their session's turn was still going, holding
-    /// their place until it is over.
-    draining: HashMap<String, Vec<Subscription>>,
+    live: HashMap<String, carrier::Driven>,
+    /// What watches each run that ended while its session's turn still goes.
+    draining: HashMap<String, place::Drain>,
+    /// Whoever asked to be told where a task's request landed.
+    told: HashMap<String, futures::channel::oneshot::Sender<Placed>>,
     /// What a person pressed on each task that is still being read or done,
     /// so the button waits wherever the task is drawn.
     acting: HashMap<String, onehand_core::task::work::Act>,
-    /// How many finished tasks of each project were let go to keep the
-    /// history bounded.
-    // ponytail: counts since boot only; persist it if people ask.
-    removed: HashMap<PathBuf, usize>,
-    /// Tasks to be driven off screen the first time they are driven: ones a
-    /// tool started, which must not move what the person is looking at.
-    off_screen: HashSet<String>,
     /// How many commands, a check's or a step's, have not exited yet.
     commands: Arc<AtomicUsize>,
     writer: files::Writer,
@@ -64,17 +55,21 @@ impl Drop for Running {
 
 impl Default for Tasks {
     fn default() -> Self {
+        Self::in_dir(files::dir())
+    }
+}
+
+impl Tasks {
+    /// No task yet, with their files kept in `dir`.
+    fn in_dir(dir: PathBuf) -> Self {
         Self {
-            tasks: Vec::new(),
+            drive: TasksDrive::default(),
             live: HashMap::new(),
-            queue: queue::Queue::default(),
-            asked_in: HashMap::new(),
             draining: HashMap::new(),
+            told: HashMap::new(),
             acting: HashMap::new(),
-            removed: HashMap::new(),
-            off_screen: HashSet::new(),
             commands: Arc::default(),
-            writer: files::Writer::spawn(files::dir()),
+            writer: files::Writer::spawn(dir),
         }
     }
 }
@@ -82,31 +77,12 @@ impl Default for Tasks {
 impl Global for Tasks {}
 
 impl Tasks {
+    fn tasks(&self) -> &[Task] {
+        self.drive.tasks()
+    }
+
     fn task(&self, id: &str) -> Option<&Task> {
-        self.tasks.iter().find(|task| task.id == id)
-    }
-
-    fn task_mut(&mut self, id: &str) -> Option<&mut Task> {
-        self.tasks.iter_mut().find(|task| task.id == id)
-    }
-
-    /// `run` is where task `id`'s last run stands: keep it, and write the task.
-    fn store_run(&mut self, id: &str, run: Run) {
-        let Some(task) = self.task_mut(id) else {
-            return;
-        };
-        match task.runs.last_mut() {
-            Some(last) => *last = run,
-            None => task.runs.push(run),
-        }
-        let task = task.clone();
-        self.writer.save(task);
-    }
-
-    fn save(&self, id: &str) {
-        if let Some(task) = self.task(id) {
-            self.writer.save(task.clone());
-        }
+        self.drive.task(id)
     }
 
     /// Count a command as running until the guard drops.
@@ -123,7 +99,7 @@ impl Tasks {
 
     /// Whether task `id` is running or waiting for its place.
     fn busy(&self, id: &str) -> bool {
-        self.working(id).is_some()
+        self.drive.busy(id)
     }
 
     /// Whether task `id` holds a slot of the cap on unattended runs: queued
@@ -138,8 +114,8 @@ impl Tasks {
         }
     }
 
-    /// The driver running task `id`'s run, if one is.
-    fn driven(&self, id: &str) -> Option<&driver::Driven> {
+    /// The carrier running task `id`'s run, if one is.
+    fn driven(&self, id: &str) -> Option<&carrier::Driven> {
         self.live.get(id)
     }
 
@@ -151,19 +127,27 @@ impl Tasks {
             .map(|(id, _)| id.clone())
     }
 
-    /// What task `id` is doing, if anything.
+    /// What task `id` is doing, if anything: its place's word, and a run
+    /// under way waiting on a person, its drive's.
     fn working(&self, id: &str) -> Option<Working> {
-        if self.queue.queued(id) {
-            return Some(Working::Queued);
+        match (self.drive.working(id), self.driven(id)) {
+            (Some(Working::Running), Some(d)) if d.waits_on_person() => Some(Working::Waiting),
+            (working, _) => working,
         }
-        if let Some(d) = self.driven(id) {
-            return Some(match d.waits_on_person() {
-                true => Working::Waiting,
-                false => Working::Running,
-            });
-        }
-        self.queue.holds(id).then_some(Working::Running)
     }
+}
+
+/// Give the tasks' drive `command`, and carry out what it says.
+fn with_drive<R>(
+    cx: &mut App,
+    command: impl FnOnce(&mut TasksDrive<AnyWindowHandle>) -> (R, Vec<Effect<AnyWindowHandle>>),
+) -> Option<R> {
+    if !cx.has_global::<Tasks>() {
+        return None;
+    }
+    let (answer, effects) = cx.update_global::<Tasks, _>(|t, _| command(&mut t.drive));
+    place::perform(effects, None, cx);
+    Some(answer)
 }
 
 /// How long quitting waits for the task files still being written.
@@ -221,20 +205,7 @@ pub(crate) fn boot(cx: &mut App) {
                     .ok()
                 })
                 .collect();
-            // Oldest first, as everything that looks for the newest task of an
-            // issue reads them: what was read is older than anything added
-            // while it was being read, and a task added then may have been
-            // written in time to be read too.
-            cx.update_global::<Tasks, _>(|t, _| {
-                let added = std::mem::replace(&mut t.tasks, tasks);
-                t.tasks.retain(|task| added.iter().all(|a| a.id != task.id));
-                t.tasks.extend(added);
-            });
-            enforce_cap(cx);
-            // An issue not told how its run ended before the last quit is
-            // told now.
-            crate::unattended::deliver_all(cx);
-            cx.refresh_windows();
+            with_drive(cx, |d| ((), d.loaded(tasks)));
         });
     })
     .detach();
@@ -242,97 +213,31 @@ pub(crate) fn boot(cx: &mut App) {
 
 /// Drive task `id` off screen the first time it is driven.
 pub(crate) fn drive_off_screen(id: &str, cx: &mut App) {
-    cx.update_global::<Tasks, _>(|t, _| t.off_screen.insert(id.to_string()));
-}
-
-/// Whether task `id` is to be driven off screen this time, which only its
-/// first drive is: a Resume or Retry a person presses later shows as theirs.
-pub(crate) fn take_off_screen(id: &str, cx: &mut App) -> bool {
-    cx.try_global::<Tasks>()
-        .is_some_and(|t| t.off_screen.contains(id))
-        && cx.update_global::<Tasks, _>(|t, _| t.off_screen.remove(id))
+    cx.update_global::<Tasks, _>(|t, _| t.drive.drive_off_screen(id));
 }
 
 /// Keep `task`, new, and write it.
 pub(crate) fn add(task: Task, cx: &mut App) {
-    cx.update_global::<Tasks, _>(|t, _| {
-        t.writer.save(task.clone());
-        t.tasks.push(task);
-    });
+    with_drive(cx, |d| ((), d.add(task)));
 }
 
 /// The last run of task `id`, to drive, while the task may be picked up:
 /// not dismissed, and its run not ended on its own outcome.
 pub(crate) fn resumable_run(id: &str, cx: &App) -> Option<Run> {
-    cx.try_global::<Tasks>()?
-        .task(id)
-        .filter(|task| task.resumable())?
-        .runs
-        .last()
-        .cloned()
+    cx.try_global::<Tasks>()?.drive.resumable_run(id)
 }
 
 /// A person let interrupted task `id` go: it is kept as history and never
 /// offered again.
 pub(crate) fn dismiss(id: &str, window: &mut Window, cx: &mut App) {
-    let dismissed = cx.update_global::<Tasks, _>(|t, _| {
-        if t.busy(id) {
-            return None;
-        }
-        let task = t.task_mut(id)?;
-        task.dismissed = true;
-        let cut_off = task
-            .runs
-            .last()
-            .filter(|run| run.outcome.is_none())
-            .cloned();
-        let task = task.clone();
-        Some((t.writer.save_said(task), cut_off))
-    });
-    let Some((written, cut_off)) = dismissed else {
-        return;
-    };
-    let id = id.to_string();
-    window
-        .spawn(cx, async move |cx| {
-            let written = written.await;
-            let _ = cx.update(|window, cx| match written {
-                // A run cut off by a quit was never reported; letting it go,
-                // once that is kept, is its end.
-                Ok(()) => {
-                    if let Some(run) = cut_off {
-                        crate::unattended::keep(&id, &run, None, cx);
-                        crate::unattended::deliver(id, cx);
-                    }
-                    enforce_cap(cx);
-                    cx.refresh_windows();
-                }
-                // Not kept, so not let go: the task goes back to where it was.
-                Err(why) => {
-                    cx.update_global::<Tasks, _>(|t, _| {
-                        if let Some(task) = t.task_mut(&id) {
-                            task.dismissed = false;
-                        }
-                    });
-                    window.push_notification(crate::toast::failed("Dismissing the task", why), cx);
-                    cx.refresh_windows();
-                }
-            });
-        })
-        .detach();
-    cx.refresh_windows();
+    let handle = window.window_handle();
+    with_drive(cx, |d| ((), d.dismiss(id, handle)));
 }
 
 /// Task `id`'s worktree and branch were removed: kept with the task, so
 /// nothing offers to remove them again.
 pub(crate) fn worktree_removed(id: &str, cx: &mut App) {
-    cx.update_global::<Tasks, _>(|t, _| {
-        if let Some(task) = t.task_mut(id) {
-            task.worktree_removed = true;
-            t.save(id);
-        }
-    });
-    cx.refresh_windows();
+    with_drive(cx, |d| ((), d.worktree_removed(id)));
 }
 
 /// Where the run on session `uid` stands, as its strip draws it.
@@ -392,7 +297,7 @@ pub(crate) fn each<R>(cx: &App, look: impl Fn(&Task, bool) -> Option<R>) -> Vec<
     let Some(t) = cx.try_global::<Tasks>() else {
         return Vec::new();
     };
-    t.tasks
+    t.tasks()
         .iter()
         .filter_map(|task| look(task, t.busy(&task.id)))
         .collect()
@@ -436,10 +341,7 @@ pub(crate) fn task(id: &str, cx: &App) -> Option<Task> {
 pub(crate) fn resume_refused(task: &Task, cx: &App) -> Option<String> {
     let template = task.runs.last()?.template.clone();
     let facts = crate::unattended::task_facts(task, template, cx);
-    onehand_core::preflight::preflight(onehand_core::preflight::Kind::Resume, &facts)
-        .into_iter()
-        .find(|f| f.blocks)
-        .map(|f| f.text)
+    onehand_core::preflight::refusal(onehand_core::preflight::Kind::Resume, &facts)
 }
 
 /// The title of the task holding `place`, unless that task is `except`: a
@@ -447,22 +349,18 @@ pub(crate) fn resume_refused(task: &Task, cx: &App) -> Option<String> {
 pub(crate) fn holder_at(place: &std::path::Path, except: Option<&str>, cx: &App) -> Option<String> {
     let t = cx.try_global::<Tasks>()?;
     let holder = t
-        .queue
+        .drive
+        .queue()
         .holder_at(place)
         .filter(|holder| Some(*holder) != except)?;
     t.task(holder).map(|task| task.brief.title.clone())
 }
 
-/// A person pressed Stop on task `id`, whatever it is doing.
+/// A person pressed Stop on task `id`, whatever it is doing: a queued one is
+/// called off, and a run under way is stopped.
 pub(crate) fn stop_task(id: &str, cx: &mut App) {
-    let Some(t) = cx.try_global::<Tasks>() else {
-        return;
-    };
-    if t.queue.queued(id) {
-        return stop_queued(id, cx);
-    }
-    if t.live.contains_key(id) {
-        driver::stop_task(id, cx);
+    if with_drive(cx, |d| d.stop_queued(id)) == Some(false) {
+        carrier::stop_task(id, cx);
     }
 }
 
@@ -476,19 +374,20 @@ pub(crate) fn retry(
     note: Option<String>,
     cx: &mut App,
 ) -> bool {
-    cx.update_global::<Tasks, _>(|t, _| {
-        if t.busy(id) {
-            return false;
-        }
-        let made = t.task_mut(id).is_some_and(|task| {
-            task.retry(onehand_core::task::new_id(), template, from, note)
-                .is_some()
-        });
-        if made {
-            t.save(id);
-        }
-        made
+    let run = onehand_core::task::new_id();
+    with_drive(cx, |d| d.retry(id, run, template, from, note)).unwrap_or(false)
+}
+
+/// Retry task `id` at once when it is a check, which has one step and keeps
+/// nothing: whether it was retried, or `None` for a task a person retries
+/// through what the retry would keep.
+pub(crate) fn retry_at_once(id: &str, cx: &mut App) -> Option<bool> {
+    let run = onehand_core::task::new_id();
+    with_drive(cx, |d| match d.retry_at_once(id, run) {
+        Some((made, fx)) => (Some(made), fx),
+        None => (None, Vec::new()),
     })
+    .flatten()
 }
 
 /// Give task `id` a new run with what Settings say now, as `plan` worked it
@@ -499,76 +398,32 @@ pub(crate) fn retry_with(
     plan: onehand_core::workflow::WithCurrent,
     cx: &mut App,
 ) -> bool {
-    cx.update_global::<Tasks, _>(|t, _| {
-        if t.busy(id) {
-            return false;
-        }
-        let made = t.task_mut(id).is_some_and(|task| {
-            task.retry_with(onehand_core::task::new_id(), plan)
-                .is_some()
-        });
-        if made {
-            t.save(id);
-        }
-        made
-    })
+    let run = onehand_core::task::new_id();
+    with_drive(cx, |d| d.retry_with(id, run, plan)).unwrap_or(false)
 }
 
-/// Run check task `id`, whose place it now holds: pin the work, run the
-/// command, and say in `window` how it went. No session: there is no agent
-/// to watch.
-pub(crate) fn drive_check(id: String, window: AnyWindowHandle, cx: &mut App) {
-    let Some(mut run) = resumable_run(&id, cx) else {
-        return release(id, cx);
-    };
-    // Counted from what landed, as a session's run is.
-    let from = run.pinned_count();
-    let first = run.resume();
-    driver::start_check(id, run, first, from, window, cx);
-}
-
-/// Let go of the finished tasks past what each project keeps: their files,
-/// then the marks they pinned, off the UI thread.
-fn enforce_cap(cx: &mut App) {
-    let Some(t) = cx.try_global::<Tasks>() else {
-        return;
-    };
-    let listed: Vec<(&Task, Group)> = t
-        .tasks
-        .iter()
-        .map(|task| (task, task.group(t.working(&task.id))))
-        .collect();
-    let gone = history::over_cap(&listed);
-    if gone.is_empty() {
-        return;
+/// Begin task `id`, whose place it now holds, its work's folder being there
+/// or not: how it is driven, or why it cannot be.
+pub(crate) fn begin(id: &str, folder_there: bool, cx: &mut App) -> Begin {
+    match cx.has_global::<Tasks>() {
+        true => cx.update_global::<Tasks, _>(|t, _| t.drive.begin(id, folder_there)),
+        false => Begin::Refused {
+            why: "That task has nothing left to run".to_string(),
+            kind: onehand_core::workflow::Failure::Other,
+        },
     }
-    let dropped = cx.update_global::<Tasks, _>(|t, _| {
-        let mut dropped = Vec::new();
-        t.tasks.retain(|task| {
-            if !gone.contains(&task.id) {
-                return true;
-            }
-            t.writer.remove(task.id.clone());
-            *t.removed.entry(task.setup.repo.clone()).or_default() += 1;
-            dropped.push((
-                task.setup.dir.clone(),
-                task.setup.repo.clone(),
-                task.id.clone(),
-            ));
-            false
-        });
-        dropped
-    });
-    cx.background_executor()
-        .spawn(async move {
-            for (dir, repo, id) in dropped {
-                let at = if dir.is_dir() { dir } else { repo };
-                if let Err(why) = marks::drop_blocking(&at, &id) {
-                    eprintln!("onehand: the marks of an old task were not dropped: {why}");
-                }
-            }
-        })
-        .detach();
+}
+
+/// Task `id`'s session did not start, its agent gone from Settings or not.
+pub(crate) fn session_not_started(id: String, agent_gone: bool, cx: &mut App) {
+    with_drive(cx, |d| ((), d.session_not_started(&id, agent_gone)));
+}
+
+/// Run check task `id` from `start`, whose place it now holds: pin the work,
+/// run the command, and say in `window` how it went. No session: there is no
+/// agent to watch.
+pub(crate) fn start_check(id: String, start: Start, window: AnyWindowHandle, cx: &mut App) {
+    carrier::start_check(id, start, window, cx);
 }
 
 /// Change the issue task `id` works, and write the task.
@@ -577,25 +432,19 @@ pub(crate) fn update_issue(
     cx: &mut App,
     change: impl FnOnce(&mut onehand_core::unattended::IssueSource),
 ) {
-    cx.update_global::<Tasks, _>(|t, _| {
-        let Some(task) = t.task_mut(id) else {
-            return;
-        };
-        let onehand_core::task::Source::Issue(issue) = &mut task.source else {
-            return;
-        };
-        change(issue);
-        t.save(id);
-    });
+    with_drive(cx, |d| ((), d.change_issue(id, change)));
 }
 
 /// Every issue task whose issue has not been told how a run ended.
 pub(crate) fn undelivered(cx: &App) -> Vec<String> {
     cx.try_global::<Tasks>().map_or_else(Vec::new, |t| {
-        t.tasks
+        t.tasks()
             .iter()
             .filter(|task| task.issue().is_some_and(|issue| !issue.unsent.is_empty()))
             .map(|task| task.id.clone())
             .collect()
     })
 }
+
+#[cfg(test)]
+mod tests;

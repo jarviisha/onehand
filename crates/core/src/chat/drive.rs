@@ -294,12 +294,6 @@ impl SessionDrive {
         }
     }
 
-    /// The session's model, changed directly: for the run's drive, which puts
-    /// a step's mode and picks in force on its session through their link.
-    pub(crate) fn chat_mut(&mut self) -> &mut Chat {
-        &mut self.chat
-    }
-
     fn mint(&mut self) -> u64 {
         self.minted += 1;
         self.minted

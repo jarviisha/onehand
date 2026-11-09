@@ -153,8 +153,8 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   Claude Code's plugins, which the `claude-plugins` crate manages.
 - **Rules and what happens next live in core, never in the app.** What is true is the model's
   (`Chat::apply`, `GitStatus::label`); what happens next is a drive's (`SessionDrive`,
-  `task::Drive`), and the app's carriers only carry it out. New code changes application state
-  only through a drive, with no exceptions, and adds no call to `SessionDrive::chat_mut`; reads
+  `RunDrive`), and the app's carriers only carry it out. New code changes application state
+  only through a drive, with no exceptions, and no drive changes another drive's model; reads
   go to the model. Older code is moved phase by phase: until its phase, a model mutator may still
   be `pub` and an entity may still hold state outside a drive. The app matches on core's enums,
   never on the labels core shows. The standard is [docs/drives.md](docs/drives.md).

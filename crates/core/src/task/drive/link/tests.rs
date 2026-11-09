@@ -28,6 +28,11 @@ fn session() -> (SessionDrive, Rx) {
 }
 
 fn run() -> (String, Run, Action) {
+    run_in(None)
+}
+
+/// A run whose setup puts the agent in `mode`.
+fn run_in(mode: Option<&str>) -> (String, Run, Action) {
     let brief = Brief {
         title: "Fix the thing".into(),
         body: "It is broken.".into(),
@@ -39,7 +44,7 @@ fn run() -> (String, Run, Action) {
         branch: None,
         agent: None,
         check: Some("make check".into()),
-        mode: None,
+        mode: mode.map(str::to_string),
         forge: None,
     };
     let task = Task::new("t1".into(), builtin::all().remove(0), brief, setup);
@@ -51,7 +56,7 @@ fn run() -> (String, Run, Action) {
 /// The two drives and what joins them: the run's effects on its session go
 /// through the link, the session's signals come back through it.
 struct Pair {
-    drive: Drive,
+    drive: RunDrive,
     session: SessionDrive,
     rx: Rx,
     now: Instant,
@@ -59,8 +64,13 @@ struct Pair {
 
 impl Pair {
     fn start() -> (Self, Vec<Effect>) {
-        let (mut session, rx) = session();
-        let (task, run, first) = run();
+        Self::start_on(session(), run())
+    }
+
+    fn start_on(
+        (mut session, rx): (SessionDrive, Rx),
+        (task, run, first): (String, Run, Action),
+    ) -> (Self, Vec<Effect>) {
         let now = Instant::now();
         let (drive, fx, asked) = start(task, run, first, 0, false, now, Some(&mut session));
         let mut pair = Self {
@@ -76,7 +86,7 @@ impl Pair {
 
     /// Tell the run `input`, and carry out what it says on its session.
     fn on(&mut self, input: Input) -> Vec<Effect> {
-        let (fx, asked) = on(&mut self.drive, input, Some(&mut self.session), self.now);
+        let (fx, asked) = handle(&mut self.drive, input, Some(&mut self.session), self.now);
         self.send(asked);
         self.carry(fx)
     }
@@ -220,4 +230,45 @@ fn signals_that_move_no_run_are_not_passed_on() {
         input_of(&Signal::TurnEnded, &pair.drive, &pair.session),
         Some(Input::TurnEnded)
     );
+}
+
+/// The run's mode is made on the session through its own drive, never on its
+/// model by the run: it reaches the agent, and the prompt waits for its
+/// answer.
+#[test]
+fn a_runs_mode_reaches_the_agent_through_the_sessions_drive() {
+    let (mut session, rx) = session();
+    session.apply(
+        AcpEvent::Modes {
+            current: Some("default".into()),
+            available: ["default", "plan"]
+                .map(|id| crate::acp::Mode {
+                    id: id.into(),
+                    name: id.into(),
+                })
+                .to_vec(),
+        },
+        now(),
+    );
+    session.end_batch();
+    let (mut pair, _) = Pair::start_on((session, rx), run_in(Some("plan")));
+    pair.on(Input::Pinned(Ok("c0".into())));
+    pair.on(Input::Measured(Ok(mark("a"))));
+    let sent: Vec<AcpRequest> = std::iter::from_fn(|| pair.rx.try_recv().ok()).collect();
+    assert!(
+        matches!(sent.as_slice(), [AcpRequest::SetMode(mode)] if mode == "plan"),
+        "{sent:?}"
+    );
+    assert!(pair.session.pick_waiting(crate::chat::MODE_SELECTOR));
+    assert!(!pair.session.busy, "the prompt waits for the mode's answer");
+}
+
+#[test]
+fn a_runs_session_is_named_for_its_task_unless_it_has_a_name() {
+    let (pair, _) = Pair::start();
+    assert_eq!(pair.session.custom_title.as_deref(), Some("Fix the thing"));
+    let (mut session, rx) = session();
+    session.rename("Mine");
+    let (pair, _) = Pair::start_on((session, rx), run());
+    assert_eq!(pair.session.custom_title.as_deref(), Some("Mine"));
 }

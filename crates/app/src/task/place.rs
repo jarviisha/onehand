@@ -1,13 +1,23 @@
-//! A task's place: asking for it, waiting for it, and letting it go, so one
-//! task at a time works in a checkout and the next one waiting starts there.
+//! The tasks' drive as the app carries it out: every start asked for, the
+//! place each task waits for, and what an ended run still holds, written,
+//! looked up, watched and said here, and decided in
+//! `onehand_core::task::tasks`.
 
-use super::{Tasks, enforce_cap, resumable_run};
+use super::{Tasks, with_drive};
+use crate::chat::session::{ChatEvent, ChatSession};
 use futures::channel::oneshot;
-use gpui::{AnyWindowHandle, App, BorrowAppContext as _};
+use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Task as GpuiTask};
 use gpui_component::WindowExt as _;
-use onehand_core::task::Task;
-use onehand_core::task::{marks, queue};
-use onehand_core::workflow::{Failure, Stop};
+use onehand_core::task::tasks::{Effect, Input, Placed, Signal};
+use onehand_core::task::{Task, marks, queue};
+use onehand_core::workflow::Failure;
+
+/// What watches a run that ended while its session's turn still goes: the
+/// session's events, its release, and the drain limit's clock.
+pub(super) struct Drain {
+    _watch: Vec<Subscription>,
+    _limit: GpuiTask<()>,
+}
 
 /// Keep `task`, new, and ask for its place from `window`: the one way in for
 /// a task that did not exist before, whatever started it.
@@ -15,16 +25,6 @@ pub(crate) fn submit(task: Task, window: AnyWindowHandle, cx: &mut App) {
     let id = task.id.clone();
     super::add(task, cx);
     request(id, window, cx);
-}
-
-/// Where a task asked for its place landed.
-pub(crate) enum Placed {
-    /// It holds the place and is being driven.
-    Started,
-    /// It waits behind another, as said.
-    Queued(String),
-    /// It was not taken, and why.
-    Refused(String),
 }
 
 /// [`submit`], answering where the task landed once that is known: for a
@@ -37,301 +37,234 @@ pub(crate) fn submit_told(
     let (tell, told) = oneshot::channel();
     let id = task.id.clone();
     super::add(task, cx);
-    request_told(id, window, Some(tell), cx);
+    cx.update_global::<Tasks, _>(|t, _| t.told.insert(id.clone(), tell));
+    request(id, window, cx);
     told
 }
 
-/// Start task `id` once its place is free, saying in `window` what happens:
-/// at once when nobody works there, or after the task that does, saying so.
-/// A task already running or waiting is left as it is. It starts in
-/// `window`, or, when it waited, in the window it was asked from, if that is
-/// still open.
+/// Start task `id` once its place is free, saying in `window` what happens.
+/// It starts in `window`, or, when it waited, in the window it was asked
+/// from, if that is still open.
 pub(crate) fn request(id: String, window: AnyWindowHandle, cx: &mut App) {
-    request_told(id, window, None, cx);
+    let over_cap = crate::unattended::over_cap(&id, cx);
+    with_drive(cx, |d| ((), d.request(&id, window, over_cap)));
 }
 
-/// [`request`], answering `tell` where the task landed.
-fn request_told(
-    id: String,
-    window: AnyWindowHandle,
-    tell: Option<oneshot::Sender<Placed>>,
+/// Task `id`, holding its place, could not start for `why`, of `kind`: the
+/// drive says whether its run ends failed or its place only passes on.
+pub(crate) fn not_started(id: String, why: String, kind: Failure, cx: &mut App) {
+    with_drive(cx, |d| ((), d.not_started(&id, why, kind)));
+}
+
+/// Tell the tasks' drive what the world found, and carry out what it says.
+fn feed(input: Input<AnyWindowHandle>, cx: &mut App) {
+    with_drive(cx, |d| ((), d.handle(input)));
+}
+
+/// Do what the tasks' drive said, in order. `session` is the session of the
+/// run that just ended, if that is what this answers.
+pub(super) fn perform(
+    effects: Vec<Effect<AnyWindowHandle>>,
+    session: Option<&Entity<ChatSession>>,
     cx: &mut App,
 ) {
-    let told = move |placed: Placed| {
-        if let Some(tell) = tell {
-            let _ = tell.send(placed);
+    for effect in effects {
+        match effect {
+            Effect::Save(task) => {
+                let written = cx.global::<Tasks>().writer.save_said(*task);
+                cx.spawn(async move |cx| {
+                    let written = written.await;
+                    cx.update(|cx| feed(Input::Saved(written), cx));
+                })
+                .detach();
+            }
+            Effect::SaveDismissed(task) => {
+                let id = task.id.clone();
+                let written = cx.global::<Tasks>().writer.save_said(*task);
+                cx.spawn(async move |cx| {
+                    let written = written.await;
+                    cx.update(|cx| feed(Input::Dismissed { task: id, written }, cx));
+                })
+                .detach();
+            }
+            Effect::Remove(id) => cx.global::<Tasks>().writer.remove(id),
+            Effect::DropMarks { dir, repo, id } => cx
+                .background_executor()
+                .spawn(async move {
+                    let at = if dir.is_dir() { dir } else { repo };
+                    if let Err(why) = marks::drop_blocking(&at, &id) {
+                        eprintln!("onehand: the marks of an old task were not dropped: {why}");
+                    }
+                })
+                .detach(),
+            Effect::FindPlace { task, dir, window } => {
+                cx.spawn(async move |cx| {
+                    let place = cx
+                        .background_executor()
+                        .spawn(async move { queue::place_blocking(&dir) })
+                        .await;
+                    cx.update(|cx| {
+                        let window_open =
+                            crate::state::with_shell(window, cx, |_, _, _| ()).is_some();
+                        feed(
+                            Input::PlaceFound {
+                                task,
+                                place,
+                                window,
+                                window_open,
+                            },
+                            cx,
+                        );
+                    });
+                })
+                .detach();
+            }
+            Effect::Drive { task, window } => drive(task, window, cx),
+            Effect::WatchDrain { task, limit } => watch_drain(task, limit, session, cx),
+            Effect::Pin {
+                task,
+                dir,
+                refs,
+                from,
+            } => {
+                cx.spawn(async move |cx| {
+                    let pinned = cx
+                        .background_executor()
+                        .spawn(async move { marks::pin_blocking(&dir, &refs) })
+                        .await;
+                    cx.update(|cx| feed(Input::Pinned { task, from, pinned }, cx));
+                })
+                .detach();
+            }
+            Effect::Defer(input) => cx.defer(move |cx| feed(input, cx)),
+            Effect::Report { task, run, asked } => crate::unattended::keep(&task, &run, asked, cx),
+            Effect::IssueEnded(task) => crate::unattended::ended(&task, cx),
+            Effect::Deliver(task) => crate::unattended::deliver(task, cx),
+            Effect::DeliverAll => crate::unattended::deliver_all(cx),
+            Effect::Told { task, placed } => tell(&task, placed, cx),
+            Effect::Asked(task) => crate::unattended::placed(&task, cx),
+            Effect::CloseSession { uid, window } => cx.defer(move |cx| {
+                crate::state::with_shell(window, cx, |shell, _, cx| shell.close_finished(uid, cx));
+            }),
+            Effect::Signal(signal) => say(signal, cx),
+            Effect::Refresh => cx.refresh_windows(),
         }
-    };
-    if let Some(why) = crate::unattended::over_cap(&id, cx) {
-        told(Placed::Refused(why.clone()));
-        // A retry's new run never began: dropped, the task is as it was.
-        cx.update_global::<Tasks, _>(|t, _| {
-            let Some(task) = t.task_mut(&id) else {
-                return;
-            };
-            if task.drop_unbegun_retry() {
-                t.save(&id);
-            }
-        });
-        // Deferred: a request is often made from inside that window's shell.
-        cx.defer(move |cx| {
-            let _ = window.update(cx, |_, window, cx| {
-                window.push_notification(crate::toast::warning(why), cx)
-            });
-        });
-        cx.refresh_windows();
-        return;
     }
-    let Some(dir) = cx
-        .try_global::<Tasks>()
-        .and_then(|t| t.task(&id))
-        .map(|task| task.setup.dir.clone())
-    else {
-        crate::unattended::placed(&id, cx);
-        told(Placed::Refused("that task is gone".to_string()));
-        return;
-    };
-    cx.spawn(async move |cx| {
-        let place = cx
-            .background_executor()
-            .spawn(async move { queue::place_blocking(&dir) })
-            .await;
-        cx.update(|cx| {
-            let asked = id.clone();
-            let landed = crate::state::with_shell(window, cx, |shell, window, cx| {
-                let free = cx.update_global::<Tasks, _>(|t, _| {
-                    if t.busy(&id) {
-                        return None;
-                    }
-                    let free = t.queue.ask(place.clone(), id.clone());
-                    if !free {
-                        t.asked_in.insert(id.clone(), window.window_handle());
-                    }
-                    Some(free)
-                });
-                // Asked for, or held already: an issue's run counts against
-                // the cap from here as queued or running.
-                crate::unattended::placed(&id, cx);
-                match free {
-                    Some(true) => match shell.drive_task(id, window, cx) {
-                        Ok(()) => Placed::Started,
-                        Err(why) => Placed::Refused(why),
-                    },
-                    Some(false) => {
-                        let t = cx.global::<Tasks>();
-                        let title = t
-                            .task(&id)
-                            .map_or_else(String::new, |task| task.brief.title.clone());
-                        let at = place.file_name().map_or_else(
-                            || place.display().to_string(),
-                            |n| n.to_string_lossy().into_owned(),
-                        );
-                        let holder = t.queue.holder_of(&id).and_then(|holder| t.task(holder));
-                        let said = onehand_core::task::queue::queued_said(
-                            &title,
-                            holder.map(|holder| holder.brief.title.as_str()),
-                            &at,
-                        );
-                        window.push_notification(crate::toast::info(said.clone()), cx);
-                        cx.refresh_windows();
-                        Placed::Queued(said)
-                    }
-                    None => Placed::Refused("that task is already running or waiting".to_string()),
-                }
-            });
-            // The window went while the place was looked up, so nothing asks
-            // for it: the cap lets go here, and the task reads cut off, as
-            // after a restart, rather than holding a slot until one.
-            if landed.is_none() {
-                crate::unattended::placed(&asked, cx);
-            }
-            told(landed.unwrap_or(Placed::Refused("the window closed".to_string())));
-        })
-    })
-    .detach();
 }
 
-/// How long a cancelled turn is waited for before its place is given up anyway.
-const DRAIN_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
+/// Answer whoever asked where task `id` landed, if anybody did.
+fn tell(id: &str, placed: Placed, cx: &mut App) {
+    if let Some(tell) = cx.update_global::<Tasks, _>(|t, _| t.told.remove(id)) {
+        let _ = tell.send(placed);
+    }
+}
 
-/// Task `id` ended in `session`: its place is given up once the work has
-/// stopped, which is at once unless the session's turn is still going.
-/// Marks from the `from`th boundary on are still to be pinned.
-pub(super) fn ended(
+/// Drive task `id`, which holds its place, in `window`. Its refusal is said
+/// in the window, and comes back to the drive as a start that failed.
+fn drive(id: String, window: AnyWindowHandle, cx: &mut App) {
+    let task = id.clone();
+    let driven = crate::state::with_shell(window, cx, |shell, window, cx| {
+        shell.drive_task(task, window, cx)
+    });
+    match driven {
+        Some(Ok(())) => tell(&id, Placed::Started, cx),
+        Some(Err(why)) => tell(&id, Placed::Refused(why), cx),
+        None => {
+            tell(&id, Placed::Refused("the window closed".to_string()), cx);
+            feed(Input::NotDriven(id), cx);
+        }
+    }
+}
+
+/// Tell the drive once task `id`'s session's turn is over, the session goes,
+/// or `limit` runs out, whichever is first.
+fn watch_drain(
     id: String,
-    from: usize,
-    session: Option<&gpui::Entity<crate::chat::session::ChatSession>>,
+    limit: std::time::Duration,
+    session: Option<&Entity<ChatSession>>,
     cx: &mut App,
 ) {
-    let Some(session) = session.filter(|s| s.read(cx).chat.busy) else {
-        cx.defer(move |cx| freed(id, from, cx));
-        return;
-    };
     let drained = {
         let id = id.clone();
         move |cx: &mut App| {
             let id = id.clone();
             cx.defer(move |cx| {
-                let waited = cx.update_global::<Tasks, _>(|t, _| t.draining.remove(&id));
-                if waited.is_some() {
-                    freed(id, from, cx);
-                }
+                cx.update_global::<Tasks, _>(|t, _| t.draining.remove(&id));
+                feed(Input::Drained(id), cx);
             });
         }
     };
-    let on_event = drained.clone();
-    // The second deadline. A turn that was cancelled ends when the agent says
-    // so, and one that never does held this place, and a slot, for good.
+    let Some(session) = session else {
+        return drained(cx);
+    };
     let late = drained.clone();
-    cx.spawn(async move |cx| {
-        cx.background_executor().timer(DRAIN_LIMIT).await;
+    let limit = cx.spawn(async move |cx| {
+        cx.background_executor().timer(limit).await;
         cx.update(|cx| late(cx));
-    })
-    .detach();
-    let watch = cx.subscribe(
-        session,
-        move |_, event: &crate::chat::session::ChatEvent, cx| {
-            use crate::chat::session::ChatEvent as E;
-            use onehand_core::chat::drive::Signal as S;
-            match event {
-                E::Session(S::TurnEnded | S::Disconnected) => on_event(cx),
-                E::Session(
-                    S::Appended
-                    | S::AwaitingUser(_)
-                    | S::PickRefused(_)
-                    | S::CycleEnded
-                    | S::StopRefused(_)
-                    | S::SaveFailed(_)
-                    | S::CodeFailed(_)
-                    | S::RenameFailed(_),
-                )
-                | E::OpenFile(_)
-                | E::Fork(_)
-                | E::HostSession(_)
-                | E::HostBusy
-                | E::RestartHost(_) => {}
-            }
-        },
-    );
+    });
+    let on_event = drained.clone();
+    let watch = cx.subscribe(session, move |_, event: &ChatEvent, cx| {
+        use onehand_core::chat::drive::Signal as S;
+        match event {
+            ChatEvent::Session(S::TurnEnded | S::Disconnected) => on_event(cx),
+            ChatEvent::Session(
+                S::Appended
+                | S::AwaitingUser(_)
+                | S::PickRefused(_)
+                | S::CycleEnded
+                | S::StopRefused(_)
+                | S::SaveFailed(_)
+                | S::CodeFailed(_)
+                | S::RenameFailed(_),
+            )
+            | ChatEvent::OpenFile(_)
+            | ChatEvent::Fork(_)
+            | ChatEvent::HostSession(_)
+            | ChatEvent::HostBusy
+            | ChatEvent::RestartHost(_) => {}
+        }
+    });
     let gone = cx.observe_release(session, move |_, cx| drained(cx));
     cx.update_global::<Tasks, _>(|t, _| {
-        t.draining.insert(id, vec![watch, gone]);
+        t.draining.insert(
+            id,
+            Drain {
+                _watch: vec![watch, gone],
+                _limit: limit,
+            },
+        );
     });
 }
 
-/// Task `id` has stopped working: pin where its last visit left the work,
-/// then give its place to whoever waits for it. An issue it works is told
-/// how the run ended.
-fn freed(id: String, from: usize, cx: &mut App) {
-    let unpinned = cx.try_global::<Tasks>().and_then(|t| {
-        let task = t.task(&id)?;
-        let run = task.runs.last()?;
-        let refs = marks::refs_from(&task.id, run, from);
-        (!refs.is_empty()).then(|| (run.setup.dir.clone(), refs))
-    });
-    let Some((dir, refs)) = unpinned else {
-        return let_go(id, cx);
+/// Say `signal` where it belongs, in this front end's words.
+fn say(signal: Signal<AnyWindowHandle>, cx: &mut App) {
+    let toast = |window: AnyWindowHandle, note, cx: &mut App| {
+        let _ = window.update(cx, |_, window, cx| window.push_notification(note, cx));
     };
-    cx.spawn(async move |cx| {
-        let pinned = cx
-            .background_executor()
-            .spawn(async move { marks::pin_blocking(&dir, &refs) })
-            .await;
-        cx.update(|cx| {
-            match pinned {
-                Ok(commit) => cx.update_global::<Tasks, _>(|t, _| {
-                    if let Some(run) = t.task_mut(&id).and_then(|task| task.runs.last_mut()) {
-                        run.pinned(&commit, from);
-                    }
-                    t.save(&id);
-                }),
-                Err(why) => eprintln!("onehand: a task's last mark was not pinned: {why}"),
-            }
-            let_go(id, cx);
-        });
-    })
-    .detach();
-}
-
-/// Task `id`, holding its place, could not start for `why`, of `kind`: its
-/// run ends failed, its issue is told, and its place passes on.
-pub(crate) fn fail(id: String, why: String, kind: Failure, cx: &mut App) {
-    let Some(mut run) = resumable_run(&id, cx) else {
-        return release(id, cx);
-    };
-    run.failed(why, kind);
-    crate::unattended::keep(&id, &run, None, cx);
-    cx.update_global::<Tasks, _>(|t, _| t.store_run(&id, run));
-    let_go(id, cx);
-}
-
-/// Task `id` is over and its last mark pinned: tell an issue it works how it
-/// ended, then give its place up.
-fn let_go(id: String, cx: &mut App) {
-    // A schedule's task ended with nobody necessarily watching: said on the
-    // desktop as well as on the Tasks page.
-    if let Some(task) = super::task(&id, cx)
-        && let Some(onehand_core::task::Origin::Schedule { name, .. }) = &task.origin
-    {
-        let said = task.ended_said().unwrap_or_else(|| "ended".to_string());
-        crate::chat::session::notify_scheduled(name.clone(), said);
-    }
-    crate::unattended::ended(&id, cx);
-    release(id, cx);
-}
-
-/// Give task `id`'s place up, and start the next task waiting for it in the
-/// window it was asked from. One that cannot start there stays interrupted,
-/// and the place passes on.
-pub(crate) fn release(id: String, cx: &mut App) {
-    let next = cx.update_global::<Tasks, _>(|t, _| {
-        let next = t.queue.release(&id)?;
-        let asked = t.asked_in.remove(&next);
-        Some((next, asked))
-    });
-    enforce_cap(cx);
-    cx.refresh_windows();
-    let Some((next, asked)) = next else {
-        return;
-    };
-    let started = asked.and_then(|window| {
-        let next = next.clone();
-        crate::state::with_shell(window, cx, |shell, window, cx| {
-            // Its refusal is said in the window, and nobody else is waiting
-            // on it.
-            let _ = shell.drive_task(next, window, cx);
-        })
-    });
-    if started.is_none() {
-        release(next, cx);
-    }
-}
-
-/// A person pressed Stop on queued task `id`: it no longer waits. One that
-/// never ran a step is over, stopped by a person, with no empty run kept;
-/// one resumed goes back to how it was.
-pub(crate) fn stop_queued(id: &str, cx: &mut App) {
-    // Never driven, so what was asked for its first drive goes with it: a
-    // later Retry is a person's, and shows.
-    super::take_off_screen(id, cx);
-    let dropped = cx.update_global::<Tasks, _>(|t, _| {
-        if !t.queue.call_off(id) {
-            return None;
+    match signal {
+        Signal::Queued { window, said } => toast(window, crate::toast::info(said), cx),
+        // Deferred: a request is often made from inside that window's shell.
+        Signal::Refused { window, why } => {
+            cx.defer(move |cx| toast(window, crate::toast::warning(why), cx))
         }
-        t.asked_in.remove(id);
-        let task = t.task_mut(id)?;
-        let dropped = task.take_unbegun();
-        t.save(id);
-        dropped
-    });
-    // An issue whose run never began is told it was stopped, or it would
-    // stay claimed with nothing after the claim.
-    if let Some(mut run) = dropped {
-        // Through the engine, so the stop is in the run's history as any is.
-        run.stopped(Stop::ByPerson);
-        crate::unattended::keep(id, &run, None, cx);
-        crate::unattended::deliver(id.to_string(), cx);
+        Signal::CheckEnded {
+            window,
+            project,
+            passed,
+        } => {
+            let note = match passed {
+                true => crate::toast::success(format!("Check passed in {project}")),
+                false => crate::toast::warning(format!("Check failed in {project}")),
+            };
+            toast(window, note, cx);
+        }
+        // Ended with nobody necessarily watching: said on the desktop as well
+        // as on the Tasks page.
+        Signal::ScheduleEnded { name, said } => crate::chat::session::notify_scheduled(name, said),
+        Signal::DismissFailed { window, why } => {
+            toast(window, crate::toast::failed("Dismissing the task", why), cx)
+        }
+        Signal::SaveFailed(why) => eprintln!("onehand: could not write a task's file: {why}"),
+        Signal::PinFailed(why) => eprintln!("onehand: a task's last mark was not pinned: {why}"),
     }
-    enforce_cap(cx);
-    cx.refresh_windows();
 }

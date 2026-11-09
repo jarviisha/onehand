@@ -23,7 +23,7 @@ pub struct Queue {
 impl Queue {
     /// `task` asks for `place`: whether it has it now. One that does not
     /// waits, first in, first out.
-    pub fn ask(&mut self, place: PathBuf, task: String) -> bool {
+    pub(crate) fn ask(&mut self, place: PathBuf, task: String) -> bool {
         if self.held.get(&place).is_some_and(|holder| *holder != task) {
             self.waiting.push((place, task));
             return false;
@@ -34,7 +34,7 @@ impl Queue {
 
     /// `task` has stopped working: its place goes straight to the first task
     /// waiting for it, which is handed back to be started.
-    pub fn release(&mut self, task: &str) -> Option<String> {
+    pub(crate) fn release(&mut self, task: &str) -> Option<String> {
         let place = self
             .held
             .iter()
@@ -48,7 +48,7 @@ impl Queue {
     }
 
     /// `task` no longer waits: whether it was waiting.
-    pub fn call_off(&mut self, task: &str) -> bool {
+    pub(crate) fn call_off(&mut self, task: &str) -> bool {
         let before = self.waiting.len();
         self.waiting.retain(|(_, waiting)| waiting != task);
         self.waiting.len() != before

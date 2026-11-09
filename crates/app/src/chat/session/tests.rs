@@ -250,7 +250,7 @@ fn the_offline_line_says_how_recent_the_copy_is() {
 // The session's carrier: what it does with the drive's effects, held to its
 // contract with a test context and a channel standing in for the adapter.
 
-mod carrier {
+pub(crate) mod carrier {
     use super::super::{ChatEvent, ChatSession, Source};
     use futures::channel::mpsc;
     use gpui::{AppContext as _, Entity, TestAppContext};
@@ -264,11 +264,11 @@ mod carrier {
     use std::rc::Rc;
     use std::time::Instant;
 
-    type Seen = Rc<RefCell<Vec<Signal>>>;
+    pub(crate) type Seen = Rc<RefCell<Vec<Signal>>>;
 
     /// A session folding what is sent on the returned channel into `chat`,
     /// and every signal it gave, in order.
-    fn driven(
+    pub(crate) fn driven(
         cx: &mut TestAppContext,
         chat: Chat,
     ) -> (Entity<ChatSession>, mpsc::Sender<AcpEvent>, Seen) {
@@ -291,7 +291,7 @@ mod carrier {
     }
 
     /// The agent comes up, and the session names its conversation.
-    fn up(
+    pub(crate) fn up(
         tx: &mut mpsc::Sender<AcpEvent>,
     ) -> tokio::sync::mpsc::UnboundedReceiver<onehand_core::acp::AcpRequest> {
         let (req, rx): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
@@ -311,7 +311,7 @@ mod carrier {
         });
     }
 
-    fn turn(tx: &mut mpsc::Sender<AcpEvent>) {
+    pub(crate) fn turn(tx: &mut mpsc::Sender<AcpEvent>) {
         tx.try_send(AcpEvent::AgentChunk {
             text: "done".into(),
             message: None,

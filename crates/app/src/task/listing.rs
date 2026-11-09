@@ -37,7 +37,7 @@ pub(crate) struct Row {
 /// says it is busy.
 pub(crate) fn checking(root: &std::path::Path, cx: &App) -> bool {
     cx.try_global::<Tasks>().is_some_and(|t| {
-        t.tasks.iter().any(|task| {
+        t.tasks().iter().any(|task| {
             task.setup.repo == root && task.source == Source::Check && t.live.contains_key(&task.id)
         })
     })
@@ -51,7 +51,7 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
     };
     let mut rows: Vec<(Option<&Task>, Row)> = Vec::new();
     let tasks = t
-        .tasks
+        .tasks()
         .iter()
         .filter(|task| roots.contains(&task.setup.repo) || roots.contains(&task.setup.dir));
     for task in tasks {
@@ -87,7 +87,7 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
             group: task.group(working),
             session: live.and_then(|d| Some((d.uid()?, d.window))),
             resumable: task.resumable(),
-            stoppable: live.is_some() || t.queue.queued(&task.id),
+            stoppable: live.is_some() || t.drive.queue().queued(&task.id),
             stopping: t.stopping(&task.id),
         };
         rows.push((Some(task), row));
@@ -108,7 +108,7 @@ pub(crate) fn issue_works(kept: &[(PathBuf, PathBuf)], cx: &App) -> Vec<IssueWor
         return Vec::new();
     };
     let mut by_issue: Vec<(IssueKey, Vec<&Task>)> = Vec::new();
-    for task in &t.tasks {
+    for task in t.tasks() {
         let Some(issue) = task.issue() else {
             continue;
         };
@@ -133,7 +133,8 @@ pub(crate) fn issue_works(kept: &[(PathBuf, PathBuf)], cx: &App) -> Vec<IssueWor
         .filter_map(|(key, tasks)| {
             let tasks = tasks.into_iter().map(|task| {
                 let behind = t
-                    .queue
+                    .drive
+                    .queue()
                     .holder_of(&task.id)
                     .and_then(|holder| t.task(holder))
                     .map(|holder| holder.brief.title.clone());
@@ -153,7 +154,7 @@ pub(crate) fn issue_tasks(
     let Some(t) = cx.try_global::<Tasks>() else {
         return Vec::new();
     };
-    t.tasks
+    t.tasks()
         .iter()
         .filter(|task| task.issue().is_some_and(&of))
         .map(|task| (task.clone(), t.working(&task.id)))
@@ -180,9 +181,8 @@ pub(crate) fn attention(roots: &[PathBuf], cx: &App) -> usize {
 /// How many finished tasks of the projects at `roots` were let go since
 /// the app started, to keep the history bounded.
 pub(crate) fn removed(roots: &[PathBuf], cx: &App) -> usize {
-    cx.try_global::<Tasks>().map_or(0, |t| {
-        roots.iter().filter_map(|root| t.removed.get(root)).sum()
-    })
+    cx.try_global::<Tasks>()
+        .map_or(0, |t| roots.iter().map(|root| t.drive.removed(root)).sum())
 }
 
 /// Whether task `id` is queued, running or waiting on a person.
@@ -198,7 +198,7 @@ pub(crate) fn slot_holders(cx: &App) -> Vec<Holder> {
     let Some(t) = cx.try_global::<Tasks>() else {
         return Vec::new();
     };
-    t.tasks
+    t.tasks()
         .iter()
         .filter(|task| t.holds_slot(&task.id))
         .filter_map(|task| {
@@ -223,7 +223,7 @@ pub(crate) fn slot_holders(cx: &App) -> Vec<Holder> {
 /// waiting runs counts.
 pub(crate) fn issues_waiting(cx: &App) -> usize {
     cx.try_global::<Tasks>().map_or(0, |t| {
-        t.tasks
+        t.tasks()
             .iter()
             .filter(|task| task.issue().is_some())
             .filter(|task| t.working(&task.id) == Some(Working::Waiting))

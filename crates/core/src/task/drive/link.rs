@@ -8,14 +8,20 @@
 //! handlers, untested. A front end calls these with the two drives it holds
 //! and carries out what comes back.
 
-use super::{Drive, Input};
+use super::{Input, RunDrive};
 use crate::chat::drive::{Code, Effect as SessionEffect, Intake, Origin, SessionDrive, Signal};
-use crate::chat::Now;
+use crate::chat::{Chat, Now};
 use crate::workflow::{Action, Run};
 use std::time::Instant;
 
-/// Start driving `run` on `session`: what [`Drive::start`] answers, and what
-/// putting the first step's settings in force asks of the session.
+/// Start driving `run` on `session`: what [`RunDrive::start`] answers, and what
+/// naming the session and putting the first step's settings in force ask of
+/// it.
+///
+/// The session is named for the task unless it has a name already, so the
+/// rail tells runs apart rather than calling each by the opening line of its
+/// first prompt. Before that prompt the name is only held, and the first
+/// turn's save writes it.
 #[allow(clippy::too_many_arguments)]
 pub fn start(
     task: String,
@@ -25,32 +31,47 @@ pub fn start(
     issue: bool,
     now: Instant,
     mut session: Option<&mut SessionDrive>,
-) -> (Drive, Vec<super::Effect>, Vec<SessionEffect>) {
-    let chat = session.as_deref_mut().map(SessionDrive::chat_mut);
-    let (drive, fx) = Drive::start(task, run, first, pinned, issue, now, chat);
-    (drive, fx, asked_of(session))
+) -> (RunDrive, Vec<super::Effect>, Vec<SessionEffect>) {
+    let mut named = Vec::new();
+    if let Some(session) = session.as_deref_mut().filter(|s| s.custom_title.is_none()) {
+        named = session.rename(&run.brief.title).1;
+    }
+    let chat = session.as_deref().map(|session| &**session);
+    let (mut drive, fx) = RunDrive::start(task, run, first, pinned, issue, now, chat);
+    named.extend(asked_of(&mut drive, session));
+    (drive, fx, named)
 }
 
 /// Tell `drive` what happened, with its session as it stands: what the run
 /// does next, and what that asks of the session.
-pub fn on(
-    drive: &mut Drive,
+pub fn handle(
+    drive: &mut RunDrive,
     input: Input,
-    mut session: Option<&mut SessionDrive>,
+    session: Option<&mut SessionDrive>,
     now: Instant,
 ) -> (Vec<super::Effect>, Vec<SessionEffect>) {
-    let fx = drive.on(
-        input,
-        session.as_deref_mut().map(SessionDrive::chat_mut),
-        now,
-    );
-    (fx, asked_of(session))
+    command(drive, session, |drive, chat| drive.handle(input, chat, now))
 }
 
-/// What the run's drive queued for the agent on its session: a step's mode
-/// and picks.
-fn asked_of(session: Option<&mut SessionDrive>) -> Vec<SessionEffect> {
-    session.map_or_else(Vec::new, |session| session.sent(Vec::new()))
+/// Give `drive` a command, `give`, with its session as it stands: what the
+/// run does next, and what that asks of the session.
+pub fn command(
+    drive: &mut RunDrive,
+    session: Option<&mut SessionDrive>,
+    give: impl FnOnce(&mut RunDrive, Option<&Chat>) -> Vec<super::Effect>,
+) -> (Vec<super::Effect>, Vec<SessionEffect>) {
+    let fx = give(drive, session.as_deref().map(|session| &**session));
+    (fx, asked_of(drive, session))
+}
+
+/// What the run's drive asked of its session, its mode and a step's picks,
+/// made through the session's own drive: what that asks of the session's
+/// carrier. Without a session there is nothing to pick on.
+fn asked_of(drive: &mut RunDrive, session: Option<&mut SessionDrive>) -> Vec<SessionEffect> {
+    let picks = drive.take_picks();
+    session.map_or_else(Vec::new, |session| {
+        picks.iter().flat_map(|pick| session.pick(pick)).collect()
+    })
 }
 
 /// What `signal`, from the session `drive` runs on, tells the run, if
@@ -59,7 +80,7 @@ fn asked_of(session: Option<&mut SessionDrive>) -> Vec<SessionEffect> {
 /// A streamed chunk is asked about first, read-only: most of what a session
 /// says is its reply streaming in, and a chunk that cannot move the run must
 /// not tell everything watching the run that it changed.
-pub fn input_of(signal: &Signal, drive: &Drive, session: &SessionDrive) -> Option<Input> {
+pub fn input_of(signal: &Signal, drive: &RunDrive, session: &SessionDrive) -> Option<Input> {
     match signal {
         Signal::Appended => drive.heeds_appended(session).then_some(Input::Appended),
         Signal::TurnEnded => Some(Input::TurnEnded),
@@ -79,7 +100,7 @@ pub fn input_of(signal: &Signal, drive: &Drive, session: &SessionDrive) -> Optio
 /// The session changed in some way: what that tells the run, which is only
 /// something when a card it waits on may have been answered, or work a turn
 /// left running may have settled.
-pub fn notified(drive: &Drive, session: &SessionDrive) -> Option<Input> {
+pub fn notified(drive: &RunDrive, session: &SessionDrive) -> Option<Input> {
     drive.heeds_notified(session).then_some(Input::Notified)
 }
 

@@ -1,58 +1,45 @@
-//! What the one driver of every run decides: it watches the run's session,
-//! does what the run's engine asks, and reports back what happened.
+//! A run's drive: what every run decides as it watches its session, does
+//! what its engine asks, and reports back what happened.
 //!
-//! **Decided here, carried out elsewhere.** A [`Drive`] is told what
-//! happened ([`Input`]) with the run's session as it stands, and answers with
-//! what to do ([`Effect`]): pin a mark, send a prompt, run a command, call the
-//! forge, wait, say something, save, finish. It has no timer, no thread and
+//! **Decided here, carried out elsewhere.** A [`RunDrive`] is given a
+//! person's commands as methods ([`RunDrive::approve`], [`RunDrive::revise`],
+//! [`RunDrive::stop`]) and told what happened ([`Input`]) with the run's
+//! session as it stands, and answers with what to do ([`Effect`]): pin a
+//! mark, send a prompt, run a command, call the forge, wait, say something,
+//! save, finish. It has no timer, no thread and
 //! no I/O of its own, so every rule below is a rule a test can hold it to; the
 //! front end does the work and brings back what came of it.
 //!
-//! **The mode and the settings picks are made on the session itself**, here,
-//! as they are decided: the next pick is planned against what the session
-//! says is still waiting, and a pick that has not been made yet would read as
-//! one already answered.
+//! **The mode and the settings picks are asked of the session**, never made
+//! on its model here: the drive reads its session and keeps the picks it
+//! decided ([`RunDrive::take_picks`]), which the link makes through the
+//! session's own drive before anything else reaches the run. The next pick
+//! is planned only once the agent answered the last one.
 //!
 //! **Every Stop goes through the engine the same way.** A person's Stop, a
 //! prompt of their own, the timeout, the agent going and the session closing
 //! each end the run with [`Run::stopped`], which never judges the turn that
 //! was under way — a cut-short turn passing as finished work is the mistake
-//! two drivers disagreeing made before.
+//! two carriers disagreeing made before.
 
 use crate::chat::{Chat, Link};
-use crate::preflight::{found_late, mode_refused, About};
-use crate::task::marks;
+
 use crate::unattended::Budget;
-use crate::workflow::{Action, ApprovalAt, Failure, Outcome, Run, Stop};
+use crate::workflow::{Action, ApprovalAt, Failure, Pick, Run, Stop};
 use std::time::{Duration, Instant};
 
+mod forge;
 pub mod link;
+mod pin;
 mod settings;
 mod signals;
+mod steps;
 
-pub use signals::{Effect, Input};
-
-/// The longest answer kept from a turn. An answer the length of a book is cut
-/// rather than carried whole into the run's file and the next prompt.
-const ANSWER_MAX: usize = 20_000;
-
-/// A call held until a mark is pinned.
-#[derive(Debug, Clone)]
-enum Held {
-    Answer(Answer),
-    Cut(Stop),
-    End(Stop),
-}
-
-/// A person's answer to an approval.
-#[derive(Debug, Clone)]
-enum Answer {
-    Approved(ApprovalAt),
-    Revised(ApprovalAt, String),
-}
+use pin::{Answer, Held};
+pub use signals::{Effect, Input, Signal, Timer};
 
 /// A run under way on one session.
-pub struct Drive {
+pub struct RunDrive {
     /// The task the run is of.
     task: String,
     run: Run,
@@ -92,6 +79,8 @@ pub struct Drive {
     /// The run's own mode, picked when the agent came up and not yet
     /// answered: a refusal of it is the run's mode refused, not a step's.
     mode_out: Option<String>,
+    /// Picks decided and not yet handed to the session, in order.
+    picks: Vec<Pick>,
     /// The step the transcript was last told of.
     noted: Option<usize>,
     /// How much of the timeout is left; it does not run while a card or an
@@ -104,10 +93,15 @@ pub struct Drive {
     /// The turn sent ended with the agent still at work beside it: the step
     /// is judged once that work, and the agent's answer to it, are done.
     after_work: bool,
-    /// The step's command, or a forge call, is running.
+    /// The step's command, or a forge call a Stop waits for, is running.
     command: bool,
+    /// The forge call the run is in, or the status checks it waits on.
+    forging: Option<forge::Forging>,
     /// How the run ends once its called-off command has exited.
     stopping: Option<Stop>,
+    /// A write of the run failed and was said; nothing more is said until
+    /// one lands.
+    save_failed: bool,
     /// The run has finished: nothing more is done.
     over: bool,
     /// The run never had a session: a check, which only runs a command.
@@ -115,7 +109,7 @@ pub struct Drive {
     sessionless: bool,
 }
 
-impl Drive {
+impl RunDrive {
     /// Drive `run`, the last run of `task`, starting with `first`: what
     /// [`Run::resume`] said to do. `pinned` boundaries of it had their mark
     /// pinned before; `issue` says it is an issue's run.
@@ -126,7 +120,7 @@ impl Drive {
         pinned: usize,
         issue: bool,
         now: Instant,
-        chat: Option<&mut Chat>,
+        chat: Option<&Chat>,
     ) -> (Self, Vec<Effect>) {
         let limit = run
             .template
@@ -149,21 +143,33 @@ impl Drive {
             settled: None,
             picking: None,
             mode_out: None,
+            picks: Vec::new(),
             noted: None,
             budget: Budget::start(limit, now),
             card: false,
             after_work: false,
             command: false,
+            forging: None,
             stopping: None,
+            save_failed: false,
             over: false,
             sessionless: chat.is_none(),
         };
         let mut fx = Vec::new();
         if !drive.sessionless {
-            fx.push(Effect::ArmClock(limit));
+            fx.push(Effect::Arm {
+                timer: Timer::Timeout,
+                after: limit,
+            });
         }
         drive.act(first, chat, now, &mut fx);
         (drive, fx)
+    }
+
+    /// The picks the run decided since last asked, to be made on its session
+    /// in order before anything else reaches the run.
+    pub(crate) fn take_picks(&mut self) -> Vec<Pick> {
+        std::mem::take(&mut self.picks)
     }
 
     /// The task the run is of.
@@ -227,9 +233,55 @@ impl Drive {
         self.spent_before + used.as_secs()
     }
 
+    /// A person approved what they read at `at`. Held while a mark is
+    /// pinned, and refused by the engine once the run no longer waits there.
+    pub fn approve(&mut self, at: ApprovalAt, chat: Option<&Chat>, now: Instant) -> Vec<Effect> {
+        self.command_with(chat, now, |d, chat, now, fx| {
+            d.answer(Answer::Approved(at), chat, now, fx);
+            fx.push(Effect::Answered);
+        })
+    }
+
+    /// A person sent what they read at `at` back with `note`, as
+    /// [`Self::approve`] is judged.
+    pub fn revise(
+        &mut self,
+        at: ApprovalAt,
+        note: String,
+        chat: Option<&Chat>,
+        now: Instant,
+    ) -> Vec<Effect> {
+        self.command_with(chat, now, |d, chat, now, fx| {
+            d.answer(Answer::Revised(at, note), chat, now, fx);
+            fx.push(Effect::Answered);
+        })
+    }
+
+    /// A person pressed Stop: the turn under way is cancelled and the run
+    /// ends, once a command running has exited.
+    pub fn stop(&mut self, chat: Option<&Chat>, now: Instant) -> Vec<Effect> {
+        self.command_with(chat, now, |d, chat, now, fx| {
+            d.cut(Stop::ByPerson, chat, now, fx)
+        })
+    }
+
+    /// Do `command`, unless the run has finished, which does nothing more.
+    fn command_with(
+        &mut self,
+        chat: Option<&Chat>,
+        now: Instant,
+        command: impl FnOnce(&mut Self, Option<&Chat>, Instant, &mut Vec<Effect>),
+    ) -> Vec<Effect> {
+        let mut fx = Vec::new();
+        if !self.over {
+            command(self, chat, now, &mut fx);
+        }
+        fx
+    }
+
     /// Something happened: what to do about it. A run that has finished does
     /// nothing more.
-    pub fn on(&mut self, input: Input, chat: Option<&mut Chat>, now: Instant) -> Vec<Effect> {
+    pub fn handle(&mut self, input: Input, chat: Option<&Chat>, now: Instant) -> Vec<Effect> {
         let mut fx = Vec::new();
         if self.over {
             return fx;
@@ -241,11 +293,7 @@ impl Drive {
             | Input::Disconnected
             | Input::PickRefused(_) => self.on_event(input, chat, now, &mut fx),
             Input::Notified => {
-                if self.card
-                    && chat
-                        .as_deref()
-                        .is_some_and(|chat| !chat.awaiting_permission())
-                {
+                if self.card && chat.is_some_and(|chat| !chat.awaiting_permission()) {
                     self.card = false;
                     self.budget.resume(now);
                     fx.push(Effect::Answered);
@@ -264,15 +312,6 @@ impl Drive {
                     settings::answered(self, chat, now, &mut fx);
                 }
             }
-            Input::Approved { at } => {
-                self.answer(Answer::Approved(at), chat, now, &mut fx);
-                fx.push(Effect::Answered);
-            }
-            Input::Revised { at, note } => {
-                self.answer(Answer::Revised(at, note), chat, now, &mut fx);
-                fx.push(Effect::Answered);
-            }
-            Input::Stop => self.cut(Stop::ByPerson, chat, now, &mut fx),
             Input::Pinned(pinned) => self.landed(pinned, chat, now, &mut fx),
             Input::Measured(Ok(mark)) => {
                 self.advance(chat, now, &mut fx, move |run| run.measured(mark))
@@ -309,25 +348,30 @@ impl Drive {
                 }
                 self.advance(chat, now, &mut fx, move |run| run.command_finished(ran));
             }
-            Input::ForgeDone(done) => {
-                self.command = false;
-                if let Some(stop) = self.stopping.take() {
-                    return self.ended(stop, chat, now, fx);
+            Input::Pushed(pushed) => self.pushed(pushed, chat, now, &mut fx),
+            Input::PullRequestFound(found) => self.found(found, chat, now, &mut fx),
+            Input::PullRequestOpened(read) => self.pull_request_opened(read, chat, now, &mut fx),
+            Input::LogsRead(logs) => self.logs_read(logs, chat, now, &mut fx),
+            Input::MarkedReady(ready) => self.marked_ready(ready, chat, now, &mut fx),
+            Input::Elapsed(Timer::Checks) => self.look_again(&mut fx),
+            Input::NoForge(why) => self.no_forge(why, chat, now, &mut fx),
+            Input::Saved(Ok(())) => self.save_failed = false,
+            Input::Saved(Err(why)) => {
+                if !std::mem::replace(&mut self.save_failed, true) {
+                    fx.push(Effect::Signal(Signal::SaveFailed(why)));
                 }
-                self.advance(chat, now, &mut fx, move |run| run.forge_done(done));
-            }
-            Input::ChecksSeen(seen) => {
-                self.budget.resume(now);
-                self.advance(chat, now, &mut fx, move |run| run.status_checks_seen(seen));
             }
             // The run's timeout: when it has run out, look again, since time
             // spent waiting on a person did not count; end the run once
             // nothing is left.
-            Input::ClockFired => {
+            Input::Elapsed(Timer::Timeout) => {
                 let left = self.budget.left(now);
                 match left.is_zero() {
                     true => self.cut(Stop::TimedOut, chat, now, &mut fx),
-                    false => fx.push(Effect::ArmClock(left)),
+                    false => fx.push(Effect::Arm {
+                        timer: Timer::Timeout,
+                        after: left,
+                    }),
                 }
             }
         }
@@ -338,7 +382,7 @@ impl Drive {
     fn ended(
         &mut self,
         stop: Stop,
-        chat: Option<&mut Chat>,
+        chat: Option<&Chat>,
         now: Instant,
         mut fx: Vec<Effect>,
     ) -> Vec<Effect> {
@@ -346,13 +390,7 @@ impl Drive {
         fx
     }
 
-    fn on_event(
-        &mut self,
-        input: Input,
-        chat: Option<&mut Chat>,
-        now: Instant,
-        fx: &mut Vec<Effect>,
-    ) {
+    fn on_event(&mut self, input: Input, chat: Option<&Chat>, now: Instant, fx: &mut Vec<Effect>) {
         let Some(chat) = chat else {
             return;
         };
@@ -406,43 +444,26 @@ impl Drive {
             Input::Notified
             | Input::SessionGone
             | Input::PicksAnswered
-            | Input::Approved { .. }
-            | Input::Revised { .. }
-            | Input::Stop
             | Input::Pinned(_)
             | Input::Measured(_)
             | Input::TurnRead(_)
             | Input::NotTaken
             | Input::CommandExited(_)
-            | Input::ForgeDone(_)
-            | Input::ChecksSeen(_)
-            | Input::ClockFired => {}
+            | Input::Pushed(_)
+            | Input::PullRequestFound(_)
+            | Input::PullRequestOpened(_)
+            | Input::LogsRead(_)
+            | Input::MarkedReady(_)
+            | Input::NoForge(_)
+            | Input::Elapsed(_)
+            | Input::Saved(_) => {}
         }
     }
-
-    /// Hold `held`, which ends the run when `ends`, while a mark is being
-    /// pinned: whether it was held.
-    fn hold(&mut self, ends: bool, held: Held) -> bool {
-        match &mut self.held {
-            Some(list) => {
-                list.push((ends, held));
-                true
-            }
-            None => false,
-        }
-    }
-
     /// A person's answer to the approval the run waits on: held while a mark
     /// is pinned, then judged by the engine against the visit it was drawn
     /// from. The clock goes on only once the engine took it, so a refused
     /// press leaves the run waiting as it was.
-    fn answer(
-        &mut self,
-        answer: Answer,
-        chat: Option<&mut Chat>,
-        now: Instant,
-        fx: &mut Vec<Effect>,
-    ) {
+    fn answer(&mut self, answer: Answer, chat: Option<&Chat>, now: Instant, fx: &mut Vec<Effect>) {
         if self.hold(false, Held::Answer(answer.clone())) {
             return;
         }
@@ -459,11 +480,11 @@ impl Drive {
     /// Cancel the turn under way and end the run as `stop`, as one call: held
     /// together while a mark is pinned, so the cancel never runs before a
     /// prompt the pin is still holding back.
-    fn cut(&mut self, stop: Stop, chat: Option<&mut Chat>, now: Instant, fx: &mut Vec<Effect>) {
+    fn cut(&mut self, stop: Stop, chat: Option<&Chat>, now: Instant, fx: &mut Vec<Effect>) {
         if self.hold(true, Held::Cut(stop)) {
             return;
         }
-        if chat.as_deref().is_some_and(|chat| chat.busy) {
+        if chat.is_some_and(|chat| chat.busy) {
             fx.push(Effect::CancelTurn);
         }
         self.end(stop, chat, now, fx);
@@ -474,7 +495,7 @@ impl Drive {
     /// exited; while a forge call runs, once it has landed. A run said to be
     /// stopped never leaves a build or a test writing to the work behind it.
     /// The first reason given is the one the run ends with.
-    fn end(&mut self, stop: Stop, chat: Option<&mut Chat>, now: Instant, fx: &mut Vec<Effect>) {
+    fn end(&mut self, stop: Stop, chat: Option<&Chat>, now: Instant, fx: &mut Vec<Effect>) {
         if self.hold(true, Held::End(stop)) {
             return;
         }
@@ -492,7 +513,7 @@ impl Drive {
     /// Report to the run's engine, then do what it says.
     fn advance(
         &mut self,
-        chat: Option<&mut Chat>,
+        chat: Option<&Chat>,
         now: Instant,
         fx: &mut Vec<Effect>,
         report: impl FnOnce(&mut Run) -> Action,
@@ -502,305 +523,6 @@ impl Drive {
         }
         let action = report(&mut self.run);
         self.act(action, chat, now, fx);
-    }
-
-    /// Do what the engine said, once the work is pinned at every boundary the
-    /// run has crossed since the last pin: the mark of a step's start lands
-    /// before its prompt or command touches the work. A mark that cannot be
-    /// pinned is said and left out; it never stops the run.
-    fn act(&mut self, action: Action, chat: Option<&mut Chat>, now: Instant, fx: &mut Vec<Effect>) {
-        if ends_run(&action) || action == Action::Idle {
-            return self.carry_out(action, chat, now, fx);
-        }
-        let refs = marks::refs_from(&self.task, &self.run, self.pinned);
-        if refs.is_empty() {
-            return self.carry_out(action, chat, now, fx);
-        }
-        let from = self.pinned;
-        self.held = Some(Vec::new());
-        self.waiting = Some((action, from, from + refs.len()));
-        fx.push(Effect::Pin {
-            dir: self.run.setup.dir.clone(),
-            refs,
-        });
-    }
-
-    /// The marks landed, or did not: do the action that waited on them, and
-    /// then what was asked meanwhile.
-    fn landed(
-        &mut self,
-        pinned: Result<String, String>,
-        chat: Option<&mut Chat>,
-        now: Instant,
-        fx: &mut Vec<Effect>,
-    ) {
-        let Some((action, from, total)) = self.waiting.take() else {
-            return;
-        };
-        match &pinned {
-            Ok(commit) => self.run.pinned(commit, from),
-            Err(why) => eprintln!("onehand: a step's mark was not pinned: {why}"),
-        }
-        self.pinned = total;
-        let mut held = self.held.take().unwrap_or_default();
-        // An ending asked meanwhile wins over the action, which would only
-        // start work on a run that is over; the first one asked is its
-        // reason, and the rest find nothing left to do.
-        let mut chat = chat;
-        if let Some(at) = held.iter().position(|(ends, _)| *ends) {
-            let (_, ending) = held.swap_remove(at);
-            return self.replay(ending, chat, now, fx);
-        }
-        self.carry_out(action, chat.as_deref_mut(), now, fx);
-        // In the order asked; one that starts another pin holds the rest.
-        for (_, then) in held {
-            self.replay(then, chat.as_deref_mut(), now, fx);
-        }
-    }
-
-    fn replay(&mut self, held: Held, chat: Option<&mut Chat>, now: Instant, fx: &mut Vec<Effect>) {
-        match held {
-            Held::Answer(answer) => self.answer(answer, chat, now, fx),
-            Held::Cut(stop) => self.cut(stop, chat, now, fx),
-            Held::End(stop) => self.end(stop, chat, now, fx),
-        }
-    }
-
-    /// Do what the engine said, now.
-    fn carry_out(
-        &mut self,
-        action: Action,
-        chat: Option<&mut Chat>,
-        now: Instant,
-        fx: &mut Vec<Effect>,
-    ) {
-        let Some(chat) = chat else {
-            return self.carry_out_without_session(action, now, fx);
-        };
-        if !ends_run(&action) {
-            self.announce_step(fx);
-        }
-        let dir = self.run.setup.dir.clone();
-        match action {
-            Action::Measure => fx.push(Effect::Measure { dir }),
-            Action::Prompt(text) => self.send(text, chat, now, fx),
-            Action::RunCommand(command) => {
-                self.command = true;
-                fx.push(Effect::Note(format!("Running: {command}")));
-                fx.push(Effect::RunCommand { dir, command });
-            }
-            Action::AwaitApproval => {
-                self.budget.pause(now);
-                fx.push(Effect::Note(
-                    "Waiting for approval: Continue or Revise… under the header".to_string(),
-                ));
-                fx.push(Effect::Waiting);
-            }
-            Action::Push(commit) => {
-                fx.push(Effect::Note(format!(
-                    "Pushing {}, which the check passed on",
-                    short(&commit)
-                )));
-                // Held as a step's command is, so a Stop waits for the forge
-                // call in flight and the run is said to be stopped only once
-                // it has landed, and no pull request is opened after that.
-                self.command = true;
-                fx.push(Effect::Forge {
-                    commit: Some(commit),
-                });
-            }
-            Action::OpenPullRequest => {
-                fx.push(Effect::Note("Opening the pull request".to_string()));
-                self.command = true;
-                fx.push(Effect::Forge { commit: None });
-            }
-            Action::AwaitStatusChecks { wait, pushed } => {
-                self.budget.pause(now);
-                fx.push(Effect::Note(
-                    "Waiting for the pull request's status checks".to_string(),
-                ));
-                fx.push(Effect::WatchChecks { pushed, wait });
-                // Its slot is free now, for another issue to take up.
-                fx.push(Effect::Waiting);
-            }
-            Action::Finish(outcome) => return self.finish(Some(chat), outcome, now, fx),
-            Action::Idle => return,
-        }
-        self.run.spent_secs = self.spent_secs(now);
-        fx.push(Effect::Save);
-        fx.push(Effect::Refresh);
-    }
-
-    /// Do what the engine said with no session to do it in: a run that never
-    /// had one runs its command and measures its work; one whose session went
-    /// is only ended.
-    fn carry_out_without_session(&mut self, action: Action, now: Instant, fx: &mut Vec<Effect>) {
-        let dir = self.run.setup.dir.clone();
-        match action {
-            Action::Finish(outcome) => return self.finish(None, outcome, now, fx),
-            Action::RunCommand(command) if self.sessionless => {
-                self.command = true;
-                fx.push(Effect::RunCommand { dir, command });
-            }
-            Action::Measure if self.sessionless => fx.push(Effect::Measure { dir }),
-            Action::Measure
-            | Action::Prompt(_)
-            | Action::RunCommand(_)
-            | Action::AwaitApproval
-            | Action::Push(_)
-            | Action::OpenPullRequest
-            | Action::AwaitStatusChecks { .. }
-            | Action::Idle => return,
-        }
-        self.run.spent_secs = self.spent_secs(now);
-        fx.push(Effect::Save);
-        fx.push(Effect::Refresh);
-    }
-
-    /// Tell the transcript the step the run is now in, once per step entered.
-    /// A prompt's run has no steps to tell apart, so it says none.
-    fn announce_step(&mut self, fx: &mut Vec<Effect>) {
-        let fresh = self.noted != Some(self.run.step);
-        self.noted = Some(self.run.step);
-        let Some(step) = self.run.current() else {
-            return;
-        };
-        if fresh && !self.run.template.is_prompt() {
-            fx.push(Effect::Note(format!(
-                "Step {} of {}: {}",
-                self.run.step + 1,
-                self.run.template.steps.len(),
-                step.label
-            )));
-        }
-    }
-
-    /// Send `text`, or keep it until the agent is up.
-    fn send(&mut self, text: String, chat: &mut Chat, now: Instant, fx: &mut Vec<Effect>) {
-        if chat.link != Link::Connected {
-            self.pending = Some(text);
-            return;
-        }
-        if chat.prompted_beyond(self.sent) {
-            return self.end(Stop::TakenOver, Some(chat), now, fx);
-        }
-        if !self.came_up(chat, now, fx) {
-            return;
-        }
-        let Some(text) = settings::settle(self, text, chat, now, fx) else {
-            return;
-        };
-        self.sent += 1;
-        self.answer_from = chat.items.len();
-        self.sent_at = Some(now);
-        fx.push(Effect::Submit(text));
-    }
-
-    /// The agent is up, the first time in this session: put it in the run's
-    /// mode before its first prompt, and say so to an issue the run works.
-    /// Whether the prompt may go: an agent that does not offer the mode fails
-    /// the run, since one left in the mode that asks before every edit would
-    /// park at the first.
-    fn came_up(&mut self, chat: &mut Chat, now: Instant, fx: &mut Vec<Effect>) -> bool {
-        if std::mem::replace(&mut self.up, true) {
-            return true;
-        }
-        fx.push(Effect::CameUp);
-        let Some(mode) = self.run.setup.mode.clone() else {
-            self.start_settings(chat, None);
-            return true;
-        };
-        let offered: Vec<String> = chat.modes.iter().map(|m| m.id.clone()).collect();
-        if let Some(why) = mode_refused(&mode, &offered) {
-            fx.push(Effect::Pause {
-                why: why.clone(),
-                fix: "unattended.mode is fixed".to_string(),
-            });
-            self.advance(Some(chat), now, fx, move |run| {
-                run.failed(why, found_late(About::Mode))
-            });
-            return false;
-        }
-        chat.set_mode(&mode);
-        self.mode_out = Some(mode.clone());
-        fx.push(Effect::Note(format!("Mode {mode} set")));
-        self.start_settings(chat, Some(mode));
-        true
-    }
-
-    /// Keep what the agent came up running as the run's starting settings,
-    /// in the run's `mode` when it has one.
-    fn start_settings(&mut self, chat: &Chat, mode: Option<String>) {
-        let mut start = chat.in_force();
-        if mode.is_some() {
-            start.mode = mode;
-        }
-        self.run.start_settings(start);
-    }
-
-    /// A turn the run sent ended: read the work, then let the engine judge it.
-    fn after_turn(&mut self, chat: &Chat, fx: &mut Vec<Effect>) {
-        let Some(from) = self.run.marks.step_from.clone() else {
-            return;
-        };
-        self.answer = Some(turn_answer(chat, self.answer_from));
-        fx.push(Effect::ReadFacts {
-            dir: self.run.setup.dir.clone(),
-            from,
-        });
-    }
-
-    /// End the run: say how in its transcript, then let the front end keep it
-    /// and let its place go. Nothing is done after this.
-    fn finish(
-        &mut self,
-        chat: Option<&mut Chat>,
-        outcome: Outcome,
-        now: Instant,
-        fx: &mut Vec<Effect>,
-    ) {
-        self.over = true;
-        if chat.is_some() {
-            let said = outcome.said_in(&self.run.template);
-            let said = match outcome.resumable() {
-                true => format!("{said}; resume it from the Tasks page"),
-                false => said,
-            };
-            fx.push(Effect::Note(said));
-        }
-        self.run.spent_secs = self.spent_secs(now);
-        fx.push(Effect::Finish { outcome });
-    }
-}
-
-/// Whether doing `action` ends the run, which is the one action after which
-/// there is no step to announce and nothing to save.
-fn ends_run(action: &Action) -> bool {
-    match action {
-        Action::Finish(_) => true,
-        Action::Measure
-        | Action::Prompt(_)
-        | Action::RunCommand(_)
-        | Action::AwaitApproval
-        | Action::Push(_)
-        | Action::OpenPullRequest
-        | Action::AwaitStatusChecks { .. }
-        | Action::Idle => false,
-    }
-}
-
-/// A commit as a person reads it.
-fn short(commit: &str) -> &str {
-    &commit[..commit.len().min(10)]
-}
-
-/// The whole of the answer to the prompt sent at `from` items, cut at
-/// [`ANSWER_MAX`] characters.
-fn turn_answer(chat: &Chat, from: usize) -> String {
-    let prose = chat.prose_since(from);
-    match prose.char_indices().nth(ANSWER_MAX) {
-        Some((cut, _)) => format!("{}\n\n(cut at {ANSWER_MAX} characters)", &prose[..cut]),
-        None => prose,
     }
 }
 

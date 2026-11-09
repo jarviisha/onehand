@@ -1,6 +1,6 @@
-//! The one driver of every run, as the app carries it out: what the run's
-//! session says goes to its [`Drive`], which decides, and what the drive
-//! says to do is done here — the marks pinned, the prompt sent, the command
+//! The run's carrier: what the run's session says, and what a person
+//! presses, goes to its [`RunDrive`], which decides, and what the drive says
+//! to do is done here — the marks pinned, the prompt sent, the command
 //! run, the forge called, the clock armed — and what came of it goes back.
 //!
 //! Every rule is the drive's (`onehand_core::task::drive`); nothing here
@@ -11,9 +11,11 @@ use super::Tasks;
 use crate::chat::session::{ChatEvent, ChatSession, note};
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Task, WeakEntity};
 use gpui_component::WindowExt as _;
-use onehand_core::task::drive::{Drive, Effect, Input, link};
-use onehand_core::task::{Approval, Source, marks};
-use onehand_core::workflow::{Action, Facts, Mark, Outcome, Run, run_command_blocking};
+use onehand_core::chat::Chat;
+use onehand_core::task::drive::{Effect, Input, RunDrive, Signal, Timer, link};
+use onehand_core::task::tasks::{Start, link as tasks_link};
+use onehand_core::task::{Approval, marks};
+use onehand_core::workflow::{Facts, Mark, Run, run_command_blocking};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
@@ -22,18 +24,18 @@ mod forge;
 
 /// A run under way, on a session or, for a check, on none.
 pub(super) struct Driven {
-    drive: Drive,
+    drive: RunDrive,
     /// The session the run is driven on, and its uid; neither for a check.
     session: Option<(u64, WeakEntity<ChatSession>)>,
     /// The window the session is in, or the check was asked from.
     pub(super) window: AnyWindowHandle,
-    /// Set to call off the step's command or forge call, while one is running.
+    /// Set to call off the step's command, while one is running.
     pub(super) command: Option<Arc<AtomicBool>>,
     _subscriptions: Vec<Subscription>,
-    _clock: Option<Task<()>>,
-    /// Looking at the pull request's status checks, while the run waits on
-    /// them.
-    _status_checks: Option<Task<()>>,
+    /// The clock for the run's timeout, and the one for its next look at its
+    /// status checks.
+    _timeout: Option<Task<()>>,
+    _checks: Option<Task<()>>,
 }
 
 impl Driven {
@@ -66,20 +68,17 @@ impl Driven {
     }
 }
 
-/// Drive `run`, the last run of `task`, on session `uid`, starting with
-/// `first`: what [`Run::resume`] said to do. `pinned` boundaries of it had
-/// their mark pinned before.
-#[allow(clippy::too_many_arguments)]
+/// Drive task `task`'s run on session `uid`, from `start`, as the tasks'
+/// drive began it.
 pub(crate) fn start(
     uid: u64,
     session: &Entity<ChatSession>,
     window: AnyWindowHandle,
     task: String,
-    run: Run,
-    first: Action,
-    pinned: usize,
+    start: Start,
     cx: &mut App,
 ) {
+    let Start { run, first, pinned } = start;
     let id = task.clone();
     let watch = cx.subscribe(session, move |session, event: &ChatEvent, cx| {
         let input = match event {
@@ -131,6 +130,8 @@ pub(crate) fn start(
             Some(&mut session.chat),
         );
         session.perform(asked, cx);
+        // Named for the task: what shows it is drawn again.
+        cx.notify();
         (drive, effects)
     });
     let driven = Driven {
@@ -139,8 +140,8 @@ pub(crate) fn start(
         window,
         command: None,
         _subscriptions: vec![watch, answered, release],
-        _clock: None,
-        _status_checks: None,
+        _timeout: None,
+        _checks: None,
     };
     cx.default_global::<Tasks>()
         .live
@@ -148,17 +149,11 @@ pub(crate) fn start(
     perform(&task, effects, cx);
 }
 
-/// Drive the check `run`, the last run of task `task`, with no session,
-/// starting with `first`; what it found is said in `window`.
-pub(crate) fn start_check(
-    task: String,
-    run: Run,
-    first: Action,
-    pinned: usize,
-    window: AnyWindowHandle,
-    cx: &mut App,
-) {
-    let (drive, effects) = Drive::start(
+/// Drive check task `task`'s run with no session, from `start`; what it
+/// found is said in `window`.
+pub(crate) fn start_check(task: String, start: Start, window: AnyWindowHandle, cx: &mut App) {
+    let Start { run, first, pinned } = start;
+    let (drive, effects) = RunDrive::start(
         task.clone(),
         run,
         first,
@@ -173,8 +168,8 @@ pub(crate) fn start_check(
         window,
         command: None,
         _subscriptions: Vec::new(),
-        _clock: None,
-        _status_checks: None,
+        _timeout: None,
+        _checks: None,
     };
     cx.default_global::<Tasks>()
         .live
@@ -186,29 +181,31 @@ pub(crate) fn start_check(
 
 /// A person approved what they read, as `approval` names it.
 pub(crate) fn approve(approval: Approval, cx: &mut App) {
-    feed(&approval.task, Input::Approved { at: approval.at }, cx);
+    let at = approval.at;
+    give(&approval.task, cx, move |d, chat, now| {
+        d.approve(at, chat, now)
+    });
 }
 
 /// A person sent what they read, as `approval` names it, back with `note`.
 pub(crate) fn revise(approval: Approval, note: String, cx: &mut App) {
-    let input = Input::Revised {
-        at: approval.at,
-        note,
-    };
-    feed(&approval.task, input, cx);
+    let at = approval.at;
+    give(&approval.task, cx, move |d, chat, now| {
+        d.revise(at, note, chat, now)
+    });
 }
 
 /// A person pressed Stop on the run driven on session `uid`: the turn is
 /// cancelled and the run ends.
 pub(crate) fn stop(uid: u64, cx: &mut App) {
     if let Some(task) = cx.try_global::<Tasks>().and_then(|t| t.task_on(uid)) {
-        feed(&task, Input::Stop, cx);
+        stop_task(&task, cx);
     }
 }
 
 /// A person pressed Stop on task `task`'s run, a check's included.
 pub(super) fn stop_task(task: &str, cx: &mut App) {
-    feed(task, Input::Stop, cx);
+    give(task, cx, |d, chat, now| d.stop(chat, now));
 }
 
 /// Read task `id`'s run. Apart from [`with`] because every event the session
@@ -228,6 +225,16 @@ pub(super) fn with<R>(id: &str, cx: &mut App, act: impl FnOnce(&mut Driven) -> R
 /// Tell task `id`'s run what happened, with its session as it stands, and do
 /// what it says.
 pub(super) fn feed(id: &str, input: Input, cx: &mut App) {
+    give(id, cx, move |d, chat, now| d.handle(input, chat, now));
+}
+
+/// Give task `id`'s run `command`, with its session as it stands, and do
+/// what it says.
+fn give(
+    id: &str,
+    cx: &mut App,
+    command: impl FnOnce(&mut RunDrive, Option<&Chat>, Instant) -> Vec<Effect>,
+) {
     if !cx.has_global::<Tasks>() {
         return;
     }
@@ -236,11 +243,14 @@ pub(super) fn feed(id: &str, input: Input, cx: &mut App) {
         let d = t.live.get_mut(id)?;
         Some(match d.session() {
             Some(session) => session.update(cx, |session, cx| {
-                let (effects, asked) = link::on(&mut d.drive, input, Some(&mut session.chat), now);
+                let (effects, asked) =
+                    link::command(&mut d.drive, Some(&mut session.chat), |drive, chat| {
+                        command(drive, chat, now)
+                    });
                 session.perform(asked, cx);
                 effects
             }),
-            None => d.drive.on(input, None, now),
+            None => command(&mut d.drive, None, now),
         })
     });
     if let Some(effects) = effects {
@@ -297,24 +307,37 @@ fn perform(id: &str, effects: Vec<Effect>, cx: &mut App) {
                     cancel.store(true, Ordering::SeqCst);
                 }
             }
-            Effect::Forge { commit } => forge::on_forge(id, commit, cx),
-            Effect::WatchChecks { pushed, wait } => {
-                let watching = forge::watch_status_checks(id, pushed, Instant::now(), wait, cx);
-                with(id, cx, |d| d._status_checks = Some(watching));
-            }
-            Effect::ArmClock(left) => {
+            Effect::Push { commit } => forge::push(id, commit, cx),
+            Effect::FindPullRequest => forge::find(id, cx),
+            Effect::OpenPullRequest => forge::open(id, cx),
+            Effect::ReadLogs { checks } => forge::read_logs(id, checks, cx),
+            Effect::MarkReady { number } => forge::mark_ready(id, number, cx),
+            Effect::Arm { timer, after } => {
                 let task = id.to_string();
                 let clock = cx.spawn(async move |cx| {
-                    cx.background_executor().timer(left).await;
-                    cx.update(|cx| feed(&task, Input::ClockFired, cx));
+                    cx.background_executor().timer(after).await;
+                    cx.update(|cx| feed(&task, Input::Elapsed(timer), cx));
                 });
-                with(id, cx, |d| d._clock = Some(clock));
+                // Armed again, the clock before it is dropped.
+                with(id, cx, |d| match timer {
+                    Timer::Timeout => d._timeout = Some(clock),
+                    Timer::Checks => d._checks = Some(clock),
+                });
             }
             Effect::Defer(input) => {
                 let task = id.to_string();
                 cx.defer(move |cx| feed(&task, input, cx));
             }
             Effect::Save => save(id, cx),
+            Effect::Signal(Signal::SaveFailed(why)) => {
+                if let Some(window) = read(id, cx, |d| d.window) {
+                    let note = crate::toast::failed("Saving the task", why);
+                    let _ = window.update(cx, |_, window, cx| window.push_notification(note, cx));
+                }
+            }
+            Effect::Signal(Signal::PinFailed(why)) => {
+                eprintln!("onehand: a step's mark was not pinned: {why}")
+            }
             Effect::Waiting => crate::unattended::waiting(id, cx),
             Effect::Answered => {
                 let task = id.to_string();
@@ -347,17 +370,25 @@ fn spawn_feed(id: &str, cx: &mut App, work: impl FnOnce() -> Input + Send + 'sta
     .detach();
 }
 
-/// Write the run into its task's file, in order with every other write.
+/// Write the run into its task's file, in order with every other write,
+/// and tell the run how the write went.
 fn save(id: &str, cx: &mut App) {
     if !cx.has_global::<Tasks>() {
         return;
     }
-    cx.update_global::<Tasks, _>(|t, _| {
-        let Some(run) = t.live.get(id).map(|d| d.run().clone()) else {
-            return;
-        };
-        t.store_run(id, run);
+    let written = cx.update_global::<Tasks, _>(|t, _| {
+        let task = tasks_link::save_run(&mut t.drive, &t.live.get(id)?.drive)?;
+        Some(t.writer.save_said(task))
     });
+    let Some(written) = written else {
+        return;
+    };
+    let task = id.to_string();
+    cx.spawn(async move |cx| {
+        let written = written.await;
+        cx.update(|cx| feed(&task, Input::Saved(written), cx));
+    })
+    .detach();
 }
 
 /// Run the step's command in the work, then report how it went with the
@@ -386,8 +417,8 @@ fn run_command(id: &str, dir: std::path::PathBuf, command: String, cx: &mut App)
     .detach();
 }
 
-/// End the run: keep it in its task, then let its place go once its
-/// session's turn is over.
+/// End the run: keep it in its task, and let the tasks' drive decide when
+/// its place goes.
 ///
 /// Taken off the list at once, so an event the ending causes finds nothing
 /// to end again; dropped only once the event delivering it is over, since
@@ -400,46 +431,14 @@ fn finish(id: &str, session: Option<&Entity<ChatSession>>, cx: &mut App) {
     let Some(driven) = driven else {
         return;
     };
-    let run = driven.run().clone();
-    let task = id.to_string();
-    let asked = session
-        .filter(|_| driven.drive.card())
-        .and_then(|session| crate::unattended::card_question(session, cx));
-    let check = super::task(&task, cx).is_some_and(|task| task.source == Source::Check);
-    if check {
-        say_check(&run, driven.window, cx);
-    }
-    crate::unattended::keep(&task, &run, asked, cx);
-    cx.update_global::<Tasks, _>(|t, _| t.store_run(&task, run));
-    // A finished schedule's session leaves the rail once the run is let go,
-    // so nothing of the run is left listening to it.
-    let closes = driven
-        .uid()
-        .filter(|_| super::task(&task, cx).is_some_and(|task| task.closes_session()));
-    super::ended(task, driven.drive.pinned(), session, cx);
+    let effects = cx.update_global::<Tasks, _>(|t, cx| {
+        let on = session.zip(driven.uid());
+        let chat = on.map(|(session, uid)| (&session.read(cx).chat as &Chat, uid));
+        tasks_link::finished(&mut t.drive, &driven.drive, chat, driven.window)
+    });
     cx.defer(move |cx| {
-        let window = driven.window;
         drop(driven);
-        if let Some(uid) = closes {
-            crate::state::with_shell(window, cx, |shell, _, cx| shell.close_finished(uid, cx));
-        }
         cx.refresh_windows();
     });
-}
-
-/// Say in `window` how a check came out. One a person stopped says nothing:
-/// they know.
-fn say_check(run: &Run, window: AnyWindowHandle, cx: &mut App) {
-    let project = run.setup.repo.file_name().map_or_else(
-        || run.setup.repo.display().to_string(),
-        |n| n.to_string_lossy().into_owned(),
-    );
-    let note = match run.outcome {
-        Some(Outcome::Stopped(_)) | None => return,
-        Some(Outcome::Done) => crate::toast::success(format!("Check passed in {project}")),
-        Some(Outcome::Exhausted { .. } | Outcome::Failed(_)) => {
-            crate::toast::warning(format!("Check failed in {project}"))
-        }
-    };
-    let _ = window.update(cx, |_, window, cx| window.push_notification(note, cx));
+    super::place::perform(effects, session, cx);
 }

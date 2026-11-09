@@ -490,7 +490,7 @@ fn only_a_person_waits_on_the_code() {
 fn connecting() -> (Front, ReqTx, Rx) {
     let (mut drive, rx) = Front::new(SessionDrive::new(Chat::default()));
     let (tx, _): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
-    drive.chat_mut().store = None;
+    drive.chat.store = None;
     (drive, tx, rx)
 }
 
@@ -583,7 +583,7 @@ fn a_card_asked_in_a_batch_that_tells_is_said_before_what_ends_it() {
                 .collect(),
         }]),
     );
-    drive.chat_mut().set_config_option("effort", "high");
+    drive.chat.set_config_option("effort", "high");
     drive.prompt("go", &[], Origin::Person, Code::Here);
     let (_, next) = drive.apply(AcpEvent::Permission(permission()));
     assert_eq!(next, Next::PastCap);

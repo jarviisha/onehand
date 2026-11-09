@@ -1,12 +1,14 @@
 # An application layer: how onehand works, apart from how it is drawn
 
-- Status: phases 1 to 3 built.
+- Status: phases 1 to 4 built.
   - Phase 1, a trial slice of one session, is #307.
   - Phase 2 settled the standard: it lives in [docs/drives.md](../drives.md), its terms in
     CONTEXT.md (*How onehand is built*), and its short form in AGENTS.md (*Invariants*).
   - Phase 3 moved the rest of the session's behaviour into `SessionDrive` and started the I/O
-    crate (`onehand-io`); what it left for later is under *Plan*.
-  - What is left here is the plan for phases 4 to 10, the inventory they work from, and the
+    crate (`onehand-io`); what it left for later is placed under *Plan*.
+  - Phase 4 moved tasks: the run's drive is `RunDrive`, every task and its place are
+    `TasksDrive`'s, and starts and retries are decided in core.
+  - What is left here is the plan for phases 5 to 10, the inventory they work from, and the
     record of the trial. Each phase that is built moves its rows out of here, in the same PR.
 - Supersedes the rule agreed in #133 ("logic belongs in core when two call sites share it, when a
   second front end could need it, or when it wants a test without a GUI"). That rule moved *rules*
@@ -30,8 +32,8 @@ is woken next. That sequencing lives in GPUI entities and their subscribers, so:
 - **A wrong behaviour has no obvious home.** The same decision is split across a session entity,
   the chat pane's subscriber and core.
 
-The task run already shows the answer. `onehand_core::task::drive::Drive` decides everything a run
-does, answering each `Input` with `Effect`s; `crates/app/src/task/driver.rs` only carries them out
+The task run already shows the answer. `onehand_core::task::drive::RunDrive` decides everything a run
+does, answering each `Input` with `Effect`s; `crates/app/src/task/carrier.rs` only carries them out
 and reports back. It has no timer, thread or I/O, and its rules are held by tests without a window.
 This proposal makes that shape the standard for **all** application behaviour.
 
@@ -99,12 +101,10 @@ row is re-audited at the start of its phase. Line counts are at `6f92ab49`.
 | Area | Core has | App decides today | Target drive |
 |---|---|---|---|
 | Session: what phase 3 left | `SessionDrive` (every change to a session), `host::went_away`'s line | `chat/session.rs` pump (seeing a host's lost connection, on the connection it holds); `chat/pane/sessions.rs` subscriber (offload check after a turn, archive refresh) | `SessionDrive`, with the host drive (phase 6) |
-| Session: telling | `attention` (`telling`, `Away`), `remote::Chats::announcement` | `chat/pane/bridge.rs` (`turn_ended_detached`, `awaiting_user_detached`, `link_lost_detached`), desktop notifications | `SessionDrive` signals, with `Input::Shown` |
-| Session: lifecycle | `SessionDrive::resume`, `fork`, `take_snapshot`, the workspace tree | `chat/session.rs` (`spawn`), `chat/pane/sessions.rs` (phases, `close`), `shell/sessions.rs` (946 lines), `shell/fork.rs` | a workspace drive |
-| Task runs | `task::Drive`, `task::queue`, `workflow::Run` | `task/driver.rs` (already a carrier), `task/approval.rs`, `task/place.rs` | `task::Drive` (D2) |
-| Task starts and retries | preflight, `retry_plan`, worktree composition (#171) | `shell/workflows.rs` (launcher: preflight → cut → request), `shell/retry.rs` | a task-start drive, or `task::Drive` |
+| Session: telling (phase 7) | `attention` (`telling`, `Away`), `remote::Chats::announcement` | `chat/pane/bridge.rs` (`turn_ended_detached`, `awaiting_user_detached`, `link_lost_detached`), desktop notifications | `SessionDrive` signals, with `Input::Shown` |
+| Session: lifecycle (phase 8) | `SessionDrive::resume`, `fork`, `take_snapshot`, the workspace tree | `chat/session.rs` (`spawn`), `chat/pane/sessions.rs` (phases, `close`), `shell/sessions.rs` (946 lines), `shell/fork.rs` | a workspace drive |
 | Schedules | `schedule::decide`, `cron` | `schedules.rs` (the clock, rereading `schedules.toml`, choosing the window) | schedule drive |
-| Unattended runs | `unattended` claim, verdict, report (#170) | `unattended.rs` (770), `unattended/launch*`, `unattended/report.rs` (tick, cap, after a run's task ends) | unattended drive |
+| Unattended runs | `unattended` claim, verdict, report (#170) | `unattended.rs` (770), `unattended/launch*`, `unattended/report.rs` (tick, cap, after a run's task ends), carried from the tasks' and the run's effects (`Report`, `IssueEnded`, `Deliver`, `Asked`, `Waiting`, `Answered`, `CameUp`, `Pause`) | unattended drive |
 | Offloaded projects | `host::copy`, offload state | `offload.rs` (934, past the split line), `offload/branch.rs`, `shell/offload.rs` | offload drive |
 | Hosts | `host::client`, `host::wire`, `journal` | `hosts.rs` (one attach per host), `hosts/waits.rs`, `shell/host_end.rs`, `shell/host_project*` | host drive |
 | Remote bridge | `remote::command`, `remote::Chats`, `press` | `remote.rs` (`answer`, `send_prompt`, `stop_session`), `shell/remote_runs.rs` | remote drive, calling `SessionDrive` |
@@ -166,28 +166,60 @@ is built*, and AGENTS.md's *Invariants*. The decisions are below.
 - Every `Chat` mutator is `pub(crate)`; `SessionDrive::chat_mut` is crate-private, kept for the
   run's link (phase 4 decides it).
 
-Left for a later phase, which is settled with phase 4's audit:
-- telling (`Input::Shown`, a signal out): badges, desktop notices, the remote bridge's words;
-- the lifecycle in `shell/sessions.rs` and `shell/fork.rs`, and the pane's phases and close;
-- restarting a session with a save in flight, whose snapshot carries the moved mark;
-- seeing a host's lost connection, which needs the connection (phase 6).
+What it left was placed with phase 4's audit (D9):
+- telling (`Input::Shown`, a signal out): badges, desktop notices, the remote bridge's words, in
+  phase 7;
+- the lifecycle in `shell/sessions.rs` and `shell/fork.rs`, and the pane's phases and close, in
+  phase 8;
+- restarting a session with a save in flight, whose snapshot carries the moved mark, as a session
+  follow-up beside phase 6;
+- seeing a host's lost connection, which needs the connection, in phase 6.
 
-**Phase 4: tasks.**
-- Start, retry and the queue's app half move into drives.
-- `task::Drive` becomes `RunDrive`, takes its commands as methods rather than as `Input`
-  (`Stop`, `Approved`, `Revised`), and declares each answered effect's late answer (D2).
-- `crates/app/src/task/driver.rs` becomes the run's carrier, by name too.
+**Phase 4: tasks.** Built:
+- The run's drive is `RunDrive`, split along its seams (`pin.rs`, `steps.rs`, `forge.rs`). A
+  person's Approve, Revise and Stop are its methods; what the world reports stays one `Input`
+  (D2).
+- Every answered effect declares its late answer: a pin, a command, a push, opening a pull
+  request and taking a draft out of draft are awaited; a read, a look and a clock are dropped;
+  a save is recorded, and answered (`Input::Saved`), its failure said once (`Signal::SaveFailed`).
+  The drive prints nothing: a mark not pinned is a signal too.
+- The forge calls are one at a time and decided in the drive: a pull request open on the branch
+  taken up, nothing opened after a Stop, the status checks looked at on a clock the drive arms
+  (`Arm`/`Elapsed`), at most three failing logs read for a repair, a draft taken out of draft.
+- No drive changes another drive's model (D10): the run's drive reads its session and keeps the
+  mode and picks it decides, which the link makes through `SessionDrive::pick`.
+  `SessionDrive::chat_mut` is gone.
+- Every task and its place are `TasksDrive`'s (`onehand_core::task::tasks`), a drive of its own
+  beside the runs' (D11): requests, the queue, a run's end and its drain, the last mark, the next
+  task, Stop on a queued task, dismiss, retry and the history cap. Its link to `RunDrive`
+  (`task::tasks::link`) makes a run's save and end the task's.
+- How a task holding its place begins (`TasksDrive::begin`), what the launcher refuses
+  (`task::Launch`), a check's retry at once, a retry on another branch and a Resume's preflight
+  refusal are core's. The run's link names its session for the task.
+- The unattended hooks stay effects the carriers hand to `unattended` (D12).
+- `crates/app/src/task/driver.rs` is the run's carrier, `task/carrier.rs`; the `Tasks` global
+  carries the tasks' drive (`task/place.rs`). `Task`'s, the queue's and `Run`'s mutators are
+  `pub(crate)`. Both carriers have contract tests (`crates/app/src/task/tests.rs`).
+
+Left for later:
+- `Task`'s fields are still public: the app builds tasks with them (`unattended/launch.rs` sets an
+  issue's source on the task it makes), though it no longer changes a kept one.
+- What a person pressed and is still being done (`acting`) stays in the `Tasks` global.
+- `task/approval.rs` still asks which answer a run waits at before a press, to show the new one
+  instead; the engine refuses a stale press either way.
 
 **Phase 5: schedules and unattended runs.** The clock and the tick become `Arm`/`Elapsed`; the
-window choice becomes an input the carrier supplies.
+window choice becomes an input the carrier supplies. The unattended effects of the tasks' and the
+run's drives become an unattended drive's commands, through a link.
 
 **Phase 6: offloaded projects and hosts.** Splits `offload.rs` along the way, which the line rule
-already demands.
+already demands. Seeing a host's lost connection moves here, and restarting a session with a save
+in flight is done beside it.
 
 **Phase 7: remote bridge, onehand's tools, second launch, settings, agent check.** Mostly callers
-of drives built earlier, so mostly deletion.
+of drives built earlier, so mostly deletion. Telling moves here.
 
-**Phase 8: workspace edits and issues.**
+**Phase 8: workspace edits and issues.** The session lifecycle moves here.
 
 **Phase 9: Workbench modes.** Only modes with behaviour get a drive; a mode that only shows
 something keeps its view. `onehand-workbench`'s contract splits into a GUI-free request and answer
@@ -377,6 +409,23 @@ Made on 2026-11-06:
 - **Closing honours the saves in flight** (phase 3, #309). Built as a whole-file write at close
   rather than a wait: the drive goes with its session, so it cannot wait, and the store drops the
   lines of a save built before that write lands.
+
+Made on 2026-11-09, with phase 4's audit:
+- **D9. What phase 3 left** is placed: telling in phase 7, the session lifecycle in phase 8,
+  restarting with a save in flight beside phase 6, a host's lost connection in phase 6.
+- **D10. A drive reads another drive's model and never changes it.** What one drive decides for
+  another's model goes through that drive's methods, called by their link.
+- **D11. Tasks have a drive of their own**, beside the runs', joined to `RunDrive` by a link, rather
+  than `RunDrive` taking start, retry and the queue.
+- **D12. Unattended stays effects in phase 4.** A run's end keeps its issue's report through an
+  effect, as the run's other unattended hooks do; unattended's own decisions are phase 5's.
+
+Phase 4 changed, on purpose:
+- A run's failed write was only logged; it is now said in the run's window, once until a write
+  lands.
+- A task's failed write is logged once until a write lands, rather than at every write.
+- A Stop while a draft is being taken out of draft waits for that call to land, as a push and an
+  open already did.
 
 ## Done when
 

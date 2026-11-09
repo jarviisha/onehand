@@ -1,8 +1,9 @@
 use super::*;
 use crate::acp::{AcpEvent, ConfigChoice, ConfigOption, Mode, ReqTx};
+use crate::connector::{Check, CheckState, PrState, PullRequest};
 use crate::task::Task;
-use crate::workflow::{builtin, Brief, Setup, StepKind, Template};
-use crate::workflow::{CommandResult, Facts, Mark};
+use crate::workflow::{builtin, Brief, Setup, StepKind, StepSpec, Template};
+use crate::workflow::{CommandResult, Facts, Mark, Outcome};
 use std::path::PathBuf;
 
 fn brief() -> Brief {
@@ -62,7 +63,7 @@ fn connected() -> (
 
 /// A drive and its session, played the way the app plays them.
 struct Rig {
-    drive: Drive,
+    drive: RunDrive,
     chat: Chat,
     _rx: tokio::sync::mpsc::UnboundedReceiver<crate::acp::AcpRequest>,
     now: Instant,
@@ -78,8 +79,7 @@ impl Rig {
 
     fn start_run(run: Run, first: Action, (chat, rx): (Chat, RxOf)) -> (Self, Vec<Effect>) {
         let now = Instant::now();
-        let mut chat = chat;
-        let (drive, fx) = Drive::start("t1".into(), run, first, 0, false, now, Some(&mut chat));
+        let (drive, fx) = RunDrive::start("t1".into(), run, first, 0, false, now, Some(&chat));
         let mut rig = Self {
             drive,
             chat,
@@ -91,13 +91,29 @@ impl Rig {
     }
 
     fn on(&mut self, input: Input) -> Vec<Effect> {
-        let fx = self.drive.on(input, Some(&mut self.chat), self.now);
+        let fx = self.drive.handle(input, Some(&self.chat), self.now);
+        self.play(&fx);
+        fx
+    }
+
+    fn approve(&mut self, at: ApprovalAt) -> Vec<Effect> {
+        let fx = self.drive.approve(at, Some(&self.chat), self.now);
+        self.play(&fx);
+        fx
+    }
+
+    fn stop(&mut self) -> Vec<Effect> {
+        let fx = self.drive.stop(Some(&self.chat), self.now);
         self.play(&fx);
         fx
     }
 
     /// What the app does to the session for an effect.
     fn play(&mut self, fx: &[Effect]) {
+        // What the link makes on the session first: the run's mode and picks.
+        for pick in self.drive.take_picks() {
+            self.chat.pick(&pick);
+        }
         for effect in fx {
             match effect {
                 Effect::Submit(text) => {
@@ -170,10 +186,10 @@ fn approval_at(rig: &Rig) -> ApprovalAt {
 fn a_pin_holds_what_is_asked_meanwhile_and_an_ending_wins() {
     let mut rig = at_approval();
     let at = approval_at(&rig);
-    let fx = rig.on(Input::Approved { at });
+    let fx = rig.approve(at);
     assert!(has(&fx, |e| matches!(e, Effect::Pin { .. })), "{fx:?}");
     assert!(!submitted(&fx), "the prompt waits on the pin");
-    assert!(rig.on(Input::Stop).is_empty(), "held while the pin lands");
+    assert!(rig.stop().is_empty(), "held while the pin lands");
     let fx = rig.on(Input::Pinned(Ok("c2".into())));
     assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::ByPerson)));
     assert!(!submitted(&fx), "no prompt to a run said to be over");
@@ -183,7 +199,7 @@ fn a_pin_holds_what_is_asked_meanwhile_and_an_ending_wins() {
 fn a_turn_ending_while_a_pin_is_held_is_not_judged() {
     let mut rig = at_approval();
     let at = approval_at(&rig);
-    rig.on(Input::Approved { at });
+    rig.approve(at);
     let fx = rig.on(Input::TurnEnded);
     assert!(
         !has(&fx, |e| matches!(e, Effect::ReadFacts { .. })),
@@ -199,7 +215,7 @@ fn an_approval_waits_on_a_person_until_answered() {
     let mut rig = at_approval();
     assert!(rig.drive.waits_on_person() && !rig.drive.card());
     let at = approval_at(&rig);
-    rig.on(Input::Approved { at });
+    rig.approve(at);
     assert!(!rig.drive.waits_on_person());
 }
 
@@ -207,11 +223,11 @@ fn an_approval_waits_on_a_person_until_answered() {
 fn an_approval_answers_and_says_so() {
     let mut rig = at_approval();
     let at = approval_at(&rig);
-    let fx = rig.on(Input::Approved { at: at.clone() });
+    let fx = rig.approve(at.clone());
     assert!(has(&fx, |e| matches!(e, Effect::Answered)));
     // A second press of the same approval is judged stale and moves nothing.
     rig.on(Input::Pinned(Ok("c2".into())));
-    let fx = rig.on(Input::Approved { at });
+    let fx = rig.approve(at);
     assert!(
         !has(&fx, |e| matches!(e, Effect::Pin { .. } | Effect::Submit(_))),
         "{fx:?}"
@@ -247,7 +263,7 @@ fn a_stop_while_a_command_runs_waits_for_it() {
         has(&fx, |e| matches!(e, Effect::RunCommand { .. })),
         "{fx:?}"
     );
-    let fx = rig.on(Input::Stop);
+    let fx = rig.stop();
     assert!(has(&fx, |e| matches!(e, Effect::CallOffCommand)));
     assert_eq!(finished(&fx), None, "ended only once the command exits");
     assert!(rig.drive.stopping());
@@ -258,9 +274,9 @@ fn a_stop_while_a_command_runs_waits_for_it() {
 #[test]
 fn the_first_stop_reason_is_the_one_kept() {
     let (mut rig, _) = checking();
-    rig.on(Input::Stop);
+    rig.stop();
     rig.now += Duration::from_secs(60 * 60 * 24);
-    rig.on(Input::ClockFired);
+    rig.on(Input::Elapsed(Timer::Timeout));
     let fx = rig.on(Input::CommandExited(ran(true)));
     assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::ByPerson)));
 }
@@ -281,16 +297,25 @@ fn the_budget_does_not_run_while_a_person_is_waited_on() {
     let mut rig = at_approval();
     let fired = rig.drive.run().template.timeout_limit() * 2;
     rig.now += fired;
-    let fx = rig.on(Input::ClockFired);
+    let fx = rig.on(Input::Elapsed(Timer::Timeout));
     assert_eq!(finished(&fx), None, "{fx:?}");
-    assert!(has(&fx, |e| matches!(e, Effect::ArmClock(_))), "{fx:?}");
+    assert!(
+        has(&fx, |e| matches!(
+            e,
+            Effect::Arm {
+                timer: Timer::Timeout,
+                ..
+            }
+        )),
+        "{fx:?}"
+    );
 }
 
 #[test]
 fn the_clock_ends_the_run_once_nothing_is_left() {
     let (mut rig, _) = Rig::start(checkout(), None, connected());
     rig.now += rig.drive.run().template.timeout_limit() + Duration::from_secs(1);
-    let fx = rig.on(Input::ClockFired);
+    let fx = rig.on(Input::Elapsed(Timer::Timeout));
     // Held behind the first pin, as every ending is; it wins once it lands.
     let fx = match finished(&fx) {
         Some(_) => fx,
@@ -302,12 +327,12 @@ fn the_clock_ends_the_run_once_nothing_is_left() {
 #[test]
 fn a_finished_drive_ignores_everything() {
     let (mut rig, _) = checking();
-    rig.on(Input::Stop);
+    rig.stop();
     rig.on(Input::CommandExited(ran(true)));
+    assert!(rig.stop().is_empty());
     for input in [
-        Input::Stop,
         Input::TurnEnded,
-        Input::ClockFired,
+        Input::Elapsed(Timer::Timeout),
         Input::Appended,
     ] {
         assert!(rig.on(input).is_empty());
@@ -320,11 +345,11 @@ fn a_gone_session_only_lets_the_run_end() {
     let at = approval_at(&rig);
     let now = rig.now;
     // The session went while the next step's mark was pinned.
-    let fx = rig.drive.on(Input::Approved { at }, None, now);
+    let fx = rig.drive.approve(at, None, now);
     assert!(has(&fx, |e| matches!(e, Effect::Pin { .. })), "{fx:?}");
-    let fx = rig.drive.on(Input::Pinned(Ok("c2".into())), None, now);
+    let fx = rig.drive.handle(Input::Pinned(Ok("c2".into())), None, now);
     assert!(fx.is_empty(), "nothing to prompt: {fx:?}");
-    let fx = rig.drive.on(Input::Stop, None, now);
+    let fx = rig.drive.stop(None, now);
     assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::ByPerson)));
     assert!(
         !has(&fx, |e| matches!(e, Effect::Note(_))),
@@ -643,7 +668,7 @@ fn a_card_pauses_the_budget_and_says_it_waits() {
     assert!(has(&fx, |e| matches!(e, Effect::Waiting)));
     assert!(rig.drive.card() && rig.drive.waits_on_person());
     rig.now += rig.drive.run().template.timeout_limit() * 2;
-    let fx = rig.on(Input::ClockFired);
+    let fx = rig.on(Input::Elapsed(Timer::Timeout));
     assert_eq!(finished(&fx), None, "a person is waited on");
 }
 
@@ -667,7 +692,7 @@ fn a_lost_link_ends_the_run() {
 #[test]
 fn a_closed_session_ends_the_run() {
     let mut rig = in_turn();
-    let fx = rig.drive.on(Input::SessionGone, None, rig.now);
+    let fx = rig.drive.handle(Input::SessionGone, None, rig.now);
     assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::Closed)));
 }
 
@@ -724,11 +749,11 @@ fn a_chunk_is_heeded_only_when_it_can_move_the_run() {
 
 // ── A drive without a session: a check ───────────────────────────────────
 
-fn check_drive() -> (Drive, Vec<Effect>) {
+fn check_drive() -> (RunDrive, Vec<Effect>) {
     let task = Task::check("t1".into(), "make check".into(), setup(None));
     let mut run = task.runs[0].clone();
     let first = run.resume();
-    Drive::start("t1".into(), run, first, 0, false, Instant::now(), None)
+    RunDrive::start("t1".into(), run, first, 0, false, Instant::now(), None)
 }
 
 #[test]
@@ -736,16 +761,16 @@ fn a_check_runs_its_command_and_finishes_without_a_session() {
     let (mut drive, fx) = check_drive();
     let now = Instant::now();
     let fx = match has(&fx, |e| matches!(e, Effect::Pin { .. })) {
-        true => drive.on(Input::Pinned(Ok("c0".into())), None, now),
+        true => drive.handle(Input::Pinned(Ok("c0".into())), None, now),
         false => fx,
     };
     assert!(
         has(&fx, |e| matches!(e, Effect::RunCommand { .. })),
         "{fx:?}"
     );
-    let fx = drive.on(Input::CommandExited(ran(true)), None, now);
+    let fx = drive.handle(Input::CommandExited(ran(true)), None, now);
     let fx = match has(&fx, |e| matches!(e, Effect::Pin { .. })) {
-        true => drive.on(Input::Pinned(Ok("c1".into())), None, now),
+        true => drive.handle(Input::Pinned(Ok("c1".into())), None, now),
         false => fx,
     };
     assert_eq!(finished(&fx), Some(&Outcome::Done), "{fx:?}");
@@ -754,7 +779,16 @@ fn a_check_runs_its_command_and_finishes_without_a_session() {
 #[test]
 fn a_check_has_no_timeout() {
     let (_, fx) = check_drive();
-    assert!(!has(&fx, |e| matches!(e, Effect::ArmClock(_))), "{fx:?}");
+    assert!(
+        !has(&fx, |e| matches!(
+            e,
+            Effect::Arm {
+                timer: Timer::Timeout,
+                ..
+            }
+        )),
+        "{fx:?}"
+    );
 }
 
 #[test]
@@ -762,8 +796,272 @@ fn a_check_stopped_before_its_command_runs_none() {
     let (mut drive, fx) = check_drive();
     assert!(has(&fx, |e| matches!(e, Effect::Pin { .. })), "{fx:?}");
     let now = Instant::now();
-    assert!(drive.on(Input::Stop, None, now).is_empty());
-    let fx = drive.on(Input::Pinned(Ok("c0".into())), None, now);
+    assert!(drive.stop(None, now).is_empty());
+    let fx = drive.handle(Input::Pinned(Ok("c0".into())), None, now);
     assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::ByPerson)));
     assert!(!has(&fx, |e| matches!(e, Effect::RunCommand { .. })));
+}
+
+#[test]
+fn a_failed_write_is_said_once_until_one_lands() {
+    let mut rig = at_approval();
+    let failed = |fx: &[Effect]| {
+        fx.iter()
+            .filter(|e| matches!(e, Effect::Signal(Signal::SaveFailed(_))))
+            .count()
+    };
+    assert_eq!(failed(&rig.on(Input::Saved(Err("disk full".into())))), 1);
+    assert_eq!(failed(&rig.on(Input::Saved(Err("disk full".into())))), 0);
+    assert!(rig.on(Input::Saved(Ok(()))).is_empty());
+    assert_eq!(failed(&rig.on(Input::Saved(Err("disk full".into())))), 1);
+}
+
+/// A mark that could not be pinned is told, not logged by the drive, and
+/// the run goes on to the action it held back.
+#[test]
+fn a_mark_not_pinned_is_told_and_the_run_goes_on() {
+    let (mut rig, fx) = Rig::start(checkout(), None, connected());
+    assert!(has(&fx, |e| matches!(e, Effect::Pin { .. })), "{fx:?}");
+    let fx = rig.on(Input::Pinned(Err("no git".into())));
+    assert!(
+        has(
+            &fx,
+            |e| matches!(e, Effect::Signal(Signal::PinFailed(why)) if why == "no git")
+        ),
+        "{fx:?}"
+    );
+    assert!(has(&fx, |e| matches!(e, Effect::Measure { .. })), "{fx:?}");
+}
+
+/// A run on a branch with a forge: a check that passes on `a`, then the
+/// push, the pull request and its status checks.
+fn forging() -> Rig {
+    let mut template = Template::blank("Forge");
+    let step = |id: &str, kind| StepSpec {
+        id: id.into(),
+        label: id.into(),
+        kind,
+    };
+    template.steps = vec![
+        step(
+            "verify",
+            StepKind::Command {
+                command: Some("make check".into()),
+                on_fail: String::new(),
+            },
+        ),
+        step("push", StepKind::Push),
+        step("pr", StepKind::PullRequest),
+        step(
+            "checks",
+            StepKind::StatusChecks {
+                on_fail: String::new(),
+                wait: "1h".into(),
+            },
+        ),
+    ];
+    let mut setup = setup(None);
+    setup.branch = Some("workflow/fix".into());
+    setup.forge = Some("github".into());
+    let task = Task::new("t1".into(), template, brief(), setup);
+    let mut run = task.runs[0].clone();
+    let first = run.resume();
+    let (mut rig, fx) = Rig::start_run(run, first, connected());
+    let mut fx = fx;
+    // Pinned, measured and checked, until the push.
+    for _ in 0..8 {
+        if let Some(Effect::Push { .. }) = fx.iter().find(|e| matches!(e, Effect::Push { .. })) {
+            return rig;
+        }
+        let next = fx.iter().find_map(|e| match e {
+            Effect::Pin { .. } => Some(Input::Pinned(Ok("c".into()))),
+            Effect::Measure { .. } => Some(Input::Measured(Ok(mark("a", "d1")))),
+            Effect::RunCommand { .. } => Some(Input::CommandExited(ran(true))),
+            _ => None,
+        });
+        fx = rig.on(next.expect("the run moves on to its push"));
+    }
+    panic!("the run never pushed: {fx:?}")
+}
+
+fn pr(draft: bool, checks: &[CheckState]) -> PullRequest {
+    PullRequest {
+        url: "https://forge/pr/7".into(),
+        number: 7,
+        state: PrState::Open,
+        draft,
+        head: "a".into(),
+        conflicting: false,
+        checks: checks
+            .iter()
+            .enumerate()
+            .map(|(i, state)| Check {
+                name: format!("job{i}"),
+                state: *state,
+                link: None,
+            })
+            .collect(),
+    }
+}
+
+/// From the push to waiting on the status checks, with no pull request
+/// open on the branch yet.
+fn watching() -> Rig {
+    let mut rig = forging();
+    let fx = rig.on(Input::Pushed(Ok(())));
+    let fx = match has(&fx, |e| matches!(e, Effect::Pin { .. })) {
+        true => rig.on(Input::Pinned(Ok("c".into()))),
+        false => fx,
+    };
+    assert!(has(&fx, |e| *e == Effect::FindPullRequest), "{fx:?}");
+    let fx = rig.on(Input::PullRequestFound(Ok(None)));
+    assert!(has(&fx, |e| *e == Effect::OpenPullRequest), "{fx:?}");
+    let fx = rig.on(Input::PullRequestOpened(Ok(Ok(Some(pr(true, &[]))))));
+    let fx = match has(&fx, |e| matches!(e, Effect::Pin { .. })) {
+        true => rig.on(Input::Pinned(Ok("c".into()))),
+        false => fx,
+    };
+    assert!(
+        has(&fx, |e| *e
+            == Effect::Arm {
+                timer: Timer::Checks,
+                after: Duration::from_secs(60)
+            }),
+        "{fx:?}"
+    );
+    assert_eq!(
+        rig.drive.run().pull_request.as_ref().map(|p| p.number),
+        Some(7)
+    );
+    rig
+}
+
+#[test]
+fn a_pull_request_open_on_the_branch_is_taken_up_not_opened_again() {
+    let mut rig = forging();
+    rig.on(Input::Pushed(Ok(())));
+    let fx = rig.on(Input::Pinned(Ok("c".into())));
+    assert!(has(&fx, |e| *e == Effect::FindPullRequest), "{fx:?}");
+    let fx = rig.on(Input::PullRequestFound(Ok(Some(pr(false, &[])))));
+    assert!(!has(&fx, |e| *e == Effect::OpenPullRequest), "{fx:?}");
+    assert_eq!(
+        rig.drive.run().pull_request.as_ref().map(|p| p.number),
+        Some(7)
+    );
+}
+
+/// A Stop while the branch is read for a pull request waits for the read,
+/// and then opens nothing.
+#[test]
+fn a_stop_while_the_pull_request_is_looked_for_opens_none() {
+    let mut rig = forging();
+    rig.on(Input::Pushed(Ok(())));
+    rig.on(Input::Pinned(Ok("c".into())));
+    let fx = rig.stop();
+    assert!(finished(&fx).is_none(), "waits for the read: {fx:?}");
+    let fx = rig.on(Input::PullRequestFound(Ok(None)));
+    assert!(!has(&fx, |e| *e == Effect::OpenPullRequest), "{fx:?}");
+    assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::ByPerson)));
+}
+
+#[test]
+fn checks_still_running_are_looked_at_again_on_the_clock() {
+    let mut rig = watching();
+    let fx = rig.on(Input::Elapsed(Timer::Checks));
+    assert_eq!(fx, vec![Effect::FindPullRequest]);
+    let fx = rig.on(Input::PullRequestFound(Ok(Some(pr(
+        true,
+        &[CheckState::Pending],
+    )))));
+    assert_eq!(
+        fx,
+        vec![Effect::Arm {
+            timer: Timer::Checks,
+            after: Duration::from_secs(60)
+        }]
+    );
+}
+
+/// All passing takes the draft out of draft, and a Stop meanwhile waits for
+/// it to land.
+#[test]
+fn passing_checks_take_the_draft_out_of_draft_and_a_stop_waits_for_it() {
+    let mut rig = watching();
+    rig.on(Input::Elapsed(Timer::Checks));
+    let fx = rig.on(Input::PullRequestFound(Ok(Some(pr(
+        true,
+        &[CheckState::Passed],
+    )))));
+    assert_eq!(fx, vec![Effect::MarkReady { number: 7 }]);
+    let fx = rig.stop();
+    assert!(finished(&fx).is_none(), "waits for the draft: {fx:?}");
+    let fx = rig.on(Input::MarkedReady(Ok(())));
+    assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::ByPerson)));
+}
+
+#[test]
+fn a_draft_that_cannot_leave_draft_is_waited_on() {
+    let mut rig = watching();
+    rig.on(Input::Elapsed(Timer::Checks));
+    rig.on(Input::PullRequestFound(Ok(Some(pr(
+        true,
+        &[CheckState::Passed],
+    )))));
+    let fx = rig.on(Input::MarkedReady(Err("forbidden".into())));
+    assert!(
+        has(&fx, |e| matches!(
+            e,
+            Effect::Arm {
+                timer: Timer::Checks,
+                ..
+            }
+        )),
+        "{fx:?}"
+    );
+}
+
+/// Failing checks hand at most three logs to the repair, a log that could
+/// not be read saying why.
+#[test]
+fn failing_checks_carry_at_most_three_logs_to_the_repair() {
+    let mut rig = watching();
+    rig.on(Input::Elapsed(Timer::Checks));
+    let failed = [CheckState::Failed; 4];
+    let fx = rig.on(Input::PullRequestFound(Ok(Some(pr(false, &failed)))));
+    let checks = fx.iter().find_map(|e| match e {
+        Effect::ReadLogs { checks } => Some(checks.len()),
+        _ => None,
+    });
+    assert_eq!(checks, Some(3), "{fx:?}");
+    let logs = vec![
+        ("job0".to_string(), Ok("boom".to_string())),
+        ("job1".to_string(), Err("gone".to_string())),
+    ];
+    rig.on(Input::LogsRead(logs));
+    let kept = rig
+        .drive
+        .run()
+        .visits()
+        .last()
+        .and_then(|v| v.output.clone());
+    let kept = kept.unwrap_or_default();
+    assert!(
+        kept.contains("boom") && kept.contains("(no log: gone)"),
+        "{kept}"
+    );
+}
+
+/// A look that lands after the run stopped finds nothing to do.
+#[test]
+fn a_look_after_the_run_stopped_is_dropped() {
+    let mut rig = watching();
+    rig.on(Input::Elapsed(Timer::Checks));
+    let fx = rig.stop();
+    assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::ByPerson)));
+    assert!(rig
+        .on(Input::PullRequestFound(Ok(Some(pr(
+            true,
+            &[CheckState::Passed]
+        )))))
+        .is_empty());
 }

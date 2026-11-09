@@ -235,8 +235,9 @@ dropping an earlier step never moves a failed one into the past. `Task::retry` p
 clears `dismissed`, so a task let go comes back live and a failure lands under *Needs attention*
 again. A check is retried from its one step, so one that passed runs again.
 `Run::resume` enters the run's own step on its first start, which is step 0 for a fresh run.
-`task::marks::against_blocking` answers `Same`, `Changed` or `OtherBranch`, and
-`Shell::begin_retry` (`crates/app/src/shell/retry.rs`) asks the question. On `Changed` the
+`task::marks::against_blocking` answers `Same`, `Changed` or `OtherBranch`, `Against::refuses_retry`
+says why the last refuses, and `Shell::begin_retry` (`crates/app/src/shell/retry.rs`) asks the
+question. A check is retried at once by `TasksDrive::retry_at_once`. On `Changed` the
 start is held at or before the last command step up to it (`Run::recheck`): a retry carries
 `verified_at`, and without the check running again on the work as it is now, a push would send
 the commit the last check passed on. Enter in the dialog retries as *Retry* does.
@@ -257,14 +258,17 @@ an async runtime to core or a GUI dependency to it.
 crates/core (GUI-free, blocking)          crates/app (GPUI)
 ─────────────────────────────────         ──────────────────────────────────────
 workflow::template / validate / store     settings: Workflows
-workflow::run   (the engine;              task::driver      ── session events → reports
-                 workflow::Run)                 │  (unchanged in kind: still the only one)
+workflow::run   (the engine;              task::carrier     ── the run's carrier:
+                 workflow::Run)                 │  session events → the run's drive
+task::drive     (RunDrive: one run)             ▼
+task::tasks     (TasksDrive: every task,  Tasks global ── one per process: carries
+                 the queue, a run's end)        │  the tasks' drive, holds the runs'
 task            (Task, Run list,                ▼
-                 outcome, group rule)     Tasks global on Shared ── one per process
-task::queue     (who may run where)            │  owns every task, its lock and queue,
-task::files     (Writer, one thread)           │  and the session uid → task index
-task::marks     (commit objects + refs)        ▼
-unattended      (the issue a task works,  Tasks page in the agent pane, rail row
+                 outcome, group rule)     Tasks page in the agent pane, rail row
+task::queue     (who may run where)
+task::files     (Writer, one thread)
+task::marks     (commit objects + refs)
+unattended      (the issue a task works,
                  its branch and report)
 ```
 
@@ -297,6 +301,13 @@ unattended      (the issue a task works,  Tasks page in the agent pane, rail row
 - **The history cap is pure** (`task::history::over_cap`): the ids of the *Finished* tasks past the
   newest `KEPT` (200) of each project a task was started from (`setup.repo`, never a worktree).
   Recency is the latest move across a task's runs, then its id, which is the nanos it was made at.
+- **What happens to every task is the tasks' drive's** (`task::tasks::TasksDrive`), beside the
+  runs' (`task::drive::RunDrive`): a request for a place, a start queued or begun
+  (`TasksDrive::begin`), a run's end and what it still holds, Stop on a queued task, dismiss,
+  retry and the history cap. It reads no disk and keeps no timer; it answers with effects the app
+  carries out, and is told what came of them. `task::tasks::link` makes a run's save and its end
+  its task's. A new task from the launcher is a `task::Launch`: the first blocking finding of its
+  preflight refuses it, then a workflow that cannot be read or no title.
 - **The queue rule is pure** (`task::queue::Queue`). Given a place, it answers whether a start runs
   now or queues, and which queued task goes next when a place frees up (first in, first out). Every task
   holds its place's lock, a single command included, so a check waits behind a workflow that is
@@ -376,43 +387,47 @@ migration it protects.
 
 ### The app
 
-- **One `Tasks` global** (`crates/app/src/task.rs`) owns every task, the queue, the runs under way
-  by task id (each with its session's uid, if it has a session), the window each queued task was
-  asked from, and the tasks still draining. `Workflows` keeps only the workflows on offer.
-- **Every start goes through `task::request`**, given the window to speak in (a handle, so nothing
-  that starts a task needs to be inside a window): a new task through `task::submit`, which keeps
-  it and then asks (the launcher, *Run check*, an unattended claim); Retry, Resume and a review's
-  answer ask for an existing one. A free place starts the task at once (`Shell::drive_task`); a taken one queues it and
-  says so in a notification. A task already running or waiting is left alone.
-- **The run's drive and carrier stay the only code that turns session events into reports.** They gained two
-  duties: pinning the work at every boundary a step change crosses, before the step's first action,
-  and handing an ended run to the global. That one keeps the place until the session's turn is over
-  (or its agent or session goes), pins the last end mark, then releases the place and starts the
-  next task in the window it was asked from; one whose window or folder is gone stays interrupted,
-  and the place passes on.
+- **One `Tasks` global** (`crates/app/src/task.rs`) carries the tasks' drive, which holds every
+  task, the queue and the window each queued task was asked from, and holds the runs under way by
+  task id (each with its session's uid, if it has a session) and what watches the tasks still
+  draining. `Workflows` keeps only the workflows on offer.
+- **Every start goes through `task::request`** (`TasksDrive::request`), given the window to speak
+  in (a handle, so nothing that starts a task needs to be inside a window): a new task through
+  `task::submit`, which keeps it and then asks (the launcher, *Run check*, an unattended claim);
+  Retry, Resume and a review's answer ask for an existing one. A free place starts the task at once
+  (`Shell::drive_task`, as `TasksDrive::begin` says); a taken one queues it and says so in a
+  notification. A task already running or waiting is left alone.
+- **The run's drive and carrier stay the only code that turns session events into reports.** They
+  pin the work at every boundary a step change crosses, before the step's first action, and hand an
+  ended run to the tasks' drive (`task::tasks::link::finished`). That one keeps the place until the
+  session's turn is over (or its agent or session goes, or `DRAIN_LIMIT`, thirty seconds, runs out),
+  pins the last end mark, then releases the place and starts the next task in the window it was
+  asked from; one whose window or folder is gone stays interrupted, and the place passes on.
 - **The page reads its rows per frame** from `task::rows`, the window's tasks (by `setup.repo` or
   `setup.dir`), sorted by `task::sort_listed`
   (core): by group, finished rows by when they last moved, newest first, every other group by
   when the task was made, oldest first. The rail's count is `task::attention`, counted from the same
-  rows. `Tasks::working` says what a task does: queued, waiting (an approval or an unanswered card
-  on its live drive), or running (a live drive, a place held, a check running).
-- **Stop goes through `task::stop_task`**, whatever the task does: a queued one is called off, a
-  live drive is stopped, and a running check has its command called off. A task that ended but
+  rows. `Tasks::working` says what a task does: queued or holding its place, as the tasks' drive
+  says (`TasksDrive::working`), and waiting where its run's drive waits on a person (an approval or
+  an unanswered card).
+- **Stop goes through `task::stop_task`**, whatever the task does: a queued one is called off
+  (`TasksDrive::stop_queued`), a live run is stopped (`RunDrive::stop`), and a running check has its
+  command called off. A task that ended but
   still holds its place, its session's turn not yet over, has nothing to stop, and its row offers
   no *Stop*.
 - **The check command as a task** (`Task::check`) is a run of a template named *Check* with one
   command step whose `on_fail` is empty, so a failure ends the run failed. The template is made on
   the spot and never saved or validated. *Run check* on the project page keeps the task and asks
   for its place like any other. It runs on the same drive as every run, with no session: a drive
-  started without one (`Drive::start` with no chat) arms no timeout and carries out only what needs
+  started without one (`RunDrive::start` with no chat) arms no timeout and carries out only what needs
   no session. It pins the start mark, runs the command with a cancel flag, reports
   `command_finished` (passed on the exit status alone, so a folder outside git or a repository with
   no commit passes too) (or `stopped` by a person when called off), says *Check passed in <project>*
   or *Check failed in <project>* in the window it was asked from (nothing when stopped), then pins
   the end mark and gives the place up.
-- **The history cap runs** once the tasks are read at boot and whenever a task lets go of its
-  place, is dismissed or is called off. Each task past the cap has its file removed, leaves the
-  global, and has its marks dropped off the UI thread; a failure is logged. How many went is counted
+- **The history cap runs** in the tasks' drive once the tasks are read at boot and whenever a task
+  lets go of its place, is dismissed or is called off. Each task past the cap has its file removed,
+  leaves the drive, and has its marks dropped off the UI thread; a failure is logged. How many went is counted
   per project since boot only.
 - **An unattended run is a task of its own source** (`Source::Issue`). Its session is started off
   screen, its run is driven by the same drive and carrier, and when its place is freed the issue is told how
