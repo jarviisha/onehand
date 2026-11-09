@@ -12,7 +12,7 @@ use crate::chat::session::{ChatEvent, ChatSession, note};
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Task, WeakEntity};
 use gpui_component::WindowExt as _;
 use onehand_core::chat::Chat;
-use onehand_core::task::drive::{Effect, Input, RunDrive, Signal, link};
+use onehand_core::task::drive::{Effect, Input, RunDrive, Signal, Timer, link};
 use onehand_core::task::{Approval, Source, marks};
 use onehand_core::workflow::{Action, Facts, Mark, Outcome, Run, run_command_blocking};
 use std::sync::Arc;
@@ -28,13 +28,13 @@ pub(super) struct Driven {
     session: Option<(u64, WeakEntity<ChatSession>)>,
     /// The window the session is in, or the check was asked from.
     pub(super) window: AnyWindowHandle,
-    /// Set to call off the step's command or forge call, while one is running.
+    /// Set to call off the step's command, while one is running.
     pub(super) command: Option<Arc<AtomicBool>>,
     _subscriptions: Vec<Subscription>,
-    _clock: Option<Task<()>>,
-    /// Looking at the pull request's status checks, while the run waits on
-    /// them.
-    _status_checks: Option<Task<()>>,
+    /// The clock for the run's timeout, and the one for its next look at its
+    /// status checks.
+    _timeout: Option<Task<()>>,
+    _checks: Option<Task<()>>,
 }
 
 impl Driven {
@@ -140,8 +140,8 @@ pub(crate) fn start(
         window,
         command: None,
         _subscriptions: vec![watch, answered, release],
-        _clock: None,
-        _status_checks: None,
+        _timeout: None,
+        _checks: None,
     };
     cx.default_global::<Tasks>()
         .live
@@ -174,8 +174,8 @@ pub(crate) fn start_check(
         window,
         command: None,
         _subscriptions: Vec::new(),
-        _clock: None,
-        _status_checks: None,
+        _timeout: None,
+        _checks: None,
     };
     cx.default_global::<Tasks>()
         .live
@@ -313,18 +313,22 @@ fn perform(id: &str, effects: Vec<Effect>, cx: &mut App) {
                     cancel.store(true, Ordering::SeqCst);
                 }
             }
-            Effect::Forge { commit } => forge::on_forge(id, commit, cx),
-            Effect::WatchChecks { pushed, wait } => {
-                let watching = forge::watch_status_checks(id, pushed, Instant::now(), wait, cx);
-                with(id, cx, |d| d._status_checks = Some(watching));
-            }
-            Effect::ArmClock(left) => {
+            Effect::Push { commit } => forge::push(id, commit, cx),
+            Effect::FindPullRequest => forge::find(id, cx),
+            Effect::OpenPullRequest => forge::open(id, cx),
+            Effect::ReadLogs { checks } => forge::read_logs(id, checks, cx),
+            Effect::MarkReady { number } => forge::mark_ready(id, number, cx),
+            Effect::Arm { timer, after } => {
                 let task = id.to_string();
                 let clock = cx.spawn(async move |cx| {
-                    cx.background_executor().timer(left).await;
-                    cx.update(|cx| feed(&task, Input::ClockFired, cx));
+                    cx.background_executor().timer(after).await;
+                    cx.update(|cx| feed(&task, Input::Elapsed(timer), cx));
                 });
-                with(id, cx, |d| d._clock = Some(clock));
+                // Armed again, the clock before it is dropped.
+                with(id, cx, |d| match timer {
+                    Timer::Timeout => d._timeout = Some(clock),
+                    Timer::Checks => d._checks = Some(clock),
+                });
             }
             Effect::Defer(input) => {
                 let task = id.to_string();

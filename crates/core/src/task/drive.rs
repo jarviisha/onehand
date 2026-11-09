@@ -28,6 +28,7 @@ use crate::unattended::Budget;
 use crate::workflow::{Action, ApprovalAt, Failure, Pick, Run, Stop};
 use std::time::{Duration, Instant};
 
+mod forge;
 pub mod link;
 mod pin;
 mod settings;
@@ -35,7 +36,7 @@ mod signals;
 mod steps;
 
 use pin::{Answer, Held};
-pub use signals::{Effect, Input, Signal};
+pub use signals::{Effect, Input, Signal, Timer};
 
 /// A run under way on one session.
 pub struct RunDrive {
@@ -92,8 +93,10 @@ pub struct RunDrive {
     /// The turn sent ended with the agent still at work beside it: the step
     /// is judged once that work, and the agent's answer to it, are done.
     after_work: bool,
-    /// The step's command, or a forge call, is running.
+    /// The step's command, or a forge call a Stop waits for, is running.
     command: bool,
+    /// The forge call the run is in, or the status checks it waits on.
+    forging: Option<forge::Forging>,
     /// How the run ends once its called-off command has exited.
     stopping: Option<Stop>,
     /// A write of the run failed and was said; nothing more is said until
@@ -146,6 +149,7 @@ impl RunDrive {
             card: false,
             after_work: false,
             command: false,
+            forging: None,
             stopping: None,
             save_failed: false,
             over: false,
@@ -153,7 +157,10 @@ impl RunDrive {
         };
         let mut fx = Vec::new();
         if !drive.sessionless {
-            fx.push(Effect::ArmClock(limit));
+            fx.push(Effect::Arm {
+                timer: Timer::Timeout,
+                after: limit,
+            });
         }
         drive.act(first, chat, now, &mut fx);
         (drive, fx)
@@ -341,17 +348,13 @@ impl RunDrive {
                 }
                 self.advance(chat, now, &mut fx, move |run| run.command_finished(ran));
             }
-            Input::ForgeDone(done) => {
-                self.command = false;
-                if let Some(stop) = self.stopping.take() {
-                    return self.ended(stop, chat, now, fx);
-                }
-                self.advance(chat, now, &mut fx, move |run| run.forge_done(done));
-            }
-            Input::ChecksSeen(seen) => {
-                self.budget.resume(now);
-                self.advance(chat, now, &mut fx, move |run| run.status_checks_seen(seen));
-            }
+            Input::Pushed(pushed) => self.pushed(pushed, chat, now, &mut fx),
+            Input::PullRequestFound(found) => self.found(found, chat, now, &mut fx),
+            Input::PullRequestOpened(read) => self.pull_request_opened(read, chat, now, &mut fx),
+            Input::LogsRead(logs) => self.logs_read(logs, chat, now, &mut fx),
+            Input::MarkedReady(ready) => self.marked_ready(ready, chat, now, &mut fx),
+            Input::Elapsed(Timer::Checks) => self.look_again(&mut fx),
+            Input::NoForge(why) => self.no_forge(why, chat, now, &mut fx),
             Input::Saved(Ok(())) => self.save_failed = false,
             Input::Saved(Err(why)) => {
                 if !std::mem::replace(&mut self.save_failed, true) {
@@ -361,11 +364,14 @@ impl RunDrive {
             // The run's timeout: when it has run out, look again, since time
             // spent waiting on a person did not count; end the run once
             // nothing is left.
-            Input::ClockFired => {
+            Input::Elapsed(Timer::Timeout) => {
                 let left = self.budget.left(now);
                 match left.is_zero() {
                     true => self.cut(Stop::TimedOut, chat, now, &mut fx),
-                    false => fx.push(Effect::ArmClock(left)),
+                    false => fx.push(Effect::Arm {
+                        timer: Timer::Timeout,
+                        after: left,
+                    }),
                 }
             }
         }
@@ -443,9 +449,13 @@ impl RunDrive {
             | Input::TurnRead(_)
             | Input::NotTaken
             | Input::CommandExited(_)
-            | Input::ForgeDone(_)
-            | Input::ChecksSeen(_)
-            | Input::ClockFired
+            | Input::Pushed(_)
+            | Input::PullRequestFound(_)
+            | Input::PullRequestOpened(_)
+            | Input::LogsRead(_)
+            | Input::MarkedReady(_)
+            | Input::NoForge(_)
+            | Input::Elapsed(_)
             | Input::Saved(_) => {}
         }
     }

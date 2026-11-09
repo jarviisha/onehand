@@ -6,7 +6,8 @@
 //! the run holds on until it lands. A finished run takes no answer at all:
 //! its carrier lets it go, and what the run kept is the task's.
 
-use crate::workflow::{CommandResult, Facts, Mark, Outcome, PrOpened, Seen};
+use crate::connector::{Check, PullRequest};
+use crate::workflow::{CommandResult, Facts, Mark, Outcome};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -38,15 +39,34 @@ pub enum Input {
     NotTaken,
     /// The step's command exited.
     CommandExited(CommandResult),
-    /// A forge call landed.
-    ForgeDone(Result<Option<PrOpened>, String>),
-    /// A look at the pull request's status checks said something other than
-    /// pending.
-    ChecksSeen(Seen),
-    /// The clock armed last ran out.
-    ClockFired,
+    /// The push landed, or why it did not.
+    Pushed(Result<(), String>),
+    /// The pull request on the run's branch, as the forge read it.
+    PullRequestFound(Result<Option<PullRequest>, String>),
+    /// The pull request was opened, with what reading it back found; or why
+    /// it was not opened.
+    PullRequestOpened(Result<Result<Option<PullRequest>, String>, String>),
+    /// The failing checks' logs, by check name, or why each was not read.
+    LogsRead(Vec<(String, Result<String, String>)>),
+    /// The pull request was taken out of draft, or why not.
+    MarkedReady(Result<(), String>),
+    /// The run's forge cannot be called at all, for this reason: it has no
+    /// branch of its own, or no connector of the name its setup keeps.
+    NoForge(String),
+    /// The clock armed last for `timer` ran out.
+    Elapsed(Timer),
     /// The run's write landed, or why it did not.
     Saved(Result<(), String>),
+}
+
+/// What a run waits for on a clock. Each has one clock, which arming again
+/// replaces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Timer {
+    /// The run's timeout.
+    Timeout,
+    /// The next look at the pull request's status checks.
+    Checks,
 }
 
 /// What a person, or the log, is told about the run: the words and where
@@ -90,31 +110,38 @@ pub enum Effect {
     /// Awaited: a run stopped while it runs calls it off and ends only once
     /// it has exited, and its place is held until then.
     RunCommand { dir: PathBuf, command: String },
-    /// Call off the command or forge call running. Not answered itself: the
-    /// call's own answer says it is over.
+    /// Call off the step's command running. Not answered itself: the
+    /// command's own answer says it is over. A forge call is not called off:
+    /// it is awaited.
     CallOffCommand,
-    /// Push `commit` as the run's branch, or with none open its pull
-    /// request, and report [`Input::ForgeDone`].
+    /// Push `commit` as the run's branch, and report [`Input::Pushed`].
     ///
     /// Awaited, as a command is: code that went up is up, so a Stop waits
-    /// for it, and no pull request is opened once it is pressed.
-    Forge { commit: Option<String> },
-    /// Watch the pull request's status checks on `pushed`, at most `wait`,
-    /// and report [`Input::ChecksSeen`].
+    /// for it.
+    Push { commit: String },
+    /// Read the pull request on the run's branch, and report
+    /// [`Input::PullRequestFound`].
     ///
-    /// Dropped late: the watch goes with the run. A draft taken out of draft
-    /// just before is left so; the pull request's state is the forge's, read
-    /// again wherever it is shown.
-    WatchChecks {
-        pushed: Option<String>,
-        wait: Duration,
-    },
-    /// Report [`Input::ClockFired`] after this long, in place of the clock
-    /// armed before.
+    /// Awaited while the pull request step decides whether to open one, so
+    /// none is opened once Stop is pressed; dropped late while the status
+    /// checks are looked at, since a look leaves nothing behind.
+    FindPullRequest,
+    /// Open the run's pull request as a draft, read it back, and report
+    /// [`Input::PullRequestOpened`]. Awaited: once open, it is open.
+    OpenPullRequest,
+    /// Read the logs of these failing checks, and report
+    /// [`Input::LogsRead`]. Dropped late.
+    ReadLogs { checks: Vec<Check> },
+    /// Take pull request `number` out of draft, and report
+    /// [`Input::MarkedReady`]. Awaited: a Stop waits for it.
+    MarkReady { number: u64 },
+    /// Report [`Input::Elapsed`] for `timer` after `after`, in place of the
+    /// clock armed for it before.
     ///
-    /// Dropped late: a fire looks at what is left of the timeout again, so
-    /// one that comes early only arms the clock anew.
-    ArmClock(Duration),
+    /// Dropped late: the timeout looks at what is left of it again, so a
+    /// fire that comes early only arms it anew, and a look is taken only
+    /// while the run still waits on its checks.
+    Arm { timer: Timer, after: Duration },
     /// Report this input once the event being handled is over. Dropped
     /// late, as the input it carries would be.
     Defer(Input),

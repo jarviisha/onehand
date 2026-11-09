@@ -48,25 +48,18 @@ impl RunDrive {
                     "Pushing {}, which the check passed on",
                     short(&commit)
                 )));
-                // Held as a step's command is, so a Stop waits for the forge
-                // call in flight and the run is said to be stopped only once
-                // it has landed, and no pull request is opened after that.
-                self.command = true;
-                fx.push(Effect::Forge {
-                    commit: Some(commit),
-                });
+                self.push(commit, fx);
             }
             Action::OpenPullRequest => {
                 fx.push(Effect::Note("Opening the pull request".to_string()));
-                self.command = true;
-                fx.push(Effect::Forge { commit: None });
+                self.open_pull_request(fx);
             }
             Action::AwaitStatusChecks { wait, pushed } => {
                 self.budget.pause(now);
                 fx.push(Effect::Note(
                     "Waiting for the pull request's status checks".to_string(),
                 ));
-                fx.push(Effect::WatchChecks { pushed, wait });
+                self.watch_checks(pushed, wait, now, fx);
                 // Its slot is free now, for another issue to take up.
                 fx.push(Effect::Waiting);
             }
