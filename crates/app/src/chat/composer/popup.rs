@@ -349,10 +349,10 @@ impl Composer {
         // measured, so it grows out of a line saying it is still looking rather
         // than collapsing from a guess.
         let pending = self.trigger.as_ref().is_some_and(|trigger| {
-            let chat = &session.read(cx).chat;
+            let session = session.read(cx);
             match trigger.kind {
-                TriggerKind::File => !chat.files_scanned,
-                TriggerKind::Command => chat.commands.is_empty(),
+                TriggerKind::File => !session.files_scanned,
+                TriggerKind::Command => session.chat.commands.is_empty(),
             }
         });
         // Measured once, on the frame the popup opens, against an empty query,

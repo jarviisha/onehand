@@ -7,7 +7,7 @@
 
 use super::apply::{plan, seal_thought, settle_steps, tool_call, tool_update};
 use super::items::{ChatItem, Md, Thought};
-use super::{Chat, Replay};
+use super::{Chat, Now, Replay};
 use crate::acp::{AcpEvent, SubagentEnd};
 
 /// Where a subagent is in its life.
@@ -62,11 +62,11 @@ impl SubagentItem {
 
     /// Stop the card: whatever still runs inside it, a nested card included,
     /// will never be settled.
-    fn close(&mut self, state: SubagentState) {
+    fn close(&mut self, state: SubagentState, now: Option<Now>) {
         self.state = state;
-        interrupt(&mut self.items);
-        seal_thought(&mut self.items);
-        settle_steps(&mut self.items);
+        interrupt(&mut self.items, now);
+        seal_thought(&mut self.items, now);
+        settle_steps(&mut self.items, now);
     }
 }
 
@@ -95,7 +95,7 @@ impl Chat {
                 if self.subagent(&id).is_some() {
                     return false;
                 }
-                seal_thought(&mut self.items);
+                seal_thought(&mut self.items, self.told);
                 self.items
                     .push(ChatItem::Subagent(SubagentItem::new(id, name, &task)));
                 true
@@ -106,7 +106,7 @@ impl Chat {
                 AcpEvent::SubagentEnded { id, end } => self.end_subagent(&id, end),
                 AcpEvent::SubagentSpawned { ref id, .. } if self.subagent(id).is_some() => false,
                 event => match working_mut(&mut self.items, &child) {
-                    Some(card) => step(&mut card.items, event),
+                    Some(card) => step(&mut card.items, event, self.told),
                     None => false,
                 },
             },
@@ -143,15 +143,17 @@ impl Chat {
     }
 
     fn end_subagent(&mut self, id: &str, end: SubagentEnd) -> bool {
+        let now = self.told;
         let Some(card) = working_mut(&mut self.items, id) else {
             return false;
         };
-        card.close(match end {
+        let state = match end {
             SubagentEnd::Completed => SubagentState::Completed,
             SubagentEnd::Failed => SubagentState::Failed,
             SubagentEnd::Cancelled => SubagentState::Cancelled,
             SubagentEnd::Disconnected => SubagentState::Interrupted,
-        });
+        };
+        card.close(state, now);
         true
     }
 
@@ -170,8 +172,8 @@ impl Chat {
     /// them is gone.
     pub(super) fn interrupt_subagents(&mut self) {
         // History too: a restart carries a working card over into it.
-        interrupt(&mut self.history);
-        interrupt(&mut self.items);
+        interrupt(&mut self.history, self.told);
+        interrupt(&mut self.items, self.told);
     }
 }
 
@@ -210,12 +212,12 @@ fn working_mut<'a>(items: &'a mut [ChatItem], id: &str) -> Option<&'a mut Subage
     None
 }
 
-fn interrupt(items: &mut [ChatItem]) {
+fn interrupt(items: &mut [ChatItem], now: Option<Now>) {
     for item in items {
         if let ChatItem::Subagent(card) = item {
-            interrupt(&mut card.items);
+            interrupt(&mut card.items, now);
             if card.state == SubagentState::Working {
-                card.close(SubagentState::Interrupted);
+                card.close(SubagentState::Interrupted, now);
             }
         }
     }
@@ -224,10 +226,10 @@ fn interrupt(items: &mut [ChatItem]) {
 /// One step of a subagent, into its card; whether it was taken. Only what a
 /// subagent's transcript holds is: the rest of what its session says is about
 /// the session, which the parent already shows.
-fn step(items: &mut Vec<ChatItem>, event: AcpEvent) -> bool {
+fn step(items: &mut Vec<ChatItem>, event: AcpEvent, now: Option<Now>) -> bool {
     match event {
         AcpEvent::AgentChunk { text: s, .. } => {
-            seal_thought(items);
+            seal_thought(items, now);
             match items.last_mut() {
                 Some(ChatItem::Agent(md)) => md.push(&s),
                 _ => items.push(ChatItem::Agent(Md::parse(&s))),
@@ -235,19 +237,19 @@ fn step(items: &mut Vec<ChatItem>, event: AcpEvent) -> bool {
         }
         AcpEvent::ThoughtChunk(s) => match items.last_mut() {
             Some(ChatItem::Thought(th)) if th.elapsed_secs.is_none() => th.md.push(&s),
-            _ => items.push(ChatItem::Thought(Thought::live(&s))),
+            _ => items.push(ChatItem::Thought(Thought::live(&s, now))),
         },
         AcpEvent::ToolCall(tc) => {
-            seal_thought(items);
-            tool_call(items, tc);
+            seal_thought(items, now);
+            tool_call(items, tc, now);
         }
-        AcpEvent::ToolUpdate(tu) => tool_update(items, tu),
+        AcpEvent::ToolUpdate(tu) => tool_update(items, tu, now),
         AcpEvent::Plan(entries) => {
-            seal_thought(items);
+            seal_thought(items, now);
             plan(items, entries);
         }
         AcpEvent::SubagentSpawned { id, name, task } => {
-            seal_thought(items);
+            seal_thought(items, now);
             items.push(ChatItem::Subagent(SubagentItem::new(id, name, &task)));
         }
         AcpEvent::Connected { .. }

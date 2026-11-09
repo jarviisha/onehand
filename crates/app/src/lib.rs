@@ -13,7 +13,6 @@
 //! code across four phases. Tests live inside the crate, so
 //! they are unaffected. Keep new modules private.
 
-mod acp;
 mod agent_check;
 pub mod assets;
 mod chat;

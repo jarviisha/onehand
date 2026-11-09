@@ -5,7 +5,6 @@
 //! a host session's events exactly as it reads a local adapter's.
 
 use super::{ChatEvent, ChatSession};
-use crate::acp::{Events, HostStart};
 use crate::hosts::HostFailure;
 use crate::state::Shared;
 use gpui::{AsyncApp, WeakEntity};
@@ -16,6 +15,7 @@ use onehand_core::host::client::{HostConn, HostError};
 use onehand_core::host::copy;
 use onehand_core::host::wire::{HostSession, SessionInfo};
 use onehand_core::workspace::HostName;
+use onehand_io::acp::{Events, HostStart};
 use std::path::PathBuf;
 
 /// Which host a session runs on, in which folder there, and how its events
@@ -161,7 +161,7 @@ pub(super) async fn host_events(
     // Either the start, known already, or what a re-watch decides on once
     // the host has said what it runs.
     let decided = match begin {
-        HostBegin::Refuse(why) => return crate::acp::ended(why.into()),
+        HostBegin::Refuse(why) => return onehand_io::acp::ended(why.into()),
         HostBegin::Open => Ok(HostStart::Open { cwd, spec, opening }),
         HostBegin::Watch(id) => Ok(HostStart::Watch(id)),
         HostBegin::Rewatch(id, carried) => Err((id, carried, cwd, spec)),
@@ -205,11 +205,11 @@ pub(super) async fn host_events(
                 OfflineStart::Read => match failure {
                     HostFailure::Refused(why) | HostFailure::Taken(why) => {
                         offline(host, &kept, false, session, cx);
-                        crate::acp::ended(why)
+                        onehand_io::acp::ended(why)
                     }
                     HostFailure::Other(_) | HostFailure::Busy { .. } => {
                         offline(host, &kept, true, session, cx);
-                        crate::acp::silent()
+                        onehand_io::acp::silent()
                     }
                 },
                 OfflineStart::End | OfflineStart::Wait => {
@@ -220,10 +220,10 @@ pub(super) async fn host_events(
                     match failure {
                         HostFailure::Other(why)
                         | HostFailure::Refused(why)
-                        | HostFailure::Taken(why) => crate::acp::ended(why),
+                        | HostFailure::Taken(why) => onehand_io::acp::ended(why),
                         HostFailure::Busy { host, busy, terms } => {
                             wait(host, busy.len(), terms, session, cx);
-                            crate::acp::silent()
+                            onehand_io::acp::silent()
                         }
                     }
                 }
@@ -249,7 +249,7 @@ pub(super) async fn host_events(
                 }
                 Restarted::Ended(why, carried) => {
                     carry(carried, session, cx);
-                    return crate::acp::ended(why);
+                    return onehand_io::acp::ended(why);
                 }
             }
         }
@@ -279,7 +279,7 @@ fn carry(
 ) {
     let _ = session.update(cx, |session, cx| {
         if sent > 0 {
-            session.chat.chat_mut().carry_sent(sent);
+            session.chat.carry_sent(sent);
         }
         if let Some(stored) = stored {
             session.adopt(stored, cx);
@@ -307,17 +307,13 @@ fn offline(
     let last = kept.iter().rev().map(|(_, at, _)| *at).find(|at| *at != 0);
     let line = offline_line(&host, last, onehand_core::chat::now_secs());
     let _ = session.update(cx, |session, cx| {
-        for event in copy::events(kept) {
-            session.chat.chat_mut().apply(event);
-        }
+        let fx = session
+            .chat
+            .read_back(copy::events(kept), away.then_some(line), super::now());
         if away {
-            session.chat.chat_mut().say_host_wait(line);
             session.host_offline = Some(host);
         }
-        session.sync_md(cx);
-        cx.emit(ChatEvent::Session(
-            onehand_core::chat::drive::Signal::Appended,
-        ));
+        session.perform(fx, cx);
         cx.notify();
     });
 }
@@ -327,28 +323,23 @@ fn offline(
 /// says it is out of reach, rather than that its agent went, and keeps what
 /// it has until the host is back. Decided on the connection, never on words.
 ///
-/// What the link left running settles as on any disconnect, its cards no
-/// longer offering answers, but nothing says the agent went.
-pub(super) fn went_away(session: &mut ChatSession, event: &AcpEvent) -> bool {
+/// The line that says so, for the drive's [`SessionDrive::host_lost`], or
+/// `None` when the event is not such an end.
+///
+/// [`SessionDrive::host_lost`]: onehand_core::chat::SessionDrive::host_lost
+pub(super) fn went_away(session: &mut ChatSession, event: &AcpEvent) -> Option<String> {
     if !matches!(event, AcpEvent::Disconnected(_)) {
-        return false;
+        return None;
     }
-    let Some((host, _)) = session
+    let (host, _) = session
         .host_conn
         .as_ref()
-        .filter(|(_, conn)| connection_lost(conn.is_closed(), conn.taken()))
-    else {
-        return false;
-    };
+        .filter(|(_, conn)| connection_lost(conn.is_closed(), conn.taken()))?;
     let host = host.clone();
     let now = onehand_core::chat::now_secs();
-    session.chat.chat_mut().link_cut();
-    session
-        .chat
-        .chat_mut()
-        .say_host_wait(offline_line(&host, Some(now), now));
+    let line = offline_line(&host, Some(now), now);
     session.host_offline = Some(host);
-    true
+    Some(line)
 }
 
 /// Whether a watch that ended did so because its connection was lost: closed,
@@ -369,15 +360,12 @@ fn wait(
     cx: &mut AsyncApp,
 ) {
     let _ = session.update(cx, |session, cx| {
-        session
+        let fx = session
             .chat
-            .chat_mut()
             .say_host_wait(crate::hosts::waiting_line(&host, n, terms));
         session.host_wait = Some(host);
         cx.emit(ChatEvent::HostBusy);
-        cx.emit(ChatEvent::Session(
-            onehand_core::chat::drive::Signal::Appended,
-        ));
+        session.perform(fx, cx);
         cx.notify();
     });
 }

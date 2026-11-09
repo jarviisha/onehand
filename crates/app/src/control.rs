@@ -144,11 +144,13 @@ impl Token {
     pub(crate) fn claim(&self, uid: u64) {
         sessions().tokens.insert(self.0.clone(), Some(uid));
     }
+}
 
+impl onehand_io::acp::Pass for Token {
     /// The `mcpServers` entry that gives an agent this token: onehand itself,
     /// as the proxy to its socket. Nothing when onehand cannot say where its
     /// own executable is.
-    pub(crate) fn servers(&self) -> Vec<serde_json::Value> {
+    fn servers(&self) -> Vec<serde_json::Value> {
         let socket = onehand_core::instance::socket_path(&onehand_core::config::config_dir());
         std::env::current_exe()
             .map(|exe| vec![control::proxy_entry(&exe, &socket, &self.0)])

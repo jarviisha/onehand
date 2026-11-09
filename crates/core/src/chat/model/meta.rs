@@ -213,14 +213,6 @@ pub struct SelectorChoice {
 }
 
 impl Chat {
-    /// Take the project's files, as the scan for `@`-mentions found them,
-    /// with the folders they pass through, and know the scan is over.
-    pub fn set_files(&mut self, files: Vec<String>) {
-        self.folders = crate::completion::folders(&files);
-        self.files = files;
-        self.files_scanned = true;
-    }
-
     /// The adapter's event stream is over: no turn runs and the link is
     /// lost.
     ///
@@ -302,7 +294,7 @@ impl Chat {
     /// Commit a user-entered title. Whitespace is normalized so a value pasted
     /// from multiple lines still behaves like a single-line header label.
     /// Blank input is ignored; Reset is an explicit separate action.
-    pub fn rename(&mut self, title: &str) -> bool {
+    pub(crate) fn rename(&mut self, title: &str) -> bool {
         let title = title.split_whitespace().collect::<Vec<_>>().join(" ");
         if title.is_empty() {
             return false;
@@ -314,13 +306,13 @@ impl Chat {
     /// Take over the titles of the chat this one restarts: a restart builds
     /// the chat anew, and a name not yet written down, or a stand-in that
     /// never is, would otherwise give way to the prompt's.
-    pub fn carry_titles(&mut self, custom: Option<String>, stand_in: Option<String>) {
+    pub(crate) fn carry_titles(&mut self, custom: Option<String>, stand_in: Option<String>) {
         self.custom_title = self.custom_title.take().or(custom);
         self.stand_in_title = stand_in;
     }
 
     /// Return to the title that stands when nobody named the conversation.
-    pub fn reset_title(&mut self) {
+    pub(crate) fn reset_title(&mut self) {
         self.custom_title = None;
     }
     /// Every picker the agent offers, mode and config options alike, as one
@@ -444,7 +436,7 @@ impl Chat {
     }
 
     /// Send one setting pick to the agent.
-    pub fn pick(&mut self, pick: &Pick) {
+    pub(crate) fn pick(&mut self, pick: &Pick) {
         match pick {
             Pick::Mode(id) => self.set_mode(id),
             Pick::Option { id, value } => self.set_config_option(id, value),
@@ -463,7 +455,7 @@ impl Chat {
     /// The sentence it returns is read from the picker itself rather than from
     /// what the caller thought it was choosing, so a reply built from it is
     /// always true about what actually happened.
-    pub fn choose(&mut self, group: &str, choice: usize) -> Option<String> {
+    pub(crate) fn choose(&mut self, group: &str, choice: usize) -> Option<String> {
         let selector = self.selectors().into_iter().find(|s| s.id == group)?;
         let picked = selector.choices.get(choice)?.clone();
         if group == MODE_SELECTOR {
@@ -479,7 +471,7 @@ impl Chat {
     /// Optimistic on purpose — the adapter confirms a mode change in its reply
     /// rather than as a `session/update`, so waiting for an echo would leave
     /// the picker showing the old value until the next turn.
-    pub fn set_mode(&mut self, mode_id: &str) {
+    pub(crate) fn set_mode(&mut self, mode_id: &str) {
         self.send_pick(
             super::MODE_SELECTOR,
             AcpRequest::SetMode(mode_id.to_string()),
@@ -489,7 +481,8 @@ impl Chat {
 
     /// Send a pick for `group` to the agent, counted until it answers.
     fn send_pick(&mut self, group: &str, request: AcpRequest) {
-        let sent = self.tx.as_ref().is_some_and(|tx| tx.send(request).is_ok());
+        let sent = self.tx.is_some();
+        self.request(request);
         if sent {
             *self.picks_out.entry(group.to_string()).or_default() += 1;
         }
@@ -515,7 +508,7 @@ impl Chat {
     /// A mode the list no longer holds — or none at all — steps to the first,
     /// so the key always lands somewhere the picker can show. `None` when the
     /// agent advertises fewer than two modes, since there is nowhere to go.
-    pub fn cycle_mode(&mut self) -> Option<&str> {
+    pub(crate) fn cycle_mode(&mut self) -> Option<&str> {
         if self.modes.len() < 2 {
             return None;
         }
@@ -531,7 +524,7 @@ impl Chat {
 
     /// Pick a config option (model / effort / sub-agent), same contract as
     /// [`Self::set_mode`].
-    pub fn set_config_option(&mut self, config_id: &str, value: &str) {
+    pub(crate) fn set_config_option(&mut self, config_id: &str, value: &str) {
         self.send_pick(
             config_id,
             AcpRequest::SetConfigOption {

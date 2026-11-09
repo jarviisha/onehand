@@ -202,7 +202,8 @@ pub(super) fn ended(
                     | S::CycleEnded
                     | S::StopRefused(_)
                     | S::SaveFailed(_)
-                    | S::CodeFailed(_),
+                    | S::CodeFailed(_)
+                    | S::RenameFailed(_),
                 )
                 | E::OpenFile(_)
                 | E::Fork(_)

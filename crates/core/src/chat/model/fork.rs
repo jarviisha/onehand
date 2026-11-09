@@ -76,7 +76,7 @@ impl Chat {
 
     /// Start this conversation as a fork: its history is the seed, all of it
     /// still to be written, under the fork's own id once the agent names it.
-    pub fn adopt_fork(&mut self, seed: ForkSeed) {
+    pub(crate) fn adopt_fork(&mut self, seed: ForkSeed) {
         self.custom_title = Some(seed.title);
         self.arm_prefs(
             seed.prefs.mode,

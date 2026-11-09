@@ -14,7 +14,6 @@ pub(super) fn ask_take(
     idx: usize,
     field: usize,
     row: onehand_core::chat::AskRow,
-    quick: bool,
     window: &mut Window,
     cx: &mut App,
 ) {
@@ -30,8 +29,10 @@ pub(super) fn ask_take(
                 let handle = state.read(cx).focus_handle(cx);
                 window.focus(&handle, cx);
                 session.update(cx, |s, cx| {
-                    if let Some(item) = s.chat.chat_mut().ask_at_mut(idx) {
-                        item.cursor = item.row_count(field).saturating_sub(1);
+                    if let Some(rows) = s.chat.ask_at(idx).map(|item| item.row_count(field)) {
+                        let mut place = s.ask_place(idx);
+                        place.point_at(rows.saturating_sub(1));
+                        s.set_ask_place(idx, place);
                     }
                     cx.notify();
                 });
@@ -42,15 +43,9 @@ pub(super) fn ask_take(
             // so the box goes with it -- model and widget together, since
             // neither clears the other.
             s.clear_ask_input(idx, field, window, cx);
-            if let Some(item) = s.chat.chat_mut().ask_at_mut(idx) {
-                item.toggle(field, option);
-                item.cursor = option;
-            }
-            // A one-question single-select has nothing left to decide, so it
-            // commits on the press.
-            if quick {
-                s.chat.chat_mut().answer_ask(idx, false);
-            }
+            // A one-question single-select has nothing left to decide, so the
+            // drive commits it on the press.
+            s.ask_pick(idx, field, option, cx);
             cx.notify();
         }),
     }
@@ -72,19 +67,7 @@ pub(super) fn ask_skip(
 ) {
     session.update(cx, |s, cx| {
         s.clear_ask_input(idx, field, window, cx);
-        let done = s
-            .chat
-            .chat_mut()
-            .ask_at_mut(idx)
-            .is_none_or(|item| item.skip_field(field));
-        if done {
-            let answered = s
-                .chat
-                .chat_mut()
-                .ask_at_mut(idx)
-                .is_some_and(|item| item.has_answer());
-            s.chat.chat_mut().answer_ask(idx, !answered);
-        }
+        s.ask_skip(idx, field, cx);
         cx.notify();
     });
 }
@@ -93,14 +76,7 @@ pub(super) fn ask_skip(
 /// question.
 pub(super) fn ask_advance(session: &Entity<ChatSession>, idx: usize, field: usize, cx: &mut App) {
     session.update(cx, |s, cx| {
-        let last = s
-            .chat
-            .chat_mut()
-            .ask_at_mut(idx)
-            .is_none_or(|item| item.advance(field));
-        if last {
-            s.chat.chat_mut().answer_ask(idx, false);
-        }
+        s.ask_advance(idx, field, cx);
         cx.notify();
     });
 }
@@ -119,9 +95,11 @@ pub(super) fn walk(
 ) {
     window.focus(card, cx);
     session.update(cx, |s, cx| {
-        if let Some(item) = s.chat.chat_mut().ask_at_mut(idx) {
-            item.move_cursor(active, delta);
+        let mut place = s.ask_place(idx);
+        if let Some(item) = s.chat.ask_at(idx) {
+            place.move_cursor(item, active, delta);
         }
+        s.set_ask_place(idx, place);
         cx.notify();
     });
 }

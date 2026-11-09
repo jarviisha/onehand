@@ -49,7 +49,7 @@ pub(super) fn diff_detail(
     well: gpui::Div,
     cx: &App,
 ) -> gpui::Div {
-    let open = t.out_open.contains(&0);
+    let open = session.read(cx).out_is_open(target, 0);
     let key = fold_key(target);
     let changed: usize = t
         .diff_summary
@@ -79,7 +79,7 @@ pub(super) fn diff_detail(
                             .label("Load diff")
                             .on_click(move |_, _, cx: &mut App| {
                                 session.update(cx, |s, cx| {
-                                    s.chat.chat_mut().toggle_tool_output(target, 0);
+                                    s.toggle_out(target, 0);
                                     cx.notify();
                                 });
                             }),

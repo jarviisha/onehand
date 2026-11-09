@@ -33,7 +33,6 @@ fn a_running_line_is_never_wordless() {
         md: Md::parse("weighing it up"),
         started: None,
         elapsed_secs: None,
-        fold: None,
     }));
     assert_eq!(chat.activity_status(), None, "the model stays quiet");
     assert_eq!(working_word(&chat).as_deref(), Some("Thinking…"));
@@ -284,7 +283,7 @@ fn only_a_restart_rewatches_a_host_session() {
     let snapshot = || {
         let mut chat = Chat::new(1, std::path::PathBuf::from("/srv/app"), "c".into(), None);
         chat.session_id = Some("acp-1".into());
-        chat.take_snapshot()
+        onehand_core::chat::SessionDrive::new(chat).take_snapshot(crate::chat::session::now())
     };
     let id = HostSession("h-1".into());
 

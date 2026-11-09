@@ -4,7 +4,6 @@ use super::items::{
 use super::{Chat, Link, Replay};
 use crate::acp::{AcpRequest, Attachment, ElicitOutcome, ToolStatus};
 use crate::attachment::{AttachmentDelivery, AttachmentSnapshot, StagedAttachment};
-use crate::chat::store;
 
 /// Why a composed prompt cannot be sent right now.
 ///
@@ -82,7 +81,7 @@ impl Chat {
     /// `resolve_permission` — it is three steps that must all happen, in order,
     /// on the one path where getting it wrong leaves the agent parked
     /// forever. One method is one chance to get it wrong.
-    pub fn answer_permission(&mut self, idx: usize, option_id: &str) {
+    pub(crate) fn answer_permission(&mut self, idx: usize, option_id: &str) {
         let Some(ChatItem::Permission(p)) = self.items.get(idx) else {
             return;
         };
@@ -92,18 +91,16 @@ impl Chat {
         let name = p.option_name(option_id);
         let rpc_id = p.req.rpc_id.clone();
 
-        if let Some(tx) = &self.tx {
-            let _ = tx.send(AcpRequest::PermissionResponse {
-                rpc_id,
-                option_id: Some(option_id.to_string()),
-            });
-        }
+        self.request(AcpRequest::PermissionResponse {
+            rpc_id,
+            option_id: Some(option_id.to_string()),
+        });
         self.resolve_permission(idx, name);
     }
 
-    /// The still-open question at `idx`, mutable — the option clicks and typed
-    /// "Other" text edit it in place before it's submitted.
-    pub fn ask_at_mut(&mut self, idx: usize) -> Option<&mut AskItem> {
+    /// The still-open question at `idx`, mutable, for the drive's answers to
+    /// edit in place before it is sent.
+    pub(crate) fn ask_at_mut(&mut self, idx: usize) -> Option<&mut AskItem> {
         match self.items.get_mut(idx) {
             Some(ChatItem::Ask(a)) if a.resolved.is_none() => Some(a),
             _ => None,
@@ -111,8 +108,8 @@ impl Chat {
     }
 
     /// The same question, read-only — what a key press asks before it acts, so
-    /// that where the cursor is and what row a number names are answered by the
-    /// model rather than recomputed at the keyboard.
+    /// that what row a number names is answered by the model rather than
+    /// recomputed at the keyboard.
     pub fn ask_at(&self, idx: usize) -> Option<&AskItem> {
         match self.items.get(idx) {
             Some(ChatItem::Ask(a)) if a.resolved.is_none() => Some(a),
@@ -157,7 +154,7 @@ impl Chat {
 
     /// Answer the question at `idx` and settle its card. `Decline` is the Skip
     /// button: the model is told the user passed and the turn carries on.
-    pub fn answer_ask(&mut self, idx: usize, skip: bool) {
+    pub(crate) fn answer_ask(&mut self, idx: usize, skip: bool) {
         let Some(a) = self.ask_at_mut(idx) else {
             return;
         };
@@ -169,9 +166,7 @@ impl Chat {
         let rpc_id = a.req.rpc_id.clone();
         let summary = a.summary();
         a.settle(if skip { "Skipped".into() } else { summary }, !skip);
-        if let Some(tx) = &self.tx {
-            let _ = tx.send(AcpRequest::ElicitationResponse { rpc_id, outcome });
-        }
+        self.request(AcpRequest::ElicitationResponse { rpc_id, outcome });
         self.touch();
     }
 
@@ -245,9 +240,7 @@ impl Chat {
     pub(crate) fn cancel_turn(&mut self) {
         self.cancelled = true;
         self.cancel_pending_permissions(false);
-        if let Some(tx) = &self.tx {
-            let _ = tx.send(AcpRequest::Cancel);
-        }
+        self.request(AcpRequest::Cancel);
     }
 
     /// Answer every still-pending permission with the `cancelled` outcome and
@@ -274,7 +267,7 @@ impl Chat {
     /// than one saying it is unclear. This is the same answer
     /// `cancel_pending_permissions` gives a dangling card one line above.
     pub(super) fn settle_running_steps(&mut self) {
-        super::apply::settle_steps(&mut self.items);
+        super::apply::settle_steps(&mut self.items, self.told);
     }
 
     ///
@@ -309,8 +302,8 @@ impl Chat {
             }
             match it {
                 ChatItem::Permission(p) if p.resolved.is_none() => {
-                    if let Some(tx) = &self.tx {
-                        let _ = tx.send(AcpRequest::PermissionResponse {
+                    if self.tx.is_some() {
+                        self.outbox.push(AcpRequest::PermissionResponse {
                             rpc_id: p.req.rpc_id.clone(),
                             option_id: None,
                         });
@@ -321,8 +314,8 @@ impl Chat {
                 // tool call blocks on our answer. `Cancel` (not `Decline`)
                 // aborts that tool call, which is what a cancelled turn means.
                 ChatItem::Ask(a) if a.resolved.is_none() => {
-                    if let Some(tx) = &self.tx {
-                        let _ = tx.send(AcpRequest::ElicitationResponse {
+                    if self.tx.is_some() {
+                        self.outbox.push(AcpRequest::ElicitationResponse {
                             rpc_id: a.req.rpc_id.clone(),
                             outcome: ElicitOutcome::Cancel,
                         });
@@ -339,51 +332,6 @@ impl Chat {
         match target {
             TranscriptItemId::History(_) => &self.history,
             TranscriptItemId::Live(_) => &self.items,
-        }
-    }
-
-    fn list_mut(&mut self, target: TranscriptItemId) -> &mut Vec<ChatItem> {
-        match target {
-            TranscriptItemId::History(_) => &mut self.history,
-            TranscriptItemId::Live(_) => &mut self.items,
-        }
-    }
-
-    /// Toggle a whole tool/plan card's fold (typed, per item).
-    pub fn toggle_tool(&mut self, target: TranscriptItemId) {
-        self.fold_changed();
-        match self.list_mut(target).get_mut(target.index()) {
-            Some(ChatItem::Tool(t)) => t.fold = Some(!t.is_open()),
-            Some(ChatItem::Plan(p)) => p.fold = !p.fold,
-            _ => {}
-        }
-    }
-
-    /// Open or close a permission's command block past the lines it folds at.
-    pub fn toggle_permission(&mut self, target: TranscriptItemId) {
-        self.fold_changed();
-        if let Some(ChatItem::Permission(p)) = self.list_mut(target).get_mut(target.index()) {
-            p.expanded = !p.expanded;
-        }
-    }
-
-    /// Open or close the settled record of one question.
-    pub fn toggle_ask(&mut self, target: TranscriptItemId) {
-        self.fold_changed();
-        if let Some(ChatItem::Ask(a)) = self.list_mut(target).get_mut(target.index()) {
-            a.expanded = !a.expanded;
-        }
-    }
-
-    /// Toggle one OUT section's past-threshold fold on a tool card.
-    ///
-    /// Leaves [`Self::folds`] alone: the run layout never reads an output
-    /// well, and the row it sits in is drawn from the item either way.
-    pub fn toggle_tool_output(&mut self, target: TranscriptItemId, section: usize) {
-        if let Some(ChatItem::Tool(t)) = self.list_mut(target).get_mut(target.index()) {
-            if !t.out_open.remove(&section) {
-                t.out_open.insert(section);
-            }
         }
     }
 
@@ -476,11 +424,12 @@ impl Chat {
                 })
                 .collect(),
         };
-        // Send *before* recording the turn locally: a dead channel must not
-        // leave a prompt in the transcript that no agent ever received.
-        if self.tx.as_ref().is_none_or(|tx| tx.send(request).is_err()) {
+        // Refused *before* recording the turn locally: a link that is down
+        // must not leave a prompt in the transcript that no agent received.
+        if self.tx.is_none() {
             return false;
         }
+        self.request(request);
         // Typed here and now, whatever a replay before it said of its own times.
         self.begin_turn(
             text.to_string(),
@@ -489,7 +438,7 @@ impl Chat {
                 .cloned()
                 .map(StagedAttachment::snapshot)
                 .collect(),
-            store::now_secs(),
+            self.wall(),
         );
         true
     }
@@ -671,15 +620,6 @@ impl Chat {
             .join("\n\n")
     }
 
-    /// Toggle a thought's expanded reasoning — in the live items or, for a
-    /// resumed transcript's read-only history, in `history`.
-    pub fn toggle_thought(&mut self, target: TranscriptItemId) {
-        self.fold_changed();
-        if let Some(ChatItem::Thought(th)) = self.list_mut(target).get_mut(target.index()) {
-            th.fold = Some(!th.is_open());
-        }
-    }
-
     /// Whether a prompt went out beyond the first `sent`: what a lead reads
     /// as its worker taken over by a person. Unlike [`Self::prompted_beyond`],
     /// a prompt waiting in the queue does not count until it is sent.
@@ -705,7 +645,7 @@ impl Chat {
     /// Take over the prompts the chat this one restarts had sent, `before`:
     /// a restart builds the chat anew, and a count starting again from
     /// nothing would read a person's next prompt as nobody's.
-    pub fn carry_sent(&mut self, before: usize) {
+    pub(crate) fn carry_sent(&mut self, before: usize) {
         self.prompts_sent += before;
     }
 

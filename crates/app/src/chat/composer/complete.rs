@@ -225,7 +225,8 @@ impl Composer {
             Pick::Mode(id) => {
                 let id = id.clone();
                 session.update(cx, |session, cx| {
-                    session.chat.chat_mut().set_mode(&id);
+                    let fx = session.chat.set_mode(&id);
+                    session.perform(fx, cx);
                     cx.notify();
                 });
                 self.close_overlay(cx);
@@ -234,10 +235,8 @@ impl Composer {
             Pick::Config { config_id, value } => {
                 let (config_id, value) = (config_id.clone(), value.clone());
                 session.update(cx, |session, cx| {
-                    session
-                        .chat
-                        .chat_mut()
-                        .set_config_option(&config_id, &value);
+                    let fx = session.chat.set_config_option(&config_id, &value);
+                    session.perform(fx, cx);
                     cx.notify();
                 });
                 self.close_overlay(cx);
@@ -288,10 +287,10 @@ impl Composer {
             return false;
         };
         session.update(cx, |session, cx| {
-            session
+            let fx = session
                 .chat
-                .chat_mut()
                 .set_config_option(&toggle.config_id, &toggle.flip_to);
+            session.perform(fx, cx);
             cx.notify();
         });
         cx.notify();
@@ -378,13 +377,15 @@ impl Composer {
         let Some(trigger) = &self.trigger else {
             return (Vec::new(), 0);
         };
-        let chat = &session.read(cx).chat;
+        let entity = session;
+        let session = entity.read(cx);
+        let chat = &session.chat;
         match trigger.kind {
             TriggerKind::File => {
                 let artifacts = chat.artifacts(MAX_ARTIFACT_SCAN);
                 let (found, held) = completion::mentions(
-                    &chat.files,
-                    &chat.folders,
+                    &session.files,
+                    &session.folders,
                     &artifacts,
                     query,
                     MAX_COMPLETION_ROWS,
@@ -462,7 +463,7 @@ impl Composer {
                 // something a hand learns the position of; put under a list of
                 // unknown length it is somewhere different every time.
                 let mut rows: Vec<Row> = Vec::new();
-                let mut own = act_rows(query, session, cx).into_iter();
+                let mut own = act_rows(query, entity, cx).into_iter();
                 if let Some(first) = own.next() {
                     rows.push(Row {
                         group: Some("Composer".into()),

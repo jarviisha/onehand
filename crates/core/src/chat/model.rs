@@ -7,9 +7,10 @@
 //! — a composer buffer, scroll offsets, find state, parsed-markdown or texture
 //! caches — belongs to that front end, not here.
 
-use crate::acp::{ConfigOption, Mode, ReqTx, SlashCommand};
+use crate::acp::{AcpRequest, ConfigOption, Mode, ReqTx, SlashCommand};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Instant;
 
 mod apply;
 mod background;
@@ -24,8 +25,8 @@ pub use background::{BackgroundItem, Level, Meter};
 pub use fork::{fork_seed, ForkPoint, ForkSeed};
 pub(crate) use items::line_change_counts;
 pub use items::{
-    AskItem, AskRow, ChatItem, Md, MdId, NoticeLevel, PermItem, PlanItem, Thought, ToolItem,
-    TranscriptItemId, TurnAnswer, UserMsg, MAX_TERM_BYTES,
+    AskItem, AskPlace, AskRow, ChatItem, Md, MdId, NoticeLevel, PermItem, PlanItem, Thought,
+    ToolItem, TranscriptItemId, TurnAnswer, UserMsg, MAX_TERM_BYTES,
 };
 pub(crate) use meta::summarize_title;
 pub use meta::{Selector, SelectorChoice, MODE_SELECTOR};
@@ -87,6 +88,15 @@ enum Replay {
 }
 
 /// Per-session chat state (keyed by session uid in `App`).
+/// The time, as a front end read it and told it: the wall clock, in seconds
+/// since the epoch, for what is written down, and an instant, for how long a
+/// step or a thought took. The model reads no clock of its own.
+#[derive(Debug, Clone, Copy)]
+pub struct Now {
+    pub secs: u64,
+    pub at: Instant,
+}
+
 #[derive(Default)]
 pub struct Chat {
     /// The owning session's uid. Scopes this chat's widget ids (the composer
@@ -143,7 +153,17 @@ pub struct Chat {
     /// concatenate into one).
     user_chunk_open: bool,
     /// The live request channel once `Connected`; `None` while not running.
+    ///
+    /// Held to know the link is up, and handed to the front end that sends:
+    /// the model itself sends nothing.
     pub(crate) tx: Option<ReqTx>,
+    /// The time last told, by whatever drives the session. Untold, the wall
+    /// clock reads as the epoch and nothing is timed.
+    told: Option<Now>,
+    /// What is to go to the agent, in order, taken by the session's drive
+    /// and sent by its front end. Only queued while the link is up, as a
+    /// request into no channel reaches nobody.
+    pub(super) outbox: Vec<AcpRequest>,
     /// Whether the adapter is coming up, live, or gone. See [`Link`].
     pub link: Link,
     /// A turn is in flight (Send becomes Stop).
@@ -171,25 +191,7 @@ pub struct Chat {
     pub cancelled: bool,
     pub(crate) resumed: bool,
 
-    // ── composer sources (Phase 3B) ──
-    /// Root-relative file paths for `@`-mention completion.
-    pub files: Vec<String>,
-    /// The directories [`Self::files`] passes through, with what is under each.
-    ///
-    /// **Derived once, where the list it is derived from changes once.** It was
-    /// rebuilt inside the popup, which is rebuilt on every keystroke and on
-    /// every frame an agent streams into — a walk of the whole file list and a
-    /// `BTreeMap` of every directory in the project, thrown away and done again
-    /// a moment later. Nothing about it changes between those frames.
-    pub folders: Vec<(String, usize)>,
-    /// Whether the scan that fills [`Self::files`] has finished.
-    ///
-    /// **An empty list is not the same as a list that has not arrived**, and
-    /// the `@` popup has to tell them apart: one means "still looking", the
-    /// other means there is nothing here to name. Inferred from the list being
-    /// empty, a project with no files to offer said it was still looking for
-    /// them forever.
-    pub files_scanned: bool,
+    // ── composer sources ──
     /// Agent-advertised slash commands for `/` completion.
     pub commands: Vec<SlashCommand>,
     /// Session modes offered by the agent (composer selector).
@@ -245,14 +247,6 @@ pub struct Chat {
     /// The line saying the session waits on its host's busy sessions: where
     /// it was put and what it says, so it alone is taken back.
     host_wait_line: Option<(usize, String)>,
-    /// How many times a fold has been toggled, whoever holds it: an item's
-    /// own here, a group's in the front end, which reports its own through
-    /// [`Self::fold_changed`].
-    ///
-    /// Apart from [`Self::revision`] because folding changes no item, yet the
-    /// run layout reads the item folds to choose how far a run stands from
-    /// its neighbours, so it has to be built again when one moves.
-    folds: u64,
     /// Moved each time the transcript is numbered afresh, so whatever is keyed
     /// by an item's position knows its keys now name other items.
     numbering: u64,
@@ -308,9 +302,20 @@ impl Chat {
         chat
     }
 
-    /// When the event being applied happened: the host's word for it, or now.
+    /// When the event being applied happened: the host's word for it, or the
+    /// time last told.
     fn event_time(&self) -> u64 {
-        self.clock.unwrap_or_else(crate::chat::store::now_secs)
+        self.clock.unwrap_or_else(|| self.wall())
+    }
+
+    /// Tell the model what time it is, ahead of what it is told next.
+    pub(crate) fn tell_time(&mut self, now: Now) {
+        self.told = Some(now);
+    }
+
+    /// The wall clock as last told, in seconds since the epoch.
+    fn wall(&self) -> u64 {
+        self.told.map_or(0, |now| now.secs)
     }
 
     /// The transcript's current revision. See the field.
@@ -318,19 +323,9 @@ impl Chat {
         self.revision
     }
 
-    /// How many folds have been toggled. See the field.
-    pub fn folds(&self) -> u64 {
-        self.folds
-    }
-
     /// How many times the transcript has been numbered afresh.
     pub fn numbering(&self) -> u64 {
         self.numbering
-    }
-
-    /// Record that a fold was toggled.
-    pub fn fold_changed(&mut self) {
-        self.folds = self.folds.wrapping_add(1);
     }
 
     /// Record that the transcript changed.
@@ -338,17 +333,33 @@ impl Chat {
     /// Called from the few places that mutate what is rendered: [`Self::apply`]
     /// for every event that is not pure session metadata, [`Self::push_user`]
     /// for a locally-staged prompt, [`Self::load_history`] for an adopted
-    /// archive, and the two that settle a blocking card. Item *fold* state is
-    /// deliberately not one of them -- folding changes what a row draws, and a
-    /// row is drawn from the live item either way; a fold moves
-    /// [`Self::folds`] instead.
+    /// archive, and the two that settle a blocking card. What is open or
+    /// closed is the front end's, and moves nothing here.
     fn touch(&mut self) {
         self.revision = self.revision.wrapping_add(1);
     }
 
     /// Say that the session waits on its host's busy sessions, in a line of
     /// onehand's own that [`Self::unsay_host_wait`] takes back.
-    pub fn say_host_wait(&mut self, text: String) {
+    /// Queue `request` for the agent, if the link is up.
+    pub(crate) fn request(&mut self, request: AcpRequest) {
+        if self.tx.is_some() {
+            self.outbox.push(request);
+        }
+    }
+
+    /// What was queued for the agent since last asked, in order.
+    pub(crate) fn take_requests(&mut self) -> Vec<AcpRequest> {
+        std::mem::take(&mut self.outbox)
+    }
+
+    /// The channel to the agent, for the front end that sends what the
+    /// session's drive queued: `None` while the link is down.
+    pub fn agent_channel(&self) -> Option<&ReqTx> {
+        self.tx.as_ref()
+    }
+
+    pub(crate) fn say_host_wait(&mut self, text: String) {
         self.host_wait_line = Some((self.items.len(), text.clone()));
         self.items.push(ChatItem::notice(text));
         self.touch();
@@ -356,7 +367,7 @@ impl Chat {
 
     /// Take back the line [`Self::say_host_wait`] put, if it is still where
     /// it was put, saying what it said; nothing else is touched.
-    pub fn unsay_host_wait(&mut self) {
+    pub(crate) fn unsay_host_wait(&mut self) {
         let Some((at, said)) = self.host_wait_line.take() else {
             return;
         };
@@ -365,6 +376,11 @@ impl Chat {
             Some(ChatItem::Notice { text, level: NoticeLevel::Info, .. }) if *text == said
         );
         if here {
+            // Whatever came after the line moves up one, so a front end's
+            // choices kept by position would land on other items.
+            if at + 1 < self.items.len() {
+                self.numbering = self.numbering.wrapping_add(1);
+            }
             self.items.remove(at);
             self.touch();
         }

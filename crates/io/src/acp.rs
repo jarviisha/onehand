@@ -1,4 +1,4 @@
-//! The bridge between the ACP client's tokio world and GPUI's smol world.
+//! The bridge between the ACP client's tokio world and a front end's executor.
 //!
 //! `onehand_core::acp::connect` folds its serve loop *into* the stream it
 //! returns — the adapter only advances while something polls it, and dropping
@@ -6,7 +6,7 @@
 //! wants, with one catch: the loop underneath is `tokio::process` +
 //! `tokio::io`, so polling it requires a tokio reactor. GPUI's executor is
 //! smol, and awaiting a tokio I/O future there panics looking for a reactor
-//! that was never started.
+//! that was never started; any front end on another executor is the same.
 //!
 //! So the stream is driven on a tokio runtime of our own and its events are
 //! handed across on a plain `futures` channel, which belongs to neither
@@ -40,9 +40,19 @@ const EVENT_BUFFER: usize = 64;
 ///
 /// One runtime for the whole process rather than one per session: adapters are
 /// I/O-bound and idle most of the time, so per-session runtimes would buy
-/// nothing but thread-pool duplication. Lives in [`crate::state::Shared`].
-pub struct AcpRuntime {
+/// nothing but thread-pool duplication. One per process, held by the front end.
+/// What an agent is given to reach onehand's own tools, held by the session
+/// that holds the agent for as long as it does. A front end mints its own:
+/// where its tools listen is its business.
+pub trait Pass {
+    /// The `mcpServers` entries that hand an agent this pass.
+    fn servers(&self) -> Vec<serde_json::Value>;
+}
+
+pub struct AcpRuntime<P> {
     rt: tokio::runtime::Runtime,
+    /// Mints the pass each agent started here is given.
+    mint: fn() -> P,
     /// At most one adapter started ahead of the session that will use it. See
     /// [`AcpRuntime::warm`].
     ///
@@ -51,24 +61,24 @@ pub struct AcpRuntime {
     /// that global through `ChatSession::spawn`, which has no other reason to
     /// want it. Borrows are taken and dropped inside single methods here, so
     /// there is no path that holds one across a call.
-    warm: RefCell<Option<Warm>>,
+    warm: RefCell<Option<Warm<P>>>,
 }
 
 /// An adapter that is already booting for a session nobody has minted yet.
-struct Warm {
+struct Warm<P> {
     /// The agent it runs, nameless: see [`Warm::matches`].
     spec: AgentSpec,
     cwd: PathBuf,
     events: Events,
     /// What its agent's proxy to onehand's tools speaks for, handed to the
     /// session that claims it.
-    token: crate::control::Token,
+    token: P,
     /// When its process was started, which is when the agent read what it
     /// loads at start — not when a session came to adopt it.
     started: Instant,
 }
 
-impl Warm {
+impl<P> Warm<P> {
     /// Whether this parked adapter is the one `spec` in `cwd` would have
     /// spawned. Compared by what was *executed* rather than by the agent's
     /// name: renaming an agent does not change the process, and two agents
@@ -86,13 +96,15 @@ fn nameless(spec: &AgentSpec) -> AgentSpec {
     }
 }
 
-impl AcpRuntime {
-    pub fn new() -> std::io::Result<Self> {
+impl<P: Pass> AcpRuntime<P> {
+    /// A runtime whose agents are each given a pass from `mint`.
+    pub fn new(mint: fn() -> P) -> std::io::Result<Self> {
         Ok(Self {
             rt: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .thread_name("onehand-acp")
                 .build()?,
+            mint,
             warm: RefCell::new(None),
         })
     }
@@ -125,7 +137,7 @@ impl AcpRuntime {
         {
             return;
         }
-        let token = crate::control::Token::mint();
+        let token = (self.mint)();
         let events = self.start(
             spec,
             cwd.clone(),
@@ -169,7 +181,7 @@ impl AcpRuntime {
         cwd: PathBuf,
         opening: acp::Opening,
         dirs: Vec<PathBuf>,
-    ) -> (Events, Instant, crate::control::Token) {
+    ) -> (Events, Instant, P) {
         if takes_warm(&opening, &dirs)
             && let Some(warm) = self
                 .warm
@@ -178,7 +190,7 @@ impl AcpRuntime {
         {
             return (warm.events, warm.started, warm.token);
         }
-        let token = crate::control::Token::mint();
+        let token = (self.mint)();
         let events = self.start(spec, cwd, opening, token.servers(), dirs);
         (events, Instant::now(), token)
     }
@@ -191,14 +203,15 @@ impl AcpRuntime {
         self.start(spec, cwd, acp::Opening::Fresh, Vec::new(), Vec::new())
     }
 
-    /// Run `work` on this runtime: what must poll tokio I/O and cannot on GPUI's executor.
-    pub(crate) fn spawn(&self, work: impl std::future::Future<Output = ()> + Send + 'static) {
+    /// Run `work` on this runtime: what must poll tokio I/O and cannot on a
+    /// front end's own executor.
+    pub fn spawn(&self, work: impl std::future::Future<Output = ()> + Send + 'static) {
         self.rt.spawn(work);
     }
 
     /// This runtime, for a blocking call off the UI thread to poll its tokio
     /// I/O on: a host's disk is read through it.
-    pub(crate) fn handle(&self) -> tokio::runtime::Handle {
+    pub fn handle(&self) -> tokio::runtime::Handle {
         self.rt.handle().clone()
     }
 
@@ -211,7 +224,7 @@ impl AcpRuntime {
     ///
     /// Every watch keeps this machine's copy of the session's journal, and
     /// starts from where that copy ends.
-    pub(crate) fn host_events(
+    pub fn host_events(
         &self,
         conn: HostConn,
         host: HostName,
@@ -283,7 +296,7 @@ impl AcpRuntime {
 }
 
 /// How a host session's events begin.
-pub(crate) enum HostStart {
+pub enum HostStart {
     /// Start a new session on the host.
     Open {
         cwd: PathBuf,
@@ -314,10 +327,9 @@ pub struct Events {
 }
 
 impl Events {
-    /// Events read off `rx`, for a session driven by a test rather than an
-    /// adapter.
-    #[cfg(test)]
-    pub(crate) fn from_channel(rx: mpsc::Receiver<AcpEvent>) -> Self {
+    /// Events read off `rx`, for a session driven by something other than an
+    /// adapter: a test, or a stand-in.
+    pub fn from_channel(rx: mpsc::Receiver<AcpEvent>) -> Self {
         let (_, held) = oneshot::channel();
         Self { rx, _held: held }
     }
@@ -333,7 +345,7 @@ impl Stream for Events {
 
 /// Events that say only that `why` ended them, for a session that never
 /// reached an agent.
-pub(crate) fn ended(why: String) -> Events {
+pub fn ended(why: String) -> Events {
     let (rx, mut tx, _alive) = events();
     // A fresh channel has room, so this one send never waits.
     let _ = tx.try_send(AcpEvent::Disconnected(why));
@@ -342,7 +354,7 @@ pub(crate) fn ended(why: String) -> Events {
 
 /// Events that end at once, saying nothing: for a session that says why
 /// itself.
-pub(crate) fn silent() -> Events {
+pub fn silent() -> Events {
     events().0
 }
 

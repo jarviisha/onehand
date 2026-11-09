@@ -130,6 +130,7 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 | `crates/terminal-ui` | `onehand-terminal-ui` | PTY/grid ownership shared by the terminal dock and Neovim |
 | `crates/editor`, `files`, `markdown`, `neovim`, `issues`, `claude-plugins` | `onehand-<name>` | the Workbench modes, one crate each (Files lives inside Editor; `claude-plugins` is the Plugins mode, which manages Claude Code's plugins); composed in `crates/app/src/features.rs` |
 | `crates/host` | `onehand-host` | the service that runs sessions on a host reached over SSH; built from core alone, never links GPUI |
+| `crates/io` | `onehand-io` | the runtimes onehand's I/O runs on, apart from any front end: the agent runtime (`acp`) so far; never links GPUI |
 | `crates/github`, `crates/telegram` | `onehand-github`, `onehand-telegram` | the GitHub `Connector` and the Telegram `RemoteChannel`, implementing core's traits; composed in `crates/app/src/features.rs` |
 | `vendor/gpui-terminal` | `gpui-terminal` | vendored terminal grid + our `onehand patch` interaction layer |
 
@@ -138,9 +139,11 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 - **Core is GUI-free:** `cargo tree -p onehand-core -i gpui-pre` must error with "did not match
   any packages". `gpui-pre` is the package the workspace's `gpui` resolves to; `-i gpui` matches
   nothing and so always passes. Use `-i`, not `| grep gpui`: the checkout path contains `gpui`.
+  `onehand-io` and `onehand-host` are held to the same check.
 - **Core dictates no async runtime.** Blocking functions, thin async wrappers. GPUI runs on smol
-  with no tokio reactor; tokio I/O on the UI executor panics. In the app, `acp.rs` and `remote.rs`
-  drive their tokio side on runtimes of their own and cross to GPUI over a `futures` channel.
+  with no tokio reactor; tokio I/O on the UI executor panics. `onehand_io::acp` and the app's
+  `remote.rs` drive their tokio side on runtimes of their own and cross to GPUI over a `futures`
+  channel.
 - **Nothing in core is `pub` unless something outside the crate names it.** First-party
   libraries other than the app carry `#![warn(unreachable_pub)]`. Keeping internal items
   private lets `dead_code` reach them; publicly reachable items can hide unused code.

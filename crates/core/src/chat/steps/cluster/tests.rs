@@ -7,7 +7,6 @@ fn thought(secs: u64) -> ChatItem {
         md: Md::parse("…"),
         started: None,
         elapsed_secs: Some(secs),
-        fold: None,
     })
 }
 

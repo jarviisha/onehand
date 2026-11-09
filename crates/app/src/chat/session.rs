@@ -27,6 +27,7 @@ pub(crate) use host::{BeginOnHost, Carried, HostBegin, list as host_list};
 use host::{Source, host_events, new_chat};
 
 mod cards;
+mod folds;
 mod host;
 #[cfg(test)]
 mod tests;
@@ -218,6 +219,22 @@ pub struct ChatSession {
     ///
     /// One box per field, so moving between a form's questions does not rewrite
     /// one box under the user.
+    /// The project's files, root-relative, for `@`-mention completion: what
+    /// the composer offers, read off disk once when the session opens, and
+    /// so this side's. None for a session on a host.
+    pub files: Vec<String>,
+    /// The directories [`Self::files`] passes through, with what is under
+    /// each: derived once, where the list changes once, rather than in the
+    /// popup on every keystroke and every streamed frame.
+    pub folders: Vec<(String, usize)>,
+    /// Whether the scan that fills [`Self::files`] has finished. An empty
+    /// list is not a list that has not arrived: one means there is nothing
+    /// here to name, the other that the popup is still looking.
+    pub files_scanned: bool,
+    /// Where the reader is on each open question card, by its live index:
+    /// which question shows and the keyboard's row. View state, pruned with
+    /// the boxes once a card is answered.
+    ask_places: HashMap<usize, onehand_core::chat::AskPlace>,
     ask_inputs: HashMap<(usize, usize), AskInput>,
     /// The card of a parked question, keyed by its live item index.
     ///
@@ -256,11 +273,9 @@ pub struct ChatSession {
     /// joining the run ahead of it renumbers every run below and would silently
     /// move the fold.
     ///
-    /// **Here, and an item's own fold on the item in core.** The reducer opens
-    /// a step that fails at the moment its status changes, so an item's fold
-    /// has to live where the status does; a run, a section, a turn summary and
-    /// a file row group items only this side's run plan knows. Every change to
-    /// either moves one counter, the chat's `folds`.
+    /// Every fold is the reader's, and so this side's: core says only what
+    /// opens by itself (a step running or one that just failed, a thought
+    /// still being written). Every change moves one counter, `folds`.
     activity_open: HashMap<TranscriptItemId, bool>,
     /// Sections the user opened inside an opened cluster.
     ///
@@ -299,6 +314,20 @@ pub struct ChatSession {
     /// **Kept across a renumbering**, unlike the folds above: an id names one
     /// subagent wherever its card sits, so it cannot land on another.
     subagent_open: HashSet<String>,
+    /// Which steps, thoughts, plans, and answered permissions and questions
+    /// the reader opened or closed, and how; absent follows what the item
+    /// does by itself.
+    ///
+    /// **One map for every kind**, because an id names one item, and an item
+    /// is one kind.
+    item_open: HashMap<TranscriptItemId, bool>,
+    /// A step's output wells the reader opened past their cut, by the
+    /// section's place in the step's content.
+    out_open: HashSet<(TranscriptItemId, usize)>,
+    /// How many times a fold was toggled. Apart from the transcript's
+    /// revision because folding changes no item, yet the run layout reads the
+    /// folds to choose how far a run stands from its neighbours.
+    folds: u64,
     /// The chat's numbering the folds above were keyed under.
     numbering: u64,
     /// The event pump.
@@ -306,7 +335,7 @@ pub struct ChatSession {
     /// Held rather than detached so the adapter's lifetime is tied to this
     /// entity's: dropping the session drops the task, which drops the event
     /// receiver, which makes the bridge's forwarder stop polling and kill the
-    /// child (see [`crate::acp::AcpRuntime::connect`]). Nothing else has to
+    /// child (see [`onehand_io::acp::AcpRuntime::connect`]). Nothing else has to
     /// remember to shut an agent down.
     _pump: Task<()>,
     /// The wait the drive armed; replacing it restarts it, dropping it calls
@@ -319,19 +348,41 @@ impl EventEmitter<ChatEvent> for ChatSession {}
 impl ChatSession {
     /// Stop waiting for the host, taking back the line that said so:
     /// `true` when it was waiting.
-    pub(crate) fn forget_host_wait(&mut self) -> bool {
+    pub(crate) fn forget_host_wait(&mut self, cx: &mut Context<Self>) -> bool {
         if self.host_wait.take().is_none() {
             return false;
         }
-        self.chat.chat_mut().unsay_host_wait();
+        let fx = self.chat.unsay_host_wait();
+        self.perform(fx, cx);
         true
     }
 
     /// No longer out of reach of its host, taking back the line that said so.
-    pub(crate) fn forget_host_offline(&mut self) {
+    pub(crate) fn forget_host_offline(&mut self, cx: &mut Context<Self>) {
         if self.host_offline.take().is_some() {
-            self.chat.chat_mut().unsay_host_wait();
+            let fx = self.chat.unsay_host_wait();
+            self.perform(fx, cx);
         }
+    }
+
+    /// Fold `event` in as a batch of its own: one this side makes, such as
+    /// the end of a wait that left the session's agent lost.
+    pub(crate) fn fold(&mut self, event: onehand_core::acp::AcpEvent, cx: &mut Context<Self>) {
+        let (fx, _) = self.chat.apply(event, now());
+        self.perform(fx, cx);
+        let fx = self.chat.end_batch();
+        self.perform(fx, cx);
+        cx.notify();
+    }
+}
+
+/// The time now, read here for the session's drive: the model reads no clock
+/// of its own, so every event and command that may stamp or time something
+/// carries this.
+pub(crate) fn now() -> onehand_core::chat::Now {
+    onehand_core::chat::Now {
+        secs: onehand_core::chat::now_secs(),
+        at: std::time::Instant::now(),
     }
 }
 
@@ -339,8 +390,8 @@ impl ChatSession {
 /// driving the session did, for the person reading it.
 pub(crate) fn note(session: &Entity<ChatSession>, text: String, cx: &mut App) {
     session.update(cx, |session, cx| {
-        session.chat.chat_mut().items.push(ChatItem::notice(text));
-        cx.emit(ChatEvent::Session(Signal::Appended));
+        let fx = session.chat.note(text);
+        session.perform(fx, cx);
         cx.notify();
     });
 }
@@ -410,7 +461,9 @@ impl ChatSession {
                         .spawn(async move { completion::scan_files(&root, MAX_MENTION_FILES) })
                         .await;
                     let _ = session.update(cx, |session: &mut Self, cx| {
-                        session.chat.chat_mut().set_files(files);
+                        session.folders = completion::folders(&files);
+                        session.files = files;
+                        session.files_scanned = true;
                         cx.notify();
                     });
                 }
@@ -431,6 +484,10 @@ impl ChatSession {
             md: HashMap::new(),
             images: RefCell::new(HashMap::new()),
             ask_inputs: HashMap::new(),
+            ask_places: HashMap::new(),
+            files: Vec::new(),
+            folders: Vec::new(),
+            files_scanned: false,
             ask_focus: HashMap::new(),
             perm_focus: HashMap::new(),
             pinned_keys: (None, false),
@@ -440,6 +497,9 @@ impl ChatSession {
             turn_open: HashMap::new(),
             file_open: HashMap::new(),
             subagent_open: HashSet::new(),
+            item_open: HashMap::new(),
+            out_open: HashSet::new(),
+            folds: 0,
             numbering: 0,
             _armed: None,
             _pump: cx.spawn(async move |session, cx| {
@@ -462,11 +522,12 @@ impl ChatSession {
                             // A watch that ended with its host's connection
                             // says so instead, and is read on from what it
                             // has until the host is back.
-                            if host::went_away(session, &event) {
-                                cx.emit(ChatEvent::Session(Signal::Appended));
+                            if let Some(line) = host::went_away(session, &event) {
+                                let fx = session.chat.host_lost(line, now());
+                                session.perform(fx, cx);
                                 continue;
                             }
-                            let (fx, more) = session.chat.apply(event);
+                            let (fx, more) = session.chat.apply(event, now());
                             session.perform(fx, cx);
                             let more = match more {
                                 Next::Stop => false,
@@ -492,7 +553,7 @@ impl ChatSession {
 
                 // The stream ended, which only this loop knows.
                 let _ = session.update(cx, |session: &mut Self, cx| {
-                    let fx = session.chat.handle(Input::StreamEnded);
+                    let fx = session.chat.handle(Input::StreamEnded, now());
                     session.perform(fx, cx);
                     cx.notify();
                 });
@@ -525,10 +586,11 @@ impl ChatSession {
                             })
                             .await;
                         // A session closed while its own write was in flight
-                        // has nowhere to file the answer: its drop wrote what
-                        // was left.
+                        // has nowhere to file the answer: its drop wrote the
+                        // whole transcript, and the store keeps this write's
+                        // lines from standing twice.
                         let _ = session.update(cx, |session: &mut Self, cx| {
-                            let fx = session.chat.handle(Input::Saved { write, result });
+                            let fx = session.chat.handle(Input::Saved { write, result }, now());
                             session.perform(fx, cx);
                         });
                     })
@@ -538,13 +600,47 @@ impl ChatSession {
                     self._armed = Some(cx.spawn(async move |session, cx| {
                         cx.background_executor().timer(wait).await;
                         let _ = session.update(cx, |session: &mut Self, cx| {
-                            let fx = session.chat.handle(Input::Elapsed { token });
+                            let fx = session.chat.handle(Input::Elapsed { token }, now());
                             session.perform(fx, cx);
                             cx.notify();
                         });
                     }));
                 }
                 Effect::Disarm => self._armed = None,
+                // A channel that closed as it went is the stream ending, which
+                // the pump hears and says.
+                Effect::Request(request) => {
+                    if let Some(tx) = self.chat.agent_channel() {
+                        let _ = tx.send(request);
+                    }
+                }
+                // Through the one writer every shown-then-saved change goes
+                // through, so a name is written after every name before it.
+                Effect::SaveTitle {
+                    write,
+                    change,
+                    title,
+                } => {
+                    let written = Shared::global(cx).writer.write(move || {
+                        onehand_core::chat::commit(&write).map_err(|why| why.to_string())
+                    });
+                    cx.spawn(async move |session, cx| {
+                        let result = written.await;
+                        let _ = session.update(cx, |session: &mut Self, cx| {
+                            let fx = session.chat.handle(
+                                Input::TitleSaved {
+                                    change,
+                                    title,
+                                    result,
+                                },
+                                now(),
+                            );
+                            session.perform(fx, cx);
+                            cx.notify();
+                        });
+                    })
+                    .detach();
+                }
                 Effect::SendCode { .. } | Effect::PromptAgain => left.push(effect),
             }
         }
@@ -561,7 +657,7 @@ impl ChatSession {
         code: Code,
         cx: &mut Context<Self>,
     ) -> (Intake, Vec<Effect>) {
-        let (intake, fx) = self.chat.prompt(text, staged, origin, code);
+        let (intake, fx) = self.chat.prompt(text, staged, origin, code, now());
         let left = self.perform(fx, cx);
         cx.notify();
         (intake, left)
@@ -575,10 +671,18 @@ impl ChatSession {
         origin: Origin,
         cx: &mut Context<Self>,
     ) -> Intake {
-        let (intake, fx) = self.chat.prompt_when_up(text, origin);
+        let (intake, fx) = self.chat.prompt_when_up(text, origin, now());
         self.perform(fx, cx);
         cx.notify();
         intake
+    }
+
+    /// Send the last prompt again, after a turn that failed; see
+    /// [`SessionDrive::resend`].
+    pub(crate) fn resend(&mut self, cx: &mut Context<Self>) {
+        let (_, fx) = self.chat.resend(now());
+        self.perform(fx, cx);
+        cx.notify();
     }
 
     /// Stop the running turn.
@@ -588,167 +692,26 @@ impl ChatSession {
         cx.notify();
     }
 
+    /// Name the conversation `title`; whether anything changed. See
+    /// [`SessionDrive::rename`].
+    pub(crate) fn rename(&mut self, title: &str, cx: &mut Context<Self>) -> bool {
+        let (renamed, fx) = self.chat.rename(title);
+        self.perform(fx, cx);
+        cx.notify();
+        renamed
+    }
+
+    /// Drop the name a person gave, back to the automatic one.
+    pub(crate) fn reset_title(&mut self, cx: &mut Context<Self>) {
+        let fx = self.chat.reset_title();
+        self.perform(fx, cx);
+        cx.notify();
+    }
+
     /// Write the conversation's name and settings alone.
     pub(crate) fn save_meta(&mut self, cx: &mut Context<Self>) {
         let fx = self.chat.save_meta();
         self.perform(fx, cx);
-    }
-
-    /// Whether the prompt at `target` is shown whole past its cut.
-    pub fn prompt_is_open(&self, target: TranscriptItemId) -> bool {
-        self.prompt_open.contains(&target)
-    }
-
-    /// Show the prompt at `target` whole, or cut it again.
-    pub fn toggle_prompt(&mut self, target: TranscriptItemId) {
-        if !self.prompt_open.remove(&target) {
-            self.prompt_open.insert(target);
-        }
-        self.chat.chat_mut().fold_changed();
-    }
-
-    /// Whether the activity run anchored at `anchor` is showing its steps:
-    /// the reader's choice once they made one, else `default`.
-    pub fn activity_is_open(&self, anchor: TranscriptItemId, default: bool) -> bool {
-        self.activity_open.get(&anchor).copied().unwrap_or(default)
-    }
-
-    /// Hold the activity run anchored at `anchor` open or closed, whatever
-    /// it goes on to do.
-    pub fn set_activity_open(&mut self, anchor: TranscriptItemId, open: bool) {
-        self.activity_open.insert(anchor, open);
-        self.chat.chat_mut().fold_changed();
-    }
-
-    /// Whether the section anchored at `anchor` is showing its steps.
-    pub fn section_is_open(&self, anchor: TranscriptItemId) -> bool {
-        self.section_open.contains(&anchor)
-    }
-
-    /// Fold or unfold the section anchored at `anchor`.
-    pub fn toggle_section(&mut self, anchor: TranscriptItemId) {
-        if !self.section_open.remove(&anchor) {
-            self.section_open.insert(anchor);
-        }
-        self.chat.chat_mut().fold_changed();
-    }
-
-    /// Whether the turn summary anchored at `anchor` is open, given what it
-    /// would do if nobody had said.
-    pub fn turn_is_open(&self, anchor: TranscriptItemId, default: bool) -> bool {
-        self.turn_open.get(&anchor).copied().unwrap_or(default)
-    }
-
-    /// Open or close the turn summary anchored at `anchor`.
-    pub fn toggle_turn(&mut self, anchor: TranscriptItemId, default: bool) {
-        let now = self.turn_is_open(anchor, default);
-        self.turn_open.insert(anchor, !now);
-        self.chat.chat_mut().fold_changed();
-    }
-
-    /// Whether the subagent card `id` shows every step it took.
-    pub fn subagent_is_open(&self, id: &str) -> bool {
-        self.subagent_open.contains(id)
-    }
-
-    /// Open or close the subagent card `id`.
-    pub fn toggle_subagent(&mut self, id: &str) {
-        if !self.subagent_open.remove(id) {
-            self.subagent_open.insert(id.to_string());
-        }
-        self.chat.chat_mut().fold_changed();
-    }
-
-    /// Whether `path`'s diff is showing under the turn anchored at `anchor`.
-    pub fn file_is_open(&self, anchor: TranscriptItemId, path: &str) -> bool {
-        // **Built and asked, not scanned.** This is answered once per file row
-        // per frame, so walking the set turns a turn's worth of rows into a
-        // quadratic over what the whole conversation has open.
-        self.file_open.contains_key(&(anchor, path.to_string()))
-    }
-
-    /// Show or hide `path`'s diff under the turn anchored at `anchor`.
-    ///
-    /// **The diff is computed here, once, and kept.** Taking it in the renderer
-    /// instead put an LCS over two whole files inside a render pass -- which
-    /// runs on every frame the row is on screen, for as long as it is open, and
-    /// the table that diff builds is megabytes wide on a large file. The row
-    /// changes what it draws only when somebody clicks it, so this is the one
-    /// moment the work is actually needed.
-    pub fn toggle_file(&mut self, anchor: TranscriptItemId, path: &str, body: &[TranscriptItemId]) {
-        let key = (anchor, path.to_string());
-        if self.file_open.remove(&key).is_none() {
-            let rows = self.with_turn_items(body, |items| {
-                onehand_core::chat::turn_file_diff(items, path)
-            });
-            self.file_open.insert(key, rows);
-        }
-        self.chat.chat_mut().fold_changed();
-    }
-
-    /// The diff showing under `path`'s row, if it is showing.
-    pub fn file_diff(
-        &self,
-        anchor: TranscriptItemId,
-        path: &str,
-    ) -> Option<&[onehand_core::diff::Row]> {
-        self.file_open
-            .get(&(anchor, path.to_string()))
-            .map(Vec::as_slice)
-    }
-
-    /// Show every file of the turn anchored at `anchor`, or hide them all if
-    /// they are already showing.
-    ///
-    /// One control for the whole block, since opening eight rows one at a time
-    /// to read a turn's diff is the block asking to be scrolled rather than
-    /// read.
-    pub fn toggle_every_file(
-        &mut self,
-        anchor: TranscriptItemId,
-        paths: &[String],
-        body: &[TranscriptItemId],
-    ) {
-        let all_open = paths.iter().all(|path| self.file_is_open(anchor, path));
-        self.file_open.retain(|(at, _), _| *at != anchor);
-        if !all_open {
-            let rows: Vec<(String, Vec<onehand_core::diff::Row>)> =
-                self.with_turn_items(body, |items| {
-                    paths
-                        .iter()
-                        .map(|path| {
-                            (
-                                path.clone(),
-                                onehand_core::chat::turn_file_diff(items, path),
-                            )
-                        })
-                        .collect()
-                });
-            self.file_open
-                .extend(rows.into_iter().map(|(path, diff)| ((anchor, path), diff)));
-        }
-        self.chat.chat_mut().fold_changed();
-    }
-
-    /// Run `f` over the transcript items `body` names.
-    ///
-    /// The summary block holds a turn's items by id rather than by value, so
-    /// this is how it reaches them when a row is opened -- and it is a closure
-    /// rather than a returned `Vec<&ChatItem>` because those borrow the chat
-    /// this session owns.
-    pub fn with_turn_items<T>(
-        &self,
-        body: &[TranscriptItemId],
-        f: impl FnOnce(&[&onehand_core::chat::ChatItem]) -> T,
-    ) -> T {
-        let items: Vec<&onehand_core::chat::ChatItem> = body
-            .iter()
-            .filter_map(|target| match target {
-                TranscriptItemId::History(i) => self.chat.history.get(*i),
-                TranscriptItemId::Live(i) => self.chat.items.get(*i),
-            })
-            .collect();
-        f(&items)
     }
 
     /// A cached handle for an inline image result.
@@ -796,31 +759,19 @@ impl ChatSession {
         snapshot: onehand_core::chat::ConversationSnapshot,
         cx: &mut Context<Self>,
     ) {
-        self.chat.chat_mut().resume_from(snapshot);
+        let fx = self.chat.resume(snapshot);
         self.forget_folds();
-        self.sync_md(cx);
+        self.perform(fx, cx);
         cx.notify();
     }
 
     /// Start as a fork of another conversation, seeded with its history up to
     /// the point; parsed as an adopted conversation is.
     pub fn adopt_fork(&mut self, seed: onehand_core::chat::ForkSeed, cx: &mut Context<Self>) {
-        self.chat.chat_mut().adopt_fork(seed);
+        let fx = self.chat.fork(seed);
         self.forget_folds();
-        self.sync_md(cx);
+        self.perform(fx, cx);
         cx.notify();
-    }
-
-    /// Folds are keyed by position, and the transcript is numbered afresh,
-    /// so a choice kept from before would land on an unrelated step.
-    fn forget_folds(&mut self) {
-        self.numbering = self.chat.numbering();
-        self.activity_open.clear();
-        self.section_open.clear();
-        self.prompt_open.clear();
-        self.turn_open.clear();
-        self.file_open.clear();
-        self.chat.chat_mut().fold_changed();
     }
 
     /// Reparse whatever grew, drop whatever went away.

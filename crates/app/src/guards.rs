@@ -619,18 +619,19 @@ mod tests {
 
     /// An archived conversation is adopted in exactly one place.
     ///
-    /// The model's loader takes items and nothing else; the *parsed* markdown
-    /// those items need is the front end's, and it lives on the session. Call
-    /// the loader directly and the transcript comes up drawing raw markdown
-    /// source — every heading, fence and asterisk of the conversation — until
-    /// some later event syncs the cache by accident. That is what
+    /// The drive's loader takes items and answers that the transcript changed;
+    /// the *parsed* markdown those items need is the front end's, and it lives
+    /// on the session. Call the loader and drop what it answers, and the
+    /// transcript comes up drawing raw markdown source — every heading, fence
+    /// and asterisk of the conversation — until some later event syncs the
+    /// cache by accident. That is what
     /// [`crate::chat::session::ChatSession::adopt`] exists to make impossible,
     /// and a guard is the only thing that keeps it that way: the wrong call is
     /// one line shorter and looks perfectly reasonable.
     #[test]
     fn an_archived_conversation_is_adopted_in_one_place() {
         // Assembled at run time so this test does not match its own source.
-        let loader = format!("resume_{}(", "from");
+        let loader = format!("chat.{}(", "resume");
         let callers: Vec<String> = sources()
             .into_iter()
             .filter(|(_, source)| {

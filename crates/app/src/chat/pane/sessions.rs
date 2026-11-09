@@ -7,7 +7,7 @@ use crate::chat::conversation::{HostAt, OnHost};
 use crate::chat::session::{BeginOnHost, Carried, ChatEvent, ChatSession, HostBegin};
 use gpui::{App, Context, Entity, Focusable, SharedString, Window};
 use onehand_core::acp::Opening;
-use onehand_core::chat::drive::{Code, Intake, Origin, Signal};
+use onehand_core::chat::drive::{Intake, Origin, Signal};
 use onehand_core::chat::{Chat, ConvMeta};
 use onehand_core::config::AgentSpec;
 use onehand_core::host::wire::HostSession;
@@ -252,14 +252,10 @@ impl ChatPane {
             cx,
         );
         if sent_before > 0 {
-            session.update(cx, |session, _| {
-                session.chat.chat_mut().carry_sent(sent_before)
-            });
+            session.update(cx, |session, _| session.chat.carry_sent(sent_before));
         }
         if let Some((custom, stand_in)) = titles {
-            session.update(cx, |session, _| {
-                session.chat.chat_mut().carry_titles(custom, stand_in)
-            });
+            session.update(cx, |session, _| session.chat.carry_titles(custom, stand_in));
         }
         cx.emit(ChatPaneEvent::AgentStarted);
         // The conversation is adopted *before* the adapter's replay lands,
@@ -372,6 +368,10 @@ impl ChatPane {
                     ChatEvent::Session(Signal::CodeFailed(why)) => {
                         cx.emit(ChatPaneEvent::CodeFailed(why.clone()));
                     }
+                    ChatEvent::Session(Signal::RenameFailed(why)) => {
+                        cx.emit(ChatPaneEvent::RenameFailed(why.clone()));
+                        cx.notify();
+                    }
                     ChatEvent::HostSession(id) => {
                         if let Some(on) = pane
                             .conversations
@@ -466,12 +466,12 @@ impl ChatPane {
         // mark riding along is what lets the replacement carry on the same file
         // instead of starting the conversation again inside it.
         let stored = self.session_of(uid).and_then(|s| {
-            s.update(cx, |s, _| {
+            s.update(cx, |s, cx| {
                 // Its line about waiting, or about being out of reach, is
                 // over with the restart.
-                s.forget_host_wait();
-                s.forget_host_offline();
-                s.chat.chat_mut().take_snapshot()
+                s.forget_host_wait(cx);
+                s.forget_host_offline(cx);
+                s.chat.take_snapshot(crate::chat::session::now())
             })
         });
         // `connect_as` drops the old adapter before spawning the new one, so
@@ -700,11 +700,7 @@ impl ChatPane {
         let Some(session) = self.session_of(uid).cloned() else {
             return;
         };
-        session.update(cx, |session, cx| {
-            if let Some(text) = session.chat.resend_text().map(str::to_string) {
-                session.prompt(&text, &[], Origin::Person, Code::Here, cx);
-            }
-        });
+        session.update(cx, |session, cx| session.resend(cx));
     }
 
     pub(super) fn session(&self) -> Option<Entity<ChatSession>> {
@@ -745,13 +741,9 @@ impl ChatPane {
             return;
         };
         session.update(cx, |session, cx| {
-            if session.forget_host_wait() {
+            if session.forget_host_wait(cx) {
                 let lost = onehand_core::acp::AcpEvent::Disconnected(why.to_string());
-                session.chat.chat_mut().apply(lost);
-                cx.emit(ChatEvent::Session(
-                    onehand_core::chat::drive::Signal::Appended,
-                ));
-                cx.notify();
+                session.fold(lost, cx);
             }
         });
     }
@@ -771,13 +763,9 @@ impl ChatPane {
         };
         session.update(cx, |session, cx| {
             if session.host_offline.is_some() {
-                session.forget_host_offline();
+                session.forget_host_offline(cx);
                 let lost = onehand_core::acp::AcpEvent::Disconnected(why.to_string());
-                session.chat.chat_mut().apply(lost);
-                cx.emit(ChatEvent::Session(
-                    onehand_core::chat::drive::Signal::Appended,
-                ));
-                cx.notify();
+                session.fold(lost, cx);
             }
         });
     }

@@ -1,10 +1,12 @@
 # An application layer: how onehand works, apart from how it is drawn
 
-- Status: phases 1 and 2 built.
+- Status: phases 1 to 3 built.
   - Phase 1, a trial slice of one session, is #307.
   - Phase 2 settled the standard: it lives in [docs/drives.md](../drives.md), its terms in
     CONTEXT.md (*How onehand is built*), and its short form in AGENTS.md (*Invariants*).
-  - What is left here is the plan for phases 3 to 10, the inventory they work from, and the
+  - Phase 3 moved the rest of the session's behaviour into `SessionDrive` and started the I/O
+    crate (`onehand-io`); what it left for later is under *Plan*.
+  - What is left here is the plan for phases 4 to 10, the inventory they work from, and the
     record of the trial. Each phase that is built moves its rows out of here, in the same PR.
 - Supersedes the rule agreed in #133 ("logic belongs in core when two call sites share it, when a
   second front end could need it, or when it wants a test without a GUI"). That rule moved *rules*
@@ -96,10 +98,9 @@ row is re-audited at the start of its phase. Line counts are at `6f92ab49`.
 
 | Area | Core has | App decides today | Target drive |
 |---|---|---|---|
-| Session: events and saving, what phase 1 left | `SessionDrive::apply`, `handle`, `save_meta` | `chat/session.rs` pump (`host::went_away`, checked before an event reaches the drive); `chat/pane/sessions.rs` subscriber (offload check, archive refresh); the rename's own save (`chat/pane/titles.rs`) | `SessionDrive::apply` / `handle` |
+| Session: what phase 3 left | `SessionDrive` (every change to a session), `host::went_away`'s line | `chat/session.rs` pump (seeing a host's lost connection, on the connection it holds); `chat/pane/sessions.rs` subscriber (offload check after a turn, archive refresh) | `SessionDrive`, with the host drive (phase 6) |
 | Session: telling | `attention` (`telling`, `Away`), `remote::Chats::announcement` | `chat/pane/bridge.rs` (`turn_ended_detached`, `awaiting_user_detached`, `link_lost_detached`), desktop notifications | `SessionDrive` signals, with `Input::Shown` |
-| Session: cards, picks, stop | `answer_permission`, `answer_ask`, `pick`, `set_mode`, `cancel_turn`, `stop_background` | called straight from the transcript, header and remote paths | `SessionDrive` methods |
-| Session: lifecycle | `Chat` construction, `resume_from`, `adopt_fork`, `rename`, the workspace tree | `chat/session.rs` (`spawn`, `adopt`), `chat/pane/sessions.rs` (phases, `close`), `shell/sessions.rs` (946 lines), `shell/fork.rs`, `chat/session/host.rs` | `SessionDrive` + a workspace drive |
+| Session: lifecycle | `SessionDrive::resume`, `fork`, `take_snapshot`, the workspace tree | `chat/session.rs` (`spawn`), `chat/pane/sessions.rs` (phases, `close`), `shell/sessions.rs` (946 lines), `shell/fork.rs` | a workspace drive |
 | Task runs | `task::Drive`, `task::queue`, `workflow::Run` | `task/driver.rs` (already a carrier), `task/approval.rs`, `task/place.rs` | `task::Drive` (D2) |
 | Task starts and retries | preflight, `retry_plan`, worktree composition (#171) | `shell/workflows.rs` (launcher: preflight → cut → request), `shell/retry.rs` | a task-start drive, or `task::Drive` |
 | Schedules | `schedule::decide`, `cron` | `schedules.rs` (the clock, rereading `schedules.toml`, choosing the window) | schedule drive |
@@ -115,14 +116,15 @@ row is re-audited at the start of its phase. Line counts are at `6f92ab49`.
 | Issues | `issues`, `connector` | `shell/issues_page.rs`, `shell/issue_work.rs`, the Issues mode | issues drive |
 | Workbench modes | editor rules, file tree, markdown | each mode crate (`AnyView`, `Window` in `onehand-workbench`) | per mode, only where a mode has behaviour (phase 7) |
 
-## The I/O crate (D5: early, in phase 3)
+## The I/O crate (D5: started in phase 3)
 
-The ACP runtime (`acp.rs`), the remote channel's runtime (`remote.rs`), the attach to a host
-(`hosts.rs`), disk writes and git calls are GUI-free in what they do, but they live in the app and
-reach `Shared`. Phase 3 moves them into one GUI-free crate, with the same check core has
-(`cargo tree -p <crate> -i gpui-pre` fails). Core keeps its rule of dictating no runtime; this
-crate is where the runtime is chosen. Its name is chosen in phase 3. It is not *executor*, which
-GPUI already uses (`cx.background_executor()`).
+`onehand-io` holds the runtimes onehand's I/O runs on, held to core's check (`cargo tree -p
+onehand-io -i gpui-pre` fails, in CI). Phase 3 moved the agent runtime into it (`onehand_io::acp`);
+what an agent is given to reach onehand's tools stays the front end's, through `acp::Pass`. The
+remote channel's runtime (`remote.rs`) and the attach to a host (`hosts.rs`) are tangled with
+`Shared` and GPUI contexts, so their runtime halves move with the phases that take them apart (6
+and 7). Disk writes and git calls stay blocking functions in core. Core keeps its rule of
+dictating no runtime; this crate is where the runtime is chosen.
 
 ## Where the drives live (D4: R)
 
@@ -151,18 +153,24 @@ decisions are deleted from the app, its mutators are `pub(crate)` in core, and i
 **Phase 2: settle the standard.** Built: [docs/drives.md](../drives.md), the glossary's *How onehand
 is built*, and AGENTS.md's *Invariants*. The decisions are below.
 
-**Phase 3: the rest of the session, and the I/O crate.**
-- Host sessions, forks, telling (`Input::Shown`, a signal out), cards, picks and background work.
-- The open and closed state in `Chat` (`toggle_*`) moves to the UI (D3).
-- The lifecycle in `shell/sessions.rs`. Closing becomes a command that saves what is left and
-  waits for the saves in flight (#309).
-- `Chat`'s requests to its agent become an effect (`Effect::Request`), carried out on the
-  request channel.
-- `Chat` stops reading the clock. The carrier says the time with each event and command it hands
-  the drive, and the drive passes it to the model; nothing in `chat::model` calls
-  `chat::store::now_secs` or `Instant::now`.
-- The GUI-free I/O moves into its own crate (D5).
-- Then every `Chat` mutator is `pub(crate)`, and `SessionDrive::chat_mut` is gone.
+**Phase 3: the rest of the session, and the I/O crate.** Built:
+- What the reader has open (the item folds, the fold counter, a question card's tab and keyboard
+  row as `AskPlace`, the `@`-mention file list) is the front end's (D3).
+- Cards, picks, modes and background work, names (with their ordered, put-back save), host lines
+  and lost links, resume, fork, snapshot and notes all go through `SessionDrive`.
+- `Chat`'s requests to its agent are `Effect::Request`, carried out on the request channel.
+- `Chat` reads no clock: the carrier tells the drive the time (`Now`).
+- A session closed with a save in flight writes the whole transcript, and the store drops a late
+  save's lines (#309).
+- The agent runtime is in `onehand-io` (D5).
+- Every `Chat` mutator is `pub(crate)`; `SessionDrive::chat_mut` is crate-private, kept for the
+  run's link (phase 4 decides it).
+
+Left for a later phase, which is settled with phase 4's audit:
+- telling (`Input::Shown`, a signal out): badges, desktop notices, the remote bridge's words;
+- the lifecycle in `shell/sessions.rs` and `shell/fork.rs`, and the pane's phases and close;
+- restarting a session with a save in flight, whose snapshot carries the moved mark;
+- seeing a host's lost connection, which needs the connection (phase 6).
 
 **Phase 4: tasks.**
 - Start, retry and the queue's app half move into drives.
@@ -298,7 +306,14 @@ the last four:
 - A host's lost connection (`host::went_away`) no longer marks the batch changed, so a batch of
   only that event does not resync the parsed markdown.
 
-Each is settled in phase 3: kept and moved into the owning document, or put back.
+Settled on 2026-11-06, at the start of phase 3:
+- Kept: the two first-prompt moments, and the latch being the session's. No feature document
+  says either moment: `SessionDrive::prompt_when_up` and the save latch say them in their own
+  comments, and control.md's "sent once the agent is up" holds as written.
+- Put back in phase 3: a resend while a turn runs is refused again (`SessionDrive::resend`, which
+  never queues), and the two link cuts outside the drive go through it
+  (`SessionDrive::host_lost`, and the pane's `Disconnected` folded as a batch of its own), which
+  drops the held prompt and marks the batch changed again.
 
 **Left in the app, inside the slice, for later phases:**
 - the host's lost connection (`host::went_away`, checked before an event reaches the drive);
@@ -345,19 +360,23 @@ Made on 2026-11-06:
   the glossary. `SessionDrive` stays; `task::Drive` becomes `RunDrive` in phase 4. *Executor* is
   not a term: GPUI uses the word.
 - **D2. Commands are methods.** `task::Drive` converts in phase 4.
-- **D3. The open and closed state in `Chat` is view state,** and moves to the UI in phase 3.
+- **D3. The open and closed state in `Chat` is view state,** and moves to the UI in phase 3. So
+  do a question card's tab and keyboard row (`AskPlace`, its rules kept in core).
 - **D4. R:** each drive is owned by its entity, and drives meet in a link in core.
-- **D5. The GUI-free I/O gets its own crate early,** in phase 3.
+- **D5. The GUI-free I/O gets its own crate early,** in phase 3: `onehand-io`, starting with the
+  agent runtime; the remote and host runtimes follow in phases 6 and 7.
 - **D6. PRs:** one per phase, each with its own docs.
 - **D7. No feature work in an open phase's files.**
 - **D8. Offloaded projects and the send paths:** the remote bridge reaches an offloaded session
   without its code (#308). Every other path is kept off offloaded projects where projects are
   listed or picked.
-- **Requests to the agent become an effect** (phase 3).
+- **Requests to the agent become an effect** (phase 3). Whether one may go is decided on the link
+  being up, not on the send.
 - **The time is an input:** the model stops reading the clock, and the carrier says the time
   (phase 3).
-- **Closing is a command** that saves what is left and waits for the saves in flight (phase 3,
-  #309).
+- **Closing honours the saves in flight** (phase 3, #309). Built as a whole-file write at close
+  rather than a wait: the drive goes with its session, so it cannot wait, and the store drops the
+  lines of a save built before that write lands.
 
 ## Done when
 

@@ -202,12 +202,14 @@ pub(super) fn thought(
     window: &Window,
     cx: &App,
 ) -> impl IntoElement + use<> {
-    let open = th.is_open();
+    // Open while it is written, closed once done, unless the reader said.
+    let running = th.is_running();
+    let open = session.read(cx).item_is_open(target, running);
     let toggle = {
         let session = session.clone();
         move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
             session.update(cx, |s, cx| {
-                s.chat.chat_mut().toggle_thought(target);
+                s.toggle_item(target, running);
                 cx.notify();
             });
         }

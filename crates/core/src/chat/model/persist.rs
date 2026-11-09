@@ -55,7 +55,8 @@ impl Chat {
         let mut write = self.meta_write(total)?;
         // Only a save that added messages moves the conversation's date -- see
         // the field on the file for why the list must not reorder otherwise.
-        write.meta.updated = (!lines.is_empty()).then(store::now_secs);
+        let wall = self.wall();
+        write.meta.updated = (!lines.is_empty()).then_some(wall);
         write.lines = lines;
         write.blobs = blobs;
         write.from = from;
@@ -89,7 +90,7 @@ impl Chat {
     ///
     /// `None` for a conversation with nothing on disk yet. Metadata by itself
     /// would put an empty conversation in the list.
-    pub fn flush_meta(&mut self) -> Option<PendingWrite> {
+    pub(crate) fn flush_meta(&mut self) -> Option<PendingWrite> {
         if self.persisted == 0 {
             return None;
         }
@@ -127,7 +128,7 @@ impl Chat {
     /// window it would have spoken to is being torn down. The per-turn save
     /// covers the same conversation every turn and does report, so a standing
     /// condition has already been said out loud long before this runs.
-    pub fn save_blocking(&mut self) {
+    fn save_blocking(&mut self) {
         // The adapter goes with the chat, so a card still working never ends;
         // held back, it and everything after it would never be written. Its
         // background work ends here too, and says so.
@@ -139,6 +140,16 @@ impl Chat {
         }
     }
 
+    /// Write the whole transcript at the next save, over the file, rather than
+    /// what came after the mark: for a session closed with a save still on its
+    /// way, whose turn that save would lose if it then failed. Never for a
+    /// transcript read back only to its bound, as the file is longer than it.
+    pub(crate) fn write_whole(&mut self) {
+        if !self.bounded {
+            self.rewrite = true;
+        }
+    }
+
     /// Lift this conversation out, leaving the chat empty — the handoff a
     /// restart makes to the session replacing it.
     ///
@@ -146,7 +157,7 @@ impl Chat {
     /// came from is about to be dropped, and a drop still holding these items
     /// would write them a second time. It carries the mark with it, so the
     /// replacement continues the same file rather than starting one.
-    pub fn take_snapshot(&mut self) -> Option<ConversationSnapshot> {
+    pub(crate) fn take_snapshot(&mut self) -> Option<ConversationSnapshot> {
         let session_id = self.session_id.clone()?;
         // The adapter that would end a working card is the one being
         // replaced; carried over working, it would hold every save back. Its
@@ -185,7 +196,7 @@ impl Chat {
         Some(ConversationSnapshot {
             session_id,
             title: self.custom_title.clone(),
-            updated: self.last_activity.unwrap_or_else(store::now_secs),
+            updated: self.last_activity.unwrap_or(self.wall()),
             // The file's own, and the file keeps it: a snapshot passing through
             // memory has no business telling a conversation when it began.
             prefs: self.prefs(),
@@ -306,7 +317,7 @@ impl Chat {
     /// `last_activity` and the rail dates the session from the moment it was
     /// reopened rather than from its last real turn; forget the mark and the
     /// conversation is written to its own file a second time.
-    pub fn resume_from(&mut self, snapshot: ConversationSnapshot) {
+    pub(crate) fn resume_from(&mut self, snapshot: ConversationSnapshot) {
         self.bounded = !snapshot.complete;
         self.custom_title = snapshot.title;
         self.last_activity = Some(snapshot.updated);

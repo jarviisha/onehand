@@ -20,7 +20,7 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::kbd::Kbd;
 use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
 use onehand_core::acp::ElicitKind;
-use onehand_core::chat::{AskItem, TranscriptItemId};
+use onehand_core::chat::{AskItem, AskPlace, TranscriptItemId};
 
 mod keys;
 mod record;
@@ -42,10 +42,13 @@ pub(in crate::chat) fn ask(
     }
     let idx = live_index(target);
     let live = idx.is_some();
+    let place = idx
+        .map(|idx| session.read(cx).ask_place(idx))
+        .unwrap_or_default();
     let counter = (live && a.req.fields.len() > 1).then(|| {
         format!(
             "Question {} of {}",
-            a.active_field() + 1,
+            place.active_field(a) + 1,
             a.req.fields.len()
         )
     });
@@ -138,6 +141,9 @@ struct AskForm<'a> {
     session: &'a Entity<ChatSession>,
     a: &'a AskItem,
     idx: usize,
+    /// Where the reader is on the card: the question showing and the
+    /// keyboard's row.
+    place: AskPlace,
     /// The question the strip has open, and the one every row below it answers.
     active: usize,
     /// A one-question single-select: it answers on the click, so its footer
@@ -200,9 +206,9 @@ impl AskForm<'_> {
                     // the view.
                     .on_click(move |_, _, cx: &mut App| {
                         session.update(cx, |s, cx| {
-                            if let Some(item) = s.chat.chat_mut().ask_at_mut(idx) {
-                                item.go_to(f);
-                            }
+                            let mut place = s.ask_place(idx);
+                            place.go_to(f);
+                            s.set_ask_place(idx, place);
                             cx.notify();
                         });
                     })
@@ -211,8 +217,7 @@ impl AskForm<'_> {
 
     /// The open question's choices, one row each.
     fn choice_rows(&self, cx: &App) -> Vec<gpui::AnyElement> {
-        let (session, a, idx, active, quick) =
-            (self.session, self.a, self.idx, self.active, self.quick);
+        let (session, a, idx, active) = (self.session, self.a, self.idx, self.active);
         let field = a.req.fields.get(active);
         let single = matches!(field.map(|f| &f.kind), Some(ElicitKind::Select(_)));
         let choices = field
@@ -222,7 +227,7 @@ impl AskForm<'_> {
             })
             .unwrap_or_default();
         let picked = a.picked.get(active).cloned().unwrap_or_default();
-        let cursor = a.cursor_row(active);
+        let cursor = self.place.cursor_row(a, active);
 
         choices
             .into_iter()
@@ -310,7 +315,6 @@ impl AskForm<'_> {
                             idx,
                             active,
                             onehand_core::chat::AskRow::Choice(o),
-                            quick,
                             window,
                             cx,
                         );
@@ -358,7 +362,8 @@ impl AskForm<'_> {
         // The keyboard's position on the list, marked with the edge a focused
         // field draws: the arrows reach this row without handing it the
         // caret, and a row they reach shows it as the choices above do.
-        let cursor = self.a.cursor_row(self.active) == Some(onehand_core::chat::AskRow::Custom);
+        let cursor =
+            self.place.cursor_row(self.a, self.active) == Some(onehand_core::chat::AskRow::Custom);
         Some(
             // **The list's last row, written in rather than picked**: a field
             // edged on the card's own fill, at the choices' inset and their
@@ -474,7 +479,7 @@ impl AskForm<'_> {
     /// those say what the form looks like, this says what a keystroke landing
     /// anywhere on it means.
     fn keys(&self, body: gpui::Div, focus: gpui::FocusHandle) -> gpui::Stateful<gpui::Div> {
-        let (idx, active, quick) = (self.idx, self.active, self.quick);
+        let (idx, active) = (self.idx, self.active);
         let session = self.session.clone();
         let card = focus.clone();
         body.id(("ask-card", idx))
@@ -507,13 +512,14 @@ impl AskForm<'_> {
                     if !card.is_focused(window) {
                         return;
                     }
-                    let row = session
-                        .read(cx)
+                    let session_ = session.read(cx);
+                    let place = session_.ask_place(idx);
+                    let row = session_
                         .chat
                         .ask_at(idx)
-                        .and_then(|item| item.cursor_row(active));
+                        .and_then(|item| place.cursor_row(item, active));
                     if let Some(row) = row {
-                        ask_take(&session, idx, active, row, quick, window, cx);
+                        ask_take(&session, idx, active, row, window, cx);
                     }
                 }
             })
@@ -546,7 +552,7 @@ impl AskForm<'_> {
                     .ask_at(idx)
                     .and_then(|item| item.row(active, pick.index));
                 if let Some(row) = row {
-                    ask_take(&session, idx, active, row, quick, window, cx);
+                    ask_take(&session, idx, active, row, window, cx);
                 }
             })
     }
@@ -570,11 +576,11 @@ pub(in crate::chat) fn pick_pinned(
     let Some((idx, item)) = pinned_question(session, cx) else {
         return;
     };
-    let (active, quick) = (item.active_field(), item.is_quick());
+    let active = session.read(cx).ask_place(idx).active_field(item);
     let Some(row) = item.row(active, index) else {
         return;
     };
-    ask_take(session, idx, active, row, quick, window, cx);
+    ask_take(session, idx, active, row, window, cx);
 }
 
 /// The pinned card where it is a question: its live index and the question.
@@ -592,7 +598,7 @@ pub(in crate::chat) fn advance_pinned(session: &Entity<ChatSession>, cx: &mut Ap
     let Some((idx, item)) = pinned_question(session, cx) else {
         return;
     };
-    let active = item.active_field();
+    let active = session.read(cx).ask_place(idx).active_field(item);
     if item.may_advance(active) {
         ask_advance(session, idx, active, cx);
     }
@@ -607,7 +613,7 @@ pub(in crate::chat) fn skip_pinned(
     let Some((idx, item)) = pinned_question(session, cx) else {
         return;
     };
-    let active = item.active_field();
+    let active = session.read(cx).ask_place(idx).active_field(item);
     ask_skip(session, idx, active, window, cx);
 }
 
@@ -625,11 +631,13 @@ fn ask_form(
     idx: usize,
     cx: &App,
 ) -> gpui::AnyElement {
+    let place = session.read(cx).ask_place(idx);
     let form = AskForm {
         session,
         a,
         idx,
-        active: a.active_field(),
+        place,
+        active: place.active_field(a),
         quick: a.is_quick(),
     };
     let multi_field = a.req.fields.len() > 1;

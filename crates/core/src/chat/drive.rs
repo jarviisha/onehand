@@ -16,8 +16,8 @@
 //! [`SessionDrive::prompt`], rather than a copy of the sending rule at each.
 //!
 //! **Reads go to the model.** The drive derefs to its [`Chat`]; what a front
-//! end draws, it reads there. A change to the session comes through a method
-//! here, or, for what no method here covers yet, through [`SessionDrive::chat_mut`].
+//! end draws, it reads there. Every change to the session comes through a
+//! method here; a front end has no way to the model's mutators.
 //!
 //! **A batch of events.** The agent streams many small events, and a front end
 //! repaints once per batch rather than once per event. Where a batch may end
@@ -27,9 +27,9 @@
 //! with whether the batch may go on ([`Next`]); [`SessionDrive::end_batch`]
 //! closes it. How many events a front end takes at most is its own cap.
 
-use super::model::{Chat, Link, QueuedPrompt, SubmitBlock, UserAsk};
+use super::model::{Chat, Link, Now, QueuedPrompt, SubmitBlock, UserAsk};
 use super::store::PendingWrite;
-use crate::acp::AcpEvent;
+use crate::acp::{AcpEvent, AcpRequest};
 use crate::attachment::StagedAttachment;
 use std::time::Duration;
 
@@ -133,6 +133,9 @@ pub enum Signal {
     SaveFailed(String),
     /// An offloaded project's code could not go up: why.
     CodeFailed(String),
+    /// The conversation's newest name could not be written, and the last
+    /// one written is back: why.
+    RenameFailed(String),
 }
 
 /// One thing the drive asks its front end to do, in the order given.
@@ -162,6 +165,24 @@ pub enum Effect {
     SendCode { token: u64 },
     /// The code is up: send the person's prompt again, from where it waits.
     PromptAgain,
+    /// Send `request` to the agent on its channel
+    /// ([`Chat::agent_channel`]), in the order given.
+    ///
+    /// Not answered: whether the link was up was asked before this was
+    /// queued, and a channel that closed as it went is the agent's stream
+    /// ending, which the stream says itself.
+    Request(AcpRequest),
+    /// Write the conversation's name and settings, after every name written
+    /// before it, and report [`Input::TitleSaved`] with `change` and `title`.
+    ///
+    /// A late answer is **recorded**: the write landed or it did not, and
+    /// only the newest change's failure puts a name back, since a newer
+    /// write carries the name on screen.
+    SaveTitle {
+        write: Box<PendingWrite>,
+        change: u64,
+        title: Option<String>,
+    },
 }
 
 /// What the front end reports back.
@@ -182,6 +203,12 @@ pub enum Input {
     },
     /// The agent's stream ended.
     StreamEnded,
+    /// The name written for `change`, `title`, landed, or why not.
+    TitleSaved {
+        change: u64,
+        title: Option<String>,
+        result: Result<(), String>,
+    },
 }
 
 /// Whether a batch of events may take another.
@@ -224,7 +251,25 @@ pub struct SessionDrive {
     held: Option<Held>,
     /// The last save failed: the next failure is not said again.
     save_failed: bool,
+    /// How many saves are on their way and not answered yet.
+    saving: usize,
+    /// The name shown and the one last written, once a person named the
+    /// conversation here.
+    title: Option<crate::saving::Saving<Option<String>>>,
     batch: Batch,
+}
+
+/// **Closing honours the saves still on their way.** The model writes what is
+/// left as it goes, from the mark the newest save moved; were a save still on
+/// its way to fail after that, its turn would be in neither write. So a
+/// session closed with one on its way writes the whole transcript instead,
+/// and the store drops the lines of any save built before that write lands.
+impl Drop for SessionDrive {
+    fn drop(&mut self) {
+        if self.saving > 0 {
+            self.chat.write_whole();
+        }
+    }
 }
 
 impl std::ops::Deref for SessionDrive {
@@ -243,12 +288,15 @@ impl SessionDrive {
             sending: None,
             held: None,
             save_failed: false,
+            saving: 0,
+            title: None,
             batch: Batch::default(),
         }
     }
 
-    /// The session's model, for a change no method here covers yet.
-    pub fn chat_mut(&mut self) -> &mut Chat {
+    /// The session's model, changed directly: for the run's drive, which puts
+    /// a step's mode and picks in force on its session through their link.
+    pub(crate) fn chat_mut(&mut self) -> &mut Chat {
         &mut self.chat
     }
 
@@ -269,6 +317,19 @@ impl SessionDrive {
     /// an offloaded project before it gets here, where projects are listed or
     /// picked, except the remote bridge's, which reaches every open session.
     pub fn prompt(
+        &mut self,
+        text: &str,
+        staged: &[StagedAttachment],
+        origin: Origin,
+        code: Code,
+        now: Now,
+    ) -> (Intake, Vec<Effect>) {
+        self.chat.tell_time(now);
+        let (intake, fx) = self.intake(text, staged, origin, code);
+        (intake, self.sent(fx))
+    }
+
+    fn intake(
         &mut self,
         text: &str,
         staged: &[StagedAttachment],
@@ -320,12 +381,21 @@ impl SessionDrive {
     ///
     /// Issue work's prompt goes only to a session nobody has prompted yet: a
     /// person who wrote first is driving it.
-    pub fn prompt_when_up(&mut self, text: &str, origin: Origin) -> (Intake, Vec<Effect>) {
+    pub fn prompt_when_up(
+        &mut self,
+        text: &str,
+        origin: Origin,
+        now: Now,
+    ) -> (Intake, Vec<Effect>) {
+        self.chat.tell_time(now);
         match self.chat.link {
-            Link::Connected => self.prompt_held(Held {
-                text: text.to_string(),
-                origin,
-            }),
+            Link::Connected => self.prompt_held(
+                Held {
+                    text: text.to_string(),
+                    origin,
+                },
+                now,
+            ),
             Link::Connecting => {
                 self.held = Some(Held {
                     text: text.to_string(),
@@ -340,7 +410,7 @@ impl SessionDrive {
         }
     }
 
-    fn prompt_held(&mut self, held: Held) -> (Intake, Vec<Effect>) {
+    fn prompt_held(&mut self, held: Held, now: Now) -> (Intake, Vec<Effect>) {
         let untouched =
             !self.chat.busy && self.chat.prompts_sent == 0 && self.chat.queued.is_none();
         if held.origin == Origin::Issue && !untouched {
@@ -349,7 +419,26 @@ impl SessionDrive {
                 Vec::new(),
             );
         }
-        self.prompt(&held.text, &[], held.origin, Code::Here)
+        self.prompt(&held.text, &[], held.origin, Code::Here, now)
+    }
+
+    /// Send the last prompt again, after a turn that failed, as a person's.
+    ///
+    /// Never queued: an error can be said before the turn it ends has
+    /// closed, and a resend queued then would replace a prompt already
+    /// waiting, which the person wrote and did not take back.
+    pub fn resend(&mut self, now: Now) -> (Intake, Vec<Effect>) {
+        self.chat.tell_time(now);
+        let Some(text) = self.chat.resend_text().map(str::to_string) else {
+            return (Intake::Refused(Refusal::NotTaken), Vec::new());
+        };
+        if self.chat.busy {
+            return (
+                Intake::Refused(Refusal::Blocked(SubmitBlock::Busy)),
+                Vec::new(),
+            );
+        }
+        self.prompt(&text, &[], Origin::Person, Code::Here, now)
     }
 
     /// Take the queued prompt back, for a front end putting it back where it
@@ -361,13 +450,25 @@ impl SessionDrive {
     /// Stop the running turn.
     pub fn stop(&mut self) -> Vec<Effect> {
         self.chat.cancel_turn();
-        Vec::new()
+        self.sent(Vec::new())
+    }
+
+    /// `fx`, then what the model queued for the agent meanwhile.
+    pub(crate) fn sent(&mut self, mut fx: Vec<Effect>) -> Vec<Effect> {
+        fx.extend(self.chat.take_requests().into_iter().map(Effect::Request));
+        fx
     }
 
     /// Fold one event in.
-    pub fn apply(&mut self, event: AcpEvent) -> (Vec<Effect>, Next) {
+    pub fn apply(&mut self, event: AcpEvent, now: Now) -> (Vec<Effect>, Next) {
+        self.chat.tell_time(now);
         let outcome = self.chat.apply(event);
         let mut fx = vec![Effect::Signal(Signal::Appended)];
+        // The turn's save is built before what waited behind it goes: built
+        // after, it would write the next prompt as a turn still running,
+        // and the file, written only at its end, would never hear when that
+        // turn finished.
+        let turn_save = outcome.turn_ended.then(|| self.save()).flatten();
         // Last of a turn's end, so a prompt written mid-turn opens its own
         // turn against a conversation that has finished closing the last.
         if outcome.turn_ended {
@@ -381,7 +482,7 @@ impl SessionDrive {
         }
         if let Some(held) = self.held.take_if(|_| self.chat.link != Link::Connecting) {
             if self.chat.link == Link::Connected {
-                fx.extend(self.prompt_held(held).1);
+                fx.extend(self.prompt_held(held, now).1);
             }
         }
         self.batch.changed |= outcome.transcript_changed;
@@ -406,7 +507,9 @@ impl SessionDrive {
         {
             fx.push(Effect::Signal(Signal::AwaitingUser(ask)));
         }
-        if outcome.turn_ended || cycle_ended {
+        if outcome.turn_ended {
+            fx.extend(turn_save);
+        } else if cycle_ended {
             fx.extend(self.save());
         }
         if outcome.turn_ended {
@@ -429,7 +532,7 @@ impl SessionDrive {
             (false, true) => Next::PastCap,
             (false, false) => Next::More,
         };
-        (fx, next)
+        (self.sent(fx), next)
     }
 
     /// Close the batch [`Self::apply`] has been folding.
@@ -455,7 +558,8 @@ impl SessionDrive {
     }
 
     /// What the front end reports back.
-    pub fn handle(&mut self, input: Input) -> Vec<Effect> {
+    pub fn handle(&mut self, input: Input, now: Now) -> Vec<Effect> {
+        self.chat.tell_time(now);
         match input {
             Input::Saved { write, result } => self.saved(&write, result),
             Input::Elapsed { token } => self.elapsed(token),
@@ -470,6 +574,11 @@ impl SessionDrive {
                 fx.push(Effect::Signal(Signal::Disconnected));
                 fx
             }
+            Input::TitleSaved {
+                change,
+                title,
+                result,
+            } => self.title_saved(change, title, result),
         }
     }
 
@@ -484,20 +593,23 @@ impl SessionDrive {
     /// flight at once cannot both carry the same turn; the writing itself is
     /// the front end's, off its UI thread.
     fn save(&mut self) -> Option<Effect> {
-        self.chat.flush().map(|write| Effect::Save(Box::new(write)))
+        let write = self.chat.flush()?;
+        self.saving += 1;
+        Some(Effect::Save(Box::new(write)))
     }
 
     /// Write the conversation's name and settings alone: a rename, which can
     /// come mid-turn, when a line written would be a step not yet finished.
     pub fn save_meta(&mut self) -> Vec<Effect> {
-        self.chat
-            .flush_meta()
-            .map(|write| Effect::Save(Box::new(write)))
-            .into_iter()
-            .collect()
+        let Some(write) = self.chat.flush_meta() else {
+            return Vec::new();
+        };
+        self.saving += 1;
+        vec![Effect::Save(Box::new(write))]
     }
 
     fn saved(&mut self, write: &PendingWrite, result: Result<(), String>) -> Vec<Effect> {
+        self.saving = self.saving.saturating_sub(1);
         match result {
             Ok(()) => {
                 self.save_failed = false;
@@ -568,6 +680,12 @@ impl SessionDrive {
         fx
     }
 }
+
+mod cards;
+mod host;
+mod life;
+mod settings;
+mod titles;
 
 #[cfg(test)]
 mod tests;

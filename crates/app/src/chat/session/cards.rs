@@ -1,10 +1,13 @@
 //! The inputs a parked card is answered in: a free-text box per question
-//! field, and the focus a permission's buttons are reached by.
+//! field, where the reader is on each question card, the focus a
+//! permission's buttons are reached by, and the answers they send through
+//! the drive.
 
 use super::{AskBox, AskInput, ChatSession};
-use gpui::{App, AppContext, Context, Entity, Window};
+use gpui::{AppContext, Context, Entity, Window};
 use gpui_component::input::{InputEvent, TextareaState};
 use onehand_core::acp::ElicitKind;
+use onehand_core::chat::AskPlace;
 use std::collections::HashSet;
 
 /// The rows the typed answer to a question holds at rest, and the most it
@@ -32,7 +35,7 @@ impl ChatSession {
         let mut wanted: Vec<AskBox> = Vec::new();
         for (idx, a) in self.chat.pending_asks() {
             live.insert(idx);
-            let field = a.active_field();
+            let field = self.ask_place(idx).active_field(a);
             if !a.has_custom(field) {
                 continue;
             }
@@ -58,6 +61,7 @@ impl ChatSession {
         // A question that has been answered keeps no box: the card it belonged
         // to is a record now and draws no controls at all.
         self.ask_inputs.retain(|(idx, _), _| live.contains(idx));
+        self.ask_places.retain(|idx, _| live.contains(idx));
         self.ask_focus.retain(|idx, _| live.contains(idx));
         // Handles only: which card takes the caret is settled once both
         // kinds are known, in [`Self::sync_perm_focus`].
@@ -89,9 +93,7 @@ impl ChatSession {
                 match ev {
                     InputEvent::Change => {
                         let text = state.read(cx).value().to_string();
-                        if let Some(a) = s.chat.chat_mut().ask_at_mut(idx) {
-                            a.set_custom(field, text);
-                        }
+                        s.ask_type(idx, field, text, cx);
                         cx.notify();
                     }
                     // Enter is the only key that finishes the card: the choices above it answer on a
@@ -100,13 +102,7 @@ impl ChatSession {
                     // typed and nothing picked sends nothing -- an empty accept
                     // is an answer the agent cannot read.
                     InputEvent::PressEnter { shift: false, .. } => {
-                        if s.chat
-                            .chat_mut()
-                            .ask_at_mut(idx)
-                            .is_some_and(|a| a.has_answer())
-                        {
-                            s.chat.chat_mut().answer_ask(idx, false);
-                        }
+                        s.ask_submit(idx, cx);
                         cx.notify();
                     }
                     _ => {}
@@ -215,13 +211,81 @@ impl ChatSession {
     /// raises no change event, so neither half tells the other. Cleared one at
     /// a time, the box goes on showing words nothing will send — which is the
     /// one thing a form must never do.
-    pub fn clear_ask_input(&mut self, idx: usize, field: usize, window: &mut Window, cx: &mut App) {
-        if let Some(a) = self.chat.chat_mut().ask_at_mut(idx) {
-            a.set_custom(field, String::new());
-        }
+    pub fn clear_ask_input(
+        &mut self,
+        idx: usize,
+        field: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.ask_type(idx, field, String::new(), cx);
         let state = self.ask_inputs.get(&(idx, field)).map(|i| i.state.clone());
         if let Some(state) = state {
             state.update(cx, |state, cx| state.set_value("", window, cx));
+        }
+    }
+}
+
+impl ChatSession {
+    /// Where the reader is on the open question at `idx`.
+    pub fn ask_place(&self, idx: usize) -> AskPlace {
+        self.ask_places.get(&idx).copied().unwrap_or_default()
+    }
+
+    /// Put the reader at `place` on the open question at `idx`.
+    pub fn set_ask_place(&mut self, idx: usize, place: AskPlace) {
+        self.ask_places.insert(idx, place);
+    }
+
+    /// Answer the permission card at `idx` with `option_id`.
+    pub fn answer_permission(&mut self, idx: usize, option_id: &str, cx: &mut Context<Self>) {
+        let fx = self.chat.answer_permission(idx, option_id);
+        self.perform(fx, cx);
+    }
+
+    /// Pick `option` of `field` on the question at `idx`, the keyboard landing
+    /// on it; see [`onehand_core::chat::SessionDrive::ask_pick`].
+    pub fn ask_pick(&mut self, idx: usize, field: usize, option: usize, cx: &mut Context<Self>) {
+        let mut place = self.ask_place(idx);
+        place.point_at(option);
+        self.set_ask_place(idx, place);
+        let (_, fx) = self.chat.ask_pick(idx, field, option);
+        self.perform(fx, cx);
+    }
+
+    /// Type `text` as the answer to `field` of the question at `idx`.
+    pub fn ask_type(&mut self, idx: usize, field: usize, text: String, cx: &mut Context<Self>) {
+        let fx = self.chat.ask_type(idx, field, text);
+        self.perform(fx, cx);
+    }
+
+    /// Pass on `field` of the question at `idx`, showing the next one if the
+    /// form goes on; see [`onehand_core::chat::SessionDrive::ask_skip`].
+    pub fn ask_skip(&mut self, idx: usize, field: usize, cx: &mut Context<Self>) {
+        let (next, fx) = self.chat.ask_skip(idx, field);
+        self.show_question(idx, next);
+        self.perform(fx, cx);
+    }
+
+    /// Move the question at `idx` on from `field`; see
+    /// [`onehand_core::chat::SessionDrive::ask_advance`].
+    pub fn ask_advance(&mut self, idx: usize, field: usize, cx: &mut Context<Self>) {
+        let (next, fx) = self.chat.ask_advance(idx, field);
+        self.show_question(idx, next);
+        self.perform(fx, cx);
+    }
+
+    /// Send the question at `idx` as it stands, if it holds an answer.
+    pub fn ask_submit(&mut self, idx: usize, cx: &mut Context<Self>) {
+        let fx = self.chat.ask_submit(idx);
+        self.perform(fx, cx);
+    }
+
+    fn show_question(&mut self, idx: usize, next: Option<usize>) {
+        if let Some(field) = next {
+            let mut place = self.ask_place(idx);
+            place.go_to(field);
+            self.set_ask_place(idx, place);
         }
     }
 }

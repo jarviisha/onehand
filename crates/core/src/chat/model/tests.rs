@@ -147,33 +147,6 @@ fn blank_custom_title_is_ignored() {
 }
 
 #[test]
-fn tool_out_sections_fold_independently() {
-    // Two text outputs on one tool must fold independently (per-section
-    // indices in `out_open`), and the whole-card fold is its own flag.
-    let mut chat = Chat::default();
-    chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
-        id: "t1".into(),
-        title: "cmd".into(),
-        description: None,
-        kind: crate::acp::ToolKind::Other,
-        status: ToolStatus::Completed,
-        content: vec![],
-    })));
-    chat.toggle_tool_output(TranscriptItemId::Live(0), 0);
-    let ChatItem::Tool(t) = &chat.items[0] else {
-        panic!()
-    };
-    assert!(t.out_open.contains(&0));
-    assert!(!t.out_open.contains(&1));
-    assert!(!t.is_open(), "completed + unfolded card stays collapsed");
-    chat.toggle_tool(TranscriptItemId::Live(0));
-    let ChatItem::Tool(t) = &chat.items[0] else {
-        panic!()
-    };
-    assert!(t.is_open());
-}
-
-#[test]
 fn only_running_tools_start_open() {
     let call = |status| ToolCall {
         id: "t".into(),
@@ -183,50 +156,32 @@ fn only_running_tools_start_open() {
         status,
         content: vec![],
     };
-    assert!(ToolItem::new(call(ToolStatus::InProgress)).is_open());
-    assert!(!ToolItem::new(call(ToolStatus::Completed)).is_open());
-    assert!(!ToolItem::new(call(ToolStatus::Pending)).is_open());
-    // A failure opens itself too, but through the fold rather than through
-    // this -- see `a_failure_opens_itself_and_can_still_be_shut`.
-    assert!(!ToolItem::new(call(ToolStatus::Failed)).is_open());
+    assert!(ToolItem::new(call(ToolStatus::InProgress)).opens_by_itself());
+    assert!(!ToolItem::new(call(ToolStatus::Completed)).opens_by_itself());
+    assert!(!ToolItem::new(call(ToolStatus::Pending)).opens_by_itself());
+    // A failure opens itself too, but only as it happens, in `apply` -- see
+    // `a_failure_opens_itself`. One read back from disk does not.
+    assert!(!ToolItem::new(call(ToolStatus::Failed)).opens_by_itself());
 }
 
-/// A plan stays open until the user closes it; a thought opens while it
-/// runs and closes once done; a running step can be shut while it runs.
+/// A thought runs open and settles closed: what the reader chooses on top of
+/// that is the front end's.
 #[test]
-fn what_runs_starts_open_and_the_plan_always_does() {
-    assert!(PlanItem::new(Vec::new()).is_open());
-
+fn a_thought_runs_then_settles() {
     let mut chat = Chat::default();
+    told(&mut chat);
     chat.push_user("go".into(), Vec::new(), crate::chat::store::now_secs());
     chat.apply(AcpEvent::ThoughtChunk("hm".into()));
-    let thinking = |chat: &Chat| match &chat.items[1] {
-        ChatItem::Thought(th) => (th.is_running(), th.is_open()),
+    let running = |chat: &Chat| match &chat.items[1] {
+        ChatItem::Thought(th) => th.is_running(),
         _ => panic!(),
     };
-    assert_eq!(thinking(&chat), (true, true), "a live thought is open");
+    assert!(running(&chat), "a live thought runs");
     chat.apply(AcpEvent::AgentChunk {
         text: "done".into(),
         message: None,
     });
-    assert_eq!(thinking(&chat), (false, false), "and closes once done");
-    chat.toggle_thought(TranscriptItemId::Live(1));
-    assert_eq!(thinking(&chat), (false, true), "the user's open wins");
-
-    chat.apply(AcpEvent::ToolCall(ToolCall {
-        id: "live".into(),
-        title: "cargo test".into(),
-        description: None,
-        kind: crate::acp::ToolKind::Execute,
-        status: ToolStatus::InProgress,
-        content: vec![],
-    }));
-    let at = chat.items.len() - 1;
-    chat.toggle_tool(TranscriptItemId::Live(at));
-    assert!(
-        matches!(&chat.items[at], ChatItem::Tool(t) if !t.is_open()),
-        "a running step shuts when told to"
-    );
+    assert!(!running(&chat), "and settles once the answer starts");
 }
 
 /// The paragraph the footer copies is the turn's last, a blank line inside
@@ -250,28 +205,15 @@ fn the_closing_paragraph_is_the_last_one() {
     assert_eq!(chat.turn_closing(TranscriptItemId::Live(1)), "Then this.");
 }
 
-/// **A failure opens itself, and the user can still shut it.**
-///
-/// The second half is the trap. Written as `is_open() = fold || Failed`,
-/// which is how the running case is written, a terminal status forces the
-/// row open *for ever*: the control that shuts it does nothing, and the one
-/// state that most wants a way out is the one with none. Running gets away
-/// with the OR because it stops being true on its own.
+/// **A failure opens itself**, as it happens: arriving failed, or breaking
+/// mid-turn. That the reader can still shut it is the front end's, which
+/// keeps the reader's choice above this.
 #[test]
-fn a_failure_opens_itself_and_can_still_be_shut() {
+fn a_failure_opens_itself() {
     let mut chat = Chat::default();
-    chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
-        id: "failed".into(),
-        title: "cargo test".into(),
-        description: None,
-        kind: crate::acp::ToolKind::Execute,
-        status: ToolStatus::Failed,
-        content: vec![ToolContent::Text("Exit code 1".into())],
-    })));
-
-    let open = |chat: &Chat| match &chat.items[0] {
-        ChatItem::Tool(tool) => tool.is_open(),
-        _ => false,
+    let opens = |chat: &Chat, at: usize| match &chat.items[at] {
+        ChatItem::Tool(tool) => tool.opens_by_itself(),
+        _ => panic!("not a step"),
     };
     // Arriving already failed is how an adapter reports a step it never
     // started, and it opens on the same rule.
@@ -283,18 +225,8 @@ fn a_failure_opens_itself_and_can_still_be_shut() {
         status: ToolStatus::Failed,
         content: vec![],
     }));
-    let late = chat.items.len() - 1;
-    assert!(
-        matches!(&chat.items[late], ChatItem::Tool(t) if t.is_open()),
-        "a failure opens itself"
-    );
-    chat.toggle_tool(TranscriptItemId::Live(late));
-    assert!(
-        matches!(&chat.items[late], ChatItem::Tool(t) if !t.is_open()),
-        "and shuts when told to"
-    );
+    assert!(opens(&chat, chat.items.len() - 1), "a failure opens itself");
 
-    // And a step that *becomes* a failure mid-turn does the same.
     chat.apply(crate::acp::AcpEvent::ToolCall(ToolCall {
         id: "running".into(),
         title: "cargo test".into(),
@@ -312,24 +244,39 @@ fn a_failure_opens_itself_and_can_still_be_shut() {
             content: None,
         },
     ));
-    let broke = chat.items.len() - 1;
     assert!(
-        matches!(&chat.items[broke], ChatItem::Tool(t) if t.is_open()),
+        opens(&chat, chat.items.len() - 1),
         "a step that breaks opens itself"
     );
-    chat.toggle_tool(TranscriptItemId::Live(broke));
+
+    chat.apply(crate::acp::AcpEvent::ToolCall(ToolCall {
+        id: "done".into(),
+        title: "ls".into(),
+        description: None,
+        kind: crate::acp::ToolKind::Execute,
+        status: ToolStatus::InProgress,
+        content: vec![],
+    }));
+    chat.apply(crate::acp::AcpEvent::ToolUpdate(
+        crate::acp::ToolCallUpdate {
+            id: "done".into(),
+            status: Some(ToolStatus::Completed),
+            title: None,
+            description: None,
+            content: None,
+        },
+    ));
     assert!(
-        matches!(&chat.items[broke], ChatItem::Tool(t) if !t.is_open()),
-        "and shuts when told to"
+        !opens(&chat, chat.items.len() - 1),
+        "a step that finishes closes"
     );
-    let _ = open;
 }
 
 #[test]
 fn plan_updates_replace_in_place_per_turn() {
     // The agent republishes the full checklist on every change: within one
-    // turn the card updates in place (fold survives); a new turn gets its
-    // own card.
+    // turn the card updates in place, so it keeps its place and whatever the
+    // reader chose for it; a new turn gets its own card.
     let entry = |s: &str, st| PlanEntry {
         content: s.into(),
         status: st,
@@ -337,7 +284,6 @@ fn plan_updates_replace_in_place_per_turn() {
     let mut chat = Chat::default();
     chat.push_user("go".into(), Vec::new(), crate::chat::store::now_secs());
     chat.apply(AcpEvent::Plan(vec![entry("a", PlanStatus::Pending)]));
-    chat.toggle_tool(TranscriptItemId::Live(1)); // user closes the card
     chat.apply(AcpEvent::Plan(vec![
         entry("a", PlanStatus::Completed),
         entry("b", PlanStatus::InProgress),
@@ -352,10 +298,9 @@ fn plan_updates_replace_in_place_per_turn() {
         .collect();
     assert_eq!(plans.len(), 1, "same turn replaces in place");
     assert_eq!(plans[0].entries.len(), 2);
-    assert!(plans[0].fold, "user fold survives the update");
     assert!(
-        !plans[0].is_open(),
-        "the user's close wins over a running step"
+        matches!(chat.items[1], ChatItem::Plan(_)),
+        "at the place it was first put"
     );
 
     chat.push_user("next".into(), Vec::new(), crate::chat::store::now_secs());
@@ -932,11 +877,12 @@ fn ask_item() -> AskItem {
 #[test]
 fn tab_clamps_and_answered_tracks_picks_and_text() {
     let mut a = ask_item();
-    assert_eq!(a.active_field(), 0);
-    a.tab = 1;
-    assert_eq!(a.active_field(), 1);
-    a.tab = 9; // a stale cursor never points off the end of the form
-    assert_eq!(a.active_field(), 1);
+    let mut place = AskPlace::default();
+    assert_eq!(place.active_field(&a), 0);
+    place.go_to(1);
+    assert_eq!(place.active_field(&a), 1);
+    place.go_to(9); // a stale place never points off the end of the form
+    assert_eq!(place.active_field(&a), 1);
 
     assert!(!a.field_answered(0) && !a.field_answered(1));
     a.toggle(1, 0);
@@ -1022,7 +968,6 @@ fn skipping_drops_the_answer_and_walks_on() {
     a.set_custom(0, "mine".into());
     // Not stepped over: a half-typed line left behind would be sent.
     assert!(!a.skip_field(0), "there is a question after this one");
-    assert_eq!(a.tab, 1);
     assert!(!a.field_answered(0));
     assert_eq!(a.custom[0], "");
     // The last question has nowhere to walk to, so skipping it settles the
@@ -1033,17 +978,23 @@ fn skipping_drops_the_answer_and_walks_on() {
 #[test]
 fn a_tab_jumped_back_to_still_holds_its_answer() {
     let mut a = ask_item();
+    let mut place = AskPlace::default();
     a.toggle(0, 1);
-    a.go_to(1);
+    place.go_to(1);
+    place.move_cursor(&a, 1, 1);
     a.toggle(1, 0);
-    a.go_to(0);
+    place.go_to(0);
     assert_eq!(a.picked[0], vec![1], "the earlier pick survived the trip");
-    assert_eq!(a.cursor, 0, "and the keyboard starts at the top of it");
+    assert_eq!(
+        place.cursor_row(&a, 0),
+        Some(AskRow::Choice(0)),
+        "and the keyboard starts at the top of it"
+    );
 }
 
 #[test]
 fn the_cursor_walks_the_choices_and_the_typed_answer_as_one_list() {
-    let mut a = ask_item();
+    let a = ask_item();
     // Two choices and an "Other" box.
     assert_eq!(a.row_count(0), 3);
     assert_eq!(a.row(0, 2), Some(AskRow::Custom));
@@ -1052,19 +1003,19 @@ fn the_cursor_walks_the_choices_and_the_typed_answer_as_one_list() {
     assert_eq!(a.row_count(1), 2);
     assert_eq!(a.row(1, 2), None);
 
-    assert_eq!(a.cursor_row(0), Some(AskRow::Choice(0)));
-    a.move_cursor(0, 1);
-    assert_eq!(a.cursor_row(0), Some(AskRow::Choice(1)));
-    a.move_cursor(0, 1);
-    assert_eq!(a.cursor_row(0), Some(AskRow::Custom));
-    a.move_cursor(0, 1);
-    assert_eq!(a.cursor_row(0), Some(AskRow::Choice(0)), "it wraps");
-    a.move_cursor(0, -1);
-    assert_eq!(a.cursor_row(0), Some(AskRow::Custom), "both ways");
-    // A cursor left past the end of a shorter question lands on its last
-    // row rather than on nothing.
-    assert_eq!(a.cursor, 2);
-    assert_eq!(a.cursor_row(1), Some(AskRow::Choice(1)));
+    let mut place = AskPlace::default();
+    assert_eq!(place.cursor_row(&a, 0), Some(AskRow::Choice(0)));
+    place.move_cursor(&a, 0, 1);
+    assert_eq!(place.cursor_row(&a, 0), Some(AskRow::Choice(1)));
+    place.move_cursor(&a, 0, 1);
+    assert_eq!(place.cursor_row(&a, 0), Some(AskRow::Custom));
+    place.move_cursor(&a, 0, 1);
+    assert_eq!(place.cursor_row(&a, 0), Some(AskRow::Choice(0)), "it wraps");
+    place.move_cursor(&a, 0, -1);
+    assert_eq!(place.cursor_row(&a, 0), Some(AskRow::Custom), "both ways");
+    // A cursor left past the end of a shorter question (on row 2 of the
+    // first) lands on its last row rather than on nothing.
+    assert_eq!(place.cursor_row(&a, 1), Some(AskRow::Choice(1)));
 }
 
 #[test]
@@ -1143,12 +1094,12 @@ fn a_parked_question_reads_as_awaiting_the_user() {
 /// lost or double-counted if a front end reimplemented the guard.
 #[test]
 fn submit_sends_a_prompt_and_opens_a_turn() {
-    let (mut chat, mut rx) = chat_with_tx();
+    let (mut chat, _rx) = chat_with_tx();
 
     assert!(chat.submit("  build it  ", &[]));
     assert!(chat.busy, "a sent prompt opens a turn");
     assert!(matches!(
-        rx.try_recv(),
+        recv(&mut chat),
         Ok(AcpRequest::Prompt { text, .. }) if text == "build it"
     ));
     assert!(matches!(chat.items.last(), Some(ChatItem::User(u)) if u.text == "build it"));
@@ -1156,7 +1107,7 @@ fn submit_sends_a_prompt_and_opens_a_turn() {
 
 #[test]
 fn submit_refuses_and_records_nothing() {
-    let (mut chat, mut rx) = chat_with_tx();
+    let (mut chat, _rx) = chat_with_tx();
 
     // Blank with no attachments.
     assert!(!chat.submit("   ", &[]));
@@ -1173,7 +1124,7 @@ fn submit_refuses_and_records_nothing() {
         "a refused prompt leaves no transcript"
     );
     assert!(!chat.busy);
-    assert!(rx.try_recv().is_err());
+    assert!(recv(&mut chat).is_err());
 }
 
 /// The blocker is what a front end draws on Send, so it has to name the
@@ -1446,7 +1397,7 @@ fn cycle_mode_wraps_and_recovers() {
 /// sends a request the adapter has no reading for.
 #[test]
 fn choosing_sends_the_request_the_picker_belongs_to() {
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     let mut chat = Chat::default();
     chat.tx = Some(tx);
     chat.modes = vec![Mode {
@@ -1469,7 +1420,7 @@ fn choosing_sends_the_request_the_picker_belongs_to() {
         chat.choose(MODE_SELECTOR, 0).as_deref(),
         Some("Mode → Plan")
     );
-    assert!(matches!(rx.try_recv(), Ok(AcpRequest::SetMode(m)) if m == "plan"));
+    assert!(matches!(recv(&mut chat), Ok(AcpRequest::SetMode(m)) if m == "plan"));
     assert_eq!(chat.current_mode.as_deref(), Some("plan"));
 
     assert_eq!(
@@ -1478,7 +1429,7 @@ fn choosing_sends_the_request_the_picker_belongs_to() {
         "the sentence is read from the picker, not from what the caller thought it chose"
     );
     assert!(matches!(
-        rx.try_recv(),
+        recv(&mut chat),
         Ok(AcpRequest::SetConfigOption { config_id, value }) if config_id == "effort" && value == "high"
     ));
     assert_eq!(chat.config_options[0].current.as_deref(), Some("high"));
@@ -1489,7 +1440,7 @@ fn choosing_sends_the_request_the_picker_belongs_to() {
 /// model nobody asked for, quietly -- and send nothing to say it had.
 #[test]
 fn choosing_something_that_is_not_there_changes_nothing() {
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     let mut chat = Chat::default();
     chat.tx = Some(tx);
     chat.modes = vec![Mode {
@@ -1500,7 +1451,7 @@ fn choosing_something_that_is_not_there_changes_nothing() {
     assert_eq!(chat.choose(MODE_SELECTOR, 9), None, "no such choice");
     assert_eq!(chat.choose("model", 0), None, "no such group");
     assert_eq!(chat.current_mode, None);
-    assert!(rx.try_recv().is_err(), "nothing may reach the adapter");
+    assert!(recv(&mut chat).is_err(), "nothing may reach the adapter");
 }
 
 /// Until the handshake lands there is no agent to be doing anything, so
@@ -1555,7 +1506,6 @@ fn a_question_waits_for_an_answer_and_a_permission_for_approval() {
         req: permission("cargo test"),
         resolved: None,
         asker: None,
-        expanded: false,
     }));
     assert_eq!(
         chat.activity_status().as_deref(),
@@ -1682,20 +1632,19 @@ fn resuming_adopts_transcript_title_prefs_and_date() {
 /// keeps buttons whose click would answer a request nobody is waiting on.
 #[test]
 fn cancelling_resolves_parked_permissions_first() {
-    let (mut chat, mut rx) = chat_with_tx();
+    let (mut chat, _rx) = chat_with_tx();
     chat.busy = true;
     chat.items.push(ChatItem::Permission(PermItem {
         req: permission("rm -rf build"),
         resolved: None,
         asker: None,
-        expanded: false,
     }));
 
     chat.cancel_turn();
 
     assert!(
         matches!(
-            rx.try_recv(),
+            recv(&mut chat),
             Ok(AcpRequest::PermissionResponse {
                 option_id: None,
                 ..
@@ -1703,7 +1652,7 @@ fn cancelling_resolves_parked_permissions_first() {
         ),
         "the parked permission is answered before the cancel"
     );
-    assert!(matches!(rx.try_recv(), Ok(AcpRequest::Cancel)));
+    assert!(matches!(recv(&mut chat), Ok(AcpRequest::Cancel)));
     assert!(!chat.awaiting_permission());
 }
 
@@ -1711,18 +1660,17 @@ fn cancelling_resolves_parked_permissions_first() {
 /// half is how a turn ends up parked forever with live-looking buttons.
 #[test]
 fn answering_a_permission_replies_and_records_the_choice() {
-    let (mut chat, mut rx) = chat_with_tx();
+    let (mut chat, _rx) = chat_with_tx();
     chat.items.push(ChatItem::Permission(PermItem {
         req: permission("rm -rf build"),
         resolved: None,
         asker: None,
-        expanded: false,
     }));
 
     chat.answer_permission(0, "allow-1");
 
     assert!(matches!(
-        rx.try_recv(),
+        recv(&mut chat),
         Ok(AcpRequest::PermissionResponse { option_id: Some(id), .. }) if id == "allow-1"
     ));
     // The card records the *name*, the wire carries the id.
@@ -1749,7 +1697,6 @@ fn copying_a_collapsed_command_takes_all_of_it() {
         req: permission(&script),
         resolved: None,
         asker: None,
-        expanded: false,
     };
 
     assert_eq!(item.command(), script);
@@ -1759,47 +1706,26 @@ fn copying_a_collapsed_command_takes_all_of_it() {
         req: permission(&long_line),
         resolved: None,
         asker: None,
-        expanded: false,
     };
     assert_eq!(one.command(), long_line);
-}
-
-/// Opening is the item's own state, so the card can be rebuilt from
-/// scratch every frame without losing what the reader opened.
-#[test]
-fn opening_a_command_block_survives_in_the_item() {
-    let mut chat = Chat::default();
-    chat.items.push(ChatItem::Permission(PermItem {
-        req: permission(&"echo\n".repeat(20)),
-        resolved: None,
-        asker: None,
-        expanded: false,
-    }));
-
-    chat.toggle_permission(TranscriptItemId::Live(0));
-    let Some(ChatItem::Permission(p)) = chat.items.first() else {
-        panic!("the permission is gone");
-    };
-    assert!(p.expanded);
 }
 
 /// A second click on an answered card would echo an rpc id the adapter has
 /// already resolved -- and after a restart, one it never issued at all.
 #[test]
 fn answering_twice_sends_only_once() {
-    let (mut chat, mut rx) = chat_with_tx();
+    let (mut chat, _rx) = chat_with_tx();
     chat.items.push(ChatItem::Permission(PermItem {
         req: permission("rm -rf build"),
         resolved: None,
         asker: None,
-        expanded: false,
     }));
 
     chat.answer_permission(0, "allow-1");
     chat.answer_permission(0, "reject-1");
 
-    assert!(rx.try_recv().is_ok());
-    assert!(rx.try_recv().is_err(), "the second click must not reply");
+    assert!(recv(&mut chat).is_ok());
+    assert!(recv(&mut chat).is_err(), "the second click must not reply");
     assert!(matches!(
         chat.items.first(),
         Some(ChatItem::Permission(p)) if p.resolved.as_deref() == Some("Allow once")
@@ -1857,7 +1783,7 @@ fn chat_with_tx() -> (Chat, tokio::sync::mpsc::UnboundedReceiver<AcpRequest>) {
 
 #[test]
 fn resume_replays_mode_and_effort_but_never_model() {
-    let (mut chat, mut rx) = chat_with_tx();
+    let (mut chat, _rx) = chat_with_tx();
     chat.arm_prefs(
         Some("plan".into()),
         vec![
@@ -1871,7 +1797,7 @@ fn resume_replays_mode_and_effort_but_never_model() {
     chat.reapply_prefs();
 
     let mut sent = Vec::new();
-    while let Ok(req) = rx.try_recv() {
+    while let Ok(req) = recv(&mut chat) {
         sent.push(req);
     }
     // Mode + effort replayed; model deliberately absent.
@@ -1892,7 +1818,7 @@ fn resume_replays_mode_and_effort_but_never_model() {
 
 #[test]
 fn resume_skips_values_already_current_or_no_longer_offered() {
-    let (mut chat, mut rx) = chat_with_tx();
+    let (mut chat, _rx) = chat_with_tx();
     chat.arm_prefs(
         Some("default".into()), // already the current mode → no resend
         vec![
@@ -1905,12 +1831,12 @@ fn resume_skips_values_already_current_or_no_longer_offered() {
     // the "not offered" case to keep the assertion unambiguous.
     chat.pending_config = vec![("effort".into(), "bogus".into())];
     chat.reapply_prefs();
-    assert!(rx.try_recv().is_err()); // nothing sent
+    assert!(recv(&mut chat).is_err()); // nothing sent
 }
 
 #[test]
 fn fresh_session_fallback_drops_armed_prefs_unused() {
-    let (mut chat, mut rx) = chat_with_tx();
+    let (mut chat, _rx) = chat_with_tx();
     chat.arm_prefs(Some("plan".into()), vec![("effort".into(), "high".into())]);
     // A `session/new` fallback: resumed=false must not replay anything.
     chat.apply(AcpEvent::Connected {
@@ -1918,7 +1844,7 @@ fn fresh_session_fallback_drops_armed_prefs_unused() {
         resumed: false,
         forkable: false,
     });
-    assert!(rx.try_recv().is_err());
+    assert!(recv(&mut chat).is_err());
     assert!(chat.pending_mode.is_none());
     assert!(chat.pending_config.is_empty());
 }
@@ -2616,16 +2542,6 @@ fn picks_waiting_until_the_agent_answers() {
 }
 
 #[test]
-fn the_scanned_files_bring_their_folders() {
-    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "a".into(), None);
-    assert!(!chat.files_scanned);
-    chat.set_files(vec!["src/a.rs".into(), "src/b.rs".into()]);
-    assert!(chat.files_scanned);
-    assert_eq!(chat.files.len(), 2);
-    assert_eq!(chat.folders, crate::completion::folders(&chat.files));
-}
-
-#[test]
 fn a_stream_that_ends_leaves_no_turn_running() {
     let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "a".into(), None);
     chat.busy = true;
@@ -2655,32 +2571,22 @@ fn a_stream_that_ends_after_disconnected_changes_nothing() {
     assert_eq!(seen(&chat), before);
 }
 
+/// Taking the host's line back from under what came after it moves those
+/// items up, which renumbers the transcript; taken back from the end, it
+/// moves nothing.
 #[test]
-fn every_fold_moves_the_fold_counter() {
-    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "a".into(), None);
-    chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
-        id: "t".into(),
-        title: "Read a.rs".into(),
-        description: None,
-        kind: crate::acp::ToolKind::Read,
-        status: ToolStatus::Completed,
-        content: Vec::new(),
-    })));
-    chat.items.push(ChatItem::Thought(Thought {
-        md: Md::parse("weighing it up"),
-        started: None,
-        elapsed_secs: Some(3),
-        fold: None,
-    }));
-    let before = chat.folds();
-    chat.toggle_tool(TranscriptItemId::Live(0));
-    chat.toggle_thought(TranscriptItemId::Live(1));
-    chat.toggle_permission(TranscriptItemId::Live(0));
-    chat.toggle_ask(TranscriptItemId::Live(0));
-    assert_eq!(chat.folds(), before + 4);
-    // A tool's output well changes no run's kind, so it leaves the counter.
-    chat.toggle_tool_output(TranscriptItemId::Live(0), 0);
-    assert_eq!(chat.folds(), before + 4);
+fn a_host_line_taken_back_from_under_others_renumbers() {
+    let mut chat = Chat::default();
+    chat.say_host_wait("Sending the code".into());
+    let before = chat.numbering();
+    chat.unsay_host_wait();
+    assert_eq!(chat.numbering(), before, "from the end, nothing moves");
+
+    chat.say_host_wait("Sending the code".into());
+    chat.items.push(ChatItem::notice("after it".to_string()));
+    chat.unsay_host_wait();
+    assert_ne!(chat.numbering(), before);
+    assert_eq!(notices(&chat), ["after it"]);
 }
 
 fn notices(chat: &Chat) -> Vec<String> {
@@ -2897,7 +2803,6 @@ fn the_waiting_line_names_the_oldest_card() {
         req: permission("rm -rf build"),
         resolved: None,
         asker: Some("Explorer".into()),
-        expanded: false,
     }));
     assert_eq!(chat.waiting_line().as_deref(), Some("asks: pick"));
     chat.items.remove(0);
@@ -2912,6 +2817,7 @@ fn the_waiting_line_names_the_oldest_card() {
 fn connected_chat() -> (Chat, tokio::sync::mpsc::UnboundedReceiver<AcpRequest>) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let mut chat = Chat::default();
+    told(&mut chat);
     chat.apply(AcpEvent::Connected {
         tx,
         resumed: false,
@@ -2922,7 +2828,7 @@ fn connected_chat() -> (Chat, tokio::sync::mpsc::UnboundedReceiver<AcpRequest>) 
 
 #[test]
 fn echoed_prompt_is_a_user_message_and_a_busy_turn() {
-    let (mut chat, mut rx) = connected_chat();
+    let (mut chat, _rx) = connected_chat();
     chat.apply(AcpEvent::Echo(AcpRequest::Prompt {
         text: "build it".into(),
         attachments: vec![],
@@ -2931,12 +2837,12 @@ fn echoed_prompt_is_a_user_message_and_a_busy_turn() {
     assert!(chat.busy);
     assert_eq!(chat.prompts_sent, 1);
     assert!(!chat.cancelled);
-    assert!(rx.try_recv().is_err(), "an echo is never sent");
+    assert!(recv(&mut chat).is_err(), "an echo is never sent");
 }
 
 #[test]
 fn echoed_permission_answer_resolves_the_card_by_rpc_id() {
-    let (mut chat, mut rx) = connected_chat();
+    let (mut chat, _rx) = connected_chat();
     chat.apply(AcpEvent::Permission(permission("run it")));
     chat.apply(AcpEvent::Echo(AcpRequest::PermissionResponse {
         rpc_id: serde_json::json!(7),
@@ -2947,7 +2853,7 @@ fn echoed_permission_answer_resolves_the_card_by_rpc_id() {
         Some(ChatItem::Permission(p)) if p.resolved.as_deref() == Some("Allow once")
     ));
     assert!(chat.pending_permissions().is_empty());
-    assert!(rx.try_recv().is_err());
+    assert!(recv(&mut chat).is_err());
 }
 
 #[test]
@@ -2957,7 +2863,7 @@ fn echoed_question_answer_settles_the_card() {
         chat.apply(AcpEvent::Elicitation(ask_item().req));
         (chat, rx)
     };
-    let (mut chat, mut rx) = ask();
+    let (mut chat, _rx) = ask();
     chat.apply(AcpEvent::Echo(AcpRequest::ElicitationResponse {
         rpc_id: serde_json::json!(1),
         outcome: ElicitOutcome::Decline,
@@ -2966,9 +2872,9 @@ fn echoed_question_answer_settles_the_card() {
         chat.items.last(),
         Some(ChatItem::Ask(a)) if a.resolved.as_deref() == Some("Skipped") && !a.accepted
     ));
-    assert!(rx.try_recv().is_err());
+    assert!(recv(&mut chat).is_err());
 
-    let (mut chat, mut rx) = ask();
+    let (mut chat, _rx) = ask();
     chat.apply(AcpEvent::Echo(AcpRequest::ElicitationResponse {
         rpc_id: serde_json::json!(1),
         outcome: ElicitOutcome::Accept(vec![]),
@@ -2977,12 +2883,12 @@ fn echoed_question_answer_settles_the_card() {
         chat.items.last(),
         Some(ChatItem::Ask(a)) if a.resolved.as_deref() == Some("Answered") && a.accepted
     ));
-    assert!(rx.try_recv().is_err());
+    assert!(recv(&mut chat).is_err());
 }
 
 #[test]
 fn echoed_cancel_settles_parked_cards_without_sending() {
-    let (mut chat, mut rx) = connected_chat();
+    let (mut chat, _rx) = connected_chat();
     chat.apply(AcpEvent::Permission(permission("run it")));
     chat.apply(AcpEvent::Echo(AcpRequest::Cancel));
     assert!(chat.cancelled);
@@ -2992,12 +2898,12 @@ fn echoed_cancel_settles_parked_cards_without_sending() {
     ));
     assert!(chat.pending_permissions().is_empty());
     assert!(chat.tx.is_some(), "the channel is still there to use");
-    assert!(rx.try_recv().is_err());
+    assert!(recv(&mut chat).is_err());
 }
 
 #[test]
 fn echoed_picks_move_the_picker_without_sending_and_stops_change_nothing() {
-    let (mut chat, mut rx) = connected_chat();
+    let (mut chat, _rx) = connected_chat();
     chat.config_options = vec![ConfigOption {
         id: "model".into(),
         name: "Model".into(),
@@ -3018,19 +2924,19 @@ fn echoed_picks_move_the_picker_without_sending_and_stops_change_nothing() {
     assert!(!chat.picks_waiting());
     assert!(chat.items.is_empty());
     assert!(!chat.busy && !chat.cancelled);
-    assert!(rx.try_recv().is_err());
+    assert!(recv(&mut chat).is_err());
 }
 
 #[test]
 fn echoed_permission_answer_for_an_unknown_rpc_id_changes_nothing() {
-    let (mut chat, mut rx) = connected_chat();
+    let (mut chat, _rx) = connected_chat();
     chat.apply(AcpEvent::Permission(permission("run it")));
     chat.apply(AcpEvent::Echo(AcpRequest::PermissionResponse {
         rpc_id: serde_json::json!(99),
         option_id: Some("allow-1".into()),
     }));
     assert_eq!(chat.pending_permissions().len(), 1);
-    assert!(rx.try_recv().is_err());
+    assert!(recv(&mut chat).is_err());
 }
 
 #[test]
@@ -3060,14 +2966,14 @@ fn a_host_replay_sends_the_armed_mode_once_on_the_live_channel() {
     chat.apply(AcpEvent::TurnEnded {
         stop_reason: "end_turn".into(),
     });
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     chat.apply(AcpEvent::Connected {
         tx,
         resumed: true,
         forkable: false,
     });
     let mut sent = Vec::new();
-    while let Ok(request) = rx.try_recv() {
+    while let Ok(request) = recv(&mut chat) {
         sent.push(request);
     }
     assert!(
@@ -3111,7 +3017,7 @@ fn an_echoed_answer_reads_as_the_live_one_did() {
         },
     ];
     for fill in fills {
-        let (mut live, mut rx) = connected_chat();
+        let (mut live, _rx) = connected_chat();
         live.apply(AcpEvent::Elicitation(ask_item().req));
         let at = live.items.len() - 1;
         let Some(ChatItem::Ask(a)) = live.items.last_mut() else {
@@ -3119,7 +3025,7 @@ fn an_echoed_answer_reads_as_the_live_one_did() {
         };
         fill(a);
         live.answer_ask(at, false);
-        let Ok(AcpRequest::ElicitationResponse { rpc_id, outcome }) = rx.try_recv() else {
+        let Ok(AcpRequest::ElicitationResponse { rpc_id, outcome }) = recv(&mut live) else {
             panic!("no answer sent");
         };
         let resolved = |chat: &Chat| match chat.items.last() {
@@ -3379,4 +3285,21 @@ fn a_card_with_its_answer_waits_on_nobody() {
         outcome: crate::acp::ElicitOutcome::Decline,
     }));
     assert!(!chat.awaiting_permission());
+}
+
+/// The next request the chat queued for its agent, read off as its front
+/// end would send it on the channel.
+fn recv(chat: &mut Chat) -> Result<AcpRequest, ()> {
+    match chat.outbox.is_empty() {
+        true => Err(()),
+        false => Ok(chat.outbox.remove(0)),
+    }
+}
+
+/// The time now, told to a chat as its drive would before what it folds.
+fn told(chat: &mut Chat) {
+    chat.tell_time(crate::chat::Now {
+        secs: crate::chat::now_secs(),
+        at: std::time::Instant::now(),
+    });
 }

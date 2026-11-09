@@ -52,7 +52,9 @@ impl ChatPane {
                 | Effect::OfferChanged
                 | Effect::Save(_)
                 | Effect::Arm { .. }
-                | Effect::Disarm => {}
+                | Effect::Disarm
+                | Effect::SaveTitle { .. }
+                | Effect::Request(_) => {}
             }
         }
     }
@@ -82,11 +84,14 @@ impl ChatPane {
                 let _ = cx.update(|window, cx| {
                     let still = composer.read(cx).text(cx) == text;
                     let left = session.update(cx, |session, cx| {
-                        let fx = session.chat.handle(Input::CodeSent {
-                            token,
-                            result,
-                            still,
-                        });
+                        let fx = session.chat.handle(
+                            Input::CodeSent {
+                                token,
+                                result,
+                                still,
+                            },
+                            crate::chat::session::now(),
+                        );
                         let left = session.perform(fx, cx);
                         cx.notify();
                         left

@@ -2,13 +2,13 @@ use super::host::{
     Carried, OfflineStart, Restarted, connection_lost, host_restart, new_chat, offline_line,
     offline_start,
 };
-use crate::acp::HostStart;
 use crate::hosts::HostFailure;
 use onehand_core::acp::Opening;
 use onehand_core::chat::drive::Effect;
 use onehand_core::chat::{ChatItem, SessionDrive};
 use onehand_core::config::AgentSpec;
 use onehand_core::host::wire::{HostSession, SessionInfo};
+use onehand_io::acp::HostStart;
 use std::path::PathBuf;
 
 fn listed(ended: bool) -> SessionInfo {
@@ -27,7 +27,7 @@ fn carried() -> Carried {
     let mut chat = new_chat(1, PathBuf::from("/srv/app"), &AgentSpec::default(), true);
     chat.session_id = Some("acp-1".into());
     Carried {
-        stored: chat.take_snapshot(),
+        stored: onehand_core::chat::SessionDrive::new(chat).take_snapshot(super::now()),
         sent: 2,
         after_service: false,
     }
@@ -187,9 +187,12 @@ fn a_host_chat_has_no_store() {
         chat.session_id = Some("acp-1".into());
         chat.items.push(ChatItem::notice("said".to_string()));
         let mut drive = SessionDrive::new(chat);
-        let (fx, _) = drive.apply(onehand_core::acp::AcpEvent::TurnEnded {
-            stop_reason: "end_turn".into(),
-        });
+        let (fx, _) = drive.apply(
+            onehand_core::acp::AcpEvent::TurnEnded {
+                stop_reason: "end_turn".into(),
+            },
+            super::now(),
+        );
         fx.iter().any(|effect| matches!(effect, Effect::Save(_)))
     };
     assert!(!saves(true), "a host chat writes nothing");
@@ -249,13 +252,13 @@ fn the_offline_line_says_how_recent_the_copy_is() {
 
 mod carrier {
     use super::super::{ChatEvent, ChatSession, Source};
-    use crate::acp::Events;
     use futures::channel::mpsc;
     use gpui::{AppContext as _, Entity, TestAppContext};
     use onehand_core::acp::{AcpEvent, ReqTx};
     use onehand_core::chat::Chat;
     use onehand_core::chat::drive::{Code, Origin, QUIET_SAVE, Signal};
     use onehand_core::config::AgentSpec;
+    use onehand_io::acp::Events;
     use std::cell::RefCell;
     use std::path::PathBuf;
     use std::rc::Rc;
@@ -356,6 +359,26 @@ mod carrier {
             "{seen:?}"
         );
         assert_eq!(seen.iter().filter(|s| **s == Signal::TurnEnded).count(), 1);
+    }
+
+    /// What the drive asks of the agent is sent on its channel, in order:
+    /// the prompt, then the stop.
+    #[gpui::test]
+    fn requests_reach_the_agent_in_order(cx: &mut TestAppContext) {
+        let (session, mut tx, _) = driven(cx, Chat::default());
+        let mut rx = up(&mut tx);
+        cx.run_until_parked();
+        prompt(&session, cx);
+        session.update(cx, |s, cx| s.stop(cx));
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(onehand_core::acp::AcpRequest::Prompt { text, .. }) if text == "go"
+        ));
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(onehand_core::acp::AcpRequest::Cancel)
+        ));
+        assert!(rx.try_recv().is_err(), "each once");
     }
 
     #[gpui::test]
@@ -466,5 +489,97 @@ mod carrier {
         assert_eq!(count(&seen, &Signal::CycleEnded), 0, "{:?}", seen.borrow());
         assert_eq!(failed(&seen), 0, "{:?}", seen.borrow());
         std::fs::remove_file(file).ok();
+    }
+}
+
+// What the reader has open, on top of what an item does by itself.
+
+mod folds {
+    use super::super::{ChatSession, Source};
+    use futures::channel::mpsc;
+    use gpui::{AppContext as _, Entity, TestAppContext};
+    use onehand_core::chat::{Chat, TranscriptItemId};
+    use onehand_core::config::AgentSpec;
+    use onehand_io::acp::Events;
+    use std::time::Instant;
+
+    fn session(
+        cx: &mut TestAppContext,
+    ) -> (
+        Entity<ChatSession>,
+        mpsc::Sender<onehand_core::acp::AcpEvent>,
+    ) {
+        let (tx, rx) = mpsc::channel(8);
+        let source = Source::Local(Events::from_channel(rx));
+        let spec = AgentSpec::default();
+        let session = cx.new(|cx| {
+            ChatSession::begin(
+                Chat::default(),
+                &spec,
+                false,
+                source,
+                Instant::now(),
+                None,
+                cx,
+            )
+        });
+        (session, tx)
+    }
+
+    const STEP: TranscriptItemId = TranscriptItemId::Live(0);
+
+    /// **A failure opens a step, and the reader can still shut it.** Were the
+    /// failure to force the row open, the control that shuts it would do
+    /// nothing in the one state that most wants a way out.
+    #[gpui::test]
+    fn a_step_that_opens_by_itself_shuts_when_told_and_stays_shut(cx: &mut TestAppContext) {
+        let (session, _tx) = session(cx);
+        session.update(cx, |s, _| {
+            assert!(s.item_is_open(STEP, true), "open by itself");
+            s.toggle_item(STEP, true);
+            assert!(!s.item_is_open(STEP, true), "shut when told");
+            // What the item does by itself moves on; the reader's choice keeps.
+            assert!(!s.item_is_open(STEP, false));
+            s.toggle_item(STEP, false);
+            assert!(s.item_is_open(STEP, false), "and opens when told");
+        });
+    }
+
+    #[gpui::test]
+    fn output_wells_open_apart_and_move_no_layout(cx: &mut TestAppContext) {
+        let (session, _tx) = session(cx);
+        session.update(cx, |s, _| {
+            let before = s.folds();
+            s.toggle_out(STEP, 0);
+            assert!(s.out_is_open(STEP, 0));
+            assert!(!s.out_is_open(STEP, 1));
+            assert!(!s.item_is_open(STEP, false), "the card itself stays shut");
+            assert_eq!(s.folds(), before, "an output well moves no run");
+            s.toggle_item(STEP, false);
+            assert_eq!(s.folds(), before + 1, "a card's fold does");
+        });
+    }
+
+    /// Kept by position, a choice made before the transcript was numbered
+    /// afresh would land on another item.
+    #[gpui::test]
+    fn a_renumbered_transcript_forgets_what_was_open(cx: &mut TestAppContext) {
+        let (session, _tx) = session(cx);
+        session.update(cx, |s, cx| {
+            let fx = s.chat.say_host_wait("Sending the code".into());
+            s.perform(fx, cx);
+            let fx = s.chat.note("after it".to_string());
+            s.perform(fx, cx);
+            let after = TranscriptItemId::Live(1);
+            s.toggle_item(after, false);
+            s.toggle_out(after, 0);
+            let fx = s.chat.unsay_host_wait();
+            s.perform(fx, cx);
+            s.sync_md(cx);
+            // The item moved up to where the line was; its old place is now
+            // nobody's, and what was chosen there is gone with the numbering.
+            assert!(!s.item_is_open(after, false));
+            assert!(!s.out_is_open(after, 0));
+        });
     }
 }

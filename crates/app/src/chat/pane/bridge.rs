@@ -1,7 +1,7 @@
 use super::{ANSWER_TAIL_MAX, ChatPane, QUOTED_PROMPT_MAX, SETTLED};
 use gpui::{App, Context};
-use onehand_core::chat::drive::{Code, Intake, Origin, Refusal};
-use onehand_core::chat::{Away, Chat, ChatItem, Presence, SessionSignal, Telling};
+use onehand_core::chat::drive::{Code, Effect, Intake, Origin, Refusal};
+use onehand_core::chat::{Away, ChatItem, Presence, SessionDrive, SessionSignal, Telling};
 use onehand_core::remote::types::Button;
 use onehand_core::remote::{Press, press};
 
@@ -403,7 +403,8 @@ impl ChatPane {
     pub fn remote_answer(&mut self, press: Press, cx: &mut Context<Self>) -> Option<String> {
         let session = self.session_of(press.uid())?.clone();
         let said = session.update(cx, |session, cx| {
-            let said = Self::apply_press(session.chat.chat_mut(), press);
+            let (said, fx) = Self::apply_press(&mut session.chat, press);
+            session.perform(fx, cx);
             cx.notify();
             said
         });
@@ -418,17 +419,18 @@ impl ChatPane {
     /// long as it is scrollable, and a card that has since been answered — in
     /// the window, or by an earlier press — has to be reported as settled rather
     /// than have the press slide onto the next unanswered one.
-    fn apply_press(chat: &mut Chat, press: Press) -> String {
+    fn apply_press(chat: &mut SessionDrive, press: Press) -> (String, Vec<Effect>) {
         // Every press that names a card names one; the picker is the one that
         // does not, and it is the arm that never reads this.
         let item = press.item().unwrap_or_default();
+        let said = |words: &str| (words.to_string(), Vec::new());
         match press {
             Press::Permission { option, .. } => {
                 let Some(ChatItem::Permission(perm)) = chat.items.get(item) else {
-                    return SETTLED.to_string();
+                    return said(SETTLED);
                 };
                 if perm.resolved.is_some() {
-                    return SETTLED.to_string();
+                    return said(SETTLED);
                 }
                 let options = perm.req.options.clone();
                 // An index that names nothing lands on a refusal rather than on
@@ -436,50 +438,49 @@ impl ChatPane {
                 // must not be able to grant something, and must not silently
                 // leave the agent parked either.
                 let Some(chosen) = press::option_at(&options, option) else {
-                    return "That permission offers nothing this can answer with.".to_string();
+                    return said("That permission offers nothing this can answer with.");
                 };
                 let (id, name) = (chosen.id.clone(), chosen.name.clone());
-                chat.answer_permission(item, &id);
-                format!("{name}.")
+                (format!("{name}."), chat.answer_permission(item, &id))
             }
             Press::Question { choice, .. } => {
                 // The same guard the buttons were built behind, checked again
                 // here: a message outlives the form it was drawn for, and an
                 // unanswerable pick would otherwise settle the card with an
                 // empty answer.
-                let picked = chat.ask_at_mut(item).and_then(|ask| {
-                    let label = ask
-                        .req
-                        .fields
-                        .first()?
-                        .kind
-                        .choices()
-                        .get(choice)?
-                        .label
-                        .clone();
-                    ask.toggle(0, choice);
-                    Some(label)
+                let label = chat.ask_at(item).and_then(|ask| {
+                    let field = ask.req.fields.first()?;
+                    Some(field.kind.choices().get(choice)?.label.clone())
                 });
-                let Some(label) = picked else {
-                    return SETTLED.to_string();
+                let Some(label) = label else {
+                    return said(SETTLED);
                 };
-                chat.answer_ask(item, false);
-                format!("{label}.")
+                // Sent whatever shape the form is: the press is the answer.
+                let (settled, mut fx) = chat.ask_pick(item, 0, choice);
+                if !settled {
+                    fx.extend(chat.ask_submit(item));
+                }
+                (format!("{label}."), fx)
             }
             Press::Skip { .. } => {
-                if chat.ask_at_mut(item).is_none() {
-                    return SETTLED.to_string();
+                if chat.ask_at(item).is_none() {
+                    return said(SETTLED);
                 }
-                chat.answer_ask(item, true);
-                "Skipped — the agent carries on without an answer.".to_string()
+                let fx = chat.ask_decline(item);
+                (
+                    "Skipped — the agent carries on without an answer.".to_string(),
+                    fx,
+                )
             }
             // Not a card, so none of the transcript bookkeeping above applies:
             // what the agent offers is live, and the model refuses a group or a
             // choice that has moved rather than settling for the nearest.
             Press::Option { group, choice, .. } => {
-                chat.choose(&group, choice).unwrap_or_else(|| {
+                let (chosen, fx) = chat.choose(&group, choice);
+                let words = chosen.unwrap_or_else(|| {
                     "That isn't offered any more — ask for /options again.".to_string()
-                })
+                });
+                (words, fx)
             }
         }
     }

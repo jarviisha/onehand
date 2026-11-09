@@ -72,7 +72,8 @@ pub(super) fn tool(
 ) -> impl IntoElement + use<> {
     let root = session.read(cx).chat.root.clone();
     let presented = activity::presentation(t);
-    let open = t.is_open();
+    let opens = t.opens_by_itself();
+    let open = session.read(cx).item_is_open(target, opens);
     // **The live stream, while there is one.** A command that is still running
     // has its output in the session's terminal map rather than in the card --
     // the model folds it in at turn end -- so a detail built from the card's
@@ -88,7 +89,7 @@ pub(super) fn tool(
         let session = session.clone();
         move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
             session.update(cx, |s, cx| {
-                s.chat.chat_mut().toggle_tool(target);
+                s.toggle_item(target, opens);
                 cx.notify();
             });
         }
@@ -319,7 +320,7 @@ fn detail_frame(
     let key = fold_key(target);
     let body = div().flex_1().min_w_0().map(|well| match detail {
         Detail::Command { command, output } => {
-            command_detail(session, t, target, &command, &output, well, cx)
+            command_detail(session, target, &command, &output, well, cx)
         }
         Detail::Diffs => diff_detail(session, t, target, well, cx),
         Detail::Image(bytes) => well.p_3().map(|well| {
@@ -384,14 +385,13 @@ fn detail_frame(
 /// where the way to them is offered.
 fn command_detail(
     session: &Entity<ChatSession>,
-    t: &ToolItem,
     target: TranscriptItemId,
     command: &str,
     output: &str,
     well: gpui::Div,
     cx: &App,
 ) -> gpui::Div {
-    let open = t.out_open.contains(&0);
+    let open = session.read(cx).out_is_open(target, 0);
     let lines: Vec<&str> = output.lines().collect();
     let cap = match open {
         true => MAX_MONO_LINES,
@@ -477,7 +477,7 @@ fn fold_link(
         show_more(("detail-fold", fold_key(target)), label, cx).on_click(
             move |_, _, cx: &mut App| {
                 session.update(cx, |s, cx| {
-                    s.chat.chat_mut().toggle_tool_output(target, 0);
+                    s.toggle_out(target, 0);
                     cx.notify();
                 });
             },

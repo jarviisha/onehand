@@ -1,9 +1,10 @@
+use super::Now;
 use crate::acp::{
     ElicitKind, ElicitValue, Elicitation, PermissionRequest, PlanEntry, ToolCall, ToolContent,
     ToolStatus,
 };
 use crate::attachment::AttachmentSnapshot;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::time::Instant;
 
 /// Max bytes of terminal output retained per terminal (tail kept).
@@ -34,13 +35,6 @@ pub struct PermItem {
     pub resolved: Option<String>,
     /// The subagent that asks, by name; `None` when it is the agent itself.
     pub asker: Option<String>,
-    /// Whether the record an answered permission leaves is open to the whole
-    /// command and where it ran.
-    ///
-    /// Held on the item and not on the row that draws it, for the reason every
-    /// other fold in this conversation is: the row is rebuilt from scratch on
-    /// every frame.
-    pub expanded: bool,
 }
 
 impl PermItem {
@@ -88,30 +82,6 @@ pub struct AskItem {
     pub custom: Vec<String>,
     /// A one-line summary of the answer once settled (controls then disable).
     pub resolved: Option<String>,
-    /// Whether the settled record of this exchange is showing its
-    /// question-and-answer pairs.
-    ///
-    /// **Only ever read once the form is answered.** While it is open the card
-    /// is on screen whole and there is nothing to unfold; what this folds is
-    /// the record left behind afterwards, which is one line by default and the
-    /// list of what was asked and what was chosen when opened. Held here for
-    /// the reason every other fold in this conversation is: the row is rebuilt
-    /// from scratch on every frame, so a flag owned by the view lasts exactly
-    /// as long as nothing else on screen changes.
-    pub expanded: bool,
-    /// Which question the card is showing. A multi-question form renders as a
-    /// tab strip (one tab per field) with only the active field's choices
-    /// below it — stacking them all made a form taller than the pane, and the
-    /// overflow was simply lost off the top of the sticky bar.
-    pub tab: usize,
-    /// Which row of the showing question the keyboard is on.
-    ///
-    /// Held here rather than in the card that draws it, for the reason every
-    /// other cursor in this app is: the card is rebuilt from scratch on every
-    /// frame, so a highlight owned by the view survives exactly as long as
-    /// nothing else on screen changes — and what changes while a form is open
-    /// is the agent still streaming underneath it.
-    pub cursor: usize,
     /// Whether the answers were sent. A form skipped or cancelled keeps
     /// whatever was picked on it, none of which reached the agent.
     pub(crate) accepted: bool,
@@ -134,6 +104,66 @@ pub enum AskRow {
     Custom,
 }
 
+/// Where a reader is on an open question card: which question it shows, and
+/// which row of it the keyboard is on.
+///
+/// **View state, with its rules here.** A front end keeps one per card, since
+/// two readers may look at different questions of one form; how it moves
+/// (clamped to the form, wrapping at the ends, back to the top on another
+/// question) is the same for every front end, so it is written once.
+///
+/// A multi-question form shows one question at a time behind a strip of tabs:
+/// stacking them all made a form taller than the pane.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AskPlace {
+    tab: usize,
+    cursor: usize,
+}
+
+impl AskPlace {
+    /// The showing question of `ask`, clamped: a form is never empty (an
+    /// empty schema is declined before it becomes a card).
+    pub fn active_field(&self, ask: &AskItem) -> usize {
+        self.tab.min(ask.req.fields.len().saturating_sub(1))
+    }
+
+    /// Show `field`, from its first row.
+    ///
+    /// The cursor goes back to the top rather than being carried over: it is a
+    /// place in *this* question's list, and a question with two choices
+    /// followed by one with five would otherwise open on whichever row the last
+    /// one was left on.
+    pub fn go_to(&mut self, field: usize) {
+        self.tab = field;
+        self.cursor = 0;
+    }
+
+    /// Put the keyboard on row `n` of the showing question.
+    pub fn point_at(&mut self, n: usize) {
+        self.cursor = n;
+    }
+
+    /// The row the keyboard is on, clamped: a cursor left past the end of a
+    /// shorter question lands on its last row rather than on nothing.
+    pub fn cursor_row(&self, ask: &AskItem, field: usize) -> Option<AskRow> {
+        ask.row(
+            field,
+            self.cursor.min(ask.row_count(field).saturating_sub(1)),
+        )
+    }
+
+    /// Walk the cursor, wrapping at both ends: a list this short is one the eye
+    /// holds whole, so stopping at the bottom only costs presses.
+    pub fn move_cursor(&mut self, ask: &AskItem, field: usize, delta: isize) {
+        let rows = ask.row_count(field);
+        if rows == 0 {
+            return;
+        }
+        let at = self.cursor.min(rows - 1) as isize;
+        self.cursor = (at + delta).rem_euclid(rows as isize) as usize;
+    }
+}
+
 impl AskItem {
     /// Record how the question ended.
     pub(crate) fn settle(&mut self, resolved: String, accepted: bool) {
@@ -149,18 +179,9 @@ impl AskItem {
             picked: vec![Vec::new(); n],
             custom: vec![String::new(); n],
             resolved: None,
-            expanded: false,
-            tab: 0,
-            cursor: 0,
             accepted: false,
             none: vec![false; n],
         }
-    }
-
-    /// The showing question, clamped — `tab` is a view cursor, and a form is
-    /// never empty (an empty schema is declined before it becomes a card).
-    pub fn active_field(&self) -> usize {
-        self.tab.min(self.req.fields.len().saturating_sub(1))
     }
 
     /// Whether `field` carries an answer yet — drives the tab's done tick, so
@@ -186,17 +207,13 @@ impl AskItem {
     /// Move on from `field`, recording an empty multi-select as answered with
     /// none. Answers `true` when it was the last question, which is the
     /// caller's cue to settle the form. Call only where [`Self::may_advance`].
-    pub fn advance(&mut self, field: usize) -> bool {
+    pub(crate) fn advance(&mut self, field: usize) -> bool {
         if !self.field_answered(field) {
             if let Some(none) = self.none.get_mut(field) {
                 *none = true;
             }
         }
-        if self.is_last(field) {
-            return true;
-        }
-        self.go_to(field + 1);
-        false
+        self.is_last(field)
     }
 
     /// How many questions carry an answer.
@@ -223,7 +240,7 @@ impl AskItem {
     /// text are mutually exclusive per field — the adapter resolves a field
     /// that carries both in favour of the text, so letting both show at once
     /// would render a selection that isn't the answer.
-    pub fn toggle(&mut self, field: usize, option: usize) {
+    pub(crate) fn toggle(&mut self, field: usize, option: usize) {
         let Some(f) = self.req.fields.get(field) else {
             return;
         };
@@ -252,17 +269,6 @@ impl AskItem {
         field + 1 >= self.req.fields.len()
     }
 
-    /// Show `field`, from its first row.
-    ///
-    /// The cursor goes back to the top rather than being carried over: it is a
-    /// place in *this* question's list, and a question with two choices
-    /// followed by one with five would otherwise open on whichever row the last
-    /// one was left on.
-    pub fn go_to(&mut self, field: usize) {
-        self.tab = field;
-        self.cursor = 0;
-    }
-
     /// How many rows `field` offers the keyboard: the agent's choices, plus the
     /// free-text box where the form has one.
     pub fn row_count(&self, field: usize) -> usize {
@@ -287,26 +293,6 @@ impl AskItem {
         }
     }
 
-    /// The row the keyboard is on, clamped — a cursor left past the end of a
-    /// shorter question lands on its last row rather than on nothing.
-    pub fn cursor_row(&self, field: usize) -> Option<AskRow> {
-        self.row(
-            field,
-            self.cursor.min(self.row_count(field).saturating_sub(1)),
-        )
-    }
-
-    /// Walk the cursor, wrapping at both ends: a list this short is one the eye
-    /// holds whole, so stopping at the bottom only costs presses.
-    pub fn move_cursor(&mut self, field: usize, delta: isize) {
-        let rows = self.row_count(field);
-        if rows == 0 {
-            return;
-        }
-        let at = self.cursor.min(rows - 1) as isize;
-        self.cursor = (at + delta).rem_euclid(rows as isize) as usize;
-    }
-
     /// Pass on `field`: whatever was picked or typed there is dropped and the
     /// card moves to the next question. Answers `true` when there is no next
     /// one, which is the caller's cue to settle the whole form.
@@ -315,7 +301,7 @@ impl AskItem {
     /// this question gets no answer, and a half-typed line left behind would be
     /// sent as one — the response is built from what each field holds, not from
     /// which tab was last on screen.
-    pub fn skip_field(&mut self, field: usize) -> bool {
+    pub(crate) fn skip_field(&mut self, field: usize) -> bool {
         if let Some(picked) = self.picked.get_mut(field) {
             picked.clear();
         }
@@ -325,16 +311,12 @@ impl AskItem {
         if let Some(none) = self.none.get_mut(field) {
             *none = false;
         }
-        if self.is_last(field) {
-            return true;
-        }
-        self.go_to(field + 1);
-        false
+        self.is_last(field)
     }
 
     /// Type into a field's free-text box; a non-blank answer drops that
     /// field's picks (see [`Self::toggle`] for why they can't coexist).
-    pub fn set_custom(&mut self, field: usize, value: String) {
+    pub(crate) fn set_custom(&mut self, field: usize, value: String) {
         let Some(slot) = self.custom.get_mut(field) else {
             return;
         };
@@ -523,17 +505,21 @@ pub struct Thought {
     pub started: Option<Instant>,
     /// Final duration once the thought is done (persisted); `None` while live.
     pub elapsed_secs: Option<u64>,
-    /// What the user chose by opening or closing it; `None` until they do.
-    pub fold: Option<bool>,
 }
 
 impl Thought {
-    pub(super) fn live(s: &str) -> Self {
+    pub(super) fn live(s: &str, now: Option<Now>) -> Self {
         Self {
             md: Md::parse(s),
-            started: Some(Instant::now()),
+            started: now.map(|now| now.at),
             elapsed_secs: None,
-            fold: None,
+        }
+    }
+
+    /// Stamp the thought with how long it ran, to `now`.
+    pub(super) fn seal(&mut self, now: Option<Now>) {
+        if self.elapsed_secs.is_none() {
+            self.elapsed_secs = Some(took(self.started, now));
         }
     }
 
@@ -541,11 +527,6 @@ impl Thought {
     /// without a duration does not read as live for the rest of its life.
     pub fn is_running(&self) -> bool {
         self.elapsed_secs.is_none() && self.started.is_some()
-    }
-
-    /// Open while it runs and closed once done, unless the user said otherwise.
-    pub fn is_open(&self) -> bool {
-        self.fold.unwrap_or_else(|| self.is_running())
     }
 }
 
@@ -658,12 +639,14 @@ pub struct ToolItem {
     /// when the tool reports new content, which is exactly where this is
     /// filled.
     pub diff_rows: HashMap<usize, Vec<crate::diff::Row>>,
-    /// What the user chose by opening or closing this card; `None` until
-    /// they do, or until a failure opens it for them.
-    pub(crate) fold: Option<bool>,
-    /// Content sections whose OUT well is un-folded past the threshold,
-    /// keyed by the section's index in `call.content`.
-    pub out_open: HashSet<usize>,
+    /// The step failed while it was being shown, so it opens by itself, to
+    /// what it said before it stopped.
+    ///
+    /// Opened for the reader rather than forced open: a terminal status that
+    /// forced the row open would force it open for ever, so the control that
+    /// shuts it would do nothing in the one state that most wants a way out.
+    /// The reader's own choice, kept by the front end, wins over this.
+    pub(crate) failed_open: bool,
     /// When this step began, for the duration below.
     ///
     /// **Not persisted, and it must not be.** An `Instant` is a reading of a
@@ -700,30 +683,45 @@ pub struct ToolItem {
 impl ToolItem {
     /// Stop the step's clock, once: a later update to a settled step must not
     /// restart it.
-    pub(crate) fn settle_clock(&mut self) {
+    pub(crate) fn settle_clock(&mut self, now: Option<Now>) {
         if self.elapsed_secs.is_none() {
-            self.elapsed_secs = Some(self.started.map(|s| s.elapsed().as_secs()).unwrap_or(0));
-            self.settled_at = Some(crate::chat::store::now_secs());
+            self.elapsed_secs = Some(took(self.started, now));
+            self.settled_at = now.map(|now| now.secs);
         }
+    }
+
+    /// Start the step's clock at `now`. Only work that has not finished gets
+    /// a start: a step that arrives already settled was timed by whoever ran
+    /// it, and stamping it here would measure the moment it reached this
+    /// process.
+    pub(super) fn started_at(mut self, now: Option<Now>) -> Self {
+        let running = matches!(
+            self.call.status,
+            ToolStatus::Pending | ToolStatus::InProgress
+        );
+        if running && self.started.is_none() {
+            self.started = now.map(|now| now.at);
+        }
+        self
     }
 
     pub fn new(call: ToolCall) -> Self {
         let diff_rows = Self::hunks(&call);
         let diff_summary = Self::summarize_diffs(&call, &diff_rows);
-        let running = matches!(call.status, ToolStatus::Pending | ToolStatus::InProgress);
         Self {
             // Only work that has not finished gets a start: a step that arrives
             // already settled was timed by whoever ran it, and stamping it here
             // would measure the moment it reached this process.
-            started: running.then(Instant::now),
+            // Started by whoever folds it in, from the time it was told: see
+            // `started_at`.
+            started: None,
             elapsed_secs: None,
             settled_at: None,
             exit_code: None,
             call,
             diff_summary,
             diff_rows,
-            fold: None,
-            out_open: HashSet::new(),
+            failed_open: false,
         }
     }
 
@@ -782,33 +780,23 @@ impl ToolItem {
         self.diff_rows = Self::hunks(&self.call);
         self.diff_summary = Self::summarize_diffs(&self.call, &self.diff_rows);
     }
-    /// Live work starts open and settled work closed; the user's choice,
-    /// once made, wins either way, while it runs too.
-    pub fn is_open(&self) -> bool {
-        self.fold
-            .unwrap_or(matches!(self.call.status, ToolStatus::InProgress))
+    /// Whether the card is open until the reader says otherwise: while it
+    /// runs, and once a failure opened it.
+    pub fn opens_by_itself(&self) -> bool {
+        self.failed_open || matches!(self.call.status, ToolStatus::InProgress)
     }
 }
 
-/// The agent's plan/checklist (Claude Code's TodoWrite) plus its fold state —
-/// one card per turn, replaced in full on every `plan` update.
+/// The agent's plan/checklist (Claude Code's TodoWrite): one card per turn,
+/// its entries replaced in full on every `plan` update. Open until the reader
+/// closes it: a plan is what the turn is working through.
 pub struct PlanItem {
     pub entries: Vec<PlanEntry>,
-    /// The user closed this card.
-    pub(crate) fold: bool,
 }
 
 impl PlanItem {
     pub fn new(entries: Vec<PlanEntry>) -> Self {
-        Self {
-            entries,
-            fold: false,
-        }
-    }
-    /// Open until the user closes it: a plan is what the turn is working
-    /// through, so it stays in sight whether or not a step is running.
-    pub fn is_open(&self) -> bool {
-        !self.fold
+        Self { entries }
     }
 }
 
@@ -938,4 +926,11 @@ impl ChatItem {
             detail,
         }
     }
+}
+
+/// Whole seconds from `started` to `now`, or none where either is unknown.
+pub(super) fn took(started: Option<Instant>, now: Option<Now>) -> u64 {
+    started.zip(now).map_or(0, |(started, now)| {
+        now.at.saturating_duration_since(started).as_secs()
+    })
 }

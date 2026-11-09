@@ -213,6 +213,7 @@ fn open_forwarded(forwarded: Forwarded, cx: &mut App) {
 mod tests {
     use super::*;
     use futures::channel::mpsc::UnboundedReceiver;
+    use onehand_io::acp::Pass as _;
     use serde_json::{Value, json};
     use std::io::{BufRead as _, Write as _};
     use std::os::unix::net::UnixStream;

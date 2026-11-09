@@ -2,19 +2,168 @@ use super::*;
 use crate::acp::{
     AcpRequest, ConfigChoice, ConfigOption, PermissionOption, PermissionRequest, ReqTx, Usage,
 };
+use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::rc::Rc;
 
-type Rx = tokio::sync::mpsc::UnboundedReceiver<AcpRequest>;
+/// What a session sent its agent, read off in order as a channel is.
+#[derive(Clone, Default)]
+struct Rx(Rc<RefCell<VecDeque<AcpRequest>>>);
+
+impl Rx {
+    fn try_recv(&mut self) -> Result<AcpRequest, ()> {
+        self.0.borrow_mut().pop_front().ok_or(())
+    }
+}
+
+/// The time now, as a front end reads it for the drive.
+fn now() -> Now {
+    Now {
+        secs: crate::chat::now_secs(),
+        at: std::time::Instant::now(),
+    }
+}
+
+/// A drive with the one part of a front end these tests need: every request
+/// it answers is taken off, as its carrier sends it to the agent. Its methods
+/// stand in front of the drive's own of the same name.
+struct Front {
+    drive: SessionDrive,
+    sent: Rx,
+}
+
+impl std::ops::Deref for Front {
+    type Target = SessionDrive;
+    fn deref(&self) -> &SessionDrive {
+        &self.drive
+    }
+}
+
+impl std::ops::DerefMut for Front {
+    fn deref_mut(&mut self) -> &mut SessionDrive {
+        &mut self.drive
+    }
+}
+
+impl Front {
+    fn new(drive: SessionDrive) -> (Self, Rx) {
+        let sent = Rx::default();
+        (
+            Self {
+                drive,
+                sent: sent.clone(),
+            },
+            sent,
+        )
+    }
+
+    fn take(&self, fx: &[Effect]) {
+        for effect in fx {
+            if let Effect::Request(request) = effect {
+                self.sent.0.borrow_mut().push_back(request.clone());
+            }
+        }
+    }
+
+    fn prompt(
+        &mut self,
+        text: &str,
+        staged: &[StagedAttachment],
+        origin: Origin,
+        code: Code,
+    ) -> (Intake, Vec<Effect>) {
+        let out = self.drive.prompt(text, staged, origin, code, now());
+        self.take(&out.1);
+        out
+    }
+
+    fn prompt_when_up(&mut self, text: &str, origin: Origin) -> (Intake, Vec<Effect>) {
+        let out = self.drive.prompt_when_up(text, origin, now());
+        self.take(&out.1);
+        out
+    }
+
+    fn resend(&mut self) -> (Intake, Vec<Effect>) {
+        let out = self.drive.resend(now());
+        self.take(&out.1);
+        out
+    }
+
+    fn stop(&mut self) -> Vec<Effect> {
+        let out = self.drive.stop();
+        self.take(&out);
+        out
+    }
+
+    fn apply(&mut self, event: AcpEvent) -> (Vec<Effect>, Next) {
+        let out = self.drive.apply(event, now());
+        self.take(&out.0);
+        out
+    }
+
+    fn handle(&mut self, input: Input) -> Vec<Effect> {
+        let out = self.drive.handle(input, now());
+        self.take(&out);
+        out
+    }
+
+    fn read_back(
+        &mut self,
+        kept: impl IntoIterator<Item = AcpEvent>,
+        away: Option<String>,
+    ) -> Vec<Effect> {
+        let out = self.drive.read_back(kept, away, now());
+        self.take(&out);
+        out
+    }
+
+    fn host_lost(&mut self, line: String) -> Vec<Effect> {
+        let out = self.drive.host_lost(line, now());
+        self.take(&out);
+        out
+    }
+
+    fn ask_pick(&mut self, idx: usize, field: usize, option: usize) -> (bool, Vec<Effect>) {
+        let out = self.drive.ask_pick(idx, field, option);
+        self.take(&out.1);
+        out
+    }
+
+    fn ask_skip(&mut self, idx: usize, field: usize) -> (Option<usize>, Vec<Effect>) {
+        let out = self.drive.ask_skip(idx, field);
+        self.take(&out.1);
+        out
+    }
+
+    fn ask_advance(&mut self, idx: usize, field: usize) -> (Option<usize>, Vec<Effect>) {
+        let out = self.drive.ask_advance(idx, field);
+        self.take(&out.1);
+        out
+    }
+
+    fn ask_submit(&mut self, idx: usize) -> Vec<Effect> {
+        let out = self.drive.ask_submit(idx);
+        self.take(&out);
+        out
+    }
+
+    fn ask_decline(&mut self, idx: usize) -> Vec<Effect> {
+        let out = self.drive.ask_decline(idx);
+        self.take(&out);
+        out
+    }
+}
 
 /// A connected session that keeps a transcript, and what it sends.
 ///
-/// The store is a path nothing is written to: a save is only built here, and
-/// the drop that would write the rest is told there is nowhere to write.
-fn connected() -> (SessionDrive, Rx) {
+/// The store is a path nothing can be written to: a save is only built here,
+/// and the drop that writes the rest fails there, as it may.
+fn connected() -> (Front, Rx) {
     let store = PathBuf::from("/nonexistent/onehand-drive-tests");
     let chat = Chat::new(1, PathBuf::from("/repo"), "agent".into(), Some(store));
-    let mut drive = SessionDrive::new(chat);
-    let (tx, rx): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
+    let (mut drive, rx) = Front::new(SessionDrive::new(chat));
+    let (tx, _): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
     feed(
         &mut drive,
         AcpEvent::Connected {
@@ -29,7 +178,7 @@ fn connected() -> (SessionDrive, Rx) {
 
 /// One event in its own batch, as a front end with nothing else waiting
 /// would fold it: what the event said, then what the batch's end said.
-fn feed(drive: &mut SessionDrive, event: AcpEvent) -> Vec<Effect> {
+fn feed(drive: &mut Front, event: AcpEvent) -> Vec<Effect> {
     let (mut fx, _) = drive.apply(event);
     fx.extend(drive.end_batch());
     fx
@@ -63,9 +212,11 @@ fn permission() -> PermissionRequest {
     }
 }
 
-/// Effects as names, for asserting their order.
+/// Effects as names, for asserting their order. Requests to the agent are
+/// left out: they are read off what was sent.
 fn names(fx: &[Effect]) -> Vec<String> {
     fx.iter()
+        .filter(|effect| !matches!(effect, Effect::Request(_)))
         .map(|effect| match effect {
             Effect::Signal(signal) => format!("{signal:?}"),
             Effect::Changed => "Changed".into(),
@@ -75,6 +226,8 @@ fn names(fx: &[Effect]) -> Vec<String> {
             Effect::Disarm => "Disarm".into(),
             Effect::SendCode { .. } => "SendCode".into(),
             Effect::PromptAgain => "PromptAgain".into(),
+            Effect::SaveTitle { .. } => "SaveTitle".into(),
+            Effect::Request(_) => unreachable!("left out above"),
         })
         .collect()
 }
@@ -100,13 +253,6 @@ fn take_save(fx: Vec<Effect>) -> Box<PendingWrite> {
             _ => None,
         })
         .expect("a save")
-}
-
-impl Drop for SessionDrive {
-    fn drop(&mut self) {
-        // Nowhere to write: see `connected`.
-        self.chat.store = None;
-    }
 }
 
 // Intake, by origin.
@@ -188,6 +334,31 @@ fn a_queued_prompt_goes_out_when_the_turn_ends() {
     assert_eq!(sent(&mut rx).as_deref(), Some("second"));
     assert!(drive.busy, "the queued prompt opened its own turn");
     assert!(drive.queued.is_none());
+}
+
+/// The turn a queued prompt opens is written whole, when it ends: the save
+/// of the turn before leaves it out, so its line is not frozen on disk while
+/// the turn is still running, without the time it finished.
+#[test]
+fn a_queued_prompt_is_written_with_its_own_turn() {
+    let (mut drive, _rx) = connected();
+    drive.prompt("first", &[], Origin::Person, Code::Here);
+    drive.prompt("second", &[], Origin::Person, Code::Here);
+    let first = take_save(feed(&mut drive, turn_ends()));
+    assert!(drive.busy, "the queued prompt went");
+    assert!(
+        !first.lines.iter().any(|line| line.contains("second")),
+        "{:?}",
+        first.lines
+    );
+
+    let second = take_save(feed(&mut drive, turn_ends()));
+    let line = second
+        .lines
+        .iter()
+        .find(|line| line.contains("\"second\""))
+        .expect("written with its own turn");
+    assert!(line.contains("completed_at"), "{line}");
 }
 
 #[test]
@@ -316,9 +487,9 @@ fn only_a_person_waits_on_the_code() {
 
 // A first prompt held until the agent is up.
 
-fn connecting() -> (SessionDrive, ReqTx, Rx) {
-    let mut drive = SessionDrive::new(Chat::default());
-    let (tx, rx): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
+fn connecting() -> (Front, ReqTx, Rx) {
+    let (mut drive, rx) = Front::new(SessionDrive::new(Chat::default()));
+    let (tx, _): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
     drive.chat_mut().store = None;
     (drive, tx, rx)
 }
@@ -557,4 +728,488 @@ fn stop_cancels_the_turn() {
     drive.stop();
     assert!(matches!(rx.try_recv(), Ok(AcpRequest::Cancel)));
     assert!(drive.cancelled);
+}
+
+// Sending a failed turn's prompt again.
+
+#[test]
+fn a_failed_turns_prompt_goes_again() {
+    let (mut drive, mut rx) = connected();
+    drive.prompt("go", &[], Origin::Person, Code::Here);
+    sent(&mut rx);
+    feed(
+        &mut drive,
+        AcpEvent::TurnEnded {
+            stop_reason: "refusal".into(),
+        },
+    );
+    let (intake, _) = drive.resend();
+    assert_eq!(intake, Intake::Sent);
+    assert_eq!(sent(&mut rx).as_deref(), Some("go"));
+}
+
+#[test]
+fn a_resend_while_the_turn_still_runs_is_refused_and_leaves_what_waits() {
+    let (mut drive, mut rx) = connected();
+    drive.prompt("go", &[], Origin::Person, Code::Here);
+    sent(&mut rx);
+    drive.prompt("waiting", &[], Origin::Person, Code::Here);
+    // An error said before the turn it ends has closed.
+    feed(
+        &mut drive,
+        AcpEvent::Error {
+            text: "overloaded".into(),
+            detail: None,
+        },
+    );
+    assert!(drive.busy && drive.resend_text().is_some());
+    let (intake, _) = drive.resend();
+    assert_eq!(intake, Intake::Refused(Refusal::Blocked(SubmitBlock::Busy)));
+    assert_eq!(
+        drive.queued.as_ref().map(|q| q.text.as_str()),
+        Some("waiting")
+    );
+    assert!(sent(&mut rx).is_none());
+}
+
+#[test]
+fn nothing_failed_nothing_goes_again() {
+    let (mut drive, mut rx) = connected();
+    assert_eq!(drive.resend().0, Intake::Refused(Refusal::NotTaken));
+    assert!(sent(&mut rx).is_none());
+}
+
+// Answering cards.
+
+/// A question parked on a running turn, of one single-select field, or of a
+/// single-select then a multi-select: its live index.
+fn ask(drive: &mut Front, two: bool) -> usize {
+    use crate::acp::{ElicitChoice, ElicitField, ElicitKind, Elicitation};
+    let choice = |v: &str| ElicitChoice {
+        value: v.into(),
+        label: v.to_uppercase(),
+        description: None,
+    };
+    let field = |key: &str, kind| ElicitField {
+        key: key.into(),
+        title: None,
+        description: None,
+        kind,
+        custom_key: None,
+    };
+    let mut fields = vec![field(
+        "q0",
+        ElicitKind::Select(vec![choice("a"), choice("b")]),
+    )];
+    if two {
+        fields.push(field(
+            "q1",
+            ElicitKind::MultiSelect(vec![choice("x"), choice("y")]),
+        ));
+    }
+    drive.prompt("go", &[], Origin::Person, Code::Here);
+    feed(
+        drive,
+        AcpEvent::Elicitation(Elicitation {
+            rpc_id: serde_json::Value::from(9),
+            tool_call_id: None,
+            message: "pick".into(),
+            fields,
+            child: None,
+        }),
+    );
+    drive.items.len() - 1
+}
+
+fn answered(rx: &mut Rx) -> Option<crate::acp::ElicitOutcome> {
+    std::iter::from_fn(|| rx.try_recv().ok()).find_map(|request| match request {
+        AcpRequest::ElicitationResponse { outcome, .. } => Some(outcome),
+        _ => None,
+    })
+}
+
+#[test]
+fn a_pick_answers_a_one_question_form_and_only_that() {
+    let (mut drive, mut rx) = connected();
+    let one = ask(&mut drive, false);
+    assert!(drive.ask_pick(one, 0, 1).0, "nothing left to decide");
+    assert!(matches!(
+        answered(&mut rx),
+        Some(crate::acp::ElicitOutcome::Accept(_))
+    ));
+
+    let (mut drive, mut rx) = connected();
+    let two = ask(&mut drive, true);
+    assert!(!drive.ask_pick(two, 0, 1).0);
+    assert!(
+        answered(&mut rx).is_none(),
+        "a second question is still open"
+    );
+}
+
+#[test]
+fn skipping_walks_on_and_the_last_skip_sends_what_the_rest_hold() {
+    let (mut drive, mut rx) = connected();
+    let two = ask(&mut drive, true);
+    drive.ask_pick(two, 0, 0);
+    assert_eq!(drive.ask_skip(two, 0).0, Some(1), "the next question shows");
+    // The pick above was dropped with the skip, so nothing is left: declined.
+    assert_eq!(drive.ask_skip(two, 1).0, None);
+    assert!(matches!(
+        answered(&mut rx),
+        Some(crate::acp::ElicitOutcome::Decline)
+    ));
+
+    let (mut drive, mut rx) = connected();
+    let two = ask(&mut drive, true);
+    drive.ask_pick(two, 0, 0);
+    assert_eq!(drive.ask_advance(two, 0).0, Some(1));
+    assert_eq!(drive.ask_skip(two, 1).0, None);
+    assert!(
+        matches!(
+            answered(&mut rx),
+            Some(crate::acp::ElicitOutcome::Accept(_))
+        ),
+        "the answer above the skipped question is sent"
+    );
+}
+
+#[test]
+fn moving_on_from_the_last_question_sends_the_form() {
+    let (mut drive, mut rx) = connected();
+    let two = ask(&mut drive, true);
+    drive.ask_pick(two, 0, 1);
+    drive.ask_advance(two, 0);
+    assert_eq!(drive.ask_advance(two, 1).0, None);
+    assert!(matches!(
+        answered(&mut rx),
+        Some(crate::acp::ElicitOutcome::Accept(_))
+    ));
+}
+
+#[test]
+fn a_form_is_sent_only_once_it_holds_an_answer() {
+    let (mut drive, mut rx) = connected();
+    let two = ask(&mut drive, true);
+    drive.ask_submit(two);
+    assert!(answered(&mut rx).is_none());
+    drive.ask_type(two, 0, "mine".into());
+    assert!(drive.ask_at(two).is_some_and(|a| a.custom[0] == "mine"));
+    drive.ask_submit(two);
+    assert!(matches!(
+        answered(&mut rx),
+        Some(crate::acp::ElicitOutcome::Accept(_))
+    ));
+}
+
+#[test]
+fn a_declined_form_sends_no_answer() {
+    let (mut drive, mut rx) = connected();
+    let one = ask(&mut drive, false);
+    drive.ask_decline(one);
+    assert!(matches!(
+        answered(&mut rx),
+        Some(crate::acp::ElicitOutcome::Decline)
+    ));
+    assert!(drive.ask_at(one).is_none(), "and the card is settled");
+}
+
+// A conversation's name.
+
+/// A connected session whose conversation is on disk already, as a rename
+/// writes only a conversation that has a file.
+fn written() -> (Front, Rx) {
+    let (mut drive, rx) = connected();
+    drive.prompt("go", &[], Origin::Person, Code::Here);
+    take_save(feed(&mut drive, turn_ends()));
+    (drive, rx)
+}
+
+fn title_write(fx: &[Effect]) -> Option<(u64, Option<String>)> {
+    fx.iter().find_map(|effect| match effect {
+        Effect::SaveTitle { change, title, .. } => Some((*change, title.clone())),
+        _ => None,
+    })
+}
+
+#[test]
+fn a_rename_shows_at_once_and_is_written() {
+    let (mut drive, _rx) = written();
+    let (renamed, fx) = drive.rename("  the  plan ");
+    assert!(renamed);
+    assert_eq!(drive.custom_title.as_deref(), Some("the plan"));
+    assert_eq!(title_write(&fx), Some((1, Some("the plan".into()))));
+    assert!(!drive.rename("   ").0, "a blank name is not a rename");
+}
+
+#[test]
+fn a_conversation_with_no_file_is_renamed_and_not_written() {
+    let (mut drive, _rx) = connected();
+    let (renamed, fx) = drive.rename("named");
+    assert!(renamed);
+    assert!(title_write(&fx).is_none(), "the first turn's end writes it");
+}
+
+#[test]
+fn the_newest_name_failing_puts_back_the_last_written_once() {
+    let (mut drive, _rx) = written();
+    let (first, _) = title_write(&drive.rename("one").1).unwrap();
+    drive.handle(Input::TitleSaved {
+        change: first,
+        title: Some("one".into()),
+        result: Ok(()),
+    });
+    let (second, title) = title_write(&drive.rename("two").1).unwrap();
+    let fx = drive.handle(Input::TitleSaved {
+        change: second,
+        title,
+        result: Err("read-only".into()),
+    });
+    assert_eq!(names(&fx), ["RenameFailed(\"read-only\")"]);
+    assert_eq!(
+        drive.custom_title.as_deref(),
+        Some("one"),
+        "the last written"
+    );
+}
+
+#[test]
+fn a_name_failing_behind_a_newer_one_changes_nothing() {
+    let (mut drive, _rx) = written();
+    let (first, title) = title_write(&drive.rename("one").1).unwrap();
+    drive.rename("two");
+    let fx = drive.handle(Input::TitleSaved {
+        change: first,
+        title,
+        result: Err("read-only".into()),
+    });
+    assert!(fx.is_empty(), "the newer write carries what is shown");
+    assert_eq!(drive.custom_title.as_deref(), Some("two"));
+}
+
+#[test]
+fn a_reset_failing_puts_the_given_name_back() {
+    let (mut drive, _rx) = written();
+    let (first, title) = title_write(&drive.rename("mine").1).unwrap();
+    drive.handle(Input::TitleSaved {
+        change: first,
+        title,
+        result: Ok(()),
+    });
+    let (reset, title) = title_write(&drive.reset_title()).unwrap();
+    assert!(drive.custom_title.is_none());
+    drive.handle(Input::TitleSaved {
+        change: reset,
+        title,
+        result: Err("gone".into()),
+    });
+    assert_eq!(drive.custom_title.as_deref(), Some("mine"));
+}
+
+// A session on a host.
+
+#[test]
+fn a_lost_host_drops_the_held_prompt_and_changes_the_batch() {
+    let (mut drive, tx, mut rx) = connecting();
+    drive.prompt_when_up("go", Origin::Tools);
+    let fx = drive.host_lost("Out of reach of box".into());
+    assert_eq!(names(&fx), ["Appended"]);
+    assert!(drive.held.is_none(), "dropped, as on any lost link");
+    assert_eq!(names(&drive.end_batch()), ["Changed"]);
+    // The same session coming up later sends nothing it was not asked again.
+    feed(
+        &mut drive,
+        AcpEvent::Connected {
+            tx,
+            resumed: false,
+            forkable: false,
+        },
+    );
+    assert!(sent(&mut rx).is_none());
+}
+
+#[test]
+fn what_was_kept_is_read_back_without_a_word_of_turns() {
+    let (mut drive, _rx) = connected();
+    let fx = drive.read_back(
+        [
+            AcpEvent::UserChunk("then".into()),
+            chunk("an old answer"),
+            turn_ends(),
+        ],
+        Some("Out of reach of box".into()),
+    );
+    assert_eq!(names(&fx), ["Changed", "Appended"], "no TurnEnded, no Save");
+    assert!(matches!(
+        drive.items.last(),
+        Some(crate::chat::ChatItem::Notice { text, .. }) if text == "Out of reach of box"
+    ));
+}
+
+// Closing with a save on its way.
+
+/// A session on a store that can be written, under a directory of its own.
+fn on_disk(name: &str) -> (Front, Rx, PathBuf) {
+    let store =
+        std::env::temp_dir().join(format!("onehand-drive-close-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&store);
+    let chat = Chat::new(
+        1,
+        PathBuf::from("/repo"),
+        "agent".into(),
+        Some(store.clone()),
+    );
+    let (mut drive, rx) = Front::new(SessionDrive::new(chat));
+    let (tx, _): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
+    feed(
+        &mut drive,
+        AcpEvent::Connected {
+            tx,
+            resumed: false,
+            forkable: false,
+        },
+    );
+    feed(&mut drive, AcpEvent::SessionId("s1".into()));
+    (drive, rx, store)
+}
+
+fn turn(drive: &mut Front, prompt: &str, answer: &str) -> Vec<Effect> {
+    drive.prompt(prompt, &[], Origin::Person, Code::Here);
+    feed(drive, chunk(answer));
+    feed(drive, turn_ends())
+}
+
+/// What the file says, prompts and answers alike, once each in order.
+fn written_lines(store: &std::path::Path) -> Vec<String> {
+    let dir = crate::chat::store::conv_dir(store, "s1");
+    std::fs::read_to_string(dir.join("items.jsonl"))
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
+/// A session closed while its last turn's save is on its way, and
+/// that save failing then: the turn is on disk all the same, as the close
+/// wrote the whole transcript rather than what came after that save.
+#[test]
+fn a_session_closed_with_a_save_on_its_way_keeps_that_turn_if_the_save_fails() {
+    let (mut drive, _rx, store) = on_disk("fails");
+    let first = take_save(turn(&mut drive, "one", "first answer"));
+    crate::chat::store::commit(&first).unwrap();
+    drive.handle(Input::Saved {
+        write: first,
+        result: Ok(()),
+    });
+    // The second turn's save is on its way, and never lands.
+    let _lost = take_save(turn(&mut drive, "two", "second answer"));
+    drop(drive);
+    let lines = written_lines(&store);
+    assert!(
+        lines.iter().any(|l| l.contains("second answer")),
+        "{lines:?}"
+    );
+    assert!(
+        lines.iter().any(|l| l.contains("first answer")),
+        "{lines:?}"
+    );
+    let _ = std::fs::remove_dir_all(&store);
+}
+
+/// And that save landing late, after the close wrote the whole file, adds
+/// nothing a second time.
+#[test]
+fn a_save_landing_after_the_close_wrote_the_whole_file_adds_nothing_twice() {
+    let (mut drive, _rx, store) = on_disk("lands");
+    let first = take_save(turn(&mut drive, "one", "first answer"));
+    crate::chat::store::commit(&first).unwrap();
+    drive.handle(Input::Saved {
+        write: first,
+        result: Ok(()),
+    });
+    let late = take_save(turn(&mut drive, "two", "second answer"));
+    drop(drive);
+    let closed = written_lines(&store);
+    crate::chat::store::commit(&late).unwrap();
+    assert_eq!(
+        written_lines(&store),
+        closed,
+        "the late save's lines are in it"
+    );
+    assert_eq!(
+        closed
+            .iter()
+            .filter(|l| l.contains("second answer"))
+            .count(),
+        1
+    );
+    let _ = std::fs::remove_dir_all(&store);
+}
+
+/// With nothing on its way, a close writes only what is left, as ever.
+#[test]
+fn a_session_closed_with_nothing_on_its_way_adds_only_the_rest() {
+    let (mut drive, _rx, store) = on_disk("idle");
+    let first = take_save(turn(&mut drive, "one", "first answer"));
+    crate::chat::store::commit(&first).unwrap();
+    drive.handle(Input::Saved {
+        write: first,
+        result: Ok(()),
+    });
+    let before = written_lines(&store);
+    drop(drive);
+    assert_eq!(
+        written_lines(&store),
+        before,
+        "nothing left, nothing written"
+    );
+    let _ = std::fs::remove_dir_all(&store);
+}
+
+// The time, told rather than read.
+
+/// What the session writes down and how long it says a step took come from
+/// the time its front end told it, never from a clock of its own.
+#[test]
+fn a_session_stamps_and_times_by_the_time_it_is_told() {
+    let (mut front, _rx) = connected();
+    let start = std::time::Instant::now();
+    let at = |secs: u64| Now {
+        secs: 1_000 + secs,
+        at: start + std::time::Duration::from_secs(secs),
+    };
+    front
+        .drive
+        .prompt("go", &[], Origin::Person, Code::Here, at(0));
+    let Some(crate::chat::ChatItem::User(prompt)) = front.items.last() else {
+        panic!("no prompt");
+    };
+    assert_eq!(prompt.sent_at, Some(1_000));
+
+    front.drive.apply(
+        AcpEvent::ToolCall(crate::acp::ToolCall {
+            id: "t".into(),
+            title: "cargo test".into(),
+            description: None,
+            kind: crate::acp::ToolKind::Execute,
+            status: crate::acp::ToolStatus::InProgress,
+            content: Vec::new(),
+        }),
+        at(1),
+    );
+    front.drive.apply(
+        AcpEvent::ToolUpdate(crate::acp::ToolCallUpdate {
+            id: "t".into(),
+            status: Some(crate::acp::ToolStatus::Completed),
+            title: None,
+            description: None,
+            content: None,
+        }),
+        at(6),
+    );
+    let Some(crate::chat::ChatItem::Tool(step)) = front.items.last() else {
+        panic!("no step");
+    };
+    assert_eq!(step.elapsed_secs, Some(5), "from 1 to 6, as told");
+    assert_eq!(step.settled_at, Some(1_006));
 }

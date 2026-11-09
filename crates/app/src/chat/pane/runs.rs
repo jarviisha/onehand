@@ -175,8 +175,9 @@ impl ChatPane {
         let conv = self.conversations.get_mut(&uid)?;
         conv.viewport.replan(
             &session.chat,
-            session.chat.folds(),
+            session.folds(),
             |anchor, default| session.activity_is_open(anchor, default),
+            |target, default| session.item_is_open(target, default),
             |anchor, default| session.turn_is_open(anchor, default),
         );
         let state = conv.viewport.list_state(session.chat.busy, room);
