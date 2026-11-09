@@ -4,7 +4,7 @@
 //! for the person to merge. The code goes up only when the person asks, as a
 //! commit merged into the host's branch.
 
-use super::{Effect, Job, Moving, Offload, OffloadDrive};
+use super::{Effect, Errand, Moving, Offload, OffloadDrive};
 use crate::workspace::HostName;
 use std::path::{Path, PathBuf};
 
@@ -45,8 +45,8 @@ impl OffloadDrive {
         let o = self.roots.get_mut(path)?;
         let name = o.branch.as_ref()?.name.clone();
         o.claim(Moving::Back).then_some(())?;
-        let job = Job::refresh(path.to_path_buf(), o.host.clone(), name, poll);
-        Some(vec![Effect::Run(job)])
+        let errand = Errand::refresh(path.to_path_buf(), o.host.clone(), name, poll);
+        Some(vec![Effect::Run(errand)])
     }
 
     /// *Update host from laptop*: this folder's commit merged into the host's
@@ -62,8 +62,8 @@ impl OffloadDrive {
         if !o.claim(Moving::Up) {
             return Vec::new();
         }
-        let job = Job::update_host(path.to_path_buf(), o.host.clone(), name);
-        vec![Effect::Run(job)]
+        let errand = Errand::update_host(path.to_path_buf(), o.host.clone(), name);
+        vec![Effect::Run(errand)]
     }
 }
 

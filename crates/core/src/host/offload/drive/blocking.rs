@@ -1,6 +1,6 @@
-//! What each of the offload drive's jobs does, off the UI loop: the copies
+//! What each of the offload drive's errands does, off the UI loop: the copies
 //! and git calls are core's blocking functions, and every call to the host
-//! rides the attach the front end hands the job, polled on its runtime as a
+//! rides the attach the front end hands the errand, polled on its runtime as a
 //! host's disk is. A body that panics answers as a failure, so its folder
 //! never stays claimed.
 
@@ -15,11 +15,11 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use tokio::runtime::Handle;
 
-/// The attach a job is handed: `None` when it asked only for one already up
+/// The attach a errand is handed: `None` when it asked only for one already up
 /// and there was none.
 pub type Reached = Result<Option<HostConn>, HostFailure>;
 
-/// Which attach a job is handed.
+/// Which attach a errand is handed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Reach {
     /// None: it does not call the host.
@@ -32,9 +32,9 @@ pub enum Reach {
     Live,
 }
 
-/// One of the drive's jobs, for the front end to run off its UI loop with
+/// One of the drive's errands, for the front end to run off its UI loop with
 /// the attach it asks for.
-pub struct Job {
+pub struct Errand {
     path: PathBuf,
     pub host: HostName,
     pub reach: Reach,
@@ -63,7 +63,7 @@ pub struct Brought {
     pub backed: bool,
 }
 
-impl Job {
+impl Errand {
     fn new(path: PathBuf, host: HostName, reach: Reach, work: Work) -> Self {
         Self {
             path,
@@ -139,7 +139,7 @@ impl Job {
     pub fn run(self, conn: Reached, rt: &Handle) -> Input {
         let fallback = self.panicked();
         catch_unwind(AssertUnwindSafe(|| self.body(conn, rt))).unwrap_or_else(|_| {
-            eprintln!("onehand: an offloaded project's job panicked");
+            eprintln!("onehand: an offloaded project's errand panicked");
             fallback
         })
     }
@@ -208,7 +208,7 @@ impl Job {
     }
 
     fn body(self, conn: Reached, rt: &Handle) -> Input {
-        let Job {
+        let Errand {
             path, host, work, ..
         } = self;
         match work {
@@ -307,7 +307,7 @@ impl Job {
     }
 }
 
-/// The attach a job that needs one was handed, or why not in a person's
+/// The attach a errand that needs one was handed, or why not in a person's
 /// words.
 fn attached(conn: Reached, host: &HostName) -> Result<HostConn, String> {
     match conn {

@@ -1,7 +1,7 @@
-//! The offloaded projects' carrier against its contract: a job's answer
+//! The offloaded projects' carrier against its contract: a errand's answer
 //! reaches the drive once, the poll's clock comes round and is armed again,
 //! an answer reaches whoever asked once, and a late answer for a folder no
-//! longer kept lands on nothing. The jobs here touch no host: a host's
+//! longer kept lands on nothing. The errands here touch no host: a host's
 //! attach runs on a runtime the test scheduler does not drive.
 
 use crate::state::Shared;
@@ -135,7 +135,7 @@ fn an_answer_reaches_its_asker_once(cx: &mut TestAppContext) {
     let _ = std::fs::remove_dir_all(&path_b);
 }
 
-/// A folder forgotten while its job runs: the answer lands on nothing.
+/// A folder forgotten while its errand runs: the answer lands on nothing.
 #[gpui::test]
 fn a_late_answer_for_a_folder_let_go_lands_on_nothing(cx: &mut TestAppContext) {
     app(cx);

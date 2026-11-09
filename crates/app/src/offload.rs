@@ -1,5 +1,5 @@
 //! Offloaded projects' carrier: the process's [`OffloadDrive`], held in a
-//! global, its jobs run off the UI loop over the attach each asks for, and
+//! global, its errands run off the UI loop over the attach each asks for, and
 //! its answers handed back. What happens next is the drive's.
 //!
 //! **One entry per folder, for the whole process.** Two windows holding the
@@ -17,7 +17,7 @@ use futures::channel::oneshot;
 use futures::future::{self, LocalBoxFuture};
 use gpui::{App, BorrowAppContext as _, Global, Task};
 use onehand_core::host::offload::drive::{
-    Effect, HostSeen, Input, Job, Kept, OffloadDrive, Reach, Reached, Signal,
+    Effect, Errand, HostSeen, Input, Kept, OffloadDrive, Reach, Reached, Signal,
 };
 use onehand_core::workspace::HostName;
 use std::collections::{HashMap, VecDeque};
@@ -254,7 +254,7 @@ fn perform(cx: &mut App, fx: Vec<Effect>) {
                 });
                 cx.update_global::<Offloads, _>(|all, _| all._poll = Some(clock));
             }
-            Effect::Run(job) => run(cx, job),
+            Effect::Run(errand) => run(cx, errand),
             Effect::Signal(signal) => tell(cx, signal),
         }
     }
@@ -277,16 +277,16 @@ fn elapsed(cx: &mut App) {
     });
 }
 
-/// Run `job` off the UI loop over the attach it asks for, then hand its
+/// Run `errand` off the UI loop over the attach it asks for, then hand its
 /// answer to the drive.
-fn run(cx: &mut App, job: Job) {
-    let reaching = reach(cx, &job.host, job.reach);
+fn run(cx: &mut App, errand: Errand) {
+    let reaching = reach(cx, &errand.host, errand.reach);
     let rt = Shared::global(cx).acp.handle();
     cx.spawn(async move |cx| {
         let conn = reaching.await;
         let input: Input = cx
             .background_executor()
-            .spawn(async move { job.run(conn, &rt) })
+            .spawn(async move { errand.run(conn, &rt) })
             .await;
         cx.update(|cx| drive(cx, |d| d.handle(input)));
     })

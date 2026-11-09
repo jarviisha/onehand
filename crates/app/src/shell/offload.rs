@@ -156,8 +156,9 @@ impl Shell {
         }
     }
 
-    /// Put the form away. A send under way is dropped with it; what it had
-    /// copied stays in the mirror, and the project stays here.
+    /// Put the form away. A send under way runs to its end, keeping what
+    /// went for the next offload, and the project stays here: what it lands
+    /// finds no form to carry on.
     pub(crate) fn cancel_offload(&mut self, cx: &mut Context<Self>) {
         if self.offload_draft.take().is_some() {
             cx.notify();

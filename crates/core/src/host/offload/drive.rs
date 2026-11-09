@@ -7,8 +7,8 @@
 //! front end's commands as methods (track a folder, claim the send before a
 //! prompt, check after a turn, check again, take the host's code, update the
 //! host, offload a folder, the poll's clock) and is told what came of each
-//! [`Job`] it hands out ([`Input`]). It reads no disk, no network and no
-//! clock: a job's body ([`Job::run`]) does, off the UI loop, over the attach
+//! [`Errand`] it hands out ([`Input`]). It reads no disk, no network and no
+//! clock: a errand's body ([`Errand::run`]) does, off the UI loop, over the attach
 //! the front end hands it ([`Reach`]).
 //!
 //! **One per process.** Two windows holding the same folder hold one copy of
@@ -21,7 +21,7 @@
 //! first, so a cache gone stale can only make a move wait, never send old
 //! code up over the host's.
 //!
-//! **Late answers.** A job's answer is *recorded*: what its body wrote is on
+//! **Late answers.** A errand's answer is *recorded*: what its body wrote is on
 //! disk whatever the drive did since, so it lands on the folder's entry while
 //! the folder is kept, and on nothing once it is not. The poll's clock is
 //! *dropped* past its use: only one is ever armed.
@@ -39,7 +39,7 @@ mod branch;
 #[cfg(test)]
 mod tests;
 
-pub use blocking::{Brought, Job, Reach, Reached};
+pub use blocking::{Brought, Errand, Reach, Reached};
 pub use branch::BranchState;
 
 /// How often an offloaded project whose host holds the code is checked for
@@ -173,9 +173,9 @@ pub enum Kept {
 pub enum Effect {
     /// Hand over the poll's clock after this long ([`OffloadDrive::elapsed`]).
     Arm(Duration),
-    /// Run this job off the UI loop and hand its answer to
+    /// Run this errand off the UI loop and hand its answer to
     /// [`OffloadDrive::handle`].
-    Run(Job),
+    Run(Errand),
     Signal(Signal),
 }
 
@@ -220,7 +220,7 @@ pub type Came = Result<Option<OffloadState>, (String, Option<Box<OffloadState>>)
 /// to keep then.
 pub type Went = Result<OffloadState, (String, Option<Box<OffloadState>>)>;
 
-/// What a job came to.
+/// What a errand came to.
 pub enum Input {
     Loaded {
         path: PathBuf,
@@ -323,7 +323,7 @@ impl OffloadDrive {
         let read = state.is_none();
         let mut fx = self.keep(path.clone(), Offload::new(host.clone(), state, None));
         if read {
-            fx.push(Effect::Run(Job::load(path, host)));
+            fx.push(Effect::Run(Errand::load(path, host)));
         }
         fx
     }
@@ -349,8 +349,8 @@ impl OffloadDrive {
             .as_ref()
             .map(|s| s.manifest.clone())
             .unwrap_or_default();
-        let job = Job::send_up(path.to_path_buf(), o.host.clone(), sent);
-        (true, vec![Effect::Run(job)])
+        let errand = Errand::send_up(path.to_path_buf(), o.host.clone(), sent);
+        (true, vec![Effect::Run(errand)])
     }
 
     /// Check `path` now, as a turn of a session on it ends: its branch
@@ -381,8 +381,8 @@ impl OffloadDrive {
             .manifest
             .clone();
         o.claim(Moving::Back).then_some(())?;
-        let job = Job::check_back(path.to_path_buf(), o.host.clone(), sent, poll);
-        Some(vec![Effect::Run(job)])
+        let errand = Errand::check_back(path.to_path_buf(), o.host.clone(), sent, poll);
+        Some(vec![Effect::Run(errand)])
     }
 
     /// Check `path` again because the person asked, attaching to its host if
@@ -391,8 +391,8 @@ impl OffloadDrive {
         let Some(o) = self.roots.get(path) else {
             return Vec::new();
         };
-        let job = Job::attach(path.to_path_buf(), o.host.clone(), Then::Again);
-        vec![Effect::Run(job)]
+        let errand = Errand::attach(path.to_path_buf(), o.host.clone(), Then::Again);
+        vec![Effect::Run(errand)]
     }
 
     /// Take the host's code over what changed here since it went, once the
@@ -419,7 +419,7 @@ impl OffloadDrive {
                 result: Err(why),
             })];
         };
-        vec![Effect::Run(Job::take_over(
+        vec![Effect::Run(Errand::take_over(
             path.to_path_buf(),
             host,
             sent,
@@ -431,11 +431,11 @@ impl OffloadDrive {
     /// first, unless on a branch, which needs none. [`Signal::Offloaded`]
     /// says how it went; the folder is kept only once the window keeps it.
     pub fn offload(&mut self, path: PathBuf, host: HostName, on_branch: bool) -> Vec<Effect> {
-        let job = match on_branch {
-            true => Job::offload(path, host, true),
-            false => Job::check(path, host),
+        let errand = match on_branch {
+            true => Errand::offload(path, host, true),
+            false => Errand::check(path, host),
         };
-        vec![Effect::Run(job)]
+        vec![Effect::Run(errand)]
     }
 
     /// The poll's clock came round: every folder whose host holds the code
@@ -480,7 +480,7 @@ impl OffloadDrive {
                         Some(o) if !pass.unreached.contains(&o.host) => o.host.clone(),
                         _ => continue,
                     };
-                    Some(vec![Effect::Run(Job::attach(path, host, Then::Poll))])
+                    Some(vec![Effect::Run(Errand::attach(path, host, Then::Poll))])
                 }
             };
             if let Some(fx) = fx {
@@ -490,7 +490,7 @@ impl OffloadDrive {
         Vec::new()
     }
 
-    /// What a job came to.
+    /// What a errand came to.
     pub fn handle(&mut self, input: Input) -> Vec<Effect> {
         match input {
             Input::Loaded { path, read } => {
@@ -514,7 +514,7 @@ impl OffloadDrive {
             }
             Input::Attached { path, then, result } => self.attached(path, then, result),
             Input::Checked { path, host, result } => match result {
-                Ok(()) => vec![Effect::Run(Job::offload(path, host, false))],
+                Ok(()) => vec![Effect::Run(Errand::offload(path, host, false))],
                 Err(why) => vec![Effect::Signal(Signal::Offloaded {
                     path,
                     host,

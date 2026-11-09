@@ -10,7 +10,7 @@ fn names(fx: &[Effect]) -> Vec<&'static str> {
     fx.iter()
         .map(|effect| match effect {
             Effect::Arm(_) => "Arm",
-            Effect::Run(job) => job.name(),
+            Effect::Run(errand) => errand.name(),
             Effect::Signal(Signal::Sent { .. }) => "Sent",
             Effect::Signal(Signal::Offloaded { .. }) => "Offloaded",
             Effect::Signal(Signal::TookOver { .. }) => "TookOver",
@@ -186,10 +186,10 @@ fn the_send_up_is_claimed_once_and_said() {
     let (claimed, fx) = drive.claim_send(Path::new("/a"));
     assert!(claimed);
     assert_eq!(names(&fx), ["SendUp"]);
-    let Effect::Run(job) = &fx[0] else {
+    let Effect::Run(errand) = &fx[0] else {
         unreachable!()
     };
-    assert_eq!(job.reach, Reach::Take);
+    assert_eq!(errand.reach, Reach::Take);
     assert!(drive[Path::new("/a")].going_up());
     assert!(!drive.claim_send(Path::new("/a")).0, "a second press waits");
     assert!(!drive.claim_send(Path::new("/elsewhere")).0);
@@ -246,10 +246,14 @@ fn a_turn_end_checks_only_code_the_host_holds() {
     let mut drive = kept(Holder::Host);
     let fx = drive.check(Path::new("/a"));
     assert_eq!(names(&fx), ["CheckBack"]);
-    let Effect::Run(job) = &fx[0] else {
+    let Effect::Run(errand) = &fx[0] else {
         unreachable!()
     };
-    assert_eq!(job.reach, Reach::Live, "a check never attaches by itself");
+    assert_eq!(
+        errand.reach,
+        Reach::Live,
+        "a check never attaches by itself"
+    );
     assert!(drive.check(Path::new("/a")).is_empty(), "moving");
     assert!(drive.check(Path::new("/elsewhere")).is_empty());
 }
@@ -348,10 +352,10 @@ fn taking_the_hosts_code_says_how_it_went() {
     drive.track("/a".into(), vps(), Some(stopped(1)));
     let fx = drive.take_over(Path::new("/a"), "/b/backup".into());
     assert_eq!(names(&fx), ["TakeOver"]);
-    let Effect::Run(job) = &fx[0] else {
+    let Effect::Run(errand) = &fx[0] else {
         unreachable!()
     };
-    assert_eq!(job.reach, Reach::Take);
+    assert_eq!(errand.reach, Reach::Take);
     let took = |came, here, backed| Input::BroughtBack {
         path: "/a".into(),
         poll: false,
@@ -489,10 +493,10 @@ fn the_poll_goes_one_folder_at_a_time() {
     };
     // `/a`'s host is out of reach: `/b` and `/c`, on it too, are skipped.
     let fx = drive.handle(attached("/a", Err(HostFailure::Other("gone".into()))));
-    let Effect::Run(job) = &fx[0] else {
+    let Effect::Run(errand) = &fx[0] else {
         panic!("{:?}", names(&fx))
     };
-    assert_eq!(job.path(), Path::new("/d"));
+    assert_eq!(errand.path(), Path::new("/d"));
     assert!(
         drive[Path::new("/a")].failed.is_none(),
         "a blip is not said"
@@ -599,10 +603,10 @@ fn an_offload_checks_rsync_before_it_attaches() {
     assert_eq!(names(&drive.offload("/a".into(), vps(), true)), ["Offload"]);
     let fx = drive.offload("/a".into(), vps(), false);
     assert_eq!(names(&fx), ["Check"]);
-    let Effect::Run(job) = &fx[0] else {
+    let Effect::Run(errand) = &fx[0] else {
         unreachable!()
     };
-    assert_eq!(job.reach, Reach::Nothing);
+    assert_eq!(errand.reach, Reach::Nothing);
     let fx = drive.handle(Input::Checked {
         path: "/a".into(),
         host: vps(),
