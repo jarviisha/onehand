@@ -18,9 +18,11 @@ phase; the order, and what each phase moves, is in
 | Carrier | each front end (GPUI's are in `crates/app`) | drives, the front end | what happens next |
 | UI | `crates/app`, `crates/ui`, the Workbench modes' views | everything below, to read | the order of anything |
 
-The first drives are `onehand_core::chat::drive::SessionDrive`, one session, and
-`onehand_core::task::drive::RunDrive`, one run. `ChatSession` (`crates/app/src/chat/session.rs`)
-is the session's carrier, and `crates/app/src/task/carrier.rs` the run's.
+The drives so far are `onehand_core::chat::drive::SessionDrive`, one session;
+`onehand_core::task::drive::RunDrive`, one run; and `onehand_core::task::tasks::TasksDrive`, every
+task and the place each works in. `ChatSession` (`crates/app/src/chat/session.rs`) is the
+session's carrier, `crates/app/src/task/carrier.rs` the run's, and the `Tasks` global
+(`crates/app/src/task.rs`, `task/place.rs`) the tasks'.
 
 ## Rules
 
@@ -141,15 +143,17 @@ A model's methods that change application state are `pub(crate)`, so only drives
 call them, and core exports drives and the model's read side. A call from the app to
 `Chat::submit` does not compile, and `dead_code` finds a mutator no drive uses.
 
-Built for `Chat`: every method that changes it is `pub(crate)`. The other models are not there
-yet; each phase that moves one makes its mutators `pub(crate)`.
+Built for `Chat`, `Task`, the task queue and the workflow engine's `Run`: every method that
+changes them is `pub(crate)`. `Task`'s fields are still public, for the app to build a task with.
+The other models are not there yet; each phase that moves one makes its mutators `pub(crate)`.
 
 No guard backs this up yet: a guard is added once the same mistake has been made in several
 places, as every guard in `crates/app/src/guards.rs` was.
 
 ### 9. A drive sits beside its model
 
-`SessionDrive` is `core/src/chat/drive.rs`; a run's drive is `core/src/task/drive.rs`. The
+`SessionDrive` is `core/src/chat/drive.rs`; a run's drive is `core/src/task/drive.rs`, and the
+tasks' `core/src/task/tasks.rs`. The
 repository is cut by feature, and there is no `application/` folder to split each feature in
 two.
 
@@ -157,7 +161,8 @@ two.
 
 A drive never holds another. Where one drive's effects become another's commands, and one's
 signals another's inputs, is behaviour too. So it is a GUI-free module of core tested with the
-real drives on both sides, as `task::drive::link` joins a run and its session. A GPUI subscriber
+real drives on both sides, as `task::drive::link` joins a run and its session, and
+`task::tasks::link` a run and its task. A GPUI subscriber
 that routes between drives is a rule in the wrong place.
 
 **A drive reads another drive's model, and never changes it.** The run's drive reads its
@@ -176,11 +181,15 @@ is GPUI's (`ChatSession`'s are in `crates/app/src/chat/session/tests.rs`). They 
 
 Not built yet for every carrier or every check. `ChatSession`'s tests hold order and exactly
 once, requests reaching the agent in order, a failed save reaching the drive, the quiet wait and
-its cancel at the stream's end, and a close with a save in flight and a wait armed. Still
-untested: `SendCode`'s late answer and the pane's half of the session (`ChatPane::carry`),
-`SaveTitle` (written on the ordered writer's own thread, which GPUI's test scheduler does not
-wait for), deferred work, and the run's carrier (`crates/app/src/task/carrier.rs`), which has no
-contract tests yet.
+its cancel at the stream's end, and a close with a save in flight and a wait armed. The run's and
+the tasks' carriers' tests (`crates/app/src/task/tests.rs`) hold a run's prompt going once, its
+failed writes reaching its drive and said once, a session closed under a run leaving nothing
+listening, a finished run hearing nothing more, the place held while a cancelled turn drains, a
+Stop before a command starts, and a dismiss put back when its write fails. Still untested:
+`SendCode`'s late answer and the pane's half of the session (`ChatPane::carry`), `SaveTitle`
+(written on the ordered writer's own thread, which GPUI's test scheduler does not wait for),
+deferred work, the forge calls (the connectors are the ones built in), and a command called off
+while it runs (the test scheduler runs it to its end before a Stop can reach it).
 
 ### 12. A model does no I/O and reads no clock
 

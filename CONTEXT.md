@@ -350,7 +350,8 @@ _Avoid_: version
 ## How onehand is built
 
 **Drive**:
-The part of core that decides what happens next for one thing, a session or a run: it is told
+The part of core that decides what happens next for one thing (a session, a run, or every task
+and the places they work in): it is told
 commands and what came of its effects, and answers with effects. It does no I/O and holds no
 timer. Not the `drive` skill, which runs the app in a headless session for a by-hand test.
 _Avoid_: controller, service, manager, orchestrator, use case
