@@ -8,6 +8,7 @@
 
 pub mod client;
 pub mod copy;
+pub mod drive;
 mod failure;
 pub mod journal;
 pub mod offload;

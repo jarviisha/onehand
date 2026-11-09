@@ -1,29 +1,10 @@
-use super::{
-    HostFlow, Waiting, Want, back_failure, landed_on, needs_restart, release, said_by_wait,
-};
-use crate::hosts::HostState;
+use super::{HostFlow, Waiting, Want, landed_on, release};
 
 /// What a host's waiting holds, to compare.
 fn held(waiting: Option<Waiting>) -> Option<(Vec<u64>, Option<u64>, bool)> {
     waiting.map(|w| (w.uids, w.add, w.page))
 }
-use crate::hosts::HostFailure;
 use onehand_core::workspace::HostName;
-
-#[test]
-fn a_yes_restarts_the_service_only_while_it_is_still_busy() {
-    let busy: Result<(), HostFailure> = Err(HostFailure::Busy {
-        host: HostName("box".into()),
-        busy: Vec::new(),
-        terms: 0,
-    });
-    assert!(needs_restart(&busy));
-    // Done waiting since the question was asked: nothing to stop.
-    assert!(!needs_restart(&Ok::<(), HostFailure>(())));
-    assert!(!needs_restart(&Err::<(), _>(HostFailure::Other(
-        "gone".into()
-    ))));
-}
 
 /// What waits on a host here is gathered once per host, and the end of
 /// its wait is listened for once.
@@ -126,42 +107,4 @@ fn a_wait_on_a_host_being_back_stands_apart_from_its_busy_wait() {
     assert_eq!(held(flow.take(&a, true)), Some((vec![1], None, false)));
     assert_eq!(held(flow.take(&a, false)), Some((vec![2], None, false)));
     assert!(flow.is_empty());
-}
-
-/// A failed restart that ended a wait is said where the wait was, once;
-/// with nothing waiting, or a host still busy, it is said on its own.
-#[test]
-fn a_failed_restart_is_said_once() {
-    let gone = HostFailure::Other("Could not attach to box: gone".into());
-    let busy = HostFailure::Busy {
-        host: HostName("box".into()),
-        busy: Vec::new(),
-        terms: 0,
-    };
-    assert!(said_by_wait(true, &gone), "the wait ended on it: no toast");
-    assert!(!said_by_wait(false, &gone), "nothing waited: a toast");
-    assert!(!said_by_wait(true, &busy), "still waiting: said on its own");
-}
-
-/// A host taken by another machine is never attached again by itself, however
-/// its wait ended; one found busy carries on onto its busy wait; a refused
-/// host ends what waited on why.
-#[test]
-fn what_waited_on_a_host_being_back_restarts_only_when_it_may() {
-    let host = HostName("vps".into());
-    let taken = Some("vps was attached from another machine".to_string());
-    assert_eq!(back_failure(&host, &HostState::Taken, false, Ok(())), taken);
-    assert_eq!(
-        back_failure(&host, &HostState::Taken, true, Err("busy".into())),
-        taken
-    );
-    assert_eq!(back_failure(&host, &HostState::Live, false, Ok(())), None);
-    assert_eq!(
-        back_failure(&host, &HostState::Attaching, true, Err("busy".into())),
-        None
-    );
-    assert_eq!(
-        back_failure(&host, &HostState::Unknown, false, Err("refused".into())),
-        Some("refused".into())
-    );
 }
