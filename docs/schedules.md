@@ -71,6 +71,11 @@ Anything but nothing moves `last_fired`, so one due time fires once. A skip is s
 The clock writes only `last_fired` and `said`, onto the file as it is when it writes, so a hand
 edit made during a look stands. A time held for a schedule that is then switched off is let go.
 
+A look that comes while the last is under way waits for the next, and a look starts what is due one
+at a time, in the file's order. All of it is decided in core (`schedule::drive::ScheduleDrive`, over
+`schedule::decide`); the app carries it out (`crates/app/src/schedules.rs`): the timer, reading and
+writing the file, the window holding each project, and each start.
+
 ## A start
 
 - **A prompt** runs as a task of a workflow of one agent step, *Prompt*, whose prompt is the

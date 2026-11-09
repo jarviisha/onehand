@@ -1,6 +1,6 @@
 # An application layer: how onehand works, apart from how it is drawn
 
-- Status: phases 1 to 4 built.
+- Status: phases 1 to 5 built.
   - Phase 1, a trial slice of one session, is #307.
   - Phase 2 settled the standard: it lives in [docs/drives.md](../drives.md), its terms in
     CONTEXT.md (*How onehand is built*), and its short form in AGENTS.md (*Invariants*).
@@ -8,7 +8,8 @@
     crate (`onehand-io`); what it left for later is placed under *Plan*.
   - Phase 4 moved tasks: the run's drive is `RunDrive`, every task and its place are
     `TasksDrive`'s, and starts and retries are decided in core.
-  - What is left here is the plan for phases 5 to 10, the inventory they work from, and the
+  - Phase 5 moved unattended runs into `UnattendedDrive` and the clock into `ScheduleDrive`.
+  - What is left here is the plan for phases 6 to 10, the inventory they work from, and the
     record of the trial. Each phase that is built moves its rows out of here, in the same PR.
 - Supersedes the rule agreed in #133 ("logic belongs in core when two call sites share it, when a
   second front end could need it, or when it wants a test without a GUI"). That rule moved *rules*
@@ -103,8 +104,6 @@ row is re-audited at the start of its phase. Line counts are at `6f92ab49`.
 | Session: what phase 3 left | `SessionDrive` (every change to a session), `host::went_away`'s line | `chat/session.rs` pump (seeing a host's lost connection, on the connection it holds); `chat/pane/sessions.rs` subscriber (offload check after a turn, archive refresh) | `SessionDrive`, with the host drive (phase 6) |
 | Session: telling (phase 7) | `attention` (`telling`, `Away`), `remote::Chats::announcement` | `chat/pane/bridge.rs` (`turn_ended_detached`, `awaiting_user_detached`, `link_lost_detached`), desktop notifications | `SessionDrive` signals, with `Input::Shown` |
 | Session: lifecycle (phase 8) | `SessionDrive::resume`, `fork`, `take_snapshot`, the workspace tree | `chat/session.rs` (`spawn`), `chat/pane/sessions.rs` (phases, `close`), `shell/sessions.rs` (946 lines), `shell/fork.rs` | a workspace drive |
-| Schedules | `schedule::decide`, `cron` | `schedules.rs` (the clock, rereading `schedules.toml`, choosing the window) | schedule drive |
-| Unattended runs | `unattended` claim, verdict, report (#170) | `unattended.rs` (770), `unattended/launch*`, `unattended/report.rs` (tick, cap, after a run's task ends), carried from the tasks' and the run's effects (`Report`, `IssueEnded`, `Deliver`, `Asked`, `Waiting`, `Answered`, `CameUp`, `Pause`) | unattended drive |
 | Offloaded projects | `host::copy`, offload state | `offload.rs` (934, past the split line), `offload/branch.rs`, `shell/offload.rs` | offload drive |
 | Hosts | `host::client`, `host::wire`, `journal` | `hosts.rs` (one attach per host), `hosts/waits.rs`, `shell/host_end.rs`, `shell/host_project*` | host drive |
 | Remote bridge | `remote::command`, `remote::Chats`, `press` | `remote.rs` (`answer`, `send_prompt`, `stop_session`), `shell/remote_runs.rs` | remote drive, calling `SessionDrive` |
@@ -202,15 +201,44 @@ What it left was placed with phase 4's audit (D9):
   `pub(crate)`. Both carriers have contract tests (`crates/app/src/task/tests.rs`).
 
 Left for later:
-- `Task`'s fields are still public: the app builds tasks with them (`unattended/launch.rs` sets an
-  issue's source on the task it makes), though it no longer changes a kept one.
+- `Task`'s fields are still public: the app builds tasks with them, though it no longer changes a
+  kept one (phase 5 built an issue's task in core).
 - What a person pressed and is still being done (`acting`) stays in the `Tasks` global.
 - `task/approval.rs` still asks which answer a run waits at before a press, to show the new one
   instead; the engine refuses a stale press either way.
 
-**Phase 5: schedules and unattended runs.** The clock and the tick become `Arm`/`Elapsed`; the
-window choice becomes an input the carrier supplies. The unattended effects of the tasks' and the
-run's drives become an unattended drive's commands, through a link.
+**Phase 5: schedules and unattended runs.** Built:
+- Unattended runs are `UnattendedDrive` (`onehand_core::unattended::drive`, split along its seams:
+  `claiming.rs`, `settings.rs`, `reports.rs`, `blocking.rs`), one drive beside the clock's rather
+  than one for both (D13). The tick is its clock (`Arm`/`Elapsed`); the look and the search, the
+  recheck before a claim, the claim and the task it is kept as, a pick refused before its claim, a
+  search asked for now, the cap and the runs still starting, waiting and answered runs, the pause,
+  a run's end and its reports sent once each are its (D15). What its effects do off the UI loop is
+  core's too (`drive::blocking`).
+- It is held in the `Tasks` global beside the tasks' drive and the runs (D14); `Shared.unattended`
+  is gone. `unattended::link` joins it to `TasksDrive`: an issue task asking for its place, its end
+  and what it owes its issue become unattended commands, and a claim kept as a task, a review
+  answered and a report landed become the tasks'. Every start is held to the cap through
+  `Joined::request`. `task::tasks::link::Seen` reads the tasks with the runs under way, so what a
+  task is doing and the slot rule (`holds_slot`) are core's.
+- The run's unattended effects (`Waiting`, `Answered`, `CameUp`, `Pause`) are carried as the drive's
+  commands; the tasks' `Report` is gone (below).
+- An issue's task is built in core (`Task::of_issue`); the app no longer sets a task's fields for
+  one (D16).
+- The clock schedules run by is `ScheduleDrive` (`onehand_core::schedule::drive`): its first look
+  and every later one as `Arm`/`Elapsed`, the window holding each project, the tasks still working,
+  the workflows on offer, the time and the time zone told it. A look, its starts one at a time, its
+  write onto the file as it is (`schedule::merge_looked`) and a switch put back when its write fails
+  (`schedule::switch`) are decided there.
+- Both carriers have contract tests (`crates/app/src/unattended/tests.rs`,
+  `crates/app/src/schedules/tests.rs`). Core's drive tests hold every rule moved, among them a tick
+  that searches a real repository's issues, claims one and keeps its task asking for its place.
+
+Left for later:
+- `read_review` (`crates/app/src/unattended/launch/answer.rs`) still gathers what answering a review
+  is judged on in the app; it only reads, and what it starts goes through the drive.
+- What needs a window's shell (a claim's run brought up, a schedule's start, a run's project kept
+  or dropped) is tested by hand; the carriers' tests run without a shell.
 
 **Phase 6: offloaded projects and hosts.** Splits `offload.rs` along the way, which the line rule
 already demands. Seeing a host's lost connection moves here, and restarting a session with a save
@@ -227,7 +255,8 @@ part, and the GPUI mount.
 
 **Phase 10: cross-drive flows.** Link tests with the real drives and fake I/O:
 - schedule → task → run → session;
-- unattended tick → claim → run → report.
+- unattended tick → claim → run → report (phase 5's drive tests reach the task asking for its
+  place).
 
 ## What the trial showed
 
@@ -419,6 +448,22 @@ Made on 2026-11-09, with phase 4's audit:
   than `RunDrive` taking start, retry and the queue.
 - **D12. Unattended stays effects in phase 4.** A run's end keeps its issue's report through an
   effect, as the run's other unattended hooks do; unattended's own decisions are phase 5's.
+
+Made on 2026-11-09, with phase 5's audit:
+- **D13. Two drives**, one for unattended runs and one for the clock, each beside its model: they
+  share no state and meet only through the tasks.
+- **D14. Unattended runs' drive is held beside the tasks' drive**, in the `Tasks` global: the slot
+  rule reads the tasks and the runs under way at once, and the link needs both drives in one call.
+- **D15. All of unattended runs moves in phase 5**: the tick, the search and the claims, the pick,
+  the search asked for now and a review answered, as well as the cap and a run's end.
+- **D16. An issue's task is built in core.** The other builders (the launcher, a check, a tool, a
+  schedule) keep `Task`'s public fields for now.
+
+Phase 5 changed, on purpose:
+- A run's end reached its issue's task through an effect carried after the tasks' drive had queued
+  the run's own write, so that write held the run without its report until the last mark was
+  pinned. The tasks' drive now keeps the report on its own model (`IssueSource::keep_report`) in
+  the write that keeps the run, and `Effect::Report` is gone.
 
 Phase 4 changed, on purpose:
 - A run's failed write was only logged; it is now said in the run's window, once until a write
