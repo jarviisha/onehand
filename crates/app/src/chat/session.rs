@@ -30,7 +30,7 @@ mod cards;
 mod folds;
 mod host;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 /// Emitted when the transcript changed in a way the hosting pane cares about.
 /// Say something on the desktop, outside the app's own window.

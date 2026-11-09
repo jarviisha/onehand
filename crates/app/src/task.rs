@@ -64,6 +64,13 @@ impl Drop for Running {
 
 impl Default for Tasks {
     fn default() -> Self {
+        Self::in_dir(files::dir())
+    }
+}
+
+impl Tasks {
+    /// No task yet, with their files kept in `dir`.
+    fn in_dir(dir: PathBuf) -> Self {
         Self {
             tasks: Vec::new(),
             live: HashMap::new(),
@@ -74,7 +81,7 @@ impl Default for Tasks {
             removed: HashMap::new(),
             off_screen: HashSet::new(),
             commands: Arc::default(),
-            writer: files::Writer::spawn(files::dir()),
+            writer: files::Writer::spawn(dir),
         }
     }
 }
@@ -599,3 +606,6 @@ pub(crate) fn undelivered(cx: &App) -> Vec<String> {
             .collect()
     })
 }
+
+#[cfg(test)]
+mod tests;
