@@ -27,6 +27,8 @@ The drives so far:
 | `onehand_core::task::tasks::TasksDrive` | every task and the place each works in | the `Tasks` global (`crates/app/src/task.rs`, `task/place.rs`) |
 | `onehand_core::unattended::drive::UnattendedDrive` | unattended runs: the tick, the claim, the cap, a run's reports | `crates/app/src/unattended.rs`, its drive held in the `Tasks` global |
 | `onehand_core::schedule::drive::ScheduleDrive` | the clock schedules run by | the clock in `crates/app/src/schedules.rs` |
+| `onehand_core::host::drive::HostDrive` | one attach per host, what is known of each, the waits on a busy or lost host | `crates/app/src/hosts.rs`, its drive held on `Shared`, the attach run by `onehand_io::host` |
+| `onehand_core::host::offload::drive::OffloadDrive` | every offloaded folder: who holds its code, its moves, the poll, a branch's updates | `crates/app/src/offload.rs`, its drive held in the `Offloads` global |
 
 ## Rules
 
@@ -150,11 +152,12 @@ call them, and core exports drives and the model's read side. A call from the ap
 
 Built for `Chat`, `Task`, the task queue and the workflow engine's `Run`: every method that
 changes them is `pub(crate)`. `Task`'s fields are still public, for the app to build a task with,
-though an issue's task is built in core (`Task::of_issue`). Unattended runs and the clock keep their
-state in their drives' private fields. A schedule is the file's data, and what the clock or a
-switch writes onto it is decided by core's functions the carrier runs in its writer
-(`schedule::merge_looked`, `schedule::switch`). The other models are not there yet; each phase that
-moves one makes its mutators `pub(crate)`.
+though an issue's task is built in core (`Task::of_issue`). Unattended runs, the clock, hosts
+and offloaded projects keep their state in their drives' private fields; an offloaded folder's
+entry is read through its drive, never handed out to change. A schedule is the file's data, and
+what the clock or a switch writes onto it is decided by core's functions the carrier runs in its
+writer (`schedule::merge_looked`, `schedule::switch`). The other models are not there yet; each
+phase that moves one makes its mutators `pub(crate)`.
 
 No guard backs this up yet: a guard is added once the same mistake has been made in several
 places, as every guard in `crates/app/src/guards.rs` was.
@@ -162,8 +165,9 @@ places, as every guard in `crates/app/src/guards.rs` was.
 ### 9. A drive sits beside its model
 
 `SessionDrive` is `core/src/chat/drive.rs`; a run's drive is `core/src/task/drive.rs`, the
-tasks' `core/src/task/tasks.rs`, unattended runs' `core/src/unattended/drive.rs` and the clock's
-`core/src/schedule/drive.rs`. The
+tasks' `core/src/task/tasks.rs`, unattended runs' `core/src/unattended/drive.rs`, the clock's
+`core/src/schedule/drive.rs`, hosts' `core/src/host/drive.rs` and offloaded projects'
+`core/src/host/offload/drive.rs`. The
 repository is cut by feature, and there is no `application/` folder to split each feature in
 two.
 
@@ -175,7 +179,9 @@ real drives on both sides, as `task::drive::link` joins a run and its session,
 `task::tasks::link` a run and its task, and `unattended::link` unattended runs and the tasks (every
 start held to the cap, a claim kept as a task, a run's end telling its issue). A drive that reads
 the tasks reads them with the runs under way through `task::tasks::link::Seen`, which says what
-each task is doing and who holds a slot. A GPUI subscriber
+each task is doing and who holds a slot. Which of a session's signals checks an offloaded
+project's code is `OffloadDrive::session_said`'s, and how a host stands, the offload poll is
+told as it comes round (`HostSeen`). A GPUI subscriber
 that routes between drives is a rule in the wrong place.
 
 **A drive reads another drive's model, and never changes it.** The run's drive reads its
@@ -192,23 +198,29 @@ is GPUI's (`ChatSession`'s are in `crates/app/src/chat/session/tests.rs`). They 
 - after a session closes, nothing of it stays running and no effect runs for it;
 - deferred work runs after the update that asked for it, never inside it.
 
-Not built yet for every carrier or every check. `ChatSession`'s tests hold order and exactly
-once, requests reaching the agent in order, a failed save reaching the drive, the quiet wait and
-its cancel at the stream's end, and a close with a save in flight and a wait armed. The run's and
+Not built yet for every carrier or every check. `ChatSession`'s tests hold order and exactly once,
+requests reaching the agent in order, a failed save reaching the drive, the quiet wait and its
+cancel at the stream's end, a close with a save in flight and a wait armed, and a watch ended by
+its host's lost connection said as out of reach, one taken by another machine ended. The run's and
 the tasks' carriers' tests (`crates/app/src/task/tests.rs`) hold a run's prompt going once, its
 failed writes reaching its drive and said once, a session closed under a run leaving nothing
 listening, a finished run hearing nothing more, the place held while a cancelled turn drains, a
-Stop before a command starts, and a dismiss put back when its write fails. Unattended runs' carrier
-(`crates/app/src/unattended/tests.rs`) holds its clock coming round and armed again, a start over
-the cap refused where it was asked, a pause, a config that cannot work, and a report sent once and
-dropped once it lands; the clock's (`crates/app/src/schedules/tests.rs`) its first look after its
-wait, a file it cannot read said, a look that moves nothing writing nothing, and a failed switch
-put back. Still untested:
-`SendCode`'s late answer and the pane's half of the session (`ChatPane::carry`), `SaveTitle`
-(written on the ordered writer's own thread, which GPUI's test scheduler does not wait for),
-deferred work, the forge calls (the connectors are the ones built in), a command called off
-while it runs (the test scheduler runs it to its end before a Stop can reach it), and what needs a
-window's shell: a claim's run brought up, a schedule's start, a run's project kept or dropped.
+Stop before a command starts, and a dismiss put back when its write fails. Hosts' carrier
+(`crates/app/src/hosts/tests.rs`) holds a wait's end reaching every listener once and the last
+listener going ending the wait and its clock; offloaded projects'
+(`crates/app/src/offload/tests.rs`) a errand's answer landing once, the poll's clock coming round
+and armed again, an answer reaching its asker once, and a late answer for a folder let go landing
+on nothing. Unattended runs' carrier (`crates/app/src/unattended/tests.rs`) holds its clock coming
+round and armed again, a start over the cap refused where it was asked, a pause, a config that
+cannot work, and a report sent once and dropped once it lands; the clock's
+(`crates/app/src/schedules/tests.rs`) its first look after its wait, a file it cannot read said, a
+look that moves nothing writing nothing, and a failed switch put back. Still untested: `SendCode`'s
+late answer and the pane's half of the session (`ChatPane::carry`), `SaveTitle` (written on the
+ordered writer's own thread, which GPUI's test scheduler does not wait for), deferred work, the
+forge calls (the connectors are the ones built in), a command called off while it runs (the test
+scheduler runs it to its end before a Stop can reach it), and what needs a window's shell: a
+claim's run brought up, a schedule's start, a run's project kept or dropped; and a host's real
+attach, which runs on a runtime GPUI's test scheduler does not drive.
 
 ### 12. A model does no I/O and reads no clock
 

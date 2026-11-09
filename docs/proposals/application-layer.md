@@ -1,6 +1,6 @@
 # An application layer: how onehand works, apart from how it is drawn
 
-- Status: phases 1 to 5 built.
+- Status: phases 1 to 6 built.
   - Phase 1, a trial slice of one session, is #307.
   - Phase 2 settled the standard: it lives in [docs/drives.md](../drives.md), its terms in
     CONTEXT.md (*How onehand is built*), and its short form in AGENTS.md (*Invariants*).
@@ -9,7 +9,9 @@
   - Phase 4 moved tasks: the run's drive is `RunDrive`, every task and its place are
     `TasksDrive`'s, and starts and retries are decided in core.
   - Phase 5 moved unattended runs into `UnattendedDrive` and the clock into `ScheduleDrive`.
-  - What is left here is the plan for phases 6 to 10, the inventory they work from, and the
+  - Phase 6 moved hosts into `HostDrive`, offloaded projects into `OffloadDrive`, and the attach
+    to a host into `onehand-io`.
+  - What is left here is the plan for phases 7 to 10, the inventory they work from, and the
     record of the trial. Each phase that is built moves its rows out of here, in the same PR.
 - Supersedes the rule agreed in #133 ("logic belongs in core when two call sites share it, when a
   second front end could need it, or when it wants a test without a GUI"). That rule moved *rules*
@@ -101,11 +103,9 @@ row is re-audited at the start of its phase. Line counts are at `6f92ab49`.
 
 | Area | Core has | App decides today | Target drive |
 |---|---|---|---|
-| Session: what phase 3 left | `SessionDrive` (every change to a session), `host::went_away`'s line | `chat/session.rs` pump (seeing a host's lost connection, on the connection it holds); `chat/pane/sessions.rs` subscriber (offload check after a turn, archive refresh) | `SessionDrive`, with the host drive (phase 6) |
+| Session: what phase 6 left | `SessionDrive` (every change to a session, a host's lost connection, what it waits on its host for) | `chat/pane/sessions.rs` subscriber (the archive refresh after a turn; the `Disconnected` arm telling a fork that never opened, a host out of reach and a lost agent apart) | the session lifecycle (phase 8) |
 | Session: telling (phase 7) | `attention` (`telling`, `Away`), `remote::Chats::announcement` | `chat/pane/bridge.rs` (`turn_ended_detached`, `awaiting_user_detached`, `link_lost_detached`), desktop notifications | `SessionDrive` signals, with `Input::Shown` |
 | Session: lifecycle (phase 8) | `SessionDrive::resume`, `fork`, `take_snapshot`, the workspace tree | `chat/session.rs` (`spawn`), `chat/pane/sessions.rs` (phases, `close`), `shell/sessions.rs` (946 lines), `shell/fork.rs` | a workspace drive |
-| Offloaded projects | `host::copy`, offload state | `offload.rs` (934, past the split line), `offload/branch.rs`, `shell/offload.rs` | offload drive |
-| Hosts | `host::client`, `host::wire`, `journal` | `hosts.rs` (one attach per host), `hosts/waits.rs`, `shell/host_end.rs`, `shell/host_project*` | host drive |
 | Remote bridge | `remote::command`, `remote::Chats`, `press` | `remote.rs` (`answer`, `send_prompt`, `stop_session`), `shell/remote_runs.rs` | remote drive, calling `SessionDrive` |
 | onehand's tools | `control` (what a tool may do), `control::turns` | `control.rs` (`perform`), `control/start.rs`, `control/workers/*` | control drive |
 | Settings | `AppConfig::update_in_place`, `saving` | `saves.rs`, `shell/settings_page.rs` (`persist_agents`) | settings drive |
@@ -119,10 +119,10 @@ row is re-audited at the start of its phase. Line counts are at `6f92ab49`.
 
 `onehand-io` holds the runtimes onehand's I/O runs on, held to core's check (`cargo tree -p
 onehand-io -i gpui-pre` fails, in CI). Phase 3 moved the agent runtime into it (`onehand_io::acp`);
-what an agent is given to reach onehand's tools stays the front end's, through `acp::Pass`. The
-remote channel's runtime (`remote.rs`) and the attach to a host (`hosts.rs`) are tangled with
-`Shared` and GPUI contexts, so their runtime halves move with the phases that take them apart (6
-and 7). Disk writes and git calls stay blocking functions in core. Core keeps its rule of
+what an agent is given to reach onehand's tools stays the front end's, through `acp::Pass`. Phase
+6 moved the attach to a host and every call over it (`onehand_io::host`); what follows from an
+attach is `HostDrive`'s. The remote channel's runtime (`remote.rs`) is tangled with `Shared` and
+GPUI contexts, so its runtime half moves with phase 7. Disk writes and git calls stay blocking functions in core. Core keeps its rule of
 dictating no runtime; this crate is where the runtime is chosen.
 
 ## Where the drives live (D4: R)
@@ -240,9 +240,43 @@ Left for later:
 - What needs a window's shell (a claim's run brought up, a schedule's start, a run's project kept
   or dropped) is tested by hand; the carriers' tests run without a shell.
 
-**Phase 6: offloaded projects and hosts.** Splits `offload.rs` along the way, which the line rule
-already demands. Seeing a host's lost connection moves here, and restarting a session with a save
-in flight is done beside it.
+**Phase 6: offloaded projects and hosts.** Built:
+- Offloaded projects are `OffloadDrive` (`onehand_core::host::offload::drive`, split along its
+  seams: `blocking.rs`, the errands' bodies; `branch.rs`, a project on a branch). Who holds a folder's
+  code, the claim before a prompt, every copy's landing, *Check again*, *Take the host's code*, the
+  form's offload (`rsync` checked first), a branch's fetch and update, and the poll's pass, one
+  folder at a time with each unreached host tried once, are its. Each errand's body runs off the UI
+  loop in core over the attach the carrier hands it (`Reach`), and answers as a failure if it
+  panics. The app's `offload.rs` is its carrier (324 lines, from 940); `offload/branch.rs` is gone.
+- Hosts are `HostDrive` (`onehand_core::host::drive`): which ask joins which attempt, a person's
+  ask waiting on one made by itself and attaching again should it fail, which landing is heard,
+  what is known of each host, and the busy and back waits with their clocks and backoff. Its
+  carrier (`crates/app/src/hosts.rs`) holds one shared future per attempt, so callers keep awaiting
+  as before (D19). The attach and every call over it are `onehand_io::host` (D5); `HostFailure`
+  and the waiting line are core's. The shell's rules on a restart and a back wait
+  (`back_failure`, `needs_restart`, `said_by_wait`, `restart_failure`) are core's too.
+- A host's lost connection is decided in the session's drive (D9): the pump tells it how the
+  watch's connection stands (`HostLink`), and `SessionDrive::apply_watched` says the copy's line and
+  keeps the wait. What a session waits on its host for (its busy sessions, or the host itself) is
+  the drive's, no longer the entity's.
+- Which of a session's signals checks an offloaded project's code is
+  `OffloadDrive::session_said`'s; the pane's subscriber only hands the signal on.
+- Restarting a session with a save in flight honours it: the snapshot says a save was on its way,
+  and the session that carries on writes the whole transcript at its first save (D20).
+- Both carriers have contract tests (`crates/app/src/hosts/tests.rs`,
+  `crates/app/src/offload/tests.rs`), and the session's carrier holds a lost connection and a
+  taken one.
+
+Left for later:
+- Each window's share of a host's waits (`HostFlow`, `crates/app/src/shell/host_project.rs`) keeps
+  its bookkeeping in the shell; the rules it follows are core's.
+- How a host session begins (`offline_start`, `host_restart`, `crates/app/src/chat/session/host.rs`)
+  and *End on <host>* (`shell/host_end.rs`) are the session's lifecycle, phase 8's.
+- The pane's subscriber still tells a fork that never opened, a host out of reach and a lost agent
+  apart at a stream's end, reading what the drive holds; phase 8 moves it with the lifecycle.
+- The remote bridge still reaches an offloaded session without its code (#308, D8): phase 7.
+- A host's real attach is tested by hand: it runs on a runtime GPUI's test scheduler does not
+  drive.
 
 **Phase 7: remote bridge, onehand's tools, second launch, settings, agent check.** Mostly callers
 of drives built earlier, so mostly deletion. Telling moves here.
@@ -458,6 +492,25 @@ Made on 2026-11-09, with phase 5's audit:
   the search asked for now and a review answered, as well as the cap and a run's end.
 - **D16. An issue's task is built in core.** The other builders (the launcher, a check, a tool, a
   schedule) keep `Task`'s public fields for now.
+
+Made on 2026-11-09, with phase 6's audit:
+- **D17. Two drives and a link**, one for hosts and one for offloaded projects, each beside its
+  model: they share no state, and an offloaded project only reads how its host stands and asks for
+  an attach.
+- **D18. The owners stay where they were:** hosts' drive on `Shared`, one per process;
+  offloaded projects' in the `Offloads` global.
+- **D19. The attach's runtime half moves into `onehand-io`, and callers keep awaiting.** The drive
+  decides; the carrier keeps one shared future per attempt and resolves every caller from it.
+- **D20. Restarting with a save in flight is fixed in phase 6's PR**, a commit of its own.
+
+Phase 6 changed, on purpose:
+- Putting the offload form away no longer stops a send under way: it runs to its end and keeps
+  what went for the next offload. The project stays here, as before.
+- A errand of an offloaded project that panics answers as a failure, *Something went wrong here; try
+  again*, rather than leaving its folder claimed.
+- The poll goes through the folders in their path's order, not the map's.
+- An attempt joined by several asks is heard once, as a person's when a person's ask joined it,
+  where each ask heard it before; a poll's miss counts once per attempt.
 
 Phase 5 changed, on purpose:
 - A run's end reached its issue's task through an effect carried after the tasks' drive had queued

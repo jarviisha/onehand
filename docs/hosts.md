@@ -25,7 +25,7 @@ it. What is refused, and how, is under *What a host project does not do*.
 ## The host service
 
 - **The binary is the one built beside this one:** `onehand-host` in `current_exe()`'s directory
-  (`bundled_binary`, `crates/app/src/hosts.rs`). The release tarball ships the two together;
+  (`bundled_binary`, `crates/io/src/host.rs`). The release tarball ships the two together;
   `make dev` and `make showcase` build `-p onehand-host` before the app. Missing, an attach fails
   with *onehand-host is not beside onehand; build it with `cargo build -p onehand-host`*.
 - **Installed by build:** the attach copies it to `~/.onehand-host/<build>/onehand-host` unless
@@ -39,16 +39,18 @@ it. What is refused, and how, is under *What a host project does not do*.
 
 ## Attach and detach
 
-- **One attach per host, for the whole process**, held on `Shared` (`crates/app/src/hosts.rs`):
+- **One attach per host, for the whole process**, held on `Shared` (`crates/app/src/hosts.rs`)
+  and decided by `HostDrive` (`crates/core/src/host/drive.rs`):
   every window, project and session on a host shares it. It is made on first use (a host
   project's page shown, a host session shown, a host project shown in the Workbench, the *Add* of
   the form) and made again only once its stream has ended. Asks that arrive while one attach runs
   all wait on that one, so two never run at once. A person's ask that finds an attach made by
   itself under way (which does not take the host, below) waits on it too, and takes what it lands;
   if it fails, held or otherwise, the person's own attach, taking the host, follows. Only the
-  latest attempt for a host says what is known of it: one a restart replaced is not heard. The attach runs on the ACP runtime and its
-  answer crosses back on a oneshot.
-- **What a host is to this run** (`HostState`, `crates/app/src/hosts.rs`): never tried, attaching,
+  latest attempt for a host says what is known of it: one a restart replaced is not heard. The
+  attach runs on the agent runtime (`crates/io/src/host.rs`) and its answer crosses back on a
+  oneshot.
+- **What a host is to this run** (`HostState`, `crates/core/src/host/drive.rs`): never tried, attaching,
   live, **lost** (an attach failed, or a live connection closed, without another machine taking the
   host), **taken** (another machine attached; the connection keeps it, `HostConn::taken`), or
   refused. Refused is a host that cannot work at all: one that is not a Linux x86_64 machine, or
@@ -120,7 +122,7 @@ Every attach opens by exchanging builds (`client::attach`):
   those sessions to go idle and those terminals to close** (which, since it has no attach to the
   host meanwhile, it cannot do itself: a terminal closes from a laptop on the host's build, or by
   its shell exiting), once per host however many sessions, pages
-  and forms wait on it (`Waits` in `crates/app/src/hosts.rs`): it attaches again every 15 s
+  and forms wait on it (`HostDrive`'s waits, `crates/core/src/host/drive/waits.rs`): it attaches again every 15 s
   (`HOST_IDLE_POLL`), and the first attach that lands, which restarts the idle service onto this
   build by itself, ends the wait. An attach that cannot reach the host ends it too, on that
   failure (from the poll only after two misses in a row, `HOST_UNREACHABLE_POLLS`, so a blip
@@ -258,9 +260,10 @@ Every attach opens by exchanging builds (`client::attach`):
   the link is lost, so Restart tries again. Nothing kept ends the session on the failure's words,
   as before; a busy host waits as above whatever is kept; a refused host reads the copy with no
   notice and ends on the reason. The line goes with the restart that carries on.
-- **A connection lost under a shown session says the same.** The cut link is settled
-  (`Chat::link_cut`: the thought finalised, pending permission cards withdrawn, the link lost)
-  without a failure item, then the copy's line is said with *up to just now*, and the session
+- **A connection lost under a shown session says the same** (`SessionDrive::apply_watched`,
+  told how the watch's connection stands). The cut link is settled (`Chat::link_cut`: the
+  thought finalised, pending permission cards withdrawn, the link lost) without a failure
+  item, then the copy's line is said with *up to just now*, and the session
   joins the back wait, so it restarts by itself when the host answers. A connection taken by
   another machine is not that: it ends as before, on *<host> was attached from another machine*.
   Either is a session that is not lost to the person: the remote bridge's *agent lost* is not
@@ -533,7 +536,8 @@ sessions work on a branch of their own, and the code moves by git alone over the
   does not. Git reaches the mirror at `ssh://<host><mirror>` with the attach's ssh options (a
   path, for the host `local`), so the host needs git on its non-interactive `PATH`.
 
-In the window (`crates/app/src/offload.rs`, `crates/app/src/shell/offload.rs`):
+In the window (decided by `OffloadDrive`, `crates/core/src/host/offload/drive.rs`, carried out by
+`crates/app/src/offload.rs`, and the form in `crates/app/src/shell/offload.rs`):
 
 - **Offloading converts the project in place.** *Offload to a host…*, in a local project's menu on
   the rail and on its page, opens a form naming the host (its menu as *Add a project on a host*'s).
@@ -584,7 +588,7 @@ In the window (`crates/app/src/offload.rs`, `crates/app/src/shell/offload.rs`):
   sessions go here (they run on there until they end) and clears `offloaded`. The mirror and
   `offload.json` stay, so a later offload sends only what changed.
 
-On a branch (`crates/app/src/offload/branch.rs`), the window's side of a branch mirror:
+On a branch (`crates/core/src/host/offload/drive/branch.rs`), the window's side of a branch mirror:
 
 - **Picked in the offload form**, *Into this folder* (the mirror with a key, the default) or *On
   a branch*, and kept beside `offloaded` as `offloaded_branches` (the branch, by root; a file
