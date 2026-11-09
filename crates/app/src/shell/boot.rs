@@ -273,7 +273,7 @@ impl Shell {
                     E::HostLost { uid, host } => shell.host_lost(*uid, host.clone(), window, cx),
                     E::RestartHost(host) => shell.ask_restart_host(host.clone(), window, cx),
                     E::TakeHostCode(path) => shell.ask_take_host_code(path.clone(), window, cx),
-                    E::UpdateHost(path) => shell.update_host_from_laptop(path.clone(), window, cx),
+                    E::UpdateHost(path) => shell.update_host_from_laptop(path.clone(), cx),
                     E::RunCheck => {
                         let active = shell.window.workspace.active_root;
                         if let Some(root) = shell.local_root(active).map(|p| p.to_path_buf()) {

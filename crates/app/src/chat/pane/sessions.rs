@@ -287,12 +287,12 @@ impl ChatPane {
                 match event {
                     // Work the agent did between turns is said as a turn's
                     // is; the drive has saved both.
-                    ChatEvent::Session(Signal::CycleEnded | Signal::TurnEnded) => {
-                        // An offloaded project's code may come back now.
-                        if session.read(cx).on_host {
-                            let root = session.read(cx).chat.root.clone();
-                            crate::offload::check_soon(cx, root);
-                        }
+                    ChatEvent::Session(said @ (Signal::CycleEnded | Signal::TurnEnded)) => {
+                        let (root, on_host) = {
+                            let session = session.read(cx);
+                            (session.chat.root.clone(), session.on_host)
+                        };
+                        crate::offload::session_said(cx, &root, on_host, said);
                         pane.turn_ended_detached(uid, &agent, &root_label, cx);
                         // The turn that just ended is what wrote the archive, so
                         // this is the moment a conversation first exists on disk

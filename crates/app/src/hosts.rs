@@ -45,28 +45,7 @@ use waits::{Waits, next_delay};
 /// How often a host kept waiting by its busy sessions is attached again.
 pub(crate) const HOST_IDLE_POLL: Duration = Duration::from_secs(15);
 
-/// Why a host could not be attached.
-#[derive(Clone, Debug)]
-pub(crate) enum HostFailure {
-    /// The host runs another build, with these sessions mid-turn and
-    /// `terms` terminals open; it is left alone and waited on until they are
-    /// done and closed, or the person agrees to stop them.
-    Busy {
-        host: HostName,
-        busy: Vec<HostSession>,
-        terms: usize,
-    },
-    /// A sentence a person reads, naming the host.
-    Other(String),
-    /// The host is not one this build can attach to (a machine it does not
-    /// run on), or this build cannot attach anywhere (its service binary
-    /// missing): a sentence naming why. Never tried again by itself.
-    Refused(String),
-    /// An attach made by itself found the host held by another machine's,
-    /// and left it so: a sentence naming the host. Only a person attaches
-    /// to it again.
-    Taken(String),
-}
+pub(crate) use onehand_core::host::{HostFailure, taken_line, waiting_line};
 
 /// The process's attaches, one per host.
 pub(crate) struct Hosts {
@@ -243,30 +222,6 @@ pub(crate) fn busy(cx: &App, host: &HostName) -> (Vec<HostSession>, usize) {
     let waits = Shared::global(cx).hosts.waits.borrow();
     let (busy, terms) = waits.busy(host);
     (busy.to_vec(), terms)
-}
-
-/// What is said wherever something waits on `host`'s `n` busy sessions and
-/// its `terms` open terminals.
-pub(crate) fn waiting_line(host: &HostName, n: usize, terms: usize) -> String {
-    let plural = |n: usize, one: &str, many: &str| match n {
-        1 => format!("1 {one}"),
-        n => format!("{n} {many}"),
-    };
-    let what = match (n, terms) {
-        (n, 0) => format!("{} on {host} to finish", plural(n, "session", "sessions")),
-        (0, t) => format!("{} on {host} to close", plural(t, "terminal", "terminals")),
-        (n, t) => format!(
-            "{} to finish and {} to close on {host}",
-            plural(n, "session", "sessions"),
-            plural(t, "terminal", "terminals")
-        ),
-    };
-    format!("Waiting for {what} before restarting its host service onto this build")
-}
-
-/// What is said of `host` once another machine holds it.
-pub(crate) fn taken_line(host: &HostName) -> String {
-    format!("{host} was attached from another machine")
 }
 
 /// An attach to `host` made by itself, for work nobody is watching: as
@@ -511,7 +466,7 @@ fn attach_with(
 async fn attach(host: HostName, fresh: bool, take: bool) -> Result<HostConn, HostFailure> {
     let binary = bundled_binary()?;
     let addr = host.addr();
-    let failed = |e| failure(&host, e);
+    let failed = |e| HostFailure::of(&host, e);
     let remote = client::install(&addr, &binary).await.map_err(failed)?;
     // ponytail: read a second time after `install` read it; a few MB on a runtime thread.
     let bytes = std::fs::read(&binary).map_err(|e| {
@@ -527,24 +482,6 @@ async fn attach(host: HostName, fresh: bool, take: bool) -> Result<HostConn, Hos
         client::attach(&addr, &remote, &build, take).await
     };
     conn.map_err(failed)
-}
-
-/// What a person reads of `e`, an attach to `host` that failed.
-fn failure(host: &HostName, e: HostError) -> HostFailure {
-    match e {
-        e @ (HostError::Unreachable(_) | HostError::Protocol(_)) => {
-            HostFailure::Other(format!("Could not attach to {host}: {e}"))
-        }
-        HostError::Unsupported(uname) => HostFailure::Refused(format!(
-            "{host} is not a machine this build runs on: {uname}"
-        )),
-        HostError::Busy { busy, terms, .. } => HostFailure::Busy {
-            host: host.clone(),
-            busy,
-            terms,
-        },
-        HostError::Held => HostFailure::Taken(taken_line(host)),
-    }
 }
 
 /// What is said when the service's binary is not beside this one.

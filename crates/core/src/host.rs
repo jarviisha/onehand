@@ -8,7 +8,10 @@
 
 pub mod client;
 pub mod copy;
+mod failure;
 pub mod journal;
 pub mod offload;
 pub mod sshconf;
 pub mod wire;
+
+pub use failure::{taken_line, waiting_line, HostFailure};
