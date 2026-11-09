@@ -375,6 +375,11 @@ fn an_agent_run_goes_from_its_prompt_to_done(cx: &mut TestAppContext) {
     settle(cx);
     let task = kept(&id, cx);
     assert_eq!(task.outcome(), Some(Outcome::Done));
+    // Its prompt went once.
+    let more = std::iter::from_fn(|| requests.try_recv().ok())
+        .filter(|r| matches!(r, onehand_core::acp::AcpRequest::Prompt { .. }))
+        .count();
+    assert_eq!(more, 0);
     let visit = &task.runs[0].visits()[0];
     assert!(visit.start.is_some() && visit.end.is_some(), "{visit:?}");
     let refs = git(
@@ -429,4 +434,92 @@ fn a_stopped_run_holds_its_place_until_its_turn_is_over(cx: &mut TestAppContext)
     .unwrap();
     settle(cx);
     assert!(!holds(&id, cx));
+}
+
+/// How many notifications `window` has put up.
+fn notes(window: AnyWindowHandle, cx: &mut TestAppContext) -> usize {
+    use gpui_component::WindowExt as _;
+    cx.update(|cx| {
+        window
+            .update(cx, |_, window, cx| window.notifications(cx).len())
+            .unwrap()
+    })
+}
+
+/// An agent's run up to its prompt on a session, every effect so far landed.
+fn prompted(
+    id: &str,
+    work: &Path,
+    window: AnyWindowHandle,
+    uid: u64,
+    cx: &mut TestAppContext,
+) -> (
+    gpui::Entity<crate::chat::session::ChatSession>,
+    futures::channel::mpsc::Sender<onehand_core::acp::AcpEvent>,
+    tokio::sync::mpsc::UnboundedReceiver<onehand_core::acp::AcpRequest>,
+) {
+    let task = Task::new(id.into(), one_agent_step(), brief(), setup(work));
+    let id = placed(task, window, cx);
+    let (session, mut tx, _seen) = carrier::driven(cx, Chat::default());
+    let started = begun(&id, cx);
+    cx.update(|cx| start(uid, &session, window, id, started, cx));
+    cx.run_until_parked();
+    let requests = carrier::up(&mut tx);
+    cx.run_until_parked();
+    (session, tx, requests)
+}
+
+/// Every write of a run that fails reaches its drive, which says so once.
+#[gpui::test]
+fn a_runs_failed_writes_reach_its_drive_and_are_said_once(cx: &mut TestAppContext) {
+    let work = repo("unwritable-run");
+    let file = temp_dir("blocked-run").join("file");
+    std::fs::write(&file, "").unwrap();
+    let window = app(cx, &file.join("store"));
+    let (_session, _tx, _requests) = prompted("12", &work, window, 9, cx);
+    let writer = cx.update(|cx| cx.global::<Tasks>().writer.clone());
+    assert!(writer.flush(Duration::from_secs(5)));
+    cx.run_until_parked();
+    assert_eq!(
+        notes(window, cx),
+        1,
+        "the measure's and the prompt's writes failed, said once"
+    );
+}
+
+/// A session closed under its run ends the run as cut off, to be resumed,
+/// and gives its place up; nothing of the run is left listening.
+#[gpui::test]
+fn a_session_closed_under_its_run_leaves_it_resumable_and_its_place_free(cx: &mut TestAppContext) {
+    let (work, store) = (repo("closed-under"), temp_dir("store"));
+    let window = app(cx, &store);
+    let (session, tx, _requests) = prompted("13", &work, window, 10, cx);
+    drop((session, tx));
+    settle(cx);
+    let task = kept("13", cx);
+    assert_eq!(task.outcome(), Some(Outcome::Stopped(Stop::Closed)));
+    assert!(task.resumable());
+    assert!(!holds("13", cx));
+    cx.update(|cx| {
+        let t = cx.global::<Tasks>();
+        assert!(t.live.is_empty() && t.draining.is_empty());
+    });
+}
+
+/// A run that finished hears nothing more from its session: a later turn
+/// there moves no run, and nothing of it is still held.
+#[gpui::test]
+fn a_finished_run_hears_nothing_more_from_its_session(cx: &mut TestAppContext) {
+    let (work, store) = (repo("finished-quiet"), temp_dir("store"));
+    let window = app(cx, &store);
+    let (_session, mut tx, _requests) = prompted("14", &work, window, 11, cx);
+    carrier::turn(&mut tx);
+    settle(cx);
+    let before = kept("14", cx);
+    assert_eq!(before.outcome(), Some(Outcome::Done));
+    carrier::turn(&mut tx);
+    settle(cx);
+    let after = kept("14", cx);
+    assert_eq!(after.runs[0].history.len(), before.runs[0].history.len());
+    cx.update(|cx| assert!(cx.global::<Tasks>().live.is_empty()));
 }
