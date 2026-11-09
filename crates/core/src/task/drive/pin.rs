@@ -3,7 +3,7 @@
 //! after it, or, when it ends the run, instead of it.
 
 use super::steps::ends_run;
-use super::{Effect, RunDrive};
+use super::{Effect, RunDrive, Signal};
 use crate::chat::Chat;
 use crate::task::marks;
 use crate::workflow::{Action, ApprovalAt, Stop};
@@ -78,7 +78,7 @@ impl RunDrive {
         };
         match &pinned {
             Ok(commit) => self.run.pinned(commit, from),
-            Err(why) => eprintln!("onehand: a step's mark was not pinned: {why}"),
+            Err(why) => fx.push(Effect::Signal(Signal::PinFailed(why.clone()))),
         }
         self.pinned = total;
         let mut held = self.held.take().unwrap_or_default();

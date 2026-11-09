@@ -12,7 +12,7 @@ use crate::chat::session::{ChatEvent, ChatSession, note};
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Task, WeakEntity};
 use gpui_component::WindowExt as _;
 use onehand_core::chat::Chat;
-use onehand_core::task::drive::{Effect, Input, RunDrive, link};
+use onehand_core::task::drive::{Effect, Input, RunDrive, Signal, link};
 use onehand_core::task::{Approval, Source, marks};
 use onehand_core::workflow::{Action, Facts, Mark, Outcome, Run, run_command_blocking};
 use std::sync::Arc;
@@ -331,6 +331,15 @@ fn perform(id: &str, effects: Vec<Effect>, cx: &mut App) {
                 cx.defer(move |cx| feed(&task, input, cx));
             }
             Effect::Save => save(id, cx),
+            Effect::Signal(Signal::SaveFailed(why)) => {
+                if let Some(window) = read(id, cx, |d| d.window) {
+                    let note = crate::toast::failed("Saving the task", why);
+                    let _ = window.update(cx, |_, window, cx| window.push_notification(note, cx));
+                }
+            }
+            Effect::Signal(Signal::PinFailed(why)) => {
+                eprintln!("onehand: a step's mark was not pinned: {why}")
+            }
             Effect::Waiting => crate::unattended::waiting(id, cx),
             Effect::Answered => {
                 let task = id.to_string();
@@ -363,17 +372,25 @@ fn spawn_feed(id: &str, cx: &mut App, work: impl FnOnce() -> Input + Send + 'sta
     .detach();
 }
 
-/// Write the run into its task's file, in order with every other write.
+/// Write the run into its task's file, in order with every other write,
+/// and tell the run how the write went.
 fn save(id: &str, cx: &mut App) {
     if !cx.has_global::<Tasks>() {
         return;
     }
-    cx.update_global::<Tasks, _>(|t, _| {
-        let Some(run) = t.live.get(id).map(|d| d.run().clone()) else {
-            return;
-        };
-        t.store_run(id, run);
+    let written = cx.update_global::<Tasks, _>(|t, _| {
+        let run = t.live.get(id).map(|d| d.run().clone())?;
+        t.store_run_said(id, run)
     });
+    let Some(written) = written else {
+        return;
+    };
+    let task = id.to_string();
+    cx.spawn(async move |cx| {
+        let written = written.await;
+        cx.update(|cx| feed(&task, Input::Saved(written), cx));
+    })
+    .detach();
 }
 
 /// Run the step's command in the work, then report how it went with the

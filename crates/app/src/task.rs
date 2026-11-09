@@ -99,15 +99,29 @@ impl Tasks {
 
     /// `run` is where task `id`'s last run stands: keep it, and write the task.
     fn store_run(&mut self, id: &str, run: Run) {
-        let Some(task) = self.task_mut(id) else {
-            return;
-        };
+        if let Some(task) = self.keep_run(id, run) {
+            self.writer.save(task);
+        }
+    }
+
+    /// [`Self::store_run`], answering how the write went.
+    fn store_run_said(
+        &mut self,
+        id: &str,
+        run: Run,
+    ) -> Option<impl std::future::Future<Output = Result<(), String>> + use<>> {
+        let task = self.keep_run(id, run)?;
+        Some(self.writer.save_said(task))
+    }
+
+    /// Keep `run` as task `id`'s last run: the task as it now stands.
+    fn keep_run(&mut self, id: &str, run: Run) -> Option<Task> {
+        let task = self.task_mut(id)?;
         match task.runs.last_mut() {
             Some(last) => *last = run,
             None => task.runs.push(run),
         }
-        let task = task.clone();
-        self.writer.save(task);
+        Some(task.clone())
     }
 
     fn save(&self, id: &str) {

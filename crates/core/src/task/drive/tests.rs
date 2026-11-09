@@ -778,3 +778,34 @@ fn a_check_stopped_before_its_command_runs_none() {
     assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::ByPerson)));
     assert!(!has(&fx, |e| matches!(e, Effect::RunCommand { .. })));
 }
+
+#[test]
+fn a_failed_write_is_said_once_until_one_lands() {
+    let mut rig = at_approval();
+    let failed = |fx: &[Effect]| {
+        fx.iter()
+            .filter(|e| matches!(e, Effect::Signal(Signal::SaveFailed(_))))
+            .count()
+    };
+    assert_eq!(failed(&rig.on(Input::Saved(Err("disk full".into())))), 1);
+    assert_eq!(failed(&rig.on(Input::Saved(Err("disk full".into())))), 0);
+    assert!(rig.on(Input::Saved(Ok(()))).is_empty());
+    assert_eq!(failed(&rig.on(Input::Saved(Err("disk full".into())))), 1);
+}
+
+/// A mark that could not be pinned is told, not logged by the drive, and
+/// the run goes on to the action it held back.
+#[test]
+fn a_mark_not_pinned_is_told_and_the_run_goes_on() {
+    let (mut rig, fx) = Rig::start(checkout(), None, connected());
+    assert!(has(&fx, |e| matches!(e, Effect::Pin { .. })), "{fx:?}");
+    let fx = rig.on(Input::Pinned(Err("no git".into())));
+    assert!(
+        has(
+            &fx,
+            |e| matches!(e, Effect::Signal(Signal::PinFailed(why)) if why == "no git")
+        ),
+        "{fx:?}"
+    );
+    assert!(has(&fx, |e| matches!(e, Effect::Measure { .. })), "{fx:?}");
+}

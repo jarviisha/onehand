@@ -35,7 +35,7 @@ mod signals;
 mod steps;
 
 use pin::{Answer, Held};
-pub use signals::{Effect, Input};
+pub use signals::{Effect, Input, Signal};
 
 /// A run under way on one session.
 pub struct RunDrive {
@@ -96,6 +96,9 @@ pub struct RunDrive {
     command: bool,
     /// How the run ends once its called-off command has exited.
     stopping: Option<Stop>,
+    /// A write of the run failed and was said; nothing more is said until
+    /// one lands.
+    save_failed: bool,
     /// The run has finished: nothing more is done.
     over: bool,
     /// The run never had a session: a check, which only runs a command.
@@ -144,6 +147,7 @@ impl RunDrive {
             after_work: false,
             command: false,
             stopping: None,
+            save_failed: false,
             over: false,
             sessionless: chat.is_none(),
         };
@@ -348,6 +352,12 @@ impl RunDrive {
                 self.budget.resume(now);
                 self.advance(chat, now, &mut fx, move |run| run.status_checks_seen(seen));
             }
+            Input::Saved(Ok(())) => self.save_failed = false,
+            Input::Saved(Err(why)) => {
+                if !std::mem::replace(&mut self.save_failed, true) {
+                    fx.push(Effect::Signal(Signal::SaveFailed(why)));
+                }
+            }
             // The run's timeout: when it has run out, look again, since time
             // spent waiting on a person did not count; end the run once
             // nothing is left.
@@ -435,7 +445,8 @@ impl RunDrive {
             | Input::CommandExited(_)
             | Input::ForgeDone(_)
             | Input::ChecksSeen(_)
-            | Input::ClockFired => {}
+            | Input::ClockFired
+            | Input::Saved(_) => {}
         }
     }
     /// A person's answer to the approval the run waits on: held while a mark
