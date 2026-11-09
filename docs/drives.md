@@ -117,7 +117,8 @@ Each effect that is answered declares, in its own doc, which of these its late a
 - Closing honours the answers still on their way. A session closed while a save is in flight
   cannot wait for it, since its drive goes with it; so it writes the whole transcript instead,
   and the store drops the lines of any save built before that write lands. Restarting a session
-  with a save in flight does not do this yet: the snapshot handed on carries the moved mark.
+  with a save in flight does the same: the snapshot handed on says so, and the session that
+  carries on writes the whole transcript at its first save.
 
 ### 6. A failure is an input
 

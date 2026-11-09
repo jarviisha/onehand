@@ -517,6 +517,7 @@ fn a_pending_rewrite_is_not_work_between_turns() {
         items: vec![ChatItem::User(UserMsg::text("message 0"))],
         written: 1,
         complete: true,
+        rewrite: false,
     });
     chat.apply(AcpEvent::UserChunk("message 0".into()));
     chat.apply(AcpEvent::AgentChunk {

@@ -206,6 +206,10 @@ pub struct ConversationSnapshot {
     /// Whether `items` is the whole conversation. False when the read hit its
     /// bound, which is what forbids rewriting the file from it.
     pub(crate) complete: bool,
+    /// Whether the next save writes the whole transcript over the file: a
+    /// save of the session it was taken from may still be on its way, and,
+    /// were that save to fail, its turn would be in neither write.
+    pub(crate) rewrite: bool,
 }
 
 /// Everything one save has to put on disk, prepared while the transcript is in
@@ -435,6 +439,7 @@ fn read(dir: &Path, cap: usize) -> Option<ConversationSnapshot> {
         // A skipped line — a newer build's item kind, or a torn one — is still
         // in the file, and a rewrite from what was read would delete it.
         complete: !bounded && !skipped,
+        rewrite: false,
     })
 }
 

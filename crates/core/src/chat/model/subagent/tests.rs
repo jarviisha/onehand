@@ -256,6 +256,7 @@ fn a_replay_adds_no_cards() {
         items: vec![ChatItem::User(UserMsg::text("message 0"))],
         written: 1,
         complete: true,
+        rewrite: false,
     });
     // Armed: nothing replayed yet.
     chat.apply(spawn("c1", "Reader", "Read"));
@@ -301,6 +302,7 @@ fn a_longer_replay_keeps_the_files_cards() {
         ],
         written: 2,
         complete: true,
+        rewrite: false,
     });
     for i in 0..3 {
         chat.apply(AcpEvent::UserChunk(format!("message {i}")));

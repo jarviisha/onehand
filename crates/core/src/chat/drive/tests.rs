@@ -1183,6 +1183,61 @@ fn a_session_closed_with_a_save_on_its_way_keeps_that_turn_if_the_save_fails() {
     let _ = std::fs::remove_dir_all(&store);
 }
 
+/// A session restarted while its last turn's save is on its way, and that
+/// save failing then: the turn is on disk all the same, as the session that
+/// carries on writes the whole transcript at its first save.
+#[test]
+fn a_session_restarted_with_a_save_on_its_way_keeps_that_turn_if_the_save_fails() {
+    let (mut drive, _rx, store) = on_disk("restarted");
+    let first = take_save(turn(&mut drive, "one", "first answer"));
+    crate::chat::store::commit(&first).unwrap();
+    drive.handle(Input::Saved {
+        write: first,
+        result: Ok(()),
+    });
+    // The second turn's save is on its way, and never lands.
+    let _lost = take_save(turn(&mut drive, "two", "second answer"));
+    let snapshot = drive.drive.take_snapshot(now()).unwrap();
+    assert!(snapshot.rewrite, "a save was on its way");
+    drop(drive);
+    let chat = Chat::new(
+        1,
+        PathBuf::from("/repo"),
+        "agent".into(),
+        Some(store.clone()),
+    );
+    let mut next = SessionDrive::new(chat);
+    next.resume(snapshot);
+    drop(next);
+    let lines = written_lines(&store);
+    assert!(
+        lines.iter().any(|l| l.contains("second answer")),
+        "{lines:?}"
+    );
+    assert_eq!(
+        lines.iter().filter(|l| l.contains("first answer")).count(),
+        1,
+        "{lines:?}"
+    );
+    let _ = std::fs::remove_dir_all(&store);
+}
+
+/// With every save answered, the next session carries on from the mark.
+#[test]
+fn a_session_restarted_with_nothing_on_its_way_carries_on_from_the_mark() {
+    let (mut drive, _rx, store) = on_disk("settled");
+    let first = take_save(turn(&mut drive, "one", "first answer"));
+    crate::chat::store::commit(&first).unwrap();
+    drive.handle(Input::Saved {
+        write: first,
+        result: Ok(()),
+    });
+    let snapshot = drive.drive.take_snapshot(now()).unwrap();
+    assert!(!snapshot.rewrite);
+    drop(drive);
+    let _ = std::fs::remove_dir_all(&store);
+}
+
 /// And that save landing late, after the close wrote the whole file, adds
 /// nothing a second time.
 #[test]

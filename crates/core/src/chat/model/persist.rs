@@ -203,6 +203,7 @@ impl Chat {
             items: kept,
             written: self.persisted.saturating_sub(dropped_before),
             complete: !self.bounded,
+            rewrite: false,
         })
     }
 
@@ -331,6 +332,9 @@ impl Chat {
                 .collect(),
         );
         self.load_history(snapshot.items, snapshot.session_id, snapshot.written);
+        if snapshot.rewrite {
+            self.write_whole();
+        }
     }
 
     /// Take the loaded history off the screen the first time real replayed
