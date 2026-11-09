@@ -433,24 +433,10 @@ impl Shell {
         // Taken first, so a first drive that is refused uses it up as well.
         let off_screen = crate::task::take_off_screen(&id, cx);
         let refused = |why: String, kind: Failure, window: &mut Window, cx: &mut Context<Self>| {
-            // An issue's run that cannot start ends failed, so its issue is
-            // told rather than left claimed with nothing after the claim.
-            // A schedule's task too: nobody is watching it either, and failing
-            // is what says so, on its row and on the desktop.
-            let issue = crate::task::task(&id, cx).is_some_and(|task| {
-                task.issue().is_some()
-                    || matches!(
-                        task.origin,
-                        Some(onehand_core::task::Origin::Schedule { .. })
-                    )
-            });
             window.push_notification(crate::toast::warning(why.clone()), cx);
             // Deferred: handing the place on may start a task in this shell.
             let (id, said) = (id.clone(), why.clone());
-            cx.defer(move |cx| match issue {
-                true => crate::task::fail(id, said, kind, cx),
-                false => crate::task::release(id, cx),
-            });
+            cx.defer(move |cx| crate::task::not_started(id, said, kind, cx));
             Err(why)
         };
         let Some(mut run) = crate::task::resumable_run(&id, cx) else {

@@ -14,6 +14,7 @@ pub mod files;
 pub mod history;
 pub mod marks;
 pub mod queue;
+pub mod tasks;
 pub mod work;
 
 use crate::unattended::IssueSource;
@@ -204,7 +205,7 @@ impl Task {
     /// A retry refused before it began: its run is dropped and the task is as
     /// it was. The task's first run is never dropped this way, since without
     /// it the task was never anything. Whether a run was dropped.
-    pub fn drop_unbegun_retry(&mut self) -> bool {
+    pub(crate) fn drop_unbegun_retry(&mut self) -> bool {
         let unbegun = self.runs.len() > 1 && self.runs.last().is_some_and(|run| !run.begun());
         if unbegun {
             self.runs.pop();
@@ -214,7 +215,7 @@ impl Task {
 
     /// The last run, taken off the task, when it never began: a task stopped
     /// before it ran a step keeps no empty run, and is over.
-    pub fn take_unbegun(&mut self) -> Option<Run> {
+    pub(crate) fn take_unbegun(&mut self) -> Option<Run> {
         match self.runs.last().is_some_and(|run| !run.begun()) {
             true => self.runs.pop(),
             false => None,
@@ -269,7 +270,7 @@ impl Task {
     /// retried is live again: its new run may need a person like any other.
     /// A `note` is what a person asked to change, which the step it starts
     /// at is told as a revision is.
-    pub fn retry(
+    pub(crate) fn retry(
         &mut self,
         id: String,
         template: Template,
@@ -286,7 +287,7 @@ impl Task {
     /// Run it again as run `id` with what Settings say now, as `plan` worked
     /// it out from its last run: its own workflow at its newest version, the
     /// setup a new task of its kind takes, from the step `plan` starts at.
-    pub fn retry_with(&mut self, id: String, plan: WithCurrent) -> Option<&Run> {
+    pub(crate) fn retry_with(&mut self, id: String, plan: WithCurrent) -> Option<&Run> {
         let from = plan
             .template
             .steps

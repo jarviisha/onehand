@@ -2,7 +2,7 @@
 //! check run with no session, an agent's run on a session, a queued task
 //! stopped or passed over, and a dismiss whose write fails.
 
-use super::{Tasks, add, dismiss, drive_check, release, resumable_run, retry, start, stop_task};
+use super::{Tasks, add, dismiss, drive_check, resumable_run, retry, start, stop_task};
 use crate::chat::session::tests::carrier;
 use gpui::{
     AnyWindowHandle, AppContext as _, BorrowAppContext as _, IntoElement, Render, TestAppContext,
@@ -10,6 +10,7 @@ use gpui::{
 };
 use gpui_component::Root;
 use onehand_core::chat::Chat;
+use onehand_core::task::tasks::Input;
 use onehand_core::task::{Group, Task, Working, queue};
 use onehand_core::workflow::{Brief, GateKind, Outcome, Setup, StepKind, StepSpec, Stop, Template};
 use std::path::{Path, PathBuf};
@@ -90,15 +91,36 @@ fn app(cx: &mut TestAppContext, store: &Path) -> AnyWindowHandle {
         .into()
 }
 
-/// Keep `task` and give it its place, as a request finding it free does.
-fn placed(task: Task, cx: &mut TestAppContext) -> String {
+/// Keep `task` and ask for its place from `window`, as the drive does once
+/// the place is found: whether it got it. What that asks is left undone, so
+/// a test drives the task itself.
+fn ask(task: Task, window: AnyWindowHandle, cx: &mut TestAppContext) -> bool {
     let id = task.id.clone();
     let place = queue::place_blocking(&task.setup.dir);
     cx.update(|cx| {
         add(task, cx);
-        cx.update_global::<Tasks, _>(|t, _| assert!(t.queue.ask(place, id.clone())));
-    });
+        cx.update_global::<Tasks, _>(|t, _| {
+            t.drive.request(&id, window, None);
+            t.drive.handle(Input::PlaceFound {
+                task: id.clone(),
+                place,
+                window,
+                window_open: true,
+            });
+            t.drive.queue().holds(&id)
+        })
+    })
+}
+
+/// Keep `task` and give it its place, as a request finding it free does.
+fn placed(task: Task, window: AnyWindowHandle, cx: &mut TestAppContext) -> String {
+    let id = task.id.clone();
+    assert!(ask(task, window, cx));
     id
+}
+
+fn holds(id: &str, cx: &mut TestAppContext) -> bool {
+    cx.update(|cx| cx.global::<Tasks>().drive.queue().holds(id))
 }
 
 /// Every background answer landed, and every write the writer was sent.
@@ -139,12 +161,16 @@ fn on_disk(store: &Path, id: &str) -> Task {
 fn a_check_that_passes_ends_done_and_gives_its_place_up(cx: &mut TestAppContext) {
     let (work, store) = (temp_dir("check-pass"), temp_dir("store"));
     let window = app(cx, &store);
-    let id = placed(Task::check("1".into(), "true".into(), setup(&work)), cx);
+    let id = placed(
+        Task::check("1".into(), "true".into(), setup(&work)),
+        window,
+        cx,
+    );
     cx.update(|cx| drive_check(id.clone(), window, cx));
     settle(cx);
     assert_eq!(kept(&id, cx).outcome(), Some(Outcome::Done));
     assert_eq!(group(&id, cx), Group::Finished);
-    cx.update(|cx| assert!(!cx.global::<Tasks>().queue.holds(&id)));
+    assert!(!holds(&id, cx));
     assert_eq!(on_disk(&store, &id).outcome(), Some(Outcome::Done));
 }
 
@@ -152,7 +178,11 @@ fn a_check_that_passes_ends_done_and_gives_its_place_up(cx: &mut TestAppContext)
 fn a_check_that_fails_ends_under_needs_attention(cx: &mut TestAppContext) {
     let (work, store) = (temp_dir("check-fail"), temp_dir("store"));
     let window = app(cx, &store);
-    let id = placed(Task::check("2".into(), "false".into(), setup(&work)), cx);
+    let id = placed(
+        Task::check("2".into(), "false".into(), setup(&work)),
+        window,
+        cx,
+    );
     cx.update(|cx| drive_check(id.clone(), window, cx));
     settle(cx);
     let outcome = kept(&id, cx).outcome();
@@ -164,7 +194,7 @@ fn a_check_that_fails_ends_under_needs_attention(cx: &mut TestAppContext) {
         "{outcome:?}"
     );
     assert_eq!(group(&id, cx), Group::Ended);
-    cx.update(|cx| assert!(!cx.global::<Tasks>().queue.holds(&id)));
+    assert!(!holds(&id, cx));
 }
 
 /// A Stop pressed while the first mark is pinned ends the run once the pin
@@ -175,7 +205,7 @@ fn a_check_stopped_before_its_command_starts_never_runs_it(cx: &mut TestAppConte
     let window = app(cx, &store);
     let touched = work.join("ran");
     let command = format!("touch {}", touched.display());
-    let id = placed(Task::check("3".into(), command, setup(&work)), cx);
+    let id = placed(Task::check("3".into(), command, setup(&work)), window, cx);
     cx.update(|cx| {
         drive_check(id.clone(), window, cx);
         stop_task(&id, cx);
@@ -186,7 +216,7 @@ fn a_check_stopped_before_its_command_starts_never_runs_it(cx: &mut TestAppConte
         Some(Outcome::Stopped(Stop::ByPerson))
     );
     assert!(!touched.exists());
-    cx.update(|cx| assert!(!cx.global::<Tasks>().queue.holds(&id)));
+    assert!(!holds(&id, cx));
 }
 
 /// A queued task that never ran a step is over, stopped by a person, with no
@@ -194,14 +224,17 @@ fn a_check_stopped_before_its_command_starts_never_runs_it(cx: &mut TestAppConte
 #[gpui::test]
 fn stop_on_a_queued_task_calls_off_that_start_only(cx: &mut TestAppContext) {
     let (work, store) = (temp_dir("queued-stop"), temp_dir("store"));
-    let _window = app(cx, &store);
-    let first = placed(Task::check("4".into(), "true".into(), setup(&work)), cx);
-    let second = Task::check("5".into(), "true".into(), setup(&work));
-    let place = queue::place_blocking(&work);
-    cx.update(|cx| {
-        add(second, cx);
-        cx.update_global::<Tasks, _>(|t, _| assert!(!t.queue.ask(place, "5".into())));
-    });
+    let window = app(cx, &store);
+    let first = placed(
+        Task::check("4".into(), "true".into(), setup(&work)),
+        window,
+        cx,
+    );
+    assert!(!ask(
+        Task::check("5".into(), "true".into(), setup(&work)),
+        window,
+        cx
+    ));
     assert_eq!(group("5", cx), Group::Queued);
     // A retry is refused while the task waits for its place.
     let template = kept("5", cx).runs[0].template.clone();
@@ -213,32 +246,31 @@ fn stop_on_a_queued_task_calls_off_that_start_only(cx: &mut TestAppContext) {
     assert_eq!(stopped.outcome(), Some(Outcome::Stopped(Stop::ByPerson)));
     assert_eq!(group("5", cx), Group::Finished);
     assert!(on_disk(&store, "5").runs.is_empty());
-    cx.update(|cx| {
-        let t = cx.global::<Tasks>();
-        assert!(t.queue.holds(&first));
-        assert_eq!(t.working(&first), Some(Working::Running));
-    });
+    assert!(holds(&first, cx));
+    cx.update(|cx| assert_eq!(cx.global::<Tasks>().working(&first), Some(Working::Running)));
 }
 
-/// A place let go passes to the next task waiting; one with no window to
-/// start in is passed over, reads cut off, and the place passes on.
+/// A place let go passes to the next task waiting; one whose window has no
+/// shell to start it in is passed over, reads cut off, and the place passes
+/// on.
 #[gpui::test]
 fn a_queued_task_with_no_window_to_start_in_is_passed_over(cx: &mut TestAppContext) {
     let (work, store) = (temp_dir("passed-over"), temp_dir("store"));
-    let _window = app(cx, &store);
-    let first = placed(Task::check("6".into(), "true".into(), setup(&work)), cx);
-    let place = queue::place_blocking(&work);
-    cx.update(|cx| {
-        add(Task::check("7".into(), "true".into(), setup(&work)), cx);
-        cx.update_global::<Tasks, _>(|t, _| assert!(!t.queue.ask(place, "7".into())));
-        release(first, cx);
-    });
+    let window = app(cx, &store);
+    let first = placed(
+        Task::check("6".into(), "true".into(), setup(&work)),
+        window,
+        cx,
+    );
+    assert!(!ask(
+        Task::check("7".into(), "true".into(), setup(&work)),
+        window,
+        cx
+    ));
+    cx.update(|cx| drive_check(first, window, cx));
     settle(cx);
-    cx.update(|cx| {
-        let t = cx.global::<Tasks>();
-        assert!(!t.queue.holds("7"));
-        assert!(!t.queue.queued("7"));
-    });
+    assert!(!holds("7", cx));
+    cx.update(|cx| assert!(!cx.global::<Tasks>().drive.queue().queued("7")));
     assert_eq!(kept("7", cx).outcome(), None);
     assert_eq!(group("7", cx), Group::Ended);
 }
@@ -309,6 +341,7 @@ fn an_agent_run_goes_from_its_prompt_to_done(cx: &mut TestAppContext) {
     let window = app(cx, &store);
     let id = placed(
         Task::new("10".into(), one_agent_step(), brief(), setup(&work)),
+        window,
         cx,
     );
     let (session, mut tx, _seen) = carrier::driven(cx, Chat::default());
@@ -338,7 +371,7 @@ fn an_agent_run_goes_from_its_prompt_to_done(cx: &mut TestAppContext) {
     assert_eq!(refs.lines().count(), 2, "{refs}");
     cx.update(|cx| {
         let t = cx.global::<Tasks>();
-        assert!(!t.queue.holds(&id));
+        assert!(!t.drive.queue().holds(&id));
         assert!(t.task_on(7).is_none());
     });
     assert_eq!(on_disk(&store, &id).outcome(), Some(Outcome::Done));
@@ -352,6 +385,7 @@ fn a_stopped_run_holds_its_place_until_its_turn_is_over(cx: &mut TestAppContext)
     let window = app(cx, &store);
     let id = placed(
         Task::new("11".into(), one_agent_step(), brief(), setup(&work)),
+        window,
         cx,
     );
     let (session, mut tx, _seen) = carrier::driven(cx, Chat::default());
@@ -374,7 +408,7 @@ fn a_stopped_run_holds_its_place_until_its_turn_is_over(cx: &mut TestAppContext)
     );
     cx.update(|cx| {
         let t = cx.global::<Tasks>();
-        assert!(t.queue.holds(&id));
+        assert!(t.drive.queue().holds(&id));
         assert!(t.draining.contains_key(&id));
     });
     // The agent says the cancelled turn is over: the place goes.
@@ -383,5 +417,5 @@ fn a_stopped_run_holds_its_place_until_its_turn_is_over(cx: &mut TestAppContext)
     })
     .unwrap();
     settle(cx);
-    cx.update(|cx| assert!(!cx.global::<Tasks>().queue.holds(&id)));
+    assert!(!holds(&id, cx));
 }

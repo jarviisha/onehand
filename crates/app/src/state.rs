@@ -245,7 +245,8 @@ pub(crate) fn with_shell<R>(
         &mut gpui::Context<crate::shell::Shell>,
     ) -> R,
 ) -> Option<R> {
-    let shell = Shared::global(cx)
+    let shell = cx
+        .try_global::<Shared>()?
         .windows
         .iter()
         .find(|w| w.handle == window)?

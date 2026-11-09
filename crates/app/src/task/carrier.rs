@@ -13,8 +13,9 @@ use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Ta
 use gpui_component::WindowExt as _;
 use onehand_core::chat::Chat;
 use onehand_core::task::drive::{Effect, Input, RunDrive, Signal, Timer, link};
-use onehand_core::task::{Approval, Source, marks};
-use onehand_core::workflow::{Action, Facts, Mark, Outcome, Run, run_command_blocking};
+use onehand_core::task::tasks::link as tasks_link;
+use onehand_core::task::{Approval, marks};
+use onehand_core::workflow::{Action, Facts, Mark, Run, run_command_blocking};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
@@ -383,8 +384,8 @@ fn save(id: &str, cx: &mut App) {
         return;
     }
     let written = cx.update_global::<Tasks, _>(|t, _| {
-        let run = t.live.get(id).map(|d| d.run().clone())?;
-        t.store_run_said(id, run)
+        let task = tasks_link::save_run(&mut t.drive, &t.live.get(id)?.drive)?;
+        Some(t.writer.save_said(task))
     });
     let Some(written) = written else {
         return;
@@ -423,8 +424,8 @@ fn run_command(id: &str, dir: std::path::PathBuf, command: String, cx: &mut App)
     .detach();
 }
 
-/// End the run: keep it in its task, then let its place go once its
-/// session's turn is over.
+/// End the run: keep it in its task, and let the tasks' drive decide when
+/// its place goes.
 ///
 /// Taken off the list at once, so an event the ending causes finds nothing
 /// to end again; dropped only once the event delivering it is over, since
@@ -437,46 +438,14 @@ fn finish(id: &str, session: Option<&Entity<ChatSession>>, cx: &mut App) {
     let Some(driven) = driven else {
         return;
     };
-    let run = driven.run().clone();
-    let task = id.to_string();
-    let asked = session
-        .filter(|_| driven.drive.card())
-        .and_then(|session| crate::unattended::card_question(session, cx));
-    let check = super::task(&task, cx).is_some_and(|task| task.source == Source::Check);
-    if check {
-        say_check(&run, driven.window, cx);
-    }
-    crate::unattended::keep(&task, &run, asked, cx);
-    cx.update_global::<Tasks, _>(|t, _| t.store_run(&task, run));
-    // A finished schedule's session leaves the rail once the run is let go,
-    // so nothing of the run is left listening to it.
-    let closes = driven
-        .uid()
-        .filter(|_| super::task(&task, cx).is_some_and(|task| task.closes_session()));
-    super::ended(task, driven.drive.pinned(), session, cx);
+    let effects = cx.update_global::<Tasks, _>(|t, cx| {
+        let on = session.zip(driven.uid());
+        let chat = on.map(|(session, uid)| (&session.read(cx).chat as &Chat, uid));
+        tasks_link::finished(&mut t.drive, &driven.drive, chat, driven.window)
+    });
     cx.defer(move |cx| {
-        let window = driven.window;
         drop(driven);
-        if let Some(uid) = closes {
-            crate::state::with_shell(window, cx, |shell, _, cx| shell.close_finished(uid, cx));
-        }
         cx.refresh_windows();
     });
-}
-
-/// Say in `window` how a check came out. One a person stopped says nothing:
-/// they know.
-fn say_check(run: &Run, window: AnyWindowHandle, cx: &mut App) {
-    let project = run.setup.repo.file_name().map_or_else(
-        || run.setup.repo.display().to_string(),
-        |n| n.to_string_lossy().into_owned(),
-    );
-    let note = match run.outcome {
-        Some(Outcome::Stopped(_)) | None => return,
-        Some(Outcome::Done) => crate::toast::success(format!("Check passed in {project}")),
-        Some(Outcome::Exhausted { .. } | Outcome::Failed(_)) => {
-            crate::toast::warning(format!("Check failed in {project}"))
-        }
-    };
-    let _ = window.update(cx, |_, window, cx| window.push_notification(note, cx));
+    super::place::perform(effects, session, cx);
 }
