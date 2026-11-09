@@ -729,9 +729,10 @@ pub fn boot(cx: &mut App) {
     // before the first window, so a channel that takes a moment to answer has
     // already been asked by the time there is anything to announce.
     crate::remote::boot(&remote, cx);
-    crate::unattended::boot(&unattended, cx);
     crate::workflow::boot(cx);
     crate::task::boot(cx);
+    // Beside the tasks it starts, so after them.
+    crate::unattended::boot(&unattended, cx);
     crate::schedules::boot(cx);
     // Before the theme names the bundled families, and before the monospace
     // scan looks for them among what is installed.

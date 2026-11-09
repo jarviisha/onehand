@@ -104,11 +104,6 @@ pub struct Shared {
     /// owns the receiving end, and dropping that is what tells the channel
     /// nobody is listening.
     pub _remote_pump: Option<gpui::Task<()>>,
-    /// Unattended runs: the tick and the one run it may have going.
-    ///
-    /// Global for the reason the remote bridge is: a tick per window would be
-    /// two agents on one issue. `None` unless the config turned it on.
-    pub unattended: Option<crate::unattended::Unattended>,
     /// What each agent offered when it last came up, by the spec it was
     /// started with, a person's session or a run alike.
     ///
@@ -166,7 +161,6 @@ impl Shared {
             remote: crate::remote::RemoteBridge::off(),
             away: false,
             _remote_pump: None,
-            unattended: None,
             offers_seen: Vec::new(),
             agent_checks: Vec::new(),
         }

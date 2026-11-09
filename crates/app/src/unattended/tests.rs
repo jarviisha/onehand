@@ -1,18 +1,30 @@
-//! What unattended runs decide today in the app, held before it moves: the
-//! cap and the runs still starting, the pause, a config that cannot work, and
-//! a report delivered once.
+//! The unattended carrier against its contract: its clock comes round and
+//! ticks again, a start over the cap is refused where it was asked, a pause
+//! stops every run, a config that cannot work is filed, and a report goes to
+//! its issue once and leaves its task once it has landed.
 
-use super::{Unattended, blocked, deliver, over_cap, pause, placed, slots};
 use crate::state::Shared;
 use crate::task::Tasks;
-use gpui::TestAppContext;
+use gpui::{AnyWindowHandle, AppContext as _, TestAppContext};
+use gpui_component::Root;
 use onehand_core::config::UnattendedConfig;
 use onehand_core::task::{Source, Task};
 use onehand_core::unattended::{IssueSource, PendingReport, TrackerRef};
 use onehand_core::workflow::Setup;
-use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+
+struct Blank;
+
+impl gpui::Render for Blank {
+    fn render(
+        &mut self,
+        _: &mut gpui::Window,
+        _: &mut gpui::Context<Self>,
+    ) -> impl gpui::IntoElement {
+        gpui::div()
+    }
+}
 
 fn temp_dir(name: &str) -> PathBuf {
     let dir =
@@ -22,47 +34,36 @@ fn temp_dir(name: &str) -> PathBuf {
     dir
 }
 
-/// The unattended state as `boot` files it for a config that works, with
-/// room for `at_once` runs and no clock.
-fn unattended(at_once: u32) -> Unattended {
-    Unattended {
-        label: "auto".into(),
-        timeout: "45m".into(),
-        mode: None,
-        agent: None,
-        workflow: "builtin:issue".into(),
-        workflows: BTreeMap::new(),
-        at_once,
-        waiting: None,
-        claiming: false,
-        blocked: None,
-        paused: None,
-        delivering: HashSet::new(),
-        starting: HashSet::new(),
-        accounts: None,
-        checked_at: None,
-        checks_out: 0,
-        problems: HashMap::new(),
-        _tick: gpui::Task::ready(()),
-    }
-}
-
-/// The process's state and the tasks' global writing into `store`, with
-/// unattended runs as `u` has them.
-fn app(cx: &mut TestAppContext, store: &Path, u: Option<Unattended>) {
+/// The process's state, the tasks writing into `store`, and unattended runs
+/// on `cfg` when given; a window to say things in.
+fn app(cx: &mut TestAppContext, store: &Path, cfg: Option<UnattendedConfig>) -> AnyWindowHandle {
     cx.executor().allow_parking();
+    cx.update(gpui_component::init);
     let store = store.to_path_buf();
     cx.update(|cx| {
-        let mut shared = Shared::for_test();
-        shared.unattended = u;
-        cx.set_global(shared);
+        cx.set_global(Shared::for_test());
         cx.set_global(Tasks::in_dir(store));
+        if let Some(cfg) = cfg {
+            super::boot(&cfg, cx);
+        }
     });
+    cx.add_window(|window, cx| Root::new(cx.new(|_| Blank), window, cx))
+        .into()
 }
 
-/// A task of the issue numbered `number` kept in `file`, working in `dir`.
-fn issue_task(id: &str, number: u64, file: &Path, dir: &Path) -> Task {
-    let mut task = Task::check(id.into(), "true".into(), setup(dir));
+/// A task of the issue numbered `number` kept in `file`, working in `dir`,
+/// owing it `unsent`.
+fn issue_task(id: &str, number: u64, file: &Path, dir: &Path, unsent: Vec<PendingReport>) -> Task {
+    let setup = Setup {
+        repo: dir.to_path_buf(),
+        dir: dir.to_path_buf(),
+        branch: Some(format!("onehand/local-{number}-fix")),
+        agent: None,
+        check: None,
+        mode: None,
+        forge: None,
+    };
+    let mut task = Task::check(id.into(), "true".into(), setup);
     task.source = Source::Issue(IssueSource {
         tracker: TrackerRef::Local {
             file: file.to_path_buf(),
@@ -72,22 +73,40 @@ fn issue_task(id: &str, number: u64, file: &Path, dir: &Path) -> Task {
         forge: None,
         base: "main".into(),
         picked: false,
-        unsent: Vec::new(),
+        unsent,
         notes: Vec::new(),
     });
     task
 }
 
-fn setup(dir: &Path) -> Setup {
-    Setup {
-        repo: dir.to_path_buf(),
-        dir: dir.to_path_buf(),
-        branch: Some("onehand/local-1-fix".into()),
-        agent: None,
-        check: None,
-        mode: None,
-        forge: None,
+/// A report of a run cut off and let go.
+fn report() -> PendingReport {
+    PendingReport {
+        run: "a".into(),
+        outcome: None,
+        started: true,
+        ended_on: None,
+        asked: None,
+        notes: Vec::new(),
     }
+}
+
+/// An issues file in `dir` holding issues numbered 1 and 2.
+fn issues(dir: &Path) -> PathBuf {
+    let file = dir.join("issues.json");
+    for title in ["Fix it", "And this"] {
+        onehand_core::issues::update_blocking(&file, |kept| {
+            kept.create(
+                onehand_core::issues::Draft {
+                    title: title.into(),
+                    ..Default::default()
+                },
+                1,
+            )
+        })
+        .unwrap();
+    }
+    file
 }
 
 fn issue_of(id: &str, cx: &mut TestAppContext) -> IssueSource {
@@ -96,45 +115,118 @@ fn issue_of(id: &str, cx: &mut TestAppContext) -> IssueSource {
         .unwrap()
 }
 
-/// A task kept by the tick or a pick counts against the cap until it has
-/// asked for its place, so a tick landing in between cannot start one more;
-/// it is never refused by its own count, and a task of no issue never is.
+/// Run what is under way until task `id` owes its issue nothing.
+fn delivered(id: &str, cx: &mut TestAppContext) {
+    for _ in 0..100 {
+        cx.run_until_parked();
+        if issue_of(id, cx).unsent.is_empty() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    panic!("never delivered");
+}
+
+/// The notes left on issue `number` of `file`.
+fn notes(file: &Path, number: u64) -> Vec<String> {
+    let kept = onehand_core::issues::load_blocking(file).unwrap();
+    kept.get(number)
+        .unwrap()
+        .notes
+        .iter()
+        .map(|note| note.text.clone())
+        .collect()
+}
+
+/// A report goes to its issue once, however many times delivery is asked
+/// for while it is on its way, and leaves its task once it has landed.
 #[gpui::test]
-fn a_task_still_starting_holds_a_slot_until_it_asks_for_its_place(cx: &mut TestAppContext) {
+fn a_report_is_sent_once_and_dropped_once_it_lands(cx: &mut TestAppContext) {
+    let dir = temp_dir("deliver");
+    app(cx, &dir.join("tasks"), Some(UnattendedConfig::default()));
+    let file = issues(&dir);
+    let task = issue_task("a", 1, &file, &dir, vec![report()]);
+    cx.update(|cx| crate::task::add(task, cx));
+    cx.update(|cx| {
+        for _ in 0..2 {
+            crate::task::with_unattended(cx, |u, seen| ((), u.deliver("a", seen)));
+        }
+    });
+    delivered("a", cx);
+    let said = notes(&file, 1);
+    assert_eq!(said.len(), 1, "told once: {said:?}");
+    assert!(said[0].contains("cut off"), "{}", said[0]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// The clock comes round on its own and is armed again, and a tick sends
+/// what is owed even with nothing switched on.
+#[gpui::test]
+fn the_clock_ticks_and_a_tick_sends_what_is_owed(cx: &mut TestAppContext) {
+    let dir = temp_dir("clock");
+    let cfg = UnattendedConfig {
+        every: "1m".into(),
+        ..Default::default()
+    };
+    app(cx, &dir.join("tasks"), Some(cfg));
+    let file = issues(&dir);
+    cx.update(|cx| crate::task::add(issue_task("a", 1, &file, &dir, vec![report()]), cx));
+    cx.run_until_parked();
+    assert_eq!(
+        issue_of("a", cx).unsent.len(),
+        1,
+        "nothing before the clock"
+    );
+    cx.executor().advance_clock(Duration::from_secs(61));
+    delivered("a", cx);
+    assert_eq!(notes(&file, 1).len(), 1);
+    cx.update(|cx| crate::task::add(issue_task("b", 2, &file, &dir, vec![report()]), cx));
+    cx.executor().advance_clock(Duration::from_secs(61));
+    delivered("b", cx);
+    assert_eq!(notes(&file, 2).len(), 1, "the next fire came");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A start of an issue's task with every slot taken is refused through the
+/// one way every start goes, and answered to whoever asked.
+#[gpui::test]
+fn a_start_over_the_cap_is_refused_where_it_was_asked(cx: &mut TestAppContext) {
     let dir = temp_dir("cap");
-    app(cx, &dir.join("tasks"), Some(unattended(1)));
+    let cfg = UnattendedConfig {
+        at_once: 0,
+        ..Default::default()
+    };
+    let window = app(cx, &dir.join("tasks"), Some(cfg));
     let file = dir.join("issues.json");
-    cx.update(|cx| {
-        crate::task::add(issue_task("a", 1, &file, &dir), cx);
-        crate::task::add(issue_task("b", 2, &file, &dir), cx);
-        crate::task::add(Task::check("c".into(), "true".into(), setup(&dir)), cx);
-        super::with(cx, |u| u.starting.insert("a".into()));
-    });
-    cx.update(|cx| {
-        assert_eq!(over_cap("a", cx), None, "its own count never refuses it");
-        let full = over_cap("b", cx).expect("the one slot is taken");
-        assert!(full.contains("Slots: 1 of 1"), "{full}");
-        assert_eq!(over_cap("c", cx), None, "only an issue's task is capped");
-        assert_eq!(slots(cx).unwrap().starting, 1);
-    });
-    cx.update(|cx| placed("a", cx));
-    cx.update(|cx| {
-        assert_eq!(slots(cx).unwrap().starting, 0);
-        assert_eq!(over_cap("b", cx), None, "nothing holds the slot now");
-    });
+    let task = issue_task("a", 1, &file, &dir, Vec::new());
+    let told = cx.update(|cx| crate::task::submit_told(task, window, cx));
+    cx.run_until_parked();
+    let placed = futures::executor::block_on(told).unwrap();
+    assert!(
+        matches!(&placed, crate::task::Placed::Refused(why) if why.contains("capped at none")),
+        "{placed:?}"
+    );
+    let _ = std::fs::remove_dir_all(dir);
 }
 
 /// With unattended runs not set up, nothing is capped.
 #[gpui::test]
 fn nothing_is_capped_with_unattended_runs_off(cx: &mut TestAppContext) {
     let dir = temp_dir("off");
-    app(cx, &dir.join("tasks"), None);
+    let window = app(cx, &dir.join("tasks"), None);
     let file = dir.join("issues.json");
-    cx.update(|cx| crate::task::add(issue_task("a", 1, &file, &dir), cx));
-    cx.update(|cx| {
-        assert_eq!(over_cap("a", cx), None);
-        assert!(slots(cx).is_none());
-    });
+    let task = issue_task("a", 1, &file, &dir, Vec::new());
+    let told = cx.update(|cx| crate::task::submit_told(task, window, cx));
+    cx.run_until_parked();
+    assert!(cx.update(|cx| super::slots(cx)).is_none());
+    // Past the cap to its place: refused only because this window holds no
+    // shell to drive it in.
+    let placed = futures::executor::block_on(told).unwrap();
+    assert_eq!(
+        placed,
+        crate::task::Placed::Refused("the window closed".into())
+    );
+    let _ = std::fs::remove_dir_all(dir);
 }
 
 /// A run that failed on a setting pauses every later one until onehand is
@@ -142,15 +234,17 @@ fn nothing_is_capped_with_unattended_runs_off(cx: &mut TestAppContext) {
 #[gpui::test]
 fn a_pause_stops_every_run_and_says_what_to_fix(cx: &mut TestAppContext) {
     let dir = temp_dir("pause");
-    app(cx, &dir.join("tasks"), Some(unattended(1)));
+    app(cx, &dir.join("tasks"), Some(UnattendedConfig::default()));
     cx.update(|cx| {
-        pause(
+        super::pause(
             "The agent does not offer mode `x`",
             "unattended.mode is fixed",
             cx,
         )
     });
-    let why = cx.update(|cx| blocked(cx)).expect("every run is stopped");
+    let why = cx
+        .update(|cx| super::blocked(cx))
+        .expect("every run is stopped");
     assert_eq!(
         why,
         "The agent does not offer mode `x`. Unattended runs are paused until \
@@ -158,8 +252,8 @@ fn a_pause_stops_every_run_and_says_what_to_fix(cx: &mut TestAppContext) {
     );
 }
 
-/// A config that cannot work is filed as what stops every run, whatever the
-/// workflows say: no label, or an interval that does not parse.
+/// A config that cannot work is filed as what stops every run: no label, or
+/// an interval that does not parse.
 #[gpui::test]
 fn boot_files_why_a_config_cannot_work(cx: &mut TestAppContext) {
     let dir = temp_dir("boot");
@@ -189,83 +283,10 @@ fn boot_files_why_a_config_cannot_work(cx: &mut TestAppContext) {
     ];
     for (cfg, said) in cases {
         cx.update(|cx| super::boot(&cfg, cx));
-        let filed = cx.update(|cx| {
-            Shared::global(cx)
-                .unattended
-                .as_ref()
-                .and_then(|u| u.blocked.clone())
-        });
+        let filed = cx.update(|cx| super::blocked(cx));
         assert!(
             filed.as_deref().is_some_and(|why| why.contains(said)),
             "{filed:?}"
         );
     }
-    cx.update(|cx| super::boot(&UnattendedConfig::default(), cx));
-    let filed = cx.update(|cx| {
-        Shared::global(cx)
-            .unattended
-            .as_ref()
-            .unwrap()
-            .blocked
-            .clone()
-    });
-    assert_eq!(filed, None);
-}
-
-/// A report goes to its issue once, however many times delivery is asked
-/// for while it is on its way, and is dropped from the task once it lands.
-#[gpui::test]
-fn a_report_is_sent_once_and_dropped_once_it_lands(cx: &mut TestAppContext) {
-    let dir = temp_dir("deliver");
-    app(cx, &dir.join("tasks"), Some(unattended(1)));
-    let file = dir.join("issues.json");
-    onehand_core::issues::update_blocking(&file, |kept| {
-        kept.create(
-            onehand_core::issues::Draft {
-                title: "Fix it".into(),
-                ..Default::default()
-            },
-            1,
-        )
-    })
-    .unwrap();
-    let mut task = issue_task("a", 1, &file, &dir);
-    if let Source::Issue(issue) = &mut task.source {
-        issue.unsent.push(PendingReport {
-            run: "a".into(),
-            outcome: None,
-            started: true,
-            ended_on: None,
-            asked: None,
-            notes: Vec::new(),
-        });
-    }
-    cx.update(|cx| crate::task::add(task, cx));
-    cx.update(|cx| {
-        deliver("a".into(), cx);
-        deliver("a".into(), cx);
-        super::deliver_all(cx);
-    });
-    for _ in 0..100 {
-        cx.run_until_parked();
-        let out = cx.update(|cx| {
-            Shared::global(cx)
-                .unattended
-                .as_ref()
-                .is_some_and(|u| !u.delivering.is_empty())
-        });
-        if !out {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    assert!(
-        issue_of("a", cx).unsent.is_empty(),
-        "dropped once it landed"
-    );
-    let kept = onehand_core::issues::load_blocking(&file).unwrap();
-    let notes = &kept.get(1).unwrap().notes;
-    assert_eq!(notes.len(), 1, "told once: {notes:?}");
-    assert!(notes[0].text.contains("cut off"), "{}", notes[0].text);
-    let _ = std::fs::remove_dir_all(dir);
 }

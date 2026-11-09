@@ -6,9 +6,12 @@
 //! timer, a window or the disk.
 
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Global, SharedString, Window};
+use onehand_core::task::tasks::link::Seen;
 use onehand_core::task::tasks::{Begin, Effect, Start, TasksDrive};
 use onehand_core::task::work::UnderReview;
 use onehand_core::task::{Task, Working, files};
+use onehand_core::unattended::drive::UnattendedDrive;
+use onehand_core::unattended::link::{Joined, Out};
 use onehand_core::workflow::{Run, Template};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -29,6 +32,9 @@ pub(crate) struct Tasks {
     /// Every task kept, the queue, and what ended runs still hold. Empty
     /// until the boot read lands.
     drive: TasksDrive<AnyWindowHandle>,
+    /// Unattended runs, once they are set up: one per process, beside the
+    /// tasks they start, since two would be two agents on one issue.
+    unattended: Option<UnattendedDrive>,
     /// Runs under way, by their task's id; a check's has no session.
     live: HashMap<String, carrier::Driven>,
     /// What watches each run that ended while its session's turn still goes.
@@ -64,6 +70,7 @@ impl Tasks {
     pub(crate) fn in_dir(dir: PathBuf) -> Self {
         Self {
             drive: TasksDrive::default(),
+            unattended: None,
             live: HashMap::new(),
             draining: HashMap::new(),
             told: HashMap::new(),
@@ -102,18 +109,6 @@ impl Tasks {
         self.drive.busy(id)
     }
 
-    /// Whether task `id` holds a slot of the cap on unattended runs: queued
-    /// or running, and not waiting on its pull request's status checks.
-    fn holds_slot(&self, id: &str) -> bool {
-        match self.working(id) {
-            Some(Working::Running) => self
-                .driven(id)
-                .is_none_or(|d| !d.run().awaiting_status_checks()),
-            Some(Working::Queued) => true,
-            Some(Working::Waiting) | None => false,
-        }
-    }
-
     /// The carrier running task `id`'s run, if one is.
     fn driven(&self, id: &str) -> Option<&carrier::Driven> {
         self.live.get(id)
@@ -130,11 +125,76 @@ impl Tasks {
     /// What task `id` is doing, if anything: its place's word, and a run
     /// under way waiting on a person, its drive's.
     fn working(&self, id: &str) -> Option<Working> {
-        match (self.drive.working(id), self.driven(id)) {
-            (Some(Working::Running), Some(d)) if d.waits_on_person() => Some(Working::Waiting),
-            (working, _) => working,
-        }
+        self.seen().working(id)
     }
+
+    /// Every task and the runs under way, to read.
+    fn seen(&self) -> Seen<'_, AnyWindowHandle> {
+        Seen::new(&self.drive, self.live.values().map(carrier::Driven::drive))
+    }
+
+    /// The drives joined for one call.
+    fn joined(&mut self) -> Joined<'_, AnyWindowHandle> {
+        Joined::new(
+            &mut self.drive,
+            self.live.values().map(carrier::Driven::drive),
+            self.unattended.as_mut(),
+        )
+    }
+}
+
+/// Carry out what the joined drives said: the tasks', with `session` the
+/// session of the run that just ended if that is what this answers, then
+/// unattended runs'.
+fn carry(
+    out: Out<AnyWindowHandle>,
+    session: Option<&gpui::Entity<crate::chat::session::ChatSession>>,
+    cx: &mut App,
+) {
+    place::perform(out.tasks, session, cx);
+    crate::unattended::perform(out.unattended, cx);
+}
+
+/// Join the drives for `command`, and carry out what they say.
+fn with_joined<R>(
+    cx: &mut App,
+    command: impl FnOnce(&mut Joined<'_, AnyWindowHandle>) -> (R, Out<AnyWindowHandle>),
+) -> Option<R> {
+    if !cx.has_global::<Tasks>() {
+        return None;
+    }
+    let (answer, out) = cx.update_global::<Tasks, _>(|t, _| command(&mut t.joined()));
+    carry(out, None, cx);
+    Some(answer)
+}
+
+/// Give unattended runs `command`, reading the tasks, and carry out what it
+/// says. `R::default()` before they are set up.
+pub(crate) fn with_unattended<R: Default>(
+    cx: &mut App,
+    command: impl FnOnce(
+        &mut UnattendedDrive,
+        &Seen<'_, AnyWindowHandle>,
+    ) -> (
+        R,
+        Vec<onehand_core::unattended::drive::Effect<AnyWindowHandle>>,
+    ),
+) -> R {
+    with_joined(cx, |j| j.unattended(command)).unwrap_or_default()
+}
+
+/// Set unattended runs up with `drive`.
+pub(crate) fn set_unattended(drive: UnattendedDrive, cx: &mut App) {
+    cx.default_global::<Tasks>().unattended = Some(drive);
+}
+
+/// What `read` makes of unattended runs and the tasks, once they are set up.
+pub(crate) fn unattended<R>(
+    cx: &App,
+    read: impl FnOnce(&UnattendedDrive, &Seen<'_, AnyWindowHandle>) -> R,
+) -> Option<R> {
+    let t = cx.try_global::<Tasks>()?;
+    Some(read(t.unattended.as_ref()?, &t.seen()))
 }
 
 /// Give the tasks' drive `command`, and carry out what it says.
@@ -145,9 +205,7 @@ fn with_drive<R>(
     if !cx.has_global::<Tasks>() {
         return None;
     }
-    let (answer, effects) = cx.update_global::<Tasks, _>(|t, _| command(&mut t.drive));
-    place::perform(effects, None, cx);
-    Some(answer)
+    with_joined(cx, |j| j.tasks(command))
 }
 
 /// How long quitting waits for the task files still being written.
@@ -424,26 +482,6 @@ pub(crate) fn session_not_started(id: String, agent_gone: bool, cx: &mut App) {
 /// agent to watch.
 pub(crate) fn start_check(id: String, start: Start, window: AnyWindowHandle, cx: &mut App) {
     carrier::start_check(id, start, window, cx);
-}
-
-/// Change the issue task `id` works, and write the task.
-pub(crate) fn update_issue(
-    id: &str,
-    cx: &mut App,
-    change: impl FnOnce(&mut onehand_core::unattended::IssueSource),
-) {
-    with_drive(cx, |d| ((), d.change_issue(id, change)));
-}
-
-/// Every issue task whose issue has not been told how a run ended.
-pub(crate) fn undelivered(cx: &App) -> Vec<String> {
-    cx.try_global::<Tasks>().map_or_else(Vec::new, |t| {
-        t.tasks()
-            .iter()
-            .filter(|task| task.issue().is_some_and(|issue| !issue.unsent.is_empty()))
-            .map(|task| task.id.clone())
-            .collect()
-    })
 }
 
 #[cfg(test)]

@@ -46,8 +46,7 @@ pub(crate) fn submit_told(
 /// It starts in `window`, or, when it waited, in the window it was asked
 /// from, if that is still open.
 pub(crate) fn request(id: String, window: AnyWindowHandle, cx: &mut App) {
-    let over_cap = crate::unattended::over_cap(&id, cx);
-    with_drive(cx, |d| ((), d.request(&id, window, over_cap)));
+    super::with_joined(cx, |j| ((), j.request(&id, window)));
 }
 
 /// Task `id`, holding its place, could not start for `why`, of `kind`: the
@@ -137,11 +136,10 @@ pub(super) fn perform(
                 .detach();
             }
             Effect::Defer(input) => cx.defer(move |cx| feed(input, cx)),
-            Effect::IssueEnded(task) => crate::unattended::ended(&task, cx),
-            Effect::Deliver(task) => crate::unattended::deliver(task, cx),
-            Effect::DeliverAll => crate::unattended::deliver_all(cx),
             Effect::Told { task, placed } => tell(&task, placed, cx),
-            Effect::Asked(task) => crate::unattended::placed(&task, cx),
+            // Unattended runs' to act on: the link hands them over, and
+            // never on to here.
+            Effect::IssueEnded(_) | Effect::Deliver(_) | Effect::DeliverAll | Effect::Asked(_) => {}
             Effect::CloseSession { uid, window } => cx.defer(move |cx| {
                 crate::state::with_shell(window, cx, |shell, _, cx| shell.close_finished(uid, cx));
             }),

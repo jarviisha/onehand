@@ -1,7 +1,6 @@
 //! What a start on an issue is checked against: the facts the app holds,
 //! gathered for the preflight core decides with.
 
-use super::launch;
 use crate::state::Shared;
 use gpui::App;
 use onehand_core::config::{self, AgentSpec};
@@ -15,24 +14,27 @@ use onehand_core::workflow::Template;
 /// agent, its mode and what is known of it, and the slots. The workflow, the
 /// project and the issue are the caller's to fill in.
 pub(crate) fn common(cx: &App) -> Facts {
-    let shared = Shared::global(cx);
-    let u = shared.unattended.as_ref();
+    let world = super::world(cx);
+    if let Some(facts) = crate::task::unattended(cx, |u, seen| u.common(seen, &world)) {
+        return facts;
+    }
+    // Not set up: the first agent, and no mode or slots of runs.
     let agent = super::run_agent(cx);
     let spec = agent
         .as_deref()
-        .and_then(|name| shared.agents.iter().find(|spec| spec.name == name));
+        .and_then(|name| world.agents.iter().find(|spec| spec.name == name));
     Facts {
         workflow: Err("no workflow is chosen yet".to_string()),
         agent_configured: spec.is_some(),
         offered: spec.and_then(|spec| offered(spec, cx)),
         agent,
-        mode: u.and_then(|_| config::mode_set(&super::run_mode(cx))),
+        mode: None,
         has_check: false,
         in_git: false,
         checked_out: None,
         forge: None,
         issue: None,
-        slots: u.map(|u| super::slots_of(u, cx)),
+        slots: None,
         queued_behind: None,
         shared_checkout: None,
         forge_read: true,
@@ -75,12 +77,9 @@ pub(crate) fn issue_run(
 /// The workflow `id` as an issue's run would take it, its timeout the runs'
 /// own, not yet judged: the preflight says what is wrong with it.
 pub(crate) fn template(id: &str, cx: &App) -> Result<Template, String> {
-    let timeout = Shared::global(cx)
-        .unattended
-        .as_ref()
-        .map(|u| u.timeout.clone())
-        .ok_or("unattended runs are not set up")?;
-    launch::found(id, &timeout, cx)
+    let world = super::world(cx);
+    crate::task::unattended(cx, |u, _| u.template(id, &world))
+        .ok_or("unattended runs are not set up")?
 }
 
 /// `forge` as a preflight reads it: its name, and its account as last seen.
@@ -105,12 +104,7 @@ fn account(forge: &'static dyn Connector, cx: &App) -> Option<Result<String, Str
 /// A run's agent is started through the spec runs wrap it in, so what it
 /// offered counts as the configured spec's too.
 pub(crate) fn offered(spec: &AgentSpec, cx: &App) -> Option<onehand_core::workflow::Offer> {
-    let wrapped = super::report::wrapped(spec.clone());
-    Shared::global(cx)
-        .offers_seen
-        .iter()
-        .find(|(seen, _)| seen == spec || *seen == wrapped)
-        .map(|(_, offer)| offer.clone())
+    onehand_core::unattended::drive::offered(spec, &Shared::global(cx).offers_seen)
 }
 
 /// A Resume or a Retry of `task` on `template`: judged by its last run's own
@@ -145,10 +139,10 @@ pub(crate) fn with_setup(
             .and_then(|forge| account(forge, cx)),
     });
     // Held to the cap as the tick is: an issue's task not already counted.
-    let slots = shared.unattended.as_ref().and_then(|u| {
-        let counted = u.starting.contains(&task.id) || crate::task::is_working(&task.id, cx);
-        (task.issue().is_some() && !counted).then(|| super::slots_of(u, cx))
-    });
+    let slots = crate::task::unattended(cx, |u, seen| {
+        (task.issue().is_some() && !u.counted(&task.id, seen)).then(|| u.slots(seen))
+    })
+    .flatten();
     Facts {
         workflow,
         agent_configured: spec.is_some(),

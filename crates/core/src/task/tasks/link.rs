@@ -10,7 +10,7 @@
 use super::{Effect, TasksDrive};
 use crate::chat::Chat;
 use crate::task::drive::RunDrive;
-use crate::task::Task;
+use crate::task::{Task, Working};
 
 /// `run` asked to be saved: the task it is of, keeping the run as it now
 /// stands, to write.
@@ -50,4 +50,64 @@ pub fn card_question(chat: &Chat) -> Option<String> {
                 .last()
                 .map(|(_, permission)| permission.req.title.clone())
         })
+}
+
+/// Every task and the runs under way, as another drive reads them: what each
+/// task is doing, its run's word included, and who holds a slot of the cap
+/// on unattended runs. Reads only; nothing here changes a task.
+pub struct Seen<'a, W> {
+    tasks: &'a TasksDrive<W>,
+    runs: Vec<&'a RunDrive>,
+}
+
+impl<'a, W: Copy> Seen<'a, W> {
+    /// `tasks`, with the drives of the runs under way.
+    pub fn new(tasks: &'a TasksDrive<W>, runs: impl IntoIterator<Item = &'a RunDrive>) -> Self {
+        Self {
+            tasks,
+            runs: runs.into_iter().collect(),
+        }
+    }
+
+    /// The drive of task `id`'s run under way, if one is.
+    pub fn run(&self, id: &str) -> Option<&'a RunDrive> {
+        self.runs.iter().copied().find(|run| run.task() == id)
+    }
+
+    /// What task `id` is doing: its place's word, and a run holding the place
+    /// that waits on a person (an approval, or a card), its drive's.
+    pub fn working(&self, id: &str) -> Option<Working> {
+        match (self.tasks.working(id), self.run(id)) {
+            (Some(Working::Running), Some(run)) if run.waits_on_person() => Some(Working::Waiting),
+            (working, _) => working,
+        }
+    }
+
+    /// Whether task `id` is queued, running or waiting on a person.
+    pub fn busy(&self, id: &str) -> bool {
+        self.tasks.busy(id)
+    }
+
+    /// Whether task `id` holds a slot of the cap on unattended runs: queued,
+    /// or running and not waiting on its pull request's status checks. One
+    /// waiting on a person holds none.
+    pub fn holds_slot(&self, id: &str) -> bool {
+        match self.working(id) {
+            Some(Working::Running) => self
+                .run(id)
+                .is_none_or(|run| !run.run().awaiting_status_checks()),
+            Some(Working::Queued) => true,
+            Some(Working::Waiting) | None => false,
+        }
+    }
+
+    /// Every task kept, oldest first.
+    pub fn all(&self) -> &'a [Task] {
+        self.tasks.tasks()
+    }
+
+    /// Task `id` as it is kept.
+    pub fn task(&self, id: &str) -> Option<&'a Task> {
+        self.tasks.task(id)
+    }
 }

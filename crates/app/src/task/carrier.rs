@@ -39,6 +39,11 @@ pub(super) struct Driven {
 }
 
 impl Driven {
+    /// The run's drive, to read.
+    pub(super) fn drive(&self) -> &RunDrive {
+        &self.drive
+    }
+
     /// The task the run is of.
     pub(super) fn task(&self) -> &str {
         self.drive.task()
@@ -344,9 +349,8 @@ fn perform(id: &str, effects: Vec<Effect>, cx: &mut App) {
                 cx.defer(move |cx| crate::unattended::answered(&task, cx));
             }
             Effect::CameUp => {
-                if let (Some(task), Some(session)) = (super::task(id, cx), session) {
-                    crate::unattended::started(&task, &session, cx);
-                }
+                let name = session.and_then(|session| session.read(cx).chat.session_id.clone());
+                crate::unattended::came_up(id, name, cx);
             }
             Effect::Pause { why, fix } => crate::unattended::pause(&why, &fix, cx),
             Effect::Refresh => cx.refresh_windows(),
@@ -431,14 +435,21 @@ fn finish(id: &str, session: Option<&Entity<ChatSession>>, cx: &mut App) {
     let Some(driven) = driven else {
         return;
     };
-    let effects = cx.update_global::<Tasks, _>(|t, cx| {
+    let out = cx.update_global::<Tasks, _>(|t, cx| {
         let on = session.zip(driven.uid());
         let chat = on.map(|(session, uid)| (&session.read(cx).chat as &Chat, uid));
-        tasks_link::finished(&mut t.drive, &driven.drive, chat, driven.window)
+        t.joined()
+            .tasks(|d| {
+                (
+                    (),
+                    tasks_link::finished(d, &driven.drive, chat, driven.window),
+                )
+            })
+            .1
     });
     cx.defer(move |cx| {
         drop(driven);
         cx.refresh_windows();
     });
-    super::place::perform(effects, session, cx);
+    super::carry(out, session, cx);
 }

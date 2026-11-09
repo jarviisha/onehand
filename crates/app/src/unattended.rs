@@ -1,98 +1,44 @@
-//! Unattended runs, as the app drives them: the tick, the claim, the cap, and
-//! what happens once a run's task ends.
+//! Unattended runs, as the app carries them: the clock, the look, the claim
+//! and the reports, done here and decided in
+//! `onehand_core::unattended::drive`.
 //!
 //! An issue is worked as a task of the configured workflow, driven like any
-//! other (`crate::task`). Everything that can be decided without a window —
-//! which issue, what branch, what the run is asked, what the issue is told — is
-//! `onehand_core::unattended`. What is here is what needs an entity, a window
-//! or a timer.
+//! other (`crate::task`). The drive is held beside the tasks it starts, in
+//! the `Tasks` global, and the two meet in `onehand_core::unattended::link`.
+//! What is here is what needs a timer, a thread, a window or the person's
+//! settings: each command is given the projects switched on across every
+//! window and the workflows and agents on offer as they are now, and each
+//! effect is carried out once.
 //!
-//! **One per process, on [`Shared`]**, for the reason the remote bridge is
-//! there: two windows each running a tick would be two agents on one issue. The
-//! tick therefore belongs to no window and asks each in turn for its projects.
+//! **One per process**, for the reason the remote bridge is: two windows each
+//! running a tick would be two agents on one issue. The tick therefore
+//! belongs to no window and asks each in turn for its projects.
 
 use crate::state::Shared;
-use gpui::{App, BorrowAppContext as _, Task, WeakEntity};
+use gpui::{AnyWindowHandle, App, Global, WeakEntity};
 use onehand_core::config::UnattendedConfig;
 use onehand_core::connector::{self, Connector};
-use onehand_core::unattended::{self as core, Accounts, Served, Slots};
+use onehand_core::unattended::drive::{
+    Effect, Input, On, Signal, UnattendedDrive, World, blocking,
+};
+use onehand_core::unattended::{self as core, Accounts, Slots};
 use onehand_core::workflow::Field;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::BTreeMap;
 use std::path::Path;
-use std::path::PathBuf;
-use std::time::Duration;
 
 mod facts;
 mod launch;
 mod report;
-use launch::{Landed, landed};
 pub use launch::{ReviewRead, look_now, read_review, start_answer, start_picked};
 pub use onehand_core::unattended::{Pickable, Project};
-pub(crate) use report::{deliver, deliver_all, ended, opening, pause, spec_for, started};
+pub(crate) use report::{opening, spec_for};
 
-/// The unattended half of the process: its settings, the claim in flight and
-/// the tick. The runs themselves are tasks, kept with every other.
-pub struct Unattended {
-    label: String,
-    /// How long a run may work, put over the workflow's own timeout.
-    timeout: String,
-    /// The mode configured; absent takes the one the runs' agent needs, read
-    /// when a run starts (see [`run_mode`]).
-    mode: Option<String>,
-    agent: Option<String>,
-    /// The id of the workflow an issue is worked with, unless a workflow
-    /// label on it names another.
-    workflow: String,
-    /// Workflow label → workflow id.
-    workflows: BTreeMap<String, String>,
-    /// How many runs may work at once.
-    at_once: u32,
-    /// How many runs may wait on a person at once; `None` for no cap.
-    waiting: Option<u32>,
-    /// A claim is on its way to the connector and the worktree is being made. A tick
-    /// landing now must not start a second.
-    claiming: bool,
-    /// Why no run can start at all, whatever project is switched on: a config
-    /// that cannot work (no label, an interval that does not parse, a mode the
-    /// agent does not offer). Every run would fail the same way on a fresh
-    /// issue, so the search stops, and every switched-on row says why.
-    blocked: Option<String>,
-    /// A run failed on a setting: the agent does not offer the configured
-    /// mode, or a step's own settings were not offered or refused. Kept
-    /// apart from `blocked` because it stops a run picked by hand as well,
-    /// where the label and the interval do not matter — and it is only
-    /// learned once an adapter has answered, which is after a claim.
-    paused: Option<String>,
-    /// Tasks whose reports are on their way to their issue, so a second
-    /// delivery does not send them twice.
-    delivering: HashSet<String>,
-    /// Issue tasks kept but not yet waiting for or holding a place: counted
-    /// against the cap meanwhile, so a tick landing in between cannot start
-    /// one more.
-    starting: HashSet<String>,
-    /// What each connector last said about its account, for the lines in
-    /// Settings. `None` until the first answer lands.
-    accounts: Option<Accounts>,
-    /// When those answers landed, so Settings can say how old they are.
-    checked_at: Option<std::time::SystemTime>,
-    /// How many checks started through [`check`] -- *Check again*, a project
-    /// switched on, a window registering -- have not answered yet. Without it
-    /// *Check again* looks like it did nothing until the answer lands.
-    ///
-    /// **A count and not a flag**, because checks overlap: a scheduled look or
-    /// a switch turned on can land while the one asked for is still out, and a
-    /// flag cleared by whichever lands first gives the button back early.
-    checks_out: usize,
-    /// Why the last look at a project could not go ahead, by project.
-    ///
-    /// **Shown on the project's row**, because the alternative is stderr: a
-    /// project no connector serves, or one whose account is unusable, fails the
-    /// same way on every tick, and a switch that is on while nothing can happen
-    /// looks exactly like one that is working. An entry is cleared by the next
-    /// look that gets through.
-    problems: HashMap<PathBuf, String>,
-    _tick: Task<()>,
+/// The tick's clock, armed again at every fire; dropping it stops it.
+struct Clock {
+    _tick: gpui::Task<()>,
 }
+
+impl Global for Clock {}
 
 /// The connector serving the project at `root`, or every reason none does.
 ///
@@ -103,54 +49,29 @@ pub fn connector_for(root: &Path) -> Result<&'static dyn Connector, String> {
     connector::serving(all, root).map(|at| all[at])
 }
 
-/// Why no more runs may start while these work: every slot is taken, said
-/// with who holds each, or as many runs wait on a person as may. A run
-/// waiting on a person holds no slot, so one question nobody has answered
-/// yet does not stop every other issue from being worked; one whose card is
-/// answered carries on beside whatever started meanwhile, since the protocol
-/// cannot hold an agent mid-turn.
-fn at_cap(u: &Unattended, cx: &App) -> Option<String> {
-    slots_of(u, cx).full()
-}
-
-/// The slots as they stand, across every window.
-fn slots_of(u: &Unattended, cx: &App) -> Slots {
-    Slots {
-        holders: crate::task::slot_holders(cx),
-        starting: u.starting.len(),
-        at_once: u.at_once,
-        waiting: crate::task::issues_waiting(cx),
-        waiting_cap: u.waiting,
+/// The workflows and agents on offer now, as the drive reads them.
+fn world(cx: &App) -> World {
+    let shared = Shared::global(cx);
+    World {
+        library: crate::workflow::templates(cx)
+            .into_iter()
+            .filter_map(|entry| entry.template.ok())
+            .collect(),
+        agents: shared.agents.clone(),
+        offers: shared.offers_seen.clone(),
     }
 }
 
-/// A look or a pick is claiming an issue, so *Look for an issue now* waits.
-pub(crate) fn claiming(cx: &App) -> bool {
-    Shared::global(cx)
-        .unattended
-        .as_ref()
-        .is_some_and(|u| u.claiming)
-}
-
-/// The slots as they stand, if unattended runs are set up.
-pub(crate) fn slots(cx: &App) -> Option<Slots> {
-    Shared::global(cx)
-        .unattended
-        .as_ref()
-        .map(|u| slots_of(u, cx))
-}
-
-/// Why nothing at all may start, picked or found, as core says over the
-/// workflows the config names, each as a run would take it.
-fn cannot_start(u: &Unattended, cx: &App) -> Option<String> {
-    let default = launch::workflow(&u.workflow, &u.timeout, cx);
-    let by_label: Vec<_> = u
-        .workflows
-        .iter()
-        .map(|(label, id)| (label.clone(), launch::workflow(id, &u.timeout, cx)))
-        .collect();
-    let agent_configured = spec_for(u.agent.as_deref(), cx).is_some();
-    core::cannot_start(u.paused.as_deref(), &default, &by_label, agent_configured)
+/// Every switched-on project across every window, in rail order, once each,
+/// with whether it has a check command in whichever window holds it.
+fn roots(cx: &App) -> Vec<On> {
+    opted_in_roots(cx)
+        .into_iter()
+        .map(|project| {
+            let has = has_check(&project.root, cx);
+            (project, has)
+        })
+        .collect()
 }
 
 /// Whether the project at `root` has a check command, in whichever window
@@ -161,263 +82,6 @@ fn has_check(root: &Path, cx: &App) -> bool {
         .iter()
         .filter_map(|w| w.shell.upgrade())
         .any(|shell| shell.read(cx).check_of(root).is_some())
-}
-
-/// How the search chooses each issue's workflow, with the ids among them
-/// that run the project's check command, which a project with none passes
-/// over before any claim.
-fn choosing(u: &Unattended, cx: &App) -> core::Choosing {
-    let validated: Vec<_> = std::iter::once(&u.workflow)
-        .chain(u.workflows.values())
-        .map(|id| (id.clone(), launch::workflow(id, &u.timeout, cx)))
-        .collect();
-    core::Choosing::new(u.workflow.clone(), u.workflows.clone(), &validated)
-}
-
-/// What a search judges each new task by, gathered on the UI loop.
-fn judging(u: &Unattended, cx: &App) -> core::Judging {
-    let templates = std::iter::once(&u.workflow)
-        .chain(u.workflows.values())
-        .map(|id| (id.clone(), launch::found(id, &u.timeout, cx)))
-        .collect();
-    core::Judging {
-        common: facts::common(cx),
-        templates,
-        tasks: crate::task::issue_tasks(cx, |_| true),
-    }
-}
-
-/// Why a project that `has` a check command or not cannot be worked by the
-/// workflow `id` — or why that workflow cannot run anywhere — for a caller
-/// that already knows whether it has one: one inside its own window's update,
-/// whose shell cannot be read again while it is being updated.
-fn lacks_check_given(has: bool, id: &str, cx: &App) -> Option<String> {
-    let u = Shared::global(cx).unattended.as_ref()?;
-    let template = match launch::workflow(id, &u.timeout, cx) {
-        Ok(template) => template,
-        Err(why) => return Some(why),
-    };
-    core::check_missing(&template, has)
-}
-
-/// Start the tick, or say why it cannot run.
-///
-/// **The state is filed either way.** A config that cannot work is not the same
-/// as a feature that is off: the switches are still on screen and still
-/// switchable, so the reason has to be somewhere the rows and Settings can read
-/// it — left only on stderr, a bad interval read on screen as a missing label,
-/// and the account line waited for an answer that was never going to come. The
-/// search is what stops; looking at projects and at accounts still works.
-pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
-    let label = cfg.label.trim().to_string();
-    let every = core::parse_every(&cfg.every);
-    let timeout = core::parse_every(&cfg.timeout).map(|_| cfg.timeout.clone());
-    let blocked = if label.is_empty() {
-        Some("no label is set in the config (unattended.label), so nothing is picked up".into())
-    } else if every.is_none() || timeout.is_none() {
-        Some(format!(
-            "unattended.every and unattended.timeout take a number and a unit (\"30m\", \
-             \"2h\", \"90s\"); the config has {:?} and {:?}",
-            cfg.every, cfg.timeout
-        ))
-    } else {
-        None
-    };
-    if let Some(why) = &blocked {
-        eprintln!("onehand: unattended runs cannot start: {why}");
-    }
-    // The tick runs whatever the config says, because it is also what keeps the
-    // rows' answers current; it only searches when nothing blocks a run.
-    // The defaults are core's, parsed, so there is one answer to "how often".
-    let fallback = UnattendedConfig::default();
-    let every = every
-        .or_else(|| core::parse_every(&fallback.every))
-        .unwrap_or(Duration::from_secs(1800));
-    let tick = cx.spawn(async move |cx| {
-        loop {
-            cx.background_executor().timer(every).await;
-            cx.update(|cx| tick(None, cx));
-        }
-    });
-    cx.update_global::<Shared, _>(|shared, _| {
-        shared.unattended = Some(Unattended {
-            label,
-            timeout: timeout.unwrap_or(fallback.timeout),
-            mode: cfg.mode.clone(),
-            agent: cfg.agent.clone(),
-            workflow: cfg.workflow.clone(),
-            workflows: cfg.workflows.clone(),
-            at_once: cfg.at_once,
-            waiting: cfg.waiting,
-            claiming: false,
-            blocked,
-            paused: None,
-            delivering: HashSet::new(),
-            starting: HashSet::new(),
-            accounts: None,
-            checked_at: None,
-            checks_out: 0,
-            problems: HashMap::new(),
-            _tick: tick,
-        });
-    });
-}
-
-/// Why no run can start at all, if something stops every one.
-pub fn blocked(cx: &App) -> Option<String> {
-    let u = Shared::global(cx).unattended.as_ref()?;
-    u.blocked.clone().or_else(|| cannot_start(u, cx))
-}
-
-/// What stops a run being picked now, if anything: the cap reached, then
-/// anything that stops every run.
-fn why_not(cx: &App) -> (Option<String>, Option<String>) {
-    Shared::global(cx)
-        .unattended
-        .as_ref()
-        .map(|u| (at_cap(u, cx), cannot_start(u, cx)))
-        .unwrap_or_default()
-}
-
-/// Why issue task `id` may not start now: the cap is reached. A task the
-/// tick or a pick has just kept is counted already, and one already queued or
-/// running holds its slot; every other start of an issue's task, a Resume or
-/// a Retry, is held to the cap like the tick.
-pub(crate) fn over_cap(id: &str, cx: &App) -> Option<String> {
-    let u = Shared::global(cx).unattended.as_ref()?;
-    let issue = crate::task::task(id, cx).is_some_and(|task| task.issue().is_some());
-    if !issue || u.starting.contains(id) || crate::task::is_working(id, cx) {
-        return None;
-    }
-    at_cap(u, cx)
-}
-
-/// Issue task `id` now waits for its place or holds it, and counts against
-/// the cap as such.
-pub(crate) fn placed(id: &str, cx: &mut App) {
-    with(cx, |u| u.starting.remove(id));
-}
-
-/// A run of issue task `id` now waits on a person and gives its place under
-/// the cap up: look for the next issue at once rather than at the next tick.
-pub(crate) fn waiting(id: &str, cx: &mut App) {
-    if crate::task::task(id, cx).is_some_and(|task| task.issue().is_some()) {
-        tick(None, cx);
-    }
-}
-
-/// A person answered the run of issue task `id` that waited on them: under
-/// a cap on waiting runs, that is room made, so look for the next issue at
-/// once rather than at the next tick.
-pub(crate) fn answered(id: &str, cx: &mut App) {
-    let capped = Shared::global(cx)
-        .unattended
-        .as_ref()
-        .is_some_and(|u| u.waiting.is_some());
-    if capped && crate::task::task(id, cx).is_some_and(|task| task.issue().is_some()) {
-        tick(None, cx);
-    }
-}
-
-/// What each connector last said about its account, if they have answered yet.
-pub fn accounts(cx: &App) -> Option<Accounts> {
-    Shared::global(cx).unattended.as_ref()?.accounts.clone()
-}
-
-/// When the connectors last answered, if they have.
-pub fn accounts_checked_at(cx: &App) -> Option<std::time::SystemTime> {
-    Shared::global(cx).unattended.as_ref()?.checked_at
-}
-
-/// Whether a check asked for by hand has not answered yet.
-pub fn accounts_checking(cx: &App) -> bool {
-    Shared::global(cx)
-        .unattended
-        .as_ref()
-        .is_some_and(|u| u.checks_out > 0)
-}
-
-/// File what the connectors said, and when.
-fn file_accounts(accounts: Accounts, cx: &mut App) {
-    with(cx, |u| {
-        u.accounts = Some(accounts);
-        u.checked_at = Some(std::time::SystemTime::now());
-    });
-}
-
-/// Why the last look at `root` could not go ahead, if it could not.
-pub fn problem(root: &std::path::Path, cx: &App) -> Option<String> {
-    Shared::global(cx)
-        .unattended
-        .as_ref()?
-        .problems
-        .get(root)
-        .cloned()
-}
-
-/// Ask every connector again, and look again at every project that is switched on —
-/// what Settings' *Check again* does, and what a window does when it opens.
-pub fn recheck(cx: &mut App) {
-    let roots = opted_in_roots(cx);
-    check(roots, true, cx);
-}
-
-/// Look at one project that was just switched on, so a switch that cannot work
-/// says so now rather than at the next tick, half an hour away.
-pub fn check_now(project: Project, cx: &mut App) {
-    check(vec![project], false, cx);
-}
-
-/// Ask each connector who it acts as and look at `roots`, off the UI loop, then
-/// file what was found. `prune` when `roots` is every switched-on project, so
-/// what is kept for a project since switched off or closed goes with it.
-fn check(roots: Vec<Project>, prune: bool, cx: &mut App) {
-    with(cx, |u| u.checks_out += 1);
-    cx.refresh_windows();
-    cx.spawn(async move |cx| {
-        let (accounts, checked) = cx
-            .background_executor()
-            .spawn(async move { look_blocking(roots) })
-            .await;
-        cx.update(|cx| {
-            with(cx, |u| u.checks_out = u.checks_out.saturating_sub(1));
-            file_accounts(accounts, cx);
-            record(checked, prune, cx);
-        });
-    })
-    .detach();
-}
-
-/// What every connector says about its account, and for each of `roots` what
-/// it can be worked with, by the connectors built into this onehand.
-fn look_blocking(roots: Vec<Project>) -> (Accounts, Vec<(PathBuf, Served)>) {
-    core::look_blocking(crate::features::connectors(), roots)
-}
-
-/// File what each look found, and redraw the rows that show it. A later entry
-/// for the same project wins, so a search that failed after its project passed
-/// the look is what the row says.
-///
-/// `prune` drops what is kept for projects no longer switched on — read now,
-/// when the answer lands, and not from the list the look started with. A look
-/// takes up to a minute, and a project switched on in that minute has already
-/// been looked at by itself; clearing everything the slower look did not cover
-/// threw that answer away.
-fn record(checked: Vec<(PathBuf, Served)>, prune: bool, cx: &mut App) {
-    let switched_on = prune.then(|| opted_in_roots(cx));
-    with(cx, |u| {
-        if let Some(switched_on) = switched_on {
-            u.problems
-                .retain(|root, _| switched_on.iter().any(|p| &p.root == root));
-        }
-        for (root, served) in checked {
-            match served {
-                Err(why) => u.problems.insert(root, why),
-                Ok(_) => u.problems.remove(&root),
-            };
-        }
-    });
-    cx.refresh_windows();
 }
 
 /// Every switched-on project across every window, in rail order, once each.
@@ -438,24 +102,290 @@ fn opted_in_roots(cx: &App) -> Vec<Project> {
     roots
 }
 
+/// The windows holding the project at `repo`, in order, each with that
+/// project's check command there.
+fn holding(repo: Option<&Path>, cx: &App) -> Vec<(AnyWindowHandle, Option<String>)> {
+    let Some(repo) = repo else {
+        return Vec::new();
+    };
+    Shared::global(cx)
+        .windows
+        .iter()
+        .filter_map(|w| {
+            let shell = w.shell.upgrade()?;
+            let shell = shell.read(cx);
+            shell
+                .holds_root(repo)
+                .then(|| (w.handle, shell.check_of(repo)))
+        })
+        .collect()
+}
+
+/// Set unattended runs up as `cfg` says and start their clock. A config
+/// that cannot work is filed, and its clock still runs.
+pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
+    let (drive, fx) = UnattendedDrive::new(cfg, crate::features::connectors());
+    crate::task::set_unattended(drive, cx);
+    perform(fx, cx);
+}
+
+/// Tell the drive what the world found, with the world as it is now.
+fn feed(input: Input<AnyWindowHandle>, cx: &mut App) {
+    let (roots, world) = (roots(cx), world(cx));
+    let now = std::time::SystemTime::now();
+    crate::task::with_unattended(cx, |u, seen| {
+        ((), u.handle(input, seen, roots, &world, now))
+    });
+}
+
+/// Do what the drive said, in order.
+pub(crate) fn perform(effects: Vec<Effect<AnyWindowHandle>>, cx: &mut App) {
+    for effect in effects {
+        match effect {
+            Effect::Arm(after) => {
+                let clock = cx.spawn(async move |cx| {
+                    cx.background_executor().timer(after).await;
+                    cx.update(|cx| feed(Input::Elapsed, cx));
+                });
+                cx.set_global(Clock { _tick: clock });
+            }
+            Effect::Check {
+                connectors,
+                roots,
+                prune,
+            } => off_loop(cx, move || {
+                let (accounts, checked) = core::look_blocking(connectors, roots);
+                Input::Checked {
+                    accounts,
+                    checked,
+                    prune,
+                }
+            }),
+            Effect::Look(look) => {
+                off_loop(cx, move || Input::Looked(Box::new(look.run_blocking())))
+            }
+            Effect::Claim {
+                found,
+                label,
+                asked_from,
+                held,
+            } => {
+                cx.spawn(async move |cx| {
+                    let begun = cx
+                        .background_executor()
+                        .spawn(async move { blocking::claim_found(*found, &label) })
+                        .await;
+                    cx.update(|cx| {
+                        let repo = begun
+                            .as_ref()
+                            .and_then(|b| b.as_ref().ok())
+                            .map(|claimed| claimed.repo.as_path());
+                        let input = Input::Claimed {
+                            holding: holding(repo, cx),
+                            begun,
+                            asked_from,
+                            held,
+                            new_task: onehand_core::task::new_id(),
+                        };
+                        feed(input, cx);
+                    });
+                })
+                .detach();
+            }
+            Effect::Take {
+                pick,
+                window,
+                earlier,
+                connectors,
+            } => off_loop(cx, move || {
+                let taken = blocking::take(&pick, &earlier, connectors);
+                Input::Taken {
+                    pick,
+                    window,
+                    taken,
+                }
+            }),
+            Effect::ClaimPicked {
+                pick,
+                window,
+                forge,
+                taking,
+                label,
+            } => {
+                let named = pick.tracker.named(&pick.row.issue);
+                cx.spawn(async move |cx| {
+                    let begun = cx
+                        .background_executor()
+                        .spawn(async move { blocking::claim_picked(*pick, forge, *taking, &label) })
+                        .await;
+                    cx.update(|cx| {
+                        let repo = match &begun {
+                            Ok(Ok(claimed)) => Some(claimed.repo.as_path()),
+                            Ok(Err(_)) | Err(_) => None,
+                        };
+                        let input = Input::PickClaimed {
+                            window,
+                            named,
+                            holding: holding(repo, cx),
+                            begun,
+                            new_task: onehand_core::task::new_id(),
+                        };
+                        feed(input, cx);
+                    });
+                })
+                .detach();
+            }
+            Effect::Tell {
+                tracker,
+                repo,
+                number,
+                body,
+            } => cx
+                .background_executor()
+                .spawn(async move { blocking::tell_blocking(&tracker, &repo, number, &body) })
+                .detach(),
+            Effect::Send(sending) => off_loop(cx, move || Input::Sent {
+                landed: sending.send_blocking(),
+                task: sending.task,
+            }),
+            Effect::Teardown { dir, keep } => report::teardown(&dir, keep, cx),
+            Effect::NoteTakenUp {
+                file,
+                number,
+                said,
+                session,
+            } => cx
+                .background_executor()
+                .spawn(async move {
+                    if let Err(why) =
+                        onehand_core::issues::taken_up_blocking(&file, number, &said, session)
+                    {
+                        eprintln!("onehand: could not note the session on issue: {why}");
+                    }
+                })
+                .detach(),
+            Effect::Tick => cx.defer(|cx| tick(None, cx)),
+            Effect::Signal(Signal::Warn { window, said }) => launch::warn(window, said, cx),
+            Effect::Signal(Signal::Log(said)) => eprintln!("onehand: {said}"),
+            Effect::Refresh => cx.refresh_windows(),
+            // The tasks' to act on: the link hands them over, and never on
+            // to here.
+            Effect::Submit { .. } | Effect::AnswerReview { .. } | Effect::Drain { .. } => {}
+        }
+    }
+}
+
+/// Do `work` off the UI loop, then tell the drive what came of it.
+fn off_loop(cx: &mut App, work: impl FnOnce() -> Input<AnyWindowHandle> + Send + 'static) {
+    cx.spawn(async move |cx| {
+        let input = cx.background_executor().spawn(async move { work() }).await;
+        cx.update(|cx| feed(input, cx));
+    })
+    .detach();
+}
+
+/// Look at every switched-on project, and search them if a slot is free;
+/// `asked_from` is the window a person asked from.
+pub(super) fn tick(asked_from: Option<AnyWindowHandle>, cx: &mut App) {
+    let (roots, world) = (roots(cx), world(cx));
+    crate::task::with_unattended(cx, |u, seen| ((), u.tick(asked_from, seen, roots, &world)));
+}
+
+/// Read unattended runs, once they are set up.
+fn read<R>(cx: &App, read: impl FnOnce(&UnattendedDrive) -> R) -> Option<R> {
+    crate::task::unattended(cx, |u, _| read(u))
+}
+
+/// Whether unattended runs are set up.
+pub(crate) fn set_up(cx: &App) -> bool {
+    read(cx, |_| ()).is_some()
+}
+
+/// A look or a pick is claiming an issue, so *Look for an issue now* waits.
+pub(crate) fn claiming(cx: &App) -> bool {
+    read(cx, UnattendedDrive::claiming).unwrap_or(false)
+}
+
+/// The slots as they stand, if unattended runs are set up.
+pub(crate) fn slots(cx: &App) -> Option<Slots> {
+    crate::task::unattended(cx, |u, seen| u.slots(seen))
+}
+
+/// Why no run can start at all, if something stops every one.
+pub fn blocked(cx: &App) -> Option<String> {
+    let world = world(cx);
+    read(cx, |u| u.blocked(&world)).flatten()
+}
+
+/// What each connector last said about its account, if they have answered yet.
+pub fn accounts(cx: &App) -> Option<Accounts> {
+    read(cx, |u| u.accounts().cloned()).flatten()
+}
+
+/// When the connectors last answered, if they have.
+pub fn accounts_checked_at(cx: &App) -> Option<std::time::SystemTime> {
+    read(cx, UnattendedDrive::checked_at).flatten()
+}
+
+/// Whether a check asked for by hand has not answered yet.
+pub fn accounts_checking(cx: &App) -> bool {
+    read(cx, UnattendedDrive::checking).unwrap_or(false)
+}
+
+/// Why the last look at `root` could not go ahead, if it could not.
+pub fn problem(root: &Path, cx: &App) -> Option<String> {
+    read(cx, |u| u.problem(root).map(str::to_string)).flatten()
+}
+
+/// Ask every connector again, and look again at every project that is switched on —
+/// what Settings' *Check again* does, and what a window does when it opens.
+pub fn recheck(cx: &mut App) {
+    let roots = opted_in_roots(cx);
+    crate::task::with_unattended(cx, |u, _| ((), u.check(roots, true)));
+}
+
+/// Look at one project that was just switched on, so a switch that cannot work
+/// says so now rather than at the next tick, half an hour away.
+pub fn check_now(project: Project, cx: &mut App) {
+    crate::task::with_unattended(cx, |u, _| ((), u.check(vec![project], false)));
+}
+
+/// A run of task `id` now waits on a person, or on its status checks.
+pub(crate) fn waiting(id: &str, cx: &mut App) {
+    let (roots, world) = (roots(cx), world(cx));
+    crate::task::with_unattended(cx, |u, seen| ((), u.waiting(id, seen, roots, &world)));
+}
+
+/// A person answered the run of task `id` that waited on them.
+pub(crate) fn answered(id: &str, cx: &mut App) {
+    let (roots, world) = (roots(cx), world(cx));
+    crate::task::with_unattended(cx, |u, seen| ((), u.answered(id, seen, roots, &world)));
+}
+
+/// The agent of task `id`'s run came up in the session named `session`.
+pub(crate) fn came_up(id: &str, session: Option<String>, cx: &mut App) {
+    crate::task::with_unattended(cx, |u, seen| ((), u.came_up(id, session, seen)));
+}
+
+/// A run failed on a setting every later one would fail on too.
+pub(crate) fn pause(why: &str, fix: &str, cx: &mut App) {
+    crate::task::with_unattended(cx, |u, _| ((), u.pause(why, fix)));
+}
+
 /// The label that asks for a run, for the places that tell the user which
 /// label to put on an issue.
 pub fn label(cx: &App) -> String {
-    Shared::global(cx)
-        .unattended
-        .as_ref()
-        .map(|u| u.label.clone())
-        .unwrap_or_default()
+    read(cx, |u| u.label().to_string()).unwrap_or_default()
 }
 
 /// The id of the workflow an issue carrying `labels` is worked with: the one
 /// its first workflow label names, else the default.
 pub fn workflow_for(labels: &[String], cx: &App) -> String {
-    Shared::global(cx)
-        .unattended
-        .as_ref()
-        .map(|u| core::workflow_for(labels, &u.workflows, &u.workflow, &u.label).to_string())
-        .unwrap_or_default()
+    read(cx, |u| {
+        let (default, by_label) = u.workflows();
+        core::workflow_for(labels, by_label, default, u.label()).to_string()
+    })
+    .unwrap_or_default()
 }
 
 /// What a new run of workflow `id` on `issue` in `tracker` is checked
@@ -475,33 +405,22 @@ pub(crate) use facts::with_setup as setup_facts;
 pub(crate) use facts::forge as forge_facts;
 pub(crate) use facts::offered;
 
-/// The agent an issue's run starts, by name: the one set for runs, else the
-/// first configured.
-/// The mode a run started now starts in: the configured one, else the one
-/// the agent runs use now is known to need. Empty leaves the agent's own.
-pub(crate) fn run_mode(cx: &App) -> String {
-    let shared = Shared::global(cx);
-    let mode = shared.unattended.as_ref().and_then(|u| u.mode.as_deref());
-    onehand_core::config::run_mode(mode, &shared.agents, run_agent(cx).as_deref())
-}
-
 /// The mode a lead's worker on agent `agent` starts in: the mode runs use,
 /// when that agent is theirs, else what it is known to need.
 pub(crate) fn worker_mode(agent: &str, cx: &App) -> Option<String> {
-    let shared = Shared::global(cx);
-    let mode = shared.unattended.as_ref().and_then(|u| u.mode.as_deref());
-    onehand_core::config::worker_mode(mode, run_agent(cx).as_deref(), &shared.agents, agent)
+    let agents = &Shared::global(cx).agents;
+    read(cx, |u| u.worker_mode(agent, agents)).unwrap_or_else(|| {
+        onehand_core::config::worker_mode(None, run_agent(cx).as_deref(), agents, agent)
+    })
 }
 
+/// The agent an issue's run starts, by name: the one set for runs, else the
+/// first configured.
 pub(crate) fn run_agent(cx: &App) -> Option<String> {
-    let shared = Shared::global(cx);
-    shared
-        .unattended
-        .as_ref()
-        .and_then(|u| u.agent.clone())
-        .or_else(|| {
-            onehand_core::config::agent_or_first(&shared.agents, None).map(|spec| spec.name.clone())
-        })
+    let agents = &Shared::global(cx).agents;
+    read(cx, |u| u.run_agent(agents)).unwrap_or_else(|| {
+        onehand_core::config::agent_or_first(agents, None).map(|spec| spec.name.clone())
+    })
 }
 
 /// What a new task of `task`'s kind would be given now, for a retry with
@@ -512,14 +431,9 @@ pub(crate) fn now_for(
     check: Option<String>,
     cx: &App,
 ) -> onehand_core::workflow::Now {
-    let shared = Shared::global(cx);
-    let first =
-        onehand_core::config::agent_or_first(&shared.agents, None).map(|spec| spec.name.clone());
-    let runs = shared.unattended.as_ref().map(|u| core::RunSettings {
-        agent: u.agent.clone(),
-        mode: run_mode(cx),
-        timeout: u.timeout.clone(),
-    });
+    let agents = &Shared::global(cx).agents;
+    let first = onehand_core::config::agent_or_first(agents, None).map(|spec| spec.name.clone());
+    let runs = read(cx, |u| u.run_settings(agents));
     core::now_for(task.issue().is_some(), runs.as_ref(), first, check)
 }
 
@@ -542,11 +456,11 @@ pub(crate) fn timeout_moved(task: &onehand_core::task::Task, cx: &App) -> bool {
 
 /// The default workflow and the workflow labels, as the config has them.
 pub fn workflows(cx: &App) -> (String, BTreeMap<String, String>) {
-    Shared::global(cx)
-        .unattended
-        .as_ref()
-        .map(|u| (u.workflow.clone(), u.workflows.clone()))
-        .unwrap_or_default()
+    read(cx, |u| {
+        let (default, by_label) = u.workflows();
+        (default.to_string(), by_label.clone())
+    })
+    .unwrap_or_default()
 }
 
 /// Every workflow an issue can be worked with, as `(id, name, shipped)`:
@@ -594,177 +508,10 @@ pub fn set_workflows(
 
 /// Put `default` and `by_label` in force for every run from now on.
 fn apply_workflows(default: String, by_label: BTreeMap<String, String>, cx: &mut App) {
-    with(cx, |u| {
-        u.workflow = default;
-        u.workflows = by_label;
+    crate::task::with_unattended(cx, |u, _| {
+        u.set_workflows(default, by_label);
+        ((), Vec::new())
     });
-}
-
-/// Act on the unattended state, if there is one.
-fn with<R>(cx: &mut App, act: impl FnOnce(&mut Unattended) -> R) -> Option<R> {
-    cx.update_global::<Shared, _>(|shared, _| shared.unattended.as_mut().map(act))
-}
-
-/// Look at every switched-on project, and search them for an issue if no run
-/// is working and nothing blocks a run.
-///
-/// **Every tick looks, even while a run is live.** The rows show what the last
-/// look found, and a tick that only looked while it was about to search left
-/// them as old as the run was long — and left an account signed in on screen after it
-/// had been signed out.
-pub(super) fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
-    // A report that could not reach its issue is tried again at every tick,
-    // switched on or not: an issue picked by hand needs no switch, and its
-    // report must not wait for one.
-    deliver_all(cx);
-    let roots = opted_in_roots(cx);
-    // Nothing switched on is nothing to look at and nothing to search, so a
-    // tick asks no connector anything at all — the feature costs nobody who has not
-    // switched a project on.
-    if roots.is_empty() {
-        return;
-    }
-    let stopped = Shared::global(cx)
-        .unattended
-        .as_ref()
-        .and_then(|u| at_cap(u, cx).or_else(|| cannot_start(u, cx)));
-    // A project with no check command is still searched, for the issues
-    // whose workflow runs none; its row says what the default workflow lacks.
-    let checks: Vec<(PathBuf, bool)> = roots
-        .iter()
-        .map(|p| (p.root.clone(), has_check(&p.root, cx)))
-        .collect();
-    let lacking: Vec<(PathBuf, String)> = Shared::global(cx)
-        .unattended
-        .as_ref()
-        .map(|u| {
-            checks
-                .iter()
-                .filter_map(|(root, has)| {
-                    Some((root.clone(), lacks_check_given(*has, &u.workflow, cx)?))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    let chosen = Shared::global(cx)
-        .unattended
-        .as_ref()
-        .map(|u| (choosing(u, cx), judging(u, cx)));
-    let earlier = launch::earlier(cx);
-    let search = with(cx, |u| {
-        let idle = !u.claiming && u.blocked.is_none() && stopped.is_none();
-        idle.then(|| {
-            u.claiming = true;
-            u.label.clone()
-        })
-    })
-    .flatten()
-    .zip(chosen);
-    cx.spawn(async move |cx| {
-        let searching = search.is_some();
-        // A panic in there would otherwise leave `claiming` set for the life of
-        // the process, and no issue would be looked for again. Said and treated
-        // as nothing found.
-        let (accounts, checked, found, held) = cx
-            .background_executor()
-            .spawn(async move {
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let (accounts, mut checked) = look_blocking(roots.clone());
-                    // Only the projects that passed the look are searched, each
-                    // with the forge the look found for it, if any.
-                    let workable: Vec<core::Workable> = roots
-                        .into_iter()
-                        .filter_map(|project| {
-                            let (_, served) =
-                                checked.iter().find(|(root, _)| *root == project.root)?;
-                            let forge = *served.as_ref().ok()?;
-                            let has_check = checks
-                                .iter()
-                                .any(|(root, has)| *root == project.root && *has);
-                            Some(core::Workable {
-                                project,
-                                forge,
-                                has_check,
-                            })
-                        })
-                        .collect();
-                    let found = search.and_then(|(label, (choosing, judging))| {
-                        let found = core::find_blocking(
-                            &workable,
-                            &label,
-                            &choosing,
-                            &earlier,
-                            &judging,
-                            &mut checked,
-                        )?;
-                        Some((found, label))
-                    });
-                    // Why nothing was started where something was looked
-                    // for: the look refused the project, or what the search
-                    // found was blocked. Taken before the line below, which
-                    // passes issues over rather than stopping a project.
-                    let held = checked.iter().find_map(|(root, served)| {
-                        let why = served.as_ref().err()?;
-                        let name = root.file_name()?.to_string_lossy().into_owned();
-                        Some(format!("Nothing was picked up in {name}: {why}"))
-                    });
-                    // Said after the look, which would otherwise say the
-                    // project is fine.
-                    checked.extend(lacking.into_iter().map(|(root, why)| (root, Err(why))));
-                    (Some(accounts), checked, found, held)
-                }))
-                .unwrap_or_else(|_| {
-                    // The look and the search are in here, and neither takes
-                    // a label.
-                    eprintln!("onehand: looking for an unattended run panicked");
-                    (None, Vec::new(), None, None)
-                })
-            })
-            .await;
-        // Checked again here, where tasks start: a Retry pressed while the
-        // search ran would otherwise have the issue claimed under it.
-        let (found, held) = cx.update(|cx| {
-            if let Some(accounts) = accounts {
-                file_accounts(accounts, cx);
-                record(checked, true, cx);
-            }
-            match found {
-                Some((found, _)) if !found.still_free(&launch::earlier(cx)) => (
-                    None,
-                    Some(
-                        "Nothing was picked up: the issue found is being worked, and keeps its label"
-                            .to_string(),
-                    ),
-                ),
-                found => (found, held),
-            }
-        });
-        let begun = match found {
-            Some((found, label)) => {
-                cx.background_executor()
-                    .spawn(async move {
-                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            core::claim_found_blocking(found, &label)
-                                .map(|begun| begun.map(|claimed| Landed::new(claimed, None)))
-                        }))
-                        .unwrap_or_else(|_| {
-                            // `prepare_blocking` catches its own, so this is the
-                            // claim's: said, and treated as nothing found.
-                            eprintln!("onehand: claiming an unattended run panicked");
-                            None
-                        })
-                    })
-                    .await
-            }
-            None => None,
-        };
-        cx.update(|cx| {
-            if searching {
-                landed(begun, asked_from, held, cx);
-            }
-        });
-    })
-    .detach();
 }
 
 #[cfg(test)]
