@@ -71,12 +71,17 @@ impl WorkspaceDrive {
 
     /// What sweep `token` found. An older sweep landing after a newer one
     /// started is dropped: `git status` on a big repository does not finish
-    /// in the order asked.
+    /// in the order asked. What it read of a project that left while it ran
+    /// is dropped too, rather than kept for a project no longer here.
     pub(super) fn swept(&mut self, token: u64, found: Vec<(PathBuf, GitStatus)>) -> Vec<Effect> {
         if token != self.swept {
             return Vec::new();
         }
-        self.git = found.into_iter().collect();
+        let ws = &self.workspace;
+        self.git = found
+            .into_iter()
+            .filter(|(path, _)| ws.roots.iter().any(|root| root.path == *path))
+            .collect();
         vec![Effect::GitRead]
     }
 }

@@ -141,6 +141,10 @@ impl Shell {
             // old command in a field its project no longer had.
             self.check_inputs.remove(&path);
             self.terminal_homes.forget(&path);
+            // A form about it goes too: left up, it would run git on a folder
+            // that is no longer a project here.
+            self.worktree_draft.take_if(|draft| draft.root == path);
+            self.branch_draft.take_if(|draft| draft.root == path);
         }
         self.mru.remove(&path);
         self.folds.remove(&path);

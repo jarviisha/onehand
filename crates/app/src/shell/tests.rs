@@ -19,18 +19,16 @@ fn session_cycle_ends_when_the_remapped_modifier_is_released() {
     assert!(!direct.held(gpui::Modifiers::default()));
 }
 
-/// A drive on `ws`, with `git` read for it as a sweep would.
-fn drive_with(
-    ws: onehand_core::workspace::Workspace,
+/// Give `drive` `git` as read, as a sweep would.
+fn swept(
+    drive: &mut onehand_core::workspace::WorkspaceDrive,
     git: Vec<(std::path::PathBuf, onehand_core::gitstat::GitStatus)>,
-) -> onehand_core::workspace::WorkspaceDrive {
+) {
     use onehand_core::workspace::drive::{Effect, Input};
-    let mut drive = onehand_core::workspace::WorkspaceDrive::new(ws);
     let Effect::Sweep { token, .. } = drive.sweep(|_| true) else {
         unreachable!("a sweep is a sweep");
     };
     let _ = drive.handle(Input::Swept { token, found: git });
-    drive
 }
 
 fn status(branch: &str) -> onehand_core::gitstat::GitStatus {
@@ -78,8 +76,12 @@ fn the_overview_keeps_a_host_project_and_the_other_pages_do_not() {
     ws.storage_dir = Some(PathBuf::from("/s"));
     // A status for the local folder, which the host's of the same path must
     // never show.
-    let mut drive = drive_with(ws, vec![(PathBuf::from("/srv/app"), status("main"))]);
+    let mut drive = onehand_core::workspace::WorkspaceDrive::new(ws);
     let _ = drive.open_host_root(HostName("vps".into()), PathBuf::from("/srv/app"));
+    swept(
+        &mut drive,
+        vec![(PathBuf::from("/srv/app"), status("main"))],
+    );
     let overview = sessions::page_projects_in(&drive, sessions::Reach::Overview);
     assert_eq!(overview.len(), 2);
     let (here, there) = (&overview[0], &overview[1]);
@@ -97,15 +99,16 @@ fn the_overview_keeps_a_host_project_and_the_other_pages_do_not() {
 fn a_host_root_reads_its_git_status_unless_a_local_root_has_its_path() {
     use onehand_core::workspace::{HostName, Workspace};
     use std::path::PathBuf;
-    let mut drive = drive_with(
-        Workspace::seeded("/srv/app"),
+    let mut drive = onehand_core::workspace::WorkspaceDrive::new(Workspace::seeded("/srv/app"));
+    let _ = drive.open_host_root(HostName("vps".into()), PathBuf::from("/srv/app"));
+    let _ = drive.open_host_root(HostName("vps".into()), PathBuf::from("/srv/other"));
+    swept(
+        &mut drive,
         vec![
             (PathBuf::from("/srv/app"), status("here")),
             (PathBuf::from("/srv/other"), status("there")),
         ],
     );
-    let _ = drive.open_host_root(HostName("vps".into()), PathBuf::from("/srv/app"));
-    let _ = drive.open_host_root(HostName("vps".into()), PathBuf::from("/srv/other"));
     let branches: Vec<_> = drive
         .roots
         .iter()

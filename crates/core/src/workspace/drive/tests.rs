@@ -495,3 +495,27 @@ fn a_sweep_reads_what_it_can_and_keeps_only_the_newest_answer() {
         "a host's folder on /a"
     );
 }
+
+/// A sweep under way when a project leaves would put back what was read of
+/// it: that part of its answer is dropped, the rest kept.
+#[test]
+fn a_sweep_under_way_when_a_project_leaves_is_dropped() {
+    let mut drive = bound();
+    drive.open_root("/b".into());
+    let Effect::Sweep { token, .. } = drive.sweep(|_| false) else {
+        panic!("a sweep");
+    };
+    drive.forget(1);
+    let status = crate::gitstat::GitStatus {
+        branch: "main".into(),
+        changed: 0,
+        ahead: 0,
+        behind: 0,
+        entries: Default::default(),
+    };
+    drive.handle(Input::Swept {
+        token,
+        found: vec![("/b".into(), status.clone()), ("/a".into(), status)],
+    });
+    assert_eq!(drive.git().keys().collect::<Vec<_>>(), [Path::new("/a")]);
+}
