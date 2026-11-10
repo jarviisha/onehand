@@ -45,11 +45,6 @@ use store::IssuesFile;
 /// one this mode is on, if nothing else has synced it sooner.
 const SYNC_EVERY: Duration = Duration::from_secs(300);
 
-/// The least time between two syncs that nothing asked for. Being shown, and
-/// reading the file again, are frequent; the forge does not need to hear about
-/// each of them.
-const SYNC_GAP: Duration = Duration::from_secs(60);
-
 /// How often the view is drawn again with nothing having changed, so the
 /// footer's "synced 3m ago" keeps telling the time. A multiple of it is
 /// [`SYNC_EVERY`].
@@ -142,9 +137,6 @@ pub(crate) struct IssuesView {
     /// Which of an issue's sections shows: kept from one issue to the next,
     /// so stepping through the list reads the same section of each.
     issue_tab: detail::IssueTab,
-    /// The issue being sent to its forge: the menu that sent it shows it
-    /// until the forge answers.
-    publishing: Option<IssueKey>,
 }
 
 /// One project's issues file, shared with every other view of it, and what
@@ -199,7 +191,6 @@ impl IssuesView {
             connectors,
             query: None,
             issue_tab: detail::IssueTab::default(),
-            publishing: None,
             showing: Showing::default(),
             tab_focus: cx.focus_handle(),
             label: None,
@@ -612,14 +603,12 @@ impl IssuesView {
         };
         // Publishing is offered where it can land: a project kept in step with
         // a forge, on an issue not already there.
-        let publish_to = state
-            .file
-            .read(cx)
-            .forge
-            .filter(|forge| issues.in_step_with(forge.name()))
-            .filter(|_| issue.link.is_none())
+        let forge = state.file.read(cx).forge;
+        let publish_to = forge
+            .filter(|forge| onehand_core::issues::drive::publishable(issues, Some(*forge), &issue))
             .map(|forge| forge.name());
         let templates = state.file.read(cx).templates.clone();
+        let publishing = state.file.read(cx).publishing == Some(issue.number);
         let body = self.parsed_body(root, &issue, cx);
         let key = self.key(root, issue.number);
         let work = key
@@ -629,7 +618,6 @@ impl IssuesView {
         self.read_pr_if_due(root, work.as_ref(), cx);
         self.read_left_if_due(work.as_ref(), cx);
         let review = self.review_block(&issue, key.as_ref(), work.as_ref(), cx);
-        let publishing = key.is_some() && self.publishing == key;
         let reading =
             self.pr.reading() || self.page.as_ref().is_some_and(|page| page.full.reading());
         let doing = Doing {
@@ -637,7 +625,7 @@ impl IssuesView {
             reading,
             review,
             full: self.page.as_ref().map(page::PageState::full),
-            session: working_in(&issue, &self.live).map(str::to_string),
+            session: issue.working_in(&self.live).map(str::to_string),
             offered: self.offered.iter().any(|offered| offered == root),
             pr: self.pr_seen(work.as_ref()),
             last: self.pr_value(work.as_ref()),
@@ -723,20 +711,6 @@ impl IssuesView {
         Some((parsed, Vec::new()))
     }
 }
-
-/// The live session working `issue`: the latest conversation its history
-/// names that is among `live`, the ones with a session in this window.
-fn working_in<'a>(issue: &'a LocalIssue, live: &[String]) -> Option<&'a str> {
-    issue
-        .notes
-        .iter()
-        .rev()
-        .filter_map(|note| note.session.as_deref())
-        .find(|session| live.iter().any(|id| id == session))
-}
-
-#[cfg(test)]
-mod tests;
 
 /// What a project is called where the page has not named it: its folder.
 fn project_name(root: &Path) -> gpui::SharedString {

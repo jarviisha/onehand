@@ -35,25 +35,24 @@ impl IssuesView {
         let Some((root, path)) = self.file() else {
             return;
         };
-        let Some(forge) = self.forge(cx) else {
-            return;
-        };
         let Some(file) = self.state_mut().map(|state| state.file.clone()) else {
             return;
         };
-        self.publishing = self.key(&root, number);
-        cx.notify();
+        let Some((number, forge)) = file.update(cx, |file, cx| file.publish(number, cx)) else {
+            return;
+        };
         cx.spawn(async move |view, cx| {
             let done = cx
                 .background_executor()
                 .spawn(async move { sync::publish_blocking(&path, &root, forge, number) })
-                .await;
+                .await
+                .map(|_| ());
+            file.update(cx, |file, cx| file.published(number, done.clone(), cx));
             let _ = view.update(cx, |view: &mut Self, cx| {
-                view.publishing = None;
                 if let Err(why) = done {
                     view.failed = Some(("Publishing the issue", why));
                 }
-                file.update(cx, |file, cx| file.load(cx));
+                cx.notify();
             });
         })
         .detach();
@@ -131,18 +130,8 @@ impl IssuesView {
             // there, so what was read meanwhile is not held for ever.
             let newest = file.update(cx, |file, cx| {
                 let newest = file.newest(of);
-                match &done {
-                    Ok((kept, _)) => {
-                        file.land(Some(kept.clone()), cx);
-                        file.sync(true, cx);
-                    }
-                    Err(_) => {
-                        file.land(None, cx);
-                        if newest {
-                            file.load(cx);
-                        }
-                    }
-                }
+                let kept = done.as_ref().ok().map(|(kept, _)| kept.clone());
+                file.written(of, kept, cx);
                 newest
             });
             let _ = view.update(cx, |view: &mut Self, cx| {

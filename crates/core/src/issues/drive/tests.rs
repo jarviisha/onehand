@@ -1,0 +1,348 @@
+// A test that only reads the drive after a change lets its effects go.
+#![allow(unused_must_use)]
+
+use super::*;
+use crate::connector::fake::Fake;
+use crate::issues::Draft;
+
+static FORGE: Fake = Fake::SERVING;
+static CONNECTORS: [&'static dyn Connector; 1] = [&FORGE];
+
+/// Effects as names, for asserting their order.
+fn names(fx: &[Effect]) -> Vec<&'static str> {
+    fx.iter()
+        .map(|effect| match effect {
+            Effect::Read { .. } => "Read",
+            Effect::Sync { .. } => "Sync",
+            Effect::Publish { .. } => "Publish",
+            Effect::Changed => "Changed",
+        })
+        .collect()
+}
+
+fn token(fx: &[Effect]) -> u64 {
+    fx.iter()
+        .find_map(|effect| match effect {
+            Effect::Read { token } => Some(*token),
+            _ => None,
+        })
+        .expect("a read")
+}
+
+/// A file with one issue, kept in step with the forge when `in_step`.
+fn issues(in_step: bool) -> Issues {
+    let mut kept = Issues::default();
+    let draft = Draft {
+        title: "one".into(),
+        ..Draft::default()
+    };
+    kept.create(draft, 1).unwrap();
+    if in_step {
+        kept.sync_with(Some("Forge".into()));
+    }
+    kept
+}
+
+/// A drive whose first read found `kept`, served by the forge, at `now`.
+fn read(kept: Issues, now: u64) -> (FileDrive, Vec<Effect>) {
+    let mut drive = FileDrive::new("/p".into(), "/p.json".into(), &CONNECTORS);
+    let token = token(&drive.load());
+    let fx = drive.handle(Input::Read {
+        token,
+        read: Ok(kept),
+        forge: Some(&FORGE),
+        templates: Vec::new(),
+        now,
+    });
+    (drive, fx)
+}
+
+fn synced(drive: &mut FileDrive, now: u64) -> Vec<Effect> {
+    drive.handle(Input::Synced {
+        done: Ok((issues(true), Report::default())),
+        now,
+    })
+}
+
+// Reading.
+
+#[test]
+fn a_file_is_read_once_marked_and_not_again_until_marked() {
+    let mut drive = FileDrive::new("/p".into(), "/p.json".into(), &CONNECTORS);
+    assert_eq!(names(&drive.load_if_stale()), ["Read"], "it starts unread");
+    assert!(drive.load_if_stale().is_empty());
+    drive.mark_stale();
+    assert_eq!(names(&drive.load_if_stale()), ["Read"]);
+}
+
+/// A read superseded by a newer one is dropped.
+#[test]
+fn an_older_read_landing_is_dropped() {
+    let mut drive = FileDrive::new("/p".into(), "/p.json".into(), &CONNECTORS);
+    let old = token(&drive.load());
+    drive.load();
+    let fx = drive.handle(Input::Read {
+        token: old,
+        read: Ok(issues(false)),
+        forge: None,
+        templates: Vec::new(),
+        now: 1,
+    });
+    assert!(fx.is_empty());
+    assert!(drive.issues.is_none());
+}
+
+#[test]
+fn a_read_that_fails_says_why_and_keeps_what_was_shown() {
+    let (mut drive, _) = read(issues(false), 1);
+    let token = token(&drive.load());
+    drive.handle(Input::Read {
+        token,
+        read: Err("unreadable".into()),
+        forge: None,
+        templates: Vec::new(),
+        now: 2,
+    });
+    assert_eq!(drive.failed.as_deref(), Some("unreadable"));
+    assert!(drive.issues.is_some());
+}
+
+// Syncing.
+
+/// A file kept in step syncs after its first read; one that is not, never.
+#[test]
+fn a_read_syncs_a_file_kept_in_step_and_only_that() {
+    let (_, fx) = read(issues(true), 100);
+    assert_eq!(names(&fx), ["Changed", "Changed", "Sync"]);
+    let (_, fx) = read(issues(false), 100);
+    assert_eq!(names(&fx), ["Changed"]);
+}
+
+/// A sync that only comes round waits out the gap since the last; one asked
+/// for goes at once.
+#[test]
+fn a_sync_coming_round_waits_out_the_gap() {
+    let (mut drive, _) = read(issues(true), 100);
+    synced(&mut drive, 100);
+    assert!(drive.sync(false, 100 + SYNC_GAP.as_secs() - 1).is_empty());
+    assert_eq!(
+        names(&drive.sync(false, 100 + SYNC_GAP.as_secs())),
+        ["Changed", "Sync"]
+    );
+    synced(&mut drive, 200);
+    assert_eq!(names(&drive.sync(true, 201)), ["Changed", "Sync"]);
+}
+
+/// Asked for while one runs, a sync runs once more when it lands, and only
+/// once.
+#[test]
+fn a_sync_asked_for_while_one_runs_follows_it_once() {
+    let (mut drive, _) = read(issues(true), 100);
+    assert!(drive.syncing);
+    assert!(drive.sync(true, 101).is_empty());
+    assert!(drive.sync(true, 102).is_empty());
+    assert_eq!(
+        names(&synced(&mut drive, 103)),
+        ["Changed", "Changed", "Sync"]
+    );
+    assert_eq!(names(&synced(&mut drive, 104)), ["Changed"]);
+}
+
+#[test]
+fn a_sync_that_fails_is_kept_with_its_time() {
+    let (mut drive, _) = read(issues(true), 100);
+    drive.handle(Input::Synced {
+        done: Err("offline".into()),
+        now: 101,
+    });
+    assert!(!drive.syncing);
+    assert!(matches!(&drive.synced, Some((101, Err(why))) if why == "offline"));
+}
+
+// Writing.
+
+/// A change is shown at once; its write landing syncs a file kept in step;
+/// the newest refused reads the file again, an older one refused does not.
+#[test]
+fn a_write_landing_syncs_and_the_newest_refused_reads_again() {
+    let (mut drive, _) = read(issues(true), 100);
+    synced(&mut drive, 100);
+    assert_eq!(
+        names(&drive.show(|kept| kept.set_open(1, false, 2))),
+        ["Changed"]
+    );
+    assert!(!drive.issues.as_ref().unwrap().get(1).unwrap().open);
+    let first = drive.send();
+    let second = drive.send();
+    assert!(!drive.newest(first) && drive.newest(second));
+    let fx = drive.handle(Input::Written {
+        of: first,
+        kept: None,
+        now: 101,
+    });
+    assert_eq!(names(&fx), ["Changed"], "an older refusal reads nothing");
+    let fx = drive.handle(Input::Written {
+        of: second,
+        kept: None,
+        now: 101,
+    });
+    assert_eq!(names(&fx), ["Changed", "Read"]);
+    let third = drive.send();
+    let fx = drive.handle(Input::Written {
+        of: third,
+        kept: Some(issues(true)),
+        now: 102,
+    });
+    assert_eq!(names(&fx), ["Changed", "Changed", "Sync"]);
+}
+
+#[test]
+fn a_change_that_does_not_apply_is_left_for_its_write() {
+    let (mut drive, _) = read(issues(false), 1);
+    assert!(drive.show(|kept| kept.set_open(9, false, 2)).is_empty());
+}
+
+// Publishing.
+
+/// An issue is sent once at a time, only with a forge, and the file is read
+/// again once it lands, whatever it came to.
+#[test]
+fn an_issue_is_published_one_at_a_time_and_read_back() {
+    let mut drive = FileDrive::new("/p".into(), "/p.json".into(), &CONNECTORS);
+    assert!(drive.publish(1).is_empty(), "no forge yet");
+    let (mut drive, _) = read(issues(true), 1);
+    assert_eq!(names(&drive.publish(1)), ["Changed", "Publish"]);
+    assert_eq!(drive.publishing, Some(1));
+    assert!(drive.publish(2).is_empty(), "one at a time");
+    let fx = drive.handle(Input::Published {
+        number: 1,
+        done: Err("refused".into()),
+    });
+    assert_eq!(names(&fx), ["Changed", "Read"]);
+    assert_eq!(drive.publishing, None);
+}
+
+#[test]
+fn only_an_issue_not_yet_on_a_forge_kept_in_step_is_publishable() {
+    let kept = issues(true);
+    let issue = kept.get(1).unwrap();
+    assert!(publishable(&kept, Some(&FORGE), issue));
+    assert!(!publishable(&kept, None, issue));
+    assert!(!publishable(&issues(false), Some(&FORGE), issue));
+}
+
+// What is shown while writes are on their way.
+
+/// The file as it stands after `writes` writes, each making an issue.
+fn written(name: &str, writes: usize) -> Issues {
+    let path = std::env::temp_dir().join(format!(
+        "onehand-issues-drive-{name}-{}.json",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let mut kept = Issues::default();
+    for n in 0..writes {
+        let draft = Draft {
+            title: format!("issue {n}"),
+            ..Draft::default()
+        };
+        kept = crate::issues::update_blocking(&path, move |kept| kept.create(draft, 1))
+            .unwrap()
+            .0;
+    }
+    let _ = std::fs::remove_file(&path);
+    kept
+}
+
+fn close_first(kept: &mut Issues) -> Result<(), String> {
+    kept.set_open(1, false, 2)
+}
+
+fn first_open(shown: &Option<Issues>) -> bool {
+    shown.as_ref().unwrap().get(1).unwrap().open
+}
+
+#[test]
+fn a_sync_landing_before_a_shown_changes_write_keeps_the_change() {
+    let mut pending = Pending::default();
+    let mut shown = Some(written("sync-held", 1));
+    close_first(shown.as_mut().unwrap()).unwrap();
+    let of = pending.send();
+    let synced = written("sync-held", 1);
+    pending.incoming(&mut shown, synced);
+    assert!(!first_open(&shown), "the shown change stays");
+    let mut kept = written("sync-held", 2);
+    close_first(&mut kept).unwrap();
+    assert_eq!(of, 1);
+    pending.land(&mut shown, Some(kept.clone()));
+    assert_eq!(shown, Some(kept));
+}
+
+#[test]
+fn a_copy_newer_than_the_write_wins_once_the_write_lands() {
+    let mut pending = Pending::default();
+    let mut shown = Some(written("newer", 1));
+    close_first(shown.as_mut().unwrap()).unwrap();
+    pending.send();
+    let mut kept = written("newer", 2);
+    close_first(&mut kept).unwrap();
+    let mut synced = written("newer", 3);
+    close_first(&mut synced).unwrap();
+    pending.incoming(&mut shown, synced.clone());
+    pending.land(&mut shown, Some(kept));
+    assert_eq!(shown, Some(synced));
+}
+
+#[test]
+fn a_refused_write_lets_what_was_read_through() {
+    let mut pending = Pending::default();
+    let mut shown = Some(written("refused", 1));
+    close_first(shown.as_mut().unwrap()).unwrap();
+    pending.send();
+    let read = written("refused", 1);
+    pending.incoming(&mut shown, read.clone());
+    pending.land(&mut shown, None);
+    assert_eq!(shown, Some(read.clone()));
+    let later = written("refused", 2);
+    pending.incoming(&mut shown, later.clone());
+    assert_eq!(shown, Some(later));
+}
+
+#[test]
+fn an_older_write_landing_waits_for_the_newer_one() {
+    let mut pending = Pending::default();
+    let mut shown = Some(written("two", 1));
+    close_first(shown.as_mut().unwrap()).unwrap();
+    pending.send();
+    shown.as_mut().unwrap().set_open(1, true, 3).unwrap();
+    pending.send();
+    let mut first = written("two", 2);
+    close_first(&mut first).unwrap();
+    pending.land(&mut shown, Some(first));
+    assert!(first_open(&shown), "the newer change stays on screen");
+    let second = written("two", 3);
+    pending.land(&mut shown, Some(second.clone()));
+    assert_eq!(shown, Some(second));
+}
+
+#[test]
+fn an_issue_is_worked_by_the_latest_session_it_names_that_is_still_live() {
+    let mut issues = Issues::default();
+    let n = issues
+        .create(
+            Draft {
+                title: "one".into(),
+                ..Draft::default()
+            },
+            1,
+        )
+        .unwrap();
+    issues.taken_up(n, "first", "old".into(), 2).unwrap();
+    issues.taken_up(n, "second", "new".into(), 3).unwrap();
+    let issue = issues.get(n).unwrap();
+    let live = |ids: &[&str]| ids.iter().map(|id| id.to_string()).collect::<Vec<_>>();
+    assert_eq!(issue.working_in(&live(&["old", "new"])), Some("new"));
+    // The newer one ended: the older one, still going, is where the work is.
+    assert_eq!(issue.working_in(&live(&["old"])), Some("old"));
+    assert_eq!(issue.working_in(&live(&["elsewhere"])), None);
+}
