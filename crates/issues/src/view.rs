@@ -137,6 +137,11 @@ pub(crate) struct IssuesView {
     /// Which of an issue's sections shows: kept from one issue to the next,
     /// so stepping through the list reads the same section of each.
     issue_tab: detail::IssueTab,
+    /// This view's changes whose writes are on their way, by project and
+    /// change.
+    asked: HashMap<(PathBuf, u64), file::Asked>,
+    /// The issue this view asked to send to its forge, whose failure it says.
+    publish_asked: Option<(PathBuf, u64)>,
 }
 
 /// One project's issues file, shared with every other view of it, and what
@@ -145,6 +150,8 @@ struct RootIssues {
     file: Entity<IssuesFile>,
     /// Draws this view again whenever the file moves.
     _watch: Subscription,
+    /// Hears what the file says of this view's changes.
+    _said: Subscription,
     selected: Option<u64>,
     /// A new issue or an edit being written: kept across a switch of project
     /// or of page, and asked about before it is dropped.
@@ -191,6 +198,8 @@ impl IssuesView {
             connectors,
             query: None,
             issue_tab: detail::IssueTab::default(),
+            asked: HashMap::new(),
+            publish_asked: None,
             showing: Showing::default(),
             tab_focus: cx.focus_handle(),
             label: None,
@@ -296,11 +305,16 @@ impl IssuesView {
             let path = issues::file_for(self.storage.as_deref()?, root);
             let file = IssuesFile::get(root, path, self.connectors, cx);
             let watch = cx.observe(&file, |_, _, cx| cx.notify());
+            let at = root.to_path_buf();
+            let said = cx.subscribe(&file, move |view: &mut Self, _, signal, cx| {
+                view.heard(&at, signal, cx)
+            });
             self.roots.insert(
                 root.to_path_buf(),
                 RootIssues {
                     file,
                     _watch: watch,
+                    _said: said,
                     selected: None,
                     form: None,
                     writing: false,

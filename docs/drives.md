@@ -242,7 +242,7 @@ list kept; the workspace's (`crates/app/src/shell/carry/tests.rs`, on a real `Sh
 written once after its wait, a failed write put back on screen and in its field, a window closing
 writing the burst still waiting, and a run's session ended leaving no agent and no project; an
 issues file's (`crates/issues/src/view/store/tests.rs`) one file for every view, read once, and a
-write landing with its answer reaching the drive. Still untested: the pane's answer to a session's look (`ChatPane::look`), a worker's
+write landing once with its answer reaching the drive and its maker. Still untested: the pane's answer to a session's look (`ChatPane::look`), a worker's
 open carried through a window (its start, watch and first prompt), an agent check's probe, which
 starts a real agent, `SendCode`'s late answer and the pane's half
 of the session (`ChatPane::carry`), `SaveTitle` (written on the ordered writer's own thread, which

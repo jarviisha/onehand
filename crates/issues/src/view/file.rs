@@ -4,7 +4,9 @@
 
 use super::IssuesView;
 use gpui::Context;
-use onehand_core::issues::{self, Issues, sync};
+use onehand_core::issues::drive::Signal;
+use onehand_core::issues::{self, Issues};
+use std::path::Path;
 
 impl IssuesView {
     /// Keep the active project in step with its forge, if it is kept in step
@@ -32,30 +34,14 @@ impl IssuesView {
     /// Send issue `number` to the forge, which is the only way anything written
     /// here reaches it.
     pub(super) fn publish(&mut self, number: u64, cx: &mut Context<Self>) {
-        let Some((root, path)) = self.file() else {
+        let Some((root, _)) = self.file() else {
             return;
         };
         let Some(file) = self.state_mut().map(|state| state.file.clone()) else {
             return;
         };
-        let Some((number, forge)) = file.update(cx, |file, cx| file.publish(number, cx)) else {
-            return;
-        };
-        cx.spawn(async move |view, cx| {
-            let done = cx
-                .background_executor()
-                .spawn(async move { sync::publish_blocking(&path, &root, forge, number) })
-                .await
-                .map(|_| ());
-            file.update(cx, |file, cx| file.published(number, done.clone(), cx));
-            let _ = view.update(cx, |view: &mut Self, cx| {
-                if let Err(why) = done {
-                    view.failed = Some(("Publishing the issue", why));
-                }
-                cx.notify();
-            });
-        })
-        .detach();
+        self.publish_asked = Some((root, number));
+        file.update(cx, |file, cx| file.publish(number, cx));
     }
 
     /// Settle issue `number`'s conflict one way or the other, then sync so the
@@ -99,15 +85,9 @@ impl IssuesView {
 
     /// The whole read-change-write happens off the UI loop in one call, after
     /// every change made before it, so it is made against what is on disk
-    /// rather than against the copy on screen.
-    ///
-    /// On a project kept in step with its forge the change is then synced
-    /// straight away, so an edit reaches the forge without waiting for the
-    /// timer.
-    ///
-    /// Only the newest change's write moves the selection to the issue it
-    /// names, and only while the person has picked nothing else since it was
-    /// made and no draft is open: an older one landing would take them back.
+    /// rather than against the copy on screen; on a project kept in step with
+    /// its forge it is then synced straight away. What it came to is heard in
+    /// [`Self::heard`].
     fn write(
         &mut self,
         change: impl FnOnce(&mut Issues) -> Result<Option<u64>, String> + Send + 'static,
@@ -123,50 +103,60 @@ impl IssuesView {
         else {
             return;
         };
-        let (of, written) = file.update(cx, |file, _| file.write(change));
-        cx.spawn(async move |view, cx| {
-            let done = written.await;
-            // The file takes every write whether or not this view is still
-            // there, so what was read meanwhile is not held for ever.
-            let newest = file.update(cx, |file, cx| {
-                let newest = file.newest(of);
-                let kept = done.as_ref().ok().map(|(kept, _)| kept.clone());
-                file.written(of, kept, cx);
-                newest
-            });
-            let _ = view.update(cx, |view: &mut Self, cx| {
-                let state = view.roots.get_mut(&root);
-                match done {
-                    Ok((_, number)) => {
-                        if let Some(state) = state {
-                            if waited {
-                                state.writing = false;
-                                state.form = None;
-                            }
-                            if newest
-                                && number.is_some()
-                                && state.selected == picked
-                                && state.form.is_none()
-                            {
-                                state.selected = number;
-                            }
-                        }
-                        view.status = None;
-                    }
-                    // The form stays open with what was typed in it: a refusal
-                    // is something to correct, not a reason to start again.
-                    Err(why) => {
-                        if let Some(state) = state
-                            && waited
-                        {
-                            state.writing = false;
-                        }
-                        view.failed = Some(("Saving the issue", why));
-                    }
-                }
-                cx.notify();
-            });
-        })
-        .detach();
+        let of = file.update(cx, |file, cx| file.write(Box::new(change), cx));
+        self.asked.insert((root, of), Asked { waited, picked });
     }
+
+    /// What `root`'s file said.
+    ///
+    /// Only the newest change's write moves the selection to the issue it
+    /// names, and only while the person has picked nothing else since it was
+    /// made and no draft is open: an older one landing would take them back.
+    /// A refused change keeps the form open with what was typed in it: a
+    /// refusal is something to correct, not a reason to start again.
+    pub(super) fn heard(&mut self, root: &Path, signal: &Signal, cx: &mut Context<Self>) {
+        match signal {
+            Signal::Wrote { of, done } => {
+                let Some(asked) = self.asked.remove(&(root.to_path_buf(), *of)) else {
+                    return;
+                };
+                let Some(state) = self.roots.get_mut(root) else {
+                    return;
+                };
+                let newest = state.file.read(cx).newest(*of);
+                if asked.waited {
+                    state.writing = false;
+                }
+                match done {
+                    Ok(number) => {
+                        if asked.waited {
+                            state.form = None;
+                        }
+                        if newest
+                            && number.is_some()
+                            && state.selected == asked.picked
+                            && state.form.is_none()
+                        {
+                            state.selected = *number;
+                        }
+                        self.status = None;
+                    }
+                    Err(why) => self.failed = Some(("Saving the issue", why.clone())),
+                }
+            }
+            Signal::PublishFailed { number, why } => {
+                if self.publish_asked.as_ref() == Some(&(root.to_path_buf(), *number)) {
+                    self.failed = Some(("Publishing the issue", why.clone()));
+                }
+            }
+        }
+        cx.notify();
+    }
+}
+
+/// A change this view made, waiting for its write: whether its form waits on
+/// it, and what was selected when it was made.
+pub(super) struct Asked {
+    waited: bool,
+    picked: Option<u64>,
 }

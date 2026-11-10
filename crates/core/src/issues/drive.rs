@@ -52,13 +52,40 @@ pub struct Kept {
     pub publishing: Option<u64>,
 }
 
+/// A change to an issues file, made on what is on disk when its write runs:
+/// the issue it names, if any, for the view that made it to select.
+pub type Change = Box<dyn FnOnce(&mut Issues) -> Result<Option<u64>, String> + Send>;
+
+/// What a person is told.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Signal {
+    /// Change `of`'s write landed: the issue it names, or why it was refused.
+    /// Said to whoever made the change, whose form and selection it moves.
+    Wrote {
+        of: u64,
+        done: Result<Option<u64>, String>,
+    },
+    /// Issue `number` could not be sent to the forge: why.
+    PublishFailed { number: u64, why: String },
+}
+
 /// What the front end carries out.
 pub enum Effect {
+    /// Read the file, make `change` and write it ([`super::update_blocking`]),
+    /// off the UI loop and after every write before it, and report
+    /// [`Input::Written`] with `of`. A late answer is **recorded**: the change
+    /// is on disk or it is not, whatever changed since.
+    Write {
+        of: u64,
+        change: Change,
+    },
     /// Read the file, the forge serving its project and its templates
     /// ([`read_blocking`]), off the UI loop, and report [`Input::Read`] with
     /// `token`. A late answer is **dropped** by its token: a newer read
     /// supersedes it.
-    Read { token: u64 },
+    Read {
+        token: u64,
+    },
     /// Keep the file in step with `forge` ([`super::sync::sync_blocking`] at `now`),
     /// off the UI loop, and report [`Input::Synced`]. A late answer is
     /// **recorded**: what it wrote is on disk whatever changed since.
@@ -75,6 +102,7 @@ pub enum Effect {
     },
     /// What the file is changed: whatever draws it draws it again.
     Changed,
+    Signal(Signal),
 }
 
 /// What the front end reports back.
@@ -92,10 +120,11 @@ pub enum Input {
         done: Result<(Issues, Report), String>,
         now: u64,
     },
-    /// Change `of`'s write landed, with what it left on disk if it was done.
+    /// Change `of`'s write landed: what it left on disk and the issue it
+    /// names, or why it was refused.
     Written {
         of: u64,
-        kept: Option<Issues>,
+        done: Result<(Issues, Option<u64>), String>,
         now: u64,
     },
     /// Sending issue `number` to the forge came to this.
@@ -198,9 +227,12 @@ impl FileDrive {
         }
     }
 
-    /// A change is about to be written: which one it is.
-    pub fn send(&mut self) -> u64 {
-        self.pending.send()
+    /// Write `change` after every change before it: which change it is, and
+    /// the write.
+    #[must_use = "its effects are to be carried"]
+    pub fn write(&mut self, change: Change) -> (u64, Effect) {
+        let of = self.pending.send();
+        (of, Effect::Write { of, change })
     }
 
     /// Whether change `of` is the newest one made.
@@ -287,11 +319,18 @@ impl FileDrive {
                 }
                 fx
             }
-            Input::Written { of, kept, now } => {
-                let done = kept.is_some();
+            Input::Written { of, done, now } => {
+                let (kept, said) = match done {
+                    Ok((kept, number)) => (Some(kept), Ok(number)),
+                    Err(why) => (None, Err(why)),
+                };
+                let landed = kept.is_some();
                 self.pending.land(&mut self.kept.issues, kept);
-                let mut fx = vec![Effect::Changed];
-                match (done, self.newest(of)) {
+                let mut fx = vec![
+                    Effect::Changed,
+                    Effect::Signal(Signal::Wrote { of, done: said }),
+                ];
+                match (landed, self.newest(of)) {
                     // Sent at once, so an edit reaches the forge without
                     // waiting for the gap.
                     (true, _) => fx.extend(self.sync(true, now)),
@@ -301,11 +340,14 @@ impl FileDrive {
                 }
                 fx
             }
-            Input::Published { number, done: _ } => {
+            Input::Published { number, done } => {
                 if self.kept.publishing == Some(number) {
                     self.kept.publishing = None;
                 }
                 let mut fx = vec![Effect::Changed];
+                if let Err(why) = done {
+                    fx.push(Effect::Signal(Signal::PublishFailed { number, why }));
+                }
                 fx.extend(self.load());
                 fx
             }

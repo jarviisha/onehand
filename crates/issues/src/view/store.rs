@@ -9,7 +9,7 @@
 
 use gpui::{App, AppContext as _, Context, Entity, Global, WeakEntity};
 use onehand_core::connector::Connector;
-use onehand_core::issues::drive::{Effect, FileDrive, Input, read_blocking};
+use onehand_core::issues::drive::{Change, Effect, FileDrive, Input, Signal, read_blocking};
 use onehand_core::issues::{self, Issues, sync};
 use onehand_core::saving::OrderedWriter;
 use std::collections::HashMap;
@@ -32,6 +32,8 @@ pub(super) struct IssuesFile {
     /// Writes the file one change at a time, in the order they were made.
     writer: OrderedWriter,
 }
+
+impl gpui::EventEmitter<Signal> for IssuesFile {}
 
 impl Deref for IssuesFile {
     type Target = FileDrive;
@@ -83,39 +85,12 @@ impl IssuesFile {
         self.carry(fx, cx);
     }
 
-    /// Read, change and write the file after every change made before this
-    /// one. Hands back which change it is, and what its write came to, which
-    /// its caller hands to [`Self::written`].
-    pub(super) fn write<C, R>(
-        &mut self,
-        change: C,
-    ) -> (
-        u64,
-        impl std::future::Future<Output = Result<(Issues, R), String>> + use<C, R>,
-    )
-    where
-        C: FnOnce(&mut Issues) -> Result<R, String> + Send + 'static,
-        R: Send + 'static,
-    {
-        let of = self.drive.send();
-        let (_, path) = self.drive.place();
-        let path = path.to_path_buf();
-        let written = self
-            .writer
-            .write(move || issues::update_blocking(&path, change));
-        (of, written)
-    }
-
-    /// Change `of`'s write landed, with what it left on disk if it was done.
-    /// Every write lands here, the newest or not, so what was read meanwhile
-    /// is let through once none is on its way.
-    pub(super) fn written(&mut self, of: u64, kept: Option<Issues>, cx: &mut Context<Self>) {
-        let fx = self.drive.handle(Input::Written {
-            of,
-            kept,
-            now: issues::now(),
-        });
-        self.carry(fx, cx);
+    /// Write `change` after every change made before it: which change it
+    /// is, for the view that made it to hear its write in [`Signal::Wrote`].
+    pub(super) fn write(&mut self, change: Change, cx: &mut Context<Self>) -> u64 {
+        let (of, write) = self.drive.write(change);
+        self.carry(vec![write], cx);
+        of
     }
 
     /// Keep the file in step with its forge, if that is due; `asked` when
@@ -125,32 +100,10 @@ impl IssuesFile {
         self.carry(fx, cx);
     }
 
-    /// Send issue `number` to the forge: what to send to which forge, handed
-    /// back for the view that asked to carry, so it says what it came to;
-    /// `None` when nothing is sent.
-    pub(super) fn publish(
-        &mut self,
-        number: u64,
-        cx: &mut Context<Self>,
-    ) -> Option<(u64, &'static dyn Connector)> {
-        let mut send = None;
-        for effect in self.drive.publish(number) {
-            match effect {
-                Effect::Publish { number, forge } => send = Some((number, forge)),
-                other => self.carry(vec![other], cx),
-            }
-        }
-        send
-    }
-
-    /// What sending issue `number` came to.
-    pub(super) fn published(
-        &mut self,
-        number: u64,
-        done: Result<(), String>,
-        cx: &mut Context<Self>,
-    ) {
-        let fx = self.drive.handle(Input::Published { number, done });
+    /// Send issue `number` to the forge; what it came to is heard in
+    /// [`Signal::PublishFailed`] when it failed.
+    pub(super) fn publish(&mut self, number: u64, cx: &mut Context<Self>) {
+        let fx = self.drive.publish(number);
         self.carry(fx, cx);
     }
 
@@ -198,8 +151,47 @@ impl IssuesFile {
                     })
                     .detach();
                 }
-                // Only ever answered to the view that asked, by `publish`.
-                Effect::Publish { .. } => debug_assert!(false, "a publish is the asker's to carry"),
+                Effect::Write { of, change } => {
+                    let (_, path) = self.drive.place();
+                    let path = path.to_path_buf();
+                    let written = self
+                        .writer
+                        .write(move || issues::update_blocking(&path, change));
+                    // Held strongly: every write lands, whether or not a view
+                    // is still there, so what was read meanwhile is let through.
+                    let file = cx.entity();
+                    cx.spawn(async move |_, cx| {
+                        let done = written.await;
+                        file.update(cx, |file, cx| {
+                            let fx = file.drive.handle(Input::Written {
+                                of,
+                                done,
+                                now: issues::now(),
+                            });
+                            file.carry(fx, cx);
+                        });
+                    })
+                    .detach();
+                }
+                Effect::Publish { number, forge } => {
+                    let (root, path) = self.drive.place();
+                    let (root, path) = (root.to_path_buf(), path.to_path_buf());
+                    cx.spawn(async move |file, cx| {
+                        let done = cx
+                            .background_executor()
+                            .spawn(
+                                async move { sync::publish_blocking(&path, &root, forge, number) },
+                            )
+                            .await
+                            .map(|_| ());
+                        let _ = file.update(cx, |file: &mut Self, cx| {
+                            let fx = file.drive.handle(Input::Published { number, done });
+                            file.carry(fx, cx);
+                        });
+                    })
+                    .detach();
+                }
+                Effect::Signal(signal) => cx.emit(signal),
             }
         }
     }

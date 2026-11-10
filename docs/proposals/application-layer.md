@@ -369,9 +369,10 @@ The second, issues:
   the read and the token that drops an older one, a change shown before its write and what comes
   in meanwhile held (`Pending`, moved from the Issues views), a write landing (a sync after it, the
   newest refused read again), when a sync is due and the one that follows a sync asked for while
-  one ran, and an issue sent to the forge one at a time. It is told the time. The Issues views'
-  `IssuesFile` is its carrier; a publish is carried by the view that asked, which says what it came
-  to. Which issue may be published (`publishable`) and the session working an issue
+  one ran, and an issue sent to the forge one at a time. It is told the time. A change is written
+  through its `Write` effect, and what the write and a publish came to is said as a `Signal`
+  (`Wrote`, `PublishFailed`), which only the view that made the change or pressed *Publish* acts
+  on. The Issues views' `IssuesFile` is its carrier, and emits those signals. Which issue may be published (`publishable`) and the session working an issue
   (`LocalIssue::working_in`) are core's; which projects a run is offered on is the workspace
   drive's (`offered_for_runs`).
 - The carrier has contract tests (`crates/issues/src/view/store/tests.rs`).

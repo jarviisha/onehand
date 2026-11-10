@@ -4,10 +4,9 @@
 
 use super::IssuesFile;
 use gpui::TestAppContext;
+use onehand_core::issues::drive::Signal;
 use onehand_core::issues::{self, Draft};
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::task::{Context, Poll, Wake, Waker};
 use std::time::Duration;
 
 /// A file of its own holding one issue, in a folder no forge serves.
@@ -35,25 +34,6 @@ fn settle(cx: &mut TestAppContext) {
     }
 }
 
-/// Wait on this thread for `future`, which the writer's own thread answers.
-fn wait<F: std::future::Future>(future: F) -> F::Output {
-    struct Unpark(std::thread::Thread);
-    impl Wake for Unpark {
-        fn wake(self: Arc<Self>) {
-            self.0.unpark();
-        }
-    }
-    let waker = Waker::from(Arc::new(Unpark(std::thread::current())));
-    let mut cx = Context::from_waker(&waker);
-    let mut future = std::pin::pin!(future);
-    loop {
-        match future.as_mut().poll(&mut cx) {
-            Poll::Ready(out) => return out,
-            Poll::Pending => std::thread::park_timeout(Duration::from_millis(50)),
-        }
-    }
-}
-
 #[gpui::test]
 fn a_file_is_one_for_every_view_and_read_once(cx: &mut TestAppContext) {
     cx.executor().allow_parking();
@@ -71,19 +51,41 @@ fn a_file_is_one_for_every_view_and_read_once(cx: &mut TestAppContext) {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// A change written lands on disk and its answer reaches the drive, which
-/// shows what the file holds.
+/// A change written lands on disk once, its answer reaches the drive, which
+/// shows what the file holds, and the change's maker hears it once.
 #[gpui::test]
-fn a_write_lands_and_its_answer_reaches_the_drive(cx: &mut TestAppContext) {
+fn a_write_lands_once_and_its_maker_hears_it(cx: &mut TestAppContext) {
     cx.executor().allow_parking();
     let (dir, path) = file("write");
     let file = cx.update(|cx| IssuesFile::get(&dir, path.clone(), &[], cx));
     file.update(cx, |file, cx| file.load_if_stale(cx));
     settle(cx);
-    let (of, written) = file.update(cx, |file, _| file.write(|kept| kept.set_open(1, false, 2)));
-    let kept = wait(written).ok().map(|(kept, _)| kept);
-    assert!(kept.is_some(), "the write landed");
-    file.update(cx, |file, cx| file.written(of, kept, cx));
+    let heard = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let ears = heard.clone();
+    let _said = cx.update(|cx| {
+        cx.subscribe(&file, move |_, signal: &Signal, _| {
+            ears.borrow_mut().push(signal.clone())
+        })
+    });
+    let of = file.update(cx, |file, cx| {
+        file.write(
+            Box::new(|kept| kept.set_open(1, false, 2).map(|()| Some(1))),
+            cx,
+        )
+    });
+    for _ in 0..50 {
+        settle(cx);
+        if !heard.borrow().is_empty() {
+            break;
+        }
+    }
+    assert_eq!(
+        *heard.borrow(),
+        [Signal::Wrote {
+            of,
+            done: Ok(Some(1))
+        }]
+    );
     let open = file.read_with(cx, |file, _| {
         file.issues
             .as_ref()

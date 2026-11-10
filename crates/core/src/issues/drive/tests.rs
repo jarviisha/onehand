@@ -16,6 +16,8 @@ fn names(fx: &[Effect]) -> Vec<&'static str> {
             Effect::Sync { .. } => "Sync",
             Effect::Publish { .. } => "Publish",
             Effect::Changed => "Changed",
+            Effect::Write { .. } => "Write",
+            Effect::Signal(_) => "Signal",
         })
         .collect()
 }
@@ -172,28 +174,36 @@ fn a_write_landing_syncs_and_the_newest_refused_reads_again() {
         ["Changed"]
     );
     assert!(!drive.issues.as_ref().unwrap().get(1).unwrap().open);
-    let first = drive.send();
-    let second = drive.send();
+    let (first, _) = drive.write(Box::new(|_| Ok(None)));
+    let (second, _) = drive.write(Box::new(|_| Ok(None)));
     assert!(!drive.newest(first) && drive.newest(second));
     let fx = drive.handle(Input::Written {
         of: first,
-        kept: None,
+        done: Err("refused".into()),
         now: 101,
     });
-    assert_eq!(names(&fx), ["Changed"], "an older refusal reads nothing");
+    assert_eq!(
+        names(&fx),
+        ["Changed", "Signal"],
+        "an older refusal reads nothing"
+    );
+    assert!(matches!(
+        &fx[1],
+        Effect::Signal(Signal::Wrote { of, done: Err(_) }) if *of == first
+    ));
     let fx = drive.handle(Input::Written {
         of: second,
-        kept: None,
+        done: Err("refused".into()),
         now: 101,
     });
-    assert_eq!(names(&fx), ["Changed", "Read"]);
-    let third = drive.send();
+    assert_eq!(names(&fx), ["Changed", "Signal", "Read"]);
+    let (third, _) = drive.write(Box::new(|_| Ok(None)));
     let fx = drive.handle(Input::Written {
         of: third,
-        kept: Some(issues(true)),
+        done: Ok((issues(true), Some(1))),
         now: 102,
     });
-    assert_eq!(names(&fx), ["Changed", "Changed", "Sync"]);
+    assert_eq!(names(&fx), ["Changed", "Signal", "Changed", "Sync"]);
 }
 
 #[test]
@@ -218,7 +228,11 @@ fn an_issue_is_published_one_at_a_time_and_read_back() {
         number: 1,
         done: Err("refused".into()),
     });
-    assert_eq!(names(&fx), ["Changed", "Read"]);
+    assert_eq!(names(&fx), ["Changed", "Signal", "Read"]);
+    assert!(matches!(
+        &fx[1],
+        Effect::Signal(Signal::PublishFailed { number: 1, why }) if why == "refused"
+    ));
     assert_eq!(drive.publishing, None);
 }
 
