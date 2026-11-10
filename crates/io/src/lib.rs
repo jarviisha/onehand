@@ -8,9 +8,11 @@
 //! - [`acp`]: the agent runtime every session's adapter runs on.
 //! - [`host`]: the attach to a host, and every call over it.
 //! - [`remote`]: the remote channel's runtime.
+//! - [`socket`]: the socket beside the instance lock, served.
 
 #![warn(unreachable_pub)]
 
 pub mod acp;
 pub mod host;
 pub mod remote;
+pub mod socket;

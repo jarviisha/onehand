@@ -1,24 +1,23 @@
 //! onehand's tools, carried out.
 //!
-//! What a tool may do and how a message is answered is core's `control`; the
-//! socket's side of the conversation runs on the listener's runtime and sends
-//! only a [`Call`] across, which [`perform`] carries out on the window in
-//! front and answers with the text the caller reads.
+//! What a tool may do and how a message is answered is core's `control`, and
+//! what follows from a session's switch, its grant, its closing and a
+//! worker's open is its drive's (`control::drive::ControlDrive`), held here.
+//! The socket's side of the conversation runs on `onehand_io::socket` and
+//! sends only a [`Call`] across, which [`perform`] carries out on the window
+//! in front and answers with the text the caller reads.
 
-use crate::instance::{Incoming, next_line};
 use crate::state::Shared;
 use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot;
 use gpui::{App, Window};
 use onehand_core::config::ControlConfig;
 use onehand_core::control::drive::{ControlDrive, Effect};
-use onehand_core::control::{self, Call, Conn, Handled, Peer, Standing};
+use onehand_core::control::{self, Call, Peer, Standing};
 use onehand_core::workflow::Brief;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
-use tokio::io::{AsyncWriteExt as _, BufReader};
-use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 
 mod start;
 mod workers;
@@ -187,66 +186,15 @@ fn tell_changed(uid: u64) {
     }
 }
 
-/// Said when a call's answer cannot come, because the app is going.
-const CLOSING: &str = "onehand is closing";
-
-/// Carry one MCP conversation, `first` its first line, until the client hangs
-/// up: each line answered by core, each call performed on the UI thread and
-/// its answer written back before the next line is read.
-pub(crate) async fn converse(
-    first: String,
-    mut reader: BufReader<OwnedReadHalf>,
-    mut writer: OwnedWriteHalf,
-    tx: UnboundedSender<Incoming>,
-) {
-    // One writer for the replies and for what the session is told unasked,
-    // so the two never interleave inside a line.
-    let (out, mut lines) = futures::channel::mpsc::unbounded::<String>();
-    tokio::spawn(async move {
-        use futures::StreamExt as _;
-        while let Some(line) = lines.next().await {
-            if writer
-                .write_all(format!("{line}\n").as_bytes())
-                .await
-                .is_err()
-            {
-                return;
-            }
-        }
-    });
-    let mut conn = Conn::default();
-    let mut told = false;
-    let mut line = Some(first);
-    while let Some(text) = line.take() {
-        let reply = match control::handle(&mut conn, &text, standing) {
-            Handled::Reply(reply) => Some(reply),
-            Handled::Quiet => None,
-            Handled::Perform { id, call } => {
-                let peer = conn.peer().cloned().unwrap_or(Peer::Outside);
-                let (answer, answered) = oneshot::channel();
-                let outcome = match tx.unbounded_send(Incoming::Call(peer, *call, answer)) {
-                    Ok(()) => answered.await.unwrap_or_else(|_| Err(CLOSING.to_string())),
-                    Err(_) => Err(CLOSING.to_string()),
-                };
-                Some(control::answered(&id, outcome))
-            }
-        };
-        // A session's connection, once it has said whose it is, is told when
-        // that session's switch changes.
-        if let (false, Some(Peer::Session(token))) = (told, conn.peer()) {
-            told = true;
-            conns().entry(token.clone()).or_default().push(out.clone());
-        }
-        if let Some(reply) = reply
-            && out.unbounded_send(reply).is_err()
-        {
-            break;
-        }
-        line = next_line(&mut reader).await;
+/// What the socket asks of the tools from its own thread: each connection's
+/// standing, and where a session's connection is told its tools changed.
+pub(crate) fn front() -> onehand_io::socket::Front {
+    onehand_io::socket::Front {
+        standing: std::sync::Arc::new(standing),
+        joined: std::sync::Arc::new(|token: &str, out: UnboundedSender<String>| {
+            conns().entry(token.to_string()).or_default().push(out);
+        }),
     }
-    // For every clone, the one kept to tell the session too: the writer then
-    // lets the socket go, so the proxy on the other end hears it close.
-    out.close_channel();
 }
 
 /// Carry out `call` in the window in front, and answer what came of it in
