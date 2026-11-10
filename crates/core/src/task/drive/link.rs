@@ -85,7 +85,7 @@ pub fn input_of(signal: &Signal, drive: &RunDrive, session: &SessionDrive) -> Op
         Signal::Appended => drive.heeds_appended(session).then_some(Input::Appended),
         Signal::TurnEnded => Some(Input::TurnEnded),
         Signal::AwaitingUser(_) => Some(Input::AwaitingUser),
-        Signal::Disconnected => Some(Input::Disconnected),
+        Signal::Disconnected(_) => Some(Input::Disconnected),
         Signal::PickRefused(why) => Some(Input::PickRefused(why.clone())),
         // Between-turn work, a refused stop, and what a save, a code send or
         // a rename came to move no run.

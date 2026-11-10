@@ -12,6 +12,7 @@ pub mod drive;
 mod failure;
 pub mod journal;
 pub mod offload;
+pub mod session;
 pub mod sshconf;
 pub mod wire;
 

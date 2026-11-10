@@ -730,7 +730,10 @@ fn a_stream_that_ends_calls_off_the_wait_and_says_so() {
     let (mut drive, _rx) = connected();
     feed(&mut drive, chunk("by itself"));
     let fx = drive.handle(Input::StreamEnded);
-    assert_eq!(names(&fx), ["Disarm", "Disconnected", "Look(LinkLost)"]);
+    assert_eq!(
+        names(&fx),
+        ["Disarm", "Disconnected(Lost)", "Look(LinkLost)"]
+    );
     assert!(!drive.busy);
 }
 
@@ -1123,8 +1126,10 @@ fn a_fork_that_never_opened_ends_without_news() {
         AcpEvent::Disconnected("Could not fork the conversation: no such session".into()),
     );
     let fx = drive.handle(Input::StreamEnded);
-    assert_eq!(names(&fx), ["Disconnected"]);
-    assert_eq!(drive.fork_failure().as_deref(), Some("no such session"));
+    assert_eq!(
+        names(&fx),
+        ["Disconnected(ForkNeverOpened(\"no such session\"))"]
+    );
 }
 
 /// A host session read from its copy because the host is out of reach ends
@@ -1134,8 +1139,7 @@ fn a_session_out_of_reach_of_its_host_ends_without_news() {
     let (mut drive, _rx) = connected();
     drive.read_back([], Some((HostName("box".into()), None)));
     let fx = drive.handle(Input::StreamEnded);
-    assert_eq!(names(&fx), ["Disconnected"]);
-    assert_eq!(drive.host_away(), Some(&HostName("box".into())));
+    assert_eq!(names(&fx), ["Disconnected(OutOfReach(HostName(\"box\")))"]);
 }
 
 /// A session waiting on its host's busy sessions is ended by a stream that
@@ -1146,7 +1150,7 @@ fn a_session_waiting_on_a_busy_host_ends_as_a_lost_agent_today() {
     let (mut drive, _rx) = connected();
     drive.drive.wait_on_host(HostName("box".into()), 2, 0);
     let fx = drive.handle(Input::StreamEnded);
-    assert_eq!(names(&fx), ["Disconnected", "Look(LinkLost)"]);
+    assert_eq!(names(&fx), ["Disconnected(Lost)", "Look(LinkLost)"]);
     assert_eq!(drive.host_waiting(), Some(&HostName("box".into())));
 }
 
@@ -1157,17 +1161,28 @@ fn a_session_waiting_on_a_busy_host_ends_as_a_lost_agent_today() {
 fn a_failed_wait_folds_the_reason_as_an_end() {
     let (mut drive, _rx) = connected();
     drive.drive.wait_on_host(HostName("box".into()), 1, 0);
-    let (was, _) = drive.drive.forget_host_wait();
-    assert!(was);
-    let fx = feed(
-        &mut drive,
-        AcpEvent::Disconnected("Could not attach".into()),
-    );
+    let fx = drive.drive.wait_failed("Could not attach", now());
     assert!(!names(&fx)
         .iter()
-        .any(|n| n == "Disconnected" || n.starts_with("Look")));
+        .any(|n| n.starts_with("Disconnected") || n.starts_with("Look")));
     assert_eq!(drive.link, crate::chat::Link::Lost);
-    assert!(!drive.drive.forget_host_wait().0);
+    assert!(drive.host_waiting().is_none());
+    assert!(
+        drive.drive.wait_failed("again", now()).is_empty(),
+        "not waiting"
+    );
+
+    let (mut drive, _rx) = connected();
+    drive.read_back([], Some((HostName("box".into()), None)));
+    let _ = drive
+        .drive
+        .back_failed("box was attached from another machine", now());
+    assert_eq!(drive.link, crate::chat::Link::Lost);
+    assert!(drive.host_away().is_none());
+    assert!(
+        drive.drive.back_failed("again", now()).is_empty(),
+        "not away"
+    );
 }
 
 /// The copy's notice says how recent it is when its entries kept a time, and

@@ -336,6 +336,87 @@ pub fn back_failure(
     }
 }
 
+/// Which of a window's waits on a host ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Waited {
+    /// The wait for a lost host to be back.
+    Back,
+    /// The wait for a busy host's sessions to finish, on another build.
+    Busy,
+}
+
+/// What a window does once one of its waits on a host ends, for the sessions
+/// that waited (`uids`), its page if that waited, and its form's *Add* if
+/// that waited.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Landed {
+    /// Each session restarted, `after_service` when the host's service has
+    /// just been restarted onto this build, said when `told`; the page lists
+    /// again when `list`; the form's *Add* carries on when `add`.
+    Restart {
+        uids: Vec<u64>,
+        after_service: bool,
+        told: bool,
+        list: bool,
+        add: bool,
+    },
+    /// Each session ends as a lost agent does, on `why`; the page says so
+    /// when `page`; the form fails on `why` when `add`.
+    Ended {
+        waited: Waited,
+        uids: Vec<u64>,
+        why: String,
+        page: bool,
+        add: bool,
+    },
+}
+
+/// What a window's wait for lost `host` to be back comes to, given how it
+/// ended ([`back_failure`]'s answer): what waited restarts quietly, as the
+/// host simply being back is no news, and the page lists again only if it
+/// waited.
+pub fn back_landed(uids: Vec<u64>, page: bool, failed: Option<String>) -> Landed {
+    match failed {
+        None => Landed::Restart {
+            uids,
+            after_service: false,
+            told: false,
+            list: page,
+            add: false,
+        },
+        Some(why) => Landed::Ended {
+            waited: Waited::Back,
+            uids,
+            why,
+            page,
+            add: false,
+        },
+    }
+}
+
+/// What a window's wait on a busy host's sessions comes to, given how it
+/// ended: what waited restarts onto the restarted service, each said, and
+/// the page lists whatever waited, since its sessions are what the wait
+/// changed; the form's *Add* carries on when it waited.
+pub fn idle_landed(uids: Vec<u64>, page: bool, add: bool, end: WaitEnd) -> Landed {
+    match end {
+        Ok(()) => Landed::Restart {
+            uids,
+            after_service: true,
+            told: true,
+            list: true,
+            add,
+        },
+        Err(why) => Landed::Ended {
+            waited: Waited::Busy,
+            uids,
+            why,
+            page,
+            add,
+        },
+    }
+}
+
 /// Whether a yes to restarting a host's service still has to restart it:
 /// the wait may have ended since the question was asked, and restarting it
 /// again would stop what that started.

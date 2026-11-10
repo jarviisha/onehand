@@ -32,6 +32,7 @@ use super::model::{Away, Chat, Link, Now, QueuedPrompt, SubmitBlock, UserAsk};
 use super::store::PendingWrite;
 use crate::acp::{AcpEvent, AcpRequest};
 use crate::attachment::StagedAttachment;
+use crate::workspace::HostName;
 use std::time::Duration;
 
 /// How long an agent writes nothing, between turns, before what it wrote is
@@ -112,6 +113,19 @@ impl Refusal {
     }
 }
 
+/// How a session's stream ended, which decides what follows: a fork that
+/// never opened goes, saying why; a session out of reach of its host waits
+/// for it to be back; any other is a lost agent, which Restart tries again.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Ended {
+    /// The agent went.
+    Lost,
+    /// The session started as a fork, and its agent never opened it: why.
+    ForkNeverOpened(String),
+    /// The session reads its host's copy, its host out of reach.
+    OutOfReach(HostName),
+}
+
 /// What the session tells whatever watches it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Signal {
@@ -123,8 +137,8 @@ pub enum Signal {
     CycleEnded,
     /// The agent parked a card and waits on a person.
     AwaitingUser(UserAsk),
-    /// The agent's stream ended.
-    Disconnected,
+    /// The agent's stream ended, as [`Ended`] says.
+    Disconnected(Ended),
     /// The agent refused a pick, put back to what it last confirmed: why.
     PickRefused(String),
     /// The agent would not stop a background item: why.
@@ -592,7 +606,8 @@ impl SessionDrive {
             Input::StreamEnded => {
                 self.chat.stream_ended();
                 let mut fx = self.disarm();
-                self.say(&mut fx, Signal::Disconnected);
+                let ended = self.ended();
+                self.say(&mut fx, Signal::Disconnected(ended));
                 fx
             }
             Input::TitleSaved {

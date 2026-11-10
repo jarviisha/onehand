@@ -111,6 +111,39 @@ impl SessionDrive {
         }
     }
 
+    /// The wait on the host's busy sessions ended on `why`, the host out of
+    /// reach: the session ends as a lost agent does, which Restart tries
+    /// again. Nothing when it was not waiting.
+    pub fn wait_failed(&mut self, why: &str, now: Now) -> Vec<Effect> {
+        match self.forget_host_wait() {
+            (true, mut fx) => {
+                fx.extend(self.end_as_lost(why, now));
+                fx
+            }
+            (false, _) => Vec::new(),
+        }
+    }
+
+    /// The wait for the host to be back ended on `why`, the host taken or
+    /// refused: the session ends as a lost agent does. Nothing when it was not
+    /// out of reach.
+    pub fn back_failed(&mut self, why: &str, now: Now) -> Vec<Effect> {
+        match self.forget_host_away() {
+            (true, mut fx) => {
+                fx.extend(self.end_as_lost(why, now));
+                fx
+            }
+            (false, _) => Vec::new(),
+        }
+    }
+
+    /// End the agent's link on `why`, as a batch of its own.
+    fn end_as_lost(&mut self, why: &str, now: Now) -> Vec<Effect> {
+        let (mut fx, _) = self.apply(AcpEvent::Disconnected(why.to_string()), now);
+        fx.extend(self.end_batch());
+        fx
+    }
+
     /// Take back the line a wait on the host put, if it is still where it
     /// was put.
     fn unsay_host_wait(&mut self) -> Vec<Effect> {

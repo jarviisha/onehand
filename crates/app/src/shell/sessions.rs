@@ -610,14 +610,27 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        match self
+        self.restart_told(uid, after_service, true, window, cx);
+    }
+
+    /// [`Self::restart_now`], saying so when `told`.
+    pub(super) fn restart_told(
+        &mut self,
+        uid: u64,
+        after_service: bool,
+        told: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let restarted = self
             .chat
-            .update(cx, |pane, cx| pane.restart(uid, after_service, cx))
-        {
-            crate::chat::pane::Restart::Restarted => {
+            .update(cx, |pane, cx| pane.restart(uid, after_service, cx));
+        match (restarted, told) {
+            (crate::chat::pane::Restart::Restarted, true) => {
                 window.push_notification(crate::toast::info("Restarting the agent"), cx);
             }
-            crate::chat::pane::Restart::Nothing => {}
+            (crate::chat::pane::Restart::Restarted, false)
+            | (crate::chat::pane::Restart::Nothing, _) => {}
         }
         cx.notify();
     }

@@ -643,3 +643,53 @@ fn a_yes_restarts_only_while_busy_and_its_failure_is_said_once() {
         "vps still runs another build of the host service"
     );
 }
+
+/// A host simply back restarts what waited quietly, listing the page only if
+/// it waited; a busy host's wait ending restarts each session onto the new
+/// service, said, and lists the page whatever waited.
+#[test]
+fn a_wait_landing_restarts_what_waited_as_its_wait_says() {
+    assert_eq!(
+        back_landed(vec![1], false, None),
+        super::Landed::Restart {
+            uids: vec![1],
+            after_service: false,
+            told: false,
+            list: false,
+            add: false,
+        }
+    );
+    assert_eq!(
+        idle_landed(vec![1], false, true, Ok(())),
+        super::Landed::Restart {
+            uids: vec![1],
+            after_service: true,
+            told: true,
+            list: true,
+            add: true,
+        }
+    );
+}
+
+#[test]
+fn a_wait_that_fails_ends_what_waited_on_why() {
+    assert_eq!(
+        back_landed(vec![1], true, Some("taken".into())),
+        super::Landed::Ended {
+            waited: super::Waited::Back,
+            uids: vec![1],
+            why: "taken".into(),
+            page: true,
+            add: false,
+        }
+    );
+    assert!(matches!(
+        idle_landed(vec![], true, true, Err("gone".into())),
+        super::Landed::Ended {
+            waited: super::Waited::Busy,
+            page: true,
+            add: true,
+            ..
+        }
+    ));
+}

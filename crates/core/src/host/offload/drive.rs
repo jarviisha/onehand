@@ -752,7 +752,7 @@ impl OffloadDrive {
             | Said::CycleEnded
             | Said::Appended
             | Said::AwaitingUser(_)
-            | Said::Disconnected
+            | Said::Disconnected(_)
             | Said::PickRefused(_)
             | Said::StopRefused(_)
             | Said::SaveFailed(_)

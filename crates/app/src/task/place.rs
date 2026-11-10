@@ -205,7 +205,7 @@ fn watch_drain(
     let watch = cx.subscribe(session, move |_, event: &ChatEvent, cx| {
         use onehand_core::chat::drive::Signal as S;
         match event {
-            ChatEvent::Session(S::TurnEnded | S::Disconnected) => on_event(cx),
+            ChatEvent::Session(S::TurnEnded | S::Disconnected(_)) => on_event(cx),
             ChatEvent::Session(
                 S::Appended
                 | S::AwaitingUser(_)

@@ -295,17 +295,7 @@ impl<P: Pass> AcpRuntime<P> {
     }
 }
 
-/// How a host session's events begin.
-pub enum HostStart {
-    /// Start a new session on the host.
-    Open {
-        cwd: PathBuf,
-        spec: AgentSpec,
-        opening: acp::Opening,
-    },
-    /// Read one the host already keeps.
-    Watch(HostSession),
-}
+pub use onehand_core::host::session::HostStart;
 
 /// Whether a session opening this way may take the parked adapter.
 ///

@@ -9,13 +9,16 @@ use crate::hosts::HostFailure;
 use crate::state::Shared;
 use gpui::{AsyncApp, WeakEntity};
 use onehand_core::acp::Opening;
-use onehand_core::chat::{Chat, ConversationSnapshot};
+use onehand_core::chat::Chat;
 use onehand_core::config::AgentSpec;
 use onehand_core::host::client::{HostConn, HostError};
 use onehand_core::host::copy;
-use onehand_core::host::wire::{HostSession, SessionInfo};
+use onehand_core::host::session::{Carried, HostBegin, OfflineStart, Restarted};
+use onehand_core::host::session::{host_restart, offline_start};
+use onehand_core::host::wire::SessionInfo;
 use onehand_core::workspace::HostName;
-use onehand_io::acp::{Events, HostStart};
+use onehand_io::acp::Events;
+use onehand_io::acp::HostStart;
 use std::path::PathBuf;
 
 /// Which host a session runs on, in which folder there, and how its events
@@ -24,30 +27,6 @@ pub(crate) struct BeginOnHost {
     pub(crate) host: HostName,
     pub(crate) cwd: PathBuf,
     pub(crate) begin: HostBegin,
-}
-
-/// How a host session's events begin.
-pub(crate) enum HostBegin {
-    /// A new host session, opened as the session's opening says.
-    Open,
-    /// The host session named, read whatever state it is in.
-    Watch(HostSession),
-    /// The host session named, read again while the host still runs it;
-    /// otherwise a new one, on what was carried.
-    Rewatch(HostSession, Carried),
-    /// Nothing begins, for this reason.
-    Refuse(&'static str),
-}
-
-/// What a restart took from the session it replaces, for a host session
-/// opened in place of one the host has ended.
-pub(crate) struct Carried {
-    pub(crate) stored: Option<ConversationSnapshot>,
-    /// The prompts the old session had sent.
-    pub(crate) sent: usize,
-    /// Whether the restart follows the host service's own, which ended every
-    /// session it ran: one on screen with nothing carried had not shown yet.
-    pub(crate) after_service: bool,
 }
 
 /// Where a session's events come from.
@@ -64,77 +43,6 @@ pub(super) fn new_chat(uid: u64, root: PathBuf, spec: &AgentSpec, on_host: bool)
     let mut chat = Chat::new(uid, root, spec.name.clone(), store);
     chat.login_hint = spec.login_hint();
     chat
-}
-
-/// How a host session whose host could not be attached begins.
-#[derive(Debug, PartialEq)]
-pub(super) enum OfflineStart {
-    /// From the copy this machine kept of its journal.
-    Read,
-    /// It ends on why the attach failed: nothing was kept to show.
-    End,
-    /// It waits on the host's busy sessions, as any session on it does.
-    Wait,
-}
-
-/// How a host session begins when its host could not be attached, given how
-/// many entries this machine kept of its journal and why the attach failed.
-pub(super) fn offline_start(kept: usize, failure: &HostFailure) -> OfflineStart {
-    match failure {
-        HostFailure::Busy { .. } => OfflineStart::Wait,
-        HostFailure::Other(_) | HostFailure::Refused(_) | HostFailure::Taken(_) if kept == 0 => {
-            OfflineStart::End
-        }
-        HostFailure::Other(_) | HostFailure::Refused(_) | HostFailure::Taken(_) => {
-            OfflineStart::Read
-        }
-    }
-}
-
-/// What a restart on a host comes to.
-pub(super) enum Restarted {
-    /// It begins so, with what was carried to adopt, if anything.
-    Begin(HostStart, Option<Carried>),
-    /// It ends on why, with what was carried to keep on screen.
-    Ended(String, Carried),
-}
-
-/// How a restarted host session begins, given what the host lists for the
-/// session it was on: read again while the host runs it, with nothing
-/// carried, since its journal is the whole transcript; otherwise opened on
-/// the agent's own conversation (or a fresh one), with what was carried to
-/// adopt until the agent's replay lands. An ended one with nothing carried,
-/// after the host service's own restart, is read from its journal instead,
-/// so it is shown rather than replaced; any other restart with nothing
-/// carried had an agent that never got going, and tries again.
-///
-/// A host that could not say what it runs ends the restart on why, with what
-/// was carried handed back to keep on screen: opening anyway could start a
-/// second session beside one that still runs.
-pub(super) fn host_restart(
-    listed: Result<Option<&SessionInfo>, String>,
-    carried: Carried,
-    cwd: PathBuf,
-    spec: AgentSpec,
-) -> Restarted {
-    match listed {
-        Err(why) => Restarted::Ended(why, carried),
-        Ok(Some(info)) if !info.ended => {
-            Restarted::Begin(HostStart::Watch(info.session.clone()), None)
-        }
-        // Ended with nothing carried by the service's restart: the session
-        // never showed here (that restart came first), so its journal is
-        // read rather than a blank one opened.
-        Ok(Some(info)) if carried.stored.is_none() && carried.after_service => {
-            Restarted::Begin(HostStart::Watch(info.session.clone()), None)
-        }
-        Ok(Some(_) | None) => {
-            let opening = carried.stored.as_ref().map_or(Opening::Fresh, |stored| {
-                Opening::Resume(stored.session_id.clone())
-            });
-            Restarted::Begin(HostStart::Open { cwd, spec, opening }, Some(carried))
-        }
-    }
 }
 
 /// The events of a host session, once its host is attached; a refusal or a
