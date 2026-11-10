@@ -419,7 +419,7 @@ impl ChatPane {
     /// long as it is scrollable, and a card that has since been answered — in
     /// the window, or by an earlier press — has to be reported as settled rather
     /// than have the press slide onto the next unanswered one.
-    fn apply_press(chat: &mut SessionDrive, press: Press) -> (String, Vec<Effect>) {
+    pub(super) fn apply_press(chat: &mut SessionDrive, press: Press) -> (String, Vec<Effect>) {
         // Every press that names a card names one; the picker is the one that
         // does not, and it is the arm that never reads this.
         let item = press.item().unwrap_or_default();
@@ -485,3 +485,6 @@ impl ChatPane {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
