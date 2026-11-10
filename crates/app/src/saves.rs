@@ -169,3 +169,6 @@ fn land(input: Input, cx: &mut App) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

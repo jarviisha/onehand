@@ -551,3 +551,6 @@ fn issue_file(
         .issues_file(&root)
         .ok_or_else(|| "this workspace keeps no issues of its own".to_string())
 }
+
+#[cfg(test)]
+mod tests;

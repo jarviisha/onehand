@@ -359,3 +359,6 @@ pub fn announce(origin: &Origin, what: Announcement, cx: &mut App) {
 pub fn is_away(cx: &App) -> bool {
     Shared::global(cx).remote.drive.away()
 }
+
+#[cfg(test)]
+mod tests;
