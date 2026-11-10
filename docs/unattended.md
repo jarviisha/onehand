@@ -99,8 +99,8 @@ background executor, one interval in the config, no cron expressions.
 | `crates/core/src/config.rs` | `UnattendedConfig` |
 | `crates/core/src/workspace.rs` | `ProjectRoot::transient`, left out by `to_config`, and `add_transient_root`, which adds one with its session without selecting it |
 | `crates/core/src/worktree.rs` | `cut_blocking`, the one way a run gets its worktree (a free branch, its directory, `branch_off_blocking` from a named start), `subtree_or`, and `fetch_blocking`; `worktree add` and the fetch both bounded and never prompting |
-| `crates/app/src/shell/remote_runs.rs` | `run_unattended`, `end_unattended`, `adopt_unattended` |
-| `crates/app/src/shell/roots.rs` | `forget_root`, the half of `remove_root` that asks nothing and moves nothing |
+| `crates/core/src/workspace/drive/sessions.rs` | `WorkspaceDrive::add_run_session`, `end_run` and `adopt_run`; `forget`, the half of `remove` that asks nothing and moves nothing |
+| `crates/app/src/shell/remote_runs.rs` | `run_unattended`, `end_unattended`, `adopt_unattended`, carrying those |
 | `crates/app/src/chat/pane/sessions.rs` | `open_unshown` |
 | `crates/app/src/dialogs/issue.rs` | `pick_issue`, the list and the start form, and `issue_workflow_menu`, the workflow menu the picker and Settings share |
 | `crates/app/src/settings/pages.rs` | the default workflow and the workflow labels in Settings |
@@ -568,9 +568,10 @@ a worktree of an issue in the workspace for good — and marking the project
 rather than skipping one save is what keeps any *other* save in the meantime
 from writing it.
 
-Dropping it is `Shell::end_unattended` over `forget_root`, the half of
-`remove_root` that asks nothing and moves nothing, and only for a project the
-run added itself. `remove_root` asks a person twice before losing live sessions
+Dropping it is `WorkspaceDrive::end_run` over `forget`, the half of `remove`
+that asks nothing and moves nothing, and only for a project the run added
+itself (`Shell::end_unattended` carries it). Removing a project by hand asks a
+person before losing live sessions
 — the run has already decided — and puts the active session back on screen
 afterwards, which takes the caret out of whatever the user was typing in. Only
 when the run's own project was the one being looked at is anything shown in its

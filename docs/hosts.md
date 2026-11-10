@@ -135,13 +135,15 @@ Every attach opens by exchanging builds (`client::attach`):
   `crates/app/src/shell/host_project.rs`) and, once the wait ends, restarts each session that
   waited (as after a service restart), lists the page again and carries on with the form's *Add*,
   unless that form was put away or added its project since (a form opened again is never added by
-  an older wait). Meanwhile each says *Waiting for N sessions on <host> to finish before
+  an older wait); what each wait's end comes to is core's (`back_landed`, `idle_landed`,
+  `crates/core/src/host/drive.rs`). Meanwhile each says *Waiting for N sessions on <host> to finish before
   restarting its host service onto this build* (with terminals, *Waiting for N terminals on
   <host> to close…*, or *N sessions to finish and N terminals to close on <host>…*), with
   *Restart now*: a session as a line in its
   transcript (a notice, not a failure), the page and the form in their own places, each only
   while the host is waited on for some. A waiting session is not lost: the rail draws it calm,
-  *Waiting for <host>*, never as needing attention, and Restart on it asks the restart question
+  *Waiting for <host>*, never as needing attention, its stream's end is no news (no badge,
+  desktop notice or remote bridge word, `Ended::Waiting`), and Restart on it asks the restart question
   instead of attaching again. The line goes with the wait, never into the transcript a restart
   carries on.
 - **Restart now** asks one question, *Restart the host service on <host>?*, saying that the host
@@ -236,7 +238,8 @@ Every attach opens by exchanging builds (`client::attach`):
   that cannot be attached shows the list kept from the last read instead (*The laptop's copy*),
   said as not connected, with the why and *Try again*.
 - **Shown in the chat pane through the same code as a local session**
-  (`crates/app/src/chat/session/host.rs`): the host's events stand in for a local adapter's.
+  (`crates/app/src/chat/session/host.rs`): the host's events stand in for a local adapter's. How
+  one begins there, a restart's outcome included, is `crates/core/src/host/session.rs`'s.
   Prompts, cancels, card answers and picks go to the host and into its journal.
 - **Restart** re-watches the session if the host still runs it, its journal being the whole
   transcript. A session the host has ended opens a new host session resuming the agent's own
@@ -254,7 +257,7 @@ Every attach opens by exchanging builds (`client::attach`):
 - **A host that cannot be attached is read from the copy.** A session shown or restarted while its
   attach fails for any reason but a busy host is built from its copy, through the same rule as a
   replay, without raising a turn's end, a card's notice or a run's input
-  (`offline_start`, `crates/app/src/chat/session/host.rs`). It ends on a line of the Info kind,
+  (`offline_start`, `crates/core/src/host/session.rs`). It ends on a line of the Info kind,
   *Not connected to <host>. This is the copy kept on this machine, up to <when>; it carries on
   once the host is back* (*up to* is the last entry that kept a time, and goes when none did), and
   the link is lost, so Restart tries again. Nothing kept ends the session on the failure's words,

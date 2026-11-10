@@ -229,8 +229,8 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 - **Overlay layers:** `gpui_component::init` registers the sheet, dialog and toast layers as a
   `Root` plugin, and a root copies the plugins registered when it is built: `init`, and the app's
   own plugin (`KeyRelease`), run before the first window. The layers sit beside the shell, not in it.
-- **Unattended teardown:** a run's project is dropped with `Shell::forget_root`, never
-  `remove_root`, which re-shows the active session and steals the caret.
+- **Unattended teardown:** a run's project is dropped with `WorkspaceDrive::end_run` (over
+  `forget`), never `remove`, which re-shows the active session and steals the caret.
 - **Transcripts:** `items.jsonl` is append-only and written at every turn end. A rename writes
   metadata only (`Chat::flush_meta`).
 - **Telegram token:** never in `onehand.toml`, which settings write into and people paste into reports. It comes from
