@@ -601,9 +601,10 @@ Made on 2026-11-10, with phase 8's audit:
   commit of its own.
 
 Phase 8 changed, on purpose:
-- Going back to the header's history keeps the session that was live running, out of sight, until
-  a past conversation is chosen; before, its agent was dropped the moment the list was read, a turn
-  running included. A list read for a session restarted or closed meanwhile puts nothing up.
+- Going back to the header's history (offered only between turns) keeps the session that was live
+  running, out of sight, until a past conversation is chosen; before, its agent was dropped the
+  moment the list was read. A list read for a session restarted or closed meanwhile puts nothing
+  up, where before it took the new session off its conversation.
 - A session waiting on a busy host's sessions is no longer told as a lost agent when its stream
   ends (no badge, desktop notice or remote bridge word).
 - A project removed takes the worktree and branch forms about it, and a `git status` sweep under
