@@ -1143,14 +1143,13 @@ fn a_session_out_of_reach_of_its_host_ends_without_news() {
 }
 
 /// A session waiting on its host's busy sessions is ended by a stream that
-/// says nothing, and today that end is told as a lost agent, though the
-/// session only waits.
+/// says nothing; it only waits, so the end is no news.
 #[test]
-fn a_session_waiting_on_a_busy_host_ends_as_a_lost_agent_today() {
+fn a_session_waiting_on_a_busy_host_ends_without_news() {
     let (mut drive, _rx) = connected();
     drive.drive.wait_on_host(HostName("box".into()), 2, 0);
     let fx = drive.handle(Input::StreamEnded);
-    assert_eq!(names(&fx), ["Disconnected(Lost)", "Look(LinkLost)"]);
+    assert_eq!(names(&fx), ["Disconnected(Waiting(HostName(\"box\")))"]);
     assert_eq!(drive.host_waiting(), Some(&HostName("box".into())));
 }
 

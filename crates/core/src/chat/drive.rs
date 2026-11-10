@@ -124,6 +124,9 @@ pub enum Ended {
     ForkNeverOpened(String),
     /// The session reads its host's copy, its host out of reach.
     OutOfReach(HostName),
+    /// The session waits on its host's busy sessions, and restarts once they
+    /// are done: it is not lost.
+    Waiting(HostName),
 }
 
 /// What the session tells whatever watches it.

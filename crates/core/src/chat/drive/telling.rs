@@ -30,13 +30,16 @@ impl SessionDrive {
     ///
     /// A stream that ended is news only as a lost agent: a fork that never
     /// opened is said where it goes, and a host session out of reach of its
-    /// host is not lost, and is restarted once the host is back.
+    /// host, or waiting on its busy sessions, is not lost, and is restarted
+    /// once the host is back or done.
     fn news(signal: &Signal) -> Option<Away> {
         match signal {
             Signal::TurnEnded | Signal::CycleEnded => Some(Away::TurnEnded),
             Signal::AwaitingUser(ask) => Some(Away::Asked(*ask)),
             Signal::Disconnected(Ended::Lost) => Some(Away::LinkLost),
-            Signal::Disconnected(Ended::ForkNeverOpened(_) | Ended::OutOfReach(_)) => None,
+            Signal::Disconnected(
+                Ended::ForkNeverOpened(_) | Ended::OutOfReach(_) | Ended::Waiting(_),
+            ) => None,
             Signal::Appended
             | Signal::PickRefused(_)
             | Signal::StopRefused(_)
@@ -48,10 +51,15 @@ impl SessionDrive {
 
     /// How the stream that just ended ended.
     pub(super) fn ended(&self) -> Ended {
-        match (self.chat.fork_failure(), self.host_away()) {
-            (Some(why), _) => Ended::ForkNeverOpened(why),
-            (None, Some(host)) => Ended::OutOfReach(host.clone()),
-            (None, None) => Ended::Lost,
+        match (
+            self.chat.fork_failure(),
+            self.host_away(),
+            self.host_waiting(),
+        ) {
+            (Some(why), _, _) => Ended::ForkNeverOpened(why),
+            (None, Some(host), _) => Ended::OutOfReach(host.clone()),
+            (None, None, Some(host)) => Ended::Waiting(host.clone()),
+            (None, None, None) => Ended::Lost,
         }
     }
 

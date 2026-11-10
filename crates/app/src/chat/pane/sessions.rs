@@ -347,8 +347,9 @@ impl ChatPane {
                             uid: Some(uid),
                             host: host.clone(),
                         }),
-                        // A lost agent is the drive's news (`ChatEvent::Look`).
-                        Ended::Lost => {}
+                        // A lost agent is the drive's news (`ChatEvent::Look`);
+                        // one waiting on a busy host said so as it began.
+                        Ended::Lost | Ended::Waiting(_) => {}
                     },
                     ChatEvent::Fork(target) => pane.begin_fork(uid, *target, cx),
                     ChatEvent::Session(Signal::Appended) => {}
