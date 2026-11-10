@@ -252,3 +252,6 @@ fn failures(report: &sync::Report) -> Option<String> {
         more => format!("{first} (and {more} more)"),
     })
 }
+
+#[cfg(test)]
+mod tests;
