@@ -1,6 +1,6 @@
 # An application layer: how onehand works, apart from how it is drawn
 
-- Status: phases 1 to 7 built; phase 8's first half (the workspace) built, its second (issues) next.
+- Status: phases 1 to 8 built.
   - Phase 1, a trial slice of one session, is #307.
   - Phase 2 settled the standard: it lives in [docs/drives.md](../drives.md), its terms in
     CONTEXT.md (*How onehand is built*), and its short form in AGENTS.md (*Invariants*).
@@ -14,10 +14,11 @@
   - Phase 7 moved telling into `SessionDrive`, the remote bridge into `RemoteDrive`, onehand's
     tools into `ControlDrive` and the settings and the agent check into `SettingsDrive`, and the
     remote channel and the instance socket into `onehand-io`.
-  - Phase 8's first half moved each window's workspace into `WorkspaceDrive`: the session
-    lifecycle, the workspace edits and the workspace file; how a session begins on a host is core's.
-  - What is left here is the plan for the rest of phase 8 and phases 9 and 10, the inventory they
-    work from, and the record of the trial. Each phase that is built moves its rows out of here, in the same PR.
+  - Phase 8 moved each window's workspace into `WorkspaceDrive` (the session lifecycle, the
+    workspace edits and the workspace file; how a session begins on a host is core's), and the
+    shared issues file into `FileDrive`.
+  - What is left here is the plan for phases 9 and 10, the inventory they work from, and the
+    record of the trial. Each phase that is built moves its rows out of here, in the same PR.
 - Supersedes the rule agreed in #133 ("logic belongs in core when two call sites share it, when a
   second front end could need it, or when it wants a test without a GUI"). That rule moved *rules*
   to core; this one moves *what happens next* there too, with no exceptions.
@@ -108,7 +109,6 @@ row is re-audited at the start of its phase. Line counts are at `6f92ab49`.
 
 | Area | Core has | App decides today | Target drive |
 |---|---|---|---|
-| Issues | `issues` (with `sync`, `template`), `connector`, `task::work` (`next_action`, `list`, `Reading`) | the shared issues file `IssuesFile` (`crates/issues/src/view/store.rs`, `view/file.rs`: the load, the sync's gap and follow-up, what shows while writes are on their way, writes, publish); the close and publish-offered rules in the Issues views; `shell/issue_work.rs` (the note taken up, the offered rule); writers outside it (`control.rs`, `unattended.rs`) | issues drive (phase 8, second PR); the views' own reads wait for phase 9 |
 | Workbench modes | editor rules, file tree, markdown | each mode crate (`AnyView`, `Window` in `onehand-workbench`) | per mode, only where a mode has behaviour (phase 9) |
 
 ## The I/O crate (D5: started in phase 3)
@@ -315,7 +315,7 @@ Left for later:
   refused for is core's.
 - *Test* beside an agent (`check_agent`) only reads the machine and stays the shell's.
 
-**Phase 8: the workspace, then issues.** Two PRs (D29). The first, the workspace, is built:
+**Phase 8: the workspace, then issues.** Two PRs (D29). The first, the workspace:
 - Each window's workspace is `WorkspaceDrive` (`onehand_core::workspace::drive`, split along its
   seams: `sessions.rs`, `roots.rs`, `git.rs`), one drive for the lifecycle and the edits, since a
   session lives inside its project (D26), held per window on the `Shell` (D27). It derefs to the
@@ -363,6 +363,27 @@ Left for later:
   of those end on why) is still decided in `chat/session/host.rs`, beside `offline_start`.
 - Showing a host session already watched rather than opening it twice, and which projects each
   page lists, are still the shell's (`shell/sessions.rs`).
+
+The second, issues:
+- One issues file is `FileDrive` (`onehand_core::issues::drive`), one per file for the process:
+  the read and the token that drops an older one, a change shown before its write and what comes
+  in meanwhile held (`Pending`, moved from the Issues views), a write landing (a sync after it, the
+  newest refused read again), when a sync is due and the one that follows a sync asked for while
+  one ran, and an issue sent to the forge one at a time. It is told the time. The Issues views'
+  `IssuesFile` is its carrier; a publish is carried by the view that asked, which says what it came
+  to. Which issue may be published (`publishable`) and the session working an issue
+  (`LocalIssue::working_in`) are core's; which projects a run is offered on is the workspace
+  drive's (`offered_for_runs`).
+- The carrier has contract tests (`crates/issues/src/view/store/tests.rs`).
+
+Left for later, with phase 9's Workbench modes:
+- What the Issues views read of a pull request, the work left and a review, their filters, the
+  template's fill and the close question stay in the views.
+- `Issues`' methods stay public: a tool creating an issue, an unattended run's notes and the
+  issue work's note write the file outside the drive, under core's lock, and the views read them
+  again when told the file may have changed.
+- When a session's note on an issue it took up is written (once, after the agent names the
+  conversation) is still the shell's (`shell/issue_work.rs`).
 
 **Phase 9: Workbench modes.** Only modes with behaviour get a drive; a mode that only shows
 something keeps its view. `onehand-workbench`'s contract splits into a GUI-free request and answer
@@ -617,6 +638,8 @@ Phase 8 changed, on purpose:
 - A project removed takes the worktree and branch forms about it, and a `git status` sweep under
   way no longer puts its status back.
 - An order put back after a failed write tells a local and a host project on one path apart.
+- A failed note on an issue a session took up is said in its window, once; before, it was only
+  logged.
 
 Phase 7 changed, on purpose:
 - The remote bridge no longer lists or reaches a host or offloaded project's session (#308): a
