@@ -523,9 +523,13 @@ impl Workspace {
         Some(to)
     }
 
-    /// Each root's path, in the order the file keeps them.
-    pub fn root_order(&self) -> Vec<PathBuf> {
-        self.roots.iter().map(|root| root.path.clone()).collect()
+    /// Each root, by its host and path, in the order the file keeps them: a
+    /// local root and a host's may share a path.
+    pub fn root_order(&self) -> Vec<(Option<HostName>, PathBuf)> {
+        self.roots
+            .iter()
+            .map(|root| (root.host.clone(), root.path.clone()))
+            .collect()
     }
 
     /// Put the roots back in `order`, as [`Self::root_order`] gave it: what
@@ -533,7 +537,7 @@ impl Workspace {
     /// after it. A root `order` does not name keeps its place among the
     /// others after every root it names; a root it names that has gone is
     /// passed over.
-    pub(crate) fn put_order(&mut self, order: &[PathBuf]) {
+    pub(crate) fn put_order(&mut self, order: &[(Option<HostName>, PathBuf)]) {
         let active = self
             .roots
             .get(self.active_root)
@@ -541,7 +545,7 @@ impl Workspace {
         let rank = |root: &ProjectRoot| {
             order
                 .iter()
-                .position(|path| *path == root.path)
+                .position(|(host, path)| *host == root.host && *path == root.path)
                 .unwrap_or(order.len())
         };
         self.roots.sort_by_key(rank);

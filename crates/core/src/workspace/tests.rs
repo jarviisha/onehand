@@ -252,7 +252,7 @@ fn an_order_put_back_is_the_one_saved() {
         .position(|r| r.path == Path::new("/a"))
         .unwrap();
     ws.put_order(&saved);
-    let order: Vec<_> = ws.root_order();
+    let order: Vec<_> = ws.root_order().into_iter().map(|(_, path)| path).collect();
     assert_eq!(
         order,
         ["/a", "/b", "/c", "/d"].map(PathBuf::from),
@@ -722,16 +722,14 @@ fn a_session_out_of_range_is_neither_closed_nor_selected() {
     assert_eq!(root.active_session, 0);
 }
 
-/// An order is kept by path alone, so a local and a host root on one path
-/// rank the same when it is put back: the two keep the order they had
-/// between them, whatever the saved order said.
+/// An order is kept by host and path, so a local and a host root on one path
+/// each go back to their own place.
 #[test]
-fn an_order_put_back_ranks_a_local_and_a_host_root_on_one_path_alike() {
+fn an_order_put_back_tells_a_local_and_a_host_root_on_one_path_apart() {
     let mut ws = Workspace::seeded("/p");
     ws.add_root("/q");
     ws.add_host_root(HostName("box".into()), PathBuf::from("/p"));
     let saved = ws.root_order();
-    assert_eq!(saved, [PathBuf::from("/p"), "/q".into(), "/p".into()]);
     ws.move_root(2, 0);
     ws.put_order(&saved);
     let kept: Vec<_> = ws
@@ -742,10 +740,10 @@ fn an_order_put_back_ranks_a_local_and_a_host_root_on_one_path_alike() {
     assert_eq!(
         kept,
         [
-            (true, PathBuf::from("/p")),
-            (false, "/p".into()),
-            (false, "/q".into())
+            (false, PathBuf::from("/p")),
+            (false, "/q".into()),
+            (true, "/p".into())
         ],
-        "the host root stays ahead of the local one it was moved past"
+        "the host root goes back after the local one"
     );
 }

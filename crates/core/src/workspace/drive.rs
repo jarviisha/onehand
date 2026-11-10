@@ -59,7 +59,7 @@ pub enum Thing {
 pub enum Value {
     Name(String),
     /// Every project's place, as [`Workspace::root_order`] gives it.
-    Order(Vec<PathBuf>),
+    Order(Vec<(Option<HostName>, PathBuf)>),
     Pin {
         host: Option<HostName>,
         path: PathBuf,
