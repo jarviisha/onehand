@@ -12,7 +12,7 @@ impl Shell {
     /// The global agent menu. Definitions are process-wide; a session keeps a
     /// clone of the spec it was spawned with.
     pub fn agents<'a>(&self, cx: &'a App) -> &'a [AgentSpec] {
-        &Shared::global(cx).agents
+        &Shared::global(cx).settings.agents
     }
 
     pub fn agent_draft(&self) -> &AgentDraft {
@@ -66,7 +66,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let spec = idx.and_then(|idx| Shared::global(cx).agents.get(idx).cloned());
+        let spec = idx.and_then(|idx| Shared::global(cx).settings.agents.get(idx).cloned());
         self.remember_focus(window, cx);
         match (idx, spec) {
             (Some(idx), Some(spec)) => self.agent_draft.load(idx, &spec, window, cx),
@@ -103,7 +103,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(spec) = cx.global::<Shared>().agents.get(idx).cloned() else {
+        let Some(spec) = cx.global::<Shared>().settings.agents.get(idx).cloned() else {
             return;
         };
         let name = spec.name.clone();
@@ -118,7 +118,12 @@ impl Shell {
         // By the whole spec, not by position: the list can be reordered while
         // the question is open, and two agents may share a name.
         self.confirm(ask, window, cx, move |shell, window, cx| {
-            let at = cx.global::<Shared>().agents.iter().position(|a| *a == spec);
+            let at = cx
+                .global::<Shared>()
+                .settings
+                .agents
+                .iter()
+                .position(|a| *a == spec);
             if let Some(idx) = at {
                 shell.delete_agent(idx, window, cx);
             }
@@ -130,7 +135,7 @@ impl Shell {
     /// The rule is `settings::draft_shift`, which says why a position left
     /// uncorrected here is a form that saves over the wrong agent.
     fn delete_agent(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(spec) = Shared::global(cx).agents.get(idx).cloned() else {
+        let Some(spec) = Shared::global(cx).settings.agents.get(idx).cloned() else {
             return;
         };
         match crate::settings::draft_shift(self.agent_draft.editing, idx) {
@@ -151,7 +156,7 @@ impl Shell {
         if idx == 0 {
             return;
         }
-        let Some(spec) = Shared::global(cx).agents.get(idx).cloned() else {
+        let Some(spec) = Shared::global(cx).settings.agents.get(idx).cloned() else {
             return;
         };
         self.agent_draft.editing =
@@ -168,7 +173,7 @@ impl Shell {
     /// Look for an agent's command the way starting a session would, off the UI
     /// loop, without starting anything.
     pub fn check_agent(&mut self, idx: usize, cx: &mut Context<Self>) {
-        let Some(spec) = Shared::global(cx).agents.get(idx).cloned() else {
+        let Some(spec) = Shared::global(cx).settings.agents.get(idx).cloned() else {
             return;
         };
         let key = crate::settings::check_key(&spec);
@@ -229,7 +234,7 @@ impl Shell {
         let old = self
             .agent_draft
             .editing
-            .and_then(|idx| Shared::global(cx).agents.get(idx).cloned());
+            .and_then(|idx| Shared::global(cx).settings.agents.get(idx).cloned());
         self.close_agent_form(window, cx);
         self.persist_agents(AgentEdit::Put { old, new: spec }, window, cx);
         cx.notify();
@@ -243,7 +248,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let new = AgentSpec::of(preset, &Shared::global(cx).agents);
+        let new = AgentSpec::of(preset, &Shared::global(cx).settings.agents);
         self.persist_agents(AgentEdit::Put { old: None, new }, window, cx);
         cx.notify();
     }
@@ -252,7 +257,7 @@ impl Shell {
 
     /// Which mode the user has chosen. App-wide, like the theme it selects.
     pub fn appearance(&self, cx: &App) -> Appearance {
-        Shared::global(cx).appearance
+        Shared::global(cx).settings.appearance
     }
 
     /// Change it, put it on screen, and remember it.
@@ -267,27 +272,8 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let before = Shared::global(cx).appearance;
-        if before == choice {
-            return;
-        }
-        cx.update_global::<Shared, _>(|shared, _| shared.appearance = choice);
-        apply_appearance(choice, Some(window), cx);
-        crate::saves::write_config(
-            "appearance",
-            "Saving the appearance",
-            move |cfg| cfg.appearance = choice,
-            Some(crate::saves::Change {
-                before,
-                after: choice,
-                put: |choice, window, cx| {
-                    cx.update_global::<Shared, _>(|shared, _| shared.appearance = choice);
-                    apply_appearance(choice, Some(window), cx);
-                },
-            }),
-            window,
-            cx,
-        );
+        let fx = cx.update_global::<Shared, _>(|shared, _| shared.settings.set_appearance(choice));
+        crate::saves::carry_settings(fx, window, cx);
         cx.notify();
     }
 
@@ -295,17 +281,10 @@ impl Shell {
     /// the config was loaded from, preserving every other section and any
     /// entry written there by hand since.
     fn persist_agents(&mut self, edit: AgentEdit, window: &mut Window, cx: &mut Context<Self>) {
-        cx.update_global::<Shared, _>(|shared, _| edit.apply(&mut shared.agents));
         // Off the UI thread and in order; the form already waited on its
         // press, so a failure is said and the list stands.
-        crate::saves::write_config(
-            "agents",
-            "Saving the agents",
-            move |cfg| edit.apply(&mut cfg.agents),
-            None::<crate::saves::Change<()>>,
-            window,
-            cx,
-        );
+        let fx = cx.update_global::<Shared, _>(|shared, _| shared.settings.edit_agents(edit));
+        crate::saves::carry_settings(fx, window, cx);
     }
 }
 
@@ -325,7 +304,7 @@ impl Shell {
 /// Telling the platform as well is what keeps a window's native border and
 /// title bar in step with a forced mode; it does nothing on Linux, and passing
 /// `None` for *System* is what hands tracking back to the desktop.
-pub(super) fn apply_appearance(choice: Appearance, window: Option<&mut Window>, cx: &mut App) {
+pub(crate) fn apply_appearance(choice: Appearance, window: Option<&mut Window>, cx: &mut App) {
     let system = window
         .as_ref()
         .map(|window| window.appearance())

@@ -57,8 +57,8 @@ fn world(cx: &App) -> World {
             .into_iter()
             .filter_map(|entry| entry.template.ok())
             .collect(),
-        agents: shared.agents.clone(),
-        offers: shared.offers_seen.clone(),
+        agents: shared.settings.agents.clone(),
+        offers: shared.settings.offers_seen.clone(),
     }
 }
 
@@ -408,7 +408,7 @@ pub(crate) use facts::offered;
 /// The mode a lead's worker on agent `agent` starts in: the mode runs use,
 /// when that agent is theirs, else what it is known to need.
 pub(crate) fn worker_mode(agent: &str, cx: &App) -> Option<String> {
-    let agents = &Shared::global(cx).agents;
+    let agents = &Shared::global(cx).settings.agents;
     read(cx, |u| u.worker_mode(agent, agents)).unwrap_or_else(|| {
         onehand_core::config::worker_mode(None, run_agent(cx).as_deref(), agents, agent)
     })
@@ -417,7 +417,7 @@ pub(crate) fn worker_mode(agent: &str, cx: &App) -> Option<String> {
 /// The agent an issue's run starts, by name: the one set for runs, else the
 /// first configured.
 pub(crate) fn run_agent(cx: &App) -> Option<String> {
-    let agents = &Shared::global(cx).agents;
+    let agents = &Shared::global(cx).settings.agents;
     read(cx, |u| u.run_agent(agents)).unwrap_or_else(|| {
         onehand_core::config::agent_or_first(agents, None).map(|spec| spec.name.clone())
     })
@@ -431,7 +431,7 @@ pub(crate) fn now_for(
     check: Option<String>,
     cx: &App,
 ) -> onehand_core::workflow::Now {
-    let agents = &Shared::global(cx).agents;
+    let agents = &Shared::global(cx).settings.agents;
     let first = onehand_core::config::agent_or_first(agents, None).map(|spec| spec.name.clone());
     let runs = read(cx, |u| u.run_settings(agents));
     core::now_for(task.issue().is_some(), runs.as_ref(), first, check)

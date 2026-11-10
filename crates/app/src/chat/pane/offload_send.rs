@@ -54,7 +54,11 @@ impl ChatPane {
                 | Effect::Arm { .. }
                 | Effect::Disarm
                 | Effect::SaveTitle { .. }
+                | Effect::Look(_)
                 | Effect::Request(_) => {}
+                // Only the answer to a look tells, and the pane carries that
+                // answer's effects itself (`ChatPane::look`).
+                Effect::Tell { .. } => {}
             }
         }
     }

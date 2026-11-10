@@ -323,7 +323,7 @@ impl ChatPane {
     pub(super) fn project_home(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         // Ahead of whether there is a project: with no agent nothing can be
         // started anywhere, and that is the first thing to put right.
-        if crate::state::Shared::global(cx).agents.is_empty() {
+        if crate::state::Shared::global(cx).settings.agents.is_empty() {
             return no_agent(cx);
         }
         let Some(project) = self.empty.as_ref() else {
@@ -670,6 +670,7 @@ fn no_agent(cx: &mut Context<ChatPane>) -> gpui::AnyElement {
 /// another agent while more than one is configured.
 fn new_session(cx: &mut Context<ChatPane>) -> gpui::AnyElement {
     let agents: Vec<SharedString> = crate::state::Shared::global(cx)
+        .settings
         .agents
         .iter()
         .map(|spec| SharedString::from(spec.name.clone()))

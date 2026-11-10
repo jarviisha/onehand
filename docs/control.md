@@ -24,8 +24,12 @@ is written for them.
   conversation, carried on until the client hangs up. A first line that does not come within five
   seconds, or any line past 64 KiB without a newline, drops the connection.
 - **Where the rule lives:** core's `instance` reads and writes a second launch's lines, core's
-  `control` every MCP message; the app's `instance` and `control` only carry them, on a tokio
-  runtime of their own, and cross to GPUI over a channel only to carry out a call.
+  `control` every MCP message, and the tools' drive (`control::drive::ControlDrive`) each
+  connection's standing, every token, switch and grant, the cap, and a worker's open from the call
+  to its answer. The socket is served on `onehand_io::socket`'s runtime, which crosses to GPUI over
+  a channel only to carry out a call; the app's `instance` and `control` carry what the drive
+  answers. The drive is held in one lock for the process, since a token is minted and let go where
+  no window is at hand and the socket reads standing on every message.
 
 ## A second launch
 

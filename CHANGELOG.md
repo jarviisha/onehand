@@ -180,6 +180,9 @@ minor bump may break any of them.
 
 ### Fixed
 
+- The Telegram bridge no longer lists or reaches a session whose project runs on a host or is
+  offloaded to one. Before, a prompt sent to an offloaded session went without the project's code
+  and was refused, and sending it again from Telegram never helped (#308).
 - Restarting a session while its last turn is still being saved no longer loses that turn when
   the save then fails: the restarted session writes the whole conversation at its first save.
 - A conversation's title taken from its first prompt no longer ends on half of a backtick pair.

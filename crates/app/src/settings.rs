@@ -104,6 +104,7 @@ impl AgentDraft {
         let value = |field: &Entity<InputState>| field.read(cx).value().to_string();
         // Every other entry's name: the one being edited may keep its own.
         let taken = crate::state::Shared::global(cx)
+            .settings
             .agents
             .iter()
             .enumerate()

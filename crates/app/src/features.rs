@@ -31,6 +31,7 @@ pub fn workbench_modes(
     // up and nowhere else. Read when the window is made: a Claude Code agent
     // added later brings it to the next window.
     let claude = crate::state::Shared::global(cx)
+        .settings
         .agents
         .iter()
         .any(|spec| spec.claude_or_preset() == Some(onehand_core::config::Preset::ClaudeCode));

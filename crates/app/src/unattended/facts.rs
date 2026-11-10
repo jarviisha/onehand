@@ -104,7 +104,7 @@ fn account(forge: &'static dyn Connector, cx: &App) -> Option<Result<String, Str
 /// A run's agent is started through the spec runs wrap it in, so what it
 /// offered counts as the configured spec's too.
 pub(crate) fn offered(spec: &AgentSpec, cx: &App) -> Option<onehand_core::workflow::Offer> {
-    onehand_core::unattended::drive::offered(spec, &Shared::global(cx).offers_seen)
+    onehand_core::unattended::drive::offered(spec, &Shared::global(cx).settings.offers_seen)
 }
 
 /// A Resume or a Retry of `task` on `template`: judged by its last run's own
@@ -126,13 +126,12 @@ pub(crate) fn with_setup(
     let shared = Shared::global(cx);
     // A setup naming no agent starts the first one configured; one whose
     // agent is gone is judged as naming it, which the preflight says.
-    let agent = setup
-        .agent
-        .clone()
-        .or_else(|| config::agent_or_first(&shared.agents, None).map(|spec| spec.name.clone()));
+    let agent = setup.agent.clone().or_else(|| {
+        config::agent_or_first(&shared.settings.agents, None).map(|spec| spec.name.clone())
+    });
     let spec = agent
         .as_deref()
-        .and_then(|name| shared.agents.iter().find(|spec| spec.name == name));
+        .and_then(|name| shared.settings.agents.iter().find(|spec| spec.name == name));
     let forge = setup.forge.as_deref().map(|name| Forge {
         name: name.to_string(),
         account: onehand_core::connector::named(crate::features::connectors(), name)

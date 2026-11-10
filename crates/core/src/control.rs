@@ -10,9 +10,13 @@
 //! **No tool answers a card, a permission or an approval.** Those wait for a
 //! person, whoever asks; there is nothing here to call for them.
 
+pub mod calls;
+pub mod drive;
+pub mod link;
 pub mod open;
 pub mod state;
 pub mod turns;
+pub mod workers;
 
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};

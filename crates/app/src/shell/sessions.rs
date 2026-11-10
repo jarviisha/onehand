@@ -564,7 +564,7 @@ impl Shell {
             return;
         }
         let idx = agent_index(Some(agent), cx);
-        let Some(spec) = Shared::global(cx).agents.get(idx).cloned() else {
+        let Some(spec) = Shared::global(cx).settings.agents.get(idx).cloned() else {
             return;
         };
         let Some(uid) = self.mint_session(spec, window, cx) else {
@@ -621,7 +621,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<u64> {
-        let Some(spec) = Shared::global(cx).agents.get(idx).cloned() else {
+        let Some(spec) = Shared::global(cx).settings.agents.get(idx).cloned() else {
             window.push_notification(
                 crate::toast::warning("Add an agent in Settings before starting a session"),
                 cx,
@@ -859,11 +859,6 @@ impl Shell {
             .ok();
         });
     }
-
-    /// How `uid`'s last answer ended, for a run's report.
-    pub fn answer_tail(&self, uid: u64, cx: &App) -> Option<String> {
-        self.chat.read(cx).answer_tail(uid, cx)
-    }
 }
 
 /// Which projects a page lists.
@@ -938,6 +933,7 @@ pub(super) fn page_roots_in(
 fn agent_index(name: Option<SharedString>, cx: &App) -> usize {
     name.and_then(|name| {
         Shared::global(cx)
+            .settings
             .agents
             .iter()
             .position(|spec| spec.name == name.as_ref())

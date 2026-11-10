@@ -1,25 +1,23 @@
 //! onehand's tools, carried out.
 //!
-//! What a tool may do and how a message is answered is core's `control`; the
-//! socket's side of the conversation runs on the listener's runtime and sends
-//! only a [`Call`] across, which [`perform`] carries out on the window in
-//! front and answers with the text the caller reads.
+//! What a tool may do and how a message is answered is core's `control`, and
+//! what follows from a session's switch, its grant, its closing and a
+//! worker's open is its drive's (`control::drive::ControlDrive`), held here.
+//! The socket's side of the conversation runs on `onehand_io::socket` and
+//! sends only a [`Call`] across, which [`perform`] carries out on the window
+//! in front and answers with the text the caller reads.
 
-use crate::instance::{Incoming, next_line};
 use crate::state::Shared;
 use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot;
-use gpui::{App, Window};
+use gpui::{App, BorrowAppContext as _, Window};
 use onehand_core::config::ControlConfig;
-use onehand_core::control::{self, Call, Conn, Handled, Peer, Standing};
-use onehand_core::task::Group;
+use onehand_core::control::drive::{ControlDrive, Effect};
+use onehand_core::control::{self, Call, Peer, Standing};
 use onehand_core::workflow::Brief;
-use std::collections::{HashMap, HashSet};
-use std::path::{Component, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
-use tokio::io::{AsyncWriteExt as _, BufReader};
-use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 
 mod start;
 mod workers;
@@ -28,104 +26,45 @@ pub(crate) use start::{Started, start_task};
 use start::{start, template};
 pub(crate) use workers::whose::{Worker, give_back, give_back_offered, lead_of, workers_of};
 
-/// Whether a program outside onehand may use the tools. Read by the
-/// listener on every message it answers, so it is shared with that runtime
-/// rather than kept in a global only the UI thread reaches.
-static OUTSIDE: AtomicBool = AtomicBool::new(false);
+/// The tools' drive, held for the whole process: an agent's token is minted
+/// and let go where no window is at hand, and the socket's runtime reads each
+/// connection's standing on every message. Never held across anything else.
+static CONTROL: LazyLock<Mutex<ControlDrive>> = LazyLock::new(Mutex::default);
+
+pub(crate) fn drive() -> std::sync::MutexGuard<'static, ControlDrive> {
+    CONTROL.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Where each token's connections are written, to tell them the tools
+/// changed: the socket's half, which no drive holds.
+static CONNS: LazyLock<Mutex<HashMap<String, Vec<UnboundedSender<String>>>>> =
+    LazyLock::new(Mutex::default);
+
+fn conns() -> std::sync::MutexGuard<'static, HashMap<String, Vec<UnboundedSender<String>>>> {
+    CONNS.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// Put the config's answer in force, before anything listens.
 pub(crate) fn boot(cfg: &ControlConfig) {
-    OUTSIDE.store(cfg.outside, Ordering::Relaxed);
+    drive().set_outside(cfg.outside);
 }
 
 /// Whether outside control is on.
 pub(crate) fn outside() -> bool {
-    OUTSIDE.load(Ordering::Relaxed)
+    drive().outside()
 }
 
 /// Turn outside control on or off, at once and for the next message of a
 /// client already connected, then write it; a write that fails puts it back.
 pub(crate) fn set_outside(on: bool, window: &mut Window, cx: &mut App) {
     let before = outside();
-    if before == on {
-        return;
-    }
-    put_outside(on, window, cx);
-    crate::saves::write_config(
-        "control-outside",
-        "Saving outside control",
-        move |cfg| cfg.control.outside = on,
-        Some(crate::saves::Change {
-            before,
-            after: on,
-            put: put_outside,
-        }),
-        window,
-        cx,
-    );
-}
-
-fn put_outside(on: bool, _: &mut Window, cx: &mut App) {
-    OUTSIDE.store(on, Ordering::Relaxed);
-    cx.refresh_windows();
+    let fx = cx.update_global::<Shared, _>(|shared, _| shared.settings.set_outside(before, on));
+    crate::saves::carry_settings(fx, window, cx);
 }
 
 /// What a connection may do now: read on every message it sends.
 fn standing(peer: &Peer) -> Standing {
-    match peer {
-        Peer::Outside if outside() => Standing::On,
-        Peer::Outside => Standing::Refused(
-            "outside control is off: switch it on in Settings ▸ Connections".to_string(),
-        ),
-        Peer::Session(token) => {
-            let sessions = sessions();
-            match sessions.tokens.get(token) {
-                None => Standing::Refused("no such session".to_string()),
-                Some(Some(uid)) if sessions.on.contains(uid) => Standing::On,
-                Some(Some(uid)) if sessions.only.contains_key(uid) => {
-                    Standing::Only(sessions.only[uid].clone())
-                }
-                // Not claimed yet (a warm adapter's), or switched off.
-                Some(_) => Standing::Off,
-            }
-        }
-    }
-}
-
-/// Every session's standing, shared with the listener's runtime, which reads
-/// it on every message a session's agent sends.
-#[derive(Default)]
-struct Sessions {
-    /// Each token given out, and the session that holds it once one does.
-    tokens: HashMap<String, Option<u64>>,
-    /// The sessions switched on.
-    on: HashSet<u64>,
-    /// Where each token's connections are written, to tell them the tools
-    /// changed.
-    conns: HashMap<String, Vec<UnboundedSender<String>>>,
-    /// The sessions each session's tools opened.
-    opened: HashMap<u64, Vec<u64>>,
-    /// The labels an issue each session's agent writes gets: its schedule's.
-    labels: HashMap<u64, Vec<String>>,
-    /// The tools each session not switched on may use: its schedule's.
-    only: HashMap<u64, Vec<String>>,
-    /// The folders workers are opening or open on.
-    reserved: workers::Reservations,
-    /// What each lead asked `open_worker` for, by its request id.
-    requests: workers::requests::Requests,
-    /// Each worker's lead, by the worker's uid.
-    workers: HashMap<u64, workers::requests::Relation>,
-    /// The lead each closed worker had, so it alone reads it as closed.
-    closed_workers: HashMap<u64, u64>,
-    /// The opens each lead has in flight, woken when it closes or is
-    /// switched off, so they are abandoned at once.
-    pokes: HashMap<u64, Vec<UnboundedSender<()>>>,
-}
-
-static SESSIONS: LazyLock<Mutex<Sessions>> = LazyLock::new(Mutex::default);
-
-fn sessions() -> std::sync::MutexGuard<'static, Sessions> {
-    SESSIONS.lock().unwrap_or_else(|e| e.into_inner())
+    drive().standing(peer)
 }
 
 /// A session's token: what its agent's proxy says it speaks for. Minted when
@@ -135,14 +74,12 @@ pub(crate) struct Token(String);
 
 impl Token {
     pub(crate) fn mint() -> Self {
-        let token = control::new_token();
-        sessions().tokens.insert(token.clone(), None);
-        Self(token)
+        Self(drive().mint())
     }
 
     /// Held by session `uid` from now on.
     pub(crate) fn claim(&self, uid: u64) {
-        sessions().tokens.insert(self.0.clone(), Some(uid));
+        drive().claim(&self.0, uid);
     }
 }
 
@@ -160,9 +97,8 @@ impl onehand_io::acp::Pass for Token {
 
 impl Drop for Token {
     fn drop(&mut self) {
-        let mut sessions = sessions();
-        sessions.tokens.remove(&self.0);
-        sessions.conns.remove(&self.0);
+        drive().release(&self.0);
+        conns().remove(&self.0);
     }
 }
 
@@ -176,150 +112,66 @@ pub(crate) fn offered(uid: u64, cx: &App) -> bool {
 
 /// Whether session `uid`'s agent may use the tools.
 pub(crate) fn switched_on(uid: u64) -> bool {
-    sessions().on.contains(&uid)
+    drive().switched_on(uid)
 }
 
-/// Let session `uid`'s agent use the tools, or stop it, and tell every
-/// connection it has that the list changed.
-pub(crate) fn switch(uid: u64, on: bool) {
-    let mut sessions = sessions();
-    let changed = match on {
-        true => sessions.on.insert(uid),
-        false => sessions.on.remove(&uid),
-    };
-    if changed {
-        tell_changed(&mut sessions, uid);
-        if !on {
-            wake_opens(&mut sessions, uid);
-        }
+/// Let session `uid`'s agent use the tools, or stop it.
+pub(crate) fn switch(uid: u64, on: bool, cx: &mut App) {
+    let fx = drive().switch(uid, on);
+    carry_later(fx, cx);
+}
+
+/// Give session `uid` what its task was given.
+pub(crate) fn grant(uid: u64, grant: &onehand_core::task::Grant, cx: &mut App) {
+    let fx = drive().grant(uid, grant);
+    carry_later(fx, cx);
+}
+
+/// Session `uid` is closed: its switch and what its tools opened go with it.
+pub(crate) fn forget(uid: u64, cx: &mut App) {
+    let fx = drive().forget(uid);
+    carry_later(fx, cx);
+}
+
+/// Carry `fx` once whatever asked has let go of its entities: an open's
+/// failure closes a session and may drop a project.
+fn carry_later(fx: Vec<Effect>, cx: &mut App) {
+    if fx.is_empty() {
+        return;
     }
+    cx.defer(move |cx| carry(fx, cx));
 }
 
-/// Wake `sender` when session `lead` closes or is switched off.
-pub(crate) fn poke_on(lead: u64, sender: UnboundedSender<()>) {
-    sessions().pokes.entry(lead).or_default().push(sender);
-}
-
-/// Wake every open `lead` has in flight, dropping those already over.
-fn wake_opens(sessions: &mut Sessions, lead: u64) {
-    if let Some(senders) = sessions.pokes.get_mut(&lead) {
-        senders.retain(|sender| sender.unbounded_send(()).is_ok());
+/// Carry out the drive's effects, in order, each once; the drive's lock is
+/// never held across one.
+pub(crate) fn carry(fx: Vec<Effect>, cx: &mut App) {
+    for effect in fx {
+        workers::carry_one(effect, cx);
     }
 }
 
 /// Tell every connection of session `uid` that its tools changed, dropping
 /// the ones whose other end has gone.
-fn tell_changed(sessions: &mut Sessions, uid: u64) {
-    let Sessions { tokens, conns, .. } = sessions;
+fn tell_changed(uid: u64) {
+    let tokens = drive().tokens_of(uid);
     let note = control::tools_changed();
-    for (token, held) in tokens.iter() {
-        if *held != Some(uid) {
-            continue;
-        }
-        if let Some(senders) = conns.get_mut(token) {
+    let mut conns = conns();
+    for token in tokens {
+        if let Some(senders) = conns.get_mut(&token) {
             senders.retain(|sender| sender.unbounded_send(note.clone()).is_ok());
         }
     }
 }
 
-/// Give session `uid` what its task was given: the tools it may use while
-/// nobody switches it on, and the labels its issues get. A task given
-/// nothing changes nothing.
-pub(crate) fn grant(uid: u64, grant: &onehand_core::task::Grant) {
-    let mut sessions = sessions();
-    // An agent may have listed its tools before the session held its token
-    // (a warm adapter's): told, it asks again.
-    if !grant.tools.is_empty()
-        && sessions.only.insert(uid, grant.tools.clone()).as_ref() != Some(&grant.tools)
-    {
-        tell_changed(&mut sessions, uid);
+/// What the socket asks of the tools from its own thread: each connection's
+/// standing, and where a session's connection is told its tools changed.
+pub(crate) fn front() -> onehand_io::socket::Front {
+    onehand_io::socket::Front {
+        standing: std::sync::Arc::new(standing),
+        joined: std::sync::Arc::new(|token: &str, out: UnboundedSender<String>| {
+            conns().entry(token.to_string()).or_default().push(out);
+        }),
     }
-    if !grant.labels.is_empty() {
-        sessions.labels.insert(uid, grant.labels.clone());
-    }
-}
-
-/// Session `uid` is closed: its switch and what its tools opened go with it.
-pub(crate) fn forget(uid: u64) {
-    let mut sessions = sessions();
-    wake_opens(&mut sessions, uid);
-    sessions.pokes.remove(&uid);
-    sessions.on.remove(&uid);
-    sessions.opened.remove(&uid);
-    sessions.labels.remove(&uid);
-    sessions.only.remove(&uid);
-    sessions.reserved.release_worker(uid);
-    sessions.requests.forget_lead(uid);
-    if let Some(relation) = sessions.workers.remove(&uid) {
-        sessions.closed_workers.insert(uid, relation.lead);
-    }
-    sessions.workers.retain(|_, relation| relation.lead != uid);
-}
-
-/// Said when a call's answer cannot come, because the app is going.
-const CLOSING: &str = "onehand is closing";
-
-/// Carry one MCP conversation, `first` its first line, until the client hangs
-/// up: each line answered by core, each call performed on the UI thread and
-/// its answer written back before the next line is read.
-pub(crate) async fn converse(
-    first: String,
-    mut reader: BufReader<OwnedReadHalf>,
-    mut writer: OwnedWriteHalf,
-    tx: UnboundedSender<Incoming>,
-) {
-    // One writer for the replies and for what the session is told unasked,
-    // so the two never interleave inside a line.
-    let (out, mut lines) = futures::channel::mpsc::unbounded::<String>();
-    tokio::spawn(async move {
-        use futures::StreamExt as _;
-        while let Some(line) = lines.next().await {
-            if writer
-                .write_all(format!("{line}\n").as_bytes())
-                .await
-                .is_err()
-            {
-                return;
-            }
-        }
-    });
-    let mut conn = Conn::default();
-    let mut told = false;
-    let mut line = Some(first);
-    while let Some(text) = line.take() {
-        let reply = match control::handle(&mut conn, &text, standing) {
-            Handled::Reply(reply) => Some(reply),
-            Handled::Quiet => None,
-            Handled::Perform { id, call } => {
-                let peer = conn.peer().cloned().unwrap_or(Peer::Outside);
-                let (answer, answered) = oneshot::channel();
-                let outcome = match tx.unbounded_send(Incoming::Call(peer, *call, answer)) {
-                    Ok(()) => answered.await.unwrap_or_else(|_| Err(CLOSING.to_string())),
-                    Err(_) => Err(CLOSING.to_string()),
-                };
-                Some(control::answered(&id, outcome))
-            }
-        };
-        // A session's connection, once it has said whose it is, is told when
-        // that session's switch changes.
-        if let (false, Some(Peer::Session(token))) = (told, conn.peer()) {
-            told = true;
-            sessions()
-                .conns
-                .entry(token.clone())
-                .or_default()
-                .push(out.clone());
-        }
-        if let Some(reply) = reply
-            && out.unbounded_send(reply).is_err()
-        {
-            break;
-        }
-        line = next_line(&mut reader).await;
-    }
-    // For every clone, the one kept to tell the session too: the writer then
-    // lets the socket go, so the proxy on the other end hears it close.
-    out.close_channel();
 }
 
 /// Carry out `call` in the window in front, and answer what came of it in
@@ -338,14 +190,6 @@ pub(crate) fn perform(peer: Peer, call: Call, answer: Answer, cx: &mut App) {
 /// Where a call's answer goes.
 pub(crate) type Answer = oneshot::Sender<Result<String, String>>;
 
-/// This run of the app, as a worker's handle names it: uids count from 1 in
-/// every run, so a handle from an earlier one must never reach whichever
-/// session took its number. Never written anywhere.
-static RUN: LazyLock<String> = LazyLock::new(|| control::new_token()[..8].to_string());
-
-/// How many sessions one session's tools may have open at once.
-pub(crate) const OPENED_CAP: usize = 4;
-
 fn perform_now(
     peer: Peer,
     call: Call,
@@ -360,12 +204,7 @@ fn perform_now(
             (handle, shell, None)
         }
         Peer::Session(token) => {
-            let uid = sessions()
-                .tokens
-                .get(token)
-                .copied()
-                .flatten()
-                .ok_or("no such session")?;
+            let uid = drive().holder(token).ok_or("no such session")?;
             let windows: Vec<_> = Shared::global(cx)
                 .windows
                 .iter()
@@ -389,13 +228,7 @@ fn perform_now(
     let projects = by_name(shell.read(cx).remote_roots());
     if let Some(named) = call.project() {
         let hosted = by_name(shell.read(cx).host_roots());
-        if control::pick_project(&projects, named).is_err()
-            && control::pick_project(&hosted, named).is_ok()
-        {
-            return Err(format!(
-                "{named} runs its sessions on a host; onehand's tools do not reach it yet"
-            ));
-        }
+        control::calls::hosted(&projects, &hosted, named)?;
     }
     match call {
         Call::StartWorkflow {
@@ -497,7 +330,7 @@ fn perform_now(
                 body,
                 labels: caller
                     .as_ref()
-                    .and_then(|(uid, _)| sessions().labels.get(uid).cloned())
+                    .map(|(uid, _)| drive().labels(*uid))
                     .unwrap_or_default(),
             };
             let answer = answer.take();
@@ -544,7 +377,7 @@ fn perform_now(
             Ok(control::listed(lines, "This window has no project"))
         }
         Call::ListAgents => {
-            let agents = &Shared::global(cx).agents;
+            let agents = &Shared::global(cx).settings.agents;
             let lines = agents.iter().map(|spec| spec.name.clone()).collect();
             Ok(control::listed(
                 lines,
@@ -608,7 +441,7 @@ fn perform_now(
                         "{} — {} — {} — {} — next: {next}",
                         row.id,
                         row.title,
-                        group_said(row.group),
+                        control::calls::group_said(row.group),
                         row.at
                     )
                 })
@@ -621,59 +454,31 @@ fn perform_now(
                 .into_iter()
                 .find(|row| row.id == task)
                 .ok_or_else(|| format!("no task {task} in this window's projects"))?;
-            // A session stopping its own task would be an agent ending the
-            // run that is watching it; that is the person's to do.
             let own = caller
                 .as_ref()
                 .and_then(|(uid, _)| crate::task::shown(*uid, cx))
                 .is_some_and(|shown| shown.task == row.id);
-            if own {
-                return Err("that is this session's own task".to_string());
-            }
-            if !row.stoppable {
-                return Err(format!(
-                    "{} has nothing to stop: it is {}",
-                    row.title,
-                    group_said(row.group)
-                ));
-            }
+            control::calls::may_stop(&row.title, row.group, own, row.stoppable)?;
             crate::task::stop_task(&row.id, cx);
             Ok(format!("Stopping {}", row.title))
         }
         Call::OpenFile { path } => {
-            // Relative to the calling session's project, which is where its
-            // agent works; an outside program has no project to start from.
-            let path = match (&caller, path.is_absolute()) {
-                (_, true) => path,
-                (Some((_, project)), false) => project.join(path),
-                (None, false) => return Err("give the file's absolute path".to_string()),
-            };
-            // Refused rather than resolved, so a path can never climb out of
-            // the project it names by its first components.
-            if path.components().any(|c| c == Component::ParentDir) {
-                return Err("name the file without `..`".to_string());
-            }
-            let active = shell
-                .read(cx)
-                .on_screen()
-                .ok_or("no project on this machine is on screen")?;
-            if !path.starts_with(&active.1) {
-                return Err(format!(
-                    "{} is not in {}, the project on screen",
-                    path.display(),
-                    active.0
-                ));
-            }
-            if !path.is_file() {
-                return Err(format!("{} is not a file", path.display()));
-            }
+            let on_screen = shell.read(cx).on_screen();
+            let path = control::calls::file_to_open(
+                path,
+                caller.as_ref().map(|(_, project)| project.as_path()),
+                on_screen
+                    .as_ref()
+                    .map(|(name, root)| (name.as_ref(), root.as_path())),
+                Path::is_file,
+            )?;
             crate::state::with_shell(handle, cx, |shell, window, cx| {
                 shell.open_file(&path, window, cx)
             })
             .ok_or("the window closed")?;
             Ok(format!("Opened {} in the Workbench", path.display()))
         }
-        Call::SessionState { session } => workers::state::answer(caller, &session, cx),
+        Call::SessionState { session } => workers::turns::answer(caller, &session, cx),
         Call::SendPrompt {
             session,
             text,
@@ -703,9 +508,9 @@ fn perform_now(
             model,
             name,
         } => workers::open(
-            workers::Open {
+            onehand_core::control::drive::Open {
                 // Never listed to an outside program, so never called by one.
-                caller: caller.ok_or("`open_worker` is for a session's agent")?,
+                lead: caller.ok_or("`open_worker` is for a session's agent")?.0,
                 project,
                 agent,
                 prompt,
@@ -742,17 +547,6 @@ fn issue_file(
         .read(cx)
         .issues_file(&root)
         .ok_or_else(|| "this workspace keeps no issues of its own".to_string())
-}
-
-/// A task's group, as a caller reads it.
-fn group_said(group: Group) -> &'static str {
-    match group {
-        Group::Waiting => "waiting on a person",
-        Group::Ended => "ended",
-        Group::Running => "running",
-        Group::Queued => "queued",
-        Group::Finished => "finished",
-    }
 }
 
 #[cfg(test)]

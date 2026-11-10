@@ -425,7 +425,7 @@ fn control_chip(
             .child(chip_text("Controls onehand"))
             .tooltip("This session's agent can use onehand's tools. Press to stop it")
             .on_click(cx.listener(move |_: &mut Composer, _, _, cx| {
-                crate::control::switch(uid, false);
+                crate::control::switch(uid, false, cx);
                 cx.notify();
             })),
     )

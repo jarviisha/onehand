@@ -2,13 +2,15 @@
 //! thread, in the order the changes were made, and put back to its last value
 //! known saved if its write fails while no later write carries it, said once.
 //!
-//! The ordering and the rule are core's ([`onehand_core::saving`]); what is
-//! here is the spawn and the toast.
+//! The ordering and the rule are core's ([`onehand_core::saving`]), and for
+//! the agents, the appearance and outside control the settings' drive's
+//! (`onehand_core::config::drive`); what is here is the spawn and the toast.
 
 use crate::state::Shared;
 use gpui::{App, BorrowAppContext as _, Window};
 use gpui_component::WindowExt as _;
 use onehand_core::config::AppConfig;
+use onehand_core::config::drive::{self, Effect, Input, Signal, Value};
 use std::rc::Rc;
 
 /// What puts one setting's value back on screen.
@@ -70,3 +72,102 @@ pub(crate) fn write_config<V: Clone + 'static>(
         })
         .detach();
 }
+
+/// Carry out what the settings' drive answers, in order, each once.
+///
+/// A check's agent is held here until it comes up, fails or is called off:
+/// dropping its events is what kills it.
+pub(crate) fn carry_settings(fx: Vec<Effect>, window: &mut Window, cx: &mut App) {
+    for effect in fx {
+        match effect {
+            Effect::Show(Value::Appearance(choice)) => {
+                crate::shell::apply_appearance(choice, Some(&mut *window), cx)
+            }
+            Effect::Show(value @ Value::Outside(_)) => {
+                onehand_core::control::link::shown(&mut crate::control::drive(), &value);
+                cx.refresh_windows();
+            }
+            Effect::Show(Value::Agents) => {}
+            Effect::Write { pending, edit } => {
+                let path = Shared::global(cx).config_path.clone();
+                let write = edit.clone();
+                let written = Shared::global(cx)
+                    .writer
+                    .write(move || AppConfig::update_in_place(&path, |cfg| write.apply(cfg)));
+                window
+                    .spawn(cx, async move |cx| {
+                        let result = written.await;
+                        let _ = cx.update(|window, cx| {
+                            let fx = cx.update_global::<Shared, _>(|shared, _| {
+                                shared.settings.handle(Input::Written {
+                                    pending,
+                                    edit,
+                                    result,
+                                })
+                            });
+                            carry_settings(fx, window, cx);
+                        });
+                    })
+                    .detach();
+            }
+            Effect::Probe { spec, cwd, token } => probe(spec, cwd, token, cx),
+            Effect::CallOff { token } => {
+                cx.default_global::<Checks>().0.remove(&token);
+            }
+            Effect::Changed => cx.refresh_windows(),
+            Effect::Signal(Signal::SaveFailed { doing, why }) => {
+                window.push_notification(crate::toast::failed(doing, why), cx)
+            }
+        }
+    }
+}
+
+/// The checks under way, by token: dropping one kills its agent.
+#[derive(Default)]
+struct Checks(std::collections::HashMap<u64, gpui::Task<()>>);
+
+impl gpui::Global for Checks {}
+
+/// Bring `spec` up for a look at what it offers, and report what it found,
+/// or that its wait ran out.
+fn probe(spec: onehand_core::config::AgentSpec, cwd: std::path::PathBuf, token: u64, cx: &mut App) {
+    use futures::StreamExt as _;
+    let mut events = Shared::global(cx).acp.probe(&spec, cwd);
+    let read = cx.spawn(async move |cx| {
+        let mut offer = onehand_core::workflow::Offer::default();
+        let mut found = Err(drive::CLOSED_EARLY.to_string());
+        while let Some(event) = events.next().await {
+            if let Some(ended) = drive::fold_probe(&mut offer, event) {
+                found = ended.map(|()| std::mem::take(&mut offer));
+                break;
+            }
+        }
+        // The events go with this task, which kills the adapter.
+        drop(events);
+        cx.update(|cx| land(Input::Probed { token, found }, cx));
+    });
+    cx.default_global::<Checks>().0.insert(token, read);
+    cx.spawn(async move |cx| {
+        cx.background_executor().timer(drive::CHECK_WAIT).await;
+        cx.update(|cx| land(Input::Elapsed { token }, cx));
+    })
+    .detach();
+}
+
+/// A check's answer, with no window at hand: what it says needs none.
+fn land(input: Input, cx: &mut App) {
+    let fx = cx.update_global::<Shared, _>(|shared, _| shared.settings.handle(input));
+    for effect in fx {
+        match effect {
+            Effect::CallOff { token } => {
+                cx.default_global::<Checks>().0.remove(&token);
+            }
+            Effect::Changed => cx.refresh_windows(),
+            // A check's answer asks for nothing else.
+            Effect::Show(_) | Effect::Write { .. } | Effect::Probe { .. } | Effect::Signal(_) => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

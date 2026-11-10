@@ -27,7 +27,8 @@
 //! with whether the batch may go on ([`Next`]); [`SessionDrive::end_batch`]
 //! closes it. How many events a front end takes at most is its own cap.
 
-use super::model::{Chat, Link, Now, QueuedPrompt, SubmitBlock, UserAsk};
+use super::attention::Attention;
+use super::model::{Away, Chat, Link, Now, QueuedPrompt, SubmitBlock, UserAsk};
 use super::store::PendingWrite;
 use crate::acp::{AcpEvent, AcpRequest};
 use crate::attachment::StagedAttachment;
@@ -183,6 +184,20 @@ pub enum Effect {
         change: u64,
         title: Option<String>,
     },
+    /// News a person may want told: say where they are, as
+    /// [`Input::Seen`] with `what`, read as it stands when the news is heard.
+    ///
+    /// A late answer is **recorded**: the news happened, and it is told as the
+    /// answer says, whatever the session has done since. A carrier answers it
+    /// as soon as it hears it, so none is late in practice.
+    Look(Away),
+    /// Say `what` outside the window: on the desktop, on a chat away from
+    /// the machine, or both. Not answered.
+    Tell {
+        what: Away,
+        desktop: bool,
+        chat: bool,
+    },
 }
 
 /// What the front end reports back.
@@ -209,6 +224,11 @@ pub enum Input {
         title: Option<String>,
         result: Result<(), String>,
     },
+    /// Where the person was when the news [`Effect::Look`] asked about came.
+    Seen { what: Away, attention: Attention },
+    /// The person is looking at this session's conversation: its news is
+    /// read.
+    Shown,
 }
 
 /// Whether a batch of events may take another.
@@ -259,6 +279,9 @@ pub struct SessionDrive {
     batch: Batch,
     /// What the session waits on its host for, while it does.
     hold: Option<host::Hold>,
+    /// A turn ended out of the person's sight and they have not looked since:
+    /// the session's row says so.
+    unseen: bool,
 }
 
 /// **Closing honours the saves still on their way.** The model writes what is
@@ -294,6 +317,7 @@ impl SessionDrive {
             title: None,
             batch: Batch::default(),
             hold: None,
+            unseen: false,
         }
     }
 
@@ -502,7 +526,7 @@ impl SessionDrive {
             .take_if(|_| told)
             .filter(|_| self.chat.awaiting_permission())
         {
-            fx.push(Effect::Signal(Signal::AwaitingUser(ask)));
+            self.say(&mut fx, Signal::AwaitingUser(ask));
         }
         if outcome.turn_ended {
             fx.extend(turn_save);
@@ -510,10 +534,10 @@ impl SessionDrive {
             fx.extend(self.save());
         }
         if outcome.turn_ended {
-            fx.push(Effect::Signal(Signal::TurnEnded));
+            self.say(&mut fx, Signal::TurnEnded);
         }
         if cycle_ended {
-            fx.push(Effect::Signal(Signal::CycleEnded));
+            self.say(&mut fx, Signal::CycleEnded);
         }
         if let Some(why) = outcome.stop_refused {
             fx.push(Effect::Signal(Signal::StopRefused(why)));
@@ -537,7 +561,7 @@ impl SessionDrive {
         let batch = std::mem::take(&mut self.batch);
         let mut fx = Vec::new();
         if let Some(ask) = batch.asked.filter(|_| self.chat.awaiting_permission()) {
-            fx.push(Effect::Signal(Signal::AwaitingUser(ask)));
+            self.say(&mut fx, Signal::AwaitingUser(ask));
         }
         if batch.changed {
             fx.push(Effect::Changed);
@@ -568,7 +592,7 @@ impl SessionDrive {
             Input::StreamEnded => {
                 self.chat.stream_ended();
                 let mut fx = self.disarm();
-                fx.push(Effect::Signal(Signal::Disconnected));
+                self.say(&mut fx, Signal::Disconnected);
                 fx
             }
             Input::TitleSaved {
@@ -576,6 +600,8 @@ impl SessionDrive {
                 title,
                 result,
             } => self.title_saved(change, title, result),
+            Input::Seen { what, attention } => self.seen(what, attention),
+            Input::Shown => self.shown(),
         }
     }
 
@@ -652,7 +678,7 @@ impl SessionDrive {
         let mut fx = Vec::new();
         if self.chat.unsaved_between_turns() {
             fx.extend(self.save());
-            fx.push(Effect::Signal(Signal::CycleEnded));
+            self.say(&mut fx, Signal::CycleEnded);
         }
         if self.chat.quiet_spell() {
             fx.push(Effect::Changed);
@@ -683,6 +709,7 @@ mod host;
 pub use host::HostLink;
 mod life;
 mod settings;
+mod telling;
 mod titles;
 
 #[cfg(test)]

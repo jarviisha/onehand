@@ -1,110 +1,92 @@
+//! The tools' carrier against its contract: a switch's change reaches each
+//! connection once and lets go of the ones gone, what it carries runs after
+//! the call that asked, an open's deadline comes round and frees its request,
+//! and a token let go leaves nothing listening.
+
 use super::*;
 use futures::StreamExt as _;
+use gpui::TestAppContext;
+use onehand_core::control::drive::{Begun, Open};
+use std::time::Duration;
 
-fn standing_of(token: &str) -> Standing {
-    standing(&Peer::Session(token.to_string()))
+fn token_of(token: &Token) -> String {
+    token.0.clone()
 }
 
-#[test]
-fn a_granted_session_stands_with_its_set_until_switched_on() {
-    let uid = 900_002;
+/// A session's switch tells each of its connections once, after the call
+/// that switched it; switching to where it already is tells nobody; a token
+/// let go is refused and keeps no connection.
+#[gpui::test]
+fn a_switch_tells_each_connection_once(cx: &mut TestAppContext) {
+    let uid = 900_101;
     let token = Token::mint();
     token.claim(uid);
-    let name = token.0.clone();
-    grant(
-        uid,
-        &onehand_core::task::Grant {
-            tools: vec!["list_issues".into()],
-            labels: vec!["auto".into()],
-        },
-    );
-    assert!(matches!(standing_of(&name), Standing::Only(set) if set == ["list_issues"]));
-    assert_eq!(sessions().labels[&uid], ["auto"]);
-    switch(uid, true);
-    assert!(matches!(standing_of(&name), Standing::On));
-    switch(uid, false);
-    assert!(matches!(standing_of(&name), Standing::Only(_)));
-    forget(uid);
-    assert!(matches!(standing_of(&name), Standing::Off));
-    assert!(!sessions().labels.contains_key(&uid));
-}
-
-#[test]
-fn a_token_speaks_for_its_session_until_it_goes() {
-    let uid = 900_001;
-    let token = Token::mint();
-    let name = token.0.clone();
-    // A warm adapter's: known, and offered nothing.
-    assert!(matches!(standing_of(&name), Standing::Off));
-    token.claim(uid);
-    assert!(matches!(standing_of(&name), Standing::Off));
-
+    let name = token_of(&token);
     let (told, mut heard) = futures::channel::mpsc::unbounded();
     let (gone, _) = futures::channel::mpsc::unbounded::<String>();
-    sessions()
-        .conns
-        .entry(name.clone())
-        .or_default()
-        .extend([told, gone]);
-    switch(uid, true);
-    assert!(switched_on(uid));
-    assert!(matches!(standing_of(&name), Standing::On));
+    (front().joined)(&name, told);
+    (front().joined)(&name, gone);
+    let early = cx.update(|cx| {
+        switch(uid, true, cx);
+        heard.try_recv().is_ok()
+    });
+    assert!(!early, "carried after the call, not inside it");
+    cx.run_until_parked();
     let note = futures::executor::block_on(heard.next()).unwrap();
     assert!(note.contains("list_changed"), "{note}");
-    // The connection whose other end went is dropped, the live one kept.
-    assert_eq!(sessions().conns[&name].len(), 1);
-    // Switching to where it is already tells nobody.
-    switch(uid, true);
+    assert_eq!(conns()[&name].len(), 1, "the one gone is let go");
+    cx.update(|cx| switch(uid, true, cx));
+    cx.run_until_parked();
     assert!(heard.try_recv().is_err());
-
-    forget(uid);
-    assert!(!switched_on(uid));
+    assert!(matches!(
+        standing(&Peer::Session(name.clone())),
+        Standing::On
+    ));
+    cx.update(|cx| forget(uid, cx));
     drop(token);
-    assert!(matches!(standing_of(&name), Standing::Refused(_)));
-    assert!(!sessions().conns.contains_key(&name));
+    assert!(matches!(
+        standing(&Peer::Session(name.clone())),
+        Standing::Refused(_)
+    ));
+    assert!(!conns().contains_key(&name));
 }
 
-#[test]
-fn a_grant_tells_an_agent_that_listed_its_tools_before() {
-    let uid = 900_003;
-    let token = Token::mint();
-    let name = token.0.clone();
-    // A warm adapter's agent connected and listed nothing before the claim.
-    let (told, mut heard) = futures::channel::mpsc::unbounded();
-    sessions().conns.entry(name.clone()).or_default().push(told);
-    token.claim(uid);
-    let given = onehand_core::task::Grant {
-        tools: vec!["create_issue".into()],
-        labels: Vec::new(),
+/// An open's deadline, armed when it is asked, comes round on the clock and
+/// fails the open, so the same request opens afresh.
+#[gpui::test]
+fn an_opens_deadline_comes_round_and_frees_its_request(cx: &mut TestAppContext) {
+    let lead = 900_102;
+    drive().switch(lead, true);
+    let open = || Open {
+        lead,
+        project: "repo".into(),
+        agent: "agent".into(),
+        prompt: None,
+        dirs: Vec::new(),
+        request: "r".into(),
+        turn: None,
+        model: None,
+        name: None,
     };
-    grant(uid, &given);
-    let note = futures::executor::block_on(heard.next()).unwrap();
-    assert!(note.contains("list_changed"), "{note}");
-    // The same grant again, a Resume's, tells nobody.
-    grant(uid, &given);
-    assert!(heard.try_recv().is_err());
-    forget(uid);
-}
-
-/// A lead closing wakes every open it has in flight, so the open is
-/// abandoned at once rather than at its worker's next change.
-#[test]
-fn forgetting_a_lead_wakes_its_opens() {
-    let lead = 9_000_001;
-    let (tx, mut rx) = futures::channel::mpsc::unbounded();
-    super::poke_on(lead, tx);
-    super::forget(lead);
-    assert_eq!(rx.try_recv().ok(), Some(()));
-}
-
-/// So does a lead switched off.
-#[test]
-fn switching_a_lead_off_wakes_its_opens() {
-    let lead = 9_000_002;
-    super::switch(lead, true);
-    let (tx, mut rx) = futures::channel::mpsc::unbounded();
-    super::poke_on(lead, tx);
-    super::switch(lead, false);
-    assert_eq!(rx.try_recv().ok(), Some(()));
-    super::forget(lead);
+    let projects = vec![("repo".to_string(), PathBuf::from("/repo"))];
+    let Ok(Begun::Resolve { fx, .. }) = drive().open_worker(open(), &projects, None) else {
+        panic!("a new request");
+    };
+    let [Effect::Arm { token, .. }] = fx[..] else {
+        panic!("the deadline is armed at the call");
+    };
+    assert!(matches!(
+        drive().open_worker(open(), &projects, None),
+        Ok(Begun::Said(_))
+    ));
+    let wait = Duration::from_secs(1);
+    cx.update(|cx| carry(vec![Effect::Arm { token, wait }], cx));
+    cx.executor().advance_clock(wait);
+    cx.run_until_parked();
+    assert!(matches!(
+        drive().open_worker(open(), &projects, None),
+        Ok(Begun::Resolve { .. })
+    ));
+    let fx = drive().forget(lead);
+    assert!(!fx.is_empty());
 }

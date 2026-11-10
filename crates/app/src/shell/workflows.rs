@@ -210,7 +210,7 @@ impl Shell {
             _ => None,
         };
         let named = agent;
-        let agent = onehand_core::config::agent_or_first(&shared.agents, named);
+        let agent = onehand_core::config::agent_or_first(&shared.settings.agents, named);
         let facts = preflight::Facts {
             workflow,
             // One named and gone is said by its name, as a Retry's is.
@@ -446,7 +446,7 @@ impl Shell {
         };
         // Every drive, a Resume's new session included: what the task was
         // given when it started is what its session may use.
-        crate::control::grant(uid, &task.grant);
+        crate::control::grant(uid, &task.grant, cx);
         // Deferred: the run's carrier reaches into the session and the global
         // the shell is reading from while this runs.
         let handle = window.window_handle();
@@ -496,6 +496,7 @@ fn new_task(setup: Setup, template: Template, brief: Brief, cx: &gpui::App) -> T
 /// The agent a new session takes: the first configured.
 fn first_agent(cx: &gpui::App) -> Option<String> {
     Shared::global(cx)
+        .settings
         .agents
         .first()
         .map(|spec| spec.name.clone())

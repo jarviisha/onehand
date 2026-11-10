@@ -218,7 +218,8 @@ fn watch_drain(
             | ChatEvent::Fork(_)
             | ChatEvent::HostSession(_)
             | ChatEvent::HostBusy
-            | ChatEvent::RestartHost(_) => {}
+            | ChatEvent::RestartHost(_)
+            | ChatEvent::Look(_) => {}
         }
     });
     let gone = cx.observe_release(session, move |_, cx| drained(cx));

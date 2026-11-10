@@ -499,7 +499,7 @@ pub(super) fn run_agent_offer(
 ) -> Option<(onehand_core::config::AgentSpec, Option<core::Offer>)> {
     let name = crate::unattended::run_agent(cx)?;
     let spec = onehand_core::config::agent_or_first(
-        &crate::state::Shared::global(cx).agents,
+        &crate::state::Shared::global(cx).settings.agents,
         Some(&name),
     )?
     .clone();

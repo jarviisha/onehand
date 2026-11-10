@@ -1,36 +1,27 @@
 //! The lock a launch starts with, and the socket its holder listens on.
 //!
 //! A launch that finds the lock held hands its folder to the process holding
-//! it and exits, before GPUI is started at all. The holder reads those lines on
-//! a tokio runtime of its own and crosses to GPUI over a `futures` channel; what
-//! a line means is decided in core's `instance`, and this only carries it.
+//! it and exits, before GPUI is started at all. The holder serves the socket on
+//! `onehand_io::socket`'s runtime, which crosses to GPUI over a `futures`
+//! channel; what a line means is decided in core's `instance`, and this only
+//! carries it.
 
 use crate::state::Shared;
 use futures::StreamExt as _;
-use futures::channel::mpsc::{UnboundedSender, unbounded};
-use futures::channel::oneshot;
 use gpui::App;
-use onehand_core::control::{Call, Peer};
 use onehand_core::instance::{self, Forwarded, Unforwarded};
+use onehand_io::socket::{Incoming, Socket};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
-use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _, BufReader};
-use tokio::net::UnixListener;
-use tokio::net::unix::OwnedReadHalf;
 
-/// The listener's runtime, kept for the life of the process.
-static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+/// The socket's runtime, kept for the life of the process.
+static SERVED: OnceLock<Socket> = OnceLock::new();
 
 /// The socket, bound the moment the lock is taken and served once GPUI is up.
 /// A second launch in between waits in the socket's backlog instead of
 /// finding nobody there.
 static BOUND: Mutex<Option<std::os::unix::net::UnixListener>> = Mutex::new(None);
-
-/// How long a connection may take to send its first line, and how long any
-/// line may be: past either it is dropped, not waited on.
-const LINE_WAIT: Duration = Duration::from_secs(5);
-const LINE_CAP: u64 = 64 * 1024;
 
 /// How often a line that arrived before the first window looks for it again.
 const WINDOW_POLL: Duration = Duration::from_millis(50);
@@ -88,32 +79,14 @@ pub(crate) fn listen(cx: &mut App) {
     let Some(listener) = BOUND.lock().unwrap_or_else(|e| e.into_inner()).take() else {
         return;
     };
-    let rt = match tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(1)
-        .enable_all()
-        .thread_name("onehand-socket")
-        .build()
-    {
-        Ok(rt) => rt,
+    let (socket, mut rx) = match Socket::serve(listener, crate::control::front()) {
+        Ok(served) => served,
         Err(e) => {
             eprintln!("onehand: no socket for a second launch: {e}");
             return;
         }
     };
-    let listener = listener.set_nonblocking(true).and_then(|()| {
-        let _in_runtime = rt.enter();
-        UnixListener::from_std(listener)
-    });
-    let listener = match listener {
-        Ok(listener) => listener,
-        Err(e) => {
-            eprintln!("onehand: no socket for a second launch: {e}");
-            return;
-        }
-    };
-    let (tx, mut rx) = unbounded();
-    rt.spawn(serve(listener, tx));
-    let _ = RUNTIME.set(rt);
+    let _ = SERVED.set(socket);
     cx.spawn(async move |cx| {
         while let Some(incoming) = rx.next().await {
             // The first window registers a moment after boot. A line that lands
@@ -131,65 +104,6 @@ pub(crate) fn listen(cx: &mut App) {
         }
     })
     .detach();
-}
-
-/// What the socket hands to GPUI.
-pub(crate) enum Incoming {
-    /// A second launch's folder, or only a window to raise.
-    Open(Forwarded),
-    /// A tool's call, who made it, and where its answer goes.
-    Call(Peer, Call, oneshot::Sender<Result<String, String>>),
-}
-
-/// Answer every connection. One whose first line is a second launch's open
-/// is answered and closed; any other is an MCP conversation, carried on
-/// until the client hangs up. What a line asks for goes to GPUI before the
-/// answer goes back, so a second launch that hears yes has been heard.
-async fn serve(listener: UnixListener, tx: UnboundedSender<Incoming>) {
-    loop {
-        let stream = match listener.accept().await {
-            Ok((stream, _)) => stream,
-            Err(e) => {
-                // ponytail: one failed accept ends the listener; retry with a
-                // pause if it ever happens for a reason that passes.
-                eprintln!("onehand: the socket stopped listening: {e}");
-                return;
-            }
-        };
-        let tx = tx.clone();
-        tokio::spawn(async move {
-            let (read, mut write) = stream.into_split();
-            let mut reader = BufReader::new(read);
-            let first = tokio::time::timeout(LINE_WAIT, next_line(&mut reader)).await;
-            let Ok(Some(first)) = first else {
-                return;
-            };
-            let Some((reply, forwarded)) = instance::open(&first) else {
-                return crate::control::converse(first, reader, write, tx).await;
-            };
-            if let Some(forwarded) = forwarded {
-                let _ = tx.unbounded_send(Incoming::Open(forwarded));
-            }
-            let _ = write.write_all(format!("{reply}\n").as_bytes()).await;
-        });
-    }
-}
-
-/// The next line `reader` holds, or `None` at its end, on a read error, or
-/// past [`LINE_CAP`] without a newline, which ends the connection rather
-/// than being held in memory. Bytes that are not UTF-8 are kept as a line
-/// all the same, so it is answered as malformed and the connection goes on.
-pub(crate) async fn next_line(reader: &mut BufReader<OwnedReadHalf>) -> Option<String> {
-    let mut line = Vec::new();
-    match (&mut *reader)
-        .take(LINE_CAP)
-        .read_until(b'\n', &mut line)
-        .await
-    {
-        Ok(0) | Err(_) => None,
-        Ok(_) if line.last() != Some(&b'\n') && line.len() as u64 >= LINE_CAP => None,
-        Ok(_) => Some(String::from_utf8_lossy(&line).into_owned()),
-    }
 }
 
 /// Open what a second launch forwarded in the window in front, or the first
@@ -219,29 +133,14 @@ mod tests {
     use std::os::unix::net::UnixStream;
 
     /// A listener on a socket of its own, and what reaches GPUI from it.
-    fn listening(
-        name: &str,
-    ) -> (
-        PathBuf,
-        tokio::runtime::Runtime,
-        UnboundedReceiver<Incoming>,
-    ) {
+    fn listening(name: &str) -> (PathBuf, Socket, UnboundedReceiver<Incoming>) {
         let dir = std::env::temp_dir().join(format!("onehand-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let socket = dir.join("onehand.sock");
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
-            .enable_all()
-            .build()
-            .unwrap();
-        let listener = {
-            let _in_runtime = rt.enter();
-            UnixListener::bind(&socket).unwrap()
-        };
-        let (tx, rx) = unbounded();
-        rt.spawn(serve(listener, tx));
-        (dir, rt, rx)
+        let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        let (served, rx) = Socket::serve(listener, crate::control::front()).unwrap();
+        (dir, served, rx)
     }
 
     /// Send `msg` and read the answer.

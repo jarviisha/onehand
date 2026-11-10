@@ -147,6 +147,9 @@ pub enum ChatEvent {
     /// *Restart now*, pressed on the line saying this session waits on the
     /// host named.
     RestartHost(onehand_core::workspace::HostName),
+    /// The session has news a person may want told: whoever knows where they
+    /// are answers with `Input::Seen` (`ChatPane::look`).
+    Look(onehand_core::chat::Away),
 }
 
 /// The widget behind one question field's free-text box, and the subscription
@@ -566,7 +569,7 @@ impl ChatSession {
                 // before it brings an agent up.
                 Effect::OfferChanged => {
                     let (spec, offer) = (self.agent.clone(), self.chat.offer());
-                    cx.update_global::<Shared, _>(|s, _| s.saw_offer(spec, offer));
+                    cx.update_global::<Shared, _>(|s, _| s.settings.saw_offer(spec, offer));
                 }
                 Effect::Save(write) => {
                     cx.spawn(async move |session, cx| {
@@ -633,7 +636,10 @@ impl ChatSession {
                     })
                     .detach();
                 }
-                Effect::SendCode { .. } | Effect::PromptAgain => left.push(effect),
+                Effect::Look(what) => cx.emit(ChatEvent::Look(what)),
+                Effect::SendCode { .. } | Effect::PromptAgain | Effect::Tell { .. } => {
+                    left.push(effect)
+                }
             }
         }
         left

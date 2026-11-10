@@ -440,7 +440,7 @@ Refused or left out, each in one place:
 - **onehand's tools** do not list it, and a call naming it is refused, *<project> is on a host;
   onehand's tools do not reach it yet* ([control.md](control.md#the-tools)). A host session's
   agent is given no token, so it cannot call them.
-- **The Telegram bridge** does not offer it: the bridge reads the projects on this machine only.
+- **The Telegram bridge** does not offer it: the bridge lists and reaches only sessions whose project runs here.
 
 ## Offloaded projects
 

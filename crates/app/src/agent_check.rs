@@ -7,32 +7,20 @@
 //! Nothing is prompted: the adapter is brought up as far as `session/new`,
 //! whose answer carries the modes and config options, and dropped at once,
 //! which kills it. What it learns goes where any sighting of the agent's
-//! offer goes (`Shared::saw_offer`), so every later start in this process
+//! offer goes (`SettingsDrive::saw_offer`), so every later start in this process
 //! reads it.
 
 use crate::controls::Short as _;
 use crate::state::Shared;
-use futures::StreamExt as _;
 use gpui::BorrowAppContext as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div};
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme as _, StyledExt as _};
-use onehand_core::acp::AcpEvent;
 use onehand_core::config::{self, AgentSpec};
-use onehand_core::workflow::Offer;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
-/// How long an agent is given to come up before the check gives up on it.
-const CHECK_WAIT: Duration = Duration::from_secs(90);
-
-/// A check under way, or the last one that failed, per spec.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Checking {
-    Running,
-    Failed(String),
-}
+pub(crate) use onehand_core::config::drive::Checking;
 
 /// What a *Check the agent* button checks: the agent a start would run, in
 /// the project it would start in, for the mode it would start in.
@@ -53,7 +41,7 @@ impl Ask {
         mode: Option<&str>,
         cx: &App,
     ) -> Option<Self> {
-        let spec = config::agent_or_first(&Shared::global(cx).agents, agent)?;
+        let spec = config::agent_or_first(&Shared::global(cx).settings.agents, agent)?;
         Some(Self {
             spec: spec.clone(),
             cwd: cwd.to_path_buf(),
@@ -68,105 +56,15 @@ impl Ask {
 }
 
 /// Start `ask`'s agent, read what it offers, and close it.
-fn check(ask: &Ask, cx: &mut App) {
-    if checking(&ask.spec, cx) == Some(Checking::Running) {
-        return;
-    }
-    set(&ask.spec, Some(Checking::Running), cx);
-    let mut events = Shared::global(cx).acp.probe(&ask.spec, ask.cwd.clone());
-    let spec = ask.spec.clone();
-    let timer = cx.background_executor().timer(CHECK_WAIT);
-    cx.spawn(async move |cx| {
-        let read = async move {
-            let mut offer = Offer::default();
-            while let Some(event) = events.next().await {
-                match event {
-                    AcpEvent::Modes { available, .. } => {
-                        offer.modes = available.into_iter().map(|m| m.id).collect();
-                    }
-                    AcpEvent::ConfigOptions(opts) => {
-                        offer.options = opts
-                            .into_iter()
-                            .map(|opt| (opt.id, opt.choices.into_iter().map(|c| c.value).collect()))
-                            .collect();
-                    }
-                    AcpEvent::Connected { .. } => return Ok(offer),
-                    AcpEvent::Error { text: why, .. } | AcpEvent::Disconnected(why) => {
-                        return Err(why);
-                    }
-                    // Nothing else is asked of an agent that is never
-                    // prompted; whatever it says before it comes up is let go.
-                    AcpEvent::SessionId(_)
-                    | AcpEvent::AgentChunk { .. }
-                    | AcpEvent::ThoughtChunk(_)
-                    | AcpEvent::UserChunk(_)
-                    | AcpEvent::Interrupted
-                    | AcpEvent::ToolCall(_)
-                    | AcpEvent::ToolUpdate(_)
-                    | AcpEvent::Plan(_)
-                    | AcpEvent::Usage(_)
-                    | AcpEvent::Background(_)
-                    | AcpEvent::SubagentSpawned { .. }
-                    | AcpEvent::SubagentEnded { .. }
-                    | AcpEvent::InChild { .. }
-                    | AcpEvent::StopRefused { .. }
-                    | AcpEvent::Permission(_)
-                    | AcpEvent::Elicitation(_)
-                    | AcpEvent::AvailableCommands(_)
-                    | AcpEvent::ModeChanged(_)
-                    | AcpEvent::PickConfirmed { .. }
-                    | AcpEvent::PickRefused { .. }
-                    | AcpEvent::TerminalOutput { .. }
-                    | AcpEvent::TerminalExit { .. }
-                    | AcpEvent::TurnEnded { .. }
-                    | AcpEvent::Notice(_)
-                    | AcpEvent::Echo(_)
-                    | AcpEvent::At(_)
-                    // The refusal it comes ahead of ends the check, in words.
-                    | AcpEvent::LoginRequired { .. } => {}
-                }
-            }
-            Err("the agent closed before it came up".to_string())
-        };
-        // Whichever way it ends, the stream is dropped with the read, which
-        // kills the adapter.
-        let found = match futures::future::select(Box::pin(read), timer).await {
-            futures::future::Either::Left((found, _)) => found,
-            futures::future::Either::Right(_) => Err(format!(
-                "the agent did not come up within {}s",
-                CHECK_WAIT.as_secs()
-            )),
-        };
-        cx.update(|cx| {
-            match found {
-                Ok(offer) => {
-                    set(&spec, None, cx);
-                    cx.update_global::<Shared, _>(|s, _| s.saw_offer(spec, offer));
-                }
-                Err(why) => set(&spec, Some(Checking::Failed(why)), cx),
-            }
-            cx.refresh_windows();
-        });
-    })
-    .detach();
+fn check(ask: &Ask, window: &mut Window, cx: &mut App) {
+    let (spec, cwd) = (ask.spec.clone(), ask.cwd.clone());
+    let fx = cx.update_global::<Shared, _>(|shared, _| shared.settings.check(spec, cwd));
+    crate::saves::carry_settings(fx, window, cx);
 }
 
 /// The check of `spec` under way, or its last failure.
 fn checking(spec: &AgentSpec, cx: &App) -> Option<Checking> {
-    Shared::global(cx)
-        .agent_checks
-        .iter()
-        .find(|(seen, _)| seen == spec)
-        .map(|(_, checking)| checking.clone())
-}
-
-fn set(spec: &AgentSpec, to: Option<Checking>, cx: &mut App) {
-    cx.update_global::<Shared, _>(|s, _| {
-        s.agent_checks.retain(|(seen, _)| seen != spec);
-        if let Some(to) = to {
-            s.agent_checks.push((spec.clone(), to));
-        }
-    });
+    Shared::global(cx).settings.checking(spec).cloned()
 }
 
 /// The button, drawn beside a mode not known yet: *Check the agent*, then
@@ -201,7 +99,7 @@ pub(crate) fn button(id: usize, ask: &Ask, cx: &App) -> AnyElement {
                 .short()
                 .loading(running)
                 .label("Check the agent")
-                .on_click(move |_, _: &mut Window, cx: &mut App| check(&ask, cx)),
+                .on_click(move |_, window: &mut Window, cx: &mut App| check(&ask, window, cx)),
         )
         .into_any_element()
 }

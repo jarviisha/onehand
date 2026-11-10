@@ -12,7 +12,7 @@ use std::path::Path;
 /// The agent a run starts, with every build it makes pointed at one shared
 /// directory.
 pub(crate) fn spec_for(agent: Option<&str>, cx: &App) -> Option<AgentSpec> {
-    let agents = &Shared::global(cx).agents;
+    let agents = &Shared::global(cx).settings.agents;
     // A gone agent's run starts on the first configured: by now the preflight
     // has had its say, and a run let through has to start on something.
     let base = config::agent_or_first(agents, agent)
