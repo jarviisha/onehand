@@ -1,6 +1,6 @@
 # An application layer: how onehand works, apart from how it is drawn
 
-- Status: phases 1 to 6 built.
+- Status: phases 1 to 7 built.
   - Phase 1, a trial slice of one session, is #307.
   - Phase 2 settled the standard: it lives in [docs/drives.md](../drives.md), its terms in
     CONTEXT.md (*How onehand is built*), and its short form in AGENTS.md (*Invariants*).
@@ -11,7 +11,10 @@
   - Phase 5 moved unattended runs into `UnattendedDrive` and the clock into `ScheduleDrive`.
   - Phase 6 moved hosts into `HostDrive`, offloaded projects into `OffloadDrive`, and the attach
     to a host into `onehand-io`.
-  - What is left here is the plan for phases 7 to 10, the inventory they work from, and the
+  - Phase 7 moved telling into `SessionDrive`, the remote bridge into `RemoteDrive`, onehand's
+    tools into `ControlDrive` and the settings and the agent check into `SettingsDrive`, and the
+    remote channel and the instance socket into `onehand-io`.
+  - What is left here is the plan for phases 8 to 10, the inventory they work from, and the
     record of the trial. Each phase that is built moves its rows out of here, in the same PR.
 - Supersedes the rule agreed in #133 ("logic belongs in core when two call sites share it, when a
   second front end could need it, or when it wants a test without a GUI"). That rule moved *rules*
@@ -105,16 +108,10 @@ row is re-audited at the start of its phase. Line counts are at `6f92ab49`.
 |---|---|---|---|
 | Hosts: what phase 6 left | `HostDrive`, `host::drive`'s rules on a restart and a back wait | `shell/host_project.rs` (`HostFlow`, each window's share of a host's waits), `hosts::attach_waiting` (a busy host waited on, then attached again), `shell/host_end.rs` | `HostDrive`, with the session lifecycle (phase 8) |
 | Session: what phase 6 left | `SessionDrive` (every change to a session, a host's lost connection, what it waits on its host for) | `chat/pane/sessions.rs` subscriber (the archive refresh after a turn; the `Disconnected` arm telling a fork that never opened, a host out of reach and a lost agent apart) | the session lifecycle (phase 8) |
-| Session: telling (phase 7) | `attention` (`telling`, `Away`), `remote::Chats::announcement` | `chat/pane/bridge.rs` (`turn_ended_detached`, `awaiting_user_detached`, `link_lost_detached`), desktop notifications | `SessionDrive` signals, with `Input::Shown` |
 | Session: lifecycle (phase 8) | `SessionDrive::resume`, `fork`, `take_snapshot`, the workspace tree | `chat/session.rs` (`spawn`), `chat/pane/sessions.rs` (phases, `close`), `shell/sessions.rs` (946 lines), `shell/fork.rs` | a workspace drive |
-| Remote bridge | `remote::command`, `remote::Chats`, `press` | `remote.rs` (`answer`, `send_prompt`, `stop_session`), `shell/remote_runs.rs` | remote drive, calling `SessionDrive` |
-| onehand's tools | `control` (what a tool may do), `control::turns` | `control.rs` (`perform`), `control/start.rs`, `control/workers/*` | control drive |
-| Settings | `AppConfig::update_in_place`, `saving` | `saves.rs`, `shell/settings_page.rs` (`persist_agents`) | settings drive |
-| Second launch | `instance` | `instance.rs` | instance drive (small) |
-| Agent check | `Shared::saw_offer` input | `agent_check.rs` | settings drive, or its own |
 | Workspace edits | the workspace tree | `shell/roots.rs`, `shell/drafts.rs` (rename, worktree, branch), `shell/storage.rs`, `shell/cleanup.rs`, `shell/git_sweep.rs` | workspace drive |
 | Issues | `issues`, `connector` | `shell/issues_page.rs`, `shell/issue_work.rs`, the Issues mode | issues drive |
-| Workbench modes | editor rules, file tree, markdown | each mode crate (`AnyView`, `Window` in `onehand-workbench`) | per mode, only where a mode has behaviour (phase 7) |
+| Workbench modes | editor rules, file tree, markdown | each mode crate (`AnyView`, `Window` in `onehand-workbench`) | per mode, only where a mode has behaviour (phase 9) |
 
 ## The I/O crate (D5: started in phase 3)
 
@@ -124,8 +121,9 @@ what an agent is given to reach onehand's tools stays the front end's, through `
 6 moved the attach to a host and the front end's calls over it (`onehand_io::host`); what follows
 from an attach is `HostDrive`'s. An offloaded project's errands call the host from a blocking body
 in core, polling the runtime's handle the front end passes them, as a host's disk already did
-(`disk::HostDisk`). The remote channel's runtime (`remote.rs`) is tangled with `Shared` and
-GPUI contexts, so its runtime half moves with phase 7. Disk writes and git calls stay blocking functions in core. Core keeps its rule of
+(`disk::HostDisk`). Phase 7 moved the remote channel's runtime (`onehand_io::remote`) and the
+instance socket's, a second launch's line and the MCP conversation alike (`onehand_io::socket`),
+which asks the front end each connection's standing on every message. Disk writes and git calls stay blocking functions in core. Core keeps its rule of
 dictating no runtime; this crate is where the runtime is chosen.
 
 ## Where the drives live (D4: R)
@@ -281,12 +279,43 @@ Left for later:
   and *End on <host>* (`shell/host_end.rs`) are the session's lifecycle, phase 8's.
 - The pane's subscriber still tells a fork that never opened, a host out of reach and a lost agent
   apart at a stream's end, reading what the drive holds; phase 8 moves it with the lifecycle.
-- The remote bridge still reaches an offloaded session without its code (#308, D8): phase 7.
 - A host's real attach is tested by hand: it runs on a runtime GPUI's test scheduler does not
   drive.
 
-**Phase 7: remote bridge, onehand's tools, second launch, settings, agent check.** Mostly callers
-of drives built earlier, so mostly deletion. Telling moves here.
+**Phase 7: remote bridge, onehand's tools, second launch, settings, agent check.** Built:
+- Telling is `SessionDrive`'s (D9, D21): which signal is news (a turn or cycle that ended, a card
+  that waits, an agent lost rather than a fork that never opened or a host out of reach) is said
+  with `Effect::Look`; the pane answers at once with where the person is (`Input::Seen`), and the
+  drive keeps the badge (`unseen`) and says what to tell (`Effect::Tell`). `Input::Shown` reads it.
+  What a chat is told of the news is `remote::link::announcement`.
+- The remote bridge is `RemoteDrive` (`onehand_core::remote::drive`): the gate, every command and
+  its words, the reconcile, away, a channel that ends, and a press checked against the sessions
+  open. What a prompt, a stop (taken back first), a press or a look at the pickers does to one
+  session is `remote::link`'s. It reaches only sessions whose project runs here (#308, D22).
+  The channel's runtime is `onehand_io::remote`; the app's `remote.rs` carries (361 lines, from
+  696, and the pane's bridge from 487 to 155).
+- onehand's tools are `ControlDrive` (`onehand_core::control::drive`): tokens and standing, the
+  switch and grant, labels, the cap, the reservations, requests and relations
+  (`control::workers`), and a worker's open as steps, its deadline armed at the call. What a call
+  is refused for before anything is done is `control::calls`. The drive is held in one process
+  lock by the app's carrier (D23).
+- The settings and the agent check are `SettingsDrive` (`onehand_core::config::drive`), on
+  `Shared` (D24): the agents, the appearance, outside control's save (its value the tools'
+  drive's), what each agent was seen to offer, and a check started once, folded by `fold_probe`,
+  failing after its wait.
+- A second launch has no drive of its own (D25): it changes no application state but the folder
+  it opens, a workspace edit (phase 8). Its socket is `onehand_io::socket`.
+- Carrier contract tests: `crates/app/src/remote/tests.rs`, `crates/app/src/control/tests.rs`,
+  `crates/app/src/saves/tests.rs`.
+
+Left for later:
+- The pane's answer to a session's look and a worker's open carried through a window are tested by
+  hand; so is an agent check's probe, which starts a real agent.
+- The keymap's save and the workflows named for unattended runs keep `saves::write_config`; the
+  keymap is the front end's, the workflows `UnattendedDrive`'s.
+- `perform_now` still routes each call to the window and the other drives it needs; what a call is
+  refused for is core's.
+- *Test* beside an agent (`check_agent`) only reads the machine and stays the shell's.
 
 **Phase 8: workspace edits and issues.** The session lifecycle moves here.
 
@@ -509,6 +538,23 @@ Made on 2026-11-09, with phase 6's audit:
 - **D19. The attach's runtime half moves into `onehand-io`, and callers keep awaiting.** The drive
   decides; the carrier keeps one shared future per attempt and resolves every caller from it.
 - **D20. Restarting with a save in flight is fixed in phase 6's PR**, a commit of its own.
+
+Made on 2026-11-10, with phase 7's audit:
+- **D21. Telling: the drive asks, the front end answers.** Presence is read when the news comes,
+  not pushed into every session at each change of focus.
+- **D22. The remote bridge reaches only sessions that run here** (#308): a host or offloaded
+  project's session is not listed, followed, prompted, answered or announced.
+- **D23. Three drives, one PR**: remote, tools and settings, each beside its model. The tools'
+  drive is held in a process lock rather than on `Shared`: a token is minted and let go without a
+  window, and the socket's thread reads standing on every message.
+- **D24. Outside control's value is the tools' drive's**, which the socket reads; its save and
+  put-back are the settings' drive's.
+- **D25. No drive for a second launch.** Its runtime half moved to `onehand-io` with the socket the
+  tools share.
+
+Phase 7 changed, on purpose:
+- The remote bridge no longer lists or reaches a host or offloaded project's session (#308).
+- A session's badge goes with its drive: a restart of its agent starts it unread.
 
 Phase 6 changed, on purpose:
 - Putting the offload form away no longer stops a send under way: it runs to its end and keeps

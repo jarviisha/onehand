@@ -29,6 +29,9 @@ The drives so far:
 | `onehand_core::schedule::drive::ScheduleDrive` | the clock schedules run by | the clock in `crates/app/src/schedules.rs` |
 | `onehand_core::host::drive::HostDrive` | one attach per host, what is known of each, the waits on a busy or lost host | `crates/app/src/hosts.rs`, its drive held on `Shared`, the attach run by `onehand_io::host` |
 | `onehand_core::host::offload::drive::OffloadDrive` | every offloaded folder: who holds its code, its moves, the poll, a branch's updates | `crates/app/src/offload.rs`, its drive held in the `Offloads` global |
+| `onehand_core::remote::drive::RemoteDrive` | the remote bridge: a line or a press from a chat, what it asks of a session (`remote::link`), what is said back, whether the person is away | `crates/app/src/remote.rs`, its drive held on `Shared`, the channel run by `onehand_io::remote` |
+| `onehand_core::control::drive::ControlDrive` | onehand's tools: tokens and standing, each session's switch and grant, the cap, a worker's open | `crates/app/src/control.rs`, `control/workers.rs`, its drive held in one process lock, the socket served by `onehand_io::socket` |
+| `onehand_core::config::drive::SettingsDrive` | the agents, the appearance, outside control's save, what each agent offers and its check | `crates/app/src/saves.rs`, its drive held on `Shared` |
 
 ## Rules
 
@@ -37,6 +40,10 @@ The drives so far:
 There are no exceptions, not even for a change that only forwards to the model and answers no
 effects. An exception list is a judgement every contributor makes differently, and a feature
 that is pure today and gains I/O tomorrow changes inside its drive while its callers stay.
+
+Telling is a session's too: which of its signals is news, the badge on its row and where the news
+is said are `SessionDrive`'s, which asks where the person is (`Effect::Look`) and is answered at
+once (`Input::Seen`).
 
 A front end has no way around this rule for a session: `SessionDrive` hands out no mutable
 `Chat`, and the app changes a session only through the drive's methods. Inside core no drive
@@ -154,7 +161,10 @@ Built for `Chat`, `Task`, the task queue and the workflow engine's `Run`: every 
 changes them is `pub(crate)`. `Task`'s fields are still public, for the app to build a task with,
 though an issue's task is built in core (`Task::of_issue`). Unattended runs, the clock, hosts
 and offloaded projects keep their state in their drives' private fields; an offloaded folder's
-entry is read through its drive, never handed out to change. A schedule is the file's data, and
+entry is read through its drive, never handed out to change. The remote bridge's chats, the tools'
+state and the settings are kept in their drives too: `Chats`' mutators are `pub(crate)`, the tools'
+state is private to `ControlDrive`, and `SettingsDrive` derefs to its settings without `DerefMut`.
+A schedule is the file's data, and
 what the clock or a switch writes onto it is decided by core's functions the carrier runs in its
 writer (`schedule::merge_looked`, `schedule::switch`). The other models are not there yet; each
 phase that moves one makes its mutators `pub(crate)`.
@@ -167,7 +177,8 @@ places, as every guard in `crates/app/src/guards.rs` was.
 `SessionDrive` is `core/src/chat/drive.rs`; a run's drive is `core/src/task/drive.rs`, the
 tasks' `core/src/task/tasks.rs`, unattended runs' `core/src/unattended/drive.rs`, the clock's
 `core/src/schedule/drive.rs`, hosts' `core/src/host/drive.rs` and offloaded projects'
-`core/src/host/offload/drive.rs`. The
+`core/src/host/offload/drive.rs`, the remote bridge's `core/src/remote/drive.rs`, the tools'
+`core/src/control/drive.rs` and the settings' `core/src/config/drive.rs`. The
 repository is cut by feature, and there is no `application/` folder to split each feature in
 two.
 
@@ -215,7 +226,14 @@ Unattended runs' carrier (`crates/app/src/unattended/tests.rs`) holds its clock 
 armed again, a start over the cap refused where it was asked, a pause, a config that cannot work,
 and a report sent once and dropped once it lands; the clock's (`crates/app/src/schedules/tests.rs`)
 its first look after its wait, a file it cannot read said, a look that moves nothing writing
-nothing, and a failed switch put back. Still untested: `SendCode`'s late answer and the pane's half
+nothing, and a failed switch put back. The remote bridge's carrier (`crates/app/src/remote/tests.rs`) holds a line answered once, a
+session no window holds said gone, a scan landing once off the UI thread and nothing told after the
+channel ends; the tools' (`crates/app/src/control/tests.rs`) a switch told to each connection
+once, after the call, and an open's deadline coming round on the clock; the settings'
+(`crates/app/src/saves/tests.rs`) a write landing once, a failed appearance put back and the agent
+list kept. Still untested: the pane's answer to a session's look (`ChatPane::look`), a worker's
+open carried through a window (its start, watch and first prompt), an agent check's probe, which
+starts a real agent, `SendCode`'s late answer and the pane's half
 of the session (`ChatPane::carry`), `SaveTitle` (written on the ordered writer's own thread, which
 GPUI's test scheduler does not wait for), deferred work, the forge calls (the connectors are the
 ones built in), a command called off while it runs (the test scheduler runs it to its end before a
