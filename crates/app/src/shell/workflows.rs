@@ -298,7 +298,7 @@ impl Shell {
             let _ = shell.update_in(cx, |shell: &mut Self, window, cx| match made {
                 Ok((dir, branch, forge)) => {
                     shell.workflow_launcher = None;
-                    shell.window.workspace.add_root(dir.clone());
+                    shell.window.workspace.tree_mut().add_root(dir.clone());
                     shell.refresh_git(cx);
                     shell.save_workspace(window, cx);
                     let launch = launch.on_worktree(dir, branch, forge);
@@ -347,7 +347,10 @@ impl Shell {
         // selected, as nothing the person is looking at moves for a task
         // they did not start.
         if self.root_index(&setup.dir).is_none() {
-            self.window.workspace.add_root_quietly(setup.dir.clone());
+            self.window
+                .workspace
+                .tree_mut()
+                .add_root_quietly(setup.dir.clone());
             self.refresh_git(cx);
             self.save_workspace(window, cx);
         }
@@ -429,7 +432,7 @@ impl Shell {
             }
             false => {
                 let idx = self.root_index(&dir).unwrap_or_else(|| {
-                    let idx = self.window.workspace.add_root(dir);
+                    let idx = self.window.workspace.tree_mut().add_root(dir);
                     self.refresh_git(cx);
                     self.save_workspace(window, cx);
                     idx

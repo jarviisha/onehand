@@ -3,7 +3,6 @@
 //! typed, and drawn on the project's page beside *Run check*.
 
 use super::Shell;
-use super::storage::{Thing, WorkspaceChange};
 use gpui::{AppContext as _, Context, Window};
 use gpui_component::input::{InputEvent, InputState};
 
@@ -47,53 +46,15 @@ impl Shell {
             cx.subscribe_in(
                 &input,
                 window,
-                move |shell: &mut Self, state, event: &InputEvent, _, cx| {
+                move |shell: &mut Self, state, event: &InputEvent, window, cx| {
                     if !matches!(event, InputEvent::Change) {
                         return;
                     }
-                    let typed = state.read(cx).value().trim().to_string();
-                    let check = (!typed.is_empty()).then_some(typed);
-                    let Some(root) = shell
-                        .window
-                        .workspace
-                        .roots
-                        .iter_mut()
-                        .find(|r| r.local_path() == Some(&*at))
-                    else {
-                        return;
-                    };
-                    if root.check != check {
-                        let before = std::mem::replace(&mut root.check, check.clone());
-                        // Put back, field and all, if its write fails.
-                        shell.save_change_soon(
-                            Thing::Check(at.clone()),
-                            WorkspaceChange {
-                                before: (at.clone(), before),
-                                after: (at.clone(), check),
-                                put: |shell, (at, check), window, cx| {
-                                    if let Some(root) = shell
-                                        .window
-                                        .workspace
-                                        .roots
-                                        .iter_mut()
-                                        .find(|r| r.local_path() == Some(&*at))
-                                    {
-                                        root.check = check.clone();
-                                    }
-                                    if let Some(input) = shell.check_inputs.get(&at).cloned() {
-                                        let text = check.unwrap_or_default();
-                                        input.update(cx, |input, cx| {
-                                            input.set_value(text, window, cx)
-                                        });
-                                    }
-                                    shell.sync_project_facts(cx);
-                                },
-                            },
-                            cx,
-                        );
-                        // *Run check* comes and goes with the command.
-                        shell.sync_project_facts(cx);
-                    }
+                    // Put back, field and all, if its write fails; *Run check*
+                    // comes and goes with the command.
+                    let typed = state.read(cx).value().to_string();
+                    let fx = shell.window.workspace.set_check(&at, &typed);
+                    shell.carry_workspace(fx, window, cx);
                 },
             )
             .detach();

@@ -6,8 +6,53 @@ use super::{Effect, SessionDrive, Signal};
 use crate::chat::model::ChatItem;
 use crate::chat::store::ConversationSnapshot;
 use crate::chat::{ForkSeed, Now};
+use crate::workspace::HostName;
+
+/// What closing a session asks first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Closing {
+    /// Nothing would be lost: the transcript is written at every turn's end.
+    Now,
+    /// A turn is running, and closing loses it: ask.
+    Ask,
+}
+
+/// What restarting a session's agent asks first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Restarting {
+    /// Nothing would be lost.
+    Now,
+    /// A turn is running, and restarting loses it: ask.
+    Ask,
+    /// It waits on its host's busy sessions, and would only find them busy
+    /// again: the way on is the host service's restart, which is asked.
+    Host(HostName),
+}
 
 impl SessionDrive {
+    /// Whether a turn is running that closing or restarting would lose: one
+    /// streaming, or one parked on a card.
+    fn turn_in_flight(&self) -> bool {
+        self.chat.busy || self.chat.awaiting_permission()
+    }
+
+    /// What closing this session asks first.
+    pub fn closing(&self) -> Closing {
+        match self.turn_in_flight() {
+            true => Closing::Ask,
+            false => Closing::Now,
+        }
+    }
+
+    /// What restarting this session's agent asks first.
+    pub fn restarting(&self) -> Restarting {
+        match (self.host_waiting(), self.turn_in_flight()) {
+            (Some(host), _) => Restarting::Host(host.clone()),
+            (None, true) => Restarting::Ask,
+            (None, false) => Restarting::Now,
+        }
+    }
+
     /// Start as the conversation `snapshot` holds: its transcript, its mark
     /// in the file, its settings and when it was last active.
     pub fn resume(&mut self, snapshot: ConversationSnapshot) -> Vec<Effect> {

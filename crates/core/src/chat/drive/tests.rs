@@ -1514,3 +1514,24 @@ fn a_card_and_a_lost_agent_are_told_without_a_badge() {
     assert_eq!(tells(&fx), [(Away::LinkLost, false, true)]);
     assert!(!drive.unseen());
 }
+
+// What closing and restarting ask first.
+
+#[test]
+fn closing_or_restarting_asks_only_while_a_turn_runs() {
+    let (mut drive, _rx) = connected();
+    assert_eq!(drive.closing(), Closing::Now);
+    assert_eq!(drive.restarting(), Restarting::Now);
+    drive.prompt("go", &[], Origin::Person, Code::Here);
+    assert_eq!(drive.closing(), Closing::Ask);
+    assert_eq!(drive.restarting(), Restarting::Ask);
+}
+
+/// A session waiting on its host's busy sessions is restarted through the
+/// host service's restart, asked, whatever its turn.
+#[test]
+fn a_session_waiting_on_its_host_restarts_through_the_host() {
+    let (mut drive, _rx) = connected();
+    drive.drive.wait_on_host(HostName("box".into()), 1, 0);
+    assert_eq!(drive.restarting(), Restarting::Host(HostName("box".into())));
+}

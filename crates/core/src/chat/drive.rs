@@ -708,6 +708,7 @@ mod cards;
 mod host;
 pub use host::HostLink;
 mod life;
+pub use life::{Closing, Restarting};
 mod settings;
 mod telling;
 mod titles;

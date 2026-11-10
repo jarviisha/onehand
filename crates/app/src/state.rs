@@ -152,7 +152,8 @@ impl Shared {
 
 /// One window's world: a workspace plus the per-root state derived from it.
 pub struct WorkspaceWindow {
-    pub workspace: Workspace,
+    /// The window's workspace tree, changed only through its drive.
+    pub workspace: onehand_core::workspace::WorkspaceDrive,
     /// `git status` per root path. A non-repo root simply has no entry.
     pub git: HashMap<PathBuf, GitStatus>,
 }
@@ -160,7 +161,7 @@ pub struct WorkspaceWindow {
 impl WorkspaceWindow {
     pub fn new(workspace: Workspace) -> Self {
         Self {
-            workspace,
+            workspace: onehand_core::workspace::WorkspaceDrive::new(workspace),
             git: HashMap::new(),
         }
     }

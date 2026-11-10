@@ -11,7 +11,10 @@
 //! here, with no view code anywhere near it, so it is testable headless.
 
 use crate::agent::Session;
+
+pub mod drive;
 use crate::config::{AgentSpec, PanelLayout, WorkspaceConfig};
+pub use drive::WorkspaceDrive;
 use std::fmt;
 use std::path::{Path, PathBuf};
 

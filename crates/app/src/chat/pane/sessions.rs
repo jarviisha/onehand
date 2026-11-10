@@ -7,7 +7,7 @@ use crate::chat::conversation::{HostAt, OnHost};
 use crate::chat::session::{BeginOnHost, Carried, ChatEvent, ChatSession, HostBegin};
 use gpui::{App, Context, Entity, Focusable, SharedString, Window};
 use onehand_core::acp::Opening;
-use onehand_core::chat::drive::{Input, Intake, Origin, Signal};
+use onehand_core::chat::drive::{Closing, Input, Intake, Origin, Restarting, Signal};
 use onehand_core::chat::{Chat, ConvMeta};
 use onehand_core::config::AgentSpec;
 use onehand_core::host::wire::HostSession;
@@ -451,7 +451,7 @@ impl ChatPane {
     /// blanks the conversation looks like data loss even though it is not.
     ///
     /// Mid-turn this throws away the turn the user is waiting on; asking
-    /// first is the caller's, through [`Self::turn_in_flight`].
+    /// first is the caller's, through [`Self::restarting`].
     pub fn restart(&mut self, uid: u64, after_service: bool, cx: &mut Context<Self>) -> Restart {
         // The session is looked up twice rather than held across the whole
         // function, and neither look-up is a clone. A cloned handle is a second
@@ -798,11 +798,21 @@ impl ChatPane {
     /// lost and mid-turn reports `Lost` there, and a caller guarding against
     /// throwing a turn away needs the fact, not the priority.
     pub fn turn_in_flight(&self, uid: u64, cx: &App) -> bool {
-        let Some(session) = self.session_of(uid) else {
-            return false;
-        };
-        let chat = &session.read(cx).chat;
-        chat.busy || chat.awaiting_permission()
+        self.closing(uid, cx) == Closing::Ask
+    }
+
+    /// What closing session `uid` asks first; one with nothing live closes
+    /// at once.
+    pub fn closing(&self, uid: u64, cx: &App) -> Closing {
+        self.session_of(uid)
+            .map_or(Closing::Now, |session| session.read(cx).chat.closing())
+    }
+
+    /// What restarting session `uid`'s agent asks first.
+    pub fn restarting(&self, uid: u64, cx: &App) -> Restarting {
+        self.session_of(uid).map_or(Restarting::Now, |session| {
+            session.read(cx).chat.restarting()
+        })
     }
 
     /// Forget the badge on the session being looked at.

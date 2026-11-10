@@ -442,29 +442,12 @@ impl Shell {
         cx.subscribe_in(
             &workspace_name,
             window,
-            |shell: &mut Self, state, event: &InputEvent, _, cx| {
+            |shell: &mut Self, state, event: &InputEvent, window, cx| {
                 if matches!(event, InputEvent::Change) {
-                    let name = state.read(cx).value().trim().to_string();
-                    if !name.is_empty() && name != shell.window.workspace.name {
-                        let before =
-                            std::mem::replace(&mut shell.window.workspace.name, name.clone());
-                        // Put back, field and all, if its write fails.
-                        shell.save_change_soon(
-                            super::storage::Thing::Name,
-                            super::storage::WorkspaceChange {
-                                before,
-                                after: name,
-                                put: |shell, name, window, cx| {
-                                    shell.window.workspace.name = name.clone();
-                                    shell
-                                        .workspace_name
-                                        .update(cx, |input, cx| input.set_value(name, window, cx));
-                                },
-                            },
-                            cx,
-                        );
-                        cx.notify();
-                    }
+                    // Put back, field and all, if its write fails.
+                    let name = state.read(cx).value().to_string();
+                    let fx = shell.window.workspace.rename(&name);
+                    shell.carry_workspace(fx, window, cx);
                 }
             },
         )
@@ -552,7 +535,6 @@ impl Shell {
             workspace_page,
             terminal,
             _pending_save: None,
-            saves: Default::default(),
             docks_saved: None,
             terminal_live: false,
             _pending_warm: None,

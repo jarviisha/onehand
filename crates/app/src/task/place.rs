@@ -141,7 +141,9 @@ pub(super) fn perform(
             // never on to here.
             Effect::IssueEnded(_) | Effect::Deliver(_) | Effect::DeliverAll | Effect::Asked(_) => {}
             Effect::CloseSession { uid, window } => cx.defer(move |cx| {
-                crate::state::with_shell(window, cx, |shell, _, cx| shell.close_finished(uid, cx));
+                crate::state::with_shell(window, cx, |shell, window, cx| {
+                    shell.close_finished(uid, window, cx)
+                });
             }),
             Effect::Signal(signal) => say(signal, cx),
             Effect::Refresh => cx.refresh_windows(),

@@ -484,8 +484,7 @@ impl Shell {
                                 .worktree_draft
                                 .take_if(|draft| draft.root == root && draft.busy);
                             let label = workspace::label_for(&dir);
-                            let idx = shell.window.workspace.add_root(dir);
-                            shell.window.workspace.select_root(idx);
+                            shell.window.workspace.tree_mut().add_root(dir);
                             shell.show_active_session(window, cx);
                             shell.refresh_git(cx);
                             shell.save_workspace(window, cx);

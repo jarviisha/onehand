@@ -120,7 +120,7 @@ impl Shell {
                 let idx = match shell.root_index(&root) {
                     Some(idx) => idx,
                     None if there => {
-                        let idx = shell.window.workspace.add_root(root.clone());
+                        let idx = shell.window.workspace.tree_mut().add_root(root.clone());
                         shell.refresh_git(cx);
                         shell.save_workspace(window, cx);
                         idx

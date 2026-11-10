@@ -4,20 +4,11 @@ use crate::state::Shared;
 use gpui::{App, BorrowAppContext, Context, SharedString, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::dock::DockPlacement;
+use onehand_core::chat::drive::{Closing, Restarting};
 use onehand_core::config::AgentSpec;
 use onehand_core::gitstat;
 use onehand_core::host::wire::HostSession;
 use std::path::PathBuf;
-
-/// Whether the project at `root` is left with nothing a person keeps: one
-/// added for a worker or a run alone, never saved, whose last session closed.
-/// Its row would stand for nothing, so it goes with that session.
-pub(super) fn left_behind(workspace: &onehand_core::workspace::Workspace, root: usize) -> bool {
-    workspace
-        .roots
-        .get(root)
-        .is_some_and(|root| root.transient && root.sessions.is_empty())
-}
 
 impl Shell {
     /// What the rail draws on a session row.
@@ -102,11 +93,7 @@ impl Shell {
 
     /// The session on screen, if there is one.
     pub(crate) fn active_session_uid(&self) -> Option<u64> {
-        self.window
-            .workspace
-            .active_root()
-            .and_then(|root| root.active_session())
-            .map(|session| session.uid)
+        self.window.workspace.active_uid()
     }
 
     /// Delete the conversation showing: the directory on disk, and the session
@@ -238,7 +225,7 @@ impl Shell {
             return;
         };
         let uid = session.uid;
-        if !self.chat.read(cx).turn_in_flight(uid, cx) {
+        if self.chat.read(cx).closing(uid, cx) == Closing::Now {
             self.end_session(uid, window, cx);
             return;
         }
@@ -259,60 +246,15 @@ impl Shell {
     }
 
     /// Close session `uid` and its agent, no question asked.
+    ///
+    /// No toast: the row leaving the rail and the pane moving to whatever is
+    /// left say it, where removing a project has to announce itself because
+    /// most of what it destroys was never on screen.
     pub(super) fn end_session(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
         // A worker on screen closing gives the pane back to its lead rather
         // than to its worktree, emptied.
-        let shown = self.active_session_uid() == Some(uid);
-        let lead = crate::control::lead_of(uid).filter(|_| shown);
-        let root = self.locate(uid).map(|(root, _)| root);
-        if !self.drop_session(uid, cx) {
-            return;
-        }
-        if let Some(root) = root.filter(|&root| left_behind(&self.window.workspace, root)) {
-            self.forget_root(root, cx);
-        }
-        if let Some((root, session)) = lead.and_then(|lead| self.locate(lead)) {
-            self.window.workspace.select_root(root);
-            self.window.workspace.select_session(session);
-        }
-        // No toast: the row leaving the rail and the pane moving to whatever is
-        // left say it, where removing a project has to announce itself because
-        // most of what it destroys was never on screen.
-        self.show_active_session(window, cx);
-        cx.notify();
-    }
-
-    /// Take session `uid` and its agent out of the window, showing nothing in
-    /// its place; `false` when there was no such session.
-    pub(super) fn drop_session(&mut self, uid: u64, cx: &mut Context<Self>) -> bool {
-        let Some((root_idx, session_idx, path)) = self
-            .window
-            .workspace
-            .roots
-            .iter()
-            .enumerate()
-            .find_map(|(ri, root)| {
-                root.sessions
-                    .iter()
-                    .position(|session| session.uid == uid)
-                    .map(|si| (ri, si, root.path.clone()))
-            })
-        else {
-            return false;
-        };
-
-        // The pane owns the conversation and, through it, the adapter: dropping
-        // the session there is what ends the agent process. Nothing else has to
-        // be shut down by hand.
-        self.chat.update(cx, |pane, cx| pane.close(uid, cx));
-        if let Some(order) = self.mru.get_mut(&path) {
-            order.retain(|&seen| seen != uid);
-        }
-        // A cycle's frozen order can name a session that no longer exists.
-        self.tab_cycle = None;
-
-        self.window.workspace.close_session(root_idx, session_idx);
-        true
+        let fx = self.window.workspace.end(uid, crate::control::lead_of(uid));
+        self.carry_workspace(fx, window, cx);
     }
 
     /// Move `uid` to the front of its root's recency list.
@@ -368,9 +310,8 @@ impl Shell {
         if index >= count {
             return;
         }
-        self.window.workspace.select_session(index);
-        self.show_active_session(window, cx);
-        cx.notify();
+        let fx = self.window.workspace.select_session(index);
+        self.carry_workspace(fx, window, cx);
     }
 
     /// Walk the active root's sessions in recency order, VSCode-style.
@@ -413,9 +354,8 @@ impl Shell {
             .active_root()
             .and_then(|root| root.sessions.iter().position(|s| s.uid == uid));
         if let Some(index) = index {
-            self.window.workspace.select_session(index);
-            self.show_active_session(window, cx);
-            cx.notify();
+            let fx = self.window.workspace.select_session(index);
+            self.carry_workspace(fx, window, cx);
         }
         if self
             .tab_cycle
@@ -489,13 +429,10 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.window.workspace.select_root(root_idx);
-        // The selection has moved whether or not a session could start (no
-        // agent configured): the panels follow it, or the rail names one
-        // project while every panel shows another.
-        if self.spawn_session(agent, None, window, cx).is_none() {
-            self.show_active_session(window, cx);
-        }
+        let spec = Shared::global(cx).settings.agents.get(agent).cloned();
+        let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
+        let (_, fx) = self.window.workspace.add_session_in(root_idx, spec, uid);
+        self.carry_workspace(fx, window, cx);
     }
 
     /// Drop a session at another place under its project.
@@ -508,16 +445,23 @@ impl Shell {
         to: usize,
         cx: &mut Context<Self>,
     ) {
-        self.window.workspace.move_session(root_idx, from, to);
-        cx.notify();
+        let fx = self.window.workspace.move_session(root_idx, from, to);
+        // Nothing here needs the window: a move only redraws.
+        for effect in fx {
+            debug_assert!(matches!(
+                effect,
+                onehand_core::workspace::drive::Effect::Changed
+            ));
+            cx.notify();
+        }
     }
 
     /// Add a session running `agents[idx]`.
     pub fn new_session_with(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
         // Only here, where the project is the one on screen: a caller that
         // named a project keeps it.
-        self.leave_worker_home();
-        self.spawn_session(idx, None, window, cx);
+        let home = self.worker_home();
+        self.spawn_session(idx, None, home, window, cx);
     }
 
     /// Start a session on the active root, as the project page asks for it: on
@@ -539,7 +483,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> Option<u64> {
         let idx = agent_index(agent, cx);
-        self.spawn_session(idx, resume, window, cx)
+        self.spawn_session(idx, resume, None, window, cx)
     }
 
     /// Start a session on the active root, a host's, attached to the host
@@ -567,75 +511,57 @@ impl Shell {
         let Some(spec) = Shared::global(cx).settings.agents.get(idx).cloned() else {
             return;
         };
-        let Some(uid) = self.mint_session(spec, window, cx) else {
-            return;
-        };
         // Before it is shown, which is what starts it.
-        self.chat.update(cx, |pane, _| pane.watch_next(uid, id));
-        self.show_active_session(window, cx);
-        cx.notify();
+        let _ = self.add_session(Some(spec), None, window, cx, |pane, uid| {
+            pane.watch_next(uid, id)
+        });
     }
 
-    /// Beside a worker on screen, select its lead's project, where a new
-    /// session belongs: the worker's worktree is kept for it alone.
-    fn leave_worker_home(&mut self) {
-        let home = self
-            .active_session_uid()
-            .and_then(|uid| self.home_of(uid))
-            .filter(|home| *home != self.window.workspace.active_root);
-        if let Some(home) = home {
-            self.window.workspace.select_root(home);
-        }
+    /// Beside a worker on screen, its lead's project, where a new session
+    /// belongs: the worker's worktree is kept for it alone.
+    fn worker_home(&self) -> Option<usize> {
+        self.active_session_uid().and_then(|uid| self.home_of(uid))
     }
 
-    /// Add a session running `spec` on the active root, not yet shown, and
-    /// hand back its uid.
-    pub(super) fn mint_session(
+    /// Add a session of `spec` on the active project (on `home` first, beside
+    /// a worker), hand the pane what it starts on with `before`, and show it.
+    ///
+    /// What it starts on goes to the pane *before* the session is shown:
+    /// showing is what spawns the adapter, and a resume arriving after that
+    /// has already lost — the session would be up on a fresh conversation.
+    pub(super) fn add_session(
         &mut self,
-        spec: AgentSpec,
+        spec: Option<AgentSpec>,
+        home: Option<usize>,
         window: &mut Window,
         cx: &mut Context<Self>,
+        before: impl FnOnce(&mut crate::chat::ChatPane, u64),
     ) -> Option<u64> {
         let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
-        if self.window.workspace.add_session(spec, uid).is_none() {
-            window.push_notification(
-                crate::toast::warning("Add a project before starting a session"),
-                cx,
-            );
-            return None;
+        let (added, fx) = self.window.workspace.add_session(spec, uid, home);
+        if let Ok(uid) = added {
+            self.chat.update(cx, |pane, _| before(pane, uid));
         }
-        Some(uid)
+        self.carry_workspace(fx, window, cx);
+        added.ok()
     }
 
-    /// Mint a session on the active root and show it, resuming `archive` if one
-    /// was named.
-    ///
-    /// The archive is handed to the pane *before* the session is shown: showing
-    /// is what spawns the adapter, and a resume arriving after that has already
-    /// lost — the session would be up on a fresh conversation with the picker
-    /// asking which one to open.
+    /// A session of `agents[idx]` on the active project, shown, resuming
+    /// `archive` if one was named.
     pub(super) fn spawn_session(
         &mut self,
         idx: usize,
         archive: Option<PathBuf>,
+        home: Option<usize>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<u64> {
-        let Some(spec) = Shared::global(cx).settings.agents.get(idx).cloned() else {
-            window.push_notification(
-                crate::toast::warning("Add an agent in Settings before starting a session"),
-                cx,
-            );
-            return None;
-        };
-        let uid = self.mint_session(spec, window, cx)?;
-        if let Some(archive) = archive {
-            self.chat
-                .update(cx, |pane, _| pane.resume_next(uid, archive));
-        }
-        self.show_active_session(window, cx);
-        cx.notify();
-        Some(uid)
+        let spec = Shared::global(cx).settings.agents.get(idx).cloned();
+        self.add_session(spec, home, window, cx, |pane, uid| {
+            if let Some(archive) = archive {
+                pane.resume_next(uid, archive);
+            }
+        })
     }
 
     /// Tell the Workbench when the agent on screen started. Pushed rather
@@ -655,15 +581,10 @@ impl Shell {
         let Some(uid) = self.active_session_uid() else {
             return;
         };
-        // One waiting for its host would only find it busy again: the way
-        // on is the host's restart, as its line's *Restart now* asks.
-        if let Some(host) = self.chat.read(cx).host_wait(uid, cx) {
-            self.ask_restart_host(host, window, cx);
-            return;
-        }
-        if !self.chat.read(cx).turn_in_flight(uid, cx) {
-            self.restart_now(uid, false, window, cx);
-            return;
+        match self.chat.read(cx).restarting(uid, cx) {
+            Restarting::Host(host) => return self.ask_restart_host(host, window, cx),
+            Restarting::Now => return self.restart_now(uid, false, window, cx),
+            Restarting::Ask => {}
         }
         let label = self.session_label(uid, cx);
         let ask = Confirm {
@@ -720,9 +641,8 @@ impl Shell {
     /// showing. For a run somebody picked by hand, who asked for it and is
     /// waiting to watch it, and for a session pressed on the workspace page.
     pub fn show_session(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some((root_idx, session_idx)) = self.locate(uid) {
-            self.select_root_session(root_idx, session_idx, window, cx);
-        }
+        let fx = self.window.workspace.select(uid);
+        self.carry_workspace(fx, window, cx);
     }
 
     /// Show the workspace page: what waits and what works across every
@@ -930,7 +850,7 @@ pub(super) fn page_roots_in(
 }
 
 /// Which of the configured agents is called `name`, the first when none is.
-fn agent_index(name: Option<SharedString>, cx: &App) -> usize {
+pub(super) fn agent_index(name: Option<SharedString>, cx: &App) -> usize {
     name.and_then(|name| {
         Shared::global(cx)
             .settings

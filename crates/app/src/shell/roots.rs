@@ -1,5 +1,5 @@
 use super::confirm::Confirm;
-use super::storage::{Thing, WorkspaceChange, pick_folder};
+use super::storage::pick_folder;
 use super::{Shell, WARM_DELAY};
 use crate::state::Shared;
 use crate::workbench::Refusal;
@@ -84,9 +84,8 @@ impl Shell {
 
     /// Select a root, and show whatever session it was last on.
     pub fn select_root(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
-        self.window.workspace.select_root(idx);
-        self.show_active_session(window, cx);
-        cx.notify();
+        let fx = self.window.workspace.select_root(idx);
+        self.carry_workspace(fx, window, cx);
     }
 
     /// Select root *and* session in one touch, mirroring
@@ -99,10 +98,11 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.window.workspace.select_root(root_idx);
-        self.window.workspace.select_session(session_idx);
-        self.show_active_session(window, cx);
-        cx.notify();
+        let fx = self
+            .window
+            .workspace
+            .select_root_session(root_idx, session_idx);
+        self.carry_workspace(fx, window, cx);
     }
 
     /// Point the chat pane at the workspace's active session, spawning its
@@ -421,8 +421,7 @@ impl Shell {
     /// Add `dir` as a project and select it, or select it if it is one
     /// already. The folder picker lands here, and so does a second launch.
     pub(crate) fn open_root(&mut self, dir: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        let idx = self.window.workspace.add_root(dir);
-        self.window.workspace.select_root(idx);
+        self.window.workspace.tree_mut().add_root(dir);
         self.show_active_session(window, cx);
         self.refresh_git(cx);
         self.save_workspace(window, cx);
@@ -438,8 +437,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let idx = self.window.workspace.add_host_root(host, path);
-        self.window.workspace.select_root(idx);
+        self.window.workspace.tree_mut().add_host_root(host, path);
         self.show_active_session(window, cx);
         self.refresh_git(cx);
         self.save_workspace(window, cx);
@@ -522,57 +520,12 @@ impl Shell {
             return;
         };
         let label = self.window.workspace.roots[idx].label.clone();
-        self.forget_root(idx, cx);
+        let fx = self.window.workspace.forget(idx);
+        self.carry_workspace(fx, window, cx);
         window.push_notification(crate::toast::info(format!("Removed {label}")), cx);
         self.show_active_session(window, cx);
         self.save_workspace(window, cx);
         cx.notify();
-    }
-
-    /// Drop root `idx` and everything the window keeps for it, with no question
-    /// asked and nothing on screen moved.
-    pub(super) fn forget_root(&mut self, idx: usize, cx: &mut Context<Self>) {
-        let path = self.window.workspace.roots[idx].path.clone();
-        // Its code is no longer checked for here; offloaded again, it comes
-        // back as any does.
-        if self.window.workspace.roots[idx].offload.is_some() {
-            crate::offload::forget(cx, &path);
-        }
-        // Sessions go first: dropping a chat session is what kills its adapter,
-        // and the workspace tree is where their uids are recorded.
-        let uids: Vec<u64> = self.window.workspace.roots[idx]
-            .sessions
-            .iter()
-            .map(|session| session.uid)
-            .collect();
-        self.chat.update(cx, |pane, cx| {
-            for &uid in &uids {
-                pane.close(uid, cx);
-            }
-        });
-        // The editor's buffers, the tree and the shells go with a host's
-        // folder too, or they come back under a later project on the same path.
-        let host = self.window.workspace.roots[idx].on_host().cloned();
-        self.workbench
-            .update(cx, |panel, cx| panel.forget_root(&path, host.is_some(), cx));
-        self.terminal
-            .update(cx, |panel, cx| panel.forget_root(&path, host, cx));
-        // A folder on a host was never given the rest, and what is filed
-        // under its path belongs to a folder of the same path here.
-        if self.local_root(idx).is_some() {
-            self.issues_page.forget_root(&path, cx);
-            self.window.git.remove(&path);
-            // Its field goes with it: kept, the same folder added back found the
-            // old command in a field its project no longer had.
-            self.check_inputs.remove(&path);
-            self.terminal_homes.forget(&path);
-        }
-        self.mru.remove(&path);
-        self.folds.remove(&path);
-        // A cycle's frozen order can name sessions that no longer exist.
-        self.tab_cycle = None;
-
-        self.window.workspace.remove_root(idx);
     }
 
     /// Hold a root at the top of the rail, or let it go.
@@ -580,38 +533,10 @@ impl Shell {
     /// Only the drawing order moves; `roots` and every index into it stay
     /// exactly as they were, so nothing keyed by position has to be told.
     pub fn toggle_pin(&mut self, root_idx: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(root) = self.window.workspace.roots.get(root_idx) else {
-            return;
-        };
-        let (at, pinned) = ((root.host.clone(), root.path.clone()), !root.pinned);
-        self.window.workspace.toggle_pin(root_idx);
-        // Put back, alone, if its write fails: pinning is its own thing, and
-        // it goes back to the pin as last saved.
-        self.save_change(
-            Thing::Pin(at.0.clone(), at.1.clone()),
-            WorkspaceChange {
-                before: (at.clone(), !pinned),
-                after: (at, pinned),
-                put: |shell, ((host, path), pinned), _, cx| {
-                    if let Some(root) = shell
-                        .window
-                        .workspace
-                        .roots
-                        .iter_mut()
-                        .find(|root| root.host == host && root.path == path)
-                    {
-                        root.pinned = pinned;
-                    }
-                    shell.sync_project_facts(cx);
-                },
-            },
-            window,
-            cx,
-        );
-        // The project page's menu is the other place that says whether this is
-        // pinned, and it says it in the label of the entry that was just used.
-        self.sync_project_facts(cx);
-        cx.notify();
+        // Put back, alone, if its write fails; the project page's menu says
+        // whether it is pinned in the label of the entry just used.
+        let fx = self.window.workspace.toggle_pin(root_idx);
+        self.carry_workspace(fx, window, cx);
     }
 
     /// Drop a project at another place in the rail.
@@ -628,26 +553,9 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let before = self.window.workspace.root_order();
-        // A drop the pin line clamps back onto itself moved nothing to write.
-        if self.window.workspace.move_root(from, to).is_none() {
-            return;
-        }
-        // Put back, alone, if its write fails: every root to its place in the
-        // order last saved, which wherever the pin clamp landed this one, and
-        // however many moves came after, is what the file still holds.
-        let after = self.window.workspace.root_order();
-        self.save_change(
-            Thing::Order,
-            WorkspaceChange {
-                before,
-                after,
-                put: |shell, order, _, _| shell.window.workspace.put_order(&order),
-            },
-            window,
-            cx,
-        );
-        cx.notify();
+        // Put back, if its write fails, to the order last saved.
+        let fx = self.window.workspace.move_root(from, to);
+        self.carry_workspace(fx, window, cx);
     }
 
     /// Put a root's path on the clipboard.
@@ -727,9 +635,8 @@ impl Shell {
                 archive,
             } => {
                 if let Some(idx) = self.root_index(root) {
-                    self.window.workspace.select_root(idx);
-                    let _ =
-                        self.start_session(Some(agent.clone()), Some(archive.clone()), window, cx);
+                    let agent = super::sessions::agent_index(Some(agent.clone()), cx);
+                    let _ = self.spawn_session(agent, Some(archive.clone()), Some(idx), window, cx);
                 }
             }
         }

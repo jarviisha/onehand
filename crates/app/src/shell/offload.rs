@@ -235,19 +235,13 @@ impl Shell {
         else {
             return;
         };
-        let here: Vec<u64> = self.window.workspace.roots[idx]
-            .sessions
-            .iter()
-            .map(|s| s.uid)
-            .collect();
-        for uid in here {
-            self.drop_session(uid, cx);
-        }
+        let fx = self.window.workspace.drop_sessions_in(&path);
+        self.carry_workspace(fx, window, cx);
         let branch = match &kept {
             Kept::Branch(branch) => Some(branch.clone()),
             Kept::Mirror(_) => None,
         };
-        self.window.workspace.roots[idx].offload = Some(Offloaded {
+        self.window.workspace.tree_mut().roots[idx].offload = Some(Offloaded {
             host: host.clone(),
             mirror: mirror.clone(),
             branch,
@@ -289,11 +283,9 @@ impl Shell {
             window.push_notification(crate::toast::warning(why), cx);
             return;
         }
-        let there: Vec<u64> = root.sessions.iter().map(|s| s.uid).collect();
-        for uid in there {
-            self.drop_session(uid, cx);
-        }
-        self.window.workspace.roots[idx].offload = None;
+        let fx = self.window.workspace.drop_sessions_in(&path);
+        self.carry_workspace(fx, window, cx);
+        self.window.workspace.tree_mut().roots[idx].offload = None;
         offload::forget(cx, &path);
         self.save_workspace_soon(cx);
         self.show_active_session(window, cx);
