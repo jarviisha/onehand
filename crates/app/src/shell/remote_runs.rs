@@ -242,7 +242,7 @@ impl Shell {
     /// Keep a run's project for good: a person has taken the run over, so it
     /// is their project now, and it is written into the workspace.
     pub fn adopt_unattended(&mut self, dir: &Path, window: &mut Window, cx: &mut Context<Self>) {
-        let fx = self.window.workspace.adopt_run(dir);
+        let fx = self.window.workspace.take_over_run(dir);
         self.carry_workspace(fx, window, cx);
     }
 

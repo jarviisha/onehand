@@ -51,6 +51,11 @@ impl Shell {
                     })
                     .detach();
                 }
+                Effect::WriteOnClose {
+                    pending,
+                    config,
+                    dir,
+                } => self.write_on_close(pending, config, dir, cx),
                 Effect::Arm { token, after } => self.arm(token, after, cx),
                 Effect::Sweep { token, roots } => self.sweep_git(token, roots, cx),
                 Effect::Resweep => self.refresh_git(cx),
@@ -75,15 +80,41 @@ impl Shell {
         }
     }
 
-    /// Carry out `fx` where no window is in hand: a burst's wait, or a
-    /// sweep and what it read.
+    /// Carry out `fx` where no window is in hand: a burst's wait, or a sweep
+    /// and what it read, at once; from the first effect that needs the
+    /// window on, the rest in order once the window can be reached, after
+    /// this update.
     pub(super) fn carry_workspace_quietly(&mut self, fx: Vec<Effect>, cx: &mut Context<Self>) {
-        for effect in fx {
+        let mut fx = fx.into_iter();
+        while let Some(effect) = fx.next() {
             match effect {
                 Effect::Arm { token, after } => self.arm(token, after, cx),
                 Effect::Sweep { token, roots } => self.sweep_git(token, roots, cx),
                 Effect::GitRead => self.git_read(cx),
-                _ => debug_assert!(false, "only a wait or a sweep is carried without a window"),
+                Effect::WriteOnClose {
+                    pending,
+                    config,
+                    dir,
+                } => self.write_on_close(pending, config, dir, cx),
+                effect @ (Effect::Close(_)
+                | Effect::Forgot(_)
+                | Effect::Show
+                | Effect::Changed
+                | Effect::Put(_)
+                | Effect::Write { .. }
+                | Effect::LookForRuns(_)
+                | Effect::Resweep
+                | Effect::Remember { .. }
+                | Effect::Signal(_)) => {
+                    let rest: Vec<Effect> = std::iter::once(effect).chain(fx).collect();
+                    let (at, shell) = (self.chat.read(cx).window_handle(), cx.entity().downgrade());
+                    cx.defer(move |cx| {
+                        let _ = at.update(cx, |_, window, cx| {
+                            shell.update(cx, |shell, cx| shell.carry_workspace(rest, window, cx))
+                        });
+                    });
+                    return;
+                }
             }
         }
     }

@@ -171,7 +171,7 @@ impl WorkspaceDrive {
     /// Keep a run's project at `dir` for good, written into the workspace: a
     /// person has taken the run over, so it is their project now.
     #[must_use = "its effects are to be carried"]
-    pub fn adopt_run(&mut self, dir: &Path) -> Vec<Effect> {
+    pub fn take_over_run(&mut self, dir: &Path) -> Vec<Effect> {
         let Some(idx) = self.local_index(dir) else {
             return Vec::new();
         };

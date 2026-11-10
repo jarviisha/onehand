@@ -35,6 +35,7 @@ fn names(fx: &[Effect]) -> Vec<String> {
             Effect::Changed => "Changed".into(),
             Effect::Put(value) => format!("Put({value:?})"),
             Effect::Write { .. } => "Write".into(),
+            Effect::WriteOnClose { .. } => "WriteOnClose".into(),
             Effect::Arm { .. } => "Arm".into(),
             Effect::Remember { name, .. } => format!("Remember({name})"),
             Effect::Sweep { roots, .. } => format!("Sweep({})", roots.len()),
@@ -188,10 +189,10 @@ fn a_run_project_ends_quietly_unless_it_was_selected() {
 }
 
 #[test]
-fn an_adopted_run_project_is_written() {
+fn a_run_project_taken_over_is_written() {
     let mut drive = bound();
     drive.add_run_session(Path::new("/run"), spec(), 3);
-    let fx = drive.adopt_run(Path::new("/run"));
+    let fx = drive.take_over_run(Path::new("/run"));
     assert_eq!(names(&fx), ["Write"]);
     assert!(!drive.roots[1].transient);
 }
@@ -277,7 +278,7 @@ fn a_window_closing_writes_the_burst_still_waiting_and_only_that() {
     let mut drive = bound();
     assert!(drive.flush().is_none());
     drive.rename("one");
-    assert!(matches!(drive.flush(), Some(Effect::Write { .. })));
+    assert!(matches!(drive.flush(), Some(Effect::WriteOnClose { .. })));
     assert!(drive.flush().is_none());
 }
 
@@ -518,4 +519,29 @@ fn a_sweep_under_way_when_a_project_leaves_is_dropped() {
         found: vec![("/b".into(), status.clone()), ("/a".into(), status)],
     });
     assert_eq!(drive.git().keys().collect::<Vec<_>>(), [Path::new("/a")]);
+}
+
+/// A late sweep read a local folder; once it leaves, a host's folder on the
+/// same path is not given what was read of the local one.
+#[test]
+fn a_late_sweep_does_not_give_a_host_folder_the_local_one_s_status() {
+    let mut drive = bound();
+    drive.open_host_root(HostName("box".into()), "/a".into());
+    let Effect::Sweep { token, roots } = drive.sweep(|_| true) else {
+        panic!("a sweep");
+    };
+    assert_eq!(roots.len(), 1, "the host's folder on /a is not read");
+    drive.forget(0);
+    let status = crate::gitstat::GitStatus {
+        branch: "main".into(),
+        changed: 0,
+        ahead: 0,
+        behind: 0,
+        entries: Default::default(),
+    };
+    drive.handle(Input::Swept {
+        token,
+        found: vec![("/a".into(), status)],
+    });
+    assert!(drive.git().is_empty());
 }

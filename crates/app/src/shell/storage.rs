@@ -6,7 +6,6 @@ use gpui_component::WindowExt as _;
 use gpui_component::input::InputState;
 use gpui_component::notification::Notification;
 use onehand_core::config::{WorkspaceConfig, WorkspaceLoad};
-use onehand_core::workspace::drive::Effect;
 use onehand_core::workspace::{self, Workspace};
 use std::path::{Path, PathBuf};
 
@@ -26,14 +25,22 @@ impl Shell {
     /// queued cannot land over it, and waited for, briefly: the window is
     /// going.
     pub(super) fn flush_workspace(&mut self, cx: &mut Context<Self>) {
-        let Some(Effect::Write {
-            pending,
-            mut config,
-            dir,
-        }) = self.window.workspace.flush()
-        else {
-            return;
-        };
+        let fx = self.window.workspace.flush().into_iter().collect();
+        self.carry_workspace_quietly(fx, cx);
+    }
+
+    /// Write `config` into `dir` at once, waiting briefly: what a closing
+    /// window does last. Its answer goes back to the drive.
+    pub(super) fn write_on_close(
+        &mut self,
+        pending: onehand_core::saving::Pending<
+            onehand_core::workspace::drive::Thing,
+            onehand_core::workspace::drive::Value,
+        >,
+        mut config: Box<onehand_core::config::WorkspaceConfig>,
+        dir: PathBuf,
+        cx: &mut Context<Self>,
+    ) {
         config.layout = self.dock_layout(cx);
         let result = Shared::global(cx).writer.write_within(
             move || config.save_to(&dir).map_err(|why| why.to_string()),
@@ -42,7 +49,11 @@ impl Shell {
         if let Err(why) = &result {
             eprintln!("onehand: the workspace was not saved on closing: {why}");
         }
-        self.window.workspace.flushed(pending, result);
+        let fx = self
+            .window
+            .workspace
+            .handle(onehand_core::workspace::drive::Input::WrittenOnClose { pending, result });
+        self.carry_workspace_quietly(fx, cx);
     }
 
     // ── Workspace settings ──────────────────────────────────────────────────

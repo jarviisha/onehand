@@ -128,6 +128,16 @@ pub enum Effect {
         config: Box<WorkspaceConfig>,
         dir: PathBuf,
     },
+    /// What [`Effect::Write`] asks, as the window closes: written at once and
+    /// waited for briefly, there being no later to hear the answer in, then
+    /// reported as [`Input::WrittenOnClose`]. Its answer is **recorded**, and
+    /// nothing is put back: the window is going, and should the close be
+    /// called off the next change writes again.
+    WriteOnClose {
+        pending: Pending<Thing, Value>,
+        config: Box<WorkspaceConfig>,
+        dir: PathBuf,
+    },
     /// Report [`Input::Elapsed`] with `token` after `after`. A late answer is
     /// **dropped** by its token: a later change armed a later wait.
     Arm {
@@ -140,7 +150,8 @@ pub enum Effect {
     LookForRuns(PathBuf),
     /// Read the `git status` of each of `roots`, off the UI loop, and report
     /// [`Input::Swept`] with `token`. A late answer is **dropped** by its
-    /// token: a later sweep, or a project leaving, supersedes it.
+    /// token when a later sweep supersedes it; what it read of a project that
+    /// left meanwhile is dropped from it.
     Sweep {
         token: u64,
         roots: Vec<SweepRoot>,
@@ -166,6 +177,11 @@ pub enum Input {
         pending: Pending<Thing, Value>,
         result: Result<(), String>,
     },
+    /// The write [`Effect::WriteOnClose`] asked for landed, or failed.
+    WrittenOnClose {
+        pending: Pending<Thing, Value>,
+        result: Result<(), String>,
+    },
     /// The wait [`Effect::Arm`] asked for ran out.
     Elapsed { token: u64 },
     /// What sweep `token` found: each repository's `git status`.
@@ -181,6 +197,8 @@ pub struct WorkspaceDrive {
     git: std::collections::HashMap<PathBuf, crate::gitstat::GitStatus>,
     /// The newest sweep's token.
     swept: u64,
+    /// The projects the newest sweep reads.
+    sweeping: Vec<SweepRoot>,
     saves: Saves<Thing, Value>,
     /// The newest wait armed for a burst's write, while one waits.
     soon: Option<u64>,
@@ -200,6 +218,7 @@ impl WorkspaceDrive {
             workspace,
             git: Default::default(),
             swept: 0,
+            sweeping: Vec::new(),
             saves: Saves::default(),
             soon: None,
             minted: 0,
@@ -261,14 +280,12 @@ impl WorkspaceDrive {
     #[must_use = "its effects are to be carried"]
     pub fn flush(&mut self) -> Option<Effect> {
         self.soon.take()?;
-        self.write()
-    }
-
-    /// What the write [`Self::flush`] asked for, made as the window closes,
-    /// came to: recorded, and nothing put back, since the window is going and
-    /// should the close be called off the next change writes again.
-    pub fn flushed(&mut self, pending: Pending<Thing, Value>, result: Result<(), String>) {
-        let _ = self.saves.landed(pending, result);
+        let (pending, config, dir) = self.snapshot()?;
+        Some(Effect::WriteOnClose {
+            pending,
+            config,
+            dir,
+        })
     }
 
     /// Bind the workspace to the folder `dir`, and write it there.
@@ -296,12 +313,22 @@ impl WorkspaceDrive {
     }
 
     fn write(&mut self) -> Option<Effect> {
-        let dir = self.workspace.storage_dir.clone()?;
+        let (pending, config, dir) = self.snapshot()?;
         Some(Effect::Write {
-            pending: self.saves.write_all(),
-            config: Box::new(self.workspace.to_config()),
+            pending,
+            config,
             dir,
         })
+    }
+
+    /// The whole file as it now stands, and where it goes; none unbound.
+    fn snapshot(&mut self) -> Option<(Pending<Thing, Value>, Box<WorkspaceConfig>, PathBuf)> {
+        let dir = self.workspace.storage_dir.clone()?;
+        Some((
+            self.saves.write_all(),
+            Box::new(self.workspace.to_config()),
+            dir,
+        ))
     }
 
     /// What the front end reports back.
@@ -334,6 +361,10 @@ impl WorkspaceDrive {
                 false => Vec::new(),
             },
             Input::Swept { token, found } => self.swept(token, found),
+            Input::WrittenOnClose { pending, result } => {
+                let _ = self.saves.landed(pending, result);
+                Vec::new()
+            }
         }
     }
 

@@ -62,7 +62,8 @@ impl WorkspaceDrive {
                 path: root.path.clone(),
                 host: root.host.clone(),
             })
-            .collect();
+            .collect::<Vec<_>>();
+        self.sweeping = roots.clone();
         Effect::Sweep {
             token: self.swept,
             roots,
@@ -72,16 +73,22 @@ impl WorkspaceDrive {
     /// What sweep `token` found. An older sweep landing after a newer one
     /// started is dropped: `git status` on a big repository does not finish
     /// in the order asked. What it read of a project that left while it ran
-    /// is dropped too, rather than kept for a project no longer here.
+    /// is dropped too, by host and path, rather than kept for a project no
+    /// longer here or shown as another's of the same path.
     pub(super) fn swept(&mut self, token: u64, found: Vec<(PathBuf, GitStatus)>) -> Vec<Effect> {
         if token != self.swept {
             return Vec::new();
         }
+        let read = std::mem::take(&mut self.sweeping);
         let ws = &self.workspace;
-        self.git = found
-            .into_iter()
-            .filter(|(path, _)| ws.roots.iter().any(|root| root.path == *path))
-            .collect();
+        let still = |path: &PathBuf| {
+            read.iter().filter(|at| at.path == *path).any(|at| {
+                ws.roots
+                    .iter()
+                    .any(|r| r.host == at.host && r.path == at.path)
+            })
+        };
+        self.git = found.into_iter().filter(|(path, _)| still(path)).collect();
         vec![Effect::GitRead]
     }
 }
