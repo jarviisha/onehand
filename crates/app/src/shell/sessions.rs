@@ -859,11 +859,6 @@ impl Shell {
             .ok();
         });
     }
-
-    /// How `uid`'s last answer ended, for a run's report.
-    pub fn answer_tail(&self, uid: u64, cx: &App) -> Option<String> {
-        self.chat.read(cx).answer_tail(uid, cx)
-    }
 }
 
 /// Which projects a page lists.

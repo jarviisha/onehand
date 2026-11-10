@@ -11,8 +11,9 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 onehand-core = { path = "../core" }
 # The agent's serve loop is tokio-based, so it is polled on a tokio runtime of
-# its own here, whatever executor the front end runs on.
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "time"] }
+# its own here, whatever executor the front end runs on; a remote channel's
+# requests need its I/O driver.
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "time", "net"] }
 # `Stream` and the channel events cross on: neither tokio's nor any front
 # end's executor's.
 futures = "0.3"

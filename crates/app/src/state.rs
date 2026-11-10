@@ -79,25 +79,6 @@ pub struct Shared {
     /// message belongs to no window in particular and has to find one, which is
     /// what [`OpenWindow::shell`] is for.
     pub remote: crate::remote::RemoteBridge,
-    /// The user has left the machine.
-    ///
-    /// **The one thing the app cannot work out for itself.** Every rule about
-    /// whether something is worth announcing asks the same question — is the
-    /// user looking at what this is about — and answers it from the focused
-    /// window and the conversation on screen. Both of those are still perfectly
-    /// true in front of an empty chair: the window is focused, the transcript is
-    /// showing, and the app concludes it has been read. This is where somebody
-    /// says otherwise, and while it is set every announcement goes out as though
-    /// nothing were on screen at all.
-    ///
-    /// Global, not per window, because it is a fact about the person rather than
-    /// about a window — walking away from one window is walking away from all of
-    /// them.
-    ///
-    /// **Not persisted, deliberately.** It describes right now, and a launch
-    /// that came up believing the user was elsewhere would send a message about
-    /// every turn to somebody sitting in front of it.
-    pub away: bool,
     /// The task feeding [`Self::remote`]'s events into the app.
     ///
     /// Held rather than detached, for the reason every held task here is: it
@@ -159,7 +140,6 @@ impl Shared {
             // means reading a credential and spawning a poll, and neither of
             // those is something a constructor should be able to fail at.
             remote: crate::remote::RemoteBridge::off(),
-            away: false,
             _remote_pump: None,
             offers_seen: Vec::new(),
             agent_checks: Vec::new(),

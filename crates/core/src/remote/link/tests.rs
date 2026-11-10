@@ -1,16 +1,17 @@
-//! What a press from outside the app does to a session, and what a stop from
-//! outside takes back, as the bridge carries them today.
-
-use super::super::{ChatPane, SETTLED};
-use crate::chat::session::now;
-use onehand_core::acp::{
+use super::*;
+use crate::acp::{
     AcpEvent, AcpRequest, ElicitField, ElicitOutcome, Elicitation, PermissionOption,
     PermissionRequest, ReqTx,
 };
-use onehand_core::chat::drive::{Code, Effect, Intake, Origin};
-use onehand_core::chat::{Chat, SessionDrive};
-use onehand_core::remote::Press;
+use crate::chat::Chat;
 use std::path::PathBuf;
+
+fn now() -> Now {
+    Now {
+        secs: crate::chat::now_secs(),
+        at: std::time::Instant::now(),
+    }
+}
 
 type Rx = tokio::sync::mpsc::UnboundedReceiver<AcpRequest>;
 
@@ -59,7 +60,7 @@ fn permission(drive: &mut SessionDrive) -> usize {
         AcpEvent::Permission(PermissionRequest {
             rpc_id: serde_json::Value::from(7),
             tool_call_id: None,
-            kind: onehand_core::acp::ToolKind::Execute,
+            kind: crate::acp::ToolKind::Execute,
             child: None,
             title: "Run command".into(),
             options: vec![option("allow-1", "Allow once"), option("deny", "Deny")],
@@ -114,7 +115,7 @@ fn a_permission_press_answers_its_card_with_its_option() {
         item,
         option: 1,
     };
-    let (said, fx) = ChatPane::apply_press(&mut drive, press);
+    let (said, fx) = super::press(&mut drive, press);
     assert_eq!(said, "Deny.");
     assert_eq!(permission_answered(fx).as_deref(), Some("deny"));
 }
@@ -129,8 +130,8 @@ fn a_press_on_a_settled_card_is_said_settled() {
         item,
         option: 0,
     };
-    ChatPane::apply_press(&mut drive, press());
-    let (said, fx) = ChatPane::apply_press(&mut drive, press());
+    super::press(&mut drive, press());
+    let (said, fx) = super::press(&mut drive, press());
     assert_eq!(said, SETTLED);
     assert!(fx.is_empty());
 }
@@ -140,7 +141,7 @@ fn a_press_on_a_settled_card_is_said_settled() {
 fn a_press_naming_nothing_grants_nothing() {
     let (mut drive, _rx) = connected();
     let item = permission(&mut drive);
-    let (said, fx) = ChatPane::apply_press(
+    let (said, fx) = press(
         &mut drive,
         Press::Permission {
             uid: 1,
@@ -149,7 +150,7 @@ fn a_press_naming_nothing_grants_nothing() {
         },
     );
     assert_eq!((said.as_str(), fx.len()), (SETTLED, 0));
-    let (said, fx) = ChatPane::apply_press(
+    let (said, fx) = press(
         &mut drive,
         Press::Permission {
             uid: 1,
@@ -167,7 +168,7 @@ fn a_press_naming_nothing_grants_nothing() {
 fn a_question_press_picks_and_sends() {
     let (mut drive, _rx) = connected();
     let item = question(&mut drive);
-    let (said, fx) = ChatPane::apply_press(
+    let (said, fx) = press(
         &mut drive,
         Press::Question {
             uid: 1,
@@ -184,7 +185,7 @@ fn a_question_press_picks_and_sends() {
         matches!(outcome, Some(ElicitOutcome::Accept(_))),
         "{outcome:?}"
     );
-    let (said, _) = ChatPane::apply_press(
+    let (said, _) = press(
         &mut drive,
         Press::Question {
             uid: 1,
@@ -200,7 +201,7 @@ fn a_question_press_picks_and_sends() {
 fn a_skip_declines_the_question_once() {
     let (mut drive, _rx) = connected();
     let item = question(&mut drive);
-    let (said, fx) = ChatPane::apply_press(&mut drive, Press::Skip { uid: 1, item });
+    let (said, fx) = super::press(&mut drive, Press::Skip { uid: 1, item });
     assert_eq!(said, "Skipped — the agent carries on without an answer.");
     assert!(requests(fx).iter().any(|request| matches!(
         request,
@@ -209,7 +210,7 @@ fn a_skip_declines_the_question_once() {
             ..
         }
     )));
-    let (said, _) = ChatPane::apply_press(&mut drive, Press::Skip { uid: 1, item });
+    let (said, _) = super::press(&mut drive, Press::Skip { uid: 1, item });
     assert_eq!(said, SETTLED);
 }
 
@@ -217,7 +218,7 @@ fn a_skip_declines_the_question_once() {
 #[test]
 fn an_option_no_longer_offered_says_so() {
     let (mut drive, _rx) = connected();
-    let (said, fx) = ChatPane::apply_press(
+    let (said, fx) = press(
         &mut drive,
         Press::Option {
             uid: 1,
@@ -237,13 +238,18 @@ fn an_option_no_longer_offered_says_so() {
 #[test]
 fn a_remote_stop_takes_back_the_queued_prompt_before_it_cancels() {
     let (mut drive, _rx) = connected();
-    let (_, mut fx) = drive.prompt("first", &[], Origin::Remote, Code::Here, now());
-    let (intake, queued) = drive.prompt("second", &[], Origin::Remote, Code::Here, now());
-    assert_eq!(intake, Intake::Queued);
+    let (_, mut fx) = prompt(&mut drive, "first", now());
+    let (handled, queued) = prompt(&mut drive, "second", now());
+    assert_eq!(handled, Handled::Queued);
     fx.extend(queued);
-    let taken = drive.unqueue().expect("the second prompt waited");
-    assert_eq!(taken.text, "second");
-    fx.extend(drive.stop());
+    let (stopped, stop) = stop(&mut drive);
+    assert_eq!(
+        stopped,
+        Stopped::Cancelled {
+            taken_back: Some("second".into())
+        }
+    );
+    fx.extend(stop);
     fx.extend(feed(
         &mut drive,
         AcpEvent::TurnEnded {
@@ -286,4 +292,34 @@ fn a_plain_stop_lets_the_queued_prompt_go() {
         })
         .collect();
     assert_eq!(prompts, ["first", "second"]);
+}
+
+/// A second prompt from outside while one already waits is refused, not put
+/// over it; nothing running is said idle.
+#[test]
+fn a_full_queue_refuses_and_an_idle_stop_stops_nothing() {
+    let (mut drive, _rx) = connected();
+    assert_eq!(stop(&mut drive).0, Stopped::Idle);
+    assert_eq!(prompt(&mut drive, "first", now()).0, Handled::Sent);
+    assert_eq!(prompt(&mut drive, "second", now()).0, Handled::Queued);
+    assert!(matches!(
+        prompt(&mut drive, "third", now()).0,
+        Handled::Refused(why) if why.starts_with("a prompt is already waiting")
+    ));
+    assert_eq!(
+        drive.queued.as_ref().map(|q| q.text.as_str()),
+        Some("second")
+    );
+}
+
+/// A waiting permission is announced with its title and its buttons.
+#[test]
+fn a_waiting_permission_is_announced_with_its_buttons() {
+    let (mut drive, _rx) = connected();
+    permission(&mut drive);
+    let said = announcement(&drive, 1, Away::Asked(UserAsk::Permission));
+    assert_eq!(said.detail.as_deref(), Some("Run command"));
+    assert!(!said.buttons.is_empty());
+    let lost = announcement(&drive, 1, Away::LinkLost);
+    assert!(lost.detail.is_none() && lost.buttons.is_empty());
 }

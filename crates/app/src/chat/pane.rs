@@ -165,32 +165,6 @@ const SMOKE: Rems = rems(7.);
 /// the same number the row is actually drawn at.
 const LIST_HEAD: Rems = rems(1.5);
 
-/// How much of a finished answer rides along with the turn-ended announcement.
-///
-/// Sized for the surface it lands on rather than for the answer: a notification
-/// is read at a glance on a phone, so this is a few sentences — enough for the
-/// paragraph an answer closes with, and short of the point where the reader is
-/// scrolling a transcript in a chat client. Whatever the channel itself will not
-/// carry is clipped again on the way out, so this is the smaller of two bounds
-/// and the one chosen for how it reads.
-const ANSWER_TAIL_MAX: usize = 700;
-
-/// How much of a taken-back prompt is quoted back at whoever wrote it.
-///
-/// Enough to recognise it by, not enough to make a stop confirmation into a wall
-/// of text — it is there so the words are not simply gone, and the words
-/// themselves are in the sender's own chat history a few messages up.
-const QUOTED_PROMPT_MAX: usize = 120;
-
-/// What a press on a card that is no longer open is told.
-///
-/// One sentence for every way it can happen — answered in the window, answered
-/// by an earlier press on the same message, or a form this build can no longer
-/// read — because they are the same fact to whoever pressed it: there is nothing
-/// there to answer. Telling them which of the three would be telling them about
-/// the app's own bookkeeping.
-const SETTLED: &str = "That's already been answered.";
-
 /// What a project's menu says about it, wherever that menu is drawn.
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub struct ProjectFacts {

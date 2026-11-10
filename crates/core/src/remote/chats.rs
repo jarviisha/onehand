@@ -12,6 +12,7 @@ use std::path::PathBuf;
 /// position in a list would be the wrong thing to print: the list is read, a
 /// message is typed, and a session closed in between would slide every number
 /// below it onto a different conversation.
+#[derive(Clone)]
 pub struct RemoteSession {
     pub uid: u64,
     pub project: String,
@@ -22,6 +23,9 @@ pub struct RemoteSession {
     /// What the session is doing, in the front end's own words for it. `None`
     /// is the case that draws nothing: connected, idle and already read.
     pub state: Option<&'static str>,
+    /// Its project runs its sessions on this machine: the bridge reaches no
+    /// other.
+    pub here: bool,
 }
 
 impl RemoteSession {
@@ -72,6 +76,9 @@ pub struct Origin {
     pub project: String,
     /// The conversation's name, or `None` while it has not earned one.
     pub conversation: Option<String>,
+    /// Its project runs its sessions on this machine: no chat hears of any
+    /// other.
+    pub here: bool,
 }
 
 impl Origin {
@@ -162,7 +169,7 @@ impl Chats {
     ///
     /// Trimmed here, once: the list is hand-typed, and an entry kept with its
     /// spaces is one every lookup by a chat's own id misses.
-    pub fn new(allowed: Vec<ChatId>) -> Self {
+    pub(crate) fn new(allowed: Vec<ChatId>) -> Self {
         Self {
             allowed: allowed
                 .into_iter()
@@ -180,7 +187,7 @@ impl Chats {
     /// Replaced whole rather than added to, so it is one page per chat and not a
     /// history of them: the number typed back counts into the page that went
     /// out, and a page that grew would move every row under it.
-    pub fn remember_archive(&mut self, chat: &str, rows: Vec<ArchiveRow>) {
+    pub(crate) fn remember_archive(&mut self, chat: &str, rows: Vec<ArchiveRow>) {
         self.archives.insert(chat.to_string(), rows);
     }
 
@@ -440,7 +447,13 @@ impl Chats {
     /// a parked question, an agent that stopped — because that is the honest
     /// reading of being told to say nothing about a session. Half a subscription
     /// is a mode whose rule nobody could state.
-    pub fn follow(&mut self, chat: &str, aim: Aim, on: bool, open: &[RemoteSession]) -> String {
+    pub(crate) fn follow(
+        &mut self,
+        chat: &str,
+        aim: Aim,
+        on: bool,
+        open: &[RemoteSession],
+    ) -> String {
         let word = if on { "follow" } else { "unfollow" };
         let uid = match aim {
             // Not read as the bound session: the user named something, it just
@@ -506,7 +519,7 @@ impl Chats {
     /// not have started announcing a different conversation in the meantime.
     /// What it does instead is make `/status` unable to keep its promise of
     /// naming everything a chat will hear about.
-    pub fn reconcile(&mut self, open: &[RemoteSession]) {
+    pub(crate) fn reconcile(&mut self, open: &[RemoteSession]) {
         let live: HashSet<u64> = open.iter().map(|session| session.uid).collect();
         self.pointed.retain(|_, uid| live.contains(uid));
         for set in self.followed.values_mut() {
@@ -528,7 +541,7 @@ impl Chats {
     /// keeps typing where it was typing. Repointing it at nothing on the
     /// strength of a typo would take away the session somebody was working in
     /// and send the next prompt nowhere.
-    pub fn point_at(&mut self, chat: &str, uid: u64, open: &[RemoteSession]) -> String {
+    pub(crate) fn point_at(&mut self, chat: &str, uid: u64, open: &[RemoteSession]) -> String {
         let Some(session) = open.iter().find(|session| session.uid == uid) else {
             return format!("There's no session {uid}.\n\n{}", self.listing(chat, open));
         };
@@ -637,6 +650,7 @@ mod tests {
             conversation: Some(format!("conversation {uid}")),
             agent: "Claude Code".to_string(),
             state: None,
+            here: true,
         }
     }
 
@@ -899,6 +913,7 @@ mod tests {
             agent: "Claude Code".to_string(),
             project: "onehand".to_string(),
             conversation: Some("fix the rail".to_string()),
+            here: true,
         }
     }
 
