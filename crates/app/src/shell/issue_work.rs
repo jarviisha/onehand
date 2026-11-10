@@ -162,19 +162,10 @@ impl Shell {
                 Some((path.to_path_buf(), self.issues_file(path)?))
             })
             .collect();
-        // The rule the project menu offers *Work an issue…* by: a repository,
-        // not a run's own worktree, with unattended runs set up.
-        let set_up = crate::unattended::set_up(cx);
-        let offered: Vec<_> = self
+        let offered = self
             .window
             .workspace
-            .roots
-            .iter()
-            .filter(|root| set_up && !root.transient && root.runs_here())
-            .filter_map(|root| root.local_path())
-            .filter(|path| self.window.workspace.git().contains_key(*path))
-            .map(Path::to_path_buf)
-            .collect();
+            .offered_for_runs(crate::unattended::set_up(cx));
         let mut works = crate::task::issue_works(&kept, cx);
         // Whether a retry with current settings would run an ended task with
         // another timeout, which only the app can tell: it knows Settings.

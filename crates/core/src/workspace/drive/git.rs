@@ -43,6 +43,20 @@ impl WorkspaceDrive {
         }
     }
 
+    /// The projects a run may be started on, which the project menu offers
+    /// *Work an issue…* on: with unattended runs `set_up`, a repository here
+    /// that runs here, never a run's own worktree.
+    pub fn offered_for_runs(&self, set_up: bool) -> Vec<PathBuf> {
+        self.workspace
+            .roots
+            .iter()
+            .filter(|root| set_up && !root.transient && root.runs_here())
+            .filter_map(|root| root.local_path())
+            .filter(|path| self.git.contains_key(*path))
+            .map(std::path::Path::to_path_buf)
+            .collect()
+    }
+
     /// Read every project's `git status` again: those here, and those on a
     /// host `attached` says is attached, which are never attached for a
     /// sweep; never a host's folder on a local one's path.
