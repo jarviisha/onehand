@@ -492,7 +492,7 @@ impl ChatPane {
     /// dot on a rail row that no longer exists.
     pub fn close(&mut self, uid: u64, cx: &mut Context<Self>) {
         self.conversations.remove(&uid);
-        crate::control::forget(uid);
+        crate::control::forget(uid, cx);
         if self.active == Some(uid) {
             // What the composer still holds is dropped by the next `show`,
             // which treats an unaddressed draft as unaddressed.

@@ -1,103 +1,40 @@
 //! `open_session` and `open_worker`, carried out: a session on a project of
 //! the window, the person's own in the rail, or, for a session's agent, a
-//! worker on a project or a worktree of one of their repositories, with the
-//! further folders it may write.
+//! worker on a project or a worktree of one of their repositories.
 //!
-//! **One worker per folder.** A worker never opens on a folder another
-//! session is open on, nor where a process of the person's already works: an
-//! earlier run's worker left behind by a crash is the case this is for. A
-//! session opened later, by the person or with `open_session`, is not held
-//! back: it is the person's own, as one opened by hand is. The
-//! folder is reserved on the UI thread in the same update that checks it,
-//! which nothing else runs beside, so two opens in flight together cannot
-//! both pass.
+//! What may open, where, and what an open does next is
+//! `onehand_core::control::drive`'s. This reads the folder off the UI thread,
+//! gathers what the windows hold, starts and watches the worker's session,
+//! and carries out the rest of what the drive answers.
 
-use super::{Answer, OPENED_CAP, sessions};
+use super::{Answer, carry, drive};
 use crate::chat::session::ChatSession;
 use crate::shell::Shell;
-use gpui::{App, Entity};
-use onehand_core::chat::drive::Origin;
-use onehand_core::control;
-use onehand_core::worktree::occupants::{self, Occupants};
-use onehand_core::worktree::worker::{self, Repo};
+use gpui::{AnyWindowHandle, App, Entity, Global, Subscription, WeakEntity};
+use onehand_core::chat::drive::{Code, Origin};
+use onehand_core::config::AgentSpec;
+use onehand_core::control::drive::{Begun, Effect, Facts, Key, Open, World};
+use onehand_core::control::{self, workers::resolve_blocking};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-/// The folders workers are opening or open on, each by its canonical path.
+/// What the opens in flight need of the front end, by their key: where each
+/// was asked, the agent it starts, where its answer goes, and the watch on
+/// its session.
 #[derive(Default)]
-pub(super) struct Reservations {
-    /// The worker holding each folder, once its session started.
-    held: HashMap<PathBuf, Option<u64>>,
+struct Opens {
+    asked: HashMap<Key, Asked>,
+    watches: HashMap<u64, Subscription>,
 }
 
-impl Reservations {
-    /// Take `folder` for an open, unless an open or a worker holds it.
-    pub(super) fn take(&mut self, folder: &Path) -> Result<(), String> {
-        // A folder inside a held one, or holding one, is the same files.
-        if let Some(held) = self
-            .held
-            .keys()
-            .find(|held| held.starts_with(folder) || folder.starts_with(held))
-        {
-            return Err(format!(
-                "{} already has a worker opening or open on it",
-                held.display()
-            ));
-        }
-        self.held.insert(folder.to_path_buf(), None);
-        Ok(())
-    }
-
-    /// The open on `folder` started session `uid`.
-    pub(super) fn bind(&mut self, folder: &Path, uid: u64) {
-        self.held.insert(folder.to_path_buf(), Some(uid));
-    }
-
-    /// The open on `folder` failed.
-    pub(super) fn release(&mut self, folder: &Path) {
-        self.held.remove(folder);
-    }
-
-    /// Let go of every folder held by a worker `live` says is gone. A
-    /// window closing ends its sessions without closing them one by one, so
-    /// nothing else would.
-    pub(super) fn prune(&mut self, live: impl Fn(u64) -> bool) {
-        self.held.retain(|_, worker| worker.is_none_or(&live));
-    }
-
-    /// Session `uid` closed: the folder it held is free.
-    pub(super) fn release_worker(&mut self, uid: u64) {
-        self.held.retain(|_, worker| *worker != Some(uid));
-    }
+struct Asked {
+    window: AnyWindowHandle,
+    shell: WeakEntity<Shell>,
+    spec: AgentSpec,
+    answer: Option<Answer>,
 }
 
-/// What `open_worker` was asked.
-pub(super) struct Open {
-    pub(super) caller: (u64, PathBuf),
-    pub(super) project: String,
-    pub(super) agent: String,
-    pub(super) prompt: Option<String>,
-    pub(super) dirs: Vec<PathBuf>,
-    pub(super) request: String,
-    pub(super) turn: Option<u64>,
-    pub(super) model: Option<String>,
-    pub(super) name: Option<String>,
-}
-
-impl Open {
-    /// The arguments its request is held to.
-    fn asked(&self) -> requests::Asked {
-        requests::Asked {
-            project: self.project.clone(),
-            agent: self.agent.clone(),
-            prompt: self.prompt.clone(),
-            dirs: self.dirs.clone(),
-            turn: self.turn,
-            model: self.model.clone(),
-            name: self.name.clone(),
-        }
-    }
-}
+impl Global for Opens {}
 
 /// Open a session on a project of the window, the person's own: it appears
 /// in the rail, may share its project, and gets `prompt` once its agent is
@@ -114,7 +51,18 @@ pub(super) fn open_plain(
     let spec = agent_named(agent, cx)?;
     let dir = control::pick_project(projects, project)?.to_path_buf();
     let name = spec.name.clone();
-    let (_, session) = start(shell, dir, spec, Vec::new(), caller, cx)?;
+    if let Some((lead, _)) = caller {
+        let open = still_open(*lead, cx);
+        drive().admit(*lead, &open)?;
+    }
+    let (uid, session) = shell
+        .update(cx, |shell, cx| {
+            shell.run_unattended(dir, spec, Vec::new(), cx)
+        })
+        .ok_or("the session did not start")?;
+    if let Some((lead, _)) = caller {
+        drive().opened_one(*lead, uid);
+    }
     if let Some(prompt) = prompt {
         // As a person would after watching it connect; dropped if it never
         // comes up.
@@ -127,75 +75,54 @@ pub(super) fn open_plain(
     ))
 }
 
-fn agent_named(agent: &str, cx: &App) -> Result<onehand_core::config::AgentSpec, String> {
+fn agent_named(agent: &str, cx: &App) -> Result<AgentSpec, String> {
     onehand_core::config::agent_or_first(&crate::state::Shared::global(cx).agents, Some(agent))
         .cloned()
         .ok_or_else(|| format!("no agent named {agent}; list_agents names them"))
 }
 
-/// Carry out `open` for a session's agent, once its folder has been checked
-/// off the UI thread. An outside program is never offered the tool.
+/// Begin `open` for a session's agent: answered at once, or once its worker
+/// is up or its open failed. An outside program is never offered the tool.
 pub(super) fn open(
     open: Open,
-    window: gpui::AnyWindowHandle,
+    window: AnyWindowHandle,
     shell: Entity<Shell>,
     projects: &[(String, PathBuf)],
     answer: &mut Option<Answer>,
     cx: &mut App,
 ) -> Result<String, String> {
     let spec = agent_named(&open.agent, cx)?;
-    let named = control::pick_project(projects, &open.project).map(Path::to_path_buf);
-    let caller = open.caller.clone();
-    let deadline = std::time::Instant::now() + opening::OPEN_DEADLINE;
-    let request = open.request.clone();
-    match (&open.prompt, open.turn) {
-        (Some(_), None) => return Err("`turn` is required with a prompt".to_string()),
-        (None, Some(_)) => return Err("`turn` goes with a prompt; there is none".to_string()),
-        _ => {}
-    }
-    match sessions().requests.see(caller.0, &request, &open.asked())? {
-        requests::Seen::New => {}
-        requests::Seen::Opening(uid) => {
-            return Ok(match uid {
-                Some(uid) => format!(
-                    "{} is still opening; call again with the same request",
-                    control::open::handle(&super::RUN, uid)
-                ),
-                None => {
-                    "the session is still opening; call again with the same request".to_string()
-                }
-            });
-        }
-        requests::Seen::Answered(answer) => return Ok(answer),
-    }
     let mode = crate::unattended::worker_mode(&spec.name, cx);
-    let target = match named {
-        Ok(dir) => Target::Project(dir),
-        Err(_) if Path::new(&open.project).is_absolute() => {
-            Target::Worktree(PathBuf::from(&open.project))
-        }
-        Err(why) => {
-            sessions().requests.failed(caller.0, &request);
-            return Err(why);
-        }
+    let dirs = open.dirs.clone();
+    let lead = open.lead;
+    let begun = drive().open_worker(open, projects, mode)?;
+    let (key, target, token) = match begun {
+        Begun::Said(said) => return Ok(said),
+        Begun::Resolve { key, target, token } => (key, target, token),
     };
     let skip: Vec<u32> = std::iter::once(std::process::id())
         .chain(shell.read(cx).shell_pids(cx))
         .collect();
     let roots: Vec<PathBuf> = projects.iter().map(|(_, path)| path.clone()).collect();
     // Every window's projects, to find a session on the folder or inside it.
-    let everywhere: Vec<PathBuf> = crate::state::Shared::global(cx)
-        .windows
-        .iter()
-        .filter_map(|window| window.shell.upgrade())
-        .flat_map(|shell| shell.read(cx).roots_with_sessions())
-        .map(|(path, _)| path)
-        .collect();
+    let everywhere: Vec<PathBuf> = counts(cx).into_iter().map(|(path, _)| path).collect();
     let home = std::env::var_os("HOME").map(PathBuf::from);
-    let dirs = open.dirs.clone();
-    let name = open.name.clone();
-    let shell = shell.downgrade();
-    let answer = answer.take();
+    cx.default_global::<Opens>().asked.insert(
+        key.clone(),
+        Asked {
+            window,
+            shell: shell.downgrade(),
+            spec,
+            answer: answer.take(),
+        },
+    );
+    carry(
+        vec![Effect::Arm {
+            token,
+            wait: onehand_core::control::drive::OPEN_DEADLINE,
+        }],
+        cx,
+    );
     cx.spawn(async move |cx| {
         let resolved = cx
             .background_executor()
@@ -203,304 +130,224 @@ pub(super) fn open(
                 resolve_blocking(target, &roots, &everywhere, &dirs, home.as_deref(), &skip)
             })
             .await;
-        let started = match resolved {
-            // The window may have closed while the folder was read.
-            Ok(resolved) => cx.update(|cx| match shell.upgrade() {
-                Some(strong) => finish(&caller, resolved, spec, name, &strong, cx),
-                None => Err("the window closed".to_string()),
-            }),
-            Err(why) => Err(why),
-        };
-        let outcome = match started {
-            Ok(started) => {
-                sessions().requests.started(caller.0, &request, started.uid);
-                let opening = opening::Opening {
-                    lead: caller.0,
-                    request: request.clone(),
-                    uid: started.uid,
-                    session: started.session,
-                    window,
-                    root: started.root,
-                    added: started.added,
-                    mode,
-                    model: open.model,
-                    prompt: open.prompt,
-                    turn: open.turn,
-                    dirs: started.dirs,
-                    deadline,
-                };
-                opening::wait_open(opening, cx).await
-            }
-            Err(why) => {
-                sessions().requests.failed(caller.0, &request);
-                Err(why)
-            }
-        };
-        if let Some(answer) = answer {
-            let _ = answer.send(outcome);
-        }
+        cx.update(|cx| {
+            let world = World {
+                lead_here: session_here(lead, cx),
+                counts: counts(cx),
+                live: live(cx),
+                opened: still_open(lead, cx),
+            };
+            let fx = drive().resolved(&key, resolved, &world);
+            carry(fx, cx);
+        });
     })
     .detach();
     Ok(String::new())
 }
 
-/// The folder a session's agent named.
-enum Target {
-    /// A project of the window, by the path the window knows it by.
-    Project(PathBuf),
-    /// An absolute path that is no project of the window.
-    Worktree(PathBuf),
-}
-
-/// What the background read of an open found.
-struct Resolved {
-    /// The folder, canonical: what is reserved.
-    folder: PathBuf,
-    /// The path the session is started on: the window's own for a folder
-    /// that is one of its roots, else the canonical one.
-    root: PathBuf,
-    /// Every window root whose canonical path is `folder`.
-    same: Vec<PathBuf>,
-    /// What the worker may write besides its folder.
-    dirs: Vec<PathBuf>,
-    occupants: Occupants,
-    /// Every window's project, by the path the window knows it by and its
-    /// canonical one.
-    canonical: Vec<(PathBuf, PathBuf)>,
-}
-
-/// Check the folder and the further folders, and read what works in it.
-/// Blocking.
-fn resolve_blocking(
-    target: Target,
-    roots: &[PathBuf],
-    everywhere: &[PathBuf],
-    dirs: &[PathBuf],
-    home: Option<&Path>,
-    skip: &[u32],
-) -> Result<Resolved, String> {
-    let repo = match &target {
-        Target::Worktree(path) => worker::worktree_of_blocking(path, roots)?,
-        Target::Project(path) => {
-            let top =
-                std::fs::canonicalize(path).map_err(|why| format!("{}: {why}", path.display()))?;
-            // A project that is no checkout is its own folder and nothing
-            // more; git failing to say refuses the open in its words.
-            match worker::repo_of_blocking(&top)? {
-                Some(repo) => Repo {
-                    top: top.clone(),
-                    ..repo
-                },
-                None => Repo {
-                    common: top.join(".git"),
-                    top,
-                },
+/// Carry one of the drive's effects for an open.
+pub(super) fn carry_open(effect: Effect, cx: &mut App) {
+    match effect {
+        Effect::Start {
+            key,
+            root,
+            dirs,
+            folder,
+            name,
+        } => {
+            let started = asked_of(&key, cx)
+                .and_then(|(shell, spec)| {
+                    shell.update(cx, |shell, cx| shell.run_unattended(root, spec, dirs, cx))
+                })
+                .ok_or_else(|| "the session did not start".to_string())
+                .map(|(uid, session)| {
+                    // No conversation file exists yet; the first turn's end
+                    // writes the given name with the rest.
+                    session.update(cx, |session, cx| {
+                        session.chat.name_for_folder(folder, name);
+                        cx.notify();
+                    });
+                    uid
+                });
+            let fx = drive().started(&key, started);
+            carry(fx, cx);
+        }
+        Effect::Watch(uid) => {
+            if let Some(session) = session_of(uid, cx) {
+                let watch = cx.observe(&session, move |_, cx| wake(uid, cx));
+                cx.default_global::<Opens>().watches.insert(uid, watch);
+            }
+            wake(uid, cx);
+        }
+        Effect::Unwatch(uid) => {
+            cx.default_global::<Opens>().watches.remove(&uid);
+        }
+        Effect::Pick { uid, pick } => {
+            if let Some(session) = session_of(uid, cx) {
+                session.update(cx, |session, cx| {
+                    let fx = session.chat.pick(&pick);
+                    session.perform(fx, cx);
+                    cx.notify();
+                });
             }
         }
-    };
-    let writable = worker::writable_blocking(dirs, &repo, home)?;
-    let same: Vec<PathBuf> = roots
-        .iter()
-        .filter(|root| std::fs::canonicalize(root).is_ok_and(|real| real == repo.top))
-        .cloned()
-        .collect();
-    let canonical = everywhere
-        .iter()
-        .filter_map(|root| Some((root.clone(), std::fs::canonicalize(root).ok()?)))
-        .collect();
-    let root = match &target {
-        Target::Project(path) => path.clone(),
-        Target::Worktree(_) => same.first().cloned().unwrap_or_else(|| repo.top.clone()),
-    };
-    Ok(Resolved {
-        canonical,
-        occupants: occupants::occupants_blocking(&repo.top, skip, std::process::id()),
-        dirs: worker::worker_dirs(&repo, writable),
-        folder: repo.top,
-        root,
-        same,
-    })
-}
-
-/// A worker's session, started and not yet up.
-struct Started {
-    uid: u64,
-    session: gpui::WeakEntity<ChatSession>,
-    root: PathBuf,
-    /// Whether the open added `root` to the window.
-    added: bool,
-    dirs: Vec<PathBuf>,
-}
-
-/// Back on the UI thread: refuse a folder another session or a process
-/// works in, or the caller over its cap; else reserve it and start.
-fn finish(
-    caller: &(u64, PathBuf),
-    resolved: Resolved,
-    spec: onehand_core::config::AgentSpec,
-    name: Option<String>,
-    shell: &Entity<Shell>,
-    cx: &mut App,
-) -> Result<Started, String> {
-    // The lead may have gone while the folder was read: nothing is started
-    // for nobody, nor counted under a cap a forgotten lead no longer has.
-    if !opening::lead_here(caller.0, cx) {
-        return Err("the lead went before its worker was ready".to_string());
-    }
-    let counts: Vec<(PathBuf, usize)> = crate::state::Shared::global(cx)
-        .windows
-        .iter()
-        .filter_map(|window| window.shell.upgrade())
-        .flat_map(|shell| shell.read(cx).roots_with_sessions())
-        .collect();
-    let roots: Vec<(PathBuf, PathBuf, usize)> = resolved
-        .canonical
-        .iter()
-        .map(|(path, real)| {
-            let count = counts
-                .iter()
-                .filter(|(root, _)| root == path)
-                .map(|(_, count)| count)
-                .sum();
-            (path.clone(), real.clone(), count)
-        })
-        .collect();
-    if let Some(root) = sessions_in(&resolved.folder, &roots).first() {
-        return Err(format!(
-            "{} already has a session open on it; a worker never shares its folder",
-            root.display()
-        ));
-    }
-    let live: Vec<u64> = crate::state::Shared::global(cx)
-        .windows
-        .iter()
-        .filter_map(|window| window.shell.upgrade())
-        .flat_map(|shell| shell.read(cx).session_uids())
-        .collect();
-    let mut held = sessions();
-    held.reserved.prune(|uid| live.contains(&uid));
-    held.reserved.take(&resolved.folder)?;
-    drop(held);
-    let refused = match &resolved.occupants {
-        Occupants::None => None,
-        Occupants::Found(found) => Some(format!(
-            "{} processes work in {}: {}; the person has to stop them before a worker opens there",
-            found.len(),
-            resolved.folder.display(),
-            found.join(", ")
-        )),
-        Occupants::Unknown(unread) => Some(format!(
-            "could not tell whether anything works in {}: {}",
-            resolved.folder.display(),
-            unread.join(", ")
-        )),
-    };
-    if let Some(why) = refused {
-        sessions().reserved.release(&resolved.folder);
-        return Err(why);
-    }
-    let added = resolved.same.is_empty();
-    match start(
-        shell,
-        resolved.root.clone(),
-        spec,
-        resolved.dirs.clone(),
-        Some(caller),
-        cx,
-    ) {
-        Ok((uid, session)) => {
-            sessions().reserved.bind(&resolved.folder, uid);
-            // Named for what it works on, else for its folder, never for its
-            // prompt, which is the lead's instructions. No conversation file
-            // exists yet; the first turn's end writes the given name with the
-            // rest.
-            let folder = resolved.root.file_name().map_or_else(
-                || resolved.root.display().to_string(),
-                |last| last.to_string_lossy().into_owned(),
-            );
-            session.update(cx, |session, cx| {
-                session.chat.name_for_folder(folder, name);
-                cx.notify();
-            });
-            Ok(Started {
-                uid,
-                session: session.downgrade(),
-                root: resolved.root,
-                added,
-                dirs: resolved.dirs,
+        Effect::Begin { uid, prompt } => {
+            let facts = session_of(uid, cx).map(|session| begin(uid, &session, prompt, cx));
+            // Read before the drive is taken: its lock is not reentrant.
+            let lead_here = session_here_of_lead(uid, cx);
+            let fx = match facts {
+                Some(facts) => drive().begun(uid, facts),
+                None => drive().woke(uid, None, lead_here),
+            };
+            carry(fx, cx);
+        }
+        Effect::Arm { token, wait } => {
+            cx.spawn(async move |cx| {
+                cx.background_executor().timer(wait).await;
+                cx.update(|cx| {
+                    let fx = drive().elapsed(token);
+                    carry(fx, cx);
+                });
             })
+            .detach();
         }
-        Err(why) => {
-            sessions().reserved.release(&resolved.folder);
-            Err(why)
+        Effect::Drop {
+            key,
+            uid,
+            root,
+            added,
+        } => {
+            // The window holding the session, else the one the open was
+            // asked in, which may still hold the project it added.
+            let window = window_of(uid, cx).or_else(|| {
+                cx.default_global::<Opens>()
+                    .asked
+                    .get(&key)
+                    .map(|asked| asked.window)
+            });
+            if let Some(window) = window {
+                crate::state::with_shell(window, cx, |shell, window, cx| {
+                    shell.drop_opened(uid, &root, added, window, cx)
+                });
+            }
         }
+        Effect::Answer { key, outcome } => {
+            let asked = cx.default_global::<Opens>().asked.remove(&key);
+            if let Some(answer) = asked.and_then(|asked| asked.answer) {
+                let _ = answer.send(outcome);
+            }
+        }
+        // The person's view reads the relation: nothing in a session changed.
+        Effect::Changed => cx.refresh_windows(),
+        Effect::ToolsChanged(_) => unreachable!("carried by `control::carry`"),
     }
 }
 
-/// The roots of `roots` (as the window knows it, canonical, sessions open)
-/// with a session on `folder` or on a folder inside it: a worker would share
-/// their files. A root holding `folder` does not count: a lead in the main
-/// checkout with its workers' worktrees beneath it is the usual layout.
-fn sessions_in(folder: &Path, roots: &[(PathBuf, PathBuf, usize)]) -> Vec<PathBuf> {
-    roots
+/// Worker `uid`'s session changed: the drive decides the open's next step.
+fn wake(uid: u64, cx: &mut App) {
+    let lead_here = session_here_of_lead(uid, cx);
+    let session = session_of(uid, cx);
+    let fx = {
+        let chat = session.as_ref().map(|session| &session.read(cx).chat);
+        drive().woke(uid, chat.map(|chat| &**chat), lead_here)
+    };
+    carry(fx, cx);
+}
+
+/// Send worker `uid` its first prompt, if it has one, and what its answer
+/// reads.
+fn begin(uid: u64, session: &Entity<ChatSession>, prompt: Option<String>, cx: &mut App) -> Facts {
+    let intake = prompt.map(|prompt| {
+        session
+            .update(cx, |session, cx| {
+                session.prompt(&prompt, &[], Origin::Tools, Code::Here, cx)
+            })
+            .0
+    });
+    let name = window_of(uid, cx)
+        .and_then(|window| {
+            crate::state::with_shell(window, cx, |shell, _, cx| shell.session_label(uid, cx))
+        })
+        .unwrap_or_default();
+    let chat = &session.read(cx).chat;
+    Facts {
+        intake,
+        sent: chat.prompts_sent,
+        mode: control::state::mode_said(chat),
+        model: control::state::model_said(chat),
+        name,
+    }
+}
+
+/// Where open `key` was asked, and the agent it starts.
+fn asked_of(key: &Key, cx: &mut App) -> Option<(Entity<Shell>, AgentSpec)> {
+    let asked = cx.default_global::<Opens>().asked.get(key)?;
+    Some((asked.shell.upgrade()?, asked.spec.clone()))
+}
+
+fn shells(cx: &App) -> Vec<(AnyWindowHandle, Entity<Shell>)> {
+    crate::state::Shared::global(cx)
+        .windows
         .iter()
-        .filter(|(_, real, count)| *count > 0 && real.starts_with(folder))
-        .map(|(path, _, _)| path.clone())
+        .filter_map(|window| Some((window.handle, window.shell.upgrade()?)))
         .collect()
 }
 
-/// Start `spec` on `dir` off screen, within the caller's cap.
-fn start(
-    shell: &Entity<Shell>,
-    dir: PathBuf,
-    spec: onehand_core::config::AgentSpec,
-    dirs: Vec<PathBuf>,
-    caller: Option<&(u64, PathBuf)>,
-    cx: &mut App,
-) -> Result<(u64, Entity<ChatSession>), String> {
-    if let Some((uid, _)) = caller {
-        let open: Vec<u64> = {
-            let shell = shell.read(cx);
-            sessions()
-                .opened
-                .get(uid)
-                .into_iter()
-                .flatten()
-                .copied()
-                .filter(|opened| shell.session_project(*opened).is_some())
-                .collect()
-        };
-        if open.len() >= OPENED_CAP {
-            let shell = shell.read(cx);
-            let said: Vec<String> = open
-                .iter()
-                .map(|opened| {
-                    let at = shell.session_project(*opened).unwrap_or_default();
-                    format!("session {opened} on {}", at.display())
-                })
-                .collect();
-            return Err(format!(
-                "this session's tools already have {OPENED_CAP} sessions open: {}; \
-                 one has to close first",
-                said.join(", ")
-            ));
-        }
-        sessions().opened.insert(*uid, open);
-    }
-    let started = shell
-        .update(cx, |shell, cx| shell.run_unattended(dir, spec, dirs, cx))
-        .ok_or("the session did not start")?;
-    if let Some((uid, _)) = caller {
-        sessions().opened.entry(*uid).or_default().push(started.0);
-    }
-    Ok(started)
+/// Session `uid`, in whichever window holds it.
+pub(super) fn session_of(uid: u64, cx: &App) -> Option<Entity<ChatSession>> {
+    shells(cx)
+        .into_iter()
+        .find_map(|(_, shell)| shell.read(cx).session_entity(uid, cx))
 }
 
-mod opening;
-pub(super) mod requests;
-pub(super) mod state;
+fn window_of(uid: u64, cx: &App) -> Option<AnyWindowHandle> {
+    shells(cx)
+        .into_iter()
+        .find(|(_, shell)| shell.read(cx).session_project(uid).is_some())
+        .map(|(window, _)| window)
+}
+
+/// Whether session `uid` is still a session of some window.
+pub(super) fn session_here(uid: u64, cx: &App) -> bool {
+    window_of(uid, cx).is_some()
+}
+
+/// Whether the lead of worker `uid` is still a session of some window.
+fn session_here_of_lead(uid: u64, cx: &App) -> bool {
+    let lead = drive().lead_of(uid);
+    lead.is_some_and(|lead| session_here(lead, cx))
+}
+
+/// Every window's project roots on this machine, with their sessions.
+fn counts(cx: &App) -> Vec<(PathBuf, usize)> {
+    shells(cx)
+        .into_iter()
+        .flat_map(|(_, shell)| shell.read(cx).roots_with_sessions())
+        .collect()
+}
+
+/// Every session open in any window.
+fn live(cx: &App) -> Vec<u64> {
+    shells(cx)
+        .into_iter()
+        .flat_map(|(_, shell)| shell.read(cx).session_uids())
+        .collect()
+}
+
+/// The sessions `lead`'s tools opened that are still open, with their
+/// projects.
+fn still_open(lead: u64, cx: &App) -> Vec<(u64, PathBuf)> {
+    let all = shells(cx);
+    drive()
+        .opened_by(lead)
+        .into_iter()
+        .filter_map(|uid| {
+            all.iter()
+                .find_map(|(_, shell)| shell.read(cx).session_project(uid))
+                .map(|at| (uid, at))
+        })
+        .collect()
+}
+
 pub(super) mod turns;
 pub(super) mod whose;
-
-#[cfg(test)]
-mod tests;

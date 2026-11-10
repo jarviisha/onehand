@@ -209,7 +209,7 @@ impl Composer {
                     (None, Act::Mention) => self.insert_trigger('@', window, cx),
                     (None, Act::Control) => {
                         let uid = session.read(cx).chat.uid;
-                        crate::control::switch(uid, !crate::control::switched_on(uid));
+                        crate::control::switch(uid, !crate::control::switched_on(uid), cx);
                         cx.notify();
                     }
                     // Every picker opens an overlay, so these never land here.

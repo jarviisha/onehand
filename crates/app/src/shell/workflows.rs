@@ -446,7 +446,7 @@ impl Shell {
         };
         // Every drive, a Resume's new session included: what the task was
         // given when it started is what its session may use.
-        crate::control::grant(uid, &task.grant);
+        crate::control::grant(uid, &task.grant, cx);
         // Deferred: the run's carrier reaches into the session and the global
         // the shell is reading from while this runs.
         let handle = window.window_handle();
