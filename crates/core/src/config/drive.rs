@@ -67,7 +67,7 @@ impl Edit {
     }
 
     /// What the write is, in a person's words, for the line saying it failed.
-    pub fn doing(&self) -> &'static str {
+    fn doing(&self) -> &'static str {
         match self {
             Self::Appearance(_) => "Saving the appearance",
             Self::Agents(_) => "Saving the agents",

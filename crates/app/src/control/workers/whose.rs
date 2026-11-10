@@ -3,7 +3,7 @@
 //! windows whether a lead is still open.
 
 use super::super::drive;
-use super::session_here;
+use super::session_here_of_lead;
 use gpui::App;
 
 pub(crate) use onehand_core::control::workers::Worker;
@@ -21,7 +21,7 @@ pub(crate) fn workers_of(lead: u64) -> Vec<Worker> {
 /// Whether *Give back to the lead* is offered for worker `uid`, which has
 /// sent `prompts_sent` prompts.
 pub(crate) fn give_back_offered(uid: u64, prompts_sent: usize, cx: &App) -> bool {
-    let open = lead_of(uid).is_some_and(|lead| session_here(lead, cx));
+    let open = session_here_of_lead(uid, cx);
     drive().give_back_offered(uid, prompts_sent, open)
 }
 
@@ -29,6 +29,6 @@ pub(crate) fn give_back_offered(uid: u64, prompts_sent: usize, cx: &App) -> bool
 /// counted as the lead's. Nothing is sent, nothing said. False when it is
 /// no longer offered by the time it is pressed.
 pub(crate) fn give_back(uid: u64, prompts_sent: usize, cx: &App) -> bool {
-    let open = lead_of(uid).is_some_and(|lead| session_here(lead, cx));
+    let open = session_here_of_lead(uid, cx);
     drive().give_back(uid, prompts_sent, open)
 }

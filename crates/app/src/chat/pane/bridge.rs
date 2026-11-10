@@ -18,7 +18,14 @@ impl ChatPane {
     /// A session that has not reached a live adapter is skipped rather than
     /// listed as unavailable: it is still on its resume picker, so there is no
     /// conversation to name and nothing that could be sent to it.
-    pub fn remote_sessions(&self, cx: &App) -> Vec<crate::remote::RemoteSession> {
+    ///
+    /// `runs_here` says whether the project at a root runs its sessions on
+    /// this machine, which the bridge alone weighs.
+    pub fn remote_sessions(
+        &self,
+        runs_here: impl Fn(&std::path::Path) -> bool,
+        cx: &App,
+    ) -> Vec<crate::remote::RemoteSession> {
         let mut uids: Vec<u64> = self.conversations.keys().copied().collect();
         uids.sort_unstable();
         uids.iter()
@@ -38,7 +45,7 @@ impl ChatPane {
                     // screen and a line on a phone cannot end up calling one
                     // state two things.
                     state: self.signal(uid, cx).map(SessionSignal::word),
-                    here: conv.host.is_none(),
+                    here: runs_here(&conv.root),
                 })
             })
             .collect()
@@ -58,6 +65,7 @@ impl ChatPane {
             return;
         };
         let attention = self.presence(cx).seeing(uid);
+        let origin = self.origin(uid, agent, root, cx);
         let left = session.update(cx, |session, cx| {
             let fx = session
                 .chat
@@ -70,7 +78,7 @@ impl ChatPane {
                     what,
                     desktop,
                     chat,
-                } => self.tell(uid, what, desktop, chat, agent, root, cx),
+                } => self.tell(&origin, what, desktop, chat, cx),
                 // Only a tell answers a look; the rest the session carried.
                 Effect::Signal(_)
                 | Effect::Changed
@@ -88,37 +96,29 @@ impl ChatPane {
         cx.notify();
     }
 
-    /// Say `what` on `uid` outside the window: on the desktop, and to the
-    /// chats following it.
-    #[allow(clippy::too_many_arguments)]
+    /// Say `what` on `origin`'s session outside the window: on the desktop,
+    /// and to the chats following it.
     fn tell(
         &self,
-        uid: u64,
+        origin: &crate::remote::Origin,
         what: Away,
         desktop: bool,
         chat: bool,
-        agent: &str,
-        root: &str,
         cx: &mut Context<Self>,
     ) {
+        let (agent, root) = (origin.agent.clone(), origin.project.clone());
         if desktop {
             match what {
-                Away::TurnEnded => {
-                    crate::chat::session::notify_turn_ended(agent.to_string(), root.to_string())
-                }
-                Away::Asked(ask) => crate::chat::session::notify_awaiting_user(
-                    ask,
-                    agent.to_string(),
-                    root.to_string(),
-                ),
+                Away::TurnEnded => crate::chat::session::notify_turn_ended(agent, root),
+                Away::Asked(ask) => crate::chat::session::notify_awaiting_user(ask, agent, root),
                 // Never put on the desktop: the drive asks for the chat only.
                 Away::LinkLost => {}
             }
         }
-        if chat && let Some(session) = self.session_of(uid) {
-            let origin = self.origin(uid, agent, root, cx);
-            let what = onehand_core::remote::link::announcement(&session.read(cx).chat, uid, what);
-            crate::remote::announce(&origin, what, cx);
+        if chat && let Some(session) = self.session_of(origin.uid) {
+            let news =
+                onehand_core::remote::link::announcement(&session.read(cx).chat, origin.uid, what);
+            crate::remote::announce(origin, news, cx);
         }
     }
 
@@ -146,10 +146,6 @@ impl ChatPane {
             agent: agent.to_string(),
             project: root.to_string(),
             conversation: self.title_for(uid, cx),
-            here: self
-                .conversations
-                .get(&uid)
-                .is_some_and(|conv| conv.host.is_none()),
         }
     }
 }

@@ -83,10 +83,9 @@ pub(crate) fn carry_settings(fx: Vec<Effect>, window: &mut Window, cx: &mut App)
             Effect::Show(Value::Appearance(choice)) => {
                 crate::shell::apply_appearance(choice, Some(&mut *window), cx)
             }
-            Effect::Show(Value::Outside(on)) => {
-                if crate::control::drive().set_outside(on) {
-                    cx.refresh_windows();
-                }
+            Effect::Show(value @ Value::Outside(_)) => {
+                onehand_core::control::link::shown(&mut crate::control::drive(), &value);
+                cx.refresh_windows();
             }
             Effect::Show(Value::Agents) => {}
             Effect::Write { pending, edit } => {

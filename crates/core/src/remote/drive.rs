@@ -335,9 +335,10 @@ impl RemoteDrive {
     ///
     /// An empty audience is the ordinary case, and the whole of the silence
     /// rule here; whether the news is worth telling at all is the session's
-    /// drive's.
+    /// drive's. A session that does not run here has none: no chat can follow
+    /// a session it is never listed.
     pub fn announce(&self, origin: &super::Origin, what: &super::Announcement) -> Vec<Effect> {
-        if !self.live || !origin.here {
+        if !self.live {
             return Vec::new();
         }
         self.chats

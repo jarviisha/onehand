@@ -658,6 +658,13 @@ impl Shell {
     /// is where a session's running state actually lives, and the tree's
     /// `Session` is its description rather than its condition.
     pub fn remote_sessions(&self, cx: &App) -> Vec<crate::remote::RemoteSession> {
-        self.chat.read(cx).remote_sessions(cx)
+        let roots = &self.window.workspace.roots;
+        let runs_here = |path: &Path| {
+            roots
+                .iter()
+                .find(|root| root.path == path)
+                .is_some_and(|root| root.runs_here())
+        };
+        self.chat.read(cx).remote_sessions(runs_here, cx)
     }
 }

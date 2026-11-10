@@ -816,21 +816,19 @@ impl ChatPane {
         }
     }
 
-    /// The person is looking at `uid`'s conversation: tell its drive.
+    /// The person is looking at `uid`'s conversation: tell its drive, and draw
+    /// its row again.
     fn shown(&mut self, uid: u64, cx: &mut Context<Self>) {
         let Some(session) = self.session_of(uid).cloned() else {
             return;
         };
-        let was = session.read(cx).chat.unseen();
         session.update(cx, |session, cx| {
             let fx = session
                 .chat
                 .handle(Input::Shown, crate::chat::session::now());
             session.perform(fx, cx);
         });
-        if was {
-            cx.notify();
-        }
+        cx.notify();
     }
 
     /// Write the whole conversation to a Markdown file, saying so in a toast

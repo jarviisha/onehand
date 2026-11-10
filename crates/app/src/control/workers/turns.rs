@@ -10,8 +10,8 @@ use super::super::drive;
 use super::session_of;
 use crate::chat::session::ChatSession;
 use gpui::{App, Entity};
-use onehand_core::chat::drive::{Code, Intake, Origin};
-use onehand_core::control::drive::{Found, run};
+use onehand_core::chat::drive::{Code, Origin};
+use onehand_core::control::drive::{Found, this_run};
 use onehand_core::control::open::parse_handle;
 use onehand_core::control::state::state;
 use onehand_core::control::turns;
@@ -24,7 +24,7 @@ fn find(
     cx: &App,
 ) -> Result<Option<(u64, Entity<ChatSession>)>, String> {
     let (caller, _) = caller.ok_or("this tool is for a session's agent")?;
-    let uid = parse_handle(session, &run())?;
+    let uid = parse_handle(session, &this_run())?;
     let entity = session_of(uid, cx);
     match drive().find(caller, uid, session, entity.is_some())? {
         Found::Open { uid } => Ok(entity.map(|entity| (uid, entity))),
@@ -61,12 +61,8 @@ pub(in crate::control) fn send(
             let (intake, _) = worker.update(cx, |worker, cx| {
                 worker.prompt(text, &[], Origin::Tools, Code::Here, cx)
             });
-            if intake != Intake::Sent {
-                return Err("the prompt was not accepted".to_string());
-            }
             let sent = worker.read(cx).chat.prompts_sent;
-            drive().sent(uid, turn, text, sent);
-            Ok(format!("turn {turn} accepted"))
+            drive().sent(uid, turn, text, &intake, sent)
         }
     }
 }

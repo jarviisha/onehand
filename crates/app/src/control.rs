@@ -146,10 +146,7 @@ fn carry_later(fx: Vec<Effect>, cx: &mut App) {
 /// never held across one.
 pub(crate) fn carry(fx: Vec<Effect>, cx: &mut App) {
     for effect in fx {
-        match effect {
-            Effect::ToolsChanged(uid) => tell_changed(uid),
-            other => workers::carry_open(other, cx),
-        }
+        workers::carry_one(effect, cx);
     }
 }
 

@@ -69,8 +69,11 @@ fn an_opens_deadline_comes_round_and_frees_its_request(cx: &mut TestAppContext) 
         name: None,
     };
     let projects = vec![("repo".to_string(), PathBuf::from("/repo"))];
-    let Ok(Begun::Resolve { token, .. }) = drive().open_worker(open(), &projects, None) else {
+    let Ok(Begun::Resolve { fx, .. }) = drive().open_worker(open(), &projects, None) else {
         panic!("a new request");
+    };
+    let [Effect::Arm { token, .. }] = fx[..] else {
+        panic!("the deadline is armed at the call");
     };
     assert!(matches!(
         drive().open_worker(open(), &projects, None),

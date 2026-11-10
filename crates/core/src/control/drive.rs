@@ -10,13 +10,13 @@
 //!
 //! **A worker's open, step by step.** [`ControlDrive::open_worker`] checks
 //! the call and its request id, and names the folder to resolve off the UI
-//! thread. Once resolved ([`ControlDrive::resolved`]) the drive refuses a
+//! thread. Once resolved ([`Input::Resolved`]) the drive refuses a
 //! folder another session or a process works in, or a lead over its cap, and
 //! reserves the folder and asks for the session ([`Effect::Start`]). Once
-//! started ([`ControlDrive::started`]) every change of the session wakes it
-//! ([`ControlDrive::woke`]): the mode and the model go in one pick at a time,
+//! started ([`Input::Started`]) every change of the session wakes it
+//! ([`Input::Woke`]): the mode and the model go in one pick at a time,
 //! each answered, then the first prompt ([`Effect::Begin`]), and only then is
-//! the relation written and the open answered ([`ControlDrive::begun`]).
+//! the relation written and the open answered ([`Input::Begun`]).
 //!
 //! **The lead is asked about at every step.** A lead closed or switched off
 //! abandons its opens at once ([`ControlDrive::forget`],
@@ -47,7 +47,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// How many sessions one session's tools may have open at once.
-pub const OPENED_CAP: usize = 4;
+const OPENED_CAP: usize = 4;
 
 /// How long a worker has to come up, from the call to its first prompt
 /// accepted: the agent's start, its handshake, and every pick answered.
@@ -56,7 +56,7 @@ pub const OPEN_DEADLINE: Duration = Duration::from_secs(120);
 /// An open in flight, by its lead and request id.
 pub type Key = (u64, String);
 
-/// What `open_worker` was asked, by the session `lead` on `project_of_lead`.
+/// What `open_worker` was asked, by the session `lead`.
 #[derive(Debug, Clone)]
 pub struct Open {
     pub lead: u64,
@@ -89,14 +89,14 @@ pub enum Begun {
     /// Answered now, with this.
     Said(String),
     /// Resolve `target` and the further folders off the UI thread
-    /// (`workers::resolve_blocking`), and report [`ControlDrive::resolved`]
-    /// for `key`; and arm the open's deadline, [`Effect::Arm`] with `token`.
-    /// A late answer for an open already failed is **dropped**: nothing was
+    /// (`workers::resolve_blocking`), and report [`Input::Resolved`] for
+    /// `key`; and carry `fx` now, the open's deadline armed at the call. A
+    /// late answer for an open already failed is **dropped**: nothing was
     /// reserved or started for it.
     Resolve {
         key: Key,
         target: Target,
-        token: u64,
+        fx: Vec<Effect>,
     },
 }
 
@@ -127,15 +127,41 @@ pub struct Facts {
     pub name: String,
 }
 
+/// What the world reports back.
+pub enum Input<'a> {
+    /// Open `key`'s folder was read, with the world as it stands.
+    Resolved {
+        key: Key,
+        resolved: Result<Resolved, String>,
+        world: World,
+    },
+    /// Open `key`'s session started as this uid, or why not.
+    Started {
+        key: Key,
+        started: Result<u64, String>,
+    },
+    /// Worker `uid`'s session changed, or is gone (`chat` is `None`);
+    /// `lead_here` says whether its lead is still a session of some window.
+    Woke {
+        uid: u64,
+        chat: Option<&'a Chat>,
+        lead_here: bool,
+    },
+    /// Worker `uid`'s first prompt went as `facts` say.
+    Begun { uid: u64, facts: Facts },
+    /// The wait armed with `token` ran out.
+    Elapsed { token: u64 },
+}
+
 /// What the front end carries out.
 #[derive(Debug)]
 pub enum Effect {
     /// Tell every connection of session `uid`'s agent that its tools changed.
     ToolsChanged(u64),
     /// Start the worker's session on `root` with `dirs`, off screen, and
-    /// name it for `folder` (or `name`); report [`ControlDrive::started`].
-    /// A late answer is **cleaned up**: a session started for an open that
-    /// failed meanwhile is closed by [`ControlDrive::started`]'s own effects.
+    /// name it for `folder` (or `name`); report [`Input::Started`]. A late
+    /// answer is **cleaned up**: a session started for an open that failed
+    /// meanwhile is closed ([`Effect::Drop`]).
     Start {
         key: Key,
         root: PathBuf,
@@ -143,18 +169,22 @@ pub enum Effect {
         folder: String,
         name: Option<String>,
     },
-    /// Report [`ControlDrive::woke`] for `uid` whenever its session changes,
-    /// and once now.
+    /// Report [`Input::Woke`] for `uid` whenever its session changes, and
+    /// once now. A late report, for a worker no open holds any more, is
+    /// **dropped**: the drive answers it by unwatching.
     Watch(u64),
     /// Stop watching `uid`.
     Unwatch(u64),
     /// Put `pick` to worker `uid`'s agent. Its answer is the session's
-    /// change, which wakes the open again.
+    /// change, reported as [`Input::Woke`]; one for an open already over is
+    /// **dropped** with it.
     Pick { uid: u64, pick: Pick },
     /// Send worker `uid` its first prompt, if it has one, from onehand's
-    /// tools, then report [`ControlDrive::begun`]. Answered in the same pass.
+    /// tools, then report [`Input::Begun`] in the same pass. A late answer,
+    /// for an open that failed meanwhile, is **dropped**: the session it went
+    /// to is being closed.
     Begin { uid: u64, prompt: Option<String> },
-    /// Report [`ControlDrive::elapsed`] with `token` after `wait`. A late
+    /// Report [`Input::Elapsed`] with `token` after `wait`. A late
     /// answer is **dropped** by its token: the open it timed is over.
     Arm { token: u64, wait: Duration },
     /// Close worker `uid`'s session, open `key`'s, and its project when the
@@ -470,14 +500,26 @@ impl ControlDrive {
         })
     }
 
-    /// The lead's turn `turn`, `text`, went to worker `uid`, which has now
-    /// sent `sent` prompts.
-    pub fn sent(&mut self, uid: u64, turn: u64, text: &str, sent: usize) {
+    /// The lead's turn `turn`, `text`, was handed to worker `uid` and came
+    /// to `intake`, the worker having sent `sent` prompts since: what the
+    /// lead is answered. Only a prompt the agent took moves the relation on.
+    pub fn sent(
+        &mut self,
+        uid: u64,
+        turn: u64,
+        text: &str,
+        intake: &Intake,
+        sent: usize,
+    ) -> Result<String, String> {
+        if *intake != Intake::Sent {
+            return Err("the prompt was not accepted".to_string());
+        }
         if let Some(relation) = self.workers.get_mut(&uid) {
             relation.turn = Some(turn);
             relation.text = Some(text.to_string());
             relation.sent = sent;
         }
+        Ok(format!("turn {turn} accepted"))
     }
 
     // The cap.
@@ -534,7 +576,7 @@ impl ControlDrive {
                 return Ok(Begun::Said(match uid {
                     Some(uid) => format!(
                         "{} is still opening; call again with the same request",
-                        open::handle(&run(), uid)
+                        open::handle(&this_run(), uid)
                     ),
                     None => {
                         "the session is still opening; call again with the same request".to_string()
@@ -564,12 +606,38 @@ impl ControlDrive {
                 token,
             },
         );
-        Ok(Begun::Resolve { key, target, token })
+        Ok(Begun::Resolve {
+            key,
+            target,
+            fx: vec![Effect::Arm {
+                token,
+                wait: OPEN_DEADLINE,
+            }],
+        })
+    }
+
+    /// What the world reports back.
+    pub fn handle(&mut self, input: Input<'_>) -> Vec<Effect> {
+        match input {
+            Input::Resolved {
+                key,
+                resolved,
+                world,
+            } => self.resolved(&key, resolved, &world),
+            Input::Started { key, started } => self.started(&key, started),
+            Input::Woke {
+                uid,
+                chat,
+                lead_here,
+            } => self.woke(uid, chat, lead_here),
+            Input::Begun { uid, facts } => self.begun(uid, facts),
+            Input::Elapsed { token } => self.elapsed(token),
+        }
     }
 
     /// Open `key`'s folder was read, as `resolved` says, with `world` as it
     /// stands: refuse it, or reserve it and start.
-    pub fn resolved(
+    fn resolved(
         &mut self,
         key: &Key,
         resolved: Result<Resolved, String>,
@@ -660,7 +728,7 @@ impl ControlDrive {
     }
 
     /// Open `key`'s session started as `uid`, or why not.
-    pub fn started(&mut self, key: &Key, started: Result<u64, String>) -> Vec<Effect> {
+    fn started(&mut self, key: &Key, started: Result<u64, String>) -> Vec<Effect> {
         let Some(pending) = self.pending.get_mut(key) else {
             // Failed while it started: what it started goes.
             return match started {
@@ -706,7 +774,7 @@ impl ControlDrive {
 
     /// Worker `uid`'s session changed, or is gone (`chat` is `None`);
     /// `lead_here` says whether its lead is still a session of some window.
-    pub fn woke(&mut self, uid: u64, chat: Option<&Chat>, lead_here: bool) -> Vec<Effect> {
+    fn woke(&mut self, uid: u64, chat: Option<&Chat>, lead_here: bool) -> Vec<Effect> {
         let Some(key) = self.key_of(uid) else {
             return vec![Effect::Unwatch(uid)];
         };
@@ -748,7 +816,7 @@ impl ControlDrive {
 
     /// Worker `uid`'s first prompt went as `facts` say: write the relation and
     /// answer, or fail.
-    pub fn begun(&mut self, uid: u64, facts: Facts) -> Vec<Effect> {
+    fn begun(&mut self, uid: u64, facts: Facts) -> Vec<Effect> {
         let Some(key) = self.key_of(uid) else {
             return Vec::new();
         };
@@ -768,7 +836,7 @@ impl ControlDrive {
             return Vec::new();
         };
         let mut lines = vec![
-            format!("session: {}", open::handle(&run(), uid)),
+            format!("session: {}", open::handle(&this_run(), uid)),
             format!("name: {}", facts.name),
             format!("project: {}", root.display()),
             format!("mode: {}", facts.mode),
@@ -804,7 +872,7 @@ impl ControlDrive {
     }
 
     /// The wait armed with `token` ran out.
-    pub fn elapsed(&mut self, token: u64) -> Vec<Effect> {
+    fn elapsed(&mut self, token: u64) -> Vec<Effect> {
         let key = self
             .pending
             .iter()
@@ -880,7 +948,7 @@ impl ControlDrive {
 /// This run of the app, as a worker's handle names it: uids count from 1 in
 /// every run, so a handle from an earlier one must never reach whichever
 /// session took its number. Never written anywhere.
-pub fn run() -> String {
+pub fn this_run() -> String {
     static RUN: std::sync::LazyLock<String> =
         std::sync::LazyLock::new(|| super::new_token()[..8].to_string());
     RUN.clone()

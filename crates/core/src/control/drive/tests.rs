@@ -51,12 +51,19 @@ fn up(drive: &mut ControlDrive) -> Key {
     let Ok(Begun::Resolve { key, .. }) = drive.open_worker(asked("go"), &projects(), None) else {
         panic!("a new request resolves");
     };
-    let fx = drive.resolved(&key, Ok(resolved()), &world());
+    let fx = drive.handle(Input::Resolved {
+        key: key.clone(),
+        resolved: Ok(resolved()),
+        world: world(),
+    });
     assert!(
         matches!(&fx[..], [Effect::Start { folder, .. }] if folder == "repo"),
         "{fx:?}"
     );
-    let fx = drive.started(&key, Ok(7));
+    let fx = drive.handle(Input::Started {
+        key: key.clone(),
+        started: Ok(7),
+    });
     assert!(fx.iter().any(|e| matches!(e, Effect::Watch(7))), "{fx:?}");
     key
 }
@@ -92,12 +99,25 @@ fn a_worker_up_is_given_its_prompt_then_answered() {
     up(&mut drive);
     assert_eq!(drive.lead_of(7), Some(1), "a worker from its start");
     assert!(
-        drive.woke(7, Some(&Chat::default()), true).is_empty(),
+        drive
+            .handle(Input::Woke {
+                uid: 7,
+                chat: Some(&Chat::default()),
+                lead_here: true
+            })
+            .is_empty(),
         "still connecting"
     );
-    let fx = drive.woke(7, Some(&connected()), true);
+    let fx = drive.handle(Input::Woke {
+        uid: 7,
+        chat: Some(&connected()),
+        lead_here: true,
+    });
     assert!(matches!(&fx[..], [Effect::Begin { uid: 7, prompt: Some(p) }] if p == "go"));
-    let fx = drive.begun(7, facts(Some(Intake::Sent)));
+    let fx = drive.handle(Input::Begun {
+        uid: 7,
+        facts: facts(Some(Intake::Sent)),
+    });
     let said = answer(&fx).unwrap().as_ref().unwrap();
     assert!(
         said.contains("name: repo") && said.ends_with("turn: 1 accepted"),
@@ -124,7 +144,10 @@ fn a_worker_up_is_given_its_prompt_then_answered() {
 fn a_prompt_not_taken_leaves_nothing_behind() {
     let mut drive = lead_on();
     up(&mut drive);
-    let fx = drive.begun(7, facts(Some(Intake::Queued)));
+    let fx = drive.handle(Input::Begun {
+        uid: 7,
+        facts: facts(Some(Intake::Queued)),
+    });
     assert!(fx.iter().any(|e| matches!(
         e,
         Effect::Drop {
@@ -168,7 +191,11 @@ fn a_lead_that_goes_abandons_its_open() {
 fn a_wake_without_its_lead_fails() {
     let mut drive = lead_on();
     up(&mut drive);
-    let fx = drive.woke(7, Some(&connected()), false);
+    let fx = drive.handle(Input::Woke {
+        uid: 7,
+        chat: Some(&connected()),
+        lead_here: false,
+    });
     assert!(answer(&fx).is_some_and(Result::is_err));
 }
 
@@ -177,18 +204,29 @@ fn a_wake_without_its_lead_fails() {
 #[test]
 fn an_open_past_its_deadline_fails_once() {
     let mut drive = lead_on();
-    let Ok(Begun::Resolve { key, token, .. }) = drive.open_worker(asked("go"), &projects(), None)
+    let Ok(Begun::Resolve { key, fx, .. }) = drive.open_worker(asked("go"), &projects(), None)
     else {
         panic!("resolves");
     };
-    drive.resolved(&key, Ok(resolved()), &world());
-    drive.started(&key, Ok(7));
-    let fx = drive.elapsed(token);
+    let [Effect::Arm { token, wait }] = fx[..] else {
+        panic!("the deadline is armed at the call: {fx:?}");
+    };
+    assert_eq!(wait, OPEN_DEADLINE);
+    drive.handle(Input::Resolved {
+        key: key.clone(),
+        resolved: Ok(resolved()),
+        world: world(),
+    });
+    drive.handle(Input::Started {
+        key: key.clone(),
+        started: Ok(7),
+    });
+    let fx = drive.handle(Input::Elapsed { token });
     assert_eq!(
         answer(&fx),
         Some(&Err("the agent was not ready within 120 seconds".into()))
     );
-    assert!(drive.elapsed(token).is_empty());
+    assert!(drive.handle(Input::Elapsed { token }).is_empty());
 }
 
 /// A session open on the folder, a process in it, or a lead at its cap
@@ -203,7 +241,11 @@ fn a_folder_in_use_or_a_full_cap_refuses() {
         counts: vec![(PathBuf::from("/repo"), 1)],
         ..world()
     };
-    let fx = drive.resolved(&key, Ok(resolved()), &busy);
+    let fx = drive.handle(Input::Resolved {
+        key: key.clone(),
+        resolved: Ok(resolved()),
+        world: busy,
+    });
     assert!(answer(&fx).is_some_and(|o| o.as_ref().unwrap_err().contains("already has a session")));
 
     let Ok(Begun::Resolve { key, .. }) = drive.open_worker(asked("go"), &projects(), None) else {
@@ -213,14 +255,22 @@ fn a_folder_in_use_or_a_full_cap_refuses() {
         opened: (2..6).map(|uid| (uid, PathBuf::from("/x"))).collect(),
         ..world()
     };
-    let fx = drive.resolved(&key, Ok(resolved()), &full);
+    let fx = drive.handle(Input::Resolved {
+        key: key.clone(),
+        resolved: Ok(resolved()),
+        world: full,
+    });
     assert!(answer(&fx).is_some_and(|o| o.as_ref().unwrap_err().contains("4 sessions open")));
     // The folder was given back.
     let Ok(Begun::Resolve { key, .. }) = drive.open_worker(asked("go"), &projects(), None) else {
         panic!("resolves");
     };
     assert!(matches!(
-        &drive.resolved(&key, Ok(resolved()), &world())[..],
+        &drive.handle(Input::Resolved {
+            key: key.clone(),
+            resolved: Ok(resolved()),
+            world: world()
+        })[..],
         [Effect::Start { .. }]
     ));
 }
@@ -270,12 +320,42 @@ fn standing_follows_the_switches() {
 fn a_worker_given_back_is_the_leads_again() {
     let mut drive = lead_on();
     up(&mut drive);
-    drive.woke(7, Some(&connected()), true);
-    drive.begun(7, facts(Some(Intake::Sent)));
+    drive.handle(Input::Woke {
+        uid: 7,
+        chat: Some(&connected()),
+        lead_here: true,
+    });
+    drive.handle(Input::Begun {
+        uid: 7,
+        facts: facts(Some(Intake::Sent)),
+    });
     assert!(!drive.give_back_offered(7, 1, true), "the lead holds it");
     assert!(drive.give_back_offered(7, 2, true));
     assert!(!drive.give_back_offered(7, 2, false), "its lead is gone");
     assert!(drive.give_back(7, 2, true));
     assert!(!drive.give_back_offered(7, 2, true));
     assert_eq!(drive.last(7).map(|last| last.sent), Some(2));
+}
+
+/// A turn the worker's agent did not take is refused and moves nothing on.
+#[test]
+fn a_turn_not_taken_moves_nothing() {
+    let mut drive = lead_on();
+    up(&mut drive);
+    drive.handle(Input::Woke {
+        uid: 7,
+        chat: Some(&connected()),
+        lead_here: true,
+    });
+    drive.handle(Input::Begun {
+        uid: 7,
+        facts: facts(Some(Intake::Sent)),
+    });
+    assert!(drive.sent(7, 2, "next", &Intake::Queued, 2).is_err());
+    assert_eq!(drive.last(7).map(|last| last.turn), Some(Some(1)));
+    assert_eq!(
+        drive.sent(7, 2, "next", &Intake::Sent, 2),
+        Ok("turn 2 accepted".into())
+    );
+    assert_eq!(drive.last(7).map(|last| last.turn), Some(Some(2)));
 }

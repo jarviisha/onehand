@@ -185,11 +185,11 @@ pub enum Effect {
         title: Option<String>,
     },
     /// News a person may want told: say where they are, as
-    /// [`Input::Seen`] with `what`, before anything else is carried.
+    /// [`Input::Seen`] with `what`, read as it stands when the news is heard.
     ///
     /// A late answer is **recorded**: the news happened, and it is told as the
     /// answer says, whatever the session has done since. A carrier answers it
-    /// in the pass that carries it, so none is late in practice.
+    /// as soon as it hears it, so none is late in practice.
     Look(Away),
     /// Say `what` outside the window: on the desktop, on a chat away from
     /// the machine, or both. Not answered.

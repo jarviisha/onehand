@@ -135,7 +135,6 @@ fn a_channel_that_ended_tells_nobody_more(cx: &mut TestAppContext) {
         agent: "a".into(),
         project: "p".into(),
         conversation: None,
-        here: true,
     };
     cx.update(|cx| announce(&origin, Announcement::plain(Away::TurnEnded), cx));
     assert!(said(&rx).is_empty());

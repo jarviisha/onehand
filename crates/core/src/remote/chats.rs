@@ -23,8 +23,8 @@ pub struct RemoteSession {
     /// What the session is doing, in the front end's own words for it. `None`
     /// is the case that draws nothing: connected, idle and already read.
     pub state: Option<&'static str>,
-    /// Its project runs its sessions on this machine: the bridge reaches no
-    /// other.
+    /// Its project runs its sessions on this machine
+    /// (`ProjectRoot::runs_here`): the bridge reaches no other.
     pub here: bool,
 }
 
@@ -76,9 +76,6 @@ pub struct Origin {
     pub project: String,
     /// The conversation's name, or `None` while it has not earned one.
     pub conversation: Option<String>,
-    /// Its project runs its sessions on this machine: no chat hears of any
-    /// other.
-    pub here: bool,
 }
 
 impl Origin {
@@ -913,7 +910,6 @@ mod tests {
             agent: "Claude Code".to_string(),
             project: "onehand".to_string(),
             conversation: Some("fix the rail".to_string()),
-            here: true,
         }
     }
 

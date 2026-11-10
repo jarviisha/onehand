@@ -13,7 +13,7 @@ use crate::shell::Shell;
 use gpui::{AnyWindowHandle, App, Entity, Global, Subscription, WeakEntity};
 use onehand_core::chat::drive::{Code, Origin};
 use onehand_core::config::AgentSpec;
-use onehand_core::control::drive::{Begun, Effect, Facts, Key, Open, World};
+use onehand_core::control::drive::{Begun, Effect, Facts, Input, Key, Open, World};
 use onehand_core::control::{self, workers::resolve_blocking};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -99,9 +99,9 @@ pub(super) fn open(
     let dirs = open.dirs.clone();
     let lead = open.lead;
     let begun = drive().open_worker(open, projects, mode)?;
-    let (key, target, token) = match begun {
+    let (key, target, fx) = match begun {
         Begun::Said(said) => return Ok(said),
-        Begun::Resolve { key, target, token } => (key, target, token),
+        Begun::Resolve { key, target, fx } => (key, target, fx),
     };
     let skip: Vec<u32> = std::iter::once(std::process::id())
         .chain(shell.read(cx).shell_pids(cx))
@@ -119,13 +119,7 @@ pub(super) fn open(
             answer: answer.take(),
         },
     );
-    carry(
-        vec![Effect::Arm {
-            token,
-            wait: onehand_core::control::drive::OPEN_DEADLINE,
-        }],
-        cx,
-    );
+    carry(fx, cx);
     cx.spawn(async move |cx| {
         let resolved = cx
             .background_executor()
@@ -140,7 +134,11 @@ pub(super) fn open(
                 live: live(cx),
                 opened: still_open(lead, cx),
             };
-            let fx = drive().resolved(&key, resolved, &world);
+            let fx = drive().handle(Input::Resolved {
+                key,
+                resolved,
+                world,
+            });
             carry(fx, cx);
         });
     })
@@ -148,8 +146,8 @@ pub(super) fn open(
     Ok(String::new())
 }
 
-/// Carry one of the drive's effects for an open.
-pub(super) fn carry_open(effect: Effect, cx: &mut App) {
+/// Carry one of the drive's effects.
+pub(super) fn carry_one(effect: Effect, cx: &mut App) {
     match effect {
         Effect::Start {
             key,
@@ -159,10 +157,12 @@ pub(super) fn carry_open(effect: Effect, cx: &mut App) {
             name,
         } => {
             let started = asked_of(&key, cx)
+                .ok_or_else(|| "the window closed".to_string())
                 .and_then(|(shell, spec)| {
-                    shell.update(cx, |shell, cx| shell.run_unattended(root, spec, dirs, cx))
+                    shell
+                        .update(cx, |shell, cx| shell.run_unattended(root, spec, dirs, cx))
+                        .ok_or_else(|| "the session did not start".to_string())
                 })
-                .ok_or_else(|| "the session did not start".to_string())
                 .map(|(uid, session)| {
                     // No conversation file exists yet; the first turn's end
                     // writes the given name with the rest.
@@ -172,7 +172,7 @@ pub(super) fn carry_open(effect: Effect, cx: &mut App) {
                     });
                     uid
                 });
-            let fx = drive().started(&key, started);
+            let fx = drive().handle(Input::Started { key, started });
             carry(fx, cx);
         }
         Effect::Watch(uid) => {
@@ -199,8 +199,12 @@ pub(super) fn carry_open(effect: Effect, cx: &mut App) {
             // Read before the drive is taken: its lock is not reentrant.
             let lead_here = session_here_of_lead(uid, cx);
             let fx = match facts {
-                Some(facts) => drive().begun(uid, facts),
-                None => drive().woke(uid, None, lead_here),
+                Some(facts) => drive().handle(Input::Begun { uid, facts }),
+                None => drive().handle(Input::Woke {
+                    uid,
+                    chat: None,
+                    lead_here,
+                }),
             };
             carry(fx, cx);
         }
@@ -208,7 +212,7 @@ pub(super) fn carry_open(effect: Effect, cx: &mut App) {
             cx.spawn(async move |cx| {
                 cx.background_executor().timer(wait).await;
                 cx.update(|cx| {
-                    let fx = drive().elapsed(token);
+                    let fx = drive().handle(Input::Elapsed { token });
                     carry(fx, cx);
                 });
             })
@@ -242,7 +246,7 @@ pub(super) fn carry_open(effect: Effect, cx: &mut App) {
         }
         // The person's view reads the relation: nothing in a session changed.
         Effect::Changed => cx.refresh_windows(),
-        Effect::ToolsChanged(_) => unreachable!("carried by `control::carry`"),
+        Effect::ToolsChanged(uid) => super::tell_changed(uid),
     }
 }
 
@@ -252,7 +256,11 @@ fn wake(uid: u64, cx: &mut App) {
     let session = session_of(uid, cx);
     let fx = {
         let chat = session.as_ref().map(|session| &session.read(cx).chat);
-        drive().woke(uid, chat.map(|chat| &**chat), lead_here)
+        drive().handle(Input::Woke {
+            uid,
+            chat: chat.map(|chat| &**chat),
+            lead_here,
+        })
     };
     carry(fx, cx);
 }
@@ -316,7 +324,7 @@ pub(super) fn session_here(uid: u64, cx: &App) -> bool {
 }
 
 /// Whether the lead of worker `uid` is still a session of some window.
-fn session_here_of_lead(uid: u64, cx: &App) -> bool {
+pub(super) fn session_here_of_lead(uid: u64, cx: &App) -> bool {
     let lead = drive().lead_of(uid);
     lead.is_some_and(|lead| session_here(lead, cx))
 }

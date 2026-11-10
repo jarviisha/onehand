@@ -132,12 +132,14 @@ fn a_session_not_running_here_is_out_of_reach() {
         .iter()
         .any(|effect| matches!(effect, Effect::Press { .. })));
     assert_eq!(sent(&fx), ["Session 2 is gone."]);
+    // Nor can a chat follow it, so its news reaches nobody.
+    let fx = drive.handle(line("/follow 2"), &open);
+    assert!(sent(&fx)[0].starts_with("There's no session 2."));
     let elsewhere = Origin {
         uid: 2,
         agent: "agent".into(),
         project: "p".into(),
         conversation: None,
-        here: false,
     };
     assert!(drive
         .announce(&elsewhere, &Announcement::plain(Away::TurnEnded))
@@ -233,7 +235,6 @@ fn away_goes_with_the_channel() {
         agent: "agent".into(),
         project: "p".into(),
         conversation: None,
-        here: true,
     };
     let news = Announcement::plain(Away::TurnEnded);
     assert_eq!(drive.announce(&origin, &news).len(), 1);

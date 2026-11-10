@@ -231,15 +231,21 @@ fn carry(fx: Vec<Effect>, cx: &mut App) {
     }
 }
 
+/// Every window's shell, in the order the windows were opened; one closed
+/// since the registry's prune is left for its caller to skip.
+fn shells(cx: &App) -> Vec<gpui::WeakEntity<crate::shell::Shell>> {
+    Shared::global(cx)
+        .windows
+        .iter()
+        .map(|w| w.shell.clone())
+        .collect()
+}
+
 /// Every session this process is running, across every window, in one order:
 /// windows in the order they were opened, each one's by uid, so the numbers in
 /// a listing stay put between one message and the next.
 fn sessions(cx: &App) -> Vec<RemoteSession> {
-    let shells: Vec<_> = Shared::global(cx)
-        .windows
-        .iter()
-        .map(|w| w.shell.clone())
-        .collect();
+    let shells = shells(cx);
     shells
         .iter()
         // A window closed between the registry's prune and this walk is one
@@ -256,11 +262,7 @@ fn on_session<R>(
     cx: &mut App,
     act: impl FnOnce(&Entity<ChatSession>, &mut App) -> R,
 ) -> Option<R> {
-    let shells: Vec<_> = Shared::global(cx)
-        .windows
-        .iter()
-        .map(|w| w.shell.clone())
-        .collect();
+    let shells = shells(cx);
     let session = shells
         .into_iter()
         .filter_map(|shell| shell.upgrade())
@@ -310,11 +312,7 @@ fn scan(chat: String, cx: &mut App) {
 /// Every project root on this machine that runs its sessions here, once each:
 /// two windows can hold one folder.
 fn roots(cx: &App) -> Vec<(std::path::PathBuf, String)> {
-    let shells: Vec<_> = Shared::global(cx)
-        .windows
-        .iter()
-        .map(|w| w.shell.clone())
-        .collect();
+    let shells = shells(cx);
     let mut out: Vec<(std::path::PathBuf, String)> = Vec::new();
     for shell in shells.into_iter().filter_map(|shell| shell.upgrade()) {
         for root in shell.read(cx).remote_roots() {

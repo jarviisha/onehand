@@ -192,7 +192,8 @@ start held to the cap, a claim kept as a task, a run's end telling its issue). A
 the tasks reads them with the runs under way through `task::tasks::link::Seen`, which says what
 each task is doing and who holds a slot. Which of a session's signals checks an offloaded
 project's code is `OffloadDrive::session_said`'s, and how a host stands, the offload poll is
-told as it comes round (`HostSeen`). A GPUI subscriber
+told as it comes round (`HostSeen`). Outside control's value is the tools' drive's and its save
+the settings', joined in `control::link`. A GPUI subscriber
 that routes between drives is a rule in the wrong place.
 
 **A drive reads another drive's model, and never changes it.** The run's drive reads its

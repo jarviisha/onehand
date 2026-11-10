@@ -296,13 +296,13 @@ Left for later:
   696, and the pane's bridge from 487 to 155).
 - onehand's tools are `ControlDrive` (`onehand_core::control::drive`): tokens and standing, the
   switch and grant, labels, the cap, the reservations, requests and relations
-  (`control::workers`), and a worker's open as steps, its deadline armed at the call. What a call
-  is refused for before anything is done is `control::calls`. The drive is held in one process
-  lock by the app's carrier (D23).
+  (`control::workers`), and a worker's open as steps, its deadline armed at the call; what the
+  world reports comes back as one `Input`. What a call is refused for before anything is done is
+  `control::calls`. The drive is held in one process lock by the app's carrier (D23).
 - The settings and the agent check are `SettingsDrive` (`onehand_core::config::drive`), on
   `Shared` (D24): the agents, the appearance, outside control's save (its value the tools'
-  drive's), what each agent was seen to offer, and a check started once, folded by `fold_probe`,
-  failing after its wait.
+  drive's, put in force through `control::link`), what each agent was seen to offer, and a check
+  started once, folded by `fold_probe`, failing after its wait.
 - A second launch has no drive of its own (D25): it changes no application state but the folder
   it opens, a workspace edit (phase 8). Its socket is `onehand_io::socket`.
 - Carrier contract tests: `crates/app/src/remote/tests.rs`, `crates/app/src/control/tests.rs`,
@@ -553,8 +553,14 @@ Made on 2026-11-10, with phase 7's audit:
   tools share.
 
 Phase 7 changed, on purpose:
-- The remote bridge no longer lists or reaches a host or offloaded project's session (#308).
+- The remote bridge no longer lists or reaches a host or offloaded project's session (#308): a
+  session is reached when its project runs here (`ProjectRoot::runs_here`).
 - A session's badge goes with its drive: a restart of its agent starts it unread.
+- A worker's 120 seconds run from the call, as control.md says, so they can run out while its
+  folder is still read; before, they were looked at only once its session had started.
+- The cap of four counts the sessions a lead's tools opened in every window, not only the lead's.
+- A session's connections hear that its tools changed once the call that switched, granted or
+  closed it is over, not inside it.
 
 Phase 6 changed, on purpose:
 - Putting the offload form away no longer stops a send under way: it runs to its end and keeps
