@@ -2,7 +2,7 @@
 //! screen, and going back to choosing one.
 
 use super::{ChatPane, ChatPaneEvent, rel_time};
-use crate::chat::conversation::{Conversation, SessionPhase};
+use crate::chat::conversation::{Conversation, Held, SessionPhase};
 use crate::controls::Named as _;
 use gpui::{App, Context, IntoElement, ParentElement, SharedString, Styled, Window, div};
 use gpui_component::menu::DropdownMenu as _;
@@ -29,9 +29,11 @@ impl ChatPane {
         };
         // Its name and settings, written alone: this can come mid-turn, when
         // a line written would be a step not yet finished.
-        if let Some(session) = conv.session().cloned() {
+        let live = conv.session().cloned();
+        if let Some(session) = &live {
             session.update(cx, |session, cx| session.save_meta(cx));
         }
+        let live = live.map(|session| session.entity_id());
         let (root, agent) = (conv.root.clone(), conv.spec.name.clone());
         cx.spawn(async move |pane, cx| {
             let past = cx
@@ -49,13 +51,41 @@ impl ChatPane {
                 // session that has never been anywhere else, and putting up a
                 // page whose only option is the one already on screen would be
                 // a dead end.
+                //
+                // Only onto the session it was asked on: one restarted or
+                // closed meanwhile is not taken off its conversation by a list
+                // read for the one before.
                 if !past.is_empty() {
-                    pane.set_phase(uid, SessionPhase::ChoosingHistory(past));
+                    pane.choose_history(uid, live, past);
                 }
                 cx.notify();
             });
         })
         .detach();
+    }
+
+    /// Put `uid` on choosing from `past`, holding the session live on it if
+    /// it is still the one `live` names.
+    pub(super) fn choose_history(
+        &mut self,
+        uid: u64,
+        live: Option<gpui::EntityId>,
+        past: Vec<onehand_core::chat::ConvMeta>,
+    ) {
+        let Some(conv) = self.conversations.get_mut(&uid) else {
+            return;
+        };
+        if conv.session().map(|session| session.entity_id()) != live {
+            return;
+        }
+        let held = match std::mem::replace(&mut conv.phase, SessionPhase::Opening) {
+            SessionPhase::Live { session, _watch } => Some(Held {
+                _session: session,
+                _watch,
+            }),
+            SessionPhase::Opening | SessionPhase::ChoosingHistory { .. } => None,
+        };
+        conv.phase = SessionPhase::ChoosingHistory { past, _held: held };
     }
 
     /// The way back to a conversation this project has already had — as a

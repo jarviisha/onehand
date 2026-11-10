@@ -397,4 +397,40 @@ mod lifecycle {
         let nothing = pane.update(cx, |pane, cx| pane.restart(9, false, cx));
         assert!(matches!(nothing, Restart::Nothing));
     }
+    fn past() -> Vec<onehand_core::chat::ConvMeta> {
+        vec![onehand_core::chat::ConvMeta {
+            dir: PathBuf::from("/nonexistent/onehand-past"),
+            session_id: "past".into(),
+            agent: "nowhere".into(),
+            updated: 0,
+            title: "a past conversation".into(),
+            item_count: 1,
+        }]
+    }
+
+    /// Going back to choose a past conversation keeps the session that was
+    /// live running until a choice is made, and the choice lets it go; a
+    /// list read for a session restarted meanwhile puts nothing up.
+    #[gpui::test]
+    fn choosing_a_past_conversation_keeps_the_live_one_until_the_choice(cx: &mut TestAppContext) {
+        let (pane, cx) = pane(cx);
+        open(&pane, 1, cx);
+        let live = session(&pane, 1, cx).expect("a session");
+        pane.update(cx, |pane, _| {
+            pane.choose_history(1, Some(live.entity_id()), past())
+        });
+        assert!(pane.read_with(cx, |pane, _| pane.is_choosing(1)));
+        cx.run_until_parked();
+        assert!(live.upgrade().is_some(), "held while the choice is open");
+        pane.update(cx, |pane, cx| pane.start(1, None, cx));
+        cx.run_until_parked();
+        assert!(live.upgrade().is_none(), "the choice lets it go");
+
+        let now = session(&pane, 1, cx).expect("a session");
+        pane.update(cx, |pane, _| {
+            pane.choose_history(1, Some(live.entity_id()), past())
+        });
+        assert!(!pane.read_with(cx, |pane, _| pane.is_choosing(1)));
+        assert!(now.upgrade().is_some(), "a stale list takes nothing off");
+    }
 }
