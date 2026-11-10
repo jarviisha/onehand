@@ -356,6 +356,13 @@ Left for later:
 - `shell/cleanup.rs` (*Remove worktree…*) is a task's, not the workspace's: its rule is
   `removal::judge`, and a window closing while it runs loses `worktree_removed` (an issue owed).
 - The panels' layout is view state the front end keeps in the workspace file (`layout_mut`).
+- *End on <host>* (`shell/host_end.rs`) still runs its attach and the host's end in the shell,
+  closing the session watching first through the drive; what a failed attach reads as is core's
+  (`HostFailure::said`).
+- How a host session that cannot be attached begins (which failures read the kept copy, and which
+  of those end on why) is still decided in `chat/session/host.rs`, beside `offline_start`.
+- Showing a host session already watched rather than opening it twice, and which projects each
+  page lists, are still the shell's (`shell/sessions.rs`).
 
 **Phase 9: Workbench modes.** Only modes with behaviour get a drive; a mode that only shows
 something keeps its view. `onehand-workbench`'s contract splits into a GUI-free request and answer

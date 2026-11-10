@@ -212,7 +212,7 @@ Every attach opens by exchanging builds (`client::attach`):
   build with sessions mid-turn keeps the form waiting, *Add* refused, with the waiting line and
   *Restart now* in place of a failure; the wait's end carries the *Add* on.
 - **Adding one that is already there selects it.** A root is told apart by host and path together
-  (`Workspace::add_host_root`); a host's path is kept as typed, never resolved on this machine.
+  (`WorkspaceDrive::open_host_root`); a host's path is kept as typed, never resolved on this machine.
 - **Kept in `onehand-workspace.toml` as `<host>:<path>`**, one string in `roots` and, keyed the
   same way, in `pinned`, `unattended` and `checks` (`root_key`, `parse_root_key`,
   `crates/core/src/workspace.rs`). An entry that is not absolute and has a host before its first
