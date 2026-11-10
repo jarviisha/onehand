@@ -347,3 +347,93 @@ fn a_watched_host_session_knows_its_id_from_the_start() {
     );
     assert_eq!(opening_host(None, Some(&id), false), None);
 }
+
+/// The session lifecycle as the pane carries it today: what opening, closing
+/// and restarting a session leaves running.
+mod lifecycle {
+    use super::super::{ChatPane, Restart};
+    use crate::state::Shared;
+    use gpui::{Entity, TestAppContext, VisualTestContext};
+    use gpui_component::Root;
+    use onehand_core::config::AgentSpec;
+    use std::path::PathBuf;
+
+    /// An agent that cannot start: its session opens and its stream ends,
+    /// and nothing is spawned.
+    fn nowhere() -> AgentSpec {
+        AgentSpec {
+            name: "nowhere".into(),
+            command: "/nonexistent/onehand-test-agent".into(),
+            ..Default::default()
+        }
+    }
+
+    fn pane(cx: &mut TestAppContext) -> (Entity<ChatPane>, &mut VisualTestContext) {
+        cx.executor().allow_parking();
+        cx.update(gpui_component::init);
+        cx.update(|cx| cx.set_global(Shared::for_test()));
+        let mut made = None;
+        let window = cx.add_window(|window, cx| {
+            let pane = ChatPane::new(window, cx);
+            made = Some(pane.clone());
+            Root::new(pane, window, cx)
+        });
+        let cx = VisualTestContext::from_window(window.into(), cx).into_mut();
+        (made.expect("the pane"), cx)
+    }
+
+    fn open(pane: &Entity<ChatPane>, uid: u64, cx: &mut VisualTestContext) {
+        pane.update(cx, |pane, cx| {
+            pane.open_unshown(uid, PathBuf::from("/tmp"), &nowhere(), Vec::new(), cx);
+        });
+    }
+
+    fn session(
+        pane: &Entity<ChatPane>,
+        uid: u64,
+        cx: &mut VisualTestContext,
+    ) -> Option<gpui::WeakEntity<crate::chat::session::ChatSession>> {
+        pane.read_with(cx, |pane, _| pane.session_of(uid).map(Entity::downgrade))
+    }
+
+    /// A session asked for twice starts once: the second ask finds the first.
+    #[gpui::test]
+    fn a_session_opened_twice_starts_once(cx: &mut TestAppContext) {
+        let (pane, cx) = pane(cx);
+        open(&pane, 1, cx);
+        let first = session(&pane, 1, cx).expect("a session");
+        open(&pane, 1, cx);
+        let second = session(&pane, 1, cx).expect("a session");
+        assert_eq!(first.entity_id(), second.entity_id());
+        assert_eq!(pane.read_with(cx, |pane, _| pane.conversations.len()), 1);
+    }
+
+    /// Closing a session lets its session go, and with it its agent.
+    #[gpui::test]
+    fn a_closed_session_lets_its_agent_go(cx: &mut TestAppContext) {
+        let (pane, cx) = pane(cx);
+        open(&pane, 1, cx);
+        let held = session(&pane, 1, cx).expect("a session");
+        pane.update(cx, |pane, cx| pane.close(1, cx));
+        cx.run_until_parked();
+        assert!(held.upgrade().is_none(), "nothing of it is left");
+        assert!(pane.read_with(cx, |pane, _| pane.conversations.is_empty()));
+    }
+
+    /// A restart puts a new session in the old one's place, and the old one
+    /// is gone by then; one with nothing live restarts nothing.
+    #[gpui::test]
+    fn a_restart_replaces_the_session_and_lets_the_old_one_go(cx: &mut TestAppContext) {
+        let (pane, cx) = pane(cx);
+        open(&pane, 1, cx);
+        let old = session(&pane, 1, cx).expect("a session");
+        let restarted = pane.update(cx, |pane, cx| pane.restart(1, false, cx));
+        assert!(matches!(restarted, Restart::Restarted));
+        cx.run_until_parked();
+        let new = session(&pane, 1, cx).expect("a session");
+        assert_ne!(old.entity_id(), new.entity_id());
+        assert!(old.upgrade().is_none());
+        let nothing = pane.update(cx, |pane, cx| pane.restart(9, false, cx));
+        assert!(matches!(nothing, Restart::Nothing));
+    }
+}

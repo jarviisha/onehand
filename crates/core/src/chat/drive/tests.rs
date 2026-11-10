@@ -1109,6 +1109,67 @@ fn a_busy_host_is_waited_on_apart_from_one_away() {
     assert!(!drive.drive.forget_host_wait().0, "said once");
 }
 
+// How a stream's end is told, as the session's lifecycle reads it today.
+
+/// A fork whose agent never opened ends without news: the failure is said
+/// where the fork was asked for, and the session goes.
+#[test]
+fn a_fork_that_never_opened_ends_without_news() {
+    let chat = Chat::new(1, PathBuf::from("/repo"), "agent".into(), None);
+    let (mut drive, _rx) = Front::new(SessionDrive::new(chat));
+    drive.drive.fork(crate::chat::ForkSeed::named("a fork"));
+    feed(
+        &mut drive,
+        AcpEvent::Disconnected("Could not fork the conversation: no such session".into()),
+    );
+    let fx = drive.handle(Input::StreamEnded);
+    assert_eq!(names(&fx), ["Disconnected"]);
+    assert_eq!(drive.fork_failure().as_deref(), Some("no such session"));
+}
+
+/// A host session read from its copy because the host is out of reach ends
+/// without news: it is not lost, and restarts once the host is back.
+#[test]
+fn a_session_out_of_reach_of_its_host_ends_without_news() {
+    let (mut drive, _rx) = connected();
+    drive.read_back([], Some((HostName("box".into()), None)));
+    let fx = drive.handle(Input::StreamEnded);
+    assert_eq!(names(&fx), ["Disconnected"]);
+    assert_eq!(drive.host_away(), Some(&HostName("box".into())));
+}
+
+/// A session waiting on its host's busy sessions is ended by a stream that
+/// says nothing, and today that end is told as a lost agent, though the
+/// session only waits.
+#[test]
+fn a_session_waiting_on_a_busy_host_ends_as_a_lost_agent_today() {
+    let (mut drive, _rx) = connected();
+    drive.drive.wait_on_host(HostName("box".into()), 2, 0);
+    let fx = drive.handle(Input::StreamEnded);
+    assert_eq!(names(&fx), ["Disconnected", "Look(LinkLost)"]);
+    assert_eq!(drive.host_waiting(), Some(&HostName("box".into())));
+}
+
+/// A wait that fails folds the reason as the agent's end, so the session is
+/// lost with no stream end of its own and nothing told; a session that was
+/// not waiting folds nothing.
+#[test]
+fn a_failed_wait_folds_the_reason_as_an_end() {
+    let (mut drive, _rx) = connected();
+    drive.drive.wait_on_host(HostName("box".into()), 1, 0);
+    let (was, _) = drive.drive.forget_host_wait();
+    assert!(was);
+    let fx = feed(
+        &mut drive,
+        AcpEvent::Disconnected("Could not attach".into()),
+    );
+    assert!(!names(&fx)
+        .iter()
+        .any(|n| n == "Disconnected" || n.starts_with("Look")));
+    assert_eq!(drive.link, crate::chat::Link::Lost);
+    assert!(!drive.drive.forget_host_wait().0);
+}
+
 /// The copy's notice says how recent it is when its entries kept a time, and
 /// leaves that out when none did.
 #[test]

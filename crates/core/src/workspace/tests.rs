@@ -667,3 +667,85 @@ fn a_host_root_never_carries_an_offload() {
     );
     assert!(back.roots[0].session_host().is_none());
 }
+
+// The session lifecycle's edits, as the shell makes them today.
+
+#[test]
+fn a_session_needs_a_project_to_be_added_to() {
+    let mut ws = Workspace::seeded("/a");
+    ws.remove_root(0);
+    assert_eq!(ws.add_session(spec("one"), 1), None);
+}
+
+/// A session added quietly goes only to a folder on this machine: a host's
+/// folder on the same path is another project.
+#[test]
+fn a_session_added_quietly_finds_only_a_local_root() {
+    let mut ws = Workspace::seeded("/a");
+    ws.remove_root(0);
+    ws.add_host_root(HostName("box".into()), PathBuf::from("/p"));
+    assert_eq!(
+        ws.add_session_quietly(Path::new("/p"), spec("one"), 1),
+        None
+    );
+    let local = ws.add_root("/p");
+    ws.select_root(0);
+    assert_eq!(
+        ws.add_session_quietly(Path::new("/p"), spec("one"), 1),
+        Some(local)
+    );
+    assert_eq!(ws.active_root, 0, "nothing selected");
+    assert_eq!(ws.roots[local].active_session, 0);
+}
+
+#[test]
+fn closing_a_session_below_the_one_shown_keeps_it_shown() {
+    let mut ws = Workspace::seeded("/a");
+    for uid in 1..=3 {
+        ws.add_session(spec("s"), uid);
+    }
+    ws.close_session(0, 0);
+    let root = ws.active_root().unwrap();
+    assert_eq!(root.active_session, 1);
+    assert_eq!(root.sessions[1].uid, 3);
+}
+
+#[test]
+fn a_session_out_of_range_is_neither_closed_nor_selected() {
+    let mut ws = Workspace::seeded("/a");
+    ws.add_session(spec("s"), 1);
+    ws.close_session(0, 5);
+    ws.close_session(7, 0);
+    ws.select_session(5);
+    let root = ws.active_root().unwrap();
+    assert_eq!(root.sessions.len(), 1);
+    assert_eq!(root.active_session, 0);
+}
+
+/// An order is kept by path alone, so a local and a host root on one path
+/// rank the same when it is put back: the two keep the order they had
+/// between them, whatever the saved order said.
+#[test]
+fn an_order_put_back_ranks_a_local_and_a_host_root_on_one_path_alike() {
+    let mut ws = Workspace::seeded("/p");
+    ws.add_root("/q");
+    ws.add_host_root(HostName("box".into()), PathBuf::from("/p"));
+    let saved = ws.root_order();
+    assert_eq!(saved, [PathBuf::from("/p"), "/q".into(), "/p".into()]);
+    ws.move_root(2, 0);
+    ws.put_order(&saved);
+    let kept: Vec<_> = ws
+        .roots
+        .iter()
+        .map(|r| (r.host.is_some(), r.path.clone()))
+        .collect();
+    assert_eq!(
+        kept,
+        [
+            (true, PathBuf::from("/p")),
+            (false, "/p".into()),
+            (false, "/q".into())
+        ],
+        "the host root stays ahead of the local one it was moved past"
+    );
+}

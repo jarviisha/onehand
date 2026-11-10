@@ -36,6 +36,19 @@ pub struct ForkSeed {
     title: String,
 }
 
+#[cfg(test)]
+impl ForkSeed {
+    /// A seed with nothing in it but a name, for a test that only needs a
+    /// session to be a fork.
+    pub(crate) fn named(title: &str) -> Self {
+        Self {
+            items: Vec::new(),
+            prefs: Prefs::default(),
+            title: title.to_string(),
+        }
+    }
+}
+
 impl Chat {
     /// Where the prompt at `target` forks from; `None` when it cannot be
     /// forked from at all.
