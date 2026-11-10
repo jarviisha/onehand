@@ -229,6 +229,8 @@ fn names(fx: &[Effect]) -> Vec<String> {
             Effect::SendCode { .. } => "SendCode".into(),
             Effect::PromptAgain => "PromptAgain".into(),
             Effect::SaveTitle { .. } => "SaveTitle".into(),
+            Effect::Look(what) => format!("Look({what:?})"),
+            Effect::Tell { what, .. } => format!("Tell({what:?})"),
             Effect::Request(_) => unreachable!("left out above"),
         })
         .collect()
@@ -550,7 +552,10 @@ fn a_turn_end_saves_then_says_so_and_ends_the_batch() {
     assert_eq!(next, Next::More);
     let (fx, next) = drive.apply(turn_ends());
     assert_eq!(next, Next::Stop);
-    assert_eq!(names(&fx), ["Appended", "Save", "TurnEnded"]);
+    assert_eq!(
+        names(&fx),
+        ["Appended", "Save", "TurnEnded", "Look(TurnEnded)"]
+    );
     assert_eq!(names(&drive.end_batch()), ["Changed"]);
 }
 
@@ -601,6 +606,7 @@ fn a_card_asked_in_a_batch_that_tells_is_said_before_what_ends_it() {
         [
             "Appended",
             "AwaitingUser(Permission)",
+            "Look(Asked(Permission))",
             "PickRefused(\"not on this plan\")"
         ]
     );
@@ -618,7 +624,10 @@ fn a_card_the_turns_end_cancelled_is_not_said() {
     // A turn that ends with the card unanswered cancels it, so nothing waits
     // and nothing is said: the card went with the turn.
     let (fx, _) = drive.apply(turn_ends());
-    assert_eq!(names(&fx), ["Appended", "Save", "TurnEnded"]);
+    assert_eq!(
+        names(&fx),
+        ["Appended", "Save", "TurnEnded", "Look(TurnEnded)"]
+    );
     assert!(!names(&drive.end_batch()).contains(&"AwaitingUser(Permission)".to_string()));
 }
 
@@ -664,7 +673,10 @@ fn a_cycle_the_agent_marks_ends_the_batch_and_saves() {
         marks_cycles: true,
     }));
     assert_eq!(next, Next::Stop);
-    assert_eq!(names(&fx), ["Appended", "Save", "CycleEnded"]);
+    assert_eq!(
+        names(&fx),
+        ["Appended", "Save", "CycleEnded", "Look(TurnEnded)"]
+    );
 }
 
 // What came of a save.
@@ -718,7 +730,7 @@ fn a_stream_that_ends_calls_off_the_wait_and_says_so() {
     let (mut drive, _rx) = connected();
     feed(&mut drive, chunk("by itself"));
     let fx = drive.handle(Input::StreamEnded);
-    assert_eq!(names(&fx), ["Disarm", "Disconnected"]);
+    assert_eq!(names(&fx), ["Disarm", "Disconnected", "Look(LinkLost)"]);
     assert!(!drive.busy);
 }
 
@@ -1375,4 +1387,69 @@ fn a_session_stamps_and_times_by_the_time_it_is_told() {
     };
     assert_eq!(step.elapsed_secs, Some(5), "from 1 to 6, as told");
     assert_eq!(step.settled_at, Some(1_006));
+}
+
+// Telling.
+
+fn tells(fx: &[Effect]) -> Vec<(Away, bool, bool)> {
+    fx.iter()
+        .filter_map(|effect| match effect {
+            Effect::Tell {
+                what,
+                desktop,
+                chat,
+            } => Some((*what, *desktop, *chat)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A turn that ends out of sight badges the session and is said everywhere;
+/// one ended at the window on another conversation only badges it; one read
+/// as it ends is said nowhere.
+#[test]
+fn a_turn_end_is_told_as_the_person_was_placed() {
+    let (mut drive, _rx) = connected();
+    let fx = drive.handle(Input::Seen {
+        what: Away::TurnEnded,
+        attention: Attention::Reading,
+    });
+    assert!(fx.is_empty());
+    assert!(!drive.unseen());
+
+    let fx = drive.handle(Input::Seen {
+        what: Away::TurnEnded,
+        attention: Attention::AtWindow,
+    });
+    assert!(fx.is_empty(), "a badge only");
+    assert!(drive.unseen());
+
+    drive.handle(Input::Shown);
+    assert!(!drive.unseen(), "looking at it reads it");
+
+    let fx = drive.handle(Input::Seen {
+        what: Away::TurnEnded,
+        attention: Attention::Absent,
+    });
+    assert_eq!(tells(&fx), [(Away::TurnEnded, true, true)]);
+    assert!(drive.unseen());
+}
+
+/// A card that waits is said on the desktop and the chat and badges nothing;
+/// a lost agent only on the chat.
+#[test]
+fn a_card_and_a_lost_agent_are_told_without_a_badge() {
+    let (mut drive, _rx) = connected();
+    let asked = Away::Asked(UserAsk::Permission);
+    let fx = drive.handle(Input::Seen {
+        what: asked,
+        attention: Attention::AtWindow,
+    });
+    assert_eq!(tells(&fx), [(asked, true, true)]);
+    let fx = drive.handle(Input::Seen {
+        what: Away::LinkLost,
+        attention: Attention::Absent,
+    });
+    assert_eq!(tells(&fx), [(Away::LinkLost, false, true)]);
+    assert!(!drive.unseen());
 }

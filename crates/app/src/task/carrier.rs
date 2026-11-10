@@ -96,12 +96,14 @@ pub(crate) fn start(
                     None => return,
                 }
             }
-            // A fork asked for and what a host says of its session move no run.
+            // A fork asked for, what a host says of its session and news for a
+            // person move no run.
             ChatEvent::OpenFile(_)
             | ChatEvent::Fork(_)
             | ChatEvent::HostSession(_)
             | ChatEvent::HostBusy
-            | ChatEvent::RestartHost(_) => return,
+            | ChatEvent::RestartHost(_)
+            | ChatEvent::Look(_) => return,
         };
         feed(&id, input, cx);
     });

@@ -7,7 +7,7 @@ use crate::chat::conversation::{HostAt, OnHost};
 use crate::chat::session::{BeginOnHost, Carried, ChatEvent, ChatSession, HostBegin};
 use gpui::{App, Context, Entity, Focusable, SharedString, Window};
 use onehand_core::acp::Opening;
-use onehand_core::chat::drive::{Intake, Origin, Signal};
+use onehand_core::chat::drive::{Input, Intake, Origin, Signal};
 use onehand_core::chat::{Chat, ConvMeta};
 use onehand_core::config::AgentSpec;
 use onehand_core::host::wire::HostSession;
@@ -96,10 +96,8 @@ impl ChatPane {
         if kept_here {
             self.follow_archives(&root, cx);
         }
-        if window.is_window_active()
-            && let Some(conv) = self.conversations.get_mut(&uid)
-        {
-            conv.unseen = false;
+        if window.is_window_active() {
+            self.shown(uid, cx);
         }
 
         self.composer
@@ -293,14 +291,13 @@ impl ChatPane {
                             (session.chat.root.clone(), session.on_host)
                         };
                         crate::offload::session_said(cx, &root, on_host, said);
-                        pane.turn_ended_detached(uid, &agent, &root_label, cx);
                         // The turn that just ended is what wrote the archive, so
                         // this is the moment a conversation first exists on disk
                         // and the moment its summary and its age change.
                         pane.refresh_archives(cx);
                         cx.emit(ChatPaneEvent::WorkTreeTouched);
                     }
-                    ChatEvent::Session(Signal::AwaitingUser(ask)) => {
+                    ChatEvent::Session(Signal::AwaitingUser(_)) => {
                         // **An agent that has stopped outranks a list the user
                         // left open.** The popup is drawn over the pinned
                         // cards, so a card arriving while one is up would park
@@ -324,8 +321,11 @@ impl ChatPane {
                             pane.composer
                                 .update(cx, |composer, cx| composer.close_overlay(cx));
                         }
-                        pane.awaiting_user_detached(uid, *ask, &agent, &root_label, cx);
+                        // The card the agent parked is in the transcript now,
+                        // and the reader of that conversation has to see it.
+                        cx.notify();
                     }
+                    ChatEvent::Look(what) => pane.look(uid, *what, &agent, &root_label, cx),
                     // Re-emitted rather than acted on: the transcript says what
                     // was asked for, and where a file goes is the shell's call.
                     // Matched exhaustively so a new variant cannot be added and
@@ -352,7 +352,8 @@ impl ChatPane {
                                 uid: Some(uid),
                                 host,
                             }),
-                            (None, None) => pane.link_lost_detached(uid, &agent, &root_label, cx),
+                            // A lost agent is the drive's news (`ChatEvent::Look`).
+                            (None, None) => {}
                         }
                     }
                     ChatEvent::Fork(target) => pane.begin_fork(uid, *target, cx),
@@ -732,7 +733,7 @@ impl ChatPane {
             chat.failed(),
             chat.awaiting_permission() || crate::task::waits_on_person(uid, cx),
             chat.running(),
-            conv.unseen,
+            session.chat.unseen(),
         )
     }
 
@@ -810,10 +811,24 @@ impl ChatPane {
     /// session *switch*, so returning to a window whose session is already on
     /// screen would otherwise leave the badge up.
     pub fn mark_active_seen(&mut self, cx: &mut Context<Self>) {
-        if let Some(conv) = self.active_conversation_mut()
-            && conv.unseen
-        {
-            conv.unseen = false;
+        if let Some(uid) = self.active {
+            self.shown(uid, cx);
+        }
+    }
+
+    /// The person is looking at `uid`'s conversation: tell its drive.
+    fn shown(&mut self, uid: u64, cx: &mut Context<Self>) {
+        let Some(session) = self.session_of(uid).cloned() else {
+            return;
+        };
+        let was = session.read(cx).chat.unseen();
+        session.update(cx, |session, cx| {
+            let fx = session
+                .chat
+                .handle(Input::Shown, crate::chat::session::now());
+            session.perform(fx, cx);
+        });
+        if was {
             cx.notify();
         }
     }

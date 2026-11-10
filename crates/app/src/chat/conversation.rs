@@ -62,13 +62,6 @@ pub struct Conversation {
     /// coming back to it finds the conversation where it was left rather than
     /// snapped to the tail.
     pub viewport: Viewport,
-    /// A turn ended here while nobody was looking.
-    ///
-    /// "Not looking" is two things at once: a session in the background, or any
-    /// session while its window is not the active one. Both mean the same thing
-    /// to the person who has to be told — something finished and you did not
-    /// see it.
-    pub unseen: bool,
     /// What was typed here and not sent.
     ///
     /// One composer serves the whole pane, so what it holds belongs to whatever
@@ -132,7 +125,6 @@ impl Conversation {
             host: None,
             phase: SessionPhase::Opening,
             viewport: Viewport::default(),
-            unseen: false,
             draft: None,
             was_live: false,
         }

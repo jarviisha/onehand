@@ -1,7 +1,7 @@
 use super::{ANSWER_TAIL_MAX, ChatPane, QUOTED_PROMPT_MAX, SETTLED};
 use gpui::{App, Context};
-use onehand_core::chat::drive::{Code, Effect, Intake, Origin, Refusal};
-use onehand_core::chat::{Away, ChatItem, Presence, SessionDrive, SessionSignal, Telling};
+use onehand_core::chat::drive::{Code, Effect, Input, Intake, Origin, Refusal};
+use onehand_core::chat::{Away, ChatItem, Presence, SessionDrive, SessionSignal};
 use onehand_core::remote::types::Button;
 use onehand_core::remote::{Press, press};
 
@@ -186,52 +186,106 @@ impl ChatPane {
             .collect()
     }
 
-    /// A turn settled. Badge it, and say so out loud wherever
-    /// [`Attention::telling`] sends it.
-    ///
-    /// [`Attention::telling`]: onehand_core::chat::Attention::telling
-    pub(super) fn turn_ended_detached(
+    /// Answer the news `uid`'s drive asked about with where the person is,
+    /// and carry what the drive says to tell.
+    pub(super) fn look(
         &mut self,
         uid: u64,
+        what: Away,
         agent: &str,
         root: &str,
         cx: &mut Context<Self>,
     ) {
-        let say = self.telling(uid, Away::TurnEnded, cx);
-        // Before any of the three payloads, each of which reads the transcript
-        // to build itself -- and before the repaint, which the reader of this
-        // conversation is already getting from the turn itself.
-        if say.silent() {
+        let Some(session) = self.session_of(uid).cloned() else {
             return;
+        };
+        let attention = self.presence(cx).seeing(uid);
+        let left = session.update(cx, |session, cx| {
+            let fx = session
+                .chat
+                .handle(Input::Seen { what, attention }, crate::chat::session::now());
+            session.perform(fx, cx)
+        });
+        for effect in left {
+            match effect {
+                Effect::Tell {
+                    what,
+                    desktop,
+                    chat,
+                } => self.tell(uid, what, desktop, chat, agent, root, cx),
+                // Only a tell answers a look; the rest the session carried.
+                Effect::Signal(_)
+                | Effect::Changed
+                | Effect::OfferChanged
+                | Effect::Save(_)
+                | Effect::Arm { .. }
+                | Effect::Disarm
+                | Effect::SendCode { .. }
+                | Effect::PromptAgain
+                | Effect::Request(_)
+                | Effect::SaveTitle { .. }
+                | Effect::Look(_) => {}
+            }
         }
-        if say.badge
-            && let Some(conv) = self.conversations.get_mut(&uid)
-        {
-            conv.unseen = true;
+        cx.notify();
+    }
+
+    /// Say `what` on `uid` outside the window: on the desktop, and to the
+    /// chats following it.
+    #[allow(clippy::too_many_arguments)]
+    fn tell(
+        &self,
+        uid: u64,
+        what: Away,
+        desktop: bool,
+        chat: bool,
+        agent: &str,
+        root: &str,
+        cx: &App,
+    ) {
+        if desktop {
+            match what {
+                Away::TurnEnded => {
+                    crate::chat::session::notify_turn_ended(agent.to_string(), root.to_string())
+                }
+                Away::Asked(ask) => crate::chat::session::notify_awaiting_user(
+                    ask,
+                    agent.to_string(),
+                    root.to_string(),
+                ),
+                // Never put on the desktop: the drive asks for the chat only.
+                Away::LinkLost => {}
+            }
         }
-        if say.desktop {
-            crate::chat::session::notify_turn_ended(agent.to_string(), root.to_string());
-        }
-        if say.chat {
+        if chat {
             let origin = self.origin(uid, agent, root, cx);
+            let (detail, buttons) = match what {
+                // The end of what the agent said, which is where an answer
+                // says what it did. "Finished a turn" on its own is a
+                // notification whose only content is that there is content:
+                // it costs a walk back to the machine to find out whether
+                // anything needs doing. Not put on the desktop notification,
+                // which does not need it -- the window it is about is one
+                // keystroke away, and the transcript is in it.
+                Away::TurnEnded => (self.answer_tail(uid, cx), Vec::new()),
+                // The one announcement that carries the question itself and
+                // the buttons to answer it. A desktop notification cannot do
+                // better than point at the window, because the card is already
+                // in it; a message on a phone is the only place the answer can
+                // be given from.
+                Away::Asked(ask) => self.parked_ask(uid, ask, cx),
+                Away::LinkLost => (None, Vec::new()),
+            };
             crate::remote::announce(
                 &origin,
                 crate::remote::Announcement {
-                    away: Away::TurnEnded,
-                    // The end of what the agent said, which is where an answer
-                    // says what it did. "Finished a turn" on its own is a
-                    // notification whose only content is that there is content:
-                    // it costs a walk back to the machine to find out whether
-                    // anything needs doing. Not put on the desktop
-                    // notification, which does not need it -- the window it is
-                    // about is one keystroke away, and the transcript is in it.
-                    detail: self.answer_tail(uid, cx),
-                    buttons: Vec::new(),
+                    away: what,
+                    detail,
+                    buttons,
                 },
                 cx,
             );
         }
-        cx.notify();
     }
 
     /// How the agent's last answer on `uid` ended, short enough to read on a
@@ -262,12 +316,6 @@ impl ChatPane {
         }
     }
 
-    /// What is said about one piece of news on `uid`, in the three places it
-    /// could go.
-    fn telling(&self, uid: u64, what: Away, cx: &App) -> Telling {
-        self.presence(cx).seeing(uid).telling(what)
-    }
-
     /// Who an announcement about `uid` is from, in the words somebody who is not
     /// looking at the app would need.
     fn origin(&self, uid: u64, agent: &str, root: &str, cx: &App) -> crate::remote::Origin {
@@ -277,69 +325,6 @@ impl ChatPane {
             project: root.to_string(),
             conversation: self.title_for(uid, cx),
         }
-    }
-
-    /// The adapter went away. Say so outside the window, if
-    /// [`Attention::telling`] says anyone should hear it.
-    ///
-    /// [`Attention::telling`]: onehand_core::chat::Attention::telling
-    pub(super) fn link_lost_detached(
-        &mut self,
-        uid: u64,
-        agent: &str,
-        root: &str,
-        cx: &mut Context<Self>,
-    ) {
-        if !self.telling(uid, Away::LinkLost, cx).chat {
-            return;
-        }
-        let origin = self.origin(uid, agent, root, cx);
-        crate::remote::announce(
-            &origin,
-            crate::remote::Announcement::plain(Away::LinkLost),
-            cx,
-        );
-    }
-
-    /// An agent stopped and is waiting on the user. Say so wherever
-    /// [`Attention::telling`] sends it.
-    ///
-    /// The repaint happens either way, unlike a finished turn's: the card the
-    /// agent parked is in the transcript now, and the reader of that
-    /// conversation is exactly who has to see it appear.
-    ///
-    /// [`Attention::telling`]: onehand_core::chat::Attention::telling
-    pub(super) fn awaiting_user_detached(
-        &mut self,
-        uid: u64,
-        ask: onehand_core::chat::UserAsk,
-        agent: &str,
-        root: &str,
-        cx: &mut Context<Self>,
-    ) {
-        let say = self.telling(uid, Away::Asked(ask), cx);
-        if say.desktop {
-            crate::chat::session::notify_awaiting_user(ask, agent.to_string(), root.to_string());
-        }
-        if say.chat {
-            let origin = self.origin(uid, agent, root, cx);
-            // The one announcement that carries the question itself and the
-            // buttons to answer it. A desktop notification cannot do better than
-            // point at the window, because the card is already in it; a message
-            // on a phone is the only place the answer can be given from, so it
-            // has to carry what is being asked as well as who is asking.
-            let (detail, buttons) = self.parked_ask(uid, ask, cx);
-            crate::remote::announce(
-                &origin,
-                crate::remote::Announcement {
-                    away: Away::Asked(ask),
-                    detail,
-                    buttons,
-                },
-                cx,
-            );
-        }
-        cx.notify();
     }
 
     /// What `uid` is waiting on, and what can be answered without opening the
