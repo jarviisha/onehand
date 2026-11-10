@@ -7,7 +7,7 @@
 //! than reinterpreted here.
 
 use gpui::{App, Global};
-use onehand_core::config::{AgentSpec, AppConfig, AppState, Appearance};
+use onehand_core::config::{AppConfig, AppState};
 use onehand_core::gitstat::GitStatus;
 use onehand_core::workspace::{ProjectRoot, Workspace};
 use onehand_io::acp::AcpRuntime;
@@ -39,20 +39,17 @@ pub struct OpenWindow {
 
 /// Global, process-wide state. One per `App`.
 pub struct Shared {
-    /// The menu a new session spawns from. Agent definitions are global; each
-    /// session keeps a clone of the spec it was spawned with.
-    pub agents: Vec<AgentSpec>,
+    /// The agents a new session spawns from, the appearance, what each agent
+    /// offered when it last came up and the checks of one: read through it,
+    /// changed only through it. Agent definitions are global; each session
+    /// keeps a clone of the spec it was spawned with.
+    pub settings: onehand_core::config::drive::SettingsDrive,
     /// The built-in agents installed on this machine, looked for once at
     /// start, so a page that offers one never goes looking when it opens.
     pub on_machine: Vec<onehand_core::config::Preset>,
     /// Where `persist_agents` writes back to — the file the config came from.
     pub config_path: PathBuf,
     pub keymap: std::collections::BTreeMap<String, Vec<String>>,
-    /// Light, dark, or following the desktop. Global rather than per window,
-    /// because the theme it selects is itself one global: two windows cannot
-    /// be drawn in two modes, so one of them holding a different answer would
-    /// only be a lie about what is on screen.
-    pub appearance: Appearance,
     /// The monospace family the boot-time scan settled on, if it found one.
     ///
     /// Kept so it can be put back after a theme change: swapping the palette
@@ -85,16 +82,6 @@ pub struct Shared {
     /// owns the receiving end, and dropping that is what tells the channel
     /// nobody is listening.
     pub _remote_pump: Option<gpui::Task<()>>,
-    /// What each agent offered when it last came up, by the spec it was
-    /// started with, a person's session or a run alike.
-    ///
-    /// **For this process only.** A restart forgets, so an adapter upgraded
-    /// in between is never judged by what an older one offered; and a spec
-    /// edited since is another spec, so what was learned of it stops
-    /// counting with the edit.
-    pub offers_seen: Vec<(AgentSpec, onehand_core::workflow::Offer)>,
-    /// *Check the agent* under way, or the last one that failed, per spec.
-    pub agent_checks: Vec<(AgentSpec, crate::agent_check::Checking)>,
     /// The one thread every settings file is written on: off the UI thread,
     /// and in the order the changes were made.
     pub writer: onehand_core::saving::OrderedWriter,
@@ -120,8 +107,7 @@ impl Shared {
 
     fn with_recents(cfg: AppConfig, config_path: PathBuf, recents: AppState) -> Self {
         Self {
-            appearance: cfg.appearance,
-            agents: cfg.agents,
+            settings: onehand_core::config::drive::SettingsDrive::new(cfg.agents, cfg.appearance),
             on_machine: onehand_core::config::on_machine(std::env::var_os("PATH").as_deref()),
             config_path,
             keymap: cfg.keymap,
@@ -141,16 +127,7 @@ impl Shared {
             // those is something a constructor should be able to fail at.
             remote: crate::remote::RemoteBridge::off(),
             _remote_pump: None,
-            offers_seen: Vec::new(),
-            agent_checks: Vec::new(),
         }
-    }
-
-    /// `spec` came up offering `offer`: what was learned of it before is
-    /// replaced.
-    pub fn saw_offer(&mut self, spec: AgentSpec, offer: onehand_core::workflow::Offer) {
-        self.offers_seen.retain(|(seen, _)| *seen != spec);
-        self.offers_seen.push((spec, offer));
     }
 
     /// Hand out the next session uid.

@@ -569,7 +569,7 @@ impl ChatSession {
                 // before it brings an agent up.
                 Effect::OfferChanged => {
                     let (spec, offer) = (self.agent.clone(), self.chat.offer());
-                    cx.update_global::<Shared, _>(|s, _| s.saw_offer(spec, offer));
+                    cx.update_global::<Shared, _>(|s, _| s.settings.saw_offer(spec, offer));
                 }
                 Effect::Save(write) => {
                     cx.spawn(async move |session, cx| {

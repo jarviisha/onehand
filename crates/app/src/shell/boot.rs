@@ -418,7 +418,7 @@ impl Shell {
         // answer arrives here.
         window
             .observe_window_appearance(|window, cx| {
-                let choice = Shared::global(cx).appearance;
+                let choice = Shared::global(cx).settings.appearance;
                 if choice == Appearance::System {
                     apply_appearance(choice, Some(window), cx);
                 }

@@ -341,7 +341,7 @@ impl Shell {
     /// spare process: the adapter is claimed by matching what it was told to
     /// run against what the session asks for, so a mismatch simply spawns.
     fn warm_default_agent(&mut self, root: PathBuf, cx: &mut Context<Self>) {
-        if Shared::global(cx).agents.is_empty() {
+        if Shared::global(cx).settings.agents.is_empty() {
             return;
         }
         // Replacing the task cancels the one before it, which is the debounce.
@@ -349,7 +349,9 @@ impl Shell {
             cx.background_executor().timer(WARM_DELAY).await;
             cx.update(|cx| {
                 let shared = Shared::global(cx);
-                if let Some(spec) = onehand_core::config::agent_or_first(&shared.agents, None) {
+                if let Some(spec) =
+                    onehand_core::config::agent_or_first(&shared.settings.agents, None)
+                {
                     shared.acp.warm(spec, root);
                 }
             });

@@ -76,9 +76,12 @@ pub(super) fn open_plain(
 }
 
 fn agent_named(agent: &str, cx: &App) -> Result<AgentSpec, String> {
-    onehand_core::config::agent_or_first(&crate::state::Shared::global(cx).agents, Some(agent))
-        .cloned()
-        .ok_or_else(|| format!("no agent named {agent}; list_agents names them"))
+    onehand_core::config::agent_or_first(
+        &crate::state::Shared::global(cx).settings.agents,
+        Some(agent),
+    )
+    .cloned()
+    .ok_or_else(|| format!("no agent named {agent}; list_agents names them"))
 }
 
 /// Begin `open` for a session's agent: answered at once, or once its worker

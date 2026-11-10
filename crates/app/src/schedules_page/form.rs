@@ -324,7 +324,7 @@ fn starts_section(handle: &Entity<SchedulesPage>, draft: &ScheduleDraft, cx: &Ap
 /// The agent, then the settings it offers as rows of choices, *Check the
 /// agent* while they are not known.
 fn agent_section(handle: &Entity<SchedulesPage>, draft: &ScheduleDraft, cx: &App) -> AnyElement {
-    let agents = &crate::state::Shared::global(cx).agents;
+    let agents = &crate::state::Shared::global(cx).settings.agents;
     let spec = onehand_core::config::agent_or_first(agents, draft.agent.as_deref());
     let first = agents.first().map(|spec| spec.name.clone());
     let shown = match (&draft.agent, &first) {

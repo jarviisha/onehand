@@ -41,6 +41,7 @@ mod retry;
 mod roots;
 mod sessions;
 mod settings_page;
+pub(crate) use settings_page::apply_appearance;
 mod storage;
 mod workers;
 mod workflows;

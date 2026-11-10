@@ -210,7 +210,7 @@ impl Shell {
             _ => None,
         };
         let named = agent;
-        let agent = onehand_core::config::agent_or_first(&shared.agents, named);
+        let agent = onehand_core::config::agent_or_first(&shared.settings.agents, named);
         let facts = preflight::Facts {
             workflow,
             // One named and gone is said by its name, as a Retry's is.
@@ -496,6 +496,7 @@ fn new_task(setup: Setup, template: Template, brief: Brief, cx: &gpui::App) -> T
 /// The agent a new session takes: the first configured.
 fn first_agent(cx: &gpui::App) -> Option<String> {
     Shared::global(cx)
+        .settings
         .agents
         .first()
         .map(|spec| spec.name.clone())

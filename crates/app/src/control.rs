@@ -10,7 +10,7 @@
 use crate::state::Shared;
 use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot;
-use gpui::{App, Window};
+use gpui::{App, BorrowAppContext as _, Window};
 use onehand_core::config::ControlConfig;
 use onehand_core::control::drive::{ControlDrive, Effect};
 use onehand_core::control::{self, Call, Peer, Standing};
@@ -58,28 +58,8 @@ pub(crate) fn outside() -> bool {
 /// client already connected, then write it; a write that fails puts it back.
 pub(crate) fn set_outside(on: bool, window: &mut Window, cx: &mut App) {
     let before = outside();
-    if before == on {
-        return;
-    }
-    put_outside(on, window, cx);
-    crate::saves::write_config(
-        "control-outside",
-        "Saving outside control",
-        move |cfg| cfg.control.outside = on,
-        Some(crate::saves::Change {
-            before,
-            after: on,
-            put: put_outside,
-        }),
-        window,
-        cx,
-    );
-}
-
-fn put_outside(on: bool, _: &mut Window, cx: &mut App) {
-    if drive().set_outside(on) {
-        cx.refresh_windows();
-    }
+    let fx = cx.update_global::<Shared, _>(|shared, _| shared.settings.set_outside(before, on));
+    crate::saves::carry_settings(fx, window, cx);
 }
 
 /// What a connection may do now: read on every message it sends.
@@ -400,7 +380,7 @@ fn perform_now(
             Ok(control::listed(lines, "This window has no project"))
         }
         Call::ListAgents => {
-            let agents = &Shared::global(cx).agents;
+            let agents = &Shared::global(cx).settings.agents;
             let lines = agents.iter().map(|spec| spec.name.clone()).collect();
             Ok(control::listed(
                 lines,
