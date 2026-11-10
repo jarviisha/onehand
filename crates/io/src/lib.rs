@@ -6,7 +6,9 @@
 //! GUI framework: another front end takes this crate as it is.
 //!
 //! - [`acp`]: the agent runtime every session's adapter runs on.
+//! - [`host`]: the attach to a host, and every call over it.
 
 #![warn(unreachable_pub)]
 
 pub mod acp;
+pub mod host;

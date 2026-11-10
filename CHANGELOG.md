@@ -180,6 +180,8 @@ minor bump may break any of them.
 
 ### Fixed
 
+- Restarting a session while its last turn is still being saved no longer loses that turn when
+  the save then fails: the restarted session writes the whole conversation at its first save.
 - A conversation's title taken from its first prompt no longer ends on half of a backtick pair.
 - The rail between a workflow's step dots draws again.
 - A session shown for the first time takes the keyboard in its composer once it connects,

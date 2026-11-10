@@ -6,6 +6,7 @@ use crate::offload;
 use gpui::{AppContext as _, Context, Entity, Focusable as _, Subscription, Task, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputEvent, InputState};
+use onehand_core::host::offload::drive::Kept;
 use onehand_core::host::sshconf;
 use onehand_core::workspace::{HostName, Offloaded};
 use std::collections::HashMap;
@@ -31,13 +32,6 @@ pub(crate) struct OffloadDraft {
     _aliases: Task<()>,
     _typing: Subscription,
     _sending: Option<Task<()>>,
-}
-
-/// What an offload that landed keeps of the project: what went, for a
-/// mirror, or the branch its host works on.
-pub(crate) enum Kept {
-    Mirror(onehand_core::host::offload::OffloadState),
-    Branch(String),
 }
 
 /// Why *Offload* cannot go yet: the host is unnamed, or `busy` sessions here
@@ -162,8 +156,9 @@ impl Shell {
         }
     }
 
-    /// Put the form away. A send under way is dropped with it; what it had
-    /// copied stays in the mirror, and the project stays here.
+    /// Put the form away. A send under way runs to its end, keeping what
+    /// went for the next offload, and the project stays here: what it lands
+    /// finds no form to carry on.
     pub(crate) fn cancel_offload(&mut self, cx: &mut Context<Self>) {
         if self.offload_draft.take().is_some() {
             cx.notify();
@@ -184,17 +179,11 @@ impl Shell {
             return;
         }
         let host = HostName(host);
+        let going = offload::offload(cx, path.clone(), host.clone(), on_branch);
         let sending = cx.spawn_in(window, {
             let (path, host) = (path.clone(), host.clone());
             async move |shell, cx| {
-                let went = match on_branch {
-                    true => offload::offload_branch_to(cx, path.clone(), host.clone())
-                        .await
-                        .map(|(mirror, branch)| (mirror, Kept::Branch(branch))),
-                    false => offload::offload_to(cx, path.clone(), host.clone())
-                        .await
-                        .map(|(mirror, state)| (mirror, Kept::Mirror(state))),
-                };
+                let went = going.await;
                 let _ = shell.update_in(cx, |shell: &mut Self, window, cx| {
                     shell.offload_landed(path, host, went, window, cx)
                 });
@@ -350,8 +339,9 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let taking = offload::take_over(cx, path, into.clone());
         cx.spawn_in(window, async move |_, cx| {
-            let took = offload::take_over(cx, path, into.clone()).await;
+            let took = taking.await;
             // A failure stands on the project's page, where it was pressed.
             let Ok(taken) = took else {
                 return;
@@ -391,16 +381,8 @@ impl Shell {
 
     /// *Update host from laptop* on `path`, offloaded on a branch: how it
     /// went stands on the project's page.
-    pub(crate) fn update_host_from_laptop(
-        &mut self,
-        path: PathBuf,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        cx.spawn_in(window, async move |_, cx| {
-            offload::update_host(cx, path).await
-        })
-        .detach();
+    pub(crate) fn update_host_from_laptop(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        offload::update_host(cx, &path);
     }
 
     /// *Send to <host>* on `path`, a file or folder of an offloaded project:
@@ -487,5 +469,24 @@ impl Shell {
         self.sync_project_facts(cx);
         self.chat.update(cx, |_, cx| cx.notify());
         cx.notify();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::offload_refusal;
+
+    #[test]
+    fn offloading_waits_on_a_host_and_on_turns_here() {
+        assert_eq!(offload_refusal(" ", 0).as_deref(), Some("Name the host"));
+        assert_eq!(offload_refusal("box", 0), None);
+        assert_eq!(
+            offload_refusal("box", 1).as_deref(),
+            Some("Wait for the session here to finish")
+        );
+        assert_eq!(
+            offload_refusal("box", 3).as_deref(),
+            Some("Wait for 3 sessions here to finish")
+        );
     }
 }

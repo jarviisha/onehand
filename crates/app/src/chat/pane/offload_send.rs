@@ -73,13 +73,13 @@ impl ChatPane {
         let root = session.read(cx).chat.root.clone();
         // Claimed at once, so a second press waits on this send rather than
         // starting one of its own.
-        let claimed = crate::offload::claim_send(cx, &root);
+        let sending = crate::offload::send_up(cx, &root);
         let (session, composer) = (session.clone(), composer.clone());
         window
             .spawn(cx, async move |cx| {
-                let result = match claimed {
-                    true => crate::offload::send_up(cx, root).await,
-                    false => Err("The code is no longer this machine's to send".into()),
+                let result = match sending {
+                    Some(sending) => sending.await,
+                    None => Err("The code is no longer this machine's to send".into()),
                 };
                 let _ = cx.update(|window, cx| {
                     let still = composer.read(cx).text(cx) == text;

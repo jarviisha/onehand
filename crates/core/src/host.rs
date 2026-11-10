@@ -8,7 +8,12 @@
 
 pub mod client;
 pub mod copy;
+pub mod drive;
+mod failure;
 pub mod journal;
 pub mod offload;
 pub mod sshconf;
 pub mod wire;
+
+pub(crate) use failure::taken_line;
+pub use failure::{waiting_line, HostFailure};

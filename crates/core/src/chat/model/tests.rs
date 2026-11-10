@@ -623,6 +623,7 @@ fn resumed_chat(n: usize) -> Chat {
             .collect(),
         written: n,
         complete: true,
+        rewrite: false,
     });
     chat
 }
@@ -1612,6 +1613,7 @@ fn resuming_adopts_transcript_title_prefs_and_date() {
         items: Vec::new(),
         written: 0,
         complete: true,
+        rewrite: false,
     });
 
     assert_eq!(chat.session_id.as_deref(), Some("sess-9"));
@@ -2276,6 +2278,7 @@ fn a_failed_turn_survives_a_replay_that_replaces_the_file() {
         ],
         written: 2,
         complete: true,
+        rewrite: false,
     });
     assert!(chat.failed());
     chat.apply(AcpEvent::UserChunk("go".into()));
@@ -2316,6 +2319,7 @@ fn a_message_the_agent_delivers_does_not_answer_a_failure() {
         ],
         written: 2,
         complete: true,
+        rewrite: false,
     });
     chat.apply(AcpEvent::UserChunk("go".into()));
     assert!(
@@ -3132,6 +3136,7 @@ fn a_resume_onto_a_failed_conversation_says_its_failure_once() {
         ],
         written: 3,
         complete: true,
+        rewrite: false,
     };
     // A replay that delivers all of it, and one that comes up short; each
     // with and without the failure said again on the way.
@@ -3196,6 +3201,7 @@ fn a_resume_that_fails_again_keeps_its_own_notice() {
         ],
         written: 3,
         complete: true,
+        rewrite: false,
     });
     chat.apply(AcpEvent::UserChunk("go".into()));
     chat.apply(AcpEvent::Error {

@@ -1,14 +1,15 @@
 //! What this run knows of each host's attach, and the waits on it: a busy
 //! host's for its sessions to finish, a lost one's to be attached again.
-//! Read and written on the UI thread alone.
 
-use super::{Ended, HostFailure, WaitEnd, taken_line, waiting_line};
-use futures::FutureExt as _;
-use futures::channel::oneshot;
-use onehand_core::host::wire::HostSession;
-use onehand_core::workspace::HostName;
+use super::{Effect, HostState, Kind, WaitEnd};
+use crate::host::wire::HostSession;
+use crate::host::{taken_line, waiting_line, HostFailure};
+use crate::workspace::HostName;
 use std::collections::BTreeMap;
 use std::time::Duration;
+
+/// How often a host kept waiting by its busy sessions is attached again.
+pub const HOST_IDLE_POLL: Duration = Duration::from_secs(15);
 
 /// How long after a connection is lost it is first attached again.
 pub(crate) const RECONNECT_FIRST: Duration = Duration::from_secs(2);
@@ -16,31 +17,15 @@ pub(crate) const RECONNECT_FIRST: Duration = Duration::from_secs(2);
 /// The longest a lost host goes between attaches, the wait doubling up to it.
 pub(crate) const RECONNECT_MAX: Duration = Duration::from_secs(60);
 
+/// How many polls in a row may fail to reach a waited host before its wait
+/// ends on why: one is a blip, a host gone stays gone.
+pub(crate) const HOST_UNREACHABLE_POLLS: u32 = 2;
+
 /// How long to wait before the next attach to a lost host, `prev` the wait
 /// before the last miss, if there was one.
 pub(crate) fn next_delay(prev: Option<Duration>) -> Duration {
     prev.map_or(RECONNECT_FIRST, |prev| (prev * 2).min(RECONNECT_MAX))
 }
-
-/// What this run knows of its attach to a host.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum HostState {
-    /// Never attached this run, nor tried.
-    Unknown,
-    /// A first attach, or a person's after the host was taken, under way;
-    /// or the host found running another build, which its wait follows.
-    Attaching,
-    Live,
-    /// Its connection went, or no attach reaches it, for why: attached again
-    /// by itself while anything listens.
-    Lost(String),
-    /// Another machine attached, which holds the host now.
-    Taken,
-}
-
-/// How many polls in a row may fail to reach a waited host before its wait
-/// ends on why: one is a blip, a host gone stays gone.
-pub(crate) const HOST_UNREACHABLE_POLLS: u32 = 2;
 
 /// Hosts found busy, with the sessions they said, and the waits listened
 /// to on them, one each; what is known of each host's attach, and the waits
@@ -52,23 +37,31 @@ pub(super) struct Waits {
     waits: BTreeMap<HostName, Wait>,
     states: BTreeMap<HostName, HostState>,
     backs: BTreeMap<HostName, Wait>,
+    minted: u64,
+    /// The waits ended since the drive last took them, with how.
+    ended: Vec<Effect>,
 }
 
 struct Wait {
-    /// Sent when the wait ends; dropped unsent with its last listener.
-    end: oneshot::Sender<WaitEnd>,
-    ended: Ended,
+    id: u64,
     listeners: usize,
     polling: bool,
     /// Polls in a row that could not reach the host.
     missed: u32,
+    /// The last wait between a lost host's attaches.
+    delay: Option<Duration>,
 }
 
 impl Waits {
-    /// What an attach to `host` came to, `polled` when the wait's own poll
-    /// made it: a busy host is kept with the sessions it said; one that
-    /// lands ends the wait, and one that could not reach the host ends it
-    /// on why, at once, or from the poll after a few misses in a row.
+    /// The waits ended since the last call, each with how.
+    pub(super) fn take_ended(&mut self) -> Vec<Effect> {
+        std::mem::take(&mut self.ended)
+    }
+
+    /// What an attach to `host` came to, `polled` when only a wait's own
+    /// poll asked for it: a busy host is kept with the sessions it said; one
+    /// that lands ends the wait, and one that could not reach the host ends
+    /// it on why, at once, or from the poll after a few misses in a row.
     ///
     /// The host is live once an attach lands, which also ends a wait for it
     /// to be back; one found busy ends that wait on why, the busy wait taking
@@ -78,32 +71,32 @@ impl Waits {
     /// not lost, and nothing attaches to it again by itself.
     ///
     /// `true` when what is known of the host changed.
-    pub(super) fn heard<C>(
+    pub(super) fn heard(
         &mut self,
         host: &HostName,
-        result: &Result<C, HostFailure>,
+        result: &Result<(), HostFailure>,
         polled: bool,
     ) -> bool {
         match result {
-            Ok(_) => {
+            Ok(()) => {
                 self.end(host, Ok(()));
-                end_in(&mut self.backs, host, Ok(()));
+                self.end_back(host, Ok(()));
                 self.set(host, HostState::Live)
             }
             Err(HostFailure::Refused(why)) => {
                 self.end(host, Err(why.clone()));
-                end_in(&mut self.backs, host, Err(why.clone()));
+                self.end_back(host, Err(why.clone()));
                 self.set(host, HostState::Unknown)
             }
             Err(HostFailure::Taken(why)) => {
                 self.end(host, Err(why.clone()));
-                end_in(&mut self.backs, host, Err(why.clone()));
+                self.end_back(host, Err(why.clone()));
                 self.set(host, HostState::Taken)
             }
             Err(HostFailure::Busy { busy, terms, .. }) => {
                 let changed = self.set(host, HostState::Attaching);
                 let line = waiting_line(host, busy.len(), *terms);
-                end_in(&mut self.backs, host, Err(line));
+                self.end_back(host, Err(line));
                 self.busy.insert(host.clone(), (busy.clone(), *terms));
                 if let Some(wait) = self.waits.get_mut(host) {
                     wait.missed = 0;
@@ -150,7 +143,15 @@ impl Waits {
 
     fn end(&mut self, host: &HostName, how: WaitEnd) {
         self.busy.remove(host);
-        end_in(&mut self.waits, host, how);
+        if let Some(wait) = self.waits.remove(host) {
+            self.ended.push(Effect::Ended { id: wait.id, how });
+        }
+    }
+
+    fn end_back(&mut self, host: &HostName, how: WaitEnd) {
+        if let Some(wait) = self.backs.remove(host) {
+            self.ended.push(Effect::Ended { id: wait.id, how });
+        }
     }
 
     /// What is known of `host`'s attach.
@@ -173,8 +174,7 @@ impl Waits {
     pub(super) fn closed(&mut self, host: &HostName, taken: bool) -> bool {
         let state = match taken {
             true => {
-                let why = taken_line(host);
-                end_in(&mut self.backs, host, Err(why));
+                self.end_back(host, Err(taken_line(host)));
                 HostState::Taken
             }
             false => HostState::Lost(format!("lost the connection to {host}")),
@@ -182,43 +182,101 @@ impl Waits {
         self.set(host, state)
     }
 
-    /// One more listener to the wait for lost `host` to be back; `None`
-    /// unless it is lost.
-    pub(super) fn listen_back(&mut self, host: &HostName) -> Option<Ended> {
-        match self.state(host) {
-            HostState::Lost(_) => Some(join_in(&mut self.backs, host)),
-            HostState::Unknown | HostState::Attaching | HostState::Live | HostState::Taken => None,
+    /// One more listener to `host`'s wait of `kind`, made with the first,
+    /// and its poll's first clock when it has yet to be polled; `None` when
+    /// nothing is to be waited for: a host not known busy, or not lost.
+    pub(super) fn listen(&mut self, host: &HostName, kind: Kind) -> Option<(u64, Vec<Effect>)> {
+        let waits = match kind {
+            Kind::Busy if self.busy.contains_key(host) => &mut self.waits,
+            Kind::Back if matches!(self.state(host), HostState::Lost(_)) => &mut self.backs,
+            Kind::Busy | Kind::Back => return None,
+        };
+        let minted = &mut self.minted;
+        let wait = waits.entry(host.clone()).or_insert_with(|| {
+            *minted += 1;
+            Wait {
+                id: *minted,
+                listeners: 0,
+                polling: false,
+                missed: 0,
+                delay: None,
+            }
+        });
+        wait.listeners += 1;
+        let id = wait.id;
+        if std::mem::replace(&mut wait.polling, true) {
+            return Some((id, Vec::new()));
+        }
+        let after = match kind {
+            Kind::Busy => HOST_IDLE_POLL,
+            Kind::Back => {
+                let after = next_delay(None);
+                wait.delay = Some(after);
+                after
+            }
+        };
+        let arm = Effect::Arm {
+            host: host.clone(),
+            kind,
+            id,
+            after,
+        };
+        Some((id, vec![arm]))
+    }
+
+    /// The wait `id` on `host`, if it still stands.
+    fn standing(&mut self, host: &HostName, kind: Kind, id: u64) -> Option<&mut Wait> {
+        let waits = match kind {
+            Kind::Busy => &mut self.waits,
+            Kind::Back => &mut self.backs,
+        };
+        waits
+            .get_mut(host)
+            .filter(|wait| wait.id == id && wait.polling)
+    }
+
+    /// The clock of wait `id` came round: attach again, if it still stands.
+    pub(super) fn elapsed(&mut self, host: &HostName, kind: Kind, id: u64) -> Vec<Effect> {
+        match self.standing(host, kind, id) {
+            Some(_) => vec![Effect::Attach {
+                host: host.clone(),
+                kind,
+                id,
+            }],
+            None => Vec::new(),
         }
     }
 
-    /// Whether the loop of `host`'s wait to be back has yet to start.
-    pub(super) fn poll_back(&mut self, host: &HostName) -> bool {
-        poll_in(&mut self.backs, host)
+    /// The attach wait `id`'s clock asked for came back: its next clock, if
+    /// it still stands, a lost host's twice as long as the last.
+    pub(super) fn polled(&mut self, host: &HostName, kind: Kind, id: u64) -> Vec<Effect> {
+        let Some(wait) = self.standing(host, kind, id) else {
+            return Vec::new();
+        };
+        let after = match kind {
+            Kind::Busy => HOST_IDLE_POLL,
+            Kind::Back => {
+                let after = next_delay(wait.delay);
+                wait.delay = Some(after);
+                after
+            }
+        };
+        vec![Effect::Arm {
+            host: host.clone(),
+            kind,
+            id,
+            after,
+        }]
     }
 
-    /// Whether the loop of the wait `ended` for `host` to be back goes on.
-    pub(super) fn polling_back(&self, host: &HostName, ended: &Ended) -> bool {
-        polling_in(&self.backs, host, ended)
-    }
-
-    /// One more listener to `host`'s wait, made with the first; `None` when
-    /// the host is not known busy. A wait is only ever made here, so none
-    /// stands with nobody listening.
-    pub(super) fn listen(&mut self, host: &HostName) -> Option<Ended> {
-        if !self.busy.contains_key(host) {
-            return None;
-        }
-        Some(join_in(&mut self.waits, host))
-    }
-
-    /// A listener to the wait `ended`, on busy sessions or for the host to
-    /// be back, went; with the last, the wait goes, and with a busy one what
-    /// the host said.
-    pub(super) fn leave(&mut self, host: &HostName, ended: &Ended) {
-        if leave_in(&mut self.waits, host, ended) {
+    /// A listener to the wait `id` went; with the last, the wait goes, and
+    /// with a busy one what the host said. `true` when the wait went.
+    pub(super) fn leave(&mut self, host: &HostName, id: u64) -> bool {
+        if leave_in(&mut self.waits, host, id) {
             self.busy.remove(host);
+            return true;
         }
-        leave_in(&mut self.backs, host, ended);
+        leave_in(&mut self.backs, host, id)
     }
 
     /// The sessions `host` said were mid-turn, while it is waited on.
@@ -232,49 +290,16 @@ impl Waits {
         }
     }
 
-    /// Whether `host`'s wait has yet to be polled; it is from now on.
-    pub(super) fn poll(&mut self, host: &HostName) -> bool {
-        poll_in(&mut self.waits, host)
-    }
-
-    /// Whether the poll of the wait `ended` goes on: that wait still stands.
-    pub(super) fn polling(&self, host: &HostName, ended: &Ended) -> bool {
-        polling_in(&self.waits, host, ended)
-    }
-
     /// Whether anything waits on `host`.
     pub(super) fn waited(&self, host: &HostName) -> bool {
         self.waits.contains_key(host)
     }
 }
 
-/// End `host`'s wait in `waits`, if one stands, as `how`.
-fn end_in(waits: &mut BTreeMap<HostName, Wait>, host: &HostName, how: WaitEnd) {
-    if let Some(wait) = waits.remove(host) {
-        let _ = wait.end.send(how);
-    }
-}
-
-/// One more listener to `host`'s wait in `waits`, made with the first.
-fn join_in(waits: &mut BTreeMap<HostName, Wait>, host: &HostName) -> Ended {
-    let wait = waits.entry(host.clone()).or_insert_with(|| {
-        let (end, ended) = oneshot::channel();
-        Wait {
-            end,
-            ended: ended.shared(),
-            listeners: 0,
-            polling: false,
-            missed: 0,
-        }
-    });
-    wait.listeners += 1;
-    wait.ended.clone()
-}
-
-/// A listener to the wait `ended` in `waits` went: `true` when it was the
-/// last, and the wait went with it.
-fn leave_in(waits: &mut BTreeMap<HostName, Wait>, host: &HostName, ended: &Ended) -> bool {
-    let Some(wait) = waits.get_mut(host).filter(|wait| wait.ended.ptr_eq(ended)) else {
+/// A listener to the wait `id` in `waits` went: `true` when it was the last,
+/// and the wait went with it.
+fn leave_in(waits: &mut BTreeMap<HostName, Wait>, host: &HostName, id: u64) -> bool {
+    let Some(wait) = waits.get_mut(host).filter(|wait| wait.id == id) else {
         return false;
     };
     wait.listeners = wait.listeners.saturating_sub(1);
@@ -283,18 +308,4 @@ fn leave_in(waits: &mut BTreeMap<HostName, Wait>, host: &HostName, ended: &Ended
     }
     waits.remove(host);
     true
-}
-
-/// Whether `host`'s wait in `waits` has yet to be polled; it is from now on.
-fn poll_in(waits: &mut BTreeMap<HostName, Wait>, host: &HostName) -> bool {
-    waits
-        .get_mut(host)
-        .is_some_and(|wait| !std::mem::replace(&mut wait.polling, true))
-}
-
-/// Whether the poll of the wait `ended` in `waits` goes on.
-fn polling_in(waits: &BTreeMap<HostName, Wait>, host: &HostName, ended: &Ended) -> bool {
-    waits
-        .get(host)
-        .is_some_and(|wait| wait.polling && wait.ended.ptr_eq(ended))
 }

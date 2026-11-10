@@ -190,11 +190,7 @@ pub(super) fn offload_box(path: &Path, cx: &mut Context<ChatPane>) -> Option<Div
             .refuses(busy)
             .on_click(cx.listener({
                 let path = path.to_path_buf();
-                move |_: &mut ChatPane, _, _, cx| {
-                    let path = path.clone();
-                    cx.spawn(async move |_, cx| crate::offload::check_again(cx, path).await)
-                        .detach();
-                }
+                move |_: &mut ChatPane, _, _, cx| crate::offload::check_again(cx, &path)
             }));
         let take = crate::controls::action("offload-take-host-code")
             .secondary()

@@ -11,6 +11,7 @@ use gpui::{App, AppContext as _, Context, Entity, Focusable as _, Subscription, 
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputEvent, InputState};
 use onehand_core::host::client::HostConn;
+use onehand_core::host::drive::{back_failure, needs_restart, restart_failure, said_by_wait};
 use onehand_core::host::sshconf;
 use onehand_core::host::wire::HostSession;
 use onehand_core::workspace::HostName;
@@ -254,63 +255,6 @@ fn release(form: &mut Option<u64>, held: Option<u64>) -> bool {
 /// cancelled and opened again has another, or none.
 fn landed_on(current: Option<u64>, landed: u64) -> bool {
     current == Some(landed)
-}
-
-/// Why what waited on `host` being back ends rather than carries on, given
-/// what is known of it now, whether it was last found busy, and how the wait
-/// ended; `None` to restart and list again. A host taken by another machine
-/// is never attached again by itself, however the wait ended. One found busy
-/// carries on, which puts what waited on its busy wait; any other end, a
-/// host refused, is why.
-fn back_failure(
-    host: &HostName,
-    state: &hosts::HostState,
-    busy: bool,
-    end: hosts::WaitEnd,
-) -> Option<String> {
-    match state {
-        hosts::HostState::Taken => Some(format!("{host} was attached from another machine")),
-        hosts::HostState::Unknown
-        | hosts::HostState::Attaching
-        | hosts::HostState::Live
-        | hosts::HostState::Lost(_) => match end {
-            Ok(()) => None,
-            Err(_) if busy => None,
-            Err(why) => Some(why),
-        },
-    }
-}
-
-/// Whether a yes still has to restart the service: the wait may have ended
-/// since the question was asked, and restarting it again would stop what
-/// that started.
-fn needs_restart<C>(attached: &Result<C, HostFailure>) -> bool {
-    match attached {
-        Err(HostFailure::Busy { .. }) => true,
-        Ok(_) | Err(HostFailure::Other(_) | HostFailure::Refused(_) | HostFailure::Taken(_)) => {
-            false
-        }
-    }
-}
-
-/// Whether a failed restart is already said where the wait it ended was
-/// waited on, so nothing else says it: a host out of reach ends its wait on
-/// why, and one still busy ends none.
-fn said_by_wait(waited: bool, failure: &HostFailure) -> bool {
-    match failure {
-        HostFailure::Other(_) | HostFailure::Refused(_) | HostFailure::Taken(_) => waited,
-        HostFailure::Busy { .. } => false,
-    }
-}
-
-/// What a restart that failed says.
-fn restart_failure(failure: HostFailure) -> String {
-    match failure {
-        HostFailure::Other(why) | HostFailure::Refused(why) | HostFailure::Taken(why) => why,
-        HostFailure::Busy { host, .. } => {
-            format!("{host} still runs another build of the host service")
-        }
-    }
 }
 
 /// The question asked before `host`'s service is restarted, stopping `busy`.

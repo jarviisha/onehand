@@ -25,9 +25,17 @@ impl SessionDrive {
     /// Hand the conversation on to the session that restarts this one: a
     /// move, carrying the mark in the file, so this one's drop does not write
     /// it a second time and the next continues the same file.
+    ///
+    /// **A save still on its way is honoured.** The mark it carries is the
+    /// one that save moved; were the save to fail once this drive is gone,
+    /// its turn would be in neither write. So the next session writes the
+    /// whole transcript at its first save instead, as a close does, and the
+    /// store drops the lines of any save built before that write lands.
     pub fn take_snapshot(&mut self, now: Now) -> Option<ConversationSnapshot> {
         self.chat.tell_time(now);
-        self.chat.take_snapshot()
+        let mut snapshot = self.chat.take_snapshot()?;
+        snapshot.rewrite = self.saving > 0;
+        Some(snapshot)
     }
 
     /// Add a line in onehand's own voice: what a run driving the session
