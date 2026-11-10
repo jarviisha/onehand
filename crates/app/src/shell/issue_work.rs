@@ -48,6 +48,7 @@ impl Shell {
             session.prompt_when_up(prompt, Origin::Issue, cx)
         });
         let workbench = self.workbench.downgrade();
+        let at = self.chat.read(cx).window_handle();
         let mut told = false;
         cx.subscribe(&session, move |_, session, _: &ChatEvent, cx| {
             let Some(id) = session.read(cx).chat.session_id.clone().filter(|_| !told) else {
@@ -67,8 +68,14 @@ impl Shell {
                         )
                     })
                     .await;
+                // Said once: the note is written once per session.
                 if let Err(why) = done {
-                    eprintln!("onehand: could not note the session on issue: {why}");
+                    let _ = at.update(cx, |_, window, cx| {
+                        window.push_notification(
+                            crate::toast::failed("Noting the session on the issue", why),
+                            cx,
+                        )
+                    });
                 }
                 let _ = workbench.update(cx, |panel, cx| panel.rescan(cx));
             })
