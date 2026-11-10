@@ -8,6 +8,7 @@ use gpui_component::WindowExt as _;
 use gpui_component::dock::DockPlacement;
 use onehand_core::disk::Disk;
 use onehand_core::workspace::HostName;
+use onehand_core::workspace::drive::Losses;
 use std::path::{Path, PathBuf};
 
 impl Shell {
@@ -421,11 +422,8 @@ impl Shell {
     /// Add `dir` as a project and select it, or select it if it is one
     /// already. The folder picker lands here, and so does a second launch.
     pub(crate) fn open_root(&mut self, dir: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        self.window.workspace.tree_mut().add_root(dir);
-        self.show_active_session(window, cx);
-        self.refresh_git(cx);
-        self.save_workspace(window, cx);
-        cx.notify();
+        let fx = self.window.workspace.open_root(dir);
+        self.carry_workspace(fx, window, cx);
     }
 
     /// Add `path` on `host` as a project and select it, or select it if it is
@@ -437,11 +435,8 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.window.workspace.tree_mut().add_host_root(host, path);
-        self.show_active_session(window, cx);
-        self.refresh_git(cx);
-        self.save_workspace(window, cx);
-        cx.notify();
+        let fx = self.window.workspace.open_host_root(host, path);
+        self.carry_workspace(fx, window, cx);
     }
 
     /// Remove a project root, and everything the window keeps for it.
@@ -486,14 +481,16 @@ impl Shell {
         let Some(root) = self.window.workspace.roots.get(idx) else {
             return Vec::new();
         };
-        let live = root.sessions.len();
         // A host's folder has its files open in the editor as one here does.
         let on_host = root.on_host().is_some();
         let unsaved = self.workbench.read(cx).unsaved_in(&root.path, on_host, cx);
+        let Some(Losses { sessions, unsaved }) = self.window.workspace.losses(idx, unsaved) else {
+            return Vec::new();
+        };
         let mut losses = Vec::new();
-        if live > 0 {
-            let s = if live == 1 { "session" } else { "sessions" };
-            losses.push(format!("closes {live} {s}"));
+        if sessions > 0 {
+            let s = if sessions == 1 { "session" } else { "sessions" };
+            losses.push(format!("closes {sessions} {s}"));
         }
         if unsaved > 0 {
             let s = if unsaved == 1 { "file" } else { "files" };
@@ -510,22 +507,8 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(idx) = self
-            .window
-            .workspace
-            .roots
-            .iter()
-            .position(|r| r.on_host() == host && r.path == path)
-        else {
-            return;
-        };
-        let label = self.window.workspace.roots[idx].label.clone();
-        let fx = self.window.workspace.forget(idx);
+        let fx = self.window.workspace.remove(host, path);
         self.carry_workspace(fx, window, cx);
-        window.push_notification(crate::toast::info(format!("Removed {label}")), cx);
-        self.show_active_session(window, cx);
-        self.save_workspace(window, cx);
-        cx.notify();
     }
 
     /// Hold a root at the top of the rail, or let it go.

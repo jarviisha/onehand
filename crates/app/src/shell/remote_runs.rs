@@ -545,7 +545,8 @@ impl Shell {
             &row.issue,
             self.check_of(&picker.root).is_some(),
             self.window
-                .git
+                .workspace
+                .git()
                 .get(&picker.root)
                 .map(|git| git.branch.clone()),
             picker.forge.flatten(),

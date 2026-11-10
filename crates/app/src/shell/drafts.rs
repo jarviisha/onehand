@@ -237,7 +237,8 @@ impl Shell {
         };
         let Some(from) = self
             .window
-            .git
+            .workspace
+            .git()
             .get(&root)
             .map(|status| status.branch.clone())
         else {
@@ -484,10 +485,8 @@ impl Shell {
                                 .worktree_draft
                                 .take_if(|draft| draft.root == root && draft.busy);
                             let label = workspace::label_for(&dir);
-                            shell.window.workspace.tree_mut().add_root(dir);
-                            shell.show_active_session(window, cx);
-                            shell.refresh_git(cx);
-                            shell.save_workspace(window, cx);
+                            let fx = shell.window.workspace.open_root(dir);
+                            shell.carry_workspace(fx, window, cx);
                             window.push_notification(
                                 crate::toast::info(format!("Added {label}, on {branch}")),
                                 cx,

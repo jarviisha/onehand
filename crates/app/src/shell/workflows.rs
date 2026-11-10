@@ -198,7 +198,7 @@ impl Shell {
         cx: &gpui::App,
     ) -> Vec<preflight::Finding> {
         let shared = Shared::global(cx);
-        let git = self.window.git.get(root);
+        let git = self.window.workspace.git().get(root);
         // Not known yet blocks nothing: the cut says so itself if it fails.
         let (in_git, forge) = ground.map_or((true, None), |g| (g.in_git, g.forge));
         // Who holds the place, said only for a workflow that works there.
@@ -298,9 +298,8 @@ impl Shell {
             let _ = shell.update_in(cx, |shell: &mut Self, window, cx| match made {
                 Ok((dir, branch, forge)) => {
                     shell.workflow_launcher = None;
-                    shell.window.workspace.tree_mut().add_root(dir.clone());
-                    shell.refresh_git(cx);
-                    shell.save_workspace(window, cx);
+                    let (_, fx) = shell.window.workspace.keep_root(dir.clone());
+                    shell.carry_workspace(fx, window, cx);
                     let launch = launch.on_worktree(dir, branch, forge);
                     shell.start_launch(launch, window, cx);
                 }
@@ -346,14 +345,8 @@ impl Shell {
         // launcher's is: kept, listed, and there to come back to; but not
         // selected, as nothing the person is looking at moves for a task
         // they did not start.
-        if self.root_index(&setup.dir).is_none() {
-            self.window
-                .workspace
-                .tree_mut()
-                .add_root_quietly(setup.dir.clone());
-            self.refresh_git(cx);
-            self.save_workspace(window, cx);
-        }
+        let fx = self.window.workspace.keep_root_quietly(setup.dir.clone());
+        self.carry_workspace(fx, window, cx);
         let (origin, grant) = given;
         let task = Task {
             origin: Some(origin),
@@ -431,12 +424,8 @@ impl Shell {
                 started
             }
             false => {
-                let idx = self.root_index(&dir).unwrap_or_else(|| {
-                    let idx = self.window.workspace.tree_mut().add_root(dir);
-                    self.refresh_git(cx);
-                    self.save_workspace(window, cx);
-                    idx
-                });
+                let (idx, fx) = self.window.workspace.keep_root(dir);
+                self.carry_workspace(fx, window, cx);
                 self.select_root(idx, window, cx);
                 let agent = start.run.setup.agent.clone().map(SharedString::from);
                 self.start_session(agent, None, window, cx)

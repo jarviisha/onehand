@@ -385,13 +385,6 @@ impl Shell {
         })
         .detach();
     }
-
-    /// Write the workspace back to its storage folder, if it has one: a
-    /// change nothing puts back, such as a project added.
-    pub(super) fn save_workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let fx = self.window.workspace.save();
-        self.carry_workspace(fx, window, cx);
-    }
 }
 
 /// How long a closing window waits for its last workspace write.

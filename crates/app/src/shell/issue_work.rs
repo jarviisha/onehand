@@ -120,9 +120,8 @@ impl Shell {
                 let idx = match shell.root_index(&root) {
                     Some(idx) => idx,
                     None if there => {
-                        let idx = shell.window.workspace.tree_mut().add_root(root.clone());
-                        shell.refresh_git(cx);
-                        shell.save_workspace(window, cx);
+                        let (idx, fx) = shell.window.workspace.keep_root(root.clone());
+                        shell.carry_workspace(fx, window, cx);
                         idx
                     }
                     None => {
@@ -173,7 +172,7 @@ impl Shell {
             .iter()
             .filter(|root| set_up && !root.transient && root.runs_here())
             .filter_map(|root| root.local_path())
-            .filter(|path| self.window.git.contains_key(*path))
+            .filter(|path| self.window.workspace.git().contains_key(*path))
             .map(Path::to_path_buf)
             .collect();
         let mut works = crate::task::issue_works(&kept, cx);

@@ -13,6 +13,11 @@ fn spec() -> AgentSpec {
     }
 }
 
+/// The tree itself, for a test to set up what it needs.
+fn tree(drive: &mut WorkspaceDrive) -> &mut Workspace {
+    &mut drive.workspace
+}
+
 /// A drive on a workspace of `/a`, bound to a folder of its own.
 fn bound() -> WorkspaceDrive {
     let mut ws = Workspace::seeded("/a");
@@ -32,6 +37,9 @@ fn names(fx: &[Effect]) -> Vec<String> {
             Effect::Write { .. } => "Write".into(),
             Effect::Arm { .. } => "Arm".into(),
             Effect::Remember { name, .. } => format!("Remember({name})"),
+            Effect::Sweep { roots, .. } => format!("Sweep({})", roots.len()),
+            Effect::Resweep => "Resweep".into(),
+            Effect::GitRead => "GitRead".into(),
             Effect::LookForRuns(path) => format!("LookForRuns({})", path.display()),
             Effect::Signal(signal) => format!("{signal:?}"),
         })
@@ -82,7 +90,7 @@ fn a_session_without_an_agent_or_a_project_is_refused_and_said() {
 #[test]
 fn a_new_session_beside_a_worker_goes_home() {
     let mut drive = bound();
-    drive.tree_mut().add_root("/worker");
+    tree(&mut drive).add_root("/worker");
     drive.add_session(Some(spec()), 1, Some(0));
     assert_eq!(drive.active_root, 0);
     assert_eq!(drive.roots[0].sessions.len(), 1);
@@ -93,8 +101,8 @@ fn a_new_session_beside_a_worker_goes_home() {
 #[test]
 fn a_session_asked_for_on_a_project_selects_it_even_when_refused() {
     let mut drive = bound();
-    drive.tree_mut().add_root("/b");
-    drive.tree_mut().select_root(0);
+    tree(&mut drive).add_root("/b");
+    tree(&mut drive).select_root(0);
     let (added, fx) = drive.add_session_in(1, None, 1);
     assert!(added.is_err());
     assert_eq!(drive.active_root, 1);
@@ -134,12 +142,12 @@ fn a_run_project_goes_with_its_last_session() {
 fn a_worker_on_screen_closing_shows_its_lead() {
     let mut drive = bound();
     drive.add_session(Some(spec()), 1, None);
-    let worker = drive.tree_mut().add_root("/worker");
+    let worker = tree(&mut drive).add_root("/worker");
     drive.add_session_in(worker, Some(spec()), 2);
     drive.end(2, Some(1));
     assert_eq!(drive.active_uid(), Some(1));
 
-    let worker = drive.tree_mut().add_root("/worker");
+    let worker = tree(&mut drive).add_root("/worker");
     drive.add_session_in(worker, Some(spec()), 3);
     drive.add_session_in(worker, Some(spec()), 4);
     drive.end(3, Some(1));
@@ -149,8 +157,8 @@ fn a_worker_on_screen_closing_shows_its_lead() {
 #[test]
 fn a_run_session_goes_on_an_open_project_and_selects_nothing() {
     let mut drive = bound();
-    drive.tree_mut().add_root("/b");
-    drive.tree_mut().select_root(0);
+    tree(&mut drive).add_root("/b");
+    tree(&mut drive).select_root(0);
     assert_eq!(drive.add_run_session(Path::new("/b"), spec(), 3), Some(1));
     assert_eq!(drive.active_root, 0);
     assert!(
@@ -229,7 +237,7 @@ fn a_session_out_of_range_selects_nothing() {
 fn a_worker_stands_under_its_lead_s_project_when_the_lead_is_here() {
     let mut drive = bound();
     drive.add_session(Some(spec()), 1, None);
-    let worker = drive.tree_mut().add_root("/worker");
+    let worker = tree(&mut drive).add_root("/worker");
     drive.add_session_in(worker, Some(spec()), 2);
     assert_eq!(drive.home_of(2, Some(1)), Some(0));
     assert_eq!(drive.home_of(2, Some(99)), Some(worker));
@@ -328,7 +336,7 @@ fn a_pin_whose_write_fails_is_put_back() {
 #[test]
 fn an_order_whose_write_fails_goes_back_to_the_one_saved() {
     let mut drive = bound();
-    drive.tree_mut().add_root("/b");
+    tree(&mut drive).add_root("/b");
     let pending = written(drive.move_root(1, 0));
     assert_eq!(drive.roots[0].path, PathBuf::from("/b"));
     drive.handle(Input::Written {
@@ -352,9 +360,7 @@ fn unattended_runs_are_switched_only_where_they_can_run() {
     assert_eq!(names(&drive.toggle_unattended(0)), ["Write", "Changed"]);
     let run = drive.add_run_session(Path::new("/run"), spec(), 1).unwrap();
     assert!(drive.toggle_unattended(run).is_empty());
-    let host = drive
-        .tree_mut()
-        .add_host_root(HostName("box".into()), PathBuf::from("/p"));
+    let host = tree(&mut drive).add_host_root(HostName("box".into()), PathBuf::from("/p"));
     assert!(drive.toggle_unattended(host).is_empty());
 }
 
@@ -369,4 +375,123 @@ fn a_check_command_is_written_after_the_typing_and_blank_is_none() {
     assert!(drive.set_check(Path::new("/a"), "make test").is_empty());
     drive.set_check(Path::new("/a"), "  ");
     assert_eq!(drive.roots[0].check, None);
+}
+
+// Projects.
+
+#[test]
+fn a_folder_opened_is_selected_shown_swept_and_written() {
+    let mut drive = bound();
+    let fx = drive.open_root("/b".into());
+    assert_eq!(names(&fx), ["Show", "Resweep", "Write", "Changed"]);
+    assert_eq!(drive.active_root, 1);
+    drive.open_root("/b".into());
+    assert_eq!(drive.roots.len(), 2, "an open project is not doubled");
+}
+
+#[test]
+fn a_folder_kept_for_work_is_added_once() {
+    let mut drive = bound();
+    let (idx, fx) = drive.keep_root("/wt".into());
+    assert_eq!(names(&fx), ["Resweep", "Write", "Changed"]);
+    let (again, fx) = drive.keep_root("/wt".into());
+    assert_eq!((idx, fx.len()), (again, 0));
+    tree(&mut drive).select_root(0);
+    drive.keep_root_quietly("/task".into());
+    assert_eq!(drive.active_root, 0, "nothing selected");
+}
+
+/// Removing asks first only when something would be lost.
+#[test]
+fn removing_asks_only_when_it_loses_something() {
+    let mut drive = bound();
+    assert_eq!(drive.losses(0, 0), None);
+    assert_eq!(
+        drive.losses(0, 2),
+        Some(Losses {
+            sessions: 0,
+            unsaved: 2
+        })
+    );
+    drive.add_session(Some(spec()), 1, None);
+    assert_eq!(
+        drive.losses(0, 0),
+        Some(Losses {
+            sessions: 1,
+            unsaved: 0
+        })
+    );
+}
+
+/// A removal lands on the project it was asked about, by host and path,
+/// after a reorder; its sessions close first, then it is said and written.
+#[test]
+fn a_removal_lands_by_host_and_path() {
+    let mut drive = bound();
+    drive.open_root("/b".into());
+    drive.add_session(Some(spec()), 1, None);
+    drive.open_host_root(HostName("box".into()), "/b".into());
+    let fx = drive.remove(None, Path::new("/b"));
+    assert_eq!(
+        names(&fx),
+        [
+            "Close(1)",
+            "Forgot(/b)",
+            "Changed",
+            "Removed(\"b\")",
+            "Show",
+            "Write"
+        ]
+    );
+    assert!(drive
+        .roots
+        .iter()
+        .any(|r| r.host.is_some() && r.path == Path::new("/b")));
+    assert!(
+        drive.remove(None, Path::new("/b")).is_empty(),
+        "gone already"
+    );
+}
+
+// The git sweep.
+
+/// A sweep reads the folders here and those on an attached host, never a
+/// host's folder on a local one's path; an older sweep's answer is dropped.
+#[test]
+fn a_sweep_reads_what_it_can_and_keeps_only_the_newest_answer() {
+    let mut drive = bound();
+    drive.open_host_root(HostName("box".into()), "/srv".into());
+    drive.open_host_root(HostName("off".into()), "/x".into());
+    drive.open_host_root(HostName("box".into()), "/a".into());
+    let Effect::Sweep { token: old, roots } = drive.sweep(|host| host.0 == "box") else {
+        panic!("a sweep");
+    };
+    let read: Vec<_> = roots.iter().map(|r| r.path.display().to_string()).collect();
+    assert_eq!(read, ["/a", "/srv"]);
+    let Effect::Sweep { token: new, .. } = drive.sweep(|_| true) else {
+        panic!("a sweep");
+    };
+    let status = |branch: &str| crate::gitstat::GitStatus {
+        branch: branch.into(),
+        changed: 0,
+        ahead: 0,
+        behind: 0,
+        entries: Default::default(),
+    };
+    assert!(drive
+        .handle(Input::Swept {
+            token: old,
+            found: vec![("/a".into(), status("old"))],
+        })
+        .is_empty());
+    let fx = drive.handle(Input::Swept {
+        token: new,
+        found: vec![("/a".into(), status("main"))],
+    });
+    assert_eq!(names(&fx), ["GitRead"]);
+    assert_eq!(drive.git_of(&drive.roots[0]).unwrap().branch, "main");
+    assert!(
+        drive.git_of(&drive.roots[3]).is_none(),
+        "a host's folder on /a"
+    );
 }

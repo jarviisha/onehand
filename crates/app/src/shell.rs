@@ -308,9 +308,6 @@ pub struct Shell {
     /// The attach a host project on screen waits on for its files; replaced
     /// on every arrival, so one for a project left behind stops.
     _host_files: Option<gpui::Task<()>>,
-    /// Bumped on every `git status` sweep, so a slow one that started earlier
-    /// cannot land on top of a fast one that started later.
-    git_generation: u64,
     /// The rail's session rows as of the last repaint, so a chat notify that
     /// changes nothing the rail shows does not cost a rail rebuild.
     rail_sessions: Vec<(u64, RailSession)>,

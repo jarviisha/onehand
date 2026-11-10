@@ -723,13 +723,13 @@ impl Shell {
     /// Every project as the workspace page lists it, in rail order, those on
     /// a host included.
     pub(super) fn page_projects(&self) -> Vec<crate::page_parts::PageProject> {
-        page_projects_in(&self.window.workspace, &self.window.git, Reach::Overview)
+        page_projects_in(&self.window.workspace, Reach::Overview)
     }
 
     /// The projects the Tasks, Issues, Workflows and Schedules pages list:
     /// those on this machine.
     pub(super) fn local_page_projects(&self) -> Vec<crate::page_parts::PageProject> {
-        page_projects_in(&self.window.workspace, &self.window.git, Reach::Local)
+        page_projects_in(&self.window.workspace, Reach::Local)
     }
 
     /// Whether the workspace page is what the centre of the window shows, for
@@ -818,8 +818,7 @@ fn listed(root: &onehand_core::workspace::ProjectRoot, reach: Reach) -> bool {
 /// no issue file here: what this machine files under its path is a folder of
 /// the same path here. Its `git status` is read over its attach.
 pub(super) fn page_projects_in(
-    workspace: &onehand_core::workspace::Workspace,
-    git: &std::collections::HashMap<PathBuf, gitstat::GitStatus>,
+    workspace: &onehand_core::workspace::WorkspaceDrive,
     reach: Reach,
 ) -> Vec<crate::page_parts::PageProject> {
     workspace
@@ -838,7 +837,7 @@ pub(super) fn page_projects_in(
                     .iter()
                     .map(|session| (session.uid, SharedString::from(session.title().to_string())))
                     .collect(),
-                git: crate::state::git_of(workspace, git, root).map(gitstat::GitStatus::label),
+                git: workspace.git_of(root).map(gitstat::GitStatus::label),
                 issues: local.and_then(|path| {
                     Some(onehand_core::issues::file_for(
                         workspace.storage_dir.as_deref()?,

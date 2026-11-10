@@ -52,6 +52,9 @@ impl Shell {
                     .detach();
                 }
                 Effect::Arm { token, after } => self.arm(token, after, cx),
+                Effect::Sweep { token, roots } => self.sweep_git(token, roots, cx),
+                Effect::Resweep => self.refresh_git(cx),
+                Effect::GitRead => self.git_read(cx),
                 Effect::Remember { dir, name } => super::storage::remember_name(&dir, &name, cx),
                 Effect::Signal(signal) => {
                     let toast = match signal {
@@ -64,6 +67,7 @@ impl Shell {
                         Signal::Refused(Refusal::NoAgent) => crate::toast::warning(
                             "Add an agent in Settings before starting a session",
                         ),
+                        Signal::Removed(label) => crate::toast::info(format!("Removed {label}")),
                     };
                     window.push_notification(toast, cx);
                 }
@@ -71,13 +75,15 @@ impl Shell {
         }
     }
 
-    /// Carry out `fx` where no window is in hand: only a wait, which is all a
-    /// burst's change answers.
+    /// Carry out `fx` where no window is in hand: a burst's wait, or a
+    /// sweep and what it read.
     pub(super) fn carry_workspace_quietly(&mut self, fx: Vec<Effect>, cx: &mut Context<Self>) {
         for effect in fx {
             match effect {
                 Effect::Arm { token, after } => self.arm(token, after, cx),
-                _ => debug_assert!(false, "a burst's change answers only a wait"),
+                Effect::Sweep { token, roots } => self.sweep_git(token, roots, cx),
+                Effect::GitRead => self.git_read(cx),
+                _ => debug_assert!(false, "only a wait or a sweep is carried without a window"),
             }
         }
     }
@@ -131,7 +137,6 @@ impl Shell {
         // under its path belongs to a folder of the same path here.
         if !on_host {
             self.issues_page.forget_root(&path, cx);
-            self.window.git.remove(&path);
             // Its field goes with it: kept, the same folder added back found the
             // old command in a field its project no longer had.
             self.check_inputs.remove(&path);

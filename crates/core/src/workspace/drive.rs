@@ -29,7 +29,11 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::time::Duration;
 
+mod git;
+mod roots;
 mod sessions;
+pub use git::SweepRoot;
+pub use roots::Losses;
 
 /// How long the workspace must sit still before a burst of changes is
 /// written: long enough that a drag is one write rather than one per frame,
@@ -79,6 +83,8 @@ pub enum Signal {
     SaveFailed(String),
     /// What was asked for cannot be done.
     Refused(Refusal),
+    /// The project named was removed from the workspace.
+    Removed(String),
 }
 
 /// Why a change was not made.
@@ -132,6 +138,19 @@ pub enum Effect {
     /// now, so a project that can never be worked says so now and not at the
     /// next tick.
     LookForRuns(PathBuf),
+    /// Read the `git status` of each of `roots`, off the UI loop, and report
+    /// [`Input::Swept`] with `token`. A late answer is **dropped** by its
+    /// token: a later sweep, or a project leaving, supersedes it.
+    Sweep {
+        token: u64,
+        roots: Vec<SweepRoot>,
+    },
+    /// Read the projects' `git status` again, through [`WorkspaceDrive::sweep`]:
+    /// the projects changed.
+    Resweep,
+    /// What was read of the projects' `git status` changed: whatever shows a
+    /// branch or a change shows it again.
+    GitRead,
     /// The workspace in `dir` is known by `name`: remember it so.
     Remember {
         dir: PathBuf,
@@ -149,11 +168,19 @@ pub enum Input {
     },
     /// The wait [`Effect::Arm`] asked for ran out.
     Elapsed { token: u64 },
+    /// What sweep `token` found: each repository's `git status`.
+    Swept {
+        token: u64,
+        found: Vec<(PathBuf, crate::gitstat::GitStatus)>,
+    },
 }
 
 /// One window's workspace drive. See the module header.
 pub struct WorkspaceDrive {
     workspace: Workspace,
+    git: std::collections::HashMap<PathBuf, crate::gitstat::GitStatus>,
+    /// The newest sweep's token.
+    swept: u64,
     saves: Saves<Thing, Value>,
     /// The newest wait armed for a burst's write, while one waits.
     soon: Option<u64>,
@@ -171,6 +198,8 @@ impl WorkspaceDrive {
     pub fn new(workspace: Workspace) -> Self {
         Self {
             workspace,
+            git: Default::default(),
+            swept: 0,
             saves: Saves::default(),
             soon: None,
             minted: 0,
@@ -181,11 +210,6 @@ impl WorkspaceDrive {
     /// beside the tree. View state: nothing here reads it.
     pub fn layout_mut(&mut self) -> &mut PanelLayout {
         &mut self.workspace.layout
-    }
-
-    /// The tree itself, for the edits not yet moved here. Going.
-    pub fn tree_mut(&mut self) -> &mut Workspace {
-        &mut self.workspace
     }
 
     /// The session on screen, if there is one.
@@ -309,6 +333,7 @@ impl WorkspaceDrive {
                 true => self.save(),
                 false => Vec::new(),
             },
+            Input::Swept { token, found } => self.swept(token, found),
         }
     }
 
@@ -343,10 +368,10 @@ impl WorkspaceDrive {
     /// Hold project `idx` at the top of the rail, or let it go; written now,
     /// and put back alone if its write fails. Only the drawing order moves.
     pub fn toggle_pin(&mut self, idx: usize) -> Vec<Effect> {
-        let Some(root) = self.workspace.roots.get_mut(idx) else {
+        self.workspace.toggle_pin(idx);
+        let Some(root) = self.workspace.roots.get(idx) else {
             return Vec::new();
         };
-        root.pinned = !root.pinned;
         let (host, path, pinned) = (root.host.clone(), root.path.clone(), root.pinned);
         let mut fx = self.change(
             Thing::Pin(host.clone(), path.clone()),
@@ -387,15 +412,16 @@ impl WorkspaceDrive {
     /// anybody chose, and no run reaches a folder on a host or offloaded, so
     /// neither has the switch.
     pub fn toggle_unattended(&mut self, idx: usize) -> Vec<Effect> {
-        let Some(root) = self
+        if !self
             .workspace
             .roots
-            .get_mut(idx)
-            .filter(|root| !root.transient && root.runs_here())
-        else {
+            .get(idx)
+            .is_some_and(|root| !root.transient && root.runs_here())
+        {
             return Vec::new();
-        };
-        root.unattended = !root.unattended;
+        }
+        self.workspace.toggle_unattended(idx);
+        let root = &self.workspace.roots[idx];
         let (path, on) = (root.path.clone(), root.unattended);
         let mut fx = Vec::new();
         if on {

@@ -539,7 +539,6 @@ impl Shell {
             terminal_live: false,
             _pending_warm: None,
             _host_files: None,
-            git_generation: 0,
             rail_sessions: Vec::new(),
             live_conversations: Vec::new(),
             issue_works: (Vec::new(), Vec::new()),

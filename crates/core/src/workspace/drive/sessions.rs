@@ -249,6 +249,11 @@ impl WorkspaceDrive {
             .iter()
             .map(|session| Effect::Close(session.uid))
             .collect();
+        // What was read of a folder here goes with it; a host's folder never
+        // had any of its own.
+        if root.host.is_none() {
+            self.git.remove(&root.path);
+        }
         fx.push(Effect::Forgot(Forgotten {
             path: root.path.clone(),
             host: root.host.clone(),

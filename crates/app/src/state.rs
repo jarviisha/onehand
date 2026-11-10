@@ -11,7 +11,6 @@ use onehand_core::config::{AppConfig, AppState};
 use onehand_core::gitstat::GitStatus;
 use onehand_core::workspace::{ProjectRoot, Workspace};
 use onehand_io::acp::AcpRuntime;
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// A window this process has open, tracked so that opening a workspace that is
@@ -150,50 +149,22 @@ impl Shared {
     }
 }
 
-/// One window's world: a workspace plus the per-root state derived from it.
+/// One window's world: its workspace, changed only through its drive.
 pub struct WorkspaceWindow {
-    /// The window's workspace tree, changed only through its drive.
     pub workspace: onehand_core::workspace::WorkspaceDrive,
-    /// `git status` per root path. A non-repo root simply has no entry.
-    pub git: HashMap<PathBuf, GitStatus>,
 }
 
 impl WorkspaceWindow {
     pub fn new(workspace: Workspace) -> Self {
         Self {
             workspace: onehand_core::workspace::WorkspaceDrive::new(workspace),
-            git: HashMap::new(),
         }
     }
 
     /// `root`'s `git status`, as the last sweep read it.
     pub(crate) fn git_of(&self, root: &ProjectRoot) -> Option<&GitStatus> {
-        git_of(&self.workspace, &self.git, root)
+        self.workspace.git_of(root)
     }
-}
-
-/// `root`'s `git status` in `git`, which is kept by path alone. A host's
-/// folder on a path a folder here also has gets none: what is kept under that
-/// path is the local one's.
-pub(crate) fn git_of<'a>(
-    workspace: &Workspace,
-    git: &'a HashMap<PathBuf, GitStatus>,
-    root: &ProjectRoot,
-) -> Option<&'a GitStatus> {
-    if shares_local_path(workspace, root) {
-        return None;
-    }
-    git.get(&root.path)
-}
-
-/// Whether `root` is a host's folder on a path a folder here in `workspace`
-/// also has.
-pub(crate) fn shares_local_path(workspace: &Workspace, root: &ProjectRoot) -> bool {
-    root.on_host().is_some()
-        && workspace
-            .roots
-            .iter()
-            .any(|r| r.local_path() == Some(root.path.as_path()))
 }
 
 /// Run `f` on the shell of `window`, inside it: `None` when the window or its

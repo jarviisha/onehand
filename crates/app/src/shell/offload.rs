@@ -226,31 +226,26 @@ impl Shell {
             return;
         }
         self.offload_draft = None;
-        let Some(idx) = self
-            .window
-            .workspace
-            .roots
-            .iter()
-            .position(|r| r.local_path() == Some(path.as_path()))
-        else {
+        if self.window.workspace.local_index(&path).is_none() {
             return;
-        };
+        }
         let fx = self.window.workspace.drop_sessions_in(&path);
         self.carry_workspace(fx, window, cx);
         let branch = match &kept {
             Kept::Branch(branch) => Some(branch.clone()),
             Kept::Mirror(_) => None,
         };
-        self.window.workspace.tree_mut().roots[idx].offload = Some(Offloaded {
+        let on = Offloaded {
             host: host.clone(),
             mirror: mirror.clone(),
             branch,
-        });
+        };
+        let fx = self.window.workspace.set_offload(&path, Some(on));
+        self.carry_workspace(fx, window, cx);
         match kept {
             Kept::Mirror(state) => offload::track(cx, path, host, Some(state)),
             Kept::Branch(branch) => offload::track_branch(cx, path, host, branch),
         }
-        self.save_workspace_soon(cx);
         self.show_active_session(window, cx);
         self.sync_offload(cx);
         cx.notify();
@@ -285,9 +280,9 @@ impl Shell {
         }
         let fx = self.window.workspace.drop_sessions_in(&path);
         self.carry_workspace(fx, window, cx);
-        self.window.workspace.tree_mut().roots[idx].offload = None;
+        let fx = self.window.workspace.set_offload(&path, None);
+        self.carry_workspace(fx, window, cx);
         offload::forget(cx, &path);
-        self.save_workspace_soon(cx);
         self.show_active_session(window, cx);
         self.sync_offload(cx);
         cx.notify();
