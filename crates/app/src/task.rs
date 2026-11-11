@@ -45,7 +45,9 @@ pub(crate) struct Tasks {
     told: HashMap<String, futures::channel::oneshot::Sender<Placed>>,
     /// What a person pressed on each task that is still being read or done,
     /// so the button waits wherever the task is drawn.
-    acting: HashMap<String, onehand_core::task::work::Act>,
+    /// What each task's review was read as, kept for the question its
+    /// answer asks.
+    reviews: HashMap<String, onehand_core::unattended::review::ReviewRead>,
     /// How many commands, a check's or a step's, have not exited yet.
     commands: Arc<AtomicUsize>,
     writer: files::Writer,
@@ -76,7 +78,7 @@ impl Tasks {
             live: HashMap::new(),
             draining: HashMap::new(),
             told: HashMap::new(),
-            acting: HashMap::new(),
+            reviews: HashMap::new(),
             commands: Arc::default(),
             writer: files::Writer::spawn(dir),
         }
@@ -356,27 +358,25 @@ pub(crate) fn each<R>(cx: &App, look: impl Fn(&Task, bool) -> Option<R>) -> Vec<
 /// included, so its button waits.
 pub(crate) fn pressed(id: &str, cx: &App) -> Option<onehand_core::task::work::Act> {
     let t = cx.try_global::<Tasks>()?;
-    t.acting
-        .get(id)
-        .copied()
-        .or(t.drive.acting(id))
-        .or_else(|| {
-            t.stopping(id)
-                .then_some(onehand_core::task::work::Act::Stop)
-        })
+    t.drive.acting(id).or_else(|| {
+        t.stopping(id)
+            .then_some(onehand_core::task::work::Act::Stop)
+    })
 }
 
-/// Say that `act`, pressed on task `id`, is being done, or with `None` that
-/// it is over.
-pub(crate) fn set_acting(id: &str, act: Option<onehand_core::task::work::Act>, cx: &mut App) {
-    if !cx.has_global::<Tasks>() {
-        return;
-    }
-    cx.update_global::<Tasks, _>(|t, _| match act {
-        Some(act) => t.acting.insert(id.to_string(), act),
-        None => t.acting.remove(id),
-    });
-    cx.refresh_windows();
+/// *Answer the pull request review* pressed on task `id` in `window`.
+pub(crate) fn answer_review(id: &str, window: AnyWindowHandle, cx: &mut App) {
+    with_drive(cx, |d| ((), d.answer_review(id, window)));
+}
+
+/// What task `id`'s review was read as, taken for the question its answer
+/// asks.
+pub(crate) fn take_review(
+    id: &str,
+    cx: &mut App,
+) -> Option<onehand_core::unattended::review::ReviewRead> {
+    cx.try_global::<Tasks>()?;
+    cx.update_global::<Tasks, _>(|t, _| t.reviews.remove(id))
 }
 
 /// *Remove worktree…* pressed on task `id` in `window`, or, `confirmed`, the

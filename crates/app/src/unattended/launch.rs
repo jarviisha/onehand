@@ -6,7 +6,7 @@ use gpui::App;
 mod answer;
 mod pick;
 
-pub use answer::{ReviewRead, read_review, start_answer};
+pub use answer::start_answer;
 pub use pick::{look_now, start_picked};
 
 /// Say `why` in `window`, as the transient notice it is.

@@ -123,6 +123,13 @@ pub enum Input<W> {
         repo: PathBuf,
         judged: Option<(Box<removal::Facts>, removal::Judged)>,
     },
+    /// What reading task `task`'s review, asked from `window`, came to: read
+    /// and kept by the carrier for its question, or why not.
+    ReviewRead {
+        task: String,
+        window: W,
+        read: Result<(), String>,
+    },
     /// What removing task `task`'s worktree at `folder`, and `branch`, from
     /// `window`, came to.
     WorktreeRemoved {
@@ -169,6 +176,9 @@ pub enum Signal<W> {
     },
     /// Removing a worktree, from `window`, failed, for `why`.
     RemoveFailed { window: W, why: String },
+    /// Task `task`'s review, its answer asked for in `window`, could not be
+    /// read, for `why`.
+    ReviewNotRead { window: W, why: String },
     /// A task's file could not be written; said once until a write lands.
     SaveFailed(String),
     /// A task's last mark could not be pinned.
@@ -264,6 +274,14 @@ pub enum Effect<W> {
         confirmed: bool,
         window: W,
     },
+    /// Read what answering task `task`'s review is judged on, off the UI
+    /// loop, keep it, and report [`Input::ReviewRead`] with `window`.
+    /// Recorded: the press waits until it lands.
+    ReadReview { task: String, window: W },
+    /// Ask the person in `window` whether to answer task `task`'s review, on
+    /// what [`Effect::ReadReview`] kept. Not answered: a yes picks the
+    /// issue as a person does.
+    ConfirmAnswer { task: String, window: W },
     /// Ask the person in `window` whether to remove task `task`'s worktree,
     /// as `facts` and `judged` say; a yes is
     /// [`TasksDrive::remove_worktree`], confirmed. Not answered.
@@ -491,6 +509,14 @@ impl<W: Copy> TasksDrive<W> {
                 }
             }
             Input::Dismissed { task, written } => self.dismissed(task, written, &mut fx),
+            Input::ReviewRead { task, window, read } => {
+                self.acting.remove(&task);
+                fx.push(match read {
+                    Ok(()) => Effect::ConfirmAnswer { task, window },
+                    Err(why) => Effect::Signal(Signal::ReviewNotRead { window, why }),
+                });
+                fx.push(Effect::Refresh);
+            }
             Input::Judged {
                 task,
                 confirmed,

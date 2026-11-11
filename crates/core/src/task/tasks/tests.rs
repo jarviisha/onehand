@@ -851,3 +851,29 @@ fn a_worktree_is_judged_asked_judged_again_then_removed() {
     )));
     assert_eq!(tasks.acting("1"), None);
 }
+
+/// *Answer the pull request review* reads first, its button waiting; what
+/// was read is asked of the person, and a read that failed is said.
+#[test]
+fn a_review_is_read_before_it_is_asked() {
+    let mut tasks = TasksDrive::<Win>::default();
+    tasks.add(titled("1", "Mine", "/w"));
+    let fx = tasks.answer_review("1", WINDOW);
+    assert!(has(&fx, |e| matches!(e, Effect::ReadReview { .. })));
+    assert_eq!(tasks.acting("1"), Some(Act::AnswerReview));
+    let read = |tasks: &mut TasksDrive<Win>, read| {
+        tasks.handle(Input::ReviewRead {
+            task: "1".into(),
+            window: WINDOW,
+            read,
+        })
+    };
+    let fx = read(&mut tasks, Ok(()));
+    assert!(has(&fx, |e| matches!(e, Effect::ConfirmAnswer { .. })));
+    assert_eq!(tasks.acting("1"), None);
+    let fx = read(&mut tasks, Err("gone".into()));
+    assert!(has(&fx, |e| matches!(
+        e,
+        Effect::Signal(Signal::ReviewNotRead { .. })
+    )));
+}

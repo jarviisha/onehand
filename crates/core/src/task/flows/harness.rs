@@ -250,6 +250,9 @@ impl Flow {
                 self.told.push((task, placed));
             }
             TasksEffect::Cut { .. } => panic!("these flows start on the checkout"),
+            TasksEffect::ReadReview { .. } | TasksEffect::ConfirmAnswer { .. } => {
+                panic!("these flows answer no review")
+            }
             TasksEffect::JudgeRemoval { .. }
             | TasksEffect::ConfirmRemoval { .. }
             | TasksEffect::RemoveWorktree { .. } => panic!("these flows remove no worktree"),

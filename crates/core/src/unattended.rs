@@ -18,6 +18,7 @@ mod claim;
 pub mod drive;
 pub mod link;
 mod report;
+pub mod review;
 
 pub use claim::{
     cannot_start, check_missing, claim_found_blocking, find_blocking, fit_for_issue, look_blocking,

@@ -1,7 +1,10 @@
-//! *Remove worktree…* on a task whose pull request merged: judged when it
-//! is pressed, asked of the person, judged again as things stand once they
-//! say yes, then removed, and kept with the task, whatever became of the
-//! window it was pressed in. Never automatic.
+//! What a person presses on a task that is read or judged before it is
+//! asked of them, its button waiting meanwhile. *Answer the pull request
+//! review* reads what it is judged on first. *Remove worktree…* on a task
+//! whose pull request merged is judged when it is pressed, asked of the
+//! person, judged again as things stand once they say yes, then removed,
+//! and kept with the task, whatever became of the window it was pressed in.
+//! Never automatic.
 
 use super::{Effect, Signal, TasksDrive};
 use crate::task::work::Act;
@@ -12,6 +15,23 @@ impl<W: Copy> TasksDrive<W> {
     /// What a person pressed on task `id` that is still being done.
     pub fn acting(&self, id: &str) -> Option<Act> {
         self.acting.get(id).copied()
+    }
+
+    /// *Answer the pull request review* pressed on task `id` in `window`:
+    /// what it is judged on read first, its button waiting meanwhile.
+    #[must_use]
+    pub fn answer_review(&mut self, id: &str, window: W) -> Vec<Effect<W>> {
+        if self.task(id).is_none() {
+            return Vec::new();
+        }
+        self.acting.insert(id.to_string(), Act::AnswerReview);
+        vec![
+            Effect::ReadReview {
+                task: id.to_string(),
+                window,
+            },
+            Effect::Refresh,
+        ]
     }
 
     /// Remove task `id`'s worktree and branch, pressed in `window`: judged

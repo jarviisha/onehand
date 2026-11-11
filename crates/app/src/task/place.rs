@@ -10,6 +10,7 @@ use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Ta
 use gpui_component::WindowExt as _;
 use onehand_core::task::tasks::{Effect, Input, Placed, Signal};
 use onehand_core::task::{Launch, Task, marks, queue};
+use onehand_core::unattended::review::ReviewAsk;
 use onehand_core::workflow::Failure;
 use onehand_core::worktree::removal;
 
@@ -186,6 +187,15 @@ pub(super) fn perform(
                     cx,
                 );
             }
+            Effect::ReadReview { task, window } => read_review(task, window, cx),
+            Effect::ConfirmAnswer { task, window } => cx.defer(move |cx| {
+                let Some(read) = super::take_review(&task, cx) else {
+                    return;
+                };
+                crate::state::with_shell(window, cx, |shell, window, cx| {
+                    shell.confirm_answer(task, read, window, cx)
+                });
+            }),
             Effect::JudgeRemoval {
                 task,
                 dir,
@@ -270,6 +280,44 @@ pub(super) fn perform(
             Effect::Refresh => cx.refresh_windows(),
         }
     }
+}
+
+/// Read what answering task `task`'s review is judged on, its facts as the
+/// app knows them now, off the UI thread; kept for the question, and what
+/// it came to told to the drive.
+fn read_review(task: String, window: AnyWindowHandle, cx: &mut App) {
+    let ask = super::task(&task, cx)
+        .ok_or_else(|| "The task is gone".to_string())
+        .and_then(|kept| {
+            let template = kept
+                .runs
+                .last()
+                .map(|run| run.template.clone())
+                .ok_or_else(|| "The task has never run".to_string())?;
+            let facts = crate::unattended::task_facts(&kept, template, cx);
+            ReviewAsk::of(&kept, facts, crate::features::connectors())
+        });
+    let ask = match ask {
+        Ok(ask) => ask,
+        Err(why) => {
+            let read = Err(why);
+            return feed(Input::ReviewRead { task, window, read }, cx);
+        }
+    };
+    cx.spawn(async move |cx| {
+        let read = cx
+            .background_executor()
+            .spawn(async move { ask.read_blocking() })
+            .await;
+        cx.update(|cx| {
+            cx.default_global::<Tasks>()
+                .reviews
+                .insert(task.clone(), read);
+            let read = Ok(());
+            feed(Input::ReviewRead { task, window, read }, cx);
+        });
+    })
+    .detach();
 }
 
 /// Judge removing task `task`'s worktree, asked in `window`: its top found
@@ -450,6 +498,9 @@ fn say(signal: Signal<AnyWindowHandle>, cx: &mut App) {
                 (None, _) => crate::toast::success(format!("Removed {folder}")),
             };
             toast(window, note, cx)
+        }
+        Signal::ReviewNotRead { window, why } => {
+            toast(window, crate::toast::failed("Reading the review", why), cx)
         }
         Signal::RemoveFailed { window, why } => toast(
             window,

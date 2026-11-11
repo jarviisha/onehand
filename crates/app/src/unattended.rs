@@ -30,7 +30,7 @@ use std::path::Path;
 mod facts;
 mod launch;
 mod report;
-pub use launch::{ReviewRead, look_now, read_review, start_answer, start_picked};
+pub use launch::{look_now, start_answer, start_picked};
 pub use onehand_core::unattended::{Pickable, Project};
 pub(crate) use report::spec_for;
 
