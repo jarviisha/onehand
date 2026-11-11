@@ -235,3 +235,34 @@ fn a_project_forgotten_takes_its_buffers_and_a_late_read_opens_nothing() {
     assert!(late.is_empty());
     assert!(drive.tabs(&root()).is_none());
 }
+
+#[test]
+fn a_write_that_fails_after_its_tab_closed_is_still_said() {
+    let (mut drive, uid) = opened(None);
+    let _ = drive.save(&root(), uid);
+    let _ = drive.discard(&Close::Tab(root(), uid));
+    let effects = drive.handle(Input::Saved {
+        root: root(),
+        uid,
+        outcome: SaveOutcome::Failed("disk full".into()),
+        still: false,
+    });
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::Signal(Signal::SaveFailed { label, .. })] if label == "a.rs"
+    ));
+}
+
+#[test]
+fn a_read_that_fails_after_its_project_left_says_nothing() {
+    let mut drive = EditorDrive::default();
+    drive.set_root(&root(), &Disk::Local);
+    let _ = drive.open(&root(), &file());
+    let _ = drive.forget_root(&root());
+    let effects = drive.handle(Input::Read {
+        root: root(),
+        path: file(),
+        read: Err("gone".into()),
+    });
+    assert!(effects.is_empty());
+}

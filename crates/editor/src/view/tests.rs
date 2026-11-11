@@ -38,6 +38,7 @@ fn edited(
                 path: path.to_path_buf(),
                 read: Ok(("mine".into(), mtime)),
             },
+            None,
             cx,
         );
     });
