@@ -423,6 +423,12 @@ something keeps its view (D30). Two PRs (D33). The first, the contract and two m
 Left for later:
 - Which tab is on screen (`RootEditors::active`) is view state kept in core's model, as the
   workspace's panel layout is.
+- The drives are told the time in three shapes (`SystemTime` in a save's answer, `Instant` for a
+  plugin change, seconds for the Issues views' reads) rather than one `Now`; and the Editor's tab ids
+  come from a process-wide counter, so replaying its inputs gives the same effects but for those
+  ids.
+- `claude_plugins::cli` moved into core as it was, past the size a file is split at; it was already
+  past it before the move.
 - The panel still decides, from the mode's declaration, which mode shows after a project switch
   and which one answers an open file; both are which view is on screen.
 
@@ -671,15 +677,16 @@ Made on 2026-11-11, with phase 9's audit:
 - **D31. Each drive is held by its mode**, one per window's Workbench, as the modes were. The
   restart offer still counts the changes made in its own window.
 - **D32. The contract's GUI-free half moves into a core module**, `onehand_core::workbench`, rather
-  than a crate of its own; `onehand-workbench` is the GPUI mount and re-exports it.
+  than a crate of its own; `onehand-workbench` is the GPUI mount and re-exports it. The panel's one
+  rule about a host, whether to attach again, goes with it (`workbench::again`).
 - **D33. Two PRs**: the contract and the two drives first, then the Issues views' own rules.
 
 Phase 9 changed, on purpose:
 - A save that wrote nothing (the file changed on disk, or is gone) is said under that project's
   files only; before, the line stood over whichever project was on screen until a save or an open
   answered it.
-- A file whose read lands after its project left the workspace opens nothing; before, it brought
-  the project's tabs back.
+- A file whose read lands after its project left the workspace opens nothing and says nothing;
+  before, it brought the project's tabs back, or said its failure.
 - A read of the Plugins list made before the project on screen changed is dropped even when the
   person has come back to that project; the next draw reads it again.
 

@@ -160,6 +160,10 @@ impl EditorView {
         for effect in effects {
             match effect {
                 Effect::Read { root, path, disk } => {
+                    // Its answer lands in the view's window, so the buffer is
+                    // built in the same update that opens its tab, and a save
+                    // never finds the tab without one.
+                    let handle = self.window;
                     cx.spawn(async move |view, cx| {
                         let read = cx
                             .background_executor()
@@ -168,9 +172,17 @@ impl EditorView {
                                 async move { disk.read_file(&path) }
                             })
                             .await;
-                        let _ = view.update(cx, |view: &mut Self, cx| {
-                            view.landed(Input::Read { root, path, read }, cx)
-                        });
+                        let input = Input::Read { root, path, read };
+                        let _ = match handle {
+                            Some(handle) => cx.update_window(handle, |_, window, cx| {
+                                let _ = view.update(cx, |view: &mut Self, cx| {
+                                    view.landed(input, Some(window), cx)
+                                });
+                            }),
+                            None => {
+                                view.update(cx, |view: &mut Self, cx| view.landed(input, None, cx))
+                            }
+                        };
                     })
                     .detach();
                 }
@@ -220,9 +232,9 @@ impl EditorView {
     }
 
     /// Report what the world said, and carry out what the drive answers.
-    fn landed(&mut self, input: Input, cx: &mut Context<Self>) {
+    fn landed(&mut self, input: Input, window: Option<&mut Window>, cx: &mut Context<Self>) {
         let effects = self.drive.handle(input);
-        self.perform(effects, None, cx);
+        self.perform(effects, window, cx);
     }
 
     /// Write tab `uid`'s buffer as it stands now, off the UI loop.
@@ -276,6 +288,7 @@ impl EditorView {
                         outcome,
                         still,
                     },
+                    None,
                     cx,
                 )
             });

@@ -110,6 +110,13 @@ pub enum Close {
     All(PathBuf),
 }
 
+/// A write on its way: whether another save was asked for while it ran, and
+/// the file's label.
+struct Saving {
+    again: bool,
+    label: String,
+}
+
 /// The files one Workbench has open. See the module header.
 #[derive(Default)]
 pub struct EditorDrive {
@@ -119,7 +126,9 @@ pub struct EditorDrive {
     /// time the file was last seen, so the second would carry the time from
     /// before the first wrote and come back as a conflict against our own
     /// write. The second is not dropped either: it runs once the first lands.
-    saving: HashMap<u64, bool>,
+    /// Each with the file's label, so a write that failed after its tab
+    /// closed is still said by name.
+    saving: HashMap<u64, Saving>,
 }
 
 impl Deref for EditorDrive {
@@ -219,8 +228,8 @@ impl EditorDrive {
     /// line under the body says why).
     #[must_use = "its effects are to be carried"]
     pub fn save(&mut self, root: &Path, uid: u64) -> Vec<Effect> {
-        if let Some(again) = self.saving.get_mut(&uid) {
-            *again = true;
+        if let Some(saving) = self.saving.get_mut(&uid) {
+            saving.again = true;
             return Vec::new();
         }
         if self.editors.locked.contains_key(root) {
@@ -239,7 +248,14 @@ impl EditorDrive {
             mtime: file.disk_mtime,
             disk,
         };
-        self.saving.insert(uid, false);
+        let label = file.label.clone();
+        self.saving.insert(
+            uid,
+            Saving {
+                again: false,
+                label,
+            },
+        );
         vec![write]
     }
 
@@ -331,12 +347,14 @@ impl EditorDrive {
         if editors.opening.as_ref() == Some(&path) {
             editors.opening = None;
         }
+        // A read about a project that has left the Workbench is dropped,
+        // whatever it found.
+        let Some(disk) = editors.disks.get(&root).cloned() else {
+            return Vec::new();
+        };
         let (text, mtime) = match read {
             Ok(read) => read,
             Err(why) => return vec![Effect::Signal(Signal::OpenFailed { path, why })],
-        };
-        let Some(disk) = editors.disks.get(&root).cloned() else {
-            return Vec::new();
         };
         // A read that worked answers whatever the last save said here.
         editors.standing.remove(&root);
@@ -360,11 +378,17 @@ impl EditorDrive {
     }
 
     fn saved(&mut self, root: PathBuf, uid: u64, outcome: SaveOutcome, still: bool) -> Vec<Effect> {
-        let again = self.saving.remove(&uid).unwrap_or(false);
-        let Some(file) = self.file_mut(&root, uid) else {
+        let Some(Saving { again, label }) = self.saving.remove(&uid) else {
             return Vec::new();
         };
-        let label = file.label.clone();
+        let Some(file) = self.file_mut(&root, uid) else {
+            // The tab closed while it was written: the write happened or it
+            // did not, and a failure is still said.
+            return match outcome {
+                SaveOutcome::Failed(why) => vec![Effect::Signal(Signal::SaveFailed { label, why })],
+                SaveOutcome::Saved { .. } | SaveOutcome::Conflict { .. } => Vec::new(),
+            };
+        };
         let (standing, failed) = match outcome {
             SaveOutcome::Saved { mtime, .. } => {
                 file.disk_mtime = mtime;
