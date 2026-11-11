@@ -257,7 +257,8 @@ Every attach opens by exchanging builds (`client::attach`):
 - **A host that cannot be attached is read from the copy.** A session shown or restarted while its
   attach fails for any reason but a busy host is built from its copy, through the same rule as a
   replay, without raising a turn's end, a card's notice or a run's input
-  (`offline_start`, `crates/core/src/host/session.rs`). It ends on a line of the Info kind,
+  (`reads_copy` and `offline_start`, `crates/core/src/host/session.rs`, which also say how it
+  begins and ends). It ends on a line of the Info kind,
   *Not connected to <host>. This is the copy kept on this machine, up to <when>; it carries on
   once the host is back* (*up to* is the last entry that kept a time, and goes when none did), and
   the link is lost, so Restart tries again. Nothing kept ends the session on the failure's words,
