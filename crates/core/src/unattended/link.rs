@@ -113,27 +113,23 @@ impl<'a, W: Copy> Joined<'a, W> {
         let (mut tq, mut uq) = (VecDeque::from(tfx), VecDeque::from(ufx));
         loop {
             if let Some(effect) = tq.pop_front() {
-                if let tasks::Effect::Ask { task, window } = effect {
-                    tq.extend(self.ask(&task, window));
-                    continue;
-                }
-                let Some(u) = self.unattended.as_deref_mut() else {
-                    match effect {
+                // Without unattended runs set up, what is theirs goes nowhere.
+                let seen = Seen::new(&*self.tasks, self.runs.iter().copied());
+                let u = self.unattended.as_deref_mut();
+                match (effect, u) {
+                    (tasks::Effect::Ask { task, window }, _) => tq.extend(self.ask(&task, window)),
+                    (tasks::Effect::Asked(id), Some(u)) => u.placed(&id),
+                    (tasks::Effect::IssueEnded(id), Some(u)) => uq.extend(u.ended(&id, &seen)),
+                    (tasks::Effect::Deliver(id), Some(u)) => uq.extend(u.deliver(&id, &seen)),
+                    (tasks::Effect::DeliverAll, Some(u)) => uq.extend(u.deliver_all(&seen)),
+                    (
                         tasks::Effect::Asked(_)
                         | tasks::Effect::IssueEnded(_)
                         | tasks::Effect::Deliver(_)
-                        | tasks::Effect::DeliverAll => {}
-                        other => out.tasks.push(other),
-                    }
-                    continue;
-                };
-                let seen = Seen::new(&*self.tasks, self.runs.iter().copied());
-                match effect {
-                    tasks::Effect::Asked(id) => u.placed(&id),
-                    tasks::Effect::IssueEnded(id) => uq.extend(u.ended(&id, &seen)),
-                    tasks::Effect::Deliver(id) => uq.extend(u.deliver(&id, &seen)),
-                    tasks::Effect::DeliverAll => uq.extend(u.deliver_all(&seen)),
-                    other => out.tasks.push(other),
+                        | tasks::Effect::DeliverAll,
+                        None,
+                    ) => {}
+                    (other, _) => out.tasks.push(other),
                 }
                 continue;
             }
