@@ -100,9 +100,14 @@ pub enum SessionPhase {
     /// start a fresh conversation and archive it before the user got to say
     /// which one they meant.
     Opening,
-    /// The scan found past conversations, so the user chooses before anything
-    /// connects.
-    ChoosingHistory(Vec<ConvMeta>),
+    /// The person asked to go back to a past conversation, and chooses one.
+    /// The session that was live is held, out of sight, until a choice is
+    /// made: a turn it runs is not thrown away by opening a list, and the
+    /// choice's connect drops it before spawning the replacement.
+    ChoosingHistory {
+        past: Vec<ConvMeta>,
+        _held: Option<Held>,
+    },
     /// Connected, and the transcript is live.
     ///
     /// The subscription is held rather than detached for the same reason the
@@ -113,6 +118,12 @@ pub enum SessionPhase {
         session: Entity<ChatSession>,
         _watch: Subscription,
     },
+}
+
+/// A live session held while its conversation's past ones are chosen from.
+pub struct Held {
+    pub _session: Entity<ChatSession>,
+    pub _watch: Subscription,
 }
 
 impl Conversation {
@@ -134,14 +145,14 @@ impl Conversation {
     pub fn session(&self) -> Option<&Entity<ChatSession>> {
         match &self.phase {
             SessionPhase::Live { session, .. } => Some(session),
-            SessionPhase::Opening | SessionPhase::ChoosingHistory(_) => None,
+            SessionPhase::Opening | SessionPhase::ChoosingHistory { .. } => None,
         }
     }
 
     /// The past conversations to choose from, while that is what is showing.
     pub fn choices(&self) -> Option<&[ConvMeta]> {
         match &self.phase {
-            SessionPhase::ChoosingHistory(past) => Some(past),
+            SessionPhase::ChoosingHistory { past, .. } => Some(past),
             SessionPhase::Opening | SessionPhase::Live { .. } => None,
         }
     }
@@ -207,14 +218,17 @@ mod tests {
         assert!(conv.choices().is_none());
     }
 
-    /// The property the resume picker rests on: while the choice is open there
-    /// is **no** adapter. As two maps this was expressible the other way -- a
+    /// The property the resume picker rests on: while the choice is open no
+    /// session is shown. As two maps this was expressible the other way -- a
     /// uid could be in the picker map and the connected map at once, and which
     /// one the user saw came down to the order of the reads.
     #[test]
-    fn choosing_a_conversation_means_nothing_is_connected() {
+    fn choosing_a_conversation_shows_no_session() {
         let mut conv = conversation();
-        conv.phase = SessionPhase::ChoosingHistory(vec![meta()]);
+        conv.phase = SessionPhase::ChoosingHistory {
+            past: vec![meta()],
+            _held: None,
+        };
 
         assert!(conv.session().is_none());
         assert_eq!(conv.choices().map(<[_]>::len), Some(1));
@@ -229,7 +243,10 @@ mod tests {
     #[test]
     fn disconnecting_returns_to_opening() {
         let mut conv = conversation();
-        conv.phase = SessionPhase::ChoosingHistory(vec![meta()]);
+        conv.phase = SessionPhase::ChoosingHistory {
+            past: vec![meta()],
+            _held: None,
+        };
         conv.disconnect();
 
         assert!(conv.is_opening());

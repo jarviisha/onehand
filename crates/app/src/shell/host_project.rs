@@ -11,6 +11,7 @@ use gpui::{App, AppContext as _, Context, Entity, Focusable as _, Subscription, 
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputEvent, InputState};
 use onehand_core::host::client::HostConn;
+use onehand_core::host::drive::{Landing, back_landed, idle_landed};
 use onehand_core::host::drive::{back_failure, needs_restart, restart_failure, said_by_wait};
 use onehand_core::host::sshconf;
 use onehand_core::host::wire::HostSession;
@@ -540,7 +541,9 @@ impl Shell {
                             None => Ok(()),
                         };
                         shell
-                            .update(cx, |shell: &mut Self, cx| shell.host_back(&host, end, cx))
+                            .update_in(cx, |shell: &mut Self, window, cx| {
+                                shell.host_back(&host, end, window, cx)
+                            })
                             .ok();
                     }
                 })
@@ -572,7 +575,13 @@ impl Shell {
     /// page lists again: on a busy host, that is what puts them on its busy
     /// wait. Taken by another machine, or refused, nothing attaches again by
     /// itself: the sessions end on why, and the page says it.
-    fn host_back(&mut self, host: &HostName, end: hosts::WaitEnd, cx: &mut Context<Self>) {
+    fn host_back(
+        &mut self,
+        host: &HostName,
+        end: hosts::WaitEnd,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(waiting) = self.host_flow.take(host, true) else {
             return;
         };
@@ -582,24 +591,44 @@ impl Shell {
             hosts::found_busy(cx, host),
             end,
         );
-        self.chat.update(cx, |pane, cx| match failed {
-            None => {
-                for uid in &waiting.uids {
-                    pane.restart(*uid, false, cx);
+        let landed = back_landed(waiting.uids, waiting.page, failed);
+        self.carry_landed(host, landed, window, cx);
+    }
+
+    /// Carry out what a wait on `host` ending comes to, step by step.
+    fn carry_landed(
+        &mut self,
+        host: &HostName,
+        landed: Vec<Landing>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        for step in landed {
+            match step {
+                Landing::Restart { uid, after_service } => {
+                    self.restart_told(uid, after_service, after_service, window, cx)
                 }
-                if waiting.page {
-                    pane.list_host_sessions(cx);
+                Landing::List => self.chat.update(cx, |pane, cx| pane.list_host_sessions(cx)),
+                Landing::Add => self.commit_host_project(window, cx),
+                Landing::BackFailed { uid, why } => self
+                    .chat
+                    .update(cx, |pane, cx| pane.host_back_failed(uid, &why, cx)),
+                Landing::WaitFailed { uid, why } => self
+                    .chat
+                    .update(cx, |pane, cx| pane.host_wait_failed(uid, &why, cx)),
+                Landing::PageUnreached(why) => self
+                    .chat
+                    .update(cx, |pane, cx| pane.host_page_unreached(host, &why, cx)),
+                Landing::PageFailed => self
+                    .chat
+                    .update(cx, |pane, cx| pane.host_page_failed(host, cx)),
+                Landing::AddFailed(why) => {
+                    if let Some(draft) = self.host_project.as_mut() {
+                        draft.failed(why);
+                    }
                 }
             }
-            Some(why) => {
-                for uid in &waiting.uids {
-                    pane.host_back_failed(*uid, &why, cx);
-                }
-                if waiting.page {
-                    pane.host_page_unreached(host, &why, cx);
-                }
-            }
-        });
+        }
         cx.notify();
     }
 
@@ -644,33 +673,8 @@ impl Shell {
             }
             released
         });
-        match end {
-            Ok(()) => {
-                for uid in waiting.uids {
-                    self.restart_now(uid, true, window, cx);
-                }
-                // A page on a host lists again whatever waited: its sessions
-                // are what the wait changed.
-                self.chat.update(cx, |pane, cx| pane.list_host_sessions(cx));
-                if add {
-                    self.commit_host_project(window, cx);
-                }
-            }
-            Err(why) => {
-                self.chat.update(cx, |pane, cx| {
-                    for uid in &waiting.uids {
-                        pane.host_wait_failed(*uid, &why, cx);
-                    }
-                    if waiting.page {
-                        pane.host_page_failed(host, cx);
-                    }
-                });
-                if let Some(draft) = self.host_project.as_mut().filter(|_| add) {
-                    draft.failed(why);
-                }
-            }
-        }
-        cx.notify();
+        let landed = idle_landed(waiting.uids, waiting.page, add, end);
+        self.carry_landed(host, landed, window, cx);
     }
 
     /// *Restart now*, wherever something waits on `host`: ask before its

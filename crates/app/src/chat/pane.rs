@@ -556,6 +556,11 @@ impl ChatPane {
     }
 
     /// `uid`'s live session, if it has reached one.
+    /// The window this pane is in.
+    pub(crate) fn window_handle(&self) -> gpui::AnyWindowHandle {
+        self.window
+    }
+
     fn session_of(&self, uid: u64) -> Option<&Entity<ChatSession>> {
         self.conversations.get(&uid)?.session()
     }

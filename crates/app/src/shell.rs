@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 mod boot;
+mod carry;
 mod check_commands;
 mod cleanup;
 mod confirm;
@@ -95,12 +96,6 @@ gpui::actions!(
 pub struct SelectSession {
     pub index: usize,
 }
-
-/// How long the panel arrangement must sit still before it is written.
-///
-/// Long enough that a drag is one write rather than one per frame, short
-/// enough that quitting right after a resize still saves it.
-const SAVE_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(600);
 
 /// What the app calls itself to the desktop.
 ///
@@ -298,12 +293,9 @@ pub struct Shell {
     /// The new branch's name field.
     worktree_branch: Entity<InputState>,
 
-    /// A pending workspace write. Replacing it cancels the one before, which
-    /// is the whole debounce — see [`Shell::save_workspace_soon`].
+    /// The workspace drive's wait for a burst of changes to end, while one
+    /// is armed. Replaced by the next; the drive drops a wait it superseded.
     _pending_save: Option<gpui::Task<()>>,
-    /// Each thing in the workspace file a failed write puts back: its value
-    /// known saved, its newest change, and the newest write carrying it.
-    saves: onehand_core::saving::Saves<storage::Thing, storage::Put>,
     /// The docks' open state as last saved, so opening or closing one
     /// schedules a save.
     docks_saved: Option<crate::chat::DocksOpen>,
@@ -316,9 +308,6 @@ pub struct Shell {
     /// The attach a host project on screen waits on for its files; replaced
     /// on every arrival, so one for a project left behind stops.
     _host_files: Option<gpui::Task<()>>,
-    /// Bumped on every `git status` sweep, so a slow one that started earlier
-    /// cannot land on top of a fast one that started later.
-    git_generation: u64,
     /// The rail's session rows as of the last repaint, so a chat notify that
     /// changes nothing the rail shows does not cost a rail rebuild.
     rail_sessions: Vec<(u64, RailSession)>,

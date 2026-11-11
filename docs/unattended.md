@@ -61,7 +61,7 @@ gets without code of its own.
 | Run the steps and judge each turn by its gates | the workflow engine (`onehand_core::workflow::Run`) and the run's drive (`onehand_core::task::drive`) and carrier (`crate::task::carrier`) |
 | Keep the run, list it, stop, resume and retry it | a task (`onehand_core::task::Task`, `Source::Issue`) on the Tasks page |
 | One task at a time in a checkout | `crate::task::request` and its queue |
-| A session on a named project, connected and not shown | `Shell::run_unattended` → `Workspace::add_transient_root` + `ChatPane::open_unshown` — **not** `Shell::start_session`, see *A run does not take the window* |
+| A session on a named project, connected and not shown | `Shell::run_unattended` → `WorkspaceDrive::add_run_session` + `ChatPane::open_unshown` — **not** `Shell::start_session`, see *A run does not take the window* |
 | Stop asking for permission | `Setup::mode`, set by the run's drive through `Chat::set_mode` when the agent first comes up |
 | An isolated checkout | `worktree::branch_off_blocking` (plus a start point, see *Base branch*), `worktree_dir`, `validate_branch` |
 | Find a window that holds a project | the walk over `Shared::windows` every remote path does |
@@ -97,10 +97,10 @@ background executor, one interval in the config, no cron expressions.
 | `crates/app/src/task/carrier.rs` | `came_up` (the mode, the note on the issue), the clock, the take-over |
 | `crates/app/src/shell/workflows.rs` | `drive_task`, which brings an issue's run up off screen |
 | `crates/core/src/config.rs` | `UnattendedConfig` |
-| `crates/core/src/workspace.rs` | `ProjectRoot::transient`, left out by `to_config`, and `add_transient_root`, which adds one with its session without selecting it |
+| `crates/core/src/workspace.rs` | `ProjectRoot::transient`, left out by `to_config`, and `add_transient_root`, which adds one with its session without selecting it, reached through `WorkspaceDrive::add_run_session` |
 | `crates/core/src/worktree.rs` | `cut_blocking`, the one way a run gets its worktree (a free branch, its directory, `branch_off_blocking` from a named start), `subtree_or`, and `fetch_blocking`; `worktree add` and the fetch both bounded and never prompting |
-| `crates/app/src/shell/remote_runs.rs` | `run_unattended`, `end_unattended`, `adopt_unattended` |
-| `crates/app/src/shell/roots.rs` | `forget_root`, the half of `remove_root` that asks nothing and moves nothing |
+| `crates/core/src/workspace/drive/sessions.rs` | `WorkspaceDrive::add_run_session`, `end_run` and `take_over_run`; `forget`, the half of `remove` that asks nothing and moves nothing |
+| `crates/app/src/shell/remote_runs.rs` | `run_unattended`, `end_unattended`, `take_over_unattended`, carrying those |
 | `crates/app/src/chat/pane/sessions.rs` | `open_unshown` |
 | `crates/app/src/dialogs/issue.rs` | `pick_issue`, the list and the start form, and `issue_workflow_menu`, the workflow menu the picker and Settings share |
 | `crates/app/src/settings/pages.rs` | the default workflow and the workflow labels in Settings |
@@ -541,7 +541,7 @@ a deliberate one, not a list of whatever was once approved by hand.
    `/use`d it, since which channel it came through changes nothing about who is
    now driving — the run ends as taken over: no cancel, no close. From then on
    it is an ordinary session, and whatever it produces is that person's, not
-   the run's. **Its project is saved into the workspace** (`adopt_unattended`),
+   the run's. **Its project is saved into the workspace** (`take_over_unattended`),
    the one write a run's project ever gets: it was transient because the run
    would drop it, and the run no longer will — left unsaved, the work somebody
    just took on would vanish from the rail at the next launch.
@@ -568,9 +568,10 @@ a worktree of an issue in the workspace for good — and marking the project
 rather than skipping one save is what keeps any *other* save in the meantime
 from writing it.
 
-Dropping it is `Shell::end_unattended` over `forget_root`, the half of
-`remove_root` that asks nothing and moves nothing, and only for a project the
-run added itself. `remove_root` asks a person twice before losing live sessions
+Dropping it is `WorkspaceDrive::end_run` over `forget`, the half of `remove`
+that asks nothing and moves nothing, and only for a project the run added
+itself (`Shell::end_unattended` carries it). Removing a project by hand asks a
+person before losing live sessions
 — the run has already decided — and puts the active session back on screen
 afterwards, which takes the caret out of whatever the user was typing in. Only
 when the run's own project was the one being looked at is anything shown in its

@@ -336,6 +336,83 @@ pub fn back_failure(
     }
 }
 
+/// One thing a window does once one of its waits on a host ends.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Landing {
+    /// Restart session `uid`, `after_service` when the host's service has
+    /// just been restarted onto this build, which is then said.
+    Restart { uid: u64, after_service: bool },
+    /// List the project page's host sessions again.
+    List,
+    /// Carry on with the form's *Add*.
+    Add,
+    /// Session `uid`, waiting for its host to be back, ends as a lost agent
+    /// does, on `why`.
+    BackFailed { uid: u64, why: String },
+    /// Session `uid`, waiting on its host's busy sessions, ends as a lost
+    /// agent does, on `why`.
+    WaitFailed { uid: u64, why: String },
+    /// The page waiting for its host to be back says it is out of reach.
+    PageUnreached(String),
+    /// The page waiting on its host's busy sessions says the wait failed.
+    PageFailed,
+    /// The form waiting on its host fails on `why`.
+    AddFailed(String),
+}
+
+/// What a window's wait for lost `host` to be back comes to, for the sessions
+/// that waited and its page if it waited, given how it ended ([`back_failure`]'s
+/// answer): what waited restarts quietly, as the host simply being back is no
+/// news, and the page lists again only if it waited.
+pub fn back_landed(uids: Vec<u64>, page: bool, failed: Option<String>) -> Vec<Landing> {
+    match failed {
+        None => uids
+            .into_iter()
+            .map(|uid| Landing::Restart {
+                uid,
+                after_service: false,
+            })
+            .chain(page.then_some(Landing::List))
+            .collect(),
+        Some(why) => uids
+            .into_iter()
+            .map(|uid| Landing::BackFailed {
+                uid,
+                why: why.clone(),
+            })
+            .chain(page.then(|| Landing::PageUnreached(why.clone())))
+            .collect(),
+    }
+}
+
+/// What a window's wait on a busy host's sessions comes to, for the sessions
+/// that waited, its page if it waited and its form if that waited, given how
+/// it ended: what waited restarts onto the restarted service, each said, and
+/// the page lists whatever waited, since its sessions are what the wait
+/// changed; the form's *Add* carries on.
+pub fn idle_landed(uids: Vec<u64>, page: bool, add: bool, end: WaitEnd) -> Vec<Landing> {
+    match end {
+        Ok(()) => uids
+            .into_iter()
+            .map(|uid| Landing::Restart {
+                uid,
+                after_service: true,
+            })
+            .chain([Landing::List])
+            .chain(add.then_some(Landing::Add))
+            .collect(),
+        Err(why) => uids
+            .into_iter()
+            .map(|uid| Landing::WaitFailed {
+                uid,
+                why: why.clone(),
+            })
+            .chain(page.then_some(Landing::PageFailed))
+            .chain(add.then(|| Landing::AddFailed(why.clone())))
+            .collect(),
+    }
+}
+
 /// Whether a yes to restarting a host's service still has to restart it:
 /// the wait may have ended since the question was asked, and restarting it
 /// again would stop what that started.

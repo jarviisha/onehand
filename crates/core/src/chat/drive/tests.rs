@@ -730,7 +730,10 @@ fn a_stream_that_ends_calls_off_the_wait_and_says_so() {
     let (mut drive, _rx) = connected();
     feed(&mut drive, chunk("by itself"));
     let fx = drive.handle(Input::StreamEnded);
-    assert_eq!(names(&fx), ["Disarm", "Disconnected", "Look(LinkLost)"]);
+    assert_eq!(
+        names(&fx),
+        ["Disarm", "Disconnected(Lost)", "Look(LinkLost)"]
+    );
     assert!(!drive.busy);
 }
 
@@ -1109,6 +1112,78 @@ fn a_busy_host_is_waited_on_apart_from_one_away() {
     assert!(!drive.drive.forget_host_wait().0, "said once");
 }
 
+// How a stream's end is told, as the session's lifecycle reads it today.
+
+/// A fork whose agent never opened ends without news: the failure is said
+/// where the fork was asked for, and the session goes.
+#[test]
+fn a_fork_that_never_opened_ends_without_news() {
+    let chat = Chat::new(1, PathBuf::from("/repo"), "agent".into(), None);
+    let (mut drive, _rx) = Front::new(SessionDrive::new(chat));
+    drive.drive.fork(crate::chat::ForkSeed::named("a fork"));
+    feed(
+        &mut drive,
+        AcpEvent::Disconnected("Could not fork the conversation: no such session".into()),
+    );
+    let fx = drive.handle(Input::StreamEnded);
+    assert_eq!(
+        names(&fx),
+        ["Disconnected(ForkNeverOpened(\"no such session\"))"]
+    );
+}
+
+/// A host session read from its copy because the host is out of reach ends
+/// without news: it is not lost, and restarts once the host is back.
+#[test]
+fn a_session_out_of_reach_of_its_host_ends_without_news() {
+    let (mut drive, _rx) = connected();
+    drive.read_back([], Some((HostName("box".into()), None)));
+    let fx = drive.handle(Input::StreamEnded);
+    assert_eq!(names(&fx), ["Disconnected(OutOfReach(HostName(\"box\")))"]);
+}
+
+/// A session waiting on its host's busy sessions is ended by a stream that
+/// says nothing; it only waits, so the end is no news.
+#[test]
+fn a_session_waiting_on_a_busy_host_ends_without_news() {
+    let (mut drive, _rx) = connected();
+    drive.drive.wait_on_host(HostName("box".into()), 2, 0);
+    let fx = drive.handle(Input::StreamEnded);
+    assert_eq!(names(&fx), ["Disconnected(Waiting(HostName(\"box\")))"]);
+    assert_eq!(drive.host_waiting(), Some(&HostName("box".into())));
+}
+
+/// A wait that fails folds the reason as the agent's end, so the session is
+/// lost with no stream end of its own and nothing told; a session that was
+/// not waiting folds nothing.
+#[test]
+fn a_failed_wait_folds_the_reason_as_an_end() {
+    let (mut drive, _rx) = connected();
+    drive.drive.wait_on_host(HostName("box".into()), 1, 0);
+    let fx = drive.drive.wait_failed("Could not attach", now());
+    assert!(!names(&fx)
+        .iter()
+        .any(|n| n.starts_with("Disconnected") || n.starts_with("Look")));
+    assert_eq!(drive.link, crate::chat::Link::Lost);
+    assert!(drive.host_waiting().is_none());
+    assert!(
+        drive.drive.wait_failed("again", now()).is_empty(),
+        "not waiting"
+    );
+
+    let (mut drive, _rx) = connected();
+    drive.read_back([], Some((HostName("box".into()), None)));
+    let _ = drive
+        .drive
+        .back_failed("box was attached from another machine", now());
+    assert_eq!(drive.link, crate::chat::Link::Lost);
+    assert!(drive.host_away().is_none());
+    assert!(
+        drive.drive.back_failed("again", now()).is_empty(),
+        "not away"
+    );
+}
+
 /// The copy's notice says how recent it is when its entries kept a time, and
 /// leaves that out when none did.
 #[test]
@@ -1452,4 +1527,25 @@ fn a_card_and_a_lost_agent_are_told_without_a_badge() {
     });
     assert_eq!(tells(&fx), [(Away::LinkLost, false, true)]);
     assert!(!drive.unseen());
+}
+
+// What closing and restarting ask first.
+
+#[test]
+fn closing_or_restarting_asks_only_while_a_turn_runs() {
+    let (mut drive, _rx) = connected();
+    assert_eq!(drive.closing(), Closing::Now);
+    assert_eq!(drive.restarting(), Restarting::Now);
+    drive.prompt("go", &[], Origin::Person, Code::Here);
+    assert_eq!(drive.closing(), Closing::Ask);
+    assert_eq!(drive.restarting(), Restarting::Ask);
+}
+
+/// A session waiting on its host's busy sessions is restarted through the
+/// host service's restart, asked, whatever its turn.
+#[test]
+fn a_session_waiting_on_its_host_restarts_through_the_host() {
+    let (mut drive, _rx) = connected();
+    drive.drive.wait_on_host(HostName("box".into()), 1, 0);
+    assert_eq!(drive.restarting(), Restarting::Host(HostName("box".into())));
 }

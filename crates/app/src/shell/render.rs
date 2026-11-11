@@ -61,7 +61,7 @@ impl Render for Shell {
                 // dock's own resizing goes through.
                 .on_resize(
                     cx.listener(|shell: &mut Self, _: &Entity<ResizableState>, _, cx| {
-                        shell.window.workspace.layout.rail_w = shell.rail_width(cx);
+                        shell.window.workspace.layout_mut().rail_w = shell.rail_width(cx);
                         shell.save_workspace_soon(cx);
                     }),
                 )
@@ -126,7 +126,7 @@ impl Render for Shell {
                 // The caret goes to the new composer: a key pressed from the
                 // terminal is asking to type to the agent it just started.
                 if shell.held_commands.insert(crate::keymap::NEW_SESSION)
-                    && shell.spawn_session(0, None, window, cx).is_some()
+                    && shell.spawn_session(0, None, None, window, cx).is_some()
                 {
                     shell.last_panel = FocusedPanel::Chat;
                     shell

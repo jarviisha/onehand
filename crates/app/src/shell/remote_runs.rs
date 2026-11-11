@@ -1,4 +1,3 @@
-use super::storage::{Thing, WorkspaceChange};
 use super::{IssuePicker, Shell};
 use crate::state::Shared;
 use gpui::{App, AppContext as _, BorrowAppContext, Context, Entity, SharedString, Window};
@@ -16,62 +15,11 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // A run's own worktree is not a project anybody chose, and the run
-        // never searches it, so a switch on it would say `auto` over nothing.
-        // Nor does a run reach a folder on a host.
-        if self
-            .window
-            .workspace
-            .roots
-            .get(root_idx)
-            .is_none_or(|root| root.transient || !root.runs_here())
-        {
-            return;
-        }
-        self.window.workspace.toggle_unattended(root_idx);
-        let (path, on) = {
-            let root = &self.window.workspace.roots[root_idx];
-            (root.path.clone(), root.unattended)
-        };
-        // Switched on, it is looked at straight away, so a project that can
-        // never be worked says so now and not at the next tick. Switched off,
-        // nothing is cleared: a row that is off shows nothing, and the next
-        // look over every switched-on project drops what is left.
-        if let Some(root) = self
-            .window
-            .workspace
-            .roots
-            .get(root_idx)
-            .filter(|root| root.unattended)
-        {
-            crate::unattended::check_now(self.project_for_runs(&root.path), cx);
-        }
-        // Put back, alone, if its write fails: the switch as last saved.
-        self.save_change(
-            Thing::Unattended(path.clone()),
-            WorkspaceChange {
-                before: (path.clone(), !on),
-                after: (path, on),
-                put: |shell, (path, on), _, cx| {
-                    if let Some(root) = shell
-                        .window
-                        .workspace
-                        .roots
-                        .iter_mut()
-                        .find(|root| root.local_path() == Some(&*path))
-                    {
-                        root.unattended = on;
-                    }
-                    shell.sync_project_facts(cx);
-                },
-            },
-            window,
-            cx,
-        );
-        // The project page's menu says whether this is on, in the entry that was
-        // just used.
-        self.sync_project_facts(cx);
-        cx.notify();
+        // Switched on, it is looked at straight away; switched off, nothing
+        // is cleared: a row that is off shows nothing, and the next look over
+        // every switched-on project drops what is left.
+        let fx = self.window.workspace.toggle_unattended(root_idx);
+        self.carry_workspace(fx, window, cx);
     }
 
     /// Every project the Settings list offers the switch for: name, whether it
@@ -228,11 +176,10 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> Option<(u64, Entity<crate::chat::session::ChatSession>)> {
         let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
-        let workspace = &mut self.window.workspace;
-        let idx = match workspace.add_session_quietly(&dir, spec.clone(), uid) {
-            Some(idx) => idx,
-            None => workspace.add_transient_root(dir, spec.clone(), uid)?,
-        };
+        let idx = self
+            .window
+            .workspace
+            .add_run_session(&dir, spec.clone(), uid)?;
         let root = self.window.workspace.roots[idx].path.clone();
         let session = self
             .chat
@@ -252,18 +199,8 @@ impl Shell {
     /// to show instead. The worktree stays on disk; only the row goes.
     pub fn end_unattended(&mut self, dir: &Path, window: &mut Window, cx: &mut Context<Self>) {
         // Only a project the run added itself: one a person has open stays.
-        let Some(idx) = self
-            .root_index(dir)
-            .filter(|&idx| self.window.workspace.roots[idx].transient)
-        else {
-            return;
-        };
-        let was_active = self.window.workspace.active_root == idx;
-        self.forget_root(idx, cx);
-        if was_active {
-            self.show_active_session(window, cx);
-        }
-        cx.notify();
+        let fx = self.window.workspace.end_run(dir);
+        self.carry_workspace(fx, window, cx);
     }
 
     /// Close session `uid`, opened by a tool and never finished opening, and
@@ -281,21 +218,9 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let watched = self.chat.read(cx).viewing() == Some(uid);
-        self.drop_session(uid, cx);
-        let empty = self.root_index(dir).filter(|&idx| {
-            let root = &self.window.workspace.roots[idx];
-            added && root.transient && root.sessions.is_empty()
-        });
-        let mut shown = watched;
-        if let Some(idx) = empty {
-            shown |= self.window.workspace.active_root == idx;
-            self.forget_root(idx, cx);
-        }
-        if shown {
-            self.show_active_session(window, cx);
-        }
-        cx.notify();
+        let watching = self.chat.read(cx).viewing() == Some(uid);
+        let fx = self.window.workspace.drop_opened(uid, dir, added, watching);
+        self.carry_workspace(fx, window, cx);
     }
 
     /// Close the session of a run that ended with nothing left in it to look
@@ -308,29 +233,22 @@ impl Shell {
     /// behind a page is not on screen: it goes, the project's next session
     /// becomes its active one, and leaving the page shows that one, or the
     /// project page when none is left.
-    pub fn close_finished(&mut self, uid: u64, cx: &mut Context<Self>) {
-        if self.chat.read(cx).viewing() == Some(uid) {
-            return;
-        }
-        if self.drop_session(uid, cx) {
-            cx.notify();
-        }
+    pub fn close_finished(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let watching = self.chat.read(cx).viewing() == Some(uid);
+        let fx = self.window.workspace.close_finished(uid, watching);
+        self.carry_workspace(fx, window, cx);
     }
 
     /// Keep a run's project for good: a person has taken the run over, so it
     /// is their project now, and it is written into the workspace.
-    pub fn adopt_unattended(&mut self, dir: &Path, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(root) = self
-            .window
-            .workspace
-            .roots
-            .iter_mut()
-            .find(|r| r.local_path() == Some(dir))
-        else {
-            return;
-        };
-        root.transient = false;
-        self.save_workspace(window, cx);
+    pub fn take_over_unattended(
+        &mut self,
+        dir: &Path,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let fx = self.window.workspace.take_over_run(dir);
+        self.carry_workspace(fx, window, cx);
     }
 
     /// Open the list of `root_idx`'s open issues, to pick one to work now, or
@@ -632,7 +550,8 @@ impl Shell {
             &row.issue,
             self.check_of(&picker.root).is_some(),
             self.window
-                .git
+                .workspace
+                .git()
                 .get(&picker.root)
                 .map(|git| git.branch.clone()),
             picker.forge.flatten(),

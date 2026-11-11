@@ -4,12 +4,13 @@ use super::{ChatPane, ChatPaneEvent, ProjectFacts, Restart, SessionSignal, switc
 use crate::chat::composer::Composer;
 use crate::chat::conversation::{Conversation, SessionPhase};
 use crate::chat::conversation::{HostAt, OnHost};
-use crate::chat::session::{BeginOnHost, Carried, ChatEvent, ChatSession, HostBegin};
+use crate::chat::session::{BeginOnHost, ChatEvent, ChatSession};
 use gpui::{App, Context, Entity, Focusable, SharedString, Window};
 use onehand_core::acp::Opening;
-use onehand_core::chat::drive::{Input, Intake, Origin, Signal};
+use onehand_core::chat::drive::{Closing, Ended, Input, Intake, Origin, Restarting, Signal};
 use onehand_core::chat::{Chat, ConvMeta};
 use onehand_core::config::AgentSpec;
+use onehand_core::host::session::host_begin;
 use onehand_core::host::wire::HostSession;
 use onehand_core::workspace::HostName;
 use std::collections::hash_map::Entry;
@@ -204,20 +205,15 @@ impl ChatPane {
         let (root, spec, dirs) = (conv.root.clone(), conv.spec.clone(), conv.dirs.clone());
         // What the old session had sent, counted on: who prompted a worker is
         // read from it, and the new chat would start it from nothing.
-        let mut sent_before = conv
+        let sent = conv
             .session()
             .map_or(0, |session| session.read(cx).chat.prompts_sent);
-        let (on_host, start) = match &conv.host {
-            None => (None, start),
+        let (on_host, start, sent_before) = match &conv.host {
+            None => (None, start, sent),
             Some(OnHost { host, cwd, session }) => {
-                let (begin, start) = host_begin(start, session.as_ref(), sent_before);
-                // A re-watch counts the prompts again as its journal replays
-                // them; what it carries is for an open in its place.
-                if matches!(begin, HostBegin::Rewatch(..)) {
-                    sent_before = 0;
-                }
+                let (begin, start, sent) = host_begin(start, session.as_ref(), sent);
                 let (host, cwd) = (host.clone(), cwd.clone());
-                (Some(BeginOnHost { host, cwd, begin }), start)
+                (Some(BeginOnHost { host, cwd, begin }), start, sent)
             }
         };
         // Its names too: a worker's stand-in is never saved, and a name its
@@ -235,16 +231,10 @@ impl ChatPane {
             uid,
             root.clone(),
             &spec,
-            match &start {
-                Start::Fresh | Start::Watch(_) | Start::Restart(None, _) => Opening::Fresh,
-                Start::Resume(stored) | Start::Restart(Some(stored), _) => {
-                    Opening::Resume(stored.session_id.clone())
-                }
-                Start::Fork(staged) => Opening::Fork {
-                    from: staged.from.clone(),
-                    message: staged.message.clone(),
-                },
-            },
+            start.opening(|staged| Opening::Fork {
+                from: staged.from.clone(),
+                message: staged.message.clone(),
+            }),
             dirs,
             on_host,
             cx,
@@ -337,25 +327,19 @@ impl ChatPane {
                     // from this machine's copy is out of reach, not lost:
                     // nothing is announced, and it is restarted once the
                     // host is back.
-                    ChatEvent::Session(Signal::Disconnected) => {
-                        let session = session.read(cx);
-                        let (failed, offline) = (
-                            session.chat.fork_failure(),
-                            session.chat.host_away().cloned(),
-                        );
-                        match (failed, offline) {
-                            (Some(why), _) => cx.emit(ChatPaneEvent::ForkFailed {
-                                uid: Some(uid),
-                                why,
-                            }),
-                            (None, Some(host)) => cx.emit(ChatPaneEvent::HostLost {
-                                uid: Some(uid),
-                                host,
-                            }),
-                            // A lost agent is the drive's news (`ChatEvent::Look`).
-                            (None, None) => {}
-                        }
-                    }
+                    ChatEvent::Session(Signal::Disconnected(ended)) => match ended {
+                        Ended::ForkNeverOpened(why) => cx.emit(ChatPaneEvent::ForkFailed {
+                            uid: Some(uid),
+                            why: why.clone(),
+                        }),
+                        Ended::OutOfReach(host) => cx.emit(ChatPaneEvent::HostLost {
+                            uid: Some(uid),
+                            host: host.clone(),
+                        }),
+                        // A lost agent is the drive's news (`ChatEvent::Look`);
+                        // one waiting on a busy host said so as it began.
+                        Ended::Lost | Ended::Waiting(_) => {}
+                    },
                     ChatEvent::Fork(target) => pane.begin_fork(uid, *target, cx),
                     ChatEvent::Session(Signal::Appended) => {}
                     ChatEvent::Session(Signal::PickRefused(why)) => {
@@ -451,7 +435,7 @@ impl ChatPane {
     /// blanks the conversation looks like data loss even though it is not.
     ///
     /// Mid-turn this throws away the turn the user is waiting on; asking
-    /// first is the caller's, through [`Self::turn_in_flight`].
+    /// first is the caller's, through [`Self::restarting`].
     pub fn restart(&mut self, uid: u64, after_service: bool, cx: &mut Context<Self>) -> Restart {
         // The session is looked up twice rather than held across the whole
         // function, and neither look-up is a clone. A cloned handle is a second
@@ -743,12 +727,7 @@ impl ChatPane {
         let Some(session) = self.session_of(uid) else {
             return;
         };
-        session.update(cx, |session, cx| {
-            if session.forget_host_wait(cx) {
-                let lost = onehand_core::acp::AcpEvent::Disconnected(why.to_string());
-                session.fold(lost, cx);
-            }
-        });
+        session.update(cx, |session, cx| session.wait_failed(why, cx));
     }
 
     /// The host session `uid` is out of reach of, until it is back.
@@ -764,12 +743,7 @@ impl ChatPane {
         let Some(session) = self.session_of(uid) else {
             return;
         };
-        session.update(cx, |session, cx| {
-            if session.forget_host_offline(cx) {
-                let lost = onehand_core::acp::AcpEvent::Disconnected(why.to_string());
-                session.fold(lost, cx);
-            }
-        });
+        session.update(cx, |session, cx| session.back_failed(why, cx));
     }
 
     /// The host session `uid` waits on, its busy sessions to finish.
@@ -798,11 +772,21 @@ impl ChatPane {
     /// lost and mid-turn reports `Lost` there, and a caller guarding against
     /// throwing a turn away needs the fact, not the priority.
     pub fn turn_in_flight(&self, uid: u64, cx: &App) -> bool {
-        let Some(session) = self.session_of(uid) else {
-            return false;
-        };
-        let chat = &session.read(cx).chat;
-        chat.busy || chat.awaiting_permission()
+        self.closing(uid, cx) == Closing::Ask
+    }
+
+    /// What closing session `uid` asks first; one with nothing live closes
+    /// at once.
+    pub fn closing(&self, uid: u64, cx: &App) -> Closing {
+        self.session_of(uid)
+            .map_or(Closing::Now, |session| session.read(cx).chat.closing())
+    }
+
+    /// What restarting session `uid`'s agent asks first.
+    pub fn restarting(&self, uid: u64, cx: &App) -> Restarting {
+        self.session_of(uid).map_or(Restarting::Now, |session| {
+            session.read(cx).chat.restarting()
+        })
     }
 
     /// Forget the badge on the session being looked at.
@@ -869,40 +853,6 @@ impl ChatPane {
     }
 }
 
-/// How a session in a host project begins on the host, given how its
-/// conversation starts, the host session it was on and the prompts it sent;
-/// with the start that is left for the pane to adopt at once.
-///
-/// Only a restart reads the host session again. What it took from the old
-/// session rides with the re-watch, adopted only if the host has ended the
-/// session and a new one opens in its place: a re-watch replays the whole
-/// journal, prompts and all, and a copy adopted beside it is shown twice.
-pub(super) fn host_begin(
-    start: Start,
-    known: Option<&HostSession>,
-    sent: usize,
-) -> (HostBegin, Start) {
-    match (start, known) {
-        (Start::Watch(id), _) => (HostBegin::Watch(id), Start::Fresh),
-        (Start::Restart(stored, after_service), Some(id)) => (
-            HostBegin::Rewatch(
-                id.clone(),
-                Carried {
-                    stored,
-                    sent,
-                    after_service,
-                },
-            ),
-            Start::Fresh,
-        ),
-        // Adopted as a local fork is, so the refusal ends it as a failed one.
-        (start @ Start::Fork(_), _) => (HostBegin::Refuse("Not on a host yet"), start),
-        (start @ (Start::Fresh | Start::Resume(_) | Start::Restart(..)), _) => {
-            (HostBegin::Open, start)
-        }
-    }
-}
-
 /// The host a session in a host project opens on, with the host session it
 /// watches when that is known before it starts: so a second press on the
 /// same listed session finds this one at once. A fork opens its own.
@@ -918,17 +868,5 @@ pub(super) fn opening_host(
     })
 }
 
-/// How a session's conversation starts.
-pub(super) enum Start {
-    Fresh,
-    /// On a saved conversation, resumed.
-    Resume(onehand_core::chat::ConversationSnapshot),
-    /// As a fork of another.
-    Fork(StagedFork),
-    /// On a host session the host already keeps.
-    Watch(HostSession),
-    /// Again on what it was on, the conversation taken from the session
-    /// being replaced: a restart; `true` when it follows the host service's
-    /// own restart.
-    Restart(Option<onehand_core::chat::ConversationSnapshot>, bool),
-}
+/// How a session's conversation starts, a fork from what the pane staged.
+pub(super) type Start = onehand_core::host::session::Start<StagedFork>;

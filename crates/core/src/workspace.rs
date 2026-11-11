@@ -11,7 +11,10 @@
 //! here, with no view code anywhere near it, so it is testable headless.
 
 use crate::agent::Session;
+
+pub mod drive;
 use crate::config::{AgentSpec, PanelLayout, WorkspaceConfig};
+pub use drive::WorkspaceDrive;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -442,14 +445,14 @@ impl Workspace {
     /// initiative destroys the thing the list is good for -- the user knows
     /// where their projects are, and a list that rearranges itself has to be
     /// re-read every time it is looked at.
-    pub fn toggle_pin(&mut self, idx: usize) {
+    pub(crate) fn toggle_pin(&mut self, idx: usize) {
         if let Some(root) = self.roots.get_mut(idx) {
             root.pinned = !root.pinned;
         }
     }
 
     /// Turn unattended runs on or off for a root.
-    pub fn toggle_unattended(&mut self, idx: usize) {
+    pub(crate) fn toggle_unattended(&mut self, idx: usize) {
         if let Some(root) = self.roots.get_mut(idx) {
             root.unattended = !root.unattended;
         }
@@ -489,7 +492,7 @@ impl Workspace {
     /// Answers the display position the root landed at, or `None` when nothing
     /// moved; the way back is `move_root(landed, from)`, never `(to, from)`,
     /// since `to` may have been clamped.
-    pub fn move_root(&mut self, from: usize, to: usize) -> Option<usize> {
+    pub(crate) fn move_root(&mut self, from: usize, to: usize) -> Option<usize> {
         if from >= self.roots.len() {
             return None;
         }
@@ -520,9 +523,13 @@ impl Workspace {
         Some(to)
     }
 
-    /// Each root's path, in the order the file keeps them.
-    pub fn root_order(&self) -> Vec<PathBuf> {
-        self.roots.iter().map(|root| root.path.clone()).collect()
+    /// Each root, by its host and path, in the order the file keeps them: a
+    /// local root and a host's may share a path.
+    pub fn root_order(&self) -> Vec<(Option<HostName>, PathBuf)> {
+        self.roots
+            .iter()
+            .map(|root| (root.host.clone(), root.path.clone()))
+            .collect()
     }
 
     /// Put the roots back in `order`, as [`Self::root_order`] gave it: what
@@ -530,7 +537,7 @@ impl Workspace {
     /// after it. A root `order` does not name keeps its place among the
     /// others after every root it names; a root it names that has gone is
     /// passed over.
-    pub fn put_order(&mut self, order: &[PathBuf]) {
+    pub(crate) fn put_order(&mut self, order: &[(Option<HostName>, PathBuf)]) {
         let active = self
             .roots
             .get(self.active_root)
@@ -538,7 +545,7 @@ impl Workspace {
         let rank = |root: &ProjectRoot| {
             order
                 .iter()
-                .position(|path| *path == root.path)
+                .position(|(host, path)| *host == root.host && *path == root.path)
                 .unwrap_or(order.len())
         };
         self.roots.sort_by_key(rank);
@@ -553,7 +560,7 @@ impl Workspace {
     ///
     /// Within one root and never across: a session is an agent bound to that
     /// project's files, so there is nowhere else for it to be.
-    pub fn move_session(&mut self, root_idx: usize, from: usize, to: usize) {
+    pub(crate) fn move_session(&mut self, root_idx: usize, from: usize, to: usize) {
         let Some(root) = self.roots.get_mut(root_idx) else {
             return;
         };
@@ -587,14 +594,14 @@ impl Workspace {
     /// instead of creating a twin; a root on a host with the same path is
     /// another root, so only `(None, path)` is compared. Twins of one local folder would
     /// share terminals/layouts/editors while splitting sessions.
-    pub fn add_root(&mut self, path: impl Into<PathBuf>) -> usize {
+    pub(crate) fn add_root(&mut self, path: impl Into<PathBuf>) -> usize {
         self.add_found(None, normalize_root(path.into()))
     }
 
     /// [`Self::add_root`] for a folder on `host`. The path is kept as typed:
     /// it names nothing on this machine, so there is nothing to resolve it
     /// against. Adding one that is already a root on that host selects it.
-    pub fn add_host_root(&mut self, host: HostName, path: PathBuf) -> usize {
+    pub(crate) fn add_host_root(&mut self, host: HostName, path: PathBuf) -> usize {
         self.add_found(Some(host), path)
     }
 
@@ -617,7 +624,7 @@ impl Workspace {
     /// [`Self::add_root`], **selecting nothing**: a worktree cut for a task
     /// nobody here started (a schedule's, a tool's) must not move what the
     /// person has selected, which is also what *Run on* offers first.
-    pub fn add_root_quietly(&mut self, path: impl Into<PathBuf>) -> usize {
+    pub(crate) fn add_root_quietly(&mut self, path: impl Into<PathBuf>) -> usize {
         let selected = self.active_root;
         let idx = self.add_root(path);
         self.active_root = selected;
@@ -625,7 +632,7 @@ impl Workspace {
     }
 
     /// Drop a root, keeping `active_root` valid and in-bounds.
-    pub fn remove_root(&mut self, idx: usize) {
+    pub(crate) fn remove_root(&mut self, idx: usize) {
         if idx >= self.roots.len() {
             return;
         }
@@ -645,7 +652,7 @@ impl Workspace {
     ///
     /// `None` when `path` is already a project: marking a root the user added as
     /// transient would quietly drop it from their workspace file.
-    pub fn add_transient_root(
+    pub(crate) fn add_transient_root(
         &mut self,
         path: impl Into<PathBuf>,
         spec: AgentSpec,
@@ -666,7 +673,7 @@ impl Workspace {
         Some(self.roots.len() - 1)
     }
 
-    pub fn select_root(&mut self, idx: usize) {
+    pub(crate) fn select_root(&mut self, idx: usize) {
         if idx < self.roots.len() {
             self.active_root = idx;
         }
@@ -675,7 +682,12 @@ impl Workspace {
     /// Add a session of `spec` to the root at `path`, **selecting nothing**:
     /// a run taken up again on a project already open must not move what the
     /// person is looking at. Returns the root's index; `None` without one.
-    pub fn add_session_quietly(&mut self, path: &Path, spec: AgentSpec, uid: u64) -> Option<usize> {
+    pub(crate) fn add_session_quietly(
+        &mut self,
+        path: &Path,
+        spec: AgentSpec,
+        uid: u64,
+    ) -> Option<usize> {
         let path = normalize_root(path.to_path_buf());
         let idx = self
             .roots
@@ -687,7 +699,7 @@ impl Workspace {
 
     /// Spawn a new session on the active root from `spec`, making it active.
     /// Returns `(root_idx, session_idx)`, or `None` if there is no active root.
-    pub fn add_session(&mut self, spec: AgentSpec, uid: u64) -> Option<(usize, usize)> {
+    pub(crate) fn add_session(&mut self, spec: AgentSpec, uid: u64) -> Option<(usize, usize)> {
         let ri = self.active_root;
         let root = self.roots.get_mut(ri)?;
         root.sessions.push(Session::new(spec, uid));
@@ -696,7 +708,7 @@ impl Workspace {
     }
 
     /// Close a session on a given root, keeping `active_session` valid.
-    pub fn close_session(&mut self, root_idx: usize, session_idx: usize) {
+    pub(crate) fn close_session(&mut self, root_idx: usize, session_idx: usize) {
         let Some(root) = self.roots.get_mut(root_idx) else {
             return;
         };
@@ -713,7 +725,7 @@ impl Workspace {
         }
     }
 
-    pub fn select_session(&mut self, idx: usize) {
+    pub(crate) fn select_session(&mut self, idx: usize) {
         if let Some(root) = self.active_root_mut() {
             if idx < root.sessions.len() {
                 root.active_session = idx;

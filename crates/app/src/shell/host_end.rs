@@ -4,7 +4,6 @@
 
 use super::Shell;
 use super::confirm::Confirm;
-use crate::hosts::HostFailure;
 use gpui::{Context, Window};
 use gpui_component::WindowExt as _;
 use onehand_core::host::wire::HostSession;
@@ -81,12 +80,8 @@ impl Shell {
                         Err(_) => return,
                     }
                 }
-                Err(HostFailure::Busy { host, busy, terms }) => {
-                    Err(crate::hosts::waiting_line(&host, busy.len(), terms))
-                }
-                Err(
-                    HostFailure::Other(why) | HostFailure::Refused(why) | HostFailure::Taken(why),
-                ) => Err(why),
+                // A busy host is not waited on: ending is asked of it now.
+                Err(failure) => Err(failure.said()),
             };
             let _ = shell.update_in(cx, |shell: &mut Self, window, cx| {
                 if let Err(why) = ended {

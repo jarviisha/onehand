@@ -23,14 +23,10 @@ impl Shell {
         let Some(idx) = self.root_index(root) else {
             return;
         };
-        self.window.workspace.select_root(idx);
-        let Some(uid) = self.mint_session(spec, window, cx) else {
-            return;
-        };
         // Before it is shown: showing is what spawns the adapter, and the
         // adapter has to be started as the fork.
-        self.chat.update(cx, |pane, _| pane.fork_next(uid));
-        self.show_active_session(window, cx);
-        cx.notify();
+        let _ = self.add_session(Some(spec), Some(idx), window, cx, |pane, uid| {
+            pane.fork_next(uid)
+        });
     }
 }

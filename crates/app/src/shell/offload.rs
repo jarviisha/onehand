@@ -226,37 +226,23 @@ impl Shell {
             return;
         }
         self.offload_draft = None;
-        let Some(idx) = self
-            .window
-            .workspace
-            .roots
-            .iter()
-            .position(|r| r.local_path() == Some(path.as_path()))
-        else {
-            return;
-        };
-        let here: Vec<u64> = self.window.workspace.roots[idx]
-            .sessions
-            .iter()
-            .map(|s| s.uid)
-            .collect();
-        for uid in here {
-            self.drop_session(uid, cx);
-        }
         let branch = match &kept {
             Kept::Branch(branch) => Some(branch.clone()),
             Kept::Mirror(_) => None,
         };
-        self.window.workspace.roots[idx].offload = Some(Offloaded {
+        let on = Offloaded {
             host: host.clone(),
             mirror: mirror.clone(),
             branch,
-        });
+        };
+        let Some(fx) = self.window.workspace.set_offload(&path, Some(on)) else {
+            return;
+        };
+        self.carry_workspace(fx, window, cx);
         match kept {
             Kept::Mirror(state) => offload::track(cx, path, host, Some(state)),
             Kept::Branch(branch) => offload::track_branch(cx, path, host, branch),
         }
-        self.save_workspace_soon(cx);
         self.show_active_session(window, cx);
         self.sync_offload(cx);
         cx.notify();
@@ -289,13 +275,13 @@ impl Shell {
             window.push_notification(crate::toast::warning(why), cx);
             return;
         }
-        let there: Vec<u64> = root.sessions.iter().map(|s| s.uid).collect();
-        for uid in there {
-            self.drop_session(uid, cx);
-        }
-        self.window.workspace.roots[idx].offload = None;
+        let fx = self
+            .window
+            .workspace
+            .set_offload(&path, None)
+            .unwrap_or_default();
+        self.carry_workspace(fx, window, cx);
         offload::forget(cx, &path);
-        self.save_workspace_soon(cx);
         self.show_active_session(window, cx);
         self.sync_offload(cx);
         cx.notify();

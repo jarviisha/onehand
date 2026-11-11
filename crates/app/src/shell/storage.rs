@@ -1,95 +1,47 @@
+use super::Shell;
 use super::boot::open_or_focus;
-use super::{SAVE_DEBOUNCE, Shell};
 use crate::state::Shared;
 use gpui::{App, BorrowAppContext, Context, Entity, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::input::InputState;
 use gpui_component::notification::Notification;
 use onehand_core::config::{WorkspaceConfig, WorkspaceLoad};
-use onehand_core::workspace::{self, HostName, Workspace};
+use onehand_core::workspace::{self, Workspace};
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 
 impl Shell {
-    /// Write the workspace once the user stops changing it.
-    ///
-    /// Two callers, one problem: the dock emits `LayoutChanged` on **every
-    /// frame of a drag**, and the rename field emits `Change` on **every
-    /// keystroke**. Either one writing on the event is a file write per frame
-    /// or per character, on the UI thread. Each call replaces
-    /// the pending task, and dropping a `Task` cancels it — so the write only
-    /// happens after things have been still for [`SAVE_DEBOUNCE`]. The
-    /// debounce *is* the replacement; there is no flag to keep in step.
+    /// Write the workspace once the user stops changing it: a dock's
+    /// `LayoutChanged` comes on every frame of a drag, so each change only
+    /// arms the drive's wait again, and the write comes once it runs out.
     pub(super) fn save_workspace_soon(&mut self, cx: &mut Context<Self>) {
-        // Nothing to save to, so nothing to schedule. An unbound workspace
-        // persists nothing at all -- that is what binding a folder is for.
-        if self.window.workspace.storage_dir.is_none() {
-            return;
-        }
-        self._pending_save = Some(cx.spawn(async move |shell, cx| {
-            cx.background_executor().timer(SAVE_DEBOUNCE).await;
-            let _ = shell.update_in(cx, |shell: &mut Self, window, cx| {
-                // `save_workspace` reads the dock itself, so there is one place
-                // that knows how to turn the live arrangement into the saved
-                // one.
-                shell.write_workspace(window, cx);
-                shell._pending_save = None;
-            });
-        }));
+        let fx = self.window.workspace.save_soon();
+        self.carry_workspace_quietly(fx, cx);
     }
 
-    /// [`Self::save_workspace_soon`] for a change to `thing` that is put
-    /// back to its last value known saved if its write fails: a burst of
-    /// keystrokes is one write, and what comes back is what was saved.
-    pub(super) fn save_change_soon<V: Clone + 'static>(
-        &mut self,
-        thing: Thing,
-        change: WorkspaceChange<V>,
-        cx: &mut Context<Self>,
-    ) {
-        self.track(thing, change);
-        self.save_workspace_soon(cx);
-    }
-
-    /// Write the workspace at once, for a change to `thing` put back to its
-    /// last value known saved if no later write carries it and this fails.
-    pub(super) fn save_change<V: Clone + 'static>(
-        &mut self,
-        thing: Thing,
-        change: WorkspaceChange<V>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.track(thing, change);
-        self.write_workspace(window, cx);
-    }
-
-    fn track<V: Clone + 'static>(&mut self, thing: Thing, change: WorkspaceChange<V>) {
-        let (before, after, put) = (change.before, change.after, change.put);
-        self.saves.change(
-            thing,
-            Rc::new(move |shell, window, cx| put(shell, before.clone(), window, cx)),
-            Rc::new(move |shell, window, cx| put(shell, after.clone(), window, cx)),
-        );
-    }
-
-    /// Write a debounced save now, if one waits: a window closing does this
+    /// Write a burst's write now, if one waits: a window closing does this
     /// last, so the change made just before it is not lost with it.
     ///
     /// On the same ordered writer as every other write, so an older one still
     /// queued cannot land over it, and waited for, briefly: the window is
-    /// going. Taken as landed like any write, so a close that is then called
-    /// off leaves nothing to put back past it.
+    /// going.
     pub(super) fn flush_workspace(&mut self, cx: &mut Context<Self>) {
-        if self._pending_save.take().is_none() {
-            return;
-        }
-        let Some(dir) = self.window.workspace.storage_dir.clone() else {
-            return;
-        };
-        self.window.workspace.layout = self.dock_layout(cx);
-        let config = self.window.workspace.to_config();
-        let pending = self.saves.write_all();
+        let fx = self.window.workspace.flush().into_iter().collect();
+        self.carry_workspace_quietly(fx, cx);
+    }
+
+    /// Write `config` into `dir` at once, waiting briefly: what a closing
+    /// window does last. Its answer goes back to the drive.
+    pub(super) fn write_on_close(
+        &mut self,
+        write: onehand_core::workspace::drive::FileWrite,
+        cx: &mut Context<Self>,
+    ) {
+        let onehand_core::workspace::drive::FileWrite {
+            pending,
+            mut config,
+            dir,
+        } = write;
+        config.layout = self.dock_layout(cx);
         let result = Shared::global(cx).writer.write_within(
             move || config.save_to(&dir).map_err(|why| why.to_string()),
             CLOSE_WAIT,
@@ -97,9 +49,11 @@ impl Shell {
         if let Err(why) = &result {
             eprintln!("onehand: the workspace was not saved on closing: {why}");
         }
-        // Nothing is put back: the window is going, and if the close is
-        // called off the next change writes the workspace again.
-        let _ = self.saves.landed(pending, result);
+        let fx = self
+            .window
+            .workspace
+            .handle(onehand_core::workspace::drive::Input::WrittenOnClose { pending, result });
+        self.carry_workspace_quietly(fx, cx);
     }
 
     // ── Workspace settings ──────────────────────────────────────────────────
@@ -127,7 +81,7 @@ impl Shell {
 
     /// Drop the storage binding. An unbound workspace persists nothing.
     pub fn unbind_storage(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let was = self.window.workspace.storage_dir.take();
+        let was = self.window.workspace.unbind();
         self.workbench
             .update(cx, |panel, cx| panel.set_storage(None, cx));
         self.tell_issues_page(&onehand_workbench::Request::SetStorage(None), cx);
@@ -165,11 +119,11 @@ impl Shell {
     /// recents made a *second* window for it, which is the one thing the
     /// registry exists to prevent.
     fn bind_storage(&mut self, dir: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        self.window.workspace.storage_dir = Some(dir.clone());
+        let fx = self.window.workspace.bind(dir.clone());
         self.workbench
             .update(cx, |panel, cx| panel.set_storage(Some(&dir), cx));
         self.tell_issues_page(&onehand_workbench::Request::SetStorage(Some(&dir)), cx);
-        self.save_workspace(window, cx);
+        self.carry_workspace(fx, window, cx);
         self.set_window_identity(Some(dir.clone()), window, cx);
         cx.update_global::<Shared, _>(|shared, _| {
             shared.recents.touch(dir.clone());
@@ -442,85 +396,10 @@ impl Shell {
         })
         .detach();
     }
-
-    /// Write the workspace back to its storage folder, if it has one: a
-    /// change nothing puts back, such as a dragged size or a project added.
-    pub(super) fn save_workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.write_workspace(window, cx);
-    }
-
-    /// Write the workspace off the UI thread, after every write before it.
-    /// A whole snapshot, so it carries every change made so far; if it fails
-    /// as the newest write, each changed thing goes back to its last value
-    /// known saved, and the failure is said once. A failure a newer write
-    /// has superseded says nothing, since that write carries what is shown.
-    fn write_workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(dir) = self.window.workspace.storage_dir.clone() else {
-            return;
-        };
-        // Every write picks the arrangement up here rather than at each call
-        // site. Otherwise the *first* save after binding a storage folder --
-        // which is a save the user triggered by choosing the folder, not by
-        // touching a panel -- would write the arrangement this window started
-        // with instead of the one on screen, and the next launch would restore
-        // that.
-        let layout = self.dock_layout(cx);
-        self.window.workspace.layout = layout;
-
-        let config = self.window.workspace.to_config();
-        let pending = self.saves.write_all();
-        let dir_named = dir.clone();
-        let written = Shared::global(cx)
-            .writer
-            .write(move || config.save_to(&dir).map_err(|why| why.to_string()));
-        cx.spawn_in(window, async move |shell, cx| {
-            let result = written.await;
-            let _ = shell.update_in(cx, |shell: &mut Self, window, cx| {
-                // A name is remembered once its workspace holds it, never
-                // while it is still being typed or could yet be put back.
-                if result.is_ok() {
-                    remember_name(&dir_named, &shell.window.workspace.name, cx);
-                }
-                let Some((why, back)) = shell.saves.landed(pending, result) else {
-                    return;
-                };
-                for put in back {
-                    put(shell, window, cx);
-                }
-                window.push_notification(crate::toast::failed("Saving the workspace", why), cx);
-                cx.notify();
-            });
-        })
-        .detach();
-        cx.notify();
-    }
 }
-
-/// What puts one thing's value in the workspace back on screen.
-pub(super) type Put = Rc<dyn Fn(&mut Shell, &mut Window, &mut Context<Shell>)>;
 
 /// How long a closing window waits for its last workspace write.
 const CLOSE_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
-
-/// One thing in the workspace file that a failed write puts back on its own.
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub(super) enum Thing {
-    Name,
-    Order,
-    /// A root's pin, by its host (none for this machine) and path: a local
-    /// root and a host root may share a path.
-    Pin(Option<HostName>, PathBuf),
-    Unattended(PathBuf),
-    Check(PathBuf),
-}
-
-/// A change a failed write puts back: the value it replaced, the value it
-/// shows, and what puts either on screen.
-pub(super) struct WorkspaceChange<V> {
-    pub before: V,
-    pub after: V,
-    pub put: fn(&mut Shell, V, &mut Window, &mut Context<Shell>),
-}
 
 /// Run the native folder picker off the UI loop.
 pub(super) async fn pick_folder(cx: &mut gpui::AsyncApp) -> Option<std::path::PathBuf> {

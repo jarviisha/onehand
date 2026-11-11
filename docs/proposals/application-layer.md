@@ -1,6 +1,6 @@
 # An application layer: how onehand works, apart from how it is drawn
 
-- Status: phases 1 to 7 built.
+- Status: phases 1 to 7 built; phase 8's first half (the workspace) built, its second (issues) next.
   - Phase 1, a trial slice of one session, is #307.
   - Phase 2 settled the standard: it lives in [docs/drives.md](../drives.md), its terms in
     CONTEXT.md (*How onehand is built*), and its short form in AGENTS.md (*Invariants*).
@@ -14,8 +14,10 @@
   - Phase 7 moved telling into `SessionDrive`, the remote bridge into `RemoteDrive`, onehand's
     tools into `ControlDrive` and the settings and the agent check into `SettingsDrive`, and the
     remote channel and the instance socket into `onehand-io`.
-  - What is left here is the plan for phases 8 to 10, the inventory they work from, and the
-    record of the trial. Each phase that is built moves its rows out of here, in the same PR.
+  - Phase 8's first half moved each window's workspace into `WorkspaceDrive`: the session
+    lifecycle, the workspace edits and the workspace file; how a session begins on a host is core's.
+  - What is left here is the plan for the rest of phase 8 and phases 9 and 10, the inventory they
+    work from, and the record of the trial. Each phase that is built moves its rows out of here, in the same PR.
 - Supersedes the rule agreed in #133 ("logic belongs in core when two call sites share it, when a
   second front end could need it, or when it wants a test without a GUI"). That rule moved *rules*
   to core; this one moves *what happens next* there too, with no exceptions.
@@ -106,11 +108,7 @@ row is re-audited at the start of its phase. Line counts are at `6f92ab49`.
 
 | Area | Core has | App decides today | Target drive |
 |---|---|---|---|
-| Hosts: what phase 6 left | `HostDrive`, `host::drive`'s rules on a restart and a back wait | `shell/host_project.rs` (`HostFlow`, each window's share of a host's waits), `hosts::attach_waiting` (a busy host waited on, then attached again), `shell/host_end.rs` | `HostDrive`, with the session lifecycle (phase 8) |
-| Session: what phase 6 left | `SessionDrive` (every change to a session, a host's lost connection, what it waits on its host for) | `chat/pane/sessions.rs` subscriber (the archive refresh after a turn; the `Disconnected` arm telling a fork that never opened, a host out of reach and a lost agent apart) | the session lifecycle (phase 8) |
-| Session: lifecycle (phase 8) | `SessionDrive::resume`, `fork`, `take_snapshot`, the workspace tree | `chat/session.rs` (`spawn`), `chat/pane/sessions.rs` (phases, `close`), `shell/sessions.rs` (946 lines), `shell/fork.rs` | a workspace drive |
-| Workspace edits | the workspace tree | `shell/roots.rs`, `shell/drafts.rs` (rename, worktree, branch), `shell/storage.rs`, `shell/cleanup.rs`, `shell/git_sweep.rs` | workspace drive |
-| Issues | `issues`, `connector` | `shell/issues_page.rs`, `shell/issue_work.rs`, the Issues mode | issues drive |
+| Issues | `issues` (with `sync`, `template`), `connector`, `task::work` (`next_action`, `list`, `Reading`) | the shared issues file `IssuesFile` (`crates/issues/src/view/store.rs`, `view/file.rs`: the load, the sync's gap and follow-up, what shows while writes are on their way, writes, publish); the close and publish-offered rules in the Issues views; `shell/issue_work.rs` (the note taken up, the offered rule); writers outside it (`control.rs`, `unattended.rs`) | issues drive (phase 8, second PR); the views' own reads wait for phase 9 |
 | Workbench modes | editor rules, file tree, markdown | each mode crate (`AnyView`, `Window` in `onehand-workbench`) | per mode, only where a mode has behaviour (phase 9) |
 
 ## The I/O crate (D5: started in phase 3)
@@ -317,7 +315,56 @@ Left for later:
   refused for is core's.
 - *Test* beside an agent (`check_agent`) only reads the machine and stays the shell's.
 
-**Phase 8: workspace edits and issues.** The session lifecycle moves here.
+**Phase 8: the workspace, then issues.** Two PRs (D29). The first, the workspace, is built:
+- Each window's workspace is `WorkspaceDrive` (`onehand_core::workspace::drive`, split along its
+  seams: `sessions.rs`, `projects.rs`, `git.rs`), one drive for the lifecycle and the edits, since a
+  session lives inside its project (D26), held per window on the `Shell` (D27). It derefs to the
+  tree; the tree's mutators are `pub(crate)`. Its carrier is `crates/app/src/shell/carry.rs`.
+- The session lifecycle: where a session is added (refused with no agent or no project, beside a
+  worker on its lead's project), what goes when it closes (a run's or a worker's project left
+  empty, the lead shown after a worker), a run's session and project (added, ended, kept), a tool's
+  open that never opened, a finished run's session left while watched, and the selection. What
+  closing and restarting ask first is `SessionDrive`'s (`closing`, `restarting`).
+- A stream's end carries why it ended (`Signal::Disconnected(Ended)`), so the pane routes a fork
+  that never opened and a host out of reach without reading the model, and telling reads the same
+  answer. A wait on a host that fails ends the session through the drive (`wait_failed`,
+  `back_failed`).
+- How a session begins on a host (`host_begin`, `Start`, `host_restart`, `offline_start`, with
+  `HostStart`, which `onehand-io` re-exports) is core's `host::session`, and what a window's wait on
+  a host comes to when it ends (`back_landed`, `idle_landed`) is `host::drive`'s (D28).
+- The workspace edits: a folder opened (the picker, a second launch, a worktree), one kept for work
+  about to start, a removal by host and path and what its question is about (`Losses`), the pin,
+  the order, the unattended switch, the check command, the name, where an offloaded project's
+  sessions run, the storage binding.
+- The workspace file: the burst's wait (`Arm`/`Elapsed`), the write in order, each thing put back
+  alone when its write fails, the name remembered once a write lands, and the write a closing
+  window makes.
+- Each project's `git status` is kept in the drive: which projects a sweep reads, and which
+  sweep's answer is kept.
+- The carrier has contract tests on a real `Shell` (`crates/app/src/shell/carry/tests.rs`); core's
+  drive tests hold every rule moved, and characterisation tests written first pin the lifecycle's
+  edges and the pane's open, close and restart.
+
+Left for later:
+- `HostFlow` keeps each window's share of a host's waits; `hosts::attach_waiting` stays `HostDrive`'s
+  carrier, as it serves the terminal dock, the Workbench and the folder list, never a session.
+- The pane still holds what a session starts on until it is shown (`pending_resume`,
+  `pending_watch`, `pending_fork`), and which of them goes first (a fork, a watch, a resume) is
+  still decided in `ChatPane::show`; how a start opens (`Start::opening`), how it begins on a host
+  and the prompts it carries (`host_begin`) are core's.
+- The recents list (`Shared.recents`) is touched, named and forgotten by the shell's storage code.
+- A second launch picks the front window and waits for the first in the carrier
+  (`crates/app/src/instance.rs`); the folder it opens goes through the drive.
+- `shell/cleanup.rs` (*Remove worktree…*) is a task's, not the workspace's: its rule is
+  `removal::judge`, and a window closing while it runs loses `worktree_removed` (#319).
+- The panels' layout is view state the front end keeps in the workspace file (`layout_mut`).
+- *End on <host>* (`shell/host_end.rs`) still runs its attach and the host's end in the shell,
+  closing the session watching first through the drive; what a failed attach reads as is core's
+  (`HostFailure::said`).
+- How a host session that cannot be attached begins (which failures read the kept copy, and which
+  of those end on why) is still decided in `chat/session/host.rs`, beside `offline_start`.
+- Showing a host session already watched rather than opening it twice, and which projects each
+  page lists, are still the shell's (`shell/sessions.rs`).
 
 **Phase 9: Workbench modes.** Only modes with behaviour get a drive; a mode that only shows
 something keeps its view. `onehand-workbench`'s contract splits into a GUI-free request and answer
@@ -551,6 +598,27 @@ Made on 2026-11-10, with phase 7's audit:
   put-back are the settings' drive's.
 - **D25. No drive for a second launch.** Its runtime half moved to `onehand-io` with the socket the
   tools share.
+
+Made on 2026-11-10, with phase 8's audit:
+- **D26. One drive for the workspace**, the session lifecycle and the edits both: a session lives
+  inside its project, and two drives would change one model.
+- **D27. Held per window on the `Shell`**, as the workspace was.
+- **D28. A host session's rules move; `HostFlow` stays** the window's bookkeeping, carrying what
+  core decides. `hosts::attach_waiting` serves no session and stays `HostDrive`'s carrier.
+- **D29. Two PRs**: the workspace first, then an issues drive for the shared issues file; the
+  Issues views' own reads wait for phase 9. The bugs the audit found are fixed in the phase, each a
+  commit of its own.
+
+Phase 8 changed, on purpose:
+- Going back to the header's history (offered only between turns) keeps the session that was live
+  running, out of sight, until a past conversation is chosen; before, its agent was dropped the
+  moment the list was read. A list read for a session restarted or closed meanwhile puts nothing
+  up, where before it took the new session off its conversation.
+- A session waiting on a busy host's sessions is no longer told as a lost agent when its stream
+  ends (no badge, desktop notice or remote bridge word).
+- A project removed takes the worktree and branch forms about it, and a `git status` sweep under
+  way no longer puts its status back.
+- An order put back after a failed write tells a local and a host project on one path apart.
 
 Phase 7 changed, on purpose:
 - The remote bridge no longer lists or reaches a host or offloaded project's session (#308): a

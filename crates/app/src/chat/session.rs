@@ -24,7 +24,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub(crate) use host::{BeginOnHost, Carried, HostBegin, list as host_list};
+pub(crate) use host::{BeginOnHost, list as host_list};
 use host::{Source, host_events, new_chat};
 
 mod cards;
@@ -368,12 +368,16 @@ impl ChatSession {
         })
     }
 
-    /// Fold `event` in as a batch of its own: one this side makes, such as
-    /// the end of a wait that left the session's agent lost.
-    pub(crate) fn fold(&mut self, event: onehand_core::acp::AcpEvent, cx: &mut Context<Self>) {
-        let (fx, _) = self.chat.apply(event, now());
+    /// The wait on the host's busy sessions ended on `why`.
+    pub(crate) fn wait_failed(&mut self, why: &str, cx: &mut Context<Self>) {
+        let fx = self.chat.wait_failed(why, now());
         self.perform(fx, cx);
-        let fx = self.chat.end_batch();
+        cx.notify();
+    }
+
+    /// The wait for the host to be back ended on `why`.
+    pub(crate) fn back_failed(&mut self, why: &str, cx: &mut Context<Self>) {
+        let fx = self.chat.back_failed(why, now());
         self.perform(fx, cx);
         cx.notify();
     }

@@ -123,7 +123,7 @@ impl Shell {
             && drawn != size
         {
             let most = (avail.0 - CHAT_MIN.0 * zoom).max(DOCK_MIN.0) * rem;
-            self.window.workspace.layout.workbench_w = f32::from(size).min(most);
+            self.window.workspace.layout_mut().workbench_w = f32::from(size).min(most);
         }
         let wanted = rems(self.window.workspace.layout.workbench_w / rem);
         let was_split = matches!(self.presentation, Presentation::Split(_));
@@ -219,7 +219,7 @@ impl Shell {
             && drawn != size
         {
             let most = (area.0 - BAR_H.0 - READING_MIN_H.0).max(TERM_MIN_H.0) * rem;
-            self.window.workspace.layout.terminal_h = f32::from(size).min(most);
+            self.window.workspace.layout_mut().terminal_h = f32::from(size).min(most);
         }
         let wanted = rems(self.window.workspace.layout.terminal_h / rem);
         let height = px(terminal_height(wanted, area).0 * rem);
