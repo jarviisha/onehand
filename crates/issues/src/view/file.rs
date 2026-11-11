@@ -136,3 +136,6 @@ pub(super) struct Asked {
     waited: bool,
     picked: Option<u64>,
 }
+
+#[cfg(test)]
+mod tests;

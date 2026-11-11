@@ -117,3 +117,156 @@ fn a_buffer_saves_through_the_disk_it_was_read_from(cx: &mut TestAppContext) {
     .unwrap();
     std::fs::remove_dir_all(&root).unwrap();
 }
+
+/// A folder of its own for one test, holding `a.rs` as `theirs`.
+fn folder(name: &str) -> (PathBuf, PathBuf) {
+    let root = std::env::temp_dir().join(format!("onehand-editor-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let file = root.join("a.rs");
+    std::fs::write(&file, "theirs").unwrap();
+    (root, file)
+}
+
+/// The view in a window of its own.
+fn mounted(cx: &mut TestAppContext) -> (Entity<EditorView>, gpui::WindowHandle<Root>) {
+    cx.update(gpui_component::init);
+    let view = cx.update(EditorView::new);
+    let window = cx.add_window({
+        let view = view.clone();
+        |window, cx| Root::new(view, window, cx)
+    });
+    (view, window)
+}
+
+/// The text of `root`'s first tab.
+fn typed(view: &mut EditorView, root: &Path, text: &str, window: &mut Window, cx: &mut App) {
+    let uid = view.buffers[root].tabs.files[0].uid;
+    let state = view.buffers[root].buffer(uid).unwrap().clone();
+    state.update(cx, |state, cx| {
+        state.set_value(text.to_string(), window, cx)
+    });
+}
+
+/// A second save asked for while the first is still writing waits for it,
+/// then writes what was typed since: it is not a conflict with our own write.
+#[gpui::test]
+fn a_save_asked_while_one_writes_runs_after_it_with_the_latest_text(cx: &mut TestAppContext) {
+    let (root, file) = folder("again");
+    let (view, window) = mounted(cx);
+    window
+        .update(cx, |_, window, cx| {
+            view.update(cx, |view, cx| {
+                view.set_root(&root, &Disk::Local, cx);
+                edited(view, &root, &file, window, cx);
+                // Read as the file stands, so a second write carrying this
+                // time after the first had landed would be a conflict.
+                view.buffers.get_mut(&root).unwrap().tabs.files[0].disk_mtime =
+                    std::fs::metadata(&file).unwrap().modified().ok();
+                view.save_active(cx);
+                typed(view, &root, "mine, and more", window, cx);
+                view.save_active(cx);
+            })
+        })
+        .unwrap();
+    cx.run_until_parked();
+
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "mine, and more");
+    view.read_with(cx, |view, _| {
+        assert_eq!(view.status, None);
+        assert!(view.saving.is_empty());
+        assert!(!view.buffers[&root].tabs.files[0].dirty);
+    });
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// A folder whose code is elsewhere for now is not written, and its tab
+/// keeps its edits.
+#[gpui::test]
+fn a_locked_folder_is_not_written(cx: &mut TestAppContext) {
+    let (root, file) = folder("locked");
+    let (view, window) = mounted(cx);
+    window
+        .update(cx, |_, window, cx| {
+            view.update(cx, |view, cx| {
+                view.set_root(&root, &Disk::Local, cx);
+                view.set_locked(&HashMap::from([(root.clone(), "on vps".into())]), cx);
+                edited(view, &root, &file, window, cx);
+                view.save_active(cx);
+            })
+        })
+        .unwrap();
+    cx.run_until_parked();
+
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "theirs");
+    view.read_with(cx, |view, _| {
+        assert!(view.buffers[&root].tabs.files[0].dirty);
+        assert_eq!(view.unsaved(&root), 1);
+    });
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// A file written by somebody else since it was read is not overwritten:
+/// the line under the body says so, and the next save overwrites it.
+#[gpui::test]
+fn a_file_changed_on_disk_is_a_conflict_until_saved_again(cx: &mut TestAppContext) {
+    let (root, file) = folder("conflict");
+    let (view, window) = mounted(cx);
+    window
+        .update(cx, |_, window, cx| {
+            view.update(cx, |view, cx| {
+                view.set_root(&root, &Disk::Local, cx);
+                edited(view, &root, &file, window, cx);
+                // Read long before the file was last written.
+                view.buffers.get_mut(&root).unwrap().tabs.files[0].disk_mtime =
+                    Some(std::time::SystemTime::UNIX_EPOCH);
+                view.save_active(cx);
+            })
+        })
+        .unwrap();
+    cx.run_until_parked();
+
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "theirs");
+    view.read_with(cx, |view, _| {
+        let said = view.status.clone().unwrap_or_default();
+        assert!(said.contains("changed on disk"), "{said}");
+        assert!(view.buffers[&root].tabs.files[0].dirty);
+    });
+
+    view.update(cx, |view, cx| view.save_active(cx));
+    cx.run_until_parked();
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "mine");
+    view.read_with(cx, |view, _| {
+        assert_eq!(view.status, None);
+        assert!(!view.buffers[&root].tabs.files[0].dirty);
+    });
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// What a removal would throw away is counted per project, and forgetting a
+/// project drops its buffers with it.
+#[gpui::test]
+fn unsaved_edits_are_counted_per_project_and_go_with_it(cx: &mut TestAppContext) {
+    let (root, file) = folder("forget");
+    let (other, other_file) = folder("forget-other");
+    let (view, window) = mounted(cx);
+    window
+        .update(cx, |_, window, cx| {
+            view.update(cx, |view, cx| {
+                view.set_root(&root, &Disk::Local, cx);
+                view.set_root(&other, &Disk::Local, cx);
+                edited(view, &root, &file, window, cx);
+                edited(view, &other, &other_file, window, cx);
+            })
+        })
+        .unwrap();
+    view.update(cx, |view, cx| {
+        assert_eq!(view.unsaved(&root), 1);
+        assert_eq!(view.unsaved(&other), 1);
+        view.forget_root(&root, cx);
+        assert_eq!(view.unsaved(&root), 0);
+        assert_eq!(view.unsaved(&other), 1);
+    });
+    std::fs::remove_dir_all(&root).unwrap();
+    std::fs::remove_dir_all(&other).unwrap();
+}
