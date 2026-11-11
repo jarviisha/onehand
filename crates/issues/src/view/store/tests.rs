@@ -69,7 +69,10 @@ fn a_write_lands_once_and_its_maker_hears_it(cx: &mut TestAppContext) {
     });
     let of = file.update(cx, |file, cx| {
         file.write(
-            Box::new(|kept| kept.set_open(1, false, 2).map(|()| Some(1))),
+            onehand_core::issues::drive::Change::SetOpen {
+                number: 1,
+                open: false,
+            },
             cx,
         )
     });

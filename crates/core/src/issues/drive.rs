@@ -22,14 +22,15 @@
 
 use super::sync::Report;
 use super::template::{self, IssueTemplate};
-use super::{Issues, LocalIssue};
+use super::{Draft, Issues, LocalIssue};
+use crate::chat::Now;
 use crate::connector::{self, Connector};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// How long a file kept in step waits between the syncs that only come round.
-pub const SYNC_GAP: Duration = Duration::from_secs(60);
+pub(crate) const SYNC_GAP: Duration = Duration::from_secs(60);
 
 /// What a file is, read through its drive.
 #[derive(Default)]
@@ -52,9 +53,42 @@ pub struct Kept {
     pub publishing: Option<u64>,
 }
 
-/// A change to an issues file, made on what is on disk when its write runs:
-/// the issue it names, if any, for the view that made it to select.
-pub type Change = Box<dyn FnOnce(&mut Issues) -> Result<Option<u64>, String> + Send>;
+/// A change a person makes to an issues file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Change {
+    /// A new issue, as the form drafted it.
+    Create(Draft),
+    /// Issue `number` as the form redrafted it.
+    Edit { number: u64, draft: Draft },
+    /// Issue `number` opened or closed.
+    SetOpen { number: u64, open: bool },
+    /// Issue `number`'s conflict with its forge settled, this side's copy
+    /// kept or the forge's.
+    Resolve { number: u64, keep_mine: bool },
+    /// The file kept in step with the forge so named, or with none.
+    SyncWith(Option<String>),
+}
+
+impl Change {
+    /// Make the change on `kept` at `at`, seconds since the epoch: the issue
+    /// it names, if any, for whoever made it to select.
+    pub fn apply(self, kept: &mut Issues, at: u64) -> Result<Option<u64>, String> {
+        match self {
+            Self::Create(draft) => kept.create(draft, at).map(Some),
+            Self::Edit { number, draft } => kept.edit(number, draft, at).map(|()| Some(number)),
+            Self::SetOpen { number, open } => {
+                kept.set_open(number, open, at).map(|()| Some(number))
+            }
+            Self::Resolve { number, keep_mine } => {
+                kept.resolve(number, keep_mine, at).map(|()| Some(number))
+            }
+            Self::SyncWith(forge) => {
+                kept.sync_with(forge);
+                Ok(None)
+            }
+        }
+    }
+}
 
 /// What a person is told.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,13 +105,15 @@ pub enum Signal {
 
 /// What the front end carries out.
 pub enum Effect {
-    /// Read the file, make `change` and write it ([`super::update_blocking`]),
-    /// off the UI loop and after every write before it, and report
-    /// [`Input::Written`] with `of`. A late answer is **recorded**: the change
-    /// is on disk or it is not, whatever changed since.
+    /// Read the file, make `change` on it at `at` ([`Change::apply`]) and
+    /// write it ([`super::update_blocking`]), off the UI loop and after every
+    /// write before it, and report [`Input::Written`] with `of`. A late
+    /// answer is **recorded**: the change is on disk or it is not, whatever
+    /// changed since.
     Write {
         of: u64,
         change: Change,
+        at: u64,
     },
     /// Read the file, the forge serving its project and its templates
     /// ([`read_blocking`]), off the UI loop, and report [`Input::Read`] with
@@ -91,7 +127,7 @@ pub enum Effect {
     /// **recorded**: what it wrote is on disk whatever changed since.
     Sync {
         forge: &'static dyn Connector,
-        now: u64,
+        now: Now,
     },
     /// Send issue `number` to `forge` ([`super::sync::publish_blocking`]), off the UI
     /// loop, and report [`Input::Published`]. A late answer is **recorded**:
@@ -100,7 +136,7 @@ pub enum Effect {
         number: u64,
         forge: &'static dyn Connector,
     },
-    /// What the file is changed: whatever draws it draws it again.
+    /// What the file holds changed: whatever draws it draws it again.
     Changed,
     Signal(Signal),
 }
@@ -113,19 +149,19 @@ pub enum Input {
         read: Result<Issues, String>,
         forge: Option<&'static dyn Connector>,
         templates: Vec<IssueTemplate>,
-        now: u64,
+        now: Now,
     },
     /// What the sync came to, at `now`.
     Synced {
         done: Result<(Issues, Report), String>,
-        now: u64,
+        now: Now,
     },
     /// Change `of`'s write landed: what it left on disk and the issue it
     /// names, or why it was refused.
     Written {
         of: u64,
         done: Result<(Issues, Option<u64>), String>,
-        now: u64,
+        now: Now,
     },
     /// Sending issue `number` to the forge came to this.
     Published {
@@ -181,8 +217,8 @@ impl FileDrive {
     }
 
     /// The project the file keeps the issues of, and the file.
-    pub fn place(&self) -> (&Path, &Path) {
-        (&self.root, &self.path)
+    pub fn place(&self) -> (PathBuf, PathBuf) {
+        (self.root.clone(), self.path.clone())
     }
 
     /// The connectors a read looks for the serving forge among.
@@ -214,14 +250,12 @@ impl FileDrive {
         }]
     }
 
-    /// Show `change` at once, before its write; a change that does not apply
-    /// to what is shown is left for its write to refuse.
+    /// Show `change` at once, at `now`, before its write; a change that does
+    /// not apply to what is shown is left for its write to refuse.
     #[must_use = "its effects are to be carried"]
-    pub fn show<R>(
-        &mut self,
-        change: impl FnOnce(&mut Issues) -> Result<R, String>,
-    ) -> Vec<Effect> {
-        match self.kept.issues.as_mut().map(change) {
+    pub fn show(&mut self, change: &Change, now: Now) -> Vec<Effect> {
+        let shown = self.kept.issues.as_mut();
+        match shown.map(|kept| change.clone().apply(kept, now.secs)) {
             Some(Ok(_)) => vec![Effect::Changed],
             Some(Err(_)) | None => Vec::new(),
         }
@@ -230,9 +264,10 @@ impl FileDrive {
     /// Write `change` after every change before it: which change it is, and
     /// the write.
     #[must_use = "its effects are to be carried"]
-    pub fn write(&mut self, change: Change) -> (u64, Effect) {
+    pub fn write(&mut self, change: Change, now: Now) -> (u64, Effect) {
         let of = self.pending.send();
-        (of, Effect::Write { of, change })
+        let at = now.secs;
+        (of, Effect::Write { of, change, at })
     }
 
     /// Whether change `of` is the newest one made.
@@ -243,7 +278,7 @@ impl FileDrive {
     /// Keep the file in step with its forge, at `now`, if it is kept in step
     /// with one and a sync is due; `asked` when something asked for it.
     #[must_use = "its effects are to be carried"]
-    pub fn sync(&mut self, asked: bool, now: u64) -> Vec<Effect> {
+    pub fn sync(&mut self, asked: bool, now: Now) -> Vec<Effect> {
         let (Some(forge), Some(kept)) = (self.kept.forge, self.kept.issues.as_ref()) else {
             return Vec::new();
         };
@@ -253,7 +288,7 @@ impl FileDrive {
                 .kept
                 .synced
                 .as_ref()
-                .is_none_or(|(at, _)| now.saturating_sub(*at) >= SYNC_GAP.as_secs());
+                .is_none_or(|(at, _)| now.secs.saturating_sub(*at) >= SYNC_GAP.as_secs());
         if self.kept.syncing && wanted && asked {
             self.again = true;
             return Vec::new();
@@ -312,7 +347,7 @@ impl FileDrive {
                     }
                     Err(why) => Err(why),
                 };
-                self.kept.synced = Some((now, came_to));
+                self.kept.synced = Some((now.secs, came_to));
                 let mut fx = vec![Effect::Changed];
                 if std::mem::take(&mut self.again) {
                     fx.extend(self.sync(true, now));

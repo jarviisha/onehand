@@ -22,6 +22,14 @@ fn names(fx: &[Effect]) -> Vec<&'static str> {
         .collect()
 }
 
+/// The time `secs` seconds after the epoch.
+fn at(secs: u64) -> Now {
+    Now {
+        secs,
+        at: std::time::Instant::now(),
+    }
+}
+
 fn token(fx: &[Effect]) -> u64 {
     fx.iter()
         .find_map(|effect| match effect {
@@ -54,7 +62,7 @@ fn read(kept: Issues, now: u64) -> (FileDrive, Vec<Effect>) {
         read: Ok(kept),
         forge: Some(&FORGE),
         templates: Vec::new(),
-        now,
+        now: at(now),
     });
     (drive, fx)
 }
@@ -62,7 +70,7 @@ fn read(kept: Issues, now: u64) -> (FileDrive, Vec<Effect>) {
 fn synced(drive: &mut FileDrive, now: u64) -> Vec<Effect> {
     drive.handle(Input::Synced {
         done: Ok((issues(true), Report::default())),
-        now,
+        now: at(now),
     })
 }
 
@@ -88,7 +96,7 @@ fn an_older_read_landing_is_dropped() {
         read: Ok(issues(false)),
         forge: None,
         templates: Vec::new(),
-        now: 1,
+        now: at(1),
     });
     assert!(fx.is_empty());
     assert!(drive.issues.is_none());
@@ -103,7 +111,7 @@ fn a_read_that_fails_says_why_and_keeps_what_was_shown() {
         read: Err("unreadable".into()),
         forge: None,
         templates: Vec::new(),
-        now: 2,
+        now: at(2),
     });
     assert_eq!(drive.failed.as_deref(), Some("unreadable"));
     assert!(drive.issues.is_some());
@@ -126,13 +134,15 @@ fn a_read_syncs_a_file_kept_in_step_and_only_that() {
 fn a_sync_coming_round_waits_out_the_gap() {
     let (mut drive, _) = read(issues(true), 100);
     synced(&mut drive, 100);
-    assert!(drive.sync(false, 100 + SYNC_GAP.as_secs() - 1).is_empty());
+    assert!(drive
+        .sync(false, at(100 + SYNC_GAP.as_secs() - 1))
+        .is_empty());
     assert_eq!(
-        names(&drive.sync(false, 100 + SYNC_GAP.as_secs())),
+        names(&drive.sync(false, at(100 + SYNC_GAP.as_secs()))),
         ["Changed", "Sync"]
     );
     synced(&mut drive, 200);
-    assert_eq!(names(&drive.sync(true, 201)), ["Changed", "Sync"]);
+    assert_eq!(names(&drive.sync(true, at(201))), ["Changed", "Sync"]);
 }
 
 /// Asked for while one runs, a sync runs once more when it lands, and only
@@ -141,8 +151,8 @@ fn a_sync_coming_round_waits_out_the_gap() {
 fn a_sync_asked_for_while_one_runs_follows_it_once() {
     let (mut drive, _) = read(issues(true), 100);
     assert!(drive.syncing);
-    assert!(drive.sync(true, 101).is_empty());
-    assert!(drive.sync(true, 102).is_empty());
+    assert!(drive.sync(true, at(101)).is_empty());
+    assert!(drive.sync(true, at(102)).is_empty());
     assert_eq!(
         names(&synced(&mut drive, 103)),
         ["Changed", "Changed", "Sync"]
@@ -155,7 +165,7 @@ fn a_sync_that_fails_is_kept_with_its_time() {
     let (mut drive, _) = read(issues(true), 100);
     drive.handle(Input::Synced {
         done: Err("offline".into()),
-        now: 101,
+        now: at(101),
     });
     assert!(!drive.syncing);
     assert!(matches!(&drive.synced, Some((101, Err(why))) if why == "offline"));
@@ -170,17 +180,23 @@ fn a_write_landing_syncs_and_the_newest_refused_reads_again() {
     let (mut drive, _) = read(issues(true), 100);
     synced(&mut drive, 100);
     assert_eq!(
-        names(&drive.show(|kept| kept.set_open(1, false, 2))),
+        names(&drive.show(
+            &Change::SetOpen {
+                number: 1,
+                open: false
+            },
+            at(2)
+        )),
         ["Changed"]
     );
     assert!(!drive.issues.as_ref().unwrap().get(1).unwrap().open);
-    let (first, _) = drive.write(Box::new(|_| Ok(None)));
-    let (second, _) = drive.write(Box::new(|_| Ok(None)));
+    let (first, _) = drive.write(Change::SyncWith(None), at(100));
+    let (second, _) = drive.write(Change::SyncWith(None), at(100));
     assert!(!drive.newest(first) && drive.newest(second));
     let fx = drive.handle(Input::Written {
         of: first,
         done: Err("refused".into()),
-        now: 101,
+        now: at(101),
     });
     assert_eq!(
         names(&fx),
@@ -194,14 +210,14 @@ fn a_write_landing_syncs_and_the_newest_refused_reads_again() {
     let fx = drive.handle(Input::Written {
         of: second,
         done: Err("refused".into()),
-        now: 101,
+        now: at(101),
     });
     assert_eq!(names(&fx), ["Changed", "Signal", "Read"]);
-    let (third, _) = drive.write(Box::new(|_| Ok(None)));
+    let (third, _) = drive.write(Change::SyncWith(None), at(100));
     let fx = drive.handle(Input::Written {
         of: third,
         done: Ok((issues(true), Some(1))),
-        now: 102,
+        now: at(102),
     });
     assert_eq!(names(&fx), ["Changed", "Signal", "Changed", "Sync"]);
 }
@@ -209,7 +225,15 @@ fn a_write_landing_syncs_and_the_newest_refused_reads_again() {
 #[test]
 fn a_change_that_does_not_apply_is_left_for_its_write() {
     let (mut drive, _) = read(issues(false), 1);
-    assert!(drive.show(|kept| kept.set_open(9, false, 2)).is_empty());
+    assert!(drive
+        .show(
+            &Change::SetOpen {
+                number: 9,
+                open: false
+            },
+            at(2)
+        )
+        .is_empty());
 }
 
 // Publishing.
@@ -359,4 +383,36 @@ fn an_issue_is_worked_by_the_latest_session_it_names_that_is_still_live() {
     // The newer one ended: the older one, still going, is where the work is.
     assert_eq!(issue.working_in(&live(&["old"])), Some("old"));
     assert_eq!(issue.working_in(&live(&["elsewhere"])), None);
+}
+
+/// A named change is made as it says, naming the issue it touched.
+#[test]
+fn a_change_is_made_as_it_is_named() {
+    let mut kept = issues(false);
+    let made = Change::Create(Draft {
+        title: "two".into(),
+        ..Draft::default()
+    })
+    .apply(&mut kept, 2);
+    assert_eq!(made, Ok(Some(2)));
+    assert_eq!(
+        Change::SetOpen {
+            number: 2,
+            open: false
+        }
+        .apply(&mut kept, 3),
+        Ok(Some(2))
+    );
+    assert!(!kept.get(2).unwrap().open);
+    assert_eq!(
+        Change::SyncWith(Some("Forge".into())).apply(&mut kept, 4),
+        Ok(None)
+    );
+    assert!(kept.in_step_with("Forge"));
+    assert!(Change::SetOpen {
+        number: 9,
+        open: false
+    }
+    .apply(&mut kept, 5)
+    .is_err());
 }

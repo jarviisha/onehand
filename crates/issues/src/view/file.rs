@@ -4,8 +4,7 @@
 
 use super::IssuesView;
 use gpui::Context;
-use onehand_core::issues::drive::Signal;
-use onehand_core::issues::{self, Issues};
+use onehand_core::issues::drive::{Change, Signal};
 use std::path::Path;
 
 impl IssuesView {
@@ -22,13 +21,7 @@ impl IssuesView {
         let Some(forge) = self.forge(cx) else {
             return;
         };
-        self.change_now(
-            move |kept| {
-                kept.sync_with(on.then(|| forge.name().to_string()));
-                Ok(None)
-            },
-            cx,
-        );
+        self.change_now(Change::SyncWith(on.then(|| forge.name().to_string())), cx);
     }
 
     /// Send issue `number` to the forge, which is the only way anything written
@@ -47,21 +40,13 @@ impl IssuesView {
     /// Settle issue `number`'s conflict one way or the other, then sync so the
     /// decision reaches the forge.
     pub(super) fn resolve(&mut self, number: u64, keep_mine: bool, cx: &mut Context<Self>) {
-        let now = issues::now();
-        self.change_now(
-            move |kept| kept.resolve(number, keep_mine, now).map(|()| Some(number)),
-            cx,
-        );
+        self.change_now(Change::Resolve { number, keep_mine }, cx);
     }
 
     /// Make a change to the active project's issues, show it at once and
     /// write it after; a write that fails is said once, and the newest one
     /// failing puts back what is on disk.
-    pub(super) fn change_now(
-        &mut self,
-        change: impl Fn(&mut Issues) -> Result<Option<u64>, String> + Send + 'static,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn change_now(&mut self, change: Change, cx: &mut Context<Self>) {
         if let Some(file) = self.state_mut().map(|state| state.file.clone()) {
             file.update(cx, |file, cx| file.show(&change, cx));
         }
@@ -71,11 +56,7 @@ impl IssuesView {
     /// Make a change to the active project's issues and write it, then show
     /// what is now kept — selecting the issue the change names, if any. The
     /// project's form waits on its *Save* meanwhile.
-    pub(super) fn change(
-        &mut self,
-        change: impl FnOnce(&mut Issues) -> Result<Option<u64>, String> + Send + 'static,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn change(&mut self, change: Change, cx: &mut Context<Self>) {
         if let Some(state) = self.state_mut() {
             state.writing = true;
         }
@@ -88,12 +69,7 @@ impl IssuesView {
     /// rather than against the copy on screen; on a project kept in step with
     /// its forge it is then synced straight away. What it came to is heard in
     /// [`Self::heard`].
-    fn write(
-        &mut self,
-        change: impl FnOnce(&mut Issues) -> Result<Option<u64>, String> + Send + 'static,
-        waited: bool,
-        cx: &mut Context<Self>,
-    ) {
+    fn write(&mut self, change: Change, waited: bool, cx: &mut Context<Self>) {
         let Some((root, _)) = self.file() else {
             return;
         };
@@ -103,7 +79,7 @@ impl IssuesView {
         else {
             return;
         };
-        let of = file.update(cx, |file, cx| file.write(Box::new(change), cx));
+        let of = file.update(cx, |file, cx| file.write(change, cx));
         self.asked.insert((root, of), Asked { waited, picked });
     }
 

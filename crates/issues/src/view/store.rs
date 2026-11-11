@@ -8,9 +8,10 @@
 //! in its form stays with that view.
 
 use gpui::{App, AppContext as _, Context, Entity, Global, WeakEntity};
+use onehand_core::chat::Now;
 use onehand_core::connector::Connector;
 use onehand_core::issues::drive::{Change, Effect, FileDrive, Input, Signal, read_blocking};
-use onehand_core::issues::{self, Issues, sync};
+use onehand_core::issues::{self, sync};
 use onehand_core::saving::OrderedWriter;
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -76,19 +77,15 @@ impl IssuesFile {
     }
 
     /// Show `change` at once, before its write lands.
-    pub(super) fn show<R>(
-        &mut self,
-        change: impl FnOnce(&mut Issues) -> Result<R, String>,
-        cx: &mut Context<Self>,
-    ) {
-        let fx = self.drive.show(change);
+    pub(super) fn show(&mut self, change: &Change, cx: &mut Context<Self>) {
+        let fx = self.drive.show(change, now());
         self.carry(fx, cx);
     }
 
     /// Write `change` after every change made before it: which change it
     /// is, for the view that made it to hear its write in [`Signal::Wrote`].
     pub(super) fn write(&mut self, change: Change, cx: &mut Context<Self>) -> u64 {
-        let (of, write) = self.drive.write(change);
+        let (of, write) = self.drive.write(change, now());
         self.carry(vec![write], cx);
         of
     }
@@ -96,7 +93,7 @@ impl IssuesFile {
     /// Keep the file in step with its forge, if that is due; `asked` when
     /// something asked for it.
     pub(super) fn sync(&mut self, asked: bool, cx: &mut Context<Self>) {
-        let fx = self.drive.sync(asked, issues::now());
+        let fx = self.drive.sync(asked, now());
         self.carry(fx, cx);
     }
 
@@ -114,7 +111,6 @@ impl IssuesFile {
                 Effect::Changed => cx.notify(),
                 Effect::Read { token } => {
                     let (root, path) = self.drive.place();
-                    let (root, path) = (root.to_path_buf(), path.to_path_buf());
                     let connectors = self.drive.connectors();
                     self._load = Some(cx.spawn(async move |file, cx| {
                         let (read, forge, templates) = cx
@@ -127,36 +123,32 @@ impl IssuesFile {
                                 read,
                                 forge,
                                 templates,
-                                now: issues::now(),
+                                now: now(),
                             });
                             file.carry(fx, cx);
                         });
                     }));
                 }
-                Effect::Sync { forge, now } => {
+                Effect::Sync { forge, now: asked } => {
                     let (root, path) = self.drive.place();
-                    let (root, path) = (root.to_path_buf(), path.to_path_buf());
+                    let at = asked.secs;
                     cx.spawn(async move |file, cx| {
                         let done = cx
                             .background_executor()
-                            .spawn(async move { sync::sync_blocking(&path, &root, forge, now) })
+                            .spawn(async move { sync::sync_blocking(&path, &root, forge, at) })
                             .await;
                         let _ = file.update(cx, |file: &mut Self, cx| {
-                            let fx = file.drive.handle(Input::Synced {
-                                done,
-                                now: issues::now(),
-                            });
+                            let fx = file.drive.handle(Input::Synced { done, now: now() });
                             file.carry(fx, cx);
                         });
                     })
                     .detach();
                 }
-                Effect::Write { of, change } => {
+                Effect::Write { of, change, at } => {
                     let (_, path) = self.drive.place();
-                    let path = path.to_path_buf();
-                    let written = self
-                        .writer
-                        .write(move || issues::update_blocking(&path, change));
+                    let written = self.writer.write(move || {
+                        issues::update_blocking(&path, move |kept| change.apply(kept, at))
+                    });
                     // Held strongly: every write lands, whether or not a view
                     // is still there, so what was read meanwhile is let through.
                     let file = cx.entity();
@@ -166,7 +158,7 @@ impl IssuesFile {
                             let fx = file.drive.handle(Input::Written {
                                 of,
                                 done,
-                                now: issues::now(),
+                                now: now(),
                             });
                             file.carry(fx, cx);
                         });
@@ -175,7 +167,6 @@ impl IssuesFile {
                 }
                 Effect::Publish { number, forge } => {
                     let (root, path) = self.drive.place();
-                    let (root, path) = (root.to_path_buf(), path.to_path_buf());
                     cx.spawn(async move |file, cx| {
                         let done = cx
                             .background_executor()
@@ -247,3 +238,11 @@ fn failures(report: &sync::Report) -> Option<String> {
 
 #[cfg(test)]
 mod tests;
+
+/// The time now, as the drive is told it: it reads no clock of its own.
+fn now() -> Now {
+    Now {
+        secs: issues::now(),
+        at: std::time::Instant::now(),
+    }
+}
