@@ -379,7 +379,7 @@ The second, issues:
   drive's (`offered_for_runs`).
 - The carrier has contract tests (`crates/issues/src/view/store/tests.rs`).
 
-Left for later, with phase 9's Workbench modes:
+Left for later, with phase 9's Workbench modes (moved there, as phase 9 records):
 - What the Issues views read of a pull request, the work left and a review, their filters, the
   template's fill and the close question stay in the views; so does which landed write moves a
   view's selection (`IssuesView::heard`: only the newest change, nothing picked since, no form
@@ -420,7 +420,30 @@ something keeps its view (D30). Two PRs (D33). The first, the contract and two m
   drive tests hold every rule moved; the carriers' contract tests are in
   `crates/editor/src/view/tests.rs` and `crates/claude-plugins/src/view/tests.rs`.
 
+The second, the Issues views' own rules:
+- What one Issues view reads of the work on its issues is `WorkDrive`
+  (`onehand_core::task::work::drive`), one per view, the tab's or the page's: when the issue on
+  screen's pull request is read (never read for it, opened, its work moved, or the window back with
+  what is shown older than `READ_AGE`), when the page reads every project's and looks up what a
+  capped read missed, when what the work left is read, and every answer kept to what asked for it.
+  It is told the time and which issue is shown, and keeps the work on every issue the app tells it.
+- A press on the review block goes through it: it is sent where the block read the run waiting
+  (`Answered::Sent` with a `Press`, which the view hands to the shell), reloads what the run waits
+  on now (`Reloaded`), or is refused; an empty note is not sent. How the block is drawn (the whole
+  answer, the acceptance, the note being written) stays the view's.
+- A template's fill (`template::fill`), whether closing an issue asks first
+  (`IssueWork::closing_asks`) and which landed write moves a view's selection
+  (`issues::drive::moves_selection`) are core's; the views call them.
+- Core's drive tests hold every rule moved; the views' carrying of its reads has no contract test
+  yet, since the forge connectors are the ones built in.
+
 Left for later:
+- `Issues`' methods stay public, for the writers outside `FileDrive` (a tool, an unattended run,
+  the issue work's note).
+- The Issues views keep a timer that asks the file to sync every few minutes; whether a sync is due
+  is `FileDrive`'s.
+- A diff opened in the full form is read when opened, as the Files tree reads a folder: what is
+  open is the viewer's.
 - Which tab is on screen (`RootEditors::active`) is view state kept in core's model, as the
   workspace's panel layout is.
 - The panel still decides, from the mode's declaration, which mode shows after a project switch
