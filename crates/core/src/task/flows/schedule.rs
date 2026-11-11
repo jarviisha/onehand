@@ -92,3 +92,31 @@ fn a_due_schedule_starts_a_task_whose_run_prompts_its_session_and_finishes() {
     assert_eq!(flow.told[1], ("t2".to_string(), Placed::Started));
     let _ = std::fs::remove_dir_all(project.root);
 }
+
+/// A schedule starting a workflow that works on a worktree cuts it first:
+/// its task works there, on its own branch, and its project is kept.
+#[test]
+fn a_schedule_on_a_worktree_workflow_cuts_it_first() {
+    let project = repo("flow-schedule-worktree", &[]);
+    let worktree = crate::workflow::builtin::all()
+        .into_iter()
+        .find(|t| t.place == crate::workflow::Place::Worktree)
+        .expect("a workflow on a worktree");
+    let id = worktree.id.clone();
+    let mut flow = Flow::new(None, vec![worktree], NOW);
+    let mut s = due(&project.root);
+    s.starts = Starts::Workflow {
+        workflow: id,
+        title: "Tidy".into(),
+        body: String::new(),
+    };
+    flow.schedules = vec![s];
+    flow.clock();
+    assert_eq!(flow.told, vec![("t1".to_string(), Placed::Started)]);
+    let task = flow.tasks.task("t1").unwrap();
+    assert_ne!(task.setup.dir, project.root, "on a worktree of its own");
+    assert!(task.setup.dir.is_dir());
+    assert!(task.setup.branch.is_some());
+    let _ = std::fs::remove_dir_all(&task.setup.dir);
+    let _ = std::fs::remove_dir_all(project.root);
+}

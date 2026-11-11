@@ -151,7 +151,13 @@ pub(super) fn perform(
                 cx.spawn(async move |cx| {
                     let made = cx
                         .background_executor()
-                        .spawn(async move { crate::shell::cut_worktree_blocking(&repo, &title) })
+                        .spawn(async move {
+                            onehand_core::task::cut_blocking(
+                                &repo,
+                                &title,
+                                crate::features::connectors(),
+                            )
+                        })
                         .await;
                     cx.update(|cx| {
                         feed(

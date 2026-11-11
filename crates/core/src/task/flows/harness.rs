@@ -249,7 +249,19 @@ impl Flow {
                 }
                 self.told.push((task, placed));
             }
-            TasksEffect::Cut { .. } => panic!("these flows start on the checkout"),
+            TasksEffect::Cut {
+                task,
+                launch,
+                window,
+            } => {
+                let made = crate::task::cut_blocking(launch.repo(), launch.title(), &[]);
+                self.tasks_input(TasksInput::Cut {
+                    task,
+                    launch,
+                    window,
+                    made,
+                });
+            }
             TasksEffect::ReadReview { .. } | TasksEffect::ConfirmAnswer { .. } => {
                 panic!("these flows answer no review")
             }

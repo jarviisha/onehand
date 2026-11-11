@@ -5,12 +5,10 @@
 //! Where it landed is said to whoever asked ([`Effect::Told`]).
 
 use super::{Effect, Placed, TasksDrive};
-use crate::task::Launch;
-use std::path::PathBuf;
+use crate::task::{Launch, Worktree};
 
-/// A worktree cut for a task: the folder it works in, its branch, and the
-/// forge the branch goes to.
-pub type Cut = Result<(PathBuf, String, Option<String>), String>;
+/// A worktree cut for a task, or why not.
+pub type Cut = Result<Worktree, String>;
 
 impl<W: Copy> TasksDrive<W> {
     /// Start `launch` off screen as task `id`, from `window`, or say why it
@@ -44,9 +42,9 @@ impl<W: Copy> TasksDrive<W> {
     /// What [`Effect::Cut`] came to.
     pub(super) fn cut(&mut self, id: String, launch: Launch, window: W, made: Cut) -> Effect<W> {
         match made {
-            Ok((dir, branch, forge)) => Effect::Keep {
+            Ok(cut) => Effect::Keep {
                 task: id,
-                launch: Box::new(launch.on_worktree(dir, branch, forge)),
+                launch: Box::new(launch.on_worktree(cut)),
                 window,
             },
             Err(why) => refused(id, why),

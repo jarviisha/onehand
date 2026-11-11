@@ -713,7 +713,11 @@ fn a_start_off_screen_on_a_worktree_is_cut_first() {
     };
     let fx = tasks.handle(cut(Err("not a repository".into())));
     assert_eq!(told(&fx), Some(&Placed::Refused("not a repository".into())));
-    let fx = tasks.handle(cut(Ok(("/w".into(), "onehand/tidy".into(), None))));
+    let fx = tasks.handle(cut(Ok(crate::task::Worktree {
+        dir: "/w".into(),
+        branch: "onehand/tidy".into(),
+        forge: None,
+    })));
     assert!(
         matches!(fx.as_slice(), [Effect::Keep { launch, .. }] if launch.dir() == Path::new("/w")),
         "{fx:?}"
