@@ -269,7 +269,7 @@ the text typed since; the Plugins mode's (`crates/claude-plugins/src/view/tests.
 `claude` of its own) one change at a time, what went through counted, and a refusal said only in
 its project. Still untested: the Issues views' carrying of `WorkDrive`'s pull request reads (the forge
 connectors are the ones built in; what the work left is read in
-`crates/issues/src/view/reads/tests.rs`), the pane's answer to a session's look (`ChatPane::look`), a worker's
+`crates/issues/src/view/reads/tests.rs`), a worker's
 open carried through a window (its start, watch and first prompt), an agent check's probe, which
 starts a real agent, `SendCode`'s late answer and the pane's half
 of the session (`ChatPane::carry`), `SaveTitle` (written on the ordered writer's own thread, which

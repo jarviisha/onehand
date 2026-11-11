@@ -102,8 +102,8 @@ it. What is refused, and how, is under *What a host project does not do*.
   `⋯` and right-click), asks *End <session> on <host>?* (*Its agent stops there, and a running
   turn is lost. The conversation stays readable on the project page.*), then sends `End`: the
   host drops the task driving the agent, which kills the agent's process, journals *the session
-  was ended from the laptop* as its `Disconnected`, and lists it ended (`Hub::end_session`,
-  `crates/app/src/shell/host_end.rs`). A session in another laptop's mirror is refused, as a
+  was ended from the laptop* as its `Disconnected`, and lists it ended (`Hub::end_session`;
+  here, `WorkspaceDrive::end_on_host` decides each step, carried by `crates/app/src/shell/host_end.rs`). A session in another laptop's mirror is refused, as a
   request to it is. Here, the session watching it closes first, then the page lists again; a
   failure is a toast, *Ending <session> on <host> failed: …*, and the session stays on the page
   to attach to. A session the host has not named yet has nothing there to end, and says so. A

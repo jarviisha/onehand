@@ -24,7 +24,7 @@
     where a driven task lands, what a run tells unattended runs) and tests whole flows across
     drives with no front end (`task::flows`).
   - Phase 11 takes every leftover of phases 4 to 10, in five PRs by area; its plan is under
-    *Plan*. PR 11a, tasks and unattended runs, is built.
+    *Plan*. PR 11a, tasks and unattended runs, is built, and 11b1 of sessions and hosts.
   - What is left here is what each phase left for later, the record of the trial and the
     decisions; *Done when* is not met until phase 11 is built, and the proposal leaves
     `docs/proposals/` with phase 11's last PR.
@@ -572,18 +572,35 @@ Left for later (PR 11a):
 - What a review was read as is kept by the tasks' carrier until its question (`Tasks.reviews`):
   it holds a connector, which no effect can carry; the drive only hears that it was read.
 
-PR 11b, sessions and hosts:
-- what a session starts on (`pending_resume`, `pending_watch`, `pending_fork`) and which goes first
-  (`ChatPane::show`) into the session's drive, the stored transcript read off the UI thread (it is
-  read inline today, its own commit);
-- how a host session that cannot be attached begins (`chat/session/host.rs`), and *End on
-  <host>* (`shell/host_end.rs`) into `host::session`;
-- waiting out a busy host and attaching again (`hosts::attach_waiting`) into `HostDrive`;
-- each window's share of a host's waits (`HostFlow`) into a drive;
-- showing a host session already watched rather than opening it twice (`shell/sessions.rs`);
-- a fork that failed (`ForkFailed`, `shell/boot.rs`) and whether a restart is said
-  (`restart_told`);
-- the pane's answer to a session's look (`ChatPane::look`) tested.
+PR 11b, sessions and hosts, in two PRs (D42). The first, 11b1, built:
+- Which kept copy a host session that cannot be attached reads, and how it begins and ends, are
+  `host::session::reads_copy` and `OfflineStart` (`Read { away, ends }`, `End(why)`,
+  `Wait { host, busy, terms }`); `chat/session/host.rs` matches the failure once.
+- What a failed attach comes to for what waits on its host is `HostFailure::after_attach`
+  (`AfterAttach::Wait` or `Failed`); `hosts::attach_waiting` keeps the loop.
+- A fork opens through `WorkspaceDrive::fork`, which says a fork whose project left meanwhile
+  (before, nothing was said and the staged read waited; its own commit); a failed fork is
+  `WorkspaceDrive::fork_failed`.
+- *End on <host>* is `WorkspaceDrive::end_on_host`: the watching session closes first, the end is
+  asked (`Effect::EndOnHost`), and what it came to lists the sessions again
+  (`Effect::ListHostSessions`) or is said (`Signal::EndOnHostFailed`). Which session watches what is
+  still the pane's, handed in, until 11b2.
+- The pane's answer to a session's look is tested (`chat/pane/tests.rs`).
+- Whether a restart is said stays the shell's: the rule is `Landing::Restart`'s, and the shell says
+  only what restarted (D43). The restart's after-service flag no caller set is gone.
+
+Phase 11 changed, on purpose (PR 11b1):
+- A fork whose project left the workspace while its conversation was read says so, and its read
+  is let go.
+
+The second, 11b2, to build:
+- what a session starts on (`pending_resume`, `pending_watch`, `pending_fork`) held by
+  `WorkspaceDrive` until it is shown (D44), the order that cannot meet dropped, and the stored
+  transcript read off the UI thread (`ChatPane::show` and `ChatPane::start`; its own commit);
+- each window's share of a host's waits (`HostFlow`) in a small drive of its own per window, its
+  `prune` kept as it is called (D45);
+- which session watches which host session in the workspace, so one already watched is shown
+  rather than opened twice (`shell/sessions.rs`), and *End on <host>* reads it from there.
 
 PR 11c, the workspace and the shell:
 - the recents list touched, named and forgotten (`shell/storage.rs`) into a drive;
@@ -876,6 +893,16 @@ Made on 2026-11-11, with phase 11's audit:
   pressed (`acting`), each window's share of a host's waits, an agent's *Test*, a second launch's
   window, the Issues sync timer, the Workbench's mode choice and a start off screen's kept project.
 - **D41. The proposal leaves `docs/proposals/` with phase 11's last PR.**
+
+Made on 2026-11-11, with PR 11b's audit:
+- **D42. 11b in two PRs**: the small moves that change nothing (an unattached host session, a
+  failed attach, a failed fork, *End on <host>*, the look's test) first; what a session starts on,
+  who watches what, and each window's host waits after.
+- **D43. Whether a restart is said stays the shell's**: its rule is core's already.
+- **D44. What a session starts on is `WorkspaceDrive`'s** until it is shown: `SessionDrive` does
+  not exist before the session connects.
+- **D45. Each window's host waits get a small drive of their own**, beside `HostDrive`, which is
+  one for the process; `prune` is kept as it is called, and replacing it is left for later.
 
 Phase 10 changed nothing on purpose: a start off screen, a drive's answer and a run's word to
 unattended runs reach the same places in the same order. A start off screen refused (by its
