@@ -12,6 +12,7 @@ use crate::connector::{PrState, PullRequest};
 use crate::issues::IssueKey;
 use crate::workflow::{Failure, Outcome, Run, StepKind, Stop};
 
+pub mod drive;
 pub mod left;
 pub mod list;
 mod review;
@@ -700,6 +701,15 @@ fn done(work: &Work, pr: PrSeen<'_>) -> Next {
                 &[Act::ShowTask],
             ),
         },
+    }
+}
+
+impl IssueWork {
+    /// Whether this issue's work, or any earlier work on it, is running,
+    /// queued or waiting: closing the issue stops none of it, so closing
+    /// asks first.
+    pub fn closing_asks(&self) -> bool {
+        self.work.active() || self.earlier.iter().any(|earlier| earlier.active)
     }
 }
 

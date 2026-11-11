@@ -23,8 +23,8 @@ use gpui::{
 };
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::issues::{self, IssueKey, LocalIssue};
-use onehand_core::task::work::IssueWork;
-use onehand_core::task::work::list::{Filters, Held, Item, PrReads, list};
+use onehand_core::task::work::drive::WorkDrive;
+use onehand_core::task::work::list::{Filters, Held, Item, list};
 use onehand_ui::{faint_rule, hint};
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -66,17 +66,7 @@ pub(super) struct PageState {
     /// An issue was opened from outside the page: the page takes the
     /// keyboard on its next draw, so Esc and the arrow keys answer at once.
     claim_focus: bool,
-    /// Each project's pull requests, as last read.
-    pub(super) prs: HashMap<PathBuf, PrReads>,
-    /// The generation of each project's pull request read, so an answer to
-    /// an older read is dropped.
-    pub(super) pr_asked: HashMap<PathBuf, u64>,
-    /// How many projects' pull request reads are out, so *Refresh* says it
-    /// is reading.
-    pub(super) pr_reading: usize,
-    /// The page was just shown: its pull requests are read.
-    pub(super) arrived: bool,
-    /// What the issue on screen left, as read off git.
+    /// Which of the issue on screen's file lists and diffs are open.
     pub(super) full: full::FullState,
     /// The review block, while one is open.
     pub(super) review: review::ReviewState,
@@ -95,9 +85,10 @@ impl PageState {
             .map(|(_, label)| label.clone())
     }
 
-    /// What the full form draws from this page's state.
-    pub(super) fn full(&self) -> full::Full<'_> {
-        self.full.view()
+    /// What the full form draws from this page's state and the view's
+    /// drive.
+    pub(super) fn full<'a>(&'a self, drive: &'a WorkDrive) -> full::Full<'a> {
+        self.full.view(drive)
     }
 }
 
@@ -120,9 +111,7 @@ impl IssuesView {
     /// The page was put on screen: every file it draws is read again, and so
     /// are the pull requests.
     pub(crate) fn page_shown(&mut self, cx: &mut Context<Self>) {
-        if let Some(page) = self.page.as_mut() {
-            page.arrived = true;
-        }
+        self.work.page_shown();
         self.mark_stale(cx);
     }
 
@@ -133,7 +122,7 @@ impl IssuesView {
         let Some(page) = self.page.as_mut() else {
             return;
         };
-        if !page.review.open_on(key.as_ref()) {
+        if self.work.pick(key.as_ref()) {
             page.review = review::ReviewState::default();
         }
         page.held.pinned = key;
@@ -178,7 +167,7 @@ impl IssuesView {
                     page.held.pick(key, &stopped);
                 }
                 // Picking another issue closes the review; the same keeps it.
-                if !page.review.open_on(key.as_ref()) {
+                if view.work.pick(key.as_ref()) {
                     page.review = review::ReviewState::default();
                 }
                 page.open = true;
@@ -251,7 +240,11 @@ impl IssuesView {
         let Some(page) = self.page.as_ref() else {
             return;
         };
-        match innermost(page.open, form, page.review.is_open()) {
+        match innermost(
+            page.open,
+            form,
+            self.work.review().is_some_and(|r| r.is_open()),
+        ) {
             Some(Layer::Form) => {
                 self.unless_drafting(window, cx, |view, _, cx| view.cancel_form(cx));
             }
@@ -357,7 +350,7 @@ impl IssuesView {
     }
 
     /// The issue the page has picked, by its file and number.
-    fn selected_key(&self) -> Option<IssueKey> {
+    pub(super) fn selected_key(&self) -> Option<IssueKey> {
         let root = self.root.as_deref()?;
         let number = self.roots.get(root)?.selected?;
         self.key(root, number)
@@ -384,7 +377,7 @@ impl IssuesView {
                     .map(|issue| (root.clone(), issue))
             })
             .collect();
-        let works = self.works.clone();
+        let works = self.work.works().to_vec();
         let storage = self.storage.clone().unwrap_or_default();
         let items: Vec<Item<'_>> = owned
             .iter()
@@ -418,7 +411,9 @@ impl IssuesView {
             page.filters.project = None;
             filters.project = None;
         }
-        let listed = list(&items, &filters, &page.prs, &page.held, issues::now());
+        let none = HashMap::new();
+        let prs = self.work.prs().unwrap_or(&none);
+        let listed = list(&items, &filters, prs, &page.held, issues::now());
         page.held.order = listed.order();
         page.stopped = listed.stopped_matching();
         page.shown = listed
@@ -574,14 +569,6 @@ impl IssuesView {
 /// `inner` across the page's whole width: a table uses what the pane gives it.
 fn column(inner: gpui::Div) -> gpui::Div {
     inner.w_full()
-}
-
-/// The work of every issue of `root`, by the file the page keys them with.
-pub(super) fn works_of<'a>(
-    works: &'a [IssueWork],
-    file: &'a Path,
-) -> impl Iterator<Item = &'a IssueWork> {
-    works.iter().filter(move |work| work.key.file == file)
 }
 
 /// A layer open over the list, innermost first.

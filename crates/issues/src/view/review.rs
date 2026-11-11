@@ -23,16 +23,15 @@ use gpui_component::text::TextView;
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::issues::template::section;
 use onehand_core::issues::{IssueKey, LocalIssue};
-use onehand_core::task::Approval;
-use onehand_core::task::marks::{self, Change};
+use onehand_core::task::work::drive::{Answered, Effect, Press, Review, Sent};
 use onehand_core::task::work::{
-    ANSWER_CHANGED, ANSWER_LINES, Checked, IssueWork, Reading, UnderReview, Work, last_lines,
+    ANSWER_CHANGED, ANSWER_LINES, Checked, IssueWork, UnderReview, Work, last_lines,
 };
 use onehand_ui::Quiet as _;
 use onehand_ui::Short as _;
 use onehand_ui::text_area;
 use onehand_ui::{Refuses as _, action, card_box, fold_toggle, status_ink};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// How many lines of what a check printed are drawn: its last ones, where a
 /// build or a test run says how it ended.
@@ -49,48 +48,16 @@ const LABEL_W: Rems = rems(5.);
 /// How tall the note for *Revise…* stands: a few sentences in view.
 const NOTE_H: Rems = rems(6.);
 
-/// What a press sent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Sent {
-    Continue,
-    Revise,
-}
-
-/// The review block's state on the page.
+/// How the review block is drawn on the page; what it is open on, what was
+/// read and what a press came to are the view's drive's (`WorkDrive`).
 #[derive(Default)]
 pub(super) struct ReviewState {
-    /// The issue it is open on; `None` while closed.
-    open: Option<IssueKey>,
-    /// The task whose run it reviews.
-    task: Option<String>,
-    /// The folder its work is read in.
-    dir: Option<PathBuf>,
-    /// What was read when it was opened, or reloaded by a refused press.
-    read: Option<UnderReview>,
-    /// A press found the run no longer waiting where it was read.
-    changed: bool,
-    /// What a press sent, once it went.
-    sent: Option<Sent>,
     /// The whole answer is drawn, not only its last lines.
     whole: bool,
     /// The issue's acceptance is open.
     acceptance: bool,
     /// The note for *Revise…*, while it is written.
     note: Option<Entity<TextareaState>>,
-    /// What the step under review changed, as read off git.
-    files: Reading<(String, String), Vec<Change>>,
-}
-
-impl ReviewState {
-    /// Whether it is open at all.
-    pub(super) fn is_open(&self) -> bool {
-        self.open.is_some()
-    }
-
-    /// Whether it is open on the issue `key`.
-    pub(super) fn open_on(&self, key: Option<&IssueKey>) -> bool {
-        self.open.is_some() && self.open.as_ref() == key
-    }
 }
 
 impl IssuesView {
@@ -98,10 +65,7 @@ impl IssuesView {
     /// issue is put on the page first.
     pub(crate) fn review_on_page(&mut self, root: &Path, number: u64, cx: &mut Context<Self>) {
         let key = self.key(root, number);
-        let work = key
-            .as_ref()
-            .and_then(|key| self.works.iter().find(|work| work.key == *key))
-            .cloned();
+        let work = key.as_ref().and_then(|key| self.work.work_of(key)).cloned();
         if let (Some(key), Some(work)) = (key, work) {
             self.open_review(key, &work.work, cx);
         }
@@ -128,113 +92,50 @@ impl IssuesView {
         let Some(page) = self.page.as_mut() else {
             return;
         };
-        page.review = ReviewState {
-            open: Some(key),
-            task: Some(work.task.clone()),
-            dir: Some(work.dir.clone()),
-            read: work.review.clone(),
-            ..ReviewState::default()
-        };
-        self.read_review_files(cx);
-        cx.notify();
+        page.review = ReviewState::default();
+        let effects = self.work.open_review(key, work);
+        self.carry(effects, cx);
     }
 
     /// Close the block.
     pub(super) fn close_review(&mut self, cx: &mut Context<Self>) {
         if let Some(page) = self.page.as_mut() {
             page.review = ReviewState::default();
-            cx.notify();
         }
+        self.work.close_review();
+        cx.notify();
     }
 
-    /// Read what the step under review changed, when it is pinned at both
-    /// ends.
-    fn read_review_files(&mut self, cx: &mut Context<Self>) {
+    /// Hand a press's answer to the shell, or show what the run waits on now.
+    fn pressed(
+        &mut self,
+        (answered, effects): (Answered, Vec<Effect>),
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.carry(effects, cx);
         let Some(page) = self.page.as_mut() else {
             return;
         };
-        let review = &mut page.review;
-        let (Some(span), Some(dir)) = (
-            review.read.as_ref().and_then(|read| read.span.clone()),
-            review.dir.clone(),
-        ) else {
-            return;
-        };
-        let generation = review.files.ask(span.clone());
-        cx.spawn(async move |view, cx| {
-            let read = cx
-                .background_executor()
-                .spawn(async move { marks::changes_blocking(&dir, &span.0, &span.1) })
-                .await;
-            let _ = view.update(cx, |view: &mut Self, cx| {
-                if let Some(page) = view.page.as_mut()
-                    && page
-                        .review
-                        .files
-                        .land(generation, read, onehand_core::issues::now())
-                {
-                    cx.notify();
-                }
-            });
-        })
-        .detach();
-    }
-
-    /// What the run of the block's issue waits for approval on now.
-    fn waits_now(&self) -> Option<UnderReview> {
-        let review = &self.page.as_ref()?.review;
-        let key = review.open.as_ref()?;
-        let work = self.works.iter().find(|work| work.key == *key)?;
-        (Some(&work.work.task) == review.task.as_ref())
-            .then(|| work.work.review.clone())
-            .flatten()
-    }
-
-    /// Whether the run still waits where the block read it. When it waits
-    /// somewhere else, the block reloads to what it waits on now and says
-    /// so; a run no longer waiting is said by the status line.
-    fn still_where_read(&mut self, cx: &mut Context<Self>) -> bool {
-        let now = self.waits_now();
-        let Some(page) = self.page.as_mut() else {
-            return false;
-        };
-        let review = &mut page.review;
-        let read = review.read.as_ref().map(|read| &read.at);
-        match now {
-            Some(now) if Some(&now.at) == read => true,
-            Some(now) => {
-                review.read = Some(now);
-                review.changed = true;
-                review.whole = false;
-                self.read_review_files(cx);
-                cx.notify();
-                false
+        match answered {
+            Answered::Sent(press) => {
+                page.review.note = None;
+                let event = match press {
+                    Press::Approve(approval) => IssuesEvent::ApproveTask(approval),
+                    Press::Revise { approval, note } => IssuesEvent::ReviseTask { approval, note },
+                };
+                self.tell_later(window, cx, move |_| event);
             }
-            None => {
-                review.changed = true;
-                cx.notify();
-                false
-            }
+            Answered::Reloaded => page.review.whole = false,
+            Answered::Refused => {}
         }
+        cx.notify();
     }
 
     /// *Continue*, on what was read.
     fn press_continue(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.still_where_read(cx) {
-            return;
-        }
-        let Some(page) = self.page.as_mut() else {
-            return;
-        };
-        let review = &mut page.review;
-        let (Some(task), Some(read)) = (review.task.clone(), review.read.clone()) else {
-            return;
-        };
-        review.sent = Some(Sent::Continue);
-        review.note = None;
-        cx.notify();
-        let approval = Approval { task, at: read.at };
-        self.tell_later(window, cx, move |_| IssuesEvent::ApproveTask(approval));
+        let answered = self.work.approve();
+        self.pressed(answered, window, cx);
     }
 
     /// *Revise…*: the note is written in the block.
@@ -260,34 +161,12 @@ impl IssuesView {
     /// button refuses it), and a run no longer waiting there keeps the note to
     /// send again once read.
     fn send_revise(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(page) = self.page.as_mut() else {
+        let Some(note) = self.page.as_ref().and_then(|page| page.review.note.clone()) else {
             return;
         };
-        let Some(note) = page.review.note.clone() else {
-            return;
-        };
-        let text = note.read(cx).value().trim().to_string();
-        if text.is_empty() {
-            return;
-        }
-        if !self.still_where_read(cx) {
-            return;
-        }
-        let Some(page) = self.page.as_mut() else {
-            return;
-        };
-        let review = &mut page.review;
-        let (Some(task), Some(read)) = (review.task.clone(), review.read.clone()) else {
-            return;
-        };
-        review.sent = Some(Sent::Revise);
-        review.note = None;
-        cx.notify();
-        let approval = Approval { task, at: read.at };
-        self.tell_later(window, cx, move |_| IssuesEvent::ReviseTask {
-            approval,
-            note: text,
-        });
+        let text = note.read(cx).value().to_string();
+        let answered = self.work.revise(&text);
+        self.pressed(answered, window, cx);
     }
 
     fn toggle_review(&mut self, flip: fn(&mut ReviewState), cx: &mut Context<Self>) {
@@ -306,14 +185,15 @@ impl IssuesView {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let page = self.page.as_ref()?;
-        let review = &page.review;
+        let look = &page.review;
+        let review = self.work.review()?;
         if !review.open_on(key) {
             return None;
         }
-        let read = review.read.as_ref()?;
+        let read = review.read()?;
         let muted = cx.theme().muted_foreground;
         let ink = status_ink(cx);
-        let full = page.full();
+        let full = page.full(&self.work);
         let work = work.map(|work| &work.work);
 
         let head = div()
@@ -345,13 +225,13 @@ impl IssuesView {
             .mt_3()
             .text_size(onehand_ui::tokens::CHROME_TEXT)
             .child(head);
-        if review.changed && review.sent.is_none() {
+        if review.changed() && review.sent().is_none() {
             block = block.child(div().text_color(ink.warning).child(ANSWER_CHANGED));
         }
 
         // The answer, its last lines until all of it is asked for.
         let total = read.answer.lines().count();
-        let (shown, left_out) = match review.whole {
+        let (shown, left_out) = match look.whole {
             true => (read.answer.as_str(), 0),
             false => last_lines(&read.answer, ANSWER_LINES),
         };
@@ -388,18 +268,18 @@ impl IssuesView {
         // What the step under review changed, drawn only when it changed
         // something; a plan that changed no file draws no files and no check.
         let files = review
-            .files
+            .files()
             .value
             .as_ref()
             .map(|(files, _)| files)
             .filter(|files| !files.is_empty());
-        if let (Some(files), Some(dir), Some(span)) = (files, &review.dir, &read.span) {
+        if let (Some(files), Some(dir), Some(span)) = (files, review.dir(), &read.span) {
             block = block.child(labelled(
                 "Changed",
                 files_view(&full, Side::Review, files, dir, Some(span.clone()), cx),
                 cx,
             ));
-        } else if let Some(why) = review.files.failed.as_deref() {
+        } else if let Some(why) = review.files().failed.as_deref() {
             block = block.child(labelled(
                 "Changed",
                 div()
@@ -418,7 +298,7 @@ impl IssuesView {
 
         // How the work will be judged, one click away.
         if let Some(acceptance) = section(&issue.body, "Acceptance") {
-            let open = review.acceptance;
+            let open = look.acceptance;
             block = block.child(
                 div()
                     .v_flex()
@@ -442,7 +322,7 @@ impl IssuesView {
             );
         }
 
-        block = block.child(answers(review, read, work, cut, total, cx));
+        block = block.child(answers(review, look, read, work, cut, total, cx));
         Some(block.into_any_element())
     }
 }
@@ -515,7 +395,8 @@ fn check_line(
 
 /// The answers, each with what it starts; once one is sent, what came of it.
 fn answers(
-    review: &ReviewState,
+    review: &Review,
+    look: &ReviewState,
     read: &UnderReview,
     work: Option<&Work>,
     cut: bool,
@@ -532,8 +413,8 @@ fn answers(
             // passed.*).
             None => format!("{}.", work.said),
         });
-    if review.sent.is_some() || (review.changed && moved_on.is_some()) {
-        let said = match (review.sent, moved_on) {
+    if review.sent().is_some() || (review.changed() && moved_on.is_some()) {
+        let said = match (review.sent(), moved_on) {
             (_, Some(moved)) => moved,
             (Some(Sent::Continue), None) => "Approved; sent to the run.".to_string(),
             (Some(Sent::Revise), None) => "Sent back; sent to the run.".to_string(),
@@ -541,7 +422,7 @@ fn answers(
         };
         return div().text_color(muted).child(said).into_any_element();
     }
-    if let Some(note) = &review.note {
+    if let Some(note) = &look.note {
         let empty = note.read(cx).value().trim().is_empty();
         return div()
             .v_flex()

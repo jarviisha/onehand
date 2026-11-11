@@ -14,9 +14,10 @@ use gpui::{
 use gpui_component::StyledExt;
 use gpui_component::input::InputState;
 use gpui_component::text::TextViewState;
-use onehand_core::connector::{Connector, PullRequest};
-use onehand_core::issues::{self, IssueKey, Issues, LocalIssue};
-use onehand_core::task::work::{IssueWork, Reading};
+use onehand_core::connector::Connector;
+use onehand_core::issues::{self, Issues, LocalIssue};
+use onehand_core::task::work::IssueWork;
+use onehand_core::task::work::drive::WorkDrive;
 use onehand_ui::{Confirm, confirm_on, hint, measure_width, status_ink, status_line};
 use onehand_workbench::{Ask, Request};
 use std::collections::HashMap;
@@ -67,10 +68,6 @@ const HISTORY_SHOWN: usize = 50;
 /// the rest are on the Tasks page, and the list says so.
 const EARLIER_SHOWN: usize = 5;
 
-/// How old what is read of an issue's pull request may be before the window
-/// coming back to the front reads it again.
-const READ_AGE: Duration = Duration::from_secs(60);
-
 pub(crate) struct IssuesView {
     root: Option<PathBuf>,
     /// The workspace's storage directory. `None` is a workspace bound to
@@ -116,17 +113,11 @@ pub(crate) struct IssuesView {
     /// The conversations with a live session in this window, by the agent's
     /// session id: an issue whose history names one of them is being worked.
     live: Vec<String>,
-    /// The work on every issue this window's projects keep that a task
-    /// works, as the app last told it.
-    works: Vec<IssueWork>,
-    /// The pull request of the work of the issue on screen, as last read.
-    pr: Reading<reads::PrAbout, Option<PullRequest>>,
-    /// The work moved since the pull request was last read.
-    moved: bool,
-    /// The window came back to the front since the issue was last drawn.
-    returned: bool,
-    /// The issue whose work was last drawn, so opening one reads it.
-    shown: Option<IssueKey>,
+    /// The work on every issue this window's projects keep, and what this
+    /// view reads of it and when: the issue on screen's pull request, on the
+    /// page every project's and what the work left, and the review it
+    /// answers.
+    work: WorkDrive,
     /// Watches the window coming back to the front, made on the first draw.
     _activation: Option<Subscription>,
     /// The projects a run may be started on.
@@ -206,11 +197,7 @@ impl IssuesView {
             ask,
             tell,
             live: Vec::new(),
-            works: Vec::new(),
-            pr: Reading::default(),
-            moved: false,
-            returned: false,
-            shown: None,
+            work: WorkDrive::new(connectors, page),
             _activation: None,
             offered: Vec::new(),
             _sync_every: cx.spawn(async move |view, cx| {
@@ -270,17 +257,8 @@ impl IssuesView {
         offered: &[PathBuf],
         cx: &mut Context<Self>,
     ) {
-        // Only the issue on screen moving reads its pull request again.
-        let shown = |all: &[IssueWork]| {
-            let root = self.root.as_deref()?;
-            let number = self.roots.get(root)?.selected?;
-            let key = self.key(root, number)?;
-            all.iter().find(|work| work.key == key).cloned()
-        };
-        if shown(&self.works) != shown(works) {
-            self.moved = true;
-        }
-        self.works = works.to_vec();
+        let shown = self.selected_key();
+        self.work.set_works(works, shown.as_ref());
         self.offered = offered.to_vec();
         cx.notify();
     }
@@ -417,7 +395,7 @@ impl IssuesView {
     /// asking, unless a run is still working on it, which closing does not
     /// stop: that is asked about first.
     fn confirm_close(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.work_active(number) {
+        if !self.closing_asks(number) {
             self.set_open(number, false, cx);
             return;
         }
@@ -533,7 +511,7 @@ impl Render for IssuesView {
         if self._activation.is_none() {
             self._activation = Some(cx.observe_window_activation(window, |view, window, cx| {
                 if window.is_window_active() {
-                    view.returned = true;
+                    view.work.returned();
                     cx.notify();
                 }
             }));
@@ -547,8 +525,7 @@ impl Render for IssuesView {
             });
         }
         let body = self.body(window, cx);
-        // Coming back to the front reads only what is on screen then.
-        self.returned = false;
+        self.work.drawn();
         div()
             .flex_1()
             .min_h_0()
@@ -624,24 +601,20 @@ impl IssuesView {
         let publishing = state.file.read(cx).publishing == Some(issue.number);
         let body = self.parsed_body(root, &issue, cx);
         let key = self.key(root, issue.number);
-        let work = key
-            .as_ref()
-            .and_then(|key| self.works.iter().find(|work| work.key == *key))
-            .cloned();
-        self.read_pr_if_due(root, work.as_ref(), cx);
-        self.read_left_if_due(work.as_ref(), cx);
+        let work = key.as_ref().and_then(|key| self.work.work_of(key)).cloned();
+        let effects = self.work.show(root, key.as_ref(), issues::now());
+        self.carry(effects, cx);
         let review = self.review_block(&issue, key.as_ref(), work.as_ref(), cx);
-        let reading =
-            self.pr.reading() || self.page.as_ref().is_some_and(|page| page.full.reading());
+        let reading = self.work.reading();
         let doing = Doing {
             publishing,
             reading,
             review,
-            full: self.page.as_ref().map(page::PageState::full),
+            full: self.page.as_ref().map(|page| page.full(&self.work)),
             session: issue.working_in(&self.live).map(str::to_string),
             offered: self.offered.iter().any(|offered| offered == root),
-            pr: self.pr_seen(work.as_ref()),
-            last: self.pr_value(work.as_ref()),
+            pr: self.work.pr_seen(work.as_ref()),
+            last: self.work.pr_value(work.as_ref()),
             templates,
             project: self
                 .page

@@ -390,6 +390,21 @@ impl FileDrive {
     }
 }
 
+/// Where a view's selection goes once a change it made lands as `done`,
+/// naming the issue it wrote: to that issue only for the newest change
+/// (`newest`), only while what is selected is what was selected when the
+/// change was made (`picked_then`, `picked_now`), and only with no form open,
+/// so an older write landing never takes the person back. `None` leaves it.
+pub fn moves_selection(
+    newest: bool,
+    done: Option<u64>,
+    picked_then: Option<u64>,
+    picked_now: Option<u64>,
+    form_open: bool,
+) -> Option<u64> {
+    done.filter(|_| newest && picked_now == picked_then && !form_open)
+}
+
 /// Read `path`, the forge serving `root` among `connectors`, and the project's
 /// templates: what [`Effect::Read`] does. Blocking.
 pub fn read_blocking(

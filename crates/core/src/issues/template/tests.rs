@@ -163,3 +163,35 @@ fn a_project_with_no_readable_template_keeps_the_shipped_three() {
     let own = from_file("---\nname: Story\n---\n## Why\n").unwrap();
     assert_eq!(own_or_shipped(vec![own.clone()]), vec![own]);
 }
+
+fn template(body: &str, labels: &[&str]) -> IssueTemplate {
+    IssueTemplate {
+        name: body.into(),
+        body: body.into(),
+        labels: labels.iter().map(|l| l.to_string()).collect(),
+    }
+}
+
+#[test]
+fn only_an_empty_body_or_an_untouched_template_is_filled() {
+    let all = [
+        template("bug body", &["bug"]),
+        template("feature body", &[]),
+    ];
+    assert!(fillable("  ", &all));
+    assert!(fillable("bug body", &all));
+    assert!(!fillable("bug body, and mine", &all));
+    assert_eq!(fill("typed", Vec::new(), &all[1], &all), None);
+}
+
+#[test]
+fn a_template_replaced_takes_its_labels_and_keeps_those_typed() {
+    let all = [
+        template("bug body", &["bug", "triage"]),
+        template("feature body", &["feature", "triage"]),
+    ];
+    let typed = vec!["bug".into(), "triage".into(), "ui".into()];
+    let (body, labels) = fill("bug body", typed, &all[1], &all).unwrap();
+    assert_eq!(body, "feature body");
+    assert_eq!(labels, ["triage", "ui", "feature"]);
+}

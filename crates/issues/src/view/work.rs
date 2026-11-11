@@ -371,9 +371,7 @@ fn more_menu(
     let view = cx.entity();
     let danger = status_ink(cx).danger;
     // Closing asks only while a run works on the issue, which it does not stop.
-    let asks = doing.work.as_ref().is_some_and(|work| {
-        work.work.active() || work.earlier.iter().any(|earlier| earlier.active)
-    });
+    let asks = doing.work.as_ref().is_some_and(|work| work.closing_asks());
     // What ⋯ holds and is still being read or done waits on ⋯ itself.
     let waits = doing
         .work
@@ -596,8 +594,7 @@ pub(super) fn left_view(doing: &Doing, cx: &mut Context<IssuesView>) -> Option<A
                                 })
                                 .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
                                     view.refresh(cx);
-                                    let work = view.shown_work();
-                                    view.refresh_left(work.as_ref(), cx);
+                                    view.refresh_left(cx);
                                 })),
                         )
                     }),

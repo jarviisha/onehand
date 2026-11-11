@@ -340,5 +340,36 @@ fn uncommented(text: &str) -> String {
     out
 }
 
+/// Whether a new issue's `body` may be filled from one of `templates`: it is
+/// empty, or a template's untouched. Nothing typed is ever replaced.
+pub fn fillable(body: &str, templates: &[IssueTemplate]) -> bool {
+    body.trim().is_empty() || templates.iter().any(|t| t.body == body)
+}
+
+/// A new issue's body and labels once `template` fills them, or `None` when
+/// the body is not [`fillable`]. The template being replaced takes its own
+/// labels with it (a body switched from Bug to Feature is no bug), and the
+/// new one's are added to those typed.
+pub fn fill(
+    body: &str,
+    labels: Vec<String>,
+    template: &IssueTemplate,
+    templates: &[IssueTemplate],
+) -> Option<(String, Vec<String>)> {
+    if !fillable(body, templates) {
+        return None;
+    }
+    let mut labels = labels;
+    if let Some(before) = templates.iter().find(|t| t.body == body) {
+        labels.retain(|label| !before.labels.contains(label) || template.labels.contains(label));
+    }
+    for label in &template.labels {
+        if !labels.contains(label) {
+            labels.push(label.clone());
+        }
+    }
+    Some((template.body.clone(), labels))
+}
+
 #[cfg(test)]
 mod tests;

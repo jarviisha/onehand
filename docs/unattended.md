@@ -105,7 +105,7 @@ background executor, one interval in the config, no cron expressions.
 | `crates/app/src/dialogs/issue.rs` | `pick_issue`, the list and the start form, and `issue_workflow_menu`, the workflow menu the picker and Settings share |
 | `crates/app/src/settings/pages.rs` | the default workflow and the workflow labels in Settings |
 | `crates/core/src/task/work.rs` | where an issue's work stands and its next action (`Work`, `issue_work`, `next_action`), and the generation rule for what is read of it (`Reading`) |
-| `crates/app/src/task/listing.rs` (`issue_works`) and `crates/issues/src/view/work.rs`, `view/reads.rs` | each issue's work, told to the Issues tab and the Issues page through `Request::IssueWork`, drawn there, and its pull request read |
+| `crates/app/src/task/listing.rs` (`issue_works`) and `crates/issues/src/view/work.rs`, `view/reads.rs` | each issue's work, told to the Issues tab and the Issues page through `Request::IssueWork`, drawn there, and its pull request read: when each read is due, and whether a review press goes to the run, is `onehand_core::task::work::drive::WorkDrive`'s |
 | `crates/core/src/task/work/list.rs` | the Issues page's list: its filters, what each row says, and how it is held still (`list`, `PrReads`, `Held`) |
 | `crates/core/src/task/work/left.rs` | what the work left, read off git for the page: the check against the work as it is, the files of the run and of the branch, the commits past where the task started |
 | `crates/issues/src/view/page.rs`, `view/page/prs.rs`, `view/full.rs` | the Issues page: its list, its pull request reads, one per project, and the issue in full |

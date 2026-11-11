@@ -9,7 +9,7 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputState, TextareaState};
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::issues::drive::Change;
-use onehand_core::issues::template::IssueTemplate;
+use onehand_core::issues::template::{self, IssueTemplate};
 use onehand_core::issues::{self, Draft};
 use onehand_ui::Quiet as _;
 use onehand_ui::Refuses as _;
@@ -128,23 +128,12 @@ impl IssuesView {
             return;
         };
         let body = form.body.read(cx).value().to_string();
-        if !fillable(&body, &templates) {
+        let typed = issues::parse_labels(&form.labels.read(cx).value());
+        let Some((body, labels)) = template::fill(&body, typed, &template, &templates) else {
             return;
-        }
-        let mut labels = issues::parse_labels(&form.labels.read(cx).value());
-        // The template being replaced takes its own labels with it: a body
-        // switched from Bug to Feature is no bug.
-        if let Some(before) = templates.iter().find(|t| t.body == body) {
-            labels
-                .retain(|label| !before.labels.contains(label) || template.labels.contains(label));
-        }
-        for label in template.labels {
-            if !labels.contains(&label) {
-                labels.push(label);
-            }
-        }
+        };
         form.body
-            .update(cx, |body, cx| body.set_value(template.body, window, cx));
+            .update(cx, |input, cx| input.set_value(body, window, cx));
         form.labels.update(cx, |input, cx| {
             input.set_value(labels.join(", "), window, cx)
         });
@@ -176,12 +165,6 @@ impl IssuesView {
     }
 }
 
-/// Whether a new issue's `body` may be filled from one of `templates`: it is
-/// empty, or a template's untouched.
-fn fillable(body: &str, templates: &[IssueTemplate]) -> bool {
-    body.trim().is_empty() || templates.iter().any(|t| t.body == body)
-}
-
 /// The templates a new issue can be started from, while its body is still
 /// fillable; a template fills in the body only, and adds no field.
 fn templates_row(
@@ -189,7 +172,7 @@ fn templates_row(
     templates: &[IssueTemplate],
     cx: &mut Context<IssuesView>,
 ) -> Option<AnyElement> {
-    if form.editing.is_some() || !fillable(&form.body.read(cx).value(), templates) {
+    if form.editing.is_some() || !template::fillable(&form.body.read(cx).value(), templates) {
         return None;
     }
     let muted = cx.theme().muted_foreground;

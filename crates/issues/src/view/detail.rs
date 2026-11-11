@@ -49,7 +49,7 @@ pub(super) struct Doing<'a> {
     pub(super) pr: PrSeen<'a>,
     /// The pull request as last read for this work, kept beside a failed
     /// read, and when it was read.
-    pub(super) last: Option<&'a super::reads::PrRead>,
+    pub(super) last: Option<&'a (Option<onehand_core::connector::PullRequest>, u64)>,
     /// On the Issues page, what the full form adds: the steps to come, and
     /// what the work left as read off git.
     pub(super) full: Option<super::full::Full<'a>>,

@@ -4,7 +4,7 @@
 
 use super::IssuesView;
 use gpui::Context;
-use onehand_core::issues::drive::{Change, Signal};
+use onehand_core::issues::drive::{Change, Signal, moves_selection};
 use std::path::Path;
 
 impl IssuesView {
@@ -108,12 +108,11 @@ impl IssuesView {
                         if asked.waited {
                             state.form = None;
                         }
-                        if newest
-                            && number.is_some()
-                            && state.selected == asked.picked
-                            && state.form.is_none()
+                        let open = state.form.is_some();
+                        if let Some(to) =
+                            moves_selection(newest, *number, asked.picked, state.selected, open)
                         {
-                            state.selected = *number;
+                            state.selected = Some(to);
                         }
                         self.status = None;
                     }
