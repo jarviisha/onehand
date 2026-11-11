@@ -120,7 +120,7 @@ impl Shell {
                 let idx = match shell.root_index(&root) {
                     Some(idx) => idx,
                     None if there => {
-                        let (idx, fx) = shell.window.workspace.keep_root(root.clone());
+                        let (idx, fx) = shell.window.workspace.keep_project(root.clone());
                         shell.carry_workspace(fx, window, cx);
                         idx
                     }

@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 /// One project a sweep reads: its folder, and the host it is on.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SweepRoot {
+pub struct SweepProject {
     pub path: PathBuf,
     pub host: Option<HostName>,
 }
@@ -58,7 +58,7 @@ impl WorkspaceDrive {
                 Some(_) if self.workspace.shares_local_path(root) => false,
                 Some(host) => attached(host),
             })
-            .map(|root| SweepRoot {
+            .map(|root| SweepProject {
                 path: root.path.clone(),
                 host: root.host.clone(),
             })

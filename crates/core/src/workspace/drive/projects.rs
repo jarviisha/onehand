@@ -18,14 +18,14 @@ impl WorkspaceDrive {
     /// it is one already: what the folder picker, a second launch and a
     /// worktree split off do.
     #[must_use = "its effects are to be carried"]
-    pub fn open_root(&mut self, dir: PathBuf) -> Vec<Effect> {
+    pub fn open_project(&mut self, dir: PathBuf) -> Vec<Effect> {
         self.workspace.add_root(dir);
         self.opened()
     }
 
-    /// [`Self::open_root`] for `path` on `host`.
+    /// [`Self::open_project`] for `path` on `host`.
     #[must_use = "its effects are to be carried"]
-    pub fn open_host_root(&mut self, host: HostName, path: PathBuf) -> Vec<Effect> {
+    pub fn open_host_project(&mut self, host: HostName, path: PathBuf) -> Vec<Effect> {
         self.workspace.add_host_root(host, path);
         self.opened()
     }
@@ -41,7 +41,7 @@ impl WorkspaceDrive {
     /// selected but not yet shown: added when the window does not have it.
     /// Answers its index.
     #[must_use = "its effects are to be carried"]
-    pub fn keep_root(&mut self, dir: PathBuf) -> (usize, Vec<Effect>) {
+    pub fn keep_project(&mut self, dir: PathBuf) -> (usize, Vec<Effect>) {
         if let Some(idx) = self.local_index(&dir) {
             return (idx, Vec::new());
         }
@@ -49,10 +49,10 @@ impl WorkspaceDrive {
         (idx, self.kept())
     }
 
-    /// [`Self::keep_root`], selecting nothing: a worktree cut for a task
+    /// [`Self::keep_project`], selecting nothing: a worktree cut for a task
     /// nobody here started must not move what the person has selected.
     #[must_use = "its effects are to be carried"]
-    pub fn keep_root_quietly(&mut self, dir: PathBuf) -> Vec<Effect> {
+    pub fn keep_project_quietly(&mut self, dir: PathBuf) -> Vec<Effect> {
         if self.local_index(&dir).is_some() {
             return Vec::new();
         }
@@ -98,14 +98,16 @@ impl WorkspaceDrive {
     }
 
     /// Say where the sessions of the project at `dir`, a folder here, run:
-    /// on `on`, offloaded, or here again with none. Written once things are
-    /// still, as the offload's other writes are.
+    /// on `on`, offloaded, or here again with none. The sessions it had close,
+    /// since they ran where it no longer does, and it is written once things
+    /// are still, as the offload's other writes are. `None` when `dir` is no
+    /// longer a project here: nothing moves.
     #[must_use = "its effects are to be carried"]
-    pub fn set_offload(&mut self, dir: &Path, on: Option<Offloaded>) -> Vec<Effect> {
-        let Some(idx) = self.local_index(dir) else {
-            return Vec::new();
-        };
+    pub fn set_offload(&mut self, dir: &Path, on: Option<Offloaded>) -> Option<Vec<Effect>> {
+        let idx = self.local_index(dir)?;
+        let mut fx = self.drop_sessions_in(dir);
         self.workspace.roots[idx].offload = on;
-        self.save_soon()
+        fx.extend(self.save_soon());
+        Some(fx)
     }
 }

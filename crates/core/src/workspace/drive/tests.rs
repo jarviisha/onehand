@@ -31,11 +31,13 @@ fn names(fx: &[Effect]) -> Vec<String> {
         .map(|effect| match effect {
             Effect::Close(uid) => format!("Close({uid})"),
             Effect::Forgot(gone) => format!("Forgot({})", gone.path.display()),
+            Effect::ForgotOffload(path) => format!("ForgotOffload({})", path.display()),
+            Effect::ForgotHere(path) => format!("ForgotHere({})", path.display()),
             Effect::Show => "Show".into(),
             Effect::Changed => "Changed".into(),
             Effect::Put(value) => format!("Put({value:?})"),
-            Effect::Write { .. } => "Write".into(),
-            Effect::WriteOnClose { .. } => "WriteOnClose".into(),
+            Effect::Write(_) => "Write".into(),
+            Effect::WriteOnClose(_) => "WriteOnClose".into(),
             Effect::Arm { .. } => "Arm".into(),
             Effect::Remember { name, .. } => format!("Remember({name})"),
             Effect::Sweep { roots, .. } => format!("Sweep({})", roots.len()),
@@ -59,7 +61,7 @@ fn armed(fx: &[Effect]) -> u64 {
 fn written(fx: Vec<Effect>) -> Pending<Thing, Value> {
     fx.into_iter()
         .find_map(|effect| match effect {
-            Effect::Write { pending, .. } => Some(pending),
+            Effect::Write(write) => Some(write.pending),
             _ => None,
         })
         .expect("a write")
@@ -132,7 +134,14 @@ fn a_run_project_goes_with_its_last_session() {
     let fx = drive.end(5, None);
     assert_eq!(
         names(&fx),
-        ["Close(5)", "Changed", "Forgot(/run)", "Changed", "Show"]
+        [
+            "Close(5)",
+            "Changed",
+            "ForgotHere(/run)",
+            "Forgot(/run)",
+            "Changed",
+            "Show"
+        ]
     );
     assert_eq!(drive.roots.len(), 1);
 }
@@ -174,10 +183,10 @@ fn a_run_project_ends_quietly_unless_it_was_selected() {
     drive.add_run_session(Path::new("/run"), spec(), 3);
     assert_eq!(
         names(&drive.end_run(Path::new("/run"))),
-        ["Close(3)", "Forgot(/run)", "Changed"]
+        ["Close(3)", "ForgotHere(/run)", "Forgot(/run)", "Changed"]
     );
     let idx = drive.add_run_session(Path::new("/run"), spec(), 4).unwrap();
-    drive.select_root(idx);
+    drive.select_project(idx);
     assert_eq!(
         names(&drive.end_run(Path::new("/run"))).last().unwrap(),
         "Show"
@@ -202,7 +211,16 @@ fn an_opened_session_that_never_opened_takes_only_its_own_project() {
     let mut drive = bound();
     drive.add_run_session(Path::new("/w"), spec(), 3);
     let fx = drive.drop_opened(3, Path::new("/w"), true, false);
-    assert_eq!(names(&fx), ["Close(3)", "Changed", "Forgot(/w)", "Changed"]);
+    assert_eq!(
+        names(&fx),
+        [
+            "Close(3)",
+            "Changed",
+            "ForgotHere(/w)",
+            "Forgot(/w)",
+            "Changed"
+        ]
+    );
 
     drive.add_session(Some(spec()), 4, None);
     let fx = drive.drop_opened(4, Path::new("/a"), false, true);
@@ -278,7 +296,7 @@ fn a_window_closing_writes_the_burst_still_waiting_and_only_that() {
     let mut drive = bound();
     assert!(drive.flush().is_none());
     drive.rename("one");
-    assert!(matches!(drive.flush(), Some(Effect::WriteOnClose { .. })));
+    assert!(matches!(drive.flush(), Some(Effect::WriteOnClose(_))));
     assert!(drive.flush().is_none());
 }
 
@@ -383,22 +401,22 @@ fn a_check_command_is_written_after_the_typing_and_blank_is_none() {
 #[test]
 fn a_folder_opened_is_selected_shown_swept_and_written() {
     let mut drive = bound();
-    let fx = drive.open_root("/b".into());
+    let fx = drive.open_project("/b".into());
     assert_eq!(names(&fx), ["Show", "Resweep", "Write", "Changed"]);
     assert_eq!(drive.active_root, 1);
-    drive.open_root("/b".into());
+    drive.open_project("/b".into());
     assert_eq!(drive.roots.len(), 2, "an open project is not doubled");
 }
 
 #[test]
 fn a_folder_kept_for_work_is_added_once() {
     let mut drive = bound();
-    let (idx, fx) = drive.keep_root("/wt".into());
+    let (idx, fx) = drive.keep_project("/wt".into());
     assert_eq!(names(&fx), ["Resweep", "Write", "Changed"]);
-    let (again, fx) = drive.keep_root("/wt".into());
+    let (again, fx) = drive.keep_project("/wt".into());
     assert_eq!((idx, fx.len()), (again, 0));
     tree(&mut drive).select_root(0);
-    drive.keep_root_quietly("/task".into());
+    drive.keep_project_quietly("/task".into());
     assert_eq!(drive.active_root, 0, "nothing selected");
 }
 
@@ -429,14 +447,15 @@ fn removing_asks_only_when_it_loses_something() {
 #[test]
 fn a_removal_lands_by_host_and_path() {
     let mut drive = bound();
-    drive.open_root("/b".into());
+    drive.open_project("/b".into());
     drive.add_session(Some(spec()), 1, None);
-    drive.open_host_root(HostName("box".into()), "/b".into());
+    drive.open_host_project(HostName("box".into()), "/b".into());
     let fx = drive.remove(None, Path::new("/b"));
     assert_eq!(
         names(&fx),
         [
             "Close(1)",
+            "ForgotHere(/b)",
             "Forgot(/b)",
             "Changed",
             "Removed(\"b\")",
@@ -461,9 +480,9 @@ fn a_removal_lands_by_host_and_path() {
 #[test]
 fn a_sweep_reads_what_it_can_and_keeps_only_the_newest_answer() {
     let mut drive = bound();
-    drive.open_host_root(HostName("box".into()), "/srv".into());
-    drive.open_host_root(HostName("off".into()), "/x".into());
-    drive.open_host_root(HostName("box".into()), "/a".into());
+    drive.open_host_project(HostName("box".into()), "/srv".into());
+    drive.open_host_project(HostName("off".into()), "/x".into());
+    drive.open_host_project(HostName("box".into()), "/a".into());
     let Effect::Sweep { token: old, roots } = drive.sweep(|host| host.0 == "box") else {
         panic!("a sweep");
     };
@@ -502,7 +521,7 @@ fn a_sweep_reads_what_it_can_and_keeps_only_the_newest_answer() {
 #[test]
 fn a_sweep_under_way_when_a_project_leaves_is_dropped() {
     let mut drive = bound();
-    drive.open_root("/b".into());
+    drive.open_project("/b".into());
     let Effect::Sweep { token, .. } = drive.sweep(|_| false) else {
         panic!("a sweep");
     };
@@ -526,7 +545,7 @@ fn a_sweep_under_way_when_a_project_leaves_is_dropped() {
 #[test]
 fn a_late_sweep_does_not_give_a_host_folder_the_local_one_s_status() {
     let mut drive = bound();
-    drive.open_host_root(HostName("box".into()), "/a".into());
+    drive.open_host_project(HostName("box".into()), "/a".into());
     let Effect::Sweep { token, roots } = drive.sweep(|_| true) else {
         panic!("a sweep");
     };
@@ -544,4 +563,34 @@ fn a_late_sweep_does_not_give_a_host_folder_the_local_one_s_status() {
         found: vec![("/a".into(), status)],
     });
     assert!(drive.git().is_empty());
+}
+
+/// What goes with a project depends on where it is: a host's folder leaves
+/// nothing filed under its path here, an offloaded one stops its code being
+/// checked for.
+#[test]
+fn what_goes_with_a_project_is_said_by_where_it_is() {
+    let mut drive = bound();
+    drive.open_host_project(HostName("box".into()), "/srv".into());
+    let fx = drive.forget(1);
+    assert_eq!(names(&fx), ["Forgot(/srv)", "Changed"]);
+    drive.open_project("/b".into());
+    drive.set_offload(
+        Path::new("/b"),
+        Some(crate::workspace::Offloaded {
+            host: HostName("box".into()),
+            mirror: "/m".into(),
+            branch: None,
+        }),
+    );
+    let fx = drive.forget(1);
+    assert_eq!(
+        names(&fx),
+        [
+            "ForgotOffload(/b)",
+            "ForgotHere(/b)",
+            "Forgot(/b)",
+            "Changed"
+        ]
+    );
 }

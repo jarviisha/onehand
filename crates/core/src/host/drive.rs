@@ -336,84 +336,80 @@ pub fn back_failure(
     }
 }
 
-/// Which of a window's waits on a host ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Waited {
-    /// The wait for a lost host to be back.
-    Back,
-    /// The wait for a busy host's sessions to finish, on another build.
-    Busy,
-}
-
-/// What a window does once one of its waits on a host ends, for the sessions
-/// that waited (`uids`), its page if that waited, and its form's *Add* if
-/// that waited.
+/// One thing a window does once one of its waits on a host ends.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Landed {
-    /// Each session restarted, `after_service` when the host's service has
-    /// just been restarted onto this build, said when `told`; the page lists
-    /// again when `list`; the form's *Add* carries on when `add`.
-    Restart {
-        uids: Vec<u64>,
-        after_service: bool,
-        told: bool,
-        list: bool,
-        add: bool,
-    },
-    /// Each session ends as a lost agent does, on `why`; the page says so
-    /// when `page`; the form fails on `why` when `add`.
-    Ended {
-        waited: Waited,
-        uids: Vec<u64>,
-        why: String,
-        page: bool,
-        add: bool,
-    },
+pub enum Landing {
+    /// Restart session `uid`, `after_service` when the host's service has
+    /// just been restarted onto this build, which is then said.
+    Restart { uid: u64, after_service: bool },
+    /// List the project page's host sessions again.
+    List,
+    /// Carry on with the form's *Add*.
+    Add,
+    /// Session `uid`, waiting for its host to be back, ends as a lost agent
+    /// does, on `why`.
+    BackFailed { uid: u64, why: String },
+    /// Session `uid`, waiting on its host's busy sessions, ends as a lost
+    /// agent does, on `why`.
+    WaitFailed { uid: u64, why: String },
+    /// The page waiting for its host to be back says it is out of reach.
+    PageUnreached(String),
+    /// The page waiting on its host's busy sessions says the wait failed.
+    PageFailed,
+    /// The form waiting on its host fails on `why`.
+    AddFailed(String),
 }
 
-/// What a window's wait for lost `host` to be back comes to, given how it
-/// ended ([`back_failure`]'s answer): what waited restarts quietly, as the
-/// host simply being back is no news, and the page lists again only if it
-/// waited.
-pub fn back_landed(uids: Vec<u64>, page: bool, failed: Option<String>) -> Landed {
+/// What a window's wait for lost `host` to be back comes to, for the sessions
+/// that waited and its page if it waited, given how it ended ([`back_failure`]'s
+/// answer): what waited restarts quietly, as the host simply being back is no
+/// news, and the page lists again only if it waited.
+pub fn back_landed(uids: Vec<u64>, page: bool, failed: Option<String>) -> Vec<Landing> {
     match failed {
-        None => Landed::Restart {
-            uids,
-            after_service: false,
-            told: false,
-            list: page,
-            add: false,
-        },
-        Some(why) => Landed::Ended {
-            waited: Waited::Back,
-            uids,
-            why,
-            page,
-            add: false,
-        },
+        None => uids
+            .into_iter()
+            .map(|uid| Landing::Restart {
+                uid,
+                after_service: false,
+            })
+            .chain(page.then_some(Landing::List))
+            .collect(),
+        Some(why) => uids
+            .into_iter()
+            .map(|uid| Landing::BackFailed {
+                uid,
+                why: why.clone(),
+            })
+            .chain(page.then(|| Landing::PageUnreached(why.clone())))
+            .collect(),
     }
 }
 
-/// What a window's wait on a busy host's sessions comes to, given how it
-/// ended: what waited restarts onto the restarted service, each said, and
+/// What a window's wait on a busy host's sessions comes to, for the sessions
+/// that waited, its page if it waited and its form if that waited, given how
+/// it ended: what waited restarts onto the restarted service, each said, and
 /// the page lists whatever waited, since its sessions are what the wait
-/// changed; the form's *Add* carries on when it waited.
-pub fn idle_landed(uids: Vec<u64>, page: bool, add: bool, end: WaitEnd) -> Landed {
+/// changed; the form's *Add* carries on.
+pub fn idle_landed(uids: Vec<u64>, page: bool, add: bool, end: WaitEnd) -> Vec<Landing> {
     match end {
-        Ok(()) => Landed::Restart {
-            uids,
-            after_service: true,
-            told: true,
-            list: true,
-            add,
-        },
-        Err(why) => Landed::Ended {
-            waited: Waited::Busy,
-            uids,
-            why,
-            page,
-            add,
-        },
+        Ok(()) => uids
+            .into_iter()
+            .map(|uid| Landing::Restart {
+                uid,
+                after_service: true,
+            })
+            .chain([Landing::List])
+            .chain(add.then_some(Landing::Add))
+            .collect(),
+        Err(why) => uids
+            .into_iter()
+            .map(|uid| Landing::WaitFailed {
+                uid,
+                why: why.clone(),
+            })
+            .chain(page.then_some(Landing::PageFailed))
+            .chain(add.then(|| Landing::AddFailed(why.clone())))
+            .collect(),
     }
 }
 

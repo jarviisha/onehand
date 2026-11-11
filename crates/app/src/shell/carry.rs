@@ -6,7 +6,8 @@ use super::Shell;
 use crate::state::Shared;
 use gpui::{Context, Window};
 use gpui_component::WindowExt as _;
-use onehand_core::workspace::drive::{Effect, Forgotten, Input, Refusal, Signal, Value};
+use onehand_core::workspace::drive::{Effect, FileWrite, Forgotten, Input, Refusal, Signal, Value};
+use std::path::PathBuf;
 
 impl Shell {
     /// Carry out `fx`, in order.
@@ -19,6 +20,8 @@ impl Shell {
         for effect in fx {
             match effect {
                 Effect::Close(uid) => self.let_go_of(uid, cx),
+                Effect::ForgotOffload(path) => crate::offload::forget(cx, &path),
+                Effect::ForgotHere(path) => self.forgot_here(path, cx),
                 Effect::Forgot(gone) => self.forgot(gone, cx),
                 Effect::Show => self.show_active_session(window, cx),
                 Effect::Changed => {
@@ -30,11 +33,12 @@ impl Shell {
                     crate::unattended::check_now(self.project_for_runs(&path), cx)
                 }
                 Effect::Put(value) => self.put_back(value, window, cx),
-                Effect::Write {
-                    pending,
-                    mut config,
-                    dir,
-                } => {
+                Effect::Write(write) => {
+                    let FileWrite {
+                        pending,
+                        mut config,
+                        dir,
+                    } = *write;
                     config.layout = self.dock_layout(cx);
                     let written = Shared::global(cx)
                         .writer
@@ -51,11 +55,7 @@ impl Shell {
                     })
                     .detach();
                 }
-                Effect::WriteOnClose {
-                    pending,
-                    config,
-                    dir,
-                } => self.write_on_close(pending, config, dir, cx),
+                Effect::WriteOnClose(write) => self.write_on_close(*write, cx),
                 Effect::Arm { token, after } => self.arm(token, after, cx),
                 Effect::Sweep { token, roots } => self.sweep_git(token, roots, cx),
                 Effect::Resweep => self.refresh_git(cx),
@@ -91,17 +91,15 @@ impl Shell {
                 Effect::Arm { token, after } => self.arm(token, after, cx),
                 Effect::Sweep { token, roots } => self.sweep_git(token, roots, cx),
                 Effect::GitRead => self.git_read(cx),
-                Effect::WriteOnClose {
-                    pending,
-                    config,
-                    dir,
-                } => self.write_on_close(pending, config, dir, cx),
+                Effect::WriteOnClose(write) => self.write_on_close(*write, cx),
                 effect @ (Effect::Close(_)
+                | Effect::ForgotOffload(_)
+                | Effect::ForgotHere(_)
                 | Effect::Forgot(_)
                 | Effect::Show
                 | Effect::Changed
                 | Effect::Put(_)
-                | Effect::Write { .. }
+                | Effect::Write(_)
                 | Effect::LookForRuns(_)
                 | Effect::Resweep
                 | Effect::Remember { .. }
@@ -145,42 +143,31 @@ impl Shell {
         self.tab_cycle = None;
     }
 
-    /// Let go of everything the window keeps for a project that has left.
+    /// Let go of what every project has, one that has left.
     fn forgot(&mut self, gone: Forgotten, cx: &mut Context<Self>) {
-        let Forgotten {
-            path,
-            host,
-            offloaded,
-        } = gone;
-        // Its code is no longer checked for here; offloaded again, it comes
-        // back as any does.
-        if offloaded {
-            crate::offload::forget(cx, &path);
-        }
-        // The editor's buffers, the tree and the shells go with a host's
-        // folder too, or they come back under a later project on the same path.
+        let Forgotten { path, host } = gone;
         let on_host = host.is_some();
         self.workbench
             .update(cx, |panel, cx| panel.forget_root(&path, on_host, cx));
         self.terminal
             .update(cx, |panel, cx| panel.forget_root(&path, host, cx));
-        // A folder on a host was never given the rest, and what is filed
-        // under its path belongs to a folder of the same path here.
-        if !on_host {
-            self.issues_page.forget_root(&path, cx);
-            // Its field goes with it: kept, the same folder added back found the
-            // old command in a field its project no longer had.
-            self.check_inputs.remove(&path);
-            self.terminal_homes.forget(&path);
-            // A form about it goes too: left up, it would run git on a folder
-            // that is no longer a project here.
-            self.worktree_draft.take_if(|draft| draft.root == path);
-            self.branch_draft.take_if(|draft| draft.root == path);
-        }
         self.mru.remove(&path);
         self.folds.remove(&path);
         // A cycle's frozen order can name sessions that no longer exist.
         self.tab_cycle = None;
+    }
+
+    /// Let go of what is filed under the path of a folder here that left.
+    fn forgot_here(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        self.issues_page.forget_root(&path, cx);
+        // Its field goes with it: kept, the same folder added back found the
+        // old command in a field its project no longer had.
+        self.check_inputs.remove(&path);
+        self.terminal_homes.forget(&path);
+        // A form about it goes too: left up, it would run git on a folder
+        // that is no longer a project here.
+        self.worktree_draft.take_if(|draft| draft.root == path);
+        self.branch_draft.take_if(|draft| draft.root == path);
     }
 
     /// Put a value whose write failed back on screen.

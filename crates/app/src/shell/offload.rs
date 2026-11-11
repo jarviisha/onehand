@@ -226,11 +226,6 @@ impl Shell {
             return;
         }
         self.offload_draft = None;
-        if self.window.workspace.local_index(&path).is_none() {
-            return;
-        }
-        let fx = self.window.workspace.drop_sessions_in(&path);
-        self.carry_workspace(fx, window, cx);
         let branch = match &kept {
             Kept::Branch(branch) => Some(branch.clone()),
             Kept::Mirror(_) => None,
@@ -240,7 +235,9 @@ impl Shell {
             mirror: mirror.clone(),
             branch,
         };
-        let fx = self.window.workspace.set_offload(&path, Some(on));
+        let Some(fx) = self.window.workspace.set_offload(&path, Some(on)) else {
+            return;
+        };
         self.carry_workspace(fx, window, cx);
         match kept {
             Kept::Mirror(state) => offload::track(cx, path, host, Some(state)),
@@ -278,9 +275,11 @@ impl Shell {
             window.push_notification(crate::toast::warning(why), cx);
             return;
         }
-        let fx = self.window.workspace.drop_sessions_in(&path);
-        self.carry_workspace(fx, window, cx);
-        let fx = self.window.workspace.set_offload(&path, None);
+        let fx = self
+            .window
+            .workspace
+            .set_offload(&path, None)
+            .unwrap_or_default();
         self.carry_workspace(fx, window, cx);
         offload::forget(cx, &path);
         self.show_active_session(window, cx);

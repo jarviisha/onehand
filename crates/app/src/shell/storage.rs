@@ -33,14 +33,14 @@ impl Shell {
     /// window does last. Its answer goes back to the drive.
     pub(super) fn write_on_close(
         &mut self,
-        pending: onehand_core::saving::Pending<
-            onehand_core::workspace::drive::Thing,
-            onehand_core::workspace::drive::Value,
-        >,
-        mut config: Box<onehand_core::config::WorkspaceConfig>,
-        dir: PathBuf,
+        write: onehand_core::workspace::drive::FileWrite,
         cx: &mut Context<Self>,
     ) {
+        let onehand_core::workspace::drive::FileWrite {
+            pending,
+            mut config,
+            dir,
+        } = write;
         config.layout = self.dock_layout(cx);
         let result = Shared::global(cx).writer.write_within(
             move || config.save_to(&dir).map_err(|why| why.to_string()),

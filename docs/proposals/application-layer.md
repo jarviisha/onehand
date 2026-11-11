@@ -317,7 +317,7 @@ Left for later:
 
 **Phase 8: the workspace, then issues.** Two PRs (D29). The first, the workspace, is built:
 - Each window's workspace is `WorkspaceDrive` (`onehand_core::workspace::drive`, split along its
-  seams: `sessions.rs`, `roots.rs`, `git.rs`), one drive for the lifecycle and the edits, since a
+  seams: `sessions.rs`, `projects.rs`, `git.rs`), one drive for the lifecycle and the edits, since a
   session lives inside its project (D26), held per window on the `Shell` (D27). It derefs to the
   tree; the tree's mutators are `pub(crate)`. Its carrier is `crates/app/src/shell/carry.rs`.
 - The session lifecycle: where a session is added (refused with no agent or no project, beside a
@@ -349,12 +349,14 @@ Left for later:
 - `HostFlow` keeps each window's share of a host's waits; `hosts::attach_waiting` stays `HostDrive`'s
   carrier, as it serves the terminal dock, the Workbench and the folder list, never a session.
 - The pane still holds what a session starts on until it is shown (`pending_resume`,
-  `pending_watch`, `pending_fork`) and maps a start to its opening; the decisions in them are core's.
+  `pending_watch`, `pending_fork`), and which of them goes first (a fork, a watch, a resume) is
+  still decided in `ChatPane::show`; how a start opens (`Start::opening`), how it begins on a host
+  and the prompts it carries (`host_begin`) are core's.
 - The recents list (`Shared.recents`) is touched, named and forgotten by the shell's storage code.
 - A second launch picks the front window and waits for the first in the carrier
   (`crates/app/src/instance.rs`); the folder it opens goes through the drive.
 - `shell/cleanup.rs` (*Remove worktree…*) is a task's, not the workspace's: its rule is
-  `removal::judge`, and a window closing while it runs loses `worktree_removed` (an issue owed).
+  `removal::judge`, and a window closing while it runs loses `worktree_removed` (#319).
 - The panels' layout is view state the front end keeps in the workspace file (`layout_mut`).
 - *End on <host>* (`shell/host_end.rs`) still runs its attach and the host's end in the shell,
   closing the session watching first through the drive; what a failed attach reads as is core's

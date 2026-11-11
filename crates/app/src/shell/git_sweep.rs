@@ -5,7 +5,7 @@
 use super::Shell;
 use gpui::{Context, SharedString};
 use onehand_core::disk::Disk;
-use onehand_core::workspace::drive::{Input, SweepRoot};
+use onehand_core::workspace::drive::{Input, SweepProject};
 use std::path::PathBuf;
 
 impl Shell {
@@ -57,7 +57,12 @@ impl Shell {
     /// tokio wrapper: tokio's process driver is not running under GPUI, so
     /// the async path would panic looking for a reactor. A host's status is
     /// asked over its attach in the same pass, blocking there likewise.
-    pub(super) fn sweep_git(&mut self, token: u64, roots: Vec<SweepRoot>, cx: &mut Context<Self>) {
+    pub(super) fn sweep_git(
+        &mut self,
+        token: u64,
+        roots: Vec<SweepProject>,
+        cx: &mut Context<Self>,
+    ) {
         let read: Vec<(PathBuf, Disk)> = roots
             .into_iter()
             .filter_map(|root| {

@@ -298,7 +298,7 @@ impl Shell {
             let _ = shell.update_in(cx, |shell: &mut Self, window, cx| match made {
                 Ok((dir, branch, forge)) => {
                     shell.workflow_launcher = None;
-                    let (_, fx) = shell.window.workspace.keep_root(dir.clone());
+                    let (_, fx) = shell.window.workspace.keep_project(dir.clone());
                     shell.carry_workspace(fx, window, cx);
                     let launch = launch.on_worktree(dir, branch, forge);
                     shell.start_launch(launch, window, cx);
@@ -345,7 +345,10 @@ impl Shell {
         // launcher's is: kept, listed, and there to come back to; but not
         // selected, as nothing the person is looking at moves for a task
         // they did not start.
-        let fx = self.window.workspace.keep_root_quietly(setup.dir.clone());
+        let fx = self
+            .window
+            .workspace
+            .keep_project_quietly(setup.dir.clone());
         self.carry_workspace(fx, window, cx);
         let (origin, grant) = given;
         let task = Task {
@@ -424,7 +427,7 @@ impl Shell {
                 started
             }
             false => {
-                let (idx, fx) = self.window.workspace.keep_root(dir);
+                let (idx, fx) = self.window.workspace.keep_project(dir);
                 self.carry_workspace(fx, window, cx);
                 self.select_root(idx, window, cx);
                 let agent = start.run.setup.agent.clone().map(SharedString::from);
