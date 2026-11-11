@@ -18,27 +18,16 @@ use gpui_component::input::TextareaState;
 use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::task::Approval;
-use onehand_core::task::work::{ANSWER_CHANGED, UnderReview};
+use onehand_core::task::work::{ANSWER_CHANGED, UnderReview, Waits};
 use std::cell::Cell;
 use std::rc::Rc;
 
-/// Where the run waits now, against where a press was drawn from.
-enum Waits {
-    /// Where the press was read.
-    There,
-    /// At another answer, which the press did not read.
-    Elsewhere(Box<UnderReview>),
-    /// On nobody.
-    Nowhere,
-}
-
 /// Where the run `approval` was read from waits now.
 fn waits(approval: &Approval, cx: &App) -> Waits {
-    match crate::task::review_of(&approval.task, cx) {
-        Some(now) if now.at == approval.at => Waits::There,
-        Some(now) => Waits::Elsewhere(Box::new(now)),
-        None => Waits::Nowhere,
-    }
+    Waits::of(
+        Some(&approval.at),
+        crate::task::review_of(&approval.task, cx),
+    )
 }
 
 /// *Continue* on what was read, as `approval` names it: approved when the run

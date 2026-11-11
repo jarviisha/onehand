@@ -21,7 +21,7 @@
 
 use super::left::Left;
 use super::list::{PrReads, READ_AGE};
-use super::{IssueWork, Reading, UnderReview, Work};
+use super::{IssueWork, Reading, UnderReview, Waits, Work};
 use crate::connector::{self, Connector, PullRequest, PullRequests};
 use crate::issues::{self, IssueKey};
 use crate::task::marks::Change;
@@ -610,16 +610,16 @@ impl WorkDrive {
         };
         let review = &mut page.review;
         let read = review.read.as_ref().map(|read| &read.at);
-        match now {
-            Some(now) if Some(&now.at) == read => {}
+        match Waits::of(read, now) {
+            Waits::There => {}
             // It waits somewhere else: the block shows that, and says so.
-            Some(now) => {
-                review.read = Some(now);
+            Waits::Elsewhere(now) => {
+                review.read = Some(*now);
                 review.changed = true;
                 let effects = read_review_files(review).into_iter().collect();
                 return (Answered::Reloaded, effects);
             }
-            None => {
+            Waits::Nowhere => {
                 review.changed = true;
                 return (Answered::Refused, Vec::new());
             }

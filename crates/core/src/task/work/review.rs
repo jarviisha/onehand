@@ -53,6 +53,29 @@ pub enum Checked {
 /// What a press the run no longer waits for says, where the reader is.
 pub const ANSWER_CHANGED: &str = "The answer changed since you opened it.";
 
+/// Where a run waits now, against where a press on it was read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Waits {
+    /// Where the press was read: the press may go.
+    There,
+    /// At an answer the press did not read: what it waits on now is to be
+    /// read first, rather than answered unread.
+    Elsewhere(Box<UnderReview>),
+    /// On nobody: the press goes nowhere.
+    Nowhere,
+}
+
+impl Waits {
+    /// Where a run waiting on `now` stands for a press read at `read`.
+    pub fn of(read: Option<&ApprovalAt>, now: Option<UnderReview>) -> Self {
+        match now {
+            Some(now) if Some(&now.at) == read => Self::There,
+            Some(now) => Self::Elsewhere(Box::new(now)),
+            None => Self::Nowhere,
+        }
+    }
+}
+
 impl UnderReview {
     /// What `run` waits for approval on, if it does.
     pub fn of(run: &Run) -> Option<Self> {
