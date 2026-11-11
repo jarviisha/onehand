@@ -30,7 +30,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 pub(crate) use onehand_core::host::drive::{HostState, WaitEnd};
-pub(crate) use onehand_core::host::{HostFailure, waiting_line};
+pub(crate) use onehand_core::host::{AfterAttach, HostFailure, waiting_line};
 
 type Attempt = future::Shared<LocalBoxFuture<'static, Result<HostConn, HostFailure>>>;
 
@@ -287,20 +287,16 @@ pub(crate) async fn attach_waiting(
     loop {
         match cx.update(|cx| conn(cx, host)).await {
             Ok(conn) => return Ok(conn),
-            Err(HostFailure::Busy {
-                host: on,
-                busy,
-                terms,
-            }) => {
-                waiting(waiting_line(&on, busy.len(), terms), cx);
-                // None: an attach landed since, which the next turn takes.
-                if let Some(idle) = cx.update(|cx| idle(cx, host)) {
-                    idle.await?;
+            Err(failure) => match failure.after_attach() {
+                AfterAttach::Wait(line) => {
+                    waiting(line, cx);
+                    // None: an attach landed since, which the next turn takes.
+                    if let Some(idle) = cx.update(|cx| idle(cx, host)) {
+                        idle.await?;
+                    }
                 }
-            }
-            Err(HostFailure::Other(why) | HostFailure::Refused(why) | HostFailure::Taken(why)) => {
-                return Err(why);
-            }
+                AfterAttach::Failed(why) => return Err(why),
+            },
         }
     }
 }

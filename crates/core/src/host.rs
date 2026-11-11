@@ -17,4 +17,4 @@ pub mod sshconf;
 pub mod wire;
 
 pub(crate) use failure::taken_line;
-pub use failure::{waiting_line, HostFailure};
+pub use failure::{waiting_line, AfterAttach, HostFailure};
