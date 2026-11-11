@@ -7,7 +7,7 @@
 
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Global, SharedString, Window};
 use onehand_core::task::tasks::link::Seen;
-use onehand_core::task::tasks::{Begin, Effect, Start, TasksDrive};
+use onehand_core::task::tasks::{Begin, Effect, Retry, Start, TasksDrive};
 use onehand_core::task::work::UnderReview;
 use onehand_core::task::{Task, Working, files};
 use onehand_core::unattended::drive::UnattendedDrive;
@@ -27,7 +27,7 @@ pub(crate) use listing::*;
 pub(crate) use onehand_core::task::tasks::Placed;
 #[cfg(test)]
 pub(crate) use place::submit_told;
-pub(crate) use place::{not_started, request, start_off_screen, submit};
+pub(crate) use place::{not_started, start_off_screen, submit};
 
 /// Every task in this process and what each is doing.
 pub(crate) struct Tasks {
@@ -43,9 +43,9 @@ pub(crate) struct Tasks {
     draining: HashMap<String, place::Drain>,
     /// Whoever asked to be told where a task's request landed.
     told: HashMap<String, futures::channel::oneshot::Sender<Placed>>,
-    /// What a person pressed on each task that is still being read or done,
-    /// so the button waits wherever the task is drawn.
-    acting: HashMap<String, onehand_core::task::work::Act>,
+    /// What each task's review was read as, kept for the question its
+    /// answer asks.
+    reviews: HashMap<String, onehand_core::unattended::review::ReviewRead>,
     /// How many commands, a check's or a step's, have not exited yet.
     commands: Arc<AtomicUsize>,
     writer: files::Writer,
@@ -76,7 +76,7 @@ impl Tasks {
             live: HashMap::new(),
             draining: HashMap::new(),
             told: HashMap::new(),
-            acting: HashMap::new(),
+            reviews: HashMap::new(),
             commands: Arc::default(),
             writer: files::Writer::spawn(dir),
         }
@@ -289,12 +289,6 @@ pub(crate) fn dismiss(id: &str, window: &mut Window, cx: &mut App) {
     with_drive(cx, |d| ((), d.dismiss(id, handle)));
 }
 
-/// Task `id`'s worktree and branch were removed: kept with the task, so
-/// nothing offers to remove them again.
-pub(crate) fn worktree_removed(id: &str, cx: &mut App) {
-    with_drive(cx, |d| ((), d.worktree_removed(id)));
-}
-
 /// Where the run on session `uid` stands, as its strip draws it.
 pub(crate) struct Shown {
     pub(crate) task: SharedString,
@@ -362,23 +356,31 @@ pub(crate) fn each<R>(cx: &App, look: impl Fn(&Task, bool) -> Option<R>) -> Vec<
 /// included, so its button waits.
 pub(crate) fn pressed(id: &str, cx: &App) -> Option<onehand_core::task::work::Act> {
     let t = cx.try_global::<Tasks>()?;
-    t.acting.get(id).copied().or_else(|| {
+    t.drive.acting(id).or_else(|| {
         t.stopping(id)
             .then_some(onehand_core::task::work::Act::Stop)
     })
 }
 
-/// Say that `act`, pressed on task `id`, is being done, or with `None` that
-/// it is over.
-pub(crate) fn set_acting(id: &str, act: Option<onehand_core::task::work::Act>, cx: &mut App) {
-    if !cx.has_global::<Tasks>() {
-        return;
-    }
-    cx.update_global::<Tasks, _>(|t, _| match act {
-        Some(act) => t.acting.insert(id.to_string(), act),
-        None => t.acting.remove(id),
-    });
-    cx.refresh_windows();
+/// *Answer the pull request review* pressed on task `id` in `window`.
+pub(crate) fn answer_review(id: &str, window: AnyWindowHandle, cx: &mut App) {
+    with_drive(cx, |d| ((), d.answer_review(id, window)));
+}
+
+/// What task `id`'s review was read as, taken for the question its answer
+/// asks.
+pub(crate) fn take_review(
+    id: &str,
+    cx: &mut App,
+) -> Option<onehand_core::unattended::review::ReviewRead> {
+    cx.try_global::<Tasks>()?;
+    cx.update_global::<Tasks, _>(|t, _| t.reviews.remove(id))
+}
+
+/// *Remove worktree…* pressed on task `id` in `window`, or, `confirmed`, the
+/// person's yes to it.
+pub(crate) fn remove_worktree(id: &str, confirmed: bool, window: AnyWindowHandle, cx: &mut App) {
+    with_drive(cx, |d| ((), d.remove_worktree(id, confirmed, window)));
 }
 
 /// Task `id` as it is kept.
@@ -420,41 +422,44 @@ pub(crate) fn stop_task(id: &str, cx: &mut App) {
 }
 
 /// Give task `id` a new run of `template`, from step `from` when that is
-/// earlier than where it would start, kept but not started: the caller asks
-/// for its place, carrying `note` as a revision. Whether there was one to give.
+/// earlier than where it would start, and ask for its place from `window`.
 pub(crate) fn retry(
     id: &str,
     template: Template,
     from: Option<&str>,
-    note: Option<String>,
+    window: AnyWindowHandle,
     cx: &mut App,
-) -> bool {
+) {
     let run = onehand_core::task::new_id();
-    with_drive(cx, |d| d.retry(id, run, template, from, note)).unwrap_or(false)
+    with_drive(cx, |d| {
+        ((), d.retry(id, run, template, from, None, window).1)
+    });
 }
 
-/// Retry task `id` at once when it is a check, which has one step and keeps
-/// nothing: whether it was retried, or `None` for a task a person retries
-/// through what the retry would keep.
-pub(crate) fn retry_at_once(id: &str, cx: &mut App) -> Option<bool> {
+/// A Retry pressed on task `id` in `window`: dealt with at once, or to be
+/// asked about first.
+pub(crate) fn retry_asked(id: &str, window: AnyWindowHandle, cx: &mut App) -> Retry {
     let run = onehand_core::task::new_id();
-    with_drive(cx, |d| match d.retry_at_once(id, run) {
-        Some((made, fx)) => (Some(made), fx),
-        None => (None, Vec::new()),
-    })
-    .flatten()
+    with_drive(cx, |d| d.retry_asked(id, run, window)).unwrap_or(Retry::AtOnce)
 }
 
 /// Give task `id` a new run with what Settings say now, as `plan` worked it
-/// out, kept but not started: the caller asks for its place. Whether there
-/// was one to give.
+/// out, and ask for its place from `window`.
 pub(crate) fn retry_with(
     id: &str,
     plan: onehand_core::workflow::WithCurrent,
+    window: AnyWindowHandle,
     cx: &mut App,
-) -> bool {
+) {
     let run = onehand_core::task::new_id();
-    with_drive(cx, |d| d.retry_with(id, run, plan)).unwrap_or(false)
+    with_drive(cx, |d| ((), d.retry_with(id, run, plan, window)));
+}
+
+/// A Resume pressed on task `id` in `window`: refused as its preflight says,
+/// or asking for its place.
+pub(crate) fn resume(id: &str, window: AnyWindowHandle, cx: &mut App) {
+    let refused = task(id, cx).and_then(|task| resume_refused(&task, cx));
+    with_drive(cx, |d| ((), d.resume(id, refused, window)));
 }
 
 /// Begin task `id`, whose place it now holds, its work's folder being there

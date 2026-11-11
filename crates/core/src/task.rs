@@ -18,7 +18,7 @@ pub mod queue;
 pub mod tasks;
 pub mod work;
 
-pub use launch::{on_agent, Launch, Starting};
+pub use launch::{cut_blocking, on_agent, Launch, Starting, Worktree};
 
 use crate::unattended::IssueSource;
 use crate::workflow::{

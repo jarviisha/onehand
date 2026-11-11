@@ -202,7 +202,9 @@ signals another's inputs, is behaviour too. So it is a GUI-free module of core t
 real drives on both sides, as `task::drive::link` joins a run and its session,
 `task::tasks::link` a run and its task, and `unattended::link` unattended runs and the tasks (every
 start held to the cap, a task started off screen among them, a claim kept as a task, what a run
-tells unattended runs, a run's end telling its issue). A drive that reads
+tells unattended runs, a run's end telling its issue, and the workflows a setting puts in force,
+`unattended::link::shown`). A start off screen's project is kept in its window's workspace by
+`task::tasks::link::keep`, which the window lends its `WorkspaceDrive` for. A drive that reads
 the tasks reads them with the runs under way through `task::tasks::link::Seen`, which says what
 each task is doing and who holds a slot. Which of a session's signals checks an offloaded
 project's code is `OffloadDrive::session_said`'s, and how a host stands, the offload poll is
@@ -239,7 +241,9 @@ its host's lost connection said as out of reach, one taken by another machine en
 the tasks' carriers' tests (`crates/app/src/task/tests.rs`) hold a run's prompt going once, its
 failed writes reaching its drive and said once, a session closed under a run leaving nothing
 listening, a finished run hearing nothing more, the place held while a cancelled turn drains, a
-Stop before a command starts, and a dismiss put back when its write fails. Hosts' carrier
+Stop before a command starts, a dismiss put back when its write fails, and a worktree's removal
+landing with its task after its window closed; on a real shell (`crates/app/src/shell/rig.rs`), a
+check's retry running it again at once and an issue's run coming up off screen. Hosts' carrier
 (`crates/app/src/hosts/tests.rs`) holds a wait's end reaching every listener once and the last
 listener going ending the wait and its clock; offloaded projects'
 (`crates/app/src/offload/tests.rs`) an errand's answer landing once, the poll's clock coming round
@@ -271,10 +275,7 @@ starts a real agent, `SendCode`'s late answer and the pane's half
 of the session (`ChatPane::carry`), `SaveTitle` (written on the ordered writer's own thread, which
 GPUI's test scheduler does not wait for), deferred work, the forge calls (the connectors are the
 ones built in), a command called off while it runs (the test scheduler runs it to its end before a
-Stop can reach it), and what needs a window's shell: a claim's run brought up, a schedule's start,
-a run's project kept or dropped (a start off screen, its project kept quietly and where it
-landed, is held on a real shell in `crates/app/src/control/start/tests.rs`, and the routing of
-the rest by core's flows); and a host's real attach, which runs on a runtime GPUI's test
+Stop can reach it), and a host's real attach, which runs on a runtime GPUI's test
 scheduler does not drive.
 
 ### 12. A model does no I/O and reads no clock

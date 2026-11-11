@@ -83,7 +83,12 @@ pub(crate) fn start(
     start: Start,
     cx: &mut App,
 ) {
-    let Start { run, first, pinned } = start;
+    let Start {
+        run,
+        first,
+        pinned,
+        issue,
+    } = start;
     let id = task.clone();
     let watch = cx.subscribe(session, move |session, event: &ChatEvent, cx| {
         let input = match event {
@@ -124,7 +129,6 @@ pub(crate) fn start(
         let id = id.clone();
         cx.defer(move |cx| feed(&id, Input::SessionGone, cx));
     });
-    let issue = super::task(&task, cx).is_some_and(|task| task.issue().is_some());
     let now = Instant::now();
     let (drive, effects) = session.update(cx, |session, cx| {
         let (drive, effects, asked) = link::start(
@@ -159,7 +163,9 @@ pub(crate) fn start(
 /// Drive check task `task`'s run with no session, from `start`; what it
 /// found is said in `window`.
 pub(crate) fn start_check(task: String, start: Start, window: AnyWindowHandle, cx: &mut App) {
-    let Start { run, first, pinned } = start;
+    let Start {
+        run, first, pinned, ..
+    } = start;
     let (drive, effects) = RunDrive::start(
         task.clone(),
         run,

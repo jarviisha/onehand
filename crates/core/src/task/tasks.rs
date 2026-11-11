@@ -23,20 +23,24 @@
 //! held beside this one; [`link`] joins them.
 
 use super::queue::Queue;
-use super::{history, Launch, Task, Working};
+use super::work::Act;
+use super::{history, Task, Working};
 use crate::workflow::{Run, Template, WithCurrent};
+use crate::worktree::removal;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::Duration;
 
 mod begin;
+mod cleanup;
 mod ending;
 pub mod link;
 mod off_screen;
 mod place;
 
-pub use begin::{Begin, Start, SESSION_NOT_STARTED};
-pub use off_screen::Cut;
+pub use begin::{Begin, Retry, Start, SESSION_NOT_STARTED};
+pub use cleanup::Judging;
+pub use off_screen::{Cut, OffScreen};
 
 /// How long a cancelled turn is waited for before its place is given up
 /// anyway: a turn that never ends would hold the place, and a slot, for good.
@@ -64,22 +68,8 @@ pub enum Input<W> {
         window: W,
         window_open: bool,
     },
-    /// What [`Effect::Cut`] came to for task `task`'s `launch`, from
-    /// `window`.
-    Cut {
-        task: String,
-        launch: Box<Launch>,
-        window: W,
-        made: Cut,
-    },
-    /// What [`Effect::Keep`] came to: whether `window` was still `open` to
-    /// keep task `task`'s project in.
-    Kept {
-        task: String,
-        launch: Box<Launch>,
-        window: W,
-        open: bool,
-    },
+    /// What [`Effect::Cut`] came to for `start`.
+    Cut { start: OffScreen<W>, made: Cut },
     /// Task `task`, holding its place, was driven in its window: begun, or
     /// refused there for `why` (its run's end is
     /// [`TasksDrive::not_started`]'s).
@@ -109,6 +99,29 @@ pub enum Input<W> {
         task: String,
         written: Result<(), String>,
     },
+    /// What the removal `asked` was judged to come to, on what was found of
+    /// its worktree (the facts name its folder); `None` when its window went
+    /// before what uses the folder could be read.
+    Judged {
+        asked: Judging<W>,
+        judged: Option<(Box<removal::Facts>, removal::Judged)>,
+    },
+    /// What reading task `task`'s review, asked from `window`, came to: read
+    /// and kept by the carrier for its question, or why not.
+    ReviewRead {
+        task: String,
+        window: W,
+        read: Result<(), String>,
+    },
+    /// What removing task `task`'s worktree at `folder`, and `branch`, from
+    /// `window`, came to.
+    WorktreeRemoved {
+        task: String,
+        window: W,
+        folder: PathBuf,
+        branch: Option<String>,
+        removed: Result<removal::Removed, String>,
+    },
 }
 
 /// What a person, or the log, is told; the words for each and where they go
@@ -119,6 +132,8 @@ pub enum Signal<W> {
     Queued { window: W, said: String },
     /// A start asked for from `window` was refused, for `why`.
     Refused { window: W, why: String },
+    /// A Resume pressed in `window` was refused, for `why`.
+    NotResumed { window: W, why: String },
     /// A check asked for from `window` ended in `project`: passed or not.
     CheckEnded {
         window: W,
@@ -131,6 +146,22 @@ pub enum Signal<W> {
     /// A dismiss asked for from `window` was not kept, for `why`, and the
     /// task is as it was.
     DismissFailed { window: W, why: String },
+    /// A worktree's removal, confirmed in `window`, was refused as things
+    /// stand now, for every reason in `why`.
+    NotRemoved { window: W, why: Vec<String> },
+    /// The worktree at `folder` was removed, from `window`, and `branch`
+    /// with it unless deleting it failed (`kept`, why).
+    Removed {
+        window: W,
+        folder: PathBuf,
+        branch: Option<String>,
+        kept: Option<String>,
+    },
+    /// Removing a worktree, from `window`, failed, for `why`.
+    RemoveFailed { window: W, why: String },
+    /// Task `task`'s review, its answer asked for in `window`, could not be
+    /// read, for `why`.
+    ReviewNotRead { window: W, why: String },
     /// A task's file could not be written; said once until a write lands.
     SaveFailed(String),
     /// A task's last mark could not be pinned.
@@ -181,21 +212,14 @@ pub enum Effect<W> {
         refs: Vec<String>,
         from: usize,
     },
-    /// Cut a worktree of `launch`'s repository for task `task`, named for
-    /// its title, and report [`Input::Cut`]. Recorded: a worktree cut is
-    /// where the task works, whatever the drive did since.
-    Cut {
-        task: String,
-        launch: Box<Launch>,
-        window: W,
-    },
-    /// Keep the project `launch` works in, in `window`, without putting it
-    /// on screen, and report [`Input::Kept`] at once.
-    Keep {
-        task: String,
-        launch: Box<Launch>,
-        window: W,
-    },
+    /// Cut a worktree of the start's repository for it, named for its
+    /// title, and report [`Input::Cut`]. Recorded: a worktree cut is where
+    /// the task works, whatever the drive did since.
+    Cut(OffScreen<W>),
+    /// Keep the project the start works in, in its window, without putting
+    /// it on screen, then its task: carried through [`link::keep`] with that
+    /// window's workspace, at once.
+    Keep(OffScreen<W>),
     /// Ask for task `task`'s place from `window`, held to the cap on
     /// unattended runs: the link's, which asks it.
     Ask { task: String, window: W },
@@ -212,6 +236,37 @@ pub enum Effect<W> {
     /// Task `task` asked for its place, or was refused it: an issue's run no
     /// longer counts as starting.
     Asked(String),
+    /// Read what uses the worktree the removal works in (its top found
+    /// first), then judge it, off the UI loop, and report [`Input::Judged`]
+    /// with it. Recorded: the press waits until it lands.
+    JudgeRemoval(Judging<W>),
+    /// Read what answering task `task`'s review is judged on, off the UI
+    /// loop, keep it, and report [`Input::ReviewRead`] with `window`.
+    /// Recorded: the press waits until it lands.
+    ReadReview { task: String, window: W },
+    /// Ask the person in `window` whether to answer task `task`'s review, on
+    /// what [`Effect::ReadReview`] kept. Not answered: a yes picks the
+    /// issue as a person does.
+    ConfirmAnswer { task: String, window: W },
+    /// Ask the person in `window` whether to remove task `task`'s worktree,
+    /// as `facts` and `judged` say; a yes is
+    /// [`TasksDrive::remove_worktree`], confirmed. Not answered.
+    ConfirmRemoval {
+        task: String,
+        facts: Box<removal::Facts>,
+        judged: removal::Judged,
+        window: W,
+    },
+    /// Remove the worktree at `folder` from `repo`, then `branch`, and report
+    /// [`Input::WorktreeRemoved`]. Recorded, whatever became of `window`:
+    /// what was removed is kept with the task.
+    RemoveWorktree {
+        task: String,
+        repo: PathBuf,
+        folder: PathBuf,
+        branch: Option<String>,
+        window: W,
+    },
     /// Close session `uid`, in `window`: its finished schedule's task let go.
     CloseSession { uid: u64, window: W },
     /// Tell this.
@@ -249,6 +304,9 @@ pub struct TasksDrive<W> {
     off_screen: HashSet<String>,
     /// A write failed and was said; nothing more is said until one lands.
     save_failed: bool,
+    /// What a person pressed on each task that is still being done, so its
+    /// button waits.
+    acting: HashMap<String, Act>,
 }
 
 impl<W> Default for TasksDrive<W> {
@@ -262,6 +320,7 @@ impl<W> Default for TasksDrive<W> {
             removed: HashMap::new(),
             off_screen: HashSet::new(),
             save_failed: false,
+            acting: HashMap::new(),
         }
     }
 }
@@ -363,18 +422,7 @@ impl<W: Copy> TasksDrive<W> {
                 window,
                 window_open,
             } => self.place_found(task, place, window, window_open, &mut fx),
-            Input::Cut {
-                task,
-                launch,
-                window,
-                made,
-            } => fx.push(self.cut(task, *launch, window, made)),
-            Input::Kept {
-                task,
-                launch,
-                window,
-                open,
-            } => self.kept(task, *launch, window, open, &mut fx),
+            Input::Cut { start, made } => fx.push(self.cut(start, made)),
             Input::Driven { task, started } => fx.push(Effect::Told {
                 task,
                 placed: match started {
@@ -416,6 +464,22 @@ impl<W: Copy> TasksDrive<W> {
                 }
             }
             Input::Dismissed { task, written } => self.dismissed(task, written, &mut fx),
+            Input::ReviewRead { task, window, read } => {
+                self.acting.remove(&task);
+                fx.push(match read {
+                    Ok(()) => Effect::ConfirmAnswer { task, window },
+                    Err(why) => Effect::Signal(Signal::ReviewNotRead { window, why }),
+                });
+                fx.push(Effect::Refresh);
+            }
+            Input::Judged { asked, judged } => self.judged(asked, judged, &mut fx),
+            Input::WorktreeRemoved {
+                task,
+                window,
+                folder,
+                branch,
+                removed,
+            } => self.worktree_gone(task, window, folder, branch, removed, &mut fx),
         }
         fx
     }
@@ -472,8 +536,9 @@ impl<W: Copy> TasksDrive<W> {
 
     /// Give task `id` a new run `run_id` of `template`, from step `from`
     /// when that is earlier than where it would start, carrying `note` as a
-    /// revision; kept but not started: the caller asks for its place.
-    /// Whether there was one to give: none while the task is at work.
+    /// revision, asking for its place from `window`. Whether there was one
+    /// to give: none while the task is at work.
+    #[must_use]
     pub fn retry(
         &mut self,
         id: &str,
@@ -481,24 +546,48 @@ impl<W: Copy> TasksDrive<W> {
         template: Template,
         from: Option<&str>,
         note: Option<String>,
+        window: W,
     ) -> (bool, Vec<Effect<W>>) {
-        self.renew(id, |task| {
+        self.renew(id, window, |task| {
             task.retry(run_id, template, from, note).is_some()
         })
     }
 
     /// Give task `id` a new run `run_id` with what Settings say now, as
     /// `plan` worked it out; as [`Self::retry`].
+    #[must_use]
     pub fn retry_with(
         &mut self,
         id: &str,
         run_id: String,
         plan: WithCurrent,
-    ) -> (bool, Vec<Effect<W>>) {
-        self.renew(id, |task| task.retry_with(run_id, plan).is_some())
+        window: W,
+    ) -> Vec<Effect<W>> {
+        self.renew(id, window, |task| task.retry_with(run_id, plan).is_some())
+            .1
     }
 
-    fn renew(&mut self, id: &str, make: impl FnOnce(&mut Task) -> bool) -> (bool, Vec<Effect<W>>) {
+    /// Carry task `id` on from where its last run stopped, from `window`,
+    /// unless its preflight `refused` it.
+    #[must_use]
+    pub fn resume(&mut self, id: &str, refused: Option<String>, window: W) -> Vec<Effect<W>> {
+        match refused {
+            Some(why) => vec![Effect::Signal(Signal::NotResumed { window, why })],
+            None => vec![Effect::Ask {
+                task: id.to_string(),
+                window,
+            }],
+        }
+    }
+
+    /// Make task `id` a new run with `make`, unless it works: written, then
+    /// asking for its place from `window`.
+    fn renew(
+        &mut self,
+        id: &str,
+        window: W,
+        make: impl FnOnce(&mut Task) -> bool,
+    ) -> (bool, Vec<Effect<W>>) {
         if self.busy(id) {
             return (false, Vec::new());
         }
@@ -506,19 +595,18 @@ impl<W: Copy> TasksDrive<W> {
             return (false, Vec::new());
         };
         match make(task) {
-            true => (true, vec![Effect::Save(Box::new(task.clone()))]),
+            true => (
+                true,
+                vec![
+                    Effect::Save(Box::new(task.clone())),
+                    Effect::Ask {
+                        task: id.to_string(),
+                        window,
+                    },
+                ],
+            ),
             false => (false, Vec::new()),
         }
-    }
-
-    /// Task `id`'s worktree and branch were removed: kept with the task, so
-    /// nothing offers to remove them again.
-    pub fn worktree_removed(&mut self, id: &str) -> Vec<Effect<W>> {
-        let Some(task) = self.task_mut(id) else {
-            return vec![Effect::Refresh];
-        };
-        task.worktree_removed = true;
-        vec![Effect::Save(Box::new(task.clone())), Effect::Refresh]
     }
 
     /// Change the issue task `id` works, and write the task.

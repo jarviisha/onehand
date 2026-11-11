@@ -253,7 +253,8 @@ fn stop_on_a_queued_task_calls_off_that_start_only(cx: &mut TestAppContext) {
     assert_eq!(group("5", cx), Group::Queued);
     // A retry is refused while the task waits for its place.
     let template = kept("5", cx).runs[0].template.clone();
-    assert!(!cx.update(|cx| retry("5", template, None, None, cx)));
+    cx.update(|cx| retry("5", template, None, window, cx));
+    assert_eq!(kept("5", cx).runs.len(), 1, "no new run while it waits");
     cx.update(|cx| stop_task("5", cx));
     settle(cx);
     let stopped = kept("5", cx);
@@ -522,4 +523,55 @@ fn a_finished_run_hears_nothing_more_from_its_session(cx: &mut TestAppContext) {
     let after = kept("14", cx);
     assert_eq!(after.runs[0].history.len(), before.runs[0].history.len());
     cx.update(|cx| assert!(cx.global::<Tasks>().live.is_empty()));
+}
+
+/// A removal under way when its window closes still lands: the worktree
+/// goes, and its task keeps that it went (#319).
+#[gpui::test]
+fn a_removal_lands_with_its_task_after_its_window_closed(cx: &mut TestAppContext) {
+    let (store, repo) = (temp_dir("store"), repo("removal"));
+    let window = app(cx, &store);
+    let folder = repo.with_file_name(format!(
+        "{}-wt",
+        repo.file_name().unwrap().to_string_lossy()
+    ));
+    let _ = std::fs::remove_dir_all(&folder);
+    git(
+        &repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "fix",
+            folder.to_str().unwrap(),
+        ],
+    );
+    let mut task = Task::check("r1".into(), "true".into(), setup(&folder));
+    task.setup.repo = repo.clone();
+    cx.update(|cx| add(task, cx));
+    cx.update(|cx| {
+        window
+            .update(cx, |_, window, _| window.remove_window())
+            .unwrap()
+    });
+    cx.run_until_parked();
+    let effect = onehand_core::task::tasks::Effect::RemoveWorktree {
+        task: "r1".into(),
+        repo: repo.clone(),
+        folder: folder.clone(),
+        branch: Some("fix".into()),
+        window,
+    };
+    cx.update(|cx| super::place::perform(vec![effect], None, cx));
+    for _ in 0..200 {
+        settle(cx);
+        if kept("r1", cx).worktree_removed {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(kept("r1", cx).worktree_removed, "kept with its task");
+    assert!(!folder.exists(), "the worktree went");
+    let _ = std::fs::remove_dir_all(&repo);
 }

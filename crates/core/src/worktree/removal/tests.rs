@@ -158,3 +158,32 @@ fn a_process_working_inside_the_folder_is_found() {
     assert_eq!(found, ["A terminal in another window, working in it,"]);
     assert!(working_in_blocking(Path::new("/nowhere-at-all"), &me).is_empty());
 }
+
+/// A project in a folder of its repository works in that folder of the
+/// worktree; the removal is of the worktree's top, written as the
+/// project's path is, through a link included.
+#[cfg(unix)]
+#[test]
+fn the_worktree_top_is_found_from_a_folder_in_it_and_kept_unresolved() {
+    let base = std::env::temp_dir().join(format!("onehand-top-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let repo = base.join("repo");
+    std::fs::create_dir_all(repo.join("app/src")).unwrap();
+    let git = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&repo)
+        .arg("init")
+        .arg("-q")
+        .status();
+    if !git.is_ok_and(|s| s.success()) {
+        return;
+    }
+    let link = base.join("link");
+    std::os::unix::fs::symlink(&repo, &link).unwrap();
+    assert_eq!(top_blocking(&link.join("app/src")), link);
+    assert_eq!(top_blocking(&repo.join("app")), repo);
+    let outside = base.join("plain");
+    std::fs::create_dir_all(&outside).unwrap();
+    assert_eq!(top_blocking(&outside), outside);
+    let _ = std::fs::remove_dir_all(&base);
+}

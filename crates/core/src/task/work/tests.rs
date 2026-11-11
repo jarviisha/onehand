@@ -1128,3 +1128,31 @@ fn a_task_needing_attention_still_offers_a_new_run_last() {
         assert!(!next.secondary.contains(&Act::RunWorkflow));
     }
 }
+
+/// A press goes only where it was read: a run waiting on another answer is
+/// read again first, and one waiting on nobody takes no press.
+#[test]
+fn a_press_goes_only_where_it_was_read() {
+    let at = |visit| crate::workflow::ApprovalAt {
+        run: "r".into(),
+        visit,
+    };
+    let waiting = |visit| UnderReview {
+        at: at(visit),
+        of: "Plan".into(),
+        answer: String::new(),
+        starts: None,
+        span: None,
+        check: Checked::NotRun,
+    };
+    assert_eq!(Waits::of(Some(&at(1)), Some(waiting(1))), Waits::There);
+    assert_eq!(
+        Waits::of(Some(&at(1)), Some(waiting(2))),
+        Waits::Elsewhere(Box::new(waiting(2)))
+    );
+    assert_eq!(
+        Waits::of(None, Some(waiting(1))),
+        Waits::Elsewhere(Box::new(waiting(1)))
+    );
+    assert_eq!(Waits::of(Some(&at(1)), None), Waits::Nowhere);
+}

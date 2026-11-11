@@ -147,3 +147,43 @@ fn a_probe_ends_when_the_agent_comes_up_or_fails() {
         Some(Err("gone".into()))
     );
 }
+
+/// The workflows issues are worked with are put in force at once, written
+/// after, and put back when the write fails; the same pair writes nothing.
+#[test]
+fn workflows_are_shown_then_written_and_put_back_on_failure() {
+    use std::collections::BTreeMap;
+    let mut settings = SettingsDrive::new(Vec::new(), Default::default());
+    let before = ("work".to_string(), BTreeMap::new());
+    assert!(settings
+        .set_workflows(before.clone(), "work".into(), BTreeMap::new())
+        .is_empty());
+    let labels = BTreeMap::from([("bug".to_string(), "fix".to_string())]);
+    let fx = settings.set_workflows(before, "plan".into(), labels.clone());
+    let after = Value::Workflows {
+        default: "plan".into(),
+        by_label: labels,
+    };
+    assert_eq!(shown(&fx), [after]);
+    let write = fx.into_iter().find_map(|e| match e {
+        Effect::Write { pending, edit } => Some((pending, edit)),
+        Effect::Show(_)
+        | Effect::Probe { .. }
+        | Effect::CallOff { .. }
+        | Effect::Changed
+        | Effect::Signal(_) => None,
+    });
+    let (pending, edit) = write.expect("a write");
+    let fx = settings.handle(Input::Written {
+        pending,
+        edit,
+        result: Err("read-only".into()),
+    });
+    assert_eq!(
+        shown(&fx),
+        [Value::Workflows {
+            default: "work".into(),
+            by_label: BTreeMap::new(),
+        }]
+    );
+}

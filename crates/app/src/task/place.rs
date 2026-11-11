@@ -8,9 +8,14 @@ use crate::chat::session::{ChatEvent, ChatSession};
 use futures::channel::oneshot;
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Task as GpuiTask};
 use gpui_component::WindowExt as _;
-use onehand_core::task::tasks::{Effect, Input, Placed, Signal};
+use onehand_core::task::tasks::{
+    Effect, Input, Judging, OffScreen, Placed, Signal, link as tasks_link,
+};
 use onehand_core::task::{Launch, Task, marks, queue};
+use onehand_core::unattended::review::ReviewAsk;
 use onehand_core::workflow::Failure;
+use onehand_core::workspace::WorkspaceDrive;
+use onehand_core::worktree::removal;
 
 /// What watches a run that ended while its session's turn still goes: the
 /// session's events, its release, and the drain limit's clock.
@@ -67,7 +72,7 @@ fn told(id: &str, cx: &mut App) -> oneshot::Receiver<Placed> {
 /// Start task `id` once its place is free, saying in `window` what happens.
 /// It starts in `window`, or, when it waited, in the window it was asked
 /// from, if that is still open.
-pub(crate) fn request(id: String, window: AnyWindowHandle, cx: &mut App) {
+fn request(id: String, window: AnyWindowHandle, cx: &mut App) {
     super::with_joined(cx, |j| ((), j.request(&id, window)));
 }
 
@@ -140,50 +145,74 @@ pub(super) fn perform(
                 })
                 .detach();
             }
-            Effect::Cut {
-                task,
-                launch,
-                window,
-            } => {
+            Effect::Cut(start) => {
+                let launch = &start.launch;
                 let (repo, title) = (launch.repo().to_path_buf(), launch.title().to_string());
                 cx.spawn(async move |cx| {
                     let made = cx
                         .background_executor()
-                        .spawn(async move { crate::shell::cut_worktree_blocking(&repo, &title) })
+                        .spawn(async move {
+                            onehand_core::task::cut_blocking(
+                                &repo,
+                                &title,
+                                crate::features::connectors(),
+                            )
+                        })
                         .await;
-                    cx.update(|cx| {
-                        feed(
-                            Input::Cut {
-                                task,
-                                launch,
-                                window,
-                                made,
-                            },
-                            cx,
-                        )
-                    });
+                    cx.update(|cx| feed(Input::Cut { start, made }, cx));
                 })
                 .detach();
             }
-            Effect::Keep {
+            Effect::Keep(start) => keep(start, cx),
+            Effect::ReadReview { task, window } => read_review(task, window, cx),
+            Effect::ConfirmAnswer { task, window } => cx.defer(move |cx| {
+                let Some(read) = super::take_review(&task, cx) else {
+                    return;
+                };
+                crate::state::with_shell(window, cx, |shell, window, cx| {
+                    shell.confirm_answer(task, read, window, cx)
+                });
+            }),
+            Effect::JudgeRemoval(asked) => judge_removal(asked, cx),
+            Effect::ConfirmRemoval {
                 task,
-                launch,
+                facts,
+                judged,
+                window,
+            } => cx.defer(move |cx| {
+                crate::state::with_shell(window, cx, |shell, window, cx| {
+                    shell.confirm_removal(task, *facts, judged, window, cx)
+                });
+            }),
+            Effect::RemoveWorktree {
+                task,
+                repo,
+                folder,
+                branch,
                 window,
             } => {
-                let dir = launch.dir().to_path_buf();
-                let open = crate::state::with_shell(window, cx, |shell, window, cx| {
-                    shell.keep_project_quietly(dir, window, cx)
-                })
-                .is_some();
-                feed(
-                    Input::Kept {
+                // Not tied to the window: a removal that went is kept with
+                // its task even when the window closed meanwhile.
+                cx.spawn(async move |cx| {
+                    let removed =
+                        cx.background_executor()
+                            .spawn({
+                                let (folder, branch) = (folder.clone(), branch.clone());
+                                async move {
+                                    removal::remove_blocking(&repo, &folder, branch.as_deref())
+                                }
+                            })
+                            .await;
+                    let input = Input::WorktreeRemoved {
                         task,
-                        launch,
                         window,
-                        open,
-                    },
-                    cx,
-                );
+                        folder,
+                        branch,
+                        removed,
+                    };
+                    cx.update(|cx| feed(input, cx));
+                })
+                .detach();
             }
             Effect::Drive { task, window } => drive(task, window, cx),
             Effect::WatchDrain { task, limit } => watch_drain(task, limit, session, cx),
@@ -220,6 +249,114 @@ pub(super) fn perform(
             Effect::Refresh => cx.refresh_windows(),
         }
     }
+}
+
+/// Keep task `task`'s project in `window`'s workspace and the task with it,
+/// through their link; the window gone, with no workspace.
+fn keep(start: OffScreen<AnyWindowHandle>, cx: &mut App) {
+    let link = |workspace: Option<&mut WorkspaceDrive>, start, cx: &mut App| {
+        cx.update_global::<Tasks, _>(|t, _| {
+            t.joined().tasks(|d| {
+                let (fx, kept) = tasks_link::keep(d, workspace, start);
+                (kept, fx)
+            })
+        })
+    };
+    let window = start.window;
+    let asked = start.clone();
+    let in_window = crate::state::with_shell(window, cx, |shell, window, cx| {
+        shell.with_workspace(
+            |workspace, cx| {
+                let (kept, out) = link(Some(workspace), asked, cx);
+                (out, kept)
+            },
+            window,
+            cx,
+        )
+    });
+    let out = match in_window {
+        Some(out) => out,
+        None => link(None, start, cx).1,
+    };
+    super::carry(out, None, cx);
+}
+
+/// Read what answering task `task`'s review is judged on, its facts as the
+/// app knows them now, off the UI thread; kept for the question, and what
+/// it came to told to the drive.
+fn read_review(task: String, window: AnyWindowHandle, cx: &mut App) {
+    let kept = super::task(&task, cx);
+    let ask = ReviewAsk::of(
+        kept.as_ref(),
+        |kept, template| crate::unattended::task_facts(kept, template, cx),
+        crate::features::connectors(),
+    );
+    let ask = match ask {
+        Ok(ask) => ask,
+        Err(why) => {
+            let read = Err(why);
+            return feed(Input::ReviewRead { task, window, read }, cx);
+        }
+    };
+    cx.spawn(async move |cx| {
+        let read = cx
+            .background_executor()
+            .spawn(async move { ask.read_blocking() })
+            .await;
+        cx.update(|cx| {
+            cx.default_global::<Tasks>()
+                .reviews
+                .insert(task.clone(), read);
+            let read = Ok(());
+            feed(Input::ReviewRead { task, window, read }, cx);
+        });
+    })
+    .detach();
+}
+
+/// Judge the removal `asked`: its worktree's top found off the UI thread,
+/// what uses it read from every window, then the forge and git asked off
+/// it; what it came to told to the drive, `None` when the window it was
+/// pressed in went meanwhile.
+fn judge_removal(asked: Judging<AnyWindowHandle>, cx: &mut App) {
+    let window = asked.window;
+    cx.spawn(async move |cx| {
+        let folder = cx
+            .background_executor()
+            .spawn({
+                let dir = asked.dir.clone();
+                async move { removal::top_blocking(&dir) }
+            })
+            .await;
+        let reading = cx.update(|cx| {
+            let (users, processes) = crate::state::with_shell(window, cx, |shell, _, cx| {
+                shell.folder_users(&folder, cx)
+            })?;
+            Some(removal::Asked {
+                repo: asked.repo.clone(),
+                folder,
+                branch: asked.branch.clone(),
+                forge: asked.forge.as_deref().and_then(|name| {
+                    onehand_core::connector::named(crate::features::connectors(), name)
+                }),
+                users,
+                processes,
+            })
+        });
+        let judged = match reading {
+            Some(reading) => {
+                let (facts, judged) = cx
+                    .background_executor()
+                    .spawn(async move { reading.judge_blocking() })
+                    .await;
+                Some((Box::new(facts), judged))
+            }
+            None => None,
+        };
+        let input = Input::Judged { asked, judged };
+        cx.update(|cx| feed(input, cx));
+    })
+    .detach();
 }
 
 /// Answer whoever asked where task `id` landed, if anybody did.
@@ -314,6 +451,46 @@ fn say(signal: Signal<AnyWindowHandle>, cx: &mut App) {
         Signal::Refused { window, why } => {
             cx.defer(move |cx| toast(window, crate::toast::warning(why), cx))
         }
+        // Deferred, as a refusal is: a Resume is pressed inside that window.
+        Signal::NotResumed { window, why } => cx.defer(move |cx| {
+            toast(
+                window,
+                crate::toast::warning(format!("Not resumed: {why}")),
+                cx,
+            )
+        }),
+        Signal::NotRemoved { window, why } => {
+            let why = format!("Not removed, as things stand now: {}", why.join(" "));
+            toast(window, crate::toast::warning(why), cx)
+        }
+        Signal::Removed {
+            window,
+            folder,
+            branch,
+            kept,
+        } => {
+            let folder = folder.display();
+            let note = match (branch, kept) {
+                (Some(branch), Some(why)) => crate::toast::warning(format!(
+                    "Removed {folder}; the branch {branch} was kept: {why}"
+                )),
+                (Some(branch), None) => {
+                    crate::toast::success(format!("Removed {folder} and {branch}"))
+                }
+                (None, _) => crate::toast::success(format!("Removed {folder}")),
+            };
+            toast(window, note, cx)
+        }
+        // Deferred: a read refused at once is said inside the update of the
+        // window it was pressed in.
+        Signal::ReviewNotRead { window, why } => {
+            cx.defer(move |cx| toast(window, crate::toast::failed("Reading the review", why), cx))
+        }
+        Signal::RemoveFailed { window, why } => toast(
+            window,
+            crate::toast::failed("Removing the worktree", why),
+            cx,
+        ),
         Signal::CheckEnded {
             window,
             project,

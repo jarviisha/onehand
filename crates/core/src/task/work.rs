@@ -17,7 +17,7 @@ pub mod left;
 pub mod list;
 mod review;
 
-pub use review::{last_lines, Checked, UnderReview, ANSWER_CHANGED, ANSWER_LINES};
+pub use review::{last_lines, Checked, UnderReview, Waits, ANSWER_CHANGED, ANSWER_LINES};
 
 /// What a task waiting on a person waits for, in the words every view of
 /// it uses: an approval, or an answer to a card.

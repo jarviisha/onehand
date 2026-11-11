@@ -1,4 +1,6 @@
 use super::*;
+use crate::task::work::Act;
+use crate::task::Launch;
 use crate::task::{queue, Group, Origin, Source};
 use crate::unattended::IssueSource;
 use crate::workflow::{Brief, Failure, Outcome, Setup, Stop};
@@ -166,7 +168,7 @@ fn a_start_over_the_cap_is_refused_and_an_unbegun_retry_dropped() {
     let mut tasks = TasksDrive::default();
     tasks.add(check("1", "/a"));
     let template = tasks.task("1").unwrap().runs[0].template.clone();
-    let (made, _) = tasks.retry("1", "2".into(), template, None, None);
+    let (made, _) = tasks.retry("1", "2".into(), template, None, None, WINDOW);
     assert!(made);
     assert_eq!(tasks.task("1").unwrap().runs.len(), 2);
     let fx = tasks.request("1", WINDOW, Some("two runs already work".into()));
@@ -219,7 +221,7 @@ fn a_retry_is_refused_while_the_task_is_at_work() {
     tasks.add(check("1", "/a"));
     ask(&mut tasks, "1", "/a");
     let template = tasks.task("1").unwrap().runs[0].template.clone();
-    assert!(!tasks.retry("1", "2".into(), template, None, None).0);
+    assert!(!tasks.retry("1", "2".into(), template, None, None, WINDOW).0);
 }
 
 /// A run that ends while its session's turn still goes holds its place until
@@ -556,16 +558,38 @@ fn a_session_not_started_for_a_gone_agent_fails_as_found_late() {
     );
 }
 
+/// A check is retried at once and asks for its place; anything else is
+/// asked about first.
 #[test]
 fn a_check_is_retried_at_once_from_its_one_step_and_others_are_not() {
     let mut tasks = TasksDrive::<Win>::default();
     tasks.add(check("1", "/a"));
     tasks.add(titled("2", "Mine", "/b"));
-    let (made, fx) = tasks.retry_at_once("1", "1b".into()).unwrap();
-    assert!(made);
+    let (retry, fx) = tasks.retry_asked("1", "1b".into(), WINDOW);
+    assert_eq!(retry, Retry::AtOnce);
     assert_eq!(saves(&fx), 1);
+    assert!(has(
+        &fx,
+        |e| matches!(e, Effect::Ask { task, .. } if task == "1")
+    ));
     assert_eq!(tasks.task("1").unwrap().runs.len(), 2);
-    assert!(tasks.retry_at_once("2", "2b".into()).is_none());
+    let (retry, fx) = tasks.retry_asked("2", "2b".into(), WINDOW);
+    assert_eq!(retry, Retry::Confirm);
+    assert!(fx.is_empty());
+}
+
+/// A Resume its preflight refuses is said where it was pressed; one it
+/// lets through asks for its place.
+#[test]
+fn a_resume_refused_is_said_and_one_let_through_asks() {
+    let mut tasks = TasksDrive::<Win>::default();
+    let fx = tasks.resume("1", Some("no agent".into()), WINDOW);
+    assert!(matches!(
+        fx.as_slice(),
+        [Effect::Signal(Signal::NotResumed { why, .. })] if why == "no agent"
+    ));
+    let fx = tasks.resume("1", None, WINDOW);
+    assert!(matches!(fx.as_slice(), [Effect::Ask { task, .. }] if task == "1"));
 }
 
 fn starting(place: crate::workflow::Place) -> crate::task::Starting {
@@ -621,22 +645,22 @@ fn a_start_off_screen_keeps_its_project_then_its_task_and_asks() {
         Ok(launch(crate::workflow::Place::Checkout)),
         WINDOW,
     );
-    let Some(Effect::Keep {
-        task,
-        launch,
-        window,
-    }) = fx.into_iter().next()
-    else {
+    let Some(Effect::Keep(start)) = fx.into_iter().next() else {
         panic!("the project kept first");
     };
-    assert_eq!(launch.dir(), Path::new("/p"));
+    assert_eq!(start.launch.dir(), Path::new("/p"));
     assert!(tasks.tasks().is_empty(), "nothing kept before its project");
-    let fx = tasks.handle(Input::Kept {
-        task,
-        launch,
-        window,
-        open: true,
-    });
+    let mut workspace =
+        crate::workspace::WorkspaceDrive::new(crate::workspace::Workspace::seeded("/other"));
+    let (fx, _) = link::keep(&mut tasks, Some(&mut workspace), start);
+    assert!(
+        workspace
+            .roots
+            .iter()
+            .any(|root| root.path == Path::new("/p")),
+        "its project kept in the window's workspace"
+    );
+    assert_eq!(workspace.active_root, 0, "and not put on screen");
     assert_eq!(saves(&fx), 1);
     assert!(has(
         &fx,
@@ -656,12 +680,12 @@ fn a_start_off_screen_keeps_its_project_then_its_task_and_asks() {
 #[test]
 fn a_start_off_screen_whose_window_went_is_refused() {
     let mut tasks = TasksDrive::<Win>::default();
-    let fx = tasks.handle(Input::Kept {
+    let start = OffScreen {
         task: "t".into(),
         launch: Box::new(launch(crate::workflow::Place::Checkout)),
         window: WINDOW,
-        open: false,
-    });
+    };
+    let (fx, _) = link::keep(&mut tasks, None, start);
     assert_eq!(
         told(&fx),
         Some(&Placed::Refused("the window closed".into()))
@@ -679,20 +703,22 @@ fn a_start_off_screen_on_a_worktree_is_cut_first() {
         Ok(launch(crate::workflow::Place::Worktree)),
         WINDOW,
     );
-    let Some(Effect::Cut { launch, .. }) = fx.into_iter().next() else {
+    let Some(Effect::Cut(start)) = fx.into_iter().next() else {
         panic!("cut first");
     };
     let cut = |made: Cut| Input::Cut {
-        task: "t".into(),
-        launch: launch.clone(),
-        window: WINDOW,
+        start: start.clone(),
         made,
     };
     let fx = tasks.handle(cut(Err("not a repository".into())));
     assert_eq!(told(&fx), Some(&Placed::Refused("not a repository".into())));
-    let fx = tasks.handle(cut(Ok(("/w".into(), "onehand/tidy".into(), None))));
+    let fx = tasks.handle(cut(Ok(crate::task::Worktree {
+        dir: "/w".into(),
+        branch: "onehand/tidy".into(),
+        forge: None,
+    })));
     assert!(
-        matches!(fx.as_slice(), [Effect::Keep { launch, .. }] if launch.dir() == Path::new("/w")),
+        matches!(fx.as_slice(), [Effect::Keep(start)] if start.launch.dir() == Path::new("/w")),
         "{fx:?}"
     );
 }
@@ -746,4 +772,114 @@ fn a_drive_tells_where_its_task_landed() {
         Some(&Placed::Refused("the window closed".into()))
     );
     assert!(!tasks.busy("2"), "its place let go");
+}
+
+fn facts(folder: &str) -> Box<crate::worktree::removal::Facts> {
+    Box::new(crate::worktree::removal::Facts {
+        folder: PathBuf::from(folder),
+        branch: Some("b".into()),
+        expected: Some("b".into()),
+        uncommitted: Ok(Vec::new()),
+        merged: Ok(None),
+        past_merge: Ok(0),
+        users: Vec::new(),
+    })
+}
+
+/// *Remove worktree…* is judged and asked first; once confirmed it is
+/// judged again, removed, and kept with the task, its button waiting
+/// meanwhile; a refusal as things stand is said instead.
+#[test]
+fn a_worktree_is_judged_asked_judged_again_then_removed() {
+    use crate::worktree::removal::{Judged, Removed};
+    let mut tasks = TasksDrive::<Win>::default();
+    tasks.add(titled("1", "Mine", "/w"));
+    let judged = |tasks: &mut TasksDrive<Win>, confirmed, judged| {
+        let asked = Judging {
+            task: "1".into(),
+            dir: PathBuf::from("/w"),
+            repo: PathBuf::from("/r"),
+            branch: Some("b".into()),
+            forge: None,
+            confirmed,
+            window: WINDOW,
+        };
+        tasks.handle(Input::Judged { asked, judged })
+    };
+    let fx = tasks.remove_worktree("1", false, WINDOW);
+    assert!(has(&fx, |e| matches!(
+        e,
+        Effect::JudgeRemoval(Judging {
+            confirmed: false,
+            ..
+        })
+    )));
+    assert_eq!(tasks.acting("1"), Some(Act::RemoveWorktree));
+    let remove = Judged::Remove {
+        branch: Some("b".into()),
+        why: "merged".into(),
+    };
+    let fx = judged(&mut tasks, false, Some((facts("/w"), remove.clone())));
+    assert!(has(&fx, |e| matches!(e, Effect::ConfirmRemoval { .. })));
+    assert_eq!(tasks.acting("1"), None);
+    // The window went before what uses the folder was read: nothing more.
+    let _ = tasks.remove_worktree("1", true, WINDOW);
+    let fx = judged(&mut tasks, true, None);
+    assert!(!has(&fx, |e| matches!(e, Effect::RemoveWorktree { .. })));
+    assert_eq!(tasks.acting("1"), None);
+    let fx = judged(
+        &mut tasks,
+        true,
+        Some((facts("/w"), Judged::Refused(vec!["no".into()]))),
+    );
+    assert!(has(&fx, |e| matches!(
+        e,
+        Effect::Signal(Signal::NotRemoved { .. })
+    )));
+    let fx = judged(&mut tasks, true, Some((facts("/w"), remove)));
+    assert!(has(&fx, |e| matches!(
+        e,
+        Effect::RemoveWorktree { folder, branch: Some(b), .. } if folder == Path::new("/w") && b == "b"
+    )));
+    assert_eq!(tasks.acting("1"), Some(Act::RemoveWorktree));
+    let fx = tasks.handle(Input::WorktreeRemoved {
+        task: "1".into(),
+        window: WINDOW,
+        folder: PathBuf::from("/w"),
+        branch: Some("b".into()),
+        removed: Ok(Removed { branch_kept: None }),
+    });
+    assert_eq!(saves(&fx), 1);
+    assert!(tasks.task("1").unwrap().worktree_removed);
+    assert!(has(&fx, |e| matches!(
+        e,
+        Effect::Signal(Signal::Removed { .. })
+    )));
+    assert_eq!(tasks.acting("1"), None);
+}
+
+/// *Answer the pull request review* reads first, its button waiting; what
+/// was read is asked of the person, and a read that failed is said.
+#[test]
+fn a_review_is_read_before_it_is_asked() {
+    let mut tasks = TasksDrive::<Win>::default();
+    tasks.add(titled("1", "Mine", "/w"));
+    let fx = tasks.answer_review("1", WINDOW);
+    assert!(has(&fx, |e| matches!(e, Effect::ReadReview { .. })));
+    assert_eq!(tasks.acting("1"), Some(Act::AnswerReview));
+    let read = |tasks: &mut TasksDrive<Win>, read| {
+        tasks.handle(Input::ReviewRead {
+            task: "1".into(),
+            window: WINDOW,
+            read,
+        })
+    };
+    let fx = read(&mut tasks, Ok(()));
+    assert!(has(&fx, |e| matches!(e, Effect::ConfirmAnswer { .. })));
+    assert_eq!(tasks.acting("1"), None);
+    let fx = read(&mut tasks, Err("gone".into()));
+    assert!(has(&fx, |e| matches!(
+        e,
+        Effect::Signal(Signal::ReviewNotRead { .. })
+    )));
 }

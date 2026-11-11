@@ -9,7 +9,7 @@ use gpui_component::input::{InputState, TextareaState};
 use onehand_core::preflight;
 use onehand_core::task::tasks::{Begin, SESSION_NOT_STARTED};
 use onehand_core::task::{Launch, Task};
-use onehand_core::workflow::{self as core, Brief, Failure, Setup, Template};
+use onehand_core::workflow::{Brief, Failure, Setup, Template};
 use onehand_core::worktree;
 use std::path::PathBuf;
 
@@ -293,14 +293,16 @@ impl Shell {
         cx.spawn_in(window, async move |shell, cx| {
             let made = cx
                 .background_executor()
-                .spawn(async move { cut_worktree_blocking(&root, &title) })
+                .spawn(async move {
+                    onehand_core::task::cut_blocking(&root, &title, crate::features::connectors())
+                })
                 .await;
             let _ = shell.update_in(cx, |shell: &mut Self, window, cx| match made {
-                Ok((dir, branch, forge)) => {
+                Ok(cut) => {
                     shell.workflow_launcher = None;
-                    let (_, fx) = shell.window.workspace.keep_project(dir.clone());
+                    let (_, fx) = shell.window.workspace.keep_project(cut.dir.clone());
                     shell.carry_workspace(fx, window, cx);
-                    let launch = launch.on_worktree(dir, branch, forge);
+                    let launch = launch.on_worktree(cut);
                     shell.start_launch(launch, window, cx);
                 }
                 // The launcher stays up with what was written in it, and the
@@ -325,19 +327,20 @@ impl Shell {
         crate::task::submit(task, window.window_handle(), cx);
     }
 
-    /// Keep the project at `dir` for a task started from outside the
-    /// window. A worktree cut for it is a project of the workspace, as the
-    /// launcher's is: kept, listed, and there to come back to; but not
-    /// selected, as nothing the person is looking at moves for a task they
-    /// did not start.
-    pub(crate) fn keep_project_quietly(
+    /// Give `with` this window's workspace drive, for a link that joins it
+    /// to another drive, and carry out what the workspace says.
+    pub(crate) fn with_workspace<R>(
         &mut self,
-        dir: PathBuf,
+        with: impl FnOnce(
+            &mut onehand_core::workspace::WorkspaceDrive,
+            &mut gpui::App,
+        ) -> (R, Vec<onehand_core::workspace::drive::Effect>),
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
-        let fx = self.window.workspace.keep_project_quietly(dir);
+    ) -> R {
+        let (answer, fx) = with(&mut self.window.workspace, cx);
         self.carry_workspace(fx, window, cx);
+        answer
     }
 
     /// Drive task `id`, whose place it now holds, as the tasks' drive begins
@@ -473,32 +476,6 @@ fn launcher_workflow(launcher: &WorkflowLauncher, cx: &gpui::App) -> Result<Temp
     }
 }
 
-/// A worktree of the repository `root` sits in, cut for a task titled
-/// `title`: the folder the task works in, its branch, and the forge the
-/// branch goes to. Blocking.
-pub(crate) fn cut_worktree_blocking(
-    root: &std::path::Path,
-    title: &str,
-) -> Result<(PathBuf, String, Option<String>), String> {
-    // Git checks out repositories, not folders: the worktree is of the
-    // repository the project sits in, put beside it, and the run works in the
-    // same folder of it the project is.
-    let top = worktree::repo_top_blocking(root)
-        .ok_or_else(|| format!("{} is not in a git repository", root.display()))?;
-    // ponytail: only local branches count here; a `workflow/` branch whose
-    // worktree is gone but whose pull request is on the forge is reused. Ask
-    // the forge as an issue's claim does if that is seen.
-    let (branch, made) =
-        worktree::cut_blocking(&top, &core::branch_for(title), "HEAD", |_| Ok(false))?;
-    let dir = worktree::subtree_or(made, &top, root);
-    // The forge the branch goes to, for a step on it; none, and the branch is
-    // the result.
-    let forge = crate::unattended::connector_for(&top)
-        .ok()
-        .map(|forge| forge.name().to_string());
-    Ok((dir, branch, forge))
-}
-
 /// The brief the launcher's fields say, as typed so far.
 pub(crate) fn brief(
     title: &Entity<InputState>,
@@ -513,3 +490,6 @@ pub(crate) fn brief(
         instructions: (!instructions.is_empty()).then_some(instructions),
     }
 }
+
+#[cfg(test)]
+mod tests;

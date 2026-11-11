@@ -128,13 +128,12 @@ impl Launch {
         &self.brief.title
     }
 
-    /// It works on the worktree at `dir`, on `branch`, going to the forge
-    /// `forge` when one serves it.
-    pub fn on_worktree(mut self, dir: PathBuf, branch: String, forge: Option<String>) -> Self {
+    /// It works on the worktree `cut` for it.
+    pub fn on_worktree(mut self, cut: Worktree) -> Self {
         self.setup = Setup {
-            dir,
-            branch: Some(branch),
-            forge,
+            dir: cut.dir,
+            branch: Some(cut.branch),
+            forge: cut.forge,
             ..self.setup
         };
         self
@@ -148,6 +147,41 @@ impl Launch {
             ..Task::new(id, self.template, self.brief, self.setup)
         }
     }
+}
+
+/// A worktree cut for a new task: the folder it works in, its branch, and
+/// the forge the branch goes to, none when no forge serves it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Worktree {
+    pub dir: PathBuf,
+    pub branch: String,
+    pub forge: Option<String>,
+}
+
+/// A worktree of the repository `root` sits in, cut for a task titled
+/// `title`, its forge the first of `connectors` serving it. Blocking.
+pub fn cut_blocking(
+    root: &Path,
+    title: &str,
+    connectors: &[&'static dyn crate::connector::Connector],
+) -> Result<Worktree, String> {
+    // Git checks out repositories, not folders: the worktree is of the
+    // repository the project sits in, put beside it, and the run works in the
+    // same folder of it the project is.
+    let top = crate::worktree::repo_top_blocking(root)
+        .ok_or_else(|| format!("{} is not in a git repository", root.display()))?;
+    // ponytail: only local branches count here; a `workflow/` branch whose
+    // worktree is gone but whose pull request is on the forge is reused. Ask
+    // the forge as an issue's claim does if that is seen.
+    let (branch, made) =
+        crate::worktree::cut_blocking(&top, &crate::workflow::branch_for(title), "HEAD", |_| {
+            Ok(false)
+        })?;
+    let dir = crate::worktree::subtree_or(made, &top, root);
+    let forge = crate::connector::serving(connectors, &top)
+        .ok()
+        .map(|at| connectors[at].name().to_string());
+    Ok(Worktree { dir, branch, forge })
 }
 
 /// `setup`, on the agent it names or, naming none, on `first`: the one a
@@ -254,7 +288,11 @@ mod tests {
         let launch = launch.unwrap();
         assert!(launch.cuts());
         let task = launch
-            .on_worktree("/w".into(), "workflow/go".into(), Some("github".into()))
+            .on_worktree(Worktree {
+                dir: "/w".into(),
+                branch: "workflow/go".into(),
+                forge: Some("github".into()),
+            })
             .task("1".into());
         assert_eq!(task.setup.dir, PathBuf::from("/w"));
         assert_eq!(task.setup.repo, PathBuf::from("/a"));

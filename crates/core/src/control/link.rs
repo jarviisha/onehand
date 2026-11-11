@@ -12,7 +12,7 @@ pub fn shown(control: &mut ControlDrive, value: &Value) {
         Value::Outside(on) => {
             control.set_outside(*on);
         }
-        Value::Appearance(_) | Value::Agents => {}
+        Value::Appearance(_) | Value::Agents | Value::Workflows { .. } => {}
     }
 }
 

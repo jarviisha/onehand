@@ -7,10 +7,11 @@
 //! each a rule a front end would otherwise restate, untested. A front end
 //! calls these with the drives it holds and carries out what comes back.
 
-use super::{Effect, TasksDrive};
+use super::{Effect, OffScreen, TasksDrive};
 use crate::chat::Chat;
 use crate::task::drive::RunDrive;
 use crate::task::{Task, Working};
+use crate::workspace::{drive as workspace, WorkspaceDrive};
 
 /// `run` asked to be saved: the task it is of, keeping the run as it now
 /// stands, to write.
@@ -37,6 +38,24 @@ pub fn finished<W: Copy>(
         session.map(|(_, uid)| uid),
         window,
     )
+}
+
+/// Carry [`Effect::Keep`] for `start`, with the workspace of the window it
+/// was asked from if that is still open: the project the task works in kept
+/// there, listed but not put on screen, then the task kept and asking for
+/// its place. With the window gone, the start is refused. What the tasks do
+/// next, and what the workspace does.
+#[must_use]
+pub fn keep<W: Copy>(
+    tasks: &mut TasksDrive<W>,
+    workspace: Option<&mut WorkspaceDrive>,
+    start: OffScreen<W>,
+) -> (Vec<Effect<W>>, Vec<workspace::Effect>) {
+    let dir = start.launch.dir().to_path_buf();
+    let kept = workspace.map(|workspace| workspace.keep_project_quietly(dir));
+    let mut fx = Vec::new();
+    tasks.kept(start, kept.is_some(), &mut fx);
+    (fx, kept.unwrap_or_default())
 }
 
 /// What the card `chat` parked last asks a person: a question's message, or

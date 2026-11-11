@@ -23,6 +23,7 @@ use crate::unattended::drive::{
 use crate::unattended::link::{Joined, Out};
 use crate::unattended::Project;
 use crate::workflow::{Facts, Mark, Template};
+use crate::workspace::WorkspaceDrive;
 use chrono::Utc;
 use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -57,6 +58,8 @@ pub(super) struct Flow {
     pub(super) unattended: Option<UnattendedDrive>,
     pub(super) world: World,
     pub(super) schedule: ScheduleDrive<Win>,
+    /// The workspace of the one window, [`WINDOW`].
+    pub(super) workspace: WorkspaceDrive,
     /// What the clock reads at its next look.
     pub(super) schedules: Vec<Schedule>,
     /// The projects unattended runs look at, each switched on.
@@ -101,6 +104,7 @@ impl Flow {
                 offers: Vec::new(),
             },
             schedule,
+            workspace: WorkspaceDrive::new(crate::workspace::Workspace::seeded("/")),
             schedules: Vec::new(),
             roots: Vec::new(),
             runs: BTreeMap::new(),
@@ -249,17 +253,35 @@ impl Flow {
                 }
                 self.told.push((task, placed));
             }
-            TasksEffect::Cut { .. } => panic!("these flows start on the checkout"),
-            TasksEffect::Keep {
-                task,
-                launch,
-                window,
-            } => self.tasks_input(TasksInput::Kept {
-                task,
-                launch,
-                window,
-                open: true,
-            }),
+            TasksEffect::Cut(start) => {
+                let made =
+                    crate::task::cut_blocking(start.launch.repo(), start.launch.title(), &[]);
+                self.tasks_input(TasksInput::Cut { start, made });
+            }
+            TasksEffect::Keep(start) => {
+                let Flow {
+                    tasks,
+                    unattended,
+                    runs,
+                    workspace,
+                    ..
+                } = self;
+                let mut joined =
+                    Joined::new(tasks, runs.values().map(|d| &d.run), unattended.as_mut());
+                // The workspace's own effects (its write, a git sweep) are its
+                // carrier's, not a flow's.
+                let (_, out) = joined.tasks(|t| {
+                    let (fx, kept) = tasks_link::keep(t, Some(workspace), start);
+                    (kept, fx)
+                });
+                self.keep(out);
+            }
+            TasksEffect::ReadReview { .. } | TasksEffect::ConfirmAnswer { .. } => {
+                panic!("these flows answer no review")
+            }
+            TasksEffect::JudgeRemoval(_)
+            | TasksEffect::ConfirmRemoval { .. }
+            | TasksEffect::RemoveWorktree { .. } => panic!("these flows remove no worktree"),
             TasksEffect::CloseSession { .. } => {}
             TasksEffect::Signal(signal) => self.said.push(format!("{signal:?}")),
             TasksEffect::Refresh => {}
@@ -293,8 +315,12 @@ impl Flow {
         };
         let (mut session, rx) = session();
         self.opened.insert(id.clone(), opening);
-        let issue = self.tasks.task(&id).is_some_and(|t| t.issue().is_some());
-        let Start { run, first, pinned } = start;
+        let Start {
+            run,
+            first,
+            pinned,
+            issue,
+        } = start;
         let (run, fx, asked) = link::start(
             id.clone(),
             run,

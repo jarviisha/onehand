@@ -6,16 +6,28 @@ use crate::preflight::{found_late, About};
 use crate::task::Grant;
 use crate::workflow::{validate, Action, Failure, Run};
 
+/// What a Retry pressed on a task comes to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Retry {
+    /// It was dealt with at once: a check run again, or nothing to retry.
+    AtOnce,
+    /// The person is asked first, told what the new run keeps and where it
+    /// starts.
+    Confirm,
+}
+
 /// What a task whose session did not start is said to have come to.
 pub const SESSION_NOT_STARTED: &str = "The task's session did not start";
 
 /// The run a task begins with: its last run, carried on from `first`, with
-/// `pinned` of its boundaries' marks landed before.
+/// `pinned` of its boundaries' marks landed before, and whether the task
+/// works an issue.
 #[derive(Debug)]
 pub struct Start {
     pub run: Run,
     pub first: Action,
     pub pinned: usize,
+    pub issue: bool,
 }
 
 /// How a task that holds its place is driven.
@@ -86,7 +98,12 @@ impl<W: Copy> TasksDrive<W> {
         // pinned now rather than taken as made.
         let pinned = run.pinned_count();
         let first = run.resume();
-        let start = Start { run, first, pinned };
+        let start = Start {
+            run,
+            first,
+            pinned,
+            issue,
+        };
         match check {
             true => Begin::Check(start),
             false => Begin::Session {
@@ -109,17 +126,24 @@ impl<W: Copy> TasksDrive<W> {
         self.not_started(id, SESSION_NOT_STARTED.to_string(), kind)
     }
 
-    /// Retry task `id` at once, as run `run_id`, when it is a check: a fresh
-    /// run of its one step, from that step, since one that passed would
-    /// otherwise start past it. `None` when it is not a check, which a
-    /// person retries through what the retry would keep.
-    pub fn retry_at_once(&mut self, id: &str, run_id: String) -> Option<(bool, Vec<Effect<W>>)> {
-        let task = self.task(id)?;
+    /// Retry task `id`, from `window`: at once, as run `run_id`, when it is
+    /// a check, a fresh run of its one step from that step, since one that
+    /// passed would otherwise start past it, asking for its place; anything
+    /// else is asked about first, as a person retries through what the
+    /// retry would keep.
+    #[must_use]
+    pub fn retry_asked(&mut self, id: &str, run_id: String, window: W) -> (Retry, Vec<Effect<W>>) {
+        let Some(task) = self.task(id) else {
+            return (Retry::AtOnce, Vec::new());
+        };
         if task.source != super::super::Source::Check {
-            return None;
+            return (Retry::Confirm, Vec::new());
         }
-        let template = task.runs.last()?.template.clone();
+        let Some(template) = task.runs.last().map(|run| run.template.clone()) else {
+            return (Retry::AtOnce, Vec::new());
+        };
         let first = template.steps.first().map(|step| step.id.clone());
-        Some(self.retry(id, run_id, template, first.as_deref(), None))
+        let (_, fx) = self.retry(id, run_id, template, first.as_deref(), None, window);
+        (Retry::AtOnce, fx)
     }
 }

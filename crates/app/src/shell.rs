@@ -39,6 +39,8 @@ mod presentation;
 mod remote_runs;
 mod render;
 mod retry;
+#[cfg(test)]
+pub(crate) mod rig;
 mod roots;
 mod sessions;
 mod settings_page;
@@ -50,7 +52,7 @@ pub use crate::instance::hold_or_forward;
 pub use boot::{boot, open_or_focus, seed_workspace};
 pub use drafts::{BranchDraft, Draft, WorktreeDraft};
 pub use workflows::WorkflowLauncher;
-pub(crate) use workflows::{brief, cut_worktree_blocking, first_agent};
+pub(crate) use workflows::{brief, first_agent};
 
 /// Whether the window may close now; it may ask first and close later itself.
 type CloseGuard = std::rc::Rc<dyn Fn(&mut gpui::Window, &mut gpui::App) -> bool>;
