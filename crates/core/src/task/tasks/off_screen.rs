@@ -59,7 +59,7 @@ impl<W: Copy> TasksDrive<W> {
 
     /// What [`Effect::Keep`] came to: with the window still open, the task
     /// is kept, driven off screen the first time, and asks for its place.
-    pub(crate) fn kept(&mut self, start: OffScreen<W>, open: bool, fx: &mut Vec<Effect<W>>) {
+    pub(super) fn kept(&mut self, start: OffScreen<W>, open: bool, fx: &mut Vec<Effect<W>>) {
         let OffScreen {
             task,
             launch,

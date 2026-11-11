@@ -100,8 +100,8 @@ pub enum Input<W> {
     },
     /// What removing task `task`'s worktree, asked from `window`, was judged
     /// to come to (`confirmed` once the person said yes), on what was found
-    /// of the worktree at `folder` of `repo`; `None` when `window` went
-    /// before what uses the folder could be read.
+    /// of its worktree (the facts name its folder) in `repo`; `None` when
+    /// `window` went before what uses the folder could be read.
     Judged {
         task: String,
         confirmed: bool,
@@ -557,6 +557,7 @@ impl<W: Copy> TasksDrive<W> {
     /// when that is earlier than where it would start, carrying `note` as a
     /// revision, asking for its place from `window`. Whether there was one
     /// to give: none while the task is at work.
+    #[must_use]
     pub fn retry(
         &mut self,
         id: &str,

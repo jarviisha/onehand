@@ -45,6 +45,7 @@ pub fn finished<W: Copy>(
 /// there, listed but not put on screen, then the task kept and asking for
 /// its place. With the window gone, the start is refused. What the tasks do
 /// next, and what the workspace does.
+#[must_use]
 pub fn keep<W: Copy>(
     tasks: &mut TasksDrive<W>,
     workspace: Option<&mut WorkspaceDrive>,

@@ -43,8 +43,6 @@ pub(crate) struct Tasks {
     draining: HashMap<String, place::Drain>,
     /// Whoever asked to be told where a task's request landed.
     told: HashMap<String, futures::channel::oneshot::Sender<Placed>>,
-    /// What a person pressed on each task that is still being read or done,
-    /// so the button waits wherever the task is drawn.
     /// What each task's review was read as, kept for the question its
     /// answer asks.
     reviews: HashMap<String, onehand_core::unattended::review::ReviewRead>,
