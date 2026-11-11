@@ -574,13 +574,15 @@ Left for later (PR 11a):
 
 PR 11b, sessions and hosts, in two PRs (D42). The first, 11b1, built:
 - Which kept copy a host session that cannot be attached reads, and how it begins and ends, are
-  `host::session::reads_copy` and `OfflineStart` (`Read { away, ends }`, `End(why)`,
-  `Wait { host, busy, terms }`); `chat/session/host.rs` matches the failure once.
+  `host::session::reads_copy` and `OfflineStart` (`Read(AfterCopy)`, `End(why)`,
+  `Wait { host, busy, terms }`, with `keeps_carried` saying when a re-watch's carry stays);
+  `chat/session/host.rs` matches the failure once.
 - What a failed attach comes to for what waits on its host is `HostFailure::after_attach`
   (`AfterAttach::Wait` or `Failed`); `hosts::attach_waiting` keeps the loop.
 - A fork opens through `WorkspaceDrive::fork`, which says a fork whose project left meanwhile
-  (before, nothing was said and the staged read waited; its own commit); a failed fork is
-  `WorkspaceDrive::fork_failed`.
+  (before, nothing was said and the staged read waited; the fix shares its commit with the move
+  of a failed fork into `WorkspaceDrive::fork_failed`). A fork's session is added the one way a
+  session is (`Shell::add_by`).
 - *End on <host>* is `WorkspaceDrive::end_on_host`: the watching session closes first, the end is
   asked (`Effect::EndOnHost`), and what it came to lists the sessions again
   (`Effect::ListHostSessions`) or is said (`Signal::EndOnHostFailed`). Which session watches what is
@@ -591,7 +593,10 @@ PR 11b, sessions and hosts, in two PRs (D42). The first, 11b1, built:
 
 Phase 11 changed, on purpose (PR 11b1):
 - A fork whose project left the workspace while its conversation was read says so, and its read
-  is let go.
+  is let go; so is a fork's read whose session is refused for any reason.
+- *End on <host>* confirmed is sent to the host even when its window closes before the attach
+  lands; before, a window gone meanwhile dropped the end unsent. What it came to is said only
+  while the window is there.
 
 The second, 11b2, to build:
 - what a session starts on (`pending_resume`, `pending_watch`, `pending_fork`) held by
