@@ -610,7 +610,7 @@ impl IssuesView {
             publishing,
             reading,
             review,
-            full: self.page.as_ref().map(|page| page.full(self.work.left())),
+            full: self.page.as_ref().map(|page| page.full(&self.work)),
             session: issue.working_in(&self.live).map(str::to_string),
             offered: self.offered.iter().any(|offered| offered == root),
             pr: self.work.pr_seen(work.as_ref()),

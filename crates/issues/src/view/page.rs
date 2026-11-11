@@ -23,9 +23,7 @@ use gpui::{
 };
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::issues::{self, IssueKey, LocalIssue};
-use onehand_core::task::work::Reading;
-use onehand_core::task::work::drive::LeftAbout;
-use onehand_core::task::work::left::Left;
+use onehand_core::task::work::drive::WorkDrive;
 use onehand_core::task::work::list::{Filters, Held, Item, list};
 use onehand_ui::{faint_rule, hint};
 use std::collections::{BTreeSet, HashMap};
@@ -87,10 +85,10 @@ impl PageState {
             .map(|(_, label)| label.clone())
     }
 
-    /// What the full form draws from this page's state, and what the work
-    /// `left`, as the view's drive read it.
-    pub(super) fn full<'a>(&'a self, left: Option<&'a Reading<LeftAbout, Left>>) -> full::Full<'a> {
-        self.full.view(left)
+    /// What the full form draws from this page's state and the view's
+    /// drive.
+    pub(super) fn full<'a>(&'a self, drive: &'a WorkDrive) -> full::Full<'a> {
+        self.full.view(drive)
     }
 }
 
@@ -124,9 +122,8 @@ impl IssuesView {
         let Some(page) = self.page.as_mut() else {
             return;
         };
-        if !self.work.review().is_some_and(|r| r.open_on(key.as_ref())) {
+        if self.work.pick(key.as_ref()) {
             page.review = review::ReviewState::default();
-            self.work.close_review();
         }
         page.held.pinned = key;
         page.open = true;
@@ -170,9 +167,8 @@ impl IssuesView {
                     page.held.pick(key, &stopped);
                 }
                 // Picking another issue closes the review; the same keeps it.
-                if !view.work.review().is_some_and(|r| r.open_on(key.as_ref())) {
+                if view.work.pick(key.as_ref()) {
                     page.review = review::ReviewState::default();
-                    view.work.close_review();
                 }
                 page.open = true;
             }

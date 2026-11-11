@@ -116,3 +116,6 @@ impl IssuesView {
         self.work.work_of(&key).is_some_and(IssueWork::closing_asks)
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -434,10 +434,14 @@ The second, the Issues views' own rules:
 - A template's fill (`template::fill`), whether closing an issue asks first
   (`IssueWork::closing_asks`) and which landed write moves a view's selection
   (`issues::drive::moves_selection`) are core's; the views call them.
-- Core's drive tests hold every rule moved; the views' carrying of its reads has no contract test
-  yet, since the forge connectors are the ones built in.
+- Core's drive tests hold every rule moved, and the views' carrier has a contract test
+  (`crates/issues/src/view/reads/tests.rs`): what the work left read off the UI thread, its answer
+  reaching the drive once and kept for its work. Only `heard` was pinned before the move; the other
+  rules were pinned by their drive tests in the commits that moved them.
 
 Left for later:
+- The carrying of the pull request reads has no contract test: the forge connectors are the ones
+  built in, and core's fake one is not reachable from the views' crate.
 - `Issues`' methods stay public, for the writers outside `FileDrive` (a tool, an unattended run,
   the issue work's note).
 - The Issues views keep a timer that asks the file to sync every few minutes; whether a sync is due

@@ -34,12 +34,12 @@ pub const PR_LIST_CAP: usize = 200;
 
 /// How many branches a capped read missed are looked up one by one, per
 /// read; past it a row is not read, and the list says so.
-pub const LOOKUP_CAP: usize = 20;
+pub(crate) const LOOKUP_CAP: usize = 20;
 
 /// What a read of a pull request is about: a retry that keeps the task but
 /// starts a new run makes every read of the old run stale.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PrAbout {
+pub(crate) struct PrAbout {
     issue: IssueKey,
     task: String,
     run: Option<String>,
@@ -59,7 +59,15 @@ impl PrAbout {
 }
 
 /// What a read of what the work left is about: its task and run.
-pub type LeftAbout = (String, Option<String>);
+type LeftAbout = (String, Option<String>);
+
+/// What the page last read of a work's leavings, for that work.
+pub enum LeftSeen<'a> {
+    Unread,
+    Failed(&'a str),
+    /// What it left, and when that was read.
+    Read(&'a Left, u64),
+}
 
 /// What a press on the review block sent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -162,13 +170,12 @@ struct Page {
     review: Review,
 }
 
-/// What the front end carries out. Every read below is off the UI loop, and
-/// a late answer is **dropped** by its generation: a newer read, or one about
-/// something else, supersedes it.
+/// What the front end carries out, each read off the UI loop.
 pub enum Effect {
     /// Read the pull request of `branch` in `root` from `forge`
     /// ([`Connector::pull_request_for_blocking`]) and report
-    /// [`Input::Pr`].
+    /// [`Input::Pr`]. A late answer is **dropped** by its generation: a
+    /// newer read, or one about another issue, task or run, supersedes it.
     ReadPr {
         generation: u64,
         root: PathBuf,
@@ -176,7 +183,9 @@ pub enum Effect {
         branch: String,
     },
     /// Read up to [`PR_LIST_CAP`] of `root`'s pull requests
-    /// ([`Connector::pull_requests_blocking`]) and report [`Input::Prs`].
+    /// ([`Connector::pull_requests_blocking`]) and report [`Input::Prs`]. A
+    /// late answer is **dropped** by its project's generation once a newer
+    /// read of that project is asked, and counted down either way.
     ReadPrs {
         generation: u64,
         root: PathBuf,
@@ -184,18 +193,22 @@ pub enum Effect {
         branches: Vec<String>,
     },
     /// Look up `branch`'s pull request in `root` on its own and report
-    /// [`Input::LookedUp`].
+    /// [`Input::LookedUp`]. A late answer is **dropped** by the generation of
+    /// the project read it belongs to.
     LookUp {
         generation: u64,
         root: PathBuf,
         forge: &'static dyn Connector,
         branch: String,
     },
-    /// Read what `work` left ([`super::left::left_blocking`]) and report [`Input::Left`].
+    /// Read what `work` left ([`super::left::left_blocking`]) and report
+    /// [`Input::Left`]. A late answer is **dropped** by its generation: a
+    /// newer read, or one about another task or run, supersedes it.
     ReadLeft { generation: u64, work: Box<Work> },
     /// Read what the step under review changed in `dir` between the two
     /// marks ([`crate::task::marks::changes_blocking`]) and report
-    /// [`Input::ReviewFiles`].
+    /// [`Input::ReviewFiles`]. A late answer is **dropped** by its
+    /// generation: the block reloaded or closed since supersedes it.
     ReadReviewFiles {
         generation: u64,
         dir: PathBuf,
@@ -319,9 +332,20 @@ impl WorkDrive {
         self.page.as_ref().is_some_and(|page| page.reading > 0)
     }
 
-    /// What the work the reads are about left, if the page has read it.
-    pub fn left(&self) -> Option<&Reading<LeftAbout, Left>> {
-        self.page.as_ref().map(|page| &page.left)
+    /// What `work` left, as the page last read it for it: never another
+    /// task's or run's.
+    pub fn left_seen(&self, work: &Work) -> LeftSeen<'_> {
+        let Some(reading) = self.page.as_ref().map(|page| &page.left) else {
+            return LeftSeen::Unread;
+        };
+        if reading.about() != Some(&(work.task.clone(), work.run.clone())) {
+            return LeftSeen::Unread;
+        }
+        match (&reading.value, &reading.failed) {
+            (Some((left, at)), _) => LeftSeen::Read(left, *at),
+            (None, Some(why)) => LeftSeen::Failed(why),
+            (None, None) => LeftSeen::Unread,
+        }
     }
 
     /// The review block, on the page.
@@ -539,6 +563,19 @@ impl WorkDrive {
             ..Review::default()
         };
         read_review_files(&mut page.review).into_iter().collect()
+    }
+
+    /// Issue `key` was picked: another issue than the review block's closes
+    /// it, the same keeps it. Says whether it closed.
+    pub fn pick(&mut self, key: Option<&IssueKey>) -> bool {
+        let Some(page) = self.page.as_mut() else {
+            return false;
+        };
+        if page.review.open_on(key) {
+            return false;
+        }
+        page.review = Review::default();
+        true
     }
 
     /// Close the review block.

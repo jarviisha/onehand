@@ -193,7 +193,7 @@ impl IssuesView {
         let read = review.read()?;
         let muted = cx.theme().muted_foreground;
         let ink = status_ink(cx);
-        let full = page.full(self.work.left());
+        let full = page.full(&self.work);
         let work = work.map(|work| &work.work);
 
         let head = div()

@@ -33,7 +33,10 @@ fn checks(id: &str) -> Task {
 fn reads_pr(effects: &[Effect]) -> Option<u64> {
     effects.iter().find_map(|effect| match effect {
         Effect::ReadPr { generation, .. } => Some(*generation),
-        _ => None,
+        Effect::ReadPrs { .. }
+        | Effect::LookUp { .. }
+        | Effect::ReadLeft { .. }
+        | Effect::ReadReviewFiles { .. } => None,
     })
 }
 
@@ -213,4 +216,41 @@ fn a_review_press_goes_where_it_was_read_and_reloads_where_the_run_moved() {
     // A run no longer waiting refuses.
     drive.set_works(&[], Some(&key(1)));
     assert_eq!(drive.approve().0, Answered::Refused);
+}
+
+#[test]
+fn picking_another_issue_closes_the_review_and_the_same_keeps_it() {
+    let first = waiting(1);
+    let mut drive = drive(true, std::slice::from_ref(&first));
+    drive.open_review(key(1), &first.work);
+    assert!(!drive.pick(Some(&key(1))));
+    assert!(drive.review().unwrap().is_open());
+    assert!(drive.pick(Some(&key(2))));
+    assert!(!drive.review().unwrap().is_open());
+}
+
+#[test]
+fn what_the_work_left_is_shown_only_for_its_own_run() {
+    let t = checks("a");
+    let mut drive = drive(true, &[work(1, &t, Working::Running)]);
+    let effects = drive.show(Path::new(ROOT), Some(&key(1)), NOW);
+    let generation = effects
+        .iter()
+        .find_map(|effect| match effect {
+            Effect::ReadLeft { generation, .. } => Some(*generation),
+            Effect::ReadPr { .. }
+            | Effect::ReadPrs { .. }
+            | Effect::LookUp { .. }
+            | Effect::ReadReviewFiles { .. } => None,
+        })
+        .unwrap();
+    drive.handle(Input::Left {
+        generation,
+        left: super::super::left::left_blocking(&work(1, &t, Working::Running).work),
+        now: NOW,
+    });
+    let own = work(1, &t, Working::Running).work;
+    assert!(matches!(drive.left_seen(&own), LeftSeen::Read(_, NOW)));
+    let other = work(2, &checks("b"), Working::Running).work;
+    assert!(matches!(drive.left_seen(&other), LeftSeen::Unread));
 }

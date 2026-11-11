@@ -254,8 +254,9 @@ write landing once with its answer reaching the drive and its maker; the Editor'
 buffer was read from, a failure said once, and a save asked while one writes running after it with
 the text typed since; the Plugins mode's (`crates/claude-plugins/src/view/tests.rs`, against a
 `claude` of its own) one change at a time, what went through counted, and a refusal said only in
-its project. Still untested: the Issues views' carrying of `WorkDrive`'s reads (the forge connectors are the
-ones built in), the pane's answer to a session's look (`ChatPane::look`), a worker's
+its project. Still untested: the Issues views' carrying of `WorkDrive`'s pull request reads (the forge
+connectors are the ones built in; what the work left is read in
+`crates/issues/src/view/reads/tests.rs`), the pane's answer to a session's look (`ChatPane::look`), a worker's
 open carried through a window (its start, watch and first prompt), an agent check's probe, which
 starts a real agent, `SendCode`'s late answer and the pane's half
 of the session (`ChatPane::carry`), `SaveTitle` (written on the ordered writer's own thread, which

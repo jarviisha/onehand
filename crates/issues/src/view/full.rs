@@ -16,9 +16,9 @@ use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::diff::Row as DiffRow;
 use onehand_core::issues;
 use onehand_core::task::marks::{self, Change};
-use onehand_core::task::work::drive::LeftAbout;
-use onehand_core::task::work::left::{CheckStands, Left};
-use onehand_core::task::work::{Reading, Work};
+use onehand_core::task::work::Work;
+use onehand_core::task::work::drive::{LeftSeen, WorkDrive};
+use onehand_core::task::work::left::CheckStands;
 use onehand_ui::Refuses as _;
 use onehand_ui::tokens::CODE_TEXT;
 use onehand_ui::{fold_toggle, row as row_surface, status_ink};
@@ -55,27 +55,23 @@ pub(super) enum Side {
 /// What the full form draws, borrowed from the page.
 pub(super) struct Full<'a> {
     state: &'a FullState,
-    /// What the work left, as the view's drive last read it.
-    left: Option<&'a Reading<LeftAbout, Left>>,
+    /// The view's drive, which says what each work left as last read.
+    drive: &'a WorkDrive,
 }
 
 impl FullState {
-    pub(super) fn view<'a>(&'a self, left: Option<&'a Reading<LeftAbout, Left>>) -> Full<'a> {
-        Full { state: self, left }
+    pub(super) fn view<'a>(&'a self, drive: &'a WorkDrive) -> Full<'a> {
+        Full { state: self, drive }
     }
 }
 
 impl Full<'_> {
     /// How `work`'s check stands, as last read for it; `None` until read.
     pub(super) fn check_for(&self, work: &Work) -> Option<Result<CheckStands, String>> {
-        let reading = self.left?;
-        if reading.about() != Some(&(work.task.clone(), work.run.clone())) {
-            return None;
-        }
-        match (&reading.value, &reading.failed) {
-            (Some((left, _)), _) => Some(left.check.clone()),
-            (None, Some(why)) => Some(Err(why.clone())),
-            (None, None) => None,
+        match self.drive.left_seen(work) {
+            LeftSeen::Read(left, _) => Some(left.check.clone()),
+            LeftSeen::Failed(why) => Some(Err(why.to_string())),
+            LeftSeen::Unread => None,
         }
     }
 }
@@ -151,16 +147,18 @@ pub(super) fn left_lines(
 ) -> Vec<AnyElement> {
     let muted = cx.theme().muted_foreground;
     let warning = status_ink(cx).warning;
-    let reading = full.left;
-    let ours = reading.is_some_and(|r| r.about() == Some(&(work.task.clone(), work.run.clone())));
-    let Some((left, at)) = reading.and_then(|r| r.value.as_ref()).filter(|_| ours) else {
-        let said = match reading.and_then(|r| r.failed.as_deref()).filter(|_| ours) {
-            Some(why) => div()
+    let (left, at) = match full.drive.left_seen(work) {
+        LeftSeen::Read(left, at) => (left, at),
+        LeftSeen::Failed(why) => {
+            let said = div()
                 .text_color(warning)
-                .child(format!("could not be read: {why}")),
-            None => div().text_color(muted).child("Reading the check…"),
-        };
-        return vec![line("Check", said.into_any_element())];
+                .child(format!("could not be read: {why}"));
+            return vec![line("Check", said.into_any_element())];
+        }
+        LeftSeen::Unread => {
+            let said = div().text_color(muted).child("Reading the check…");
+            return vec![line("Check", said.into_any_element())];
+        }
     };
     let now = issues::now();
     let mut lines = vec![line(
@@ -169,7 +167,7 @@ pub(super) fn left_lines(
             Ok(check) => div().truncate().child(format!(
                 "{} · read {}",
                 check.said(),
-                onehand_core::rel_time(now, *at)
+                onehand_core::rel_time(now, at)
             )),
             Err(why) => div()
                 .truncate()
