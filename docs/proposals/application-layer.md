@@ -557,6 +557,9 @@ Phase 11 changed, on purpose (PR 11a):
   button no longer waits for good (#319).
 - A judgement of a removal, or a review's read, whose window closed meanwhile lets the button go;
   before, it waited until the next press elsewhere.
+- A search asked for now and refused at once (no project switched on, the cap reached, a run
+  already starting, something stopping every run) says so in its window; before, the warning was
+  dropped, said inside that window's own update. Found by /drive.
 
 Left for later (PR 11a):
 - `submit_told` stays in the tasks' carrier for the app's tests: it needs the carrier's own record
