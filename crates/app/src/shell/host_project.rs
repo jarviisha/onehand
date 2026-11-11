@@ -11,7 +11,7 @@ use gpui::{App, AppContext as _, Context, Entity, Focusable as _, Subscription, 
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputEvent, InputState};
 use onehand_core::host::client::HostConn;
-use onehand_core::host::drive::{Landed, Waited, back_landed, idle_landed};
+use onehand_core::host::drive::{Landing, back_landed, idle_landed};
 use onehand_core::host::drive::{back_failure, needs_restart, restart_failure, said_by_wait};
 use onehand_core::host::sshconf;
 use onehand_core::host::wire::HostSession;
@@ -595,54 +595,37 @@ impl Shell {
         self.carry_landed(host, landed, window, cx);
     }
 
-    /// Carry out what a wait on `host` ending comes to.
+    /// Carry out what a wait on `host` ending comes to, step by step.
     fn carry_landed(
         &mut self,
         host: &HostName,
-        landed: Landed,
+        landed: Vec<Landing>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        match landed {
-            Landed::Restart {
-                uids,
-                after_service,
-                told,
-                list,
-                add,
-            } => {
-                for uid in uids {
-                    self.restart_told(uid, after_service, told, window, cx);
+        for step in landed {
+            match step {
+                Landing::Restart { uid, after_service } => {
+                    self.restart_told(uid, after_service, after_service, window, cx)
                 }
-                if list {
-                    self.chat.update(cx, |pane, cx| pane.list_host_sessions(cx));
-                }
-                if add {
-                    self.commit_host_project(window, cx);
-                }
-            }
-            Landed::Ended {
-                waited,
-                uids,
-                why,
-                page,
-                add,
-            } => {
-                self.chat.update(cx, |pane, cx| {
-                    for uid in &uids {
-                        match waited {
-                            Waited::Back => pane.host_back_failed(*uid, &why, cx),
-                            Waited::Busy => pane.host_wait_failed(*uid, &why, cx),
-                        }
+                Landing::List => self.chat.update(cx, |pane, cx| pane.list_host_sessions(cx)),
+                Landing::Add => self.commit_host_project(window, cx),
+                Landing::BackFailed { uid, why } => self
+                    .chat
+                    .update(cx, |pane, cx| pane.host_back_failed(uid, &why, cx)),
+                Landing::WaitFailed { uid, why } => self
+                    .chat
+                    .update(cx, |pane, cx| pane.host_wait_failed(uid, &why, cx)),
+                Landing::PageUnreached(why) => self
+                    .chat
+                    .update(cx, |pane, cx| pane.host_page_unreached(host, &why, cx)),
+                Landing::PageFailed => self
+                    .chat
+                    .update(cx, |pane, cx| pane.host_page_failed(host, cx)),
+                Landing::AddFailed(why) => {
+                    if let Some(draft) = self.host_project.as_mut() {
+                        draft.failed(why);
                     }
-                    match (waited, page) {
-                        (_, false) => {}
-                        (Waited::Back, true) => pane.host_page_unreached(host, &why, cx),
-                        (Waited::Busy, true) => pane.host_page_failed(host, cx),
-                    }
-                });
-                if let Some(draft) = self.host_project.as_mut().filter(|_| add) {
-                    draft.failed(why);
                 }
             }
         }

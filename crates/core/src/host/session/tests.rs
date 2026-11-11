@@ -208,7 +208,11 @@ fn only_a_restart_rewatches_a_host_session() {
     };
     let id = HostSession("h-1".into());
 
-    let (begin, start) = host_begin(Start::Restart(snapshot(), true), Some(&id), 3);
+    let (begin, start, sent) = host_begin(Start::Restart(snapshot(), true), Some(&id), 3);
+    assert_eq!(
+        sent, 0,
+        "a re-watch counts its prompts again from the journal"
+    );
     assert!(matches!(
         &begin,
         HostBegin::Rewatch(known, carried)
@@ -217,20 +221,41 @@ fn only_a_restart_rewatches_a_host_session() {
     assert!(matches!(start, Start::Fresh), "nothing adopted at once");
 
     let picked = snapshot().expect("a snapshot");
-    let (begin, start) = host_begin(Start::Resume(picked), Some(&id), 3);
+    let (begin, start, _) = host_begin(Start::Resume(picked), Some(&id), 3);
     assert!(matches!(begin, HostBegin::Open));
     assert!(matches!(start, Start::Resume(_)));
 
-    let (begin, start) = host_begin(Start::Restart(None, false), None, 0);
+    let (begin, start, _) = host_begin(Start::Restart(None, false), None, 0);
     assert!(matches!(begin, HostBegin::Open));
     assert!(matches!(start, Start::Restart(None, false)));
 
-    let (begin, start) = host_begin(Start::Watch(id.clone()), None, 0);
+    let (begin, start, _) = host_begin(Start::Watch(id.clone()), None, 0);
     assert!(matches!(&begin, HostBegin::Watch(known) if *known == id));
     assert!(matches!(start, Start::Fresh));
 
     // A fork is refused there, and kept to be adopted as a failed one.
-    let (begin, start) = host_begin(Start::Fork(()), Some(&id), 0);
+    let (begin, start, _) = host_begin(Start::Fork(()), Some(&id), 0);
     assert!(matches!(begin, HostBegin::Refuse("Not on a host yet")));
     assert!(matches!(start, Start::Fork(())));
+}
+
+/// A start opens anew, on the conversation it names, or as its fork says.
+#[test]
+fn a_start_opens_as_it_says() {
+    type Start = super::Start<&'static str>;
+    let fork = |from: &&str| Opening::Resume(from.to_string());
+    assert!(matches!(Start::Fresh.opening(fork), Opening::Fresh));
+    assert!(matches!(
+        Start::Restart(None, false).opening(fork),
+        Opening::Fresh
+    ));
+    let stored = SessionDrive::new({
+        let mut chat = Chat::new(1, PathBuf::from("/p"), "c".into(), None);
+        chat.session_id = Some("acp-1".into());
+        chat
+    })
+    .take_snapshot(now())
+    .unwrap();
+    assert!(matches!(Start::Resume(stored).opening(fork), Opening::Resume(id) if id == "acp-1"));
+    assert!(matches!(Start::Fork("orig").opening(fork), Opening::Resume(id) if id == "orig"));
 }

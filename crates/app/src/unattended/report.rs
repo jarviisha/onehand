@@ -43,7 +43,7 @@ pub(super) fn teardown(dir: &Path, keep: bool, cx: &mut App) {
         };
         let _ = handle.update(cx, |_, window, cx| {
             shell.update(cx, |shell, cx| match keep {
-                true => shell.adopt_unattended(dir, window, cx),
+                true => shell.take_over_unattended(dir, window, cx),
                 false => shell.end_unattended(dir, window, cx),
             })
         });

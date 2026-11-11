@@ -40,21 +40,39 @@ pub enum Start<F> {
     Restart(Option<ConversationSnapshot>, bool),
 }
 
+impl<F> Start<F> {
+    /// How the agent opens the conversation this start is on: anew, on the
+    /// conversation a saved or restarted one names, or as the fork `fork`
+    /// says. A watch opens nothing of its own: the host's session is read.
+    pub fn opening(&self, fork: impl FnOnce(&F) -> Opening) -> Opening {
+        match self {
+            Self::Fresh | Self::Watch(_) | Self::Restart(None, _) => Opening::Fresh,
+            Self::Resume(stored) | Self::Restart(Some(stored), _) => {
+                Opening::Resume(stored.session_id.clone())
+            }
+            Self::Fork(from) => fork(from),
+        }
+    }
+}
+
 /// How a session in a host project begins on the host, given how its
 /// conversation starts, the host session it was on and the prompts it sent;
-/// with the start that is left for the front end to adopt at once.
+/// with the start that is left for the front end to adopt at once, and the
+/// prompts the new session counts as sent from the start.
 ///
 /// Only a restart reads the host session again. What it took from the old
 /// session rides with the re-watch, adopted only if the host has ended the
 /// session and a new one opens in its place: a re-watch replays the whole
-/// journal, prompts and all, and a copy adopted beside it is shown twice.
+/// journal, prompts and all, and a copy adopted beside it is shown twice; so
+/// a re-watch counts its prompts again as the journal replays them, and what
+/// it carries is for an open in its place.
 pub fn host_begin<F>(
     start: Start<F>,
     known: Option<&HostSession>,
     sent: usize,
-) -> (HostBegin, Start<F>) {
+) -> (HostBegin, Start<F>, usize) {
     match (start, known) {
-        (Start::Watch(id), _) => (HostBegin::Watch(id), Start::Fresh),
+        (Start::Watch(id), _) => (HostBegin::Watch(id), Start::Fresh, sent),
         (Start::Restart(stored, after_service), Some(id)) => (
             HostBegin::Rewatch(
                 id.clone(),
@@ -65,11 +83,12 @@ pub fn host_begin<F>(
                 },
             ),
             Start::Fresh,
+            0,
         ),
         // Adopted as a local fork is, so the refusal ends it as a failed one.
-        (start @ Start::Fork(_), _) => (HostBegin::Refuse("Not on a host yet"), start),
+        (start @ Start::Fork(_), _) => (HostBegin::Refuse("Not on a host yet"), start, sent),
         (start @ (Start::Fresh | Start::Resume(_) | Start::Restart(..)), _) => {
-            (HostBegin::Open, start)
+            (HostBegin::Open, start, sent)
         }
     }
 }

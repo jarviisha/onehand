@@ -26,7 +26,6 @@ use std::sync::Arc;
 
 pub(crate) use host::{BeginOnHost, list as host_list};
 use host::{Source, host_events, new_chat};
-pub(crate) use onehand_core::host::session::HostBegin;
 
 mod cards;
 mod folds;

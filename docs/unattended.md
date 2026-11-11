@@ -100,7 +100,7 @@ background executor, one interval in the config, no cron expressions.
 | `crates/core/src/workspace.rs` | `ProjectRoot::transient`, left out by `to_config`, and `add_transient_root`, which adds one with its session without selecting it, reached through `WorkspaceDrive::add_run_session` |
 | `crates/core/src/worktree.rs` | `cut_blocking`, the one way a run gets its worktree (a free branch, its directory, `branch_off_blocking` from a named start), `subtree_or`, and `fetch_blocking`; `worktree add` and the fetch both bounded and never prompting |
 | `crates/core/src/workspace/drive/sessions.rs` | `WorkspaceDrive::add_run_session`, `end_run` and `take_over_run`; `forget`, the half of `remove` that asks nothing and moves nothing |
-| `crates/app/src/shell/remote_runs.rs` | `run_unattended`, `end_unattended`, `adopt_unattended`, carrying those |
+| `crates/app/src/shell/remote_runs.rs` | `run_unattended`, `end_unattended`, `take_over_unattended`, carrying those |
 | `crates/app/src/chat/pane/sessions.rs` | `open_unshown` |
 | `crates/app/src/dialogs/issue.rs` | `pick_issue`, the list and the start form, and `issue_workflow_menu`, the workflow menu the picker and Settings share |
 | `crates/app/src/settings/pages.rs` | the default workflow and the workflow labels in Settings |
@@ -541,7 +541,7 @@ a deliberate one, not a list of whatever was once approved by hand.
    `/use`d it, since which channel it came through changes nothing about who is
    now driving — the run ends as taken over: no cancel, no close. From then on
    it is an ordinary session, and whatever it produces is that person's, not
-   the run's. **Its project is saved into the workspace** (`adopt_unattended`),
+   the run's. **Its project is saved into the workspace** (`take_over_unattended`),
    the one write a run's project ever gets: it was transient because the run
    would drop it, and the run no longer will — left unsaved, the work somebody
    just took on would vanish from the rail at the next launch.

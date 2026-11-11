@@ -30,10 +30,10 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 mod git;
-mod roots;
+mod projects;
 mod sessions;
-pub use git::SweepRoot;
-pub use roots::Losses;
+pub use git::SweepProject;
+pub use projects::Losses;
 
 /// How long the workspace must sit still before a burst of changes is
 /// written: long enough that a drag is one write rather than one per frame,
@@ -96,21 +96,36 @@ pub enum Refusal {
     NoAgent,
 }
 
-/// A project that has left the window: what the front end lets go of with it.
+/// A project that has left the window, on this machine or on `host`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Forgotten {
     pub path: PathBuf,
     pub host: Option<HostName>,
-    /// Whether its code was offloaded, and so is no longer checked for.
-    pub offloaded: bool,
+}
+
+/// One write of the workspace file: the whole file as it stood, where it
+/// goes, and which changes it carries. The front end puts its own part of
+/// the file, the panels' layout, into `config` as it writes.
+pub struct FileWrite {
+    pub pending: Pending<Thing, Value>,
+    pub config: WorkspaceConfig,
+    pub dir: PathBuf,
 }
 
 /// What the front end carries out.
 pub enum Effect {
     /// Let session `uid` go, and its agent with it.
     Close(u64),
-    /// A project has left: let go of everything kept for it. Its sessions
-    /// were each said with [`Effect::Close`] first.
+    /// The offloaded folder at this path has left: its code is no longer
+    /// checked for.
+    ForgotOffload(PathBuf),
+    /// The folder here at this path has left: let go of what is filed under
+    /// its path for this machine's folder (its issues, its check field, its
+    /// terminal's home, a form about it).
+    ForgotHere(PathBuf),
+    /// A project has left: let go of what every project has (its editor
+    /// buffers, tree and shells, its place in the session lists). Its
+    /// sessions were each said with [`Effect::Close`] first.
     Forgot(Forgotten),
     /// Put the active project's active session on screen.
     Show,
@@ -118,26 +133,16 @@ pub enum Effect {
     Changed,
     /// Put `value` back on screen: its write failed.
     Put(Value),
-    /// Write `config` into the workspace file in `dir`, after every write
-    /// before it, and report [`Input::Written`] with `pending`. The front end
-    /// puts its own part of the file, the panels' layout, into `config` as it
-    /// writes. A late answer is **recorded**: the write landed or it did not,
-    /// whatever changed since.
-    Write {
-        pending: Pending<Thing, Value>,
-        config: Box<WorkspaceConfig>,
-        dir: PathBuf,
-    },
+    /// Make `write`, after every write before it, and report
+    /// [`Input::Written`] with its `pending`. A late answer is **recorded**:
+    /// the write landed or it did not, whatever changed since.
+    Write(Box<FileWrite>),
     /// What [`Effect::Write`] asks, as the window closes: written at once and
     /// waited for briefly, there being no later to hear the answer in, then
     /// reported as [`Input::WrittenOnClose`]. Its answer is **recorded**, and
     /// nothing is put back: the window is going, and should the close be
     /// called off the next change writes again.
-    WriteOnClose {
-        pending: Pending<Thing, Value>,
-        config: Box<WorkspaceConfig>,
-        dir: PathBuf,
-    },
+    WriteOnClose(Box<FileWrite>),
     /// Report [`Input::Elapsed`] with `token` after `after`. A late answer is
     /// **dropped** by its token: a later change armed a later wait.
     Arm {
@@ -154,7 +159,7 @@ pub enum Effect {
     /// left meanwhile is dropped from it.
     Sweep {
         token: u64,
-        roots: Vec<SweepRoot>,
+        roots: Vec<SweepProject>,
     },
     /// Read the projects' `git status` again, through [`WorkspaceDrive::sweep`]:
     /// the projects changed.
@@ -198,7 +203,7 @@ pub struct WorkspaceDrive {
     /// The newest sweep's token.
     swept: u64,
     /// The projects the newest sweep reads.
-    sweeping: Vec<SweepRoot>,
+    sweeping: Vec<SweepProject>,
     saves: Saves<Thing, Value>,
     /// The newest wait armed for a burst's write, while one waits.
     soon: Option<u64>,
@@ -280,12 +285,7 @@ impl WorkspaceDrive {
     #[must_use = "its effects are to be carried"]
     pub fn flush(&mut self) -> Option<Effect> {
         self.soon.take()?;
-        let (pending, config, dir) = self.snapshot()?;
-        Some(Effect::WriteOnClose {
-            pending,
-            config,
-            dir,
-        })
+        self.snapshot().map(Effect::WriteOnClose)
     }
 
     /// Bind the workspace to the folder `dir`, and write it there.
@@ -313,22 +313,17 @@ impl WorkspaceDrive {
     }
 
     fn write(&mut self) -> Option<Effect> {
-        let (pending, config, dir) = self.snapshot()?;
-        Some(Effect::Write {
-            pending,
-            config,
-            dir,
-        })
+        self.snapshot().map(Effect::Write)
     }
 
     /// The whole file as it now stands, and where it goes; none unbound.
-    fn snapshot(&mut self) -> Option<(Pending<Thing, Value>, Box<WorkspaceConfig>, PathBuf)> {
+    fn snapshot(&mut self) -> Option<Box<FileWrite>> {
         let dir = self.workspace.storage_dir.clone()?;
-        Some((
-            self.saves.write_all(),
-            Box::new(self.workspace.to_config()),
+        Some(Box::new(FileWrite {
+            pending: self.saves.write_all(),
+            config: self.workspace.to_config(),
             dir,
-        ))
+        }))
     }
 
     /// What the front end reports back.

@@ -115,31 +115,27 @@ impl SessionDrive {
     /// reach: the session ends as a lost agent does, which Restart tries
     /// again. Nothing when it was not waiting.
     pub fn wait_failed(&mut self, why: &str, now: Now) -> Vec<Effect> {
-        match self.forget_host_wait() {
-            (true, mut fx) => {
-                fx.extend(self.end_as_lost(why, now));
-                fx
-            }
-            (false, _) => Vec::new(),
-        }
+        let forgot = self.forget_host_wait();
+        self.end_if_held(forgot, why, now)
     }
 
     /// The wait for the host to be back ended on `why`, the host taken or
     /// refused: the session ends as a lost agent does. Nothing when it was not
     /// out of reach.
     pub fn back_failed(&mut self, why: &str, now: Now) -> Vec<Effect> {
-        match self.forget_host_away() {
-            (true, mut fx) => {
-                fx.extend(self.end_as_lost(why, now));
-                fx
-            }
-            (false, _) => Vec::new(),
-        }
+        let forgot = self.forget_host_away();
+        self.end_if_held(forgot, why, now)
     }
 
-    /// End the agent's link on `why`, as a batch of its own.
-    fn end_as_lost(&mut self, why: &str, now: Now) -> Vec<Effect> {
-        let (mut fx, _) = self.apply(AcpEvent::Disconnected(why.to_string()), now);
+    /// End the agent's link on `why`, as a batch of its own, after what
+    /// letting go of a wait said (`forgot`), when there was one to let go of.
+    fn end_if_held(&mut self, forgot: (bool, Vec<Effect>), why: &str, now: Now) -> Vec<Effect> {
+        let (held, mut fx) = forgot;
+        if !held {
+            return Vec::new();
+        }
+        let (lost, _) = self.apply(AcpEvent::Disconnected(why.to_string()), now);
+        fx.extend(lost);
         fx.extend(self.end_batch());
         fx
     }

@@ -4,7 +4,7 @@ use super::{ChatPane, ChatPaneEvent, ProjectFacts, Restart, SessionSignal, switc
 use crate::chat::composer::Composer;
 use crate::chat::conversation::{Conversation, SessionPhase};
 use crate::chat::conversation::{HostAt, OnHost};
-use crate::chat::session::{BeginOnHost, ChatEvent, ChatSession, HostBegin};
+use crate::chat::session::{BeginOnHost, ChatEvent, ChatSession};
 use gpui::{App, Context, Entity, Focusable, SharedString, Window};
 use onehand_core::acp::Opening;
 use onehand_core::chat::drive::{Closing, Ended, Input, Intake, Origin, Restarting, Signal};
@@ -205,20 +205,15 @@ impl ChatPane {
         let (root, spec, dirs) = (conv.root.clone(), conv.spec.clone(), conv.dirs.clone());
         // What the old session had sent, counted on: who prompted a worker is
         // read from it, and the new chat would start it from nothing.
-        let mut sent_before = conv
+        let sent = conv
             .session()
             .map_or(0, |session| session.read(cx).chat.prompts_sent);
-        let (on_host, start) = match &conv.host {
-            None => (None, start),
+        let (on_host, start, sent_before) = match &conv.host {
+            None => (None, start, sent),
             Some(OnHost { host, cwd, session }) => {
-                let (begin, start) = host_begin(start, session.as_ref(), sent_before);
-                // A re-watch counts the prompts again as its journal replays
-                // them; what it carries is for an open in its place.
-                if matches!(begin, HostBegin::Rewatch(..)) {
-                    sent_before = 0;
-                }
+                let (begin, start, sent) = host_begin(start, session.as_ref(), sent);
                 let (host, cwd) = (host.clone(), cwd.clone());
-                (Some(BeginOnHost { host, cwd, begin }), start)
+                (Some(BeginOnHost { host, cwd, begin }), start, sent)
             }
         };
         // Its names too: a worker's stand-in is never saved, and a name its
@@ -236,16 +231,10 @@ impl ChatPane {
             uid,
             root.clone(),
             &spec,
-            match &start {
-                Start::Fresh | Start::Watch(_) | Start::Restart(None, _) => Opening::Fresh,
-                Start::Resume(stored) | Start::Restart(Some(stored), _) => {
-                    Opening::Resume(stored.session_id.clone())
-                }
-                Start::Fork(staged) => Opening::Fork {
-                    from: staged.from.clone(),
-                    message: staged.message.clone(),
-                },
-            },
+            start.opening(|staged| Opening::Fork {
+                from: staged.from.clone(),
+                message: staged.message.clone(),
+            }),
             dirs,
             on_host,
             cx,

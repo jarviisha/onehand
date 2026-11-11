@@ -485,7 +485,7 @@ impl Shell {
                                 .worktree_draft
                                 .take_if(|draft| draft.root == root && draft.busy);
                             let label = workspace::label_for(&dir);
-                            let fx = shell.window.workspace.open_root(dir);
+                            let fx = shell.window.workspace.open_project(dir);
                             shell.carry_workspace(fx, window, cx);
                             window.push_notification(
                                 crate::toast::info(format!("Added {label}, on {branch}")),

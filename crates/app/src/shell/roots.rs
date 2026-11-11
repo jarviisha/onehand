@@ -85,7 +85,7 @@ impl Shell {
 
     /// Select a root, and show whatever session it was last on.
     pub fn select_root(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let fx = self.window.workspace.select_root(idx);
+        let fx = self.window.workspace.select_project(idx);
         self.carry_workspace(fx, window, cx);
     }
 
@@ -102,7 +102,7 @@ impl Shell {
         let fx = self
             .window
             .workspace
-            .select_root_session(root_idx, session_idx);
+            .select_project_session(root_idx, session_idx);
         self.carry_workspace(fx, window, cx);
     }
 
@@ -422,7 +422,7 @@ impl Shell {
     /// Add `dir` as a project and select it, or select it if it is one
     /// already. The folder picker lands here, and so does a second launch.
     pub(crate) fn open_root(&mut self, dir: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        let fx = self.window.workspace.open_root(dir);
+        let fx = self.window.workspace.open_project(dir);
         self.carry_workspace(fx, window, cx);
     }
 
@@ -435,7 +435,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let fx = self.window.workspace.open_host_root(host, path);
+        let fx = self.window.workspace.open_host_project(host, path);
         self.carry_workspace(fx, window, cx);
     }
 

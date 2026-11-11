@@ -96,8 +96,7 @@ impl WorkspaceDrive {
 
     /// Close every session of the project at `dir`, a folder here, showing
     /// what is left: what its code moving to or from a host does.
-    #[must_use = "its effects are to be carried"]
-    pub fn drop_sessions_in(&mut self, dir: &Path) -> Vec<Effect> {
+    pub(super) fn drop_sessions_in(&mut self, dir: &Path) -> Vec<Effect> {
         let uids: Vec<u64> = self
             .workspace
             .roots
@@ -181,14 +180,14 @@ impl WorkspaceDrive {
 
     /// Select project `root`, and show the session it was last on.
     #[must_use = "its effects are to be carried"]
-    pub fn select_root(&mut self, root: usize) -> Vec<Effect> {
+    pub fn select_project(&mut self, root: usize) -> Vec<Effect> {
         self.workspace.select_root(root);
         vec![Effect::Show, Effect::Changed]
     }
 
     /// Select project `root` and its session `session` in one touch.
     #[must_use = "its effects are to be carried"]
-    pub fn select_root_session(&mut self, root: usize, session: usize) -> Vec<Effect> {
+    pub fn select_project_session(&mut self, root: usize, session: usize) -> Vec<Effect> {
         self.workspace.select_root(root);
         self.workspace.select_session(session);
         vec![Effect::Show, Effect::Changed]
@@ -198,7 +197,7 @@ impl WorkspaceDrive {
     #[must_use = "its effects are to be carried"]
     pub fn select(&mut self, uid: u64) -> Vec<Effect> {
         match self.locate(uid) {
-            Some((root, session)) => self.select_root_session(root, session),
+            Some((root, session)) => self.select_project_session(root, session),
             None => Vec::new(),
         }
     }
@@ -229,7 +228,7 @@ impl WorkspaceDrive {
     /// Whether the project at `root` is left with nothing a person keeps: one
     /// added for a worker or a run alone, never saved, whose last session
     /// closed. Its row would stand for nothing, so it goes with that session.
-    pub fn left_behind(&self, root: usize) -> bool {
+    pub(crate) fn left_behind(&self, root: usize) -> bool {
         self.workspace
             .roots
             .get(root)
@@ -249,15 +248,22 @@ impl WorkspaceDrive {
             .iter()
             .map(|session| Effect::Close(session.uid))
             .collect();
-        // What was read of a folder here goes with it; a host's folder never
-        // had any of its own.
+        // Its code is no longer checked for here; offloaded again, it comes
+        // back as any does.
+        if root.offload.is_some() {
+            fx.push(Effect::ForgotOffload(root.path.clone()));
+        }
+        // What is kept under a folder here goes with it: what was read of it,
+        // and what the window files under its path. A host's folder never had
+        // any of its own, and what is filed under its path belongs to a
+        // folder of the same path here.
         if root.host.is_none() {
             self.git.remove(&root.path);
+            fx.push(Effect::ForgotHere(root.path.clone()));
         }
         fx.push(Effect::Forgot(Forgotten {
             path: root.path.clone(),
             host: root.host.clone(),
-            offloaded: root.offload.is_some(),
         }));
         self.workspace.remove_root(idx);
         fx.push(Effect::Changed);
