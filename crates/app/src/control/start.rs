@@ -126,3 +126,6 @@ pub(crate) async fn start_task(
         .map_err(|_| "the task did not start".to_string())?;
     Ok((id, placed))
 }
+
+#[cfg(test)]
+mod tests;
