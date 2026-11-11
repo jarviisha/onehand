@@ -178,21 +178,58 @@ fn a_restart_the_host_cannot_list_for_ends_on_the_error() {
 /// build is waited on whatever was kept.
 #[test]
 fn offline_start_reads_the_copy_only_when_there_is_one() {
-    let away = HostFailure::Other("Could not reach vps".into());
-    assert_eq!(offline_start(3, &away), OfflineStart::Read);
-    assert_eq!(offline_start(0, &away), OfflineStart::End);
+    let away = || HostFailure::Other("Could not reach vps".into());
+    assert_eq!(
+        offline_start(3, away()),
+        OfflineStart::Read(AfterCopy::Away)
+    );
+    assert!(!offline_start(3, away()).keeps_carried());
+    assert!(offline_start(0, away()).keeps_carried());
+    assert_eq!(
+        offline_start(0, away()),
+        OfflineStart::End("Could not reach vps".into())
+    );
+    let busy = || HostFailure::Busy {
+        host: crate::workspace::HostName("vps".into()),
+        busy: vec![HostSession("h-1".into())],
+        terms: 2,
+    };
+    let waits = OfflineStart::Wait {
+        host: crate::workspace::HostName("vps".into()),
+        busy: 1,
+        terms: 2,
+    };
+    assert_eq!(offline_start(3, busy()), waits);
+    assert_eq!(offline_start(0, busy()), waits);
+    assert!(waits.keeps_carried());
+    // A host refused, or held by another machine, reads the copy too, and
+    // ends on why rather than being waited on.
+    let refused = || HostFailure::Refused("vps is not a machine this build runs on".into());
+    assert_eq!(
+        offline_start(3, refused()),
+        OfflineStart::Read(AfterCopy::Ends(
+            "vps is not a machine this build runs on".into()
+        ))
+    );
+    assert!(matches!(offline_start(0, refused()), OfflineStart::End(_)));
+}
+
+/// A busy host is waited on whatever was kept; any other failure reads the
+/// copy of the host session it knows.
+#[test]
+fn only_a_host_out_of_reach_refused_or_taken_reads_its_copy() {
+    let id = HostSession("h-1".into());
     let busy = HostFailure::Busy {
         host: crate::workspace::HostName("vps".into()),
         busy: Vec::new(),
         terms: 0,
     };
-    assert_eq!(offline_start(3, &busy), OfflineStart::Wait);
-    assert_eq!(offline_start(0, &busy), OfflineStart::Wait);
-    // A host refused reads the copy too; that it is not waited on is the
-    // caller's.
-    let refused = HostFailure::Refused("vps is not a machine this build runs on".into());
-    assert_eq!(offline_start(3, &refused), OfflineStart::Read);
-    assert_eq!(offline_start(0, &refused), OfflineStart::End);
+    assert_eq!(reads_copy(&busy, Some(&id)), None);
+    assert_eq!(
+        reads_copy(&HostFailure::Taken("x".into()), Some(&id)),
+        Some(&id)
+    );
+    assert_eq!(reads_copy(&HostFailure::Other("x".into()), None), None);
 }
 
 /// Only a restart reads a host session again. A conversation picked from the

@@ -44,6 +44,8 @@ fn names(fx: &[Effect]) -> Vec<String> {
             Effect::Resweep => "Resweep".into(),
             Effect::GitRead => "GitRead".into(),
             Effect::LookForRuns(path) => format!("LookForRuns({})", path.display()),
+            Effect::EndOnHost { session, .. } => format!("EndOnHost({})", session.0),
+            Effect::ListHostSessions => "ListHostSessions".into(),
             Effect::Signal(signal) => format!("{signal:?}"),
         })
         .collect()
@@ -618,4 +620,58 @@ fn what_goes_with_a_project_is_said_by_where_it_is() {
             "Changed"
         ]
     );
+}
+
+/// A fork opens on its project; one whose project left meanwhile is said
+/// and adds nothing; one that failed ends its session and is said.
+#[test]
+fn a_fork_opens_on_its_project_or_says_why_not() {
+    let mut drive = bound();
+    let (added, _) = drive.fork(Path::new("/a"), spec(), 1);
+    assert_eq!(added, Ok(1));
+    assert_eq!(drive.active_uid(), Some(1));
+    let (added, fx) = drive.fork(Path::new("/gone"), spec(), 2);
+    assert!(added.is_err());
+    assert_eq!(
+        names(&fx),
+        [r#"ForkFailed("its project left the workspace")"#]
+    );
+    assert!(drive.locate(2).is_none(), "nothing added");
+    let fx = drive.fork_failed(Some(1), None, "unsaved".into());
+    assert_eq!(names(&fx)[0], "Close(1)");
+    assert_eq!(names(&fx).last().unwrap(), r#"ForkFailed("unsaved")"#);
+    let fx = drive.fork_failed(None, None, "unsaved".into());
+    assert_eq!(names(&fx), [r#"ForkFailed("unsaved")"#]);
+}
+
+/// *End on <host>* closes the session watching it first, then ends it
+/// there; ended, the hosts' sessions are listed again, and a failure is
+/// said.
+#[test]
+fn ending_on_a_host_closes_its_watcher_first_and_says_a_failure() {
+    use crate::host::wire::HostSession;
+    let mut drive = bound();
+    drive.add_session(Some(spec()), 1, None);
+    let host = HostName("vps".into());
+    let fx = drive.end_on_host(
+        host.clone(),
+        HostSession("h-1".into()),
+        "Fix".into(),
+        Some(1),
+        None,
+    );
+    let said = names(&fx);
+    assert_eq!(said.first().map(String::as_str), Some("Close(1)"));
+    assert_eq!(said.last().map(String::as_str), Some("EndOnHost(h-1)"));
+    let ended = |result| Input::EndedOnHost {
+        host: host.clone(),
+        label: "Fix".into(),
+        result,
+    };
+    assert_eq!(names(&drive.handle(ended(Ok(())))), ["ListHostSessions"]);
+    let fx = drive.handle(ended(Err("away".into())));
+    assert!(matches!(
+        fx.as_slice(),
+        [Effect::Signal(Signal::EndOnHostFailed { why, .. })] if why == "away"
+    ));
 }

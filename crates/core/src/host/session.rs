@@ -117,27 +117,76 @@ pub struct Carried {
     pub after_service: bool,
 }
 
+/// How a host session read from its copy goes on.
+#[derive(Debug, PartialEq, Eq)]
+pub enum AfterCopy {
+    /// Out of reach: it says so, and waits silently to be restarted.
+    Away,
+    /// Its host refused it, or another machine holds it: not waited on, it
+    /// ends on why, as a lost agent Restart tries again.
+    Ends(String),
+}
+
 /// How a host session whose host could not be attached begins.
 #[derive(Debug, PartialEq, Eq)]
 pub enum OfflineStart {
-    /// From the copy this machine kept of its journal.
-    Read,
-    /// It ends on why the attach failed: nothing was kept to show.
-    End,
-    /// It waits on the host's busy sessions, as any session on it does.
-    Wait,
+    /// From the copy this machine kept of its journal, the whole transcript,
+    /// so what a re-watch carried is left out rather than shown twice.
+    Read(AfterCopy),
+    /// It ends on why the attach failed: nothing was kept to show, so what a
+    /// re-watch carried is kept on screen.
+    End(String),
+    /// It waits on the host's `busy` sessions and `terms` terminals, as any
+    /// session on it does, what a re-watch carried kept on screen.
+    Wait {
+        host: crate::workspace::HostName,
+        busy: usize,
+        terms: usize,
+    },
+}
+
+/// Which kept copy a host session whose host could not be attached reads
+/// (`known`, the host session it is on, if it is known): one out of reach,
+/// refused or held by another machine is read from what this machine kept
+/// of it; a busy host is waited on whatever was kept.
+pub fn reads_copy<'a>(
+    failure: &HostFailure,
+    known: Option<&'a HostSession>,
+) -> Option<&'a HostSession> {
+    match failure {
+        HostFailure::Busy { .. } => None,
+        HostFailure::Other(_) | HostFailure::Refused(_) | HostFailure::Taken(_) => known,
+    }
 }
 
 /// How a host session begins when its host could not be attached, given how
 /// many entries this machine kept of its journal and why the attach failed.
-pub fn offline_start(kept: usize, failure: &HostFailure) -> OfflineStart {
+pub fn offline_start(kept: usize, failure: HostFailure) -> OfflineStart {
     match failure {
-        HostFailure::Busy { .. } => OfflineStart::Wait,
-        HostFailure::Other(_) | HostFailure::Refused(_) | HostFailure::Taken(_) if kept == 0 => {
-            OfflineStart::End
+        HostFailure::Busy { host, busy, terms } => OfflineStart::Wait {
+            host,
+            busy: busy.len(),
+            terms,
+        },
+        HostFailure::Other(why) | HostFailure::Refused(why) | HostFailure::Taken(why)
+            if kept == 0 =>
+        {
+            OfflineStart::End(why)
         }
-        HostFailure::Other(_) | HostFailure::Refused(_) | HostFailure::Taken(_) => {
-            OfflineStart::Read
+        HostFailure::Other(_) => OfflineStart::Read(AfterCopy::Away),
+        HostFailure::Refused(why) | HostFailure::Taken(why) => {
+            OfflineStart::Read(AfterCopy::Ends(why))
+        }
+    }
+}
+
+impl OfflineStart {
+    /// Whether what a re-watch carried is kept on screen: only when no copy
+    /// is read, since the copy is the whole transcript.
+    pub fn keeps_carried(&self) -> bool {
+        match self {
+            OfflineStart::Read(_) => false,
+            OfflineStart::End(_) | OfflineStart::Wait { .. } => true,
         }
     }
 }

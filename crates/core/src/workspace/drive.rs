@@ -24,6 +24,7 @@
 
 use super::{HostName, ProjectRoot, Workspace};
 use crate::config::{AgentSpec, PanelLayout, WorkspaceConfig};
+use crate::host::wire::HostSession;
 use crate::saving::{Pending, Saves};
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -85,6 +86,15 @@ pub enum Signal {
     Refused(Refusal),
     /// The project named was removed from the workspace.
     Removed(String),
+    /// A fork of a conversation did not open, for why.
+    ForkFailed(String),
+    /// Ending the host session called `label` on `host` failed, for `why`;
+    /// it is still there to attach to from the project page.
+    EndOnHostFailed {
+        host: HostName,
+        label: String,
+        why: String,
+    },
 }
 
 /// Why a change was not made.
@@ -167,6 +177,18 @@ pub enum Effect {
     /// What was read of the projects' `git status` changed: whatever shows a
     /// branch or a change shows it again.
     GitRead,
+    /// End host session `session` on `host` there, attaching as a person and
+    /// asking a busy host now rather than waiting on it, and report
+    /// [`Input::EndedOnHost`] with `label`, what it is called. Recorded: the
+    /// session ended or did not, whatever changed since.
+    EndOnHost {
+        host: HostName,
+        session: HostSession,
+        label: String,
+    },
+    /// What runs on the hosts changed: whatever lists their sessions reads
+    /// them again.
+    ListHostSessions,
     /// The workspace in `dir` is known by `name`: remember it so.
     Remember {
         dir: PathBuf,
@@ -193,6 +215,13 @@ pub enum Input {
     Swept {
         token: u64,
         found: Vec<(PathBuf, crate::gitstat::GitStatus)>,
+    },
+    /// What [`Effect::EndOnHost`] for the host session called `label` on
+    /// `host` came to.
+    EndedOnHost {
+        host: HostName,
+        label: String,
+        result: Result<(), String>,
     },
 }
 
@@ -360,6 +389,14 @@ impl WorkspaceDrive {
                 let _ = self.saves.landed(pending, result);
                 Vec::new()
             }
+            Input::EndedOnHost {
+                host,
+                label,
+                result,
+            } => match result {
+                Ok(()) => vec![Effect::ListHostSessions],
+                Err(why) => vec![Effect::Signal(Signal::EndOnHostFailed { host, label, why })],
+            },
         }
     }
 

@@ -5,7 +5,6 @@
 //! a host session's events exactly as it reads a local adapter's.
 
 use super::{ChatEvent, ChatSession};
-use crate::hosts::HostFailure;
 use crate::state::Shared;
 use gpui::{AsyncApp, WeakEntity};
 use onehand_core::acp::Opening;
@@ -13,8 +12,10 @@ use onehand_core::chat::Chat;
 use onehand_core::config::AgentSpec;
 use onehand_core::host::client::{HostConn, HostError};
 use onehand_core::host::copy;
-use onehand_core::host::session::{Carried, HostBegin, OfflineStart, Restarted};
-use onehand_core::host::session::{host_restart, offline_start};
+use onehand_core::host::session::host_restart;
+use onehand_core::host::session::{
+    AfterCopy, Carried, HostBegin, OfflineStart, Restarted, offline_start, reads_copy,
+};
 use onehand_core::host::wire::SessionInfo;
 use onehand_core::workspace::HostName;
 use onehand_io::acp::Events;
@@ -65,17 +66,12 @@ pub(super) async fn host_events(
     let conn = match attaching.await {
         Ok(conn) => conn,
         Err(failure) => {
-            // A host session out of reach is read from what this machine
-            // kept of it; a busy host is waited on whatever was kept.
             let known = match &decided {
-                Ok(HostStart::Watch(id)) | Err((id, ..)) => Some(id.clone()),
+                Ok(HostStart::Watch(id)) | Err((id, ..)) => Some(id),
                 Ok(HostStart::Open { .. }) => None,
             };
-            let kept = match (&failure, known) {
-                (
-                    HostFailure::Other(_) | HostFailure::Refused(_) | HostFailure::Taken(_),
-                    Some(id),
-                ) => {
+            let kept = match reads_copy(&failure, known).cloned() {
+                Some(id) => {
                     let host = host.clone();
                     cx.background_executor()
                         .spawn(
@@ -83,44 +79,25 @@ pub(super) async fn host_events(
                         )
                         .await
                 }
-                (
-                    HostFailure::Other(_)
-                    | HostFailure::Refused(_)
-                    | HostFailure::Taken(_)
-                    | HostFailure::Busy { .. },
-                    _,
-                ) => Vec::new(),
+                None => Vec::new(),
             };
-            return match offline_start(kept.len(), &failure) {
-                // The copy is the whole transcript, prompts and all, so what
-                // a re-watch carried is left out rather than shown twice.
-                // A host refused, or held by another machine, is not
-                // waited on: what was kept is shown, and the session ends on
-                // why, as a lost agent Restart tries again.
-                OfflineStart::Read => match failure {
-                    HostFailure::Refused(why) | HostFailure::Taken(why) => {
-                        offline(host, &kept, false, session, cx);
-                        onehand_io::acp::ended(why)
+            let start = offline_start(kept.len(), failure);
+            if let (true, Err((_, carried, _, _))) = (start.keeps_carried(), decided) {
+                carry(carried, session, cx);
+            }
+            return match start {
+                OfflineStart::Read(after) => {
+                    let away = matches!(after, AfterCopy::Away);
+                    offline(host, &kept, away, session, cx);
+                    match after {
+                        AfterCopy::Away => onehand_io::acp::silent(),
+                        AfterCopy::Ends(why) => onehand_io::acp::ended(why),
                     }
-                    HostFailure::Other(_) | HostFailure::Busy { .. } => {
-                        offline(host, &kept, true, session, cx);
-                        onehand_io::acp::silent()
-                    }
-                },
-                OfflineStart::End | OfflineStart::Wait => {
-                    // No journal follows, so a re-watch's copy is kept on screen.
-                    if let Err((_, carried, _, _)) = decided {
-                        carry(carried, session, cx);
-                    }
-                    match failure {
-                        HostFailure::Other(why)
-                        | HostFailure::Refused(why)
-                        | HostFailure::Taken(why) => onehand_io::acp::ended(why),
-                        HostFailure::Busy { host, busy, terms } => {
-                            wait(host, busy.len(), terms, session, cx);
-                            onehand_io::acp::silent()
-                        }
-                    }
+                }
+                OfflineStart::End(why) => onehand_io::acp::ended(why),
+                OfflineStart::Wait { host, busy, terms } => {
+                    wait(host, busy, terms, session, cx);
+                    onehand_io::acp::silent()
                 }
             };
         }

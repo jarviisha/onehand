@@ -50,6 +50,19 @@ impl HostFailure {
         }
     }
 
+    /// What it comes to for what waits on its host to attach (the terminal
+    /// dock, the Workbench, the folder list): a busy host is waited out,
+    /// saying so, and attached again once its sessions are done; anything
+    /// else gives up, on why.
+    pub fn after_attach(self) -> AfterAttach {
+        match self {
+            Self::Busy { host, busy, terms } => {
+                AfterAttach::Wait(waiting_line(&host, busy.len(), terms))
+            }
+            Self::Other(why) | Self::Refused(why) | Self::Taken(why) => AfterAttach::Failed(why),
+        }
+    }
+
     /// The sentence it reads as where nothing waits on a busy host: the
     /// waiting line itself.
     pub fn said(self) -> String {
@@ -58,6 +71,15 @@ impl HostFailure {
             Self::Busy { host, busy, terms } => waiting_line(&host, busy.len(), terms),
         }
     }
+}
+
+/// What an attach that failed comes to for what waits on its host.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AfterAttach {
+    /// Say this, wait for the host's busy sessions, and attach again.
+    Wait(String),
+    /// Give up, on why.
+    Failed(String),
 }
 
 /// What is said wherever something waits on `host`'s `n` busy sessions and
@@ -82,4 +104,30 @@ pub fn waiting_line(host: &HostName, n: usize, terms: usize) -> String {
 /// What is said of `host` once another machine holds it.
 pub(crate) fn taken_line(host: &HostName) -> String {
     format!("{host} was attached from another machine")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A busy host is waited out, saying so; anything else gives up on why.
+    #[test]
+    fn only_a_busy_host_is_waited_out() {
+        let busy = HostFailure::Busy {
+            host: HostName("vps".into()),
+            busy: vec![HostSession("h".into())],
+            terms: 0,
+        };
+        assert_eq!(
+            busy.after_attach(),
+            AfterAttach::Wait(waiting_line(&HostName("vps".into()), 1, 0))
+        );
+        for failure in [
+            HostFailure::Other("away".into()),
+            HostFailure::Refused("no".into()),
+            HostFailure::Taken("held".into()),
+        ] {
+            assert!(matches!(failure.after_attach(), AfterAttach::Failed(_)));
+        }
+    }
 }

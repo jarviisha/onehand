@@ -20,13 +20,17 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(idx) = self.root_index(root) else {
-            return;
-        };
         // Before it is shown: showing is what spawns the adapter, and the
-        // adapter has to be started as the fork.
-        let _ = self.add_session(Some(spec), Some(idx), window, cx, |pane, uid| {
-            pane.fork_next(uid)
-        });
+        // adapter has to be started as the fork. A fork that goes nowhere
+        // lets its staged read go.
+        let _ = self.add_by(
+            |workspace, uid| workspace.fork(root, spec, uid),
+            window,
+            cx,
+            |pane, added| match added {
+                Some(uid) => pane.fork_next(uid),
+                None => pane.drop_fork(),
+            },
+        );
     }
 }

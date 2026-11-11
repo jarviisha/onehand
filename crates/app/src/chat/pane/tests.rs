@@ -381,6 +381,44 @@ mod lifecycle {
         assert!(pane.read_with(cx, |pane, _| pane.conversations.is_empty()));
     }
 
+    fn unseen(pane: &Entity<ChatPane>, uid: u64, cx: &mut VisualTestContext) -> bool {
+        pane.read_with(cx, |pane, cx| {
+            pane.session_of(uid)
+                .is_some_and(|session| session.read(cx).chat.unseen())
+        })
+    }
+
+    /// The pane answers a session's look with where the person is: news of
+    /// a session not on screen marks its row unread; news of the one on
+    /// screen in the active window leaves it read.
+    #[gpui::test]
+    fn a_look_marks_news_unread_only_out_of_sight(cx: &mut TestAppContext) {
+        use onehand_core::chat::Away;
+        let (pane, cx) = pane(cx);
+        open(&pane, 1, cx);
+        open(&pane, 2, cx);
+        cx.update(|window, cx| {
+            pane.update(cx, |pane, cx| {
+                pane.show(2, PathBuf::from("/tmp"), None, &nowhere(), window, cx)
+            })
+        });
+        // The window in front: a turn's news is a badge at most, never said
+        // on the desktop.
+        cx.update(|window, _| window.activate_window());
+        cx.run_until_parked();
+        let front = pane.read_with(cx, |pane, cx| cx.active_window() == Some(pane.window));
+        assert!(front, "the pane's window is in front");
+        let look = |uid, cx: &mut VisualTestContext| {
+            pane.update(cx, |pane, cx| {
+                pane.look(uid, Away::TurnEnded, "nowhere", "tmp", cx)
+            })
+        };
+        look(1, cx);
+        assert!(unseen(&pane, 1, cx), "out of sight: unread");
+        look(2, cx);
+        assert!(!unseen(&pane, 2, cx), "on screen in this window: read");
+    }
+
     /// A restart puts a new session in the old one's place, and the old one
     /// is gone by then; one with nothing live restarts nothing.
     #[gpui::test]
