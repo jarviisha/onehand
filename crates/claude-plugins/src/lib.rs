@@ -11,8 +11,6 @@ use gpui::{AnyView, App, Entity};
 use onehand_workbench::{Ask, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
 use std::path::Path;
 
-mod cli;
-mod inventory;
 mod view;
 use view::PluginsView;
 
@@ -72,7 +70,21 @@ impl WorkbenchMode for Mode {
                     .update(cx, |view, cx| view.agent_started(*since, cx));
                 true
             }
-            _ => false,
+            // Not this mode's to answer.
+            Request::OpenFile(_)
+            | Request::Save
+            | Request::Start
+            | Request::Reap
+            | Request::SetGit(_)
+            | Request::SetStorage(_)
+            | Request::SetFontSize(_)
+            | Request::ShowIssue(_)
+            | Request::LiveConversations(_)
+            | Request::RestartAgent
+            | Request::IssueWork { .. }
+            | Request::Locked(_)
+            | Request::Offloaded(_)
+            | Request::SendToHost(_) => false,
         }
     }
 }

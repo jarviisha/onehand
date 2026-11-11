@@ -180,6 +180,9 @@ minor bump may break any of them.
 
 ### Fixed
 
+- A save in the Editor that wrote nothing, because the file changed on disk or is gone, is said
+  under that project's files only; before, its line stood over whichever project was on screen.
+- A file still being read when its project was removed no longer brings that project's tabs back.
 - The Telegram bridge no longer lists or reaches a session whose project runs on a host or is
   offloaded to one. Before, a prompt sent to an offloaded session went without the project's code
   and was refused, and sending it again from Telegram never helped (#308).

@@ -34,6 +34,8 @@ The drives so far:
 | `onehand_core::config::drive::SettingsDrive` | the agents, the appearance, outside control's save, what each agent offers and its check | `crates/app/src/saves.rs`, its drive held on `Shared` |
 | `onehand_core::issues::drive::FileDrive` | one issues file: its read, a change shown before its write, when it syncs with its forge, an issue sent there | `IssuesFile` (`crates/issues/src/view/store.rs`), one per file for the process |
 | `onehand_core::workspace::WorkspaceDrive` | one window's workspace: its projects, where each session sits and what goes with it, the selection, the workspace file and what a failed write puts back, each project's `git status` | `crates/app/src/shell/carry.rs`, its drive held per window on the `Shell` |
+| `onehand_core::editor::drive::EditorDrive` | one Workbench's open files: a read landing as a tab, a save and the one asked while it runs, a conflict, a locked folder, a close that would lose edits | `EditorView` (`crates/editor/src/view.rs`), one per mode |
+| `onehand_core::claude_plugins::drive::PluginsDrive` | one Plugins mode: when its list is read, one change at a time, a refusal said in its project, what the agent on screen has not loaded | `PluginsView` (`crates/claude-plugins/src/view.rs`), one per mode |
 
 ## Rules
 
@@ -168,7 +170,9 @@ state and the settings are kept in their drives too, and so is each window's wor
 mutators are `pub(crate)` and which `WorkspaceDrive` derefs to without `DerefMut`, and what is
 shown of an issues file, which `FileDrive` derefs to (`Issues`' own methods are still public, for
 the writers outside it: a tool, an unattended run): `Chats`' mutators are `pub(crate)`, the tools'
-state is private to `ControlDrive`, and `SettingsDrive` derefs to its settings without `DerefMut`.
+state is private to `ControlDrive`, and `SettingsDrive` derefs to its settings without `DerefMut`. A Workbench's open files are
+`EditorDrive`'s, which derefs to them, and `RootEditors`' fields are `pub(crate)`; the Plugins
+mode's state is private to `PluginsDrive`.
 A schedule is the file's data, and
 what the clock or a switch writes onto it is decided by core's functions the carrier runs in its
 writer (`schedule::merge_looked`, `schedule::switch`). The other models are not there yet; each
@@ -184,7 +188,8 @@ tasks' `core/src/task/tasks.rs`, unattended runs' `core/src/unattended/drive.rs`
 `core/src/schedule/drive.rs`, hosts' `core/src/host/drive.rs` and offloaded projects'
 `core/src/host/offload/drive.rs`, the remote bridge's `core/src/remote/drive.rs`, the tools'
 `core/src/control/drive.rs`, the settings' `core/src/config/drive.rs`, a window's workspace
-`core/src/workspace/drive.rs` and an issues file's `core/src/issues/drive.rs`. The
+`core/src/workspace/drive.rs`, an issues file's `core/src/issues/drive.rs`, the Editor's
+`core/src/editor/drive.rs` and the Plugins mode's `core/src/claude_plugins/drive.rs`. The
 repository is cut by feature, and there is no `application/` folder to split each feature in
 two.
 
@@ -242,7 +247,12 @@ list kept; the workspace's (`crates/app/src/shell/carry/tests.rs`, on a real `Sh
 written once after its wait, a failed write put back on screen and in its field, a window closing
 writing the burst still waiting, and a run's session ended leaving no agent and no project; an
 issues file's (`crates/issues/src/view/store/tests.rs`) one file for every view, read once, and a
-write landing once with its answer reaching the drive and its maker. Still untested: the pane's answer to a session's look (`ChatPane::look`), a worker's
+write landing once with its answer reaching the drive and its maker; the Editor's
+(`crates/editor/src/view/tests.rs`) a read building one buffer, a write going through the disk its
+buffer was read from, a failure said once, and a save asked while one writes running after it with
+the text typed since; the Plugins mode's (`crates/claude-plugins/src/view/tests.rs`, against a
+`claude` of its own) one change at a time, what went through counted, and a refusal said only in
+its project. Still untested: the pane's answer to a session's look (`ChatPane::look`), a worker's
 open carried through a window (its start, watch and first prompt), an agent check's probe, which
 starts a real agent, `SendCode`'s late answer and the pane's half
 of the session (`ChatPane::carry`), `SaveTitle` (written on the ordered writer's own thread, which

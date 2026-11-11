@@ -17,7 +17,7 @@
 //! Every call is blocking and bounded, for the reason the forge's calls are:
 //! a command nobody is watching must not be able to hang its caller.
 
-use crate::inventory::{self, Inventory};
+use super::inventory::{self, Inventory};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -40,7 +40,7 @@ const CHANGE_LIMIT: Duration = Duration::from_secs(300);
 /// machine's own copy of the project beats both. The derived order is that one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum Scope {
+pub enum Scope {
     /// Every project on this machine.
     User,
     /// This project, in a settings file that is committed with it.
@@ -50,7 +50,7 @@ pub(crate) enum Scope {
 }
 
 impl Scope {
-    pub(crate) const ALL: [Scope; 3] = [Scope::User, Scope::Project, Scope::Local];
+    pub const ALL: [Scope; 3] = [Scope::User, Scope::Project, Scope::Local];
 
     fn arg(self) -> &'static str {
         match self {
@@ -62,7 +62,7 @@ impl Scope {
 
     /// The word on screen. `user` is Claude Code's name for it and reads as a
     /// person rather than a reach, so the screen says what it covers instead.
-    pub(crate) fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
             Scope::User => "Global",
             Scope::Project => "Project",
@@ -73,7 +73,7 @@ impl Scope {
     /// Who it reaches, as a menu row names it — by the people and places
     /// affected rather than by the file, since that is what choosing one
     /// decides.
-    pub(crate) fn reach(self) -> &'static str {
+    pub fn reach(self) -> &'static str {
         match self {
             Scope::User => "Every project",
             Scope::Project => "This project, for everyone (committed)",
@@ -82,7 +82,7 @@ impl Scope {
     }
 
     /// What choosing it means, for the tooltip.
-    pub(crate) fn meaning(self) -> &'static str {
+    pub fn meaning(self) -> &'static str {
         match self {
             Scope::User => "Every project on this machine",
             Scope::Project => "This project, in .claude/settings.json — committed with it",
@@ -129,28 +129,28 @@ struct Installed {
 
 /// One installed plugin that reaches this project.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Plugin {
+pub struct Plugin {
     /// `name@marketplace`, which is what every command takes.
-    pub(crate) id: String,
+    pub id: String,
     /// What its folder carries. Empty until read, and empty for a folder that
     /// could not be — which draws as no chips, never as a guessed count.
-    pub(crate) inventory: Inventory,
+    pub inventory: Inventory,
     /// What the marketplace now offers over one of its installs, and which
     /// one; `None` where no install can be told apart from what is offered,
     /// which is not the same as "up to date" and is not drawn as one.
-    pub(crate) update: Option<Update>,
+    pub update: Option<Update>,
     /// The version, folder and commit of the install the row shows: the one
     /// the update is for, else the narrowest — the copy a session here loads.
-    pub(crate) version: Option<String>,
-    pub(crate) install_path: Option<PathBuf>,
+    pub version: Option<String>,
+    pub install_path: Option<PathBuf>,
     /// The commit it was installed from, where Claude Code's record says.
-    pub(crate) commit: Option<String>,
+    pub commit: Option<String>,
     /// Each install on its own. A plugin installed at two scopes is two
     /// copies, possibly of two versions, and one can be behind while the other
     /// is not.
     installs: Vec<Install>,
     /// Where it is installed, which is where it can be removed from.
-    pub(crate) installed: Vec<Scope>,
+    pub installed: Vec<Scope>,
     /// What each scope's settings file says, indexed as [`Scope::ALL`];
     /// `None` where the file says nothing about it.
     set: [Option<bool>; 3],
@@ -172,9 +172,9 @@ struct Install {
 /// An update the marketplace offers, and the scope whose copy it is for — the
 /// one `claude plugin update` has to be told.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Update {
-    pub(crate) to: String,
-    pub(crate) scope: Scope,
+pub struct Update {
+    pub to: String,
+    pub scope: Scope,
 }
 
 /// The marketplace Anthropic runs. A plugin from it is marked *Official*;
@@ -184,18 +184,18 @@ const OFFICIAL: &str = "claude-plugins-official";
 
 impl Plugin {
     /// The plugin's own name, without its marketplace.
-    pub(crate) fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         self.id
             .split_once('@')
             .map_or(self.id.as_str(), |(name, _)| name)
     }
 
     /// The marketplace it came from.
-    pub(crate) fn marketplace(&self) -> &str {
+    pub fn marketplace(&self) -> &str {
         self.id.split_once('@').map_or("", |(_, market)| market)
     }
 
-    pub(crate) fn official(&self) -> bool {
+    pub fn official(&self) -> bool {
         self.marketplace() == OFFICIAL
     }
 
@@ -209,7 +209,7 @@ impl Plugin {
     /// by no settings file is off — which is what the listing says of one, and
     /// why the narrowest scope's answer here is what a session started in the
     /// project gets.
-    pub(crate) fn in_force(&self, scope: Scope) -> bool {
+    pub fn in_force(&self, scope: Scope) -> bool {
         self.source(scope)
             .and_then(|source| self.set[source as usize])
             .unwrap_or(false)
@@ -218,7 +218,7 @@ impl Plugin {
     /// Which scope decides it at `scope`: `scope` itself if its file mentions
     /// it, else the nearest wider one that does, else none. The one walk every
     /// other question about a scope is answered from.
-    pub(crate) fn source(&self, scope: Scope) -> Option<Scope> {
+    pub fn source(&self, scope: Scope) -> Option<Scope> {
         Scope::ALL
             .into_iter()
             .rev()
@@ -230,7 +230,7 @@ impl Plugin {
     /// turning it on or off can mean anything. Global is not offered for a
     /// plugin installed for this project alone: switched on there, the setting
     /// would name a plugin no other project has, and read as on everywhere.
-    pub(crate) fn reaches(&self, scope: Scope) -> bool {
+    pub fn reaches(&self, scope: Scope) -> bool {
         self.installed.iter().any(|at| *at <= scope)
     }
 
@@ -238,14 +238,14 @@ impl Plugin {
     /// settings files do not show — managed settings, a policy, a settings
     /// flag. Then the switches describe the files and not the outcome, and the
     /// row has to say so rather than let them be believed.
-    pub(crate) fn decided_elsewhere(&self) -> bool {
+    pub fn decided_elsewhere(&self) -> bool {
         self.in_force(Scope::Local) != self.enabled
     }
 
     /// The change that flips it at `scope`: whatever is in force there, the
     /// other way. Written at that scope, so flipping it for a project leaves
     /// every other project where it was.
-    pub(crate) fn flip(&self, scope: Scope) -> Change {
+    pub fn flip(&self, scope: Scope) -> Change {
         let verb = if self.in_force(scope) {
             Verb::Disable
         } else {
@@ -262,16 +262,16 @@ impl Plugin {
 /// One plugin a known marketplace offers.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Available {
+pub struct Available {
     #[serde(rename = "pluginId")]
-    pub(crate) id: String,
-    pub(crate) name: String,
+    pub id: String,
+    pub name: String,
     #[serde(default)]
-    pub(crate) description: String,
+    pub description: String,
     #[serde(default, rename = "marketplaceName")]
-    pub(crate) marketplace: String,
+    pub marketplace: String,
     #[serde(default)]
-    pub(crate) install_count: Option<u64>,
+    pub install_count: Option<u64>,
     /// Name, marketplace and description lowercased once, which is what a
     /// search is matched against — rather than lowercasing a few hundred
     /// descriptions on every keystroke.
@@ -341,23 +341,23 @@ pub(crate) fn complete_offers(
 impl Available {
     /// Whether it is from Anthropic's marketplace — the whole of what the
     /// *Official* mark claims.
-    pub(crate) fn official(&self) -> bool {
+    pub fn official(&self) -> bool {
         self.marketplace == OFFICIAL
     }
 
     /// Whether it matches `needle`, already lowercased.
-    pub(crate) fn matches(&self, needle: &str) -> bool {
+    pub fn matches(&self, needle: &str) -> bool {
         self.haystack.contains(needle)
     }
 }
 
 /// What is installed where it reaches this project, and what could be.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(crate) struct Catalog {
-    pub(crate) installed: Vec<Plugin>,
+pub struct Catalog {
+    pub installed: Vec<Plugin>,
     /// Most installed first, which is the order somebody browsing a few
     /// hundred entries wants the first screen in.
-    pub(crate) available: Vec<Available>,
+    pub available: Vec<Available>,
 }
 
 /// The listing's shape with `--available`: installs and offers apart. Without
@@ -474,7 +474,7 @@ fn canonical(path: &Path) -> PathBuf {
 
 /// What is installed for `root`, what each scope sets, and what the
 /// marketplaces offer.
-pub(crate) fn list_blocking(root: &Path) -> Result<Catalog, String> {
+pub fn list_blocking(root: &Path) -> Result<Catalog, String> {
     let json = claude(
         root,
         &["plugin", "list", "--json", "--available"],
@@ -584,7 +584,7 @@ fn marketplaces_blocking(root: &Path) -> HashMap<String, Vec<serde_json::Value>>
 
 /// Whether `version` reads as a commit rather than a release: seven or more
 /// hex digits and nothing else.
-pub(crate) fn is_hash(version: &str) -> bool {
+pub fn is_hash(version: &str) -> bool {
     version.len() >= 7 && version.chars().all(|c| c.is_ascii_hexdigit())
 }
 
@@ -608,9 +608,8 @@ pub(crate) fn update_to(
 ) -> Option<String> {
     // A newer release is said by its number, which is the name a person
     // knows it by.
-    if let (Some(offered), Some(installed)) = (entry["version"].as_str(), version)
-        && !is_hash(installed)
-    {
+    let released = (entry["version"].as_str(), version.filter(|v| !is_hash(v)));
+    if let (Some(offered), Some(installed)) = released {
         if newer(offered, installed) {
             return Some(offered.to_string());
         }
@@ -716,7 +715,7 @@ fn entry_for<'a>(
 
 /// What a change does to the plugin it names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Verb {
+pub enum Verb {
     Install,
     Update,
     Uninstall,
@@ -734,10 +733,10 @@ pub(crate) enum Verb {
 
 /// A change to what is installed or enabled: one plugin, one scope, one verb.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Change {
-    pub(crate) id: String,
-    pub(crate) scope: Scope,
-    pub(crate) verb: Verb,
+pub struct Change {
+    pub id: String,
+    pub scope: Scope,
+    pub verb: Verb,
 }
 
 impl Change {
@@ -773,17 +772,15 @@ impl Change {
             Verb::Move(from) => vec![at("install", *scope), at("uninstall", *from)],
             Verb::CheckUpdates => {
                 let market = id.split_once('@').map_or("", |(_, market)| market);
-                vec![
-                    ["plugin", "marketplace", "update", market]
-                        .map(str::to_string)
-                        .to_vec(),
-                ]
+                vec![["plugin", "marketplace", "update", market]
+                    .map(str::to_string)
+                    .to_vec()]
             }
         }
     }
 
     /// What is happening, while it happens.
-    pub(crate) fn doing(&self) -> String {
+    pub fn doing(&self) -> String {
         let Change { id, scope, verb } = self;
         let word = match verb {
             Verb::Install => "Installing",
@@ -801,7 +798,7 @@ impl Change {
 }
 
 /// Make `change`, in `root` so a project or local scope lands in that project.
-pub(crate) fn change_blocking(root: &Path, change: &Change) -> Result<(), String> {
+pub fn change_blocking(root: &Path, change: &Change) -> Result<(), String> {
     for step in change.steps() {
         let args: Vec<&str> = step.iter().map(String::as_str).collect();
         let said = claude(root, &args, CHANGE_LIMIT)?;
@@ -837,16 +834,14 @@ pub(crate) fn updated(said: &str) -> Result<(), String> {
 
 /// Run `claude` in `root` and hand back what it printed.
 fn claude(root: &Path, args: &[&str], limit: Duration) -> Result<String, String> {
-    let out = onehand_core::process::output_within(
-        Command::new("claude").args(args).current_dir(root),
-        limit,
-    )
-    .map_err(|err| match err {
-        onehand_core::process::Failure::Missing => {
-            "Claude Code's command line (`claude`) was not found on PATH".to_string()
-        }
-        err => format!("claude {err}"),
-    })?;
+    let out =
+        crate::process::output_within(Command::new("claude").args(args).current_dir(root), limit)
+            .map_err(|err| match err {
+            crate::process::Failure::Missing => {
+                "Claude Code's command line (`claude`) was not found on PATH".to_string()
+            }
+            err => format!("claude {err}"),
+        })?;
     if out.status.success() {
         return Ok(String::from_utf8_lossy(&out.stdout).into_owned());
     }

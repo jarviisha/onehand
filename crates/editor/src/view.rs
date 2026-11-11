@@ -1,16 +1,20 @@
-//! The Editor mode's own state: the open buffers per project root, and the
-//! rules that keep a save from clobbering somebody else's write.
+//! The Editor mode's view, and the carrier of its drive: the open buffers
+//! per project root are `onehand_core::editor::drive::EditorDrive`'s, every
+//! rule with them; what lives here is each tab's buffer, the reads and writes
+//! carried off the UI loop, and the drawing.
 
-use crate::buffers::{Lead, RootBuffers, StripHandlers, body, new_buffer, save_status, tab_strip};
+use crate::buffers::{Lead, StripHandlers, body, new_buffer, standing_line, tab_strip};
 
 use gpui::{
     AnyWindowHandle, App, AppContext as _, Context, Entity, Focusable as _, IntoElement,
     ParentElement, Render, SharedString, Styled, Window, div,
 };
 use gpui_component::WindowExt as _;
-use gpui_component::input::InputEvent;
+use gpui_component::input::{EditorState, InputEvent};
 use gpui_component::{ActiveTheme as _, StyledExt};
+use onehand_core::editor::RootEditors;
 use onehand_core::editor::SaveOutcome;
+use onehand_core::editor::drive::{Close, Closing, EditorDrive, Effect, Input, Signal};
 use onehand_ui::{hint, status_ink, status_line};
 use onehand_workbench::Disk;
 use std::collections::HashMap;
@@ -18,35 +22,18 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 pub(crate) struct EditorView {
+    /// The project on screen.
     root: Option<PathBuf>,
-    buffers: HashMap<PathBuf, RootBuffers>,
-    /// Where each root's files are, which every open and save of a buffer
-    /// of that root goes through.
-    disks: HashMap<PathBuf, Disk>,
-    /// A save conflict or a read failure, shown as a line under the body.
-    ///
-    /// **Deliberately not a notification**, unlike the rest of the app's
-    /// transient status. "Changed on disk — nothing was written" is not news
-    /// that may be missed: it is a standing condition, and the next `Ctrl+S` is
-    /// what resolves it. A toast that fades leaves the user believing the save
-    /// went through. Cleared by whatever answers it — a successful save, or a
-    /// successful open.
-    status: Option<String>,
+    drive: EditorDrive,
+    /// Each tab's buffer, by its `uid`, and what turns typing into it into
+    /// the drive's `typed`. The subscription is held beside its buffer: one
+    /// dropped stops delivering at once, which is indistinguishable from never
+    /// having subscribed.
+    buffers: HashMap<u64, (Entity<EditorState>, gpui::Subscription)>,
     /// The window this view is drawn in, kept from its first open or draw: a
-    /// save is asked for without one, and its failure is said there as soon
-    /// as it comes back, whether or not the Workbench is showing this mode.
+    /// save is asked for without one, and what it comes to is said there as
+    /// soon as it comes back, whether or not the Workbench is showing this mode.
     window: Option<AnyWindowHandle>,
-    /// Tabs with a write in flight, and whether another save was asked for
-    /// while it ran.
-    ///
-    /// Two saves of one tab must not overlap: each captures `disk_mtime` at
-    /// spawn, so the second carries the time from *before* the first wrote and
-    /// comes back as a conflict against our own write. The second press is not
-    /// dropped either — it is remembered here and re-run once the first lands,
-    /// which is what makes it pick up the keystrokes that prompted it.
-    saving: HashMap<u64, bool>,
-    /// A file being read to open it, which the body says until it lands.
-    opening: Option<PathBuf>,
     /// The width the strip leaves its tabs, in rems, as last laid out.
     /// Infinite until measured, so the first frame draws every tab.
     tabs_w: onehand_ui::Measured,
@@ -68,91 +55,65 @@ pub(crate) struct EditorView {
     /// last measured: the strip leads with the way back to the tree then,
     /// rather than the toggle that hides it.
     alone: bool,
-    /// The folders whose files may not be written now, with why: their
-    /// buffers are read only, a save is refused, and the line says so.
-    locked: HashMap<PathBuf, String>,
 }
 
 impl EditorView {
     pub(crate) fn new(cx: &mut App) -> Entity<Self> {
         cx.new(|_| Self {
             root: None,
+            drive: EditorDrive::default(),
             buffers: HashMap::new(),
-            disks: HashMap::new(),
-            status: None,
             window: None,
-            saving: HashMap::new(),
-            opening: None,
             tabs_w: onehand_ui::unmeasured(),
             tab_widths: Default::default(),
             tree_shown: true,
             detail: false,
             alone: false,
-            locked: HashMap::new(),
         })
     }
 
     /// Which folders may not be written now, whole.
     pub(crate) fn set_locked(&mut self, locks: &HashMap<PathBuf, String>, cx: &mut Context<Self>) {
-        if self.locked != *locks {
-            self.locked = locks.clone();
+        self.drive.set_locked(locks);
+        cx.notify();
+    }
+
+    pub(crate) fn set_root(&mut self, root: &Path, disk: &Disk, cx: &mut Context<Self>) {
+        // Told even for the root already on screen: a host's attach can be
+        // replaced while its project stays.
+        self.drive.set_root(root, disk);
+        if self.root.as_deref() != Some(root) {
+            self.root = Some(root.to_path_buf());
             cx.notify();
         }
     }
 
-    pub(crate) fn set_root(&mut self, root: &Path, disk: &Disk, cx: &mut Context<Self>) {
-        // Kept even for the root already on screen: a host's attach can be
-        // replaced while its project stays.
-        self.disks.insert(root.to_path_buf(), disk.clone());
-        if self.root.as_deref() == Some(root) {
-            return;
-        }
-        self.root = Some(root.to_path_buf());
-        cx.notify();
-    }
-
-    /// Drop everything held for `root`.
-    ///
-    /// Called when a project root leaves the workspace. Buffers go with it: an
-    /// unsaved edit in a project the user just removed has nowhere to be saved
-    /// *to* — the tab strip it belonged to is gone.
+    /// Drop everything held for `root`, which has left the workspace.
     pub(crate) fn forget_root(&mut self, root: &Path, cx: &mut Context<Self>) {
-        self.buffers.remove(root);
-        self.disks.remove(root);
+        let effects = self.drive.forget_root(root);
         if self.root.as_deref() == Some(root) {
             self.root = None;
         }
-        cx.notify();
+        self.perform(effects, None, cx);
     }
 
     /// How many of `root`'s open files have edits a removal would discard.
-    ///
-    /// Asked by the shell *before* it removes a root, because that is the one
-    /// place with a control to guard.
     pub(crate) fn unsaved(&self, root: &Path) -> usize {
-        self.buffers
-            .get(root)
-            .map(RootBuffers::dirty_count)
-            .unwrap_or(0)
+        self.drive.unsaved(root)
     }
 
     /// The file open in the active tab, if any.
-    pub(crate) fn active_path(&self) -> Option<std::path::PathBuf> {
-        Some(self.current()?.tabs.active_file()?.path.clone())
+    pub(crate) fn active_path(&self) -> Option<PathBuf> {
+        Some(self.tabs()?.active_file()?.path.clone())
     }
 
     /// Where the caret goes, if there is a buffer to put it in.
     pub(crate) fn caret(&self, cx: &App) -> Option<gpui::FocusHandle> {
-        let buffers = self.current()?;
-        let uid = buffers.tabs.active_file()?.uid;
-        Some(buffers.buffer(uid)?.focus_handle(cx))
+        let uid = self.tabs()?.active_file()?.uid;
+        Some(self.buffers.get(&uid)?.0.focus_handle(cx))
     }
 
     /// Open `path`, and say whether this mode took it.
-    ///
-    /// An already-open file is focused, never reloaded: the second click on a
-    /// path in a tool card must not discard unsaved edits (core's
-    /// `RootEditors::open` decides that, not this).
     ///
     /// **No line number, and nothing to take one from.** ACP's diff payload is
     /// `{ path, old_text, new_text }` with no hunk offsets, so the tool card
@@ -169,105 +130,13 @@ impl EditorView {
         let Some(root) = self.root.clone() else {
             return false;
         };
-        let Some(disk) = self.disks.get(&root).cloned() else {
-            return false;
-        };
         self.window = Some(window.window_handle());
-        self.detail = true;
-        let path = path.to_path_buf();
-
-        if let Some(buffers) = self.buffers.get(&root)
-            && buffers.tabs.index_of(&path).is_some()
-        {
-            self.buffers
-                .entry(root)
-                .or_default()
-                .tabs
-                .open(path, None, 0);
-            cx.notify();
-            return true;
+        let (took, effects) = self.drive.open(&root, path);
+        if took {
+            self.detail = true;
         }
-
-        self.opening = Some(path.clone());
-        cx.notify();
-        // `spawn_in`, not `spawn`: building an `EditorState` needs a `&mut
-        // Window`, and the read has to happen off the UI loop first.
-        cx.spawn_in(window, async move |view, cx| {
-            let read = cx
-                .background_executor()
-                .spawn({
-                    let (path, disk) = (path.clone(), disk.clone());
-                    async move { disk.read_file(&path) }
-                })
-                .await;
-
-            let _ = view.update_in(cx, |view: &mut Self, window, cx| {
-                if view.opening.as_ref() == Some(&path) {
-                    view.opening = None;
-                }
-                match read {
-                    Ok((text, mtime)) => {
-                        // A read that worked answers whatever the last failure said.
-                        // Left set, the message outlived its subject and read as a
-                        // complaint about the file now on screen.
-                        view.status = None;
-                        let uid = next_buffer_uid();
-                        let state = new_buffer(&path, &text, window, cx);
-                        // Typing is what makes a buffer dirty, and nothing was
-                        // listening for it. Subscribed *after* `new_buffer`, whose
-                        // `set_value` seeds the text -- gpui-component's
-                        // `set_value` does not emit `Change`, but ordering it this
-                        // way means a tab is never born dirty even if that changes
-                        // upstream.
-                        let watch = cx.subscribe(&state, {
-                            let root = root.clone();
-                            move |view: &mut Self, _, event: &InputEvent, cx| {
-                                if matches!(event, InputEvent::Change) {
-                                    view.mark_dirty(&root, uid, cx);
-                                }
-                            }
-                        });
-                        let buffers = view.buffers.entry(root).or_default();
-                        // Core decides whether this is a new tab; a buffer is only
-                        // adopted when it is, so a re-open keeps its edits.
-                        let (_, is_new) = buffers.tabs.open(path.clone(), mtime, uid);
-                        if is_new {
-                            buffers.insert(uid, state, watch, disk);
-                        }
-                        cx.notify();
-                    }
-                    // A press that failed, said once: nothing stands to be
-                    // answered, so no line is left under the body.
-                    Err(e) => {
-                        let name = path.file_name().map_or_else(
-                            || path.display().to_string(),
-                            |n| n.to_string_lossy().into_owned(),
-                        );
-                        window.push_notification(
-                            onehand_ui::toast::failed(&format!("Opening {name}"), e),
-                            cx,
-                        );
-                        cx.notify();
-                    }
-                }
-            });
-        })
-        .detach();
-        true
-    }
-
-    /// Note that a buffer has been typed into.
-    ///
-    /// The one place `dirty` is ever set true; before this the amber tab dot
-    /// was unreachable and every close discarded edits in silence.
-    fn mark_dirty(&mut self, root: &Path, uid: u64, cx: &mut Context<Self>) {
-        if let Some(buffers) = self.buffers.get_mut(root)
-            && let Some(file) = buffers.tabs.files.iter_mut().find(|f| f.uid == uid)
-            && !file.dirty
-        {
-            file.dirty = true;
-            cx.notify();
-        }
+        self.perform(effects, Some(window), cx);
+        took
     }
 
     /// Save the active tab, refusing to clobber a concurrent writer.
@@ -275,110 +144,204 @@ impl EditorView {
         let Some(root) = self.root.clone() else {
             return;
         };
-        let Some(uid) = self
-            .buffers
-            .get(&root)
-            .and_then(|buffers| buffers.tabs.active_file())
-            .map(|file| file.uid)
-        else {
-            return;
-        };
-        self.save_tab(root, uid, cx);
+        let effects = self.drive.save_active(&root);
+        self.perform(effects, None, cx);
     }
 
-    /// Write one tab, keyed by `uid` rather than by tab position so a re-run
-    /// after an in-flight save still targets the buffer that asked for it.
-    fn save_tab(&mut self, root: PathBuf, uid: u64, cx: &mut Context<Self>) {
-        // Already writing this tab: remember that another save was asked for
-        // and let the one in flight land first (see `saving`).
-        if let Some(again) = self.saving.get_mut(&uid) {
-            *again = true;
-            return;
+    /// Carry out the drive's effects, in order. A buffer to build or a thing
+    /// to say needs the window, which a save or a read landing does not have:
+    /// those go to the window this view is drawn in, after this update.
+    fn perform(
+        &mut self,
+        effects: Vec<Effect>,
+        mut window: Option<&mut Window>,
+        cx: &mut Context<Self>,
+    ) {
+        for effect in effects {
+            match effect {
+                Effect::Read { root, path, disk } => {
+                    // Its answer lands in the view's window, so the buffer is
+                    // built in the same update that opens its tab, and a save
+                    // never finds the tab without one.
+                    let handle = self.window;
+                    cx.spawn(async move |view, cx| {
+                        let read = cx
+                            .background_executor()
+                            .spawn({
+                                let path = path.clone();
+                                async move { disk.read_file(&path) }
+                            })
+                            .await;
+                        let input = Input::Read { root, path, read };
+                        let _ = match handle {
+                            Some(handle) => cx.update_window(handle, |_, window, cx| {
+                                let _ = view.update(cx, |view: &mut Self, cx| {
+                                    view.landed(input, Some(window), cx)
+                                });
+                            }),
+                            None => {
+                                view.update(cx, |view: &mut Self, cx| view.landed(input, None, cx))
+                            }
+                        };
+                    })
+                    .detach();
+                }
+                Effect::Write {
+                    root,
+                    uid,
+                    path,
+                    mtime,
+                    disk,
+                } => self.write(root, uid, path, mtime, disk, cx),
+                Effect::Forget { uid } => {
+                    self.buffers.remove(&uid);
+                }
+                Effect::Buffer {
+                    root,
+                    uid,
+                    path,
+                    text,
+                } => match window.as_deref_mut() {
+                    Some(window) => self.build(root, uid, &path, &text, window, cx),
+                    None => self.in_window(cx, move |view, window, cx| {
+                        view.build(root, uid, &path, &text, window, cx)
+                    }),
+                },
+                Effect::Signal(signal) => {
+                    let note = match &signal {
+                        Signal::OpenFailed { path, why } => {
+                            let name = path.file_name().map_or_else(
+                                || path.display().to_string(),
+                                |n| n.to_string_lossy().into_owned(),
+                            );
+                            onehand_ui::toast::failed(&format!("Opening {name}"), why)
+                        }
+                        Signal::SaveFailed { label, why } => {
+                            onehand_ui::toast::failed(&format!("Saving {label}"), why)
+                        }
+                    };
+                    match window.as_deref_mut() {
+                        Some(window) => window.push_notification(note, cx),
+                        None => self
+                            .in_window(cx, move |_, window, cx| window.push_notification(note, cx)),
+                    }
+                }
+            }
         }
-        // The line under the body already says why.
-        if self.locked.contains_key(&root) {
-            return;
-        }
-        let Some(buffers) = self.buffers.get(&root) else {
-            return;
-        };
-        let Some(file) = buffers.tabs.files.iter().find(|f| f.uid == uid) else {
-            return;
-        };
-        let Some(state) = buffers.buffer(uid) else {
-            return;
-        };
-        let Some(disk) = buffers.save_disk(uid, self.disks.get(&root)) else {
-            return;
-        };
+        cx.notify();
+    }
 
-        let (path, label, mtime) = (file.path.clone(), file.label.clone(), file.disk_mtime);
-        let text = state.read(cx).text().to_string();
-        self.saving.insert(uid, false);
+    /// Report what the world said, and carry out what the drive answers.
+    fn landed(&mut self, input: Input, window: Option<&mut Window>, cx: &mut Context<Self>) {
+        let effects = self.drive.handle(input);
+        self.perform(effects, window, cx);
+    }
 
+    /// Write tab `uid`'s buffer as it stands now, off the UI loop.
+    fn write(
+        &mut self,
+        root: PathBuf,
+        uid: u64,
+        path: PathBuf,
+        mtime: Option<std::time::SystemTime>,
+        disk: Disk,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(text) = self
+            .buffers
+            .get(&uid)
+            .map(|(state, _)| state.read(cx).text().to_string())
+        else {
+            // A tab whose buffer is gone: answered all the same, so the save
+            // it held is let go.
+            let outcome = SaveOutcome::Failed("the file is no longer open".into());
+            let effects = self.drive.handle(Input::Saved {
+                root,
+                uid,
+                outcome,
+                still: false,
+            });
+            return self.perform(effects, None, cx);
+        };
         cx.spawn(async move |view, cx| {
             let outcome = cx
                 .background_executor()
-                .spawn({
-                    let path = path.clone();
-                    async move { disk.save_file(&path, text, mtime) }
-                })
+                .spawn(async move { disk.save_file(&path, text, mtime) })
                 .await;
-
-            // A save that failed is said once, now: not a conflict, which is
-            // the standing line under the body.
-            let said = view.update(cx, |view: &mut Self, cx| {
-                view.status = save_status(&outcome, &label);
-                let again = view.saving.remove(&uid).unwrap_or(false);
-                // Read the live buffer before taking the tab set mutably: what
-                // the dot should say depends on whether the user kept typing
-                // while the write was in flight.
-                let current = view
-                    .buffers
-                    .get(&root)
-                    .and_then(|buffers| buffers.buffer(uid))
-                    .map(|state| state.read(cx).text().to_string());
-
-                if let Some(buffers) = view.buffers.get_mut(&root)
-                    && let Some(file) = buffers.tabs.files.iter_mut().find(|f| f.uid == uid)
-                {
-                    match &outcome {
-                        SaveOutcome::Saved { mtime, text } => {
-                            file.disk_mtime = *mtime;
-                            // The snapshot core hands back is the whole point of
-                            // it carrying one: keystrokes that arrived during
-                            // the write are still unsaved, and clearing the dot
-                            // for them would be a lie the next close acts on.
-                            file.dirty = current.is_some_and(|live| live != **text);
-                        }
-                        // Record the *current* on-disk time so the next
-                        // save is an explicit, informed overwrite.
-                        SaveOutcome::Conflict { disk_mtime } => file.disk_mtime = *disk_mtime,
-                        SaveOutcome::Failed(_) => {}
+            let _ = view.update(cx, |view: &mut Self, cx| {
+                // Whether the buffer still holds what landed: keystrokes that
+                // came in while the write was on its way are still unsaved.
+                let still = match &outcome {
+                    SaveOutcome::Saved { text, .. } => {
+                        let live = view
+                            .buffers
+                            .get(&uid)
+                            .map(|(state, _)| state.read(cx).text().to_string());
+                        live.is_some_and(|live| live == **text)
                     }
-                }
-                if again {
-                    view.save_tab(root, uid, cx);
-                }
-                cx.notify();
-                view.window
+                    SaveOutcome::Conflict { .. } | SaveOutcome::Failed(_) => false,
+                };
+                view.landed(
+                    Input::Saved {
+                        root,
+                        uid,
+                        outcome,
+                        still,
+                    },
+                    None,
+                    cx,
+                )
             });
-            if let (Ok(Some(window)), SaveOutcome::Failed(e)) = (said, &outcome) {
-                let note = onehand_ui::toast::failed(&format!("Saving {label}"), e);
-                let _ =
-                    cx.update_window(window, |_, window, cx| window.push_notification(note, cx));
-            }
         })
         .detach();
     }
 
-    /// The buffers of the project on screen, if it has any.
-    fn current(&self) -> Option<&RootBuffers> {
-        self.buffers.get(self.root.as_ref()?)
+    /// Build tab `uid`'s buffer, and listen for typing into it.
+    fn build(
+        &mut self,
+        root: PathBuf,
+        uid: u64,
+        path: &Path,
+        text: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let state = new_buffer(path, text, window, cx);
+        // Subscribed *after* `new_buffer`, whose `set_value` seeds the text:
+        // gpui-component's `set_value` does not emit `Change`, but ordering it
+        // this way means a tab is never born dirty even if that changes
+        // upstream.
+        let watch = cx.subscribe(&state, move |view: &mut Self, _, event: &InputEvent, cx| {
+            if let InputEvent::Change = event {
+                view.drive.typed(&root, uid);
+                cx.notify();
+            }
+        });
+        self.buffers.insert(uid, (state, watch));
+        cx.notify();
     }
 
-    fn current_mut(&mut self) -> Option<&mut RootBuffers> {
-        self.buffers.get_mut(self.root.as_ref()?)
+    /// Run `then` in the window this view is drawn in, after the update under
+    /// way: it may be the window's own.
+    fn in_window(
+        &self,
+        cx: &mut Context<Self>,
+        then: impl FnOnce(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+    ) {
+        let Some(handle) = self.window else {
+            return;
+        };
+        let view = cx.entity();
+        cx.defer(move |cx| {
+            let _ = handle.update(cx, |_, window, cx| {
+                view.update(cx, |view, cx| then(view, window, cx))
+            });
+        });
+    }
+
+    /// The tabs of the project on screen, if it has any.
+    fn tabs(&self) -> Option<&RootEditors> {
+        self.drive.tabs(self.root.as_ref()?)
     }
 
     pub(crate) fn tree_shown(&self) -> bool {
@@ -388,10 +351,7 @@ impl EditorView {
     /// Whether a file is what shows while the halves are one at a time: one
     /// asked for, and one there to show.
     pub(crate) fn showing_file(&self) -> bool {
-        self.detail
-            && self
-                .current()
-                .is_some_and(|buffers| buffers.tabs.active_file().is_some())
+        self.detail && self.tabs().is_some_and(|tabs| tabs.active_file().is_some())
     }
 
     /// Say whether the halves are shown one at a time. Guarded, because the
@@ -414,10 +374,8 @@ impl EditorView {
     }
 
     fn select_tab(&mut self, idx: usize, cx: &mut Context<Self>) {
-        if let Some(buffers) = self.current_mut()
-            && idx < buffers.tabs.files.len()
-        {
-            buffers.tabs.active = idx;
+        if let Some(root) = &self.root {
+            self.drive.select(root, idx);
         }
         cx.notify();
     }
@@ -427,25 +385,8 @@ impl EditorView {
         let Some(root) = self.root.clone() else {
             return;
         };
-        let Some(file) = self
-            .current()
-            .and_then(|buffers| buffers.tabs.files.get(idx))
-        else {
-            return;
-        };
-        let close = Close::Tab(root, file.uid);
-        if file.dirty {
-            let label = file.label.clone();
-            self.confirm_discard(
-                format!("Close {label}?").into(),
-                "It has edits that were never saved. Closing it throws them away.".to_string(),
-                close,
-                window,
-                cx,
-            );
-            return;
-        }
-        self.discard(close, cx);
+        let closing = self.drive.close_tab(&root, idx);
+        self.closing(closing, window, cx);
     }
 
     /// Close every tab, asking first when any of them has unsaved edits.
@@ -453,38 +394,40 @@ impl EditorView {
         let Some(root) = self.root.clone() else {
             return;
         };
-        let n = self.current().map_or(0, RootBuffers::dirty_count);
-        if n > 0 {
-            let s = if n == 1 { "file has" } else { "files have" };
-            self.confirm_discard(
-                "Close all files?".into(),
-                format!("{n} {s} edits that were never saved. Closing them throws those away."),
-                Close::All(root),
-                window,
-                cx,
-            );
-            return;
-        }
-        self.discard(Close::All(root), cx);
+        let closing = self.drive.close_all(&root);
+        self.closing(closing, window, cx);
     }
 
-    /// Ask before a close throws edits away, in a dialog rather than by arming
-    /// the ✕ for a second press.
-    ///
-    /// An armed control looks like one that did nothing, and the sentence
-    /// explaining it was drawn at the foot of the panel, nowhere near the cross
-    /// that was pressed. What to close is named by project, and a tab by `uid`
-    /// rather than by position, because the question can be on screen while
-    /// the strip changes or the window moves to another project — a remote
-    /// `/open` does that — and *Discard* must still mean what it said.
-    fn confirm_discard(
-        &mut self,
-        title: SharedString,
-        description: String,
-        close: Close,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    /// Carry out a close, or ask first in a dialog rather than by arming the ✕
+    /// for a second press: an armed control looks like one that did nothing.
+    fn closing(&mut self, closing: Closing, window: &mut Window, cx: &mut Context<Self>) {
+        let (close, unsaved, label) = match closing {
+            Closing::Closed(effects) => return self.perform(effects, Some(window), cx),
+            Closing::Asks {
+                close,
+                unsaved,
+                label,
+            } => (close, unsaved, label),
+        };
+        let (title, description): (SharedString, String) = match label {
+            Some(label) => (
+                format!("Close {label}?").into(),
+                "It has edits that were never saved. Closing it throws them away.".into(),
+            ),
+            None => {
+                let s = if unsaved == 1 {
+                    "file has"
+                } else {
+                    "files have"
+                };
+                (
+                    "Close all files?".into(),
+                    format!(
+                        "{unsaved} {s} edits that were never saved. Closing them throws those away."
+                    ),
+                )
+            }
+        };
         onehand_ui::confirm_on(
             cx.entity(),
             onehand_ui::Confirm {
@@ -497,55 +440,15 @@ impl EditorView {
             },
             window,
             cx,
-            move |view, _, cx| view.discard(close.clone(), cx),
+            move |view, window, cx| view.discard(&close, window, cx),
         );
     }
 
     /// Close without asking; the question, if there was one, is answered.
-    fn discard(&mut self, close: Close, cx: &mut Context<Self>) {
-        let root = match &close {
-            Close::Tab(root, _) | Close::All(root) => root.clone(),
-        };
-        let Some(buffers) = self.buffers.get_mut(&root) else {
-            return;
-        };
-        match close {
-            Close::Tab(_, uid) => {
-                let Some(idx) = buffers.tabs.files.iter().position(|f| f.uid == uid) else {
-                    return;
-                };
-                buffers.tabs.close(idx);
-                buffers.forget(uid);
-            }
-            Close::All(_) => {
-                for file in std::mem::take(&mut buffers.tabs.files) {
-                    buffers.forget(file.uid);
-                }
-                buffers.tabs.close_all();
-            }
-        }
-        // The status line is the view's, drawn over whichever project is on
-        // screen: a discard answered after moving elsewhere must not wipe a
-        // save conflict that belongs to the project now showing.
-        if self.root.as_ref() == Some(&root) {
-            self.status = None;
-        }
-        cx.notify();
+    fn discard(&mut self, close: &Close, window: &mut Window, cx: &mut Context<Self>) {
+        let effects = self.drive.discard(close);
+        self.perform(effects, Some(window), cx);
     }
-}
-
-/// What a close is about to drop, and in which project.
-#[derive(Debug, Clone)]
-enum Close {
-    Tab(PathBuf, u64),
-    All(PathBuf),
-}
-
-/// Process-wide buffer id salt, for the same reason core hands one out per tab.
-fn next_buffer_uid() -> u64 {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static NEXT: AtomicU64 = AtomicU64::new(1);
-    NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
 impl Render for EditorView {
@@ -562,14 +465,17 @@ impl Render for EditorView {
         // The strip is drawn with no tabs as well: the tree's toggle lives on
         // it, and a strip that went with the last tab would leave a hidden tree
         // with no way back.
-        let empty = RootBuffers::default();
-        let buffers = self.buffers.get(root).unwrap_or(&empty);
-        let locked = self.locked.get(root).cloned();
-        let active = buffers.tabs.active_file().map(|f| f.uid);
-        let buffer = active.and_then(|uid| buffers.buffer(uid)).cloned();
+        let empty = RootEditors::default();
+        let tabs = self.drive.tabs(root).unwrap_or(&empty);
+        let locked = self.drive.locked(root).map(str::to_string);
+        let standing = self.drive.standing(root).map(standing_line);
+        let active = tabs.active_file().map(|f| f.uid);
+        let buffer = active
+            .and_then(|uid| self.buffers.get(&uid))
+            .map(|(state, _)| state.clone());
         let strip = tab_strip(
             root,
-            buffers,
+            tabs,
             (&self.tabs_w, &self.tab_widths),
             cx.entity().downgrade(),
             match self.alone {
@@ -597,7 +503,7 @@ impl Render for EditorView {
             // The read's wait stands where the file will be, and only where
             // nothing is drawn yet: a buffer already open stays readable while
             // the next one is read.
-            None if self.opening.is_some() => hint("Opening the file…", cx),
+            None if self.drive.opening().is_some() => hint("Opening the file…", cx),
             None => hint("Open a file from the tree, or from a tool card", cx),
             Some(state) => div()
                 .flex_1()
@@ -616,11 +522,7 @@ impl Render for EditorView {
             .v_flex()
             .child(strip)
             .child(body)
-            .children(
-                self.status
-                    .clone()
-                    .map(|status| status_line(status, status_ink(cx).warning)),
-            )
+            .children(standing.map(|status| status_line(status, status_ink(cx).warning)))
             .children(locked.map(|why| status_line(why, cx.theme().muted_foreground)))
     }
 }

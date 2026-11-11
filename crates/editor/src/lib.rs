@@ -81,14 +81,32 @@ impl WorkbenchMode for Mode {
     /// otherwise — the git badges and the rescan are the tree's, and this mode
     /// has no business knowing which of the two took either.
     fn handle(&mut self, request: &Request<'_>, cx: &mut App) -> bool {
-        if let Request::Save = request {
-            self.view.update(cx, |view, cx| view.save_active(cx));
-            return true;
+        match request {
+            Request::Save => {
+                self.view.update(cx, |view, cx| view.save_active(cx));
+                true
+            }
+            // Both halves read only what is locked.
+            Request::Locked(locks) => {
+                self.view.update(cx, |view, cx| view.set_locked(locks, cx));
+                self.files.handle(request, cx)
+            }
+            Request::OpenFile(_)
+            | Request::Start
+            | Request::Rescan
+            | Request::Shown
+            | Request::Reap
+            | Request::SetGit(_)
+            | Request::SetStorage(_)
+            | Request::SetFontSize(_)
+            | Request::ShowIssue(_)
+            | Request::AgentStarted(_)
+            | Request::LiveConversations(_)
+            | Request::RestartAgent
+            | Request::IssueWork { .. }
+            | Request::Offloaded(_)
+            | Request::SendToHost(_) => self.files.handle(request, cx),
         }
-        if let Request::Locked(locks) = request {
-            self.view.update(cx, |view, cx| view.set_locked(locks, cx));
-        }
-        self.files.handle(request, cx)
     }
 
     fn unsaved(&self, root: &Path, cx: &App) -> usize {

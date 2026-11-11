@@ -29,6 +29,7 @@ use gpui_base::dock::{Panel, PanelEvent};
 use gpui_component::StyledExt;
 use gpui_component::button::ButtonVariants as _;
 use onehand_core::gitstat::GitStatus;
+use onehand_core::workbench::Again;
 use onehand_workbench::{Ask, Disk, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -153,8 +154,21 @@ impl Workbench {
                     self.focus_active(window, cx);
                 }
             }
-            other => {
-                self.broadcast(other, cx);
+            // Asked of the modes, which answer what they recognise.
+            Request::Save
+            | Request::Start
+            | Request::Rescan
+            | Request::Shown
+            | Request::SetGit(_)
+            | Request::SetStorage(_)
+            | Request::SetFontSize(_)
+            | Request::ShowIssue(_)
+            | Request::AgentStarted(_)
+            | Request::LiveConversations(_)
+            | Request::IssueWork { .. }
+            | Request::Locked(_)
+            | Request::Offloaded(_) => {
+                self.broadcast(request, cx);
             }
         }
     }
@@ -195,25 +209,21 @@ impl Workbench {
 
     /// Whether the root on screen is a host's folder shown over an attach
     /// that has since ended, which is what is worth attaching again for. One
-    /// still attaching, or that failed, says so instead and is left alone.
-    ///
-    /// An attach the host closed because another machine attached is not
-    /// made again: that machine holds the host now, and taking it back would
-    /// end its sessions in turn. That stands as a failure, with *Try again*.
+    /// still attaching, or that failed, says so instead and is left alone;
+    /// one another machine took stands as a failure, with *Try again*
+    /// (`workbench::again` says which).
     pub fn attach_again(&mut self, cx: &mut Context<Self>) -> bool {
-        if self.refused.is_some() || !self.disk.is_closed() {
+        if self.refused.is_some() {
             return false;
         }
-        let taken = self
-            .disk
-            .host()
-            .filter(|_| self.disk.taken())
-            .map(|host| format!("{host} was attached from another machine"));
-        if let Some(why) = taken {
-            self.refuse(Some(Refusal::Failed(why.into())), cx);
-            return false;
+        match onehand_core::workbench::again(&self.disk) {
+            Again::No => false,
+            Again::Attach => true,
+            Again::Taken(why) => {
+                self.refuse(Some(Refusal::Failed(why.into())), cx);
+                false
+            }
         }
-        true
     }
 
     pub fn mode(&self) -> ModeId {
@@ -295,7 +305,10 @@ impl Workbench {
     /// it and leave that grid drawn at the old one.
     pub fn set_zoom(&mut self, zoom: crate::zoom::Zoom, cx: &mut Context<Self>) {
         self.zoom = zoom;
-        self.broadcast(&Request::SetFontSize(crate::zoom::term_font_size(zoom)), cx);
+        self.broadcast(
+            &Request::SetFontSize(crate::zoom::term_font_size(zoom).into()),
+            cx,
+        );
         cx.notify();
     }
 
@@ -524,7 +537,7 @@ fn failed(why: SharedString, cx: &mut Context<Workbench>) -> gpui::AnyElement {
 /// Whether a mode is offered on a root, `on_host` when its files are on a
 /// host.
 fn offered(on_host: bool, spec: WorkbenchModeSpec) -> bool {
-    !on_host || spec.on_host
+    spec.offered(on_host)
 }
 
 /// The behaviour half of the dock's panel trait alone, as the conversation's

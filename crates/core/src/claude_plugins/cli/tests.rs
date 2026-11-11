@@ -206,12 +206,10 @@ fn a_plugin_something_unread_turns_on_is_said_to_be_decided_elsewhere() {
 
 #[test]
 fn a_scopes_place_in_the_list_is_its_index_into_the_settings() {
-    assert!(
-        Scope::ALL
-            .iter()
-            .enumerate()
-            .all(|(i, scope)| *scope as usize == i)
-    );
+    assert!(Scope::ALL
+        .iter()
+        .enumerate()
+        .all(|(i, scope)| *scope as usize == i));
 }
 
 #[test]
@@ -408,12 +406,10 @@ fn an_installed_plugin_the_listing_leaves_out_is_offered_again_from_its_catalog(
         "ponytail".to_string(),
         vec![serde_json::json!({"name": "ponytail", "description": "Lazy mode"})],
     )]);
-    assert!(
-        !catalog
-            .available
-            .iter()
-            .any(|o| o.id == "ponytail@ponytail")
-    );
+    assert!(!catalog
+        .available
+        .iter()
+        .any(|o| o.id == "ponytail@ponytail"));
     complete_offers(&mut catalog, &markets);
     let offer = catalog
         .available

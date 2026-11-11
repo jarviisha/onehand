@@ -1,11 +1,11 @@
-use crate::cli::Plugin;
-use crate::inventory::Inventory;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, InteractiveElement as _, IntoElement, ParentElement,
     StatefulInteractiveElement as _, Styled, Window, div,
 };
 use gpui_component::{ActiveTheme, StyledExt, WindowExt as _};
+use onehand_core::claude_plugins::cli::Plugin;
+use onehand_core::claude_plugins::inventory::Inventory;
 
 /// "4 skills", "1 command" … for each counted kind a plugin has any of, in one
 /// order wherever counts are said. Hooks are left to the caller: a chip says

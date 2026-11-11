@@ -10,9 +10,15 @@
 //! the GPUI front end) and derived from the same text on disk. What lives here
 //! is everything that decides correctness: the
 //! size bound, the tab set, the mtime guard, and turning a path an agent named
-//! into one that opens the file the agent meant.
+//! into one that opens the file the agent meant. What happens next (a read
+//! landing, a save in flight, a close that would lose edits) is
+//! [`drive::EditorDrive`]'s.
 
+use crate::disk::Disk;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+
+pub mod drive;
 
 /// Refuse to open files larger than this. The editor holds the whole buffer, so
 /// an unbounded read would freeze the UI (bounded rendering).
@@ -44,11 +50,26 @@ pub struct EditorFile {
 /// The set of files one project root has open (tabs), plus the active tab.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct RootEditors {
-    pub files: Vec<EditorFile>,
-    pub active: usize,
+    pub(crate) files: Vec<EditorFile>,
+    pub(crate) active: usize,
 }
 
 impl RootEditors {
+    /// The open files, in the order their tabs stand.
+    pub fn files(&self) -> &[EditorFile] {
+        &self.files
+    }
+
+    /// Where the tab on screen stands among them.
+    pub fn active(&self) -> usize {
+        self.active
+    }
+
+    /// How many open files hold edits a close would throw away.
+    pub fn dirty_count(&self) -> usize {
+        self.files.iter().filter(|f| f.dirty).count()
+    }
+
     pub fn active_file(&self) -> Option<&EditorFile> {
         self.files.get(self.active)
     }
@@ -63,7 +84,7 @@ impl RootEditors {
     /// a tool card must not discard what the user has typed since the first.
     /// Returns the tab's index, and whether it is new (the caller only has to
     /// build a buffer when it is).
-    pub fn open(
+    pub(crate) fn open(
         &mut self,
         path: PathBuf,
         mtime: Option<std::time::SystemTime>,
@@ -85,7 +106,7 @@ impl RootEditors {
     }
 
     /// Close tab `idx`, keeping the active index in bounds.
-    pub fn close(&mut self, idx: usize) {
+    pub(crate) fn close(&mut self, idx: usize) {
         if idx < self.files.len() {
             self.files.remove(idx);
             if self.active >= idx && self.active > 0 {
@@ -96,10 +117,78 @@ impl RootEditors {
 
     /// Close every tab at once (discarding unsaved edits) — the one-touch
     /// escape that hands the whole well back to the chat.
-    pub fn close_all(&mut self) {
+    pub(crate) fn close_all(&mut self) {
         self.files.clear();
         self.active = 0;
     }
+}
+
+/// Every project's open files in one Workbench: their tabs, where each
+/// project's files are and what each buffer was read through, which folders
+/// may not be written, and what stands to be said about a save.
+#[derive(Default)]
+pub struct Editors {
+    roots: HashMap<PathBuf, RootEditors>,
+    /// Where each project's files are now.
+    disks: HashMap<PathBuf, Disk>,
+    /// The disk each buffer was read through, by its tab's `uid`. A local and
+    /// a host folder can share a path, and a buffer read on one machine is
+    /// only ever written back to that machine.
+    read_through: HashMap<u64, Disk>,
+    /// The folders whose files may not be written now, with why.
+    locked: HashMap<PathBuf, String>,
+    /// A save that wrote nothing, per project, until a save or an open
+    /// answers it.
+    standing: HashMap<PathBuf, Standing>,
+    /// A file being read to open it.
+    opening: Option<PathBuf>,
+}
+
+impl Editors {
+    /// `root`'s open files, if it has had any.
+    pub fn tabs(&self, root: &Path) -> Option<&RootEditors> {
+        self.roots.get(root)
+    }
+
+    /// How many of `root`'s open files hold edits a removal would discard.
+    pub fn unsaved(&self, root: &Path) -> usize {
+        self.roots.get(root).map_or(0, RootEditors::dirty_count)
+    }
+
+    /// Why `root`'s files may not be written now, if they may not.
+    pub fn locked(&self, root: &Path) -> Option<&str> {
+        self.locked.get(root).map(String::as_str)
+    }
+
+    /// What stands to be said about a save in `root`.
+    pub fn standing(&self, root: &Path) -> Option<&Standing> {
+        self.standing.get(root)
+    }
+
+    /// The file being read to open it, if one is.
+    pub fn opening(&self) -> Option<&Path> {
+        self.opening.as_deref()
+    }
+
+    /// What buffer `uid` is saved through: the project's disk now, when it
+    /// is on the machine the buffer was read from (a host's attach made again
+    /// replaces its connection), and otherwise the disk it was read through.
+    pub(crate) fn save_disk(&self, root: &Path, uid: u64) -> Option<Disk> {
+        let read = self.read_through.get(&uid)?;
+        Some(match self.disks.get(root) {
+            Some(now) if now.host() == read.host() => now.clone(),
+            Some(_) | None => read.clone(),
+        })
+    }
+}
+
+/// A save that wrote nothing, standing until a save or an open answers it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Standing {
+    /// The file `label` changed on disk since it was read or last saved.
+    Changed { label: String },
+    /// The file `label` is gone from disk.
+    Gone { label: String },
 }
 
 /// Outcome of a save.

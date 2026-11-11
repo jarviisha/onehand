@@ -13,14 +13,12 @@ use gpui::{
 };
 use gpui_component::input::{Editor, EditorState};
 use gpui_component::{ActiveTheme, IconName, StyledExt};
-use onehand_core::disk::Disk;
-use onehand_core::editor::{RootEditors, SaveOutcome};
+use onehand_core::editor::{RootEditors, Standing};
 use onehand_ui::Named as _;
 use onehand_ui::{
     Measured, TAB_MAX_W, TAB_MENU_CAP, TabStrip, TabWidths, measure_tab, menu_below, menu_row,
     tab_strip as tab_strip_rule, tab_width,
 };
-use std::collections::HashMap;
 use std::path::Path;
 
 /// Tabs stand flush, as a tab panel's do, each parted from the next by its
@@ -28,70 +26,6 @@ use std::path::Path;
 const TAB_GAP: Rems = rems(0.);
 /// The unsaved-edits mark on a tab.
 const DIRTY_DOT: Rems = rems(0.375);
-
-/// Editor state for one project root: the tab set from core, plus this front
-/// end's buffers.
-#[derive(Default)]
-pub(crate) struct RootBuffers {
-    pub(crate) tabs: RootEditors,
-    /// Keyed by the tab's `uid` rather than by path: a path-keyed buffer would
-    /// be shared across windows, and `uid` is what core hands out to prevent
-    /// exactly that.
-    buffers: HashMap<u64, Entity<EditorState>>,
-    /// One per buffer, turning typing into `EditorFile::dirty`.
-    ///
-    /// Held here rather than dropped at the end of `open_file` because a
-    /// `Subscription` unsubscribes on drop: a detached one stops delivering the
-    /// moment the function that made it returns, which is indistinguishable
-    /// from never having subscribed. Dropped with the buffer it
-    /// watches, so a closed tab stops marking a `RootEditors` entry that is no
-    /// longer there.
-    watches: HashMap<u64, gpui::Subscription>,
-    /// The disk each buffer was read through. A local and a host folder can
-    /// share a path, and a buffer read on one machine is only ever written
-    /// back to that machine.
-    disks: HashMap<u64, Disk>,
-}
-
-impl RootBuffers {
-    pub(crate) fn buffer(&self, uid: u64) -> Option<&Entity<EditorState>> {
-        self.buffers.get(&uid)
-    }
-
-    pub(crate) fn insert(
-        &mut self,
-        uid: u64,
-        state: Entity<EditorState>,
-        watch: gpui::Subscription,
-        disk: Disk,
-    ) {
-        self.buffers.insert(uid, state);
-        self.watches.insert(uid, watch);
-        self.disks.insert(uid, disk);
-    }
-
-    pub(crate) fn forget(&mut self, uid: u64) {
-        self.buffers.remove(&uid);
-        self.watches.remove(&uid);
-        self.disks.remove(&uid);
-    }
-
-    /// What buffer `uid` is saved through: `now`, the root's disk, when it is
-    /// on the machine the buffer was read from (a host's attach made again
-    /// replaces its connection), and otherwise the disk it was read through.
-    pub(crate) fn save_disk(&self, uid: u64, now: Option<&Disk>) -> Option<Disk> {
-        let read = self.disks.get(&uid)?;
-        Some(match now {
-            Some(now) if now.host() == read.host() => now.clone(),
-            Some(_) | None => read.clone(),
-        })
-    }
-
-    /// How many open tabs have edits a close would throw away.
-    pub(crate) fn dirty_count(&self) -> usize {
-        self.tabs.files.iter().filter(|f| f.dirty).count()
-    }
-}
 
 /// The tree-sitter language token for a path.
 ///
@@ -155,14 +89,14 @@ pub(crate) enum Lead {
 /// controls at the ends never move.
 pub(crate) fn tab_strip<T: 'static>(
     root: &Path,
-    buffers: &RootBuffers,
+    tabs: &RootEditors,
     (measured, widths): (&Measured, &TabWidths),
     view: WeakEntity<T>,
     lead: Lead,
     on: StripHandlers,
     cx: &App,
 ) -> gpui::AnyElement {
-    let active = buffers.tabs.active;
+    let active = tabs.active();
     let StripHandlers {
         toggle_tree: on_toggle_tree,
         back: on_back,
@@ -199,7 +133,7 @@ pub(crate) fn tab_strip<T: 'static>(
             false => rel.display().to_string(),
         })
     };
-    let files = &buffers.tabs.files;
+    let files = tabs.files();
 
     // A tab's width follows what it shows: its name, and the dot while it
     // holds unsaved edits.
@@ -378,44 +312,22 @@ pub(crate) fn new_buffer(
     })
 }
 
-/// Report a save. Returns the status line to surface, if any.
+/// What stands to be said about a save, in words.
 ///
 /// A conflict is *not* an error to shrug off: the agent edits files by design,
 /// so this is the expected way a save fails and the user has to be told which
 /// way it went.
-pub(crate) fn save_status(outcome: &SaveOutcome, label: &str) -> Option<String> {
-    match outcome {
-        SaveOutcome::Saved { .. } => None,
+pub(crate) fn standing_line(standing: &Standing) -> String {
+    match standing {
         // No on-disk time means the file is *gone*, not merely different --
         // deleted or renamed under the buffer. Saying "changed on disk" there
         // sends the user looking for a diff that does not exist, and the second
         // press recreates the file rather than overwriting one.
-        SaveOutcome::Conflict { disk_mtime: None } => Some(format!(
+        Standing::Gone { label } => format!(
             "{label} no longer exists on disk — nothing was written. Save again to recreate it."
-        )),
-        SaveOutcome::Conflict { .. } => Some(format!(
-            "{label} changed on disk — nothing was written. Save again to overwrite."
-        )),
-        // A failure is a toast, said once by the caller: a conflict stands
-        // until a save answers it, and a write that failed does not.
-        SaveOutcome::Failed(_) => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::RootBuffers;
-    use std::path::PathBuf;
-
-    #[test]
-    fn dirty_tabs_are_counted() {
-        let mut buffers = RootBuffers::default();
-        assert_eq!(buffers.dirty_count(), 0);
-        buffers.tabs.open(PathBuf::from("a.rs"), None, 1);
-        buffers.tabs.open(PathBuf::from("b.rs"), None, 2);
-        buffers.tabs.open(PathBuf::from("c.rs"), None, 3);
-        buffers.tabs.files[0].dirty = true;
-        buffers.tabs.files[2].dirty = true;
-        assert_eq!(buffers.dirty_count(), 2);
+        ),
+        Standing::Changed { label } => {
+            format!("{label} changed on disk — nothing was written. Save again to overwrite.")
+        }
     }
 }

@@ -109,7 +109,7 @@ row is re-audited at the start of its phase. Line counts are at `6f92ab49`.
 
 | Area | Core has | App decides today | Target drive |
 |---|---|---|---|
-| Workbench modes | editor rules, file tree, markdown | each mode crate (`AnyView`, `Window` in `onehand-workbench`) | per mode, only where a mode has behaviour (phase 9) |
+| Workbench modes | editor rules, file tree, markdown | each mode crate (`AnyView`, `Window` in `onehand-workbench`) | per mode, only where a mode has behaviour (phase 9): `EditorDrive`, `PluginsDrive` |
 
 ## The I/O crate (D5: started in phase 3)
 
@@ -391,8 +391,46 @@ Left for later, with phase 9's Workbench modes:
   conversation) is still the shell's (`shell/issue_work.rs`).
 
 **Phase 9: Workbench modes.** Only modes with behaviour get a drive; a mode that only shows
-something keeps its view. `onehand-workbench`'s contract splits into a GUI-free request and answer
-part, and the GPUI mount.
+something keeps its view (D30). Two PRs (D33). The first, the contract and two modes:
+- `onehand-workbench`'s contract splits (D32): what a mode is apart from GPUI (`ModeId`,
+  `WorkbenchModeSpec` and where a mode is offered, `Request`, and whether the Workbench attaches
+  again to a host, `workbench::again`) is `onehand_core::workbench`; `onehand-workbench` keeps the
+  GPUI mount (`WorkbenchMode`, `Ask`) and re-exports the rest. A reading size travels as pixels in
+  an `f32`. Every mode, the panel and the Issues page match `Request` whole, with no fall-through
+  arm, so a new request is a compile error in each until it is decided there.
+- The Editor's open files are `EditorDrive` (`onehand_core::editor::drive`), one per mode, as the
+  mode is one per window (D31): every project's tabs, what each buffer was read through, the
+  folders that may not be written and what stands to be said about a save, in the model it derefs
+  to (`Editors`). It decides a read landing as a tab, a save and the one asked while it runs, a
+  conflict and the overwrite it arms, a locked folder, and a close that would lose edits.
+  `RootEditors`' fields are `pub(crate)`. The text is the front end's: a write takes the buffer's
+  text when it is carried out, and whether the buffer still holds what landed comes back with the
+  answer (`Input::Saved { still }`). `EditorView` is its carrier.
+- The Plugins mode is `PluginsDrive` (`onehand_core::claude_plugins::drive`), one per mode: when
+  the list is read (as it is drawn, never while a change runs) and the token that drops a read
+  about the project before, one change at a time, a refusal said in its project, what went through
+  counted for the restart offer, and the scope the next install takes. It is told the time a
+  change lands. Claude Code's command line and a plugin's inventory moved into core beside it
+  (`claude_plugins::cli`, `claude_plugins::inventory`). `PluginsView` is its carrier.
+- Files, Markdown and Neovim keep their views: a tree's listings and a document's index are reads
+  of the disk with what is open being the viewer's, and Neovim runs one program per project as the
+  terminal dock runs its shells.
+- Characterisation tests written first pin the Editor's saves, the Plugins mode's changes (against
+  a `claude` of the test's own on `PATH`) and which issue write moves a view's selection. Core's
+  drive tests hold every rule moved; the carriers' contract tests are in
+  `crates/editor/src/view/tests.rs` and `crates/claude-plugins/src/view/tests.rs`.
+
+Left for later:
+- Which tab is on screen (`RootEditors::active`) is view state kept in core's model, as the
+  workspace's panel layout is.
+- The drives are told the time in three shapes (`SystemTime` in a save's answer, `Instant` for a
+  plugin change, seconds for the Issues views' reads) rather than one `Now`; and the Editor's tab ids
+  come from a process-wide counter, so replaying its inputs gives the same effects but for those
+  ids.
+- `claude_plugins::cli` moved into core as it was, past the size a file is split at; it was already
+  past it before the move.
+- The panel still decides, from the mode's declaration, which mode shows after a project switch
+  and which one answers an open file; both are which view is on screen.
 
 **Phase 10: cross-drive flows.** Link tests with the real drives and fake I/O:
 - schedule → task → run → session;
@@ -632,6 +670,25 @@ Made on 2026-11-10, with phase 8's audit:
 - **D29. Two PRs**: the workspace first, then an issues drive for the shared issues file; the
   Issues views' own reads wait for phase 9. The bugs the audit found are fixed in the phase, each a
   commit of its own.
+
+Made on 2026-11-11, with phase 9's audit:
+- **D30. Drives for the Editor and the Plugins mode only.** Files, Markdown and Neovim keep their
+  views: they show what is on disk or run a program, and decide nothing that outlives the view.
+- **D31. Each drive is held by its mode**, one per window's Workbench, as the modes were. The
+  restart offer still counts the changes made in its own window.
+- **D32. The contract's GUI-free half moves into a core module**, `onehand_core::workbench`, rather
+  than a crate of its own; `onehand-workbench` is the GPUI mount and re-exports it. The panel's one
+  rule about a host, whether to attach again, goes with it (`workbench::again`).
+- **D33. Two PRs**: the contract and the two drives first, then the Issues views' own rules.
+
+Phase 9 changed, on purpose:
+- A save that wrote nothing (the file changed on disk, or is gone) is said under that project's
+  files only; before, the line stood over whichever project was on screen until a save or an open
+  answered it.
+- A file whose read lands after its project left the workspace opens nothing and says nothing;
+  before, it brought the project's tabs back, or said its failure.
+- A read of the Plugins list made before the project on screen changed is dropped even when the
+  person has come back to that project; the next draw reads it again.
 
 Phase 8 changed, on purpose:
 - Going back to the header's history (offered only between turns) keeps the session that was live

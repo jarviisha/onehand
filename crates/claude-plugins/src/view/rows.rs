@@ -1,6 +1,5 @@
 use super::details::{compact, component_chips, counted, note, open_details, tally};
 use super::{ONE_AT_A_TIME, PluginsView};
-use crate::cli::{self, Available, Catalog, Change, Plugin, Scope, Verb};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, ClickEvent, ClipboardItem, Context, Entity, InteractiveElement as _,
@@ -8,6 +7,7 @@ use gpui::{
     Window, div,
 };
 use gpui_component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
+use onehand_core::claude_plugins::cli::{self, Available, Catalog, Change, Plugin, Scope, Verb};
 use onehand_ui::ShortIcon as _;
 use std::rc::Rc;
 
@@ -49,7 +49,7 @@ impl PluginsView {
         let theme = cx.theme();
         let (muted, ring, hover) = (theme.muted_foreground, theme.ring, theme.list_hover);
         let on_here = plugin.in_force(Scope::Local);
-        let busy = self.busy.is_some();
+        let busy = self.drive.busy().is_some();
         let here = plugin.flip(Scope::Local);
 
         // Always drawn: whether it is on here is a state, which is content.
@@ -426,7 +426,7 @@ impl PluginsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let (muted, ring) = (cx.theme().muted_foreground, cx.theme().ring);
-        let busy = self.busy.is_some();
+        let busy = self.drive.busy().is_some();
         let installed = catalog.installed.iter().find(|p| p.id == plugin.id);
         // A change still running on this row keeps its spinner in sight with
         // the pointer away.
@@ -556,8 +556,8 @@ impl PluginsView {
         running: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let scope = self.install_scope;
-        let busy = self.busy.is_some();
+        let scope = self.drive.install_scope();
+        let busy = self.drive.busy().is_some();
         let install = Change {
             id: plugin.id.clone(),
             scope,
@@ -594,7 +594,6 @@ impl PluginsView {
                         menu.item(menu_item(at.reach()).checked(at == scope).on_click(
                             move |_, _, cx: &mut App| {
                                 view.update(cx, |view, cx| {
-                                    view.install_scope = at;
                                     view.change(
                                         Change {
                                             id: id.clone(),
