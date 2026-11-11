@@ -201,13 +201,20 @@ A drive never holds another. Where one drive's effects become another's commands
 signals another's inputs, is behaviour too. So it is a GUI-free module of core tested with the
 real drives on both sides, as `task::drive::link` joins a run and its session,
 `task::tasks::link` a run and its task, and `unattended::link` unattended runs and the tasks (every
-start held to the cap, a claim kept as a task, a run's end telling its issue). A drive that reads
+start held to the cap, a task started off screen among them, a claim kept as a task, what a run
+tells unattended runs, a run's end telling its issue). A drive that reads
 the tasks reads them with the runs under way through `task::tasks::link::Seen`, which says what
 each task is doing and who holds a slot. Which of a session's signals checks an offloaded
 project's code is `OffloadDrive::session_said`'s, and how a host stands, the offload poll is
 told as it comes round (`HostSeen`). Outside control's value is the tools' drive's and its save
 the settings', joined in `control::link`. A GPUI subscriber
 that routes between drives is a rule in the wrong place.
+
+Whole flows are tested across their links in `task::flows`, with every drive real and a harness
+playing the front end, each effect carried once by core's own blocking bodies on a scratch
+repository: a schedule's task from its look through its run and session to its end, and an
+unattended claim from the tick through its run to its issue's report and the slot it frees. An
+effect a flow never reaches fails the harness, so a flow that starts reaching one is noticed.
 
 **A drive reads another drive's model, and never changes it.** The run's drive reads its
 session's `Chat` and decides the mode and the settings picks to put in force; it keeps them, and
@@ -263,7 +270,9 @@ of the session (`ChatPane::carry`), `SaveTitle` (written on the ordered writer's
 GPUI's test scheduler does not wait for), deferred work, the forge calls (the connectors are the
 ones built in), a command called off while it runs (the test scheduler runs it to its end before a
 Stop can reach it), and what needs a window's shell: a claim's run brought up, a schedule's start,
-a run's project kept or dropped; and a host's real attach, which runs on a runtime GPUI's test
+a run's project kept or dropped (a start off screen, its project kept quietly and where it
+landed, is held on a real shell in `crates/app/src/control/start/tests.rs`, and the routing of
+the rest by core's flows); and a host's real attach, which runs on a runtime GPUI's test
 scheduler does not drive.
 
 ### 12. A model does no I/O and reads no clock

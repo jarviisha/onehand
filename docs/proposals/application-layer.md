@@ -1,6 +1,6 @@
 # An application layer: how onehand works, apart from how it is drawn
 
-- Status: phases 1 to 8 built.
+- Status: phases 1 to 10 built.
   - Phase 1, a trial slice of one session, is #307.
   - Phase 2 settled the standard: it lives in [docs/drives.md](../drives.md), its terms in
     CONTEXT.md (*How onehand is built*), and its short form in AGENTS.md (*Invariants*).
@@ -17,8 +17,14 @@
   - Phase 8 moved each window's workspace into `WorkspaceDrive` (the session lifecycle, the
     workspace edits and the workspace file; how a session begins on a host is core's), and the
     shared issues file into `FileDrive`.
-  - What is left here is the plan for phases 9 and 10, the inventory they work from, and the
-    record of the trial. Each phase that is built moves its rows out of here, in the same PR.
+  - Phase 9 moved the Workbench mode contract's GUI-free half into core, the Editor and the
+    Plugins mode into `EditorDrive` and `PluginsDrive`, and what the Issues views read of the work
+    into `WorkDrive`.
+  - Phase 10 moved the routing between drives still in the app into core (a start off screen,
+    where a driven task lands, what a run tells unattended runs) and tests whole flows across
+    drives with no front end (`task::flows`).
+  - What is left here is what each phase left for later, the record of the trial and the
+    decisions; *Done when* is not met until those leftovers are placed.
 - Supersedes the rule agreed in #133 ("logic belongs in core when two call sites share it, when a
   second front end could need it, or when it wants a test without a GUI"). That rule moved *rules*
   to core; this one moves *what happens next* there too, with no exceptions.
@@ -459,10 +465,51 @@ Left for later:
 - The panel still decides, from the mode's declaration, which mode shows after a project switch
   and which one answers an open file; both are which view is on screen.
 
-**Phase 10: cross-drive flows.** Link tests with the real drives and fake I/O:
-- schedule → task → run → session;
-- unattended tick → claim → run → report (phase 5's drive tests reach the task asking for its
-  place).
+**Phase 10: cross-drive flows.** One PR (D37). The audit found three hops between drives still
+routed in the app, and moved them into core before testing the flows (D34):
+- A start off screen, a schedule's or a tool's, was decided in `control::start_task`: what blocks
+  it, whether a worktree is cut first, the task it is kept as (D35). `Launch::off_screen` builds it
+  from `task::Starting` (moved from the clock's drive), refused by every blocking finding said
+  together, and `TasksDrive::start_off_screen` cuts (`Effect::Cut`), keeps the project in the
+  window without putting it on screen (`Effect::Keep`, answered at once with whether the window is
+  open), keeps the task with its origin and grant, and asks for its place (`Effect::Ask`, which
+  `unattended::link` asks, held to the cap). The preflight's facts are still read in the window.
+- Where a task asked for lands was said by the tasks' carrier after the shell drove it, and what
+  its session is given by the shell. The drive is told `Input::Driven` and says `Effect::Told`
+  itself, `Input::NotDriven` tells the window closed, and `Begin::Session` carries the grant and
+  an issue's opening lines, which the shell carries out as given.
+- What a run tells unattended runs (waiting, answered, its agent up, a pause) was four calls the
+  run's carrier made, reading the session's name itself. The run's drive says
+  `Effect::Unattended(Said)`, its agent up with its conversation's name, and
+  `unattended::link::Joined::run_said` hands each to its command; `Said::looks` says which need the
+  projects and the world read.
+
+The flows are tested in `onehand_core::task::flows` (D36): a harness holds every drive, joined by
+its links, and carries each effect once, its I/O done by core's blocking bodies on a scratch
+repository or answered as a front end would; an effect a flow never reaches fails the harness.
+- A schedule comes due; its task starts off screen on the checkout, its run prompts its session,
+  a look while it works starts nothing, its turn ends and the run is done, and the next look starts
+  it again.
+- A tick claims a labelled issue held to the cap of one; its run on the claim's worktree opens with
+  its lines and prompts its session, a second tick claims nothing, the agent commits and ends its
+  turn, the project is dropped, the issue is told once, and the slot freed claims the next issue.
+
+Characterisation tests written first pin a start off screen on a real shell
+(`crates/app/src/control/start/tests.rs`): refused by what blocks the launcher with no task kept,
+and kept with its origin and the first agent, its project kept but not put on screen, and the
+caller told where it landed. Core's drive tests hold every rule moved.
+
+Left for later:
+- Cutting a worktree (`cut_worktree_blocking`) is still a blocking function in the app's shell;
+  the flows start on the checkout, and the harness fails a cut.
+- `Effect::Keep` is carried by the tasks' carrier on the window's `WorkspaceDrive`: the two drives
+  have different owners (the process, a window), so no link joins them in one call.
+- The flows do not reach a pick by hand, a review answered, a check, a command step, the forge
+  steps, a session's own saves or its telling; each has its drive's tests.
+- `unattended::link::Joined::settle` and `control::link`'s test still have arms that match the rest
+  of an enum (`other =>`, `_ =>`).
+- `Task`'s fields stay public (phase 4): no app code builds a task by its fields any more, every
+  start's task being built in core, but the app's tests do, and readers everywhere read them.
 
 ## What the trial showed
 
@@ -707,6 +754,21 @@ Made on 2026-11-11, with phase 9's audit:
   than a crate of its own; `onehand-workbench` is the GPUI mount and re-exports it. The panel's one
   rule about a host, whether to attach again, goes with it (`workbench::again`).
 - **D33. Two PRs**: the contract and the two drives first, then the Issues views' own rules.
+
+Made on 2026-11-11, with phase 10's audit:
+- **D34. Phase 10 moves the routing still in the app before testing the flows:** a start off
+  screen, where a driven task lands and what its session is given, and what a run tells
+  unattended runs. What needs a window (the preflight's facts, a session started, a project kept)
+  stays the carriers'.
+- **D35. A schedule's or a tool's task is built in core** (`Launch::off_screen`), as an issue's is
+  (D16).
+- **D36. One harness for the flows**, in `task::flows`, one file per flow, rather than a rig per
+  link.
+- **D37. One PR** for the moves, the flows and the docs.
+
+Phase 10 changed nothing on purpose: a start off screen, a drive's answer and a run's word to
+unattended runs reach the same places in the same order. The one difference is unreachable before:
+a driven task gone from the drive between its begin and its session is no longer refused as gone.
 
 Phase 9 changed, on purpose:
 - A save that wrote nothing (the file changed on disk, or is gone) is said under that project's

@@ -5,9 +5,9 @@
 //! Each look is given the file as it is, the first window holding each
 //! schedule's project, which of the clock's last tasks still work, the
 //! workflows on offer and the time; a start goes through what every task off
-//! screen goes through (`control::start_task`). Every write of the file goes
-//! through the one writer, so the clock's and a switch's land in the order
-//! they were made.
+//! screen goes through (`control::start_task`, decided by the tasks' drive).
+//! Every write of the file goes through the one writer, so the clock's and a
+//! switch's land in the order they were made.
 
 use crate::state::Shared;
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Global};
