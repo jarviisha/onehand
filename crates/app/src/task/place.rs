@@ -504,8 +504,10 @@ fn say(signal: Signal<AnyWindowHandle>, cx: &mut App) {
             };
             toast(window, note, cx)
         }
+        // Deferred: a read refused at once is said inside the update of the
+        // window it was pressed in.
         Signal::ReviewNotRead { window, why } => {
-            toast(window, crate::toast::failed("Reading the review", why), cx)
+            cx.defer(move |cx| toast(window, crate::toast::failed("Reading the review", why), cx))
         }
         Signal::RemoveFailed { window, why } => toast(
             window,
