@@ -11,8 +11,6 @@ use gpui::{AnyView, App, Entity};
 use onehand_workbench::{Ask, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
 use std::path::Path;
 
-mod cli;
-mod inventory;
 mod view;
 use view::PluginsView;
 

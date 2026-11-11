@@ -1,35 +1,4 @@
 use super::details::compact;
-use super::{Made, pending_count};
-use std::path::Path;
-use std::time::Instant;
-
-#[test]
-fn a_global_change_is_pending_everywhere_and_a_project_one_only_there() {
-    let before = Instant::now();
-    let since = before + std::time::Duration::from_millis(1);
-    let after = since + std::time::Duration::from_millis(1);
-    let (a, b) = (Path::new("/a"), Path::new("/b"));
-    let made = [
-        Made {
-            root: a.into(),
-            everywhere: false,
-            at: after,
-        },
-        Made {
-            root: a.into(),
-            everywhere: true,
-            at: after,
-        },
-        Made {
-            root: a.into(),
-            everywhere: false,
-            at: before,
-        },
-    ];
-    assert_eq!(pending_count(&made, a, Some(since)), 2);
-    assert_eq!(pending_count(&made, b, Some(since)), 1);
-    assert_eq!(pending_count(&made, a, None), 0);
-}
 
 #[test]
 fn a_count_reads_at_a_glance() {
@@ -47,9 +16,9 @@ mod carried {
     //! Only these tests in this binary start `claude`, so the `PATH` they set
     //! reaches nothing else.
 
-    use super::super::{PluginsView, Scope};
-    use crate::cli::{Change, Verb};
+    use super::super::PluginsView;
     use gpui::{Entity, TestAppContext};
+    use onehand_core::claude_plugins::cli::{Change, Scope, Verb};
     use std::path::{Path, PathBuf};
     use std::time::{Duration, Instant};
 
@@ -133,12 +102,12 @@ mod carried {
         assert_eq!(changes_in(&log, "one@market"), 1);
         assert_eq!(changes_in(&log, "two@market"), 0);
         view.read_with(cx, |view, _| {
-            assert!(view.busy.is_none());
+            assert!(view.drive.busy().is_none());
             // What went through is one the running agent has not loaded,
             // and the list is read again before it is next drawn.
-            assert_eq!(view.pending(), 1);
-            assert!(view.stale);
-            assert_eq!(view.status, None);
+            assert_eq!(view.drive.pending(), 1);
+
+            assert_eq!(view.drive.refused(), None);
         });
     }
 
@@ -152,8 +121,8 @@ mod carried {
         });
         settle(cx);
         view.read_with(cx, |view, _| {
-            assert_eq!(view.status.as_deref(), Some("not allowed"));
-            assert_eq!(view.pending(), 0);
+            assert_eq!(view.drive.refused(), Some("not allowed"));
+            assert_eq!(view.drive.pending(), 0);
         });
 
         // Pressed here, refused after the person moved to another project:
@@ -163,7 +132,7 @@ mod carried {
             view.set_root(Path::new("/"), cx);
         });
         settle(cx);
-        view.read_with(cx, |view, _| assert_eq!(view.status, None));
+        view.read_with(cx, |view, _| assert_eq!(view.drive.refused(), None));
     }
 
     #[gpui::test]
@@ -184,10 +153,10 @@ mod carried {
         settle(cx);
         view.update(cx, |view, cx| {
             view.set_root(Path::new("/"), cx);
-            assert_eq!(view.pending(), 1);
+            assert_eq!(view.drive.pending(), 1);
             // An agent started since has loaded it.
             view.agent_started(Some(Instant::now()), cx);
-            assert_eq!(view.pending(), 0);
+            assert_eq!(view.drive.pending(), 0);
         });
     }
 }

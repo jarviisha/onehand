@@ -29,32 +29,32 @@ const DEPTH_CAP: usize = 4;
 
 /// A plugin's contents, as far as its folder says.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(crate) struct Inventory {
-    pub(crate) description: Option<String>,
+pub struct Inventory {
+    pub description: Option<String>,
     /// Where its source is published — the manifest's `repository`, else its
     /// `homepage`.
-    pub(crate) repository: Option<String>,
+    pub repository: Option<String>,
     /// Its changelog, where it ships one at the top of its folder.
-    pub(crate) changelog: Option<PathBuf>,
-    pub(crate) skills: Vec<String>,
-    pub(crate) commands: Vec<String>,
-    pub(crate) agents: Vec<String>,
-    pub(crate) mcp: Vec<String>,
+    pub changelog: Option<PathBuf>,
+    pub skills: Vec<String>,
+    pub commands: Vec<String>,
+    pub agents: Vec<String>,
+    pub mcp: Vec<String>,
     /// Every command a hook runs, which is what makes hooks the part of a
     /// plugin worth reading before it is trusted.
-    pub(crate) hooks: Vec<Hook>,
+    pub hooks: Vec<Hook>,
     /// Whether a bound stopped the walk, so what is listed is not all there
     /// is — said on screen wherever the counts are, rather than printing a
     /// cut count as though it were the whole.
-    pub(crate) cut: bool,
+    pub cut: bool,
 }
 
 /// One hook: when it runs, and what it runs.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Hook {
-    pub(crate) event: String,
-    pub(crate) matcher: Option<String>,
-    pub(crate) command: String,
+pub struct Hook {
+    pub event: String,
+    pub matcher: Option<String>,
+    pub command: String,
 }
 
 /// Read `root`, a plugin's install folder. A folder that is missing or holds

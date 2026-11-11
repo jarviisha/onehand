@@ -1,16 +1,19 @@
-//! The Plugins mode's own state — which project, what `claude` last said about
-//! it, the change in flight — and how it is drawn.
+//! The Plugins mode's view, and the carrier of its drive: which project, what
+//! `claude` last said about it and the change in flight are
+//! `onehand_core::claude_plugins::drive::PluginsDrive`'s; what lives here is
+//! carrying its reads and changes off the UI loop, and the drawing.
 
-use crate::cli::{self, Available, Catalog, Change, Plugin, Scope, Verb};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, FocusHandle,
     InteractiveElement as _, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement as _, Styled, Task, Window, div,
+    StatefulInteractiveElement as _, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::{ActiveTheme, StyledExt};
+use onehand_core::claude_plugins::cli::{self, Available, Catalog, Change, Plugin, Scope};
+use onehand_core::claude_plugins::drive::{Effect, Input, PluginsDrive};
 use onehand_ui::Short as _;
 use onehand_ui::search_input;
 use onehand_ui::{
@@ -18,7 +21,7 @@ use onehand_ui::{
 };
 use onehand_workbench::{Ask, Request};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Instant;
 
 mod details;
@@ -107,63 +110,18 @@ impl Filter {
     }
 }
 
-/// One change that went through: where it was made, whether it reaches every
-/// project, and when.
-struct Made {
-    root: PathBuf,
-    /// A change at the global scope, which every project's agent loads.
-    everywhere: bool,
-    at: Instant,
-}
-
-/// How many changes are kept to count from. Far past how many anybody makes
-/// between two restarts.
-const MADE_CAP: usize = 256;
-
-/// How many of `made` the agent in `root`, started at `since`, has not
-/// loaded: those after it started, made in this project or globally. None
-/// while no agent is running — the next one to start loads all of them.
-fn pending_count(made: &[Made], root: &Path, since: Option<Instant>) -> usize {
-    let Some(since) = since else {
-        return 0;
-    };
-    made.iter()
-        .filter(|made| made.at > since && (made.everywhere || made.root == root))
-        .count()
-}
-
 pub(crate) struct PluginsView {
-    root: Option<PathBuf>,
+    /// Which project is listed, what `claude` last said of it, the one
+    /// change in flight (one at a time, because every change is a rewrite of
+    /// a settings file or of Claude Code's install record, and two landing
+    /// together can each write a copy missing the other's), why the last one
+    /// was refused, where *Install* lands, and every change that went through.
+    drive: PluginsDrive,
     /// Which list is showing. Per window rather than per root, and not
     /// persisted: which list somebody was reading is not a fact about the
     /// project, and a mode that came back on the catalog would hide what is
     /// installed behind a click.
     tab: Tab,
-    /// What `claude` last said about the active root, or why it could not.
-    /// Cleared on a project switch, since another project's installs and
-    /// settings are not this one's.
-    catalog: Option<Result<Catalog, String>>,
-    /// Whether the listing needs reading again before it is next drawn.
-    stale: bool,
-    /// The listing in flight, held only so that starting another drops it.
-    _list: Option<Task<()>>,
-    /// The one change in flight.
-    ///
-    /// **One at a time**, because every change is a rewrite of a settings file
-    /// or of Claude Code's install record, and two landing together can each
-    /// write a copy missing the other's.
-    busy: Option<Change>,
-    _change: Option<Task<()>>,
-    /// Why the last change did not happen, kept until the next one does or the
-    /// project changes.
-    ///
-    /// A standing line rather than a notification: an install that was refused
-    /// — most often for a command it wants run, which is left to a person on
-    /// purpose — says what to do next, and a toast that fades takes that with it.
-    status: Option<String>,
-    /// Where *Install* lands: the scope last picked from its caret, so the
-    /// choice made once carries on to the next install.
-    install_scope: Scope,
     /// The marketplace the catalog is narrowed to, or all of them.
     market: Option<String>,
     /// The marketplace search. Made on the first draw, since an input needs a
@@ -172,13 +130,6 @@ pub(crate) struct PluginsView {
     /// The installed list's search, made the same way.
     installed_query: Option<Entity<InputState>>,
     filter: Filter,
-    /// Every change that went through, with the project it was made in and
-    /// when. What the agent on screen has not seen is the ones after it
-    /// started — which is what the pending banner counts.
-    made: Vec<Made>,
-    /// When the agent on screen started, as the shell last said; `None` while
-    /// no session shows, when there is nothing running to be out of date.
-    since: Option<Instant>,
     /// One focus handle per installed row, by plugin, so the rows are tab
     /// stops and a row keeps its focus across a re-list.
     rows: HashMap<String, FocusHandle>,
@@ -192,21 +143,12 @@ pub(crate) struct PluginsView {
 impl PluginsView {
     pub(crate) fn new(ask: Ask, cx: &mut App) -> Entity<Self> {
         cx.new(|_| Self {
-            root: None,
+            drive: PluginsDrive::default(),
             tab: Tab::Installed,
-            catalog: None,
-            stale: false,
-            _list: None,
-            busy: None,
-            _change: None,
-            status: None,
-            install_scope: Scope::User,
             market: None,
             query: None,
             installed_query: None,
             filter: Filter::All,
-            made: Vec::new(),
-            since: None,
             rows: HashMap::new(),
             offered: Vec::new(),
             ask,
@@ -214,128 +156,81 @@ impl PluginsView {
     }
 
     pub(crate) fn set_root(&mut self, root: &Path, cx: &mut Context<Self>) {
-        if self.root.as_deref() == Some(root) {
-            return;
-        }
-        self.root = Some(root.to_path_buf());
-        self.catalog = None;
-        // A refusal is about the project it happened in.
-        self.status = None;
-        self.stale = true;
+        self.drive.set_root(root);
         cx.notify();
     }
 
     pub(crate) fn forget_root(&mut self, root: &Path, cx: &mut Context<Self>) {
-        if self.root.as_deref() == Some(root) {
-            self.root = None;
-            self.catalog = None;
-            self.status = None;
-            self._list = None;
-            cx.notify();
-        }
+        self.drive.forget_root(root);
+        cx.notify();
     }
 
     pub(crate) fn agent_started(&mut self, since: Option<Instant>, cx: &mut Context<Self>) {
-        self.since = since;
+        self.drive.agent_started(since);
         cx.notify();
-    }
-
-    /// How many changes the agent on screen has not loaded: those made in
-    /// this project since it started. None while no agent is running, since a
-    /// session started next will load all of them.
-    ///
-    /// Counts what went through this mode alone — a plugin installed from a
-    /// terminal is not seen here, and is not claimed to be.
-    fn pending(&self) -> usize {
-        match &self.root {
-            Some(root) => pending_count(&self.made, root, self.since),
-            None => 0,
-        }
     }
 
     pub(crate) fn mark_stale(&mut self, cx: &mut Context<Self>) {
-        self.stale = true;
+        self.drive.mark_stale();
         cx.notify();
     }
 
-    /// Ask `claude` what is installed for the active root.
-    ///
-    /// The answer is dropped if the root has moved on while it was out, since
-    /// it names another project's installs and settings.
-    fn list(&mut self, cx: &mut Context<Self>) {
-        let Some(root) = self.root.clone() else {
-            return;
-        };
-        self._list = Some(cx.spawn(async move |view, cx| {
-            let listed = cx
-                .background_executor()
-                .spawn({
-                    let root = root.clone();
-                    async move { cli::list_blocking(&root) }
-                })
-                .await;
-            let _ = view.update(cx, |view: &mut Self, cx| {
-                if view.root.as_deref() == Some(root.as_path()) {
-                    view.catalog = Some(listed);
-                    cx.notify();
-                }
-            });
-        }));
-    }
-
-    /// Make one change, then read the listing again — the command line's
-    /// answer to a change is a sentence, and what it did is only certain from
-    /// what it lists afterwards.
-    ///
-    /// The change was made in the project it was pressed in, so a refusal is
-    /// said only while that project is still the one on screen.
+    /// Make one change, unless one is on its way.
     fn change(&mut self, change: Change, cx: &mut Context<Self>) {
-        if self.busy.is_some() {
-            return;
-        }
-        let Some(root) = self.root.clone() else {
-            return;
-        };
-        self.busy = Some(change.clone());
-        self.status = None;
-        cx.notify();
-        self._change = Some(cx.spawn(async move |view, cx| {
-            let done = cx
-                .background_executor()
-                .spawn({
-                    let root = root.clone();
-                    let change = change.clone();
-                    async move { cli::change_blocking(&root, &change) }
-                })
-                .await;
-            let _ = view.update(cx, |view: &mut Self, cx| {
-                view.busy = None;
-                match done {
-                    // Fetching a catalog changes nothing an agent loads.
-                    Ok(()) if change.verb == Verb::CheckUpdates => {}
-                    Ok(()) => {
-                        view.made.push(Made {
-                            root: root.clone(),
-                            // A move out of the global scope takes it away
-                            // from every project, as much as one into it adds it.
-                            everywhere: change.scope == Scope::User
-                                || change.verb == Verb::Move(Scope::User),
-                            at: Instant::now(),
+        let effects = self.drive.change(change);
+        self.perform(effects, cx);
+    }
+
+    /// Carry out the drive's effects, in order, each off the UI loop, with
+    /// its answer reported back.
+    fn perform(&mut self, effects: Vec<Effect>, cx: &mut Context<Self>) {
+        for effect in effects {
+            match effect {
+                Effect::List { root, token } => {
+                    cx.spawn(async move |view, cx| {
+                        let listed = cx
+                            .background_executor()
+                            .spawn(async move { cli::list_blocking(&root) })
+                            .await;
+                        let _ = view.update(cx, |view: &mut Self, cx| {
+                            view.landed(Input::Listed { token, listed }, cx)
                         });
-                        // Only the latest can still be pending for a running
-                        // agent; the rest are history nothing reads.
-                        let over = view.made.len().saturating_sub(MADE_CAP);
-                        view.made.drain(..over);
-                    }
-                    Err(why) if view.root.as_deref() == Some(root.as_path()) => {
-                        view.status = Some(why)
-                    }
-                    Err(_) => {}
+                    })
+                    .detach();
                 }
-                view.stale = true;
-                cx.notify();
-            });
-        }));
+                Effect::Change { root, change } => {
+                    cx.spawn(async move |view, cx| {
+                        let done = cx
+                            .background_executor()
+                            .spawn({
+                                let (root, change) = (root.clone(), change.clone());
+                                async move { cli::change_blocking(&root, &change) }
+                            })
+                            .await;
+                        let _ = view.update(cx, |view: &mut Self, cx| {
+                            let now = Instant::now();
+                            view.landed(
+                                Input::Changed {
+                                    root,
+                                    change,
+                                    done,
+                                    now,
+                                },
+                                cx,
+                            )
+                        });
+                    })
+                    .detach();
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    /// Report what the world said, and carry out what the drive answers.
+    fn landed(&mut self, input: Input, cx: &mut Context<Self>) {
+        let effects = self.drive.handle(input);
+        self.perform(effects, cx);
     }
 
     fn query(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Entity<InputState> {
@@ -368,7 +263,7 @@ impl PluginsView {
     /// Whether `change` is the one in flight, so the control that asked for
     /// it — and only that one — shows it working.
     fn running(&self, change: &Change) -> bool {
-        self.busy.as_ref() == Some(change)
+        self.drive.busy() == Some(change)
     }
 }
 
@@ -377,29 +272,29 @@ impl Render for PluginsView {
         // Being drawn is what says the listing is worth reading, as it is for
         // the Markdown mode's walk. Not while a change is out: its own landing
         // asks for one, and a listing read halfway through it is already stale.
-        if self.stale && self.busy.is_none() {
-            self.stale = false;
-            self.list(cx);
-        }
+        let effects = self.drive.list_if_due();
+        self.perform(effects, cx);
         let body = self.body(window, cx);
-        div().flex_1().min_h_0().v_flex().child(body).children(
-            self.status
-                .clone()
-                .map(|status| status_line(status, status_ink(cx).warning)),
-        )
+        let refused = self.drive.refused().map(str::to_string);
+        div()
+            .flex_1()
+            .min_h_0()
+            .v_flex()
+            .child(body)
+            .children(refused.map(|why| status_line(why, status_ink(cx).warning)))
     }
 }
 
 impl PluginsView {
     fn body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        if self.root.is_none() {
+        if self.drive.root().is_none() {
             return hint("No project selected", cx);
         }
         let query = self.query(window, cx);
         let installed_query = self.installed_query(window, cx);
         // Focus handles first, while nothing else here is borrowed: a row is
         // a tab stop, and its handle has to outlive the frame it is drawn in.
-        if let Some(Ok(catalog)) = &self.catalog {
+        if let Some(Ok(catalog)) = self.drive.catalog() {
             let ids: Vec<String> = catalog.installed.iter().map(|p| p.id.clone()).collect();
             self.rows.retain(|id, _| ids.contains(id));
             for id in ids {
@@ -416,12 +311,12 @@ impl PluginsView {
         // an empty list with nothing highlighted to say why — so it falls
         // back to all.
         if self.filter == Filter::HasUpdate
-            && let Some(Ok(catalog)) = &self.catalog
+            && let Some(Ok(catalog)) = self.drive.catalog()
             && !catalog.installed.iter().any(|p| p.update.is_some())
         {
             self.filter = Filter::All;
         }
-        let catalog = match &self.catalog {
+        let catalog = match self.drive.catalog() {
             None => return hint("Reading Claude Code's plugins…", cx),
             Some(Err(why)) => return self.failed(why.clone(), cx),
             Some(Ok(catalog)) => catalog,
@@ -587,7 +482,7 @@ impl PluginsView {
             // What is happening, while it happens, and what waits on a
             // restart: under the list, so neither moves it as it comes and
             // goes.
-            .children(self.busy.as_ref().map(|change| note(change.doing(), cx)))
+            .children(self.drive.busy().map(|change| note(change.doing(), cx)))
             .children(self.pending_banner(cx))
             .into_any_element()
     }
@@ -608,8 +503,8 @@ impl PluginsView {
                         .secondary()
                         .label("Try again")
                         .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
-                            view.catalog = None;
-                            view.mark_stale(cx)
+                            view.drive.retry();
+                            cx.notify()
                         })),
                 ),
             )
@@ -668,7 +563,7 @@ impl PluginsView {
     /// only while there is something, so an idle panel carries no line about
     /// restarting.
     fn pending_banner(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let pending = self.pending();
+        let pending = self.drive.pending();
         if pending == 0 {
             return None;
         }
@@ -700,7 +595,7 @@ impl PluginsView {
                         .short()
                         .secondary()
                         .label("Restart the agent")
-                        .refuses(self.busy.is_some().then_some(ONE_AT_A_TIME))
+                        .refuses(self.drive.busy().is_some().then_some(ONE_AT_A_TIME))
                         .on_click(move |_, window, cx| ask(&Request::RestartAgent, window, cx)),
                 )
                 .into_any_element(),
