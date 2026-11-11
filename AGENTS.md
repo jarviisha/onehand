@@ -124,9 +124,9 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 | Path | Crate | What |
 |---|---|---|
 | `crates/app` | `onehand` | GPUI front end + binary (`main.rs` is ~25 lines; logic lives in the lib) |
-| `crates/core` | `onehand-core` | GUI-free logic: config, workspace tree, ACP client, chat model, remote bridge, connectors, issues, editor rules, git status, worktrees, the workflow engine, tasks, unattended runs |
+| `crates/core` | `onehand-core` | GUI-free logic: config, workspace tree, ACP client, chat model, remote bridge, connectors, issues, the Editor's files, Claude Code's plugin command line, git status, worktrees, the workflow engine, tasks, unattended runs, the Workbench mode contract's GUI-free half (`workbench`) |
 | `crates/ui` | `onehand-ui` | what every crate draws with, as the app does: the button wrapper and its `Quiet`/`Short`/`Tall` traits, `text_input`, `search_input` and `text_area`, menu rows and `menu_below`, `choice` and `switch`, status ink, dock surface, the shared sizes |
-| `crates/workbench` | `onehand-workbench` | the Workbench mode contract: `WorkbenchModeSpec`, `ModeId`, `WorkbenchMode`, `Request`, `Ask` |
+| `crates/workbench` | `onehand-workbench` | how a Workbench mode is mounted in GPUI: `WorkbenchMode`, `Ask`, re-exporting core's `WorkbenchModeSpec`, `ModeId`, `Request` |
 | `crates/terminal-ui` | `onehand-terminal-ui` | PTY/grid ownership shared by the terminal dock and Neovim |
 | `crates/editor`, `files`, `markdown`, `neovim`, `issues`, `claude-plugins` | `onehand-<name>` | the Workbench modes, one crate each (Files lives inside Editor; `claude-plugins` is the Plugins mode, which manages Claude Code's plugins); composed in `crates/app/src/features.rs` |
 | `crates/host` | `onehand-host` | the service that runs sessions on a host reached over SSH; built from core alone, never links GPUI |
