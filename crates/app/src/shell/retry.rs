@@ -640,3 +640,6 @@ impl Shell {
         cx.notify();
     }
 }
+
+#[cfg(test)]
+mod tests;

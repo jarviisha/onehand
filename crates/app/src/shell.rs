@@ -39,6 +39,8 @@ mod presentation;
 mod remote_runs;
 mod render;
 mod retry;
+#[cfg(test)]
+pub(crate) mod rig;
 mod roots;
 mod sessions;
 mod settings_page;
