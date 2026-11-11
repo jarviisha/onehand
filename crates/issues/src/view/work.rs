@@ -371,9 +371,7 @@ fn more_menu(
     let view = cx.entity();
     let danger = status_ink(cx).danger;
     // Closing asks only while a run works on the issue, which it does not stop.
-    let asks = doing.work.as_ref().is_some_and(|work| {
-        work.work.active() || work.earlier.iter().any(|earlier| earlier.active)
-    });
+    let asks = doing.work.as_ref().is_some_and(|work| work.closing_asks());
     // What ⋯ holds and is still being read or done waits on ⋯ itself.
     let waits = doing
         .work

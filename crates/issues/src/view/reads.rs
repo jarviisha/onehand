@@ -157,15 +157,13 @@ impl IssuesView {
         }
     }
 
-    /// Whether the work on issue `number` of the project on screen is
-    /// running, queued or waiting.
-    pub(super) fn work_active(&self, number: u64) -> bool {
+    /// Whether closing issue `number` of the project on screen asks first.
+    pub(super) fn closing_asks(&self, number: u64) -> bool {
         let Some(key) = self.root.as_deref().and_then(|root| self.key(root, number)) else {
             return false;
         };
-        self.works.iter().any(|work| {
-            work.key == key
-                && (work.work.active() || work.earlier.iter().any(|earlier| earlier.active))
-        })
+        self.works
+            .iter()
+            .any(|work| work.key == key && work.closing_asks())
     }
 }

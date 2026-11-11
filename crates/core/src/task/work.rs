@@ -703,6 +703,15 @@ fn done(work: &Work, pr: PrSeen<'_>) -> Next {
     }
 }
 
+impl IssueWork {
+    /// Whether this issue's work, or any earlier work on it, is running,
+    /// queued or waiting: closing the issue stops none of it, so closing
+    /// asks first.
+    pub fn closing_asks(&self) -> bool {
+        self.work.active() || self.earlier.iter().any(|earlier| earlier.active)
+    }
+}
+
 /// A pull request as one line names it: *#7 · open, draft*.
 pub fn pr_named(pr: &PullRequest) -> String {
     format!("#{} · {}", pr.number, pr_said(pr))

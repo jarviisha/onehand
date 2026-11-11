@@ -416,3 +416,12 @@ fn a_change_is_made_as_it_is_named() {
     .apply(&mut kept, 5)
     .is_err());
 }
+
+#[test]
+fn only_the_newest_write_moves_a_selection_nobody_moved_since() {
+    assert_eq!(moves_selection(true, Some(3), None, None, false), Some(3));
+    assert_eq!(moves_selection(false, Some(3), None, None, false), None);
+    assert_eq!(moves_selection(true, Some(3), None, Some(1), false), None);
+    assert_eq!(moves_selection(true, Some(3), Some(1), Some(1), true), None);
+    assert_eq!(moves_selection(true, None, None, None, false), None);
+}

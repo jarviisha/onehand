@@ -417,7 +417,7 @@ impl IssuesView {
     /// asking, unless a run is still working on it, which closing does not
     /// stop: that is asked about first.
     fn confirm_close(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.work_active(number) {
+        if !self.closing_asks(number) {
             self.set_open(number, false, cx);
             return;
         }
