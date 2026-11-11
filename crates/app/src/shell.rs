@@ -12,7 +12,8 @@ use gpui::{App, Entity, SharedString};
 use gpui_component::ResizableState;
 use gpui_component::dock::DockArea;
 use gpui_component::input::InputState;
-use std::collections::HashMap;
+use onehand_core::workspace::HostName;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 mod boot;
@@ -266,8 +267,11 @@ pub struct Shell {
     branch_draft: Option<BranchDraft>,
     /// The add-a-project-on-a-host form, while it is up.
     host_project: Option<host_project::HostProjectDraft>,
-    /// The restart questions asked of hosts, and the form's attaches.
-    host_flow: host_project::HostFlow,
+    /// What here waits on each host, and the form's attaches.
+    host_waits: onehand_core::host::waits::WindowWaits,
+    /// The listening to each host's wait (on its being back, or on its busy
+    /// sessions) that something here waits on; dropping one leaves the wait.
+    host_listening: BTreeMap<(HostName, bool), gpui::Task<()>>,
     /// The offload form, while it is up.
     offload_draft: Option<offload::OffloadDraft>,
     /// The folders of this window's offloaded projects whose writers are
