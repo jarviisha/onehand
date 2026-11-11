@@ -224,6 +224,61 @@ fn cwd_of(pid: u32) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// What a removal reads, gathered before the git and forge reads go off
+/// the UI thread: the task's repository, the worktree's top, the task's
+/// branch, the forge serving it, what of onehand's uses the folder, and
+/// every shell and Neovim, to be asked where each works now.
+pub struct Asked {
+    pub repo: PathBuf,
+    pub folder: PathBuf,
+    pub branch: Option<String>,
+    pub forge: Option<&'static dyn crate::connector::Connector>,
+    pub users: Vec<String>,
+    pub processes: Vec<Process>,
+}
+
+impl Asked {
+    /// The forge's word on the pull request, then git's on the folder, and
+    /// the judgement. Blocking.
+    pub fn judge_blocking(&self) -> (Facts, Judged) {
+        let merged = match (self.forge, &self.branch) {
+            (Some(forge), Some(branch)) => {
+                forge
+                    .pull_request_for_blocking(&self.repo, branch)
+                    .map(|pr| {
+                        pr.filter(|pr| pr.state == crate::connector::PrState::Merged)
+                            .map(|pr| Merged {
+                                number: pr.number,
+                                head: pr.head,
+                            })
+                    })
+            }
+            (None, _) => Err("no forge serves the project".to_string()),
+            (_, None) => Err("the task has no branch to look its pull request up by".to_string()),
+        };
+        let mut users = self.users.clone();
+        users.extend(working_in_blocking(&self.folder, &self.processes));
+        let facts = facts_blocking(&self.folder, self.branch.clone(), merged, users);
+        let judged = judge(&facts);
+        (facts, judged)
+    }
+}
+
+/// The top of the worktree `dir` is in, written the way `dir` is, so it is
+/// compared with the workspace's own paths as they are kept: git answers
+/// with the top made canonical, which a link on the way would not match.
+/// Blocking.
+pub fn top_blocking(dir: &Path) -> PathBuf {
+    let Some(top) = super::repo_top_blocking(dir) else {
+        return dir.to_path_buf();
+    };
+    let real = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    let below = real
+        .strip_prefix(&top)
+        .map_or(0, |rel| rel.components().count());
+    dir.ancestors().nth(below).map_or(top, Path::to_path_buf)
+}
+
 /// What a removal did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Removed {

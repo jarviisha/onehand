@@ -23,13 +23,16 @@
 //! held beside this one; [`link`] joins them.
 
 use super::queue::Queue;
+use super::work::Act;
 use super::{history, Launch, Task, Working};
 use crate::workflow::{Run, Template, WithCurrent};
+use crate::worktree::removal;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::Duration;
 
 mod begin;
+mod cleanup;
 mod ending;
 pub mod link;
 mod off_screen;
@@ -109,6 +112,26 @@ pub enum Input<W> {
         task: String,
         written: Result<(), String>,
     },
+    /// What removing task `task`'s worktree, asked from `window`, was judged
+    /// to come to (`confirmed` once the person said yes), on what was found
+    /// of the worktree at `folder` of `repo`; `None` when `window` went
+    /// before what uses the folder could be read.
+    Judged {
+        task: String,
+        confirmed: bool,
+        window: W,
+        repo: PathBuf,
+        judged: Option<(Box<removal::Facts>, removal::Judged)>,
+    },
+    /// What removing task `task`'s worktree at `folder`, and `branch`, from
+    /// `window`, came to.
+    WorktreeRemoved {
+        task: String,
+        window: W,
+        folder: PathBuf,
+        branch: Option<String>,
+        removed: Result<removal::Removed, String>,
+    },
 }
 
 /// What a person, or the log, is told; the words for each and where they go
@@ -133,6 +156,19 @@ pub enum Signal<W> {
     /// A dismiss asked for from `window` was not kept, for `why`, and the
     /// task is as it was.
     DismissFailed { window: W, why: String },
+    /// A worktree's removal, confirmed in `window`, was refused as things
+    /// stand now, for every reason in `why`.
+    NotRemoved { window: W, why: Vec<String> },
+    /// The worktree at `folder` was removed, from `window`, and `branch`
+    /// with it unless deleting it failed (`kept`, why).
+    Removed {
+        window: W,
+        folder: PathBuf,
+        branch: Option<String>,
+        kept: Option<String>,
+    },
+    /// Removing a worktree, from `window`, failed, for `why`.
+    RemoveFailed { window: W, why: String },
     /// A task's file could not be written; said once until a write lands.
     SaveFailed(String),
     /// A task's last mark could not be pinned.
@@ -214,6 +250,39 @@ pub enum Effect<W> {
     /// Task `task` asked for its place, or was refused it: an issue's run no
     /// longer counts as starting.
     Asked(String),
+    /// Read what uses the worktree task `task` works in at `dir` (its top
+    /// found first), then judge removing it, with `branch` and the forge
+    /// named `forge` serving `repo`, off the UI loop, and report
+    /// [`Input::Judged`] with `window` and `confirmed`. Recorded: the press
+    /// waits until it lands.
+    JudgeRemoval {
+        task: String,
+        dir: PathBuf,
+        repo: PathBuf,
+        branch: Option<String>,
+        forge: Option<String>,
+        confirmed: bool,
+        window: W,
+    },
+    /// Ask the person in `window` whether to remove task `task`'s worktree,
+    /// as `facts` and `judged` say; a yes is
+    /// [`TasksDrive::remove_worktree`], confirmed. Not answered.
+    ConfirmRemoval {
+        task: String,
+        facts: Box<removal::Facts>,
+        judged: removal::Judged,
+        window: W,
+    },
+    /// Remove the worktree at `folder` from `repo`, then `branch`, and report
+    /// [`Input::WorktreeRemoved`]. Recorded, whatever became of `window`:
+    /// what was removed is kept with the task.
+    RemoveWorktree {
+        task: String,
+        repo: PathBuf,
+        folder: PathBuf,
+        branch: Option<String>,
+        window: W,
+    },
     /// Close session `uid`, in `window`: its finished schedule's task let go.
     CloseSession { uid: u64, window: W },
     /// Tell this.
@@ -251,6 +320,9 @@ pub struct TasksDrive<W> {
     off_screen: HashSet<String>,
     /// A write failed and was said; nothing more is said until one lands.
     save_failed: bool,
+    /// What a person pressed on each task that is still being done, so its
+    /// button waits.
+    acting: HashMap<String, Act>,
 }
 
 impl<W> Default for TasksDrive<W> {
@@ -264,6 +336,7 @@ impl<W> Default for TasksDrive<W> {
             removed: HashMap::new(),
             off_screen: HashSet::new(),
             save_failed: false,
+            acting: HashMap::new(),
         }
     }
 }
@@ -418,6 +491,20 @@ impl<W: Copy> TasksDrive<W> {
                 }
             }
             Input::Dismissed { task, written } => self.dismissed(task, written, &mut fx),
+            Input::Judged {
+                task,
+                confirmed,
+                window,
+                repo,
+                judged,
+            } => self.judged(task, confirmed, window, repo, judged, &mut fx),
+            Input::WorktreeRemoved {
+                task,
+                window,
+                folder,
+                branch,
+                removed,
+            } => self.worktree_gone(task, window, folder, branch, removed, &mut fx),
         }
         fx
     }
@@ -544,16 +631,6 @@ impl<W: Copy> TasksDrive<W> {
             ),
             false => (false, Vec::new()),
         }
-    }
-
-    /// Task `id`'s worktree and branch were removed: kept with the task, so
-    /// nothing offers to remove them again.
-    pub fn worktree_removed(&mut self, id: &str) -> Vec<Effect<W>> {
-        let Some(task) = self.task_mut(id) else {
-            return vec![Effect::Refresh];
-        };
-        task.worktree_removed = true;
-        vec![Effect::Save(Box::new(task.clone())), Effect::Refresh]
     }
 
     /// Change the issue task `id` works, and write the task.

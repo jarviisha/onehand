@@ -289,12 +289,6 @@ pub(crate) fn dismiss(id: &str, window: &mut Window, cx: &mut App) {
     with_drive(cx, |d| ((), d.dismiss(id, handle)));
 }
 
-/// Task `id`'s worktree and branch were removed: kept with the task, so
-/// nothing offers to remove them again.
-pub(crate) fn worktree_removed(id: &str, cx: &mut App) {
-    with_drive(cx, |d| ((), d.worktree_removed(id)));
-}
-
 /// Where the run on session `uid` stands, as its strip draws it.
 pub(crate) struct Shown {
     pub(crate) task: SharedString,
@@ -362,10 +356,14 @@ pub(crate) fn each<R>(cx: &App, look: impl Fn(&Task, bool) -> Option<R>) -> Vec<
 /// included, so its button waits.
 pub(crate) fn pressed(id: &str, cx: &App) -> Option<onehand_core::task::work::Act> {
     let t = cx.try_global::<Tasks>()?;
-    t.acting.get(id).copied().or_else(|| {
-        t.stopping(id)
-            .then_some(onehand_core::task::work::Act::Stop)
-    })
+    t.acting
+        .get(id)
+        .copied()
+        .or(t.drive.acting(id))
+        .or_else(|| {
+            t.stopping(id)
+                .then_some(onehand_core::task::work::Act::Stop)
+        })
 }
 
 /// Say that `act`, pressed on task `id`, is being done, or with `None` that
@@ -379,6 +377,12 @@ pub(crate) fn set_acting(id: &str, act: Option<onehand_core::task::work::Act>, c
         None => t.acting.remove(id),
     });
     cx.refresh_windows();
+}
+
+/// *Remove worktree…* pressed on task `id` in `window`, or, `confirmed`, the
+/// person's yes to it.
+pub(crate) fn remove_worktree(id: &str, confirmed: bool, window: AnyWindowHandle, cx: &mut App) {
+    with_drive(cx, |d| ((), d.remove_worktree(id, confirmed, window)));
 }
 
 /// Task `id` as it is kept.

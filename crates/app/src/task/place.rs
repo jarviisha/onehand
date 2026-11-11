@@ -11,6 +11,7 @@ use gpui_component::WindowExt as _;
 use onehand_core::task::tasks::{Effect, Input, Placed, Signal};
 use onehand_core::task::{Launch, Task, marks, queue};
 use onehand_core::workflow::Failure;
+use onehand_core::worktree::removal;
 
 /// What watches a run that ended while its session's turn still goes: the
 /// session's events, its release, and the drain limit's clock.
@@ -185,6 +186,55 @@ pub(super) fn perform(
                     cx,
                 );
             }
+            Effect::JudgeRemoval {
+                task,
+                dir,
+                repo,
+                branch,
+                forge,
+                confirmed,
+                window,
+            } => judge_removal(task, dir, repo, branch, forge, confirmed, window, cx),
+            Effect::ConfirmRemoval {
+                task,
+                facts,
+                judged,
+                window,
+            } => cx.defer(move |cx| {
+                crate::state::with_shell(window, cx, |shell, window, cx| {
+                    shell.confirm_removal(task, *facts, judged, window, cx)
+                });
+            }),
+            Effect::RemoveWorktree {
+                task,
+                repo,
+                folder,
+                branch,
+                window,
+            } => {
+                // Not tied to the window: a removal that went is kept with
+                // its task even when the window closed meanwhile.
+                cx.spawn(async move |cx| {
+                    let removed =
+                        cx.background_executor()
+                            .spawn({
+                                let (folder, branch) = (folder.clone(), branch.clone());
+                                async move {
+                                    removal::remove_blocking(&repo, &folder, branch.as_deref())
+                                }
+                            })
+                            .await;
+                    let input = Input::WorktreeRemoved {
+                        task,
+                        window,
+                        folder,
+                        branch,
+                        removed,
+                    };
+                    cx.update(|cx| feed(input, cx));
+                })
+                .detach();
+            }
             Effect::Drive { task, window } => drive(task, window, cx),
             Effect::WatchDrain { task, limit } => watch_drain(task, limit, session, cx),
             Effect::Pin {
@@ -220,6 +270,63 @@ pub(super) fn perform(
             Effect::Refresh => cx.refresh_windows(),
         }
     }
+}
+
+/// Judge removing task `task`'s worktree, asked in `window`: its top found
+/// off the UI thread, what uses it read from every window, then the forge
+/// and git asked off it; what it came to told to the drive, `None` when
+/// `window` went meanwhile.
+#[allow(clippy::too_many_arguments)]
+fn judge_removal(
+    task: String,
+    dir: std::path::PathBuf,
+    repo: std::path::PathBuf,
+    branch: Option<String>,
+    forge: Option<String>,
+    confirmed: bool,
+    window: AnyWindowHandle,
+    cx: &mut App,
+) {
+    cx.spawn(async move |cx| {
+        let folder = cx
+            .background_executor()
+            .spawn(async move { removal::top_blocking(&dir) })
+            .await;
+        let asked = cx.update(|cx| {
+            let (users, processes) = crate::state::with_shell(window, cx, |shell, _, cx| {
+                shell.folder_users(&folder, cx)
+            })?;
+            Some(removal::Asked {
+                repo: repo.clone(),
+                folder,
+                branch,
+                forge: forge.as_deref().and_then(|name| {
+                    onehand_core::connector::named(crate::features::connectors(), name)
+                }),
+                users,
+                processes,
+            })
+        });
+        let judged = match asked {
+            Some(asked) => {
+                let (facts, judged) = cx
+                    .background_executor()
+                    .spawn(async move { asked.judge_blocking() })
+                    .await;
+                Some((Box::new(facts), judged))
+            }
+            None => None,
+        };
+        let input = Input::Judged {
+            task,
+            confirmed,
+            window,
+            repo,
+            judged,
+        };
+        cx.update(|cx| feed(input, cx));
+    })
+    .detach();
 }
 
 /// Answer whoever asked where task `id` landed, if anybody did.
@@ -322,6 +429,33 @@ fn say(signal: Signal<AnyWindowHandle>, cx: &mut App) {
                 cx,
             )
         }),
+        Signal::NotRemoved { window, why } => {
+            let why = format!("Not removed, as things stand now: {}", why.join(" "));
+            toast(window, crate::toast::warning(why), cx)
+        }
+        Signal::Removed {
+            window,
+            folder,
+            branch,
+            kept,
+        } => {
+            let folder = folder.display();
+            let note = match (branch, kept) {
+                (Some(branch), Some(why)) => crate::toast::warning(format!(
+                    "Removed {folder}; the branch {branch} was kept: {why}"
+                )),
+                (Some(branch), None) => {
+                    crate::toast::success(format!("Removed {folder} and {branch}"))
+                }
+                (None, _) => crate::toast::success(format!("Removed {folder}")),
+            };
+            toast(window, note, cx)
+        }
+        Signal::RemoveFailed { window, why } => toast(
+            window,
+            crate::toast::failed("Removing the worktree", why),
+            cx,
+        ),
         Signal::CheckEnded {
             window,
             project,

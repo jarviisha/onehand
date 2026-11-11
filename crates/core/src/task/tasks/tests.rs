@@ -1,4 +1,5 @@
 use super::*;
+use crate::task::work::Act;
 use crate::task::{queue, Group, Origin, Source};
 use crate::unattended::IssueSource;
 use crate::workflow::{Brief, Failure, Outcome, Setup, Stop};
@@ -768,4 +769,85 @@ fn a_drive_tells_where_its_task_landed() {
         Some(&Placed::Refused("the window closed".into()))
     );
     assert!(!tasks.busy("2"), "its place let go");
+}
+
+fn facts(folder: &str) -> Box<crate::worktree::removal::Facts> {
+    Box::new(crate::worktree::removal::Facts {
+        folder: PathBuf::from(folder),
+        branch: Some("b".into()),
+        expected: Some("b".into()),
+        uncommitted: Ok(Vec::new()),
+        merged: Ok(None),
+        past_merge: Ok(0),
+        users: Vec::new(),
+    })
+}
+
+/// *Remove worktree…* is judged and asked first; once confirmed it is
+/// judged again, removed, and kept with the task, its button waiting
+/// meanwhile; a refusal as things stand is said instead.
+#[test]
+fn a_worktree_is_judged_asked_judged_again_then_removed() {
+    use crate::worktree::removal::{Judged, Removed};
+    let mut tasks = TasksDrive::<Win>::default();
+    tasks.add(titled("1", "Mine", "/w"));
+    let judged = |tasks: &mut TasksDrive<Win>, confirmed, judged| {
+        tasks.handle(Input::Judged {
+            task: "1".into(),
+            confirmed,
+            window: WINDOW,
+            repo: PathBuf::from("/r"),
+            judged,
+        })
+    };
+    let fx = tasks.remove_worktree("1", false, WINDOW);
+    assert!(has(&fx, |e| matches!(
+        e,
+        Effect::JudgeRemoval {
+            confirmed: false,
+            ..
+        }
+    )));
+    assert_eq!(tasks.acting("1"), Some(Act::RemoveWorktree));
+    let remove = Judged::Remove {
+        branch: Some("b".into()),
+        why: "merged".into(),
+    };
+    let fx = judged(&mut tasks, false, Some((facts("/w"), remove.clone())));
+    assert!(has(&fx, |e| matches!(e, Effect::ConfirmRemoval { .. })));
+    assert_eq!(tasks.acting("1"), None);
+    // The window went before what uses the folder was read: nothing more.
+    let _ = tasks.remove_worktree("1", true, WINDOW);
+    let fx = judged(&mut tasks, true, None);
+    assert!(!has(&fx, |e| matches!(e, Effect::RemoveWorktree { .. })));
+    assert_eq!(tasks.acting("1"), None);
+    let fx = judged(
+        &mut tasks,
+        true,
+        Some((facts("/w"), Judged::Refused(vec!["no".into()]))),
+    );
+    assert!(has(&fx, |e| matches!(
+        e,
+        Effect::Signal(Signal::NotRemoved { .. })
+    )));
+    let fx = judged(&mut tasks, true, Some((facts("/w"), remove)));
+    assert!(has(&fx, |e| matches!(
+        e,
+        Effect::RemoveWorktree { folder, branch: Some(b), .. } if folder == Path::new("/w") && b == "b"
+    )));
+    assert_eq!(tasks.acting("1"), Some(Act::RemoveWorktree));
+    let fx = tasks.handle(Input::WorktreeRemoved {
+        task: "1".into(),
+        window: WINDOW,
+        folder: PathBuf::from("/w"),
+        branch: Some("b".into()),
+        removed: Ok(Removed { branch_kept: None }),
+    });
+    assert_eq!(saves(&fx), 1);
+    assert!(tasks.task("1").unwrap().worktree_removed);
+    assert!(has(&fx, |e| matches!(
+        e,
+        Effect::Signal(Signal::Removed { .. })
+    )));
+    assert_eq!(tasks.acting("1"), None);
 }
