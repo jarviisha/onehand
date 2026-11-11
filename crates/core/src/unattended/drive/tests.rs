@@ -1,6 +1,7 @@
 use super::*;
 use crate::config::AgentSpec;
 use crate::task::drive::Said;
+use crate::task::flows::harness::repo;
 use crate::task::tasks::{self, Input as TasksInput, TasksDrive};
 use crate::unattended::link::{Joined, Out};
 use crate::unattended::TrackerRef;
@@ -129,51 +130,6 @@ impl Rig {
     fn slots(&mut self) -> Slots {
         let Rig { tasks, u, .. } = self;
         u.slots(&Seen::new(tasks, []))
-    }
-}
-
-/// A scratch git repository on `main` with one commit, keeping its own
-/// issues in `issues.json`, holding `issues` (a title and its labels).
-fn repo(name: &str, issues: &[(&str, &[&str])]) -> Project {
-    let git = |dir: &Path, args: &[&str]| {
-        let out = std::process::Command::new("git")
-            .arg("-C")
-            .arg(dir)
-            .args(args)
-            .output()
-            .expect("git must be installed to run this test");
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-    };
-    let root = std::env::temp_dir().join(format!("onehand-drive-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root).unwrap();
-    git(&root, &["init", "-q", "-b", "main"]);
-    git(&root, &["config", "user.email", "t@example.com"]);
-    git(&root, &["config", "user.name", "T"]);
-    std::fs::write(root.join("a.txt"), "x").unwrap();
-    git(&root, &["add", "a.txt"]);
-    git(&root, &["commit", "-qm", "one"]);
-    let file = root.join("issues.json");
-    for (title, labels) in issues {
-        crate::issues::update_blocking(&file, |kept| {
-            kept.create(
-                crate::issues::Draft {
-                    title: title.to_string(),
-                    labels: labels.iter().map(|l| l.to_string()).collect(),
-                    ..Default::default()
-                },
-                1,
-            )
-        })
-        .unwrap();
-    }
-    Project {
-        root,
-        issues: Some(file),
     }
 }
 

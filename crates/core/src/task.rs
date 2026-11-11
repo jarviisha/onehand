@@ -413,4 +413,6 @@ pub fn new_id() -> String {
 }
 
 #[cfg(test)]
+pub(crate) mod flows;
+#[cfg(test)]
 mod tests;
