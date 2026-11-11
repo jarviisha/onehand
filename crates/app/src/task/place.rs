@@ -237,12 +237,8 @@ fn drive(id: String, window: AnyWindowHandle, cx: &mut App) {
         shell.drive_task(task, window, cx)
     });
     match driven {
-        Some(Ok(())) => tell(&id, Placed::Started, cx),
-        Some(Err(why)) => tell(&id, Placed::Refused(why), cx),
-        None => {
-            tell(&id, Placed::Refused("the window closed".to_string()), cx);
-            feed(Input::NotDriven(id), cx);
-        }
+        Some(started) => feed(Input::Driven { task: id, started }, cx),
+        None => feed(Input::NotDriven(id), cx),
     }
 }
 

@@ -696,3 +696,54 @@ fn a_start_off_screen_on_a_worktree_is_cut_first() {
         other => panic!("{other:?}"),
     }
 }
+
+/// A session's run begins with what its task was given and, an issue's,
+/// with the lines its transcript opens with.
+#[test]
+fn a_sessions_run_begins_with_its_grant_and_an_issues_opening() {
+    let mut tasks = TasksDrive::<Win>::default();
+    let mut mine = titled("1", "Mine", "/b");
+    mine.grant.tools = vec!["start_task".into()];
+    tasks.add(mine);
+    tasks.add(of_issue("2"));
+    let begun = |tasks: &mut TasksDrive<Win>, id| match tasks.begin(id, true) {
+        Begin::Session { grant, opening, .. } => (grant, opening),
+        Begin::Check(_) | Begin::Refused { .. } => panic!("a session's run"),
+    };
+    let (grant, opening) = begun(&mut tasks, "1");
+    assert_eq!(grant.tools, ["start_task"]);
+    assert!(opening.is_empty());
+    let (_, opening) = begun(&mut tasks, "2");
+    assert!(
+        opening[0].starts_with("Unattended run on issue"),
+        "{opening:?}"
+    );
+}
+
+/// Where a driven task landed is told to whoever asked: begun, refused
+/// for its reason, or its window gone, which also lets its place go.
+#[test]
+fn a_drive_tells_where_its_task_landed() {
+    let mut tasks = TasksDrive::<Win>::default();
+    let driven = |tasks: &mut TasksDrive<Win>, started| {
+        let fx = tasks.handle(Input::Driven {
+            task: "1".into(),
+            started,
+        });
+        told(&fx).cloned()
+    };
+    assert_eq!(driven(&mut tasks, Ok(())), Some(Placed::Started));
+    assert_eq!(
+        driven(&mut tasks, Err("no".into())),
+        Some(Placed::Refused("no".into()))
+    );
+    tasks.add(titled("2", "Mine", "/b"));
+    let fx = ask(&mut tasks, "2", "/b");
+    assert!(drives(&fx, "2"));
+    let fx = tasks.handle(Input::NotDriven("2".into()));
+    assert_eq!(
+        told(&fx),
+        Some(&Placed::Refused("the window closed".into()))
+    );
+    assert!(!tasks.busy("2"), "its place let go");
+}

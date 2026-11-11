@@ -80,6 +80,13 @@ pub enum Input<W> {
         window: W,
         open: bool,
     },
+    /// Task `task`, holding its place, was driven in its window: begun, or
+    /// refused there for `why` (its run's end is
+    /// [`TasksDrive::not_started`]'s).
+    Driven {
+        task: String,
+        started: Result<(), String>,
+    },
     /// Task `task` could not be driven in the window it was to start in:
     /// that window has gone.
     NotDriven(String),
@@ -158,8 +165,8 @@ pub enum Effect<W> {
         window: W,
     },
     /// Drive task `task`, which holds its place, in `window`; report
-    /// [`Input::NotDriven`] when that window has gone, and
-    /// [`TasksDrive::not_started`] when it cannot start there.
+    /// [`Input::Driven`] when it was, [`Input::NotDriven`] when that window
+    /// has gone, and [`TasksDrive::not_started`] when it cannot start there.
     Drive { task: String, window: W },
     /// Report [`Input::Drained`] once task `task`'s session's turn is over,
     /// the session goes, or `limit` runs out, whichever is first. Dropped
@@ -368,7 +375,20 @@ impl<W: Copy> TasksDrive<W> {
                 window,
                 open,
             } => self.kept(task, *launch, window, open, &mut fx),
-            Input::NotDriven(task) => self.release(&task, &mut fx),
+            Input::Driven { task, started } => fx.push(Effect::Told {
+                task,
+                placed: match started {
+                    Ok(()) => Placed::Started,
+                    Err(why) => Placed::Refused(why),
+                },
+            }),
+            Input::NotDriven(task) => {
+                fx.push(Effect::Told {
+                    task: task.clone(),
+                    placed: Placed::Refused("the window closed".to_string()),
+                });
+                self.release(&task, &mut fx);
+            }
             Input::Drained(task) => {
                 if let Some(from) = self.draining.remove(&task) {
                     self.free(task, from, &mut fx);

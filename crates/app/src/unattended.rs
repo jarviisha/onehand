@@ -31,7 +31,7 @@ mod launch;
 mod report;
 pub use launch::{ReviewRead, look_now, read_review, start_answer, start_picked};
 pub use onehand_core::unattended::{Pickable, Project};
-pub(crate) use report::{opening, spec_for};
+pub(crate) use report::spec_for;
 
 /// The tick's clock, armed again at every fire; dropping it stops it.
 struct Clock {

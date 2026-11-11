@@ -366,7 +366,7 @@ impl Shell {
                 Err(why)
             };
         let there = crate::task::resumable_run(&id, cx).is_some_and(|run| run.setup.dir.is_dir());
-        let (start, off_screen, issue) = match crate::task::begin(&id, there, cx) {
+        let (start, off_screen, grant, opening) = match crate::task::begin(&id, there, cx) {
             Begin::Refused { why, kind } => {
                 return refused(why.clone(), Unstarted::Refused(why, kind), window, cx);
             }
@@ -380,11 +380,9 @@ impl Shell {
             Begin::Session {
                 start,
                 off_screen,
-                issue,
-            } => (start, off_screen, issue),
-        };
-        let Some(task) = crate::task::task(&id, cx) else {
-            return Err("That task is gone".to_string());
+                grant,
+                opening,
+            } => (start, off_screen, grant, opening),
         };
         let dir = start.run.setup.dir.clone();
         let mut agent_gone = false;
@@ -396,11 +394,7 @@ impl Shell {
             true => {
                 let spec = crate::unattended::spec_for(start.run.setup.agent.as_deref(), cx);
                 agent_gone = spec.is_none();
-                let started = spec.and_then(|spec| self.run_unattended(dir, spec, Vec::new(), cx));
-                if let (Some((_, session)), true) = (&started, issue) {
-                    crate::unattended::opening(&task, session, cx);
-                }
-                started
+                spec.and_then(|spec| self.run_unattended(dir, spec, Vec::new(), cx))
             }
             false => {
                 let (idx, fx) = self.window.workspace.keep_project(dir);
@@ -415,9 +409,10 @@ impl Shell {
             let why = SESSION_NOT_STARTED.to_string();
             return refused(why, Unstarted::NoSession { agent_gone }, window, cx);
         };
-        // Every drive, a Resume's new session included: what the task was
-        // given when it started is what its session may use.
-        crate::control::grant(uid, &task.grant, cx);
+        for line in opening {
+            crate::chat::session::note(&session, line, cx);
+        }
+        crate::control::grant(uid, &grant, cx);
         // Deferred: the run's carrier reaches into the session and the global
         // the shell is reading from while this runs.
         let handle = window.window_handle();
