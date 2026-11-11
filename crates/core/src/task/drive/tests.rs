@@ -224,7 +224,10 @@ fn an_approval_answers_and_says_so() {
     let mut rig = at_approval();
     let at = approval_at(&rig);
     let fx = rig.approve(at.clone());
-    assert!(has(&fx, |e| matches!(e, Effect::Answered)));
+    assert!(has(&fx, |e| matches!(
+        e,
+        Effect::Unattended(Said::Answered)
+    )));
     // A second press of the same approval is judged stale and moves nothing.
     rig.on(Input::Pinned(Ok("c2".into())));
     let fx = rig.approve(at);
@@ -396,7 +399,10 @@ fn a_prompt_waits_for_the_agent_to_come_up() {
     });
     let fx = rig.on(Input::Appended);
     assert!(submitted(&fx), "{fx:?}");
-    assert!(has(&fx, |e| matches!(e, Effect::CameUp)));
+    assert!(has(&fx, |e| matches!(
+        e,
+        Effect::Unattended(Said::CameUp { .. })
+    )));
 }
 
 #[test]
@@ -427,7 +433,10 @@ fn a_mode_the_agent_does_not_offer_fails_the_run_on_its_mode() {
     let (mut rig, _) = Rig::start(checkout(), Some("acceptEdits"), with_modes(&["default"]));
     rig.on(Input::Pinned(Ok("c0".into())));
     let fx = rig.on(Input::Measured(Ok(mark("a", "d0"))));
-    assert!(has(&fx, |e| matches!(e, Effect::Pause { .. })), "{fx:?}");
+    assert!(
+        has(&fx, |e| matches!(e, Effect::Unattended(Said::Pause { .. }))),
+        "{fx:?}"
+    );
     assert!(matches!(finished(&fx), Some(Outcome::Failed(_))), "{fx:?}");
     assert!(!submitted(&fx));
 }
@@ -516,7 +525,7 @@ fn a_refused_pick_fails_the_run_at_the_step() {
         "{fx:?}"
     );
     assert!(
-        !has(&fx, |e| matches!(e, Effect::Pause { .. })),
+        !has(&fx, |e| matches!(e, Effect::Unattended(Said::Pause { .. }))),
         "a launcher run pauses nothing"
     );
 }
@@ -533,7 +542,7 @@ fn a_refusal_of_the_runs_mode_is_not_a_steps() {
     let fx = rig.on(Input::PickRefused("not now".into()));
     assert!(has(
         &fx,
-        |e| matches!(e, Effect::Pause { fix, .. } if fix == "unattended.mode is fixed")
+        |e| matches!(e, Effect::Unattended(Said::Pause { fix, .. }) if fix == "unattended.mode is fixed")
     ));
     assert!(matches!(finished(&fx), Some(Outcome::Failed(why)) if why.contains("mode `plan`")));
 }
@@ -665,7 +674,7 @@ fn a_failed_turn_fails_the_run_in_its_words() {
 fn a_card_pauses_the_budget_and_says_it_waits() {
     let mut rig = in_turn();
     let fx = rig.on(Input::AwaitingUser);
-    assert!(has(&fx, |e| matches!(e, Effect::Waiting)));
+    assert!(has(&fx, |e| matches!(e, Effect::Unattended(Said::Waiting))));
     assert!(rig.drive.card() && rig.drive.waits_on_person());
     rig.now += rig.drive.run().template.timeout_limit() * 2;
     let fx = rig.on(Input::Elapsed(Timer::Timeout));
@@ -677,7 +686,7 @@ fn an_answered_card_resumes_and_says_so() {
     let mut rig = in_turn();
     rig.on(Input::AwaitingUser);
     let fx = rig.on(Input::Notified);
-    assert_eq!(fx, vec![Effect::Answered]);
+    assert_eq!(fx, vec![Effect::Unattended(Said::Answered)]);
     assert!(!rig.drive.card());
     assert!(rig.on(Input::Notified).is_empty(), "said once");
 }

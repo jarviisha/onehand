@@ -236,9 +236,12 @@ fn a_pause_stops_every_run_and_says_what_to_fix(cx: &mut TestAppContext) {
     let dir = temp_dir("pause");
     app(cx, &dir.join("tasks"), Some(UnattendedConfig::default()));
     cx.update(|cx| {
-        super::pause(
-            "The agent does not offer mode `x`",
-            "unattended.mode is fixed",
+        super::run_said(
+            "t",
+            onehand_core::task::drive::Said::Pause {
+                why: "The agent does not offer mode `x`".into(),
+                fix: "unattended.mode is fixed".into(),
+            },
             cx,
         )
     });

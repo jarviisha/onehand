@@ -345,16 +345,7 @@ fn perform(id: &str, effects: Vec<Effect>, cx: &mut App) {
             Effect::Signal(Signal::PinFailed(why)) => {
                 eprintln!("onehand: a step's mark was not pinned: {why}")
             }
-            Effect::Waiting => crate::unattended::waiting(id, cx),
-            Effect::Answered => {
-                let task = id.to_string();
-                cx.defer(move |cx| crate::unattended::answered(&task, cx));
-            }
-            Effect::CameUp => {
-                let name = session.and_then(|session| session.read(cx).chat.session_id.clone());
-                crate::unattended::came_up(id, name, cx);
-            }
-            Effect::Pause { why, fix } => crate::unattended::pause(&why, &fix, cx),
+            Effect::Unattended(said) => crate::unattended::run_said(id, said, cx),
             Effect::Refresh => cx.refresh_windows(),
             Effect::SessionChanged => {
                 if let Some(session) = session {

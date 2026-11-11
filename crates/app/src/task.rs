@@ -158,7 +158,7 @@ fn carry(
 }
 
 /// Join the drives for `command`, and carry out what they say.
-fn with_joined<R>(
+pub(crate) fn with_joined<R>(
     cx: &mut App,
     command: impl FnOnce(&mut Joined<'_, AnyWindowHandle>) -> (R, Out<AnyWindowHandle>),
 ) -> Option<R> {
