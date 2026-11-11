@@ -537,13 +537,40 @@ impl Shell {
         cx: &mut Context<Self>,
         before: impl FnOnce(&mut crate::chat::ChatPane, u64),
     ) -> Option<u64> {
+        self.add_by(
+            |workspace, uid| workspace.add_session(spec, uid, home),
+            window,
+            cx,
+            |pane, added| {
+                if let Some(uid) = added {
+                    before(pane, uid);
+                }
+            },
+        )
+    }
+
+    /// Add a session as `add` asks the workspace's drive for one, minted a
+    /// uid, then as [`Self::add_session`]; what it starts on is handed over
+    /// as `before` says, `None` when the drive refused it.
+    pub(super) fn add_by(
+        &mut self,
+        add: impl FnOnce(
+            &mut onehand_core::workspace::WorkspaceDrive,
+            u64,
+        ) -> (
+            Result<u64, onehand_core::workspace::drive::Refusal>,
+            Vec<onehand_core::workspace::drive::Effect>,
+        ),
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        before: impl FnOnce(&mut crate::chat::ChatPane, Option<u64>),
+    ) -> Option<u64> {
         let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
-        let (added, fx) = self.window.workspace.add_session(spec, uid, home);
-        if let Ok(uid) = added {
-            self.chat.update(cx, |pane, _| before(pane, uid));
-        }
+        let (added, fx) = add(&mut self.window.workspace, uid);
+        let given = added.as_ref().ok().copied();
+        self.chat.update(cx, |pane, _| before(pane, given));
         self.carry_workspace(fx, window, cx);
-        added.ok()
+        given
     }
 
     /// A session of `agents[idx]` on the active project, shown, resuming
