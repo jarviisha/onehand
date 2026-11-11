@@ -583,7 +583,7 @@ impl Shell {
         };
         match self.chat.read(cx).restarting(uid, cx) {
             Restarting::Host(host) => return self.ask_restart_host(host, window, cx),
-            Restarting::Now => return self.restart_now(uid, false, window, cx),
+            Restarting::Now => return self.restart_now(uid, window, cx),
             Restarting::Ask => {}
         }
         let label = self.session_label(uid, cx);
@@ -597,20 +597,13 @@ impl Shell {
         // By uid: the question is about the session it was asked on,
         // whichever one shows by the time it is answered.
         self.confirm(ask, window, cx, move |shell, window, cx| {
-            shell.restart_now(uid, false, window, cx)
+            shell.restart_now(uid, window, cx)
         });
     }
 
-    /// Restart session `uid`'s adapter, no question asked; `after_service`
-    /// when its host's service has just been restarted onto this build.
-    pub(super) fn restart_now(
-        &mut self,
-        uid: u64,
-        after_service: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.restart_told(uid, after_service, true, window, cx);
+    /// Restart session `uid`'s adapter, no question asked, and say so.
+    pub(super) fn restart_now(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
+        self.restart_told(uid, false, true, window, cx);
     }
 
     /// [`Self::restart_now`], saying so when `told`.
