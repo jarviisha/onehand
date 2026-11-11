@@ -61,6 +61,14 @@ impl Shell {
                 Effect::Resweep => self.refresh_git(cx),
                 Effect::GitRead => self.git_read(cx),
                 Effect::Remember { dir, name } => super::storage::remember_name(&dir, &name, cx),
+                Effect::EndOnHost {
+                    host,
+                    session,
+                    label,
+                } => self.carry_end_on_host(host, session, label, cx),
+                Effect::ListHostSessions => {
+                    self.chat.update(cx, |pane, cx| pane.list_host_sessions(cx))
+                }
                 Effect::Signal(signal) => {
                     let toast = match signal {
                         Signal::SaveFailed(why) => {
@@ -75,6 +83,9 @@ impl Shell {
                         Signal::Removed(label) => crate::toast::info(format!("Removed {label}")),
                         Signal::ForkFailed(why) => {
                             crate::toast::failed("Forking the conversation", why)
+                        }
+                        Signal::EndOnHostFailed { host, label, why } => {
+                            crate::toast::failed(&format!("Ending {label} on {host}"), why)
                         }
                     };
                     window.push_notification(toast, cx);
@@ -106,6 +117,8 @@ impl Shell {
                 | Effect::LookForRuns(_)
                 | Effect::Resweep
                 | Effect::Remember { .. }
+                | Effect::EndOnHost { .. }
+                | Effect::ListHostSessions
                 | Effect::Signal(_)) => {
                     let rest: Vec<Effect> = std::iter::once(effect).chain(fx).collect();
                     let (at, shell) = (self.chat.read(cx).window_handle(), cx.entity().downgrade());
@@ -133,6 +146,46 @@ impl Shell {
                 })
             });
         }));
+    }
+
+    /// End host session `session` on `host`, called `label`, there: attached
+    /// as a person, a busy host asked now rather than waited on, and what it
+    /// came to told to the drive while the window is there to hear it.
+    fn carry_end_on_host(
+        &mut self,
+        host: onehand_core::workspace::HostName,
+        session: onehand_core::host::wire::HostSession,
+        label: String,
+        cx: &mut Context<Self>,
+    ) {
+        let at = self.chat.read(cx).window_handle();
+        let attaching = crate::hosts::conn(cx, &host);
+        cx.spawn(async move |shell, cx| {
+            let result = match attaching.await {
+                Ok(conn) => {
+                    let ending = cx.update(|cx| {
+                        crate::hosts::on_runtime(
+                            cx,
+                            async move { conn.end_session(&session).await },
+                        )
+                    });
+                    ending.await.map_err(|e| e.to_string())
+                }
+                Err(failure) => Err(failure.said()),
+            };
+            let input = Input::EndedOnHost {
+                host,
+                label,
+                result,
+            };
+            let _ = at.update(cx, |_, window, cx| {
+                shell.update(cx, |shell, cx| {
+                    let fx = shell.window.workspace.handle(input);
+                    shell.carry_workspace(fx, window, cx);
+                })
+            });
+        })
+        .detach();
     }
 
     /// Let session `uid` go: the pane drops it, which ends its agent, and

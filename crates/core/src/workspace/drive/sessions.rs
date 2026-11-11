@@ -1,8 +1,9 @@
 //! A session's place in the workspace: where it is added, what goes with it
 //! when it closes, and what shows after.
 
-use super::{Effect, Forgotten, Refusal, Signal, WorkspaceDrive};
+use super::{Effect, Forgotten, HostName, Refusal, Signal, WorkspaceDrive};
 use crate::config::AgentSpec;
+use crate::host::wire::HostSession;
 use std::path::Path;
 
 /// Why a fork goes nowhere when the project it was of left the workspace
@@ -29,6 +30,28 @@ impl WorkspaceDrive {
                 ))],
             ),
         }
+    }
+
+    /// *End on <host>* on the host session `session` on `host`, called
+    /// `label`: the session watching it here (`watcher`, a worker's `lead`)
+    /// closes first, so the agent's going reads as nothing lost; then it is
+    /// ended there.
+    #[must_use = "its effects are to be carried"]
+    pub fn end_on_host(
+        &mut self,
+        host: HostName,
+        session: HostSession,
+        label: String,
+        watcher: Option<u64>,
+        lead: Option<u64>,
+    ) -> Vec<Effect> {
+        let mut fx = watcher.map_or_else(Vec::new, |uid| self.end(uid, lead));
+        fx.push(Effect::EndOnHost {
+            host,
+            session,
+            label,
+        });
+        fx
     }
 
     /// A fork did not open, for `why`: its session, if one was added

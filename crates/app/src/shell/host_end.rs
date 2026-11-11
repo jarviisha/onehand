@@ -51,10 +51,8 @@ impl Shell {
         });
     }
 
-    /// End it. The session watching it here closes first, so the agent's
-    /// going reads as nothing lost; the project page then reads its list
-    /// again. A failure is said once, in a toast, and the host session is
-    /// still there to attach to from the page.
+    /// End it, as the workspace's drive says: the session watching it here
+    /// closes first.
     fn end_on_host(
         &mut self,
         host: HostName,
@@ -63,39 +61,12 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(uid) = self.chat.read(cx).watching_on(&host, &session) {
-            self.end_session(uid, window, cx);
-        }
-        let attaching = crate::hosts::conn(cx, &host);
-        cx.spawn_in(window, async move |shell, cx| {
-            let ended = match attaching.await {
-                Ok(conn) => {
-                    let id = session.clone();
-                    let ending = cx.update(|_, cx| {
-                        crate::hosts::on_runtime(cx, async move { conn.end_session(&id).await })
-                    });
-                    match ending {
-                        Ok(ending) => ending.await.map_err(|e| e.to_string()),
-                        // The window went: nothing is left to say it in.
-                        Err(_) => return,
-                    }
-                }
-                // A busy host is not waited on: ending is asked of it now.
-                Err(failure) => Err(failure.said()),
-            };
-            let _ = shell.update_in(cx, |shell: &mut Self, window, cx| {
-                if let Err(why) = ended {
-                    window.push_notification(
-                        crate::toast::failed(&format!("Ending {label} on {host}"), why),
-                        cx,
-                    );
-                    return;
-                }
-                shell
-                    .chat
-                    .update(cx, |pane, cx| pane.list_host_sessions(cx));
-            });
-        })
-        .detach();
+        let watcher = self.chat.read(cx).watching_on(&host, &session);
+        let lead = watcher.and_then(crate::control::lead_of);
+        let fx = self
+            .window
+            .workspace
+            .end_on_host(host, session, label, watcher, lead);
+        self.carry_workspace(fx, window, cx);
     }
 }
