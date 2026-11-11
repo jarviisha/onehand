@@ -2,7 +2,8 @@
 //! project and its agent, and shown.
 
 use super::Shell;
-use gpui::{Context, Window};
+use crate::state::Shared;
+use gpui::{BorrowAppContext as _, Context, Window};
 use onehand_core::config::AgentSpec;
 use std::path::Path;
 
@@ -20,13 +21,15 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(idx) = self.root_index(root) else {
-            return;
-        };
+        let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
+        let (added, fx) = self.window.workspace.fork(root, spec, uid);
         // Before it is shown: showing is what spawns the adapter, and the
-        // adapter has to be started as the fork.
-        let _ = self.add_session(Some(spec), Some(idx), window, cx, |pane, uid| {
-            pane.fork_next(uid)
+        // adapter has to be started as the fork. A fork that goes nowhere
+        // lets its staged read go.
+        self.chat.update(cx, |pane, _| match added {
+            Ok(uid) => pane.fork_next(uid),
+            Err(_) => pane.drop_fork(),
         });
+        self.carry_workspace(fx, window, cx);
     }
 }

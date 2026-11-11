@@ -85,6 +85,8 @@ pub enum Signal {
     Refused(Refusal),
     /// The project named was removed from the workspace.
     Removed(String),
+    /// A fork of a conversation did not open, for why.
+    ForkFailed(String),
 }
 
 /// Why a change was not made.

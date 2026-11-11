@@ -72,6 +72,11 @@ impl ChatPane {
         }
     }
 
+    /// The fork read last goes nowhere: let it go.
+    pub fn drop_fork(&mut self) {
+        self.pending_fork = None;
+    }
+
     /// The fork waiting for session `uid`, taken.
     pub(super) fn take_fork(&mut self, uid: u64) -> Option<StagedFork> {
         self.pending_fork.take_if(|staged| staged.uid == Some(uid))

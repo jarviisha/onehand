@@ -5,7 +5,42 @@ use super::{Effect, Forgotten, Refusal, Signal, WorkspaceDrive};
 use crate::config::AgentSpec;
 use std::path::Path;
 
+/// Why a fork goes nowhere when the project it was of left the workspace
+/// while its conversation was read.
+const FORK_PROJECT_GONE: &str = "its project left the workspace";
+
 impl WorkspaceDrive {
+    /// Add the session `uid` a fork of a conversation on the project at
+    /// `root` opens on, running `spec` as the original did, selected; or, the
+    /// project gone from the workspace meanwhile, say the fork failed.
+    #[must_use = "its effects are to be carried"]
+    pub fn fork(
+        &mut self,
+        root: &Path,
+        spec: AgentSpec,
+        uid: u64,
+    ) -> (Result<u64, Refusal>, Vec<Effect>) {
+        match self.local_index(root) {
+            Some(idx) => self.add_session(Some(spec), uid, Some(idx)),
+            None => (
+                Err(Refusal::NoProject),
+                vec![Effect::Signal(Signal::ForkFailed(
+                    FORK_PROJECT_GONE.to_string(),
+                ))],
+            ),
+        }
+    }
+
+    /// A fork did not open, for `why`: its session, if one was added
+    /// (`uid`), ends as a closed one does (`lead`, a worker's), and it is
+    /// said.
+    #[must_use = "its effects are to be carried"]
+    pub fn fork_failed(&mut self, uid: Option<u64>, lead: Option<u64>, why: String) -> Vec<Effect> {
+        let mut fx = uid.map_or_else(Vec::new, |uid| self.end(uid, lead));
+        fx.push(Effect::Signal(Signal::ForkFailed(why)));
+        fx
+    }
+
     /// Add a session `uid` of `spec` on the active project, selected, for the
     /// front end to start and show. `home` is the project a new session goes
     /// to when the person is beside a worker, whose folder is kept for it

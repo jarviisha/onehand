@@ -255,13 +255,9 @@ impl Shell {
                     ),
                     E::Fork { root, spec } => shell.fork_session(root, spec.clone(), window, cx),
                     E::ForkFailed { uid, why } => {
-                        if let Some(uid) = uid {
-                            shell.end_session(*uid, window, cx);
-                        }
-                        window.push_notification(
-                            crate::toast::failed("Forking the conversation", why),
-                            cx,
-                        );
+                        let lead = uid.and_then(crate::control::lead_of);
+                        let fx = shell.window.workspace.fork_failed(*uid, lead, why.clone());
+                        shell.carry_workspace(fx, window, cx);
                     }
                     E::StopWorkflow(uid) => {
                         let uid = *uid;

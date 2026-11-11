@@ -619,3 +619,25 @@ fn what_goes_with_a_project_is_said_by_where_it_is() {
         ]
     );
 }
+
+/// A fork opens on its project; one whose project left meanwhile is said
+/// and adds nothing; one that failed ends its session and is said.
+#[test]
+fn a_fork_opens_on_its_project_or_says_why_not() {
+    let mut drive = bound();
+    let (added, _) = drive.fork(Path::new("/a"), spec(), 1);
+    assert_eq!(added, Ok(1));
+    assert_eq!(drive.active_uid(), Some(1));
+    let (added, fx) = drive.fork(Path::new("/gone"), spec(), 2);
+    assert!(added.is_err());
+    assert_eq!(
+        names(&fx),
+        [r#"ForkFailed("its project left the workspace")"#]
+    );
+    assert!(drive.locate(2).is_none(), "nothing added");
+    let fx = drive.fork_failed(Some(1), None, "unsaved".into());
+    assert_eq!(names(&fx)[0], "Close(1)");
+    assert_eq!(names(&fx).last().unwrap(), r#"ForkFailed("unsaved")"#);
+    let fx = drive.fork_failed(None, None, "unsaved".into());
+    assert_eq!(names(&fx), [r#"ForkFailed("unsaved")"#]);
+}

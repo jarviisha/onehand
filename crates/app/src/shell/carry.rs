@@ -73,6 +73,9 @@ impl Shell {
                             "Add an agent in Settings before starting a session",
                         ),
                         Signal::Removed(label) => crate::toast::info(format!("Removed {label}")),
+                        Signal::ForkFailed(why) => {
+                            crate::toast::failed("Forking the conversation", why)
+                        }
                     };
                     window.push_notification(toast, cx);
                 }
