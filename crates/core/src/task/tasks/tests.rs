@@ -691,10 +691,10 @@ fn a_start_off_screen_on_a_worktree_is_cut_first() {
     let fx = tasks.handle(cut(Err("not a repository".into())));
     assert_eq!(told(&fx), Some(&Placed::Refused("not a repository".into())));
     let fx = tasks.handle(cut(Ok(("/w".into(), "onehand/tidy".into(), None))));
-    match fx.as_slice() {
-        [Effect::Keep { launch, .. }] => assert_eq!(launch.dir(), Path::new("/w")),
-        other => panic!("{other:?}"),
-    }
+    assert!(
+        matches!(fx.as_slice(), [Effect::Keep { launch, .. }] if launch.dir() == Path::new("/w")),
+        "{fx:?}"
+    );
 }
 
 /// A session's run begins with what its task was given and, an issue's,

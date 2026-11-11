@@ -280,6 +280,8 @@ impl Flow {
         let (start, opening) = match self.tasks.begin(&id, there) {
             Begin::Session { start, opening, .. } => (start, opening),
             Begin::Check(_) => panic!("these flows run no check"),
+            // As the shell does: the drive is answered at once, and the
+            // refusal handed on once that call is over.
             Begin::Refused { why, kind } => {
                 self.tasks_input(TasksInput::Driven {
                     task: id.clone(),
