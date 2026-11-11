@@ -59,7 +59,22 @@ impl WorkbenchMode for Mode {
                 self.view.update(cx, |view, cx| view.mark_stale(cx));
                 true
             }
-            _ => false,
+            // Not this mode's to answer.
+            Request::OpenFile(_)
+            | Request::Save
+            | Request::Start
+            | Request::Reap
+            | Request::SetGit(_)
+            | Request::SetStorage(_)
+            | Request::SetFontSize(_)
+            | Request::ShowIssue(_)
+            | Request::AgentStarted(_)
+            | Request::LiveConversations(_)
+            | Request::RestartAgent
+            | Request::IssueWork { .. }
+            | Request::Locked(_)
+            | Request::Offloaded(_)
+            | Request::SendToHost(_) => false,
         }
     }
 }

@@ -2,7 +2,7 @@
 name = "onehand-workbench"
 version = "0.1.0"
 edition = "2024"
-description = "What a Workbench mode is: its declaration, its trait, and the requests between it and the panel"
+description = "How a Workbench mode is mounted in GPUI: its trait, and how it asks the panel"
 license = "MIT OR Apache-2.0"
 
 [lib]

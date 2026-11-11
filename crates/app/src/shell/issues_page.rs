@@ -32,8 +32,25 @@ impl Shell {
         let shell = cx.weak_entity();
         let ask: Ask = Rc::new(move |request, window, cx| {
             let _ = shell.update(cx, |shell: &mut Self, cx| {
-                if let Request::OpenFile(path) = request {
-                    shell.open_page_file(path, window, cx)
+                match request {
+                    Request::OpenFile(path) => shell.open_page_file(path, window, cx),
+                    // The page raises nothing else.
+                    Request::Save
+                    | Request::Start
+                    | Request::Rescan
+                    | Request::Shown
+                    | Request::Reap
+                    | Request::SetGit(_)
+                    | Request::SetStorage(_)
+                    | Request::SetFontSize(_)
+                    | Request::ShowIssue(_)
+                    | Request::AgentStarted(_)
+                    | Request::LiveConversations(_)
+                    | Request::RestartAgent
+                    | Request::IssueWork { .. }
+                    | Request::Locked(_)
+                    | Request::Offloaded(_)
+                    | Request::SendToHost(_) => {}
                 }
             });
         });

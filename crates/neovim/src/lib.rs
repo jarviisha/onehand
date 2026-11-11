@@ -74,10 +74,23 @@ impl WorkbenchMode for Mode {
             }
             Request::SetFontSize(size) => {
                 self.view
-                    .update(cx, |view, cx| view.set_font_size(*size, cx));
+                    .update(cx, |view, cx| view.set_font_size(gpui::px(*size), cx));
                 true
             }
-            _ => false,
+            // Not this mode's to answer.
+            Request::OpenFile(_)
+            | Request::Save
+            | Request::Rescan
+            | Request::Shown
+            | Request::SetGit(_)
+            | Request::SetStorage(_)
+            | Request::ShowIssue(_)
+            | Request::AgentStarted(_)
+            | Request::LiveConversations(_)
+            | Request::RestartAgent
+            | Request::IssueWork { .. }
+            | Request::Offloaded(_)
+            | Request::SendToHost(_) => false,
         }
     }
 }
