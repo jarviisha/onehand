@@ -88,6 +88,10 @@ pub(crate) fn carry_settings(fx: Vec<Effect>, window: &mut Window, cx: &mut App)
                 cx.refresh_windows();
             }
             Effect::Show(Value::Agents) => {}
+            Effect::Show(value @ Value::Workflows { .. }) => {
+                crate::unattended::shown(&value, cx);
+                cx.refresh_windows();
+            }
             Effect::Write { pending, edit } => {
                 let path = Shared::global(cx).config_path.clone();
                 let write = edit.clone();

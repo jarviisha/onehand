@@ -15,7 +15,7 @@
 //! belongs to no window and asks each in turn for its projects.
 
 use crate::state::Shared;
-use gpui::{AnyWindowHandle, App, Global, WeakEntity};
+use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Global, WeakEntity};
 use onehand_core::config::UnattendedConfig;
 use onehand_core::connector::{self, Connector};
 use onehand_core::task::drive::Said;
@@ -474,39 +474,27 @@ pub fn issue_workflows(cx: &App) -> Vec<(String, String, bool)> {
 }
 
 /// Make `default` the workflow issues are worked with and `by_label` the
-/// workflow labels, for every run from now on, and write both to the config
-/// at `path`. A run already working keeps the workflow it started with.
+/// workflow labels, for every run from now on, then write both to the
+/// config. A run already working keeps the workflow it started with.
 pub fn set_workflows(
     default: String,
     by_label: BTreeMap<String, String>,
     window: &mut gpui::Window,
     cx: &mut App,
 ) {
-    let before = workflows(cx);
-    let after = (default.clone(), by_label.clone());
-    apply_workflows(default.clone(), by_label.clone(), cx);
-    // Shown at once and written after; a write that fails puts both back.
-    crate::saves::write_config(
-        "unattended-workflows",
-        "Saving the unattended runs",
-        move |cfg| {
-            cfg.unattended.workflow = default;
-            cfg.unattended.workflows = by_label;
-        },
-        Some(crate::saves::Change {
-            before,
-            after,
-            put: |(default, by_label), _, cx| apply_workflows(default, by_label, cx),
-        }),
-        window,
-        cx,
-    );
+    let (before, labels) = workflows(cx);
+    let fx = cx.update_global::<Shared, _>(|shared, _| {
+        shared
+            .settings
+            .set_workflows((before, labels), default, by_label)
+    });
+    crate::saves::carry_settings(fx, window, cx);
 }
 
-/// Put `default` and `by_label` in force for every run from now on.
-fn apply_workflows(default: String, by_label: BTreeMap<String, String>, cx: &mut App) {
+/// Put `value`, shown by the settings' drive, in force on unattended runs.
+pub(crate) fn shown(value: &onehand_core::config::drive::Value, cx: &mut App) {
     crate::task::with_unattended(cx, |u, _| {
-        u.set_workflows(default, by_label);
+        onehand_core::unattended::link::shown(u, value);
         ((), Vec::new())
     });
 }

@@ -16,6 +16,18 @@ use crate::task::tasks::link::Seen;
 use crate::task::tasks::{self, TasksDrive};
 use std::collections::VecDeque;
 
+/// Put `value`, shown by the settings' drive, in force on unattended runs:
+/// the workflows issues are worked with are theirs, the save the settings'.
+pub fn shown(unattended: &mut UnattendedDrive, value: &crate::config::drive::Value) {
+    use crate::config::drive::Value;
+    match value {
+        Value::Workflows { default, by_label } => {
+            unattended.set_workflows(default.clone(), by_label.clone())
+        }
+        Value::Appearance(_) | Value::Outside(_) | Value::Agents => {}
+    }
+}
+
 /// What the joined drives say to do, each drive's in its own order.
 pub struct Out<W> {
     pub tasks: Vec<tasks::Effect<W>>,
