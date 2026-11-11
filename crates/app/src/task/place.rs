@@ -8,10 +8,11 @@ use crate::chat::session::{ChatEvent, ChatSession};
 use futures::channel::oneshot;
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Task as GpuiTask};
 use gpui_component::WindowExt as _;
-use onehand_core::task::tasks::{Effect, Input, Placed, Signal};
+use onehand_core::task::tasks::{Effect, Input, Placed, Signal, link as tasks_link};
 use onehand_core::task::{Launch, Task, marks, queue};
 use onehand_core::unattended::review::ReviewAsk;
 use onehand_core::workflow::Failure;
+use onehand_core::workspace::WorkspaceDrive;
 use onehand_core::worktree::removal;
 
 /// What watches a run that ended while its session's turn still goes: the
@@ -177,22 +178,7 @@ pub(super) fn perform(
                 task,
                 launch,
                 window,
-            } => {
-                let dir = launch.dir().to_path_buf();
-                let open = crate::state::with_shell(window, cx, |shell, window, cx| {
-                    shell.keep_project_quietly(dir, window, cx)
-                })
-                .is_some();
-                feed(
-                    Input::Kept {
-                        task,
-                        launch,
-                        window,
-                        open,
-                    },
-                    cx,
-                );
-            }
+            } => keep(task, *launch, window, cx),
             Effect::ReadReview { task, window } => read_review(task, window, cx),
             Effect::ConfirmAnswer { task, window } => cx.defer(move |cx| {
                 let Some(read) = super::take_review(&task, cx) else {
@@ -286,6 +272,35 @@ pub(super) fn perform(
             Effect::Refresh => cx.refresh_windows(),
         }
     }
+}
+
+/// Keep task `task`'s project in `window`'s workspace and the task with it,
+/// through their link; the window gone, with no workspace.
+fn keep(task: String, launch: Launch, window: AnyWindowHandle, cx: &mut App) {
+    let link = |workspace: Option<&mut WorkspaceDrive>, task, launch, cx: &mut App| {
+        cx.update_global::<Tasks, _>(|t, _| {
+            t.joined().tasks(|d| {
+                let (fx, kept) = tasks_link::keep(d, workspace, task, launch, window);
+                (kept, fx)
+            })
+        })
+    };
+    let asked = (task.clone(), launch.clone());
+    let in_window = crate::state::with_shell(window, cx, |shell, window, cx| {
+        shell.with_workspace(
+            |workspace, cx| {
+                let (kept, out) = link(Some(workspace), asked.0, asked.1, cx);
+                (out, kept)
+            },
+            window,
+            cx,
+        )
+    });
+    let out = match in_window {
+        Some(out) => out,
+        None => link(None, task, launch, cx).1,
+    };
+    super::carry(out, None, cx);
 }
 
 /// Read what answering task `task`'s review is judged on, its facts as the

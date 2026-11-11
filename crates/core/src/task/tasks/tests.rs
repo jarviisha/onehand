@@ -654,12 +654,17 @@ fn a_start_off_screen_keeps_its_project_then_its_task_and_asks() {
     };
     assert_eq!(launch.dir(), Path::new("/p"));
     assert!(tasks.tasks().is_empty(), "nothing kept before its project");
-    let fx = tasks.handle(Input::Kept {
-        task,
-        launch,
-        window,
-        open: true,
-    });
+    let mut workspace =
+        crate::workspace::WorkspaceDrive::new(crate::workspace::Workspace::seeded("/other"));
+    let (fx, _) = link::keep(&mut tasks, Some(&mut workspace), task, *launch, window);
+    assert!(
+        workspace
+            .roots
+            .iter()
+            .any(|root| root.path == Path::new("/p")),
+        "its project kept in the window's workspace"
+    );
+    assert_eq!(workspace.active_root, 0, "and not put on screen");
     assert_eq!(saves(&fx), 1);
     assert!(has(
         &fx,
@@ -679,12 +684,13 @@ fn a_start_off_screen_keeps_its_project_then_its_task_and_asks() {
 #[test]
 fn a_start_off_screen_whose_window_went_is_refused() {
     let mut tasks = TasksDrive::<Win>::default();
-    let fx = tasks.handle(Input::Kept {
-        task: "t".into(),
-        launch: Box::new(launch(crate::workflow::Place::Checkout)),
-        window: WINDOW,
-        open: false,
-    });
+    let (fx, _) = link::keep(
+        &mut tasks,
+        None,
+        "t".into(),
+        launch(crate::workflow::Place::Checkout),
+        WINDOW,
+    );
     assert_eq!(
         told(&fx),
         Some(&Placed::Refused("the window closed".into()))

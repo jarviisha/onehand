@@ -52,6 +52,10 @@ fn a_due_schedule_starts_a_task_whose_run_prompts_its_session_and_finishes() {
     assert_eq!(task.grant.tools, ["list_issues"]);
     assert_eq!(task.setup.agent.as_deref(), Some("a"));
     assert_eq!(flow.schedules[0].last_fired, Some(NOW), "written back");
+    assert!(
+        flow.workspace.roots.iter().any(|r| r.path == project.root),
+        "its project kept in the window"
+    );
 
     // Its run's prompt reached the session's agent.
     let sent = flow.sent("t1");

@@ -75,14 +75,6 @@ pub enum Input<W> {
         window: W,
         made: Cut,
     },
-    /// What [`Effect::Keep`] came to: whether `window` was still `open` to
-    /// keep task `task`'s project in.
-    Kept {
-        task: String,
-        launch: Box<Launch>,
-        window: W,
-        open: bool,
-    },
     /// Task `task`, holding its place, was driven in its window: begun, or
     /// refused there for `why` (its run's end is
     /// [`TasksDrive::not_started`]'s).
@@ -238,7 +230,8 @@ pub enum Effect<W> {
         window: W,
     },
     /// Keep the project `launch` works in, in `window`, without putting it
-    /// on screen, and report [`Input::Kept`] at once.
+    /// on screen, then task `task`: carried through [`link::keep`] with that
+    /// window's workspace, at once.
     Keep {
         task: String,
         launch: Box<Launch>,
@@ -462,12 +455,6 @@ impl<W: Copy> TasksDrive<W> {
                 window,
                 made,
             } => fx.push(self.cut(task, *launch, window, made)),
-            Input::Kept {
-                task,
-                launch,
-                window,
-                open,
-            } => self.kept(task, *launch, window, open, &mut fx),
             Input::Driven { task, started } => fx.push(Effect::Told {
                 task,
                 placed: match started {

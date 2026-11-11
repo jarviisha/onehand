@@ -327,19 +327,20 @@ impl Shell {
         crate::task::submit(task, window.window_handle(), cx);
     }
 
-    /// Keep the project at `dir` for a task started from outside the
-    /// window. A worktree cut for it is a project of the workspace, as the
-    /// launcher's is: kept, listed, and there to come back to; but not
-    /// selected, as nothing the person is looking at moves for a task they
-    /// did not start.
-    pub(crate) fn keep_project_quietly(
+    /// Give `with` this window's workspace drive, for a link that joins it
+    /// to another drive, and carry out what the workspace says.
+    pub(crate) fn with_workspace<R>(
         &mut self,
-        dir: PathBuf,
+        with: impl FnOnce(
+            &mut onehand_core::workspace::WorkspaceDrive,
+            &mut gpui::App,
+        ) -> (R, Vec<onehand_core::workspace::drive::Effect>),
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
-        let fx = self.window.workspace.keep_project_quietly(dir);
+    ) -> R {
+        let (answer, fx) = with(&mut self.window.workspace, cx);
         self.carry_workspace(fx, window, cx);
+        answer
     }
 
     /// Drive task `id`, whose place it now holds, as the tasks' drive begins

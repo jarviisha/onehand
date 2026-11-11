@@ -10,7 +10,8 @@
 use super::{Effect, TasksDrive};
 use crate::chat::Chat;
 use crate::task::drive::RunDrive;
-use crate::task::{Task, Working};
+use crate::task::{Launch, Task, Working};
+use crate::workspace::{drive as workspace, WorkspaceDrive};
 
 /// `run` asked to be saved: the task it is of, keeping the run as it now
 /// stands, to write.
@@ -37,6 +38,25 @@ pub fn finished<W: Copy>(
         session.map(|(_, uid)| uid),
         window,
     )
+}
+
+/// Carry [`Effect::Keep`] for task `task`'s `launch`, asked from `window`,
+/// with that window's workspace if it is still open: the project the task
+/// works in kept there, listed but not put on screen, then the task kept
+/// and asking for its place. With the window gone, the start is refused.
+/// What the tasks do next, and what the workspace does.
+pub fn keep<W: Copy>(
+    tasks: &mut TasksDrive<W>,
+    workspace: Option<&mut WorkspaceDrive>,
+    task: String,
+    launch: Launch,
+    window: W,
+) -> (Vec<Effect<W>>, Vec<workspace::Effect>) {
+    let kept =
+        workspace.map(|workspace| workspace.keep_project_quietly(launch.dir().to_path_buf()));
+    let mut fx = Vec::new();
+    tasks.kept(task, launch, window, kept.is_some(), &mut fx);
+    (fx, kept.unwrap_or_default())
 }
 
 /// What the card `chat` parked last asks a person: a question's message, or
