@@ -327,8 +327,12 @@ impl Flow {
         };
         let (mut session, rx) = session();
         self.opened.insert(id.clone(), opening);
-        let issue = self.tasks.task(&id).is_some_and(|t| t.issue().is_some());
-        let Start { run, first, pinned } = start;
+        let Start {
+            run,
+            first,
+            pinned,
+            issue,
+        } = start;
         let (run, fx, asked) = link::start(
             id.clone(),
             run,

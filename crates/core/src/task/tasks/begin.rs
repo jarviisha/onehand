@@ -20,12 +20,14 @@ pub enum Retry {
 pub const SESSION_NOT_STARTED: &str = "The task's session did not start";
 
 /// The run a task begins with: its last run, carried on from `first`, with
-/// `pinned` of its boundaries' marks landed before.
+/// `pinned` of its boundaries' marks landed before, and whether the task
+/// works an issue.
 #[derive(Debug)]
 pub struct Start {
     pub run: Run,
     pub first: Action,
     pub pinned: usize,
+    pub issue: bool,
 }
 
 /// How a task that holds its place is driven.
@@ -96,7 +98,12 @@ impl<W: Copy> TasksDrive<W> {
         // pinned now rather than taken as made.
         let pinned = run.pinned_count();
         let first = run.resume();
-        let start = Start { run, first, pinned };
+        let start = Start {
+            run,
+            first,
+            pinned,
+            issue,
+        };
         match check {
             true => Begin::Check(start),
             false => Begin::Session {

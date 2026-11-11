@@ -490,3 +490,6 @@ pub(crate) fn brief(
         instructions: (!instructions.is_empty()).then_some(instructions),
     }
 }
+
+#[cfg(test)]
+mod tests;
