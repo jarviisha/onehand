@@ -16,8 +16,9 @@ use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::diff::Row as DiffRow;
 use onehand_core::issues;
 use onehand_core::task::marks::{self, Change};
-use onehand_core::task::work::left::{CheckStands, Left, left_blocking};
-use onehand_core::task::work::{IssueWork, Reading, Work};
+use onehand_core::task::work::drive::LeftAbout;
+use onehand_core::task::work::left::{CheckStands, Left};
+use onehand_core::task::work::{Reading, Work};
 use onehand_ui::Refuses as _;
 use onehand_ui::tokens::CODE_TEXT;
 use onehand_ui::{fold_toggle, row as row_surface, status_ink};
@@ -30,31 +31,16 @@ const FILES_SHOWN: usize = 100;
 /// How many lines of one file's diff are drawn.
 const DIFF_LINES: usize = 400;
 
-/// The work a read is about: a retry that starts a new run makes the old
-/// run's read stale.
-type About = (String, Option<String>);
-
 /// One file's diff: the folder it is read in, the two marks, the path.
 type DiffKey = (PathBuf, String, String, String);
 
 /// What the page holds of the issue on screen's full form.
 #[derive(Default)]
 pub(super) struct FullState {
-    left: Reading<About, Left>,
-    /// Where the work stood when it was last read, so a step moving reads it
-    /// again.
-    seen: Option<String>,
     /// Which file lists are open: this run's, the branch's.
     open: HashSet<Side>,
     /// Diffs opened, and what each read came to; `None` while it is read.
     diffs: HashMap<DiffKey, Option<Result<Vec<DiffRow>, String>>>,
-}
-
-impl FullState {
-    /// What the work left is being read.
-    pub(super) fn reading(&self) -> bool {
-        self.left.reading()
-    }
 }
 
 /// Which list of changed files: this run's, the branch's, or what the step
@@ -69,18 +55,20 @@ pub(super) enum Side {
 /// What the full form draws, borrowed from the page.
 pub(super) struct Full<'a> {
     state: &'a FullState,
+    /// What the work left, as the view's drive last read it.
+    left: Option<&'a Reading<LeftAbout, Left>>,
 }
 
 impl FullState {
-    pub(super) fn view(&self) -> Full<'_> {
-        Full { state: self }
+    pub(super) fn view<'a>(&'a self, left: Option<&'a Reading<LeftAbout, Left>>) -> Full<'a> {
+        Full { state: self, left }
     }
 }
 
 impl Full<'_> {
     /// How `work`'s check stands, as last read for it; `None` until read.
     pub(super) fn check_for(&self, work: &Work) -> Option<Result<CheckStands, String>> {
-        let reading = &self.state.left;
+        let reading = self.left?;
         if reading.about() != Some(&(work.task.clone(), work.run.clone())) {
             return None;
         }
@@ -92,64 +80,7 @@ impl Full<'_> {
     }
 }
 
-/// Where `work` stands, in one string a move changes.
-fn standing(work: &Work) -> String {
-    format!(
-        "{}|{:?}|{:?}|{}|{:?}",
-        work.task,
-        work.run,
-        work.step.as_ref().map(|step| step.at),
-        work.said,
-        work.span
-    )
-}
-
 impl IssuesView {
-    /// Read what `work` left when it is due: never read for it, or it moved.
-    pub(super) fn read_left_if_due(&mut self, work: Option<&IssueWork>, cx: &mut Context<Self>) {
-        let Some(page) = self.page.as_mut() else {
-            return;
-        };
-        let Some(work) = work.map(|work| &work.work) else {
-            return;
-        };
-        let now = standing(work);
-        if page.full.seen.as_ref() == Some(&now) {
-            return;
-        }
-        page.full.seen = Some(now);
-        self.read_left(work.clone(), cx);
-    }
-
-    /// Read what `work` left now.
-    pub(super) fn read_left(&mut self, work: Work, cx: &mut Context<Self>) {
-        let Some(page) = self.page.as_mut() else {
-            return;
-        };
-        let generation = page.full.left.ask((work.task.clone(), work.run.clone()));
-        cx.spawn(async move |view, cx| {
-            let left = cx
-                .background_executor()
-                .spawn(async move { left_blocking(&work) })
-                .await;
-            let _ = view.update(cx, |view: &mut Self, cx| {
-                if let Some(page) = view.page.as_mut()
-                    && page.full.left.land(generation, Ok(left), issues::now())
-                {
-                    cx.notify();
-                }
-            });
-        })
-        .detach();
-    }
-
-    /// Read again what the issue on screen left, asked by a person.
-    pub(super) fn refresh_left(&mut self, work: Option<&IssueWork>, cx: &mut Context<Self>) {
-        if let Some(work) = work {
-            self.read_left(work.work.clone(), cx);
-        }
-    }
-
     fn toggle_side(&mut self, side: Side, cx: &mut Context<Self>) {
         if let Some(page) = self.page.as_mut() {
             if !page.full.open.remove(&side) {
@@ -220,10 +151,10 @@ pub(super) fn left_lines(
 ) -> Vec<AnyElement> {
     let muted = cx.theme().muted_foreground;
     let warning = status_ink(cx).warning;
-    let reading = &full.state.left;
-    let ours = reading.about() == Some(&(work.task.clone(), work.run.clone()));
-    let Some((left, at)) = reading.value.as_ref().filter(|_| ours) else {
-        let said = match reading.failed.as_deref().filter(|_| ours) {
+    let reading = full.left;
+    let ours = reading.is_some_and(|r| r.about() == Some(&(work.task.clone(), work.run.clone())));
+    let Some((left, at)) = reading.and_then(|r| r.value.as_ref()).filter(|_| ours) else {
+        let said = match reading.and_then(|r| r.failed.as_deref()).filter(|_| ours) {
             Some(why) => div()
                 .text_color(warning)
                 .child(format!("could not be read: {why}")),

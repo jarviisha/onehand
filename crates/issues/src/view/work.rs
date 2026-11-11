@@ -594,8 +594,7 @@ pub(super) fn left_view(doing: &Doing, cx: &mut Context<IssuesView>) -> Option<A
                                 })
                                 .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
                                     view.refresh(cx);
-                                    let work = view.shown_work();
-                                    view.refresh_left(work.as_ref(), cx);
+                                    view.refresh_left(cx);
                                 })),
                         )
                     }),

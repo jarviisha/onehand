@@ -165,7 +165,7 @@ impl IssuesView {
         });
         // The age of the pull request reading rides in the tooltip, so the
         // button says what it does and when it last did it.
-        let read = self.prs_read_at().map_or_else(
+        let read = self.work.prs_read_at().map_or_else(
             || "Refresh".to_string(),
             |at| {
                 format!(
@@ -174,7 +174,7 @@ impl IssuesView {
                 )
             },
         );
-        let pr_reading = self.page.as_ref().is_some_and(|page| page.pr_reading > 0);
+        let pr_reading = self.work.prs_reading();
         let reading = listed.open + listed.closed == 0 && self.reading_issues(projects, cx);
         // The page's one primary at rest; what floats over the list (an issue,
         // a form) holds it while it shows, and this steps down under it.
@@ -312,7 +312,7 @@ impl IssuesView {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let warning = status_ink(cx).warning;
-        let reading = self.page.as_ref().is_some_and(|page| page.pr_reading > 0);
+        let reading = self.work.prs_reading();
         let failed: Vec<String> = listed
             .failed
             .iter()
