@@ -23,8 +23,11 @@
   - Phase 10 moved the routing between drives still in the app into core (a start off screen,
     where a driven task lands, what a run tells unattended runs) and tests whole flows across
     drives with no front end (`task::flows`).
+  - Phase 11 takes every leftover of phases 4 to 10, in five PRs by area; its plan is under
+    *Plan*.
   - What is left here is what each phase left for later, the record of the trial and the
-    decisions; *Done when* is not met until those leftovers are placed.
+    decisions; *Done when* is not met until phase 11 is built, and the proposal leaves
+    `docs/proposals/` with phase 11's last PR.
 - Supersedes the rule agreed in #133 ("logic belongs in core when two call sites share it, when a
   second front end could need it, or when it wants a test without a GUI"). That rule moved *rules*
   to core; this one moves *what happens next* there too, with no exceptions.
@@ -516,6 +519,71 @@ Left for later:
 - `Task`'s fields stay public (phase 4): no app code builds a task by its fields any more, every
   start's task being built in core, but the app's tests do, and readers everywhere read them.
 
+**Phase 11: what the phases left.** Re-audited on 2026-11-11 against the code after phase 10
+(D38-D41). Every item each phase left for later is moved, tested or fixed, in five PRs by area,
+each with its own docs and characterisation tests first; the by-design items move too (D40).
+Already done and struck from the lists: the pane folding a host wait's failure (phase 6, now the
+drive's `wait_failed`/`back_failed`), the pane telling a stream's ends apart (phase 6, now
+`Signal::Disconnected(Ended)` passed on whole), and `claude_plugins::cli`'s size (phase 9: 568
+lines of code, under the line).
+
+PR 11a, tasks and unattended runs:
+- whether a press still answers what a run waits at (`task/approval.rs`) into core;
+- what answering a review is judged on (`read_review`, `unattended/launch/answer.rs`), as a core
+  blocking body the drive asks for;
+- cutting a worktree (`cut_worktree_blocking`) into core, so the flows' harness cuts too;
+- what a retry, a retry with current settings and a review's answer do next (`shell/retry.rs`);
+- what a person pressed and is still being done (`acting`) into the tasks' drive;
+- *Remove worktree…* (`shell/cleanup.rs`) as the tasks' drive's, so a window closing mid-removal
+  loses nothing (#319, its own commit);
+- the workflows named for unattended runs saved through a drive, not `saves::write_config`;
+- the run's project kept for a start off screen (`Effect::Keep`) joined to the window's workspace
+  drive by a link;
+- a claim's run brought up through `drive_task`, tested on a real shell; the flows' harness drives
+  through what the shell does rather than restating it;
+- phase 10's smells: `task, launch, window` as one type, a cut worktree named, the re-export of
+  `Starting` dropped, `submit_told` moved into the tests.
+
+PR 11b, sessions and hosts:
+- what a session starts on (`pending_resume`, `pending_watch`, `pending_fork`) and which goes first
+  (`ChatPane::show`) into the session's drive, the stored transcript read off the UI thread (it is
+  read inline today, its own commit);
+- how a host session that cannot be attached begins (`chat/session/host.rs`), and *End on
+  <host>* (`shell/host_end.rs`) into `host::session`;
+- waiting out a busy host and attaching again (`hosts::attach_waiting`) into `HostDrive`;
+- each window's share of a host's waits (`HostFlow`) into a drive;
+- showing a host session already watched rather than opening it twice (`shell/sessions.rs`);
+- a fork that failed (`ForkFailed`, `shell/boot.rs`) and whether a restart is said
+  (`restart_told`);
+- the pane's answer to a session's look (`ChatPane::look`) tested.
+
+PR 11c, the workspace and the shell:
+- the recents list touched, named and forgotten (`shell/storage.rs`) into a drive;
+- when a session's note on an issue it took up is written (`shell/issue_work.rs`) into a link of
+  the session and the issues;
+- which window and drives each tool call goes to (`perform_now`) as core's;
+- opening a dropped run's conversation (`open_conversation`), *Run check* on the active project,
+  and the Issues page's starts that find nothing (`shell/issues_page.rs`), each said;
+- a second launch's choice of window and its wait for the first (`instance.rs`);
+- an agent's *Test* (`check_agent`) into the settings' drive;
+- a worker's open carried through a window, and an agent check's probe, tested.
+
+PR 11d, issues and the Workbench:
+- `Issues`' writers outside `FileDrive` (a tool, an unattended run's notes, the issue work's note)
+  made through its `Change`s, and its methods `pub(crate)`;
+- the Issues views' sync timer into `FileDrive`'s clock;
+- which mode shows after a project switch and which answers an open file into core's
+  `workbench`;
+- the pull request reads' carrying tested, with core's fake connector reachable under a test
+  feature.
+
+PR 11e, across the drives:
+- `Task`'s fields `pub(crate)` behind read accessors;
+- one `Now` for every drive, and the Editor's tab ids handed in, so a replay gives the same ids;
+- no arm in a link or a drive, or their tests, that matches the rest of our own enum;
+- the proposal leaves `docs/proposals/`: its standard is `docs/drives.md`'s already, and its
+  decisions move there or into the feature documents.
+
 ## What the trial showed
 
 Phase 1 was built on `refactor/session-drive`:
@@ -770,6 +838,16 @@ Made on 2026-11-11, with phase 10's audit:
 - **D36. One harness for the flows**, in `task::flows`, one file per flow, rather than a rig per
   link.
 - **D37. One PR** for the moves, the flows and the docs.
+
+Made on 2026-11-11, with phase 11's audit:
+- **D38. Phase 11 takes every leftover of phases 4 to 10**: the rules still in the app, the bugs
+  found (#319, a transcript read inline), the untested carrying, and the clean-up.
+- **D39. Five PRs by area**: tasks and unattended runs, sessions and hosts, the workspace and the
+  shell, issues and the Workbench, then what runs across the drives; each with its docs.
+- **D40. The items earlier phases called view state or a carrier's own move too**: what a person
+  pressed (`acting`), each window's share of a host's waits, an agent's *Test*, a second launch's
+  window, the Issues sync timer, the Workbench's mode choice and a start off screen's kept project.
+- **D41. The proposal leaves `docs/proposals/` with phase 11's last PR.**
 
 Phase 10 changed nothing on purpose: a start off screen, a drive's answer and a run's word to
 unattended runs reach the same places in the same order. A start off screen refused (by its
