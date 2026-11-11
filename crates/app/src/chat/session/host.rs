@@ -14,7 +14,7 @@ use onehand_core::host::client::{HostConn, HostError};
 use onehand_core::host::copy;
 use onehand_core::host::session::host_restart;
 use onehand_core::host::session::{
-    Carried, HostBegin, OfflineStart, Restarted, offline_start, reads_copy,
+    AfterCopy, Carried, HostBegin, OfflineStart, Restarted, offline_start, reads_copy,
 };
 use onehand_core::host::wire::SessionInfo;
 use onehand_core::workspace::HostName;
@@ -81,24 +81,21 @@ pub(super) async fn host_events(
                 }
                 None => Vec::new(),
             };
-            return match offline_start(kept.len(), failure) {
-                OfflineStart::Read { away, ends } => {
+            let start = offline_start(kept.len(), failure);
+            if let (true, Err((_, carried, _, _))) = (start.keeps_carried(), decided) {
+                carry(carried, session, cx);
+            }
+            return match start {
+                OfflineStart::Read(after) => {
+                    let away = matches!(after, AfterCopy::Away);
                     offline(host, &kept, away, session, cx);
-                    match ends {
-                        Some(why) => onehand_io::acp::ended(why),
-                        None => onehand_io::acp::silent(),
+                    match after {
+                        AfterCopy::Away => onehand_io::acp::silent(),
+                        AfterCopy::Ends(why) => onehand_io::acp::ended(why),
                     }
                 }
-                OfflineStart::End(why) => {
-                    if let Err((_, carried, _, _)) = decided {
-                        carry(carried, session, cx);
-                    }
-                    onehand_io::acp::ended(why)
-                }
+                OfflineStart::End(why) => onehand_io::acp::ended(why),
                 OfflineStart::Wait { host, busy, terms } => {
-                    if let Err((_, carried, _, _)) = decided {
-                        carry(carried, session, cx);
-                    }
                     wait(host, busy, terms, session, cx);
                     onehand_io::acp::silent()
                 }

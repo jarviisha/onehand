@@ -117,15 +117,22 @@ pub struct Carried {
     pub after_service: bool,
 }
 
+/// How a host session read from its copy goes on.
+#[derive(Debug, PartialEq, Eq)]
+pub enum AfterCopy {
+    /// Out of reach: it says so, and waits silently to be restarted.
+    Away,
+    /// Its host refused it, or another machine holds it: not waited on, it
+    /// ends on why, as a lost agent Restart tries again.
+    Ends(String),
+}
+
 /// How a host session whose host could not be attached begins.
 #[derive(Debug, PartialEq, Eq)]
 pub enum OfflineStart {
     /// From the copy this machine kept of its journal, the whole transcript,
-    /// so what a re-watch carried is left out rather than shown twice. One
-    /// out of reach says so (`away`) and waits silently to be restarted; one
-    /// whose host refused it, or is held by another machine, is not waited
-    /// on, and ends on why (`ends`), as a lost agent Restart tries again.
-    Read { away: bool, ends: Option<String> },
+    /// so what a re-watch carried is left out rather than shown twice.
+    Read(AfterCopy),
     /// It ends on why the attach failed: nothing was kept to show, so what a
     /// re-watch carried is kept on screen.
     End(String),
@@ -166,14 +173,21 @@ pub fn offline_start(kept: usize, failure: HostFailure) -> OfflineStart {
         {
             OfflineStart::End(why)
         }
-        HostFailure::Other(_) => OfflineStart::Read {
-            away: true,
-            ends: None,
-        },
-        HostFailure::Refused(why) | HostFailure::Taken(why) => OfflineStart::Read {
-            away: false,
-            ends: Some(why),
-        },
+        HostFailure::Other(_) => OfflineStart::Read(AfterCopy::Away),
+        HostFailure::Refused(why) | HostFailure::Taken(why) => {
+            OfflineStart::Read(AfterCopy::Ends(why))
+        }
+    }
+}
+
+impl OfflineStart {
+    /// Whether what a re-watch carried is kept on screen: only when no copy
+    /// is read, since the copy is the whole transcript.
+    pub fn keeps_carried(&self) -> bool {
+        match self {
+            OfflineStart::Read(_) => false,
+            OfflineStart::End(_) | OfflineStart::Wait { .. } => true,
+        }
     }
 }
 

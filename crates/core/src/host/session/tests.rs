@@ -181,11 +181,10 @@ fn offline_start_reads_the_copy_only_when_there_is_one() {
     let away = || HostFailure::Other("Could not reach vps".into());
     assert_eq!(
         offline_start(3, away()),
-        OfflineStart::Read {
-            away: true,
-            ends: None
-        }
+        OfflineStart::Read(AfterCopy::Away)
     );
+    assert!(!offline_start(3, away()).keeps_carried());
+    assert!(offline_start(0, away()).keeps_carried());
     assert_eq!(
         offline_start(0, away()),
         OfflineStart::End("Could not reach vps".into())
@@ -202,15 +201,15 @@ fn offline_start_reads_the_copy_only_when_there_is_one() {
     };
     assert_eq!(offline_start(3, busy()), waits);
     assert_eq!(offline_start(0, busy()), waits);
+    assert!(waits.keeps_carried());
     // A host refused, or held by another machine, reads the copy too, and
     // ends on why rather than being waited on.
     let refused = || HostFailure::Refused("vps is not a machine this build runs on".into());
     assert_eq!(
         offline_start(3, refused()),
-        OfflineStart::Read {
-            away: false,
-            ends: Some("vps is not a machine this build runs on".into())
-        }
+        OfflineStart::Read(AfterCopy::Ends(
+            "vps is not a machine this build runs on".into()
+        ))
     );
     assert!(matches!(offline_start(0, refused()), OfflineStart::End(_)));
 }
