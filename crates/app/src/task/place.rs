@@ -291,17 +291,12 @@ fn keep(start: OffScreen<AnyWindowHandle>, cx: &mut App) {
 /// app knows them now, off the UI thread; kept for the question, and what
 /// it came to told to the drive.
 fn read_review(task: String, window: AnyWindowHandle, cx: &mut App) {
-    let ask = super::task(&task, cx)
-        .ok_or_else(|| "The task is gone".to_string())
-        .and_then(|kept| {
-            let template = kept
-                .runs
-                .last()
-                .map(|run| run.template.clone())
-                .ok_or_else(|| "The task has never run".to_string())?;
-            let facts = crate::unattended::task_facts(&kept, template, cx);
-            ReviewAsk::of(&kept, facts, crate::features::connectors())
-        });
+    let kept = super::task(&task, cx);
+    let ask = ReviewAsk::of(
+        kept.as_ref(),
+        |kept, template| crate::unattended::task_facts(kept, template, cx),
+        crate::features::connectors(),
+    );
     let ask = match ask {
         Ok(ask) => ask,
         Err(why) => {

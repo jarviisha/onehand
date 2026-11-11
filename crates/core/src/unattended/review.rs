@@ -8,6 +8,7 @@ use super::{open_issues_blocking, IssueRow, Tracker};
 use crate::connector::{self, Connector, PrState};
 use crate::preflight::{Facts, ReviewFacts};
 use crate::task::Task;
+use crate::workflow::Template;
 use std::path::PathBuf;
 
 /// What reading a task's review needs, gathered before the read goes off
@@ -38,18 +39,22 @@ pub struct ReviewRead {
 }
 
 impl ReviewAsk {
-    /// Reading issue task `task`'s review, judged by `facts` as its own
-    /// snapshot and setup make them, as a Retry is: a review is answered by
-    /// the task that opened the pull request. Why there is nothing to read,
-    /// when there is not.
+    /// Reading issue task `task`'s review, judged by the facts `facts` makes
+    /// of it and its last run's workflow, its own snapshot and setup, as a
+    /// Retry is: a review is answered by the task that opened the pull
+    /// request. Why there is nothing to read, when there is not: the task
+    /// gone, never run, or of no issue.
     pub fn of(
-        task: &Task,
-        facts: Facts,
+        task: Option<&Task>,
+        facts: impl FnOnce(&Task, Template) -> Facts,
         connectors: super::drive::Connectors,
     ) -> Result<Self, String> {
-        let (Some(issue), Some(last)) = (task.issue(), task.runs.last()) else {
-            return Err("Only an issue's task has a pull request review".into());
-        };
+        let task = task.ok_or("The task is gone")?;
+        let last = task.runs.last().ok_or("The task has never run")?;
+        let issue = task
+            .issue()
+            .ok_or("Only an issue's task has a pull request review")?;
+        let facts = facts(task, last.template.clone());
         let tracker = issue
             .tracker
             .resolve(connectors)
@@ -190,7 +195,9 @@ mod tests {
         };
         let template = builtin::all().remove(0);
         let task = Task::of_issue("t".into(), template, brief, setup, issue);
-        let read = ReviewAsk::of(&task, facts(), &[]).unwrap().read_blocking();
+        let read = ReviewAsk::of(Some(&task), |_, _| facts(), &[])
+            .unwrap()
+            .read_blocking();
         let review = read.facts.review.unwrap();
         assert_eq!(review.pr, Ok(None));
         assert!(!review.diverged);
@@ -217,6 +224,8 @@ mod tests {
                 forge: None,
             },
         );
-        assert!(ReviewAsk::of(&task, facts(), &[]).is_err());
+        assert!(ReviewAsk::of(Some(&task), |_, _| facts(), &[]).is_err());
+        let gone = ReviewAsk::of(None, |_, _| facts(), &[]).err();
+        assert_eq!(gone.as_deref(), Some("The task is gone"));
     }
 }
