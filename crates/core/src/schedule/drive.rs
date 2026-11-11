@@ -18,7 +18,7 @@
 
 use super::{decide, Act, Schedule, Starts};
 use crate::task::tasks::Placed;
-use crate::task::{Grant, Origin};
+use crate::task::{Grant, Origin, Starting};
 use crate::workflow::Template;
 use chrono::TimeZone;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -31,10 +31,6 @@ pub const EVERY: Duration = Duration::from_secs(60);
 /// How long after start the first look waits, so the first window is up to
 /// hold the projects it is about.
 pub const FIRST_LOOK: Duration = Duration::from_secs(5);
-
-/// What a schedule starts, made ready for the one way every task off screen
-/// starts.
-pub use crate::task::Starting;
 
 /// What the world found, as the drive is told it.
 #[derive(Debug, Clone, PartialEq)]

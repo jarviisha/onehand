@@ -8,7 +8,7 @@ use crate::chat::session::{ChatEvent, ChatSession};
 use futures::channel::oneshot;
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Task as GpuiTask};
 use gpui_component::WindowExt as _;
-use onehand_core::task::tasks::{Effect, Input, Placed, Signal, link as tasks_link};
+use onehand_core::task::tasks::{Effect, Input, OffScreen, Placed, Signal, link as tasks_link};
 use onehand_core::task::{Launch, Task, marks, queue};
 use onehand_core::unattended::review::ReviewAsk;
 use onehand_core::workflow::Failure;
@@ -143,11 +143,8 @@ pub(super) fn perform(
                 })
                 .detach();
             }
-            Effect::Cut {
-                task,
-                launch,
-                window,
-            } => {
+            Effect::Cut(start) => {
+                let launch = &start.launch;
                 let (repo, title) = (launch.repo().to_path_buf(), launch.title().to_string());
                 cx.spawn(async move |cx| {
                     let made = cx
@@ -160,25 +157,11 @@ pub(super) fn perform(
                             )
                         })
                         .await;
-                    cx.update(|cx| {
-                        feed(
-                            Input::Cut {
-                                task,
-                                launch,
-                                window,
-                                made,
-                            },
-                            cx,
-                        )
-                    });
+                    cx.update(|cx| feed(Input::Cut { start, made }, cx));
                 })
                 .detach();
             }
-            Effect::Keep {
-                task,
-                launch,
-                window,
-            } => keep(task, *launch, window, cx),
+            Effect::Keep(start) => keep(start, cx),
             Effect::ReadReview { task, window } => read_review(task, window, cx),
             Effect::ConfirmAnswer { task, window } => cx.defer(move |cx| {
                 let Some(read) = super::take_review(&task, cx) else {
@@ -276,20 +259,21 @@ pub(super) fn perform(
 
 /// Keep task `task`'s project in `window`'s workspace and the task with it,
 /// through their link; the window gone, with no workspace.
-fn keep(task: String, launch: Launch, window: AnyWindowHandle, cx: &mut App) {
-    let link = |workspace: Option<&mut WorkspaceDrive>, task, launch, cx: &mut App| {
+fn keep(start: OffScreen<AnyWindowHandle>, cx: &mut App) {
+    let link = |workspace: Option<&mut WorkspaceDrive>, start, cx: &mut App| {
         cx.update_global::<Tasks, _>(|t, _| {
             t.joined().tasks(|d| {
-                let (fx, kept) = tasks_link::keep(d, workspace, task, launch, window);
+                let (fx, kept) = tasks_link::keep(d, workspace, start);
                 (kept, fx)
             })
         })
     };
-    let asked = (task.clone(), launch.clone());
+    let window = start.window;
+    let asked = start.clone();
     let in_window = crate::state::with_shell(window, cx, |shell, window, cx| {
         shell.with_workspace(
             |workspace, cx| {
-                let (kept, out) = link(Some(workspace), asked.0, asked.1, cx);
+                let (kept, out) = link(Some(workspace), asked, cx);
                 (out, kept)
             },
             window,
@@ -298,7 +282,7 @@ fn keep(task: String, launch: Launch, window: AnyWindowHandle, cx: &mut App) {
     });
     let out = match in_window {
         Some(out) => out,
-        None => link(None, task, launch, cx).1,
+        None => link(None, start, cx).1,
     };
     super::carry(out, None, cx);
 }

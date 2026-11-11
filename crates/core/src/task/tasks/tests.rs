@@ -1,5 +1,6 @@
 use super::*;
 use crate::task::work::Act;
+use crate::task::Launch;
 use crate::task::{queue, Group, Origin, Source};
 use crate::unattended::IssueSource;
 use crate::workflow::{Brief, Failure, Outcome, Setup, Stop};
@@ -644,19 +645,14 @@ fn a_start_off_screen_keeps_its_project_then_its_task_and_asks() {
         Ok(launch(crate::workflow::Place::Checkout)),
         WINDOW,
     );
-    let Some(Effect::Keep {
-        task,
-        launch,
-        window,
-    }) = fx.into_iter().next()
-    else {
+    let Some(Effect::Keep(start)) = fx.into_iter().next() else {
         panic!("the project kept first");
     };
-    assert_eq!(launch.dir(), Path::new("/p"));
+    assert_eq!(start.launch.dir(), Path::new("/p"));
     assert!(tasks.tasks().is_empty(), "nothing kept before its project");
     let mut workspace =
         crate::workspace::WorkspaceDrive::new(crate::workspace::Workspace::seeded("/other"));
-    let (fx, _) = link::keep(&mut tasks, Some(&mut workspace), task, *launch, window);
+    let (fx, _) = link::keep(&mut tasks, Some(&mut workspace), start);
     assert!(
         workspace
             .roots
@@ -684,13 +680,12 @@ fn a_start_off_screen_keeps_its_project_then_its_task_and_asks() {
 #[test]
 fn a_start_off_screen_whose_window_went_is_refused() {
     let mut tasks = TasksDrive::<Win>::default();
-    let (fx, _) = link::keep(
-        &mut tasks,
-        None,
-        "t".into(),
-        launch(crate::workflow::Place::Checkout),
-        WINDOW,
-    );
+    let start = OffScreen {
+        task: "t".into(),
+        launch: Box::new(launch(crate::workflow::Place::Checkout)),
+        window: WINDOW,
+    };
+    let (fx, _) = link::keep(&mut tasks, None, start);
     assert_eq!(
         told(&fx),
         Some(&Placed::Refused("the window closed".into()))
@@ -708,13 +703,11 @@ fn a_start_off_screen_on_a_worktree_is_cut_first() {
         Ok(launch(crate::workflow::Place::Worktree)),
         WINDOW,
     );
-    let Some(Effect::Cut { launch, .. }) = fx.into_iter().next() else {
+    let Some(Effect::Cut(start)) = fx.into_iter().next() else {
         panic!("cut first");
     };
     let cut = |made: Cut| Input::Cut {
-        task: "t".into(),
-        launch: launch.clone(),
-        window: WINDOW,
+        start: start.clone(),
         made,
     };
     let fx = tasks.handle(cut(Err("not a repository".into())));
@@ -725,7 +718,7 @@ fn a_start_off_screen_on_a_worktree_is_cut_first() {
         forge: None,
     })));
     assert!(
-        matches!(fx.as_slice(), [Effect::Keep { launch, .. }] if launch.dir() == Path::new("/w")),
+        matches!(fx.as_slice(), [Effect::Keep(start)] if start.launch.dir() == Path::new("/w")),
         "{fx:?}"
     );
 }

@@ -253,30 +253,12 @@ impl Flow {
                 }
                 self.told.push((task, placed));
             }
-            TasksEffect::Cut {
-                task,
-                launch,
-                window,
-            } => {
-                let made = crate::task::cut_blocking(launch.repo(), launch.title(), &[]);
-                self.tasks_input(TasksInput::Cut {
-                    task,
-                    launch,
-                    window,
-                    made,
-                });
+            TasksEffect::Cut(start) => {
+                let made =
+                    crate::task::cut_blocking(start.launch.repo(), start.launch.title(), &[]);
+                self.tasks_input(TasksInput::Cut { start, made });
             }
-            TasksEffect::ReadReview { .. } | TasksEffect::ConfirmAnswer { .. } => {
-                panic!("these flows answer no review")
-            }
-            TasksEffect::JudgeRemoval { .. }
-            | TasksEffect::ConfirmRemoval { .. }
-            | TasksEffect::RemoveWorktree { .. } => panic!("these flows remove no worktree"),
-            TasksEffect::Keep {
-                task,
-                launch,
-                window,
-            } => {
+            TasksEffect::Keep(start) => {
                 let Flow {
                     tasks,
                     unattended,
@@ -289,11 +271,17 @@ impl Flow {
                 // The workspace's own effects (its write, a git sweep) are its
                 // carrier's, not a flow's.
                 let (_, out) = joined.tasks(|t| {
-                    let (fx, kept) = tasks_link::keep(t, Some(workspace), task, *launch, window);
+                    let (fx, kept) = tasks_link::keep(t, Some(workspace), start);
                     (kept, fx)
                 });
                 self.keep(out);
             }
+            TasksEffect::ReadReview { .. } | TasksEffect::ConfirmAnswer { .. } => {
+                panic!("these flows answer no review")
+            }
+            TasksEffect::JudgeRemoval { .. }
+            | TasksEffect::ConfirmRemoval { .. }
+            | TasksEffect::RemoveWorktree { .. } => panic!("these flows remove no worktree"),
             TasksEffect::CloseSession { .. } => {}
             TasksEffect::Signal(signal) => self.said.push(format!("{signal:?}")),
             TasksEffect::Refresh => {}

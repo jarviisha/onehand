@@ -24,7 +24,7 @@
 
 use super::queue::Queue;
 use super::work::Act;
-use super::{history, Launch, Task, Working};
+use super::{history, Task, Working};
 use crate::workflow::{Run, Template, WithCurrent};
 use crate::worktree::removal;
 use std::collections::{HashMap, HashSet};
@@ -39,7 +39,7 @@ mod off_screen;
 mod place;
 
 pub use begin::{Begin, Retry, Start, SESSION_NOT_STARTED};
-pub use off_screen::Cut;
+pub use off_screen::{Cut, OffScreen};
 
 /// How long a cancelled turn is waited for before its place is given up
 /// anyway: a turn that never ends would hold the place, and a slot, for good.
@@ -67,14 +67,8 @@ pub enum Input<W> {
         window: W,
         window_open: bool,
     },
-    /// What [`Effect::Cut`] came to for task `task`'s `launch`, from
-    /// `window`.
-    Cut {
-        task: String,
-        launch: Box<Launch>,
-        window: W,
-        made: Cut,
-    },
+    /// What [`Effect::Cut`] came to for `start`.
+    Cut { start: OffScreen<W>, made: Cut },
     /// Task `task`, holding its place, was driven in its window: begun, or
     /// refused there for `why` (its run's end is
     /// [`TasksDrive::not_started`]'s).
@@ -221,22 +215,14 @@ pub enum Effect<W> {
         refs: Vec<String>,
         from: usize,
     },
-    /// Cut a worktree of `launch`'s repository for task `task`, named for
-    /// its title, and report [`Input::Cut`]. Recorded: a worktree cut is
-    /// where the task works, whatever the drive did since.
-    Cut {
-        task: String,
-        launch: Box<Launch>,
-        window: W,
-    },
-    /// Keep the project `launch` works in, in `window`, without putting it
-    /// on screen, then task `task`: carried through [`link::keep`] with that
+    /// Cut a worktree of the start's repository for it, named for its
+    /// title, and report [`Input::Cut`]. Recorded: a worktree cut is where
+    /// the task works, whatever the drive did since.
+    Cut(OffScreen<W>),
+    /// Keep the project the start works in, in its window, without putting
+    /// it on screen, then its task: carried through [`link::keep`] with that
     /// window's workspace, at once.
-    Keep {
-        task: String,
-        launch: Box<Launch>,
-        window: W,
-    },
+    Keep(OffScreen<W>),
     /// Ask for task `task`'s place from `window`, held to the cap on
     /// unattended runs: the link's, which asks it.
     Ask { task: String, window: W },
@@ -449,12 +435,7 @@ impl<W: Copy> TasksDrive<W> {
                 window,
                 window_open,
             } => self.place_found(task, place, window, window_open, &mut fx),
-            Input::Cut {
-                task,
-                launch,
-                window,
-                made,
-            } => fx.push(self.cut(task, *launch, window, made)),
+            Input::Cut { start, made } => fx.push(self.cut(start, made)),
             Input::Driven { task, started } => fx.push(Effect::Told {
                 task,
                 placed: match started {

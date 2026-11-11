@@ -199,7 +199,7 @@ fn holders(all: &[Schedule], cx: &App) -> Vec<(PathBuf, AnyWindowHandle)> {
 
 /// Start `starting` in `window`, as every task off screen starts, and tell
 /// the clock where it landed.
-fn start(starting: onehand_core::schedule::drive::Starting, window: AnyWindowHandle, cx: &mut App) {
+fn start(starting: onehand_core::task::Starting, window: AnyWindowHandle, cx: &mut App) {
     let shell = Shared::global(cx)
         .windows
         .iter()
