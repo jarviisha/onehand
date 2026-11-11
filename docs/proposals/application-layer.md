@@ -508,6 +508,11 @@ Left for later:
   steps, a session's own saves or its telling; each has its drive's tests.
 - `unattended::link::Joined::settle` and `control::link`'s test still have arms that match the rest
   of an enum (`other =>`, `_ =>`).
+- The harness's drive of a task (`Flow::drive`) restates the shell's `drive_task` in its order,
+  rather than testing it: the shell needs a window.
+- Smells the review noted and left: `task, launch, window` travel together in `Cut` and `Keep`;
+  a cut worktree is a bare tuple (`tasks::Cut`); `schedule::drive::Starting` only re-exports
+  `task::Starting`; `submit_told` lives on for the app's tests only.
 - `Task`'s fields stay public (phase 4): no app code builds a task by its fields any more, every
   start's task being built in core, but the app's tests do, and readers everywhere read them.
 
@@ -767,7 +772,9 @@ Made on 2026-11-11, with phase 10's audit:
 - **D37. One PR** for the moves, the flows and the docs.
 
 Phase 10 changed nothing on purpose: a start off screen, a drive's answer and a run's word to
-unattended runs reach the same places in the same order. The one difference is unreachable before:
+unattended runs reach the same places in the same order. A start off screen refused (by its
+preflight, a failed cut, or its window gone) now reaches `control::start_task`'s caller as a
+landing (`Placed::Refused`) rather than an error; the tool and the clock both read the two alike. The one difference is unreachable before:
 a driven task gone from the drive between its begin and its session is no longer refused as gone.
 
 Phase 9 changed, on purpose:

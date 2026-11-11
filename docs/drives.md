@@ -214,7 +214,9 @@ Whole flows are tested across their links in `task::flows`, with every drive rea
 playing the front end, each effect carried once by core's own blocking bodies on a scratch
 repository: a schedule's task from its look through its run and session to its end, and an
 unattended claim from the tick through its run to its issue's report and the slot it frees. An
-effect a flow never reaches fails the harness, so a flow that starts reaching one is noticed.
+effect the flows are not built to reach (a cut, a pick by hand, a command, the forge) fails the
+harness, so a flow that starts reaching one is noticed; one with nothing to carry out in a flow (a
+write of no consequence there, a clock, a redraw) is passed over.
 
 **A drive reads another drive's model, and never changes it.** The run's drive reads its
 session's `Chat` and decides the mode and the settings picks to put in force; it keeps them, and

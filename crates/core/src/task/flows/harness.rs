@@ -1,8 +1,9 @@
 //! One front end's carriers, played with no window: every drive real, joined
 //! by its links, and each effect carried once, its I/O done by core's own
 //! blocking bodies on a scratch repository or answered as a front end would.
-//! An effect these flows never reach fails the test, so a flow that starts
-//! reaching one is noticed.
+//! An effect these flows are not built to reach fails the test, so a flow
+//! that starts reaching one is noticed; one with nothing to carry out here
+//! (a write of no consequence, a clock, a redraw) is passed over.
 
 use crate::acp::{AcpEvent, AcpRequest, ReqTx};
 use crate::chat::drive::{Effect as SessionEffect, SessionDrive};
