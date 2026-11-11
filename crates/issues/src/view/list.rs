@@ -478,8 +478,12 @@ impl IssuesView {
     /// nothing to be in step with.
     fn sync_footer(&self, issues: &Issues, cx: &mut Context<Self>) -> Option<AnyElement> {
         let file = self.roots.get(self.root.as_ref()?)?.file.read(cx);
-        let (forge, syncing, synced) = (file.forge?, file.syncing, file.synced.clone());
+        let (forge, syncing) = (file.forge?, file.syncing);
         let name = forge.name();
+        let synced = file
+            .synced
+            .as_ref()
+            .map(|(at, synced)| (*at, super::store::came_to(synced, name)));
         let on = issues.in_step_with(name);
         let muted = cx.theme().muted_foreground;
         let warning = status_ink(cx).warning;
@@ -619,7 +623,7 @@ impl IssuesView {
             false => theme.muted_foreground,
         };
         let conflicted = issue.link.as_ref().is_some_and(|l| l.conflict.is_some());
-        let working = super::working_in(issue, &self.live).is_some();
+        let working = issue.working_in(&self.live).is_some();
         let meta = div()
             .h_flex()
             .items_center()

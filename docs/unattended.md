@@ -109,7 +109,7 @@ background executor, one interval in the config, no cron expressions.
 | `crates/core/src/task/work/list.rs` | the Issues page's list: its filters, what each row says, and how it is held still (`list`, `PrReads`, `Held`) |
 | `crates/core/src/task/work/left.rs` | what the work left, read off git for the page: the check against the work as it is, the files of the run and of the branch, the commits past where the task started |
 | `crates/issues/src/view/page.rs`, `view/page/prs.rs`, `view/full.rs` | the Issues page: its list, its pull request reads, one per project, and the issue in full |
-| `crates/issues/src/view/store.rs` | one issues file shared by every view of it, with its sync |
+| `crates/core/src/issues/drive.rs`, `crates/issues/src/view/store.rs` | one issues file shared by every view of it, with its sync: `FileDrive` decides, `IssuesFile` carries |
 | `crates/app/src/shell/issues_page.rs` | the page as a window holds it, and what it asks of the shell |
 
 The split is the one the crate boundary already forces: everything that can be
@@ -364,7 +364,7 @@ it is, the files this run and the branch changed, each opening its diff in
 place, and the commits past where the task started. The tab's ⋯ ▸ *Open in
 Issues*, and a project row's *auto · #N* pill, open the issue on the page,
 pinned at the top when its filters leave it out. Both views hold one shared
-copy of each issues file (`view/store.rs`), so an edit in one shows in the
+copy of each issues file (`FileDrive`, carried by `view/store.rs`), so an edit in one shows in the
 other at once and a sync runs once per file; a changed draft in either is kept
 across a switch of project or page and asked about before it is dropped.
 

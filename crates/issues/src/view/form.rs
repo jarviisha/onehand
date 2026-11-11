@@ -8,6 +8,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputState, TextareaState};
 use gpui_component::{ActiveTheme, StyledExt};
+use onehand_core::issues::drive::Change;
 use onehand_core::issues::template::IssueTemplate;
 use onehand_core::issues::{self, Draft};
 use onehand_ui::Quiet as _;
@@ -167,17 +168,11 @@ impl IssuesView {
             body: form.body.read(cx).value().to_string(),
             labels: issues::parse_labels(&form.labels.read(cx).value()),
         };
-        let now = issues::now();
-        self.change(
-            move |kept| {
-                match editing {
-                    Some(number) => kept.edit(number, draft, now).map(|()| number),
-                    None => kept.create(draft, now),
-                }
-                .map(Some)
-            },
-            cx,
-        );
+        let change = match editing {
+            Some(number) => Change::Edit { number, draft },
+            None => Change::Create(draft),
+        };
+        self.change(change, cx);
     }
 }
 

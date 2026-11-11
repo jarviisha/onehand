@@ -565,6 +565,31 @@ fn a_late_sweep_does_not_give_a_host_folder_the_local_one_s_status() {
     assert!(drive.git().is_empty());
 }
 
+/// A run is offered on a repository here that runs here and a person chose,
+/// once unattended runs are set up.
+#[test]
+fn runs_are_offered_on_a_chosen_repository_here_once_set_up() {
+    let mut drive = bound();
+    drive.open_project("/b".into());
+    drive.add_run_session(Path::new("/run"), spec(), 1);
+    let Effect::Sweep { token, .. } = drive.sweep(|_| true) else {
+        panic!("a sweep");
+    };
+    let status = crate::gitstat::GitStatus {
+        branch: "main".into(),
+        changed: 0,
+        ahead: 0,
+        behind: 0,
+        entries: Default::default(),
+    };
+    drive.handle(Input::Swept {
+        token,
+        found: vec![("/a".into(), status.clone()), ("/run".into(), status)],
+    });
+    assert_eq!(drive.offered_for_runs(true), [PathBuf::from("/a")]);
+    assert!(drive.offered_for_runs(false).is_empty());
+}
+
 /// What goes with a project depends on where it is: a host's folder leaves
 /// nothing filed under its path here, an offloaded one stops its code being
 /// checked for.

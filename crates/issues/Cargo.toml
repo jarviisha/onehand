@@ -17,3 +17,7 @@ onehand-core = { path = "../core" }
 # Already built into the app through gpui, clock feature included: named here
 # for local time on an issue's history, not pulled in by it.
 chrono = "0.4"
+
+[dev-dependencies]
+# `TestAppContext`, to hold the shared issues file's carrier to its contract.
+gpui = { workspace = true, features = ["test-support"] }

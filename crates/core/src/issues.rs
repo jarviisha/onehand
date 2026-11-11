@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+pub mod drive;
 pub mod sync;
 pub mod template;
 

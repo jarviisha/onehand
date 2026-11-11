@@ -32,6 +32,7 @@ The drives so far:
 | `onehand_core::remote::drive::RemoteDrive` | the remote bridge: a line or a press from a chat, what it asks of a session (`remote::link`), what is said back, whether the person is away | `crates/app/src/remote.rs`, its drive held on `Shared`, the channel run by `onehand_io::remote` |
 | `onehand_core::control::drive::ControlDrive` | onehand's tools: tokens and standing, each session's switch and grant, the cap, a worker's open | `crates/app/src/control.rs`, `control/workers.rs`, its drive held in one process lock, the socket served by `onehand_io::socket` |
 | `onehand_core::config::drive::SettingsDrive` | the agents, the appearance, outside control's save, what each agent offers and its check | `crates/app/src/saves.rs`, its drive held on `Shared` |
+| `onehand_core::issues::drive::FileDrive` | one issues file: its read, a change shown before its write, when it syncs with its forge, an issue sent there | `IssuesFile` (`crates/issues/src/view/store.rs`), one per file for the process |
 | `onehand_core::workspace::WorkspaceDrive` | one window's workspace: its projects, where each session sits and what goes with it, the selection, the workspace file and what a failed write puts back, each project's `git status` | `crates/app/src/shell/carry.rs`, its drive held per window on the `Shell` |
 
 ## Rules
@@ -164,7 +165,9 @@ though an issue's task is built in core (`Task::of_issue`). Unattended runs, the
 and offloaded projects keep their state in their drives' private fields; an offloaded folder's
 entry is read through its drive, never handed out to change. The remote bridge's chats, the tools'
 state and the settings are kept in their drives too, and so is each window's workspace tree, whose
-mutators are `pub(crate)` and which `WorkspaceDrive` derefs to without `DerefMut`: `Chats`' mutators are `pub(crate)`, the tools'
+mutators are `pub(crate)` and which `WorkspaceDrive` derefs to without `DerefMut`, and what is
+shown of an issues file, which `FileDrive` derefs to (`Issues`' own methods are still public, for
+the writers outside it: a tool, an unattended run): `Chats`' mutators are `pub(crate)`, the tools'
 state is private to `ControlDrive`, and `SettingsDrive` derefs to its settings without `DerefMut`.
 A schedule is the file's data, and
 what the clock or a switch writes onto it is decided by core's functions the carrier runs in its
@@ -180,8 +183,8 @@ places, as every guard in `crates/app/src/guards.rs` was.
 tasks' `core/src/task/tasks.rs`, unattended runs' `core/src/unattended/drive.rs`, the clock's
 `core/src/schedule/drive.rs`, hosts' `core/src/host/drive.rs` and offloaded projects'
 `core/src/host/offload/drive.rs`, the remote bridge's `core/src/remote/drive.rs`, the tools'
-`core/src/control/drive.rs`, the settings' `core/src/config/drive.rs` and a window's workspace
-`core/src/workspace/drive.rs`. The
+`core/src/control/drive.rs`, the settings' `core/src/config/drive.rs`, a window's workspace
+`core/src/workspace/drive.rs` and an issues file's `core/src/issues/drive.rs`. The
 repository is cut by feature, and there is no `application/` folder to split each feature in
 two.
 
@@ -237,7 +240,9 @@ once, after the call, and an open's deadline coming round on the clock; the sett
 (`crates/app/src/saves/tests.rs`) a write landing once, a failed appearance put back and the agent
 list kept; the workspace's (`crates/app/src/shell/carry/tests.rs`, on a real `Shell`) a burst
 written once after its wait, a failed write put back on screen and in its field, a window closing
-writing the burst still waiting, and a run's session ended leaving no agent and no project. Still untested: the pane's answer to a session's look (`ChatPane::look`), a worker's
+writing the burst still waiting, and a run's session ended leaving no agent and no project; an
+issues file's (`crates/issues/src/view/store/tests.rs`) one file for every view, read once, and a
+write landing once with its answer reaching the drive and its maker. Still untested: the pane's answer to a session's look (`ChatPane::look`), a worker's
 open carried through a window (its start, watch and first prompt), an agent check's probe, which
 starts a real agent, `SendCode`'s late answer and the pane's half
 of the session (`ChatPane::carry`), `SaveTitle` (written on the ordered writer's own thread, which
