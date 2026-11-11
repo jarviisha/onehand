@@ -3,13 +3,15 @@
 //!
 //! **Routing is behaviour, so it lives here.** That an issue's task asking
 //! for its place stops counting as starting, that its end tells its issue,
-//! that a claim's task is kept and asks for its place held to the cap, and
-//! that a report that landed leaves its task, are each a rule a front end
+//! that a claim's task is kept and asks for its place held to the cap, as a
+//! task started off screen asks for its own, what a run tells unattended
+//! runs, and that a report that landed leaves its task, are each a rule a
+//! front end
 //! would otherwise restate, untested. A front end holds the drives, joins
 //! them here for one call, and carries out what comes back.
 
-use super::drive::{Effect, UnattendedDrive};
-use crate::task::drive::RunDrive;
+use super::drive::{Effect, On, UnattendedDrive, World};
+use crate::task::drive::{RunDrive, Said};
 use crate::task::tasks::link::Seen;
 use crate::task::tasks::{self, TasksDrive};
 use std::collections::VecDeque;
@@ -64,6 +66,27 @@ impl<'a, W: Copy> Joined<'a, W> {
         (answer, self.settle(Vec::new(), fx))
     }
 
+    /// What run `task` told unattended runs (`said`), handed to their drive
+    /// and routed. `world` is the projects switched on and the world as they
+    /// are, read for what [`Said::looks`]; without it there is nothing to
+    /// look at.
+    pub fn run_said(&mut self, task: &str, said: Said, world: Option<(Vec<On>, &World)>) -> Out<W>
+    where
+        W: PartialEq,
+    {
+        self.unattended(|u, seen| {
+            let fx = match (said, world) {
+                (Said::Waiting, Some((roots, world))) => u.waiting(task, seen, roots, world),
+                (Said::Answered, Some((roots, world))) => u.answered(task, seen, roots, world),
+                (Said::Waiting | Said::Answered, None) => Vec::new(),
+                (Said::CameUp { session }, _) => u.came_up(task, session, seen),
+                (Said::Pause { why, fix }, _) => u.pause(&why, &fix),
+            };
+            ((), fx)
+        })
+        .1
+    }
+
     /// Ask for task `id`'s place from `window`, held to the cap on
     /// unattended runs: every start goes through here.
     pub fn request(&mut self, id: &str, window: W) -> Out<W> {
@@ -90,23 +113,23 @@ impl<'a, W: Copy> Joined<'a, W> {
         let (mut tq, mut uq) = (VecDeque::from(tfx), VecDeque::from(ufx));
         loop {
             if let Some(effect) = tq.pop_front() {
-                let Some(u) = self.unattended.as_deref_mut() else {
-                    match effect {
+                // Without unattended runs set up, what is theirs goes nowhere.
+                let seen = Seen::new(&*self.tasks, self.runs.iter().copied());
+                let u = self.unattended.as_deref_mut();
+                match (effect, u) {
+                    (tasks::Effect::Ask { task, window }, _) => tq.extend(self.ask(&task, window)),
+                    (tasks::Effect::Asked(id), Some(u)) => u.placed(&id),
+                    (tasks::Effect::IssueEnded(id), Some(u)) => uq.extend(u.ended(&id, &seen)),
+                    (tasks::Effect::Deliver(id), Some(u)) => uq.extend(u.deliver(&id, &seen)),
+                    (tasks::Effect::DeliverAll, Some(u)) => uq.extend(u.deliver_all(&seen)),
+                    (
                         tasks::Effect::Asked(_)
                         | tasks::Effect::IssueEnded(_)
                         | tasks::Effect::Deliver(_)
-                        | tasks::Effect::DeliverAll => {}
-                        other => out.tasks.push(other),
-                    }
-                    continue;
-                };
-                let seen = Seen::new(&*self.tasks, self.runs.iter().copied());
-                match effect {
-                    tasks::Effect::Asked(id) => u.placed(&id),
-                    tasks::Effect::IssueEnded(id) => uq.extend(u.ended(&id, &seen)),
-                    tasks::Effect::Deliver(id) => uq.extend(u.deliver(&id, &seen)),
-                    tasks::Effect::DeliverAll => uq.extend(u.deliver_all(&seen)),
-                    other => out.tasks.push(other),
+                        | tasks::Effect::DeliverAll,
+                        None,
+                    ) => {}
+                    (other, _) => out.tasks.push(other),
                 }
                 continue;
             }

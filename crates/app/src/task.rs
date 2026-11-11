@@ -25,7 +25,9 @@ mod place;
 pub(crate) use carrier::{approve, revise, start, stop};
 pub(crate) use listing::*;
 pub(crate) use onehand_core::task::tasks::Placed;
-pub(crate) use place::{not_started, request, submit, submit_told};
+#[cfg(test)]
+pub(crate) use place::submit_told;
+pub(crate) use place::{not_started, request, start_off_screen, submit};
 
 /// Every task in this process and what each is doing.
 pub(crate) struct Tasks {
@@ -156,7 +158,7 @@ fn carry(
 }
 
 /// Join the drives for `command`, and carry out what they say.
-fn with_joined<R>(
+pub(crate) fn with_joined<R>(
     cx: &mut App,
     command: impl FnOnce(&mut Joined<'_, AnyWindowHandle>) -> (R, Out<AnyWindowHandle>),
 ) -> Option<R> {
@@ -267,11 +269,6 @@ pub(crate) fn boot(cx: &mut App) {
         });
     })
     .detach();
-}
-
-/// Drive task `id` off screen the first time it is driven.
-pub(crate) fn drive_off_screen(id: &str, cx: &mut App) {
-    cx.update_global::<Tasks, _>(|t, _| t.drive.drive_off_screen(id));
 }
 
 /// Keep `task`, new, and write it.

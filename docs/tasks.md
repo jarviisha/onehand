@@ -309,7 +309,13 @@ unattended      (the issue a task works,
   retry and the history cap. It reads no disk and keeps no timer; it answers with effects the app
   carries out, and is told what came of them. `task::tasks::link` makes a run's save and its end
   its task's. A new task from the launcher is a `task::Launch`: the first blocking finding of its
-  preflight refuses it, then a workflow that cannot be read or no title.
+  preflight refuses it, then a workflow that cannot be read or no title. One a schedule or a tool
+  starts off screen is `Launch::off_screen`, refused by every blocking finding said together, and
+  `TasksDrive::start_off_screen` decides the rest: a worktree cut first when its workflow works on
+  one, its project kept in the window without being put on screen, then the task kept with where it
+  came from and asking for its place. Where a task asked for lands (`Effect::Told`) is the drive's:
+  queued, refused, its window gone, or driven (`Input::Driven`). What a task's session is given
+  when it is driven (its grant, and an issue's opening lines) comes with `Begin::Session`.
 - **The queue rule is pure** (`task::queue::Queue`). Given a place, it answers whether a start runs
   now or queues, and which queued task goes next when a place frees up (first in, first out). Every task
   holds its place's lock, a single command included, so a check waits behind a workflow that is
@@ -398,7 +404,8 @@ migration it protects.
   `unattended::link::Joined::request`, which holds an issue's task to the cap on unattended runs),
   given the window to speak in (a handle, so nothing that starts a task needs to be inside a
   window): a new task through `task::submit`, which keeps it and then asks (the launcher, *Run
-  check*); an unattended claim's task is kept and asks through the same link; Retry, Resume and a
+  check*); a schedule's or a tool's through `task::start_off_screen`, whose drive asks once the
+  task is kept; an unattended claim's task is kept and asks through the same link; Retry, Resume and a
   review's answer ask for an existing one. A free place starts the task at once
   (`Shell::drive_task`, as `TasksDrive::begin` says); a taken one queues it and says so in a
   notification. A task already running or waiting is left alone.

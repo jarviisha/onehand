@@ -1,11 +1,9 @@
 //! A run's agent and its transcript's first lines, and the project a run
 //! worked in kept or dropped once it ends.
 
-use crate::chat::session::{ChatSession, note};
 use crate::state::Shared;
-use gpui::{App, Entity};
+use gpui::App;
 use onehand_core::config::{self, AgentSpec};
-use onehand_core::task::Task;
 use onehand_core::unattended::drive;
 use std::path::Path;
 
@@ -19,14 +17,6 @@ pub(crate) fn spec_for(agent: Option<&str>, cx: &App) -> Option<AgentSpec> {
         .or_else(|| config::agent_or_first(agents, None))?
         .clone();
     Some(drive::run_spec(base))
-}
-
-/// The lines a run's transcript opens with, as core words them. Without
-/// them it would start at a prompt nobody on screen typed.
-pub(crate) fn opening(task: &Task, session: &Entity<ChatSession>, cx: &mut App) {
-    for line in drive::opening(task) {
-        note(session, line, cx);
-    }
 }
 
 /// Keep or drop the project a run worked in, in every window holding it. Only

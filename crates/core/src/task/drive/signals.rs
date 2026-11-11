@@ -151,15 +151,8 @@ pub enum Effect {
     /// Recorded: every write is of the whole task, in order, so the next one
     /// holds what a failed one missed; a failure is said, once.
     Save,
-    /// The run waits on a person, or on its status checks: its issue's slot
-    /// is free meanwhile.
-    Waiting,
-    /// A person answered what the run waited on.
-    Answered,
-    /// The agent came up in the run's session for the first time.
-    CameUp,
-    /// Pause unattended runs: every later one would fail as this did.
-    Pause { why: String, fix: String },
+    /// Tell unattended runs this, through their link.
+    Unattended(Said),
     /// What a run shows changed: draw it again.
     Refresh,
     /// The session was changed here (a pick sent): tell whatever watches it.
@@ -168,4 +161,31 @@ pub enum Effect {
     Signal(Signal),
     /// The run is over, as `outcome`: keep it and let its place go.
     Finish { outcome: Outcome },
+}
+
+/// What a run tells unattended runs, which `unattended::link` hands them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Said {
+    /// The run waits on a person, or on its status checks: its issue's slot
+    /// is free meanwhile.
+    Waiting,
+    /// A person answered what the run waited on.
+    Answered,
+    /// The agent came up in the run's session for the first time, in the
+    /// conversation named `session`.
+    CameUp { session: Option<String> },
+    /// Pause unattended runs: every later one would fail as this did.
+    Pause { why: String, fix: String },
+}
+
+impl Said {
+    /// Whether unattended runs may look again on hearing it, so need the
+    /// projects switched on and the world as they are now: a slot freed, or
+    /// room made under the cap on waiting runs.
+    pub fn looks(&self) -> bool {
+        match self {
+            Said::Waiting | Said::Answered => true,
+            Said::CameUp { .. } | Said::Pause { .. } => false,
+        }
+    }
 }

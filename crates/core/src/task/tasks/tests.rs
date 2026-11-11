@@ -567,3 +567,183 @@ fn a_check_is_retried_at_once_from_its_one_step_and_others_are_not() {
     assert_eq!(tasks.task("1").unwrap().runs.len(), 2);
     assert!(tasks.retry_at_once("2", "2b".into()).is_none());
 }
+
+fn starting(place: crate::workflow::Place) -> crate::task::Starting {
+    let template = crate::workflow::builtin::all()
+        .into_iter()
+        .find(|t| t.place == place)
+        .expect("a workflow working there");
+    crate::task::Starting {
+        project: PathBuf::from("/p"),
+        template,
+        brief: Brief {
+            title: "Tidy".into(),
+            body: String::new(),
+            instructions: None,
+        },
+        origin: Origin::Tool,
+        grant: Default::default(),
+        agent: None,
+        mode: None,
+    }
+}
+
+fn launch(place: crate::workflow::Place) -> Launch {
+    Launch::off_screen(&[], starting(place), None, Some("a".into())).unwrap()
+}
+
+fn told<W>(fx: &[Effect<W>]) -> Option<&Placed> {
+    let Some(Effect::Told { placed, .. }) = fx.iter().find(|e| matches!(e, Effect::Told { .. }))
+    else {
+        return None;
+    };
+    Some(placed)
+}
+
+/// A start refused by what blocks it is told so under its id, and keeps
+/// nothing.
+#[test]
+fn a_start_off_screen_refused_is_told_and_keeps_nothing() {
+    let mut tasks = TasksDrive::<Win>::default();
+    let fx = tasks.start_off_screen("t".into(), Err("no agent".into()), WINDOW);
+    assert_eq!(told(&fx), Some(&Placed::Refused("no agent".into())));
+    assert!(tasks.tasks().is_empty());
+}
+
+/// On the checkout, its project is kept first; with the window still open
+/// it is kept as a task with its origin, asks for its place, and its first
+/// drive is off screen.
+#[test]
+fn a_start_off_screen_keeps_its_project_then_its_task_and_asks() {
+    let mut tasks = TasksDrive::<Win>::default();
+    let fx = tasks.start_off_screen(
+        "t".into(),
+        Ok(launch(crate::workflow::Place::Checkout)),
+        WINDOW,
+    );
+    let Some(Effect::Keep {
+        task,
+        launch,
+        window,
+    }) = fx.into_iter().next()
+    else {
+        panic!("the project kept first");
+    };
+    assert_eq!(launch.dir(), Path::new("/p"));
+    assert!(tasks.tasks().is_empty(), "nothing kept before its project");
+    let fx = tasks.handle(Input::Kept {
+        task,
+        launch,
+        window,
+        open: true,
+    });
+    assert_eq!(saves(&fx), 1);
+    assert!(has(
+        &fx,
+        |e| matches!(e, Effect::Ask { task, .. } if task == "t")
+    ));
+    assert_eq!(tasks.task("t").unwrap().origin, Some(Origin::Tool));
+    let fx = ask(&mut tasks, "t", "/p");
+    assert!(drives(&fx, "t"));
+    match tasks.begin("t", true) {
+        Begin::Session { off_screen, .. } => assert!(off_screen),
+        Begin::Check(_) | Begin::Refused { .. } => panic!("a session's run"),
+    }
+}
+
+/// A window gone before its project is kept refuses the start, keeping no
+/// task.
+#[test]
+fn a_start_off_screen_whose_window_went_is_refused() {
+    let mut tasks = TasksDrive::<Win>::default();
+    let fx = tasks.handle(Input::Kept {
+        task: "t".into(),
+        launch: Box::new(launch(crate::workflow::Place::Checkout)),
+        window: WINDOW,
+        open: false,
+    });
+    assert_eq!(
+        told(&fx),
+        Some(&Placed::Refused("the window closed".into()))
+    );
+    assert!(tasks.tasks().is_empty());
+}
+
+/// On a worktree, the cut goes first: a failed cut is told, one that lands
+/// keeps the project on the worktree.
+#[test]
+fn a_start_off_screen_on_a_worktree_is_cut_first() {
+    let mut tasks = TasksDrive::<Win>::default();
+    let fx = tasks.start_off_screen(
+        "t".into(),
+        Ok(launch(crate::workflow::Place::Worktree)),
+        WINDOW,
+    );
+    let Some(Effect::Cut { launch, .. }) = fx.into_iter().next() else {
+        panic!("cut first");
+    };
+    let cut = |made: Cut| Input::Cut {
+        task: "t".into(),
+        launch: launch.clone(),
+        window: WINDOW,
+        made,
+    };
+    let fx = tasks.handle(cut(Err("not a repository".into())));
+    assert_eq!(told(&fx), Some(&Placed::Refused("not a repository".into())));
+    let fx = tasks.handle(cut(Ok(("/w".into(), "onehand/tidy".into(), None))));
+    assert!(
+        matches!(fx.as_slice(), [Effect::Keep { launch, .. }] if launch.dir() == Path::new("/w")),
+        "{fx:?}"
+    );
+}
+
+/// A session's run begins with what its task was given and, an issue's,
+/// with the lines its transcript opens with.
+#[test]
+fn a_sessions_run_begins_with_its_grant_and_an_issues_opening() {
+    let mut tasks = TasksDrive::<Win>::default();
+    let mut mine = titled("1", "Mine", "/b");
+    mine.grant.tools = vec!["start_task".into()];
+    tasks.add(mine);
+    tasks.add(of_issue("2"));
+    let begun = |tasks: &mut TasksDrive<Win>, id| match tasks.begin(id, true) {
+        Begin::Session { grant, opening, .. } => (grant, opening),
+        Begin::Check(_) | Begin::Refused { .. } => panic!("a session's run"),
+    };
+    let (grant, opening) = begun(&mut tasks, "1");
+    assert_eq!(grant.tools, ["start_task"]);
+    assert!(opening.is_empty());
+    let (_, opening) = begun(&mut tasks, "2");
+    assert!(
+        opening[0].starts_with("Unattended run on issue"),
+        "{opening:?}"
+    );
+}
+
+/// Where a driven task landed is told to whoever asked: begun, refused
+/// for its reason, or its window gone, which also lets its place go.
+#[test]
+fn a_drive_tells_where_its_task_landed() {
+    let mut tasks = TasksDrive::<Win>::default();
+    let driven = |tasks: &mut TasksDrive<Win>, started| {
+        let fx = tasks.handle(Input::Driven {
+            task: "1".into(),
+            started,
+        });
+        told(&fx).cloned()
+    };
+    assert_eq!(driven(&mut tasks, Ok(())), Some(Placed::Started));
+    assert_eq!(
+        driven(&mut tasks, Err("no".into())),
+        Some(Placed::Refused("no".into()))
+    );
+    tasks.add(titled("2", "Mine", "/b"));
+    let fx = ask(&mut tasks, "2", "/b");
+    assert!(drives(&fx, "2"));
+    let fx = tasks.handle(Input::NotDriven("2".into()));
+    assert_eq!(
+        told(&fx),
+        Some(&Placed::Refused("the window closed".into()))
+    );
+    assert!(!tasks.busy("2"), "its place let go");
+}

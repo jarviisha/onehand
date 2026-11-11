@@ -8,7 +8,7 @@
 //! One the step only takes from the start and the agent no longer offers is
 //! left as the agent has it.
 
-use super::{Effect, RunDrive};
+use super::{Effect, RunDrive, Said};
 use crate::chat::{Chat, MODE_SELECTOR};
 use crate::preflight::{found_late, About};
 use crate::workflow::{next, Next, Pick, Settings};
@@ -57,10 +57,10 @@ fn fail(d: &mut RunDrive, why: String, chat: &Chat, now: Instant, fx: &mut Vec<E
             "the step settings of workflow `{}` are fixed",
             d.run.template.id
         );
-        fx.push(Effect::Pause {
+        fx.push(Effect::Unattended(Said::Pause {
             why: why.clone(),
             fix,
-        });
+        }));
     }
     d.advance(Some(chat), now, fx, move |run| {
         run.failed(why, found_late(About::Settings))
@@ -141,10 +141,10 @@ pub(super) fn refused(
         d.mode_out = None;
         d.picking = None;
         let why = format!("the agent refused mode `{mode}`: {why}");
-        fx.push(Effect::Pause {
+        fx.push(Effect::Unattended(Said::Pause {
             why: why.clone(),
             fix: "unattended.mode is fixed".to_string(),
-        });
+        }));
         d.advance(Some(chat), now, fx, move |run| {
             run.failed(why, found_late(About::Mode))
         });

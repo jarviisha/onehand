@@ -36,7 +36,7 @@ mod signals;
 mod steps;
 
 use pin::{Answer, Held};
-pub use signals::{Effect, Input, Signal, Timer};
+pub use signals::{Effect, Input, Said, Signal, Timer};
 
 /// A run under way on one session.
 pub struct RunDrive {
@@ -238,7 +238,7 @@ impl RunDrive {
     pub fn approve(&mut self, at: ApprovalAt, chat: Option<&Chat>, now: Instant) -> Vec<Effect> {
         self.command_with(chat, now, |d, chat, now, fx| {
             d.answer(Answer::Approved(at), chat, now, fx);
-            fx.push(Effect::Answered);
+            fx.push(Effect::Unattended(Said::Answered));
         })
     }
 
@@ -253,7 +253,7 @@ impl RunDrive {
     ) -> Vec<Effect> {
         self.command_with(chat, now, |d, chat, now, fx| {
             d.answer(Answer::Revised(at, note), chat, now, fx);
-            fx.push(Effect::Answered);
+            fx.push(Effect::Unattended(Said::Answered));
         })
     }
 
@@ -296,7 +296,7 @@ impl RunDrive {
                 if self.card && chat.is_some_and(|chat| !chat.awaiting_permission()) {
                     self.card = false;
                     self.budget.resume(now);
-                    fx.push(Effect::Answered);
+                    fx.push(Effect::Unattended(Said::Answered));
                 }
                 if let Some(chat) = chat.filter(|chat| self.after_work && !self.step_at_work(chat))
                 {
@@ -433,7 +433,7 @@ impl RunDrive {
             Input::AwaitingUser => {
                 self.card = true;
                 self.budget.pause(now);
-                fx.push(Effect::Waiting);
+                fx.push(Effect::Unattended(Said::Waiting));
             }
             Input::Disconnected => self.end(Stop::LinkLost, Some(chat), now, fx),
             Input::PickRefused(why) if self.picking.is_some() => {

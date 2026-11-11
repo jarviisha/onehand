@@ -23,7 +23,7 @@
 //! held beside this one; [`link`] joins them.
 
 use super::queue::Queue;
-use super::{history, Task, Working};
+use super::{history, Launch, Task, Working};
 use crate::workflow::{Run, Template, WithCurrent};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -32,9 +32,11 @@ use std::time::Duration;
 mod begin;
 mod ending;
 pub mod link;
+mod off_screen;
 mod place;
 
 pub use begin::{Begin, Start, SESSION_NOT_STARTED};
+pub use off_screen::Cut;
 
 /// How long a cancelled turn is waited for before its place is given up
 /// anyway: a turn that never ends would hold the place, and a slot, for good.
@@ -61,6 +63,29 @@ pub enum Input<W> {
         place: PathBuf,
         window: W,
         window_open: bool,
+    },
+    /// What [`Effect::Cut`] came to for task `task`'s `launch`, from
+    /// `window`.
+    Cut {
+        task: String,
+        launch: Box<Launch>,
+        window: W,
+        made: Cut,
+    },
+    /// What [`Effect::Keep`] came to: whether `window` was still `open` to
+    /// keep task `task`'s project in.
+    Kept {
+        task: String,
+        launch: Box<Launch>,
+        window: W,
+        open: bool,
+    },
+    /// Task `task`, holding its place, was driven in its window: begun, or
+    /// refused there for `why` (its run's end is
+    /// [`TasksDrive::not_started`]'s).
+    Driven {
+        task: String,
+        started: Result<(), String>,
     },
     /// Task `task` could not be driven in the window it was to start in:
     /// that window has gone.
@@ -140,8 +165,8 @@ pub enum Effect<W> {
         window: W,
     },
     /// Drive task `task`, which holds its place, in `window`; report
-    /// [`Input::NotDriven`] when that window has gone, and
-    /// [`TasksDrive::not_started`] when it cannot start there.
+    /// [`Input::Driven`] when it was, [`Input::NotDriven`] when that window
+    /// has gone, and [`TasksDrive::not_started`] when it cannot start there.
     Drive { task: String, window: W },
     /// Report [`Input::Drained`] once task `task`'s session's turn is over,
     /// the session goes, or `limit` runs out, whichever is first. Dropped
@@ -156,6 +181,24 @@ pub enum Effect<W> {
         refs: Vec<String>,
         from: usize,
     },
+    /// Cut a worktree of `launch`'s repository for task `task`, named for
+    /// its title, and report [`Input::Cut`]. Recorded: a worktree cut is
+    /// where the task works, whatever the drive did since.
+    Cut {
+        task: String,
+        launch: Box<Launch>,
+        window: W,
+    },
+    /// Keep the project `launch` works in, in `window`, without putting it
+    /// on screen, and report [`Input::Kept`] at once.
+    Keep {
+        task: String,
+        launch: Box<Launch>,
+        window: W,
+    },
+    /// Ask for task `task`'s place from `window`, held to the cap on
+    /// unattended runs: the link's, which asks it.
+    Ask { task: String, window: W },
     /// Report this input once the call being handled is over.
     Defer(Input<W>),
     /// Task `task`, of an issue, has let its place go: tell the issue.
@@ -320,7 +363,32 @@ impl<W: Copy> TasksDrive<W> {
                 window,
                 window_open,
             } => self.place_found(task, place, window, window_open, &mut fx),
-            Input::NotDriven(task) => self.release(&task, &mut fx),
+            Input::Cut {
+                task,
+                launch,
+                window,
+                made,
+            } => fx.push(self.cut(task, *launch, window, made)),
+            Input::Kept {
+                task,
+                launch,
+                window,
+                open,
+            } => self.kept(task, *launch, window, open, &mut fx),
+            Input::Driven { task, started } => fx.push(Effect::Told {
+                task,
+                placed: match started {
+                    Ok(()) => Placed::Started,
+                    Err(why) => Placed::Refused(why),
+                },
+            }),
+            Input::NotDriven(task) => {
+                fx.push(Effect::Told {
+                    task: task.clone(),
+                    placed: Placed::Refused("the window closed".to_string()),
+                });
+                self.release(&task, &mut fx);
+            }
             Input::Drained(task) => {
                 if let Some(from) = self.draining.remove(&task) {
                     self.free(task, from, &mut fx);

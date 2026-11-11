@@ -19,7 +19,7 @@
 use super::{decide, Act, Schedule, Starts};
 use crate::task::tasks::Placed;
 use crate::task::{Grant, Origin};
-use crate::workflow::{Brief, Template};
+use crate::workflow::Template;
 use chrono::TimeZone;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
@@ -33,18 +33,8 @@ pub const EVERY: Duration = Duration::from_secs(60);
 pub const FIRST_LOOK: Duration = Duration::from_secs(5);
 
 /// What a schedule starts, made ready for the one way every task off screen
-/// starts: its project, its workflow filled with its mode and settings, its
-/// brief, and what its task keeps of where it came from.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Starting {
-    pub project: PathBuf,
-    pub template: Template,
-    pub brief: Brief,
-    pub origin: Origin,
-    pub grant: Grant,
-    pub agent: Option<String>,
-    pub mode: Option<String>,
-}
+/// starts.
+pub use crate::task::Starting;
 
 /// What the world found, as the drive is told it.
 #[derive(Debug, Clone, PartialEq)]

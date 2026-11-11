@@ -85,17 +85,17 @@ background executor, one interval in the config, no cron expressions.
 | `crates/core/src/connector.rs` | `Connector`, what a run asks of the system a project lives on, and `serving`, which picks the first one that takes a project |
 | `crates/github/src/lib.rs` | the `gh` calls, the `origin` and ssh-alias check, and the account check |
 | `crates/core/src/unattended/drive.rs` (`claiming.rs`, `settings.rs`, `reports.rs`, `blocking.rs`) | `UnattendedDrive`, what happens next: the tick on its clock, the look and the search, the recheck before a claim, the claim and the task it is kept as, a pick refused before its claim, a search asked for now, the cap and the runs still `starting`, a waiting or answered run, the pause, a run's end and its reports sent once each; the bodies its effects run off the UI loop are `blocking` |
-| `crates/core/src/unattended/link.rs` | `Joined`, where unattended runs and the tasks meet: every start held to the cap (`Joined::request`), a claim kept as a task, a review answered, an issue task asking for its place, its end and what it owes its issue |
+| `crates/core/src/unattended/link.rs` | `Joined`, where unattended runs and the tasks meet: every start held to the cap (`Joined::request`), a claim kept as a task, a review answered, an issue task asking for its place, its end and what it owes its issue, and what a run tells unattended runs (`Joined::run_said`: waiting, answered, its agent up, a pause) |
 | `crates/core/src/task/tasks/link.rs` | `Seen`: the tasks with the runs under way, what each is doing and who holds a slot (`holds_slot`) |
 | `crates/core/src/process.rs` | `output_within`: a command with a limit on its exit *and* its output, stopped with its whole process group |
 | `crates/core/src/task/history.rs` | `over_cap`, which never lets go of a task whose report is unsent |
 | `crates/app/src/unattended.rs` | the carrier: the clock, the look, the claims and the reports carried out off the UI loop, given the projects switched on across every window, the window holding a claimed project, and the workflows and agents on offer; the reads the rows and Settings draw |
 | `crates/app/src/unattended/launch.rs` (`pick.rs`, `answer.rs`) | what a person in a window starts: `start_picked`, `look_now`, and `read_review`, which reads what answering a review is judged on |
-| `crates/app/src/unattended/report.rs` | `spec_for`, `opening`, and `teardown`, a run's project kept or dropped in every window |
+| `crates/app/src/unattended/report.rs` | `spec_for`, and `teardown`, a run's project kept or dropped in every window |
 | `crates/app/src/task.rs` | holds the unattended drive beside the tasks' (`set_unattended`, `with_unattended`), joined for each call (`Tasks::joined`) |
 | `crates/app/src/task/listing.rs` | `live_issues`, `issue_tasks` |
-| `crates/app/src/task/carrier.rs` | `came_up` (the mode, the note on the issue), the clock, the take-over |
-| `crates/app/src/shell/workflows.rs` | `drive_task`, which brings an issue's run up off screen |
+| `crates/app/src/task/carrier.rs` | the run's effects, among them what it tells unattended runs (`unattended::run_said`), the clock, the take-over |
+| `crates/app/src/shell/workflows.rs` | `drive_task`, which brings an issue's run up off screen with the opening lines `TasksDrive::begin` gives it |
 | `crates/core/src/config.rs` | `UnattendedConfig` |
 | `crates/core/src/workspace.rs` | `ProjectRoot::transient`, left out by `to_config`, and `add_transient_root`, which adds one with its session without selecting it, reached through `WorkspaceDrive::add_run_session` |
 | `crates/core/src/worktree.rs` | `cut_blocking`, the one way a run gets its worktree (a free branch, its directory, `branch_off_blocking` from a named start), `subtree_or`, and `fetch_blocking`; `worktree add` and the fetch both bounded and never prompting |

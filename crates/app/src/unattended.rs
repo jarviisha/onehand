@@ -18,6 +18,7 @@ use crate::state::Shared;
 use gpui::{AnyWindowHandle, App, Global, WeakEntity};
 use onehand_core::config::UnattendedConfig;
 use onehand_core::connector::{self, Connector};
+use onehand_core::task::drive::Said;
 use onehand_core::unattended::drive::{
     Effect, Input, On, Signal, UnattendedDrive, World, blocking,
 };
@@ -31,7 +32,7 @@ mod launch;
 mod report;
 pub use launch::{ReviewRead, look_now, read_review, start_answer, start_picked};
 pub use onehand_core::unattended::{Pickable, Project};
-pub(crate) use report::{opening, spec_for};
+pub(crate) use report::spec_for;
 
 /// The tick's clock, armed again at every fire; dropping it stops it.
 struct Clock {
@@ -350,26 +351,22 @@ pub fn check_now(project: Project, cx: &mut App) {
     crate::task::with_unattended(cx, |u, _| ((), u.check(vec![project], false)));
 }
 
-/// A run of task `id` now waits on a person, or on its status checks.
-pub(crate) fn waiting(id: &str, cx: &mut App) {
-    let (roots, world) = (roots(cx), world(cx));
-    crate::task::with_unattended(cx, |u, seen| ((), u.waiting(id, seen, roots, &world)));
+/// What the run of task `id` told unattended runs, handed to them through
+/// their link with the world as it is.
+pub(crate) fn run_said(id: &str, said: Said, cx: &mut App) {
+    let task = id.to_string();
+    match said {
+        // Deferred: a person's answer is pressed inside a window's update,
+        // and the look it may start reads every window's shell.
+        Said::Answered => cx.defer(move |cx| hand_on(&task, Said::Answered, cx)),
+        Said::Waiting | Said::CameUp { .. } | Said::Pause { .. } => hand_on(&task, said, cx),
+    }
 }
 
-/// A person answered the run of task `id` that waited on them.
-pub(crate) fn answered(id: &str, cx: &mut App) {
-    let (roots, world) = (roots(cx), world(cx));
-    crate::task::with_unattended(cx, |u, seen| ((), u.answered(id, seen, roots, &world)));
-}
-
-/// The agent of task `id`'s run came up in the session named `session`.
-pub(crate) fn came_up(id: &str, session: Option<String>, cx: &mut App) {
-    crate::task::with_unattended(cx, |u, seen| ((), u.came_up(id, session, seen)));
-}
-
-/// A run failed on a setting every later one would fail on too.
-pub(crate) fn pause(why: &str, fix: &str, cx: &mut App) {
-    crate::task::with_unattended(cx, |u, _| ((), u.pause(why, fix)));
+fn hand_on(id: &str, said: Said, cx: &mut App) {
+    let looked = said.looks().then(|| (roots(cx), world(cx)));
+    let looked = looked.as_ref().map(|(roots, world)| (roots.clone(), world));
+    crate::task::with_joined(cx, |j| ((), j.run_said(id, said, looked)));
 }
 
 /// The label that asks for a run, for the places that tell the user which

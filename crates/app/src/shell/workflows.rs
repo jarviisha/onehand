@@ -325,43 +325,19 @@ impl Shell {
         crate::task::submit(task, window.window_handle(), cx);
     }
 
-    /// A new task of `template` on `setup`, as the launcher starts one, for a
-    /// task started from outside the window:
-    /// driven off screen, so nothing the person is looking at moves, and
-    /// answering where it landed. Returns its id.
-    pub(crate) fn start_workflow_told(
+    /// Keep the project at `dir` for a task started from outside the
+    /// window. A worktree cut for it is a project of the workspace, as the
+    /// launcher's is: kept, listed, and there to come back to; but not
+    /// selected, as nothing the person is looking at moves for a task they
+    /// did not start.
+    pub(crate) fn keep_project_quietly(
         &mut self,
-        setup: Setup,
-        template: Template,
-        brief: Brief,
-        given: (onehand_core::task::Origin, onehand_core::task::Grant),
+        dir: PathBuf,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> (
-        String,
-        futures::channel::oneshot::Receiver<crate::task::Placed>,
     ) {
-        // A worktree cut for it is a project of the workspace, as the
-        // launcher's is: kept, listed, and there to come back to; but not
-        // selected, as nothing the person is looking at moves for a task
-        // they did not start.
-        let fx = self
-            .window
-            .workspace
-            .keep_project_quietly(setup.dir.clone());
+        let fx = self.window.workspace.keep_project_quietly(dir);
         self.carry_workspace(fx, window, cx);
-        let (origin, grant) = given;
-        let task = Task {
-            origin: Some(origin),
-            grant,
-            ..new_task(setup, template, brief, cx)
-        };
-        let id = task.id.clone();
-        crate::task::drive_off_screen(&id, cx);
-        (
-            id,
-            crate::task::submit_told(task, window.window_handle(), cx),
-        )
     }
 
     /// Drive task `id`, whose place it now holds, as the tasks' drive begins
@@ -390,7 +366,7 @@ impl Shell {
                 Err(why)
             };
         let there = crate::task::resumable_run(&id, cx).is_some_and(|run| run.setup.dir.is_dir());
-        let (start, off_screen, issue) = match crate::task::begin(&id, there, cx) {
+        let (start, off_screen, grant, opening) = match crate::task::begin(&id, there, cx) {
             Begin::Refused { why, kind } => {
                 return refused(why.clone(), Unstarted::Refused(why, kind), window, cx);
             }
@@ -404,11 +380,9 @@ impl Shell {
             Begin::Session {
                 start,
                 off_screen,
-                issue,
-            } => (start, off_screen, issue),
-        };
-        let Some(task) = crate::task::task(&id, cx) else {
-            return Err("That task is gone".to_string());
+                grant,
+                opening,
+            } => (start, off_screen, grant, opening),
         };
         let dir = start.run.setup.dir.clone();
         let mut agent_gone = false;
@@ -420,11 +394,7 @@ impl Shell {
             true => {
                 let spec = crate::unattended::spec_for(start.run.setup.agent.as_deref(), cx);
                 agent_gone = spec.is_none();
-                let started = spec.and_then(|spec| self.run_unattended(dir, spec, Vec::new(), cx));
-                if let (Some((_, session)), true) = (&started, issue) {
-                    crate::unattended::opening(&task, session, cx);
-                }
-                started
+                spec.and_then(|spec| self.run_unattended(dir, spec, Vec::new(), cx))
             }
             false => {
                 let (idx, fx) = self.window.workspace.keep_project(dir);
@@ -439,9 +409,10 @@ impl Shell {
             let why = SESSION_NOT_STARTED.to_string();
             return refused(why, Unstarted::NoSession { agent_gone }, window, cx);
         };
-        // Every drive, a Resume's new session included: what the task was
-        // given when it started is what its session may use.
-        crate::control::grant(uid, &task.grant, cx);
+        for line in opening {
+            crate::chat::session::note(&session, line, cx);
+        }
+        crate::control::grant(uid, &grant, cx);
         // Deferred: the run's carrier reaches into the session and the global
         // the shell is reading from while this runs.
         let handle = window.window_handle();
@@ -481,15 +452,8 @@ enum Unstarted {
     NoSession { agent_gone: bool },
 }
 
-/// A new task of `template` on `setup`, with the agent `setup` names, or the
-/// one a new session takes.
-fn new_task(setup: Setup, template: Template, brief: Brief, cx: &gpui::App) -> Task {
-    let setup = onehand_core::task::on_agent(setup, first_agent(cx));
-    Task::new(onehand_core::task::new_id(), template, brief, setup)
-}
-
 /// The agent a new session takes: the first configured.
-fn first_agent(cx: &gpui::App) -> Option<String> {
+pub(crate) fn first_agent(cx: &gpui::App) -> Option<String> {
     Shared::global(cx)
         .settings
         .agents

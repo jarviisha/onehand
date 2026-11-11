@@ -3,6 +3,7 @@
 
 use super::{Effect, TasksDrive};
 use crate::preflight::{found_late, About};
+use crate::task::Grant;
 use crate::workflow::{validate, Action, Failure, Run};
 
 /// What a task whose session did not start is said to have come to.
@@ -30,8 +31,12 @@ pub enum Begin {
     Session {
         start: Start,
         off_screen: bool,
-        /// It works an issue.
-        issue: bool,
+        /// What its session may use, given to every session it is driven
+        /// on, a Resume's new one included.
+        grant: Grant,
+        /// The lines its session opens with, before its first prompt: an
+        /// issue's run says which issue and where it works.
+        opening: Vec<String>,
     },
     /// It cannot start, for `why`, of `kind`: said where it was to start,
     /// then handed to [`TasksDrive::not_started`].
@@ -62,6 +67,7 @@ impl<W: Copy> TasksDrive<W> {
         }
         let check = task.source == super::super::Source::Check;
         let issue = task.issue().is_some();
+        let (grant, opening) = (task.grant.clone(), crate::unattended::drive::opening(task));
         // A snapshot that no longer validates (a later build's rules) is what
         // the preflight would have blocked, found late.
         let problems = validate(&run.template);
@@ -86,7 +92,8 @@ impl<W: Copy> TasksDrive<W> {
             false => Begin::Session {
                 start,
                 off_screen: issue || off_screen,
-                issue,
+                grant,
+                opening,
             },
         }
     }

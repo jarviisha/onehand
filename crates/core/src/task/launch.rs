@@ -1,17 +1,36 @@
-//! A new task as the launcher describes it, before its place is asked for:
-//! what blocks it, where it works, and the agent it runs.
+//! A new task as the launcher describes it, or as a schedule or a tool
+//! starts one off screen, before its place is asked for: what blocks it,
+//! where it works, the agent it runs and where it came from.
 
-use super::Task;
+use super::{Grant, Origin, Task};
 use crate::preflight::Finding;
 use crate::workflow::{Brief, Place, Setup, Template};
 use std::path::{Path, PathBuf};
 
-/// A launch that may go: a workflow, its brief and its setup.
-#[derive(Debug)]
+/// What a start off screen is asked for, by a schedule or one of onehand's
+/// tools: its project, its workflow, its brief, what its task keeps of where
+/// it came from, and the agent and mode it runs with (none: the first agent,
+/// and its own mode).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Starting {
+    pub project: PathBuf,
+    pub template: Template,
+    pub brief: Brief,
+    pub origin: Origin,
+    pub grant: Grant,
+    pub agent: Option<String>,
+    pub mode: Option<String>,
+}
+
+/// A launch that may go: a workflow, its brief, its setup, and what its task
+/// keeps of where it came from.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Launch {
     template: Template,
     brief: Brief,
     setup: Setup,
+    origin: Option<Origin>,
+    grant: Grant,
 }
 
 impl Launch {
@@ -47,7 +66,55 @@ impl Launch {
             template,
             brief,
             setup,
+            origin: None,
+            grant: Grant::default(),
         })
+    }
+
+    /// `starting`, off screen, on the project's `check` command, on the agent
+    /// it names or else `first`, or why it cannot: every finding of its
+    /// preflight that blocks, said together, since nobody is at a launcher
+    /// to fix them one at a time.
+    pub fn off_screen(
+        found: &[Finding],
+        starting: Starting,
+        check: Option<String>,
+        first: Option<String>,
+    ) -> Result<Self, String> {
+        let blocks: Vec<&str> = found
+            .iter()
+            .filter(|f| f.blocks)
+            .map(|f| f.text.as_str())
+            .collect();
+        if !blocks.is_empty() {
+            return Err(blocks.join("; "));
+        }
+        let setup = Setup {
+            repo: starting.project.clone(),
+            dir: starting.project,
+            branch: None,
+            agent: starting.agent,
+            check,
+            mode: starting.mode,
+            forge: None,
+        };
+        Ok(Self {
+            template: starting.template,
+            brief: starting.brief,
+            setup: on_agent(setup, first),
+            origin: Some(starting.origin),
+            grant: starting.grant,
+        })
+    }
+
+    /// The repository a worktree cut for it is of.
+    pub fn repo(&self) -> &Path {
+        &self.setup.repo
+    }
+
+    /// The folder it works in.
+    pub fn dir(&self) -> &Path {
+        &self.setup.dir
     }
 
     /// Whether its workflow works on a branch in a worktree, cut for it
@@ -75,7 +142,11 @@ impl Launch {
 
     /// The new task, as task `id`.
     pub fn task(self, id: String) -> Task {
-        Task::new(id, self.template, self.brief, self.setup)
+        Task {
+            origin: self.origin,
+            grant: self.grant,
+            ..Task::new(id, self.template, self.brief, self.setup)
+        }
     }
 }
 
@@ -117,6 +188,52 @@ mod tests {
         assert_eq!(refused.unwrap_err(), "first");
         let refused = Launch::new(&[], template(), brief(""), root, None, None);
         assert_eq!(refused.unwrap_err(), "Say what to do in the title");
+    }
+
+    fn block(text: &str) -> Finding {
+        Finding {
+            about: About::Workflow,
+            blocks: true,
+            text: text.into(),
+            change: None,
+            task: None,
+            checkable: false,
+        }
+    }
+
+    fn starting() -> Starting {
+        Starting {
+            project: "/a".into(),
+            template: builtin::all().remove(0),
+            brief: brief(""),
+            origin: Origin::Tool,
+            grant: Grant::default(),
+            agent: None,
+            mode: Some("plan".into()),
+        }
+    }
+
+    /// Off screen, every block is said at once, and a start with no title
+    /// is not refused for it.
+    #[test]
+    fn a_start_off_screen_is_refused_by_every_block_together() {
+        let found = [block("first"), block("second")];
+        let refused = Launch::off_screen(&found, starting(), None, None);
+        assert_eq!(refused.unwrap_err(), "first; second");
+        assert!(Launch::off_screen(&[], starting(), None, None).is_ok());
+    }
+
+    /// Its task keeps where it came from, the first agent when it names
+    /// none, its mode and the project's check.
+    #[test]
+    fn a_start_off_screen_keeps_its_origin_agent_and_mode() {
+        let launch = Launch::off_screen(&[], starting(), Some("make".into()), Some("a".into()));
+        let task = launch.unwrap().task("1".into());
+        assert_eq!(task.origin, Some(Origin::Tool));
+        assert_eq!(task.setup.agent.as_deref(), Some("a"));
+        assert_eq!(task.setup.mode.as_deref(), Some("plan"));
+        assert_eq!(task.setup.check.as_deref(), Some("make"));
+        assert_eq!(task.setup.dir, PathBuf::from("/a"));
     }
 
     #[test]

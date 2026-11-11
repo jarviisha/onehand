@@ -5,11 +5,10 @@
 //! Each look is given the file as it is, the first window holding each
 //! schedule's project, which of the clock's last tasks still work, the
 //! workflows on offer and the time; a start goes through what every task off
-//! screen goes through (`control::start_task`). Every write of the file goes
-//! through the one writer, so the clock's and a switch's land in the order
-//! they were made.
+//! screen goes through (`control::start_task`, decided by the tasks' drive).
+//! Every write of the file goes through the one writer, so the clock's and a
+//! switch's land in the order they were made.
 
-use crate::control::Started;
 use crate::state::Shared;
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Global};
 use gpui_component::WindowExt as _;
@@ -209,23 +208,8 @@ fn start(starting: onehand_core::schedule::drive::Starting, window: AnyWindowHan
     let Some(shell) = shell else {
         return feed(Input::Started(Err("the window closed".to_string())), cx);
     };
-    let started = Started {
-        origin: starting.origin,
-        grant: starting.grant,
-        agent: starting.agent,
-        mode: starting.mode,
-    };
     cx.spawn(async move |cx| {
-        let placed = crate::control::start_task(
-            window,
-            shell,
-            starting.project,
-            starting.template,
-            starting.brief,
-            started,
-            cx,
-        )
-        .await;
+        let placed = crate::control::start_task(window, shell, starting, cx).await;
         cx.update(|cx| feed(Input::Started(placed), cx));
     })
     .detach();

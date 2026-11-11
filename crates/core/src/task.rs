@@ -18,7 +18,7 @@ pub mod queue;
 pub mod tasks;
 pub mod work;
 
-pub use launch::{on_agent, Launch};
+pub use launch::{on_agent, Launch, Starting};
 
 use crate::unattended::IssueSource;
 use crate::workflow::{
@@ -412,5 +412,7 @@ pub fn new_id() -> String {
     nanos.to_string()
 }
 
+#[cfg(test)]
+pub(crate) mod flows;
 #[cfg(test)]
 mod tests;

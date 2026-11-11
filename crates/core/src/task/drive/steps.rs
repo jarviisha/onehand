@@ -2,7 +2,7 @@
 //! the transcript, the prompt sent once the agent is up, the command run,
 //! the forge called, the wait begun, the run finished.
 
-use super::{settings, Effect, RunDrive};
+use super::{settings, Effect, RunDrive, Said};
 use crate::chat::{Chat, Link};
 use crate::preflight::{found_late, mode_refused, About};
 use crate::workflow::{Action, Outcome, Pick, Stop};
@@ -41,7 +41,7 @@ impl RunDrive {
                 fx.push(Effect::Note(
                     "Waiting for approval: Continue or Revise… under the header".to_string(),
                 ));
-                fx.push(Effect::Waiting);
+                fx.push(Effect::Unattended(Said::Waiting));
             }
             Action::Push(commit) => {
                 fx.push(Effect::Note(format!(
@@ -61,7 +61,7 @@ impl RunDrive {
                 ));
                 self.watch_checks(pushed, wait, now, fx);
                 // Its slot is free now, for another issue to take up.
-                fx.push(Effect::Waiting);
+                fx.push(Effect::Unattended(Said::Waiting));
             }
             Action::Finish(outcome) => return self.finish(Some(chat), outcome, now, fx),
             Action::Idle => return,
@@ -145,17 +145,19 @@ impl RunDrive {
         if std::mem::replace(&mut self.up, true) {
             return true;
         }
-        fx.push(Effect::CameUp);
+        fx.push(Effect::Unattended(Said::CameUp {
+            session: chat.session_id.clone(),
+        }));
         let Some(mode) = self.run.setup.mode.clone() else {
             self.start_settings(chat, None);
             return true;
         };
         let offered: Vec<String> = chat.modes.iter().map(|m| m.id.clone()).collect();
         if let Some(why) = mode_refused(&mode, &offered) {
-            fx.push(Effect::Pause {
+            fx.push(Effect::Unattended(Said::Pause {
                 why: why.clone(),
                 fix: "unattended.mode is fixed".to_string(),
-            });
+            }));
             self.advance(Some(chat), now, fx, move |run| {
                 run.failed(why, found_late(About::Mode))
             });

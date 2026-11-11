@@ -1,5 +1,7 @@
 use super::*;
 use crate::config::AgentSpec;
+use crate::task::drive::Said;
+use crate::task::flows::harness::repo;
 use crate::task::tasks::{self, Input as TasksInput, TasksDrive};
 use crate::unattended::link::{Joined, Out};
 use crate::unattended::TrackerRef;
@@ -99,6 +101,13 @@ impl Rig {
         self.fx(|u, seen, world| u.tick(None, seen, roots, world))
     }
 
+    /// What run `id` told unattended runs, through the link.
+    fn said(&mut self, id: &str, said: Said, roots: Vec<On>) -> Out<Win> {
+        let Rig { tasks, u, world } = self;
+        let world = said.looks().then_some((roots, &*world));
+        Joined::new(tasks, [], Some(u)).run_said(id, said, world)
+    }
+
     fn request(&mut self, id: &str) -> Out<Win> {
         let Rig { tasks, u, .. } = self;
         Joined::new(tasks, [], Some(u)).request(id, WINDOW)
@@ -121,51 +130,6 @@ impl Rig {
     fn slots(&mut self) -> Slots {
         let Rig { tasks, u, .. } = self;
         u.slots(&Seen::new(tasks, []))
-    }
-}
-
-/// A scratch git repository on `main` with one commit, keeping its own
-/// issues in `issues.json`, holding `issues` (a title and its labels).
-fn repo(name: &str, issues: &[(&str, &[&str])]) -> Project {
-    let git = |dir: &Path, args: &[&str]| {
-        let out = std::process::Command::new("git")
-            .arg("-C")
-            .arg(dir)
-            .args(args)
-            .output()
-            .expect("git must be installed to run this test");
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-    };
-    let root = std::env::temp_dir().join(format!("onehand-drive-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root).unwrap();
-    git(&root, &["init", "-q", "-b", "main"]);
-    git(&root, &["config", "user.email", "t@example.com"]);
-    git(&root, &["config", "user.name", "T"]);
-    std::fs::write(root.join("a.txt"), "x").unwrap();
-    git(&root, &["add", "a.txt"]);
-    git(&root, &["commit", "-qm", "one"]);
-    let file = root.join("issues.json");
-    for (title, labels) in issues {
-        crate::issues::update_blocking(&file, |kept| {
-            kept.create(
-                crate::issues::Draft {
-                    title: title.to_string(),
-                    labels: labels.iter().map(|l| l.to_string()).collect(),
-                    ..Default::default()
-                },
-                1,
-            )
-        })
-        .unwrap();
-    }
-    Project {
-        root,
-        issues: Some(file),
     }
 }
 
@@ -445,12 +409,12 @@ fn waiting_and_answering_look_again_only_where_they_free_room() {
             "true".into(),
             issue_task("x", 1, &file, &project.root).setup,
         ));
-        let out = rig.fx(|u, seen, world| u.waiting("i", seen, roots.clone(), world));
+        let out = rig.said("i", Said::Waiting, roots.clone());
         assert!(looks(&out).is_some_and(|l| l.search.is_some()));
         rig.u.claiming = false;
-        let out = rig.fx(|u, seen, world| u.waiting("c", seen, roots.clone(), world));
+        let out = rig.said("c", Said::Waiting, roots.clone());
         assert!(looks(&out).is_none(), "a task of no issue holds no slot");
-        let out = rig.fx(|u, seen, world| u.answered("i", seen, roots.clone(), world));
+        let out = rig.said("i", Said::Answered, roots.clone());
         assert_eq!(looks(&out).is_some(), cap.is_some(), "{cap:?}");
     }
     let _ = std::fs::remove_dir_all(project.root);
@@ -517,12 +481,15 @@ fn a_run_coming_up_notes_its_session_on_an_issue_kept_here() {
         Path::new("/kept/issues.json"),
         Path::new("/w/a"),
     ));
-    let out = rig.fx(|u, seen, _| u.came_up("a", Some("s-1".into()), seen));
+    let came_up = |session: Option<&str>| Said::CameUp {
+        session: session.map(str::to_string),
+    };
+    let out = rig.said("a", came_up(Some("s-1")), Vec::new());
     assert!(matches!(
         &out.unattended[..],
         [Effect::NoteTakenUp { number: 4, session, .. }] if session == "s-1"
     ));
-    let out = rig.fx(|u, seen, _| u.came_up("a", None, seen));
+    let out = rig.said("a", came_up(None), Vec::new());
     assert!(out.unattended.is_empty());
 }
 
