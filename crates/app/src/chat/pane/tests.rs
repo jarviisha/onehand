@@ -427,6 +427,66 @@ mod lifecycle {
         assert!(!unseen(&pane, 2, cx), "on screen in this window: read");
     }
 
+    /// A session resuming a kept conversation reads it off the UI thread:
+    /// it connects once the read lands, not inside the show, and one closed
+    /// while it reads is not brought back.
+    #[gpui::test]
+    fn a_resume_reads_its_conversation_off_the_ui_thread(cx: &mut TestAppContext) {
+        use onehand_core::workspace::drive::StartsOn;
+        let (pane, cx) = pane(cx);
+        let show = |uid, cx: &mut VisualTestContext| {
+            let starts = StartsOn::Resume(PathBuf::from("/nonexistent/onehand-kept"));
+            cx.update(|window, cx| {
+                pane.update(cx, |pane, cx| {
+                    pane.show(
+                        uid,
+                        PathBuf::from("/tmp"),
+                        None,
+                        &nowhere(),
+                        starts,
+                        window,
+                        cx,
+                    )
+                })
+            });
+        };
+        show(1, cx);
+        assert!(session(&pane, 1, cx).is_none(), "not inside the show");
+        cx.run_until_parked();
+        assert!(session(&pane, 1, cx).is_some(), "once the read lands");
+        show(2, cx);
+        pane.update(cx, |pane, cx| pane.close(2, cx));
+        cx.run_until_parked();
+        assert!(session(&pane, 2, cx).is_none(), "a closed one stays closed");
+    }
+
+    /// A past conversation chosen leaves the picker at once, and a choice
+    /// made while it is read is the one that stands.
+    #[gpui::test]
+    fn a_choice_made_while_another_is_read_stands(cx: &mut TestAppContext) {
+        let (pane, cx) = pane(cx);
+        open(&pane, 1, cx);
+        let live = session(&pane, 1, cx).expect("a session");
+        pane.update(cx, |pane, _| {
+            pane.choose_history(1, Some(live.entity_id()), past())
+        });
+        let chosen = past().remove(0);
+        pane.update(cx, |pane, cx| pane.start(1, Some(chosen), cx));
+        assert!(
+            !pane.read_with(cx, |pane, _| pane.is_choosing(1)),
+            "off the picker"
+        );
+        pane.update(cx, |pane, cx| pane.start(1, None, cx));
+        let fresh = session(&pane, 1, cx).expect("the later choice");
+        cx.run_until_parked();
+        let now = session(&pane, 1, cx).expect("a session");
+        assert_eq!(
+            now.entity_id(),
+            fresh.entity_id(),
+            "the read lands on nothing"
+        );
+    }
+
     /// A restart puts a new session in the old one's place, and the old one
     /// is gone by then; one with nothing live restarts nothing.
     #[gpui::test]

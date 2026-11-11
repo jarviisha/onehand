@@ -71,10 +71,7 @@ impl ChatPane {
             match (starts, fork) {
                 (StartsOn::Fork, Some(staged)) => self.connect_as(uid, Start::Fork(staged), cx),
                 (StartsOn::Watch(id), _) => self.connect_as(uid, Start::Watch(id), cx),
-                (StartsOn::Resume(archive), _) => {
-                    let stored = onehand_core::chat::load(&archive);
-                    self.connect(uid, stored, cx);
-                }
+                (StartsOn::Resume(archive), _) => self.resume(uid, archive, cx),
                 // A fork whose staged read went meanwhile starts fresh.
                 (StartsOn::Fresh | StartsOn::Fork, _) => self.connect(uid, None, cx),
             }
@@ -172,10 +169,47 @@ impl ChatPane {
 
     /// Connect `uid`, optionally resuming an archived conversation.
     pub(super) fn start(&mut self, uid: u64, resume: Option<ConvMeta>, cx: &mut Context<Self>) {
-        let stored = resume
-            .as_ref()
-            .and_then(|meta| onehand_core::chat::load(&meta.dir));
-        self.connect(uid, stored, cx);
+        match resume {
+            Some(meta) => {
+                // Off the picker at once, so nothing else is chosen while
+                // the conversation is read; the session it held goes with it.
+                if let Some(conv) = self.conversations.get_mut(&uid) {
+                    conv.disconnect();
+                }
+                cx.notify();
+                self.resume(uid, meta.dir, cx)
+            }
+            None => self.connect(uid, None, cx),
+        }
+    }
+
+    /// Connect `uid` on the conversation kept in `archive`, read off the UI
+    /// thread first. Only the last read asked for lands, and only on a
+    /// session still opening: one closed, connected or sent back to the
+    /// picker meanwhile is not taken over by it.
+    fn resume(&mut self, uid: u64, archive: PathBuf, cx: &mut Context<Self>) {
+        self.reading.insert(uid, archive.clone());
+        cx.spawn(async move |pane, cx| {
+            let read = archive.clone();
+            let stored = cx
+                .background_executor()
+                .spawn(async move { onehand_core::chat::load(&read) })
+                .await;
+            let _ = pane.update(cx, |pane, cx| {
+                if pane.reading.get(&uid) != Some(&archive) {
+                    return;
+                }
+                pane.reading.remove(&uid);
+                if pane
+                    .conversations
+                    .get(&uid)
+                    .is_some_and(Conversation::is_opening)
+                {
+                    pane.connect(uid, stored, cx);
+                }
+            });
+        })
+        .detach();
     }
 
     /// Spawn an adapter for `uid` and fold its events into this pane.

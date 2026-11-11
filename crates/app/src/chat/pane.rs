@@ -260,6 +260,9 @@ pub struct ChatPane {
     archives: Option<Archives>,
     /// A fork read off disk, waiting for the session the shell mints for it.
     pending_fork: Option<fork::StagedFork>,
+    /// The archive each session is reading to resume on, the last one asked
+    /// for: a read that lands after another was asked for is not the choice.
+    reading: HashMap<u64, std::path::PathBuf>,
     /// Whether the window's rail is hidden, so this pane can offer the way
     /// back.
     ///
@@ -394,6 +397,7 @@ impl ChatPane {
                 page: None,
                 archives: None,
                 pending_fork: None,
+                reading: HashMap::new(),
                 rail_hidden: false,
                 background_menu: std::cell::Cell::new(None),
                 docks_open: DocksOpen::default(),
