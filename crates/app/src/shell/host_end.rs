@@ -19,7 +19,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         let label = self.session_label(uid, cx);
-        match self.chat.read(cx).host_session_of(uid) {
+        match self.window.workspace.watched_on(uid) {
             Some((host, session)) => self.ask_end_on_host(host, session, label, window, cx),
             None => window.push_notification(
                 crate::toast::info(format!("{label} has not started on its host yet")),
@@ -61,7 +61,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let watcher = self.chat.read(cx).watching_on(&host, &session);
+        let watcher = self.window.workspace.watcher(&host, &session, None);
         let lead = watcher.and_then(crate::control::lead_of);
         let fx = self
             .window

@@ -237,6 +237,24 @@ pub struct WorkspaceDrive {
     /// The newest wait armed for a burst's write, while one waits.
     soon: Option<u64>,
     minted: u64,
+    /// What each session added and not shown yet starts on.
+    starts: std::collections::HashMap<u64, StartsOn>,
+    /// The host session each session on a host watches, once known.
+    watches: std::collections::HashMap<u64, HostSession>,
+}
+
+/// What a new session starts on, kept from when it is added until it is
+/// first shown, which is what starts it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StartsOn {
+    /// A fresh conversation.
+    Fresh,
+    /// The conversation kept in this folder, resumed.
+    Resume(PathBuf),
+    /// The host session named, read as its host keeps it.
+    Watch(HostSession),
+    /// The fork the front end has staged for it.
+    Fork,
 }
 
 impl Deref for WorkspaceDrive {
@@ -256,6 +274,8 @@ impl WorkspaceDrive {
             saves: Saves::default(),
             soon: None,
             minted: 0,
+            starts: Default::default(),
+            watches: Default::default(),
         }
     }
 

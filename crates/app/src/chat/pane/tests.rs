@@ -399,7 +399,15 @@ mod lifecycle {
         open(&pane, 2, cx);
         cx.update(|window, cx| {
             pane.update(cx, |pane, cx| {
-                pane.show(2, PathBuf::from("/tmp"), None, &nowhere(), window, cx)
+                pane.show(
+                    2,
+                    PathBuf::from("/tmp"),
+                    None,
+                    &nowhere(),
+                    onehand_core::workspace::drive::StartsOn::Fresh,
+                    window,
+                    cx,
+                )
             })
         });
         // The window in front: a turn's news is a badge at most, never said

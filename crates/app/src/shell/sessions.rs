@@ -5,9 +5,9 @@ use gpui::{App, BorrowAppContext, Context, SharedString, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::dock::DockPlacement;
 use onehand_core::chat::drive::{Closing, Restarting};
-use onehand_core::config::AgentSpec;
 use onehand_core::gitstat;
 use onehand_core::host::wire::HostSession;
+use onehand_core::workspace::drive::StartsOn;
 use std::path::PathBuf;
 
 impl Shell {
@@ -496,25 +496,15 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // Shown again rather than opened twice: two sessions on one host
-        // session would both send to it.
-        let ws = &self.window.workspace;
-        let open = ws.roots.get(ws.active_root).and_then(|root| {
-            let (host, _) = root.session_host()?;
-            self.chat.read(cx).watching(&root.path, host, &id)
-        });
-        if let Some(uid) = open.filter(|uid| self.locate(*uid).is_some()) {
-            self.show_session(uid, window, cx);
-            return;
-        }
         let idx = agent_index(Some(agent), cx);
-        let Some(spec) = Shared::global(cx).settings.agents.get(idx).cloned() else {
-            return;
-        };
-        // Before it is shown, which is what starts it.
-        let _ = self.add_session(Some(spec), None, window, cx, |pane, uid| {
-            pane.watch_next(uid, id)
-        });
+        let spec = Shared::global(cx).settings.agents.get(idx).cloned();
+        // One already on it is shown again rather than a second opened.
+        let _ = self.add_by(
+            |workspace, uid| workspace.watch(id, spec, uid),
+            window,
+            cx,
+            |_, _| {},
+        );
     }
 
     /// Beside a worker on screen, its lead's project, where a new session
@@ -523,35 +513,10 @@ impl Shell {
         self.active_session_uid().and_then(|uid| self.home_of(uid))
     }
 
-    /// Add a session of `spec` on the active project (on `home` first, beside
-    /// a worker), hand the pane what it starts on with `before`, and show it.
-    ///
-    /// What it starts on goes to the pane *before* the session is shown:
-    /// showing is what spawns the adapter, and a resume arriving after that
-    /// has already lost — the session would be up on a fresh conversation.
-    pub(super) fn add_session(
-        &mut self,
-        spec: Option<AgentSpec>,
-        home: Option<usize>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-        before: impl FnOnce(&mut crate::chat::ChatPane, u64),
-    ) -> Option<u64> {
-        self.add_by(
-            |workspace, uid| workspace.add_session(spec, uid, home),
-            window,
-            cx,
-            |pane, added| {
-                if let Some(uid) = added {
-                    before(pane, uid);
-                }
-            },
-        )
-    }
-
     /// Add a session as `add` asks the workspace's drive for one, minted a
-    /// uid, then as [`Self::add_session`]; what it starts on is handed over
-    /// as `before` says, `None` when the drive refused it.
+    /// uid, and show it; the pane is told what it learned as `before` says,
+    /// `None` when the drive refused it, before the session is shown, since
+    /// showing is what spawns its adapter.
     pub(super) fn add_by(
         &mut self,
         add: impl FnOnce(
@@ -584,11 +549,13 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> Option<u64> {
         let spec = Shared::global(cx).settings.agents.get(idx).cloned();
-        self.add_session(spec, home, window, cx, |pane, uid| {
-            if let Some(archive) = archive {
-                pane.resume_next(uid, archive);
-            }
-        })
+        let starts = archive.map_or(StartsOn::Fresh, StartsOn::Resume);
+        self.add_by(
+            |workspace, uid| workspace.add_session_on(spec, uid, home, starts),
+            window,
+            cx,
+            |_, _| {},
+        )
     }
 
     /// Tell the Workbench when the agent on screen started. Pushed rather

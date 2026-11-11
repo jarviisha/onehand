@@ -1,5 +1,4 @@
-use super::{host_rows, place, watching_uid};
-use crate::chat::conversation::OnHost;
+use super::{host_rows, place};
 use onehand_core::host::wire::{HostSession, SessionInfo};
 use onehand_core::workspace::HostName;
 use std::path::Path;
@@ -39,38 +38,6 @@ fn host_sessions_are_listed_for_their_folder_newest_first() {
     let (rows, left_out) = host_rows(&list, Path::new("/srv/none"), 2);
     assert!(rows.is_empty());
     assert_eq!(left_out, 0);
-}
-
-#[test]
-fn a_host_session_already_watched_in_its_folder_is_found() {
-    let host = HostName("box".into());
-    let id = HostSession("100-1".into());
-    let on = |host: &HostName, id: Option<&str>| {
-        Some(OnHost {
-            host: host.clone(),
-            cwd: "/srv/app".into(),
-            session: id.map(|id| HostSession(id.into())),
-        })
-    };
-    let (a, b, unknown) = (
-        on(&host, Some("100-1")),
-        on(&host, Some("200-2")),
-        on(&host, None),
-    );
-    let other_host = on(&HostName("else".into()), Some("100-1"));
-    let (app, srv) = (Path::new("/srv/app"), Path::new("/srv/other"));
-    let convs = || {
-        [
-            (1, srv, a.as_ref()),
-            (2, app, other_host.as_ref()),
-            (3, app, unknown.as_ref()),
-            (4, app, None),
-            (5, app, b.as_ref()),
-            (6, app, a.as_ref()),
-        ]
-    };
-    assert_eq!(watching_uid(convs(), app, &host, &id), Some(6));
-    assert_eq!(watching_uid(convs()[..5].to_vec(), app, &host, &id), None);
 }
 
 /// A folder on a host is named on its host, never shortened with this

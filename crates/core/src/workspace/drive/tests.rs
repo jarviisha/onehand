@@ -1,6 +1,7 @@
 // A test that only reads the tree after a change lets its effects go.
 #![allow(unused_must_use)]
 
+use super::StartsOn;
 use super::*;
 use crate::config::AgentSpec;
 use std::path::{Path, PathBuf};
@@ -674,4 +675,71 @@ fn ending_on_a_host_closes_its_watcher_first_and_says_a_failure() {
         fx.as_slice(),
         [Effect::Signal(Signal::EndOnHostFailed { why, .. })] if why == "away"
     ));
+}
+
+/// What a session is added on is what it starts on when first shown, once;
+/// one added plainly starts fresh, and one closed takes what it was to start
+/// on with it.
+#[test]
+fn a_session_starts_on_what_it_was_added_on_once() {
+    let mut drive = bound();
+    let resume = StartsOn::Resume(PathBuf::from("/store/c1"));
+    let _ = drive.add_session_on(Some(spec()), 1, None, resume.clone());
+    let _ = drive.add_session(Some(spec()), 2, None);
+    assert_eq!(drive.take_start(1), resume);
+    assert_eq!(drive.take_start(1), StartsOn::Fresh, "only the first show");
+    assert_eq!(drive.take_start(2), StartsOn::Fresh);
+    let _ = drive.add_session_on(Some(spec()), 3, None, resume);
+    let _ = drive.end(3, None);
+    assert_eq!(
+        drive.take_start(3),
+        StartsOn::Fresh,
+        "gone with its session"
+    );
+    let (added, _) = drive.fork(Path::new("/a"), spec(), 4);
+    assert_eq!(added, Ok(4));
+    assert_eq!(drive.take_start(4), StartsOn::Fork);
+    let resume = StartsOn::Resume(PathBuf::from("/store/c5"));
+    let _ = drive.add_session_on(Some(spec()), 5, None, resume);
+    let idx = drive.local_index(Path::new("/a")).expect("its project");
+    let _ = drive.forget(idx);
+    assert_eq!(
+        drive.take_start(5),
+        StartsOn::Fresh,
+        "gone with its project"
+    );
+}
+
+/// A host session already watched is shown again rather than opened twice;
+/// one in another folder, or on another host, is not that one. What its
+/// host says it watches counts as much as what it was opened on, and a
+/// session closed watches nothing.
+#[test]
+fn a_host_session_watched_is_shown_again_not_opened_twice() {
+    use crate::host::wire::HostSession;
+    let mut drive = bound();
+    let host = HostName("box".into());
+    let _ = drive.open_host_project(host.clone(), "/srv".into());
+    let id = HostSession("h-1".into());
+    let (first, _) = drive.watch(id.clone(), Some(spec()), 1);
+    assert_eq!(first, Ok(1));
+    assert_eq!(drive.take_start(1), StartsOn::Watch(id.clone()));
+    let (again, _) = drive.watch(id.clone(), None, 2);
+    assert_eq!(again, Ok(1), "the one already on it, its agent gone or not");
+    assert!(drive.locate(2).is_none(), "nothing added");
+    assert_eq!(drive.watched_on(1), Some((host.clone(), id.clone())));
+    assert_eq!(drive.watcher(&HostName("off".into()), &id, None), None);
+    assert_eq!(
+        drive.watcher(&host, &id, Some(Path::new("/elsewhere"))),
+        None
+    );
+    let _ = drive.add_session(Some(spec()), 3, None);
+    let later = HostSession("h-2".into());
+    drive.watching(3, later.clone());
+    assert_eq!(drive.watcher(&host, &later, None), Some(3));
+    assert_eq!(drive.watched_on(3), Some((host.clone(), later.clone())));
+    let _ = drive.end(3, None);
+    assert_eq!(drive.watcher(&host, &later, None), None);
+    let (none, _) = drive.watch(HostSession("h-3".into()), None, 4);
+    assert_eq!(none, Err(Refusal::NoAgent), "a new one needs its agent");
 }

@@ -13,6 +13,7 @@ use onehand_core::config::AgentSpec;
 use onehand_core::host::session::host_begin;
 use onehand_core::host::wire::HostSession;
 use onehand_core::workspace::HostName;
+use onehand_core::workspace::drive::StartsOn;
 use std::collections::hash_map::Entry;
 use std::path::PathBuf;
 
@@ -21,32 +22,29 @@ impl ChatPane {
     ///
     /// Lazy on purpose: a workspace with a dozen roots must not launch a dozen
     /// agent processes at boot. `host` is the host the project's sessions run
-    /// on, and the folder they run in there.
+    /// on, and the folder they run in there; `starts` what the workspace's
+    /// drive says a session shown the first time starts on.
+    #[allow(clippy::too_many_arguments)]
     pub fn show(
         &mut self,
         uid: u64,
         root: PathBuf,
         host: Option<HostAt>,
         spec: &AgentSpec,
+        starts: StartsOn,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         // A host project keeps none of its conversations here; an offloaded
         // one keeps those it had before it went.
         let kept_here = host.as_ref().is_none_or(|(_, cwd)| *cwd != root);
-        // Taken before the map is touched, and taken whatever happens next: a
-        // request to open onto one particular archive belongs to the one `show`
-        // it was made for, and a session switched away from and back to must not
-        // be dragged into that conversation a second time.
-        let asked_for = self
-            .pending_resume
-            .take_if(|(pending, _)| *pending == uid)
-            .map(|(_, archive)| archive);
+        // A fork's staged read is the pane's, taken for the session it was
+        // staged for whatever happens next.
         let fork = self.take_fork(uid);
-        let watch = self
-            .pending_watch
-            .take_if(|(pending, _)| *pending == uid)
-            .map(|(_, id)| id);
+        let watch = match &starts {
+            StartsOn::Watch(id) => Some(id.clone()),
+            StartsOn::Fresh | StartsOn::Resume(_) | StartsOn::Fork => None,
+        };
         // An entry in the map *is* "already being set up", whatever phase it has
         // reached. Before there was one entry there were three maps and three
         // checks, and two quick selections of the same session could both pass
@@ -70,13 +68,15 @@ impl ChatPane {
             // Nothing went with it: the project page lists that project's
             // archives above the button that starts a session, and a session
             // already running reaches the same picker from its header menu.
-            match (fork, watch) {
-                (Some(staged), _) => self.connect_as(uid, Start::Fork(staged), cx),
-                (None, Some(id)) => self.connect_as(uid, Start::Watch(id), cx),
-                (None, None) => {
-                    let stored = asked_for.as_deref().and_then(onehand_core::chat::load);
+            match (starts, fork) {
+                (StartsOn::Fork, Some(staged)) => self.connect_as(uid, Start::Fork(staged), cx),
+                (StartsOn::Watch(id), _) => self.connect_as(uid, Start::Watch(id), cx),
+                (StartsOn::Resume(archive), _) => {
+                    let stored = onehand_core::chat::load(&archive);
                     self.connect(uid, stored, cx);
                 }
+                // A fork whose staged read went meanwhile starts fresh.
+                (StartsOn::Fresh | StartsOn::Fork, _) => self.connect(uid, None, cx),
             }
         }
         if switching_away(self.active, uid) {
@@ -367,6 +367,10 @@ impl ChatPane {
                         {
                             on.session = Some(id.clone());
                         }
+                        cx.emit(ChatPaneEvent::Watching {
+                            uid,
+                            id: id.clone(),
+                        });
                     }
                     ChatEvent::HostBusy => {
                         if let Some(on) = pane.conversations.get(&uid).and_then(|c| c.host.as_ref())
@@ -563,22 +567,6 @@ impl ChatPane {
         self.leave_shown_session(window, cx);
         self.active = None;
         cx.notify();
-    }
-
-    /// Open the next showing of `uid` straight onto an archived conversation,
-    /// with no picker in between.
-    ///
-    /// Told to the pane before the session is shown, because the session does
-    /// not exist yet when the row is clicked: the shell mints it, and the pane
-    /// only ever hears about it through [`Self::show`].
-    pub fn resume_next(&mut self, uid: u64, archive: PathBuf) {
-        self.pending_resume = Some((uid, archive));
-    }
-
-    /// Open the next showing of `uid`, a session in a host project, onto the
-    /// host session `id`, read as the host keeps it.
-    pub fn watch_next(&mut self, uid: u64, id: HostSession) {
-        self.pending_watch = Some((uid, id));
     }
 
     pub(super) fn active_chat<'a>(&self, cx: &'a App) -> Option<&'a Chat> {
