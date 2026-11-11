@@ -560,11 +560,17 @@ Phase 11 changed, on purpose (PR 11a):
 - A search asked for now and refused at once (no project switched on, the cap reached, a run
   already starting, something stopping every run) says so in its window; before, the warning was
   dropped, said inside that window's own update. Found by /drive.
+- *Answer the pull request review* asks on the task and the project's check as they are once its
+  read lands, not as they were at the press; a task gone meanwhile asks nothing. Two presses that
+  race open one question, not two.
+- A Retry on a check that never ran does nothing; before, it compared the work and asked.
 
 Left for later (PR 11a):
 - `submit_told` stays in the tasks' carrier for the app's tests: it needs the carrier's own record
   of who asked to be told.
 - The keymap keeps `saves::write_config`: it is the front end's.
+- What a review was read as is kept by the tasks' carrier until its question (`Tasks.reviews`):
+  it holds a connector, which no effect can carry; the drive only hears that it was read.
 
 PR 11b, sessions and hosts:
 - what a session starts on (`pending_resume`, `pending_watch`, `pending_fork`) and which goes first
