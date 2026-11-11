@@ -90,7 +90,8 @@ background executor, one interval in the config, no cron expressions.
 | `crates/core/src/process.rs` | `output_within`: a command with a limit on its exit *and* its output, stopped with its whole process group |
 | `crates/core/src/task/history.rs` | `over_cap`, which never lets go of a task whose report is unsent |
 | `crates/app/src/unattended.rs` | the carrier: the clock, the look, the claims and the reports carried out off the UI loop, given the projects switched on across every window, the window holding a claimed project, and the workflows and agents on offer; the reads the rows and Settings draw |
-| `crates/app/src/unattended/launch.rs` (`pick.rs`, `answer.rs`) | what a person in a window starts: `start_picked`, `look_now`, and `read_review`, which reads what answering a review is judged on |
+| `crates/app/src/unattended/launch.rs` (`pick.rs`, `answer.rs`) | what a person in a window starts: `start_picked`, `look_now`, and `start_answer`, a review's answer picked as a person picks |
+| `crates/core/src/unattended/review.rs` | `ReviewAsk`, what answering a review is judged on, read off the UI loop when the tasks' drive asks (`Effect::ReadReview`) |
 | `crates/app/src/unattended/report.rs` | `spec_for`, and `teardown`, a run's project kept or dropped in every window |
 | `crates/app/src/task.rs` | holds the unattended drive beside the tasks' (`set_unattended`, `with_unattended`), joined for each call (`Tasks::joined`) |
 | `crates/app/src/task/listing.rs` | `live_issues`, `issue_tasks` |
@@ -103,7 +104,7 @@ background executor, one interval in the config, no cron expressions.
 | `crates/app/src/shell/remote_runs.rs` | `run_unattended`, `end_unattended`, `take_over_unattended`, carrying those |
 | `crates/app/src/chat/pane/sessions.rs` | `open_unshown` |
 | `crates/app/src/dialogs/issue.rs` | `pick_issue`, the list and the start form, and `issue_workflow_menu`, the workflow menu the picker and Settings share |
-| `crates/app/src/settings/pages.rs` | the default workflow and the workflow labels in Settings |
+| `crates/app/src/settings/pages.rs` | the default workflow and the workflow labels in Settings, saved through the settings' drive (`SettingsDrive::set_workflows`) and put in force by `unattended::link::shown` |
 | `crates/core/src/task/work.rs` | where an issue's work stands and its next action (`Work`, `issue_work`, `next_action`), and the generation rule for what is read of it (`Reading`) |
 | `crates/app/src/task/listing.rs` (`issue_works`) and `crates/issues/src/view/work.rs`, `view/reads.rs` | each issue's work, told to the Issues tab and the Issues page through `Request::IssueWork`, drawn there, and its pull request read: when each read is due, and whether a review press goes to the run, is `onehand_core::task::work::drive::WorkDrive`'s |
 | `crates/core/src/task/work/list.rs` | the Issues page's list: its filters, what each row says, and how it is held still (`list`, `PrReads`, `Held`) |
@@ -771,7 +772,11 @@ checked out is refused. What is removed is the worktree's top, found off the UI
 thread, since a project in a folder of its repository works in that folder of
 the worktree. If `-D` fails, the worktree stays
 removed, the branch is kept, and the failure is said. A removal is kept with
-the task (`Task::worktree_removed`), so nothing offers it again.
+the task (`Task::worktree_removed`), so nothing offers it again, even when the
+window it was pressed in closed while it ran (#319). Each step (the judgement,
+the question, the judgement again and the removal) is the tasks' drive's
+(`Effect::JudgeRemoval`, `ConfirmRemoval`, `RemoveWorktree`); the shell reads
+what uses the folder in each window and asks.
 
 The transcript needs no special handling — it is written at the end of every
 turn, under the conversations directory, exactly like a conversation somebody
@@ -811,7 +816,8 @@ agent, mode or timeout configured since applies to new tasks only.
 second path: an action on an issue whose newest task is done with its pull
 request open (beside *Open pull request*), and on the detail of a task done
 having opened one. Pressed, it first reads, off the UI loop
-(`unattended::read_review`), the pull request on the task's branch, for one
+(`unattended::review::ReviewAsk`, asked by the tasks' drive, which keeps its button waiting
+meanwhile), the pull request on the task's branch, for one
 open whether the worktree and the branch on the forge went their own ways
 (`worktree::went_its_own_way_blocking`, after a fetch: a worktree behind it is
 brought up, and one ahead of it, with a repair not pushed yet, is up to date

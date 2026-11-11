@@ -24,7 +24,7 @@
     where a driven task lands, what a run tells unattended runs) and tests whole flows across
     drives with no front end (`task::flows`).
   - Phase 11 takes every leftover of phases 4 to 10, in five PRs by area; its plan is under
-    *Plan*.
+    *Plan*. PR 11a, tasks and unattended runs, is built.
   - What is left here is what each phase left for later, the record of the trial and the
     decisions; *Done when* is not met until phase 11 is built, and the proposal leaves
     `docs/proposals/` with phase 11's last PR.
@@ -527,22 +527,41 @@ drive's `wait_failed`/`back_failed`), the pane telling a stream's ends apart (ph
 `Signal::Disconnected(Ended)` passed on whole), and `claude_plugins::cli`'s size (phase 9: 568
 lines of code, under the line).
 
-PR 11a, tasks and unattended runs:
-- whether a press still answers what a run waits at (`task/approval.rs`) into core;
-- what answering a review is judged on (`read_review`, `unattended/launch/answer.rs`), as a core
-  blocking body the drive asks for;
-- cutting a worktree (`cut_worktree_blocking`) into core, so the flows' harness cuts too;
-- what a retry, a retry with current settings and a review's answer do next (`shell/retry.rs`);
-- what a person pressed and is still being done (`acting`) into the tasks' drive;
-- *Remove worktree…* (`shell/cleanup.rs`) as the tasks' drive's, so a window closing mid-removal
-  loses nothing (#319, its own commit);
-- the workflows named for unattended runs saved through a drive, not `saves::write_config`;
-- the run's project kept for a start off screen (`Effect::Keep`) joined to the window's workspace
-  drive by a link;
-- a claim's run brought up through `drive_task`, tested on a real shell; the flows' harness drives
-  through what the shell does rather than restating it;
-- phase 10's smells: `task, launch, window` as one type, a cut worktree named, the re-export of
-  `Starting` dropped, `submit_told` moved into the tests.
+PR 11a, tasks and unattended runs. Built:
+- Where a run waits against where a press was read is `task::work::Waits`, read by the approval
+  dialogs and the Issues views' drive alike.
+- A retry, a check's retry at once and a Resume ask for their place themselves (`Effect::Ask`):
+  `TasksDrive::retry_asked` answers `Retry::AtOnce` or `Retry::Confirm`, and `resume` says
+  `Signal::NotResumed` or asks.
+- What a person pressed and is still being done is `TasksDrive::acting`.
+- *Remove worktree…* is the tasks' drive's, each step an effect (`JudgeRemoval`,
+  `ConfirmRemoval`, `RemoveWorktree`); its reads are core's blocking bodies
+  (`removal::top_blocking`, `removal::Asked`), and the removal runs on the app, not the window
+  (#319, its own commit). The shell reads what uses the folder in each window, and asks.
+- What answering a review is judged on is `unattended::review::ReviewAsk`, read when the tasks'
+  drive asks (`Effect::ReadReview`), asked of the person (`Effect::ConfirmAnswer`) or said
+  (`Signal::ReviewNotRead`); the carrier keeps the read for the question.
+- Cutting a new task's worktree is `task::cut_blocking`, answering a `task::Worktree`; the flows'
+  harness cuts too, and plays a schedule of a worktree workflow.
+- The workflows issues are worked with are a setting (`Value::Workflows`), saved and put back by
+  `SettingsDrive` and put in force on unattended runs by `unattended::link::shown`.
+- A start off screen's project is kept in its window's workspace by `task::tasks::link::keep`,
+  which the shell lends its `WorkspaceDrive` for (`Shell::with_workspace`); `Input::Kept` is gone.
+  A start under way is one `OffScreen`, and `Start` says whether a task works an issue.
+- Characterisation tests written first pin a check's retry on a real shell, which the tests now
+  share (`shell::rig`); an issue's run coming up off screen and a removal landing after its window
+  closed are tested on the carriers.
+
+Phase 11 changed, on purpose (PR 11a):
+- A worktree removed while the window it was pressed in closed is kept with its task, and its
+  button no longer waits for good (#319).
+- A judgement of a removal, or a review's read, whose window closed meanwhile lets the button go;
+  before, it waited until the next press elsewhere.
+
+Left for later (PR 11a):
+- `submit_told` stays in the tasks' carrier for the app's tests: it needs the carrier's own record
+  of who asked to be told.
+- The keymap keeps `saves::write_config`: it is the front end's.
 
 PR 11b, sessions and hosts:
 - what a session starts on (`pending_resume`, `pending_watch`, `pending_fork`) and which goes first

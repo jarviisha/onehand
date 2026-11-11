@@ -237,7 +237,10 @@ again. A check is retried from its one step, so one that passed runs again.
 `Run::resume` enters the run's own step on its first start, which is step 0 for a fresh run.
 `task::marks::against_blocking` answers `Same`, `Changed` or `OtherBranch`, `Against::refuses_retry`
 says why the last refuses, and `Shell::begin_retry` (`crates/app/src/shell/retry.rs`) asks the
-question. A check is retried at once by `TasksDrive::retry_at_once`. On `Changed` the
+question. A Retry asks the tasks' drive first (`TasksDrive::retry_asked`): a check is retried
+at once and asks for its place, and anything else is asked about (`Retry::Confirm`). A retry and
+a Resume ask for their place themselves; a Resume its preflight refuses is said
+(`Signal::NotResumed`). On `Changed` the
 start is held at or before the last command step up to it (`Run::recheck`): a retry carries
 `verified_at`, and without the check running again on the work as it is now, a push would send
 the commit the last check passed on. Enter in the dialog retries as *Retry* does.
@@ -406,7 +409,8 @@ migration it protects.
   window): a new task through `task::submit`, which keeps it and then asks (the launcher, *Run
   check*); a schedule's or a tool's through `task::start_off_screen`, whose drive asks once the
   task is kept; an unattended claim's task is kept and asks through the same link; Retry, Resume and a
-  review's answer ask for an existing one. A free place starts the task at once
+  review's answer ask for an existing one, the drive asking itself once a retry's run is made
+  (`Effect::Ask`). A free place starts the task at once
   (`Shell::drive_task`, as `TasksDrive::begin` says); a taken one queues it and says so in a
   notification. A task already running or waiting is left alone.
 - **The run's drive and carrier stay the only code that turns session events into reports.** They
@@ -452,7 +456,8 @@ migration it protects.
   pull request is merged a person may press *Remove worktree…* (in the issue's ⋯, and on the task
   detail once it has read the pull request), which is judged and asked in a modal
   ([unattended.md](unattended.md#the-report)); the task's marks stay until the history cap drops
-  them.
+  them. What happens when is the tasks' drive's, which also holds what a person pressed and is
+  still being done (`TasksDrive::acting`), so a button waits wherever it is drawn.
 
 ## Not built
 
