@@ -11,7 +11,7 @@ use gpui_component::Root;
 use onehand_core::config::AgentSpec;
 use onehand_core::config::drive::SettingsDrive;
 use onehand_core::task::{Grant, Origin};
-use onehand_core::workflow::{StepKind, builtin};
+use onehand_core::workflow::{Place, StepKind, builtin};
 use onehand_core::workspace::Workspace;
 
 fn folder(name: &str) -> PathBuf {
@@ -84,8 +84,11 @@ fn brief() -> Brief {
     }
 }
 
-fn started(origin: Origin) -> Started {
-    Started {
+fn starting(project: PathBuf, origin: Origin) -> Starting {
+    Starting {
+        project,
+        template: checkout(),
+        brief: brief(),
         origin,
         grant: Grant::default(),
         agent: None,
@@ -102,21 +105,13 @@ fn a_start_off_screen_is_refused_by_what_blocks_the_launcher(cx: &mut TestAppCon
     let root = dir.join("project");
     std::fs::create_dir_all(&root).unwrap();
     let start = cx.update(|_, cx| {
-        cx.spawn(async move |cx| {
-            start_task(
-                window,
-                shell,
-                root,
-                checkout(),
-                brief(),
-                started(Origin::Tool),
-                cx,
-            )
-            .await
-        })
+        cx.spawn(async move |cx| start_task(window, shell, starting(root, Origin::Tool), cx).await)
     });
     cx.run_until_parked();
-    let refused = futures::executor::block_on(start).expect_err("refused");
+    let refused = match futures::executor::block_on(start) {
+        Ok((_, Placed::Refused(why))) | Err(why) => why,
+        Ok((_, placed)) => panic!("{placed:?}"),
+    };
     assert!(!refused.is_empty());
     let kept = cx.update(|_, cx| crate::task::each(cx, |_, _| Some(())).len());
     assert_eq!(kept, 0, "nothing kept");
@@ -139,15 +134,16 @@ fn a_start_off_screen_is_kept_quietly_and_says_where_it_landed(cx: &mut TestAppC
     std::fs::create_dir_all(&root).unwrap();
     let before = cx.update(|_, cx| shell.read(cx).workspace_window().workspace.active_root);
     let at = root.clone();
-    let given = started(Origin::Schedule {
-        id: "s1".into(),
-        name: "Nightly".into(),
-    });
+    let given = starting(
+        at,
+        Origin::Schedule {
+            id: "s1".into(),
+            name: "Nightly".into(),
+        },
+    );
     let start = cx.update(|_, cx| {
         let shell = shell.clone();
-        cx.spawn(async move |cx| {
-            start_task(window, shell, at, checkout(), brief(), given, cx).await
-        })
+        cx.spawn(async move |cx| start_task(window, shell, given, cx).await)
     });
     cx.run_until_parked();
     let (id, placed) = futures::executor::block_on(start).expect("started");

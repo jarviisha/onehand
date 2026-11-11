@@ -9,7 +9,6 @@
 //! through the one writer, so the clock's and a switch's land in the order
 //! they were made.
 
-use crate::control::Started;
 use crate::state::Shared;
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Global};
 use gpui_component::WindowExt as _;
@@ -209,23 +208,8 @@ fn start(starting: onehand_core::schedule::drive::Starting, window: AnyWindowHan
     let Some(shell) = shell else {
         return feed(Input::Started(Err("the window closed".to_string())), cx);
     };
-    let started = Started {
-        origin: starting.origin,
-        grant: starting.grant,
-        agent: starting.agent,
-        mode: starting.mode,
-    };
     cx.spawn(async move |cx| {
-        let placed = crate::control::start_task(
-            window,
-            shell,
-            starting.project,
-            starting.template,
-            starting.brief,
-            started,
-            cx,
-        )
-        .await;
+        let placed = crate::control::start_task(window, shell, starting, cx).await;
         cx.update(|cx| feed(Input::Started(placed), cx));
     })
     .detach();

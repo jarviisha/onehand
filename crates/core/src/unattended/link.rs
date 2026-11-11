@@ -3,8 +3,9 @@
 //!
 //! **Routing is behaviour, so it lives here.** That an issue's task asking
 //! for its place stops counting as starting, that its end tells its issue,
-//! that a claim's task is kept and asks for its place held to the cap, and
-//! that a report that landed leaves its task, are each a rule a front end
+//! that a claim's task is kept and asks for its place held to the cap, as a
+//! task started off screen asks for its own, and that a report that landed
+//! leaves its task, are each a rule a front end
 //! would otherwise restate, untested. A front end holds the drives, joins
 //! them here for one call, and carries out what comes back.
 
@@ -90,6 +91,10 @@ impl<'a, W: Copy> Joined<'a, W> {
         let (mut tq, mut uq) = (VecDeque::from(tfx), VecDeque::from(ufx));
         loop {
             if let Some(effect) = tq.pop_front() {
+                if let tasks::Effect::Ask { task, window } = effect {
+                    tq.extend(self.ask(&task, window));
+                    continue;
+                }
                 let Some(u) = self.unattended.as_deref_mut() else {
                     match effect {
                         tasks::Effect::Asked(_)

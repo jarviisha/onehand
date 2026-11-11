@@ -325,43 +325,19 @@ impl Shell {
         crate::task::submit(task, window.window_handle(), cx);
     }
 
-    /// A new task of `template` on `setup`, as the launcher starts one, for a
-    /// task started from outside the window:
-    /// driven off screen, so nothing the person is looking at moves, and
-    /// answering where it landed. Returns its id.
-    pub(crate) fn start_workflow_told(
+    /// Keep the project at `dir` for a task started from outside the
+    /// window. A worktree cut for it is a project of the workspace, as the
+    /// launcher's is: kept, listed, and there to come back to; but not
+    /// selected, as nothing the person is looking at moves for a task they
+    /// did not start.
+    pub(crate) fn keep_project_quietly(
         &mut self,
-        setup: Setup,
-        template: Template,
-        brief: Brief,
-        given: (onehand_core::task::Origin, onehand_core::task::Grant),
+        dir: PathBuf,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> (
-        String,
-        futures::channel::oneshot::Receiver<crate::task::Placed>,
     ) {
-        // A worktree cut for it is a project of the workspace, as the
-        // launcher's is: kept, listed, and there to come back to; but not
-        // selected, as nothing the person is looking at moves for a task
-        // they did not start.
-        let fx = self
-            .window
-            .workspace
-            .keep_project_quietly(setup.dir.clone());
+        let fx = self.window.workspace.keep_project_quietly(dir);
         self.carry_workspace(fx, window, cx);
-        let (origin, grant) = given;
-        let task = Task {
-            origin: Some(origin),
-            grant,
-            ..new_task(setup, template, brief, cx)
-        };
-        let id = task.id.clone();
-        crate::task::drive_off_screen(&id, cx);
-        (
-            id,
-            crate::task::submit_told(task, window.window_handle(), cx),
-        )
     }
 
     /// Drive task `id`, whose place it now holds, as the tasks' drive begins
@@ -481,15 +457,8 @@ enum Unstarted {
     NoSession { agent_gone: bool },
 }
 
-/// A new task of `template` on `setup`, with the agent `setup` names, or the
-/// one a new session takes.
-fn new_task(setup: Setup, template: Template, brief: Brief, cx: &gpui::App) -> Task {
-    let setup = onehand_core::task::on_agent(setup, first_agent(cx));
-    Task::new(onehand_core::task::new_id(), template, brief, setup)
-}
-
 /// The agent a new session takes: the first configured.
-fn first_agent(cx: &gpui::App) -> Option<String> {
+pub(crate) fn first_agent(cx: &gpui::App) -> Option<String> {
     Shared::global(cx)
         .settings
         .agents

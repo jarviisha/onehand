@@ -22,7 +22,7 @@ use std::sync::{LazyLock, Mutex};
 mod start;
 mod workers;
 
-pub(crate) use start::{Started, start_task};
+pub(crate) use start::start_task;
 use start::{start, template};
 pub(crate) use workers::whose::{Worker, give_back, give_back_offered, lead_of, workers_of};
 

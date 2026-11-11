@@ -9,7 +9,7 @@ use futures::channel::oneshot;
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Task as GpuiTask};
 use gpui_component::WindowExt as _;
 use onehand_core::task::tasks::{Effect, Input, Placed, Signal};
-use onehand_core::task::{Task, marks, queue};
+use onehand_core::task::{Launch, Task, marks, queue};
 use onehand_core::workflow::Failure;
 
 /// What watches a run that ended while its session's turn still goes: the
@@ -29,16 +29,38 @@ pub(crate) fn submit(task: Task, window: AnyWindowHandle, cx: &mut App) {
 
 /// [`submit`], answering where the task landed once that is known: for a
 /// caller that has to say so somewhere other than the window's toasts.
+#[cfg(test)]
 pub(crate) fn submit_told(
     task: Task,
     window: AnyWindowHandle,
     cx: &mut App,
 ) -> oneshot::Receiver<Placed> {
-    let (tell, told) = oneshot::channel();
     let id = task.id.clone();
+    let told = told(&id, cx);
     super::add(task, cx);
-    cx.update_global::<Tasks, _>(|t, _| t.told.insert(id.clone(), tell));
     request(id, window, cx);
+    told
+}
+
+/// Start `launch` off screen as task `id`, from `window`, answering where it
+/// landed once that is known.
+pub(crate) fn start_off_screen(
+    id: String,
+    launch: Result<Launch, String>,
+    window: AnyWindowHandle,
+    cx: &mut App,
+) -> oneshot::Receiver<Placed> {
+    let told = told(&id, cx);
+    with_drive(cx, |d| ((), d.start_off_screen(id, launch, window)));
+    told
+}
+
+/// Where task `id` lands, once it is told.
+fn told(id: &str, cx: &mut App) -> oneshot::Receiver<Placed> {
+    let (tell, told) = oneshot::channel();
+    cx.default_global::<Tasks>()
+        .told
+        .insert(id.to_string(), tell);
     told
 }
 
@@ -118,6 +140,51 @@ pub(super) fn perform(
                 })
                 .detach();
             }
+            Effect::Cut {
+                task,
+                launch,
+                window,
+            } => {
+                let (repo, title) = (launch.repo().to_path_buf(), launch.title().to_string());
+                cx.spawn(async move |cx| {
+                    let made = cx
+                        .background_executor()
+                        .spawn(async move { crate::shell::cut_worktree_blocking(&repo, &title) })
+                        .await;
+                    cx.update(|cx| {
+                        feed(
+                            Input::Cut {
+                                task,
+                                launch,
+                                window,
+                                made,
+                            },
+                            cx,
+                        )
+                    });
+                })
+                .detach();
+            }
+            Effect::Keep {
+                task,
+                launch,
+                window,
+            } => {
+                let dir = launch.dir().to_path_buf();
+                let open = crate::state::with_shell(window, cx, |shell, window, cx| {
+                    shell.keep_project_quietly(dir, window, cx)
+                })
+                .is_some();
+                feed(
+                    Input::Kept {
+                        task,
+                        launch,
+                        window,
+                        open,
+                    },
+                    cx,
+                );
+            }
             Effect::Drive { task, window } => drive(task, window, cx),
             Effect::WatchDrain { task, limit } => watch_drain(task, limit, session, cx),
             Effect::Pin {
@@ -139,7 +206,11 @@ pub(super) fn perform(
             Effect::Told { task, placed } => tell(&task, placed, cx),
             // Unattended runs' to act on: the link hands them over, and
             // never on to here.
-            Effect::IssueEnded(_) | Effect::Deliver(_) | Effect::DeliverAll | Effect::Asked(_) => {}
+            Effect::IssueEnded(_)
+            | Effect::Deliver(_)
+            | Effect::DeliverAll
+            | Effect::Asked(_)
+            | Effect::Ask { .. } => {}
             Effect::CloseSession { uid, window } => cx.defer(move |cx| {
                 crate::state::with_shell(window, cx, |shell, window, cx| {
                     shell.close_finished(uid, window, cx)
