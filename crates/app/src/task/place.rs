@@ -8,7 +8,9 @@ use crate::chat::session::{ChatEvent, ChatSession};
 use futures::channel::oneshot;
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Task as GpuiTask};
 use gpui_component::WindowExt as _;
-use onehand_core::task::tasks::{Effect, Input, OffScreen, Placed, Signal, link as tasks_link};
+use onehand_core::task::tasks::{
+    Effect, Input, Judging, OffScreen, Placed, Signal, link as tasks_link,
+};
 use onehand_core::task::{Launch, Task, marks, queue};
 use onehand_core::unattended::review::ReviewAsk;
 use onehand_core::workflow::Failure;
@@ -171,15 +173,7 @@ pub(super) fn perform(
                     shell.confirm_answer(task, read, window, cx)
                 });
             }),
-            Effect::JudgeRemoval {
-                task,
-                dir,
-                repo,
-                branch,
-                forge,
-                confirmed,
-                window,
-            } => judge_removal(task, dir, repo, branch, forge, confirmed, window, cx),
+            Effect::JudgeRemoval(asked) => judge_removal(asked, cx),
             Effect::ConfirmRemoval {
                 task,
                 facts,
@@ -320,58 +314,46 @@ fn read_review(task: String, window: AnyWindowHandle, cx: &mut App) {
     .detach();
 }
 
-/// Judge removing task `task`'s worktree, asked in `window`: its top found
-/// off the UI thread, what uses it read from every window, then the forge
-/// and git asked off it; what it came to told to the drive, `None` when
-/// `window` went meanwhile.
-#[allow(clippy::too_many_arguments)]
-fn judge_removal(
-    task: String,
-    dir: std::path::PathBuf,
-    repo: std::path::PathBuf,
-    branch: Option<String>,
-    forge: Option<String>,
-    confirmed: bool,
-    window: AnyWindowHandle,
-    cx: &mut App,
-) {
+/// Judge the removal `asked`: its worktree's top found off the UI thread,
+/// what uses it read from every window, then the forge and git asked off
+/// it; what it came to told to the drive, `None` when the window it was
+/// pressed in went meanwhile.
+fn judge_removal(asked: Judging<AnyWindowHandle>, cx: &mut App) {
+    let window = asked.window;
     cx.spawn(async move |cx| {
         let folder = cx
             .background_executor()
-            .spawn(async move { removal::top_blocking(&dir) })
+            .spawn({
+                let dir = asked.dir.clone();
+                async move { removal::top_blocking(&dir) }
+            })
             .await;
-        let asked = cx.update(|cx| {
+        let reading = cx.update(|cx| {
             let (users, processes) = crate::state::with_shell(window, cx, |shell, _, cx| {
                 shell.folder_users(&folder, cx)
             })?;
             Some(removal::Asked {
-                repo: repo.clone(),
+                repo: asked.repo.clone(),
                 folder,
-                branch,
-                forge: forge.as_deref().and_then(|name| {
+                branch: asked.branch.clone(),
+                forge: asked.forge.as_deref().and_then(|name| {
                     onehand_core::connector::named(crate::features::connectors(), name)
                 }),
                 users,
                 processes,
             })
         });
-        let judged = match asked {
-            Some(asked) => {
+        let judged = match reading {
+            Some(reading) => {
                 let (facts, judged) = cx
                     .background_executor()
-                    .spawn(async move { asked.judge_blocking() })
+                    .spawn(async move { reading.judge_blocking() })
                     .await;
                 Some((Box::new(facts), judged))
             }
             None => None,
         };
-        let input = Input::Judged {
-            task,
-            confirmed,
-            window,
-            repo,
-            judged,
-        };
+        let input = Input::Judged { asked, judged };
         cx.update(|cx| feed(input, cx));
     })
     .detach();

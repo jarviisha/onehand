@@ -39,6 +39,7 @@ mod off_screen;
 mod place;
 
 pub use begin::{Begin, Retry, Start, SESSION_NOT_STARTED};
+pub use cleanup::Judging;
 pub use off_screen::{Cut, OffScreen};
 
 /// How long a cancelled turn is waited for before its place is given up
@@ -98,15 +99,11 @@ pub enum Input<W> {
         task: String,
         written: Result<(), String>,
     },
-    /// What removing task `task`'s worktree, asked from `window`, was judged
-    /// to come to (`confirmed` once the person said yes), on what was found
-    /// of its worktree (the facts name its folder) in `repo`; `None` when
-    /// `window` went before what uses the folder could be read.
+    /// What the removal `asked` was judged to come to, on what was found of
+    /// its worktree (the facts name its folder); `None` when its window went
+    /// before what uses the folder could be read.
     Judged {
-        task: String,
-        confirmed: bool,
-        window: W,
-        repo: PathBuf,
+        asked: Judging<W>,
         judged: Option<(Box<removal::Facts>, removal::Judged)>,
     },
     /// What reading task `task`'s review, asked from `window`, came to: read
@@ -239,20 +236,10 @@ pub enum Effect<W> {
     /// Task `task` asked for its place, or was refused it: an issue's run no
     /// longer counts as starting.
     Asked(String),
-    /// Read what uses the worktree task `task` works in at `dir` (its top
-    /// found first), then judge removing it, with `branch` and the forge
-    /// named `forge` serving `repo`, off the UI loop, and report
-    /// [`Input::Judged`] with `window` and `confirmed`. Recorded: the press
-    /// waits until it lands.
-    JudgeRemoval {
-        task: String,
-        dir: PathBuf,
-        repo: PathBuf,
-        branch: Option<String>,
-        forge: Option<String>,
-        confirmed: bool,
-        window: W,
-    },
+    /// Read what uses the worktree the removal works in (its top found
+    /// first), then judge it, off the UI loop, and report [`Input::Judged`]
+    /// with it. Recorded: the press waits until it lands.
+    JudgeRemoval(Judging<W>),
     /// Read what answering task `task`'s review is judged on, off the UI
     /// loop, keep it, and report [`Input::ReviewRead`] with `window`.
     /// Recorded: the press waits until it lands.
@@ -485,13 +472,7 @@ impl<W: Copy> TasksDrive<W> {
                 });
                 fx.push(Effect::Refresh);
             }
-            Input::Judged {
-                task,
-                confirmed,
-                window,
-                repo,
-                judged,
-            } => self.judged(task, confirmed, window, repo, judged, &mut fx),
+            Input::Judged { asked, judged } => self.judged(asked, judged, &mut fx),
             Input::WorktreeRemoved {
                 task,
                 window,

@@ -11,6 +11,20 @@ use crate::task::work::Act;
 use crate::worktree::removal::{Facts, Judged, Removed};
 use std::path::PathBuf;
 
+/// A removal being judged: of task `task`'s worktree at `dir`, of `repo`,
+/// on `branch`, the forge named `forge` serving it, pressed in `window`,
+/// `confirmed` once the person said yes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Judging<W> {
+    pub task: String,
+    pub dir: PathBuf,
+    pub repo: PathBuf,
+    pub branch: Option<String>,
+    pub forge: Option<String>,
+    pub confirmed: bool,
+    pub window: W,
+}
+
 impl<W: Copy> TasksDrive<W> {
     /// What a person pressed on task `id` that is still being done.
     pub fn acting(&self, id: &str) -> Option<Act> {
@@ -42,7 +56,7 @@ impl<W: Copy> TasksDrive<W> {
         let Some(task) = self.task(id) else {
             return Vec::new();
         };
-        let judge = Effect::JudgeRemoval {
+        let judge = Effect::JudgeRemoval(Judging {
             task: id.to_string(),
             dir: task.setup.dir.clone(),
             repo: task.setup.repo.clone(),
@@ -50,20 +64,24 @@ impl<W: Copy> TasksDrive<W> {
             forge: task.setup.forge.clone(),
             confirmed,
             window,
-        };
+        });
         self.acting.insert(id.to_string(), Act::RemoveWorktree);
         vec![judge, Effect::Refresh]
     }
 
     pub(super) fn judged(
         &mut self,
-        id: String,
-        confirmed: bool,
-        window: W,
-        repo: PathBuf,
+        asked: Judging<W>,
         judged: Option<(Box<Facts>, Judged)>,
         fx: &mut Vec<Effect<W>>,
     ) {
+        let Judging {
+            task: id,
+            repo,
+            confirmed,
+            window,
+            ..
+        } = asked;
         self.acting.remove(&id);
         fx.push(Effect::Refresh);
         let Some((facts, judged)) = judged else {

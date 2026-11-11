@@ -279,7 +279,7 @@ impl Flow {
             TasksEffect::ReadReview { .. } | TasksEffect::ConfirmAnswer { .. } => {
                 panic!("these flows answer no review")
             }
-            TasksEffect::JudgeRemoval { .. }
+            TasksEffect::JudgeRemoval(_)
             | TasksEffect::ConfirmRemoval { .. }
             | TasksEffect::RemoveWorktree { .. } => panic!("these flows remove no worktree"),
             TasksEffect::CloseSession { .. } => {}

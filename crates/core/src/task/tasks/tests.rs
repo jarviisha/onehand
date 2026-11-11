@@ -795,21 +795,24 @@ fn a_worktree_is_judged_asked_judged_again_then_removed() {
     let mut tasks = TasksDrive::<Win>::default();
     tasks.add(titled("1", "Mine", "/w"));
     let judged = |tasks: &mut TasksDrive<Win>, confirmed, judged| {
-        tasks.handle(Input::Judged {
+        let asked = Judging {
             task: "1".into(),
+            dir: PathBuf::from("/w"),
+            repo: PathBuf::from("/r"),
+            branch: Some("b".into()),
+            forge: None,
             confirmed,
             window: WINDOW,
-            repo: PathBuf::from("/r"),
-            judged,
-        })
+        };
+        tasks.handle(Input::Judged { asked, judged })
     };
     let fx = tasks.remove_worktree("1", false, WINDOW);
     assert!(has(&fx, |e| matches!(
         e,
-        Effect::JudgeRemoval {
+        Effect::JudgeRemoval(Judging {
             confirmed: false,
             ..
-        }
+        })
     )));
     assert_eq!(tasks.acting("1"), Some(Act::RemoveWorktree));
     let remove = Judged::Remove {
