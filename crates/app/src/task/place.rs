@@ -67,7 +67,7 @@ fn told(id: &str, cx: &mut App) -> oneshot::Receiver<Placed> {
 /// Start task `id` once its place is free, saying in `window` what happens.
 /// It starts in `window`, or, when it waited, in the window it was asked
 /// from, if that is still open.
-pub(crate) fn request(id: String, window: AnyWindowHandle, cx: &mut App) {
+fn request(id: String, window: AnyWindowHandle, cx: &mut App) {
     super::with_joined(cx, |j| ((), j.request(&id, window)));
 }
 
@@ -314,6 +314,14 @@ fn say(signal: Signal<AnyWindowHandle>, cx: &mut App) {
         Signal::Refused { window, why } => {
             cx.defer(move |cx| toast(window, crate::toast::warning(why), cx))
         }
+        // Deferred, as a refusal is: a Resume is pressed inside that window.
+        Signal::NotResumed { window, why } => cx.defer(move |cx| {
+            toast(
+                window,
+                crate::toast::warning(format!("Not resumed: {why}")),
+                cx,
+            )
+        }),
         Signal::CheckEnded {
             window,
             project,

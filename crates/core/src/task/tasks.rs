@@ -35,7 +35,7 @@ pub mod link;
 mod off_screen;
 mod place;
 
-pub use begin::{Begin, Start, SESSION_NOT_STARTED};
+pub use begin::{Begin, Retry, Start, SESSION_NOT_STARTED};
 pub use off_screen::Cut;
 
 /// How long a cancelled turn is waited for before its place is given up
@@ -119,6 +119,8 @@ pub enum Signal<W> {
     Queued { window: W, said: String },
     /// A start asked for from `window` was refused, for `why`.
     Refused { window: W, why: String },
+    /// A Resume pressed in `window` was refused, for `why`.
+    NotResumed { window: W, why: String },
     /// A check asked for from `window` ended in `project`: passed or not.
     CheckEnded {
         window: W,
@@ -472,8 +474,8 @@ impl<W: Copy> TasksDrive<W> {
 
     /// Give task `id` a new run `run_id` of `template`, from step `from`
     /// when that is earlier than where it would start, carrying `note` as a
-    /// revision; kept but not started: the caller asks for its place.
-    /// Whether there was one to give: none while the task is at work.
+    /// revision, asking for its place from `window`. Whether there was one
+    /// to give: none while the task is at work.
     pub fn retry(
         &mut self,
         id: &str,
@@ -481,24 +483,48 @@ impl<W: Copy> TasksDrive<W> {
         template: Template,
         from: Option<&str>,
         note: Option<String>,
+        window: W,
     ) -> (bool, Vec<Effect<W>>) {
-        self.renew(id, |task| {
+        self.renew(id, window, |task| {
             task.retry(run_id, template, from, note).is_some()
         })
     }
 
     /// Give task `id` a new run `run_id` with what Settings say now, as
     /// `plan` worked it out; as [`Self::retry`].
+    #[must_use]
     pub fn retry_with(
         &mut self,
         id: &str,
         run_id: String,
         plan: WithCurrent,
-    ) -> (bool, Vec<Effect<W>>) {
-        self.renew(id, |task| task.retry_with(run_id, plan).is_some())
+        window: W,
+    ) -> Vec<Effect<W>> {
+        self.renew(id, window, |task| task.retry_with(run_id, plan).is_some())
+            .1
     }
 
-    fn renew(&mut self, id: &str, make: impl FnOnce(&mut Task) -> bool) -> (bool, Vec<Effect<W>>) {
+    /// Carry task `id` on from where its last run stopped, from `window`,
+    /// unless its preflight `refused` it.
+    #[must_use]
+    pub fn resume(&mut self, id: &str, refused: Option<String>, window: W) -> Vec<Effect<W>> {
+        match refused {
+            Some(why) => vec![Effect::Signal(Signal::NotResumed { window, why })],
+            None => vec![Effect::Ask {
+                task: id.to_string(),
+                window,
+            }],
+        }
+    }
+
+    /// Make task `id` a new run with `make`, unless it works: written, then
+    /// asking for its place from `window`.
+    fn renew(
+        &mut self,
+        id: &str,
+        window: W,
+        make: impl FnOnce(&mut Task) -> bool,
+    ) -> (bool, Vec<Effect<W>>) {
         if self.busy(id) {
             return (false, Vec::new());
         }
@@ -506,7 +532,16 @@ impl<W: Copy> TasksDrive<W> {
             return (false, Vec::new());
         };
         match make(task) {
-            true => (true, vec![Effect::Save(Box::new(task.clone()))]),
+            true => (
+                true,
+                vec![
+                    Effect::Save(Box::new(task.clone())),
+                    Effect::Ask {
+                        task: id.to_string(),
+                        window,
+                    },
+                ],
+            ),
             false => (false, Vec::new()),
         }
     }

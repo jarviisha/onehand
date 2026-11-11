@@ -253,7 +253,8 @@ fn stop_on_a_queued_task_calls_off_that_start_only(cx: &mut TestAppContext) {
     assert_eq!(group("5", cx), Group::Queued);
     // A retry is refused while the task waits for its place.
     let template = kept("5", cx).runs[0].template.clone();
-    assert!(!cx.update(|cx| retry("5", template, None, None, cx)));
+    cx.update(|cx| retry("5", template, None, window, cx));
+    assert_eq!(kept("5", cx).runs.len(), 1, "no new run while it waits");
     cx.update(|cx| stop_task("5", cx));
     settle(cx);
     let stopped = kept("5", cx);

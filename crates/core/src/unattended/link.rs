@@ -150,17 +150,20 @@ impl<'a, W: Copy> Joined<'a, W> {
                     note,
                     window,
                 } => {
-                    let (made, fx) =
-                        self.tasks
-                            .retry(&task, run, *template, from.as_deref(), Some(note));
+                    let (made, fx) = self.tasks.retry(
+                        &task,
+                        run,
+                        *template,
+                        from.as_deref(),
+                        Some(note),
+                        window,
+                    );
+                    // It asks for its place itself; one a run took up since
+                    // the claim looked no longer counts as starting.
                     tq.extend(fx);
-                    match made {
-                        true => tq.extend(self.ask(&task, window)),
-                        // A run took the task up since the claim looked.
-                        false => {
-                            if let Some(u) = self.unattended.as_deref_mut() {
-                                u.placed(&task);
-                            }
+                    if !made {
+                        if let Some(u) = self.unattended.as_deref_mut() {
+                            u.placed(&task);
                         }
                     }
                 }

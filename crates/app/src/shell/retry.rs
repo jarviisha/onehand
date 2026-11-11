@@ -16,6 +16,7 @@ use gpui_component::{ActiveTheme as _, StyledExt as _};
 use onehand_core::preflight;
 use onehand_core::task::Task;
 use onehand_core::task::marks::{self, Against};
+use onehand_core::task::tasks::Retry;
 use onehand_core::task::work::Act;
 use onehand_core::workflow::{Changed, Field, Run, Template, WithCurrent};
 use std::cell::Cell;
@@ -50,10 +51,9 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        match crate::task::retry_at_once(&id, cx) {
-            Some(true) => crate::task::request(id, window.window_handle(), cx),
-            Some(false) => {}
-            None => {
+        match crate::task::retry_asked(&id, window.window_handle(), cx) {
+            Retry::AtOnce => {}
+            Retry::Confirm => {
                 if let Some(task) = crate::task::task(&id, cx) {
                     self.compare_work(task, then, window, cx);
                 }
@@ -356,9 +356,7 @@ impl Shell {
                     };
                     let id = id.clone();
                     shell.update(cx, |_, cx| {
-                        if crate::task::retry_with(&id, plan, cx) {
-                            crate::task::request(id, window.window_handle(), cx);
-                        }
+                        crate::task::retry_with(&id, plan, window.window_handle(), cx)
                     });
                 }
             };
@@ -587,14 +585,7 @@ impl Shell {
     /// in the way of its own setup. Its buttons refuse while something does;
     /// a press that beat a refusal to the screen is told in the window.
     pub(crate) fn resume_task(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        let blocked =
-            crate::task::task(&id, cx).and_then(|task| crate::task::resume_refused(&task, cx));
-        match blocked {
-            Some(why) => {
-                window.push_notification(crate::toast::warning(format!("Not resumed: {why}")), cx)
-            }
-            None => crate::task::request(id, window.window_handle(), cx),
-        }
+        crate::task::resume(&id, window.window_handle(), cx);
     }
 }
 
@@ -609,9 +600,7 @@ fn retry_now(
     cx: &mut App,
 ) {
     shell.update(cx, |_, cx| {
-        if crate::task::retry(&id, template, from.as_deref(), None, cx) {
-            crate::task::request(id, window.window_handle(), cx);
-        }
+        crate::task::retry(&id, template, from.as_deref(), window.window_handle(), cx)
     });
 }
 

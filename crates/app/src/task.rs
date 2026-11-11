@@ -7,7 +7,7 @@
 
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Global, SharedString, Window};
 use onehand_core::task::tasks::link::Seen;
-use onehand_core::task::tasks::{Begin, Effect, Start, TasksDrive};
+use onehand_core::task::tasks::{Begin, Effect, Retry, Start, TasksDrive};
 use onehand_core::task::work::UnderReview;
 use onehand_core::task::{Task, Working, files};
 use onehand_core::unattended::drive::UnattendedDrive;
@@ -27,7 +27,7 @@ pub(crate) use listing::*;
 pub(crate) use onehand_core::task::tasks::Placed;
 #[cfg(test)]
 pub(crate) use place::submit_told;
-pub(crate) use place::{not_started, request, start_off_screen, submit};
+pub(crate) use place::{not_started, start_off_screen, submit};
 
 /// Every task in this process and what each is doing.
 pub(crate) struct Tasks {
@@ -420,41 +420,44 @@ pub(crate) fn stop_task(id: &str, cx: &mut App) {
 }
 
 /// Give task `id` a new run of `template`, from step `from` when that is
-/// earlier than where it would start, kept but not started: the caller asks
-/// for its place, carrying `note` as a revision. Whether there was one to give.
+/// earlier than where it would start, and ask for its place from `window`.
 pub(crate) fn retry(
     id: &str,
     template: Template,
     from: Option<&str>,
-    note: Option<String>,
+    window: AnyWindowHandle,
     cx: &mut App,
-) -> bool {
+) {
     let run = onehand_core::task::new_id();
-    with_drive(cx, |d| d.retry(id, run, template, from, note)).unwrap_or(false)
+    with_drive(cx, |d| {
+        ((), d.retry(id, run, template, from, None, window).1)
+    });
 }
 
-/// Retry task `id` at once when it is a check, which has one step and keeps
-/// nothing: whether it was retried, or `None` for a task a person retries
-/// through what the retry would keep.
-pub(crate) fn retry_at_once(id: &str, cx: &mut App) -> Option<bool> {
+/// A Retry pressed on task `id` in `window`: dealt with at once, or to be
+/// asked about first.
+pub(crate) fn retry_asked(id: &str, window: AnyWindowHandle, cx: &mut App) -> Retry {
     let run = onehand_core::task::new_id();
-    with_drive(cx, |d| match d.retry_at_once(id, run) {
-        Some((made, fx)) => (Some(made), fx),
-        None => (None, Vec::new()),
-    })
-    .flatten()
+    with_drive(cx, |d| d.retry_asked(id, run, window)).unwrap_or(Retry::AtOnce)
 }
 
 /// Give task `id` a new run with what Settings say now, as `plan` worked it
-/// out, kept but not started: the caller asks for its place. Whether there
-/// was one to give.
+/// out, and ask for its place from `window`.
 pub(crate) fn retry_with(
     id: &str,
     plan: onehand_core::workflow::WithCurrent,
+    window: AnyWindowHandle,
     cx: &mut App,
-) -> bool {
+) {
     let run = onehand_core::task::new_id();
-    with_drive(cx, |d| d.retry_with(id, run, plan)).unwrap_or(false)
+    with_drive(cx, |d| ((), d.retry_with(id, run, plan, window)));
+}
+
+/// A Resume pressed on task `id` in `window`: refused as its preflight says,
+/// or asking for its place.
+pub(crate) fn resume(id: &str, window: AnyWindowHandle, cx: &mut App) {
+    let refused = task(id, cx).and_then(|task| resume_refused(&task, cx));
+    with_drive(cx, |d| ((), d.resume(id, refused, window)));
 }
 
 /// Begin task `id`, whose place it now holds, its work's folder being there

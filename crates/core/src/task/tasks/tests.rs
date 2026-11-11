@@ -166,7 +166,7 @@ fn a_start_over_the_cap_is_refused_and_an_unbegun_retry_dropped() {
     let mut tasks = TasksDrive::default();
     tasks.add(check("1", "/a"));
     let template = tasks.task("1").unwrap().runs[0].template.clone();
-    let (made, _) = tasks.retry("1", "2".into(), template, None, None);
+    let (made, _) = tasks.retry("1", "2".into(), template, None, None, WINDOW);
     assert!(made);
     assert_eq!(tasks.task("1").unwrap().runs.len(), 2);
     let fx = tasks.request("1", WINDOW, Some("two runs already work".into()));
@@ -219,7 +219,7 @@ fn a_retry_is_refused_while_the_task_is_at_work() {
     tasks.add(check("1", "/a"));
     ask(&mut tasks, "1", "/a");
     let template = tasks.task("1").unwrap().runs[0].template.clone();
-    assert!(!tasks.retry("1", "2".into(), template, None, None).0);
+    assert!(!tasks.retry("1", "2".into(), template, None, None, WINDOW).0);
 }
 
 /// A run that ends while its session's turn still goes holds its place until
@@ -556,16 +556,38 @@ fn a_session_not_started_for_a_gone_agent_fails_as_found_late() {
     );
 }
 
+/// A check is retried at once and asks for its place; anything else is
+/// asked about first.
 #[test]
 fn a_check_is_retried_at_once_from_its_one_step_and_others_are_not() {
     let mut tasks = TasksDrive::<Win>::default();
     tasks.add(check("1", "/a"));
     tasks.add(titled("2", "Mine", "/b"));
-    let (made, fx) = tasks.retry_at_once("1", "1b".into()).unwrap();
-    assert!(made);
+    let (retry, fx) = tasks.retry_asked("1", "1b".into(), WINDOW);
+    assert_eq!(retry, Retry::AtOnce);
     assert_eq!(saves(&fx), 1);
+    assert!(has(
+        &fx,
+        |e| matches!(e, Effect::Ask { task, .. } if task == "1")
+    ));
     assert_eq!(tasks.task("1").unwrap().runs.len(), 2);
-    assert!(tasks.retry_at_once("2", "2b".into()).is_none());
+    let (retry, fx) = tasks.retry_asked("2", "2b".into(), WINDOW);
+    assert_eq!(retry, Retry::Confirm);
+    assert!(fx.is_empty());
+}
+
+/// A Resume its preflight refuses is said where it was pressed; one it
+/// lets through asks for its place.
+#[test]
+fn a_resume_refused_is_said_and_one_let_through_asks() {
+    let mut tasks = TasksDrive::<Win>::default();
+    let fx = tasks.resume("1", Some("no agent".into()), WINDOW);
+    assert!(matches!(
+        fx.as_slice(),
+        [Effect::Signal(Signal::NotResumed { why, .. })] if why == "no agent"
+    ));
+    let fx = tasks.resume("1", None, WINDOW);
+    assert!(matches!(fx.as_slice(), [Effect::Ask { task, .. }] if task == "1"));
 }
 
 fn starting(place: crate::workflow::Place) -> crate::task::Starting {
