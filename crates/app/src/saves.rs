@@ -136,8 +136,14 @@ impl gpui::Global for Checks {}
 /// Bring `spec` up for a look at what it offers, and report what it found,
 /// or that its wait ran out.
 fn probe(spec: onehand_core::config::AgentSpec, cwd: std::path::PathBuf, token: u64, cx: &mut App) {
+    let events = Shared::global(cx).acp.probe(&spec, cwd);
+    read_probe(events, token, cx);
+}
+
+/// Fold check `token`'s `events` into what its agent offers, and report it,
+/// or that the wait ran out first.
+fn read_probe(mut events: onehand_io::acp::Events, token: u64, cx: &mut App) {
     use futures::StreamExt as _;
-    let mut events = Shared::global(cx).acp.probe(&spec, cwd);
     let read = cx.spawn(async move |cx| {
         let mut offer = onehand_core::workflow::Offer::default();
         let mut found = Err(drive::CLOSED_EARLY.to_string());
