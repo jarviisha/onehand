@@ -259,6 +259,7 @@ impl Shell {
                         let fx = shell.window.workspace.fork_failed(*uid, lead, why.clone());
                         shell.carry_workspace(fx, window, cx);
                     }
+                    E::Watching { uid, id } => shell.window.workspace.watching(*uid, id.clone()),
                     E::StopWorkflow(uid) => {
                         let uid = *uid;
                         cx.defer(move |cx| crate::task::stop(uid, cx));
@@ -509,7 +510,8 @@ impl Shell {
             worktree_draft: None,
             branch_draft: None,
             host_project: None,
-            host_flow: Default::default(),
+            host_waits: Default::default(),
+            host_listening: Default::default(),
             offload_draft: None,
             offload_locks: HashMap::new(),
             issue_picker: None,

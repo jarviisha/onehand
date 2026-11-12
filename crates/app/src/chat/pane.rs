@@ -21,7 +21,6 @@ use gpui_base::dock::{Panel, PanelEvent};
 use gpui_component::input::InputEvent;
 use onehand_core::chat::Link;
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 mod body;
 mod bridge;
@@ -41,6 +40,7 @@ mod runs;
 mod sessions;
 mod step_strip;
 mod titles;
+mod turns;
 mod worker_band;
 pub use events::{ChatPaneEvent, ProjectAction, Restart, SessionSignal};
 use header::Archives;
@@ -259,20 +259,11 @@ pub struct ChatPane {
     /// the opposite state — that one is the body of the page shown when a
     /// project has nothing running, this one is offered while something is.
     archives: Option<Archives>,
-    /// The archived conversation the next [`Self::show`] of a session must open
-    /// on.
-    ///
-    /// Recorded against the session before it is shown rather than passed to
-    /// `show`: the shell points the pane at whatever the workspace's active
-    /// session is, and every other route into that call has no archive to name.
-    /// Taken on use, so a conversation picked once cannot be resumed again by a
-    /// later switch back to that session.
-    pending_resume: Option<(u64, PathBuf)>,
-    /// The host session the next showing of a session reads, taken on use
-    /// as the archive above is.
-    pending_watch: Option<(u64, onehand_core::host::wire::HostSession)>,
     /// A fork read off disk, waiting for the session the shell mints for it.
     pending_fork: Option<fork::StagedFork>,
+    /// The archive each session is reading to resume on, the last one asked
+    /// for: a read that lands after another was asked for is not the choice.
+    reading: HashMap<u64, std::path::PathBuf>,
     /// Whether the window's rail is hidden, so this pane can offer the way
     /// back.
     ///
@@ -406,9 +397,8 @@ impl ChatPane {
                 empty: None,
                 page: None,
                 archives: None,
-                pending_resume: None,
-                pending_watch: None,
                 pending_fork: None,
+                reading: HashMap::new(),
                 rail_hidden: false,
                 background_menu: std::cell::Cell::new(None),
                 docks_open: DocksOpen::default(),

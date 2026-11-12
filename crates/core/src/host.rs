@@ -14,6 +14,7 @@ pub mod journal;
 pub mod offload;
 pub mod session;
 pub mod sshconf;
+pub mod waits;
 pub mod wire;
 
 pub(crate) use failure::taken_line;

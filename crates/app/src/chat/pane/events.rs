@@ -182,6 +182,11 @@ pub enum ChatPaneEvent {
         uid: Option<u64>,
         why: String,
     },
+    /// Session `uid` is on host session `id`, as its host said.
+    Watching {
+        uid: u64,
+        id: onehand_core::host::wire::HostSession,
+    },
     /// Stop the run on session `uid`.
     StopWorkflow(u64),
     /// Show the Tasks page, narrowed to one project or not.

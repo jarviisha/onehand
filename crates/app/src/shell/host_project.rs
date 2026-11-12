@@ -11,12 +11,12 @@ use gpui::{App, AppContext as _, Context, Entity, Focusable as _, Subscription, 
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputEvent, InputState};
 use onehand_core::host::client::HostConn;
-use onehand_core::host::drive::{Landing, back_landed, idle_landed};
-use onehand_core::host::drive::{back_failure, needs_restart, restart_failure, said_by_wait};
+use onehand_core::host::drive::Landing;
+use onehand_core::host::drive::{needs_restart, restart_failure, said_by_wait};
 use onehand_core::host::sshconf;
+use onehand_core::host::waits::{Want, landed_on};
 use onehand_core::host::wire::HostSession;
 use onehand_core::workspace::HostName;
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// The add-a-project-on-a-host form, while it is up. `Some` on the shell is
@@ -35,7 +35,7 @@ pub(crate) struct HostProjectDraft {
     /// What the last *Add* ran into. Cleared by the next keystroke, because
     /// the reader has started answering it.
     pub(crate) error: Option<String>,
-    /// The attach under way, by [`HostFlow::attempt`]: attaching to the host
+    /// The attach under way, by [`WindowWaits::attempt`](onehand_core::host::waits::WindowWaits::attempt): attaching to the host
     /// and asking it about the folder, or waiting on the host's sessions.
     attempt: Option<u64>,
     /// The host the attach waits on, its busy sessions to go idle.
@@ -75,133 +75,6 @@ impl HostProjectDraft {
     }
 }
 
-/// What waits on a host's busy sessions going idle, or on a lost host being
-/// attached again.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Want {
-    /// The session that was not attached, restarted.
-    Session(u64),
-    /// The form's *Add*, on this attempt, carried on.
-    Add(u64),
-    /// The project page's list of the host's sessions, asked again.
-    Page,
-    /// The session out of reach of its lost host, restarted once it is back.
-    Back(u64),
-    /// The project page showing what it kept of a lost host's sessions,
-    /// listed again once it is back.
-    PageBack,
-}
-
-impl Want {
-    /// Whether it waits on the host being back rather than on its busy
-    /// sessions.
-    fn back(self) -> bool {
-        match self {
-            Want::Back(_) | Want::PageBack => true,
-            Want::Session(_) | Want::Add(_) | Want::Page => false,
-        }
-    }
-}
-
-/// What waits here on each host kept waiting by its busy sessions, and the
-/// count that tells one attach of the form from the next. The wait itself
-/// is the process's, in [`hosts`]; this is the window's share of it.
-#[derive(Default)]
-pub(super) struct HostFlow {
-    waiting: BTreeMap<HostName, Waiting>,
-    /// What waits on each lost host being back, kept apart: a host is lost
-    /// or busy, and the two waits end differently.
-    back: BTreeMap<HostName, Waiting>,
-    attempts: u64,
-}
-
-/// The sessions to restart, the form's attempt to carry on and whether a
-/// page waits, once a host's wait ends; and the listening to it, which
-/// leaves the wait when this goes.
-#[derive(Default)]
-struct Waiting {
-    uids: Vec<u64>,
-    add: Option<u64>,
-    page: bool,
-    _listening: Option<gpui::Task<()>>,
-}
-
-impl HostFlow {
-    /// Add `want` to what waits here on `host`: `true` when nothing did, so
-    /// the end of the host's wait is still to be listened for.
-    fn join(&mut self, host: &HostName, want: Want) -> bool {
-        let map = self.map(want.back());
-        let fresh = !map.contains_key(host);
-        let waiting = map.entry(host.clone()).or_default();
-        match want {
-            Want::Session(uid) | Want::Back(uid) if !waiting.uids.contains(&uid) => {
-                waiting.uids.push(uid)
-            }
-            Want::Session(_) | Want::Back(_) => {}
-            Want::Page | Want::PageBack => waiting.page = true,
-            Want::Add(attempt) => waiting.add = Some(attempt),
-        }
-        fresh
-    }
-
-    /// The waits on hosts being back, or on busy sessions.
-    fn map(&mut self, back: bool) -> &mut BTreeMap<HostName, Waiting> {
-        match back {
-            true => &mut self.back,
-            false => &mut self.waiting,
-        }
-    }
-
-    /// What waited here on `host`, once: on its being back, or on its busy
-    /// sessions.
-    fn take(&mut self, host: &HostName, back: bool) -> Option<Waiting> {
-        self.map(back).remove(host)
-    }
-
-    /// Hold the listening to `host`'s wait, for as long as something here
-    /// waits on it.
-    fn listen(&mut self, host: &HostName, back: bool, listening: gpui::Task<()>) {
-        if let Some(waiting) = self.map(back).get_mut(host) {
-            waiting._listening = Some(listening);
-        }
-    }
-
-    /// Keep only what `still` says waits yet; a host nothing here waits on
-    /// any more is let go, and with it the listening, so a wait nobody
-    /// anywhere listens to ends.
-    fn prune(&mut self, still: impl Fn(&HostName, Want) -> bool) {
-        self.waiting.retain(|host, waiting| {
-            waiting.uids.retain(|uid| still(host, Want::Session(*uid)));
-            waiting.add = waiting.add.filter(|add| still(host, Want::Add(*add)));
-            waiting.page = waiting.page && still(host, Want::Page);
-            !waiting.uids.is_empty() || waiting.add.is_some() || waiting.page
-        });
-        self.back.retain(|host, waiting| {
-            waiting.uids.retain(|uid| still(host, Want::Back(*uid)));
-            waiting.page = waiting.page && still(host, Want::PageBack);
-            !waiting.uids.is_empty() || waiting.page
-        });
-    }
-
-    fn is_empty(&self) -> bool {
-        self.waiting.is_empty() && self.back.is_empty()
-    }
-
-    /// The form went away: no wait carries its *Add* on, so a form opened
-    /// again is never committed by a wait that ended for this one.
-    fn forget_add(&mut self) {
-        for waiting in self.waiting.values_mut() {
-            waiting.add = None;
-        }
-    }
-
-    /// A new attach of the form's.
-    fn attempt(&mut self) -> u64 {
-        self.attempts += 1;
-        self.attempts
-    }
-}
-
 /// Whether `path` is a folder on `host`: `Ok` to add it.
 async fn folder_found(
     host: &HostName,
@@ -238,24 +111,6 @@ async fn cloned(
     }
     let cloning = cx.update(|cx| hosts::clone_repo(cx, conn, repo, target.to_path_buf()));
     cloning.await.map_err(HostFailure::Other)
-}
-
-/// Let the form go from `held` as its host's wait ends, if that is still
-/// the attempt it waits on: `true` when the form is the one that waited.
-fn release(form: &mut Option<u64>, held: Option<u64>) -> bool {
-    match held {
-        Some(held) if landed_on(*form, held) => {
-            *form = None;
-            true
-        }
-        Some(_) | None => false,
-    }
-}
-
-/// Whether an attach's answer is for the form's attach under way: a form
-/// cancelled and opened again has another, or none.
-fn landed_on(current: Option<u64>, landed: u64) -> bool {
-    current == Some(landed)
 }
 
 /// The question asked before `host`'s service is restarted, stopping `busy`.
@@ -338,7 +193,7 @@ impl Shell {
     /// dropped: it is about a form no longer there. So is the end of a wait
     /// it waits on, for the form.
     pub(crate) fn cancel_host_project(&mut self, cx: &mut Context<Self>) {
-        self.host_flow.forget_add();
+        self.host_waits.forget_add();
         if self.host_project.take().is_some() {
             self.prune_host_waits(cx);
             cx.notify();
@@ -372,7 +227,7 @@ impl Shell {
             }
             Way::Folder | Way::Clone => return,
         };
-        let attempt = self.host_flow.attempt();
+        let attempt = self.host_waits.attempt();
         if let Some(draft) = self.host_project.as_mut() {
             draft.error = None;
             draft.attempt = Some(attempt);
@@ -469,7 +324,7 @@ impl Shell {
         match found {
             Ok(()) => {
                 self.host_project = None;
-                self.host_flow.forget_add();
+                self.host_waits.forget_add();
                 self.open_host_root(host, path, window, cx);
             }
             Err(HostFailure::Other(why) | HostFailure::Refused(why) | HostFailure::Taken(why)) => {
@@ -524,7 +379,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.host_flow.join(&host, want) {
+        if !self.host_waits.wait(&host, want) {
             return;
         }
         let back = want.back();
@@ -567,7 +422,7 @@ impl Shell {
                 })
             }
         };
-        self.host_flow.listen(&host, back, listening);
+        self.host_listening.insert((host, back), listening);
     }
 
     /// The wait for lost `host` to be back ended. Attached again, or found
@@ -582,16 +437,9 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(waiting) = self.host_flow.take(host, true) else {
-            return;
-        };
-        let failed = back_failure(
-            host,
-            &hosts::state(cx, host),
-            hosts::found_busy(cx, host),
-            end,
-        );
-        let landed = back_landed(waiting.uids, waiting.page, failed);
+        self.host_listening.remove(&(host.clone(), true));
+        let (state, busy) = (hosts::state(cx, host), hosts::found_busy(cx, host));
+        let landed = self.host_waits.back_ended(host, &state, busy, end);
         self.carry_landed(host, landed, window, cx);
     }
 
@@ -635,7 +483,7 @@ impl Shell {
     /// Let go of what no longer waits here on a host: a session closed or
     /// attached, a page left, a form put away.
     pub(super) fn prune_host_waits(&mut self, cx: &App) {
-        if self.host_flow.is_empty() {
+        if self.host_waits.is_empty() {
             return;
         }
         let pane = self.chat.read(cx);
@@ -645,13 +493,18 @@ impl Shell {
             .host_project
             .as_ref()
             .and_then(|draft| draft.waiting.as_ref().zip(draft.attempt));
-        self.host_flow.prune(|host, want| match want {
+        let gone = self.host_waits.prune(|host, want| match want {
             Want::Session(uid) => pane.host_wait(uid, cx).as_ref() == Some(host),
             Want::Add(attempt) => form == Some((host, attempt)),
             Want::Page => page == Some(host),
             Want::Back(uid) => pane.host_lost(uid, cx).as_ref() == Some(host),
             Want::PageBack => away == Some(host),
         });
+        // A host nothing here waits on is no longer listened to, so a wait
+        // nobody anywhere listens to ends.
+        for listened in gone {
+            self.host_listening.remove(&listened);
+        }
     }
 
     /// `host`'s wait ended: on this build, carry on with what waited on it;
@@ -663,17 +516,16 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(waiting) = self.host_flow.take(host, false) else {
+        self.host_listening.remove(&(host.clone(), false));
+        let form = self.host_project.as_ref().and_then(|draft| draft.attempt);
+        let Some((landed, released)) = self.host_waits.idle_ended(host, form, end) else {
             return;
         };
-        let add = self.host_project.as_mut().is_some_and(|draft| {
-            let released = release(&mut draft.attempt, waiting.add);
-            if released {
-                draft.waiting = None;
-            }
-            released
-        });
-        let landed = idle_landed(waiting.uids, waiting.page, add, end);
+        // The form carried on is no longer waiting on the host.
+        if let (true, Some(draft)) = (released, self.host_project.as_mut()) {
+            draft.attempt = None;
+            draft.waiting = None;
+        }
         self.carry_landed(host, landed, window, cx);
     }
 
@@ -749,5 +601,3 @@ impl Shell {
 }
 
 mod browse;
-#[cfg(test)]
-mod tests;

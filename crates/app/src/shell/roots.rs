@@ -246,8 +246,9 @@ impl Shell {
             self.sync_agent_started(cx);
             return;
         };
+        let starts = self.window.workspace.take_start(uid);
         self.chat.update(cx, |pane, cx| {
-            pane.show(uid, path.clone(), on, &spec, window, cx);
+            pane.show(uid, path.clone(), on, &spec, starts, window, cx);
         });
         // After `show`, which is what connects a session shown for the first
         // time — before it, a fresh session has no agent to have started.

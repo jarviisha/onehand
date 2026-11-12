@@ -1,7 +1,7 @@
 //! A session's place in the workspace: where it is added, what goes with it
 //! when it closes, and what shows after.
 
-use super::{Effect, Forgotten, HostName, Refusal, Signal, WorkspaceDrive};
+use super::{Effect, Forgotten, HostName, Refusal, Signal, StartsOn, WorkspaceDrive};
 use crate::config::AgentSpec;
 use crate::host::wire::HostSession;
 use std::path::Path;
@@ -11,6 +11,81 @@ use std::path::Path;
 const FORK_PROJECT_GONE: &str = "its project left the workspace";
 
 impl WorkspaceDrive {
+    /// [`Self::add_session`], the session starting on `starts` once shown.
+    #[must_use = "its effects are to be carried"]
+    pub fn add_session_on(
+        &mut self,
+        spec: Option<AgentSpec>,
+        uid: u64,
+        home: Option<usize>,
+        starts: StartsOn,
+    ) -> (Result<u64, Refusal>, Vec<Effect>) {
+        let (added, fx) = self.add_session(spec, uid, home);
+        if let Ok(uid) = added {
+            if let StartsOn::Watch(id) = &starts {
+                self.watches.insert(uid, id.clone());
+            }
+            self.starts.insert(uid, starts);
+        }
+        (added, fx)
+    }
+
+    /// What session `uid` starts on, taken as it is first shown: what it was
+    /// added on, or a fresh conversation. Shown again, it starts on nothing
+    /// a second time.
+    #[must_use = "it is what the session starts on"]
+    pub fn take_start(&mut self, uid: u64) -> StartsOn {
+        self.starts.remove(&uid).unwrap_or(StartsOn::Fresh)
+    }
+
+    /// Session `uid` is on host session `id`, as its host said.
+    pub fn watching(&mut self, uid: u64, id: HostSession) {
+        if self.locate(uid).is_some() {
+            self.watches.insert(uid, id);
+        }
+    }
+
+    /// The session already on host session `id` of `host`; in the folder
+    /// `root` when one is named.
+    pub fn watcher(&self, host: &HostName, id: &HostSession, root: Option<&Path>) -> Option<u64> {
+        self.workspace
+            .roots
+            .iter()
+            .filter(|project| project.session_host().is_some_and(|(on, _)| on == host))
+            .filter(|project| root.is_none_or(|root| project.path == root))
+            .flat_map(|project| project.sessions.iter().map(|session| session.uid))
+            .find(|uid| self.watches.get(uid) == Some(id))
+    }
+
+    /// Show host session `id`, run by `spec`, on the active project: the
+    /// session already on it there, selected, rather than a second one,
+    /// which would send to it too, whether or not its agent is still set
+    /// up; else a new session `uid` watching it.
+    #[must_use = "its effects are to be carried"]
+    pub fn watch(
+        &mut self,
+        id: HostSession,
+        spec: Option<AgentSpec>,
+        uid: u64,
+    ) -> (Result<u64, Refusal>, Vec<Effect>) {
+        let open = self.workspace.active_root().and_then(|project| {
+            let (host, _) = project.session_host()?;
+            self.watcher(host, &id, Some(&project.path))
+        });
+        match open {
+            Some(open) => (Ok(open), self.select(open)),
+            None => self.add_session_on(spec, uid, None, StartsOn::Watch(id)),
+        }
+    }
+
+    /// The host and host session session `uid` watches, once its host has
+    /// said which.
+    pub fn watched_on(&self, uid: u64) -> Option<(HostName, HostSession)> {
+        let (root, _) = self.locate(uid)?;
+        let (host, _) = self.workspace.roots.get(root)?.session_host()?;
+        Some((host.clone(), self.watches.get(&uid)?.clone()))
+    }
+
     /// Add the session `uid` a fork of a conversation on the project at
     /// `root` opens on, running `spec` as the original did, selected; or, the
     /// project gone from the workspace meanwhile, say the fork failed.
@@ -22,7 +97,7 @@ impl WorkspaceDrive {
         uid: u64,
     ) -> (Result<u64, Refusal>, Vec<Effect>) {
         match self.local_index(root) {
-            Some(idx) => self.add_session(Some(spec), uid, Some(idx)),
+            Some(idx) => self.add_session_on(Some(spec), uid, Some(idx), StartsOn::Fork),
             None => (
                 Err(Refusal::NoProject),
                 vec![Effect::Signal(Signal::ForkFailed(
@@ -149,7 +224,14 @@ impl WorkspaceDrive {
             return Vec::new();
         };
         self.workspace.close_session(root, session);
+        self.let_go(uid);
         vec![Effect::Close(uid), Effect::Changed]
+    }
+
+    /// What is kept about session `uid`, closed, goes with it.
+    fn let_go(&mut self, uid: u64) {
+        self.starts.remove(&uid);
+        self.watches.remove(&uid);
     }
 
     /// Close every session of the project at `dir`, a folder here, showing
@@ -301,11 +383,8 @@ impl WorkspaceDrive {
         let Some(root) = self.workspace.roots.get(idx) else {
             return Vec::new();
         };
-        let mut fx: Vec<Effect> = root
-            .sessions
-            .iter()
-            .map(|session| Effect::Close(session.uid))
-            .collect();
+        let uids: Vec<u64> = root.sessions.iter().map(|session| session.uid).collect();
+        let mut fx: Vec<Effect> = uids.iter().map(|&uid| Effect::Close(uid)).collect();
         // Its code is no longer checked for here; offloaded again, it comes
         // back as any does.
         if root.offload.is_some() {
@@ -324,6 +403,7 @@ impl WorkspaceDrive {
             host: root.host.clone(),
         }));
         self.workspace.remove_root(idx);
+        uids.into_iter().for_each(|uid| self.let_go(uid));
         fx.push(Effect::Changed);
         fx
     }

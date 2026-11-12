@@ -6,7 +6,6 @@
 //! every session on it.
 
 use super::super::{ChatPane, ChatPaneEvent};
-use crate::chat::conversation::OnHost;
 use crate::controls::{Named as _, Quiet as _, Short as _};
 use crate::hosts::HostFailure;
 use crate::page_parts::{page_card, ruled};
@@ -20,7 +19,7 @@ use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme as _, Icon, Sizable as _, StyledExt as _};
 use onehand_core::host::copy::{self, copies_dir};
-use onehand_core::host::wire::{HostSession, SessionInfo};
+use onehand_core::host::wire::SessionInfo;
 use onehand_core::workspace::HostName;
 use onehand_ui::TallIcon as _;
 use std::path::Path;
@@ -77,20 +76,6 @@ pub(super) fn host_rows<'a>(
     (here, left_out)
 }
 
-/// The session among `convs` (each by uid, folder and host) already on host
-/// session `id` of `host`, in the folder `root`.
-fn watching_uid<'a>(
-    convs: impl IntoIterator<Item = (u64, &'a Path, Option<&'a OnHost>)>,
-    root: &Path,
-    host: &HostName,
-    id: &HostSession,
-) -> Option<u64> {
-    convs.into_iter().find_map(|(uid, folder, on)| {
-        let on = on?;
-        (folder == root && &on.host == host && on.session.as_ref() == Some(id)).then_some(uid)
-    })
-}
-
 impl ChatPane {
     /// The host the page on screen waits on, its busy sessions to finish.
     pub(crate) fn page_waits_on(&self) -> Option<&HostName> {
@@ -138,31 +123,6 @@ impl ChatPane {
             *said = why.to_string();
             cx.notify();
         }
-    }
-
-    /// The session in `root` on `host` already attached to host session `id`.
-    pub fn watching(&self, root: &Path, host: &HostName, id: &HostSession) -> Option<u64> {
-        let convs = self
-            .conversations
-            .iter()
-            .map(|(uid, conv)| (*uid, conv.root.as_path(), conv.host.as_ref()));
-        watching_uid(convs, root, host, id)
-    }
-
-    /// The session here already attached to host session `id` on `host`,
-    /// in whichever folder.
-    pub(crate) fn watching_on(&self, host: &HostName, id: &HostSession) -> Option<u64> {
-        self.conversations.iter().find_map(|(uid, conv)| {
-            let on = conv.host.as_ref()?;
-            (&on.host == host && on.session.as_ref() == Some(id)).then_some(*uid)
-        })
-    }
-
-    /// The host and host session session `uid` watches, once the host has
-    /// said which.
-    pub(crate) fn host_session_of(&self, uid: u64) -> Option<(HostName, HostSession)> {
-        let on = self.conversations.get(&uid)?.host.as_ref()?;
-        Some((on.host.clone(), on.session.clone()?))
     }
 
     /// Ask the host the page stands on for its sessions, off the UI loop.

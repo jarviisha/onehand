@@ -78,7 +78,7 @@ it. What is refused, and how, is under *What a host project does not do*.
   (`RECONNECT_MAX`, `next_delay`), for as long as something listens, and never for a taken or
   refused one. What listens is a session that was reading its host's copy because the host was
   away, and the project page showing what it kept of the host's sessions; each is a `Want::Back`
-  in the window's `HostFlow` (`crates/app/src/shell/host_project.rs`), joined to one loop per host
+  in the window's waits (`host::waits::WindowWaits`, carried by `crates/app/src/shell/host_project.rs`), joined to one loop per host
   (`hosts::back`), like the wait for a busy host, and the loop stops when the last of them goes.
   When an attach lands, each such session is restarted, and so watches the host from where its
   copy ends, and the page lists again; nothing is toasted. A host found busy at that point hands
@@ -131,8 +131,8 @@ Every attach opens by exchanging builds (`client::attach`):
   wait lasts only while something listens to it: once every session, page and form that waited
   has gone (closed, left, put away, or its window closed), the wait and its poll stop, and the
   next listener to a host found busy starts them again; a host found busy with nobody listening
-  (a restart's first look) is not waited on. Each window keeps what waits there (`HostFlow`,
-  `crates/app/src/shell/host_project.rs`) and, once the wait ends, restarts each session that
+  (a restart's first look) is not waited on. Each window keeps what waits there
+  (`host::waits::WindowWaits`, which decides what each wait's end comes to there) and, once the wait ends, restarts each session that
   waited (as after a service restart), lists the page again and carries on with the form's *Add*,
   unless that form was put away or added its project since (a form opened again is never added by
   an older wait); what each wait's end comes to is core's (`back_landed`, `idle_landed`,

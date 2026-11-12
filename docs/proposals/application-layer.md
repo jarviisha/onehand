@@ -24,7 +24,7 @@
     where a driven task lands, what a run tells unattended runs) and tests whole flows across
     drives with no front end (`task::flows`).
   - Phase 11 takes every leftover of phases 4 to 10, in five PRs by area; its plan is under
-    *Plan*. PR 11a, tasks and unattended runs, is built, and 11b1 of sessions and hosts.
+    *Plan*. PR 11a, tasks and unattended runs, is built, and sessions and hosts (11b1, 11b2).
   - What is left here is what each phase left for later, the record of the trial and the
     decisions; *Done when* is not met until phase 11 is built, and the proposal leaves
     `docs/proposals/` with phase 11's last PR.
@@ -598,14 +598,38 @@ Phase 11 changed, on purpose (PR 11b1):
   lands; before, a window gone meanwhile dropped the end unsent. What it came to is said only
   while the window is there.
 
-The second, 11b2, to build:
-- what a session starts on (`pending_resume`, `pending_watch`, `pending_fork`) held by
-  `WorkspaceDrive` until it is shown (D44), the order that cannot meet dropped, and the stored
-  transcript read off the UI thread (`ChatPane::show` and `ChatPane::start`; its own commit);
-- each window's share of a host's waits (`HostFlow`) in a small drive of its own per window, its
-  `prune` kept as it is called (D45);
-- which session watches which host session in the workspace, so one already watched is shown
-  rather than opened twice (`shell/sessions.rs`), and *End on <host>* reads it from there.
+The second, 11b2, built:
+- What a session starts on is `WorkspaceDrive`'s (`StartsOn`: fresh, a resume, a host session to
+  watch, a fork), kept from when it is added until it is first shown (`take_start`); the pane's
+  three fields and an order two of them could never meet in are gone. The pane keeps a fork's
+  staged read: it holds the composer's draft, which only the pane has, and the drive's
+  `StartsOn::Fork` says which session takes it.
+- A resumed conversation is read off the UI thread, as a session is shown and as one is picked
+  from a session's history (its own commit); a session closed while it reads is not brought back,
+  and only the last read asked for lands, on a session still opening.
+- Which host session each session watches is the workspace's, told as its host says it
+  (`ChatPaneEvent::Watching`); showing one already watched selects it (`WorkspaceDrive::watch`),
+  and *End on <host>* reads it from there. What a session starts on and watches goes with it
+  however it closes, its project forgotten too.
+- Each window's share of its hosts' waits is `host::waits::WindowWaits`; the shell keeps only the
+  listening, dropped as the drive says, and `prune` is called as before (D45).
+
+Phase 11 changed, on purpose (PR 11b2):
+- A session resuming a kept conversation shows as opening for the moment its read takes, rather
+  than holding the window while the file is read.
+- A past conversation picked from a session's history takes the picker down at once, and the
+  session it held with it, rather than as the new one connects: nothing else can be picked while
+  the conversation is read.
+- A host session shown from the project page with no agent set up at all says a session needs an
+  agent, as any other new session does, rather than nothing; one already watched is shown either
+  way.
+
+Left for later (PR 11b2):
+- `prune` still runs from the shell's observation of the pane, on every notify; replacing it with
+  the moments that end a wait (a session closed or attached, a page left, the form put away) is
+  its own change.
+- Which host session a session watches is also kept on the pane's conversation (`OnHost`), read
+  as it connects (`host_begin`); dropping that copy for the workspace's is its own change.
 
 PR 11c, the workspace and the shell:
 - the recents list touched, named and forgotten (`shell/storage.rs`) into a drive;
