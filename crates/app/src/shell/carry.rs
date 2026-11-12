@@ -12,6 +12,18 @@ use std::path::PathBuf;
 /// What a start is told when the project it names has left the workspace.
 pub(crate) const PROJECT_GONE: &str = "That project is no longer in this workspace";
 
+/// What a person is told when the workspace refuses `why`.
+pub(super) fn refused(why: Refusal) -> &'static str {
+    match why {
+        Refusal::NoProject => "Add a project before starting a session",
+        Refusal::NoAgent => "Add an agent in Settings before starting a session",
+        Refusal::NoSession => "That task has no session open",
+        Refusal::ProjectGone => PROJECT_GONE,
+        Refusal::NotHere => "That runs on a project on this machine",
+        Refusal::NoCheck => "This project has no check command to run",
+    }
+}
+
 impl Shell {
     /// Carry out `fx`, in order.
     pub(super) fn carry_workspace(
@@ -78,28 +90,13 @@ impl Shell {
                 }
                 Effect::ReadConversation(id) => self.read_conversation(id, window, cx),
                 Effect::Signal(signal) => {
+                    #[cfg(test)]
+                    self.said.push(signal.clone());
                     let toast = match signal {
                         Signal::SaveFailed(why) => {
                             crate::toast::failed("Saving the workspace", why)
                         }
-                        Signal::Refused(Refusal::NoProject) => {
-                            crate::toast::warning("Add a project before starting a session")
-                        }
-                        Signal::Refused(Refusal::NoAgent) => crate::toast::warning(
-                            "Add an agent in Settings before starting a session",
-                        ),
-                        Signal::Refused(Refusal::NoSession) => {
-                            crate::toast::warning("That task has no session open")
-                        }
-                        Signal::Refused(Refusal::ProjectGone) => {
-                            crate::toast::warning(PROJECT_GONE)
-                        }
-                        Signal::Refused(Refusal::NotHere) => {
-                            crate::toast::warning("That runs on a project on this machine")
-                        }
-                        Signal::Refused(Refusal::NoCheck) => {
-                            crate::toast::warning("This project has no check command to run")
-                        }
+                        Signal::Refused(why) => crate::toast::warning(refused(why)),
                         Signal::Removed(label) => crate::toast::info(format!("Removed {label}")),
                         Signal::ConversationNotSaved => {
                             crate::toast::warning("That session's conversation was not saved")

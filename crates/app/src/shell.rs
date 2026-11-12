@@ -322,6 +322,10 @@ pub struct Shell {
     /// What the Workbench was last told of the tasks working issues.
     /// And of the projects a run may be started on.
     issue_works: (Vec<onehand_core::task::work::IssueWork>, Vec<PathBuf>),
+    /// What the workspace's drive said in this window, in order, for a test
+    /// to read the words of.
+    #[cfg(test)]
+    said: Vec<onehand_core::workspace::drive::Signal>,
     /// The rail's filter, search and keyboard row, which no launch keeps.
     rail: crate::rail::RailState,
     /// Whether each project's sessions are showing under it in the rail.
