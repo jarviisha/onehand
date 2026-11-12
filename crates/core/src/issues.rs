@@ -11,7 +11,7 @@
 //! **One file per project, rewritten whole**, because a project's issues are a
 //! handful to a few hundred short records and a list that small is cheaper to
 //! read and write in one piece than to index. Every change goes through
-//! [`update_blocking`], which reads, changes and writes under one lock, so two
+//! [`drive::write_blocking`], which reads, changes and writes under one lock, so two
 //! writers in this process — a person editing and a run leaving a note — cannot
 //! each write back a copy missing the other's change.
 
@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 pub mod drive;
+pub mod link;
 pub mod sync;
 pub mod template;
 
@@ -275,7 +276,7 @@ pub fn parse_labels(text: &str) -> Vec<String> {
 
 impl Issues {
     /// Open a new issue from `draft` at `now`, and say its number.
-    pub fn create(&mut self, draft: Draft, now: u64) -> Result<u64, String> {
+    pub(crate) fn create(&mut self, draft: Draft, now: u64) -> Result<u64, String> {
         let draft = draft.settled()?;
         let number = self.take_number();
         self.issues.push(LocalIssue {
@@ -312,7 +313,7 @@ impl Issues {
     }
 
     /// Replace what issue `number` says with `draft`.
-    pub fn edit(&mut self, number: u64, draft: Draft, now: u64) -> Result<(), String> {
+    pub(crate) fn edit(&mut self, number: u64, draft: Draft, now: u64) -> Result<(), String> {
         let draft = draft.settled()?;
         let issue = self.find_mut(number)?;
         issue.title = draft.title;
@@ -323,7 +324,7 @@ impl Issues {
     }
 
     /// Close or reopen issue `number`.
-    pub fn set_open(&mut self, number: u64, open: bool, now: u64) -> Result<(), String> {
+    pub(crate) fn set_open(&mut self, number: u64, open: bool, now: u64) -> Result<(), String> {
         let issue = self.find_mut(number)?;
         if issue.open != open {
             issue.open = open;
@@ -335,7 +336,7 @@ impl Issues {
 
     /// Say on issue `number` that the conversation `session` took it up, in
     /// the words `text`.
-    pub fn taken_up(
+    pub(crate) fn taken_up(
         &mut self,
         number: u64,
         text: &str,
@@ -353,7 +354,7 @@ impl Issues {
     }
 
     /// Add `text` to what has been said about issue `number`.
-    pub fn note(&mut self, number: u64, text: &str, now: u64) -> Result<(), String> {
+    pub(crate) fn note(&mut self, number: u64, text: &str, now: u64) -> Result<(), String> {
         let text = text.trim();
         if text.is_empty() {
             return Err("A note needs something to say.".to_string());
@@ -369,7 +370,12 @@ impl Issues {
     }
 
     /// Take `label` off issue `number`, if it carries it.
-    pub fn remove_label(&mut self, number: u64, label: &str, now: u64) -> Result<(), String> {
+    pub(crate) fn remove_label(
+        &mut self,
+        number: u64,
+        label: &str,
+        now: u64,
+    ) -> Result<(), String> {
         let issue = self.find_mut(number)?;
         let before = issue.labels.len();
         issue.labels.retain(|l| l != label);
@@ -385,7 +391,7 @@ impl Issues {
     }
 
     /// Keep these issues in step with `connector`, or stop.
-    pub fn sync_with(&mut self, connector: Option<String>) {
+    pub(crate) fn sync_with(&mut self, connector: Option<String>) {
         self.synced_with = connector;
     }
 
@@ -396,7 +402,7 @@ impl Issues {
     /// takes — with the ancestor equal to the forge, the next sync sees only
     /// this side as changed and pushes it, and taking the forge's makes both
     /// sides equal so there is nothing left to move.
-    pub fn resolve(&mut self, number: u64, keep_mine: bool, now: u64) -> Result<(), String> {
+    pub(crate) fn resolve(&mut self, number: u64, keep_mine: bool, now: u64) -> Result<(), String> {
         let issue = self.find_mut(number)?;
         let ours = issue.snapshot();
         let Some(link) = issue.link.as_mut() else {
@@ -568,47 +574,30 @@ fn writing(file: &Path) -> std::sync::Arc<Mutex<()>> {
 /// A change that fails writes nothing. A file that cannot be read is never
 /// written over: an unreadable file is somebody's issues in a shape this build
 /// does not understand, and replacing it with an empty list would delete them.
-pub fn update_blocking<R>(
+pub(crate) fn update_blocking<R>(
     file: &Path,
     change: impl FnOnce(&mut Issues) -> Result<R, String>,
+) -> Result<(Issues, R), String> {
+    update_unless(file, change, |_| false)
+}
+
+/// [`update_blocking`], writing nothing back when what `change` said is
+/// `unchanged`.
+fn update_unless<R>(
+    file: &Path,
+    change: impl FnOnce(&mut Issues) -> Result<R, String>,
+    unchanged: impl FnOnce(&R) -> bool,
 ) -> Result<(Issues, R), String> {
     let lock = writing(file);
     let _held = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut issues = load_blocking(file)?;
     let said = change(&mut issues)?;
+    if unchanged(&said) {
+        return Ok((issues, said));
+    }
     issues.revision += 1;
     save_blocking(file, &issues)?;
     Ok((issues, said))
-}
-
-/// What [`create_unless_open_blocking`] did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Created {
-    /// Wrote a new issue with this number.
-    New(u64),
-    /// An open issue already has the title: this one, and nothing was written.
-    Already(u64),
-}
-
-/// Write `draft` into `file` unless an open issue already has its title,
-/// case and surrounding spaces aside. Looked for under the same lock the
-/// write takes, so two writers of one problem write it once.
-pub fn create_unless_open_blocking(file: &Path, draft: Draft) -> Result<Created, String> {
-    let lock = writing(file);
-    let _held = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut kept = load_blocking(file)?;
-    let title = draft.title.trim().to_lowercase();
-    if let Some(open) = kept
-        .issues
-        .iter()
-        .find(|i| i.open && i.title.trim().to_lowercase() == title)
-    {
-        return Ok(Created::Already(open.number));
-    }
-    let number = kept.create(draft, now())?;
-    kept.revision += 1;
-    save_blocking(file, &kept)?;
-    Ok(Created::New(number))
 }
 
 /// Write `issues` to `file` so a reader never sees half of it.
@@ -645,17 +634,6 @@ pub fn work_here_prompt(issue: &LocalIssue) -> String {
         title = issue.title,
         body = issue.body.trim(),
     )
-}
-
-/// Say on the issue `number` kept in `file` that the conversation `session`
-/// took it up, in the words `text`. Blocking: one read-change-write.
-pub fn taken_up_blocking(
-    file: &Path,
-    number: u64,
-    text: &str,
-    session: String,
-) -> Result<(), String> {
-    update_blocking(file, |kept| kept.taken_up(number, text, session, now())).map(drop)
 }
 
 /// The time now, in the unit issues are stamped in.

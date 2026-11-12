@@ -61,6 +61,33 @@ pub(crate) fn shell(
     (handle, shell, cx)
 }
 
+/// Bind `shell`'s workspace to `dir`, where it keeps its issues.
+pub(crate) fn keep_in(
+    shell: &Entity<crate::shell::Shell>,
+    dir: PathBuf,
+    cx: &mut VisualTestContext,
+) {
+    cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| {
+            let fx = shell.window.workspace.bind(dir);
+            shell.carry_workspace(fx, window, cx);
+        })
+    });
+}
+
+/// The titles of the open issues `shell`'s workspace page lists.
+pub(crate) fn workspace_issues(
+    shell: &Entity<crate::shell::Shell>,
+    cx: &mut VisualTestContext,
+) -> Vec<String> {
+    cx.update(|_, cx| shell.read(cx).workspace_page.read(cx).open_titles())
+}
+
+/// Put `shell`'s workspace page on screen.
+pub(crate) fn show_workspace(shell: &Entity<crate::shell::Shell>, cx: &mut VisualTestContext) {
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.show_workspace(window, cx)));
+}
+
 /// A second window beside the rig's, on a workspace of `root`, registered as
 /// the rig's is.
 pub(crate) fn another(

@@ -110,7 +110,8 @@ background executor, one interval in the config, no cron expressions.
 | `crates/core/src/task/work/list.rs` | the Issues page's list: its filters, what each row says, and how it is held still (`list`, `PrReads`, `Held`) |
 | `crates/core/src/task/work/left.rs` | what the work left, read off git for the page: the check against the work as it is, the files of the run and of the branch, the commits past where the task started |
 | `crates/issues/src/view/page.rs`, `view/page/prs.rs`, `view/full.rs` | the Issues page: its list, its pull request reads, one per project, and the issue in full |
-| `crates/core/src/issues/drive.rs`, `crates/issues/src/view/store.rs` | one issues file shared by every view of it, with its sync: `FileDrive` decides, `IssuesFile` carries |
+| `crates/core/src/issues/drive.rs`, `crates/issues/src/view/store.rs` | one issues file shared by every view of it, with its sync and its clock, and the changes written from outside the views: `FileDrive` decides, `IssuesFile` carries |
+| `crates/core/src/issues/link.rs` | an issue worked by hand: whether it can be here (`work_here`), and the note its session owes it once its conversation is named (`TakenUp`) |
 | `crates/app/src/shell/issues_page.rs` | the page as a window holds it, and what it asks of the shell |
 
 The split is the one the crate boundary already forces: everything that can be
@@ -367,7 +368,14 @@ Issues*, and a project row's *auto · #N* pill, open the issue on the page,
 pinned at the top when its filters leave it out. Both views hold one shared
 copy of each issues file (`FileDrive`, carried by `view/store.rs`), so an edit in one shows in the
 other at once and a sync runs once per file; a changed draft in either is kept
-across a switch of project or page and asked about before it is dropped.
+across a switch of project or page and asked about before it is dropped. A
+file kept in step syncs on its own clock, five minutes after its last sync
+landed, while some view is on its project. What is written from outside the
+views goes through the same copy (`onehand_issues::write`): a run's note that
+it took its issue up, a tool's issue and a session's note on an issue worked by
+hand each show in every view as they land. A run's claim and reports are
+written by the claim's own blocking work, and a view sees them on its next
+read.
 
 **A project with no check command is still searched**, issue by issue: one
 whose workflow (the default or its workflow label's) runs the check command is

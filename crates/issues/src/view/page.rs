@@ -129,7 +129,7 @@ impl IssuesView {
         page.open = true;
         page.reveal = true;
         page.claim_focus = true;
-        self.root = Some(root.to_path_buf());
+        self.look_at(Some(root.to_path_buf()), cx);
         if let Some(state) = self.state_for(root, cx) {
             state.selected = Some(number);
         }
@@ -147,7 +147,7 @@ impl IssuesView {
             window.focus(&focus, cx);
         }
         let arriving = self.root.as_deref() != Some(root.as_path());
-        self.root = Some(root.clone());
+        self.look_at(Some(root.clone()), cx);
         let drafting = self
             .state_for(&root, cx)
             .is_some_and(|state| state.form.is_some());
@@ -196,7 +196,7 @@ impl IssuesView {
             return;
         };
         page.open = true;
-        self.root = Some(root.clone());
+        self.look_at(Some(root.clone()), cx);
         self.state_for(&root, cx);
         self.open_form(None, window, cx);
     }

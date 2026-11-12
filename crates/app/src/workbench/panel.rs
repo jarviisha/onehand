@@ -29,7 +29,7 @@ use gpui_base::dock::{Panel, PanelEvent};
 use gpui_component::StyledExt;
 use gpui_component::button::ButtonVariants as _;
 use onehand_core::gitstat::GitStatus;
-use onehand_core::workbench::Again;
+use onehand_core::workbench::{Again, Showing};
 use onehand_workbench::{Ask, Disk, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -51,15 +51,13 @@ pub struct Workbench {
     /// Each is asked in this order, and a mode that has an answer to a request
     /// says so.
     modes: Vec<Box<dyn WorkbenchMode>>,
-    /// Which mode is showing, as a place in `modes` rather than an ID.
+    /// Which mode is showing, as a place in `modes` rather than an ID, and
+    /// which is offered: core's, told every switch, file and pick.
     ///
     /// A place and not a name because a name can fail to resolve, and this one
     /// cannot: the list is built once and never added to, so every ID that ever
-    /// reaches `active` was found in it first. Held as an ID, the panel had to
-    /// draw an unavailable state for a mode nothing contributed — an arm no
-    /// input could reach, which is the decoration the seam was meant to remove
-    /// rather than keep.
-    active: usize,
+    /// reaches the place showing was found in it first.
+    showing: Showing,
     /// The root every mode is pointed at. `None` before any root is active.
     root: Option<PathBuf>,
     /// The disk that root's files are on. On a host's, only a mode that
@@ -114,7 +112,7 @@ impl Workbench {
             let modes = build(ask, crate::zoom::term_font_size(zoom), cx);
             assert!(!modes.is_empty(), "the Workbench has no built-in modes");
             Self {
-                active: 0,
+                showing: Showing::new(modes.iter().map(|mode| mode.spec()).collect()),
                 modes,
                 focus_handle: cx.focus_handle(),
                 root: None,
@@ -186,25 +184,17 @@ impl Workbench {
     /// The showing mode's own declaration, which is where the two facts the
     /// frame needs are read from.
     fn showing(&self) -> WorkbenchModeSpec {
-        self.modes[self.active].spec()
-    }
-
-    /// Where `id` sits on the strip, if it names a mode offered on the root
-    /// on screen.
-    fn place_of(&self, id: ModeId) -> Option<usize> {
-        self.modes
-            .iter()
-            .position(|item| item.spec().id == id && self.offers(item.spec()))
+        self.modes[self.showing.active()].spec()
     }
 
     /// Whether a mode is offered on the root on screen.
     fn offers(&self, spec: WorkbenchModeSpec) -> bool {
-        offered(self.on_host(), spec)
+        self.showing.offers(spec)
     }
 
     /// Whether the root on screen is a host's folder.
     fn on_host(&self) -> bool {
-        self.disk.host().is_some()
+        self.showing.on_host()
     }
 
     /// Whether the root on screen is a host's folder shown over an attach
@@ -239,7 +229,7 @@ impl Workbench {
     pub fn unsaved_in(&self, root: &Path, on_host: bool, cx: &App) -> usize {
         self.modes
             .iter()
-            .filter(|mode| offered(on_host, mode.spec()))
+            .filter(|mode| mode.spec().offered(on_host))
             .map(|mode| mode.unsaved(root, cx))
             .sum()
     }
@@ -260,7 +250,7 @@ impl Workbench {
     /// path, a running editor among it, is a folder here.
     pub fn forget_root(&mut self, root: &Path, on_host: bool, cx: &mut Context<Self>) {
         for mode in &mut self.modes {
-            if offered(on_host, mode.spec()) {
+            if mode.spec().offered(on_host) {
                 mode.forget_root(root, cx);
             }
         }
@@ -286,7 +276,7 @@ impl Workbench {
         // in the last folder here it was pointed at.
         let on_host = self.on_host();
         for mode in &mut self.modes {
-            if offered(on_host, mode.spec()) {
+            if mode.spec().offered(on_host) {
                 mode.handle(&Request::Start, cx);
             }
         }
@@ -347,7 +337,7 @@ impl Workbench {
     /// reach for the mouse to use what they just opened. A mode that is clicked
     /// rather than typed into refuses, and the caret lands on the panel itself.
     pub fn focus_active(&self, window: &mut Window, cx: &mut App) {
-        if self.modes[self.active].focus(window, cx) {
+        if self.modes[self.showing.active()].focus(window, cx) {
             return;
         }
         self.focus_handle.focus(window, cx);
@@ -364,14 +354,11 @@ impl Workbench {
     /// took the document walk away from a second `Ctrl+Shift+M`.
     pub fn set_mode(&mut self, mode: ModeId, cx: &mut Context<Self>) {
         // Showing a mode can start its work, against the last local project
-        // the modes still hold rather than the one on screen.
-        if self.refused.is_some() {
-            return;
-        }
-        let Some(place) = self.place_of(mode) else {
+        // the modes still hold rather than the one on screen: refused while
+        // the panel refuses.
+        let Some(place) = self.showing.pick(mode) else {
             return;
         };
-        self.active = place;
         // To the arriving mode alone, and not broadcast: it is the one request
         // whose answer depends on being the mode about to be seen. A listing
         // that costs a walk of the whole project is refreshed here rather than
@@ -398,17 +385,14 @@ impl Workbench {
         self.root = Some(root.clone());
         self.disk = disk.clone();
         for mode in &mut self.modes {
-            if offered(on_host, mode.spec()) {
+            if mode.spec().offered(on_host) {
                 mode.set_root(&root, &disk, cx);
             }
         }
         if same {
             self.broadcast(&Request::Rescan, cx);
         }
-        if !self.offers(self.showing())
-            && let Some(place) = self.modes.iter().position(|m| self.offers(m.spec()))
-        {
-            self.active = place;
+        if let Some(place) = self.showing.set_root(on_host) {
             self.modes[place].handle(&Request::Shown, cx);
         }
         cx.notify();
@@ -418,6 +402,7 @@ impl Workbench {
     /// root they had, so coming back to it finds it as it was.
     pub fn refuse(&mut self, why: Option<Refusal>, cx: &mut Context<Self>) {
         if self.refused != why {
+            self.showing.refuse(why.is_some());
             self.refused = why;
             cx.notify();
         }
@@ -485,16 +470,11 @@ impl Workbench {
     /// Switching is what the answer buys: the mode that took the file is the
     /// one worth looking at, and the panel does not have to know which that is.
     pub fn open_file(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
-        if self.refused.is_some() {
-            return;
-        }
-        let on_host = self.on_host();
+        let modes = &mut self.modes;
         let opened = self
-            .modes
-            .iter_mut()
-            .position(|mode| offered(on_host, mode.spec()) && mode.open_file(path, window, cx));
+            .showing
+            .opened(|place| modes[place].open_file(path, window, cx));
         if let Some(place) = opened {
-            self.active = place;
             self.modes[place].handle(&Request::Shown, cx);
         }
         cx.notify();
@@ -532,12 +512,6 @@ fn failed(why: SharedString, cx: &mut Context<Workbench>) -> gpui::AnyElement {
                 })),
         )
         .into_any_element()
-}
-
-/// Whether a mode is offered on a root, `on_host` when its files are on a
-/// host.
-fn offered(on_host: bool, spec: WorkbenchModeSpec) -> bool {
-    spec.offered(on_host)
 }
 
 /// The behaviour half of the dock's panel trait alone, as the conversation's
@@ -600,7 +574,7 @@ impl Render for Workbench {
         let body = match self.refused.clone() {
             Some(Refusal::Waiting(why)) => onehand_ui::hint(why, cx),
             Some(Refusal::Failed(why)) => failed(why, cx),
-            None => self.modes[self.active].view().into_any_element(),
+            None => self.modes[self.showing.active()].view().into_any_element(),
         };
         // A measured glyph grid is sized by the font it was configured with and
         // not by the rem base around it, so a mode that says so is left alone:

@@ -527,11 +527,19 @@ impl Flow {
             }
             UEffect::Teardown { dir, keep } => self.torn_down.push((dir, keep)),
             UEffect::NoteTakenUp {
+                root: _,
                 file,
                 number,
                 said,
                 session,
-            } => crate::issues::taken_up_blocking(&file, number, &said, session).unwrap(),
+            } => {
+                let change = crate::issues::drive::Change::TakenUp {
+                    number,
+                    text: said,
+                    session,
+                };
+                crate::issues::drive::write_blocking(&file, change, 1).unwrap();
+            }
             UEffect::Tick => self.tick(),
             UEffect::Signal(signal) => self.said.push(format!("{signal:?}")),
             UEffect::Take { .. } | UEffect::ClaimPicked { .. } => {

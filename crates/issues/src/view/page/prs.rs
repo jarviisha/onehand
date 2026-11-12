@@ -35,7 +35,7 @@ impl IssuesView {
     }
 
     /// Read every project's pull requests now.
-    pub(super) fn read_prs(&mut self, cx: &mut Context<Self>) {
+    pub(in crate::view) fn read_prs(&mut self, cx: &mut Context<Self>) {
         let projects = self.pr_projects(cx);
         let effects = self.work.read_prs(&projects);
         self.carry(effects, cx);

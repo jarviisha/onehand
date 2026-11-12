@@ -15,6 +15,8 @@ use std::rc::Rc;
 
 mod view;
 use view::IssuesView;
+#[cfg(feature = "test-support")]
+pub use view::testing;
 
 // The issue list's keys, which the app's keymap binds in the `Issues`
 // context the page and the Workbench tab both take: the row above, the row
@@ -166,6 +168,22 @@ impl Page {
     pub fn forget_root(&self, root: &Path, cx: &mut App) {
         self.view.update(cx, |view, cx| view.forget_root(root, cx));
     }
+}
+
+/// Write `change` into the issues file `file` of the project at `root`, made
+/// outside every view of it (a tool, a session's note, a run's): through the
+/// one drive every view of the file shares, so each shows it as it lands, in
+/// order with the views' own changes. `answer` hears what it came to, once,
+/// after the update that landed it, whether or not a view holds the file.
+pub fn write(
+    root: &Path,
+    file: PathBuf,
+    change: onehand_core::issues::drive::Change,
+    connectors: &'static [&'static dyn Connector],
+    answer: impl FnOnce(Result<onehand_core::issues::drive::Applied, String>, &mut App) + 'static,
+    cx: &mut App,
+) {
+    view::write_outside(root, file, change, connectors, Box::new(answer), cx);
 }
 
 /// What a view of the issues does with a request, the mode's and the page's

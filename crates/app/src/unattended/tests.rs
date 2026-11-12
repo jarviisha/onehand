@@ -95,15 +95,15 @@ fn report() -> PendingReport {
 fn issues(dir: &Path) -> PathBuf {
     let file = dir.join("issues.json");
     for title in ["Fix it", "And this"] {
-        onehand_core::issues::update_blocking(&file, |kept| {
-            kept.create(
-                onehand_core::issues::Draft {
-                    title: title.into(),
-                    ..Default::default()
-                },
-                1,
-            )
-        })
+        let draft = onehand_core::issues::Draft {
+            title: title.into(),
+            ..Default::default()
+        };
+        onehand_core::issues::drive::write_blocking(
+            &file,
+            onehand_core::issues::drive::Change::Create(draft),
+            1,
+        )
         .unwrap();
     }
     file
@@ -292,4 +292,61 @@ fn boot_files_why_a_config_cannot_work(cx: &mut TestAppContext) {
             "{filed:?}"
         );
     }
+}
+
+/// A run's note that it took its issue up is written once, through the
+/// file's drive, and shows in a view open on the file without a rescan.
+#[gpui::test]
+fn a_runs_taken_up_note_is_written_once(cx: &mut TestAppContext) {
+    let dir = temp_dir("taken-up");
+    app(cx, &dir.join("tasks"), None);
+    let (storage, root) = (dir.join("storage"), dir.join("project"));
+    std::fs::create_dir_all(&root).unwrap();
+    let file = onehand_core::issues::file_for(&storage, &root);
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let draft = onehand_core::issues::Draft {
+        title: "Fix it".into(),
+        ..Default::default()
+    };
+    let create = onehand_core::issues::drive::Change::Create(draft);
+    onehand_core::issues::drive::write_blocking(&file, create, 1).unwrap();
+    let view = cx.update(|cx| onehand_issues::testing::OpenView::new(&storage, &root, cx));
+    for _ in 0..20 {
+        cx.run_until_parked();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    cx.update(|cx| {
+        super::perform(
+            vec![onehand_core::unattended::drive::Effect::NoteTakenUp {
+                root: root.clone(),
+                file: file.clone(),
+                number: 1,
+                said: "Taken up by an unattended run".into(),
+                session: "s-1".into(),
+            }],
+            cx,
+        )
+    });
+    for _ in 0..50 {
+        cx.run_until_parked();
+        if !notes(&file, 1).is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    cx.run_until_parked();
+    assert_eq!(notes(&file, 1), ["Taken up by an unattended run"]);
+    let kept = onehand_core::issues::load_blocking(&file).unwrap();
+    let session = kept.get(1).unwrap().notes[0].session.clone();
+    assert_eq!(session.as_deref(), Some("s-1"));
+    let shown = cx.update(|cx| view.shown(cx)).unwrap();
+    let said: Vec<_> = shown
+        .get(1)
+        .unwrap()
+        .notes
+        .iter()
+        .map(|n| n.text.clone())
+        .collect();
+    assert_eq!(said, ["Taken up by an unattended run"]);
+    let _ = std::fs::remove_dir_all(dir);
 }

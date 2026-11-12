@@ -6,6 +6,7 @@ use crate::chat::session::ChatEvent;
 use gpui::{Context, Window};
 use gpui_component::WindowExt as _;
 use onehand_core::chat::drive::Origin;
+use onehand_core::issues::link::{NotHere, TakenUp, work_here};
 use std::path::Path;
 
 impl Shell {
@@ -28,8 +29,15 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let (Some(idx), Some(file)) = (self.root_index(root), self.issues_file(root)) else {
-            return;
+        let (idx, file) = match work_here(self.root_index(root), self.issues_file(root)) {
+            Ok(here) => here,
+            Err(why) => {
+                let said = not_here(why);
+                #[cfg(test)]
+                tests::SAID.with(|told| told.borrow_mut().push(said));
+                window.push_notification(crate::toast::warning(said), cx);
+                return;
+            }
         };
         self.select_root(idx, window, cx);
         let Some(uid) = self.start_session(None, None, window, cx) else {
@@ -46,39 +54,33 @@ impl Shell {
         session.update(cx, |session, cx| {
             session.prompt_when_up(prompt, Origin::Issue, cx)
         });
-        let workbench = self.workbench.downgrade();
         let at = self.chat.read(cx).window_handle();
-        let mut told = false;
+        let mut owed = TakenUp::new(file, number);
+        let place = root.to_path_buf();
         cx.subscribe(&session, move |_, session, _: &ChatEvent, cx| {
-            let Some(id) = session.read(cx).chat.session_id.clone().filter(|_| !told) else {
+            let Some((file, change)) = owed.heard(&session.read(cx).chat) else {
                 return;
             };
-            told = true;
-            let (file, workbench) = (file.clone(), workbench.clone());
-            cx.spawn(async move |_, cx| {
-                let done = cx
-                    .background_executor()
-                    .spawn(async move {
-                        onehand_core::issues::taken_up_blocking(
-                            &file,
-                            number,
-                            "Taken up by a session on this checkout",
-                            id,
-                        )
-                    })
-                    .await;
-                // Said once: the note is written once per session.
-                if let Err(why) = done {
-                    let _ = at.update(cx, |_, window, cx| {
-                        window.push_notification(
-                            crate::toast::failed("Noting the session on the issue", why),
-                            cx,
-                        )
-                    });
-                }
-                let _ = workbench.update(cx, |panel, cx| panel.rescan(cx));
-            })
-            .detach();
+            // Through the file's drive, which every view of it shares: each
+            // shows the note as it lands.
+            onehand_issues::write(
+                &place,
+                file,
+                change,
+                crate::features::connectors(),
+                move |done, cx| {
+                    // Said once: the note is written once per session.
+                    if let Err(why) = done {
+                        let _ = at.update(cx, |_, window, cx| {
+                            window.push_notification(
+                                crate::toast::failed("Noting the session on the issue", why),
+                                cx,
+                            )
+                        });
+                    }
+                },
+                cx,
+            );
         })
         .detach();
     }
@@ -133,4 +135,25 @@ impl Shell {
         self.tell_issues_page_projects(cx);
         self.tell_workflows_page_projects(cx);
     }
+
+    /// An issues file of this window's was written outside its views: what
+    /// reads the file itself, the workspace page, reads it again while it is
+    /// what is showing. The Issues views share the file's drive, which shows
+    /// the write already.
+    pub(crate) fn issues_written(&mut self, cx: &mut Context<Self>) {
+        if self.workspace_shown(cx) {
+            self.workspace_page.update(cx, |page, cx| page.reload(cx));
+        }
+    }
 }
+
+/// Why an issue cannot be worked by hand here, in the words the window says.
+fn not_here(why: NotHere) -> &'static str {
+    match why {
+        NotHere::ProjectGone => super::carry::PROJECT_GONE,
+        NotHere::NoIssuesFile => "This workspace keeps no issues, so that issue cannot be noted",
+    }
+}
+
+#[cfg(test)]
+mod tests;

@@ -15,7 +15,7 @@
 //! code) is when the two halves split into capabilities of their own.
 
 use crate::issues::Snapshot;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::unattended::Issue;
 use crate::unattended::IssueRow;
 use std::path::Path;
@@ -234,30 +234,36 @@ pub fn serving(connectors: &[&'static dyn Connector], root: &Path) -> Result<usi
     })
 }
 
-/// A connector for tests.
-#[cfg(test)]
-pub(crate) mod fake {
+/// A connector for tests. Built for this crate's tests, and wherever the
+/// `test-support` feature is on, which a test build of the workspace turns
+/// on through the crates that take it for their tests.
+#[cfg(any(test, feature = "test-support"))]
+pub mod fake {
     use super::*;
 
     /// It serves or refuses as told, answers for its `account`, lists `limit`
     /// issues, finds the issues numbered in `labelled` under any label, has
-    /// the pull requests in `pulls` by branch, fetches nothing, and fails the
-    /// test if asked anything else.
-    pub(crate) struct Fake {
-        pub(crate) name: &'static str,
-        pub(crate) serves: Result<(), &'static str>,
-        pub(crate) account: Result<&'static str, &'static str>,
-        pub(crate) labelled: &'static [u64],
+    /// the pull requests in `pulls` by branch and lists those of `listed`,
+    /// fetches nothing, finds nothing to sync, and fails the test if asked
+    /// anything else.
+    pub struct Fake {
+        pub name: &'static str,
+        pub serves: Result<(), &'static str>,
+        pub account: Result<&'static str, &'static str>,
+        pub labelled: &'static [u64],
         /// Branch, state and address of each pull request it knows of.
-        pub(crate) pulls: &'static [(&'static str, PrState, &'static str)],
+        pub pulls: &'static [(&'static str, PrState, &'static str)],
         /// Its default branch; `None` is a question it was not told to answer.
-        pub(crate) default_branch: Option<&'static str>,
+        pub default_branch: Option<&'static str>,
         /// Why its open issues cannot be listed, when they cannot.
-        pub(crate) lists: Result<(), &'static str>,
+        pub lists: Result<(), &'static str>,
+        /// The branches its list of pull requests holds, of those in
+        /// `pulls`, and whether the list was cut; `None` gives no list.
+        pub listed: Option<(&'static [&'static str], bool)>,
     }
 
     impl Fake {
-        pub(crate) const SERVING: Fake = Fake {
+        pub const SERVING: Fake = Fake {
             name: "Forge",
             serves: Ok(()),
             account: Ok("Signed in as t"),
@@ -265,6 +271,7 @@ pub(crate) mod fake {
             pulls: &[],
             default_branch: Some("main"),
             lists: Ok(()),
+            listed: None,
         };
     }
 
@@ -341,6 +348,18 @@ pub(crate) mod fake {
                     checks: Vec::new(),
                 }))
         }
+        fn pull_requests_blocking(&self, root: &Path, _: usize) -> Result<PullRequests, String> {
+            let Some((branches, capped)) = self.listed else {
+                return Err(format!("{} gives no list of pull requests.", self.name));
+            };
+            let mut by_branch = Vec::new();
+            for branch in branches {
+                if let Some(pr) = self.pull_request_for_blocking(root, branch)? {
+                    by_branch.push((branch.to_string(), pr));
+                }
+            }
+            Ok(PullRequests { by_branch, capped })
+        }
         fn open_pull_request_blocking(
             &self,
             _: &Path,
@@ -356,13 +375,14 @@ pub(crate) mod fake {
         fn read_review_with(&self, number: u64) -> String {
             format!("`forge review {number}`")
         }
+        /// Nothing on the far side: a sync moves nothing, and lands.
         fn issues_for_sync_blocking(
             &self,
             _: &Path,
             _: Option<u64>,
             _: usize,
         ) -> Result<SyncListing, String> {
-            unreachable!()
+            Ok(SyncListing::default())
         }
         fn issue_blocking(&self, _: &Path, _: &str) -> Result<Option<RemoteIssue>, String> {
             unreachable!()

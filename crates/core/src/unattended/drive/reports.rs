@@ -37,6 +37,7 @@ impl UnattendedDrive {
             task.setup.branch.as_deref().unwrap_or_default()
         );
         vec![Effect::NoteTakenUp {
+            root: task.setup.repo.clone(),
             file,
             number: issue.number,
             said,

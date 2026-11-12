@@ -91,6 +91,69 @@ fn an_opens_deadline_comes_round_and_frees_its_request(cx: &mut TestAppContext) 
     assert!(!fx.is_empty());
 }
 
+/// `create_issue` writes its issue once, through the file's drive, and
+/// answers so; the same title again, while that issue is open, is answered
+/// as already open and written nowhere.
+#[gpui::test]
+fn a_tools_issue_is_written_once_and_not_again_while_open(cx: &mut TestAppContext) {
+    use crate::shell::rig;
+    let dir = rig::folder("tool-issue");
+    let (_, shell, cx) = rig::shell(cx, dir.join("tasks"), Vec::new());
+    let storage = dir.join("storage");
+    rig::keep_in(&shell, storage.clone(), cx);
+    rig::show_workspace(&shell, cx);
+    // An Issues view open on the project, which no rescan will reach.
+    let view =
+        cx.update(|_, cx| onehand_issues::testing::OpenView::new(&storage, Path::new("/tmp"), cx));
+    // Its first read lands before anything is written.
+    for _ in 0..30 {
+        cx.run_until_parked();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let call = |title: &str| Call::CreateIssue {
+        project: Some("tmp".into()),
+        title: title.into(),
+        body: "on open".into(),
+    };
+    let ask = |call: Call, cx: &mut gpui::VisualTestContext| {
+        let (answer, heard) = oneshot::channel();
+        cx.update(|_, cx| perform(Peer::Outside, call, answer, cx));
+        for _ in 0..100 {
+            cx.run_until_parked();
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        futures::executor::block_on(heard).unwrap()
+    };
+    assert_eq!(
+        ask(call("Crash"), cx),
+        Ok("Wrote issue #1: Crash".to_string())
+    );
+    // The workspace page, which reads the file itself, is told.
+    for _ in 0..100 {
+        if !rig::workspace_issues(&shell, cx).is_empty() {
+            break;
+        }
+        cx.run_until_parked();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(rig::workspace_issues(&shell, cx), ["Crash"]);
+    let shown = cx.update(|_, cx| view.shown(cx)).unwrap();
+    let titles: Vec<_> = shown
+        .listed()
+        .iter()
+        .map(|issue| issue.title.clone())
+        .collect();
+    assert_eq!(titles, ["Crash"]);
+    assert_eq!(
+        ask(call(" crash "), cx),
+        Ok("Issue #1 is already open with that title".to_string())
+    );
+    let file = onehand_core::issues::file_for(&storage, Path::new("/tmp"));
+    let kept = onehand_core::issues::load_blocking(&file).unwrap();
+    assert_eq!(kept.listed().len(), 1);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 /// Ask `call` of the tools as `peer`, and read the answer once everything
 /// it started has landed.
 fn ask(peer: Peer, call: Call, cx: &mut gpui::VisualTestContext) -> Result<String, String> {

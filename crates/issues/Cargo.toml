@@ -18,6 +18,13 @@ onehand-core = { path = "../core" }
 # for local time on an issue's history, not pulled in by it.
 chrono = "0.4"
 
+[features]
+# An Issues view open on one project, for the tests of the crates that
+# write issues files from outside the views.
+test-support = []
+
 [dev-dependencies]
 # `TestAppContext`, to hold the shared issues file's carrier to its contract.
 gpui = { workspace = true, features = ["test-support"] }
+# Core's fake connector, to hold the views' reads of the work to their contract.
+onehand-core = { path = "../core", features = ["test-support"] }

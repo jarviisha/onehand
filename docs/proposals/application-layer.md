@@ -24,8 +24,8 @@
     where a driven task lands, what a run tells unattended runs) and tests whole flows across
     drives with no front end (`task::flows`).
   - Phase 11 takes every leftover of phases 4 to 10, in five PRs by area; its plan is under
-    *Plan*. PR 11a, tasks and unattended runs, is built, as are sessions and hosts (11b1, 11b2)
-    and the workspace and the shell (11c).
+    *Plan*. PR 11a, tasks and unattended runs, is built, as are sessions and hosts (11b1, 11b2),
+    the workspace and the shell (11c), and issues and the Workbench (11d).
   - What is left here is what each phase left for later, the record of the trial and the
     decisions; *Done when* is not met until phase 11 is built, and the proposal leaves
     `docs/proposals/` with phase 11's last PR.
@@ -701,14 +701,62 @@ Left for later (PR 11c):
 - The per-call bodies of `perform_now` that read a window or start async work stay the carrier's;
   `create_issue`'s body is 11d's.
 
-PR 11d, issues and the Workbench:
-- `Issues`' writers outside `FileDrive` (a tool, an unattended run's notes, the issue work's note)
-  made through its `Change`s, and its methods `pub(crate)`;
-- the Issues views' sync timer into `FileDrive`'s clock;
-- which mode shows after a project switch and which answers an open file into core's
-  `workbench`;
-- the pull request reads' carrying tested, with core's fake connector reachable under a test
-  feature.
+PR 11d, issues and the Workbench. Built:
+- Every change to an issues file is a `Change`: beside the views' own, a note, a session's note,
+  a label taken off, and a new issue unless one is open with its title (`CreateUnlessOpen`). A
+  change answers what it came to (`Applied`), and `issues::drive::write_blocking` writes one under
+  the file's lock, nothing when a title was already open. `Issues`' mutators and `update_blocking`
+  are `pub(crate)`; `create_unless_open_blocking` and `taken_up_blocking` are gone.
+- The app's writers outside the views (the `create_issue` tool, an unattended run's note that it
+  took its issue up, the issue work's note) write through the file's one drive,
+  `onehand_issues::write`, which answers its maker once after the update that landed it. A write
+  says who made it (`Maker`), and only the views' writes count toward the newest, so one made
+  outside them never keeps a person's new issue from being selected. A write that wrote nothing
+  (a title already open) sends nothing to the forge. The workspace page, which reads the files
+  itself, is read again in the caller's window when a tool writes a new issue
+  (`Shell::issues_written`). An unattended run's claim and
+  reports stay core's blocking bodies (`Tracker`, now `unattended/tracker.rs`), written as
+  `Change`s.
+- When a session working an issue by hand notes it is `issues::link::TakenUp`'s: once, when its
+  conversation is named, read off the session's `Chat` (moved here from 11c). Whether an issue can
+  be worked by hand there at all is `issues::link::work_here`'s (`NotHere`), said by the window.
+- Each issues file has its own sync clock: `FileDrive` arms five minutes from a read or a sync
+  landing on a file kept in step, while some view is on its project (`FileDrive::watched`); the
+  views keep only their redraw.
+- Which Workbench mode shows after a switch, for a file opened and for a pick is
+  `workbench::Showing`, a model with no effects; the panel holds the modes and tells the one that
+  came to show.
+- The Issues views' pull request reads are tested on their carrier, against core's fake connector
+  under a `test-support` feature; under `onehand-issues`' own, an Issues view open on a file
+  (`testing::OpenView`) lets the app's tests see a write from outside the views land in it. Characterisation tests written first pin the reads, the views'
+  sync timer, the mode choice and working an issue by hand where it cannot be.
+
+Phase 11 changed, on purpose (PR 11d):
+- A1. An unattended run's note that it took its issue up shows at once on every Issues view of its
+  file; before, only after the next rescan.
+- A2. A tool's issue shows at once in every window's views of the file; before, only in the
+  caller's window, after a rescan.
+- A3. A file's sync comes round five minutes after its last sync landed, not five minutes after a
+  view was made: a sync a person pressed puts the next one back.
+- A4. One clock per file, not one per view: two views on one file ask once.
+- A5. The issue work's note shows in every view of its file as it lands, the window's Issues page
+  included; before, only the Workbench was told, by a rescan.
+- A6. Working an issue whose project left the workspace, or in a workspace keeping no issues, says
+  why; before, nothing happened.
+- A7. A tool's new issue and a session's or a run's note that it took an issue up reach the forge
+  of a file kept in step at once, as a view's edit does; before, on the next read, behind the
+  gap. A tool's issue whose title was already open writes nothing and sends nothing.
+
+Left for later (PR 11d):
+- `LocalIssue`'s fields stay public, beside `Task`'s (11e).
+- `Tracker::Synced` syncs the file itself (`sync_blocking`), which its `FileDrive` does not hear
+  of: the file's lock serializes it, so nothing is lost, but the drive may sync again right after.
+- An unattended run's claim and reports are `Change`s written by core's blocking bodies, not
+  through the shared drive: they run inside blocking claims, between forge calls. A view sees them
+  on its next read.
+- The issue work's note is not tested on a real shell: the rig's agents cannot name a
+  conversation. Its rule is tested in core.
+- `connector::memory::Forge` stays `cfg(test)`: nothing outside core needs it yet.
 
 PR 11e, across the drives:
 - `Task`'s fields `pub(crate)` behind read accessors;

@@ -109,9 +109,13 @@ impl IssuesView {
                             state.form = None;
                         }
                         let open = state.form.is_some();
-                        if let Some(to) =
-                            moves_selection(newest, *number, asked.picked, state.selected, open)
-                        {
+                        if let Some(to) = moves_selection(
+                            newest,
+                            number.issue(),
+                            asked.picked,
+                            state.selected,
+                            open,
+                        ) {
                             state.selected = Some(to);
                         }
                         self.status = None;

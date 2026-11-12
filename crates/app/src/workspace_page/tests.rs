@@ -22,7 +22,9 @@ fn a_host_tile_says_its_sessions_alone() {
         title: "Broken".into(),
         ..Default::default()
     };
-    issues.create(draft, 1).unwrap();
+    onehand_core::issues::drive::Change::Create(draft)
+        .apply(&mut issues, 1)
+        .unwrap();
     let read = vec![(PathBuf::from("/srv/app"), issues)];
     let here = project(None, 1);
     let there = project(Some(HostName("vps".into())), 1);

@@ -10,7 +10,9 @@
 use gpui::{App, AppContext as _, Context, Entity, Global, WeakEntity};
 use onehand_core::chat::Now;
 use onehand_core::connector::Connector;
-use onehand_core::issues::drive::{Change, Effect, FileDrive, Input, Signal, read_blocking};
+use onehand_core::issues::drive::{
+    Applied, Change, Effect, FileDrive, Input, Maker, Signal, read_blocking, write_blocking,
+};
 use onehand_core::issues::{self, sync};
 use onehand_core::saving::OrderedWriter;
 use std::collections::HashMap;
@@ -24,14 +26,22 @@ struct Files(HashMap<PathBuf, WeakEntity<IssuesFile>>);
 
 impl Global for Files {}
 
+/// What a writer outside every view hears once its change's write lands.
+pub(crate) type Answer = Box<dyn FnOnce(Result<Applied, String>, &mut App)>;
+
 /// The carrier of one file's drive: it reads, syncs, publishes and writes off
 /// the UI loop as the drive asks, and tells it what came of each.
 pub(super) struct IssuesFile {
     drive: FileDrive,
     /// The read in flight, held so that starting another drops it.
     _load: Option<gpui::Task<()>>,
+    /// The drive's clock, held so that arming it again drops the wait
+    /// before, and so it goes with the file.
+    _clock: Option<gpui::Task<()>>,
     /// Writes the file one change at a time, in the order they were made.
     writer: OrderedWriter,
+    /// Who to answer, by change, for the changes made outside every view.
+    makers: HashMap<u64, Answer>,
 }
 
 impl gpui::EventEmitter<Signal> for IssuesFile {}
@@ -60,7 +70,9 @@ impl IssuesFile {
         let file = cx.new(|_| Self {
             drive: FileDrive::new(root.to_path_buf(), path.clone(), connectors),
             _load: None,
+            _clock: None,
             writer: OrderedWriter::spawn("onehand-issues"),
+            makers: HashMap::new(),
         });
         cx.global_mut::<Files>().0.insert(path, file.downgrade());
         file
@@ -85,9 +97,26 @@ impl IssuesFile {
     /// Write `change` after every change made before it: which change it
     /// is, for the view that made it to hear its write in [`Signal::Wrote`].
     pub(super) fn write(&mut self, change: Change, cx: &mut Context<Self>) -> u64 {
-        let (of, write) = self.drive.write(change, now());
+        let (of, write) = self.drive.write(change, Maker::View, now());
         self.carry(vec![write], cx);
         of
+    }
+
+    /// Show and write `change`, made outside every view, after every change
+    /// made before it, and give `answer` what it came to once it lands.
+    pub(crate) fn write_outside(&mut self, change: Change, answer: Answer, cx: &mut Context<Self>) {
+        let mut fx = self.drive.show(&change, now());
+        let (of, write) = self.drive.write(change, Maker::Outside, now());
+        self.makers.insert(of, answer);
+        fx.push(write);
+        self.carry(fx, cx);
+    }
+
+    /// View `viewer` is on this file's project (`on`), or no longer: the
+    /// file's clock comes round while one is.
+    pub(super) fn watched(&mut self, viewer: u64, on: bool, cx: &mut Context<Self>) {
+        let fx = self.drive.watched(viewer, on);
+        self.carry(fx, cx);
     }
 
     /// Keep the file in step with its forge, if that is due; `asked` when
@@ -109,6 +138,15 @@ impl IssuesFile {
         for effect in fx {
             match effect {
                 Effect::Changed => cx.notify(),
+                Effect::Arm { token, after } => {
+                    self._clock = Some(cx.spawn(async move |file, cx| {
+                        cx.background_executor().timer(after).await;
+                        let _ = file.update(cx, |file: &mut Self, cx| {
+                            let fx = file.drive.handle(Input::Elapsed { token, now: now() });
+                            file.carry(fx, cx);
+                        });
+                    }));
+                }
                 Effect::Read { token } => {
                     let (root, path) = self.drive.place();
                     let connectors = self.drive.connectors();
@@ -146,9 +184,7 @@ impl IssuesFile {
                 }
                 Effect::Write { of, change, at } => {
                     let (_, path) = self.drive.place();
-                    let written = self.writer.write(move || {
-                        issues::update_blocking(&path, move |kept| change.apply(kept, at))
-                    });
+                    let written = self.writer.write(move || write_blocking(&path, change, at));
                     // Held strongly: every write lands, whether or not a view
                     // is still there, so what was read meanwhile is let through.
                     let file = cx.entity();
@@ -182,7 +218,19 @@ impl IssuesFile {
                     })
                     .detach();
                 }
-                Effect::Signal(signal) => cx.emit(signal),
+                Effect::Signal(signal) => {
+                    match &signal {
+                        // Its maker hears it after the update that landed it.
+                        Signal::Wrote { of, done } => {
+                            if let Some(answer) = self.makers.remove(of) {
+                                let done = done.clone();
+                                cx.defer(move |cx| answer(done, cx));
+                            }
+                        }
+                        Signal::PublishFailed { .. } => {}
+                    }
+                    cx.emit(signal)
+                }
             }
         }
     }

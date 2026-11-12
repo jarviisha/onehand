@@ -287,29 +287,33 @@ fn a_write_to_one_file_does_not_wait_on_another() {
 
 #[test]
 fn an_open_issue_with_the_same_title_is_not_written_twice() {
+    use drive::{write_blocking, Applied, Change};
     let dir = std::env::temp_dir().join(format!("onehand-issues-unless-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("issues.json");
-    let first = create_unless_open_blocking(&file, draft("Crash on open")).unwrap();
-    let Created::New(number) = first else {
-        panic!("{first:?}");
-    };
-    // Case and spaces aside, the same title.
+    let unless = |title: &str| Change::CreateUnlessOpen(draft(title));
+    let (kept, first) = write_blocking(&file, unless("Crash on open"), 1).unwrap();
+    assert_eq!(first, Applied::New(1));
+    let number = 1;
+    // Case and spaces aside, the same title: nothing is written.
     assert_eq!(
-        create_unless_open_blocking(&file, draft("  crash ON open ")).unwrap(),
-        Created::Already(number)
+        write_blocking(&file, unless("  crash ON open "), 2)
+            .unwrap()
+            .1,
+        Applied::Already(number)
     );
+    assert_eq!(load_blocking(&file).unwrap().revision(), kept.revision());
     // Closed, it no longer counts.
     update_blocking(&file, |kept| {
         kept.issues.iter_mut().for_each(|i| i.open = false);
         Ok(())
     })
     .unwrap();
-    assert!(matches!(
-        create_unless_open_blocking(&file, draft("Crash on open")).unwrap(),
-        Created::New(n) if n != number
-    ));
+    assert_eq!(
+        write_blocking(&file, unless("Crash on open"), 3).unwrap().1,
+        Applied::New(2)
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -319,7 +323,8 @@ fn a_blank_title_is_refused_and_nothing_is_written() {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("issues.json");
-    assert!(create_unless_open_blocking(&file, draft("   ")).is_err());
+    let blank = drive::Change::CreateUnlessOpen(draft("   "));
+    assert!(drive::write_blocking(&file, blank, 1).is_err());
     assert!(!file.exists());
     let _ = std::fs::remove_dir_all(&dir);
 }
