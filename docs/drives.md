@@ -112,8 +112,16 @@ fn end_batch(&mut self) -> Vec<Effect>;
   answers it (`Next`); how many events a batch takes at most is the carrier's cap.
 - **Effects are ordered.** "Do A, then B once A answers" is A now, and B on A's input.
 - **A drive never reads the clock.** A wait is an `Arm` effect answered by an `Elapsed` input,
-  and what may stamp or time something is told the time (`Now`), which the carrier reads.
-  Its model reads no clock either (rule 12).
+  and what may stamp or time something is told the time, in one shape for every drive
+  (`onehand_core::Now`: the wall clock's seconds and an instant), which the carrier reads with
+  `Now::read`. Its model reads no clock either (rule 12). What a drive names a new thing by is
+  handed in the same way, never minted inside: an Editor tab's id comes with the read's answer
+  (`Input::Read { uid }`), a task's with the command that makes it.
+- **Our own enums are matched whole.** A drive, a link and their tests name every variant of an
+  enum this workspace declares, with no `_`, `other` or binding arm, `matches!`, `if let` or
+  `let … else` that lets the rest through: a variant added later is then a compile error at every
+  place that has to decide about it. A router that hands the rest on lists what it hands on. A
+  read that many places share is matched whole once, beside its enum (`AcpEvent::ends_stream`).
 - `Effect` and `Input` need not be `Clone` or `PartialEq`; tests compare what they need.
 
 ### 5. A late answer is handled as its effect declares
@@ -167,15 +175,17 @@ call them, and core exports drives and the model's read side. A call from the ap
 `Chat::submit` does not compile, and `dead_code` finds a mutator no drive uses.
 
 Built for `Chat`, `Task`, the task queue and the workflow engine's `Run`: every method that
-changes them is `pub(crate)`. `Task`'s fields are still public, for the app to build a task with,
-though an issue's task is built in core (`Task::of_issue`). Unattended runs, the clock, hosts
+changes them is `pub(crate)`, and `Task`'s fields are `pub(crate)` behind read accessors: every
+task is built in core, and a test that sets one up reaches its fields through the
+`test-support` feature. Unattended runs, the clock, hosts
 and offloaded projects keep their state in their drives' private fields; an offloaded folder's
 entry is read through its drive, never handed out to change. The remote bridge's chats, the tools'
 state and the settings are kept in their drives too, and so is each window's workspace tree, whose
 mutators are `pub(crate)` and which `WorkspaceDrive` derefs to without `DerefMut`, and what is
-shown of an issues file, which `FileDrive` derefs to; `Issues`' mutators are `pub(crate)`, and
-every change to the file is a `Change`, written by its drive or, for an unattended run's claim and
-reports, by core's blocking body (`issues::drive::write_blocking`). `Chats`' mutators are `pub(crate)`, the tools'
+shown of an issues file, which `FileDrive` derefs to; `Issues`' mutators and `LocalIssue`'s
+fields are `pub(crate)`, the fields behind read accessors, and every change to the file is a
+`Change`, written by its drive or, for an unattended run's claim and reports, by core's blocking
+body (`issues::drive::write_blocking`). `Chats`' mutators are `pub(crate)`, the tools'
 state is private to `ControlDrive`, and `SettingsDrive` derefs to its settings without `DerefMut`, as `RecentsDrive` does to the recents, whose mutators are `pub(crate)`. A Workbench's open files are
 `EditorDrive`'s, which derefs to them, and `RootEditors`' fields are `pub(crate)`; the Plugins
 mode's state is private to `PluginsDrive`.
@@ -302,7 +312,8 @@ scheduler does not drive.
 
 A model changes itself and answers; it sends nothing, writes nothing, and is told the time rather
 than reading it. `Chat` queues what is to go to its agent, which its drive hands on as
-`Effect::Request`, and stamps and times by the `Now` its drive was told. One thing in it still
+`Effect::Request`, and stamps and times by the `Now` its drive was told; a run stamps its moves
+and its visits with the time each move is made at, which the run's and the tasks' drives pass on. One thing in it still
 does I/O: the save its drop writes when a session closes, synchronously, on the thread that
 drops it.
 
