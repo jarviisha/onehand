@@ -348,7 +348,7 @@ pub(crate) fn each<R>(cx: &App, look: impl Fn(&Task, bool) -> Option<R>) -> Vec<
     };
     t.tasks()
         .iter()
-        .filter_map(|task| look(task, t.busy(&task.id)))
+        .filter_map(|task| look(task, t.busy(task.id())))
         .collect()
 }
 
@@ -396,7 +396,7 @@ pub(crate) fn task(id: &str, cx: &App) -> Option<Task> {
 // down by the cap on rows drawn; keep the answers beside the issue works if a
 // long Tasks page ever stutters.
 pub(crate) fn resume_refused(task: &Task, cx: &App) -> Option<String> {
-    let template = task.runs.last()?.template.clone();
+    let template = task.runs().last()?.template.clone();
     let facts = crate::unattended::task_facts(task, template, cx);
     onehand_core::preflight::refusal(onehand_core::preflight::Kind::Resume, &facts)
 }
@@ -410,7 +410,7 @@ pub(crate) fn holder_at(place: &std::path::Path, except: Option<&str>, cx: &App)
         .queue()
         .holder_at(place)
         .filter(|holder| Some(*holder) != except)?;
-    t.task(holder).map(|task| task.brief.title.clone())
+    t.task(holder).map(|task| task.brief().title.clone())
 }
 
 /// A person pressed Stop on task `id`, whatever it is doing: a queued one is

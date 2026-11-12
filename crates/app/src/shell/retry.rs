@@ -71,7 +71,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(last) = task.runs.last() else {
+        let Some(last) = task.runs().last() else {
             return;
         };
         let (dir, end) = (last.setup.dir.clone(), last.last_mark().map(str::to_string));
@@ -112,7 +112,7 @@ impl Shell {
         changed: bool,
         cx: &App,
     ) -> Option<Result<WithCurrent, String>> {
-        let last = task.runs.last()?;
+        let last = task.runs().last()?;
         let now = crate::unattended::now_for(task, self.check_of(&last.setup.repo), cx);
         Some(Run::with_current(
             last,
@@ -133,7 +133,7 @@ impl Shell {
         if refused_elsewhere(&against, window, cx) {
             return;
         }
-        let Some(last) = task.runs.last().cloned() else {
+        let Some(last) = task.runs().last().cloned() else {
             return;
         };
         let same = last.template.clone();
@@ -164,9 +164,9 @@ impl Shell {
         let mut facts = crate::unattended::task_facts(&task, same.clone(), cx);
         // A retry asks for the place its task works in, whatever its
         // workflow says now: the run's own folder is kept.
-        facts.queued_behind = crate::task::holder_at(&place, Some(&task.id), cx);
+        facts.queued_behind = crate::task::holder_at(&place, Some(task.id()), cx);
         let found = preflight::preflight(preflight::Kind::Retry, &facts);
-        let ask = crate::agent_check::Ask::of(&facts, &task.setup.dir, cx);
+        let ask = crate::agent_check::Ask::of(&facts, &task.setup().dir, cx);
         let blocked = found.iter().any(|f| f.blocks);
         // What it keeps, one line each, and where Settings say otherwise now.
         let differs: Vec<Changed> = match self.plan_current(&task, false, cx) {
@@ -174,7 +174,7 @@ impl Shell {
             Some(Err(_)) | None => Vec::new(),
         };
         let kept = kept_lines(&last, &differs);
-        let (id, title) = (task.id.clone(), task.brief.title.clone());
+        let (id, title) = (task.id().to_string(), task.brief().title.clone());
         let shell = cx.entity();
         window.open_alert_dialog(cx, move |alert, _, cx| {
             let muted = cx.theme().muted_foreground;
@@ -297,7 +297,7 @@ impl Shell {
         if refused_elsewhere(&against, window, cx) {
             return;
         }
-        let Some(last) = task.runs.last().cloned() else {
+        let Some(last) = task.runs().last().cloned() else {
             return;
         };
         let changed = against == Some(Against::Changed);
@@ -315,7 +315,7 @@ impl Shell {
             .map(|plan| plan.template.clone())
             .map_err(Clone::clone);
         let mut facts = crate::unattended::setup_facts(&task, &setup, workflow, cx);
-        facts.queued_behind = crate::task::holder_at(&place, Some(&task.id), cx);
+        facts.queued_behind = crate::task::holder_at(&place, Some(task.id()), cx);
         let found = preflight::preflight(preflight::Kind::RetryCurrent, &facts);
         let ask = crate::agent_check::Ask::of(&facts, &setup.dir, cx);
         let blocked = found.iter().any(|f| f.blocks);
@@ -339,7 +339,7 @@ impl Shell {
         };
         let plan = plan.ok();
         let blocked = blocked || plan.is_none();
-        let (id, title) = (task.id.clone(), task.brief.title.clone());
+        let (id, title) = (task.id().to_string(), task.brief().title.clone());
         let shell = cx.entity();
         window.open_alert_dialog(cx, move |alert, _, cx| {
             let lines: Vec<_> = found
@@ -510,9 +510,9 @@ impl Shell {
         let Some(task) = crate::task::task(&id, cx) else {
             return;
         };
-        let has_check = self.check_of(&task.setup.repo).is_some();
+        let has_check = self.check_of(&task.setup().repo).is_some();
         let found = preflight::preflight(preflight::Kind::AnswerReview, &read.facts);
-        let ask = crate::agent_check::Ask::of(&read.facts, &task.setup.dir, cx);
+        let ask = crate::agent_check::Ask::of(&read.facts, &task.setup().dir, cx);
         let blocked = found.iter().any(|f| f.blocks);
         let said = match &read.from {
             Some(step) => format!(
@@ -544,7 +544,7 @@ impl Shell {
                 }
             };
             alert
-                .title(format!("Answer the review on {}?", task.brief.title))
+                .title(format!("Answer the review on {}?", task.brief().title))
                 .description(said.clone())
                 .child(gpui::div().v_flex().gap_1().w_full().children(lines))
                 .on_ok({

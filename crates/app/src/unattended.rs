@@ -446,7 +446,7 @@ pub(crate) fn now_for(
 /// timeout than its last run did: when a run that timed out is offered that
 /// second way out.
 pub(crate) fn timeout_moved(task: &onehand_core::task::Task, cx: &App) -> bool {
-    let Some(last) = task.runs.last() else {
+    let Some(last) = task.runs().last() else {
         return false;
     };
     // The check command moves no timeout, so it is not asked for.

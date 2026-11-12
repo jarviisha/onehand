@@ -95,8 +95,8 @@ fn app(cx: &mut TestAppContext, store: &Path) -> AnyWindowHandle {
 /// the place is found: whether it got it. What that asks is left undone, so
 /// a test drives the task itself.
 fn ask(task: Task, window: AnyWindowHandle, cx: &mut TestAppContext) -> bool {
-    let id = task.id.clone();
-    let place = queue::place_blocking(&task.setup.dir);
+    let id = task.id().to_string();
+    let place = queue::place_blocking(&task.setup().dir);
     cx.update(|cx| {
         add(task, cx);
         cx.update_global::<Tasks, _>(|t, _| {
@@ -114,7 +114,7 @@ fn ask(task: Task, window: AnyWindowHandle, cx: &mut TestAppContext) -> bool {
 
 /// Keep `task` and give it its place, as a request finding it free does.
 fn placed(task: Task, window: AnyWindowHandle, cx: &mut TestAppContext) -> String {
-    let id = task.id.clone();
+    let id = task.id().to_string();
     assert!(ask(task, window, cx));
     id
 }
@@ -252,16 +252,16 @@ fn stop_on_a_queued_task_calls_off_that_start_only(cx: &mut TestAppContext) {
     ));
     assert_eq!(group("5", cx), Group::Queued);
     // A retry is refused while the task waits for its place.
-    let template = kept("5", cx).runs[0].template.clone();
+    let template = kept("5", cx).runs()[0].template.clone();
     cx.update(|cx| retry("5", template, None, window, cx));
-    assert_eq!(kept("5", cx).runs.len(), 1, "no new run while it waits");
+    assert_eq!(kept("5", cx).runs().len(), 1, "no new run while it waits");
     cx.update(|cx| stop_task("5", cx));
     settle(cx);
     let stopped = kept("5", cx);
-    assert!(stopped.runs.is_empty());
+    assert!(stopped.runs().is_empty());
     assert_eq!(stopped.outcome(), Some(Outcome::Stopped(Stop::ByPerson)));
     assert_eq!(group("5", cx), Group::Finished);
-    assert!(on_disk(&store, "5").runs.is_empty());
+    assert!(on_disk(&store, "5").runs().is_empty());
     assert!(holds(&first, cx));
     cx.update(|cx| assert_eq!(cx.global::<Tasks>().working(&first), Some(Working::Running)));
 }
@@ -301,9 +301,9 @@ fn a_dismiss_is_kept_once_its_write_lands(cx: &mut TestAppContext) {
         .update(cx, |_, window, cx| dismiss("8", window, cx))
         .unwrap();
     settle(cx);
-    assert!(kept("8", cx).dismissed);
+    assert!(kept("8", cx).dismissed());
     assert_eq!(group("8", cx), Group::Finished);
-    assert!(on_disk(&store, "8").dismissed);
+    assert!(on_disk(&store, "8").dismissed());
 }
 
 /// Not kept, so not let go: a dismiss whose write fails goes back.
@@ -319,7 +319,7 @@ fn a_dismiss_whose_write_fails_goes_back(cx: &mut TestAppContext) {
         .update(cx, |_, window, cx| dismiss("9", window, cx))
         .unwrap();
     settle(cx);
-    assert!(!kept("9", cx).dismissed);
+    assert!(!kept("9", cx).dismissed());
     assert_eq!(group("9", cx), Group::Ended);
 }
 
@@ -381,7 +381,7 @@ fn an_agent_run_goes_from_its_prompt_to_done(cx: &mut TestAppContext) {
         .filter(|r| matches!(r, onehand_core::acp::AcpRequest::Prompt { .. }))
         .count();
     assert_eq!(more, 0);
-    let visit = &task.runs[0].visits()[0];
+    let visit = &task.runs()[0].visits()[0];
     assert!(visit.start.is_some() && visit.end.is_some(), "{visit:?}");
     let refs = git(
         &work,
@@ -521,7 +521,10 @@ fn a_finished_run_hears_nothing_more_from_its_session(cx: &mut TestAppContext) {
     carrier::turn(&mut tx);
     settle(cx);
     let after = kept("14", cx);
-    assert_eq!(after.runs[0].history.len(), before.runs[0].history.len());
+    assert_eq!(
+        after.runs()[0].history.len(),
+        before.runs()[0].history.len()
+    );
     cx.update(|cx| assert!(cx.global::<Tasks>().live.is_empty()));
 }
 
@@ -547,8 +550,14 @@ fn a_removal_lands_with_its_task_after_its_window_closed(cx: &mut TestAppContext
             folder.to_str().unwrap(),
         ],
     );
-    let mut task = Task::check("r1".into(), "true".into(), setup(&folder));
-    task.setup.repo = repo.clone();
+    let task = Task::check(
+        "r1".into(),
+        "true".into(),
+        Setup {
+            repo: repo.clone(),
+            ..setup(&folder)
+        },
+    );
     cx.update(|cx| add(task, cx));
     cx.update(|cx| {
         window
@@ -566,12 +575,12 @@ fn a_removal_lands_with_its_task_after_its_window_closed(cx: &mut TestAppContext
     cx.update(|cx| super::place::perform(vec![effect], None, cx));
     for _ in 0..200 {
         settle(cx);
-        if kept("r1", cx).worktree_removed {
+        if kept("r1", cx).worktree_removed() {
             break;
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    assert!(kept("r1", cx).worktree_removed, "kept with its task");
+    assert!(kept("r1", cx).worktree_removed(), "kept with its task");
     assert!(!folder.exists(), "the worktree went");
     let _ = std::fs::remove_dir_all(&repo);
 }

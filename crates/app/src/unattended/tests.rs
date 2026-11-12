@@ -63,8 +63,8 @@ fn issue_task(id: &str, number: u64, file: &Path, dir: &Path, unsent: Vec<Pendin
         mode: None,
         forge: None,
     };
-    let mut task = Task::check(id.into(), "true".into(), setup);
-    task.source = Source::Issue(IssueSource {
+    let task = Task::check(id.into(), "true".into(), setup);
+    task.with_source(Source::Issue(IssueSource {
         tracker: TrackerRef::Local {
             file: file.to_path_buf(),
         },
@@ -75,8 +75,7 @@ fn issue_task(id: &str, number: u64, file: &Path, dir: &Path, unsent: Vec<Pendin
         picked: false,
         unsent,
         notes: Vec::new(),
-    });
-    task
+    }))
 }
 
 /// A report of a run cut off and let go.

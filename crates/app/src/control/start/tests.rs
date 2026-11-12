@@ -98,9 +98,9 @@ fn a_start_off_screen_is_kept_quietly_and_says_where_it_landed(cx: &mut TestAppC
     let task = cx
         .update(|_, cx| crate::task::task(&id, cx))
         .expect("kept as a task");
-    assert!(matches!(task.origin, Some(Origin::Schedule { .. })));
-    assert_eq!(task.setup.agent.as_deref(), Some("a"));
-    assert_eq!(task.setup.dir, root);
+    assert!(matches!(task.origin(), Some(Origin::Schedule { .. })));
+    assert_eq!(task.setup().agent.as_deref(), Some("a"));
+    assert_eq!(task.setup().dir, root);
     let (listed, after) = cx.update(|_, cx| {
         let ws = &shell.read(cx).workspace_window().workspace;
         (ws.roots.iter().any(|r| r.path == root), ws.active_root)
