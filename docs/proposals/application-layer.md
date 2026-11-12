@@ -24,7 +24,8 @@
     where a driven task lands, what a run tells unattended runs) and tests whole flows across
     drives with no front end (`task::flows`).
   - Phase 11 takes every leftover of phases 4 to 10, in five PRs by area; its plan is under
-    *Plan*. PR 11a, tasks and unattended runs, is built, and sessions and hosts (11b1, 11b2).
+    *Plan*. PR 11a, tasks and unattended runs, is built, as are sessions and hosts (11b1, 11b2)
+    and the workspace and the shell (11c).
   - What is left here is what each phase left for later, the record of the trial and the
     decisions; *Done when* is not met until phase 11 is built, and the proposal leaves
     `docs/proposals/` with phase 11's last PR.
