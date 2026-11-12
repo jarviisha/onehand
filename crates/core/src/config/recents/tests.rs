@@ -79,3 +79,28 @@ fn only_an_unbinds_failed_forget_is_said() {
         })
         .is_empty());
 }
+
+/// A run of forgets that fail is said once: the next is only logged, until a
+/// write lands, after which a forget that fails is said again.
+#[test]
+fn a_run_of_failed_forgets_is_said_once_until_a_write_lands() {
+    let mut d = drive();
+    let forget = |d: &mut RecentsDrive, result: Result<(), String>| {
+        let (pending, _) = written(&d.forgot(Path::new("/a"), Forgot::Unbound));
+        d.handle(Input::Written { pending, result })
+    };
+    let full = || Err("disk full".to_string());
+    assert_eq!(
+        said(&forget(&mut d, full())),
+        &Signal::ForgetFailed("disk full".into())
+    );
+    assert_eq!(
+        said(&forget(&mut d, full())),
+        &Signal::WriteFailed("disk full".into())
+    );
+    assert!(forget(&mut d, Ok(())).is_empty());
+    assert_eq!(
+        said(&forget(&mut d, full())),
+        &Signal::ForgetFailed("disk full".into())
+    );
+}

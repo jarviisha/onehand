@@ -7,9 +7,6 @@
 use super::{Effect, Placed, TasksDrive};
 use crate::task::{Launch, Worktree};
 
-/// A worktree cut for a task, or why not.
-pub type Cut = Result<Worktree, String>;
-
 /// A start off screen under way: the task it is to be, what it launches,
 /// and the window it was asked from.
 #[derive(Debug, Clone, PartialEq)]
@@ -47,7 +44,7 @@ impl<W: Copy> TasksDrive<W> {
     }
 
     /// What [`Effect::Cut`] came to.
-    pub(super) fn cut(&mut self, start: OffScreen<W>, made: Cut) -> Effect<W> {
+    pub(super) fn cut(&mut self, start: OffScreen<W>, made: Result<Worktree, String>) -> Effect<W> {
         match made {
             Ok(cut) => Effect::Keep(OffScreen {
                 launch: Box::new(start.launch.on_worktree(cut)),

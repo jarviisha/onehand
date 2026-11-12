@@ -7,7 +7,7 @@ use crate::workflow::template::{StepKind, Template};
 /// What a task's next run takes when it runs with what Settings say now:
 /// what a new task of its kind would be given.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Now {
+pub struct Current {
     pub agent: Option<String>,
     pub mode: Option<String>,
     pub check: Option<String>,
@@ -245,7 +245,7 @@ impl Run {
     pub fn with_current(
         prev: &Run,
         newest: Result<Template, String>,
-        now: &Now,
+        now: &Current,
         changed: bool,
     ) -> Result<WithCurrent, String> {
         let mut template = newest?;

@@ -40,7 +40,7 @@ mod place;
 
 pub use begin::{Begin, Retry, Start, SESSION_NOT_STARTED};
 pub use cleanup::Judging;
-pub use off_screen::{Cut, OffScreen};
+pub use off_screen::OffScreen;
 
 /// How long a cancelled turn is waited for before its place is given up
 /// anyway: a turn that never ends would hold the place, and a slot, for good.
@@ -69,7 +69,10 @@ pub enum Input<W> {
         window_open: bool,
     },
     /// What [`Effect::Cut`] came to for `start`.
-    Cut { start: OffScreen<W>, made: Cut },
+    Cut {
+        start: OffScreen<W>,
+        made: Result<crate::task::Worktree, String>,
+    },
     /// Task `task`, holding its place, was driven in its window: begun, or
     /// refused there for `why` (its run's end is
     /// [`TasksDrive::not_started`]'s).

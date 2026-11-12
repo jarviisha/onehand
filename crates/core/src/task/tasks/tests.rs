@@ -901,7 +901,7 @@ fn a_start_off_screen_on_a_worktree_is_cut_first() {
     );
     assert_eq!(fx.first().map(name), Some("Cut"), "cut first");
     let start = fx.into_iter().next().and_then(start_of).unwrap();
-    let cut = |made: Cut| Input::Cut {
+    let cut = |made: Result<crate::task::Worktree, String>| Input::Cut {
         start: start.clone(),
         made,
     };

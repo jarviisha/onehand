@@ -20,7 +20,7 @@ mod retry;
 mod setup;
 mod visits;
 
-pub use retry::{Changed, Field, Now, StartWhy, WithCurrent};
+pub use retry::{Changed, Current, Field, StartWhy, WithCurrent};
 use setup::Marks;
 pub use setup::{Brief, Setup};
 

@@ -8,7 +8,7 @@ use crate::issues::sync::OutsideSync;
 use crate::issues::template;
 use crate::preflight::{self, About, Facts, Forge, Kind};
 use crate::task::Tracked;
-use crate::workflow::{Now, Template};
+use crate::workflow::{Current, Template};
 use crate::worktree;
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -818,15 +818,15 @@ pub fn now_for(
     runs: Option<&RunSettings>,
     first_agent: Option<String>,
     check: Option<String>,
-) -> Now {
+) -> Current {
     match runs.filter(|_| issue) {
-        Some(runs) => Now {
+        Some(runs) => Current {
             agent: runs.agent.clone().or(first_agent),
             mode: crate::config::mode_set(&runs.mode),
             check,
             timeout: Some(runs.timeout.clone()),
         },
-        None => Now {
+        None => Current {
             agent: first_agent,
             mode: None,
             check,
