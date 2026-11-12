@@ -105,6 +105,15 @@ pub enum Applied {
 }
 
 impl Applied {
+    /// Whether the change changed the file, which is then written: all but
+    /// a title already open.
+    pub fn wrote(self) -> bool {
+        match self {
+            Self::Nothing | Self::Named(_) | Self::New(_) => true,
+            Self::Already(_) => false,
+        }
+    }
+
     /// The issue it names, for whoever made the change to select.
     pub fn issue(self) -> Option<u64> {
         match self {
@@ -195,7 +204,7 @@ pub fn write_blocking(path: &Path, change: Change, at: u64) -> Result<(Issues, A
     super::update_unless(
         path,
         |kept| change.apply(kept, at),
-        |applied| matches!(applied, Applied::Already(_)),
+        |applied| !applied.wrote(),
     )
 }
 

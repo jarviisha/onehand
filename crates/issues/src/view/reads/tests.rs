@@ -182,7 +182,11 @@ fn a_pull_request_read_lands_once_for_the_work_it_was_about(cx: &mut TestAppCont
         view.set_works(&[a.clone(), b.clone()], &[PathBuf::new()], cx);
         view.state_for(&project, cx).unwrap().selected = Some(1);
         view.refresh(cx);
-        assert!(matches!(view.work.pr_seen(Some(&a)), PrSeen::Unread));
+        let unread = match view.work.pr_seen(Some(&a)) {
+            PrSeen::Unread => true,
+            PrSeen::Read(_) | PrSeen::Failed(_) => false,
+        };
+        assert!(unread);
         // Another issue opened before the first read lands.
         view.state_for(&project, cx).unwrap().selected = Some(2);
         view.refresh(cx);

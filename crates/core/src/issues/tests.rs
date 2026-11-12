@@ -294,9 +294,8 @@ fn an_open_issue_with_the_same_title_is_not_written_twice() {
     let file = dir.join("issues.json");
     let unless = |title: &str| Change::CreateUnlessOpen(draft(title));
     let (kept, first) = write_blocking(&file, unless("Crash on open"), 1).unwrap();
-    let Applied::New(number) = first else {
-        panic!("{first:?}");
-    };
+    assert_eq!(first, Applied::New(1));
+    let number = 1;
     // Case and spaces aside, the same title: nothing is written.
     assert_eq!(
         write_blocking(&file, unless("  crash ON open "), 2)
@@ -311,10 +310,10 @@ fn an_open_issue_with_the_same_title_is_not_written_twice() {
         Ok(())
     })
     .unwrap();
-    assert!(matches!(
+    assert_eq!(
         write_blocking(&file, unless("Crash on open"), 3).unwrap().1,
-        Applied::New(n) if n != number
-    ));
+        Applied::New(2)
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
