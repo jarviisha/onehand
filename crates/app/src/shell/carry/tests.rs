@@ -7,7 +7,7 @@ use super::super::Shell;
 use crate::state::Shared;
 use gpui::{Entity, TestAppContext, VisualTestContext};
 use gpui_component::Root;
-use onehand_core::config::{AgentSpec, WorkspaceConfig};
+use onehand_core::config::WorkspaceConfig;
 use onehand_core::workspace::Workspace;
 use onehand_core::workspace::drive::SAVE_DEBOUNCE;
 use std::path::PathBuf;
@@ -131,11 +131,7 @@ fn a_window_closing_writes_the_waiting_burst(cx: &mut TestAppContext) {
 #[gpui::test]
 fn an_ended_run_session_leaves_nothing_running(cx: &mut TestAppContext) {
     let (shell, cx) = shell(cx, Workspace::seeded("/tmp"));
-    let spec = AgentSpec {
-        name: "nowhere".into(),
-        command: "/nonexistent/onehand-test-agent".into(),
-        ..Default::default()
-    };
+    let spec = crate::shell::rig::nowhere();
     let (uid, session) = cx
         .update(|_, cx| {
             shell.update(cx, |shell, cx| {

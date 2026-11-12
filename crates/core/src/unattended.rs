@@ -7,6 +7,7 @@
 //! the steps; the app holds the rest: the tick, the session, the teardown.
 
 use crate::issues;
+use crate::issues::sync::OutsideSync;
 use crate::workflow::Brief;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -139,9 +140,10 @@ pub fn claim_picked_blocking(
     row: &IssueRow,
     label: &str,
     answering: Option<&str>,
+    synced: &mut Vec<OutsideSync>,
 ) -> Result<(), String> {
     if !label.is_empty() && row.carries(label) {
-        tracker.remove_label_blocking(root, row.issue.number, label)?;
+        tracker.remove_label_blocking(root, row.issue.number, label, synced)?;
     }
     tracker.comment_blocking(root, row.issue.number, &picked_claim_comment(answering))
 }
@@ -568,6 +570,8 @@ impl Budget {
 /// The open issues in `tracker` that carry `label` and were opened by the
 /// user, oldest first: a search takes the first no task is still working on.
 ///
+/// A sync the search made is put in `synced`.
+///
 /// **An empty label picks nothing**, without asking the connector: the failure of
 /// leaving it blank has to be "nothing runs", not "everything runs".
 ///
@@ -579,11 +583,12 @@ pub fn candidates_blocking(
     tracker: &Tracker,
     root: &Path,
     label: &str,
+    synced: &mut Vec<OutsideSync>,
 ) -> Result<Vec<IssueRow>, String> {
     if label.trim().is_empty() {
         return Ok(Vec::new());
     }
-    let mut found = tracker.labelled_blocking(root, label)?;
+    let mut found = tracker.labelled_blocking(root, label, synced)?;
     found.sort_by_key(|row| row.issue.number);
     Ok(found)
 }
@@ -639,15 +644,17 @@ pub fn workflow_label_refused(
 /// off, nothing picks the issue again, whatever happens after. So the claim
 /// holds once it is off: a comment that fails is not a reason to drop the run,
 /// which would leave an issue nothing picks and nobody works. The run's own
-/// report still reaches the issue when it ends.
+/// report still reaches the issue when it ends. A sync the claim made is put
+/// in `synced`.
 pub fn claim_blocking(
     tracker: &Tracker,
     root: &Path,
     number: u64,
     label: &str,
     answering: Option<&str>,
+    synced: &mut Vec<OutsideSync>,
 ) -> Result<(), String> {
-    tracker.remove_label_blocking(root, number, label)?;
+    tracker.remove_label_blocking(root, number, label, synced)?;
     if let Err(why) = tracker.comment_blocking(root, number, &claim_comment(label, answering)) {
         eprintln!("onehand: claimed issue #{number} without saying so: {why}");
     }

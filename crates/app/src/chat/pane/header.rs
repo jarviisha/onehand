@@ -417,7 +417,7 @@ impl ChatPane {
         let on_host = self
             .active_conversation()
             .and_then(|conv| conv.host.as_ref())
-            .map(|on| on.host.clone());
+            .map(|(host, _)| host.clone());
 
         // The same small ghost button as the rest of the header's controls,
         // so one row keeps one kind of control. The menu goes through the

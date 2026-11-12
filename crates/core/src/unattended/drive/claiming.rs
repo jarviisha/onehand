@@ -141,9 +141,10 @@ impl UnattendedDrive {
         let Looked {
             asked_from,
             searching,
+            synced,
             answer,
         } = looked;
-        let mut fx = Vec::new();
+        let mut fx = super::told(synced, Vec::new());
         // A look that panicked is said, and treated as nothing found.
         let (found, held) = match answer {
             Some(answer) => {

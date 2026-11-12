@@ -204,6 +204,7 @@ impl ChatPane {
                 };
                 project.listing = false;
                 project.bypass = bypass;
+                cx.emit(ChatPaneEvent::PageChanged);
                 project.listed = Some(match listed {
                     Ok(all) => Ok(all),
                     // The shell lists again once the host is back. A host

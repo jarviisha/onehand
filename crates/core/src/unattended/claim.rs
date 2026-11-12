@@ -4,6 +4,7 @@
 
 use super::{Issue, Tracker, TrackerRef};
 use crate::connector::{self, Connector, PrState};
+use crate::issues::sync::OutsideSync;
 use crate::issues::template;
 use crate::preflight::{self, About, Facts, Forge, Kind};
 use crate::task::Tracked;
@@ -389,7 +390,8 @@ pub(crate) fn trackers_blocking(
 ///
 /// Nothing is claimed here: the app looks again, on its own thread, that no
 /// task took the issue up meanwhile (`Found::still_free`), and only then
-/// claims it with `claim_found_blocking`.
+/// claims it with `claim_found_blocking`. A sync the search made is put in
+/// `synced`.
 pub fn find_blocking(
     roots: &[Workable],
     label: &str,
@@ -397,6 +399,7 @@ pub fn find_blocking(
     earlier: &[Earlier],
     judging: &Judging,
     checked: &mut Vec<(PathBuf, Served)>,
+    synced: &mut Vec<OutsideSync>,
 ) -> Option<Found> {
     // The oldest labelled issue no task is still working on: one being
     // worked is passed over, never claimed twice, and never in the way of
@@ -406,7 +409,7 @@ pub fn find_blocking(
         let (project, forge) = (&w.project, &w.forge);
         let mut checked_out = None;
         for tracker in trackers_blocking(project.issues.clone(), *forge) {
-            match super::candidates_blocking(&tracker, &project.root, label) {
+            match super::candidates_blocking(&tracker, &project.root, label, synced) {
                 Ok(found) => {
                     for row in found {
                         if !w.has_check && choosing.needs_check(&row.labels, label) {
@@ -544,8 +547,13 @@ pub fn still_free(earlier: &[Earlier], tracker: &Tracker, number: u64) -> bool {
 ///
 /// `None` when the claim itself failed, in which case there is nobody to tell
 /// but stderr, since an issue the app could not edit is one it cannot comment
-/// on either. After the claim every failure is the issue's to hear about.
-pub fn claim_found_blocking(found: Found, label: &str) -> Option<Result<Claimed, Unstarted>> {
+/// on either. After the claim every failure is the issue's to hear about. A
+/// sync the claim made is put in `synced`.
+pub fn claim_found_blocking(
+    found: Found,
+    label: &str,
+    synced: &mut Vec<OutsideSync>,
+) -> Option<Result<Claimed, Unstarted>> {
     let Found {
         repo,
         tracker,
@@ -556,7 +564,8 @@ pub fn claim_found_blocking(found: Found, label: &str) -> Option<Result<Claimed,
         notes,
     } = found;
     let number = row.issue.number;
-    if let Err(why) = super::claim_blocking(&tracker, &repo, number, label, taking.answering()) {
+    let answering = taking.answering();
+    if let Err(why) = super::claim_blocking(&tracker, &repo, number, label, answering, synced) {
         eprintln!("onehand: could not claim issue #{number}: {why}");
         return None;
     }

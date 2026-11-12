@@ -376,3 +376,38 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **Offloaded projects are checked one after another,** so one copy, or one attach to a host out
   of reach, that hangs holds back the checks of the others. The code comes back at a turn end or
   the 30 s check, not at an attach.
+- **A front end still keeps a little of what happens next.** Everything else a person or a tool
+  does goes through a drive in core; these stay in the app, each for the reason given:
+  - Which window a workspace opens in (`open_or_focus`: the one showing it, else a new one) is
+    the shell's.
+  - A workspace named in a window is remembered in the recents by the window's carrier, which
+    carries `WorkspaceDrive`'s `Effect::Remember` as `RecentsDrive::named`: the two drives have
+    different owners, a window and the process.
+  - The bodies of `perform_now` that read a window or start async work are the tools' carrier's;
+    where a call lands and what it is refused for are core's.
+  - The keymap's save goes through `saves::write_config`: the keymap is the front end's.
+  - What a pull request review was read as is kept by the tasks' carrier until its question
+    (`Tasks.reviews`): it holds a connector, which no effect carries.
+  - `submit_told` stays in the tasks' carrier for the app's tests: it needs the carrier's own
+    record of who asked to be told.
+  - `hosts::attach_waiting` waits out a busy host and attaches again in `HostDrive`'s carrier,
+    for the terminal dock, the Workbench and the folder list; what a failed attach comes to is
+    core's (`HostFailure::after_attach`).
+  - An unbind's failed forget is said at every failure, not once at the edge of a run of them.
+- **Some view state is kept in core's models**: the panels' layout in the workspace file
+  (`WorkspaceDrive::layout_mut`), and which Editor tab is on screen (`RootEditors::active`). No
+  drive decides anything by either.
+- **A diff in an issue's full form is read when it is opened**, as the Files tree reads a folder:
+  what is open is the viewer's, so no drive asks for it.
+- **An unattended run's claim and reports are written by core's blocking bodies**, between forge
+  calls, not through the issues file's shared drive: a view sees them on its next read, unless
+  the file is kept in step, whose syncs the run tells the drive. A label taken off whose sync then
+  fails is seen on the next read too.
+- **The app's views read the clock themselves** for the ages they draw (`chat::now_secs()`); no
+  drive reads those ages.
+- **Smaller things the refactor into drives left:** `workflow::Now`, the facts a retry is judged
+  on, shares its name with the crate-root `onehand_core::Now` the drives are told; models and
+  their tests still match part of our own enums in places (`workflow/tests.rs`,
+  `task/work/list.rs`), outside the drives and links the whole-match rule holds; a cut worktree is
+  a bare `Result` alias (`task::tasks::Cut`); and `connector::memory::Forge`, the forge kept in
+  memory, is `cfg(test)`, as nothing outside core needs it.

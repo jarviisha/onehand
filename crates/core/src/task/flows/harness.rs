@@ -488,7 +488,9 @@ impl Flow {
 
     fn carry_unattended(&mut self, effect: UEffect<Win>) {
         match effect {
-            UEffect::Arm(_) | UEffect::Refresh => {}
+            // No view holds a file in these flows, so there is no file's
+            // drive to tell of a sync.
+            UEffect::Arm(_) | UEffect::Refresh | UEffect::Synced(_) => {}
             UEffect::Check {
                 connectors,
                 roots,
@@ -510,10 +512,11 @@ impl Flow {
                 asked_from,
                 held,
             } => {
-                let begun = blocking::claim_found(*found, &label);
+                let (begun, synced) = blocking::claim_found(*found, &label);
                 let new_task = self.new_id();
                 self.unattended_input(UInput::Claimed {
                     begun,
+                    synced,
                     asked_from,
                     held,
                     holding: vec![(WINDOW, None)],

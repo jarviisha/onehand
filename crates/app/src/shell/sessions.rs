@@ -609,9 +609,10 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let watched = self.window.workspace.watched_on(uid).map(|(_, id)| id);
         let restarted = self
             .chat
-            .update(cx, |pane, cx| pane.restart(uid, after_service, cx));
+            .update(cx, |pane, cx| pane.restart(uid, after_service, watched, cx));
         match (restarted, told) {
             (crate::chat::pane::Restart::Restarted, true) => {
                 window.push_notification(crate::toast::info("Restarting the agent"), cx);

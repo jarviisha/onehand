@@ -38,7 +38,7 @@ fn candidate_blocking(
     root: &Path,
     label: &str,
 ) -> Result<Option<Issue>, String> {
-    Ok(candidates_blocking(tracker, root, label)?
+    Ok(candidates_blocking(tracker, root, label, &mut Vec::new())?
         .into_iter()
         .next()
         .map(|row| row.issue))
@@ -111,7 +111,8 @@ fn the_oldest_issue_is_taken_first() {
 #[test]
 fn a_found_issue_keeps_every_label_it_carries() {
     let (tracker, _dir) = local("labels", &[("first", &["auto", "bug"])]);
-    let found = candidates_blocking(&tracker, &std::env::temp_dir(), "auto").unwrap();
+    let found =
+        candidates_blocking(&tracker, &std::env::temp_dir(), "auto", &mut Vec::new()).unwrap();
     assert_eq!(found[0].labels, ["auto", "bug"]);
 }
 
@@ -172,7 +173,7 @@ fn a_local_issue_is_found_by_its_label_and_claimed_in_its_own_file() {
         .unwrap()
         .unwrap();
     assert_eq!(found.number, 1, "the oldest labelled issue goes first");
-    claim_blocking(&tracker, &root, 1, "auto", None).unwrap();
+    claim_blocking(&tracker, &root, 1, "auto", None, &mut Vec::new()).unwrap();
     let Tracker::Local(file) = &tracker else {
         unreachable!()
     };
@@ -227,12 +228,20 @@ fn a_synced_project_runs_only_what_the_user_wrote_and_claims_it_on_both_sides() 
         .unwrap()
         .unwrap();
     assert_eq!((first.number, first.forge_ref()), (1, None));
-    claim_blocking(&tracker, &root, 1, "auto", None).unwrap();
+    claim_blocking(&tracker, &root, 1, "auto", None, &mut Vec::new()).unwrap();
     let second = candidate_blocking(&tracker, &root, "auto")
         .unwrap()
         .unwrap();
     assert_eq!(second.forge_ref(), Some("#7"));
-    claim_blocking(&tracker, &root, second.number, "auto", None).unwrap();
+    claim_blocking(
+        &tracker,
+        &root,
+        second.number,
+        "auto",
+        None,
+        &mut Vec::new(),
+    )
+    .unwrap();
     assert_eq!(candidate_blocking(&tracker, &root, "auto").unwrap(), None);
 
     // The claim reached the forge: the label came off and it was told.
@@ -895,7 +904,14 @@ fn a_claim_whose_comment_fails_still_holds() {
     });
     let tracker = Tracker::Forge(forge);
 
-    let claimed = claim_blocking(&tracker, &std::env::temp_dir(), 3, "auto", None);
+    let claimed = claim_blocking(
+        &tracker,
+        &std::env::temp_dir(),
+        3,
+        "auto",
+        None,
+        &mut Vec::new(),
+    );
 
     assert!(claimed.is_ok(), "{claimed:?}");
     assert!(forge.said("3").labels.is_empty());
@@ -911,4 +927,54 @@ fn a_branch_whose_worktree_folder_is_left_is_passed_over() {
         Ok("onehand/x-2".to_string())
     );
     std::fs::remove_dir_all(parent).unwrap();
+}
+
+/// A search and a claim through a file kept in step each leave the file
+/// synced on disk: the forge's issue brought in by the search, and its label
+/// off once claimed; each sync says what it left.
+#[test]
+fn a_search_and_a_claim_on_a_synced_file_leave_it_synced_on_disk() {
+    use crate::connector::memory::Forge;
+    use crate::issues::Snapshot;
+    static FORGE: std::sync::OnceLock<Forge> = std::sync::OnceLock::new();
+    let forge = FORGE.get_or_init(|| Forge {
+        mine: vec!["7".into()],
+        ..Forge::with(vec![(
+            7,
+            Snapshot {
+                title: "mine".into(),
+                body: String::new(),
+                open: true,
+                labels: vec!["auto".into()],
+            },
+        )])
+    });
+    let (_, dir) = local("synced-disk", &[]);
+    let file = dir.join("issues.json");
+    crate::issues::update_blocking(&file, |kept| {
+        kept.sync_with(Some("Forge".into()));
+        Ok(())
+    })
+    .unwrap();
+    let tracker = Tracker::Synced {
+        file: file.clone(),
+        forge,
+    };
+    let root = std::env::temp_dir();
+    let mut heard = Vec::new();
+    let found = candidates_blocking(&tracker, &root, "auto", &mut heard).unwrap();
+    let number = found[0].issue.number;
+    let on_disk = crate::issues::load_blocking(&file).unwrap();
+    let kept = on_disk.get(number).expect("brought in by the search");
+    assert!(kept.link_on("Forge").is_some());
+    claim_blocking(&tracker, &root, number, "auto", None, &mut heard).unwrap();
+    let on_disk = crate::issues::load_blocking(&file).unwrap();
+    assert!(on_disk.get(number).unwrap().labels.is_empty());
+    // Each sync says what it left on disk, for the file's drive to hear.
+    assert_eq!(heard.len(), 2);
+    assert!(heard.iter().all(|synced| synced.file == file));
+    // The claim's note comes after its sync, so only the label is asked.
+    assert!(heard[1].kept.get(number).unwrap().labels.is_empty());
+    assert!(forge.said("7").labels.is_empty(), "and off the forge");
+    let _ = std::fs::remove_dir_all(dir);
 }

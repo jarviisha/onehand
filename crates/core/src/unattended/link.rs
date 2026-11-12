@@ -218,6 +218,7 @@ impl<'a, W: Copy> Joined<'a, W> {
                 | Effect::Send(_)
                 | Effect::Teardown { .. }
                 | Effect::NoteTakenUp { .. }
+                | Effect::Synced(_)
                 | Effect::Tick
                 | Effect::Signal(_)
                 | Effect::Refresh) => out.unattended.push(other),

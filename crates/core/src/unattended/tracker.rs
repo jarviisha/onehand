@@ -4,6 +4,7 @@
 use super::{lives_on_forge, named, shown, Issue, IssueRow};
 use crate::connector::Connector;
 use crate::issues;
+use crate::issues::sync::OutsideSync;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -76,10 +77,13 @@ impl Tracker {
     /// [`Self::Synced`], which asks, or not at all: a sync switched off, a
     /// forge unreachable for one tick, or a link lost must not turn somebody
     /// else's text into a prompt run with the user's credentials.
+    ///
+    /// A sync it made is put in `synced`.
     pub(super) fn labelled_blocking(
         &self,
         root: &Path,
         label: &str,
+        synced: &mut Vec<OutsideSync>,
     ) -> Result<Vec<IssueRow>, String> {
         match self {
             Self::Forge(c) => c.my_labelled_issues_blocking(root, label),
@@ -94,7 +98,13 @@ impl Tracker {
             // if the forge says the user wrote it — the same rule the forge's
             // own search keeps, asked of the forge because only it knows.
             Self::Synced { file, forge } => {
-                let (kept, _) = issues::sync::sync_blocking(file, root, *forge, issues::now())?;
+                let (kept, report) =
+                    issues::sync::sync_blocking(file, root, *forge, issues::now())?;
+                synced.push(OutsideSync {
+                    file: file.clone(),
+                    kept: kept.clone(),
+                    report,
+                });
                 let mine: Vec<String> = forge
                     .my_labelled_issues_blocking(root, label)?
                     .into_iter()
@@ -142,11 +152,13 @@ impl Tracker {
         }
     }
 
+    /// Take `label` off issue `number`; a sync it made is put in `synced`.
     pub(super) fn remove_label_blocking(
         &self,
         root: &Path,
         number: u64,
         label: &str,
+        synced: &mut Vec<OutsideSync>,
     ) -> Result<(), String> {
         match self {
             Self::Forge(c) => c.remove_label_blocking(root, number, label),
@@ -159,7 +171,15 @@ impl Tracker {
             // searched.
             Self::Synced { file, forge } => {
                 issues::drive::write_blocking(file, unlabel(number, label), issues::now())?;
-                let _ = issues::sync::sync_blocking(file, root, *forge, issues::now());
+                if let Ok((kept, report)) =
+                    issues::sync::sync_blocking(file, root, *forge, issues::now())
+                {
+                    synced.push(OutsideSync {
+                        file: file.clone(),
+                        kept,
+                        report,
+                    });
+                }
                 Ok(())
             }
         }

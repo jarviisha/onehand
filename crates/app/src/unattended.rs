@@ -173,7 +173,7 @@ pub(crate) fn perform(effects: Vec<Effect<AnyWindowHandle>>, cx: &mut App) {
                 held,
             } => {
                 cx.spawn(async move |cx| {
-                    let begun = cx
+                    let (begun, synced) = cx
                         .background_executor()
                         .spawn(async move { blocking::claim_found(*found, &label) })
                         .await;
@@ -185,6 +185,7 @@ pub(crate) fn perform(effects: Vec<Effect<AnyWindowHandle>>, cx: &mut App) {
                         let input = Input::Claimed {
                             holding: holding(repo, cx),
                             begun,
+                            synced,
                             asked_from,
                             held,
                             new_task: onehand_core::task::new_id(),
@@ -216,7 +217,7 @@ pub(crate) fn perform(effects: Vec<Effect<AnyWindowHandle>>, cx: &mut App) {
             } => {
                 let named = pick.tracker.named(&pick.row.issue);
                 cx.spawn(async move |cx| {
-                    let begun = cx
+                    let (begun, synced) = cx
                         .background_executor()
                         .spawn(async move { blocking::claim_picked(*pick, forge, *taking, &label) })
                         .await;
@@ -230,6 +231,7 @@ pub(crate) fn perform(effects: Vec<Effect<AnyWindowHandle>>, cx: &mut App) {
                             named,
                             holding: holding(repo, cx),
                             begun,
+                            synced,
                             new_task: onehand_core::task::new_id(),
                         };
                         feed(input, cx);
@@ -273,6 +275,7 @@ pub(crate) fn perform(effects: Vec<Effect<AnyWindowHandle>>, cx: &mut App) {
                 },
                 cx,
             ),
+            Effect::Synced(outside) => onehand_issues::synced(*outside, cx),
             Effect::Tick => cx.defer(|cx| tick(None, cx)),
             Effect::Signal(Signal::Warn { window, said }) => launch::warn(window, said, cx),
             Effect::Signal(Signal::Log(said)) => eprintln!("onehand: {said}"),

@@ -193,11 +193,18 @@ impl Shell {
     /// dropped: it is about a form no longer there. So is the end of a wait
     /// it waits on, for the form.
     pub(crate) fn cancel_host_project(&mut self, cx: &mut Context<Self>) {
-        self.host_waits.forget_add();
-        if self.host_project.take().is_some() {
-            self.prune_host_waits(cx);
+        if self.put_form_away(cx) {
             cx.notify();
         }
+    }
+
+    /// Take the form down, if it is up: no wait carries its *Add* on any
+    /// more, and what waited for it is let go of. Whether it was up.
+    fn put_form_away(&mut self, cx: &App) -> bool {
+        self.host_waits.forget_add();
+        let was = self.host_project.take().is_some();
+        self.prune_host_waits(cx);
+        was
     }
 
     /// Attach to the host the form names, then ask it whether the folder is
@@ -323,8 +330,7 @@ impl Shell {
         draft.attempt = None;
         match found {
             Ok(()) => {
-                self.host_project = None;
-                self.host_waits.forget_add();
+                self.put_form_away(cx);
                 self.open_host_root(host, path, window, cx);
             }
             Err(HostFailure::Other(why) | HostFailure::Refused(why) | HostFailure::Taken(why)) => {
@@ -601,3 +607,5 @@ impl Shell {
 }
 
 mod browse;
+#[cfg(test)]
+mod tests;

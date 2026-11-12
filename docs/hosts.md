@@ -80,6 +80,8 @@ it. What is refused, and how, is under *What a host project does not do*.
   away, and the project page showing what it kept of the host's sessions; each is a `Want::Back`
   in the window's waits (`host::waits::WindowWaits`, carried by `crates/app/src/shell/host_project.rs`), joined to one loop per host
   (`hosts::back`), like the wait for a busy host, and the loop stops when the last of them goes.
+  What waits goes at the moment its wait can end: a session closed or started again (a restart,
+  or a past conversation picked in its place), the page left or listed again, the form put away.
   When an attach lands, each such session is restarted, and so watches the host from where its
   copy ends, and the page lists again; nothing is toasted. A host found busy at that point hands
   over to the wait for its busy sessions. A host found taken or refused stops the loop, and each

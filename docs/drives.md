@@ -5,9 +5,11 @@ How onehand keeps what it does apart from how it is drawn. The model says what i
 draws. A new front end rewrites its UI and its carriers, and keeps every drive, the model and
 their tests.
 
-This is the standard new code follows. Code written before it is being moved to it phase by
-phase; the order, and what each phase moves, is in
-[proposals/application-layer.md](proposals/application-layer.md).
+This is the standard all code follows: rules and what happens next both live in core, with no
+exceptions. It replaced an older rule that moved logic to core only when two call sites shared
+it, a second front end could need it, or it wanted a test without a GUI. The code written before
+it has been moved; what a front end still keeps, and why, is in
+[known-gaps.md](known-gaps.md).
 
 ## The layers
 
@@ -191,8 +193,8 @@ state is private to `ControlDrive`, and `SettingsDrive` derefs to its settings w
 mode's state is private to `PluginsDrive`.
 A schedule is the file's data, and
 what the clock or a switch writes onto it is decided by core's functions the carrier runs in its
-writer (`schedule::merge_looked`, `schedule::switch`). The other models are not there yet; each
-phase that moves one makes its mutators `pub(crate)`.
+writer (`schedule::merge_looked`, `schedule::switch`). A model a drive takes over later makes its
+mutators `pub(crate)` in the same change.
 
 No guard backs this up yet: a guard is added once the same mistake has been made in several
 places, as every guard in `crates/app/src/guards.rs` was.
@@ -235,7 +237,7 @@ Whole flows are tested across their links in `task::flows`, with every drive rea
 playing the front end, each effect carried once by core's own blocking bodies on a scratch
 repository: a schedule's task from its look through its run and session to its end, and an
 unattended claim from the tick through its run to its issue's report and the slot it frees. An
-effect the flows are not built to reach (a cut, a pick by hand, a command, the forge) fails the
+effect the flows are not built to reach (a pick by hand, a command, the forge) fails the
 harness, so a flow that starts reaching one is noticed; one with nothing to carry out in a flow (a
 write of no consequence there, a clock, a redraw) is passed over.
 
@@ -305,8 +307,17 @@ its project. Still untested: `SendCode`'s late answer and the pane's half
 of the session (`ChatPane::carry`), `SaveTitle` (written on the ordered writer's own thread, which
 GPUI's test scheduler does not wait for), deferred work, the forge calls (the connectors are the
 ones built in), a command called off while it runs (the test scheduler runs it to its end before a
-Stop can reach it), and a host's real attach, which runs on a runtime GPUI's test
-scheduler does not drive.
+Stop can reach it), a host's real attach, which runs on a runtime GPUI's test
+scheduler does not drive, and so a project page on a host letting go of its wait as it is left
+or listed again (the window's waits are tested let go of as a session closes or restarts and as
+the form is put away, in `crates/app/src/shell/host_project/tests.rs`). A run's project kept or dropped
+from its window at its end (`Effect::Teardown`) is tested by hand, and so are a window's waits let
+go of as a past conversation is picked in a session's place and as the form adds its project. The issue work's note is
+not tested on a real shell, as the rig's agents cannot name a conversation; its rule is
+tested in core. The flows' harness drives a task in the shell's order (`Flow::drive`)
+rather than through the shell, which needs a window; and the flows do not reach a pick by hand,
+a review answered, a check, a command step, the forge steps, a session's own saves or its
+telling, each held by its drive's tests.
 
 ### 12. A model does no I/O and reads no clock
 
@@ -330,3 +341,25 @@ Before any GPUI code is written:
 5. Draw it.
 
 A feature whose drive method only forwards to the model still does steps 2 and 3.
+
+A view that only shows what is on disk, or runs a program, holds no application state and gets
+no drive: the Files tree and the Markdown reader read the disk, with what is open being the
+viewer's, and Neovim runs one program per project as the terminal dock runs its shells.
+
+## Moving behaviour into a drive
+
+Behaviour found outside a drive is moved, not left beside it:
+
+1. Write characterisation tests of what it does today first: in core where the logic already is,
+   in the app's `#[cfg(test)]` modules, on a real shell where it needs one (`shell::rig`), where
+   it is not.
+2. Move it. A move changes nothing a person sees unless it says so, and what it changes on
+   purpose goes into the changelog.
+3. A bug the move finds is fixed in a commit of its own, its test red first.
+
+**Who holds a drive.** Each drive is held by what draws it (`ChatSession` holds a
+`SessionDrive`), or, when it is one for the process, by the front end's process-wide state
+(`Shared`, a global). Drives meet in links (rule 10); no hub holds every drive, and one is
+considered again only on a concrete need. Two drives with different owners, a window and the
+process, that cannot be joined in one call are joined by the carrier that holds one lending it
+for the call (`Shell::with_workspace`), or by one carrier carrying the other's command.

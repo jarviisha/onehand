@@ -222,6 +222,8 @@ impl Shell {
     /// nothing the window keeps names it any more.
     fn let_go_of(&mut self, uid: u64, cx: &mut Context<Self>) {
         self.chat.update(cx, |pane, cx| pane.close(uid, cx));
+        // What it waited on its host for goes with it.
+        self.prune_host_waits(cx);
         for order in self.mru.values_mut() {
             order.retain(|&seen| seen != uid);
         }

@@ -2,7 +2,7 @@
 //! frame it draws around one: every page is a view of its own, held by the
 //! window, which the pane mounts below its header.
 
-use super::{ChatPane, Page};
+use super::{ChatPane, ChatPaneEvent, Page};
 use gpui::{Context, IntoElement, ParentElement, Styled, Window, div};
 use gpui_component::StyledExt;
 
@@ -41,7 +41,7 @@ impl ChatPane {
         self.page = Some(Page { kind, view });
         self.leave_shown_session(window, cx);
         self.active = None;
-        self.empty = None;
+        self.put_project_page(None, cx);
         cx.notify();
     }
 
@@ -86,6 +86,19 @@ impl ChatPane {
             .child(self.header(cx))
             .child(div().flex_1().min_h_0().v_flex().child(view))
             .into_any_element()
+    }
+
+    /// Put `page` up as the project page, or none: whatever was up, or is put
+    /// up, may end what waited on a host, which the shell is told.
+    pub(super) fn put_project_page(
+        &mut self,
+        page: Option<super::project_page::EmptyProject>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.empty.is_some() || page.is_some() {
+            cx.emit(ChatPaneEvent::PageChanged);
+        }
+        self.empty = page;
     }
 
     /// Take the caret back before a page leaves the frame: a field on it may

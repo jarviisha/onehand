@@ -57,6 +57,17 @@ pub(crate) fn write_outside(
     shared.update(cx, |shared, cx| shared.write_outside(change, answer, cx));
 }
 
+/// The issues file `outside` names was kept in step with its forge outside
+/// every view of it (an unattended run's search or claim): the one drive every
+/// view shares, if a view holds the file, hears it, so the views show what
+/// the sync left and the file does not sync again right after.
+pub fn synced(outside: onehand_core::issues::sync::OutsideSync, cx: &mut App) {
+    let onehand_core::issues::sync::OutsideSync { file, kept, report } = outside;
+    if let Some(shared) = IssuesFile::held(&file, cx) {
+        shared.update(cx, |shared, cx| shared.synced_outside(kept, report, cx));
+    }
+}
+
 /// An Issues view open on one project, for the tests of what writes an
 /// issues file from outside the views.
 #[cfg(feature = "test-support")]
