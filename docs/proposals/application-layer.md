@@ -652,7 +652,10 @@ PR 11d, issues and the Workbench. Built:
   took its issue up, the issue work's note) write through the file's one drive,
   `onehand_issues::write`, which answers its maker once after the update that landed it. A write
   says who made it (`Maker`), and only the views' writes count toward the newest, so one made
-  outside them never keeps a person's new issue from being selected. An unattended run's claim and
+  outside them never keeps a person's new issue from being selected. A write that wrote nothing
+  (a title already open) sends nothing to the forge. The workspace page, which reads the files
+  itself, is read again in the caller's window when a tool writes a new issue
+  (`Shell::issues_written`). An unattended run's claim and
   reports stay core's blocking bodies (`Tracker`, now `unattended/tracker.rs`), written as
   `Change`s.
 - When a session working an issue by hand notes it is `issues::link::TakenUp`'s: once, when its
@@ -665,7 +668,8 @@ PR 11d, issues and the Workbench. Built:
   `workbench::Showing`, a model with no effects; the panel holds the modes and tells the one that
   came to show.
 - The Issues views' pull request reads are tested on their carrier, against core's fake connector
-  under a `test-support` feature. Characterisation tests written first pin the reads, the views'
+  under a `test-support` feature; under `onehand-issues`' own, an Issues view open on a file
+  (`testing::OpenView`) lets the app's tests see a write from outside the views land in it. Characterisation tests written first pin the reads, the views'
   sync timer, the mode choice and working an issue by hand where it cannot be.
 
 Phase 11 changed, on purpose (PR 11d):
