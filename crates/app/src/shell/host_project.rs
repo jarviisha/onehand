@@ -601,3 +601,5 @@ impl Shell {
 }
 
 mod browse;
+#[cfg(test)]
+mod tests;
