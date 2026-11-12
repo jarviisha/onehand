@@ -1,10 +1,64 @@
-//! What a tool call is refused for before anything is done, given what the
-//! window holds: a project on a host, a file outside the project on screen, a
-//! task that is the caller's own or has nothing to stop.
+//! Where a tool call goes, and what it is refused for before anything is
+//! done, given what the window holds: a project on a host, a file outside the
+//! project on screen, a task that is the caller's own or has nothing to stop.
 
-use super::pick_project;
+use super::{pick_project, Call, Peer};
 use crate::task::Group;
 use std::path::{Component, Path, PathBuf};
+
+/// The window a call lands in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Window {
+    /// The window in front, else the first: an outside program's call.
+    Front,
+    /// The window holding session `uid`: a session's call, about its own
+    /// project.
+    Holding(u64),
+}
+
+/// Where a call goes, and the calling session, if a session called.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Aim {
+    pub window: Window,
+    pub caller: Option<u64>,
+}
+
+/// Where `call` from `peer` goes, `holder` being the session holding the
+/// peer's token; or why it goes nowhere.
+pub fn aim(peer: &Peer, holder: Option<u64>, call: &Call) -> Result<Aim, String> {
+    let caller = match peer {
+        Peer::Outside => None,
+        Peer::Session(_) => Some(holder.ok_or("no such session")?),
+    };
+    // Never listed to an outside program, so never called by one.
+    if caller.is_none() && matches!(call, Call::OpenWorker { .. }) {
+        return Err("`open_worker` is for a session's agent".to_string());
+    }
+    let window = caller.map_or(Window::Front, Window::Holding);
+    Ok(Aim { window, caller })
+}
+
+/// The project an issue tool works on: the one `named`, else the calling
+/// session's (`caller`), else none.
+pub fn issues_root(
+    projects: &[(String, PathBuf)],
+    named: Option<&str>,
+    caller: Option<&Path>,
+) -> Result<PathBuf, String> {
+    match (named, caller) {
+        (Some(named), _) => Ok(pick_project(projects, named)?.to_path_buf()),
+        (None, Some(project)) => Ok(project.to_path_buf()),
+        (None, None) => Err("name a project".to_string()),
+    }
+}
+
+/// The workflow `start_issue` works an issue with: the one `named`, else
+/// the one issues are worked with (`setting`), else none.
+pub fn workflow_of(named: Option<String>, setting: &str) -> Result<String, String> {
+    named
+        .or_else(|| Some(setting.to_string()).filter(|id| !id.is_empty()))
+        .ok_or_else(|| "name a workflow; list_workflows gives them".to_string())
+}
 
 /// Refuse `named` by name when it is no project here but one on a host or
 /// offloaded to one, rather than say it does not exist.
@@ -125,6 +179,66 @@ mod tests {
                 .unwrap_err()
                 .ends_with("is not a file")
         );
+    }
+
+    #[test]
+    fn a_call_goes_to_the_front_or_to_its_sessions_window() {
+        let session = Peer::Session("t".into());
+        assert_eq!(
+            aim(&Peer::Outside, None, &Call::ListProjects),
+            Ok(Aim {
+                window: Window::Front,
+                caller: None
+            })
+        );
+        assert_eq!(
+            aim(&session, Some(7), &Call::ListProjects),
+            Ok(Aim {
+                window: Window::Holding(7),
+                caller: Some(7)
+            })
+        );
+        assert_eq!(
+            aim(&session, None, &Call::ListProjects),
+            Err("no such session".into())
+        );
+        let worker = Call::OpenWorker {
+            project: "app".into(),
+            agent: "a".into(),
+            prompt: None,
+            dirs: Vec::new(),
+            request: "r".into(),
+            turn: None,
+            model: None,
+            name: None,
+        };
+        assert!(aim(&Peer::Outside, None, &worker).is_err());
+        assert!(aim(&session, Some(7), &worker).is_ok());
+    }
+
+    #[test]
+    fn an_issue_tools_project_is_the_named_else_the_callers() {
+        let caller = Some(Path::new("/repo/own"));
+        assert_eq!(
+            issues_root(&here(), Some("app"), caller),
+            Ok(PathBuf::from("/repo/app"))
+        );
+        assert_eq!(
+            issues_root(&here(), None, caller),
+            Ok(PathBuf::from("/repo/own"))
+        );
+        assert_eq!(
+            issues_root(&here(), None, None),
+            Err("name a project".into())
+        );
+        assert!(issues_root(&here(), Some("nothing"), caller).is_err());
+    }
+
+    #[test]
+    fn a_workflow_is_the_named_else_the_settings() {
+        assert_eq!(workflow_of(Some("w".into()), "s"), Ok("w".into()));
+        assert_eq!(workflow_of(None, "s"), Ok("s".into()));
+        assert!(workflow_of(None, "").is_err());
     }
 
     #[test]

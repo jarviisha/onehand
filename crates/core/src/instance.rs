@@ -14,6 +14,15 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::Duration;
 
+/// The window something with no window of its own lands in: the one in
+/// front (`active`) when it is open, else the first of `open`.
+pub fn front<W: PartialEq + Copy>(active: Option<W>, open: &[W]) -> Option<W> {
+    open.iter()
+        .copied()
+        .find(|w| Some(*w) == active)
+        .or_else(|| open.first().copied())
+}
+
 /// Another process holds the lock on this config directory.
 #[derive(Debug)]
 pub struct Held;
@@ -170,6 +179,14 @@ fn try_lock(dir: &Path) -> Result<File, TryLockError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_front_is_the_active_window_else_the_first() {
+        assert_eq!(front(Some(2), &[1, 2, 3]), Some(2));
+        assert_eq!(front(Some(9), &[1, 2]), Some(1));
+        assert_eq!(front(None, &[4]), Some(4));
+        assert_eq!(front::<u8>(Some(1), &[]), None);
+    }
 
     #[test]
     fn a_second_lock_on_the_same_directory_is_refused_until_the_first_goes() {

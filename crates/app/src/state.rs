@@ -206,11 +206,11 @@ pub(crate) fn with_shell<R>(
 pub(crate) fn front(
     cx: &App,
 ) -> Option<(gpui::AnyWindowHandle, gpui::Entity<crate::shell::Shell>)> {
-    let active = cx.active_window();
     let windows = &Shared::global(cx).windows;
+    let open: Vec<_> = windows.iter().map(|w| w.handle).collect();
+    let front = onehand_core::instance::front(cx.active_window(), &open)?;
     windows
         .iter()
-        .find(|w| Some(w.handle) == active)
-        .or(windows.first())
+        .find(|w| w.handle == front)
         .and_then(|w| Some((w.handle, w.shell.upgrade()?)))
 }
