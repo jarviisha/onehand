@@ -342,10 +342,14 @@ fn perform_now(
                 file,
                 onehand_core::issues::drive::Change::CreateUnlessOpen(draft),
                 crate::features::connectors(),
-                move |written, _| {
+                move |written, cx| {
                     use onehand_core::issues::drive::Applied;
                     let outcome = match written {
-                        Ok(Applied::New(number)) => Ok(format!("Wrote issue #{number}: {shown}")),
+                        Ok(Applied::New(number)) => {
+                            // What reads the file itself is told too.
+                            shell.update(cx, |shell, cx| shell.issues_written(cx));
+                            Ok(format!("Wrote issue #{number}: {shown}"))
+                        }
                         Ok(Applied::Already(number)) => {
                             Ok(format!("Issue #{number} is already open with that title"))
                         }

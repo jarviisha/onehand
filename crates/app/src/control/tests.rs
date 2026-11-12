@@ -101,6 +101,12 @@ fn a_tools_issue_is_written_once_and_not_again_while_open(cx: &mut TestAppContex
     let (_, shell, cx) = rig::shell(cx, dir.join("tasks"), Vec::new());
     let storage = dir.join("storage");
     rig::keep_in(&shell, storage.clone(), cx);
+    rig::show_workspace(&shell, cx);
+    // Its first read lands before anything is written.
+    for _ in 0..30 {
+        cx.run_until_parked();
+        std::thread::sleep(Duration::from_millis(10));
+    }
     let call = |title: &str| Call::CreateIssue {
         project: Some("tmp".into()),
         title: title.into(),
@@ -119,6 +125,15 @@ fn a_tools_issue_is_written_once_and_not_again_while_open(cx: &mut TestAppContex
         ask(call("Crash"), cx),
         Ok("Wrote issue #1: Crash".to_string())
     );
+    // The workspace page, which reads the file itself, is told.
+    for _ in 0..100 {
+        if !rig::workspace_issues(&shell, cx).is_empty() {
+            break;
+        }
+        cx.run_until_parked();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(rig::workspace_issues(&shell, cx), ["Crash"]);
     assert_eq!(
         ask(call(" crash "), cx),
         Ok("Issue #1 is already open with that title".to_string())

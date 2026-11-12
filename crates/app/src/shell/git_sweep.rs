@@ -34,11 +34,8 @@ impl Shell {
 
         self.workbench.update(cx, |panel, cx| panel.rescan(cx));
         self.tell_issues_page(&onehand_workbench::Request::Rescan, cx);
-        // A run leaving a note or a sync landing changes the issue files too,
-        // read again while the workspace page is what is showing.
-        if self.workspace_shown(cx) {
-            self.workspace_page.update(cx, |page, cx| page.reload(cx));
-        }
+        // A run leaving a note or a sync landing changes the issue files too.
+        self.issues_written(cx);
     }
 
     /// Refresh `git status` for every root, off the UI loop: which roots, and

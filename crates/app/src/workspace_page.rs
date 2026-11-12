@@ -109,6 +109,16 @@ impl WorkspacePage {
         }
     }
 
+    /// The titles of the open issues the page lists, as last read.
+    #[cfg(test)]
+    pub(crate) fn open_titles(&self) -> Vec<String> {
+        self.shown
+            .rows
+            .iter()
+            .map(|row| row.title.clone())
+            .collect()
+    }
+
     /// Narrow what was read to the filter. Run when either changes, not per
     /// frame, since it copies every open issue it keeps.
     fn refilter(&mut self) {

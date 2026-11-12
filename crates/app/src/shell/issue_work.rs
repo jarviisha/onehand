@@ -203,6 +203,16 @@ impl Shell {
         self.tell_issues_page_projects(cx);
         self.tell_workflows_page_projects(cx);
     }
+
+    /// An issues file of this window's was written outside its views: what
+    /// reads the file itself, the workspace page, reads it again while it is
+    /// what is showing. The Issues views share the file's drive, which shows
+    /// the write already.
+    pub(crate) fn issues_written(&mut self, cx: &mut Context<Self>) {
+        if self.workspace_shown(cx) {
+            self.workspace_page.update(cx, |page, cx| page.reload(cx));
+        }
+    }
 }
 
 /// Why an issue cannot be worked by hand here, in the words the window says.

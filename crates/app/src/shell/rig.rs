@@ -74,3 +74,16 @@ pub(crate) fn keep_in(
         })
     });
 }
+
+/// The titles of the open issues `shell`'s workspace page lists.
+pub(crate) fn workspace_issues(
+    shell: &Entity<crate::shell::Shell>,
+    cx: &mut VisualTestContext,
+) -> Vec<String> {
+    cx.update(|_, cx| shell.read(cx).workspace_page.read(cx).open_titles())
+}
+
+/// Put `shell`'s workspace page on screen.
+pub(crate) fn show_workspace(shell: &Entity<crate::shell::Shell>, cx: &mut VisualTestContext) {
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.show_workspace(window, cx)));
+}
