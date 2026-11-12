@@ -17,8 +17,8 @@ use onehand_core::config::{AgentSpec, Preset};
 mod agents;
 mod pages;
 use agents::agents_page;
+pub use agents::draft_after_promote;
 pub(crate) use agents::kind_about;
-pub use agents::{AgentCheck, check_key, draft_after_promote};
 use pages::{appearance_page, connections_page, workspace_page};
 
 /// The add/edit form's fields. `editing` is `Some(i)` when an existing agent is

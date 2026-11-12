@@ -6,14 +6,12 @@
 //! channel; what a line means is decided in core's `instance`, and this only
 //! carries it.
 
-use crate::state::Shared;
 use futures::StreamExt as _;
 use gpui::App;
-use onehand_core::instance::{self, Forwarded, Unforwarded};
+use onehand_core::instance::{self, Arrivals, Forwarded, Unforwarded};
 use onehand_io::socket::{Incoming, Socket};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
 
 /// The socket's runtime, kept for the life of the process.
 static SERVED: OnceLock<Socket> = OnceLock::new();
@@ -22,9 +20,6 @@ static SERVED: OnceLock<Socket> = OnceLock::new();
 /// A second launch in between waits in the socket's backlog instead of
 /// finding nobody there.
 static BOUND: Mutex<Option<std::os::unix::net::UnixListener>> = Mutex::new(None);
-
-/// How often a line that arrived before the first window looks for it again.
-const WINDOW_POLL: Duration = Duration::from_millis(50);
 
 /// Take the instance lock, or hand this launch's folder to the process that
 /// holds it and exit. Runs before GPUI starts, so a second launch never opens
@@ -89,21 +84,41 @@ pub(crate) fn listen(cx: &mut App) {
     let _ = SERVED.set(socket);
     cx.spawn(async move |cx| {
         while let Some(incoming) = rx.next().await {
-            // The first window registers a moment after boot. A line that lands
-            // before it waits for it, rather than opening a second window onto
-            // the workspace that one is about to show, or a call finding none.
-            while cx.update(|cx| Shared::global(cx).windows.is_empty()) {
-                cx.background_executor().timer(WINDOW_POLL).await;
-            }
-            cx.update(|cx| match incoming {
-                Incoming::Open(forwarded) => open_forwarded(forwarded, cx),
-                Incoming::Call(peer, call, answer) => {
-                    crate::control::perform(peer, call, answer, cx)
-                }
-            });
+            cx.update(|cx| arrived(incoming, cx));
         }
     })
     .detach();
+}
+
+/// What has reached the socket and waits for the first window.
+#[derive(Default)]
+struct HeldLines(Arrivals<Incoming>);
+
+impl gpui::Global for HeldLines {}
+
+/// `incoming` reached the socket: carried now when a window is up, else held
+/// for the first.
+fn arrived(incoming: Incoming, cx: &mut App) {
+    let passed = cx.default_global::<HeldLines>().0.arrived(incoming);
+    if let Some(incoming) = passed {
+        carry(incoming, cx);
+    }
+}
+
+/// The first window is registered: carry what waited for it, in order.
+/// Never inside an entity's update: a call reaches into its window's shell.
+pub(crate) fn window_up(cx: &mut App) {
+    let held = cx.default_global::<HeldLines>().0.up();
+    for incoming in held {
+        carry(incoming, cx);
+    }
+}
+
+fn carry(incoming: Incoming, cx: &mut App) {
+    match incoming {
+        Incoming::Open(forwarded) => open_forwarded(forwarded, cx),
+        Incoming::Call(peer, call, answer) => crate::control::perform(peer, call, answer, cx),
+    }
 }
 
 /// Open what a second launch forwarded in the window in front, or the first
@@ -151,6 +166,47 @@ mod tests {
             .read_line(&mut reply)
             .unwrap();
         serde_json::from_str(&reply).unwrap()
+    }
+
+    /// A call and a folder that reach the socket before the first window are
+    /// carried once it is up, in order; one after it, at once.
+    #[gpui::test]
+    fn what_arrives_before_the_first_window_waits_for_it(cx: &mut gpui::TestAppContext) {
+        use onehand_core::control::{Call, Peer};
+        let dir = crate::shell::rig::folder("arrivals");
+        let (_, shell, cx) = crate::shell::rig::shell(cx, dir.join("tasks"), Vec::new());
+        let project = dir.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let (tx, mut early) = futures::channel::oneshot::channel();
+        let path = Some(project.clone());
+        // Deferred out of the test window's update, as the socket's task
+        // carries from no window's.
+        cx.update(|_, cx| {
+            cx.defer(move |cx| {
+                arrived(Incoming::Call(Peer::Outside, Call::ListAgents, tx), cx);
+                arrived(Incoming::Open(Forwarded { path }), cx);
+            })
+        });
+        cx.run_until_parked();
+        assert!(early.try_recv().unwrap().is_none(), "held for the window");
+        let held = |cx: &mut gpui::VisualTestContext| {
+            cx.update(|_, cx| shell.read(cx).holds_root(&project))
+        };
+        assert!(!held(cx));
+        cx.update(|_, cx| cx.defer(window_up));
+        cx.run_until_parked();
+        assert!(
+            early.try_recv().unwrap().is_some(),
+            "answered once it is up"
+        );
+        assert!(held(cx), "the folder opened once it is up");
+        let (tx, mut late) = futures::channel::oneshot::channel();
+        cx.update(|_, cx| {
+            cx.defer(move |cx| arrived(Incoming::Call(Peer::Outside, Call::ListAgents, tx), cx))
+        });
+        cx.run_until_parked();
+        assert!(late.try_recv().unwrap().is_some(), "carried at once");
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

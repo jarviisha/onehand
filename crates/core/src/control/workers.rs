@@ -20,6 +20,30 @@ use crate::worktree::worker::{self, Repo};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+impl super::drive::ControlDrive {
+    /// Whether one more `open_session` may go: a session's tools (`caller`)
+    /// count under its cap, `open` being the sessions they opened still
+    /// open; an outside program's do not.
+    pub fn admit_plain(
+        &mut self,
+        caller: Option<u64>,
+        open: &[(u64, PathBuf)],
+    ) -> Result<(), String> {
+        match caller {
+            Some(lead) => self.admit(lead, open),
+            None => Ok(()),
+        }
+    }
+
+    /// `open_session` from `caller` opened session `uid`: counted when a
+    /// session's tools opened it.
+    pub fn opened_plain(&mut self, caller: Option<u64>, uid: u64) {
+        if let Some(lead) = caller {
+            self.opened_one(lead, uid);
+        }
+    }
+}
+
 /// The folders workers are opening or open on, each by its canonical path.
 #[derive(Default)]
 pub(crate) struct Reservations {

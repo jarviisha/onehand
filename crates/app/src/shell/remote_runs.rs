@@ -264,7 +264,9 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(path) = self.local_root(root_idx).map(Path::to_path_buf) else {
+        let (local, fx) = self.window.workspace.local_project(root_idx);
+        self.carry_workspace(fx, window, cx);
+        let Ok(path) = local else {
             return;
         };
         let label = SharedString::from(self.window.workspace.roots[root_idx].label.clone());

@@ -422,10 +422,21 @@ impl ChatSession {
         let host = on_host.is_some();
         let (source, started, token) = match on_host {
             None => {
-                let (events, started, token) =
-                    Shared::global(cx)
+                // A test's agent, played over a channel, when one waits.
+                #[cfg(test)]
+                let canned = cx.update_global::<Shared, _>(|shared, _| shared.canned.pop_front());
+                #[cfg(not(test))]
+                let canned = None;
+                let (events, started, token) = match canned {
+                    Some(events) => (
+                        events,
+                        std::time::Instant::now(),
+                        crate::control::Token::mint(),
+                    ),
+                    None => Shared::global(cx)
                         .acp
-                        .connect(spec, root.clone(), opening, dirs);
+                        .connect(spec, root.clone(), opening, dirs),
+                };
                 token.claim(uid);
                 (Source::Local(events), started, Some(token))
             }

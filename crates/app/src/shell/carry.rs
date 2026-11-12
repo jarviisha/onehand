@@ -4,10 +4,25 @@
 
 use super::Shell;
 use crate::state::Shared;
-use gpui::{Context, Window};
+use gpui::{BorrowAppContext as _, Context, Window};
 use gpui_component::WindowExt as _;
 use onehand_core::workspace::drive::{Effect, FileWrite, Forgotten, Input, Refusal, Signal, Value};
 use std::path::PathBuf;
+
+/// What a start is told when the project it names has left the workspace.
+pub(crate) const PROJECT_GONE: &str = "That project is no longer in this workspace";
+
+/// What a person is told when the workspace refuses `why`.
+pub(super) fn refused(why: Refusal) -> &'static str {
+    match why {
+        Refusal::NoProject => "Add a project before starting a session",
+        Refusal::NoAgent => "Add an agent in Settings before starting a session",
+        Refusal::NoSession => "That task has no session open",
+        Refusal::ProjectGone => PROJECT_GONE,
+        Refusal::NotHere => "That runs on a project on this machine",
+        Refusal::NoCheck => "This project has no check command to run",
+    }
+}
 
 impl Shell {
     /// Carry out `fx`, in order.
@@ -60,7 +75,11 @@ impl Shell {
                 Effect::Sweep { token, roots } => self.sweep_git(token, roots, cx),
                 Effect::Resweep => self.refresh_git(cx),
                 Effect::GitRead => self.git_read(cx),
-                Effect::Remember { dir, name } => super::storage::remember_name(&dir, &name, cx),
+                Effect::Remember { dir, name } => {
+                    let fx = cx
+                        .update_global::<Shared, _>(|shared, _| shared.recents.named(&dir, &name));
+                    super::storage::carry_recents(fx, None, cx);
+                }
                 Effect::EndOnHost {
                     host,
                     session,
@@ -69,18 +88,26 @@ impl Shell {
                 Effect::ListHostSessions => {
                     self.chat.update(cx, |pane, cx| pane.list_host_sessions(cx))
                 }
+                Effect::ReadConversation(id) => self.read_conversation(id, window, cx),
                 Effect::Signal(signal) => {
+                    #[cfg(test)]
+                    self.said.push(signal.clone());
                     let toast = match signal {
                         Signal::SaveFailed(why) => {
                             crate::toast::failed("Saving the workspace", why)
                         }
-                        Signal::Refused(Refusal::NoProject) => {
-                            crate::toast::warning("Add a project before starting a session")
-                        }
-                        Signal::Refused(Refusal::NoAgent) => crate::toast::warning(
-                            "Add an agent in Settings before starting a session",
-                        ),
+                        Signal::Refused(why) => crate::toast::warning(refused(why)),
                         Signal::Removed(label) => crate::toast::info(format!("Removed {label}")),
+                        Signal::ConversationNotSaved => {
+                            crate::toast::warning("That session's conversation was not saved")
+                        }
+                        Signal::AgentGone(agent) => crate::toast::warning(format!(
+                            "{agent} is no longer set up; add it in Settings ▸ Agents to open that conversation"
+                        )),
+                        Signal::FolderGone(root) => crate::toast::warning(format!(
+                            "The folder that conversation ran in is gone: {}",
+                            root.display()
+                        )),
                         Signal::ForkFailed(why) => {
                             crate::toast::failed("Forking the conversation", why)
                         }
@@ -119,6 +146,7 @@ impl Shell {
                 | Effect::Remember { .. }
                 | Effect::EndOnHost { .. }
                 | Effect::ListHostSessions
+                | Effect::ReadConversation(_)
                 | Effect::Signal(_)) => {
                     let rest: Vec<Effect> = std::iter::once(effect).chain(fx).collect();
                     let (at, shell) = (self.chat.read(cx).window_handle(), cx.entity().downgrade());

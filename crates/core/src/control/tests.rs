@@ -867,3 +867,17 @@ fn a_call_names_its_project_or_none() {
     assert_eq!(issues.project(), Some("app"));
     assert_eq!(Call::ListProjects.project(), None);
 }
+
+/// An `open_session` from a session counts under its cap; one from an
+/// outside program never does.
+#[test]
+fn a_plain_open_counts_only_a_sessions() {
+    let mut d = drive::ControlDrive::default();
+    let open: Vec<(u64, PathBuf)> = (1..=4).map(|uid| (uid, PathBuf::from("/p"))).collect();
+    assert!(d.admit_plain(None, &open).is_ok());
+    assert!(d.admit_plain(Some(9), &open).is_err());
+    d.opened_plain(None, 5);
+    assert!(d.opened_by(9).is_empty());
+    d.opened_plain(Some(9), 5);
+    assert_eq!(d.opened_by(9), vec![5]);
+}

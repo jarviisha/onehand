@@ -187,6 +187,14 @@ pub(crate) fn perform(peer: Peer, call: Call, answer: Answer, cx: &mut App) {
     }
 }
 
+/// The session holding a session's token; none for an outside program.
+fn holder(peer: &Peer) -> Option<u64> {
+    match peer {
+        Peer::Outside => None,
+        Peer::Session(token) => drive().holder(token),
+    }
+}
+
 /// Where a call's answer goes.
 pub(crate) type Answer = oneshot::Sender<Result<String, String>>;
 
@@ -198,13 +206,13 @@ fn perform_now(
 ) -> Result<String, String> {
     // A session's call lands in its own window, about its own project; an
     // outside program's in the window in front.
-    let (handle, shell, caller) = match &peer {
-        Peer::Outside => {
+    let aim = control::calls::aim(&peer, holder(&peer), &call)?;
+    let (handle, shell, caller) = match aim.lands {
+        control::calls::Lands::Front => {
             let (handle, shell) = crate::state::front(cx).ok_or("no onehand window is open")?;
             (handle, shell, None)
         }
-        Peer::Session(token) => {
-            let uid = drive().holder(token).ok_or("no such session")?;
+        control::calls::Lands::Holding(uid) => {
             let windows: Vec<_> = Shared::global(cx)
                 .windows
                 .iter()
@@ -260,9 +268,8 @@ fn perform_now(
             workflow,
         } => {
             let root = control::pick_project(&projects, &project)?.to_path_buf();
-            let workflow = workflow
-                .or_else(|| Some(crate::unattended::workflows(cx).0).filter(|id| !id.is_empty()))
-                .ok_or("name a workflow; list_workflows gives them")?;
+            let workflow =
+                control::calls::workflow_of(workflow, &crate::unattended::workflows(cx).0)?;
             let template = template(&workflow, cx)?;
             let issues = shell.read(cx).issues_file(&root);
             let answer = answer.take();
@@ -512,25 +519,29 @@ fn perform_now(
             turn,
             model,
             name,
-        } => workers::open(
-            onehand_core::control::drive::Open {
-                // Never listed to an outside program, so never called by one.
-                lead: caller.ok_or("`open_worker` is for a session's agent")?.0,
-                project,
-                agent,
-                prompt,
-                dirs,
-                request,
-                turn,
-                model,
-                name,
-            },
-            handle,
-            shell,
-            &projects,
-            answer,
-            cx,
-        ),
+        } => {
+            let Some((lead, _)) = caller else {
+                unreachable!("aim refuses open_worker to an outside program");
+            };
+            workers::open(
+                onehand_core::control::drive::Open {
+                    lead,
+                    project,
+                    agent,
+                    prompt,
+                    dirs,
+                    request,
+                    turn,
+                    model,
+                    name,
+                },
+                handle,
+                shell,
+                &projects,
+                answer,
+                cx,
+            )
+        }
     }
 }
 
@@ -555,11 +566,11 @@ fn issue_place(
     caller: &Option<(u64, PathBuf)>,
     cx: &App,
 ) -> Result<(PathBuf, PathBuf), String> {
-    let root = match (named, caller) {
-        (Some(named), _) => control::pick_project(projects, &named)?.to_path_buf(),
-        (None, Some((_, project))) => project.clone(),
-        (None, None) => return Err("name a project".to_string()),
-    };
+    let root = control::calls::issues_project(
+        projects,
+        named.as_deref(),
+        caller.as_ref().map(|(_, project)| project.as_path()),
+    )?;
     let file = shell
         .read(cx)
         .issues_file(&root)

@@ -95,6 +95,11 @@ with the first save. A list the person wrote, even `agents = []`, is never looke
 - **Installed later:** the built-in agents on the machine are looked up once at start
   (`Shared::on_machine`), and Settings ▸ Agents offers each one with no entry: *Codex is on this
   machine*, *Add*. Opening Settings looks at nothing on disk.
+- **Test:** *Test* beside an agent looks for its command the way starting a session would, from the
+  project on screen for a relative one, and asks a built-in agent's binary its version, without
+  starting anything (`SettingsDrive::test`, `config::look_blocking`). What it found is the
+  process's, shown in every window's Settings, and filed under the command line, so a rename keeps
+  it and an edit of the line drops it. A second press while one runs starts nothing.
 - **The default:** the first row, marked *Default*, is what *New session*, a new project's first
   session, an unattended run with no `unattended.agent` and a workflow step naming no agent use.
 

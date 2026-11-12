@@ -569,6 +569,50 @@ pub fn find_command(
         .find(|candidate| candidate.is_file())
 }
 
+/// Look for `spec`'s command the way starting a session would, without
+/// starting anything: a built-in agent's binary on `path`, with the version
+/// it gives; any other command on `path`, or from `root` when it names a
+/// relative path. Where it was found, and the version; `None` when nowhere.
+/// Blocking: it reads the disk and runs the binary once for its version.
+pub fn look_blocking(
+    spec: &AgentSpec,
+    path: Option<&std::ffi::OsStr>,
+    root: Option<&Path>,
+) -> Option<(PathBuf, Option<String>)> {
+    match spec.preset() {
+        Some(preset) => find_command(preset.info().binary, path, None).map(|at| {
+            let version = version_of(&at);
+            (at, version)
+        }),
+        None => find_command(&spec.command, path, root).map(|at| (at, None)),
+    }
+}
+
+/// The first line `binary --version` prints, if it prints one.
+fn version_of(binary: &Path) -> Option<String> {
+    let out = std::process::Command::new(binary)
+        .arg("--version")
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let line = text.lines().next()?.trim();
+    (!line.is_empty()).then(|| line.to_string())
+}
+
+/// What a look for `spec`'s command is filed under: the command line, not
+/// the name, so a rename keeps what was found and an edit of the line drops
+/// it.
+pub(crate) fn look_key(spec: &AgentSpec) -> String {
+    format!(
+        "{:?}\0{:?}\0{}\0{}\0{:?}",
+        spec.preset,
+        spec.version,
+        spec.command,
+        spec.args_line(),
+        spec.env
+    )
+}
+
 /// Parse one line of arguments back into a list.
 ///
 /// Whitespace separates; `'…'` is literal; `"…"` honours `\` escapes; a bare
