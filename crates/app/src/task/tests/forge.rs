@@ -271,9 +271,14 @@ impl Going {
         panic!("asked only {:?}", FORGE.asked_of(&self.branch));
     }
 
-    /// The clock comes round to the run's next look at its status checks.
+    /// The clock comes round to the run's next look at its status checks,
+    /// which is not made a moment before.
     fn next_look(&self, cx: &mut TestAppContext) {
-        cx.executor().advance_clock(LOOK_EVERY);
+        let asked = FORGE.asked_of(&self.branch).len();
+        cx.executor().advance_clock(JUST_SHORT);
+        cx.run_until_parked();
+        assert_eq!(FORGE.asked_of(&self.branch).len(), asked, "looked early");
+        cx.executor().advance_clock(THE_REST);
     }
 
     /// The prompts that reached the agent since last asked.
@@ -287,9 +292,10 @@ impl Going {
     }
 }
 
-/// How long a run waits between looks at its status checks, and a little
-/// over.
-const LOOK_EVERY: Duration = Duration::from_secs(61);
+/// A run's wait between looks at its status checks, a second short of it,
+/// and the second that brings the clock round.
+const JUST_SHORT: Duration = Duration::from_secs(59);
+const THE_REST: Duration = Duration::from_secs(1);
 
 /// Start a task of `template` on `branch` of a repository of its own, its
 /// forge the connector called `forge`, and let its agent's turn end on a

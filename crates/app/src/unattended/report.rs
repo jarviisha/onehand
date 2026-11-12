@@ -22,8 +22,9 @@ pub(crate) fn spec_for(agent: Option<&str>, cx: &App) -> Option<AgentSpec> {
 /// Keep or drop the project a run worked in, in every window holding it. Only
 /// a project the run added itself is dropped: one a person had open stays.
 ///
-/// Deferred: a run can end inside an update of a window holding the project,
-/// and a window cannot be updated again from inside its own update.
+/// Deferred, so that it holds wherever it is asked from: a window cannot be
+/// updated again from inside its own update, and one asked there would be
+/// passed over without a word.
 pub(super) fn teardown(dir: &Path, keep: bool, cx: &mut App) {
     let dir = dir.to_path_buf();
     cx.defer(move |cx| {
