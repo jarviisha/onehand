@@ -706,7 +706,9 @@ impl IssuesView {
         let body = self.parsed_body(root, &issue, cx);
         let key = self.key(root, issue.number());
         let work = key.as_ref().and_then(|key| self.work.work_of(key)).cloned();
-        let effects = self.work.show(root, key.as_ref(), issues::now());
+        let effects = self
+            .work
+            .show(root, key.as_ref(), onehand_core::Now::read());
         self.carry(effects, cx);
         let review = self.review_block(&issue, key.as_ref(), work.as_ref(), cx);
         let reading = self.work.reading();

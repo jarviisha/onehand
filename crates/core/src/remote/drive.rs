@@ -76,11 +76,13 @@ pub enum Input {
         uid: u64,
         said: Option<String>,
     },
-    /// The archive scan [`Effect::Scan`] found `found`, of `total`.
+    /// The archive scan [`Effect::Scan`] found `found`, of `total`, landing
+    /// at `now`, which its listing's ages are counted from.
     Scanned {
         chat: ChatId,
         found: Vec<ArchiveRow>,
         total: usize,
+        now: crate::Now,
     },
     /// The conversation [`Effect::Open`] reopened, as session `uid`, or
     /// `None` when no window holds its project any more.
@@ -306,8 +308,13 @@ impl RemoteDrive {
                 uid,
                 said,
             } => said_to_press(chat, press_id, said.unwrap_or_else(|| gone_alone(uid))),
-            Input::Scanned { chat, found, total } => {
-                let text = super::archive_listing(&found, total);
+            Input::Scanned {
+                chat,
+                found,
+                total,
+                now,
+            } => {
+                let text = super::archive_listing(&found, total, now.secs);
                 self.chats.remember_archive(&chat, found);
                 vec![Effect::Send(Outbound::text(chat, text))]
             }

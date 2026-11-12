@@ -51,12 +51,12 @@ fn an_issue_opened_reads_its_pull_request_once() {
     let t = checks("a");
     let mut drive = drive(false, &[work(1, &t, Working::Running)]);
     let root = Path::new(ROOT);
-    assert!(reads_pr(&drive.show(root, Some(&key(1)), NOW)).is_some());
-    assert!(reads_pr(&drive.show(root, Some(&key(1)), NOW)).is_none());
+    assert!(reads_pr(&drive.show(root, Some(&key(1)), told(NOW))).is_some());
+    assert!(reads_pr(&drive.show(root, Some(&key(1)), told(NOW))).is_none());
     // Its work moving reads it again.
     let moved = at(task("a", forge_flow(), Some("Forge")), 6, 950);
     drive.set_works(&[work(1, &moved, Working::Running)], Some(&key(1)));
-    assert!(reads_pr(&drive.show(root, Some(&key(1)), NOW)).is_some());
+    assert!(reads_pr(&drive.show(root, Some(&key(1)), told(NOW))).is_some());
 }
 
 #[test]
@@ -64,18 +64,18 @@ fn coming_back_reads_only_what_is_older_than_a_minute() {
     let t = checks("a");
     let mut drive = drive(false, &[work(1, &t, Working::Running)]);
     let root = Path::new(ROOT);
-    let generation = reads_pr(&drive.show(root, Some(&key(1)), NOW)).unwrap();
+    let generation = reads_pr(&drive.show(root, Some(&key(1)), told(NOW))).unwrap();
     drive.handle(Input::Pr {
         generation,
         answer: Ok(None),
-        now: NOW,
+        now: told(NOW),
     });
     drive.drawn();
     drive.returned();
-    assert!(reads_pr(&drive.show(root, Some(&key(1)), NOW + 30)).is_none());
+    assert!(reads_pr(&drive.show(root, Some(&key(1)), told(NOW + 30))).is_none());
     drive.drawn();
     drive.returned();
-    assert!(reads_pr(&drive.show(root, Some(&key(1)), NOW + READ_AGE)).is_some());
+    assert!(reads_pr(&drive.show(root, Some(&key(1)), told(NOW + READ_AGE))).is_some());
 }
 
 #[test]
@@ -84,12 +84,12 @@ fn an_answer_about_another_issue_is_never_shown() {
     let works = [work(1, &a, Working::Running), work(2, &b, Working::Running)];
     let mut drive = drive(false, &works);
     let root = Path::new(ROOT);
-    let old = reads_pr(&drive.show(root, Some(&key(1)), NOW)).unwrap();
-    drive.show(root, Some(&key(2)), NOW);
+    let old = reads_pr(&drive.show(root, Some(&key(1)), told(NOW))).unwrap();
+    drive.show(root, Some(&key(2)), told(NOW));
     drive.handle(Input::Pr {
         generation: old,
         answer: Ok(None),
-        now: NOW,
+        now: told(NOW),
     });
     assert!(drive.pr_value(Some(&works[1])).is_none());
     assert!(matches!(
@@ -107,9 +107,9 @@ fn the_page_reads_every_projects_prs_when_shown_and_looks_up_what_a_cap_missed()
         file: key(1).file,
         forge: Some(&FORGE),
     }];
-    assert!(drive.page_drawn(&projects, NOW).is_empty());
+    assert!(drive.page_drawn(&projects, told(NOW)).is_empty());
     drive.page_shown();
-    let effects = drive.page_drawn(&projects, NOW);
+    let effects = drive.page_drawn(&projects, told(NOW));
     let [Effect::ReadPrs {
         generation,
         branches,
@@ -128,7 +128,7 @@ fn the_page_reads_every_projects_prs_when_shown_and_looks_up_what_a_cap_missed()
             by_branch: Vec::new(),
             capped: true,
         }),
-        now: NOW,
+        now: told(NOW),
     });
     assert!(!drive.prs_reading());
     assert!(
@@ -154,7 +154,7 @@ fn an_older_page_read_is_counted_down_and_dropped() {
         forge: &FORGE,
         branches: Vec::new(),
         answer: Err("old".into()),
-        now: NOW,
+        now: told(NOW),
     });
     assert!(effects.is_empty());
     assert!(drive.prs().unwrap().get(Path::new(ROOT)).is_none());
@@ -167,11 +167,11 @@ fn what_the_work_left_is_read_again_when_it_moves() {
     let mut drive = drive(true, &[work(1, &t, Working::Running)]);
     let root = Path::new(ROOT);
     let left = |effects: &[Effect]| effects.iter().any(|e| matches!(e, Effect::ReadLeft { .. }));
-    assert!(left(&drive.show(root, Some(&key(1)), NOW)));
-    assert!(!left(&drive.show(root, Some(&key(1)), NOW)));
+    assert!(left(&drive.show(root, Some(&key(1)), told(NOW))));
+    assert!(!left(&drive.show(root, Some(&key(1)), told(NOW))));
     let moved = at(task("a", forge_flow(), Some("Forge")), 4, 950);
     drive.set_works(&[work(1, &moved, Working::Running)], Some(&key(1)));
-    assert!(left(&drive.show(root, Some(&key(1)), NOW)));
+    assert!(left(&drive.show(root, Some(&key(1)), told(NOW))));
 }
 
 /// Issue 1's work waiting for approval at `visit` of run `r`.
@@ -233,7 +233,7 @@ fn picking_another_issue_closes_the_review_and_the_same_keeps_it() {
 fn what_the_work_left_is_shown_only_for_its_own_run() {
     let t = checks("a");
     let mut drive = drive(true, &[work(1, &t, Working::Running)]);
-    let effects = drive.show(Path::new(ROOT), Some(&key(1)), NOW);
+    let effects = drive.show(Path::new(ROOT), Some(&key(1)), told(NOW));
     let generation = effects
         .iter()
         .find_map(|effect| match effect {
@@ -247,10 +247,18 @@ fn what_the_work_left_is_shown_only_for_its_own_run() {
     drive.handle(Input::Left {
         generation,
         left: super::super::left::left_blocking(&work(1, &t, Working::Running).work),
-        now: NOW,
+        now: told(NOW),
     });
     let own = work(1, &t, Working::Running).work;
     assert!(matches!(drive.left_seen(&own), LeftSeen::Read(_, NOW)));
     let other = work(2, &checks("b"), Working::Running).work;
     assert!(matches!(drive.left_seen(&other), LeftSeen::Unread));
+}
+
+/// The time `secs` past the epoch, as the drive is told it.
+fn told(secs: u64) -> crate::Now {
+    crate::Now {
+        secs,
+        at: std::time::Instant::now(),
+    }
 }

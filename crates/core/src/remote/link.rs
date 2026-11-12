@@ -11,7 +11,8 @@ use super::press::{self, Press};
 use super::types::Button;
 use super::Announcement;
 use crate::chat::drive::{Code, Effect, Intake, Origin, Refusal};
-use crate::chat::{Away, ChatItem, Now, SessionDrive, UserAsk};
+use crate::chat::{Away, ChatItem, SessionDrive, UserAsk};
+use crate::Now;
 
 /// How much of a finished answer rides along with the turn-ended announcement.
 ///

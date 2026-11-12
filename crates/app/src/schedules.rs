@@ -26,12 +26,6 @@ struct Clock {
 
 impl Global for Clock {}
 
-fn now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
-}
-
 /// Start the clock on the schedules kept at their usual place.
 pub(crate) fn boot(cx: &mut App) {
     boot_at(schedule::path(), cx);
@@ -39,7 +33,7 @@ pub(crate) fn boot(cx: &mut App) {
 
 /// Start the clock on the schedules kept at `path`.
 fn boot_at(path: PathBuf, cx: &mut App) {
-    let (drive, fx) = ScheduleDrive::new(now());
+    let (drive, fx) = ScheduleDrive::new(onehand_core::Now::read());
     cx.set_global(Clock {
         drive,
         path,
@@ -62,7 +56,9 @@ fn with_drive(
 
 /// Tell the clock what the world found, now.
 fn feed(input: Input<AnyWindowHandle>, cx: &mut App) {
-    with_drive(cx, |d| d.handle(input, now(), &chrono::Local));
+    with_drive(cx, |d| {
+        d.handle(input, onehand_core::Now::read(), &chrono::Local)
+    });
 }
 
 /// Do what the clock said, in order.
@@ -232,7 +228,7 @@ pub(crate) fn read(cx: &App) -> Option<Result<(), String>> {
 /// that fails puts back what the file holds, and says so in `window`.
 pub(crate) fn set_on(id: &str, on: bool, window: &mut gpui::Window, cx: &mut App) {
     let handle = window.window_handle();
-    with_drive(cx, |d| d.set_on(id, on, now(), handle));
+    with_drive(cx, |d| d.set_on(id, on, onehand_core::Now::read(), handle));
 }
 
 /// What a save or a delete left in the file: the list the pages show, until

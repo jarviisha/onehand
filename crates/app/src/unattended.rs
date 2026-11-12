@@ -134,7 +134,7 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
 /// Tell the drive what the world found, with the world as it is now.
 fn feed(input: Input<AnyWindowHandle>, cx: &mut App) {
     let (roots, world) = (roots(cx), world(cx));
-    let now = std::time::SystemTime::now();
+    let now = onehand_core::Now::read();
     crate::task::with_unattended(cx, |u, seen| {
         ((), u.handle(input, seen, roots, &world, now))
     });
@@ -331,8 +331,9 @@ pub fn accounts(cx: &App) -> Option<Accounts> {
     read(cx, |u| u.accounts().cloned()).flatten()
 }
 
-/// When the connectors last answered, if they have.
-pub fn accounts_checked_at(cx: &App) -> Option<std::time::SystemTime> {
+/// When the connectors last answered, in seconds past the epoch, if they
+/// have.
+pub fn accounts_checked_at(cx: &App) -> Option<u64> {
     read(cx, UnattendedDrive::checked_at).flatten()
 }
 

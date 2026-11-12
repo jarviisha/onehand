@@ -18,7 +18,6 @@ use onehand_core::task::{Approval, marks};
 use onehand_core::workflow::{Facts, Mark, Run, run_command_blocking};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
 
 mod forge;
 
@@ -129,7 +128,7 @@ pub(crate) fn start(
         let id = id.clone();
         cx.defer(move |cx| feed(&id, Input::SessionGone, cx));
     });
-    let now = Instant::now();
+    let now = onehand_core::Now::read();
     let (drive, effects) = session.update(cx, |session, cx| {
         let (drive, effects, asked) = link::start(
             task.clone(),
@@ -172,7 +171,7 @@ pub(crate) fn start_check(task: String, start: Start, window: AnyWindowHandle, c
         first,
         pinned,
         false,
-        Instant::now(),
+        onehand_core::Now::read(),
         None,
     );
     let driven = Driven {
@@ -246,12 +245,12 @@ pub(super) fn feed(id: &str, input: Input, cx: &mut App) {
 fn give(
     id: &str,
     cx: &mut App,
-    command: impl FnOnce(&mut RunDrive, Option<&Chat>, Instant) -> Vec<Effect>,
+    command: impl FnOnce(&mut RunDrive, Option<&Chat>, onehand_core::Now) -> Vec<Effect>,
 ) {
     if !cx.has_global::<Tasks>() {
         return;
     }
-    let now = Instant::now();
+    let now = onehand_core::Now::read();
     let effects = cx.update_global::<Tasks, _>(|t, cx| {
         let d = t.live.get_mut(id)?;
         Some(match d.session() {
@@ -289,7 +288,7 @@ fn perform(id: &str, effects: Vec<Effect>, cx: &mut App) {
                 let answer = match session {
                     Some(session) => session.update(cx, |session, cx| {
                         let (answer, fx) =
-                            link::submit(&mut session.chat, &text, crate::chat::session::now());
+                            link::submit(&mut session.chat, &text, onehand_core::Now::read());
                         session.perform(fx, cx);
                         cx.notify();
                         answer

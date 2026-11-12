@@ -854,7 +854,7 @@ fn recv(chat: &mut Chat) -> Result<AcpRequest, ()> {
 
 /// The time now, told to a chat as its drive would before what it folds.
 fn told(chat: &mut Chat) {
-    chat.tell_time(crate::chat::Now {
+    chat.tell_time(crate::Now {
         secs: crate::chat::now_secs(),
         at: std::time::Instant::now(),
     });

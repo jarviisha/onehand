@@ -6,7 +6,7 @@ use super::{settings, Effect, RunDrive, Said};
 use crate::chat::{Chat, Link};
 use crate::preflight::{found_late, mode_refused, About};
 use crate::workflow::{Action, Outcome, Pick, Stop};
-use std::time::Instant;
+use crate::Now;
 
 /// The longest answer kept from a turn. An answer the length of a book is cut
 /// rather than carried whole into the run's file and the next prompt.
@@ -18,7 +18,7 @@ impl RunDrive {
         &mut self,
         action: Action,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
         let Some(chat) = chat else {
@@ -37,7 +37,7 @@ impl RunDrive {
                 fx.push(Effect::RunCommand { dir, command });
             }
             Action::AwaitApproval => {
-                self.budget.pause(now);
+                self.budget.pause(now.at);
                 fx.push(Effect::Note(
                     "Waiting for approval: Continue or Revise… under the header".to_string(),
                 ));
@@ -55,7 +55,7 @@ impl RunDrive {
                 self.open_pull_request(fx);
             }
             Action::AwaitStatusChecks { wait, pushed } => {
-                self.budget.pause(now);
+                self.budget.pause(now.at);
                 fx.push(Effect::Note(
                     "Waiting for the pull request's status checks".to_string(),
                 ));
@@ -74,7 +74,7 @@ impl RunDrive {
     /// Do what the engine said with no session to do it in: a run that never
     /// had one runs its command and measures its work; one whose session went
     /// is only ended.
-    fn carry_out_without_session(&mut self, action: Action, now: Instant, fx: &mut Vec<Effect>) {
+    fn carry_out_without_session(&mut self, action: Action, now: Now, fx: &mut Vec<Effect>) {
         let dir = self.run.setup.dir.clone();
         match action {
             Action::Finish(outcome) => return self.finish(None, outcome, now, fx),
@@ -116,7 +116,7 @@ impl RunDrive {
     }
 
     /// Send `text`, or keep it until the agent is up.
-    pub(super) fn send(&mut self, text: String, chat: &Chat, now: Instant, fx: &mut Vec<Effect>) {
+    pub(super) fn send(&mut self, text: String, chat: &Chat, now: Now, fx: &mut Vec<Effect>) {
         if chat.link != Link::Connected {
             self.pending = Some(text);
             return;
@@ -132,7 +132,7 @@ impl RunDrive {
         };
         self.sent += 1;
         self.answer_from = chat.items.len();
-        self.sent_at = Some(now);
+        self.sent_at = Some(now.at);
         fx.push(Effect::Submit(text));
     }
 
@@ -141,7 +141,7 @@ impl RunDrive {
     /// Whether the prompt may go: an agent that does not offer the mode fails
     /// the run, since one left in the mode that asks before every edit would
     /// park at the first.
-    fn came_up(&mut self, chat: &Chat, now: Instant, fx: &mut Vec<Effect>) -> bool {
+    fn came_up(&mut self, chat: &Chat, now: Now, fx: &mut Vec<Effect>) -> bool {
         if std::mem::replace(&mut self.up, true) {
             return true;
         }
@@ -198,7 +198,7 @@ impl RunDrive {
         &mut self,
         chat: Option<&Chat>,
         outcome: Outcome,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
         self.over = true;

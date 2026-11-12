@@ -6,8 +6,8 @@
 
 use super::{Effect, Next, SessionDrive, Signal};
 use crate::acp::AcpEvent;
-use crate::chat::Now;
 use crate::workspace::HostName;
+use crate::Now;
 
 /// What a host session waits on, while it does.
 #[derive(Clone, Debug, PartialEq)]

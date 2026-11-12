@@ -181,7 +181,7 @@ fn offline(
         let fx = session.chat.read_back(
             copy::events(kept),
             away.then_some((host, last)),
-            super::now(),
+            onehand_core::Now::read(),
         );
         session.perform(fx, cx);
         cx.notify();

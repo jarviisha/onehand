@@ -59,7 +59,7 @@ pub enum Input {
         root: PathBuf,
         change: Change,
         done: Result<(), String>,
-        now: Instant,
+        now: crate::Now,
     },
 }
 
@@ -253,7 +253,7 @@ impl PluginsDrive {
                             everywhere: change.scope == Scope::User
                                 || change.verb == Verb::Move(Scope::User),
                             root,
-                            at: now,
+                            at: now.at,
                         });
                         let over = self.made.len().saturating_sub(MADE_CAP);
                         self.made.drain(..over);

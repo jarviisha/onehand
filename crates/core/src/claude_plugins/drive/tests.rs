@@ -22,13 +22,13 @@ fn landed(
     root: &str,
     change: Change,
     done: Result<(), String>,
-    now: Instant,
+    at: Instant,
 ) {
     let effects = drive.handle(Input::Changed {
         root: root.into(),
         change,
         done,
-        now,
+        now: crate::Now { secs: 0, at },
     });
     assert!(effects.is_empty());
 }

@@ -16,7 +16,7 @@
 //! here would need correcting on every open, close and restart, and would be
 //! wrong in between.
 
-use crate::chat::session::{ChatSession, now};
+use crate::chat::session::ChatSession;
 use crate::state::Shared;
 use gpui::{App, BorrowAppContext as _, Entity};
 use onehand_core::config::RemoteConfig;
@@ -173,7 +173,8 @@ fn carry(fx: Vec<Effect>, cx: &mut App) {
             Effect::Prompt { chat, uid, text } => {
                 let handled = on_session(uid, cx, |session, cx| {
                     session.update(cx, |session, cx| {
-                        let (handled, fx) = link::prompt(&mut session.chat, &text, now());
+                        let (handled, fx) =
+                            link::prompt(&mut session.chat, &text, onehand_core::Now::read());
                         session.perform(fx, cx);
                         cx.notify();
                         handled
@@ -304,7 +305,17 @@ fn scan(chat: String, cx: &mut App) {
             .background_executor()
             .spawn(async move { onehand_core::remote::scan_archives(roots) })
             .await;
-        cx.update(|cx| feed(Input::Scanned { chat, found, total }, cx));
+        cx.update(|cx| {
+            feed(
+                Input::Scanned {
+                    chat,
+                    found,
+                    total,
+                    now: onehand_core::Now::read(),
+                },
+                cx,
+            )
+        });
     })
     .detach();
 }

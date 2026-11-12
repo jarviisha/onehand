@@ -495,7 +495,7 @@ impl ChatPane {
                 // over with the restart.
                 s.forget_host_wait(cx);
                 s.forget_host_offline(cx);
-                s.chat.take_snapshot(crate::chat::session::now())
+                s.chat.take_snapshot(onehand_core::Now::read())
             })
         });
         // `connect_as` drops the old adapter before spawning the new one, so
@@ -723,9 +723,7 @@ impl ChatPane {
             return;
         };
         session.update(cx, |session, cx| {
-            let fx = session
-                .chat
-                .handle(Input::Shown, crate::chat::session::now());
+            let fx = session.chat.handle(Input::Shown, onehand_core::Now::read());
             session.perform(fx, cx);
         });
         cx.notify();

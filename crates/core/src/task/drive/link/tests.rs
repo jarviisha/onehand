@@ -59,7 +59,7 @@ struct Pair {
     drive: RunDrive,
     session: SessionDrive,
     rx: Rx,
-    now: Instant,
+    now: crate::Now,
 }
 
 impl Pair {
@@ -71,7 +71,7 @@ impl Pair {
         (mut session, rx): (SessionDrive, Rx),
         (task, run, first): (String, Run, Action),
     ) -> (Self, Vec<Effect>) {
-        let now = Instant::now();
+        let now = now();
         let (drive, fx, asked) = start(task, run, first, 0, false, now, Some(&mut session));
         let mut pair = Self {
             drive,
@@ -151,10 +151,10 @@ fn send(session: &SessionDrive, fx: Vec<SessionEffect>) {
     }
 }
 
-fn now() -> crate::chat::Now {
-    crate::chat::Now {
+fn now() -> crate::Now {
+    crate::Now {
         secs: crate::chat::now_secs(),
-        at: Instant::now(),
+        at: std::time::Instant::now(),
     }
 }
 

@@ -208,7 +208,7 @@ impl PluginsView {
                             })
                             .await;
                         let _ = view.update(cx, |view: &mut Self, cx| {
-                            let now = Instant::now();
+                            let now = onehand_core::Now::read();
                             view.landed(
                                 Input::Changed {
                                     root,

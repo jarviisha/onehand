@@ -1,5 +1,6 @@
 use super::*;
-use crate::chat::{Chat, Now, SessionDrive};
+use crate::chat::{Chat, SessionDrive};
+use crate::Now;
 use std::path::PathBuf;
 
 fn now() -> Now {

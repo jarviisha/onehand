@@ -26,6 +26,7 @@ use crate::connector::{self, Connector, PullRequest, PullRequests};
 use crate::issues::{self, IssueKey};
 use crate::task::marks::Change;
 use crate::task::Approval;
+use crate::Now;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -216,12 +217,12 @@ pub enum Effect {
     },
 }
 
-/// What the front end reports back, each at `now` in seconds past the epoch.
+/// What the front end reports back, each at the time it landed.
 pub enum Input {
     Pr {
         generation: u64,
         answer: Result<Option<PullRequest>, String>,
-        now: u64,
+        now: Now,
     },
     Prs {
         generation: u64,
@@ -229,7 +230,7 @@ pub enum Input {
         forge: &'static dyn Connector,
         branches: Vec<String>,
         answer: Result<PullRequests, String>,
-        now: u64,
+        now: Now,
     },
     LookedUp {
         generation: u64,
@@ -240,12 +241,12 @@ pub enum Input {
     Left {
         generation: u64,
         left: Left,
-        now: u64,
+        now: Now,
     },
     ReviewFiles {
         generation: u64,
         read: Result<Vec<Change>, String>,
-        now: u64,
+        now: Now,
     },
 }
 
@@ -382,7 +383,7 @@ impl WorkDrive {
     /// than [`READ_AGE`]), and on the page what its work left when that
     /// moved.
     #[must_use = "its effects are to be carried"]
-    pub fn show(&mut self, root: &Path, key: Option<&IssueKey>, now: u64) -> Vec<Effect> {
+    pub fn show(&mut self, root: &Path, key: Option<&IssueKey>, now: Now) -> Vec<Effect> {
         let returned = self.returned;
         let moved = std::mem::take(&mut self.moved);
         let Some(key) = key else {
@@ -401,7 +402,7 @@ impl WorkDrive {
                 .pr
                 .value
                 .as_ref()
-                .is_none_or(|(_, at)| now.saturating_sub(*at) >= READ_AGE);
+                .is_none_or(|(_, at)| now.secs.saturating_sub(*at) >= READ_AGE);
             if self.pr.about() != Some(&about) || opened || moved || (returned && old) {
                 effects.extend(self.read_pr(root, &work, about, now));
             }
@@ -419,7 +420,7 @@ impl WorkDrive {
     /// Read the pull request of issue `key` of `root` again, asked by a
     /// person.
     #[must_use = "its effects are to be carried"]
-    pub fn refresh(&mut self, root: &Path, key: &IssueKey, now: u64) -> Vec<Effect> {
+    pub fn refresh(&mut self, root: &Path, key: &IssueKey, now: Now) -> Vec<Effect> {
         let Some(work) = self.work_of(key).cloned() else {
             return Vec::new();
         };
@@ -440,14 +441,14 @@ impl WorkDrive {
         }
     }
 
-    fn read_pr(&mut self, root: &Path, work: &IssueWork, about: PrAbout, now: u64) -> Vec<Effect> {
+    fn read_pr(&mut self, root: &Path, work: &IssueWork, about: PrAbout, now: Now) -> Vec<Effect> {
         let (Some(name), Some(branch)) = (&work.work.forge, work.work.branch.clone()) else {
             return Vec::new();
         };
         let generation = self.pr.ask(about);
         let Some(forge) = connector::named(self.connectors, name) else {
             let why = format!("{name} is not a connector this build has");
-            self.pr.land(generation, Err(why), now);
+            self.pr.land(generation, Err(why), now.secs);
             return Vec::new();
         };
         vec![Effect::ReadPr {
@@ -471,10 +472,10 @@ impl WorkDrive {
     /// pull requests when due (the page just shown, or the window came back
     /// with the oldest read older than [`READ_AGE`]).
     #[must_use = "its effects are to be carried"]
-    pub fn page_drawn(&mut self, projects: &[Project], now: u64) -> Vec<Effect> {
+    pub fn page_drawn(&mut self, projects: &[Project], now: Now) -> Vec<Effect> {
         let old = self
             .prs_read_at()
-            .is_none_or(|at| now.saturating_sub(at) >= READ_AGE);
+            .is_none_or(|at| now.secs.saturating_sub(at) >= READ_AGE);
         let returned = self.returned;
         let Some(page) = self.page.as_mut() else {
             return Vec::new();
@@ -659,7 +660,7 @@ impl WorkDrive {
                 answer,
                 now,
             } => {
-                self.pr.land(generation, answer, now);
+                self.pr.land(generation, answer, now.secs);
                 Vec::new()
             }
             Input::Prs {
@@ -709,7 +710,7 @@ impl WorkDrive {
                 now,
             } => {
                 if let Some(page) = self.page.as_mut() {
-                    page.left.land(generation, Ok(left), now);
+                    page.left.land(generation, Ok(left), now.secs);
                 }
                 Vec::new()
             }
@@ -719,7 +720,7 @@ impl WorkDrive {
                 now,
             } => {
                 if let Some(page) = self.page.as_mut() {
-                    page.review.files.land(generation, read, now);
+                    page.review.files.land(generation, read, now.secs);
                 }
                 Vec::new()
             }
@@ -799,14 +800,14 @@ fn look_up(
 /// Take a read of a project's pull requests. A failure is marked with why
 /// and leaves `at` where the last good read put it, so the reading is not
 /// taken for fresh and *Read them* reads it again.
-fn landed(read: &mut PrReads, answer: Result<PullRequests, String>, now: u64) {
+fn landed(read: &mut PrReads, answer: Result<PullRequests, String>, now: Now) {
     match answer {
         Ok(found) => {
             read.by_branch = found.by_branch.into_iter().collect();
             read.capped = found.capped;
             read.looked_up.clear();
             read.failed = None;
-            read.at = Some(now);
+            read.at = Some(now.secs);
         }
         Err(why) => read.failed = Some(why),
     }

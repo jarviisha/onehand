@@ -5,8 +5,9 @@
 use super::{Effect, SessionDrive, Signal};
 use crate::chat::model::ChatItem;
 use crate::chat::store::ConversationSnapshot;
-use crate::chat::{ForkSeed, Now};
+use crate::chat::ForkSeed;
 use crate::workspace::HostName;
+use crate::Now;
 
 /// What closing a session asks first.
 #[derive(Debug, Clone, PartialEq, Eq)]

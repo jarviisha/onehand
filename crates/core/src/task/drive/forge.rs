@@ -12,6 +12,7 @@
 use super::{Chat, Effect, RunDrive, Timer};
 use crate::connector::{CheckState, PullRequest};
 use crate::workflow::{judge, pull_request_step, waited_on, with_logs, PrOpened, Seen};
+use crate::Now;
 use std::time::{Duration, Instant};
 
 /// How often a run waiting on its pull request's status checks looks at
@@ -69,12 +70,12 @@ impl RunDrive {
         &mut self,
         pushed: Option<String>,
         wait: Duration,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
         self.forging = Some(Forging::Watching(Watch {
             pushed,
-            since: now,
+            since: now.at,
             wait,
         }));
         fx.push(Effect::Arm {
@@ -95,7 +96,7 @@ impl RunDrive {
         &mut self,
         pushed: Result<(), String>,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
         if matches!(self.forging, Some(Forging::Pushing)) {
@@ -108,7 +109,7 @@ impl RunDrive {
         &mut self,
         found: Result<Option<PullRequest>, String>,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
         match self.forging.take() {
@@ -126,7 +127,7 @@ impl RunDrive {
                 let seen = judge(
                     found.as_ref().map(Option::as_ref).map_err(Clone::clone),
                     watch.pushed.as_deref(),
-                    now.saturating_duration_since(watch.since),
+                    now.at.saturating_duration_since(watch.since),
                     watch.wait,
                 );
                 match (seen, found.ok().flatten()) {
@@ -164,7 +165,7 @@ impl RunDrive {
         &mut self,
         opened_read: Result<Result<Option<PullRequest>, String>, String>,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
         if matches!(self.forging, Some(Forging::Opening)) {
@@ -178,7 +179,7 @@ impl RunDrive {
         &mut self,
         logs: Vec<(String, Result<String, String>)>,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
         let Some(Forging::Logs(watch, said)) = self.forging.take() else {
@@ -197,7 +198,7 @@ impl RunDrive {
         &mut self,
         ready: Result<(), String>,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
         let Some(Forging::Readying(watch, url)) = self.forging.take() else {
@@ -211,7 +212,7 @@ impl RunDrive {
             Ok(()) => Seen::Passed,
             Err(why) => waited_on(
                 format!("{url} could not be taken out of draft: {why}"),
-                now.saturating_duration_since(watch.since),
+                now.at.saturating_duration_since(watch.since),
                 watch.wait,
             ),
         };
@@ -225,7 +226,7 @@ impl RunDrive {
         &mut self,
         why: String,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
         match self.forging.take() {
@@ -251,7 +252,7 @@ impl RunDrive {
         watch: Watch,
         seen: Seen,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
         if seen == Seen::Pending {
@@ -261,7 +262,7 @@ impl RunDrive {
                 after: STATUS_CHECKS_EVERY,
             });
         }
-        self.budget.resume(now);
+        self.budget.resume(now.at);
         self.advance(chat, now, fx, move |run| run.status_checks_seen(seen));
     }
 
@@ -271,7 +272,7 @@ impl RunDrive {
         &mut self,
         done: Result<Option<PrOpened>, String>,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
         self.command = false;

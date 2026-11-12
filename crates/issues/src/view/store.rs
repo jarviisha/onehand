@@ -8,12 +8,12 @@
 //! in its form stays with that view.
 
 use gpui::{App, AppContext as _, Context, Entity, Global, WeakEntity};
-use onehand_core::chat::Now;
+use onehand_core::Now;
 use onehand_core::connector::Connector;
 use onehand_core::issues::drive::{
     Applied, Change, Effect, FileDrive, Input, Maker, Signal, read_blocking, write_blocking,
 };
-use onehand_core::issues::{self, sync};
+use onehand_core::issues::sync;
 use onehand_core::saving::OrderedWriter;
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -90,14 +90,14 @@ impl IssuesFile {
 
     /// Show `change` at once, before its write lands.
     pub(super) fn show(&mut self, change: &Change, cx: &mut Context<Self>) {
-        let fx = self.drive.show(change, now());
+        let fx = self.drive.show(change, Now::read());
         self.carry(fx, cx);
     }
 
     /// Write `change` after every change made before it: which change it
     /// is, for the view that made it to hear its write in [`Signal::Wrote`].
     pub(super) fn write(&mut self, change: Change, cx: &mut Context<Self>) -> u64 {
-        let (of, write) = self.drive.write(change, Maker::View, now());
+        let (of, write) = self.drive.write(change, Maker::View, Now::read());
         self.carry(vec![write], cx);
         of
     }
@@ -105,8 +105,8 @@ impl IssuesFile {
     /// Show and write `change`, made outside every view, after every change
     /// made before it, and give `answer` what it came to once it lands.
     pub(crate) fn write_outside(&mut self, change: Change, answer: Answer, cx: &mut Context<Self>) {
-        let mut fx = self.drive.show(&change, now());
-        let (of, write) = self.drive.write(change, Maker::Outside, now());
+        let mut fx = self.drive.show(&change, Now::read());
+        let (of, write) = self.drive.write(change, Maker::Outside, Now::read());
         self.makers.insert(of, answer);
         fx.push(write);
         self.carry(fx, cx);
@@ -122,7 +122,7 @@ impl IssuesFile {
     /// Keep the file in step with its forge, if that is due; `asked` when
     /// something asked for it.
     pub(super) fn sync(&mut self, asked: bool, cx: &mut Context<Self>) {
-        let fx = self.drive.sync(asked, now());
+        let fx = self.drive.sync(asked, Now::read());
         self.carry(fx, cx);
     }
 
@@ -142,7 +142,10 @@ impl IssuesFile {
                     self._clock = Some(cx.spawn(async move |file, cx| {
                         cx.background_executor().timer(after).await;
                         let _ = file.update(cx, |file: &mut Self, cx| {
-                            let fx = file.drive.handle(Input::Elapsed { token, now: now() });
+                            let fx = file.drive.handle(Input::Elapsed {
+                                token,
+                                now: Now::read(),
+                            });
                             file.carry(fx, cx);
                         });
                     }));
@@ -161,7 +164,7 @@ impl IssuesFile {
                                 read,
                                 forge,
                                 templates,
-                                now: now(),
+                                now: Now::read(),
                             });
                             file.carry(fx, cx);
                         });
@@ -176,7 +179,10 @@ impl IssuesFile {
                             .spawn(async move { sync::sync_blocking(&path, &root, forge, at) })
                             .await;
                         let _ = file.update(cx, |file: &mut Self, cx| {
-                            let fx = file.drive.handle(Input::Synced { done, now: now() });
+                            let fx = file.drive.handle(Input::Synced {
+                                done,
+                                now: Now::read(),
+                            });
                             file.carry(fx, cx);
                         });
                     })
@@ -194,7 +200,7 @@ impl IssuesFile {
                             let fx = file.drive.handle(Input::Written {
                                 of,
                                 done,
-                                now: now(),
+                                now: Now::read(),
                             });
                             file.carry(fx, cx);
                         });
@@ -286,11 +292,3 @@ fn failures(report: &sync::Report) -> Option<String> {
 
 #[cfg(test)]
 mod tests;
-
-/// The time now, as the drive is told it: it reads no clock of its own.
-fn now() -> Now {
-    Now {
-        secs: issues::now(),
-        at: std::time::Instant::now(),
-    }
-}

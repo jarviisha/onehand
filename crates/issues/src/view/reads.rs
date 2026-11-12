@@ -33,7 +33,7 @@ impl IssuesView {
                 } => self.read(cx, move || Input::Pr {
                     generation,
                     answer: forge.pull_request_for_blocking(&root, &branch),
-                    now: issues::now(),
+                    now: onehand_core::Now::read(),
                 }),
                 Effect::ReadPrs {
                     generation,
@@ -46,7 +46,7 @@ impl IssuesView {
                     root,
                     forge,
                     branches,
-                    now: issues::now(),
+                    now: onehand_core::Now::read(),
                 }),
                 Effect::LookUp {
                     generation,
@@ -62,7 +62,7 @@ impl IssuesView {
                 Effect::ReadLeft { generation, work } => self.read(cx, move || Input::Left {
                     generation,
                     left: left_blocking(&work),
-                    now: issues::now(),
+                    now: onehand_core::Now::read(),
                 }),
                 Effect::ReadReviewFiles {
                     generation,
@@ -71,7 +71,7 @@ impl IssuesView {
                 } => self.read(cx, move || Input::ReviewFiles {
                     generation,
                     read: marks::changes_blocking(&dir, &span.0, &span.1),
-                    now: issues::now(),
+                    now: onehand_core::Now::read(),
                 }),
             }
         }
@@ -95,7 +95,7 @@ impl IssuesView {
         let (Some(root), Some(key)) = (self.root.clone(), self.selected_key()) else {
             return;
         };
-        let effects = self.work.refresh(&root, &key, issues::now());
+        let effects = self.work.refresh(&root, &key, onehand_core::Now::read());
         self.carry(effects, cx);
     }
 

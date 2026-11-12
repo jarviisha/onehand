@@ -94,7 +94,18 @@ impl Rig {
     }
 
     fn handle(&mut self, input: Input<Win>, roots: Vec<On>) -> Out<Win> {
-        self.fx(|u, seen, world| u.handle(input, seen, roots, world, SystemTime::UNIX_EPOCH))
+        self.fx(|u, seen, world| {
+            u.handle(
+                input,
+                seen,
+                roots,
+                world,
+                crate::Now {
+                    secs: 0,
+                    at: std::time::Instant::now(),
+                },
+            )
+        })
     }
 
     fn tick(&mut self, roots: Vec<On>) -> Out<Win> {
@@ -526,5 +537,5 @@ fn a_check_waits_until_it_answers_and_prunes_what_is_switched_off() {
     );
     assert_eq!(rig.u.problem(&off), None, "switched off since");
     assert_eq!(rig.u.problem(&on), Some("not a git repository"));
-    assert_eq!(rig.u.checked_at(), Some(SystemTime::UNIX_EPOCH));
+    assert_eq!(rig.u.checked_at(), Some(0));
 }

@@ -8,9 +8,9 @@
 //! caches — belongs to that front end, not here.
 
 use crate::acp::{AcpRequest, ConfigOption, Mode, ReqTx, SlashCommand};
+use crate::Now;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::Instant;
 
 mod apply;
 mod background;
@@ -88,15 +88,6 @@ enum Replay {
 }
 
 /// Per-session chat state (keyed by session uid in `App`).
-/// The time, as a front end read it and told it: the wall clock, in seconds
-/// since the epoch, for what is written down, and an instant, for how long a
-/// step or a thought took. The model reads no clock of its own.
-#[derive(Debug, Clone, Copy)]
-pub struct Now {
-    pub secs: u64,
-    pub at: Instant,
-}
-
 #[derive(Default)]
 pub struct Chat {
     /// The owning session's uid. Scopes this chat's widget ids (the composer

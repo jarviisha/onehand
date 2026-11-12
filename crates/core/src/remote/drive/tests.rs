@@ -267,6 +267,7 @@ fn an_archive_is_scanned_then_opened() {
             chat: "7".into(),
             found: vec![row.clone()],
             total: 1,
+            now: crate::Now::read(),
         },
         &[],
     );

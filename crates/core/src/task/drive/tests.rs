@@ -66,7 +66,7 @@ struct Rig {
     drive: RunDrive,
     chat: Chat,
     _rx: tokio::sync::mpsc::UnboundedReceiver<crate::acp::AcpRequest>,
-    now: Instant,
+    now: crate::Now,
 }
 
 impl Rig {
@@ -78,7 +78,7 @@ impl Rig {
     }
 
     fn start_run(run: Run, first: Action, (chat, rx): (Chat, RxOf)) -> (Self, Vec<Effect>) {
-        let now = Instant::now();
+        let now = crate::Now::read();
         let (drive, fx) = RunDrive::start("t1".into(), run, first, 0, false, now, Some(&chat));
         let mut rig = Self {
             drive,
@@ -619,7 +619,7 @@ fn a_step_is_judged_once_the_work_its_turn_left_is_done() {
 fn work_an_earlier_step_left_running_does_not_hold_this_one() {
     use crate::acp::BackgroundReport;
     let (mut rig, _) = Rig::start(checkout(), None, connected());
-    rig.chat.tell_time(crate::chat::Now {
+    rig.chat.tell_time(crate::Now {
         secs: crate::chat::now_secs(),
         at: Instant::now(),
     });
@@ -631,7 +631,7 @@ fn work_an_earlier_step_left_running_does_not_hold_this_one() {
         }));
     // The step's prompt goes after the server started.
     std::thread::sleep(std::time::Duration::from_millis(2));
-    rig.now = Instant::now();
+    rig.now = crate::Now::read();
     rig.on(Input::Pinned(Ok("c0".into())));
     let fx = rig.on(Input::Measured(Ok(mark("a", "d0"))));
     assert!(submitted(&fx));
@@ -762,13 +762,13 @@ fn check_drive() -> (RunDrive, Vec<Effect>) {
     let task = Task::check("t1".into(), "make check".into(), setup(None));
     let mut run = task.runs[0].clone();
     let first = run.resume();
-    RunDrive::start("t1".into(), run, first, 0, false, Instant::now(), None)
+    RunDrive::start("t1".into(), run, first, 0, false, crate::Now::read(), None)
 }
 
 #[test]
 fn a_check_runs_its_command_and_finishes_without_a_session() {
     let (mut drive, fx) = check_drive();
-    let now = Instant::now();
+    let now = crate::Now::read();
     let fx = match has(&fx, |e| matches!(e, Effect::Pin { .. })) {
         true => drive.handle(Input::Pinned(Ok("c0".into())), None, now),
         false => fx,
@@ -804,7 +804,7 @@ fn a_check_has_no_timeout() {
 fn a_check_stopped_before_its_command_runs_none() {
     let (mut drive, fx) = check_drive();
     assert!(has(&fx, |e| matches!(e, Effect::Pin { .. })), "{fx:?}");
-    let now = Instant::now();
+    let now = crate::Now::read();
     assert!(drive.stop(None, now).is_empty());
     let fx = drive.handle(Input::Pinned(Ok("c0".into())), None, now);
     assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::ByPerson)));

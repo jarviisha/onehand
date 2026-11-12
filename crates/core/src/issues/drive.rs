@@ -27,8 +27,8 @@
 use super::sync::Report;
 use super::template::{self, IssueTemplate};
 use super::{Draft, Issues, LocalIssue};
-use crate::chat::Now;
 use crate::connector::{self, Connector};
+use crate::Now;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::time::Duration;

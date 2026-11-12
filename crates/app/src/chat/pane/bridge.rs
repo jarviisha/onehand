@@ -69,7 +69,7 @@ impl ChatPane {
         let left = session.update(cx, |session, cx| {
             let fx = session
                 .chat
-                .handle(Input::Seen { what, attention }, crate::chat::session::now());
+                .handle(Input::Seen { what, attention }, onehand_core::Now::read());
             session.perform(fx, cx)
         });
         for effect in left {

@@ -468,7 +468,7 @@ fn a_step_settling_at_the_tail_leaves_the_reader_where_they_were() {
             description: None,
             content: None,
         }),
-        crate::chat::session::now(),
+        onehand_core::Now::read(),
     );
     viewport.replan(&chat, 0, |_, open| open, |_, d| d, |_, default| default);
     let state = viewport.list_state(true, ROOM);
@@ -521,7 +521,7 @@ fn a_row_that_changed_shape_is_told_to_the_list_too() {
             description: None,
             content: None,
         }),
-        crate::chat::session::now(),
+        onehand_core::Now::read(),
     );
     viewport.replan(&chat, 0, |_, open| open, |_, d| d, |_, default| default);
     assert_eq!(viewport.changed_from, 3, "the row that changed shape");
@@ -537,7 +537,7 @@ fn a_row_that_changed_shape_is_told_to_the_list_too() {
             status: ToolStatus::InProgress,
             content: Vec::new(),
         }),
-        crate::chat::session::now(),
+        onehand_core::Now::read(),
     );
     viewport.replan(&chat, 0, |_, open| open, |_, d| d, |_, default| default);
     assert_eq!(
