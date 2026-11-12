@@ -4,6 +4,7 @@
 use super::{Effect, Input, Signal, TasksDrive, DRAIN_LIMIT};
 use crate::task::{marks, Origin, Source, Task};
 use crate::workflow::{Failure, Outcome, Run};
+use crate::Now;
 
 impl<W: Copy> TasksDrive<W> {
     /// Task `id`'s run ended as `run`, which kept the marks of `from` of its
@@ -90,13 +91,19 @@ impl<W: Copy> TasksDrive<W> {
     /// claimed with nothing after the claim; a schedule's too, since nobody
     /// is watching it either and failing is what says so. Any other's place
     /// only passes on, the task as it was.
-    pub fn not_started(&mut self, id: &str, why: String, kind: Failure) -> Vec<Effect<W>> {
+    pub fn not_started(
+        &mut self,
+        id: &str,
+        why: String,
+        kind: Failure,
+        now: Now,
+    ) -> Vec<Effect<W>> {
         let mut fx = Vec::new();
         let unwatched = self.task(id).is_some_and(|task| {
             task.issue().is_some() || matches!(task.origin, Some(Origin::Schedule { .. }))
         });
         match unwatched {
-            true => self.fail(id, why, kind, &mut fx),
+            true => self.fail(id, why, kind, now, &mut fx),
             false => self.release(id, &mut fx),
         }
         fx
@@ -104,11 +111,18 @@ impl<W: Copy> TasksDrive<W> {
 
     /// Task `id`, holding its place, could not start: its run ends failed,
     /// its issue is told, and its place passes on.
-    pub(super) fn fail(&mut self, id: &str, why: String, kind: Failure, fx: &mut Vec<Effect<W>>) {
+    pub(super) fn fail(
+        &mut self,
+        id: &str,
+        why: String,
+        kind: Failure,
+        now: Now,
+        fx: &mut Vec<Effect<W>>,
+    ) {
         let Some(mut run) = self.resumable_run(id) else {
             return self.release(id, fx);
         };
-        run.failed(why, kind);
+        run.failed(why, kind, now.secs);
         self.keep_report(id, &run, None);
         self.store_run(id, run, fx);
         self.let_go(id, fx);

@@ -206,7 +206,7 @@ impl RunDrive {
         };
         self.command = false;
         if let Some(stop) = self.stopping.take() {
-            return self.advance(chat, now, fx, move |run| run.stopped(stop));
+            return self.advance(chat, now, fx, move |run| run.stopped(stop, now.secs));
         }
         let seen = match ready {
             Ok(()) => Seen::Passed,
@@ -236,7 +236,9 @@ impl RunDrive {
             Some(Forging::Readying(watch, _)) => {
                 self.command = false;
                 match self.stopping.take() {
-                    Some(stop) => self.advance(chat, now, fx, move |run| run.stopped(stop)),
+                    Some(stop) => {
+                        self.advance(chat, now, fx, move |run| run.stopped(stop, now.secs))
+                    }
                     None => self.seen(watch, Seen::Fail(why), chat, now, fx),
                 }
             }
@@ -263,7 +265,9 @@ impl RunDrive {
             });
         }
         self.budget.resume(now.at);
-        self.advance(chat, now, fx, move |run| run.status_checks_seen(seen));
+        self.advance(chat, now, fx, move |run| {
+            run.status_checks_seen(seen, now.secs)
+        });
     }
 
     /// A push or a pull request landed, or failed: the run ends there once
@@ -278,9 +282,9 @@ impl RunDrive {
         self.command = false;
         self.forging = None;
         if let Some(stop) = self.stopping.take() {
-            return self.advance(chat, now, fx, move |run| run.stopped(stop));
+            return self.advance(chat, now, fx, move |run| run.stopped(stop, now.secs));
         }
-        self.advance(chat, now, fx, move |run| run.forge_done(done));
+        self.advance(chat, now, fx, move |run| run.forge_done(done, now.secs));
     }
 }
 

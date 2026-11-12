@@ -63,7 +63,7 @@ fn fail(d: &mut RunDrive, why: String, chat: &Chat, now: Now, fx: &mut Vec<Effec
         }));
     }
     d.advance(Some(chat), now, fx, move |run| {
-        run.failed(why, found_late(About::Settings))
+        run.failed(why, found_late(About::Settings), now.secs)
     });
 }
 
@@ -140,7 +140,7 @@ pub(super) fn refused(d: &mut RunDrive, chat: &Chat, why: &str, now: Now, fx: &m
             fix: "unattended.mode is fixed".to_string(),
         }));
         d.advance(Some(chat), now, fx, move |run| {
-            run.failed(why, found_late(About::Mode))
+            run.failed(why, found_late(About::Mode), now.secs)
         });
         return;
     }

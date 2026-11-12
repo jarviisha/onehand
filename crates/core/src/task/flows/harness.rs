@@ -310,7 +310,7 @@ impl Flow {
             .tasks
             .resumable_run(&id)
             .is_some_and(|run| run.setup.dir.is_dir());
-        let (start, opening) = match self.tasks.begin(&id, there) {
+        let (start, opening) = match self.tasks.begin(&id, there, crate::Now::read()) {
             Begin::Session { start, opening, .. } => (start, opening),
             Begin::Check(_) => panic!("these flows run no check"),
             // As the shell does: the drive is answered at once, and the
@@ -320,7 +320,10 @@ impl Flow {
                     task: id.clone(),
                     started: Err(why.clone()),
                 });
-                return self.joined(|j, _, _| j.tasks(|t| ((), t.not_started(&id, why, kind))).1);
+                return self.joined(|j, _, _| {
+                    j.tasks(|t| ((), t.not_started(&id, why, kind, crate::Now::read())))
+                        .1
+                });
             }
         };
         let (mut session, rx) = session();

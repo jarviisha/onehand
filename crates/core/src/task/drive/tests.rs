@@ -73,7 +73,7 @@ impl Rig {
     fn start(template: Template, mode: Option<&str>, chat: (Chat, RxOf)) -> (Self, Vec<Effect>) {
         let task = Task::new("t1".into(), template, brief(), setup(mode));
         let mut run = task.runs[0].clone();
-        let first = run.resume();
+        let first = run.resume(0);
         Self::start_run(run, first, chat)
     }
 
@@ -240,7 +240,7 @@ fn an_approval_answers_and_says_so() {
 fn checking() -> (Rig, Vec<Effect>) {
     let task = Task::check("t1".into(), "make check".into(), setup(None));
     let mut run = task.runs[0].clone();
-    let first = run.resume();
+    let first = run.resume(0);
     let (mut rig, fx) = Rig::start_run(run, first, connected());
     let fx = match has(&fx, |e| matches!(e, Effect::Pin { .. })) {
         true => rig.on(Input::Pinned(Ok("c0".into()))),
@@ -761,7 +761,7 @@ fn a_chunk_is_heeded_only_when_it_can_move_the_run() {
 fn check_drive() -> (RunDrive, Vec<Effect>) {
     let task = Task::check("t1".into(), "make check".into(), setup(None));
     let mut run = task.runs[0].clone();
-    let first = run.resume();
+    let first = run.resume(0);
     RunDrive::start("t1".into(), run, first, 0, false, crate::Now::read(), None)
 }
 
@@ -874,7 +874,7 @@ fn forging() -> Rig {
     setup.forge = Some("github".into());
     let task = Task::new("t1".into(), template, brief(), setup);
     let mut run = task.runs[0].clone();
-    let first = run.resume();
+    let first = run.resume(0);
     let (mut rig, fx) = Rig::start_run(run, first, connected());
     let mut fx = fx;
     // Pinned, measured and checked, until the push.

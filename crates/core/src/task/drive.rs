@@ -315,23 +315,28 @@ impl RunDrive {
             }
             Input::Pinned(pinned) => self.landed(pinned, chat, now, &mut fx),
             Input::Measured(Ok(mark)) => {
-                self.advance(chat, now, &mut fx, move |run| run.measured(mark))
+                self.advance(chat, now, &mut fx, move |run| run.measured(mark, now.secs))
             }
             Input::Measured(Err(why)) | Input::TurnRead(Err(why)) => {
                 self.advance(chat, now, &mut fx, move |run| {
-                    run.failed(format!("the work could not be read: {why}"), Failure::Other)
+                    run.failed(
+                        format!("the work could not be read: {why}"),
+                        Failure::Other,
+                        now.secs,
+                    )
                 })
             }
             Input::TurnRead(Ok(facts)) => {
                 let answer = self.answer.take().unwrap_or_default();
                 self.advance(chat, now, &mut fx, move |run| {
-                    run.turn_ended(&facts, &answer)
+                    run.turn_ended(&facts, &answer, now.secs)
                 })
             }
             Input::NotTaken => self.advance(chat, now, &mut fx, |run| {
                 run.failed(
                     "the agent did not take the prompt".to_string(),
                     Failure::Other,
+                    now.secs,
                 )
             }),
             Input::CommandExited(ran) => {
@@ -347,7 +352,9 @@ impl RunDrive {
                     };
                     fx.push(Effect::Note(said.to_string()));
                 }
-                self.advance(chat, now, &mut fx, move |run| run.command_finished(ran));
+                self.advance(chat, now, &mut fx, move |run| {
+                    run.command_finished(ran, now.secs)
+                });
             }
             Input::Pushed(pushed) => self.pushed(pushed, chat, now, &mut fx),
             Input::PullRequestFound(found) => self.found(found, chat, now, &mut fx),
@@ -387,7 +394,7 @@ impl RunDrive {
         now: Now,
         mut fx: Vec<Effect>,
     ) -> Vec<Effect> {
-        self.advance(chat, now, &mut fx, move |run| run.stopped(stop));
+        self.advance(chat, now, &mut fx, move |run| run.stopped(stop, now.secs));
         fx
     }
 
@@ -422,7 +429,7 @@ impl RunDrive {
             Input::TurnEnded if judge_turn && chat.failed() => {
                 let why = chat.failure().unwrap_or_default().to_string();
                 self.advance(Some(chat), now, fx, move |run| {
-                    run.failed(why, Failure::Other)
+                    run.failed(why, Failure::Other, now.secs)
                 });
             }
             // What the agent left running is part of the step: a build in the
@@ -469,8 +476,8 @@ impl RunDrive {
             return;
         }
         let action = match answer {
-            Answer::Approved(at) => self.run.approved(&at),
-            Answer::Revised(at, note) => self.run.revised(&at, note),
+            Answer::Approved(at) => self.run.approved(&at, now.secs),
+            Answer::Revised(at, note) => self.run.revised(&at, note, now.secs),
         };
         if action != Action::Idle {
             self.budget.resume(now.at);
@@ -507,7 +514,7 @@ impl RunDrive {
                 // Its Stop waits on its button until the command has exited.
                 fx.push(Effect::Refresh);
             }
-            false => self.advance(chat, now, fx, move |run| run.stopped(stop)),
+            false => self.advance(chat, now, fx, move |run| run.stopped(stop, now.secs)),
         }
     }
 

@@ -159,7 +159,7 @@ impl RunDrive {
                 fix: "unattended.mode is fixed".to_string(),
             }));
             self.advance(Some(chat), now, fx, move |run| {
-                run.failed(why, found_late(About::Mode))
+                run.failed(why, found_late(About::Mode), now.secs)
             });
             return false;
         }

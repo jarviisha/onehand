@@ -79,7 +79,9 @@ fn request(id: String, window: AnyWindowHandle, cx: &mut App) {
 /// Task `id`, holding its place, could not start for `why`, of `kind`: the
 /// drive says whether its run ends failed or its place only passes on.
 pub(crate) fn not_started(id: String, why: String, kind: Failure, cx: &mut App) {
-    with_drive(cx, |d| ((), d.not_started(&id, why, kind)));
+    with_drive(cx, |d| {
+        ((), d.not_started(&id, why, kind, onehand_core::Now::read()))
+    });
 }
 
 /// Tell the tasks' drive what the world found, and carry out what it says.

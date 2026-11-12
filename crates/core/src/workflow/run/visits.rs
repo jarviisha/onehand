@@ -1,6 +1,6 @@
 //! A run's step visits, and the marks pinned at their boundaries.
 
-use super::{now, CommandResult, Run, Visit};
+use super::{CommandResult, Run, Visit};
 use crate::workflow::Settings;
 
 impl Run {
@@ -92,12 +92,12 @@ impl Run {
     }
 
     /// Start a visit of `step`.
-    pub(super) fn open_visit(&mut self, step: String) {
+    pub(super) fn open_visit(&mut self, step: String, now: u64) {
         let id = self.visits.last().map_or(1, |visit| visit.id + 1);
         self.visits.push(Visit {
             id,
             step,
-            started_at: now(),
+            started_at: now,
             ended_at: None,
             start: None,
             end: None,
@@ -109,9 +109,9 @@ impl Run {
     }
 
     /// End the open visit, if there is one, for `why`.
-    pub(super) fn close_visit(&mut self, why: &str) {
+    pub(super) fn close_visit(&mut self, why: &str, now: u64) {
         if let Some(visit) = self.visits.last_mut().filter(|v| v.ended_at.is_none()) {
-            visit.ended_at = Some(now());
+            visit.ended_at = Some(now);
             visit.why = Some(why.to_string());
         }
     }

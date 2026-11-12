@@ -49,7 +49,7 @@ fn run_in(mode: Option<&str>) -> (String, Run, Action) {
     };
     let task = Task::new("t1".into(), builtin::all().remove(0), brief, setup);
     let mut run = task.runs[0].clone();
-    let first = run.resume();
+    let first = run.resume(0);
     ("t1".into(), run, first)
 }
 

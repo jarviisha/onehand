@@ -6,6 +6,7 @@ use super::{Effect, Placed, Signal, TasksDrive};
 use crate::task::queue;
 use crate::task::Task;
 use crate::workflow::Stop;
+use crate::Now;
 use std::path::PathBuf;
 
 impl<W: Copy> TasksDrive<W> {
@@ -106,7 +107,7 @@ impl<W: Copy> TasksDrive<W> {
     /// A person pressed Stop on queued task `id`: it no longer waits. One that
     /// never ran a step is over, stopped by a person, with no empty run kept;
     /// one resumed goes back to how it was. Whether it was queued.
-    pub fn stop_queued(&mut self, id: &str) -> (bool, Vec<Effect<W>>) {
+    pub fn stop_queued(&mut self, id: &str, now: Now) -> (bool, Vec<Effect<W>>) {
         let mut fx = Vec::new();
         if !self.queue.call_off(id) {
             return (false, fx);
@@ -122,7 +123,7 @@ impl<W: Copy> TasksDrive<W> {
         let told = issue && dropped.is_some();
         if let Some(mut run) = dropped.filter(|_| issue) {
             // Through the engine, so the stop is in the run's history as any is.
-            run.stopped(Stop::ByPerson);
+            run.stopped(Stop::ByPerson, now.secs);
             self.keep_report(id, &run, None);
         }
         if let Some(task) = self.task(id) {

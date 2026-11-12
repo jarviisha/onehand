@@ -204,7 +204,7 @@ fn stop_on_a_queued_task_that_never_ran_keeps_no_empty_run() {
     tasks.add(check("2", "/a"));
     ask(&mut tasks, "1", "/a");
     ask(&mut tasks, "2", "/a");
-    let (queued, fx) = tasks.stop_queued("2");
+    let (queued, fx) = tasks.stop_queued("2", crate::Now::read());
     assert!(queued);
     assert_eq!(saves(&fx), 1);
     let task = tasks.task("2").unwrap();
@@ -212,7 +212,7 @@ fn stop_on_a_queued_task_that_never_ran_keeps_no_empty_run() {
     assert_eq!(task.outcome(), Some(Outcome::Stopped(Stop::ByPerson)));
     assert_eq!(tasks.working("1"), Some(Working::Running));
     // Not queued: nothing to call off.
-    assert!(!tasks.stop_queued("1").0);
+    assert!(!tasks.stop_queued("1", crate::Now::read()).0);
 }
 
 #[test]
@@ -235,8 +235,8 @@ fn an_ended_run_holds_its_place_until_its_turn_is_over() {
     ask(&mut tasks, "1", "/a");
     ask(&mut tasks, "2", "/a");
     let mut run = tasks.task("1").unwrap().runs[0].clone();
-    run.resume();
-    run.stopped(Stop::ByPerson);
+    run.resume(0);
+    run.stopped(Stop::ByPerson, 0);
     let fx = tasks.run_ended("1", run, 0, true, None, Some(7), WINDOW);
     assert!(
         has(&fx, |e| *e
@@ -406,7 +406,7 @@ fn a_task_that_cannot_start_fails_only_when_nobody_watches_it() {
     tasks.add(titled("2", "Mine", "/b"));
     ask(&mut tasks, "1", "/a");
     ask(&mut tasks, "2", "/b");
-    let fx = tasks.not_started("1", "no agent".into(), Failure::Other);
+    let fx = tasks.not_started("1", "no agent".into(), Failure::Other, crate::Now::read());
     // Its report is in the task that is written, before the issue is told.
     let saved = fx.iter().position(|e| {
         matches!(e, Effect::Save(task) if task.id == "1"
@@ -418,7 +418,7 @@ fn a_task_that_cannot_start_fails_only_when_nobody_watches_it() {
         tasks.task("1").unwrap().outcome(),
         Some(Outcome::Failed(_))
     ));
-    tasks.not_started("2", "no agent".into(), Failure::Other);
+    tasks.not_started("2", "no agent".into(), Failure::Other, crate::Now::read());
     assert_eq!(tasks.task("2").unwrap().outcome(), None);
     assert_eq!(tasks.working("2"), None);
 }
@@ -520,16 +520,19 @@ fn a_task_begins_as_its_kind_and_a_tools_first_drive_is_off_screen() {
     tasks.add(titled("3", "A tool's", "/c"));
     tasks.add(of_issue("4"));
     tasks.drive_off_screen("3");
-    assert!(matches!(tasks.begin("1", true), Begin::Check(_)));
+    assert!(matches!(
+        tasks.begin("1", true, crate::Now::read()),
+        Begin::Check(_)
+    ));
     let off = |begun| match begun {
         Begin::Session { off_screen, .. } => off_screen,
         other => panic!("{other:?}"),
     };
-    assert!(!off(tasks.begin("2", true)));
-    assert!(off(tasks.begin("3", true)));
+    assert!(!off(tasks.begin("2", true, crate::Now::read())));
+    assert!(off(tasks.begin("3", true, crate::Now::read())));
     // Only its first drive: a Resume a person presses later shows.
-    assert!(!off(tasks.begin("3", true)));
-    assert!(off(tasks.begin("4", true)));
+    assert!(!off(tasks.begin("3", true, crate::Now::read())));
+    assert!(off(tasks.begin("4", true, crate::Now::read())));
 }
 
 #[test]
@@ -537,10 +540,13 @@ fn a_task_whose_folder_is_gone_or_with_nothing_to_run_is_refused() {
     let mut tasks = TasksDrive::<Win>::default();
     tasks.add(titled("1", "Mine", "/b"));
     assert!(matches!(
-        tasks.begin("1", false),
+        tasks.begin("1", false, crate::Now::read()),
         Begin::Refused { why, .. } if why.starts_with("The folder that task works in is gone")
     ));
-    assert!(matches!(tasks.begin("9", true), Begin::Refused { .. }));
+    assert!(matches!(
+        tasks.begin("9", true, crate::Now::read()),
+        Begin::Refused { .. }
+    ));
 }
 
 /// A session that did not start because its agent is no longer configured
@@ -550,7 +556,7 @@ fn a_session_not_started_for_a_gone_agent_fails_as_found_late() {
     let mut tasks = TasksDrive::<Win>::default();
     tasks.add(of_issue("1"));
     ask(&mut tasks, "1", "/a");
-    tasks.session_not_started("1", true);
+    tasks.session_not_started("1", true, crate::Now::read());
     let run = tasks.task("1").unwrap().runs.last().unwrap().clone();
     assert_eq!(
         run.failure,
@@ -669,7 +675,7 @@ fn a_start_off_screen_keeps_its_project_then_its_task_and_asks() {
     assert_eq!(tasks.task("t").unwrap().origin, Some(Origin::Tool));
     let fx = ask(&mut tasks, "t", "/p");
     assert!(drives(&fx, "t"));
-    match tasks.begin("t", true) {
+    match tasks.begin("t", true, crate::Now::read()) {
         Begin::Session { off_screen, .. } => assert!(off_screen),
         Begin::Check(_) | Begin::Refused { .. } => panic!("a session's run"),
     }
@@ -732,7 +738,7 @@ fn a_sessions_run_begins_with_its_grant_and_an_issues_opening() {
     mine.grant.tools = vec!["start_task".into()];
     tasks.add(mine);
     tasks.add(of_issue("2"));
-    let begun = |tasks: &mut TasksDrive<Win>, id| match tasks.begin(id, true) {
+    let begun = |tasks: &mut TasksDrive<Win>, id| match tasks.begin(id, true, crate::Now::read()) {
         Begin::Session { grant, opening, .. } => (grant, opening),
         Begin::Check(_) | Begin::Refused { .. } => panic!("a session's run"),
     };
