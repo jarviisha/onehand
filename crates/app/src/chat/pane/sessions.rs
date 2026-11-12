@@ -82,7 +82,7 @@ impl ChatPane {
         // The project's page is made again when the pane next stands on it,
         // so it reads its lists anew: a session closed meanwhile is among its
         // past conversations, or its host's sessions.
-        self.empty = None;
+        self.put_project_page(None, cx);
         self.active = Some(uid);
         // The header's menu is about the project, so it follows the project
         // rather than the session: switching between two sessions of one root
@@ -571,7 +571,7 @@ impl ChatPane {
         }
         self.leave_page(window, cx);
         self.page = None;
-        self.empty = root.map(|(label, path, on)| {
+        let page = root.map(|(label, path, on)| {
             // An offloaded project's sessions run in its mirror there.
             let mirror = on
                 .as_ref()
@@ -600,6 +600,7 @@ impl ChatPane {
                 rows: super::project_page::home_rows(cx),
             }
         });
+        self.put_project_page(page, cx);
         self.scan_project_history(cx);
         self.list_host_sessions(cx);
         // Going to no session at all is still leaving the one that was showing,

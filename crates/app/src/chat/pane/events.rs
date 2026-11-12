@@ -182,6 +182,9 @@ pub enum ChatPaneEvent {
         uid: Option<u64>,
         why: String,
     },
+    /// The project page on screen was left, made for another project, or
+    /// listed again: what waited on its host may wait no longer.
+    PageChanged,
     /// Session `uid` is on host session `id`, as its host said.
     Watching {
         uid: u64,
