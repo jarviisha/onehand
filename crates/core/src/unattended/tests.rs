@@ -912,3 +912,48 @@ fn a_branch_whose_worktree_folder_is_left_is_passed_over() {
     );
     std::fs::remove_dir_all(parent).unwrap();
 }
+
+/// A search and a claim through a file kept in step each leave the file
+/// synced on disk: the forge's issue brought in by the search, and its label
+/// off once claimed.
+#[test]
+fn a_search_and_a_claim_on_a_synced_file_leave_it_synced_on_disk() {
+    use crate::connector::memory::Forge;
+    use crate::issues::Snapshot;
+    static FORGE: std::sync::OnceLock<Forge> = std::sync::OnceLock::new();
+    let forge = FORGE.get_or_init(|| Forge {
+        mine: vec!["7".into()],
+        ..Forge::with(vec![(
+            7,
+            Snapshot {
+                title: "mine".into(),
+                body: String::new(),
+                open: true,
+                labels: vec!["auto".into()],
+            },
+        )])
+    });
+    let (_, dir) = local("synced-disk", &[]);
+    let file = dir.join("issues.json");
+    crate::issues::update_blocking(&file, |kept| {
+        kept.sync_with(Some("Forge".into()));
+        Ok(())
+    })
+    .unwrap();
+    let tracker = Tracker::Synced {
+        file: file.clone(),
+        forge,
+    };
+    let root = std::env::temp_dir();
+    let found = candidate_blocking(&tracker, &root, "auto")
+        .unwrap()
+        .unwrap();
+    let on_disk = crate::issues::load_blocking(&file).unwrap();
+    let kept = on_disk.get(found.number).expect("brought in by the search");
+    assert!(kept.link_on("Forge").is_some());
+    claim_blocking(&tracker, &root, found.number, "auto", None).unwrap();
+    let on_disk = crate::issues::load_blocking(&file).unwrap();
+    assert!(on_disk.get(found.number).unwrap().labels.is_empty());
+    assert!(forge.said("7").labels.is_empty(), "and off the forge");
+    let _ = std::fs::remove_dir_all(dir);
+}
