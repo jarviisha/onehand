@@ -197,6 +197,7 @@ fn name<W>(e: &Effect<W>) -> &'static str {
         Effect::Drain { .. } => "Drain",
         Effect::Teardown { .. } => "Teardown",
         Effect::NoteTakenUp { .. } => "NoteTakenUp",
+        Effect::Synced(_) => "Synced",
         Effect::Tick => "Tick",
         Effect::Refresh => "Refresh",
         Effect::Signal(Signal::Warn { .. }) => "Signal::Warn",
@@ -219,6 +220,7 @@ fn looks<W>(out: &Out<W>) -> Option<&Look<W>> {
         | Effect::Drain { .. }
         | Effect::Teardown { .. }
         | Effect::NoteTakenUp { .. }
+        | Effect::Synced(_)
         | Effect::Tick
         | Effect::Signal(_)
         | Effect::Refresh => None,
@@ -241,6 +243,7 @@ fn take_look<W>(out: Out<W>) -> Option<Look<W>> {
         | Effect::Drain { .. }
         | Effect::Teardown { .. }
         | Effect::NoteTakenUp { .. }
+        | Effect::Synced(_)
         | Effect::Tick
         | Effect::Signal(_)
         | Effect::Refresh => None,
@@ -264,6 +267,7 @@ fn warned<W>(out: &Out<W>) -> Option<&str> {
         | Effect::Drain { .. }
         | Effect::Teardown { .. }
         | Effect::NoteTakenUp { .. }
+        | Effect::Synced(_)
         | Effect::Tick
         | Effect::Refresh => None,
     })
@@ -285,6 +289,7 @@ fn armed<W>(e: &Effect<W>) -> Option<Duration> {
         | Effect::Drain { .. }
         | Effect::Teardown { .. }
         | Effect::NoteTakenUp { .. }
+        | Effect::Synced(_)
         | Effect::Tick
         | Effect::Signal(_)
         | Effect::Refresh => None,
@@ -358,15 +363,17 @@ fn a_tick_claims_an_issue_and_its_task_asks_for_its_place() {
             | Effect::Drain { .. }
             | Effect::Teardown { .. }
             | Effect::NoteTakenUp { .. }
+            | Effect::Synced(_)
             | Effect::Tick
             | Effect::Signal(_)
             | Effect::Refresh => None,
         })
         .expect("the issue found is claimed");
-    let begun = blocking::claim_found(*found, &label);
+    let (begun, synced) = blocking::claim_found(*found, &label);
     let out = rig.handle(
         Input::Claimed {
             begun,
+            synced,
             asked_from: None,
             held: None,
             holding: vec![(WINDOW, None)],
@@ -404,6 +411,57 @@ fn a_tick_claims_an_issue_and_its_task_asks_for_its_place() {
     assert_eq!(rig.slots().holders.len(), 1);
     let _ = std::fs::remove_dir_all(task_dir(&rig, "t1"));
     let _ = std::fs::remove_dir_all(project.root);
+}
+
+/// A sync a claim made of a file kept in step is told that file's drive
+/// before anything else the claim comes to, and a claim that synced nothing
+/// tells nothing.
+#[test]
+fn a_claims_sync_is_told_its_files_drive_first() {
+    use crate::issues::sync::{OutsideSync, Report};
+    let mut rig = Rig::new(config(1, None));
+    let outside = OutsideSync {
+        file: "/p/issues.json".into(),
+        kept: crate::issues::Issues::default(),
+        report: Report::default(),
+    };
+    let claimed = |synced| Input::Claimed {
+        begun: None,
+        synced,
+        asked_from: None,
+        held: None,
+        holding: Vec::new(),
+        new_task: "t1".into(),
+    };
+    let out = rig.handle(claimed(vec![outside.clone()]), Vec::new());
+    let first = out.unattended.first().expect("an effect");
+    assert_eq!(name(first), "Synced", "told first");
+    assert_eq!(synced_of(first), Some(&outside));
+    let out = rig.handle(claimed(Vec::new()), Vec::new());
+    assert!(!out.unattended.iter().map(name).any(|n| n == "Synced"));
+}
+
+/// The sync `effect` tells, when it tells one.
+fn synced_of<W>(effect: &Effect<W>) -> Option<&crate::issues::sync::OutsideSync> {
+    match effect {
+        Effect::Synced(outside) => Some(outside),
+        Effect::Arm(_)
+        | Effect::Check { .. }
+        | Effect::Look(_)
+        | Effect::Claim { .. }
+        | Effect::Take { .. }
+        | Effect::ClaimPicked { .. }
+        | Effect::Tell { .. }
+        | Effect::Submit { .. }
+        | Effect::AnswerReview { .. }
+        | Effect::Send(_)
+        | Effect::Drain { .. }
+        | Effect::Teardown { .. }
+        | Effect::NoteTakenUp { .. }
+        | Effect::Tick
+        | Effect::Signal(_)
+        | Effect::Refresh => None,
+    }
 }
 
 fn task_dir(rig: &Rig, id: &str) -> PathBuf {
@@ -582,6 +640,7 @@ fn an_ended_run_drops_its_project_unless_a_person_has_it_and_is_told_once() {
             | Effect::Send(_)
             | Effect::Drain { .. }
             | Effect::NoteTakenUp { .. }
+            | Effect::Synced(_)
             | Effect::Tick
             | Effect::Signal(_)
             | Effect::Refresh) => panic!("{} first: {picked} {outcome:?}", name(e)),

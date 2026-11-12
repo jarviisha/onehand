@@ -15,6 +15,7 @@ use std::rc::Rc;
 
 mod view;
 use view::IssuesView;
+pub use view::synced;
 #[cfg(feature = "test-support")]
 pub use view::testing;
 

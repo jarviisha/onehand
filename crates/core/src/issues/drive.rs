@@ -444,6 +444,19 @@ impl FileDrive {
         kept.in_step_with(forge.name()).then_some(forge)
     }
 
+    /// The file was kept in step with its forge outside this drive (an
+    /// unattended run's search or claim), leaving `kept` as `report` says, at
+    /// `now`: heard as a sync of its own landing, so the next that only
+    /// comes round waits from it. A sync of its own on its way runs on.
+    #[must_use = "its effects are to be carried"]
+    pub fn synced_outside(&mut self, kept: Issues, report: Report, now: Now) -> Vec<Effect> {
+        self.pending.incoming(&mut self.kept.issues, kept);
+        self.kept.synced = Some((now.secs, Ok(report)));
+        let mut fx = vec![Effect::Changed];
+        fx.extend(self.arm());
+        fx
+    }
+
     /// Keep the file in step with its forge, at `now`, if it is kept in step
     /// with one and a sync is due; `asked` when something asked for it.
     #[must_use = "its effects are to be carried"]

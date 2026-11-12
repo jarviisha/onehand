@@ -320,3 +320,60 @@ fn an_outside_write_with_no_view_holding_its_file_answers(cx: &mut TestAppContex
     assert_eq!(*heard.borrow(), [Ok(Applied::Already(1))]);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A sync made outside every view (an unattended run's) is heard by the file
+/// a view holds: its clock starts again from it, so the file does not sync
+/// again until five minutes after that one; a file no view holds hears
+/// nothing, and nothing is made for it.
+#[gpui::test]
+fn a_sync_made_outside_puts_the_files_clock_back(cx: &mut TestAppContext) {
+    use super::super::IssuesView;
+    use onehand_core::issues::sync::{OutsideSync, Report};
+    cx.executor().allow_parking();
+    let dir = std::env::temp_dir().join(format!("onehand-issues-outside-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let (storage, root) = (dir.join("storage"), dir.join("on"));
+    for folder in [&storage, &root] {
+        std::fs::create_dir_all(folder).unwrap();
+    }
+    let path = issues::file_for(&storage, &root);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let keep = Change::SyncWith(Some(FORGE.name.into()));
+    issues::drive::write_blocking(&path, keep, 1).unwrap();
+    let outside = |path: &std::path::Path| OutsideSync {
+        file: path.to_path_buf(),
+        kept: issues::load_blocking(path).unwrap(),
+        report: Report::default(),
+    };
+    // No view holds it: nothing hears, and no file is made for it.
+    cx.update(|cx| crate::synced(outside(&path), cx));
+    assert!(cx.update(|cx| IssuesFile::held(&path, cx)).is_none());
+    let view = cx.update(|cx| {
+        IssuesView::new(
+            &CONNECTORS,
+            std::rc::Rc::new(|_, _, _| {}),
+            std::rc::Rc::new(|_, _, _| {}),
+            false,
+            cx,
+        )
+    });
+    let file = view.update(cx, |view, cx| {
+        view.set_storage(Some(storage.clone()), cx);
+        view.set_root(&root, cx);
+        view.state_for(&root, cx).unwrap().file.clone()
+    });
+    file.update(cx, |file, cx| file.load_if_stale(cx));
+    settle(cx);
+    let before = writes(&path);
+    cx.executor().advance_clock(Duration::from_secs(240));
+    settle(cx);
+    cx.update(|cx| crate::synced(outside(&path), cx));
+    settle(cx);
+    cx.executor().advance_clock(Duration::from_secs(60));
+    settle(cx);
+    assert_eq!(writes(&path), before, "not five minutes after its own");
+    cx.executor().advance_clock(Duration::from_secs(240));
+    settle(cx);
+    assert_eq!(writes(&path), before + 1, "five after the one made outside");
+    let _ = std::fs::remove_dir_all(&dir);
+}

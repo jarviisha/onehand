@@ -5,6 +5,7 @@
 
 use super::{Connectors, On, Pick};
 use crate::connector::{self, Connector};
+use crate::issues::sync::OutsideSync;
 use crate::issues::template;
 use crate::unattended::{
     self as core, Accounts, Choosing, Claimed, Earlier, Found, Judging, PendingReport, Served,
@@ -38,6 +39,9 @@ pub struct Search {
 pub struct Looked<W> {
     pub(super) asked_from: Option<W>,
     pub(super) searching: bool,
+    /// The syncs the search made of files kept in step, kept even when it
+    /// panicked after them.
+    pub(super) synced: Vec<OutsideSync>,
     /// `None` when the look panicked: said, and treated as nothing found.
     pub(super) answer: Option<Answer>,
 }
@@ -63,6 +67,7 @@ impl<W> Look<W> {
             asked_from,
         } = self;
         let searching = search.is_some();
+        let mut synced = Vec::new();
         let answer = catch_unwind(AssertUnwindSafe(|| {
             let projects = roots.iter().map(|(p, _)| p.clone()).collect();
             let (accounts, mut checked) = core::look_blocking(connectors, projects);
@@ -86,6 +91,7 @@ impl<W> Look<W> {
                     &s.earlier,
                     &s.judging,
                     &mut checked,
+                    &mut synced,
                 )
             });
             // Taken before the line below, which passes issues over rather
@@ -108,23 +114,30 @@ impl<W> Look<W> {
         Looked {
             asked_from,
             searching,
+            synced,
             answer,
         }
     }
 }
 
 /// Claim what the search found and make what it is worked on: `None` when
-/// the claim failed, or panicked before the worktree was made.
-pub fn claim_found(found: Found, label: &str) -> Option<Result<Claimed, Unstarted>> {
-    catch_unwind(AssertUnwindSafe(|| {
-        core::claim_found_blocking(found, label)
+/// the claim failed, or panicked before the worktree was made; with the
+/// syncs the claim made of a file kept in step.
+pub fn claim_found(
+    found: Found,
+    label: &str,
+) -> (Option<Result<Claimed, Unstarted>>, Vec<OutsideSync>) {
+    let mut synced = Vec::new();
+    let begun = catch_unwind(AssertUnwindSafe(|| {
+        core::claim_found_blocking(found, label, &mut synced)
     }))
     .unwrap_or_else(|_| {
         // The worktree's own panic is caught where it is made, so this
         // is the claim's.
         eprintln!("onehand: claiming an unattended run panicked");
         None
-    })
+    });
+    (begun, synced)
 }
 
 /// What claiming `pick` comes to, refused before the claim when it would
@@ -159,15 +172,17 @@ pub fn take(
 /// Claim `pick` and make what it is worked on, as `taking` says: refused
 /// (`Err`) when the claim itself failed, so nothing was claimed. What its
 /// text lacks of its template goes to its first report, read later by
-/// whoever judges why the run went wrong.
+/// whoever judges why the run went wrong. With the syncs the claim made of a
+/// file kept in step.
 pub fn claim_picked(
     pick: Pick,
     forge: Option<&'static dyn Connector>,
     taking: Taking,
     label: &str,
-) -> Result<Result<Claimed, Unstarted>, String> {
+) -> (Result<Result<Claimed, Unstarted>, String>, Vec<OutsideSync>) {
     let named = pick.tracker.named(&pick.row.issue);
-    catch_unwind(AssertUnwindSafe(|| {
+    let mut synced = Vec::new();
+    let begun = catch_unwind(AssertUnwindSafe(|| {
         let Pick {
             repo,
             tracker,
@@ -176,8 +191,15 @@ pub fn claim_picked(
             instructions,
             ..
         } = pick;
-        core::claim_picked_blocking(&tracker, &repo, &row, label, taking.answering())
-            .map_err(|why| format!("Could not start on issue {named}: {why}"))?;
+        core::claim_picked_blocking(
+            &tracker,
+            &repo,
+            &row,
+            label,
+            taking.answering(),
+            &mut synced,
+        )
+        .map_err(|why| format!("Could not start on issue {named}: {why}"))?;
         let lacks = template::lacking(
             row.issue.body_text(),
             &template::for_project_blocking(&repo),
@@ -193,7 +215,8 @@ pub fn claim_picked(
             ),
         )
     }))
-    .unwrap_or_else(|_| Err("onehand panicked while claiming the issue".to_string()))
+    .unwrap_or_else(|_| Err("onehand panicked while claiming the issue".to_string()));
+    (begun, synced)
 }
 
 /// Where a task's reports go, what they are, and where to look for what its

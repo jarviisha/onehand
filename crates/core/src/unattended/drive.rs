@@ -38,6 +38,7 @@ use super::{
 };
 use crate::config::{AgentSpec, UnattendedConfig};
 use crate::connector::Connector;
+use crate::issues::sync::OutsideSync;
 use crate::task::tasks::link::Seen;
 use crate::task::{Task, Working};
 use crate::workflow::{Offer, Setup, Template};
@@ -103,6 +104,8 @@ pub enum Input<W> {
     /// something was looked for, said when nothing was claimed.
     Claimed {
         begun: Option<Result<Claimed, Unstarted>>,
+        /// The syncs the claim made of a file kept in step.
+        synced: Vec<OutsideSync>,
         asked_from: Option<W>,
         held: Option<String>,
         /// The windows holding the claimed issue's project, in order, each
@@ -125,6 +128,8 @@ pub enum Input<W> {
         window: W,
         named: String,
         begun: Result<Result<Claimed, Unstarted>, String>,
+        /// The syncs the claim made of a file kept in step.
+        synced: Vec<OutsideSync>,
         holding: Vec<(W, Option<String>)>,
         new_task: String,
     },
@@ -230,6 +235,11 @@ pub enum Effect<W> {
         said: String,
         session: String,
     },
+    /// An issues file was kept in step with its forge here, outside its
+    /// own drive, by a search or a claim: tell that drive, when a view holds
+    /// one ([`crate::issues::drive::FileDrive::synced_outside`]), so it does
+    /// not sync again right after. Not answered.
+    Synced(Box<OutsideSync>),
     /// Tick again once the call being handled is over, with the world as it
     /// is then.
     Tick,
@@ -524,13 +534,17 @@ impl UnattendedDrive {
             Input::Looked(looked) => self.looked(*looked, seen, &roots, now),
             Input::Claimed {
                 begun,
+                synced,
                 asked_from,
                 held,
                 holding,
                 new_task,
-            } => self.landed(
-                begun, asked_from, None, held, &holding, new_task, seen, world,
-            ),
+            } => {
+                let landed = self.landed(
+                    begun, asked_from, None, held, &holding, new_task, seen, world,
+                );
+                told(synced, landed)
+            }
             Input::Taken {
                 pick,
                 window,
@@ -540,9 +554,14 @@ impl UnattendedDrive {
                 window,
                 named,
                 begun,
+                synced,
                 holding,
                 new_task,
-            } => self.pick_claimed(window, &named, begun, &holding, new_task, seen, world),
+            } => {
+                let claimed =
+                    self.pick_claimed(window, &named, begun, &holding, new_task, seen, world);
+                told(synced, claimed)
+            }
             Input::Sent { task, landed } => {
                 self.delivering.remove(&task);
                 vec![Effect::Drain { task, landed }]
@@ -620,6 +639,16 @@ fn slot_holders<W: Copy>(seen: &Seen<W>) -> Vec<Holder> {
                 shown,
             })
         })
+        .collect()
+}
+
+/// The syncs a search or a claim made, each told its file's drive, before
+/// `then`, what else it came to.
+fn told<W>(synced: Vec<OutsideSync>, then: Vec<Effect<W>>) -> Vec<Effect<W>> {
+    synced
+        .into_iter()
+        .map(|outside| Effect::Synced(Box::new(outside)))
+        .chain(then)
         .collect()
 }
 

@@ -25,6 +25,16 @@ use std::path::Path;
 /// than this is imported up to it, and the report says so.
 pub const SYNC_CAP: usize = 500;
 
+/// A sync made outside its file's drive, by an unattended run's search or
+/// claim: the file, and what the sync left there and came to, for that
+/// file's drive to hear ([`super::drive::FileDrive::synced_outside`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutsideSync {
+    pub file: std::path::PathBuf,
+    pub kept: Issues,
+    pub report: Report,
+}
+
 /// What a sync did, for the line that says so.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Report {

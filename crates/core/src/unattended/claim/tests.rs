@@ -392,8 +392,16 @@ fn the_search_passes_over_what_needs_a_check_and_takes_the_next() {
         has_check: false,
     };
     let mut checked = Vec::new();
-    let found = find_blocking(&[workable], "auto", &choosing, &[], &judging, &mut checked);
-    let claimed = claim_found_blocking(found.unwrap(), "auto")
+    let found = find_blocking(
+        &[workable],
+        "auto",
+        &choosing,
+        &[],
+        &judging,
+        &mut checked,
+        &mut Vec::new(),
+    );
+    let claimed = claim_found_blocking(found.unwrap(), "auto", &mut Vec::new())
         .unwrap()
         .ok()
         .unwrap();

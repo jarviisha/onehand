@@ -708,3 +708,39 @@ fn a_write_that_wrote_nothing_asks_no_sync() {
     });
     assert_eq!(names(&fx), ["Changed", "Signal", "Changed", "Sync"]);
 }
+
+/// A sync made outside the drive (an unattended run's) is heard as one of
+/// its own landing: what it left is shown, the next that only comes round
+/// waits out the gap from it, and the clock starts again from it; one in
+/// flight is not taken for done.
+#[test]
+fn a_sync_made_outside_puts_the_next_one_back() {
+    let (mut drive, _) = read(issues(true), 100);
+    synced(&mut drive, 100);
+    let first = armed(&drive.watched(1, true)).unwrap();
+    let mut kept = issues(true);
+    kept.create(
+        Draft {
+            title: "two".into(),
+            ..Draft::default()
+        },
+        2,
+    )
+    .unwrap();
+    let report = Report {
+        pulled: 1,
+        ..Report::default()
+    };
+    let fx = drive.synced_outside(kept, report.clone(), at(200));
+    assert_eq!(names(&fx), ["Changed", "Arm"]);
+    assert_ne!(armed(&fx), Some(first), "the clock starts again");
+    assert_eq!(drive.issues.as_ref().map(|i| i.listed().len()), Some(2));
+    assert_eq!(drive.synced, Some((200, Ok(report))));
+    assert!(
+        drive.sync(false, at(201)).is_empty(),
+        "not again right after"
+    );
+    assert_eq!(names(&drive.sync(true, at(202))), ["Changed", "Sync"]);
+    let _ = drive.synced_outside(issues(true), Report::default(), at(203));
+    assert!(drive.syncing, "its own sync is still on its way");
+}

@@ -112,6 +112,24 @@ impl IssuesFile {
         self.carry(fx, cx);
     }
 
+    /// The file the views hold, if one does: no view holding it, there is no
+    /// drive to tell of what was done to it, and the next view reads it.
+    pub(super) fn held(path: &Path, cx: &App) -> Option<Entity<Self>> {
+        cx.try_global::<Files>()?.0.get(path)?.upgrade()
+    }
+
+    /// The file was kept in step with its forge outside every view, leaving
+    /// `kept` as `report` says.
+    pub(super) fn synced_outside(
+        &mut self,
+        kept: onehand_core::issues::Issues,
+        report: sync::Report,
+        cx: &mut Context<Self>,
+    ) {
+        let fx = self.drive.synced_outside(kept, report, Now::read());
+        self.carry(fx, cx);
+    }
+
     /// View `viewer` is on this file's project (`on`), or no longer: the
     /// file's clock comes round while one is.
     pub(super) fn watched(&mut self, viewer: u64, on: bool, cx: &mut Context<Self>) {
