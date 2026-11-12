@@ -168,6 +168,22 @@ impl Page {
     }
 }
 
+/// Write `change` into the issues file `file` of the project at `root`, made
+/// outside every view of it (a tool, a session's note, a run's): through the
+/// one drive every view of the file shares, so each shows it as it lands, in
+/// order with the views' own changes. `answer` hears what it came to, once,
+/// after the update that landed it, whether or not a view holds the file.
+pub fn write(
+    root: &Path,
+    file: PathBuf,
+    change: onehand_core::issues::drive::Change,
+    connectors: &'static [&'static dyn Connector],
+    answer: impl FnOnce(Result<onehand_core::issues::drive::Applied, String>, &mut App) + 'static,
+    cx: &mut App,
+) {
+    view::write_outside(root, file, change, connectors, Box::new(answer), cx);
+}
+
 /// What a view of the issues does with a request, the mode's and the page's
 /// alike.
 fn handle(view: &Entity<IssuesView>, request: &Request<'_>, cx: &mut App) -> bool {

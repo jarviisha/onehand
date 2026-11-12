@@ -42,6 +42,21 @@ use form::{Form, form_view};
 use list::Showing;
 use store::IssuesFile;
 
+/// Write `change` into `file`, of the project at `root`, through the drive
+/// every view of it shares, made outside every view; `answer` hears what it
+/// came to.
+pub(crate) fn write_outside(
+    root: &Path,
+    file: PathBuf,
+    change: onehand_core::issues::drive::Change,
+    connectors: &'static [&'static dyn Connector],
+    answer: store::Answer,
+    cx: &mut App,
+) {
+    let shared = IssuesFile::get(root, file, connectors, cx);
+    shared.update(cx, |shared, cx| shared.write_outside(change, answer, cx));
+}
+
 /// How often a project kept in step with its forge is synced while it is the
 /// one this mode is on, if nothing else has synced it sooner.
 const SYNC_EVERY: Duration = Duration::from_secs(300);

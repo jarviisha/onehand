@@ -164,3 +164,132 @@ fn the_view_syncs_its_projects_file_every_five_minutes(cx: &mut TestAppContext) 
     assert_eq!(at_five, [before[0], before[1] + 1]);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// What a writer outside every view heard, as it heard it.
+type Heard = std::rc::Rc<std::cell::RefCell<Vec<Result<Applied, String>>>>;
+
+fn ear(heard: &Heard) -> super::Answer {
+    let heard = heard.clone();
+    Box::new(move |done, _| heard.borrow_mut().push(done))
+}
+
+fn until_heard(heard: &Heard, cx: &mut TestAppContext) {
+    for _ in 0..50 {
+        settle(cx);
+        if !heard.borrow().is_empty() {
+            return;
+        }
+    }
+    panic!("never heard");
+}
+
+/// A change made outside every view lands once, its maker hears what it
+/// came to once, and the file every view shares shows it without a read.
+#[gpui::test]
+fn an_outside_write_lands_once_and_its_maker_hears_it(cx: &mut TestAppContext) {
+    cx.executor().allow_parking();
+    let (dir, path) = file("outside");
+    let file = cx.update(|cx| IssuesFile::get(&dir, path.clone(), &[], cx));
+    file.update(cx, |file, cx| file.load_if_stale(cx));
+    settle(cx);
+    let heard = Heard::default();
+    let note = Change::Note {
+        number: 1,
+        text: "a run said".into(),
+    };
+    file.update(cx, |file, cx| file.write_outside(note, ear(&heard), cx));
+    // Not inside the update that landed it.
+    assert!(heard.borrow().is_empty());
+    until_heard(&heard, cx);
+    settle(cx);
+    assert_eq!(*heard.borrow(), [Ok(Applied::Named(1))]);
+    let said = file.read_with(cx, |file, _| {
+        file.issues.as_ref().unwrap().get(1).unwrap().notes.len()
+    });
+    assert_eq!(said, 1);
+    assert_eq!(
+        issues::load_blocking(&path)
+            .unwrap()
+            .get(1)
+            .unwrap()
+            .notes
+            .len(),
+        1
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A view's own write landing after an outside write was made is still the
+/// newest of the views', so it still moves that view's selection.
+#[gpui::test]
+fn a_views_write_after_an_outside_one_is_still_the_newest(cx: &mut TestAppContext) {
+    cx.executor().allow_parking();
+    let (dir, path) = file("newest");
+    let file = cx.update(|cx| IssuesFile::get(&dir, path.clone(), &[], cx));
+    file.update(cx, |file, cx| file.load_if_stale(cx));
+    settle(cx);
+    let heard = Heard::default();
+    let created = file.update(cx, |file, cx| {
+        let of = file.write(
+            Change::Create(Draft {
+                title: "two".into(),
+                ..Draft::default()
+            }),
+            cx,
+        );
+        let note = Change::Note {
+            number: 1,
+            text: "a run said".into(),
+        };
+        file.write_outside(note, ear(&heard), cx);
+        of
+    });
+    until_heard(&heard, cx);
+    assert!(file.read_with(cx, |file, _| file.newest(created)));
+    let listed = issues::load_blocking(&path).unwrap().listed().len();
+    assert_eq!(listed, 2);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A refused outside write answers why, once, and what is shown is what
+/// is on disk.
+#[gpui::test]
+fn a_refused_outside_write_answers_why_once(cx: &mut TestAppContext) {
+    cx.executor().allow_parking();
+    let (dir, path) = file("refused");
+    let file = cx.update(|cx| IssuesFile::get(&dir, path.clone(), &[], cx));
+    file.update(cx, |file, cx| file.load_if_stale(cx));
+    settle(cx);
+    let heard = Heard::default();
+    let elsewhere = Change::Note {
+        number: 9,
+        text: "nowhere".into(),
+    };
+    file.update(cx, |file, cx| {
+        file.write_outside(elsewhere, ear(&heard), cx)
+    });
+    until_heard(&heard, cx);
+    settle(cx);
+    assert_eq!(heard.borrow().len(), 1);
+    assert!(heard.borrow()[0].is_err());
+    let shown = file.read_with(cx, |file, _| file.issues.clone());
+    assert_eq!(shown, Some(issues::load_blocking(&path).unwrap()));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// An outside write on a file no view holds still lands and answers.
+#[gpui::test]
+fn an_outside_write_with_no_view_holding_its_file_answers(cx: &mut TestAppContext) {
+    cx.executor().allow_parking();
+    let (dir, path) = file("unheld");
+    let heard = Heard::default();
+    let answer = ear(&heard);
+    let create = Change::CreateUnlessOpen(Draft {
+        title: "one".into(),
+        ..Draft::default()
+    });
+    cx.update(|cx| super::super::write_outside(&dir, path.clone(), create, &[], answer, cx));
+    until_heard(&heard, cx);
+    assert_eq!(*heard.borrow(), [Ok(Applied::Already(1))]);
+    let _ = std::fs::remove_dir_all(&dir);
+}

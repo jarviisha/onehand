@@ -11,7 +11,7 @@ use gpui::{App, AppContext as _, Context, Entity, Global, WeakEntity};
 use onehand_core::chat::Now;
 use onehand_core::connector::Connector;
 use onehand_core::issues::drive::{
-    Change, Effect, FileDrive, Input, Maker, Signal, read_blocking, write_blocking,
+    Applied, Change, Effect, FileDrive, Input, Maker, Signal, read_blocking, write_blocking,
 };
 use onehand_core::issues::{self, sync};
 use onehand_core::saving::OrderedWriter;
@@ -26,6 +26,9 @@ struct Files(HashMap<PathBuf, WeakEntity<IssuesFile>>);
 
 impl Global for Files {}
 
+/// What a writer outside every view hears once its change's write lands.
+pub(crate) type Answer = Box<dyn FnOnce(Result<Applied, String>, &mut App)>;
+
 /// The carrier of one file's drive: it reads, syncs, publishes and writes off
 /// the UI loop as the drive asks, and tells it what came of each.
 pub(super) struct IssuesFile {
@@ -34,6 +37,8 @@ pub(super) struct IssuesFile {
     _load: Option<gpui::Task<()>>,
     /// Writes the file one change at a time, in the order they were made.
     writer: OrderedWriter,
+    /// Who to answer, by change, for the changes made outside every view.
+    makers: HashMap<u64, Answer>,
 }
 
 impl gpui::EventEmitter<Signal> for IssuesFile {}
@@ -63,6 +68,7 @@ impl IssuesFile {
             drive: FileDrive::new(root.to_path_buf(), path.clone(), connectors),
             _load: None,
             writer: OrderedWriter::spawn("onehand-issues"),
+            makers: HashMap::new(),
         });
         cx.global_mut::<Files>().0.insert(path, file.downgrade());
         file
@@ -90,6 +96,16 @@ impl IssuesFile {
         let (of, write) = self.drive.write(change, Maker::View, now());
         self.carry(vec![write], cx);
         of
+    }
+
+    /// Show and write `change`, made outside every view, after every change
+    /// made before it, and give `answer` what it came to once it lands.
+    pub(crate) fn write_outside(&mut self, change: Change, answer: Answer, cx: &mut Context<Self>) {
+        let mut fx = self.drive.show(&change, now());
+        let (of, write) = self.drive.write(change, Maker::Outside, now());
+        self.makers.insert(of, answer);
+        fx.push(write);
+        self.carry(fx, cx);
     }
 
     /// Keep the file in step with its forge, if that is due; `asked` when
@@ -182,7 +198,19 @@ impl IssuesFile {
                     })
                     .detach();
                 }
-                Effect::Signal(signal) => cx.emit(signal),
+                Effect::Signal(signal) => {
+                    match &signal {
+                        // Its maker hears it after the update that landed it.
+                        Signal::Wrote { of, done } => {
+                            if let Some(answer) = self.makers.remove(of) {
+                                let done = done.clone();
+                                cx.defer(move |cx| answer(done, cx));
+                            }
+                        }
+                        Signal::PublishFailed { .. } => {}
+                    }
+                    cx.emit(signal)
+                }
             }
         }
     }
