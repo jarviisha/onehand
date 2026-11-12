@@ -1,5 +1,6 @@
 //! Working an issue by hand on a real shell, where it cannot be: a project
-//! no longer in the workspace, and a workspace keeping no issues.
+//! no longer in the workspace, and a workspace keeping no issues, each said
+//! once and starting nothing.
 
 use crate::shell::rig::{folder, shell};
 use gpui::{TestAppContext, VisualTestContext};
@@ -32,25 +33,25 @@ fn work_here(root: &Path, shell: &gpui::Entity<super::Shell>, cx: &mut VisualTes
     });
 }
 
-/// A project gone from the workspace starts nothing, and says nothing.
+/// A project gone from the workspace starts nothing, and says so once.
 #[gpui::test]
 fn a_project_gone_starts_nothing(cx: &mut TestAppContext) {
     let dir = folder("work-here-gone");
     let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
     let before = standing(&shell, cx);
     work_here(&dir.join("gone"), &shell, cx);
-    assert_eq!(standing(&shell, cx), before);
+    assert_eq!(standing(&shell, cx), (before.0, before.1 + 1));
     let _ = std::fs::remove_dir_all(dir);
 }
 
 /// A workspace keeping no issues starts nothing on its project, and says
-/// nothing.
+/// so once.
 #[gpui::test]
 fn a_workspace_keeping_no_issues_starts_nothing(cx: &mut TestAppContext) {
     let dir = folder("work-here-unkept");
     let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
     let before = standing(&shell, cx);
     work_here(Path::new("/tmp"), &shell, cx);
-    assert_eq!(standing(&shell, cx), before);
+    assert_eq!(standing(&shell, cx), (before.0, before.1 + 1));
     let _ = std::fs::remove_dir_all(dir);
 }

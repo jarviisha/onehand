@@ -1,6 +1,7 @@
-//! Where a session and an issues file meet: the note a session that took an
-//! issue up by hand owes the issue, written once the session's agent has
-//! named its conversation, which is what lets the issue open it again.
+//! Where a session and an issues file meet: whether an issue can be worked
+//! by hand here at all, and the note a session that took an issue up by hand
+//! owes the issue, written once the session's agent has named its
+//! conversation, which is what lets the issue open it again.
 
 use super::drive::Change;
 use crate::chat::Chat;
@@ -36,6 +37,27 @@ impl TakenUp {
             session,
         };
         Some((self.file.clone(), change))
+    }
+}
+
+/// Why an issue cannot be worked by hand where it was asked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotHere {
+    /// Its project is no longer in the workspace.
+    ProjectGone,
+    /// The workspace keeps no issues, so there is nowhere to note the session.
+    NoIssuesFile,
+}
+
+/// Whether an issue of a project can be worked by hand: the project, as
+/// the workspace holds it, and the file its note goes in, or why not.
+/// `project` is the project if it is still in the workspace, and `file` the
+/// issues file the workspace keeps for it, if it keeps one.
+pub fn work_here<P>(project: Option<P>, file: Option<PathBuf>) -> Result<(P, PathBuf), NotHere> {
+    match (project, file) {
+        (None, _) => Err(NotHere::ProjectGone),
+        (Some(_), None) => Err(NotHere::NoIssuesFile),
+        (Some(project), Some(file)) => Ok((project, file)),
     }
 }
 

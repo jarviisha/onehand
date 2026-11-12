@@ -7,7 +7,7 @@ use crate::chat::session::ChatEvent;
 use gpui::{Context, SharedString, Window};
 use gpui_component::WindowExt as _;
 use onehand_core::chat::drive::Origin;
-use onehand_core::issues::link::TakenUp;
+use onehand_core::issues::link::{NotHere, TakenUp, work_here};
 use std::path::Path;
 
 impl Shell {
@@ -30,8 +30,12 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let (Some(idx), Some(file)) = (self.root_index(root), self.issues_file(root)) else {
-            return;
+        let (idx, file) = match work_here(self.root_index(root), self.issues_file(root)) {
+            Ok(here) => here,
+            Err(why) => {
+                window.push_notification(crate::toast::warning(not_here(why)), cx);
+                return;
+            }
         };
         self.select_root(idx, window, cx);
         let Some(uid) = self.start_session(None, None, window, cx) else {
@@ -198,6 +202,14 @@ impl Shell {
         }
         self.tell_issues_page_projects(cx);
         self.tell_workflows_page_projects(cx);
+    }
+}
+
+/// Why an issue cannot be worked by hand here, in the words the window says.
+fn not_here(why: NotHere) -> &'static str {
+    match why {
+        NotHere::ProjectGone => "That project is no longer in this workspace",
+        NotHere::NoIssuesFile => "This workspace keeps no issues, so that issue cannot be noted",
     }
 }
 
