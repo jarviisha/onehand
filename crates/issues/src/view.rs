@@ -57,13 +57,9 @@ pub(crate) fn write_outside(
     shared.update(cx, |shared, cx| shared.write_outside(change, answer, cx));
 }
 
-/// How often a project kept in step with its forge is synced while it is the
-/// one this mode is on, if nothing else has synced it sooner.
-const SYNC_EVERY: Duration = Duration::from_secs(300);
-
 /// How often the view is drawn again with nothing having changed, so the
-/// footer's "synced 3m ago" keeps telling the time. A multiple of it is
-/// [`SYNC_EVERY`].
+/// footer's "synced 3m ago" keeps telling the time. When a file syncs is its
+/// drive's clock.
 const TICK: Duration = Duration::from_secs(60);
 
 /// How many rows the list draws. A project with more than this many issues is
@@ -108,8 +104,12 @@ pub(crate) struct IssuesView {
     /// The connectors a project may be kept in step with, in the order one is
     /// offered them.
     connectors: &'static [&'static dyn Connector],
-    /// The timer behind the periodic sync, held for as long as the view.
-    _sync_every: Task<()>,
+    /// The timer drawing the view again, held for as long as the view.
+    _tick: Task<()>,
+    /// The file of the project this view is on, as last told so.
+    watching: Option<Entity<IssuesFile>>,
+    /// The id this view tells a file it is on it by.
+    viewer: u64,
     /// The list's search box, made on its first draw.
     query: Option<Entity<InputState>>,
     /// Which half of the issues the list shows.
@@ -191,7 +191,28 @@ impl IssuesView {
         page: bool,
         cx: &mut App,
     ) -> Entity<Self> {
-        cx.new(|cx| Self {
+        cx.new(|cx| {
+            // A view going lets go of the file it was on, so the file's clock
+            // stops when no view is on it.
+            cx.on_release(|view: &mut Self, cx| {
+                let id = view.viewer;
+                if let Some(file) = view.watching.take() {
+                    file.update(cx, |file, cx| file.watched(id, false, cx));
+                }
+            })
+            .detach();
+            Self::made(connectors, ask, tell, page, cx)
+        })
+    }
+
+    fn made(
+        connectors: &'static [&'static dyn Connector],
+        ask: Ask,
+        tell: Tell,
+        page: bool,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        Self {
             page: page.then(page::PageState::default),
             root: None,
             storage: None,
@@ -215,29 +236,50 @@ impl IssuesView {
             work: WorkDrive::new(connectors, page),
             _activation: None,
             offered: Vec::new(),
-            _sync_every: cx.spawn(async move |view, cx| {
-                let every = (SYNC_EVERY.as_secs() / TICK.as_secs()).max(1);
-                for tick in 1u64.. {
+            viewer: cx.entity_id().as_u64(),
+            watching: None,
+            _tick: cx.spawn(async move |view, cx| {
+                loop {
                     cx.background_executor().timer(TICK).await;
-                    let alive = view.update(cx, |view: &mut Self, cx| {
-                        cx.notify();
-                        if tick % every == 0 {
-                            view.sync(false, cx);
-                        }
-                    });
-                    if alive.is_err() {
+                    if view.update(cx, |_, cx| cx.notify()).is_err() {
                         return;
                     }
                 }
             }),
-        })
+        }
+    }
+
+    /// Be on `root`'s project, or on none.
+    fn look_at(&mut self, root: Option<PathBuf>, cx: &mut Context<Self>) {
+        self.root = root;
+        self.watch_active(cx);
+    }
+
+    /// Tell the file of the project this view is on that it is, and the one
+    /// it was on that it no longer is.
+    fn watch_active(&mut self, cx: &mut Context<Self>) {
+        let active = self
+            .root
+            .as_ref()
+            .and_then(|root| self.roots.get(root))
+            .map(|state| state.file.clone());
+        if active.as_ref().map(Entity::entity_id) == self.watching.as_ref().map(Entity::entity_id) {
+            return;
+        }
+        let id = self.viewer;
+        if let Some(old) = std::mem::replace(&mut self.watching, active.clone()) {
+            old.update(cx, |file, cx| file.watched(id, false, cx));
+        }
+        if let Some(new) = active {
+            new.update(cx, |file, cx| file.watched(id, true, cx));
+        }
     }
 
     pub(crate) fn set_root(&mut self, root: &Path, cx: &mut Context<Self>) {
         if self.root.as_deref() == Some(root) {
             return;
         }
-        self.root = Some(root.to_path_buf());
+        self.look_at(Some(root.to_path_buf()), cx);
         self.label = None;
         // Arriving reads the project's file again: a run may have written it
         // while another project was on screen.
@@ -252,6 +294,7 @@ impl IssuesView {
         if self.root.as_deref() == Some(root) {
             self.root = None;
         }
+        self.watch_active(cx);
         cx.notify();
     }
 
@@ -263,6 +306,7 @@ impl IssuesView {
         }
         self.storage = storage;
         self.roots.clear();
+        self.watch_active(cx);
         cx.notify();
     }
 
@@ -314,6 +358,7 @@ impl IssuesView {
                     body: None,
                 },
             );
+            self.watch_active(cx);
         }
         self.roots.get_mut(root)
     }

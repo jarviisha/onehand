@@ -17,6 +17,7 @@ fn names(fx: &[Effect]) -> Vec<&'static str> {
             Effect::Publish { .. } => "Publish",
             Effect::Changed => "Changed",
             Effect::Write { .. } => "Write",
+            Effect::Arm { .. } => "Arm",
             Effect::Signal(_) => "Signal",
         })
         .collect()
@@ -521,6 +522,7 @@ fn an_outside_write_never_becomes_a_views_newest() {
         | Effect::Sync { .. }
         | Effect::Publish { .. }
         | Effect::Changed
+        | Effect::Arm { .. }
         | Effect::Write { .. } => None,
     });
     let number = done.unwrap().unwrap().issue();
@@ -574,4 +576,81 @@ fn an_outside_write_holds_what_comes_in_and_a_refused_last_one_reads_again() {
         now: at(4),
     });
     assert_eq!(drive.issues.as_ref().map(Issues::revision), Some(5));
+}
+
+// The clock.
+
+fn armed(fx: &[Effect]) -> Option<u64> {
+    fx.iter().find_map(|effect| match effect {
+        Effect::Arm { token, after } => {
+            assert_eq!(*after, SYNC_EVERY);
+            Some(*token)
+        }
+        Effect::Read { .. }
+        | Effect::Sync { .. }
+        | Effect::Publish { .. }
+        | Effect::Changed
+        | Effect::Write { .. }
+        | Effect::Signal(_) => None,
+    })
+}
+
+fn elapsed(drive: &mut FileDrive, token: u64, now: u64) -> Vec<Effect> {
+    drive.handle(Input::Elapsed {
+        token,
+        now: at(now),
+    })
+}
+
+/// A file kept in step, which a view is on, has its clock armed once its
+/// read lands; the wait over, it syncs, and the sync landing arms it again.
+#[test]
+fn a_watched_file_kept_in_step_syncs_when_its_clock_comes_round() {
+    let (mut drive, _) = read(issues(true), 100);
+    synced(&mut drive, 100);
+    assert!(
+        armed(&drive.watched(1, true)).is_some(),
+        "the first view starts it"
+    );
+    let reading = token(&drive.load());
+    let token = armed(&drive.handle(Input::Read {
+        token: reading,
+        read: Ok(issues(true)),
+        forge: Some(&FORGE),
+        templates: Vec::new(),
+        now: at(110),
+    }))
+    .unwrap();
+    // Its own wait syncs, the gap since the last sync aside.
+    assert_eq!(names(&elapsed(&mut drive, token, 110)), ["Changed", "Sync"]);
+    let again = armed(&synced(&mut drive, 111)).unwrap();
+    assert_ne!(again, token);
+    // The superseded wait does nothing.
+    assert!(elapsed(&mut drive, token, 500).is_empty());
+}
+
+/// A second view arriving starts no second clock, and one leaving keeps it;
+/// the last leaving lets it come round to nothing.
+#[test]
+fn the_clock_runs_while_any_view_is_on_the_file() {
+    let (mut drive, _) = read(issues(true), 100);
+    synced(&mut drive, 100);
+    let token = armed(&drive.watched(1, true)).unwrap();
+    assert!(drive.watched(2, true).is_empty());
+    assert!(drive.watched(1, false).is_empty());
+    assert_eq!(names(&elapsed(&mut drive, token, 500)), ["Changed", "Sync"]);
+    let token = armed(&synced(&mut drive, 501)).unwrap();
+    assert!(drive.watched(2, false).is_empty());
+    assert!(elapsed(&mut drive, token, 900).is_empty());
+    assert!(armed(&synced(&mut drive, 901)).is_none());
+}
+
+/// A file not kept in step, or one no view is on, never arms.
+#[test]
+fn an_unwatched_or_unsynced_file_never_arms() {
+    let (mut drive, _) = read(issues(false), 100);
+    assert!(drive.watched(1, true).is_empty());
+    let (mut drive, fx) = read(issues(true), 100);
+    assert!(armed(&fx).is_none());
+    assert!(armed(&synced(&mut drive, 100)).is_none());
 }

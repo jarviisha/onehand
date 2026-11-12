@@ -19,6 +19,10 @@
 //! send, a press of *Sync now*), else once [`SYNC_GAP`] has passed since the
 //! last. Asked for while one runs, it runs once more when that lands. The
 //! drive never reads the clock: the time is told it.
+//!
+//! **Its own clock comes round every [`SYNC_EVERY`]** from the last read or
+//! sync landing, while some view has the file as the project it is on
+//! ([`FileDrive::watched`]): one clock per file, however many views.
 
 use super::sync::Report;
 use super::template::{self, IssueTemplate};
@@ -31,6 +35,10 @@ use std::time::Duration;
 
 /// How long a file kept in step waits between the syncs that only come round.
 pub(crate) const SYNC_GAP: Duration = Duration::from_secs(60);
+
+/// How long the file's clock waits, from the last read or sync landing,
+/// before it syncs a file some view is on.
+pub(crate) const SYNC_EVERY: Duration = Duration::from_secs(300);
 
 /// What a file is, read through its drive.
 #[derive(Default)]
@@ -237,6 +245,13 @@ pub enum Effect {
         number: u64,
         forge: &'static dyn Connector,
     },
+    /// Wait `after`, then report [`Input::Elapsed`] with `token`. A late
+    /// answer is **dropped** by its token: every wait armed supersedes the
+    /// one before.
+    Arm {
+        token: u64,
+        after: Duration,
+    },
     /// What the file holds changed: whatever draws it draws it again.
     Changed,
     Signal(Signal),
@@ -269,6 +284,8 @@ pub enum Input {
         number: u64,
         done: Result<(), String>,
     },
+    /// The wait armed as `token` is over, at `now`.
+    Elapsed { token: u64, now: Now },
 }
 
 /// One issues file's drive. See the module header.
@@ -285,6 +302,11 @@ pub struct FileDrive {
     /// A sync was asked for while one ran.
     again: bool,
     pending: Pending,
+    /// The views that have the file as the project they are on, by an id
+    /// each tells it by.
+    viewers: std::collections::BTreeSet<u64>,
+    /// The newest wait's token.
+    armed: u64,
 }
 
 impl Deref for FileDrive {
@@ -314,6 +336,8 @@ impl FileDrive {
             reading: 0,
             again: false,
             pending: Pending::default(),
+            viewers: std::collections::BTreeSet::new(),
+            armed: 0,
         }
     }
 
@@ -379,20 +403,56 @@ impl FileDrive {
         self.pending.newest(of)
     }
 
+    /// View `viewer` has the file as the project it is on (`on`), or no
+    /// longer. The first view to arrive starts the clock.
+    #[must_use = "its effects are to be carried"]
+    pub fn watched(&mut self, viewer: u64, on: bool) -> Vec<Effect> {
+        match on {
+            true if self.viewers.insert(viewer) && self.viewers.len() == 1 => self.arm(),
+            true => Vec::new(),
+            false => {
+                self.viewers.remove(&viewer);
+                Vec::new()
+            }
+        }
+    }
+
+    /// Start the clock again, while some view is on a file kept in step.
+    fn arm(&mut self) -> Vec<Effect> {
+        if self.viewers.is_empty() || self.forge_in_step().is_none() {
+            return Vec::new();
+        }
+        self.armed += 1;
+        vec![Effect::Arm {
+            token: self.armed,
+            after: SYNC_EVERY,
+        }]
+    }
+
+    /// The forge serving the project, when the file is kept in step with it.
+    fn forge_in_step(&self) -> Option<&'static dyn Connector> {
+        let (forge, kept) = (self.kept.forge?, self.kept.issues.as_ref()?);
+        kept.in_step_with(forge.name()).then_some(forge)
+    }
+
     /// Keep the file in step with its forge, at `now`, if it is kept in step
     /// with one and a sync is due; `asked` when something asked for it.
     #[must_use = "its effects are to be carried"]
     pub fn sync(&mut self, asked: bool, now: Now) -> Vec<Effect> {
-        let (Some(forge), Some(kept)) = (self.kept.forge, self.kept.issues.as_ref()) else {
-            return Vec::new();
-        };
-        let wanted = kept.in_step_with(forge.name());
         let due = asked
             || self
                 .kept
                 .synced
                 .as_ref()
                 .is_none_or(|(at, _)| now.secs.saturating_sub(*at) >= SYNC_GAP.as_secs());
+        self.sync_if(asked, due, now)
+    }
+
+    fn sync_if(&mut self, asked: bool, due: bool, now: Now) -> Vec<Effect> {
+        let (Some(forge), Some(kept)) = (self.kept.forge, self.kept.issues.as_ref()) else {
+            return Vec::new();
+        };
+        let wanted = kept.in_step_with(forge.name());
         if self.kept.syncing && wanted && asked {
             self.again = true;
             return Vec::new();
@@ -440,6 +500,7 @@ impl FileDrive {
                 }
                 let mut fx = vec![Effect::Changed];
                 fx.extend(self.sync(false, now));
+                fx.extend(self.arm());
                 fx
             }
             Input::Synced { done, now } => {
@@ -456,6 +517,7 @@ impl FileDrive {
                 if std::mem::take(&mut self.again) {
                     fx.extend(self.sync(true, now));
                 }
+                fx.extend(self.arm());
                 fx
             }
             Input::Written { of, done, now } => {
@@ -490,6 +552,13 @@ impl FileDrive {
                 }
                 fx.extend(self.load());
                 fx
+            }
+            // Its own wait is past the gap by its length: due.
+            Input::Elapsed { token, now } => {
+                match token == self.armed && !self.viewers.is_empty() {
+                    true => self.sync_if(false, true, now),
+                    false => Vec::new(),
+                }
             }
         }
     }

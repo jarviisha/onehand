@@ -108,10 +108,11 @@ fn writes(path: &std::path::Path) -> u64 {
     issues::load_blocking(path).unwrap().revision()
 }
 
-/// The view's timer syncs the file of the project it is on every five
-/// minutes, and not the file of a project it holds but is not on.
+/// A file some view is on syncs five minutes after its last sync landed,
+/// once however many views are on it; a file no view is on does not, and
+/// stops once its last view moves to another project.
 #[gpui::test]
-fn the_view_syncs_its_projects_file_every_five_minutes(cx: &mut TestAppContext) {
+fn a_file_syncs_on_its_own_clock_while_a_view_is_on_it(cx: &mut TestAppContext) {
     use super::super::IssuesView;
     cx.executor().allow_parking();
     let dir = std::env::temp_dir().join(format!("onehand-issues-clock-{}", std::process::id()));
@@ -121,47 +122,60 @@ fn the_view_syncs_its_projects_file_every_five_minutes(cx: &mut TestAppContext) 
     for folder in [&storage, &on, &off] {
         std::fs::create_dir_all(folder).unwrap();
     }
-    let view = cx.update(|cx| {
-        IssuesView::new(
-            &CONNECTORS,
-            std::rc::Rc::new(|_, _, _| {}),
-            std::rc::Rc::new(|_, _, _| {}),
-            false,
-            cx,
-        )
-    });
-    let files = view.update(cx, |view, cx| {
-        view.set_storage(Some(storage.clone()), cx);
-        let mut files = Vec::new();
-        for root in [&off, &on] {
-            view.set_root(root, cx);
-            files.push(view.state_for(root, cx).unwrap().file.clone());
-        }
-        files
-    });
-    for file in &files {
-        file.update(cx, |file, cx| file.load_if_stale(cx));
-    }
-    settle(cx);
-    // Kept in step as shown, not yet on disk: a read syncs nothing.
-    for file in &files {
-        file.update(cx, |file, cx| {
-            file.show(&Change::SyncWith(Some(FORGE.name.into())), cx)
-        });
-    }
     let paths: Vec<_> = [&off, &on]
         .into_iter()
         .map(|root| issues::file_for(&storage, root))
         .collect();
-    let before: Vec<_> = paths.iter().map(|path| writes(path)).collect();
+    // Both kept in step on disk, so each read syncs once at once.
+    for path in &paths {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let keep = Change::SyncWith(Some(FORGE.name.into()));
+        issues::drive::write_blocking(path, keep, 1).unwrap();
+    }
+    let new_view = |cx: &mut TestAppContext| {
+        cx.update(|cx| {
+            IssuesView::new(
+                &CONNECTORS,
+                std::rc::Rc::new(|_, _, _| {}),
+                std::rc::Rc::new(|_, _, _| {}),
+                false,
+                cx,
+            )
+        })
+    };
+    let (a, b) = (new_view(cx), new_view(cx));
+    let mut files = Vec::new();
+    for view in [&a, &b] {
+        files = view.update(cx, |view, cx| {
+            view.set_storage(Some(storage.clone()), cx);
+            let mut files = Vec::new();
+            for root in [&off, &on] {
+                view.set_root(root, cx);
+                files.push(view.state_for(root, cx).unwrap().file.clone());
+            }
+            files
+        });
+    }
+    for file in &files {
+        file.update(cx, |file, cx| file.load_if_stale(cx));
+    }
+    settle(cx);
+    let count = || -> Vec<u64> { paths.iter().map(|path| writes(path)).collect() };
+    let before = count();
     cx.executor().advance_clock(Duration::from_secs(240));
     settle(cx);
-    let at_four: Vec<_> = paths.iter().map(|path| writes(path)).collect();
-    assert_eq!(at_four, before);
+    assert_eq!(count(), before);
     cx.executor().advance_clock(Duration::from_secs(60));
     settle(cx);
-    let at_five: Vec<_> = paths.iter().map(|path| writes(path)).collect();
-    assert_eq!(at_five, [before[0], before[1] + 1]);
+    assert_eq!(count(), [before[0], before[1] + 1], "once, for two views");
+    // Both views move to the other project.
+    for view in [&a, &b] {
+        view.update(cx, |view, cx| view.set_root(&off, cx));
+    }
+    let moved = count();
+    cx.executor().advance_clock(Duration::from_secs(300));
+    settle(cx);
+    assert_eq!(count(), [moved[0] + 1, moved[1]]);
     let _ = std::fs::remove_dir_all(&dir);
 }
 

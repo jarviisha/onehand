@@ -35,6 +35,9 @@ pub(super) struct IssuesFile {
     drive: FileDrive,
     /// The read in flight, held so that starting another drops it.
     _load: Option<gpui::Task<()>>,
+    /// The drive's clock, held so that arming it again drops the wait
+    /// before, and so it goes with the file.
+    _clock: Option<gpui::Task<()>>,
     /// Writes the file one change at a time, in the order they were made.
     writer: OrderedWriter,
     /// Who to answer, by change, for the changes made outside every view.
@@ -67,6 +70,7 @@ impl IssuesFile {
         let file = cx.new(|_| Self {
             drive: FileDrive::new(root.to_path_buf(), path.clone(), connectors),
             _load: None,
+            _clock: None,
             writer: OrderedWriter::spawn("onehand-issues"),
             makers: HashMap::new(),
         });
@@ -108,6 +112,13 @@ impl IssuesFile {
         self.carry(fx, cx);
     }
 
+    /// View `viewer` is on this file's project (`on`), or no longer: the
+    /// file's clock comes round while one is.
+    pub(super) fn watched(&mut self, viewer: u64, on: bool, cx: &mut Context<Self>) {
+        let fx = self.drive.watched(viewer, on);
+        self.carry(fx, cx);
+    }
+
     /// Keep the file in step with its forge, if that is due; `asked` when
     /// something asked for it.
     pub(super) fn sync(&mut self, asked: bool, cx: &mut Context<Self>) {
@@ -127,6 +138,15 @@ impl IssuesFile {
         for effect in fx {
             match effect {
                 Effect::Changed => cx.notify(),
+                Effect::Arm { token, after } => {
+                    self._clock = Some(cx.spawn(async move |file, cx| {
+                        cx.background_executor().timer(after).await;
+                        let _ = file.update(cx, |file: &mut Self, cx| {
+                            let fx = file.drive.handle(Input::Elapsed { token, now: now() });
+                            file.carry(fx, cx);
+                        });
+                    }));
+                }
                 Effect::Read { token } => {
                     let (root, path) = self.drive.place();
                     let connectors = self.drive.connectors();
