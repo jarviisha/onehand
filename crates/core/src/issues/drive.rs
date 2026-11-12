@@ -531,23 +531,26 @@ impl FileDrive {
             }
             Input::Written { of, done, now } => {
                 let (kept, said) = match done {
-                    Ok((kept, number)) => (Some(kept), Ok(number)),
+                    Ok((kept, applied)) => (Some(kept), Ok(applied)),
                     Err(why) => (None, Err(why)),
                 };
+                let wrote = said.as_ref().is_ok_and(|applied| applied.wrote());
                 let landed = kept.is_some();
                 self.pending.land(&mut self.kept.issues, kept);
                 let mut fx = vec![
                     Effect::Changed,
                     Effect::Signal(Signal::Wrote { of, done: said }),
                 ];
-                match (landed, self.pending.last(of)) {
+                match (landed, wrote, self.pending.last(of)) {
                     // Sent at once, so an edit reaches the forge without
                     // waiting for the gap.
-                    (true, _) => fx.extend(self.sync(true, now)),
+                    (true, true, _) => fx.extend(self.sync(true, now)),
+                    // Nothing was written, so there is nothing to send.
+                    (true, false, _) => {}
                     // The newest change of anyone's refused: what is on disk
                     // is shown.
-                    (false, true) => fx.extend(self.load()),
-                    (false, false) => {}
+                    (false, _, true) => fx.extend(self.load()),
+                    (false, _, false) => {}
                 }
                 fx
             }

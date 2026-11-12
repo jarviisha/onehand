@@ -680,6 +680,9 @@ Phase 11 changed, on purpose (PR 11d):
   included; before, only the Workbench was told, by a rescan.
 - A6. Working an issue whose project left the workspace, or in a workspace keeping no issues, says
   why; before, nothing happened.
+- A7. A tool's new issue and a session's or a run's note that it took an issue up reach the forge
+  of a file kept in step at once, as a view's edit does; before, on the next read, behind the
+  gap. A tool's issue whose title was already open writes nothing and sends nothing.
 
 Left for later (PR 11d):
 - `LocalIssue`'s fields stay public, beside `Task`'s (11e).

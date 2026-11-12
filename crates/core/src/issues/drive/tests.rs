@@ -654,3 +654,33 @@ fn an_unwatched_or_unsynced_file_never_arms() {
     assert!(armed(&fx).is_none());
     assert!(armed(&synced(&mut drive, 100)).is_none());
 }
+
+/// A write that wrote nothing (a title already open) sends nothing to the
+/// forge; one that wrote does, at once.
+#[test]
+fn a_write_that_wrote_nothing_asks_no_sync() {
+    let (mut drive, _) = read(issues(true), 100);
+    synced(&mut drive, 100);
+    let unless = Change::CreateUnlessOpen(Draft {
+        title: "one".into(),
+        ..Draft::default()
+    });
+    let (of, _) = drive.write(unless, Maker::Outside, at(101));
+    let fx = drive.handle(Input::Written {
+        of,
+        done: Ok((issues(true), Applied::Already(1))),
+        now: at(101),
+    });
+    assert_eq!(names(&fx), ["Changed", "Signal"]);
+    let note = Change::Note {
+        number: 1,
+        text: "said".into(),
+    };
+    let (of, _) = drive.write(note, Maker::Outside, at(101));
+    let fx = drive.handle(Input::Written {
+        of,
+        done: Ok((issues(true), Applied::Named(1))),
+        now: at(101),
+    });
+    assert_eq!(names(&fx), ["Changed", "Signal", "Changed", "Sync"]);
+}
