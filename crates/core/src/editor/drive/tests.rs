@@ -22,11 +22,13 @@ fn opened(mtime: Option<SystemTime>) -> (EditorDrive, u64) {
         root: root(),
         path: file(),
         read: Ok(("theirs".into(), mtime)),
+        uid: 7,
     });
     let [Effect::Buffer { uid, text, .. }] = effects.as_slice() else {
         panic!("no buffer built");
     };
     assert_eq!(text, "theirs");
+    assert_eq!(*uid, 7, "the tab takes the id it was handed");
     (drive, *uid)
 }
 
@@ -70,6 +72,7 @@ fn a_read_that_fails_is_said_once_and_opens_nothing() {
         root: root(),
         path: file(),
         read: Err("too large".into()),
+        uid: 7,
     });
     assert!(matches!(
         effects.as_slice(),
@@ -231,6 +234,7 @@ fn a_project_forgotten_takes_its_buffers_and_a_late_read_opens_nothing() {
         root: root(),
         path: root().join("b.rs"),
         read: Ok(("late".into(), None)),
+        uid: 7,
     });
     assert!(late.is_empty());
     assert!(drive.tabs(&root()).is_none());
@@ -263,6 +267,7 @@ fn a_read_that_fails_after_its_project_left_says_nothing() {
         root: root(),
         path: file(),
         read: Err("gone".into()),
+        uid: 7,
     });
     assert!(effects.is_empty());
 }

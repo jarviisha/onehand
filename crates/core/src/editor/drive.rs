@@ -72,11 +72,15 @@ pub enum Effect {
 
 /// What the front end reports back.
 pub enum Input {
-    /// What reading `path` in `root` found.
+    /// What reading `path` in `root` found, and the id its tab takes if it
+    /// opens one. The front end hands the id in: it must not repeat in
+    /// another window's copy of the same file, and a replay of the same
+    /// inputs gives the same tabs.
     Read {
         root: PathBuf,
         path: PathBuf,
         read: Result<(String, Option<SystemTime>), String>,
+        uid: u64,
     },
     /// What writing tab `uid` in `root` came to, and whether its buffer
     /// still holds what landed (`false` when it was typed into meanwhile, or
@@ -327,7 +331,12 @@ impl EditorDrive {
     #[must_use = "its effects are to be carried"]
     pub fn handle(&mut self, input: Input) -> Vec<Effect> {
         match input {
-            Input::Read { root, path, read } => self.read(root, path, read),
+            Input::Read {
+                root,
+                path,
+                read,
+                uid,
+            } => self.read(root, path, read, uid),
             Input::Saved {
                 root,
                 uid,
@@ -342,6 +351,7 @@ impl EditorDrive {
         root: PathBuf,
         path: PathBuf,
         read: Result<(String, Option<SystemTime>), String>,
+        uid: u64,
     ) -> Vec<Effect> {
         let editors = &mut self.editors;
         if editors.opening.as_ref() == Some(&path) {
@@ -358,7 +368,6 @@ impl EditorDrive {
         };
         // A read that worked answers whatever the last save said here.
         editors.standing.remove(&root);
-        let uid = next_uid();
         let (_, new) =
             editors
                 .roots
@@ -429,14 +438,6 @@ impl EditorDrive {
             .iter_mut()
             .find(|f| f.uid == uid)
     }
-}
-
-/// Process-wide tab id: widget operations run against every window, so a
-/// buffer's id must not repeat in another window's copy of the same file.
-fn next_uid() -> u64 {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static NEXT: AtomicU64 = AtomicU64::new(1);
-    NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
 #[cfg(test)]
