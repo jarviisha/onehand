@@ -258,12 +258,19 @@ is GPUI's (`ChatSession`'s are in `crates/app/src/chat/session/tests.rs`). They 
 Not built yet for every carrier or every check. `ChatSession`'s tests hold order and exactly once,
 requests reaching the agent in order, a failed save reaching the drive, the quiet wait and its
 cancel at the stream's end, a close with a save in flight and a wait armed, and a watch ended by
-its host's lost connection said as out of reach, one taken by another machine ended. The run's and
+its host's lost connection said as out of reach, one taken by another machine ended. The pane's
+half of it (`crates/app/src/chat/pane/offload_send/tests.rs`, the send itself stood in for) holds
+the code asked for once, the prompt going once from the composer after it and not when it was
+rewritten meanwhile, a failed send and code no longer here to send reaching the drive, and a late answer sending
+nothing. The run's and
 the tasks' carriers' tests (`crates/app/src/task/tests.rs`) hold a run's prompt going once, its
 failed writes reaching its drive and said once, a session closed under a run leaving nothing
 listening, a finished run hearing nothing more, the place held while a cancelled turn drains, a
-Stop before a command starts, a dismiss put back when its write fails, and a worktree's removal
-landing with its task after its window closed; on a real shell (`crates/app/src/shell/rig.rs`), a
+Stop before a command starts, a dismiss put back when its write fails, a worktree's removal
+landing with its task after its window closed, and (`crates/app/src/task/tests/forge.rs`, against a forge that
+records what it is asked) a run's push, pull request look, open and read back reaching the forge
+once and in order, a refused push reaching its drive and opening nothing, and a forge not built in
+said; on a real shell (`crates/app/src/shell/rig.rs`), a
 check's retry running it again at once and an issue's run coming up off screen. Hosts' carrier
 (`crates/app/src/hosts/tests.rs`) holds a wait's end reaching every listener once and the last
 listener going ending the wait and its clock; offloaded projects'
@@ -272,7 +279,9 @@ and armed again, an answer reaching its asker once, a late answer for a folder l
 nothing, and keeping a kept folder again telling nobody, so the window's observer settles.
 Unattended runs' carrier (`crates/app/src/unattended/tests.rs`) holds its clock coming round and
 armed again, a start over the cap refused where it was asked, a pause, a config that cannot work,
-and a report sent once and dropped once it lands; the clock's (`crates/app/src/schedules/tests.rs`)
+a report sent once and dropped once it lands, and, on a real shell, a run's own project dropped
+from every window holding it at its end, one taken over kept as the person's, and a project the
+person had open left alone; the clock's (`crates/app/src/schedules/tests.rs`)
 its first look after its wait, a file it cannot read said, a look that moves nothing writing
 nothing, and a failed switch put back. The remote bridge's carrier (`crates/app/src/remote/tests.rs`) holds a line answered once, a
 session no window holds said gone, a scan landing once off the UI thread and nothing told after the
@@ -303,16 +312,15 @@ opened and for a pick, told once; the Editor's
 buffer was read from, a failure said once, and a save asked while one writes running after it with
 the text typed since; the Plugins mode's (`crates/claude-plugins/src/view/tests.rs`, against a
 `claude` of its own) one change at a time, what went through counted, and a refusal said only in
-its project. Still untested: `SendCode`'s late answer and the pane's half
-of the session (`ChatPane::carry`), `SaveTitle` (written on the ordered writer's own thread, which
-GPUI's test scheduler does not wait for), deferred work, the forge calls (the connectors are the
-ones built in), a command called off while it runs (the test scheduler runs it to its end before a
+its project. Still untested: `SaveTitle` (written on the ordered writer's own thread, which
+GPUI's test scheduler does not wait for), deferred work, a run's look at its status checks on the clock, the failing ones' logs read and
+a draft taken out of draft (the recording forge is asked none of the three), a command called off while it runs (the test scheduler runs it to its end before a
 Stop can reach it), a host's real attach, which runs on a runtime GPUI's test
 scheduler does not drive, and so a project page on a host letting go of its wait as it is left
 or listed again (the window's waits are tested let go of as a session closes or restarts and as
-the form is put away, in `crates/app/src/shell/host_project/tests.rs`). A run's project kept or dropped
-from its window at its end (`Effect::Teardown`) is tested by hand, and so are a window's waits let
-go of as a past conversation is picked in a session's place and as the form adds its project. The issue work's note is
+the form is put away, in `crates/app/src/shell/host_project/tests.rs`). A window's waits let
+go of as a past conversation is picked in a session's place and as the form adds its project
+are tested by hand. The issue work's note is
 not tested on a real shell, as the rig's agents cannot name a conversation; its rule is
 tested in core. The flows' harness drives a task in the shell's order (`Flow::drive`)
 rather than through the shell, which needs a window; and the flows do not reach a pick by hand,

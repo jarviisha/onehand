@@ -1,8 +1,10 @@
 //! The unattended carrier against its contract: its clock comes round and
 //! ticks again, a start over the cap is refused where it was asked, a pause
-//! stops every run, a config that cannot work is filed, and a report goes to
-//! its issue once and leaves its task once it has landed.
+//! stops every run, a config that cannot work is filed, a report goes to its
+//! issue once and leaves its task once it has landed, and a run's project is
+//! kept or dropped at its end in every window holding it.
 
+use crate::shell::rig::run_added as held;
 use crate::state::Shared;
 use crate::task::Tasks;
 use gpui::{AnyWindowHandle, AppContext as _, TestAppContext};
@@ -348,4 +350,68 @@ fn a_runs_taken_up_note_is_written_once(cx: &mut TestAppContext) {
         .collect();
     assert_eq!(said, ["Taken up by an unattended run"]);
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A run's session started off screen in `shell`, working in `dir`.
+fn run_in(shell: &gpui::Entity<crate::shell::Shell>, dir: &Path, cx: &mut gpui::VisualTestContext) {
+    let spec = crate::shell::rig::nowhere();
+    let dir = dir.to_path_buf();
+    cx.update(|_, cx| {
+        shell.update(cx, |shell, cx| {
+            shell.run_unattended(dir, spec, Vec::new(), cx)
+        })
+    })
+    .expect("a run's session");
+}
+
+/// A run that ends with nothing to keep takes the project it added out of
+/// every window holding it, and leaves a window that never had it alone.
+#[gpui::test]
+fn a_runs_own_project_is_dropped_from_every_window_at_its_end(cx: &mut TestAppContext) {
+    let store = temp_dir("teardown-drop");
+    let dir = store.join("work");
+    let (_, first, cx) = crate::shell::rig::shell(cx, store.join("tasks"), Vec::new());
+    let (_, second) = crate::shell::rig::another(cx, Path::new("/tmp"));
+    let (_, third) = crate::shell::rig::another(cx, Path::new("/tmp"));
+    run_in(&first, &dir, cx);
+    run_in(&second, &dir, cx);
+    assert_eq!(held(&first, &dir, cx), Some(true));
+    cx.cx.update(|cx| super::report::teardown(&dir, false, cx));
+    cx.run_until_parked();
+    for shell in [&first, &second, &third] {
+        assert_eq!(held(shell, &dir, cx), None);
+        assert_eq!(crate::shell::rig::projects(shell, cx), 1);
+    }
+    let _ = std::fs::remove_dir_all(store);
+}
+
+/// A run a person took over leaves its project in the window, theirs now.
+#[gpui::test]
+fn a_kept_runs_project_stays_as_the_persons(cx: &mut TestAppContext) {
+    let store = temp_dir("teardown-keep");
+    let dir = store.join("work");
+    let (_, shell, cx) = crate::shell::rig::shell(cx, store.join("tasks"), Vec::new());
+    run_in(&shell, &dir, cx);
+    cx.cx.update(|cx| super::report::teardown(&dir, true, cx));
+    cx.run_until_parked();
+    assert_eq!(held(&shell, &dir, cx), Some(false));
+    // Its end a second time, with nothing to keep, drops nothing of theirs.
+    cx.cx.update(|cx| super::report::teardown(&dir, false, cx));
+    cx.run_until_parked();
+    assert_eq!(held(&shell, &dir, cx), Some(false));
+    let _ = std::fs::remove_dir_all(store);
+}
+
+/// A run in a project the person already had open ends without taking it.
+#[gpui::test]
+fn a_run_in_the_persons_project_leaves_it_at_its_end(cx: &mut TestAppContext) {
+    let store = temp_dir("teardown-theirs");
+    let (_, shell, cx) = crate::shell::rig::shell(cx, store.join("tasks"), Vec::new());
+    let theirs = PathBuf::from("/tmp");
+    run_in(&shell, &theirs, cx);
+    cx.cx
+        .update(|cx| super::report::teardown(&theirs, false, cx));
+    cx.run_until_parked();
+    assert_eq!(held(&shell, &theirs, cx), Some(false));
+    let _ = std::fs::remove_dir_all(store);
 }

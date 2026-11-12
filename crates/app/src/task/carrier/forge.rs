@@ -8,6 +8,13 @@ use onehand_core::connector::{self, Check, Connector};
 use onehand_core::task::drive::Input;
 use std::path::PathBuf;
 
+// The connectors a run's forge is looked up among: the ones built in, and in
+// a test the forge that test watches.
+#[cfg(not(test))]
+use crate::features::connectors;
+#[cfg(test)]
+use crate::task::tests::connectors;
+
 /// Where a run's forge calls go.
 struct Forge {
     /// The run's work.
@@ -26,7 +33,7 @@ fn forge_of(id: &str, cx: &App) -> Option<Result<Forge, String>> {
             .clone()
             .ok_or_else(|| "the run has no branch of its own".to_string())?;
         let name = setup.forge.as_deref().unwrap_or_default();
-        let connector = connector::named(crate::features::connectors(), name)
+        let connector = connector::named(connectors(), name)
             .ok_or_else(|| format!("no connector called {name} is built into this onehand"))?;
         Ok(Forge {
             dir: setup.dir.clone(),

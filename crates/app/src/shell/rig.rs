@@ -93,6 +93,27 @@ pub(crate) fn workspace_issues(
     cx.update(|_, cx| shell.read(cx).workspace_page.read(cx).open_titles())
 }
 
+/// Whether `shell` holds a project at `dir`, and whether it is one a run
+/// added for itself.
+pub(crate) fn run_added(
+    shell: &Entity<crate::shell::Shell>,
+    dir: &std::path::Path,
+    cx: &mut VisualTestContext,
+) -> Option<bool> {
+    shell.read_with(cx, |shell, _| {
+        let roots = &shell.window.workspace.roots;
+        roots
+            .iter()
+            .find(|root| root.path == dir)
+            .map(|root| root.transient)
+    })
+}
+
+/// How many projects `shell` holds.
+pub(crate) fn projects(shell: &Entity<crate::shell::Shell>, cx: &mut VisualTestContext) -> usize {
+    shell.read_with(cx, |shell, _| shell.window.workspace.roots.len())
+}
+
 /// Put `shell`'s workspace page on screen.
 pub(crate) fn show_workspace(shell: &Entity<crate::shell::Shell>, cx: &mut VisualTestContext) {
     cx.update(|window, cx| shell.update(cx, |shell, cx| shell.show_workspace(window, cx)));

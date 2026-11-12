@@ -17,6 +17,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
+mod forge;
+pub(super) use forge::connectors;
+
 struct Blank;
 
 impl Render for Blank {
