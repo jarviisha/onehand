@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 pub mod drive;
+pub mod link;
 pub mod sync;
 pub mod template;
 
@@ -633,22 +634,6 @@ pub fn work_here_prompt(issue: &LocalIssue) -> String {
         title = issue.title,
         body = issue.body.trim(),
     )
-}
-
-/// Say on the issue `number` kept in `file` that the conversation `session`
-/// took it up, in the words `text`. Blocking: one read-change-write.
-pub fn taken_up_blocking(
-    file: &Path,
-    number: u64,
-    text: &str,
-    session: String,
-) -> Result<(), String> {
-    let change = drive::Change::TakenUp {
-        number,
-        text: text.to_string(),
-        session,
-    };
-    drive::write_blocking(file, change, now()).map(drop)
 }
 
 /// The time now, in the unit issues are stamped in.
