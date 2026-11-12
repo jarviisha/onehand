@@ -31,7 +31,7 @@ fn canned(cx: &mut VisualTestContext) -> mpsc::Sender<AcpEvent> {
         cx.update_global::<Shared, _>(|shared, _| {
             shared
                 .canned
-                .push(onehand_io::acp::Events::from_channel(rx))
+                .push_back(onehand_io::acp::Events::from_channel(rx))
         })
     });
     tx

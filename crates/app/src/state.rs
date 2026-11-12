@@ -89,9 +89,9 @@ pub struct Shared {
     /// write puts back only the settings no later write carries.
     pub config_saves: onehand_core::saving::Saves<&'static str, crate::saves::Put>,
     /// The events a test's sessions start on, taken by the next session
-    /// started here before any agent is: the last pushed goes first.
+    /// started here before any agent is, in the order they were queued.
     #[cfg(test)]
-    pub canned: Vec<onehand_io::acp::Events>,
+    pub canned: std::collections::VecDeque<onehand_io::acp::Events>,
 }
 
 impl Global for Shared {}
@@ -138,7 +138,7 @@ impl Shared {
             remote: crate::remote::RemoteBridge::off(),
             _remote_pump: None,
             #[cfg(test)]
-            canned: Vec::new(),
+            canned: std::collections::VecDeque::new(),
         }
     }
 

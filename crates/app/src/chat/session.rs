@@ -424,7 +424,7 @@ impl ChatSession {
             None => {
                 // A test's agent, played over a channel, when one waits.
                 #[cfg(test)]
-                let canned = cx.update_global::<Shared, _>(|shared, _| shared.canned.pop());
+                let canned = cx.update_global::<Shared, _>(|shared, _| shared.canned.pop_front());
                 #[cfg(not(test))]
                 let canned = None;
                 let (events, started, token) = match canned {
