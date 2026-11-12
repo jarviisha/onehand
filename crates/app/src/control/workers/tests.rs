@@ -1,8 +1,9 @@
 //! A worker's open carried through a window, on a real shell, each agent
 //! played over a channel: its session starts in the lead's window, is
 //! watched, gets its first prompt once its agent is up, and the lead is
-//! answered once; a window closed before the start, its lead with it, is
-//! answered so, and leaves nothing of the worker.
+//! answered once; a window closed before the start, its lead with it or
+//! with its lead in another window, is answered so, and leaves nothing of
+//! the worker.
 
 use super::super::{Token, drive, perform};
 use crate::chat::session::tests::carrier::up;
@@ -177,6 +178,64 @@ fn a_window_closed_before_the_start_answers_so_and_leaves_nothing(cx: &mut TestA
     assert!(why.contains("the lead went"), "{why}");
     assert!(super::super::workers_of(lead).is_empty());
     // The window is gone: the app is reached without it.
+    let canned_left = cx.cx.update(|cx| Shared::global(cx).canned.len());
+    assert_eq!(canned_left, 1, "no worker session started");
+    let _ = drive().forget(lead);
+    drop(token);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// An open asked from a window that closes before its start, while its lead
+/// lives in another window, is answered that the window closed, and starts
+/// no session.
+#[gpui::test]
+fn an_open_whose_window_closed_before_its_start_says_so(cx: &mut TestAppContext) {
+    let dir = folder("worker-window-closed");
+    let (asked_window, asked, cx) = shell(cx, dir.join("tasks"), vec![agent()]);
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let (_, lead_shell) = crate::shell::rig::another(cx, &home);
+    let _lead_events = canned(cx);
+    let (lead, token) = lead(&lead_shell, 910_300, cx);
+    let project = dir.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let _worker_events = canned(cx);
+    let projects = vec![("project".to_string(), project.clone())];
+    let (tx, mut answer) = oneshot::channel();
+    // Asked from the rig's window, which goes before the folder's read lands.
+    cx.update(|window, cx| {
+        let mut answer = Some(tx);
+        let open = onehand_core::control::drive::Open {
+            lead,
+            project: "project".into(),
+            agent: "a".into(),
+            prompt: Some("go".into()),
+            dirs: Vec::new(),
+            request: "r-closed".into(),
+            turn: Some(1),
+            model: None,
+            name: None,
+        };
+        let begun = super::open(
+            open,
+            asked_window,
+            asked.clone(),
+            &projects,
+            &mut answer,
+            cx,
+        );
+        assert_eq!(begun, Ok(String::new()), "answered later");
+        window.remove_window();
+    });
+    drop(asked);
+    let mut said = None;
+    until(cx, |_| {
+        said = answer.try_recv().unwrap();
+        said.is_some()
+    });
+    let why = said.unwrap().expect_err("refused");
+    assert!(why.contains("the window closed"), "{why}");
+    assert!(super::super::workers_of(lead).is_empty());
     let canned_left = cx.cx.update(|cx| Shared::global(cx).canned.len());
     assert_eq!(canned_left, 1, "no worker session started");
     let _ = drive().forget(lead);
