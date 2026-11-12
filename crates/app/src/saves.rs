@@ -198,8 +198,12 @@ pub(crate) fn carry_quietly(fx: Vec<Effect>, cx: &mut App) {
                 cx.default_global::<Checks>().0.remove(&token);
             }
             Effect::Changed => cx.refresh_windows(),
-            // A check, a look and their answers ask for nothing else.
-            Effect::Show(_) | Effect::Write { .. } | Effect::Probe { .. } | Effect::Signal(_) => {}
+            Effect::Show(_) | Effect::Write { .. } | Effect::Probe { .. } | Effect::Signal(_) => {
+                unreachable!(
+                    "a Test, a look's answer and a check's answer ask only for a look, a call-off \
+                     or a redraw; a setting's change and a check's start go through carry_settings"
+                )
+            }
         }
     }
 }
