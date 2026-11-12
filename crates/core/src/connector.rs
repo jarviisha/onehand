@@ -234,8 +234,9 @@ pub fn serving(connectors: &[&'static dyn Connector], root: &Path) -> Result<usi
     })
 }
 
-/// A connector for tests, this crate's and the other crates' (under the
-/// `test-support` feature): never built into the app.
+/// A connector for tests. Built for this crate's tests, and wherever the
+/// `test-support` feature is on, which a test build of the workspace turns
+/// on through the crates that take it for their tests.
 #[cfg(any(test, feature = "test-support"))]
 pub mod fake {
     use super::*;
