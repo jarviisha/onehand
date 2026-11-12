@@ -660,6 +660,8 @@ fn open_window(workspace: Workspace, cx: &mut App) {
             // not from the first tick, half an hour in. After the push, because
             // the look finds projects through this registry.
             crate::unattended::recheck(cx);
+            // What reached the socket before any window waited for this one.
+            crate::instance::window_up(cx);
             if let Some(dir) = &storage_dir {
                 let fx =
                     cx.update_global::<Shared, _>(|shared, _| shared.recents.named(dir, &name));

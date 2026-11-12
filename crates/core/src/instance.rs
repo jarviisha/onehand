@@ -14,6 +14,49 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::Duration;
 
+/// What reaches the socket before the first window is up, held until it is.
+///
+/// **Held, not polled.** A line that lands before the first window opens is
+/// kept rather than carried into no window, or into a second window onto the
+/// workspace the first is about to show; the window's registration hands
+/// every held line back, in the order they came. A model whose commands
+/// answer what is carried: it has no effects of its own. The last window
+/// closing ends the process, so a window is never down again once one is up.
+#[derive(Debug)]
+pub struct Arrivals<T> {
+    up: bool,
+    held: std::collections::VecDeque<T>,
+}
+
+impl<T> Default for Arrivals<T> {
+    fn default() -> Self {
+        Self {
+            up: false,
+            held: std::collections::VecDeque::new(),
+        }
+    }
+}
+
+impl<T> Arrivals<T> {
+    /// `line` arrived: passed on at once once a window is up, else held.
+    #[must_use = "a line passed on is to be carried"]
+    pub fn arrived(&mut self, line: T) -> Option<T> {
+        if self.up {
+            return Some(line);
+        }
+        self.held.push_back(line);
+        None
+    }
+
+    /// The first window is up: every line held, in the order they came; on
+    /// a later call, none.
+    #[must_use = "the lines held are to be carried"]
+    pub fn up(&mut self) -> Vec<T> {
+        self.up = true;
+        self.held.drain(..).collect()
+    }
+}
+
 /// The window something with no window of its own lands in: the one in
 /// front (`active`) when it is open, else the first of `open`.
 pub fn front<W: PartialEq + Copy>(active: Option<W>, open: &[W]) -> Option<W> {
@@ -179,6 +222,16 @@ fn try_lock(dir: &Path) -> Result<File, TryLockError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn what_arrives_before_a_window_waits_for_it_in_order() {
+        let mut arrivals = Arrivals::default();
+        assert_eq!(arrivals.arrived(1), None);
+        assert_eq!(arrivals.arrived(2), None);
+        assert_eq!(arrivals.up(), vec![1, 2]);
+        assert_eq!(arrivals.arrived(3), Some(3));
+        assert!(arrivals.up().is_empty());
+    }
 
     #[test]
     fn the_front_is_the_active_window_else_the_first() {
