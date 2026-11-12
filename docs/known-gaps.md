@@ -393,6 +393,9 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   - `hosts::attach_waiting` waits out a busy host and attaches again in `HostDrive`'s carrier,
     for the terminal dock, the Workbench and the folder list; what a failed attach comes to is
     core's (`HostFailure::after_attach`).
+  - An unbind's failed forget is said at every failure, not once at the edge of a run of them:
+    each is another workspace that would come back at the next launch, and the words do not name
+    which.
 - **Some view state is kept in core's models**: the panels' layout in the workspace file
   (`WorkspaceDrive::layout_mut`), and which Editor tab is on screen (`RootEditors::active`). No
   drive decides anything by either.

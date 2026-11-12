@@ -182,8 +182,6 @@ minor bump may break any of them.
 
 ### Fixed
 
-- A workspace unbound whose forget cannot be written says so once, not at every unbind after it,
-  until a write of the recents lands.
 - A run waiting on its pull request's status checks keeps waiting when a forge answer it did not
   ask for lands; before, the run could stop looking at its checks for good.
 - A worktree removed while the window it was asked from closed is kept with its task, and its

@@ -7,12 +7,10 @@
 //! put back when a write fails: the list is a convenience, and the next
 //! change writes it again.
 //!
-//! **Only an unbind's failure is said, once.** A workspace unbound and then
-//! still remembered comes back at the next launch, so a forget that did not
-//! land is told to the person ([`Signal::ForgetFailed`]); any other write
-//! that fails is only logged ([`Signal::WriteFailed`]), and so is a forget
-//! that fails after one already said, until a write lands: the list is
-//! written whole, so the write that lands carries every forget before it.
+//! **Only an unbind's failure is said.** A workspace unbound and then still
+//! remembered comes back at the next launch, so a forget that did not land
+//! is told to the person ([`Signal::ForgetFailed`]); any other write that
+//! fails is only logged ([`Signal::WriteFailed`]).
 
 use super::AppState;
 use std::ops::Deref;
@@ -30,8 +28,8 @@ pub enum Forgot {
 /// What a person is told, or the log.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Signal {
-    /// The write that forgot an unbound workspace failed: why. Said, once
-    /// until a write lands: the workspace would come back at the next launch.
+    /// The write that forgot an unbound workspace failed: why. Said, every
+    /// time: the workspace would come back at the next launch.
     ForgetFailed(String),
     /// Another write of the list failed: why. Only logged.
     WriteFailed(String),
@@ -66,8 +64,6 @@ pub struct RecentsDrive {
     minted: u64,
     /// The writes in flight whose failure is said.
     said: Vec<u64>,
-    /// A forget's failure was said, and no write has landed since.
-    failing: bool,
 }
 
 impl Deref for RecentsDrive {
@@ -92,7 +88,6 @@ impl RecentsDrive {
             path,
             minted: 0,
             said: Vec::new(),
-            failing: false,
         }
     }
 
@@ -141,14 +136,8 @@ impl RecentsDrive {
                 let said = self.said.contains(&pending);
                 self.said.retain(|p| *p != pending);
                 match result {
-                    Ok(()) => {
-                        self.failing = false;
-                        Vec::new()
-                    }
-                    Err(why) if said && !self.failing => {
-                        self.failing = true;
-                        vec![Effect::Signal(Signal::ForgetFailed(why))]
-                    }
+                    Ok(()) => Vec::new(),
+                    Err(why) if said => vec![Effect::Signal(Signal::ForgetFailed(why))],
                     Err(why) => vec![Effect::Signal(Signal::WriteFailed(why))],
                 }
             }
