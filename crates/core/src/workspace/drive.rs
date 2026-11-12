@@ -30,9 +30,12 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::time::Duration;
 
+mod conversation;
 mod git;
 mod projects;
 mod sessions;
+
+pub use conversation::{Live, Reach, Saved};
 pub use git::SweepProject;
 pub use projects::Losses;
 
@@ -88,6 +91,13 @@ pub enum Signal {
     Removed(String),
     /// A fork of a conversation did not open, for why.
     ForkFailed(String),
+    /// The conversation asked for was never saved.
+    ConversationNotSaved,
+    /// The conversation asked for was had with the agent named here, which
+    /// is no longer set up: no other agent can resume it.
+    AgentGone(String),
+    /// The folder the conversation asked for ran in is gone.
+    FolderGone(PathBuf),
     /// Ending the host session called `label` on `host` failed, for `why`;
     /// it is still there to attach to from the project page.
     EndOnHostFailed {
@@ -104,6 +114,8 @@ pub enum Refusal {
     NoProject,
     /// A session needs an agent to run.
     NoAgent,
+    /// The task has no session open to show.
+    NoSession,
 }
 
 /// A project that has left the window, on this machine or on `host`.
@@ -189,6 +201,12 @@ pub enum Effect {
     /// What runs on the hosts changed: whatever lists their sessions reads
     /// them again.
     ListHostSessions,
+    /// Read the conversation the agent named this, as it was saved, and
+    /// whether the folder it ran in is still there, off the UI loop; report
+    /// [`Input::ConversationRead`]. A late answer is **recorded**: the read
+    /// leaves nothing behind, and what it found is acted on as the workspace
+    /// stands when it lands.
+    ReadConversation(String),
     /// The workspace in `dir` is known by `name`: remember it so.
     Remember {
         dir: PathBuf,
@@ -215,6 +233,13 @@ pub enum Input {
     Swept {
         token: u64,
         found: Vec<(PathBuf, crate::gitstat::GitStatus)>,
+    },
+    /// What [`Effect::ReadConversation`] found, if anything was saved; the
+    /// agents set up now; and the uid a session resuming it takes.
+    ConversationRead {
+        found: Option<conversation::Saved>,
+        agents: Vec<AgentSpec>,
+        uid: u64,
     },
     /// What [`Effect::EndOnHost`] for the host session called `label` on
     /// `host` came to.
@@ -408,6 +433,9 @@ impl WorkspaceDrive {
             Input::WrittenOnClose { pending, result } => {
                 let _ = self.saves.landed(pending, result);
                 Vec::new()
+            }
+            Input::ConversationRead { found, agents, uid } => {
+                self.conversation_read(found, &agents, uid)
             }
             Input::EndedOnHost {
                 host,

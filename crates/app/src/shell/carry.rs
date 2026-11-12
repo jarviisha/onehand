@@ -73,6 +73,7 @@ impl Shell {
                 Effect::ListHostSessions => {
                     self.chat.update(cx, |pane, cx| pane.list_host_sessions(cx))
                 }
+                Effect::ReadConversation(id) => self.read_conversation(id, window, cx),
                 Effect::Signal(signal) => {
                     let toast = match signal {
                         Signal::SaveFailed(why) => {
@@ -84,7 +85,20 @@ impl Shell {
                         Signal::Refused(Refusal::NoAgent) => crate::toast::warning(
                             "Add an agent in Settings before starting a session",
                         ),
+                        Signal::Refused(Refusal::NoSession) => {
+                            crate::toast::warning("That task has no session open")
+                        }
                         Signal::Removed(label) => crate::toast::info(format!("Removed {label}")),
+                        Signal::ConversationNotSaved => {
+                            crate::toast::warning("That session's conversation was not saved")
+                        }
+                        Signal::AgentGone(agent) => crate::toast::warning(format!(
+                            "{agent} is no longer set up; add it in Settings ▸ Agents to open that conversation"
+                        )),
+                        Signal::FolderGone(root) => crate::toast::warning(format!(
+                            "The folder that conversation ran in is gone: {}",
+                            root.display()
+                        )),
                         Signal::ForkFailed(why) => {
                             crate::toast::failed("Forking the conversation", why)
                         }
@@ -123,6 +137,7 @@ impl Shell {
                 | Effect::Remember { .. }
                 | Effect::EndOnHost { .. }
                 | Effect::ListHostSessions
+                | Effect::ReadConversation(_)
                 | Effect::Signal(_)) => {
                     let rest: Vec<Effect> = std::iter::once(effect).chain(fx).collect();
                     let (at, shell) = (self.chat.read(cx).window_handle(), cx.entity().downgrade());

@@ -47,6 +47,7 @@ fn names(fx: &[Effect]) -> Vec<String> {
             Effect::LookForRuns(path) => format!("LookForRuns({})", path.display()),
             Effect::EndOnHost { session, .. } => format!("EndOnHost({})", session.0),
             Effect::ListHostSessions => "ListHostSessions".into(),
+            Effect::ReadConversation(id) => format!("ReadConversation({id})"),
             Effect::Signal(signal) => format!("{signal:?}"),
         })
         .collect()
@@ -742,4 +743,87 @@ fn a_host_session_watched_is_shown_again_not_opened_twice() {
     assert_eq!(drive.watcher(&host, &later, None), None);
     let (none, _) = drive.watch(HostSession("h-3".into()), None, 4);
     assert_eq!(none, Err(Refusal::NoAgent), "a new one needs its agent");
+}
+
+// A conversation asked for again.
+
+fn saved(root: &str, there: bool, agent: &str) -> Option<Saved> {
+    Some(Saved {
+        root: PathBuf::from(root),
+        there,
+        agent: agent.into(),
+        resume: PathBuf::from("/conv/c1"),
+    })
+}
+
+fn read(drive: &mut WorkspaceDrive, found: Option<Saved>) -> Vec<Effect> {
+    drive.handle(Input::ConversationRead {
+        found,
+        agents: vec![spec()],
+        uid: 9,
+    })
+}
+
+#[test]
+fn a_live_conversation_is_shown_where_it_is_else_read() {
+    let mut drive = bound();
+    let (_, _) = drive.add_session(Some(spec()), 7, None);
+    match drive.open_conversation::<u8>("c1", Live::Here(7)) {
+        Reach::Here(fx) => assert!(names(&fx).contains(&"Show".to_string())),
+        Reach::There(..) => panic!("here"),
+    }
+    assert!(matches!(
+        drive.open_conversation("c1", Live::There(8, 'w')),
+        Reach::There(8, 'w')
+    ));
+    match drive.open_conversation::<u8>("c1", Live::Nowhere) {
+        Reach::Here(fx) => assert_eq!(names(&fx), ["ReadConversation(c1)"]),
+        Reach::There(..) => panic!("read"),
+    }
+}
+
+#[test]
+fn a_saved_conversation_resumes_on_its_folder_kept_again() {
+    let mut drive = bound();
+    let fx = read(&mut drive, saved("/run", true, "agent"));
+    let idx = drive.local_index(Path::new("/run")).expect("kept again");
+    assert_eq!(drive.active_root, idx);
+    assert_eq!(drive.locate(9).map(|(root, _)| root), Some(idx));
+    assert!(names(&fx).contains(&"Show".to_string()));
+    assert_eq!(
+        drive.take_start(9),
+        StartsOn::Resume(PathBuf::from("/conv/c1"))
+    );
+    let roots = drive.roots.len();
+    read(&mut drive, saved("/run", true, "agent"));
+    assert_eq!(
+        drive.roots.len(),
+        roots,
+        "a project already here is not added twice"
+    );
+}
+
+#[test]
+fn a_conversation_nothing_can_resume_is_said_and_keeps_nothing() {
+    let mut drive = bound();
+    assert_eq!(names(&read(&mut drive, None)), ["ConversationNotSaved"]);
+    assert_eq!(
+        names(&read(&mut drive, saved("/run", true, "gone"))),
+        [r#"AgentGone("gone")"#]
+    );
+    assert_eq!(drive.local_index(Path::new("/run")), None, "no folder kept");
+    assert_eq!(
+        names(&read(&mut drive, saved("/run", false, "agent"))),
+        [r#"FolderGone("/run")"#]
+    );
+    assert_eq!(drive.locate(9), None);
+}
+
+#[test]
+fn a_task_with_no_session_open_is_said() {
+    let mut drive = bound();
+    match drive.show_task_session::<u8>(Live::Nowhere) {
+        Reach::Here(fx) => assert_eq!(names(&fx), ["Refused(NoSession)"]),
+        Reach::There(..) => panic!("said here"),
+    }
 }
