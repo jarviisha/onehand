@@ -122,3 +122,53 @@ fn a_host_root_reads_its_git_status_unless_a_local_root_has_its_path() {
     let facts = crate::chat::pane::ProjectFacts::of(&drive.roots[2], true);
     assert!(!facts.is_repo);
 }
+
+/// Which host session a session watches is the workspace's, as the pane
+/// says its host named it, on a real shell: what a restart of it watches
+/// again, gone once the session goes.
+#[gpui::test]
+fn a_watched_host_session_is_the_workspaces_as_its_host_says_it(cx: &mut gpui::TestAppContext) {
+    use crate::chat::pane::ChatPaneEvent;
+    use onehand_core::config::AgentSpec;
+    use onehand_core::host::wire::HostSession;
+    use onehand_core::workspace::HostName;
+    let spec = AgentSpec {
+        name: "nowhere".into(),
+        command: "/nonexistent/onehand-test-agent".into(),
+        ..Default::default()
+    };
+    let dir = crate::shell::rig::folder("watched-host");
+    let (_, shell, cx) = crate::shell::rig::shell(cx, dir.join("tasks"), vec![spec.clone()]);
+    let (host, id) = (HostName("box".into()), HostSession("h-1".into()));
+    // Added but never shown, so nothing attaches to the host.
+    let uid = cx.update(|_, cx| {
+        shell.update(cx, |shell, _| {
+            let _ = shell
+                .window
+                .workspace
+                .open_host_project(host.clone(), "/srv/app".into());
+            let (added, _) = shell.window.workspace.add_session(Some(spec), 41, None);
+            added.expect("added")
+        })
+    });
+    cx.update(|_, cx| {
+        let chat = shell.read(cx).chat.clone();
+        chat.update(cx, |_, cx| {
+            cx.emit(ChatPaneEvent::Watching {
+                uid,
+                id: id.clone(),
+            })
+        });
+    });
+    cx.run_until_parked();
+    let watched = cx.update(|_, cx| shell.read(cx).window.workspace.watched_on(uid));
+    assert_eq!(watched, Some((host, id)));
+    cx.update(|_, cx| {
+        shell.update(cx, |shell, _| {
+            let _ = shell.window.workspace.end(uid, None);
+        })
+    });
+    let watched = cx.update(|_, cx| shell.read(cx).window.workspace.watched_on(uid));
+    assert_eq!(watched, None, "gone with its session");
+    let _ = std::fs::remove_dir_all(dir);
+}
