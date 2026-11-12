@@ -6,9 +6,12 @@ fn drive() -> RecentsDrive {
 
 /// The write an effect list holds, and its pending id.
 fn written(fx: &[Effect]) -> (u64, &AppState) {
-    match fx {
-        [Effect::Write { pending, state, .. }] => (*pending, state),
-        _ => panic!("one write"),
+    let [effect] = fx else {
+        panic!("one effect, not {}", fx.len());
+    };
+    match effect {
+        Effect::Write { pending, state, .. } => (*pending, state),
+        Effect::Signal(signal) => panic!("a write, not {signal:?}"),
     }
 }
 
