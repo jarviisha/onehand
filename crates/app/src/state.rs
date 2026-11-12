@@ -88,6 +88,10 @@ pub struct Shared {
     /// Each setting's value known saved and its newest change, so a failed
     /// write puts back only the settings no later write carries.
     pub config_saves: onehand_core::saving::Saves<&'static str, crate::saves::Put>,
+    /// The events a test's sessions start on, taken by the next session
+    /// started here before any agent is: the last pushed goes first.
+    #[cfg(test)]
+    pub canned: Vec<onehand_io::acp::Events>,
 }
 
 impl Global for Shared {}
@@ -133,6 +137,8 @@ impl Shared {
             // those is something a constructor should be able to fail at.
             remote: crate::remote::RemoteBridge::off(),
             _remote_pump: None,
+            #[cfg(test)]
+            canned: Vec::new(),
         }
     }
 

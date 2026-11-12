@@ -359,3 +359,6 @@ fn still_open(lead: u64, cx: &App) -> Vec<(u64, PathBuf)> {
 
 pub(super) mod turns;
 pub(super) mod whose;
+
+#[cfg(test)]
+mod tests;
