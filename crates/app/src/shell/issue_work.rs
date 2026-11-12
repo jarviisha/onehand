@@ -34,7 +34,7 @@ impl Shell {
             Err(why) => {
                 let said = not_here(why);
                 #[cfg(test)]
-                tests::SAID.with(|told| told.borrow_mut().push(said));
+                self.refused.push(said);
                 window.push_notification(crate::toast::warning(said), cx);
                 return;
             }

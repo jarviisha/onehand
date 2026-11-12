@@ -15,24 +15,7 @@ fn notes(cx: &mut VisualTestContext) -> usize {
 
 /// What the window was told of each refusal, in the words it was told.
 fn refusals(shell: &gpui::Entity<super::Shell>, cx: &mut VisualTestContext) -> Vec<&'static str> {
-    use onehand_core::workspace::drive::Signal;
-    cx.update(|_, cx| {
-        shell
-            .read(cx)
-            .said
-            .iter()
-            .filter_map(|signal| match signal {
-                Signal::Refused(why) => Some(crate::shell::carry::refused(*why)),
-                Signal::SaveFailed(_)
-                | Signal::Removed(_)
-                | Signal::ForkFailed(_)
-                | Signal::ConversationNotSaved
-                | Signal::AgentGone(_)
-                | Signal::FolderGone(_)
-                | Signal::EndOnHostFailed { .. } => None,
-            })
-            .collect()
-    })
+    cx.update(|_, cx| shell.read(cx).refused.clone())
 }
 
 /// Tell the shell `event`, as an Issues view does.

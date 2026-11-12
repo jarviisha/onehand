@@ -90,13 +90,15 @@ impl Shell {
                 }
                 Effect::ReadConversation(id) => self.read_conversation(id, window, cx),
                 Effect::Signal(signal) => {
-                    #[cfg(test)]
-                    self.said.push(signal.clone());
                     let toast = match signal {
                         Signal::SaveFailed(why) => {
                             crate::toast::failed("Saving the workspace", why)
                         }
-                        Signal::Refused(why) => crate::toast::warning(refused(why)),
+                        Signal::Refused(why) => {
+                            #[cfg(test)]
+                            self.refused.push(refused(why));
+                            crate::toast::warning(refused(why))
+                        }
                         Signal::Removed(label) => crate::toast::info(format!("Removed {label}")),
                         Signal::ConversationNotSaved => {
                             crate::toast::warning("That session's conversation was not saved")
