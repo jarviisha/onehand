@@ -219,9 +219,9 @@ pub enum Effect<W> {
     Teardown { dir: PathBuf, keep: bool },
     /// Note on issue `number` kept in `file`, of the project at `root`, that
     /// `session` works it, saying `said`: a change to the file through the
-    /// drive every view of it shares, so each shows it as it lands. Not
-    /// answered: a failure is the log's. A late write is **recorded**: the
-    /// note is on disk or it is not.
+    /// drive every view of it shares, so each shows it as it lands. Never
+    /// answered to this drive: what the write came to goes to the carrier,
+    /// which logs a failure, so there is no late answer here to handle.
     NoteTakenUp {
         root: PathBuf,
         file: PathBuf,
