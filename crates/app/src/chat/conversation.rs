@@ -24,23 +24,12 @@ use super::viewport::Viewport;
 use gpui::{Entity, Subscription};
 use onehand_core::chat::ConvMeta;
 use onehand_core::config::AgentSpec;
-use onehand_core::host::wire::HostSession;
 use onehand_core::workspace::HostName;
 use std::path::PathBuf;
 
-/// The host a session's agent runs on, the folder it runs in there, and the
-/// host's name for the session once the host has said it.
-///
-/// The folder is the project's own for a host project, and its mirror for an
-/// offloaded one, whose project is still known here by its folder here.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct OnHost {
-    pub(crate) host: HostName,
-    pub(crate) cwd: PathBuf,
-    pub(crate) session: Option<HostSession>,
-}
-
-/// A host and the folder there a project's sessions run in.
+/// A host and the folder there a project's sessions run in: the project's
+/// own for a host project, and its mirror for an offloaded one, whose
+/// project is still known here by its folder here.
 pub(crate) type HostAt = (HostName, PathBuf);
 
 pub struct Conversation {
@@ -54,9 +43,9 @@ pub struct Conversation {
     /// Folders beyond `root` its agent may write, held for the same reason:
     /// a restart that dropped them would leave a worker unable to commit.
     pub dirs: Vec<PathBuf>,
-    /// The host its agent runs on, and the host's name for the session once
-    /// the host has said it: what a restart reads again.
-    pub host: Option<OnHost>,
+    /// The host its agent runs on and the folder there. Which host session it
+    /// watches is the workspace's, handed to a restart.
+    pub host: Option<HostAt>,
     pub phase: SessionPhase,
     /// How this session's transcript is laid out and where it is scrolled, so
     /// coming back to it finds the conversation where it was left rather than

@@ -270,45 +270,6 @@ fn no_more_than_two_cards_peek_behind_the_one_shown() {
     assert_eq!(peeks(9), 2);
 }
 
-/// A watched host session is known from the moment its session is made, so a
-/// second press on the same listed row finds it; a fork opens its own, and a
-/// local session has no host at all.
-#[test]
-fn a_watched_host_session_knows_its_id_from_the_start() {
-    use super::sessions::opening_host;
-    use crate::chat::conversation::OnHost;
-    use onehand_core::host::wire::HostSession;
-    use onehand_core::workspace::HostName;
-
-    let (host, id) = (HostName("box".into()), HostSession("100-1".into()));
-    let cwd = std::path::PathBuf::from("/srv/app");
-    assert_eq!(
-        opening_host(Some((host.clone(), cwd.clone())), Some(&id), false),
-        Some(OnHost {
-            host: host.clone(),
-            cwd: cwd.clone(),
-            session: Some(id.clone())
-        })
-    );
-    assert_eq!(
-        opening_host(Some((host.clone(), cwd.clone())), Some(&id), true),
-        Some(OnHost {
-            host: host.clone(),
-            cwd: cwd.clone(),
-            session: None
-        })
-    );
-    assert_eq!(
-        opening_host(Some((host.clone(), cwd.clone())), None, false),
-        Some(OnHost {
-            host,
-            cwd,
-            session: None
-        })
-    );
-    assert_eq!(opening_host(None, Some(&id), false), None);
-}
-
 /// The session lifecycle as the pane carries it today: what opening, closing
 /// and restarting a session leaves running.
 mod lifecycle {
@@ -494,13 +455,13 @@ mod lifecycle {
         let (pane, cx) = pane(cx);
         open(&pane, 1, cx);
         let old = session(&pane, 1, cx).expect("a session");
-        let restarted = pane.update(cx, |pane, cx| pane.restart(1, false, cx));
+        let restarted = pane.update(cx, |pane, cx| pane.restart(1, false, None, cx));
         assert!(matches!(restarted, Restart::Restarted));
         cx.run_until_parked();
         let new = session(&pane, 1, cx).expect("a session");
         assert_ne!(old.entity_id(), new.entity_id());
         assert!(old.upgrade().is_none());
-        let nothing = pane.update(cx, |pane, cx| pane.restart(9, false, cx));
+        let nothing = pane.update(cx, |pane, cx| pane.restart(9, false, None, cx));
         assert!(matches!(nothing, Restart::Nothing));
     }
     fn past() -> Vec<onehand_core::chat::ConvMeta> {

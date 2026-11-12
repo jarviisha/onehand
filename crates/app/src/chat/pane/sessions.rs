@@ -1,8 +1,8 @@
 use super::fork::StagedFork;
 use super::project_page::EmptyProject;
 use super::{ChatPane, ChatPaneEvent, ProjectFacts, Restart, SessionSignal, switching_away};
+use crate::chat::conversation::HostAt;
 use crate::chat::conversation::{Conversation, SessionPhase};
-use crate::chat::conversation::{HostAt, OnHost};
 use crate::chat::session::{BeginOnHost, ChatEvent, ChatSession};
 use gpui::{App, Context, Entity, Focusable, SharedString, Window};
 use onehand_core::acp::Opening;
@@ -40,10 +40,6 @@ impl ChatPane {
         // A fork's staged read is the pane's, taken for the session it was
         // staged for whatever happens next.
         let fork = self.take_fork(uid);
-        let watch = match &starts {
-            StartsOn::Watch(id) => Some(id.clone()),
-            StartsOn::Fresh | StartsOn::Resume(_) | StartsOn::Fork => None,
-        };
         // An entry in the map *is* "already being set up", whatever phase it has
         // reached. Before there was one entry there were three maps and three
         // checks, and two quick selections of the same session could both pass
@@ -52,7 +48,7 @@ impl ChatPane {
         // way out.
         if let Entry::Vacant(slot) = self.conversations.entry(uid) {
             slot.insert(Conversation {
-                host: opening_host(host, watch.as_ref(), fork.is_some()),
+                host,
                 ..Conversation::opening(root.clone(), spec.clone())
             });
             // **A new session connects; it does not ask.** Every session in this
@@ -68,8 +64,10 @@ impl ChatPane {
             // archives above the button that starts a session, and a session
             // already running reaches the same picker from its header menu.
             match (starts, fork) {
-                (StartsOn::Fork, Some(staged)) => self.connect_as(uid, Start::Fork(staged), cx),
-                (StartsOn::Watch(id), _) => self.connect_as(uid, Start::Watch(id), cx),
+                (StartsOn::Fork, Some(staged)) => {
+                    self.connect_as(uid, Start::Fork(staged), None, cx)
+                }
+                (StartsOn::Watch(id), _) => self.connect_as(uid, Start::Watch(id), None, cx),
                 (StartsOn::Resume(archive), _) => self.resume(uid, archive, cx),
                 // A fork whose staged read went meanwhile starts fresh.
                 (StartsOn::Fresh | StartsOn::Fork, _) => self.connect(uid, None, cx),
@@ -227,11 +225,19 @@ impl ChatPane {
             Some(stored) => Start::Resume(stored),
             None => Start::Fresh,
         };
-        self.connect_as(uid, start, cx);
+        self.connect_as(uid, start, None, cx);
     }
 
-    /// [`Self::connect`], starting the conversation as `start` says.
-    fn connect_as(&mut self, uid: u64, start: Start, cx: &mut Context<Self>) {
+    /// [`Self::connect`], starting the conversation as `start` says; on a
+    /// host, a restart watching `watched` again, the host session the
+    /// workspace says it was on.
+    fn connect_as(
+        &mut self,
+        uid: u64,
+        start: Start,
+        watched: Option<HostSession>,
+        cx: &mut Context<Self>,
+    ) {
         let Some(conv) = self.conversations.get_mut(&uid) else {
             return;
         };
@@ -243,8 +249,8 @@ impl ChatPane {
             .map_or(0, |session| session.read(cx).chat.prompts_sent);
         let (on_host, start, sent_before) = match &conv.host {
             None => (None, start, sent),
-            Some(OnHost { host, cwd, session }) => {
-                let (begin, start, sent) = host_begin(start, session.as_ref(), sent);
+            Some((host, cwd)) => {
+                let (begin, start, sent) = host_begin(start, watched.as_ref(), sent);
                 let (host, cwd) = (host.clone(), cwd.clone());
                 (Some(BeginOnHost { host, cwd, begin }), start, sent)
             }
@@ -393,24 +399,18 @@ impl ChatPane {
                         cx.notify();
                     }
                     ChatEvent::HostSession(id) => {
-                        if let Some(on) = pane
-                            .conversations
-                            .get_mut(&uid)
-                            .and_then(|conv| conv.host.as_mut())
-                        {
-                            on.session = Some(id.clone());
-                        }
                         cx.emit(ChatPaneEvent::Watching {
                             uid,
                             id: id.clone(),
                         });
                     }
                     ChatEvent::HostBusy => {
-                        if let Some(on) = pane.conversations.get(&uid).and_then(|c| c.host.as_ref())
+                        if let Some((host, _)) =
+                            pane.conversations.get(&uid).and_then(|c| c.host.as_ref())
                         {
                             cx.emit(ChatPaneEvent::HostBusy {
                                 uid: Some(uid),
-                                host: on.host.clone(),
+                                host: host.clone(),
                             });
                         }
                     }
@@ -473,7 +473,16 @@ impl ChatPane {
     ///
     /// Mid-turn this throws away the turn the user is waiting on; asking
     /// first is the caller's, through [`Self::restarting`].
-    pub fn restart(&mut self, uid: u64, after_service: bool, cx: &mut Context<Self>) -> Restart {
+    ///
+    /// On a host it watches `watched` again, the host session the workspace
+    /// says it was on.
+    pub fn restart(
+        &mut self,
+        uid: u64,
+        after_service: bool,
+        watched: Option<HostSession>,
+        cx: &mut Context<Self>,
+    ) -> Restart {
         // The session is looked up twice rather than held across the whole
         // function, and neither look-up is a clone. A cloned handle is a second
         // strong reference to the old session, and the old adapter only dies
@@ -500,7 +509,7 @@ impl ChatPane {
         });
         // `connect_as` drops the old adapter before spawning the new one, so
         // nothing here has to take the session apart first.
-        self.connect_as(uid, Start::Restart(stored, after_service), cx);
+        self.connect_as(uid, Start::Restart(stored, after_service), watched, cx);
         Restart::Restarted
     }
 
@@ -765,21 +774,6 @@ impl ChatPane {
         })
         .detach();
     }
-}
-
-/// The host a session in a host project opens on, with the host session it
-/// watches when that is known before it starts: so a second press on the
-/// same listed session finds this one at once. A fork opens its own.
-pub(super) fn opening_host(
-    host: Option<HostAt>,
-    watch: Option<&HostSession>,
-    forking: bool,
-) -> Option<OnHost> {
-    host.map(|(host, cwd)| OnHost {
-        host,
-        cwd,
-        session: watch.filter(|_| !forking).cloned(),
-    })
 }
 
 /// How a session's conversation starts, a fork from what the pane staged.
