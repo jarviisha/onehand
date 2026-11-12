@@ -402,7 +402,10 @@ impl SessionDrive {
             }
             return (Intake::Refused(Refusal::NotTaken), Vec::new());
         }
-        let queues = matches!(origin, Origin::Person | Origin::Remote);
+        let queues = match origin {
+            Origin::Person | Origin::Remote => true,
+            Origin::Tools | Origin::Run | Origin::Issue => false,
+        };
         if queues && blocker == Some(SubmitBlock::Busy) {
             if origin == Origin::Remote && self.chat.queued.is_some() {
                 return (Intake::Refused(Refusal::AlreadyQueued), Vec::new());

@@ -86,8 +86,12 @@ impl RunDrive {
 
     /// The clock for the next look ran out: look, while the run still waits.
     pub(super) fn look_again(&mut self, fx: &mut Vec<Effect>) {
-        if matches!(self.forging, Some(Forging::Watching(_))) {
-            fx.push(Effect::FindPullRequest);
+        match self.forging {
+            Some(Forging::Watching(_)) => fx.push(Effect::FindPullRequest),
+            Some(
+                Forging::Pushing | Forging::Opening | Forging::Logs(..) | Forging::Readying(..),
+            )
+            | None => {}
         }
     }
 
@@ -99,8 +103,12 @@ impl RunDrive {
         now: Now,
         fx: &mut Vec<Effect>,
     ) {
-        if matches!(self.forging, Some(Forging::Pushing)) {
-            self.forge_done(pushed.map(|()| None), chat, now, fx);
+        match self.forging {
+            Some(Forging::Pushing) => self.forge_done(pushed.map(|()| None), chat, now, fx),
+            Some(
+                Forging::Opening | Forging::Watching(_) | Forging::Logs(..) | Forging::Readying(..),
+            )
+            | None => {}
         }
     }
 
@@ -151,7 +159,15 @@ impl RunDrive {
                         self.forging = Some(Forging::Readying(watch, pr.url));
                         fx.push(Effect::MarkReady { number: pr.number });
                     }
-                    (seen, _) => self.seen(watch, seen, chat, now, fx),
+                    // Any other answer is judged as it is.
+                    (
+                        seen @ (Seen::Pending
+                        | Seen::Passed
+                        | Seen::Repair(_)
+                        | Seen::Fail(_)
+                        | Seen::Merged),
+                        _,
+                    ) => self.seen(watch, seen, chat, now, fx),
                 }
             }
             // Not what the run asked about now.
@@ -170,9 +186,15 @@ impl RunDrive {
         now: Now,
         fx: &mut Vec<Effect>,
     ) {
-        if matches!(self.forging, Some(Forging::Opening)) {
-            let done = opened_read.map(|read| read.ok().flatten().map(opened));
-            self.forge_done(done, chat, now, fx);
+        match self.forging {
+            Some(Forging::Opening) => {
+                let done = opened_read.map(|read| read.ok().flatten().map(opened));
+                self.forge_done(done, chat, now, fx);
+            }
+            Some(
+                Forging::Pushing | Forging::Watching(_) | Forging::Logs(..) | Forging::Readying(..),
+            )
+            | None => {}
         }
     }
 

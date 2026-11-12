@@ -141,7 +141,30 @@ impl<'a, W: Copy> Joined<'a, W> {
                         | tasks::Effect::DeliverAll,
                         None,
                     ) => {}
-                    (other, _) => out.tasks.push(other),
+                    // The rest is the front end's to carry out.
+                    (
+                        other @ (tasks::Effect::Save(_)
+                        | tasks::Effect::SaveDismissed(_)
+                        | tasks::Effect::Remove(_)
+                        | tasks::Effect::DropMarks { .. }
+                        | tasks::Effect::FindPlace { .. }
+                        | tasks::Effect::Drive { .. }
+                        | tasks::Effect::WatchDrain { .. }
+                        | tasks::Effect::Pin { .. }
+                        | tasks::Effect::Cut(_)
+                        | tasks::Effect::Keep(_)
+                        | tasks::Effect::Defer(_)
+                        | tasks::Effect::Told { .. }
+                        | tasks::Effect::JudgeRemoval(_)
+                        | tasks::Effect::ReadReview { .. }
+                        | tasks::Effect::ConfirmAnswer { .. }
+                        | tasks::Effect::ConfirmRemoval { .. }
+                        | tasks::Effect::RemoveWorktree { .. }
+                        | tasks::Effect::CloseSession { .. }
+                        | tasks::Effect::Signal(_)
+                        | tasks::Effect::Refresh),
+                        _,
+                    ) => out.tasks.push(other),
                 }
                 continue;
             }
@@ -184,7 +207,20 @@ impl<'a, W: Copy> Joined<'a, W> {
                         issue.unsent.drain(..landed.min(issue.unsent.len()));
                     }));
                 }
-                other => out.unattended.push(other),
+                // The rest is the front end's to carry out.
+                other @ (Effect::Arm(_)
+                | Effect::Check { .. }
+                | Effect::Look(_)
+                | Effect::Claim { .. }
+                | Effect::Take { .. }
+                | Effect::ClaimPicked { .. }
+                | Effect::Tell { .. }
+                | Effect::Send(_)
+                | Effect::Teardown { .. }
+                | Effect::NoteTakenUp { .. }
+                | Effect::Tick
+                | Effect::Signal(_)
+                | Effect::Refresh) => out.unattended.push(other),
             }
         }
         out

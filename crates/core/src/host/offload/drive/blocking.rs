@@ -480,7 +480,8 @@ fn bring_back(
             &coming,
         )
         .map_err(|why| (why, None))?,
-        (back, _) => back,
+        (back @ Back::Stopped(_), None) => back,
+        (back @ (Back::Raced(..) | Back::Came(_)), _) => back,
     };
     let state = match came_to(back, sent, now()) {
         Settled::Keep(state) => state,

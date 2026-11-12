@@ -22,8 +22,11 @@ impl WorkspaceDrive {
     ) -> (Result<u64, Refusal>, Vec<Effect>) {
         let (added, fx) = self.add_session(spec, uid, home);
         if let Ok(uid) = added {
-            if let StartsOn::Watch(id) = &starts {
-                self.watches.insert(uid, id.clone());
+            match &starts {
+                StartsOn::Watch(id) => {
+                    self.watches.insert(uid, id.clone());
+                }
+                StartsOn::Fresh | StartsOn::Resume(_) | StartsOn::Fork => {}
             }
             self.starts.insert(uid, starts);
         }

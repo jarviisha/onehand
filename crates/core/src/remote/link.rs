@@ -131,8 +131,19 @@ pub fn press(session: &mut SessionDrive, press: Press) -> (String, Vec<Effect>) 
     let said = |words: &str| (words.to_string(), Vec::new());
     match press {
         Press::Permission { option, .. } => {
-            let Some(ChatItem::Permission(perm)) = session.items.get(item) else {
-                return said(SETTLED);
+            let perm = match session.items.get(item) {
+                Some(ChatItem::Permission(perm)) => perm,
+                Some(
+                    ChatItem::User(_)
+                    | ChatItem::Agent(_)
+                    | ChatItem::Thought(_)
+                    | ChatItem::Tool(_)
+                    | ChatItem::Plan(_)
+                    | ChatItem::Ask(_)
+                    | ChatItem::Subagent(_)
+                    | ChatItem::Notice { .. },
+                )
+                | None => return said(SETTLED),
             };
             if perm.resolved.is_some() {
                 return said(SETTLED);
