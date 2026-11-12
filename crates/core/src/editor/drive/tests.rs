@@ -17,19 +17,67 @@ fn opened(mtime: Option<SystemTime>) -> (EditorDrive, u64) {
     drive.set_root(&root(), &Disk::Local);
     let (took, effects) = drive.open(&root(), &file());
     assert!(took);
-    assert!(matches!(effects.as_slice(), [Effect::Read { .. }]));
+    assert_eq!(names(&effects), ["Read"]);
     let effects = drive.handle(Input::Read {
         root: root(),
         path: file(),
         read: Ok(("theirs".into(), mtime)),
         uid: 7,
     });
-    let [Effect::Buffer { uid, text, .. }] = effects.as_slice() else {
-        panic!("no buffer built");
+    let uid = match only(&effects) {
+        Effect::Buffer { uid, text, .. } => {
+            assert_eq!(text, "theirs");
+            *uid
+        }
+        e @ (Effect::Read { .. }
+        | Effect::Write { .. }
+        | Effect::Forget { .. }
+        | Effect::Signal(_)) => panic!("no buffer built: {}", name(e)),
     };
-    assert_eq!(text, "theirs");
-    assert_eq!(*uid, 7, "the tab takes the id it was handed");
-    (drive, *uid)
+    assert_eq!(uid, 7, "the tab takes the id it was handed");
+    (drive, uid)
+}
+
+fn name(e: &Effect) -> &'static str {
+    match e {
+        Effect::Read { .. } => "Read",
+        Effect::Buffer { .. } => "Buffer",
+        Effect::Write { .. } => "Write",
+        Effect::Forget { .. } => "Forget",
+        Effect::Signal(_) => "Signal",
+    }
+}
+
+fn names(effects: &[Effect]) -> Vec<&'static str> {
+    effects.iter().map(name).collect()
+}
+
+/// The one effect of `effects`, or a panic naming them all.
+fn only(effects: &[Effect]) -> &Effect {
+    assert_eq!(effects.len(), 1, "not one effect: {:?}", names(effects));
+    &effects[0]
+}
+
+/// The signal `effects` hold as their one effect.
+fn signal(effects: &[Effect]) -> &Signal {
+    match only(effects) {
+        Effect::Signal(signal) => signal,
+        e @ (Effect::Read { .. }
+        | Effect::Buffer { .. }
+        | Effect::Write { .. }
+        | Effect::Forget { .. }) => panic!("not a signal: {}", name(e)),
+    }
+}
+
+/// The uid `effects` forget as their one effect.
+fn forgot(effects: &[Effect]) -> u64 {
+    match only(effects) {
+        Effect::Forget { uid } => *uid,
+        e @ (Effect::Read { .. }
+        | Effect::Buffer { .. }
+        | Effect::Write { .. }
+        | Effect::Signal(_)) => panic!("not a forget: {}", name(e)),
+    }
 }
 
 fn saved(mtime: Option<SystemTime>) -> SaveOutcome {
@@ -40,10 +88,13 @@ fn saved(mtime: Option<SystemTime>) -> SaveOutcome {
 }
 
 fn write_mtime(effects: &[Effect]) -> Option<SystemTime> {
-    let [Effect::Write { mtime, .. }] = effects else {
-        panic!("not one write");
-    };
-    *mtime
+    match only(effects) {
+        Effect::Write { mtime, .. } => *mtime,
+        e @ (Effect::Read { .. }
+        | Effect::Buffer { .. }
+        | Effect::Forget { .. }
+        | Effect::Signal(_)) => panic!("not one write: {}", name(e)),
+    }
 }
 
 #[test]
@@ -74,10 +125,13 @@ fn a_read_that_fails_is_said_once_and_opens_nothing() {
         read: Err("too large".into()),
         uid: 7,
     });
-    assert!(matches!(
-        effects.as_slice(),
-        [Effect::Signal(Signal::OpenFailed { why, .. })] if why == "too large"
-    ));
+    assert_eq!(
+        signal(&effects),
+        &Signal::OpenFailed {
+            path: file(),
+            why: "too large".into()
+        }
+    );
     assert_eq!(drive.tabs(&root()).map(|t| t.files().len()), None);
 }
 
@@ -162,10 +216,12 @@ fn a_file_gone_from_disk_stands_as_gone() {
         outcome: SaveOutcome::Conflict { disk_mtime: None },
         still: false,
     });
-    assert!(matches!(
+    assert_eq!(
         drive.standing(&root()),
-        Some(Standing::Gone { .. })
-    ));
+        Some(&Standing::Gone {
+            label: "a.rs".into()
+        })
+    );
 }
 
 #[test]
@@ -187,10 +243,13 @@ fn a_failed_write_is_said_once_and_leaves_nothing_standing() {
         outcome: SaveOutcome::Failed("disk full".into()),
         still: false,
     });
-    assert!(matches!(
-        effects.as_slice(),
-        [Effect::Signal(Signal::SaveFailed { label, why })] if label == "a.rs" && why == "disk full"
-    ));
+    assert_eq!(
+        signal(&effects),
+        &Signal::SaveFailed {
+            label: "a.rs".into(),
+            why: "disk full".into()
+        }
+    );
     assert_eq!(drive.standing(&root()), None);
 }
 
@@ -198,30 +257,38 @@ fn a_failed_write_is_said_once_and_leaves_nothing_standing() {
 fn closing_a_tab_with_edits_asks_and_discarding_drops_its_buffer() {
     let (mut drive, uid) = opened(None);
     drive.typed(&root(), uid);
-    assert!(matches!(
-        drive.close_tab(&root(), 0),
-        Closing::Asks { unsaved: 1, label: Some(ref l), .. } if l == "a.rs"
-    ));
-    assert!(matches!(
-        drive.close_all(&root()),
-        Closing::Asks {
-            close: Close::All(_),
-            unsaved: 1,
-            label: None
+    match drive.close_tab(&root(), 0) {
+        Closing::Asks { unsaved, label, .. } => {
+            assert_eq!(unsaved, 1);
+            assert_eq!(label.as_deref(), Some("a.rs"));
         }
-    ));
+        Closing::Closed(_) => panic!("closed a tab with edits"),
+    }
+    match drive.close_all(&root()) {
+        Closing::Asks {
+            close,
+            unsaved,
+            label,
+        } => {
+            assert_eq!(close, Close::All(root()));
+            assert_eq!(unsaved, 1);
+            assert_eq!(label, None);
+        }
+        Closing::Closed(_) => panic!("closed tabs with edits"),
+    }
     let effects = drive.discard(&Close::Tab(root(), uid));
-    assert!(matches!(effects.as_slice(), [Effect::Forget { uid: u }] if *u == uid));
+    assert_eq!(forgot(&effects), uid);
     assert_eq!(drive.tabs(&root()).map(|t| t.files().len()), Some(0));
 }
 
 #[test]
 fn closing_a_clean_tab_closes_it_at_once() {
     let (mut drive, uid) = opened(None);
-    let Closing::Closed(effects) = drive.close_tab(&root(), 0) else {
-        panic!("asked about a clean tab");
+    let effects = match drive.close_tab(&root(), 0) {
+        Closing::Closed(effects) => effects,
+        Closing::Asks { .. } => panic!("asked about a clean tab"),
     };
-    assert!(matches!(effects.as_slice(), [Effect::Forget { uid: u }] if *u == uid));
+    assert_eq!(forgot(&effects), uid);
 }
 
 #[test]
@@ -229,7 +296,7 @@ fn a_project_forgotten_takes_its_buffers_and_a_late_read_opens_nothing() {
     let (mut drive, uid) = opened(None);
     let _ = drive.open(&root(), &root().join("b.rs"));
     let effects = drive.forget_root(&root());
-    assert!(matches!(effects.as_slice(), [Effect::Forget { uid: u }] if *u == uid));
+    assert_eq!(forgot(&effects), uid);
     let late = drive.handle(Input::Read {
         root: root(),
         path: root().join("b.rs"),
@@ -251,10 +318,10 @@ fn a_write_that_fails_after_its_tab_closed_is_still_said() {
         outcome: SaveOutcome::Failed("disk full".into()),
         still: false,
     });
-    assert!(matches!(
-        effects.as_slice(),
-        [Effect::Signal(Signal::SaveFailed { label, .. })] if label == "a.rs"
-    ));
+    match signal(&effects) {
+        Signal::SaveFailed { label, .. } => assert_eq!(label, "a.rs"),
+        s @ Signal::OpenFailed { .. } => panic!("{s:?}"),
+    }
 }
 
 #[test]

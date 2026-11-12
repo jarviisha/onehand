@@ -42,7 +42,53 @@ fn requests(fx: Vec<Effect>) -> Vec<AcpRequest> {
     fx.into_iter()
         .filter_map(|effect| match effect {
             Effect::Request(request) => Some(request),
-            _ => None,
+            Effect::Signal(_)
+            | Effect::Changed
+            | Effect::OfferChanged
+            | Effect::Save(_)
+            | Effect::Arm { .. }
+            | Effect::Disarm
+            | Effect::SendCode { .. }
+            | Effect::PromptAgain
+            | Effect::SaveTitle { .. }
+            | Effect::Look(_)
+            | Effect::Tell { .. } => None,
+        })
+        .collect()
+}
+
+/// The prompts the effects sent, in order.
+fn prompts(fx: Vec<Effect>) -> Vec<String> {
+    requests(fx)
+        .into_iter()
+        .filter_map(|request| match request {
+            AcpRequest::Prompt { text, .. } => Some(text),
+            AcpRequest::Cancel
+            | AcpRequest::PermissionResponse { .. }
+            | AcpRequest::ElicitationResponse { .. }
+            | AcpRequest::SetMode(_)
+            | AcpRequest::SetConfigOption { .. }
+            | AcpRequest::StopBackground { .. } => None,
+        })
+        .collect()
+}
+
+/// How the effects answered questions, by name, in order.
+fn outcomes(fx: Vec<Effect>) -> Vec<&'static str> {
+    requests(fx)
+        .into_iter()
+        .filter_map(|request| match request {
+            AcpRequest::ElicitationResponse { outcome, .. } => Some(match outcome {
+                ElicitOutcome::Accept(_) => "Accept",
+                ElicitOutcome::Decline => "Decline",
+                ElicitOutcome::Cancel => "Cancel",
+            }),
+            AcpRequest::Prompt { .. }
+            | AcpRequest::Cancel
+            | AcpRequest::PermissionResponse { .. }
+            | AcpRequest::SetMode(_)
+            | AcpRequest::SetConfigOption { .. }
+            | AcpRequest::StopBackground { .. } => None,
         })
         .collect()
 }
@@ -100,7 +146,12 @@ fn question(drive: &mut SessionDrive) -> usize {
 fn permission_answered(fx: Vec<Effect>) -> Option<String> {
     requests(fx).into_iter().find_map(|request| match request {
         AcpRequest::PermissionResponse { option_id, .. } => option_id,
-        _ => None,
+        AcpRequest::Prompt { .. }
+        | AcpRequest::Cancel
+        | AcpRequest::ElicitationResponse { .. }
+        | AcpRequest::SetMode(_)
+        | AcpRequest::SetConfigOption { .. }
+        | AcpRequest::StopBackground { .. } => None,
     })
 }
 
@@ -177,14 +228,8 @@ fn a_question_press_picks_and_sends() {
         },
     );
     assert_eq!(said, "B.");
-    let outcome = requests(fx).into_iter().find_map(|request| match request {
-        AcpRequest::ElicitationResponse { outcome, .. } => Some(outcome),
-        _ => None,
-    });
-    assert!(
-        matches!(outcome, Some(ElicitOutcome::Accept(_))),
-        "{outcome:?}"
-    );
+    let outcomes = outcomes(fx);
+    assert_eq!(outcomes.first(), Some(&"Accept"), "{outcomes:?}");
     let (said, _) = press(
         &mut drive,
         Press::Question {
@@ -203,13 +248,7 @@ fn a_skip_declines_the_question_once() {
     let item = question(&mut drive);
     let (said, fx) = super::press(&mut drive, Press::Skip { uid: 1, item });
     assert_eq!(said, "Skipped — the agent carries on without an answer.");
-    assert!(requests(fx).iter().any(|request| matches!(
-        request,
-        AcpRequest::ElicitationResponse {
-            outcome: ElicitOutcome::Decline,
-            ..
-        }
-    )));
+    assert!(outcomes(fx).contains(&"Decline"));
     let (said, _) = super::press(&mut drive, Press::Skip { uid: 1, item });
     assert_eq!(said, SETTLED);
 }
@@ -256,13 +295,7 @@ fn a_remote_stop_takes_back_the_queued_prompt_before_it_cancels() {
             stop_reason: "cancelled".into(),
         },
     ));
-    let prompts: Vec<_> = requests(fx)
-        .into_iter()
-        .filter_map(|request| match request {
-            AcpRequest::Prompt { text, .. } => Some(text),
-            _ => None,
-        })
-        .collect();
+    let prompts = prompts(fx);
     assert_eq!(prompts, ["first"], "nothing went after the stop");
 }
 
@@ -284,13 +317,7 @@ fn a_plain_stop_lets_the_queued_prompt_go() {
             stop_reason: "cancelled".into(),
         },
     ));
-    let prompts: Vec<_> = requests(fx)
-        .into_iter()
-        .filter_map(|request| match request {
-            AcpRequest::Prompt { text, .. } => Some(text),
-            _ => None,
-        })
-        .collect();
+    let prompts = prompts(fx);
     assert_eq!(prompts, ["first", "second"]);
 }
 
@@ -302,10 +329,10 @@ fn a_full_queue_refuses_and_an_idle_stop_stops_nothing() {
     assert_eq!(stop(&mut drive).0, Stopped::Idle);
     assert_eq!(prompt(&mut drive, "first", now()).0, Handled::Sent);
     assert_eq!(prompt(&mut drive, "second", now()).0, Handled::Queued);
-    assert!(matches!(
-        prompt(&mut drive, "third", now()).0,
-        Handled::Refused(why) if why.starts_with("a prompt is already waiting")
-    ));
+    match prompt(&mut drive, "third", now()).0 {
+        Handled::Refused(why) => assert!(why.starts_with("a prompt is already waiting"), "{why}"),
+        other @ (Handled::Sent | Handled::Queued) => panic!("{other:?}"),
+    }
     assert_eq!(
         drive.queued.as_ref().map(|q| q.text.as_str()),
         Some("second")

@@ -26,7 +26,33 @@ fn sent(fx: &[Effect]) -> Vec<String> {
     fx.iter()
         .filter_map(|effect| match effect {
             Effect::Send(out) => Some(out.text.clone()),
-            _ => None,
+            Effect::Ack { .. }
+            | Effect::ShutDown
+            | Effect::Away(_)
+            | Effect::Prompt { .. }
+            | Effect::Stop { .. }
+            | Effect::Options { .. }
+            | Effect::Press { .. }
+            | Effect::Scan { .. }
+            | Effect::Open { .. } => None,
+        })
+        .collect()
+}
+
+/// Each effect by its name, with the fields the tests read.
+fn shown(fx: &[Effect]) -> Vec<String> {
+    fx.iter()
+        .map(|effect| match effect {
+            Effect::Send(_) => "Send".into(),
+            Effect::Ack { text, .. } => format!("Ack {text}"),
+            Effect::ShutDown => "ShutDown".into(),
+            Effect::Away(on) => format!("Away {on}"),
+            Effect::Prompt { uid, text, .. } => format!("Prompt {uid} {text}"),
+            Effect::Stop { uid, .. } => format!("Stop {uid}"),
+            Effect::Options { uid, .. } => format!("Options {uid}"),
+            Effect::Press { .. } => "Press".into(),
+            Effect::Scan { .. } => "Scan".into(),
+            Effect::Open { pick, .. } => format!("Open {}", pick.dir.display()),
         })
         .collect()
 }
@@ -71,10 +97,7 @@ fn a_prompt_goes_where_the_chat_points() {
     assert!(sent(&fx)[0].starts_with("This chat isn't pointed at a session"));
     drive.handle(line("/use 1"), &open);
     let fx = drive.handle(line("hello"), &open);
-    assert!(matches!(
-        &fx[..],
-        [Effect::Prompt { uid: 1, text, .. }] if text == "hello"
-    ));
+    assert_eq!(shown(&fx), ["Prompt 1 hello"]);
     for (handled, said) in [
         (Some(Handled::Sent), "Sent to 1."),
         (
@@ -128,9 +151,7 @@ fn a_session_not_running_here_is_out_of_reach() {
         },
         &open,
     );
-    assert!(!fx
-        .iter()
-        .any(|effect| matches!(effect, Effect::Press { .. })));
+    assert!(!shown(&fx).contains(&"Press".to_string()));
     assert_eq!(sent(&fx), ["Session 2 is gone."]);
     // Nor can a chat follow it, so its news reaches nobody.
     let fx = drive.handle(line("/follow 2"), &open);
@@ -152,10 +173,7 @@ fn a_stop_says_what_it_took_back() {
     let mut drive = bridge();
     let open = [session(1, true)];
     drive.handle(line("/use 1"), &open);
-    assert!(matches!(
-        &drive.handle(line("/stop"), &open)[..],
-        [Effect::Stop { uid: 1, .. }]
-    ));
+    assert_eq!(shown(&drive.handle(line("/stop"), &open)), ["Stop 1"]);
     let fx = drive.handle(
         Input::Stopped {
             chat: "7".into(),
@@ -196,7 +214,7 @@ fn a_press_is_acknowledged_and_said() {
         },
         &open,
     );
-    assert!(matches!(&fx[..], [Effect::Press { .. }]));
+    assert_eq!(shown(&fx), ["Press"]);
     let fx = drive.handle(
         Input::Answered {
             chat: "7".into(),
@@ -206,7 +224,7 @@ fn a_press_is_acknowledged_and_said() {
         },
         &open,
     );
-    assert!(matches!(&fx[0], Effect::Ack { text, .. } if text == "Skipped."));
+    assert_eq!(shown(&fx)[0], "Ack Skipped.");
     assert_eq!(sent(&fx), ["Skipped."]);
     let fx = drive.handle(
         Input::Pressed {
@@ -228,7 +246,7 @@ fn away_goes_with_the_channel() {
     let open = [session(1, true)];
     drive.handle(line("/use 1"), &open);
     let fx = drive.handle(line("/away"), &open);
-    assert!(matches!(fx[0], Effect::Away(true)));
+    assert_eq!(shown(&fx)[0], "Away true");
     assert!(drive.away());
     let origin = Origin {
         uid: 1,
@@ -239,7 +257,7 @@ fn away_goes_with_the_channel() {
     let news = Announcement::plain(Away::TurnEnded);
     assert_eq!(drive.announce(&origin, &news).len(), 1);
     let fx = drive.handle(Input::Disconnected, &open);
-    assert!(matches!(&fx[..], [Effect::ShutDown]));
+    assert_eq!(shown(&fx), ["ShutDown"]);
     assert!(!drive.away());
     assert!(drive.announce(&origin, &news).is_empty());
 }
@@ -250,10 +268,7 @@ fn away_goes_with_the_channel() {
 fn an_archive_is_scanned_then_opened() {
     let mut drive = bridge();
     assert!(sent(&drive.handle(line("/open 1"), &[]))[0].starts_with("Ask for /archive first"));
-    assert!(matches!(
-        &drive.handle(line("/archive"), &[])[..],
-        [Effect::Scan { .. }]
-    ));
+    assert_eq!(shown(&drive.handle(line("/archive"), &[])), ["Scan"]);
     let row = ArchiveRow {
         root: "/repo".into(),
         project: "repo".into(),
@@ -272,10 +287,7 @@ fn an_archive_is_scanned_then_opened() {
         &[],
     );
     let fx = drive.handle(line("/open 1"), &[]);
-    let [Effect::Open { pick, .. }] = &fx[..] else {
-        panic!("an open");
-    };
-    assert_eq!(pick.dir, row.dir);
+    assert_eq!(shown(&fx), [format!("Open {}", row.dir.display())]);
     let open = [session(4, true)];
     let fx = drive.handle(
         Input::Opened {

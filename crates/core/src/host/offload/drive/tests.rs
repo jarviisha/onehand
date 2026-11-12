@@ -18,6 +18,39 @@ fn names(fx: &[Effect]) -> Vec<&'static str> {
         .collect()
 }
 
+/// The errand `fx` run first.
+fn errand(fx: &[Effect]) -> &Errand {
+    match &fx[0] {
+        Effect::Run(errand) => errand,
+        Effect::Arm(_) | Effect::Signal(_) => panic!("{:?}", names(fx)),
+    }
+}
+
+/// The one signal `fx` say.
+fn signal(fx: &[Effect]) -> &Signal {
+    assert_eq!(fx.len(), 1, "{:?}", names(fx));
+    match &fx[0] {
+        Effect::Signal(signal) => signal,
+        Effect::Arm(_) | Effect::Run(_) => panic!("{:?}", names(fx)),
+    }
+}
+
+/// What the one send `fx` say came to.
+fn sent(fx: &[Effect]) -> &Result<(), String> {
+    match signal(fx) {
+        Signal::Sent { result, .. } => result,
+        s @ (Signal::Offloaded { .. } | Signal::TookOver { .. }) => panic!("{s:?}"),
+    }
+}
+
+/// What the one take-over `fx` say came to.
+fn took_over(fx: &[Effect]) -> &Result<bool, String> {
+    match signal(fx) {
+        Signal::TookOver { result, .. } => result,
+        s @ (Signal::Sent { .. } | Signal::Offloaded { .. }) => panic!("{s:?}"),
+    }
+}
+
 fn state(key: Holder) -> OffloadState {
     fresh(key)
 }
@@ -194,9 +227,7 @@ fn the_send_up_is_claimed_once_and_said() {
     let (claimed, fx) = drive.claim_send(Path::new("/a"));
     assert!(claimed);
     assert_eq!(names(&fx), ["SendUp"]);
-    let Effect::Run(errand) = &fx[0] else {
-        unreachable!()
-    };
+    let errand = errand(&fx);
     assert_eq!(errand.reach, Reach::Take);
     assert!(drive[Path::new("/a")].going_up());
     assert!(!drive.claim_send(Path::new("/a")).0, "a second press waits");
@@ -208,10 +239,7 @@ fn the_send_up_is_claimed_once_and_said() {
             Some(Box::new(state(Holder::Laptop))),
         )),
     });
-    assert!(matches!(
-        &fx[..],
-        [Effect::Signal(Signal::Sent { result: Err(why), .. })] if why.contains("did not take")
-    ));
+    assert!(sent(&fx).as_ref().unwrap_err().contains("did not take"));
     let a = &drive[Path::new("/a")];
     assert_eq!(a.moving, None);
     assert!(a.failed.is_some());
@@ -221,10 +249,7 @@ fn the_send_up_is_claimed_once_and_said() {
         path: "/a".into(),
         went: Ok(state(Holder::Host)),
     });
-    assert!(matches!(
-        &fx[..],
-        [Effect::Signal(Signal::Sent { result: Ok(()), .. })]
-    ));
+    assert_eq!(sent(&fx), &Ok(()));
     let a = &drive[Path::new("/a")];
     assert!(a.locked() && a.failed.is_none());
     assert!(!drive.claim_send(Path::new("/a")).0, "the host holds it");
@@ -254,9 +279,7 @@ fn a_turn_end_checks_only_code_the_host_holds() {
     let mut drive = kept(Holder::Host);
     let fx = drive.check(Path::new("/a"));
     assert_eq!(names(&fx), ["CheckBack"]);
-    let Effect::Run(errand) = &fx[0] else {
-        unreachable!()
-    };
+    let errand = errand(&fx);
     assert_eq!(
         errand.reach,
         Reach::Live,
@@ -350,19 +373,14 @@ fn a_copy_back_that_ran_keeps_the_key_until_the_code_came() {
 fn taking_the_hosts_code_says_how_it_went() {
     let mut drive = kept(Holder::Laptop);
     let fx = drive.take_over(Path::new("/a"), "/b/backup".into());
-    assert!(matches!(
-        &fx[..],
-        [Effect::Signal(Signal::TookOver { result: Err(why), .. })] if why.contains("moving")
-    ));
+    assert!(took_over(&fx).as_ref().unwrap_err().contains("moving"));
     assert!(drive[Path::new("/a")].failed.is_some());
 
     let mut drive = OffloadDrive::default();
     drive.track("/a".into(), vps(), Some(stopped(1)));
     let fx = drive.take_over(Path::new("/a"), "/b/backup".into());
     assert_eq!(names(&fx), ["TakeOver"]);
-    let Effect::Run(errand) = &fx[0] else {
-        unreachable!()
-    };
+    let errand = errand(&fx);
     assert_eq!(errand.reach, Reach::Take);
     let took = |came, here, backed| Input::BroughtBack {
         path: "/a".into(),
@@ -371,13 +389,7 @@ fn taking_the_hosts_code_says_how_it_went() {
         brought: Brought { came, here, backed },
     };
     let fx = drive.handle(took(Ok(Some(fresh(Holder::Laptop))), false, true));
-    assert!(matches!(
-        &fx[..],
-        [Effect::Signal(Signal::TookOver {
-            result: Ok(true),
-            ..
-        })]
-    ));
+    assert_eq!(took_over(&fx), &Ok(true));
     assert!(drive[Path::new("/a")].here());
 
     // The host had handed it back already: nothing was taken.
@@ -385,25 +397,14 @@ fn taking_the_hosts_code_says_how_it_went() {
     drive.track("/a".into(), vps(), Some(stopped(1)));
     drive.take_over(Path::new("/a"), "/b/backup".into());
     let fx = drive.handle(took(Ok(Some(fresh(Holder::Laptop))), true, false));
-    assert!(matches!(
-        &fx[..],
-        [Effect::Signal(Signal::TookOver {
-            result: Ok(false),
-            ..
-        })]
-    ));
+    assert_eq!(took_over(&fx), &Ok(false));
 
     // Changed here again after the backup: said with where the backup is.
     let mut drive = OffloadDrive::default();
     drive.track("/a".into(), vps(), Some(stopped(1)));
     drive.take_over(Path::new("/a"), "/b/backup".into());
     let fx = drive.handle(took(Ok(Some(stopped(2))), false, true));
-    let Effect::Signal(Signal::TookOver {
-        result: Err(why), ..
-    }) = &fx[0]
-    else {
-        panic!("a failure")
-    };
+    let why = took_over(&fx).as_ref().expect_err("a failure");
     assert_eq!(
         why,
         "Files changed here while the code came back; they stay as this machine has them; \
@@ -428,10 +429,7 @@ fn taking_the_hosts_code_says_how_it_went() {
         drive.track("/a".into(), vps(), Some(stopped(1)));
         drive.take_over(Path::new("/a"), "/b/backup".into());
         let fx = drive.handle(took(came, false, false));
-        assert!(matches!(
-            &fx[..],
-            [Effect::Signal(Signal::TookOver { result: Err(why), .. })] if why == said
-        ));
+        assert_eq!(took_over(&fx), &Err(said.to_string()));
     }
 }
 
@@ -505,9 +503,7 @@ fn the_poll_goes_one_folder_at_a_time() {
     };
     // `/a`'s host is out of reach: `/b` and `/c`, on it too, are skipped.
     let fx = drive.handle(attached("/a", Err(HostFailure::Other("gone".into()))));
-    let Effect::Run(errand) = &fx[0] else {
-        panic!("{:?}", names(&fx))
-    };
+    let errand = errand(&fx);
     assert_eq!(errand.path(), Path::new("/d"));
     assert!(
         drive[Path::new("/a")].failed.is_none(),
@@ -624,9 +620,7 @@ fn an_offload_checks_rsync_before_it_attaches() {
     assert_eq!(names(&drive.offload("/a".into(), vps(), true)), ["Offload"]);
     let fx = drive.offload("/a".into(), vps(), false);
     assert_eq!(names(&fx), ["Check"]);
-    let Effect::Run(errand) = &fx[0] else {
-        unreachable!()
-    };
+    let errand = errand(&fx);
     assert_eq!(errand.reach, Reach::Nothing);
     let fx = drive.handle(Input::Checked {
         path: "/a".into(),

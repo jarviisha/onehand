@@ -68,7 +68,15 @@ fn a_tick_claims_an_issue_whose_run_prompts_its_session_and_reports_once_done() 
     );
     let sent = flow.sent("t1");
     assert!(
-        sent.iter().any(|r| matches!(r, AcpRequest::Prompt { .. })),
+        sent.iter().any(|r| match r {
+            AcpRequest::Prompt { .. } => true,
+            AcpRequest::Cancel
+            | AcpRequest::PermissionResponse { .. }
+            | AcpRequest::ElicitationResponse { .. }
+            | AcpRequest::SetMode(_)
+            | AcpRequest::SetConfigOption { .. }
+            | AcpRequest::StopBackground { .. } => false,
+        }),
         "{sent:?}"
     );
 
@@ -91,11 +99,7 @@ fn a_tick_claims_an_issue_whose_run_prompts_its_session_and_reports_once_done() 
     );
     assert!(flow.runs.is_empty(), "the run finished: {:?}", flow.said);
     let task = flow.tasks.task("t1").unwrap();
-    assert!(
-        matches!(task.outcome(), Some(Outcome::Done)),
-        "{:?}",
-        task.outcome()
-    );
+    assert_eq!(task.outcome(), Some(Outcome::Done));
     assert_eq!(flow.torn_down, vec![(dir.clone(), false)]);
     let said = notes(&file, 1);
     assert_eq!(said.len(), 2, "the claim's, then the report once: {said:?}");

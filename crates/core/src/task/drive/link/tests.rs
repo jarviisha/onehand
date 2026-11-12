@@ -114,7 +114,25 @@ impl Pair {
                     let fx = cancel(&mut self.session);
                     self.send(fx);
                 }
-                other => left.push(other),
+                other @ (Effect::Pin { .. }
+                | Effect::Measure { .. }
+                | Effect::ReadFacts { .. }
+                | Effect::Note(_)
+                | Effect::RunCommand { .. }
+                | Effect::CallOffCommand
+                | Effect::Push { .. }
+                | Effect::FindPullRequest
+                | Effect::OpenPullRequest
+                | Effect::ReadLogs { .. }
+                | Effect::MarkReady { .. }
+                | Effect::Arm { .. }
+                | Effect::Defer(_)
+                | Effect::Save
+                | Effect::Unattended(_)
+                | Effect::Refresh
+                | Effect::SessionChanged
+                | Effect::Signal(_)
+                | Effect::Finish { .. }) => left.push(other),
             }
         }
         left
@@ -128,13 +146,26 @@ impl Pair {
         let mut out = Vec::new();
         let (requests, fx): (Vec<_>, Vec<_>) = fx
             .into_iter()
-            .partition(|effect| matches!(effect, SessionEffect::Request(_)));
+            .partition(|effect| session_name(effect) == "Request");
         self.send(requests);
         for effect in fx {
-            if let SessionEffect::Signal(signal) = effect {
-                if let Some(input) = input_of(&signal, &self.drive, &self.session) {
-                    out.extend(self.on(input));
+            match effect {
+                SessionEffect::Signal(signal) => {
+                    if let Some(input) = input_of(&signal, &self.drive, &self.session) {
+                        out.extend(self.on(input));
+                    }
                 }
+                SessionEffect::Changed
+                | SessionEffect::OfferChanged
+                | SessionEffect::Save(_)
+                | SessionEffect::Arm { .. }
+                | SessionEffect::Disarm
+                | SessionEffect::SendCode { .. }
+                | SessionEffect::PromptAgain
+                | SessionEffect::Request(_)
+                | SessionEffect::SaveTitle { .. }
+                | SessionEffect::Look(_)
+                | SessionEffect::Tell { .. } => {}
             }
         }
         out
@@ -145,9 +176,86 @@ impl Pair {
 /// does.
 fn send(session: &SessionDrive, fx: Vec<SessionEffect>) {
     for effect in fx {
-        if let (SessionEffect::Request(request), Some(tx)) = (effect, session.agent_channel()) {
-            let _ = tx.send(request);
+        match effect {
+            SessionEffect::Request(request) => {
+                if let Some(tx) = session.agent_channel() {
+                    let _ = tx.send(request);
+                }
+            }
+            SessionEffect::Signal(_)
+            | SessionEffect::Changed
+            | SessionEffect::OfferChanged
+            | SessionEffect::Save(_)
+            | SessionEffect::Arm { .. }
+            | SessionEffect::Disarm
+            | SessionEffect::SendCode { .. }
+            | SessionEffect::PromptAgain
+            | SessionEffect::SaveTitle { .. }
+            | SessionEffect::Look(_)
+            | SessionEffect::Tell { .. } => {}
         }
+    }
+}
+
+/// A run effect's name, every variant listed so a new one must be named here.
+fn name(e: &Effect) -> &'static str {
+    match e {
+        Effect::Pin { .. } => "Pin",
+        Effect::Measure { .. } => "Measure",
+        Effect::ReadFacts { .. } => "ReadFacts",
+        Effect::Submit(_) => "Submit",
+        Effect::CancelTurn => "CancelTurn",
+        Effect::Note(_) => "Note",
+        Effect::RunCommand { .. } => "RunCommand",
+        Effect::CallOffCommand => "CallOffCommand",
+        Effect::Push { .. } => "Push",
+        Effect::FindPullRequest => "FindPullRequest",
+        Effect::OpenPullRequest => "OpenPullRequest",
+        Effect::ReadLogs { .. } => "ReadLogs",
+        Effect::MarkReady { .. } => "MarkReady",
+        Effect::Arm { .. } => "Arm",
+        Effect::Defer(_) => "Defer",
+        Effect::Save => "Save",
+        Effect::Unattended(_) => "Unattended",
+        Effect::Refresh => "Refresh",
+        Effect::SessionChanged => "SessionChanged",
+        Effect::Signal(_) => "Signal",
+        Effect::Finish { .. } => "Finish",
+    }
+}
+
+fn names(fx: &[Effect]) -> Vec<&'static str> {
+    fx.iter().map(name).collect()
+}
+
+/// A session effect's name, every variant listed.
+fn session_name(e: &SessionEffect) -> &'static str {
+    match e {
+        SessionEffect::Signal(_) => "Signal",
+        SessionEffect::Changed => "Changed",
+        SessionEffect::OfferChanged => "OfferChanged",
+        SessionEffect::Save(_) => "Save",
+        SessionEffect::Arm { .. } => "Arm",
+        SessionEffect::Disarm => "Disarm",
+        SessionEffect::SendCode { .. } => "SendCode",
+        SessionEffect::PromptAgain => "PromptAgain",
+        SessionEffect::Request(_) => "Request",
+        SessionEffect::SaveTitle { .. } => "SaveTitle",
+        SessionEffect::Look(_) => "Look",
+        SessionEffect::Tell { .. } => "Tell",
+    }
+}
+
+/// A request's name, every variant listed.
+fn request_name(r: &AcpRequest) -> &'static str {
+    match r {
+        AcpRequest::Prompt { .. } => "Prompt",
+        AcpRequest::Cancel => "Cancel",
+        AcpRequest::PermissionResponse { .. } => "PermissionResponse",
+        AcpRequest::ElicitationResponse { .. } => "ElicitationResponse",
+        AcpRequest::SetMode(_) => "SetMode",
+        AcpRequest::SetConfigOption { .. } => "SetConfigOption",
+        AcpRequest::StopBackground { .. } => "StopBackground",
     }
 }
 
@@ -168,11 +276,11 @@ fn mark(head: &str) -> Mark {
 #[test]
 fn a_runs_prompt_reaches_its_session_and_the_turns_end_moves_the_run_on() {
     let (mut pair, fx) = Pair::start();
-    assert!(fx.iter().any(|e| matches!(e, Effect::Pin { .. })), "{fx:?}");
+    assert!(names(&fx).contains(&"Pin"), "{fx:?}");
     pair.on(Input::Pinned(Ok("c0".into())));
     pair.on(Input::Measured(Ok(mark("a"))));
     assert!(
-        matches!(pair.rx.try_recv(), Ok(AcpRequest::Prompt { .. })),
+        pair.rx.try_recv().ok().as_ref().map(request_name) == Some("Prompt"),
         "the run's prompt went to the agent"
     );
     assert!(pair.session.busy);
@@ -185,7 +293,7 @@ fn a_runs_prompt_reaches_its_session_and_the_turns_end_moves_the_run_on() {
         stop_reason: "end_turn".into(),
     });
     assert!(
-        fx.iter().any(|e| matches!(e, Effect::ReadFacts { .. })),
+        names(&fx).contains(&"ReadFacts"),
         "the turn's end reached the run: {fx:?}"
     );
 }
@@ -211,7 +319,10 @@ fn a_runs_cancel_leaves_an_idle_session_alone() {
     rx.try_recv().ok();
     let fx = cancel(&mut session);
     send(&session, fx);
-    assert!(matches!(rx.try_recv(), Ok(AcpRequest::Cancel)));
+    assert_eq!(
+        rx.try_recv().ok().as_ref().map(request_name),
+        Some("Cancel")
+    );
 }
 
 #[test]
@@ -255,10 +366,16 @@ fn a_runs_mode_reaches_the_agent_through_the_sessions_drive() {
     pair.on(Input::Pinned(Ok("c0".into())));
     pair.on(Input::Measured(Ok(mark("a"))));
     let sent: Vec<AcpRequest> = std::iter::from_fn(|| pair.rx.try_recv().ok()).collect();
-    assert!(
-        matches!(sent.as_slice(), [AcpRequest::SetMode(mode)] if mode == "plan"),
-        "{sent:?}"
-    );
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    match &sent[0] {
+        AcpRequest::SetMode(mode) => assert_eq!(mode, "plan", "{sent:?}"),
+        other @ (AcpRequest::Prompt { .. }
+        | AcpRequest::Cancel
+        | AcpRequest::PermissionResponse { .. }
+        | AcpRequest::ElicitationResponse { .. }
+        | AcpRequest::SetConfigOption { .. }
+        | AcpRequest::StopBackground { .. }) => panic!("not the mode: {other:?}"),
+    }
     assert!(pair.session.pick_waiting(crate::chat::MODE_SELECTOR));
     assert!(!pair.session.busy, "the prompt waits for the mode's answer");
 }

@@ -35,9 +35,27 @@ fn token(fx: &[Effect]) -> u64 {
     fx.iter()
         .find_map(|effect| match effect {
             Effect::Read { token } => Some(*token),
-            _ => None,
+            Effect::Sync { .. }
+            | Effect::Publish { .. }
+            | Effect::Changed
+            | Effect::Write { .. }
+            | Effect::Arm { .. }
+            | Effect::Signal(_) => None,
         })
         .expect("a read")
+}
+
+/// The signal `effect` says.
+fn signal(effect: &Effect) -> &Signal {
+    match effect {
+        Effect::Signal(signal) => signal,
+        Effect::Read { .. }
+        | Effect::Sync { .. }
+        | Effect::Publish { .. }
+        | Effect::Changed
+        | Effect::Write { .. }
+        | Effect::Arm { .. } => panic!("not a signal: {:?}", names(std::slice::from_ref(effect))),
+    }
 }
 
 /// A file with one issue, kept in step with the forge when `in_step`.
@@ -204,10 +222,13 @@ fn a_write_landing_syncs_and_the_newest_refused_reads_again() {
         ["Changed", "Signal"],
         "an older refusal reads nothing"
     );
-    assert!(matches!(
-        &fx[1],
-        Effect::Signal(Signal::Wrote { of, done: Err(_) }) if *of == first
-    ));
+    match signal(&fx[1]) {
+        Signal::Wrote { of, done } => {
+            assert_eq!(*of, first);
+            assert!(done.is_err(), "{done:?}");
+        }
+        s @ Signal::PublishFailed { .. } => panic!("{s:?}"),
+    }
     let fx = drive.handle(Input::Written {
         of: second,
         done: Err("refused".into()),
@@ -254,10 +275,13 @@ fn an_issue_is_published_one_at_a_time_and_read_back() {
         done: Err("refused".into()),
     });
     assert_eq!(names(&fx), ["Changed", "Signal", "Read"]);
-    assert!(matches!(
-        &fx[1],
-        Effect::Signal(Signal::PublishFailed { number: 1, why }) if why == "refused"
-    ));
+    assert_eq!(
+        signal(&fx[1]),
+        &Signal::PublishFailed {
+            number: 1,
+            why: "refused".into()
+        }
+    );
     assert_eq!(drive.publishing, None);
 }
 

@@ -48,7 +48,10 @@ fn a_due_schedule_starts_a_task_whose_run_prompts_its_session_and_finishes() {
     flow.clock();
     assert_eq!(flow.told, vec![("t1".to_string(), Placed::Started)]);
     let task = flow.tasks.task("t1").expect("kept as a task");
-    assert!(matches!(&task.origin, Some(Origin::Schedule { id, .. }) if id == "s1"));
+    match &task.origin {
+        Some(Origin::Schedule { id, .. }) => assert_eq!(id, "s1"),
+        origin @ (Some(Origin::Tool) | None) => panic!("{origin:?}"),
+    }
     assert_eq!(task.grant.tools, ["list_issues"]);
     assert_eq!(task.setup.agent.as_deref(), Some("a"));
     assert_eq!(flow.schedules[0].last_fired, Some(NOW), "written back");
@@ -60,7 +63,15 @@ fn a_due_schedule_starts_a_task_whose_run_prompts_its_session_and_finishes() {
     // Its run's prompt reached the session's agent.
     let sent = flow.sent("t1");
     assert!(
-        sent.iter().any(|r| matches!(r, AcpRequest::Prompt { .. })),
+        sent.iter().any(|r| match r {
+            AcpRequest::Prompt { .. } => true,
+            AcpRequest::Cancel
+            | AcpRequest::PermissionResponse { .. }
+            | AcpRequest::ElicitationResponse { .. }
+            | AcpRequest::SetMode(_)
+            | AcpRequest::SetConfigOption { .. }
+            | AcpRequest::StopBackground { .. } => false,
+        }),
         "{sent:?}"
     );
 
@@ -82,11 +93,7 @@ fn a_due_schedule_starts_a_task_whose_run_prompts_its_session_and_finishes() {
     );
     assert!(flow.runs.is_empty(), "the run finished");
     let task = flow.tasks.task("t1").unwrap();
-    assert!(
-        matches!(task.outcome(), Some(Outcome::Done)),
-        "{:?}",
-        task.outcome()
-    );
+    assert_eq!(task.outcome(), Some(Outcome::Done));
     assert!(!flow.tasks.busy("t1"), "its place let go");
 
     // The next look finds it no longer working, and starts it again.

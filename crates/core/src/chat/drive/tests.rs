@@ -62,8 +62,21 @@ impl Front {
 
     fn take(&self, fx: &[Effect]) {
         for effect in fx {
-            if let Effect::Request(request) = effect {
-                self.sent.0.borrow_mut().push_back(request.clone());
+            match effect {
+                Effect::Request(request) => {
+                    self.sent.0.borrow_mut().push_back(request.clone());
+                }
+                Effect::Signal(_)
+                | Effect::Changed
+                | Effect::OfferChanged
+                | Effect::Save(_)
+                | Effect::Arm { .. }
+                | Effect::Disarm
+                | Effect::SendCode { .. }
+                | Effect::PromptAgain
+                | Effect::SaveTitle { .. }
+                | Effect::Look(_)
+                | Effect::Tell { .. } => {}
             }
         }
     }
@@ -218,35 +231,65 @@ fn permission() -> PermissionRequest {
 /// left out: they are read off what was sent.
 fn names(fx: &[Effect]) -> Vec<String> {
     fx.iter()
-        .filter(|effect| !matches!(effect, Effect::Request(_)))
-        .map(|effect| match effect {
-            Effect::Signal(signal) => format!("{signal:?}"),
-            Effect::Changed => "Changed".into(),
-            Effect::OfferChanged => "OfferChanged".into(),
-            Effect::Save(_) => "Save".into(),
-            Effect::Arm { .. } => "Arm".into(),
-            Effect::Disarm => "Disarm".into(),
-            Effect::SendCode { .. } => "SendCode".into(),
-            Effect::PromptAgain => "PromptAgain".into(),
-            Effect::SaveTitle { .. } => "SaveTitle".into(),
-            Effect::Look(what) => format!("Look({what:?})"),
-            Effect::Tell { what, .. } => format!("Tell({what:?})"),
-            Effect::Request(_) => unreachable!("left out above"),
+        .filter_map(|effect| match effect {
+            Effect::Signal(signal) => Some(format!("{signal:?}")),
+            Effect::Changed => Some("Changed".into()),
+            Effect::OfferChanged => Some("OfferChanged".into()),
+            Effect::Save(_) => Some("Save".into()),
+            Effect::Arm { .. } => Some("Arm".into()),
+            Effect::Disarm => Some("Disarm".into()),
+            Effect::SendCode { .. } => Some("SendCode".into()),
+            Effect::PromptAgain => Some("PromptAgain".into()),
+            Effect::SaveTitle { .. } => Some("SaveTitle".into()),
+            Effect::Look(what) => Some(format!("Look({what:?})")),
+            Effect::Tell { what, .. } => Some(format!("Tell({what:?})")),
+            Effect::Request(_) => None,
         })
         .collect()
+}
+
+/// A request by its name.
+fn request_name(request: &AcpRequest) -> &'static str {
+    match request {
+        AcpRequest::Prompt { .. } => "Prompt",
+        AcpRequest::Cancel => "Cancel",
+        AcpRequest::PermissionResponse { .. } => "PermissionResponse",
+        AcpRequest::ElicitationResponse { .. } => "ElicitationResponse",
+        AcpRequest::SetMode(_) => "SetMode",
+        AcpRequest::SetConfigOption { .. } => "SetConfigOption",
+        AcpRequest::StopBackground { .. } => "StopBackground",
+    }
 }
 
 fn sent(rx: &mut Rx) -> Option<String> {
     match rx.try_recv() {
         Ok(AcpRequest::Prompt { text, .. }) => Some(text),
-        _ => None,
+        Ok(
+            AcpRequest::Cancel
+            | AcpRequest::PermissionResponse { .. }
+            | AcpRequest::ElicitationResponse { .. }
+            | AcpRequest::SetMode(_)
+            | AcpRequest::SetConfigOption { .. }
+            | AcpRequest::StopBackground { .. },
+        )
+        | Err(()) => None,
     }
 }
 
 fn armed(fx: &[Effect]) -> Option<u64> {
     fx.iter().find_map(|effect| match effect {
         Effect::Arm { token, .. } => Some(*token),
-        _ => None,
+        Effect::Signal(_)
+        | Effect::Changed
+        | Effect::OfferChanged
+        | Effect::Save(_)
+        | Effect::Disarm
+        | Effect::SendCode { .. }
+        | Effect::PromptAgain
+        | Effect::Request(_)
+        | Effect::SaveTitle { .. }
+        | Effect::Look(_)
+        | Effect::Tell { .. } => None,
     })
 }
 
@@ -254,9 +297,59 @@ fn take_save(fx: Vec<Effect>) -> Box<PendingWrite> {
     fx.into_iter()
         .find_map(|effect| match effect {
             Effect::Save(write) => Some(write),
-            _ => None,
+            Effect::Signal(_)
+            | Effect::Changed
+            | Effect::OfferChanged
+            | Effect::Arm { .. }
+            | Effect::Disarm
+            | Effect::SendCode { .. }
+            | Effect::PromptAgain
+            | Effect::Request(_)
+            | Effect::SaveTitle { .. }
+            | Effect::Look(_)
+            | Effect::Tell { .. } => None,
         })
         .expect("a save")
+}
+
+/// The token of the code sent up last in `fx`.
+fn code_token(fx: &[Effect]) -> u64 {
+    match fx.last() {
+        Some(Effect::SendCode { token }) => *token,
+        Some(
+            Effect::Signal(_)
+            | Effect::Changed
+            | Effect::OfferChanged
+            | Effect::Save(_)
+            | Effect::Arm { .. }
+            | Effect::Disarm
+            | Effect::PromptAgain
+            | Effect::Request(_)
+            | Effect::SaveTitle { .. }
+            | Effect::Look(_)
+            | Effect::Tell { .. },
+        )
+        | None => panic!("the code is sent last: {:?}", names(fx)),
+    }
+}
+
+/// The text of the notice `item` is.
+fn notice(item: Option<&crate::chat::ChatItem>) -> &str {
+    use crate::chat::ChatItem;
+    match item {
+        Some(ChatItem::Notice { text, .. }) => text,
+        Some(
+            ChatItem::User(_)
+            | ChatItem::Agent(_)
+            | ChatItem::Thought(_)
+            | ChatItem::Tool(_)
+            | ChatItem::Plan(_)
+            | ChatItem::Permission(_)
+            | ChatItem::Ask(_)
+            | ChatItem::Subagent(_),
+        )
+        | None => panic!("not a notice"),
+    }
 }
 
 // Intake, by origin.
@@ -397,12 +490,10 @@ fn a_persons_prompt_sends_the_code_first_and_goes_again_once_it_is_up() {
     assert_eq!(intake, Intake::CodeFirst);
     assert_eq!(names(&fx), ["Appended", "Changed", "SendCode"]);
     assert!(sent(&mut rx).is_none(), "nothing goes before the code");
-    let Some(Effect::SendCode { token }) = fx.last() else {
-        unreachable!()
-    };
+    let token = code_token(&fx);
 
     let fx = drive.handle(Input::CodeSent {
-        token: *token,
+        token,
         result: Ok(()),
         still: true,
     });
@@ -414,11 +505,9 @@ fn code_that_went_up_under_a_changed_prompt_sends_nothing() {
     let (mut drive, _rx) = connected();
     let line = Code::MustGo { line: "up".into() };
     let (_, fx) = drive.prompt("go", &[], Origin::Person, line);
-    let Some(Effect::SendCode { token }) = fx.last() else {
-        unreachable!()
-    };
+    let token = code_token(&fx);
     let fx = drive.handle(Input::CodeSent {
-        token: *token,
+        token,
         result: Ok(()),
         still: false,
     });
@@ -434,11 +523,9 @@ fn code_that_could_not_go_up_is_said() {
         Origin::Person,
         Code::MustGo { line: "up".into() },
     );
-    let Some(Effect::SendCode { token }) = fx.last() else {
-        unreachable!()
-    };
+    let token = code_token(&fx);
     let fx = drive.handle(Input::CodeSent {
-        token: *token,
+        token,
         result: Err("no route".into()),
         still: true,
     });
@@ -530,7 +617,12 @@ fn issue_work_holds_off_a_session_a_person_prompted_first() {
     drive.prompt("mine", &[], Origin::Person, Code::Here);
     sent(&mut rx);
     let (intake, _) = drive.prompt_when_up("the issue", Origin::Issue);
-    assert!(matches!(intake, Intake::Refused(_)));
+    match intake {
+        Intake::Refused(_) => {}
+        Intake::Sent | Intake::Queued | Intake::Held | Intake::Waiting | Intake::CodeFirst => {
+            panic!("{intake:?}")
+        }
+    }
     assert!(sent(&mut rx).is_none());
 }
 
@@ -743,7 +835,7 @@ fn stop_cancels_the_turn() {
     drive.prompt("go", &[], Origin::Person, Code::Here);
     sent(&mut rx);
     drive.stop();
-    assert!(matches!(rx.try_recv(), Ok(AcpRequest::Cancel)));
+    assert_eq!(rx.try_recv().as_ref().map(request_name), Ok("Cancel"));
     assert!(drive.cancelled);
 }
 
@@ -838,10 +930,21 @@ fn ask(drive: &mut Front, two: bool) -> usize {
     drive.items.len() - 1
 }
 
-fn answered(rx: &mut Rx) -> Option<crate::acp::ElicitOutcome> {
+/// How the first question answered among what was sent was answered, by name.
+fn answered(rx: &mut Rx) -> Option<&'static str> {
+    use crate::acp::ElicitOutcome;
     std::iter::from_fn(|| rx.try_recv().ok()).find_map(|request| match request {
-        AcpRequest::ElicitationResponse { outcome, .. } => Some(outcome),
-        _ => None,
+        AcpRequest::ElicitationResponse { outcome, .. } => Some(match outcome {
+            ElicitOutcome::Accept(_) => "Accept",
+            ElicitOutcome::Decline => "Decline",
+            ElicitOutcome::Cancel => "Cancel",
+        }),
+        AcpRequest::Prompt { .. }
+        | AcpRequest::Cancel
+        | AcpRequest::PermissionResponse { .. }
+        | AcpRequest::SetMode(_)
+        | AcpRequest::SetConfigOption { .. }
+        | AcpRequest::StopBackground { .. } => None,
     })
 }
 
@@ -850,10 +953,7 @@ fn a_pick_answers_a_one_question_form_and_only_that() {
     let (mut drive, mut rx) = connected();
     let one = ask(&mut drive, false);
     assert!(drive.ask_pick(one, 0, 1).0, "nothing left to decide");
-    assert!(matches!(
-        answered(&mut rx),
-        Some(crate::acp::ElicitOutcome::Accept(_))
-    ));
+    assert_eq!(answered(&mut rx), Some("Accept"));
 
     let (mut drive, mut rx) = connected();
     let two = ask(&mut drive, true);
@@ -872,21 +972,16 @@ fn skipping_walks_on_and_the_last_skip_sends_what_the_rest_hold() {
     assert_eq!(drive.ask_skip(two, 0).0, Some(1), "the next question shows");
     // The pick above was dropped with the skip, so nothing is left: declined.
     assert_eq!(drive.ask_skip(two, 1).0, None);
-    assert!(matches!(
-        answered(&mut rx),
-        Some(crate::acp::ElicitOutcome::Decline)
-    ));
+    assert_eq!(answered(&mut rx), Some("Decline"));
 
     let (mut drive, mut rx) = connected();
     let two = ask(&mut drive, true);
     drive.ask_pick(two, 0, 0);
     assert_eq!(drive.ask_advance(two, 0).0, Some(1));
     assert_eq!(drive.ask_skip(two, 1).0, None);
-    assert!(
-        matches!(
-            answered(&mut rx),
-            Some(crate::acp::ElicitOutcome::Accept(_))
-        ),
+    assert_eq!(
+        answered(&mut rx),
+        Some("Accept"),
         "the answer above the skipped question is sent"
     );
 }
@@ -898,10 +993,7 @@ fn moving_on_from_the_last_question_sends_the_form() {
     drive.ask_pick(two, 0, 1);
     drive.ask_advance(two, 0);
     assert_eq!(drive.ask_advance(two, 1).0, None);
-    assert!(matches!(
-        answered(&mut rx),
-        Some(crate::acp::ElicitOutcome::Accept(_))
-    ));
+    assert_eq!(answered(&mut rx), Some("Accept"));
 }
 
 #[test]
@@ -913,10 +1005,7 @@ fn a_form_is_sent_only_once_it_holds_an_answer() {
     drive.ask_type(two, 0, "mine".into());
     assert!(drive.ask_at(two).is_some_and(|a| a.custom[0] == "mine"));
     drive.ask_submit(two);
-    assert!(matches!(
-        answered(&mut rx),
-        Some(crate::acp::ElicitOutcome::Accept(_))
-    ));
+    assert_eq!(answered(&mut rx), Some("Accept"));
 }
 
 #[test]
@@ -924,10 +1013,7 @@ fn a_declined_form_sends_no_answer() {
     let (mut drive, mut rx) = connected();
     let one = ask(&mut drive, false);
     drive.ask_decline(one);
-    assert!(matches!(
-        answered(&mut rx),
-        Some(crate::acp::ElicitOutcome::Decline)
-    ));
+    assert_eq!(answered(&mut rx), Some("Decline"));
     assert!(drive.ask_at(one).is_none(), "and the card is settled");
 }
 
@@ -945,7 +1031,17 @@ fn written() -> (Front, Rx) {
 fn title_write(fx: &[Effect]) -> Option<(u64, Option<String>)> {
     fx.iter().find_map(|effect| match effect {
         Effect::SaveTitle { change, title, .. } => Some((*change, title.clone())),
-        _ => None,
+        Effect::Signal(_)
+        | Effect::Changed
+        | Effect::OfferChanged
+        | Effect::Save(_)
+        | Effect::Arm { .. }
+        | Effect::Disarm
+        | Effect::SendCode { .. }
+        | Effect::PromptAgain
+        | Effect::Request(_)
+        | Effect::Look(_)
+        | Effect::Tell { .. } => None,
     })
 }
 
@@ -1036,14 +1132,14 @@ fn a_lost_host_drops_the_held_prompt_and_changes_the_batch() {
     };
     let (fx, next) = drive.watched(AcpEvent::Disconnected("lost the connection".into()), &lost);
     assert_eq!(names(&fx), ["Appended"]);
-    assert!(matches!(next, Next::Stop), "the batch ends there");
+    assert_eq!(next, Next::Stop, "the batch ends there");
     assert!(drive.held.is_none(), "dropped, as on any lost link");
     assert_eq!(drive.host_away(), Some(&HostName("box".into())));
-    assert!(matches!(
-        drive.items.last(),
-        Some(crate::chat::ChatItem::Notice { text, .. })
-            if text.starts_with("Not connected to box. This is the copy kept on this machine, up to")
-    ));
+    let text = notice(drive.items.last());
+    assert!(
+        text.starts_with("Not connected to box. This is the copy kept on this machine, up to"),
+        "{text}"
+    );
     assert_eq!(names(&drive.end_batch()), ["Changed"]);
     // The same session coming up later sends nothing it was not asked again.
     feed(
@@ -1069,12 +1165,11 @@ fn what_was_kept_is_read_back_without_a_word_of_turns() {
         Some((HostName("box".into()), None)),
     );
     assert_eq!(names(&fx), ["Changed", "Appended"], "no TurnEnded, no Save");
-    assert!(matches!(
-        drive.items.last(),
-        Some(crate::chat::ChatItem::Notice { text, .. })
-            if text == "Not connected to box. This is the copy kept on this machine; \
-                        it carries on once the host is back"
-    ));
+    assert_eq!(
+        notice(drive.items.last()),
+        "Not connected to box. This is the copy kept on this machine; \
+         it carries on once the host is back"
+    );
     assert_eq!(drive.host_away(), Some(&HostName("box".into())));
     let (was, _) = drive.drive.forget_host_away();
     assert!(was);
@@ -1431,8 +1526,20 @@ fn a_session_stamps_and_times_by_the_time_it_is_told() {
     front
         .drive
         .prompt("go", &[], Origin::Person, Code::Here, at(0));
-    let Some(crate::chat::ChatItem::User(prompt)) = front.items.last() else {
-        panic!("no prompt");
+    use crate::chat::ChatItem;
+    let prompt = match front.items.last() {
+        Some(ChatItem::User(prompt)) => prompt,
+        Some(
+            ChatItem::Agent(_)
+            | ChatItem::Thought(_)
+            | ChatItem::Tool(_)
+            | ChatItem::Plan(_)
+            | ChatItem::Permission(_)
+            | ChatItem::Ask(_)
+            | ChatItem::Subagent(_)
+            | ChatItem::Notice { .. },
+        )
+        | None => panic!("no prompt"),
     };
     assert_eq!(prompt.sent_at, Some(1_000));
 
@@ -1457,8 +1564,19 @@ fn a_session_stamps_and_times_by_the_time_it_is_told() {
         }),
         at(6),
     );
-    let Some(crate::chat::ChatItem::Tool(step)) = front.items.last() else {
-        panic!("no step");
+    let step = match front.items.last() {
+        Some(ChatItem::Tool(step)) => step,
+        Some(
+            ChatItem::User(_)
+            | ChatItem::Agent(_)
+            | ChatItem::Thought(_)
+            | ChatItem::Plan(_)
+            | ChatItem::Permission(_)
+            | ChatItem::Ask(_)
+            | ChatItem::Subagent(_)
+            | ChatItem::Notice { .. },
+        )
+        | None => panic!("no step"),
     };
     assert_eq!(step.elapsed_secs, Some(5), "from 1 to 6, as told");
     assert_eq!(step.settled_at, Some(1_006));
@@ -1474,7 +1592,17 @@ fn tells(fx: &[Effect]) -> Vec<(Away, bool, bool)> {
                 desktop,
                 chat,
             } => Some((*what, *desktop, *chat)),
-            _ => None,
+            Effect::Signal(_)
+            | Effect::Changed
+            | Effect::OfferChanged
+            | Effect::Save(_)
+            | Effect::Arm { .. }
+            | Effect::Disarm
+            | Effect::SendCode { .. }
+            | Effect::PromptAgain
+            | Effect::Request(_)
+            | Effect::SaveTitle { .. }
+            | Effect::Look(_) => None,
         })
         .collect()
 }

@@ -35,10 +35,14 @@ mod tests {
                     shown(&mut control, &value);
                 }
                 Effect::Write { pending, edit } => write = Some((pending, edit)),
-                _ => {}
+                Effect::Probe { .. }
+                | Effect::Look { .. }
+                | Effect::CallOff { .. }
+                | Effect::Changed
+                | Effect::Signal(_) => {}
             }
         }
-        assert!(matches!(control.standing(&Peer::Outside), Standing::On));
+        assert_eq!(standing(&control), "On");
         let (pending, edit) = write.expect("a write");
         let fx = settings.handle(Input::Written {
             pending,
@@ -46,13 +50,25 @@ mod tests {
             result: Err("read-only".into()),
         });
         for effect in fx {
-            if let Effect::Show(value) = effect {
-                shown(&mut control, &value);
+            match effect {
+                Effect::Show(value) => shown(&mut control, &value),
+                Effect::Write { .. }
+                | Effect::Probe { .. }
+                | Effect::Look { .. }
+                | Effect::CallOff { .. }
+                | Effect::Changed
+                | Effect::Signal(_) => {}
             }
         }
-        assert!(matches!(
-            control.standing(&Peer::Outside),
-            Standing::Refused(_)
-        ));
+        assert_eq!(standing(&control), "Refused");
+    }
+
+    fn standing(control: &ControlDrive) -> &'static str {
+        match control.standing(&Peer::Outside) {
+            Standing::On => "On",
+            Standing::Off => "Off",
+            Standing::Only(_) => "Only",
+            Standing::Refused(_) => "Refused",
+        }
     }
 }

@@ -17,7 +17,12 @@ fn written(drive: &mut SettingsDrive, fx: Vec<Effect>, result: Result<(), String
         .into_iter()
         .find_map(|effect| match effect {
             Effect::Write { pending, edit } => Some((pending, edit)),
-            _ => None,
+            Effect::Show(_)
+            | Effect::Probe { .. }
+            | Effect::Look { .. }
+            | Effect::CallOff { .. }
+            | Effect::Changed
+            | Effect::Signal(_) => None,
         })
         .expect("a write");
     drive.handle(Input::Written {
@@ -31,7 +36,12 @@ fn shown(fx: &[Effect]) -> Vec<Value> {
     fx.iter()
         .filter_map(|effect| match effect {
             Effect::Show(value) => Some(value.clone()),
-            _ => None,
+            Effect::Write { .. }
+            | Effect::Probe { .. }
+            | Effect::Look { .. }
+            | Effect::CallOff { .. }
+            | Effect::Changed
+            | Effect::Signal(_) => None,
         })
         .collect()
 }
@@ -40,9 +50,45 @@ fn failed(fx: &[Effect]) -> Vec<&'static str> {
     fx.iter()
         .filter_map(|effect| match effect {
             Effect::Signal(Signal::SaveFailed { doing, .. }) => Some(*doing),
-            _ => None,
+            Effect::Show(_)
+            | Effect::Write { .. }
+            | Effect::Probe { .. }
+            | Effect::Look { .. }
+            | Effect::CallOff { .. }
+            | Effect::Changed => None,
         })
         .collect()
+}
+
+fn name(effect: &Effect) -> &'static str {
+    match effect {
+        Effect::Show(_) => "Show",
+        Effect::Write { .. } => "Write",
+        Effect::Probe { .. } => "Probe",
+        Effect::Look { .. } => "Look",
+        Effect::CallOff { .. } => "CallOff",
+        Effect::Changed => "Changed",
+        Effect::Signal(_) => "Signal",
+    }
+}
+
+fn names(fx: &[Effect]) -> Vec<&'static str> {
+    fx.iter().map(name).collect()
+}
+
+/// The token of the probe `fx` ask for.
+fn probe(fx: &[Effect]) -> u64 {
+    fx.iter()
+        .find_map(|effect| match effect {
+            Effect::Probe { token, .. } => Some(*token),
+            Effect::Show(_)
+            | Effect::Write { .. }
+            | Effect::Look { .. }
+            | Effect::CallOff { .. }
+            | Effect::Changed
+            | Effect::Signal(_) => None,
+        })
+        .expect("a probe")
 }
 
 /// The same value again writes nothing.
@@ -98,11 +144,7 @@ fn a_failed_agents_write_keeps_the_list_and_says_so() {
 fn a_check_runs_once_and_lands_once() {
     let mut drive = drive();
     let fx = drive.check(spec("a"), "/repo".into());
-    let Some(Effect::Probe { token, .. }) =
-        fx.into_iter().find(|e| matches!(e, Effect::Probe { .. }))
-    else {
-        panic!("a probe");
-    };
+    let token = probe(&fx);
     assert!(drive.check(spec("a"), "/repo".into()).is_empty());
     let offer = Offer {
         modes: vec!["plan".into()],
@@ -116,16 +158,21 @@ fn a_check_runs_once_and_lands_once() {
     assert_eq!(drive.offers_seen, [(spec("a"), offer)]);
 
     let fx = drive.check(spec("a"), "/repo".into());
-    let Some(Effect::Probe { token, .. }) =
-        fx.into_iter().find(|e| matches!(e, Effect::Probe { .. }))
-    else {
-        panic!("a probe");
-    };
+    let token = probe(&fx);
     let fx = drive.handle(Input::Elapsed { token });
-    assert!(matches!(fx[0], Effect::CallOff { token: t } if t == token));
-    assert!(
-        matches!(drive.checking(&spec("a")), Some(Checking::Failed(why)) if why.contains("90s"))
-    );
+    match &fx[0] {
+        Effect::CallOff { token: t } => assert_eq!(*t, token),
+        e @ (Effect::Show(_)
+        | Effect::Write { .. }
+        | Effect::Probe { .. }
+        | Effect::Look { .. }
+        | Effect::Changed
+        | Effect::Signal(_)) => panic!("not a call-off: {}", name(e)),
+    }
+    match drive.checking(&spec("a")) {
+        Some(Checking::Failed(why)) => assert!(why.contains("90s")),
+        seen @ (Some(Checking::Running) | None) => panic!("not failed: {seen:?}"),
+    }
     assert!(drive
         .handle(Input::Probed {
             token,
@@ -204,7 +251,7 @@ fn a_test_runs_once_and_is_filed_by_its_command_line() {
     let mut settings = SettingsDrive::new(Vec::new(), Appearance::default());
     let spec = command("a", "agent-x");
     let fx = settings.test(spec.clone(), None);
-    assert!(matches!(&fx[..], [Effect::Changed, Effect::Look { .. }]));
+    assert_eq!(names(&fx), ["Changed", "Look"]);
     assert_eq!(settings.tested(&spec), Some(&Tested::Running));
     assert!(
         settings.test(spec.clone(), None).is_empty(),
@@ -214,7 +261,7 @@ fn a_test_runs_once_and_is_filed_by_its_command_line() {
         spec: spec.clone(),
         found: Some((PathBuf::from("/bin/agent-x"), None)),
     });
-    assert!(matches!(&fx[..], [Effect::Changed]));
+    assert_eq!(names(&fx), ["Changed"]);
     let renamed = command("b", "agent-x");
     assert_eq!(
         settings.tested(&renamed),

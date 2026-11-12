@@ -40,6 +40,16 @@ fn reads_pr(effects: &[Effect]) -> Option<u64> {
     })
 }
 
+fn name(effect: &Effect) -> &'static str {
+    match effect {
+        Effect::ReadPr { .. } => "ReadPr",
+        Effect::ReadPrs { .. } => "ReadPrs",
+        Effect::LookUp { .. } => "LookUp",
+        Effect::ReadLeft { .. } => "ReadLeft",
+        Effect::ReadReviewFiles { .. } => "ReadReviewFiles",
+    }
+}
+
 fn drive(page: bool, works: &[IssueWork]) -> WorkDrive {
     let mut drive = WorkDrive::new(&CONNECTORS, page);
     drive.set_works(works, None);
@@ -92,10 +102,11 @@ fn an_answer_about_another_issue_is_never_shown() {
         now: told(NOW),
     });
     assert!(drive.pr_value(Some(&works[1])).is_none());
-    assert!(matches!(
-        drive.pr_seen(Some(&works[0])),
-        super::super::PrSeen::Unread
-    ));
+    match drive.pr_seen(Some(&works[0])) {
+        super::super::PrSeen::Unread => {}
+        super::super::PrSeen::Read(_) => panic!("read"),
+        super::super::PrSeen::Failed(why) => panic!("failed: {why}"),
+    }
 }
 
 #[test]
@@ -110,13 +121,19 @@ fn the_page_reads_every_projects_prs_when_shown_and_looks_up_what_a_cap_missed()
     assert!(drive.page_drawn(&projects, told(NOW)).is_empty());
     drive.page_shown();
     let effects = drive.page_drawn(&projects, told(NOW));
-    let [Effect::ReadPrs {
-        generation,
-        branches,
-        ..
-    }] = effects.as_slice()
-    else {
+    let [effect] = effects.as_slice() else {
         panic!("not one read");
+    };
+    let (generation, branches) = match effect {
+        Effect::ReadPrs {
+            generation,
+            branches,
+            ..
+        } => (generation, branches),
+        e @ (Effect::ReadPr { .. }
+        | Effect::LookUp { .. }
+        | Effect::ReadLeft { .. }
+        | Effect::ReadReviewFiles { .. }) => panic!("not a read of the prs: {}", name(e)),
     };
     assert!(drive.prs_reading());
     let looked = drive.handle(Input::Prs {
@@ -131,9 +148,16 @@ fn the_page_reads_every_projects_prs_when_shown_and_looks_up_what_a_cap_missed()
         now: told(NOW),
     });
     assert!(!drive.prs_reading());
-    assert!(
-        matches!(looked.as_slice(), [Effect::LookUp { branch, .. }] if branch == "onehand/local-1")
-    );
+    let [effect] = looked.as_slice() else {
+        panic!("not one look-up");
+    };
+    match effect {
+        Effect::LookUp { branch, .. } => assert_eq!(branch, "onehand/local-1"),
+        e @ (Effect::ReadPr { .. }
+        | Effect::ReadPrs { .. }
+        | Effect::ReadLeft { .. }
+        | Effect::ReadReviewFiles { .. }) => panic!("not a look-up: {}", name(e)),
+    }
     assert_eq!(drive.prs_read_at(), Some(NOW));
 }
 
@@ -166,7 +190,7 @@ fn what_the_work_left_is_read_again_when_it_moves() {
     let t = checks("a");
     let mut drive = drive(true, &[work(1, &t, Working::Running)]);
     let root = Path::new(ROOT);
-    let left = |effects: &[Effect]| effects.iter().any(|e| matches!(e, Effect::ReadLeft { .. }));
+    let left = |effects: &[Effect]| effects.iter().any(|e| name(e) == "ReadLeft");
     assert!(left(&drive.show(root, Some(&key(1)), told(NOW))));
     assert!(!left(&drive.show(root, Some(&key(1)), told(NOW))));
     let moved = at(task("a", forge_flow(), Some("Forge")), 4, 950);
@@ -207,10 +231,15 @@ fn a_review_press_goes_where_it_was_read_and_reloads_where_the_run_moved() {
     assert!(drive.review().unwrap().changed());
 
     let (answered, _) = drive.revise("do it again");
-    assert!(matches!(
-        answered,
-        Answered::Sent(Press::Revise { approval, note }) if approval.at.visit == 2 && note == "do it again"
-    ));
+    match answered {
+        Answered::Sent(Press::Revise { approval, note }) => {
+            assert_eq!(approval.at.visit, 2);
+            assert_eq!(note, "do it again");
+        }
+        a @ (Answered::Sent(Press::Approve(_)) | Answered::Reloaded | Answered::Refused) => {
+            panic!("{a:?}")
+        }
+    }
     assert_eq!(drive.review().unwrap().sent(), Some(Sent::Revise));
 
     // A run no longer waiting refuses.
@@ -250,9 +279,17 @@ fn what_the_work_left_is_shown_only_for_its_own_run() {
         now: told(NOW),
     });
     let own = work(1, &t, Working::Running).work;
-    assert!(matches!(drive.left_seen(&own), LeftSeen::Read(_, NOW)));
+    match drive.left_seen(&own) {
+        LeftSeen::Read(_, at) => assert_eq!(at, NOW),
+        LeftSeen::Unread => panic!("unread"),
+        LeftSeen::Failed(why) => panic!("failed: {why}"),
+    }
     let other = work(2, &checks("b"), Working::Running).work;
-    assert!(matches!(drive.left_seen(&other), LeftSeen::Unread));
+    match drive.left_seen(&other) {
+        LeftSeen::Unread => {}
+        LeftSeen::Read(..) => panic!("read another run's"),
+        LeftSeen::Failed(why) => panic!("failed: {why}"),
+    }
 }
 
 /// The time `secs` past the epoch, as the drive is told it.

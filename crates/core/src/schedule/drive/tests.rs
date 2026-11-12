@@ -73,15 +73,38 @@ fn started(clock: &mut ScheduleDrive<Win>, task: &str) -> Vec<Effect<Win>> {
 fn start_in(fx: &[Effect<Win>]) -> Option<(&Starting, Win)> {
     fx.iter().find_map(|e| match e {
         Effect::Start { starting, window } => Some((&**starting, *window)),
-        _ => None,
+        Effect::Arm(_)
+        | Effect::Read
+        | Effect::Write { .. }
+        | Effect::Switch { .. }
+        | Effect::Signal(_)
+        | Effect::Refresh => None,
     })
 }
 
 fn written(fx: &[Effect<Win>]) -> Option<&[Schedule]> {
     fx.iter().find_map(|e| match e {
         Effect::Write { looked } => Some(looked.as_slice()),
-        _ => None,
+        Effect::Arm(_)
+        | Effect::Read
+        | Effect::Start { .. }
+        | Effect::Switch { .. }
+        | Effect::Signal(_)
+        | Effect::Refresh => None,
     })
+}
+
+/// The signal `e` says, if it says one.
+fn signal(e: &Effect<Win>) -> Option<&Signal<Win>> {
+    match e {
+        Effect::Signal(signal) => Some(signal),
+        Effect::Arm(_)
+        | Effect::Read
+        | Effect::Start { .. }
+        | Effect::Write { .. }
+        | Effect::Switch { .. }
+        | Effect::Refresh => None,
+    }
 }
 
 /// A look while one is under way waits for it, and the clock is armed again
@@ -226,7 +249,11 @@ fn a_start_that_cannot_go_is_said_once_per_reason() {
     };
     let told = |fx: &[Effect<Win>]| {
         fx.iter()
-            .filter(|e| matches!(e, Effect::Signal(Signal::NotStarted { .. })))
+            .filter_map(signal)
+            .filter(|s| match s {
+                Signal::NotStarted { .. } => true,
+                Signal::SwitchFailed { .. } | Signal::Log(_) => false,
+            })
             .count()
     };
     let fx = look(&mut clock, vec![s.clone()], &[("a", 1)], &[]);
@@ -266,7 +293,15 @@ fn a_switch_being_written_stands_over_a_look() {
     off.on = false;
     look(&mut clock, vec![off.clone()], &[], &[]);
     let fx = clock.set_on("a", true, at_secs(NOW), 9);
-    assert!(matches!(&fx[1], Effect::Switch { id, on: true, since: NOW, window: 9 } if id == "a"));
+    assert_eq!(
+        fx[1],
+        Effect::Switch {
+            id: "a".into(),
+            on: true,
+            since: NOW,
+            window: 9
+        }
+    );
     assert!(clock.listed()[0].on, "shown at once");
     // A look lands before the switch is written: it still reads off.
     look(&mut clock, vec![off.clone()], &[], &[]);
@@ -282,14 +317,12 @@ fn a_switch_being_written_stands_over_a_look() {
         at_secs(NOW),
         &Utc,
     );
-    assert!(matches!(
-        &fx[0],
-        Effect::Signal(Signal::SwitchFailed {
-            window: 9,
-            on: true,
-            ..
-        })
-    ));
+    match signal(&fx[0]) {
+        Some(Signal::SwitchFailed { window, on, .. }) => assert_eq!((*window, *on), (9, true)),
+        said @ (Some(Signal::NotStarted { .. } | Signal::Log(_)) | None) => {
+            panic!("not a failed switch: {said:?} of {fx:?}")
+        }
+    }
     assert!(!clock.listed()[0].on, "what the file holds is put back");
 }
 
