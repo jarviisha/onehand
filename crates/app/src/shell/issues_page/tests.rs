@@ -82,6 +82,10 @@ fn a_run_check_with_no_command_says_so(cx: &mut TestAppContext) {
     cx.update(|window, cx| shell.update(cx, |shell, cx| shell.run_check(window, cx)));
     cx.run_until_parked();
     assert_eq!(notes(cx), 1);
+    assert_eq!(
+        refusals(&shell, cx),
+        ["This project has no check command to run"]
+    );
     let _ = std::fs::remove_dir_all(dir);
 }
 
