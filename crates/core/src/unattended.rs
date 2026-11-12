@@ -6,12 +6,11 @@
 //! what a run asks of the project's [`Connector`]. The workflow engine runs
 //! the steps; the app holds the rest: the tick, the session, the teardown.
 
-use crate::connector::Connector;
 use crate::issues;
 use crate::workflow::Brief;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 mod claim;

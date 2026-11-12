@@ -40,6 +40,10 @@ futures = "0.3"
 # one binary, and a `MasterPty` from one that cannot be handed to the other.
 portable-pty = "0.9"
 
+[features]
+# Core's fake connector, for the tests of the crates built on core.
+test-support = []
+
 [dev-dependencies]
 # `start_paused` for the tests that wait on the ACP handshake deadline. Ninety
 # seconds is the right timeout and the wrong test duration; paused time spends

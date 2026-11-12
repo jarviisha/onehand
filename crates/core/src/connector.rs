@@ -15,7 +15,7 @@
 //! code) is when the two halves split into capabilities of their own.
 
 use crate::issues::Snapshot;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::unattended::Issue;
 use crate::unattended::IssueRow;
 use std::path::Path;
@@ -234,30 +234,31 @@ pub fn serving(connectors: &[&'static dyn Connector], root: &Path) -> Result<usi
     })
 }
 
-/// A connector for tests.
-#[cfg(test)]
-pub(crate) mod fake {
+/// A connector for tests, this crate's and the other crates' (under the
+/// `test-support` feature): never built into the app.
+#[cfg(any(test, feature = "test-support"))]
+pub mod fake {
     use super::*;
 
     /// It serves or refuses as told, answers for its `account`, lists `limit`
     /// issues, finds the issues numbered in `labelled` under any label, has
     /// the pull requests in `pulls` by branch, fetches nothing, and fails the
     /// test if asked anything else.
-    pub(crate) struct Fake {
-        pub(crate) name: &'static str,
-        pub(crate) serves: Result<(), &'static str>,
-        pub(crate) account: Result<&'static str, &'static str>,
-        pub(crate) labelled: &'static [u64],
+    pub struct Fake {
+        pub name: &'static str,
+        pub serves: Result<(), &'static str>,
+        pub account: Result<&'static str, &'static str>,
+        pub labelled: &'static [u64],
         /// Branch, state and address of each pull request it knows of.
-        pub(crate) pulls: &'static [(&'static str, PrState, &'static str)],
+        pub pulls: &'static [(&'static str, PrState, &'static str)],
         /// Its default branch; `None` is a question it was not told to answer.
-        pub(crate) default_branch: Option<&'static str>,
+        pub default_branch: Option<&'static str>,
         /// Why its open issues cannot be listed, when they cannot.
-        pub(crate) lists: Result<(), &'static str>,
+        pub lists: Result<(), &'static str>,
     }
 
     impl Fake {
-        pub(crate) const SERVING: Fake = Fake {
+        pub const SERVING: Fake = Fake {
             name: "Forge",
             serves: Ok(()),
             account: Ok("Signed in as t"),

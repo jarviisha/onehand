@@ -1,8 +1,10 @@
 use super::report::ended;
 use super::*;
 use crate::connector::fake::Fake;
+use crate::connector::Connector;
 use crate::connector::PrState;
 use crate::workflow::{Outcome, Stop};
+use std::path::PathBuf;
 
 /// The test forge, as the tracker an issue on it lives in.
 fn forge() -> Tracker {

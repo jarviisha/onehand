@@ -21,3 +21,5 @@ chrono = "0.4"
 [dev-dependencies]
 # `TestAppContext`, to hold the shared issues file's carrier to its contract.
 gpui = { workspace = true, features = ["test-support"] }
+# Core's fake connector, to hold the views' reads of the work to their contract.
+onehand-core = { path = "../core", features = ["test-support"] }
