@@ -1,6 +1,6 @@
 use super::Shell;
 use super::confirm::Confirm;
-use crate::settings::{AgentCheck, AgentDraft, DraftShift, SettingsPage};
+use crate::settings::{AgentDraft, DraftShift, SettingsPage};
 use crate::state::Shared;
 use gpui::{App, BorrowAppContext, Context, Entity, Focusable as _, Window, WindowAppearance};
 use gpui_component::{Theme, ThemeMode};
@@ -165,18 +165,12 @@ impl Shell {
         cx.notify();
     }
 
-    /// What the last *Test* filed under `key` found, if there was one.
-    pub fn agent_check(&self, key: &str) -> Option<&AgentCheck> {
-        self.agent_checks.get(key)
-    }
-
-    /// Look for an agent's command the way starting a session would, off the UI
-    /// loop, without starting anything.
+    /// *Test* an agent's command: look for it the way starting a session
+    /// would, off the UI loop, without starting anything.
     pub fn check_agent(&mut self, idx: usize, cx: &mut Context<Self>) {
         let Some(spec) = Shared::global(cx).settings.agents.get(idx).cloned() else {
             return;
         };
-        let key = crate::settings::check_key(&spec);
         // A session starts its agent in the project's root, so a relative
         // command is looked for from there: the project on screen is the one
         // the next *New session* would start in. A project on a host gives
@@ -184,46 +178,8 @@ impl Shell {
         let root = self
             .local_root(self.window.workspace.active_root)
             .map(std::path::Path::to_path_buf);
-        self.agent_checks.insert(key.clone(), AgentCheck::Running);
-        cx.notify();
-        cx.spawn(async move |shell, cx| {
-            let found = cx
-                .background_executor()
-                .spawn(async move {
-                    let path = std::env::var_os("PATH");
-                    match spec.preset() {
-                        // A built-in agent is its binary, looked for where a
-                        // start looks for it, and asked its version.
-                        Some(preset) => onehand_core::config::find_command(
-                            preset.info().binary,
-                            path.as_deref(),
-                            None,
-                        )
-                        .map(|at| {
-                            let version = version_of(&at);
-                            (at, version)
-                        }),
-                        None => onehand_core::config::find_command(
-                            &spec.command,
-                            path.as_deref(),
-                            root.as_deref(),
-                        )
-                        .map(|at| (at, None)),
-                    }
-                })
-                .await;
-            shell
-                .update(cx, |shell, cx| {
-                    let check = match found {
-                        Some((at, version)) => AgentCheck::Found(at, version),
-                        None => AgentCheck::Missing,
-                    };
-                    shell.agent_checks.insert(key, check);
-                    cx.notify();
-                })
-                .ok();
-        })
-        .detach();
+        let fx = cx.update_global::<Shared, _>(|shared, _| shared.settings.test(spec, root));
+        crate::saves::carry_quietly(fx, cx);
     }
 
     /// Commit the form. Adds or replaces depending on `editing`.
@@ -347,17 +303,6 @@ pub(crate) fn apply_appearance(choice: Appearance, window: Option<&mut Window>, 
         highlight.style.editor_active_line_number = Some(theme.foreground);
         theme.highlight_theme = std::sync::Arc::new(highlight);
     });
-}
-
-/// The first line `<binary> --version` prints, when it prints one.
-fn version_of(binary: &std::path::Path) -> Option<String> {
-    let out = std::process::Command::new(binary)
-        .arg("--version")
-        .output()
-        .ok()?;
-    let text = String::from_utf8_lossy(&out.stdout);
-    let line = text.lines().next()?.trim();
-    (!line.is_empty()).then(|| line.to_string())
 }
 
 #[cfg(test)]

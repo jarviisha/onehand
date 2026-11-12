@@ -493,7 +493,6 @@ impl Shell {
                 let shell = cx.weak_entity();
                 cx.new(|_| crate::settings::SettingsView::new(shell))
             },
-            agent_checks: HashMap::new(),
             held_commands: Default::default(),
             menu_bar: super::frame::menu_bar(cx),
             close_guard,

@@ -115,6 +115,7 @@ pub(crate) fn carry_settings(fx: Vec<Effect>, window: &mut Window, cx: &mut App)
                     .detach();
             }
             Effect::Probe { spec, cwd, token } => probe(spec, cwd, token, cx),
+            Effect::Look { spec, root } => look(spec, root, cx),
             Effect::CallOff { token } => {
                 cx.default_global::<Checks>().0.remove(&token);
             }
@@ -158,16 +159,40 @@ fn probe(spec: onehand_core::config::AgentSpec, cwd: std::path::PathBuf, token: 
     .detach();
 }
 
-/// A check's answer, with no window at hand: what it says needs none.
+/// Look for `spec`'s command from `root`, off the UI loop, and report what
+/// was found.
+fn look(spec: onehand_core::config::AgentSpec, root: Option<std::path::PathBuf>, cx: &mut App) {
+    cx.spawn(async move |cx| {
+        let looked = spec.clone();
+        let found = cx
+            .background_executor()
+            .spawn(async move {
+                let path = std::env::var_os("PATH");
+                onehand_core::config::look_blocking(&looked, path.as_deref(), root.as_deref())
+            })
+            .await;
+        cx.update(|cx| land(Input::Looked { spec, found }, cx));
+    })
+    .detach();
+}
+
+/// A check's or a look's answer, with no window at hand: what it says needs
+/// none.
 fn land(input: Input, cx: &mut App) {
     let fx = cx.update_global::<Shared, _>(|shared, _| shared.settings.handle(input));
+    carry_quietly(fx, cx);
+}
+
+/// Carry out what a check or a look asks, where no window is at hand.
+pub(crate) fn carry_quietly(fx: Vec<Effect>, cx: &mut App) {
     for effect in fx {
         match effect {
+            Effect::Look { spec, root } => look(spec, root, cx),
             Effect::CallOff { token } => {
                 cx.default_global::<Checks>().0.remove(&token);
             }
             Effect::Changed => cx.refresh_windows(),
-            // A check's answer asks for nothing else.
+            // A check, a look and their answers ask for nothing else.
             Effect::Show(_) | Effect::Write { .. } | Effect::Probe { .. } | Effect::Signal(_) => {}
         }
     }

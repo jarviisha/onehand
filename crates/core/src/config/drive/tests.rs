@@ -169,6 +169,7 @@ fn workflows_are_shown_then_written_and_put_back_on_failure() {
         Effect::Write { pending, edit } => Some((pending, edit)),
         Effect::Show(_)
         | Effect::Probe { .. }
+        | Effect::Look { .. }
         | Effect::CallOff { .. }
         | Effect::Changed
         | Effect::Signal(_) => None,
@@ -186,4 +187,58 @@ fn workflows_are_shown_then_written_and_put_back_on_failure() {
             by_label: BTreeMap::new(),
         }]
     );
+}
+
+fn command(name: &str, command: &str) -> AgentSpec {
+    AgentSpec {
+        name: name.into(),
+        command: command.into(),
+        ..Default::default()
+    }
+}
+
+/// A *Test* runs once per command line at a time, and what it found is
+/// filed by the command line, so a rename keeps it.
+#[test]
+fn a_test_runs_once_and_is_filed_by_its_command_line() {
+    let mut settings = SettingsDrive::new(Vec::new(), Appearance::default());
+    let spec = command("a", "agent-x");
+    let fx = settings.test(spec.clone(), None);
+    assert!(matches!(&fx[..], [Effect::Changed, Effect::Look { .. }]));
+    assert_eq!(settings.tested(&spec), Some(&Tested::Running));
+    assert!(
+        settings.test(spec.clone(), None).is_empty(),
+        "one at a time"
+    );
+    let fx = settings.handle(Input::Looked {
+        spec: spec.clone(),
+        found: Some((PathBuf::from("/bin/agent-x"), None)),
+    });
+    assert!(matches!(&fx[..], [Effect::Changed]));
+    let renamed = command("b", "agent-x");
+    assert_eq!(
+        settings.tested(&renamed),
+        Some(&Tested::Found(PathBuf::from("/bin/agent-x"), None))
+    );
+    assert_eq!(settings.tested(&command("a", "other")), None);
+    let _ = settings.test(renamed.clone(), None);
+    let _ = settings.handle(Input::Looked {
+        spec: renamed.clone(),
+        found: None,
+    });
+    assert_eq!(settings.tested(&spec), Some(&Tested::Missing));
+}
+
+/// Two agents on one launcher are two agents: what a *Test* found of one is
+/// not shown under the other.
+#[test]
+fn a_test_belongs_to_the_whole_command_line() {
+    let mut settings = SettingsDrive::new(Vec::new(), Appearance::default());
+    let on = |args: &[&str]| AgentSpec {
+        args: args.iter().map(|a| a.to_string()).collect(),
+        ..command("a", "npx")
+    };
+    let _ = settings.test(on(&["-y", "one"]), None);
+    assert_eq!(settings.tested(&on(&["-y", "one"])), Some(&Tested::Running));
+    assert_eq!(settings.tested(&on(&["-y", "two"])), None);
 }

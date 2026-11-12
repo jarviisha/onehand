@@ -1,26 +1,6 @@
 use super::agents::runs_line;
-use super::{DraftShift, check_key, draft_after_promote, draft_shift, draft_spec};
+use super::{DraftShift, draft_after_promote, draft_shift, draft_spec};
 use onehand_core::config::{AgentSpec, Preset};
-
-/// Two agents on one launcher are two agents: a result filed for one must
-/// not be shown under the other.
-#[test]
-fn a_test_result_belongs_to_the_whole_command_line() {
-    let spec = |args: &[&str]| AgentSpec {
-        name: "a".into(),
-        command: "npx".into(),
-        args: args.iter().map(|a| a.to_string()).collect(),
-        ..Default::default()
-    };
-    assert_ne!(
-        check_key(&spec(&["-y", "one"])),
-        check_key(&spec(&["-y", "two"]))
-    );
-    assert_eq!(
-        check_key(&spec(&["-y", "one"])),
-        check_key(&spec(&["-y", "one"]))
-    );
-}
 
 /// Making an agent the default moves a form open on any agent ahead of it.
 #[test]
