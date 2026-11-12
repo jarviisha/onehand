@@ -43,7 +43,7 @@ pub(super) fn next_for(issue: &LocalIssue, doing: &Doing) -> Next {
     next_action(
         doing.work.as_ref().map(|work| &work.work),
         Around {
-            open: issue.open,
+            open: issue.open(),
             can_start: doing.offered,
             pr: doing.pr,
             session: doing.session.is_some(),
@@ -144,7 +144,7 @@ pub(super) fn actions(
     publish_to: Option<&'static str>,
     cx: &mut Context<IssuesView>,
 ) -> AnyElement {
-    let number = issue.number;
+    let number = issue.number();
     let mut secondary = next.secondary.clone();
     let shown: Vec<Act> = secondary
         .iter()
@@ -365,9 +365,9 @@ fn more_menu(
     publish_to: Option<&'static str>,
     cx: &mut Context<IssuesView>,
 ) -> AnyElement {
-    let number = issue.number;
-    let open = issue.open;
-    let forge = issue.link.as_ref().map(|link| link.connector.clone());
+    let number = issue.number();
+    let open = issue.open();
+    let forge = issue.link().map(|link| link.connector.clone());
     let view = cx.entity();
     let danger = status_ink(cx).danger;
     // Closing asks only while a run works on the issue, which it does not stop.

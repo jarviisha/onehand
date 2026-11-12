@@ -508,19 +508,20 @@ impl IssuesView {
         let Some(issue) = self.issues_of(&root, cx).and_then(|kept| kept.get(number)) else {
             return;
         };
-        let description = match &issue.link {
+        let description = match &issue.link() {
             Some(link) => format!(
                 "\u{201c}{}\u{201d} moves to the closed list here and closes on {} at the next sync. A run is still working on it; closing does not stop it.",
-                issue.title, link.connector
+                issue.title(),
+                link.connector
             ),
             None => format!(
                 "\u{201c}{}\u{201d} moves to the closed list. A run is still working on it; closing does not stop it.",
-                issue.title
+                issue.title()
             ),
         };
         // The question names the issue by its title, its number only where it
         // has none.
-        let title = match issue.title.trim() {
+        let title = match issue.title().trim() {
             "" => format!("Close issue {number}?"),
             named => format!("Close \u{201c}{named}\u{201d}?"),
         };
@@ -562,7 +563,7 @@ impl IssuesView {
         let Some(link) = self
             .issues_of(&root, cx)
             .and_then(|kept| kept.get(number))
-            .and_then(|issue| issue.link.clone())
+            .and_then(|issue| issue.link().cloned())
         else {
             return;
         };
@@ -701,9 +702,9 @@ impl IssuesView {
             .filter(|forge| onehand_core::issues::drive::publishable(issues, Some(*forge), &issue))
             .map(|forge| forge.name());
         let templates = state.file.read(cx).templates.clone();
-        let publishing = state.file.read(cx).publishing == Some(issue.number);
+        let publishing = state.file.read(cx).publishing == Some(issue.number());
         let body = self.parsed_body(root, &issue, cx);
-        let key = self.key(root, issue.number);
+        let key = self.key(root, issue.number());
         let work = key.as_ref().and_then(|key| self.work.work_of(key)).cloned();
         let effects = self.work.show(root, key.as_ref(), issues::now());
         self.carry(effects, cx);
@@ -742,25 +743,25 @@ impl IssuesView {
         issue: &LocalIssue,
         cx: &mut Context<Self>,
     ) -> Option<(Entity<TextViewState>, Vec<String>)> {
-        if issue.body.is_empty() {
+        if issue.body().is_empty() {
             return None;
         }
         let state = self.roots.get_mut(root)?;
         if let Some(body) = &state.body
-            && body.number == issue.number
-            && body.updated == issue.updated
+            && body.number == issue.number()
+            && body.updated == issue.updated()
         {
             return Some((body.parsed.clone(), body.files.clone()));
         }
-        let parsed = cx.new(|cx| TextViewState::markdown(&issue.body, cx));
+        let parsed = cx.new(|cx| TextViewState::markdown(issue.body(), cx));
         state.body = Some(Body {
-            number: issue.number,
-            updated: issue.updated,
+            number: issue.number(),
+            updated: issue.updated(),
             parsed: parsed.clone(),
             files: Vec::new(),
         });
-        let (number, updated) = (issue.number, issue.updated);
-        let (root, text) = (root.to_path_buf(), issue.body.clone());
+        let (number, updated) = (issue.number(), issue.updated());
+        let (root, text) = (root.to_path_buf(), issue.body().to_string());
         cx.spawn(async move |view, cx| {
             let (linked, files) = cx
                 .background_executor()

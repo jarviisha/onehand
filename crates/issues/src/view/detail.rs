@@ -96,7 +96,7 @@ pub(super) fn issue_view(
 ) -> AnyElement {
     let nav = doing.nav.take();
     let review = doing.review.take();
-    let number = issue.number;
+    let number = issue.number();
     let theme = cx.theme();
     let muted = theme.muted_foreground;
     let next = work::next_for(issue, &doing);
@@ -133,8 +133,8 @@ pub(super) fn issue_view(
         .flex_wrap()
         .items_center()
         .gap_1p5()
-        .child(state_badge(issue.open, cx))
-        .children(issue.labels.iter().map(|label| chip(label.clone(), cx)));
+        .child(state_badge(issue.open(), cx))
+        .children(issue.labels().iter().map(|label| chip(label.clone(), cx)));
 
     // The title, the largest words on the issue: the whole of it, wrapped on
     // a title's leading.
@@ -142,7 +142,7 @@ pub(super) fn issue_view(
         .text_lg()
         .font_semibold()
         .line_height(gpui::relative(LEADING_TIGHT))
-        .child(issue.title.clone());
+        .child(issue.title().to_string());
 
     // Its facts on one line: when it changed, how its work stands, how
     // urgent the body says it is, and what a template-written body left out.
@@ -175,7 +175,7 @@ pub(super) fn issue_view(
     });
     // Its mark and its word, in the line's own muted ink: the arrow says
     // which way it presses without a hue shouting it.
-    said.extend(priority(&issue.body).map(|priority| {
+    said.extend(priority(issue.body()).map(|priority| {
         div()
             .flex_none()
             .h_flex()
@@ -187,7 +187,9 @@ pub(super) fn issue_view(
     }));
     // Advice, never a refusal, and nothing at all for a body written its own
     // way.
-    said.extend(lacking(&issue.body, &doing.templates).map(|lacks| fact(lacks.said().to_string())));
+    said.extend(
+        lacking(issue.body(), &doing.templates).map(|lacks| fact(lacks.said().to_string())),
+    );
     let mut facts = div()
         .h_flex()
         .flex_wrap()
@@ -202,7 +204,7 @@ pub(super) fn issue_view(
         facts = facts.child(said);
     }
 
-    let events = usize::from(issue.created > 0) + issue.notes.len();
+    let events = usize::from(issue.created() > 0) + issue.notes().len();
     let tabs = [IssueTab::Description, IssueTab::Activity];
     let at = tabs.iter().position(|tab| *tab == doing.tab).unwrap_or(0);
     let shown = tabs[at];
@@ -344,9 +346,9 @@ fn state_badge(open: bool, cx: &App) -> Tag {
 /// The issue's reference in the trail: in the link's ink and opening it on
 /// its forge where it is linked, in full ink where it is not.
 fn reference_link(issue: &LocalIssue, named: String, cx: &mut Context<IssuesView>) -> AnyElement {
-    let number = issue.number;
+    let number = issue.number();
     let mono = cx.theme().mono_font_family.clone();
-    match (issue.reference(), &issue.link) {
+    match (issue.reference(), &issue.link()) {
         (Some(_), Some(link)) => div()
             .id("issue-reference")
             .flex_none()
@@ -379,12 +381,12 @@ fn reference_link(issue: &LocalIssue, named: String, cx: &mut Context<IssuesView
 fn activity(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> AnyElement {
     let muted = cx.theme().muted_foreground;
     let now = onehand_core::issues::now();
-    let arrived = (issue.created > 0).then(|| (issue.created, issue.arrival(), None));
+    let arrived = (issue.created() > 0).then(|| (issue.created(), issue.arrival(), None));
     let entries: Vec<(u64, String, Option<String>)> = arrived
         .into_iter()
         .chain(
             issue
-                .notes
+                .notes()
                 .iter()
                 .map(|note| (note.at, note.text.clone(), note.session.clone())),
         )
@@ -463,10 +465,10 @@ pub(super) fn moment(secs: u64) -> String {
 /// conflict, as it reads here and as it reads on the forge, and the two ways
 /// out. `None` for an issue with nothing to decide.
 fn conflict_view(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> Option<AnyElement> {
-    let link = issue.link.as_ref()?;
+    let link = issue.link()?;
     let theirs = link.conflict.as_ref()?;
     let ours = issue.snapshot();
-    let number = issue.number;
+    let number = issue.number();
     let forge = link.connector.clone();
     let open = |open: bool| if open { "open" } else { "closed" }.to_string();
     let lines: Vec<String> = sync::merge(&link.base, &ours, theirs)
