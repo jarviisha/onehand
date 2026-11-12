@@ -17,7 +17,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let live = self.live_conversation(session, window, cx);
+        let live = self.live_conversation(session, cx);
         let reach = self.window.workspace.open_conversation(session, live);
         self.carry_reach(reach, window, cx);
     }
@@ -53,21 +53,15 @@ impl Shell {
 
     /// Where the session holding conversation `id` is live: this window
     /// first, then every other one.
-    fn live_conversation(
-        &self,
-        id: &str,
-        window: &Window,
-        cx: &Context<Self>,
-    ) -> Live<AnyWindowHandle> {
+    fn live_conversation(&self, id: &str, cx: &Context<Self>) -> Live<AnyWindowHandle> {
         if let Some(uid) = self.chat.read(cx).uid_of_conversation(id, cx) {
             return Live::Here(uid);
         }
+        // This shell is being updated, so it is never read again here.
         let me = cx.entity_id();
-        let here = window.window_handle();
         Shared::global(cx)
             .windows
             .iter()
-            .filter(|w| w.handle != here)
             .filter_map(|w| Some((w.handle, w.shell.upgrade()?)))
             .filter(|(_, shell)| shell.entity_id() != me)
             .find_map(|(at, shell)| {
