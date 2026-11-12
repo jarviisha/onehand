@@ -514,24 +514,29 @@ fn perform_now(
             turn,
             model,
             name,
-        } => workers::open(
-            onehand_core::control::drive::Open {
-                lead: aim.caller.ok_or("`open_worker` is for a session's agent")?,
-                project,
-                agent,
-                prompt,
-                dirs,
-                request,
-                turn,
-                model,
-                name,
-            },
-            handle,
-            shell,
-            &projects,
-            answer,
-            cx,
-        ),
+        } => {
+            let Some((lead, _)) = caller else {
+                unreachable!("aim refuses open_worker to an outside program");
+            };
+            workers::open(
+                onehand_core::control::drive::Open {
+                    lead,
+                    project,
+                    agent,
+                    prompt,
+                    dirs,
+                    request,
+                    turn,
+                    model,
+                    name,
+                },
+                handle,
+                shell,
+                &projects,
+                answer,
+                cx,
+            )
+        }
     }
 }
 
