@@ -9,6 +9,9 @@ use gpui_component::WindowExt as _;
 use onehand_core::workspace::drive::{Effect, FileWrite, Forgotten, Input, Refusal, Signal, Value};
 use std::path::PathBuf;
 
+/// What a start is told when the project it names has left the workspace.
+pub(crate) const PROJECT_GONE: &str = "That project is no longer in this workspace";
+
 impl Shell {
     /// Carry out `fx`, in order.
     pub(super) fn carry_workspace(
@@ -87,6 +90,15 @@ impl Shell {
                         ),
                         Signal::Refused(Refusal::NoSession) => {
                             crate::toast::warning("That task has no session open")
+                        }
+                        Signal::Refused(Refusal::ProjectGone) => {
+                            crate::toast::warning(PROJECT_GONE)
+                        }
+                        Signal::Refused(Refusal::NotHere) => {
+                            crate::toast::warning("Run check runs on a project on this machine")
+                        }
+                        Signal::Refused(Refusal::NoCheck) => {
+                            crate::toast::warning("This project has no check command to run")
                         }
                         Signal::Removed(label) => crate::toast::info(format!("Removed {label}")),
                         Signal::ConversationNotSaved => {

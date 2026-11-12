@@ -827,3 +827,36 @@ fn a_task_with_no_session_open_is_said() {
         Reach::There(..) => panic!("said here"),
     }
 }
+
+// What a start finds to start on.
+
+#[test]
+fn a_project_gone_is_refused_and_said() {
+    let drive = bound();
+    let (found, fx) = drive.find_project(Path::new("/a"));
+    assert_eq!((found, fx.len()), (Ok(0), 0));
+    let (found, fx) = drive.find_project(Path::new("/gone"));
+    assert_eq!(found, Err(Refusal::ProjectGone));
+    assert_eq!(names(&fx), ["Refused(ProjectGone)"]);
+    assert_eq!(drive.local_project(0).0, Ok(PathBuf::from("/a")));
+    assert_eq!(drive.local_project(5).0, Err(Refusal::ProjectGone));
+}
+
+#[test]
+fn a_run_check_needs_a_project_here_with_a_check_command() {
+    let mut drive = bound();
+    let (target, fx) = drive.check_target();
+    assert_eq!(target, Err(Refusal::NoCheck));
+    assert_eq!(names(&fx), ["Refused(NoCheck)"]);
+    drive.set_check(Path::new("/a"), "make test");
+    assert_eq!(
+        drive.check_target().0,
+        Ok((PathBuf::from("/a"), "make test".to_string()))
+    );
+    let host = HostName("far".into());
+    let idx = tree(&mut drive).add_host_root(host, PathBuf::from("/srv/b"));
+    tree(&mut drive).select_root(idx);
+    assert_eq!(drive.check_target().0, Err(Refusal::NotHere));
+    tree(&mut drive).roots.clear();
+    assert_eq!(drive.check_target().0, Err(Refusal::NotHere));
+}

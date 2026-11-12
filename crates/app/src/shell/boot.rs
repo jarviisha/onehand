@@ -271,12 +271,7 @@ impl Shell {
                     E::RestartHost(host) => shell.ask_restart_host(host.clone(), window, cx),
                     E::TakeHostCode(path) => shell.ask_take_host_code(path.clone(), window, cx),
                     E::UpdateHost(path) => shell.update_host_from_laptop(path.clone(), cx),
-                    E::RunCheck => {
-                        let active = shell.window.workspace.active_root;
-                        if let Some(root) = shell.local_root(active).map(|p| p.to_path_buf()) {
-                            shell.run_check(root, window, cx);
-                        }
-                    }
+                    E::RunCheck => shell.run_check(window, cx),
                 }
                 // A finished turn also changes what the rail's session dots
                 // say, and the rail is drawn from a query rather than from

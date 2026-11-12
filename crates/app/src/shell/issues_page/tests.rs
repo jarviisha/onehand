@@ -20,9 +20,9 @@ fn tell(shell: &gpui::Entity<super::Shell>, event: IssuesEvent, cx: &mut VisualT
 }
 
 /// *Run workflow…* on a project no longer in the workspace opens no picker,
-/// and says nothing.
+/// and says so, once.
 #[gpui::test]
-fn a_run_on_a_project_gone_opens_nothing(cx: &mut TestAppContext) {
+fn a_run_on_a_project_gone_is_said(cx: &mut TestAppContext) {
     let dir = folder("issues-gone");
     let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
     let root = dir.join("gone");
@@ -32,7 +32,7 @@ fn a_run_on_a_project_gone_opens_nothing(cx: &mut TestAppContext) {
         cx,
     );
     assert!(cx.update(|_, cx| shell.read(cx).issue_picker.is_none()));
-    assert_eq!(notes(cx), 0);
+    assert_eq!(notes(cx), 1);
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -46,16 +46,13 @@ fn a_tasks_session_not_open_is_said(cx: &mut TestAppContext) {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-/// *Run check* on a project with no check command says so, once.
+/// *Run check* on the project selected, which has no check command, says so,
+/// once.
 #[gpui::test]
 fn a_run_check_with_no_command_says_so(cx: &mut TestAppContext) {
     let dir = folder("issues-no-check");
     let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
-    cx.update(|window, cx| {
-        shell.update(cx, |shell, cx| {
-            shell.run_check(PathBuf::from("/tmp"), window, cx)
-        })
-    });
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.run_check(window, cx)));
     cx.run_until_parked();
     assert_eq!(notes(cx), 1);
     let _ = std::fs::remove_dir_all(dir);

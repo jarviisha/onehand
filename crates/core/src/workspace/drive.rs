@@ -116,6 +116,14 @@ pub enum Refusal {
     NoAgent,
     /// The task has no session open to show.
     NoSession,
+    /// The project asked about is no longer a project of the workspace on
+    /// this machine.
+    ProjectGone,
+    /// What was asked runs on a project on this machine, and the one
+    /// selected is not.
+    NotHere,
+    /// The project has no check command to run.
+    NoCheck,
 }
 
 /// A project that has left the window, on this machine or on `host`.

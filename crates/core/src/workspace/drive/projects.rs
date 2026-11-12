@@ -1,7 +1,7 @@
 //! A project's place in the workspace: added, kept for a task, removed, and
 //! the host its code was offloaded to.
 
-use super::{Effect, Signal, WorkspaceDrive};
+use super::{Effect, Refusal, Signal, WorkspaceDrive};
 use crate::workspace::{HostName, Offloaded};
 use std::path::{Path, PathBuf};
 
@@ -13,7 +13,52 @@ pub struct Losses {
     pub unsaved: usize,
 }
 
+/// A refusal, said.
+fn refused<T>(why: Refusal) -> (Result<T, Refusal>, Vec<Effect>) {
+    (Err(why), vec![Effect::Signal(Signal::Refused(why))])
+}
+
 impl WorkspaceDrive {
+    /// Where the project at `root`, a folder on this machine, sits among the
+    /// workspace's projects; refused, and said, when it is no longer one.
+    #[must_use = "a refusal is to be said"]
+    pub fn find_project(&self, root: &Path) -> (Result<usize, Refusal>, Vec<Effect>) {
+        match self.local_index(root) {
+            Some(idx) => (Ok(idx), Vec::new()),
+            None => refused(Refusal::ProjectGone),
+        }
+    }
+
+    /// The folder of project `idx` on this machine; refused, and said, when
+    /// there is none: gone, or on a host.
+    #[must_use = "a refusal is to be said"]
+    pub fn local_project(&self, idx: usize) -> (Result<PathBuf, Refusal>, Vec<Effect>) {
+        let local = self
+            .workspace
+            .roots
+            .get(idx)
+            .and_then(|root| root.local_path());
+        match local {
+            Some(path) => (Ok(path.to_path_buf()), Vec::new()),
+            None => refused(Refusal::ProjectGone),
+        }
+    }
+
+    /// What *Run check* runs: the active project on this machine and its
+    /// check command; refused, and said, when the project selected is not on
+    /// this machine or has no check command.
+    #[must_use = "a refusal is to be said"]
+    pub fn check_target(&self) -> (Result<(PathBuf, String), Refusal>, Vec<Effect>) {
+        let Some(root) = self.workspace.active_root() else {
+            return refused(Refusal::NotHere);
+        };
+        match (root.local_path(), &root.check) {
+            (Some(path), Some(check)) => (Ok((path.to_path_buf(), check.clone())), Vec::new()),
+            (Some(_), None) => refused(Refusal::NoCheck),
+            (None, _) => refused(Refusal::NotHere),
+        }
+    }
+
     /// Add `dir`, a folder here, as a project and select it, or select it if
     /// it is one already: what the folder picker, a second launch and a
     /// worktree split off do.

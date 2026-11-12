@@ -88,7 +88,9 @@ impl Shell {
             } => self.work_issue_here(&root, number, &prompt, window, cx),
             E::OpenConversation(session) => self.open_conversation(&session, window, cx),
             E::RunIssueWorkflow { root, number } => {
-                if let Some(idx) = self.root_index(&root) {
+                let (found, fx) = self.window.workspace.find_project(&root);
+                self.carry_workspace(fx, window, cx);
+                if let Ok(idx) = found {
                     self.begin_pick(idx, Some(number), window, cx);
                 }
             }
