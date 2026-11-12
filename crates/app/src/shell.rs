@@ -21,6 +21,7 @@ mod carry;
 mod check_commands;
 mod cleanup;
 mod confirm;
+mod conversation;
 pub(crate) use confirm::{Confirm, confirm_on};
 mod dock_rules;
 mod dock_skin;
