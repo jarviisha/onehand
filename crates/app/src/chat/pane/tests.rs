@@ -277,18 +277,9 @@ mod lifecycle {
     use crate::state::Shared;
     use gpui::{Entity, TestAppContext, VisualTestContext};
     use gpui_component::Root;
-    use onehand_core::config::AgentSpec;
     use std::path::PathBuf;
 
-    /// An agent that cannot start: its session opens and its stream ends,
-    /// and nothing is spawned.
-    fn nowhere() -> AgentSpec {
-        AgentSpec {
-            name: "nowhere".into(),
-            command: "/nonexistent/onehand-test-agent".into(),
-            ..Default::default()
-        }
-    }
+    use crate::shell::rig::nowhere;
 
     fn pane(cx: &mut TestAppContext) -> (Entity<ChatPane>, &mut VisualTestContext) {
         cx.executor().allow_parking();

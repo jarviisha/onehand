@@ -2,20 +2,10 @@
 //! host goes once nothing here waits on it any more, so the host's wait is
 //! no longer listened for from this window.
 
-use crate::shell::rig::{folder, shell};
+use crate::shell::rig::{folder, nowhere, shell};
 use gpui::{Entity, TestAppContext, VisualTestContext};
-use onehand_core::config::AgentSpec;
 use onehand_core::host::waits::Want;
 use onehand_core::workspace::HostName;
-
-/// An agent that cannot start: its session opens and its stream ends.
-fn nowhere() -> AgentSpec {
-    AgentSpec {
-        name: "nowhere".into(),
-        command: "/nonexistent/onehand-test-agent".into(),
-        ..Default::default()
-    }
-}
 
 fn host() -> HostName {
     HostName("box".into())

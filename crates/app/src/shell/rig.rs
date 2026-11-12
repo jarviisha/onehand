@@ -19,6 +19,16 @@ pub(crate) fn folder(name: &str) -> PathBuf {
     dir
 }
 
+/// An agent that cannot start: its session opens and its stream ends, and
+/// nothing is spawned.
+pub(crate) fn nowhere() -> AgentSpec {
+    AgentSpec {
+        name: "nowhere".into(),
+        command: "/nonexistent/onehand-test-agent".into(),
+        ..Default::default()
+    }
+}
+
 /// A shell on a workspace of `/tmp`, the tasks writing into `store`, and
 /// `agents` configured.
 pub(crate) fn shell(
