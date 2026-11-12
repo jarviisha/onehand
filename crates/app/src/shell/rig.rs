@@ -60,3 +60,31 @@ pub(crate) fn shell(
     let cx = VisualTestContext::from_window(handle, cx).into_mut();
     (handle, shell, cx)
 }
+
+/// A second window beside the rig's, on a workspace of `root`, registered as
+/// the rig's is.
+pub(crate) fn another(
+    cx: &mut VisualTestContext,
+    root: &std::path::Path,
+) -> (gpui::AnyWindowHandle, Entity<crate::shell::Shell>) {
+    let mut made = None;
+    let window = cx.cx.add_window(|window, cx| {
+        let ws = Workspace::seeded(root);
+        let shell = gpui::AppContext::new(cx, |cx| crate::shell::Shell::new(ws, window, cx));
+        made = Some(shell.clone());
+        Root::new(shell, window, cx)
+    });
+    let handle: gpui::AnyWindowHandle = window.into();
+    let shell = made.expect("the shell");
+    let weak = shell.downgrade();
+    cx.cx.update(|cx| {
+        cx.update_global::<Shared, _>(|shared, _| {
+            shared.windows.push(crate::state::OpenWindow {
+                storage_dir: None,
+                handle,
+                shell: weak,
+            })
+        })
+    });
+    (handle, shell)
+}

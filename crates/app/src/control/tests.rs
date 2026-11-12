@@ -170,3 +170,51 @@ fn a_sessions_call_lands_in_its_own_window(cx: &mut TestAppContext) {
     drop(token);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A session's call lands in the window holding it even when another
+/// window is in front, where an outside program's lands.
+#[gpui::test]
+fn a_sessions_call_lands_in_its_window_not_the_one_in_front(cx: &mut TestAppContext) {
+    let dir = crate::shell::rig::folder("call-two-windows");
+    let agent = onehand_core::config::AgentSpec {
+        name: "a".into(),
+        command: "true".into(),
+        ..Default::default()
+    };
+    let (front_window, _, cx) =
+        crate::shell::rig::shell(cx, dir.join("tasks"), vec![agent.clone()]);
+    let behind = dir.join("behind");
+    std::fs::create_dir_all(&behind).unwrap();
+    let (behind_window, other) = crate::shell::rig::another(cx, &behind);
+    cx.update(|window, _| window.activate_window());
+    cx.run_until_parked();
+    let front = cx.update(|_, cx| crate::state::front(cx).map(|(handle, _)| handle));
+    assert_eq!(front, Some(front_window), "the rig's window is in front");
+    assert_ne!(front, Some(behind_window));
+    let token = Token::mint();
+    let (tx, rx) = oneshot::channel();
+    let at = behind.clone();
+    cx.update(|_, cx| {
+        let (uid, _) = other
+            .update(cx, |shell, cx| {
+                shell.run_unattended(at, agent, Vec::new(), cx)
+            })
+            .expect("a session");
+        token.claim(uid);
+        perform(Peer::Session(token_of(&token)), Call::ListProjects, tx, cx);
+    });
+    let theirs = futures::executor::block_on(rx)
+        .expect("answered")
+        .expect("listed");
+    let shown = behind.display().to_string();
+    assert!(theirs.contains(&shown), "{theirs}");
+    assert!(
+        !theirs.contains("/tmp —"),
+        "not the front window's: {theirs}"
+    );
+    let outside = ask(Peer::Outside, Call::ListProjects, cx).expect("listed");
+    assert!(outside.contains("/tmp"), "{outside}");
+    assert!(!outside.contains(&shown), "{outside}");
+    drop(token);
+    let _ = std::fs::remove_dir_all(dir);
+}
