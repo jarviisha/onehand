@@ -269,8 +269,9 @@ listening, a finished run hearing nothing more, the place held while a cancelled
 Stop before a command starts, a dismiss put back when its write fails, a worktree's removal
 landing with its task after its window closed, and (`crates/app/src/task/tests/forge.rs`, against a forge that
 records what it is asked) a run's push, pull request look, open and read back reaching the forge
-once and in order, a refused push reaching its drive and opening nothing, and a forge not built in
-said; on a real shell (`crates/app/src/shell/rig.rs`), a
+once and in order, a refused push reaching its drive and opening nothing, a forge not built in
+said, its status checks looked at each time the clock comes round and not a second before, a draft taken
+out of draft once they pass, and a failing one's log read once and sent back to the agent; on a real shell (`crates/app/src/shell/rig.rs`), a
 check's retry running it again at once and an issue's run coming up off screen. Hosts' carrier
 (`crates/app/src/hosts/tests.rs`) holds a wait's end reaching every listener once and the last
 listener going ending the wait and its clock; offloaded projects'
@@ -280,8 +281,9 @@ nothing, and keeping a kept folder again telling nobody, so the window's observe
 Unattended runs' carrier (`crates/app/src/unattended/tests.rs`) holds its clock coming round and
 armed again, a start over the cap refused where it was asked, a pause, a config that cannot work,
 a report sent once and dropped once it lands, and, on a real shell, a run's own project dropped
-from every window holding it at its end, one taken over kept as the person's, and a project the
-person had open left alone; the clock's (`crates/app/src/schedules/tests.rs`)
+from every window holding it at its end, one taken over kept as the person's, a project the
+person had open left alone, and one dropped though
+its teardown was asked for inside its window's update; the clock's (`crates/app/src/schedules/tests.rs`)
 its first look after its wait, a file it cannot read said, a look that moves nothing writing
 nothing, and a failed switch put back. The remote bridge's carrier (`crates/app/src/remote/tests.rs`) holds a line answered once, a
 session no window holds said gone, a scan landing once off the UI thread and nothing told after the
@@ -313,8 +315,7 @@ buffer was read from, a failure said once, and a save asked while one writes run
 the text typed since; the Plugins mode's (`crates/claude-plugins/src/view/tests.rs`, against a
 `claude` of its own) one change at a time, what went through counted, and a refusal said only in
 its project. Still untested: `SaveTitle` (written on the ordered writer's own thread, which
-GPUI's test scheduler does not wait for), deferred work, a run's look at its status checks on the clock, the failing ones' logs read and
-a draft taken out of draft (the recording forge is asked none of the three), a command called off while it runs (the test scheduler runs it to its end before a
+GPUI's test scheduler does not wait for), deferred work but that teardown, a command called off while it runs (the test scheduler runs it to its end before a
 Stop can reach it), a host's real attach, which runs on a runtime GPUI's test
 scheduler does not drive, and so a project page on a host letting go of its wait as it is left
 or listed again (the window's waits are tested let go of as a session closes or restarts and as

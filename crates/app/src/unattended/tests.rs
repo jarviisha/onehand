@@ -415,3 +415,17 @@ fn a_run_in_the_persons_project_leaves_it_at_its_end(cx: &mut TestAppContext) {
     assert_eq!(held(&shell, &theirs, cx), Some(false));
     let _ = std::fs::remove_dir_all(store);
 }
+
+/// A teardown asked for inside an update of the window holding the project
+/// still drops it there: the window is reached once its update is over.
+#[gpui::test]
+fn a_teardown_asked_inside_its_windows_update_still_drops_the_project(cx: &mut TestAppContext) {
+    let store = temp_dir("teardown-inside");
+    let dir = store.join("work");
+    let (_, shell, cx) = crate::shell::rig::shell(cx, store.join("tasks"), Vec::new());
+    run_in(&shell, &dir, cx);
+    cx.update(|_, cx| super::report::teardown(&dir, false, cx));
+    cx.run_until_parked();
+    assert_eq!(held(&shell, &dir, cx), None);
+    let _ = std::fs::remove_dir_all(store);
+}

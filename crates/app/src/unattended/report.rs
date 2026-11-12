@@ -21,23 +21,30 @@ pub(crate) fn spec_for(agent: Option<&str>, cx: &App) -> Option<AgentSpec> {
 
 /// Keep or drop the project a run worked in, in every window holding it. Only
 /// a project the run added itself is dropped: one a person had open stays.
+///
+/// Deferred, so that it holds wherever it is asked from: a window cannot be
+/// updated again from inside its own update, and one asked there would be
+/// passed over without a word.
 pub(super) fn teardown(dir: &Path, keep: bool, cx: &mut App) {
-    let holding: Vec<_> = Shared::global(cx)
-        .windows
-        .iter()
-        .map(|w| (w.handle, w.shell.clone()))
-        .collect();
-    for (handle, shell) in holding {
-        let Some(shell) = shell.upgrade() else {
-            continue;
-        };
-        let _ = handle.update(cx, |_, window, cx| {
-            shell.update(cx, |shell, cx| match keep {
-                true => shell.take_over_unattended(dir, window, cx),
-                false => shell.end_unattended(dir, window, cx),
-            })
-        });
-    }
+    let dir = dir.to_path_buf();
+    cx.defer(move |cx| {
+        let holding: Vec<_> = Shared::global(cx)
+            .windows
+            .iter()
+            .map(|w| (w.handle, w.shell.clone()))
+            .collect();
+        for (handle, shell) in holding {
+            let Some(shell) = shell.upgrade() else {
+                continue;
+            };
+            let _ = handle.update(cx, |_, window, cx| {
+                shell.update(cx, |shell, cx| match keep {
+                    true => shell.take_over_unattended(&dir, window, cx),
+                    false => shell.end_unattended(&dir, window, cx),
+                })
+            });
+        }
+    });
 }
 
 #[cfg(test)]
