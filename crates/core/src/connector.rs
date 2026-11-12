@@ -242,8 +242,9 @@ pub mod fake {
 
     /// It serves or refuses as told, answers for its `account`, lists `limit`
     /// issues, finds the issues numbered in `labelled` under any label, has
-    /// the pull requests in `pulls` by branch, fetches nothing, and fails the
-    /// test if asked anything else.
+    /// the pull requests in `pulls` by branch and lists those of `listed`,
+    /// fetches nothing, finds nothing to sync, and fails the test if asked
+    /// anything else.
     pub struct Fake {
         pub name: &'static str,
         pub serves: Result<(), &'static str>,
@@ -255,6 +256,9 @@ pub mod fake {
         pub default_branch: Option<&'static str>,
         /// Why its open issues cannot be listed, when they cannot.
         pub lists: Result<(), &'static str>,
+        /// The branches its list of pull requests holds, of those in
+        /// `pulls`, and whether the list was cut; `None` gives no list.
+        pub listed: Option<(&'static [&'static str], bool)>,
     }
 
     impl Fake {
@@ -266,6 +270,7 @@ pub mod fake {
             pulls: &[],
             default_branch: Some("main"),
             lists: Ok(()),
+            listed: None,
         };
     }
 
@@ -342,6 +347,18 @@ pub mod fake {
                     checks: Vec::new(),
                 }))
         }
+        fn pull_requests_blocking(&self, root: &Path, _: usize) -> Result<PullRequests, String> {
+            let Some((branches, capped)) = self.listed else {
+                return Err(format!("{} gives no list of pull requests.", self.name));
+            };
+            let mut by_branch = Vec::new();
+            for branch in branches {
+                if let Some(pr) = self.pull_request_for_blocking(root, branch)? {
+                    by_branch.push((branch.to_string(), pr));
+                }
+            }
+            Ok(PullRequests { by_branch, capped })
+        }
         fn open_pull_request_blocking(
             &self,
             _: &Path,
@@ -357,13 +374,14 @@ pub mod fake {
         fn read_review_with(&self, number: u64) -> String {
             format!("`forge review {number}`")
         }
+        /// Nothing on the far side: a sync moves nothing, and lands.
         fn issues_for_sync_blocking(
             &self,
             _: &Path,
             _: Option<u64>,
             _: usize,
         ) -> Result<SyncListing, String> {
-            unreachable!()
+            Ok(SyncListing::default())
         }
         fn issue_blocking(&self, _: &Path, _: &str) -> Result<Option<RemoteIssue>, String> {
             unreachable!()

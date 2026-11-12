@@ -205,3 +205,6 @@ impl Shell {
         self.tell_workflows_page_projects(cx);
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -99,3 +99,69 @@ fn a_write_lands_once_and_its_maker_hears_it(cx: &mut TestAppContext) {
     assert!(!issues::load_blocking(&path).unwrap().get(1).unwrap().open);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+static FORGE: onehand_core::connector::fake::Fake = onehand_core::connector::fake::Fake::SERVING;
+static CONNECTORS: [&dyn onehand_core::connector::Connector; 1] = [&FORGE];
+
+/// How many times `path` has been written.
+fn writes(path: &std::path::Path) -> u64 {
+    issues::load_blocking(path).unwrap().revision()
+}
+
+/// The view's timer syncs the file of the project it is on every five
+/// minutes, and not the file of a project it holds but is not on.
+#[gpui::test]
+fn the_view_syncs_its_projects_file_every_five_minutes(cx: &mut TestAppContext) {
+    use super::super::IssuesView;
+    use onehand_core::issues::drive::Change;
+    cx.executor().allow_parking();
+    let dir = std::env::temp_dir().join(format!("onehand-issues-clock-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let storage = dir.join("storage");
+    let (on, off) = (dir.join("on"), dir.join("off"));
+    for folder in [&storage, &on, &off] {
+        std::fs::create_dir_all(folder).unwrap();
+    }
+    let view = cx.update(|cx| {
+        IssuesView::new(
+            &CONNECTORS,
+            std::rc::Rc::new(|_, _, _| {}),
+            std::rc::Rc::new(|_, _, _| {}),
+            false,
+            cx,
+        )
+    });
+    let files = view.update(cx, |view, cx| {
+        view.set_storage(Some(storage.clone()), cx);
+        let mut files = Vec::new();
+        for root in [&off, &on] {
+            view.set_root(root, cx);
+            files.push(view.state_for(root, cx).unwrap().file.clone());
+        }
+        files
+    });
+    for file in &files {
+        file.update(cx, |file, cx| file.load_if_stale(cx));
+    }
+    settle(cx);
+    // Kept in step as shown, not yet on disk: a read syncs nothing.
+    for file in &files {
+        file.update(cx, |file, cx| {
+            file.show(&Change::SyncWith(Some(FORGE.name.into())), cx)
+        });
+    }
+    let paths: Vec<_> = [&off, &on]
+        .into_iter()
+        .map(|root| issues::file_for(&storage, root))
+        .collect();
+    let before: Vec<_> = paths.iter().map(|path| writes(path)).collect();
+    cx.executor().advance_clock(Duration::from_secs(240));
+    settle(cx);
+    let at_four: Vec<_> = paths.iter().map(|path| writes(path)).collect();
+    assert_eq!(at_four, before);
+    cx.executor().advance_clock(Duration::from_secs(60));
+    settle(cx);
+    let at_five: Vec<_> = paths.iter().map(|path| writes(path)).collect();
+    assert_eq!(at_five, [before[0], before[1] + 1]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
