@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 
 mod agent;
 pub mod drive;
+pub mod recents;
 pub use agent::{
     agent_or_first, default_adapter_args, find_command, join_args, on_machine, split_args,
     AgentEdit, AgentSpec, Launch, Preset, PresetId, PresetInfo, Runs, DEFAULT_ACP_ADAPTER,

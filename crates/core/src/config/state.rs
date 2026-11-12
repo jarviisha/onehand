@@ -34,7 +34,7 @@ impl AppState {
     }
 
     /// Load state, falling back to the default (nothing remembered) on any error.
-    pub fn load() -> Self {
+    pub(crate) fn load() -> Self {
         let mut state = Self::load_from(&Self::path());
         state.migrate();
         state
@@ -86,7 +86,7 @@ impl AppState {
 
     /// Remember `dir`'s name, if `dir` is remembered at all; whether that
     /// changed anything, so a caller writes only what is new.
-    pub fn set_name(&mut self, dir: &Path, name: &str) -> bool {
+    pub(crate) fn set_name(&mut self, dir: &Path, name: &str) -> bool {
         if !self.recent_workspaces.iter().any(|d| d == dir) || self.name_of(dir) == Some(name) {
             return false;
         }
@@ -114,7 +114,7 @@ impl AppState {
 
     /// Move `dir` to the front of the recents (inserting if absent), keep the
     /// list capped, and mirror the legacy field. Pure — callers canonicalize.
-    pub fn touch(&mut self, dir: PathBuf) {
+    pub(crate) fn touch(&mut self, dir: PathBuf) {
         self.recent_workspaces.retain(|d| *d != dir);
         self.recent_workspaces.insert(0, dir);
         self.recent_workspaces.truncate(Self::MAX_RECENTS);
@@ -124,15 +124,17 @@ impl AppState {
 
     /// Drop `dir` from the recents and re-mirror the legacy field (used by
     /// Unbind: an unbound workspace must not be reopened at boot).
-    pub fn forget(&mut self, dir: &Path) {
+    pub(crate) fn forget(&mut self, dir: &Path) {
         self.recent_workspaces.retain(|d| d != dir);
         self.workspace_dir = self.recent_workspaces.first().cloned();
         self.prune_names();
     }
 
-    pub fn save(&self) -> std::io::Result<()> {
+    /// Write the state to `path`, blocking: the front end runs it off its
+    /// UI thread, in order with every other write of it.
+    pub fn save_to(&self, path: &Path) -> std::io::Result<()> {
         let text = toml::to_string_pretty(self).map_err(std::io::Error::other)?;
-        write_atomic(&Self::path(), &text)
+        write_atomic(path, &text)
     }
 }
 

@@ -581,8 +581,8 @@ pub fn open_or_focus(workspace: Workspace, cx: &mut App) {
                 .ok();
             return;
         }
-        cx.update_global::<Shared, _>(|shared, _| shared.recents.touch(dir));
-        super::storage::log_failed(super::storage::save_recents(cx), cx);
+        let fx = cx.update_global::<Shared, _>(|shared, _| shared.recents.opened(dir));
+        super::storage::carry_recents(fx, None, cx);
     }
     open_window(workspace, cx);
 }
@@ -661,7 +661,9 @@ fn open_window(workspace: Workspace, cx: &mut App) {
             // the look finds projects through this registry.
             crate::unattended::recheck(cx);
             if let Some(dir) = &storage_dir {
-                super::storage::remember_name(dir, &name, cx);
+                let fx =
+                    cx.update_global::<Shared, _>(|shared, _| shared.recents.named(dir, &name));
+                super::storage::carry_recents(fx, None, cx);
             }
         });
     })

@@ -4,7 +4,7 @@
 
 use super::Shell;
 use crate::state::Shared;
-use gpui::{Context, Window};
+use gpui::{BorrowAppContext as _, Context, Window};
 use gpui_component::WindowExt as _;
 use onehand_core::workspace::drive::{Effect, FileWrite, Forgotten, Input, Refusal, Signal, Value};
 use std::path::PathBuf;
@@ -60,7 +60,11 @@ impl Shell {
                 Effect::Sweep { token, roots } => self.sweep_git(token, roots, cx),
                 Effect::Resweep => self.refresh_git(cx),
                 Effect::GitRead => self.git_read(cx),
-                Effect::Remember { dir, name } => super::storage::remember_name(&dir, &name, cx),
+                Effect::Remember { dir, name } => {
+                    let fx = cx
+                        .update_global::<Shared, _>(|shared, _| shared.recents.named(&dir, &name));
+                    super::storage::carry_recents(fx, None, cx);
+                }
                 Effect::EndOnHost {
                     host,
                     session,

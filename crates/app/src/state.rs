@@ -7,7 +7,8 @@
 //! than reinterpreted here.
 
 use gpui::{App, Global};
-use onehand_core::config::{AppConfig, AppState};
+use onehand_core::config::AppConfig;
+use onehand_core::config::recents::RecentsDrive;
 use onehand_core::gitstat::GitStatus;
 use onehand_core::workspace::{ProjectRoot, Workspace};
 use onehand_io::acp::AcpRuntime;
@@ -62,7 +63,7 @@ pub struct Shared {
     /// Every open window, for dedup-focus on open.
     pub windows: Vec<OpenWindow>,
     /// Recently opened storage directories, most-recent-first.
-    pub recents: AppState,
+    pub recents: onehand_core::config::recents::RecentsDrive,
     /// The tokio runtime every ACP adapter runs on (see [`crate::acp`]).
     pub acp: AcpRuntime<crate::control::Token>,
     /// The one connection to each host, shared by every window's projects there.
@@ -93,7 +94,7 @@ impl Global for Shared {}
 
 impl Shared {
     pub fn from_config(cfg: AppConfig, config_path: PathBuf) -> Self {
-        Self::with_recents(cfg, config_path, AppState::load())
+        Self::with_recents(cfg, config_path, RecentsDrive::load())
     }
 
     /// The process's state for a test: the default config and no recents,
@@ -101,10 +102,16 @@ impl Shared {
     #[cfg(test)]
     pub(crate) fn for_test() -> Self {
         let dir = std::env::temp_dir().join("onehand-test-config.toml");
-        Self::with_recents(AppConfig::default(), dir, AppState::default())
+        let recents =
+            std::env::temp_dir().join(format!("onehand-test-state-{}.toml", std::process::id()));
+        Self::with_recents(
+            AppConfig::default(),
+            dir,
+            RecentsDrive::new(Default::default(), recents),
+        )
     }
 
-    fn with_recents(cfg: AppConfig, config_path: PathBuf, recents: AppState) -> Self {
+    fn with_recents(cfg: AppConfig, config_path: PathBuf, recents: RecentsDrive) -> Self {
         Self {
             settings: onehand_core::config::drive::SettingsDrive::new(cfg.agents, cfg.appearance),
             on_machine: onehand_core::config::on_machine(std::env::var_os("PATH").as_deref()),
