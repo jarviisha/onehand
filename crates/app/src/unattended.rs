@@ -18,6 +18,7 @@ use crate::state::Shared;
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Global, WeakEntity};
 use onehand_core::config::UnattendedConfig;
 use onehand_core::connector::{self, Connector};
+use onehand_core::issues::drive::Change;
 use onehand_core::task::drive::Said;
 use onehand_core::unattended::drive::{
     Effect, Input, On, Signal, UnattendedDrive, World, blocking,
@@ -251,20 +252,27 @@ pub(crate) fn perform(effects: Vec<Effect<AnyWindowHandle>>, cx: &mut App) {
             }),
             Effect::Teardown { dir, keep } => report::teardown(&dir, keep, cx),
             Effect::NoteTakenUp {
+                root,
                 file,
                 number,
                 said,
                 session,
-            } => cx
-                .background_executor()
-                .spawn(async move {
-                    if let Err(why) =
-                        onehand_core::issues::taken_up_blocking(&file, number, &said, session)
-                    {
+            } => onehand_issues::write(
+                &root,
+                file,
+                Change::TakenUp {
+                    number,
+                    text: said,
+                    session,
+                },
+                crate::features::connectors(),
+                |done, _| {
+                    if let Err(why) = done {
                         eprintln!("onehand: could not note the session on issue: {why}");
                     }
-                })
-                .detach(),
+                },
+                cx,
+            ),
             Effect::Tick => cx.defer(|cx| tick(None, cx)),
             Effect::Signal(Signal::Warn { window, said }) => launch::warn(window, said, cx),
             Effect::Signal(Signal::Log(said)) => eprintln!("onehand: {said}"),

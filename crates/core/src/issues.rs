@@ -599,29 +599,6 @@ fn update_unless<R>(
     Ok((issues, said))
 }
 
-/// What [`create_unless_open_blocking`] did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Created {
-    /// Wrote a new issue with this number.
-    New(u64),
-    /// An open issue already has the title: this one, and nothing was written.
-    Already(u64),
-}
-
-/// Write `draft` into `file` unless an open issue already has its title,
-/// case and surrounding spaces aside. Looked for under the same lock the
-/// write takes, so two writers of one problem write it once.
-pub fn create_unless_open_blocking(file: &Path, draft: Draft) -> Result<Created, String> {
-    let (_, applied) = drive::write_blocking(file, drive::Change::CreateUnlessOpen(draft), now())?;
-    match applied {
-        drive::Applied::New(number) => Ok(Created::New(number)),
-        drive::Applied::Already(number) => Ok(Created::Already(number)),
-        drive::Applied::Nothing | drive::Applied::Named(_) => {
-            unreachable!("a new issue names the issue it made or found")
-        }
-    }
-}
-
 /// Write `issues` to `file` so a reader never sees half of it.
 fn save_blocking(file: &Path, issues: &Issues) -> Result<(), String> {
     let text = serde_json::to_string_pretty(issues)

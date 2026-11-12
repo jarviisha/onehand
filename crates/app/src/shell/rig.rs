@@ -60,3 +60,17 @@ pub(crate) fn shell(
     let cx = VisualTestContext::from_window(handle, cx).into_mut();
     (handle, shell, cx)
 }
+
+/// Bind `shell`'s workspace to `dir`, where it keeps its issues.
+pub(crate) fn keep_in(
+    shell: &Entity<crate::shell::Shell>,
+    dir: PathBuf,
+    cx: &mut VisualTestContext,
+) {
+    cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| {
+            let fx = shell.window.workspace.bind(dir);
+            shell.carry_workspace(fx, window, cx);
+        })
+    });
+}

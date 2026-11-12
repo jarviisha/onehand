@@ -217,9 +217,13 @@ pub enum Effect<W> {
     /// Keep the project at `dir` a run worked in for good (`keep`), or drop
     /// it, in every window holding it: only one the run added is dropped.
     Teardown { dir: PathBuf, keep: bool },
-    /// Note on issue `number` kept in `file` that `session` works it, saying
-    /// `said`. Not answered: a failure is the log's.
+    /// Note on issue `number` kept in `file`, of the project at `root`, that
+    /// `session` works it, saying `said`: a change to the file through the
+    /// drive every view of it shares, so each shows it as it lands. Not
+    /// answered: a failure is the log's. A late write is **recorded**: the
+    /// note is on disk or it is not.
     NoteTakenUp {
+        root: PathBuf,
         file: PathBuf,
         number: u64,
         said: String,

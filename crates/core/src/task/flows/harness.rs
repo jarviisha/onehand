@@ -527,6 +527,7 @@ impl Flow {
             }
             UEffect::Teardown { dir, keep } => self.torn_down.push((dir, keep)),
             UEffect::NoteTakenUp {
+                root: _,
                 file,
                 number,
                 said,

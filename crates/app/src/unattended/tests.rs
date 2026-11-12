@@ -293,3 +293,37 @@ fn boot_files_why_a_config_cannot_work(cx: &mut TestAppContext) {
         );
     }
 }
+
+/// A run's note that it took its issue up is written once, through the
+/// file's drive.
+#[gpui::test]
+fn a_runs_taken_up_note_is_written_once(cx: &mut TestAppContext) {
+    let dir = temp_dir("taken-up");
+    app(cx, &dir.join("tasks"), None);
+    let file = issues(&dir);
+    cx.update(|cx| {
+        super::perform(
+            vec![onehand_core::unattended::drive::Effect::NoteTakenUp {
+                root: dir.clone(),
+                file: file.clone(),
+                number: 2,
+                said: "Taken up by an unattended run".into(),
+                session: "s-1".into(),
+            }],
+            cx,
+        )
+    });
+    for _ in 0..50 {
+        cx.run_until_parked();
+        if !notes(&file, 2).is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    cx.run_until_parked();
+    assert_eq!(notes(&file, 2), ["Taken up by an unattended run"]);
+    let kept = onehand_core::issues::load_blocking(&file).unwrap();
+    let session = kept.get(2).unwrap().notes[0].session.clone();
+    assert_eq!(session.as_deref(), Some("s-1"));
+    let _ = std::fs::remove_dir_all(dir);
+}

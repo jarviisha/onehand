@@ -324,7 +324,7 @@ fn perform_now(
             title,
             body,
         } => {
-            let file = issue_file(&shell, &projects, project, &caller, cx)?;
+            let (root, file) = issue_place(&shell, &projects, project, &caller, cx)?;
             let draft = onehand_core::issues::Draft {
                 title: title.trim().to_string(),
                 body,
@@ -334,31 +334,32 @@ fn perform_now(
                     .unwrap_or_default(),
             };
             let answer = answer.take();
-            cx.spawn(async move |cx| {
-                use onehand_core::issues::Created;
-                let shown = draft.title.clone();
-                let written = cx
-                    .background_executor()
-                    .spawn(async move {
-                        onehand_core::issues::create_unless_open_blocking(&file, draft)
-                    })
-                    .await;
-                let outcome = match written {
-                    Ok(Created::New(number)) => {
-                        // Read again wherever the issues are on screen.
-                        cx.update(|cx| shell.update(cx, |shell, cx| shell.refresh_worktree(cx)));
-                        Ok(format!("Wrote issue #{number}: {shown}"))
+            let shown = draft.title.clone();
+            // Through the file's drive, which every view of it shares: each
+            // shows the issue as it lands.
+            onehand_issues::write(
+                &root,
+                file,
+                onehand_core::issues::drive::Change::CreateUnlessOpen(draft),
+                crate::features::connectors(),
+                move |written, _| {
+                    use onehand_core::issues::drive::Applied;
+                    let outcome = match written {
+                        Ok(Applied::New(number)) => Ok(format!("Wrote issue #{number}: {shown}")),
+                        Ok(Applied::Already(number)) => {
+                            Ok(format!("Issue #{number} is already open with that title"))
+                        }
+                        Ok(Applied::Nothing | Applied::Named(_)) => {
+                            Err("the issue was not written".to_string())
+                        }
+                        Err(why) => Err(why),
+                    };
+                    if let Some(answer) = answer {
+                        let _ = answer.send(outcome);
                     }
-                    Ok(Created::Already(number)) => {
-                        Ok(format!("Issue #{number} is already open with that title"))
-                    }
-                    Err(why) => Err(why),
-                };
-                if let Some(answer) = answer {
-                    let _ = answer.send(outcome);
-                }
-            })
-            .detach();
+                },
+                cx,
+            );
             Ok(String::new())
         }
         Call::ListProjects => {
@@ -538,15 +539,28 @@ fn issue_file(
     caller: &Option<(u64, PathBuf)>,
     cx: &App,
 ) -> Result<PathBuf, String> {
+    issue_place(shell, projects, named, caller, cx).map(|(_, file)| file)
+}
+
+/// The project a call names, or the caller's own, and the file its issues
+/// are kept in.
+fn issue_place(
+    shell: &gpui::Entity<crate::shell::Shell>,
+    projects: &[(String, PathBuf)],
+    named: Option<String>,
+    caller: &Option<(u64, PathBuf)>,
+    cx: &App,
+) -> Result<(PathBuf, PathBuf), String> {
     let root = match (named, caller) {
         (Some(named), _) => control::pick_project(projects, &named)?.to_path_buf(),
         (None, Some((_, project))) => project.clone(),
         (None, None) => return Err("name a project".to_string()),
     };
-    shell
+    let file = shell
         .read(cx)
         .issues_file(&root)
-        .ok_or_else(|| "this workspace keeps no issues of its own".to_string())
+        .ok_or_else(|| "this workspace keeps no issues of its own".to_string())?;
+    Ok((root, file))
 }
 
 #[cfg(test)]
