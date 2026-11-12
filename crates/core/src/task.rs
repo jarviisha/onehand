@@ -118,31 +118,31 @@ pub fn sort_listed<T>(rows: &mut [T], of: impl Fn(&T) -> (Group, Option<&Task>))
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Task {
     /// Its first run's id.
-    pub id: String,
+    pub(crate) id: String,
     /// Kept beside the runs, so a task called off before it ran still says
     /// what it was asked and where.
-    pub brief: Brief,
-    pub setup: Setup,
+    pub(crate) brief: Brief,
+    pub(crate) setup: Setup,
     /// Oldest first.
-    pub runs: Vec<Run>,
+    pub(crate) runs: Vec<Run>,
     /// A person let it go: it is history, never offered again.
     #[serde(default)]
-    pub dismissed: bool,
+    pub(crate) dismissed: bool,
     /// A person removed its worktree and branch after its pull request
     /// merged: nothing of its work is left on disk to remove again.
     #[serde(default)]
-    pub worktree_removed: bool,
+    pub(crate) worktree_removed: bool,
     /// A file from before checks were tasks reads as a workflow's.
     #[serde(default)]
-    pub source: Source,
+    pub(crate) source: Source,
     /// What started it, when that was not a person: kept on the task, so it
     /// still says so after the schedule is renamed or deleted.
     #[serde(default)]
-    pub origin: Option<Origin>,
+    pub(crate) origin: Option<Origin>,
     /// What its sessions' agent may use of onehand's tools, copied from what
     /// started it, so a Retry or a Resume is never given more.
     #[serde(default)]
-    pub grant: Grant,
+    pub(crate) grant: Grant,
 }
 
 /// What started a task, when it was not a person.
@@ -166,6 +166,57 @@ pub struct Grant {
 }
 
 impl Task {
+    /// Its first run's id.
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// What it was asked, kept beside the runs.
+    pub fn brief(&self) -> &Brief {
+        &self.brief
+    }
+
+    pub fn setup(&self) -> &Setup {
+        &self.setup
+    }
+
+    /// Every run of it, oldest first.
+    pub fn runs(&self) -> &[Run] {
+        &self.runs
+    }
+
+    /// Whether a person let it go.
+    pub fn dismissed(&self) -> bool {
+        self.dismissed
+    }
+
+    /// Whether its worktree and branch were removed after its pull request
+    /// merged.
+    pub fn worktree_removed(&self) -> bool {
+        self.worktree_removed
+    }
+
+    pub fn source(&self) -> &Source {
+        &self.source
+    }
+
+    /// What started it, when that was not a person.
+    pub fn origin(&self) -> Option<&Origin> {
+        self.origin.as_ref()
+    }
+
+    /// Its runs, to change, for a test that sets a run where it needs it.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn runs_mut(&mut self) -> &mut Vec<Run> {
+        &mut self.runs
+    }
+
+    /// The task as working `source`, for a test.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_source(self, source: Source) -> Self {
+        Self { source, ..self }
+    }
+
     /// A task of `template` on `brief`, its one run not started.
     pub fn new(id: String, template: Template, brief: Brief, setup: Setup) -> Self {
         Self {

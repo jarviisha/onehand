@@ -38,7 +38,9 @@ pub(crate) struct Row {
 pub(crate) fn checking(root: &std::path::Path, cx: &App) -> bool {
     cx.try_global::<Tasks>().is_some_and(|t| {
         t.tasks().iter().any(|task| {
-            task.setup.repo == root && task.source == Source::Check && t.live.contains_key(&task.id)
+            task.setup().repo == root
+                && *task.source() == Source::Check
+                && t.live.contains_key(task.id())
         })
     })
 }
@@ -53,10 +55,10 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
     let tasks = t
         .tasks()
         .iter()
-        .filter(|task| roots.contains(&task.setup.repo) || roots.contains(&task.setup.dir));
+        .filter(|task| roots.contains(&task.setup().repo) || roots.contains(&task.setup().dir));
     for task in tasks {
-        let working = t.working(&task.id);
-        let run = task.runs.last();
+        let working = t.working(task.id());
+        let run = task.runs().last();
         // A prompt's one step is the task itself: naming it would only say
         // *Prompt* twice.
         let step = run
@@ -69,13 +71,13 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
             (None, None) => format!("cut off at {step}"),
             (None, Some(said)) => said,
         };
-        let live = t.live.get(&task.id);
+        let live = t.live.get(task.id());
         let row = Row {
-            id: task.id.clone(),
-            title: task.brief.title.clone(),
+            id: task.id().to_string(),
+            title: task.brief().title.clone(),
             name: {
                 let workflow = run.map_or_else(String::new, |run| run.template.name.clone());
-                match (task.issue(), &task.origin) {
+                match (task.issue(), &task.origin()) {
                     (Some(issue), _) => format!("{} · {workflow}", issue.shown()),
                     (None, Some(Origin::Schedule { name, .. })) => format!("{name} · {workflow}"),
                     (None, Some(Origin::Tool)) => format!("by a tool · {workflow}"),
@@ -83,12 +85,12 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
                 }
             },
             at,
-            project: task.setup.repo.clone(),
+            project: task.setup().repo.clone(),
             group: task.group(working),
             session: live.and_then(|d| Some((d.uid()?, d.window))),
             resumable: task.resumable(),
-            stoppable: live.is_some() || t.drive.queue().queued(&task.id),
-            stopping: t.stopping(&task.id),
+            stoppable: live.is_some() || t.drive.queue().queued(task.id()),
+            stopping: t.stopping(task.id()),
         };
         rows.push((Some(task), row));
     }
@@ -116,7 +118,7 @@ pub(crate) fn issue_works(kept: &[(PathBuf, PathBuf)], cx: &App) -> Vec<IssueWor
             TrackerRef::Local { file } | TrackerRef::Synced { file, .. } => file,
             TrackerRef::Forge { .. } => continue,
         };
-        if !kept.contains(&(task.setup.repo.clone(), file.clone())) {
+        if !kept.contains(&(task.setup().repo.clone(), file.clone())) {
             continue;
         }
         let key = IssueKey {
@@ -135,10 +137,10 @@ pub(crate) fn issue_works(kept: &[(PathBuf, PathBuf)], cx: &App) -> Vec<IssueWor
                 let behind = t
                     .drive
                     .queue()
-                    .holder_of(&task.id)
+                    .holder_of(task.id())
                     .and_then(|holder| t.task(holder))
-                    .map(|holder| holder.brief.title.clone());
-                (task, t.working(&task.id), behind)
+                    .map(|holder| holder.brief().title.clone());
+                (task, t.working(task.id()), behind)
             });
             issue_work(key, tasks)
         })
@@ -157,7 +159,7 @@ pub(crate) fn issue_tasks(
     t.tasks()
         .iter()
         .filter(|task| task.issue().is_some_and(&of))
-        .map(|task| (task.clone(), t.working(&task.id)))
+        .map(|task| (task.clone(), t.working(task.id())))
         .collect()
 }
 
@@ -227,18 +229,18 @@ pub(crate) fn live_issues(cx: &App) -> Vec<LiveRun> {
                 .waits_on_person()
                 .then(|| waiting_said(d.run().awaiting_approval()).to_string());
             let run = LiveRun {
-                repo: task.setup.repo.clone(),
+                repo: task.setup().repo.clone(),
                 name: issue.shown(),
                 kept: match issue.tracker {
                     TrackerRef::Local { .. } | TrackerRef::Synced { .. } => Some(issue.number),
                     TrackerRef::Forge { .. } => None,
                 },
-                title: task.brief.title.clone(),
+                title: task.brief().title.clone(),
                 uid,
                 window: d.window,
                 waiting,
             };
-            Some((task.id.clone(), run))
+            Some((task.id().to_string(), run))
         })
         .collect();
     live.sort_by(|(a, _), (b, _)| a.cmp(b));

@@ -1,7 +1,7 @@
 use super::*;
 use crate::acp::AcpEvent;
-use crate::chat::model::Now;
 use crate::chat::SessionDrive;
+use crate::Now;
 
 fn now() -> Now {
     Now {

@@ -11,10 +11,13 @@ fn enable(id: &str, scope: Scope) -> Change {
 
 fn listed(drive: &mut PluginsDrive) -> u64 {
     let effects = drive.list_if_due();
-    let [Effect::List { token, .. }] = effects.as_slice() else {
+    let [effect] = effects.as_slice() else {
         panic!("no read asked for");
     };
-    *token
+    match effect {
+        Effect::List { token, .. } => *token,
+        Effect::Change { .. } => panic!("no read asked for"),
+    }
 }
 
 fn landed(
@@ -22,13 +25,13 @@ fn landed(
     root: &str,
     change: Change,
     done: Result<(), String>,
-    now: Instant,
+    at: Instant,
 ) {
     let effects = drive.handle(Input::Changed {
         root: root.into(),
         change,
         done,
-        now,
+        now: crate::Now { secs: 0, at },
     });
     assert!(effects.is_empty());
 }
@@ -78,10 +81,14 @@ fn a_read_about_the_project_before_is_dropped() {
 fn one_change_at_a_time() {
     let mut drive = PluginsDrive::default();
     drive.set_root(Path::new("/a"));
-    assert!(matches!(
-        drive.change(enable("one@m", Scope::Local)).as_slice(),
-        [Effect::Change { .. }]
-    ));
+    let effects = drive.change(enable("one@m", Scope::Local));
+    let [effect] = effects.as_slice() else {
+        panic!("not one effect: {}", effects.len());
+    };
+    match effect {
+        Effect::Change { .. } => {}
+        Effect::List { .. } => panic!("a read, not a change"),
+    }
     assert!(drive.change(enable("two@m", Scope::Local)).is_empty());
     assert_eq!(drive.busy().map(|c| c.id.as_str()), Some("one@m"));
 }

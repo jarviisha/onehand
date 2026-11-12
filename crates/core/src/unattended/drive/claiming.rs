@@ -8,7 +8,7 @@ use super::{
 use crate::task::tasks::link::Seen;
 use crate::unattended::{self as core, Claimed, Skip, Taking, Unstarted, Work};
 use crate::workflow::Setup;
-use std::time::SystemTime;
+use crate::Now;
 
 impl UnattendedDrive {
     /// Look at every switched-on project (`roots`), and search them for an
@@ -136,7 +136,7 @@ impl UnattendedDrive {
         looked: Looked<W>,
         seen: &Seen<W>,
         roots: &Vec<On>,
-        now: SystemTime,
+        now: Now,
     ) -> Vec<Effect<W>> {
         let Looked {
             asked_from,

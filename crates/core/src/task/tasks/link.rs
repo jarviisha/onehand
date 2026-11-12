@@ -98,7 +98,9 @@ impl<'a, W: Copy> Seen<'a, W> {
     pub fn working(&self, id: &str) -> Option<Working> {
         match (self.tasks.working(id), self.run(id)) {
             (Some(Working::Running), Some(run)) if run.waits_on_person() => Some(Working::Waiting),
-            (working, _) => working,
+            (working @ (Some(Working::Queued | Working::Running | Working::Waiting) | None), _) => {
+                working
+            }
         }
     }
 

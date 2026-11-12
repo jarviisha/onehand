@@ -33,7 +33,7 @@ fn kept() -> Issues {
 }
 
 fn titles(rows: &[&LocalIssue]) -> Vec<String> {
-    rows.iter().map(|issue| issue.title.clone()).collect()
+    rows.iter().map(|issue| issue.title().to_string()).collect()
 }
 
 #[test]
@@ -46,7 +46,7 @@ fn a_hash_query_narrows_by_reference_and_names_the_exact_one() {
     // `#1` is the start of `#12`, not an issue of its own: onehand's own
     // number for the first issue is never matched.
     assert!(named(&issues, "#1").is_none());
-    assert_eq!(named(&issues, " #6 ").unwrap().title, "Fix the footer");
+    assert_eq!(named(&issues, " #6 ").unwrap().title(), "Fix the footer");
 }
 
 #[test]

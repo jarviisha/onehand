@@ -55,26 +55,26 @@ pub struct Issues {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LocalIssue {
     /// Its number within the project: `#1`, `#2`, …
-    pub number: u64,
-    pub title: String,
+    pub(crate) number: u64,
+    pub(crate) title: String,
     #[serde(default)]
-    pub body: String,
+    pub(crate) body: String,
     #[serde(default = "open_by_default")]
-    pub open: bool,
+    pub(crate) open: bool,
     #[serde(default)]
-    pub labels: Vec<String>,
+    pub(crate) labels: Vec<String>,
     /// When it was opened and last changed, in seconds since the Unix epoch.
     #[serde(default)]
-    pub created: u64,
+    pub(crate) created: u64,
     #[serde(default)]
-    pub updated: u64,
+    pub(crate) updated: u64,
     /// What has been said about it since it was opened, oldest first: a run
     /// starting on it, how that run ended.
     #[serde(default)]
-    pub notes: Vec<Note>,
+    pub(crate) notes: Vec<Note>,
     /// The issue on a forge this one is kept in step with, if any.
     #[serde(default)]
-    pub link: Option<Link>,
+    pub(crate) link: Option<Link>,
     /// The connector it was brought in from, if it was brought in rather than
     /// written here. Kept after the link is gone: an issue somebody else wrote
     /// stays somebody else's, and whether a run may take it turns on that.
@@ -166,6 +166,47 @@ impl Note {
 }
 
 impl LocalIssue {
+    /// Its number within the project: `#1`, `#2`, …
+    pub fn number(&self) -> u64 {
+        self.number
+    }
+
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    pub fn open(&self) -> bool {
+        self.open
+    }
+
+    pub fn labels(&self) -> &[String] {
+        &self.labels
+    }
+
+    /// When it was opened, in seconds since the Unix epoch.
+    pub fn created(&self) -> u64 {
+        self.created
+    }
+
+    /// When it last changed, in seconds since the Unix epoch.
+    pub fn updated(&self) -> u64 {
+        self.updated
+    }
+
+    /// What has been said about it since it was opened, oldest first.
+    pub fn notes(&self) -> &[Note] {
+        &self.notes
+    }
+
+    /// The issue on a forge this one is kept in step with, if any.
+    pub fn link(&self) -> Option<&Link> {
+        self.link.as_ref()
+    }
+
     /// When it last changed, its opening counted as a change.
     pub fn changed(&self) -> u64 {
         self.updated.max(self.created)

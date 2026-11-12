@@ -41,9 +41,10 @@ use crate::connector::Connector;
 use crate::task::tasks::link::Seen;
 use crate::task::{Task, Working};
 use crate::workflow::{Offer, Setup, Template};
+use crate::Now;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 pub mod blocking;
 mod claiming;
@@ -277,7 +278,7 @@ pub struct UnattendedDrive {
     /// What each connector last said about its account; `None` until the
     /// first answer lands.
     accounts: Option<Accounts>,
-    checked_at: Option<SystemTime>,
+    checked_at: Option<u64>,
     /// How many checks have not answered yet. A count, not a flag: checks
     /// overlap, and a flag cleared by whichever lands first gives the button
     /// back early.
@@ -371,8 +372,8 @@ impl UnattendedDrive {
         self.accounts.as_ref()
     }
 
-    /// When the connectors last answered.
-    pub fn checked_at(&self) -> Option<SystemTime> {
+    /// When the connectors last answered, in seconds past the epoch.
+    pub fn checked_at(&self) -> Option<u64> {
         self.checked_at
     }
 
@@ -502,7 +503,7 @@ impl UnattendedDrive {
         seen: &Seen<W>,
         roots: Vec<On>,
         world: &World,
-        now: SystemTime,
+        now: Now,
     ) -> Vec<Effect<W>> {
         match input {
             Input::Elapsed => {
@@ -555,9 +556,9 @@ impl UnattendedDrive {
         self.slots(seen).full()
     }
 
-    fn file_accounts(&mut self, accounts: Accounts, now: SystemTime) {
+    fn file_accounts(&mut self, accounts: Accounts, now: Now) {
         self.accounts = Some(accounts);
-        self.checked_at = Some(now);
+        self.checked_at = Some(now.secs);
     }
 
     /// File what each look found. A later entry for the same project wins,

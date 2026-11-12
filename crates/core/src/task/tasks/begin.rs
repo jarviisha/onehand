@@ -5,6 +5,7 @@ use super::{Effect, TasksDrive};
 use crate::preflight::{found_late, About};
 use crate::task::Grant;
 use crate::workflow::{validate, Action, Failure, Run};
+use crate::Now;
 
 /// What a Retry pressed on a task comes to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,7 +59,7 @@ pub enum Begin {
 impl<W: Copy> TasksDrive<W> {
     /// Begin task `id`, whose place it now holds, its work's folder being
     /// there or not (`folder_there`).
-    pub fn begin(&mut self, id: &str, folder_there: bool) -> Begin {
+    pub fn begin(&mut self, id: &str, folder_there: bool, now: Now) -> Begin {
         // Taken first, so a first drive that is refused uses it up as well.
         let off_screen = self.take_off_screen(id);
         let refused = |why: String, kind| Begin::Refused { why, kind };
@@ -97,7 +98,7 @@ impl<W: Copy> TasksDrive<W> {
         // Counted from what landed, so a mark the app quit before pinning is
         // pinned now rather than taken as made.
         let pinned = run.pinned_count();
-        let first = run.resume();
+        let first = run.resume(now.secs);
         let start = Start {
             run,
             first,
@@ -118,12 +119,12 @@ impl<W: Copy> TasksDrive<W> {
     /// Task `id`'s session did not start. With no agent of the name its
     /// setup keeps configured any more (`agent_gone`), that is what the
     /// preflight would have blocked, found late.
-    pub fn session_not_started(&mut self, id: &str, agent_gone: bool) -> Vec<Effect<W>> {
+    pub fn session_not_started(&mut self, id: &str, agent_gone: bool, now: Now) -> Vec<Effect<W>> {
         let kind = match agent_gone {
             true => found_late(About::Agent),
             false => Failure::Other,
         };
-        self.not_started(id, SESSION_NOT_STARTED.to_string(), kind)
+        self.not_started(id, SESSION_NOT_STARTED.to_string(), kind, now)
     }
 
     /// Retry task `id`, from `window`: at once, as run `run_id`, when it is

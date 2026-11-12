@@ -921,20 +921,20 @@ fn plan_waiting() -> Task {
     use crate::workflow::{Facts, Mark};
     let mut task = task("1", forge_flow(), None);
     let run = task.runs.last_mut().unwrap();
-    run.resume();
+    run.resume(0);
     run.pinned("m1", 0);
     let mark = Mark {
         head: "a".into(),
         digests: vec!["d0".into()],
     };
-    run.measured(mark);
+    run.measured(mark, 0);
     let facts = Facts {
         head: "a".into(),
         dirty: false,
         commits: 0,
         digest: "d0".into(),
     };
-    run.turn_ended(&facts, "The plan.");
+    run.turn_ended(&facts, "The plan.", 0);
     run.pinned("m2", 1);
     task
 }

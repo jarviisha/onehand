@@ -12,6 +12,7 @@
 use super::{Chat, Effect, RunDrive, Timer};
 use crate::connector::{CheckState, PullRequest};
 use crate::workflow::{judge, pull_request_step, waited_on, with_logs, PrOpened, Seen};
+use crate::Now;
 use std::time::{Duration, Instant};
 
 /// How often a run waiting on its pull request's status checks looks at
@@ -69,12 +70,12 @@ impl RunDrive {
         &mut self,
         pushed: Option<String>,
         wait: Duration,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
         self.forging = Some(Forging::Watching(Watch {
             pushed,
-            since: now,
+            since: now.at,
             wait,
         }));
         fx.push(Effect::Arm {
@@ -85,8 +86,12 @@ impl RunDrive {
 
     /// The clock for the next look ran out: look, while the run still waits.
     pub(super) fn look_again(&mut self, fx: &mut Vec<Effect>) {
-        if matches!(self.forging, Some(Forging::Watching(_))) {
-            fx.push(Effect::FindPullRequest);
+        match self.forging {
+            Some(Forging::Watching(_)) => fx.push(Effect::FindPullRequest),
+            Some(
+                Forging::Pushing | Forging::Opening | Forging::Logs(..) | Forging::Readying(..),
+            )
+            | None => {}
         }
     }
 
@@ -95,11 +100,15 @@ impl RunDrive {
         &mut self,
         pushed: Result<(), String>,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
-        if matches!(self.forging, Some(Forging::Pushing)) {
-            self.forge_done(pushed.map(|()| None), chat, now, fx);
+        match self.forging {
+            Some(Forging::Pushing) => self.forge_done(pushed.map(|()| None), chat, now, fx),
+            Some(
+                Forging::Opening | Forging::Watching(_) | Forging::Logs(..) | Forging::Readying(..),
+            )
+            | None => {}
         }
     }
 
@@ -108,7 +117,7 @@ impl RunDrive {
         &mut self,
         found: Result<Option<PullRequest>, String>,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
         match self.forging.take() {
@@ -126,7 +135,7 @@ impl RunDrive {
                 let seen = judge(
                     found.as_ref().map(Option::as_ref).map_err(Clone::clone),
                     watch.pushed.as_deref(),
-                    now.saturating_duration_since(watch.since),
+                    now.at.saturating_duration_since(watch.since),
                     watch.wait,
                 );
                 match (seen, found.ok().flatten()) {
@@ -150,11 +159,21 @@ impl RunDrive {
                         self.forging = Some(Forging::Readying(watch, pr.url));
                         fx.push(Effect::MarkReady { number: pr.number });
                     }
-                    (seen, _) => self.seen(watch, seen, chat, now, fx),
+                    // Any other answer is judged as it is.
+                    (
+                        seen @ (Seen::Pending
+                        | Seen::Passed
+                        | Seen::Repair(_)
+                        | Seen::Fail(_)
+                        | Seen::Merged),
+                        _,
+                    ) => self.seen(watch, seen, chat, now, fx),
                 }
             }
             // Not what the run asked about now.
-            other => self.forging = other,
+            other @ (None | Some(Forging::Pushing | Forging::Logs(..) | Forging::Readying(..))) => {
+                self.forging = other
+            }
         }
     }
 
@@ -164,12 +183,18 @@ impl RunDrive {
         &mut self,
         opened_read: Result<Result<Option<PullRequest>, String>, String>,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
-        if matches!(self.forging, Some(Forging::Opening)) {
-            let done = opened_read.map(|read| read.ok().flatten().map(opened));
-            self.forge_done(done, chat, now, fx);
+        match self.forging {
+            Some(Forging::Opening) => {
+                let done = opened_read.map(|read| read.ok().flatten().map(opened));
+                self.forge_done(done, chat, now, fx);
+            }
+            Some(
+                Forging::Pushing | Forging::Watching(_) | Forging::Logs(..) | Forging::Readying(..),
+            )
+            | None => {}
         }
     }
 
@@ -178,11 +203,16 @@ impl RunDrive {
         &mut self,
         logs: Vec<(String, Result<String, String>)>,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
-        let Some(Forging::Logs(watch, said)) = self.forging.take() else {
-            return;
+        let (watch, said) = match self.forging.take() {
+            Some(Forging::Logs(watch, said)) => (watch, said),
+            // Not what the run asked about now.
+            other @ (None
+            | Some(
+                Forging::Pushing | Forging::Opening | Forging::Watching(_) | Forging::Readying(..),
+            )) => return self.forging = other,
         };
         let logs: Vec<(String, String)> = logs
             .into_iter()
@@ -197,21 +227,26 @@ impl RunDrive {
         &mut self,
         ready: Result<(), String>,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
-        let Some(Forging::Readying(watch, url)) = self.forging.take() else {
-            return;
+        let (watch, url) = match self.forging.take() {
+            Some(Forging::Readying(watch, url)) => (watch, url),
+            // Not what the run asked about now.
+            other @ (None
+            | Some(
+                Forging::Pushing | Forging::Opening | Forging::Watching(_) | Forging::Logs(..),
+            )) => return self.forging = other,
         };
         self.command = false;
         if let Some(stop) = self.stopping.take() {
-            return self.advance(chat, now, fx, move |run| run.stopped(stop));
+            return self.advance(chat, now, fx, move |run| run.stopped(stop, now.secs));
         }
         let seen = match ready {
             Ok(()) => Seen::Passed,
             Err(why) => waited_on(
                 format!("{url} could not be taken out of draft: {why}"),
-                now.saturating_duration_since(watch.since),
+                now.at.saturating_duration_since(watch.since),
                 watch.wait,
             ),
         };
@@ -225,7 +260,7 @@ impl RunDrive {
         &mut self,
         why: String,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
         match self.forging.take() {
@@ -235,7 +270,9 @@ impl RunDrive {
             Some(Forging::Readying(watch, _)) => {
                 self.command = false;
                 match self.stopping.take() {
-                    Some(stop) => self.advance(chat, now, fx, move |run| run.stopped(stop)),
+                    Some(stop) => {
+                        self.advance(chat, now, fx, move |run| run.stopped(stop, now.secs))
+                    }
                     None => self.seen(watch, Seen::Fail(why), chat, now, fx),
                 }
             }
@@ -251,7 +288,7 @@ impl RunDrive {
         watch: Watch,
         seen: Seen,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
         if seen == Seen::Pending {
@@ -261,8 +298,10 @@ impl RunDrive {
                 after: STATUS_CHECKS_EVERY,
             });
         }
-        self.budget.resume(now);
-        self.advance(chat, now, fx, move |run| run.status_checks_seen(seen));
+        self.budget.resume(now.at);
+        self.advance(chat, now, fx, move |run| {
+            run.status_checks_seen(seen, now.secs)
+        });
     }
 
     /// A push or a pull request landed, or failed: the run ends there once
@@ -271,15 +310,15 @@ impl RunDrive {
         &mut self,
         done: Result<Option<PrOpened>, String>,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
         self.command = false;
         self.forging = None;
         if let Some(stop) = self.stopping.take() {
-            return self.advance(chat, now, fx, move |run| run.stopped(stop));
+            return self.advance(chat, now, fx, move |run| run.stopped(stop, now.secs));
         }
-        self.advance(chat, now, fx, move |run| run.forge_done(done));
+        self.advance(chat, now, fx, move |run| run.forge_done(done, now.secs));
     }
 }
 

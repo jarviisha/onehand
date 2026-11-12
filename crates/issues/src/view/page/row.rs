@@ -77,7 +77,7 @@ pub(super) fn issue_row(
     };
     let ink = status_ink(cx);
     let issue = row.item.issue;
-    let (root, number) = (row.item.root.to_path_buf(), issue.number);
+    let (root, number) = (row.item.root.to_path_buf(), issue.number());
     let running = row
         .item
         .work
@@ -105,12 +105,12 @@ pub(super) fn issue_row(
         .child(div().min_w_0().truncate().child(project));
     // Whether it is open, in the hue of its state, the one coloured mark on
     // the line: open in the success ink, closed in the closed ink.
-    let (glyph, hue) = match issue.open {
+    let (glyph, hue) = match issue.open() {
         true => (Icon::from(AppIcon::CircleDot), ink.success),
         false => (Icon::new(IconName::CircleCheck), ink.closed),
     };
     let state = Icon::new(glyph).small().text_color(hue);
-    let title = issue.title.clone();
+    let title = issue.title().to_string();
     // The title is what the row is, so it takes weight, as the age does; the
     // reference, the note and the project are context, in the regular weight
     // and the quieter inks.
@@ -123,8 +123,8 @@ pub(super) fn issue_row(
         .tooltip(onehand_ui::tip(move |window, cx| {
             Tooltip::new(title.clone()).build(window, cx)
         }))
-        .child(issue.title.clone());
-    let priority = priority(&issue.body).map(|said| {
+        .child(issue.title().to_string());
+    let priority = priority(issue.body()).map(|said| {
         let name = priority_name(&said).to_string();
         let said_name = format!("Priority: {name}");
         div()
@@ -176,9 +176,9 @@ pub(super) fn issue_row(
         }))
         .child(onehand_core::age(onehand_core::issues::now(), changed));
 
-    let more = issue.labels.len().saturating_sub(ROW_LABELS);
+    let more = issue.labels().len().saturating_sub(ROW_LABELS);
     let hidden = issue
-        .labels
+        .labels()
         .iter()
         .skip(ROW_LABELS)
         .cloned()
@@ -193,7 +193,7 @@ pub(super) fn issue_row(
         .w(LABELS_W)
         .overflow_hidden()
         .gap_1()
-        .children(issue.labels.iter().take(ROW_LABELS).map(|label| {
+        .children(issue.labels().iter().take(ROW_LABELS).map(|label| {
             let neutral = LabelKind::of(label) == LabelKind::Category;
             chip(label.clone(), cx)
                 .flex_initial()

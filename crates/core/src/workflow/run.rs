@@ -387,7 +387,7 @@ impl Run {
     }
 
     /// The mark asked for: the step's prompt, or the carry-on waiting on it.
-    pub(crate) fn measured(&mut self, mark: Mark) -> Action {
+    pub(crate) fn measured(&mut self, mark: Mark, now: u64) -> Action {
         let Await::Mark(carry) = &self.awaiting else {
             return Action::Idle;
         };
@@ -415,12 +415,12 @@ impl Run {
             }
         };
         self.awaiting = Await::Turn;
-        self.log_here("measured the work");
+        self.log_here("measured the work", now);
         Action::Prompt(text)
     }
 
     /// A turn the run sent ended, leaving `facts`, answering `answer`.
-    pub(crate) fn turn_ended(&mut self, facts: &Facts, answer: &str) -> Action {
+    pub(crate) fn turn_ended(&mut self, facts: &Facts, answer: &str, now: u64) -> Action {
         if self.awaiting != Await::Turn {
             return Action::Idle;
         }
@@ -446,10 +446,10 @@ impl Run {
             }
             self.revise = None;
             self.check_output = None;
-            return self.enter(self.step + 1, "its gates held");
+            return self.enter(self.step + 1, "its gates held", now);
         };
         let why = format!("missed: {}", gate.label());
-        if let Some(action) = self.miss(&why) {
+        if let Some(action) = self.miss(&why, now) {
             return action;
         }
         let place = self.template.place;
@@ -470,7 +470,7 @@ impl Run {
 
     /// The step's command finished as `ran` says, kept on its visit.
     /// Whether it passed is its exit status alone.
-    pub(crate) fn command_finished(&mut self, ran: CommandResult) -> Action {
+    pub(crate) fn command_finished(&mut self, ran: CommandResult, now: u64) -> Action {
         if self.awaiting != Await::Command {
             return Action::Idle;
         }
@@ -479,16 +479,20 @@ impl Run {
             true => {
                 self.marks.verified_at = ran.commit;
                 self.check_output = None;
-                self.enter(self.step + 1, COMMAND_PASSED)
+                self.enter(self.step + 1, COMMAND_PASSED, now)
             }
-            false => self.send_back(ran.tail, COMMAND_FAILED),
+            false => self.send_back(ran.tail, COMMAND_FAILED, now),
         }
     }
 
     /// The push or the pull request the step asked for is done, with the
     /// pull request it opened or took up, or failed for the reason given. A
     /// failure ends the run: a retry starts at the step again.
-    pub(crate) fn forge_done(&mut self, done: Result<Option<PrOpened>, String>) -> Action {
+    pub(crate) fn forge_done(
+        &mut self,
+        done: Result<Option<PrOpened>, String>,
+        now: u64,
+    ) -> Action {
         if self.awaiting != Await::Forge {
             return Action::Idle;
         }
@@ -497,14 +501,14 @@ impl Run {
                 if opened.is_some() {
                     self.pull_request = opened;
                 }
-                self.enter(self.step + 1, FORGE_DONE)
+                self.enter(self.step + 1, FORGE_DONE, now)
             }
-            Err(why) => self.fail(why, Failure::Forge),
+            Err(why) => self.fail(why, Failure::Forge, now),
         }
     }
 
     /// What a look at the pull request's status checks found.
-    pub(crate) fn status_checks_seen(&mut self, seen: Seen) -> Action {
+    pub(crate) fn status_checks_seen(&mut self, seen: Seen, now: u64) -> Action {
         if self.awaiting != Await::StatusChecks {
             return Action::Idle;
         }
@@ -512,20 +516,24 @@ impl Run {
             Seen::Pending => Action::Idle,
             Seen::Passed => {
                 self.check_output = None;
-                self.enter(self.step + 1, "its status checks passed")
+                self.enter(self.step + 1, "its status checks passed", now)
             }
             // Past every step: whatever was left is moot once it landed.
-            Seen::Merged => self.enter(self.template.steps.len(), "its pull request was merged"),
-            Seen::Fail(why) => self.fail(why, Failure::Forge),
-            Seen::Repair(out) => self.send_back(out, "its status checks failed"),
+            Seen::Merged => self.enter(
+                self.template.steps.len(),
+                "its pull request was merged",
+                now,
+            ),
+            Seen::Fail(why) => self.fail(why, Failure::Forge, now),
+            Seen::Repair(out) => self.send_back(out, "its status checks failed", now),
         }
     }
 
     /// What the step checked failed, printing `out`: a miss, and back to the
     /// step it sends back to, carrying `out`.
-    fn send_back(&mut self, out: String, why: &str) -> Action {
+    fn send_back(&mut self, out: String, why: &str, now: u64) -> Action {
         self.visit_output(out.clone());
-        if let Some(action) = self.miss(why) {
+        if let Some(action) = self.miss(why, now) {
             return action;
         }
         let back = self
@@ -533,10 +541,10 @@ impl Run {
             .and_then(|step| step.kind.sends_back_to())
             .and_then(|id| self.template.index_of(id));
         let Some(back) = back else {
-            return self.fail(why.to_string(), Failure::Other);
+            return self.fail(why.to_string(), Failure::Other, now);
         };
         self.check_output = Some(out);
-        self.enter(back, why)
+        self.enter(back, why, now)
     }
 
     /// What an approval press drawn from the run now names: the run, and the
@@ -554,16 +562,16 @@ impl Run {
 
     /// A person approved what they read at `at`: go on, unless the run no
     /// longer waits there.
-    pub(crate) fn approved(&mut self, at: &ApprovalAt) -> Action {
+    pub(crate) fn approved(&mut self, at: &ApprovalAt, now: u64) -> Action {
         if self.approval_at().as_ref() != Some(at) {
             return Action::Idle;
         }
-        self.enter(self.step + 1, "approved")
+        self.enter(self.step + 1, "approved", now)
     }
 
     /// A person sent the answer they read at `at` back with `note`: the step
     /// it approves runs again, unless the run no longer waits there.
-    pub(crate) fn revised(&mut self, at: &ApprovalAt, note: String) -> Action {
+    pub(crate) fn revised(&mut self, at: &ApprovalAt, note: String, now: u64) -> Action {
         if self.approval_at().as_ref() != Some(at) {
             return Action::Idle;
         }
@@ -575,30 +583,30 @@ impl Run {
             return Action::Idle;
         };
         self.revise = Some(note);
-        self.enter(back, "sent back to be revised")
+        self.enter(back, "sent back to be revised", now)
     }
 
     /// The run is to stop, for `stop`. **Never judges the turn** that was
     /// under way: a turn cut short could otherwise pass as finished work.
-    pub(crate) fn stopped(&mut self, stop: Stop) -> Action {
+    pub(crate) fn stopped(&mut self, stop: Stop, now: u64) -> Action {
         if self.over() {
             return Action::Idle;
         }
-        self.finish(Outcome::Stopped(stop))
+        self.finish(Outcome::Stopped(stop), now)
     }
 
     /// The drive could not go on, for `why`, which was of `kind`.
-    pub(crate) fn failed(&mut self, why: String, kind: Failure) -> Action {
+    pub(crate) fn failed(&mut self, why: String, kind: Failure, now: u64) -> Action {
         if self.over() {
             return Action::Idle;
         }
-        self.fail(why, kind)
+        self.fail(why, kind, now)
     }
 
     /// End failed, for `why`, of `kind`.
-    fn fail(&mut self, why: String, kind: Failure) -> Action {
+    fn fail(&mut self, why: String, kind: Failure, now: u64) -> Action {
         self.failure = Some(kind);
-        self.finish(Outcome::Failed(why))
+        self.finish(Outcome::Failed(why), now)
     }
 
     /// Carry on in a new session, after a restart or after its agent or
@@ -607,54 +615,54 @@ impl Run {
     /// outcome does not come back.
     ///
     /// A run never started starts here.
-    pub(crate) fn resume(&mut self) -> Action {
+    pub(crate) fn resume(&mut self, now: u64) -> Action {
         if self.outcome.as_ref().is_some_and(|o| !o.resumable()) {
             return Action::Idle;
         }
         self.outcome = None;
         self.failure = None;
         if !self.begun() {
-            return self.enter(self.step, "started");
+            return self.enter(self.step, "started", now);
         }
-        self.close_visit("interrupted");
+        self.close_visit("interrupted", now);
         if let Some(step) = self.current().map(|step| step.id.clone()) {
-            self.open_visit(step);
+            self.open_visit(step, now);
         }
-        self.log_here("resumed");
+        self.log_here("resumed", now);
         match (self.current().map(|step| &step.kind), &self.marks.step_from) {
             (Some(StepKind::Agent { .. }), Some(_)) => {
                 self.awaiting = Await::Turn;
                 Action::Prompt(self.step_prompt())
             }
-            (Some(_), _) => self.start_step(),
-            (None, _) => self.finish(Outcome::Done),
+            (Some(_), _) => self.start_step(now),
+            (None, _) => self.finish(Outcome::Done, now),
         }
     }
 
     /// Go to the step at `at`, or end done past the last.
-    fn enter(&mut self, at: usize, why: &str) -> Action {
+    fn enter(&mut self, at: usize, why: &str, now: u64) -> Action {
         let from = self.step_id();
         let Some(to) = self.template.steps.get(at).map(|step| step.id.clone()) else {
-            self.close_visit(&Outcome::Done.said_in(&self.template));
-            self.log(from, "done".to_string(), why);
+            self.close_visit(&Outcome::Done.said_in(&self.template), now);
+            self.log(from, "done".to_string(), why, now);
             self.awaiting = Await::Nothing;
             self.outcome = Some(Outcome::Done);
             return Action::Finish(Outcome::Done);
         };
-        self.close_visit(why);
-        self.open_visit(to.clone());
+        self.close_visit(why, now);
+        self.open_visit(to.clone(), now);
         if at > self.furthest {
             self.furthest = at;
             self.misses = 0;
         }
         self.step = at;
         self.marks.step_from = None;
-        self.log(from, to, why);
-        self.start_step()
+        self.log(from, to, why, now);
+        self.start_step(now)
     }
 
     /// What the step at hand starts with.
-    fn start_step(&mut self) -> Action {
+    fn start_step(&mut self, now: u64) -> Action {
         match self.current().map(|step| step.kind.clone()) {
             Some(StepKind::Agent { .. }) => {
                 self.awaiting = Await::Mark(None);
@@ -669,6 +677,7 @@ impl Run {
                     _ => self.fail(
                         "the project has no check command to run".to_string(),
                         Failure::Configuration,
+                        now,
                     ),
                 }
             }
@@ -679,6 +688,7 @@ impl Run {
             Some(kind) if kind.on_forge() && self.setup.forge.is_none() => self.enter(
                 self.step + 1,
                 "no forge serves it: the branch is the result",
+                now,
             ),
             Some(StepKind::Push) => match self.marks.verified_at.clone() {
                 Some(commit) => {
@@ -688,6 +698,7 @@ impl Run {
                 None => self.fail(
                     "no command has passed on a commit to push".to_string(),
                     Failure::Other,
+                    now,
                 ),
             },
             Some(StepKind::PullRequest) => {
@@ -703,24 +714,24 @@ impl Run {
                     pushed: self.marks.verified_at.clone(),
                 }
             }
-            None => self.finish(Outcome::Done),
+            None => self.finish(Outcome::Done, now),
         }
     }
 
     /// Count a miss; past the template's allowance, the run is exhausted.
-    fn miss(&mut self, why: &str) -> Option<Action> {
+    fn miss(&mut self, why: &str, now: u64) -> Option<Action> {
         self.misses += 1;
-        self.log_here(why);
+        self.log_here(why, now);
         if self.misses <= self.template.misses {
             return None;
         }
         let step = self
             .current()
             .map_or_else(String::new, |step| step.label.clone());
-        Some(self.finish(Outcome::Exhausted { step }))
+        Some(self.finish(Outcome::Exhausted { step }, now))
     }
 
-    fn finish(&mut self, outcome: Outcome) -> Action {
+    fn finish(&mut self, outcome: Outcome, now: u64) -> Action {
         let to = match &outcome {
             Outcome::Done => "done",
             Outcome::Stopped(_) => "stopped",
@@ -728,8 +739,8 @@ impl Run {
             Outcome::Failed(_) => "failed",
         };
         let said = outcome.said_in(&self.template);
-        self.log(self.step_id(), to.to_string(), &said);
-        self.close_visit(&said);
+        self.log(self.step_id(), to.to_string(), &said, now);
+        self.close_visit(&said, now);
         self.awaiting = Await::Nothing;
         self.outcome = Some(outcome.clone());
         Action::Finish(outcome)
@@ -767,14 +778,14 @@ impl Run {
         }
     }
 
-    fn log_here(&mut self, why: &str) {
+    fn log_here(&mut self, why: &str, now: u64) {
         let here = self.step_id();
-        self.log(here.clone(), here, why);
+        self.log(here.clone(), here, why, now);
     }
 
-    fn log(&mut self, from: String, to: String, why: &str) {
+    fn log(&mut self, from: String, to: String, why: &str, now: u64) {
         self.history.push(Transition {
-            at: now(),
+            at: now,
             from,
             to,
             why: why.to_string(),
@@ -783,11 +794,4 @@ impl Run {
             self.history.remove(0);
         }
     }
-}
-
-/// Seconds past the epoch.
-fn now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
 }

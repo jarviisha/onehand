@@ -535,7 +535,7 @@ impl Shell {
             live_conversations: Vec::new(),
             issue_works: (Vec::new(), Vec::new()),
             #[cfg(test)]
-            said: Vec::new(),
+            refused: Vec::new(),
             rail: crate::rail::RailState::new(window, cx),
             folds: HashMap::new(),
             last_panel: FocusedPanel::Chat,

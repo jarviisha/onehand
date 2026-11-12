@@ -23,7 +23,7 @@ fn a_host_chat_has_no_store() {
             onehand_core::acp::AcpEvent::TurnEnded {
                 stop_reason: "end_turn".into(),
             },
-            super::now(),
+            onehand_core::Now::read(),
         );
         fx.iter().any(|effect| matches!(effect, Effect::Save(_)))
     };

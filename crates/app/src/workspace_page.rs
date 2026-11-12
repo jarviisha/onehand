@@ -618,7 +618,7 @@ fn holds(
         read.iter()
             .find(|(root, _)| *root == project.root)
             .map_or(0, |(_, issues)| {
-                issues.listed().iter().filter(|issue| issue.open).count()
+                issues.listed().iter().filter(|issue| issue.open()).count()
             })
     });
     let holds: Vec<String> = [

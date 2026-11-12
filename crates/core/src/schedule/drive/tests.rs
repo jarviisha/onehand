@@ -32,7 +32,7 @@ fn every_minute(id: &str) -> Schedule {
 
 /// A clock opened a while ago, past its first look's arming.
 fn clock() -> ScheduleDrive<Win> {
-    let (clock, fx) = ScheduleDrive::new(NOW - 600);
+    let (clock, fx) = ScheduleDrive::new(at_secs(NOW - 600));
     assert_eq!(fx, vec![Effect::Arm(FIRST_LOOK)]);
     clock
 }
@@ -45,7 +45,7 @@ fn look(
     held: &[(&str, Win)],
     working: &[&str],
 ) -> Vec<Effect<Win>> {
-    let fx = clock.handle(Input::Elapsed, NOW, &Utc);
+    let fx = clock.handle(Input::Elapsed, at_secs(NOW), &Utc);
     assert_eq!(fx, vec![Effect::Read, Effect::Arm(EVERY)]);
     clock.handle(
         Input::Read {
@@ -57,7 +57,7 @@ fn look(
             working: working.iter().map(|t| t.to_string()).collect(),
             library: Vec::new(),
         },
-        NOW,
+        at_secs(NOW),
         &Utc,
     )
 }
@@ -65,7 +65,7 @@ fn look(
 fn started(clock: &mut ScheduleDrive<Win>, task: &str) -> Vec<Effect<Win>> {
     clock.handle(
         Input::Started(Ok((task.into(), Placed::Started))),
-        NOW,
+        at_secs(NOW),
         &Utc,
     )
 }
@@ -73,15 +73,38 @@ fn started(clock: &mut ScheduleDrive<Win>, task: &str) -> Vec<Effect<Win>> {
 fn start_in(fx: &[Effect<Win>]) -> Option<(&Starting, Win)> {
     fx.iter().find_map(|e| match e {
         Effect::Start { starting, window } => Some((&**starting, *window)),
-        _ => None,
+        Effect::Arm(_)
+        | Effect::Read
+        | Effect::Write { .. }
+        | Effect::Switch { .. }
+        | Effect::Signal(_)
+        | Effect::Refresh => None,
     })
 }
 
 fn written(fx: &[Effect<Win>]) -> Option<&[Schedule]> {
     fx.iter().find_map(|e| match e {
         Effect::Write { looked } => Some(looked.as_slice()),
-        _ => None,
+        Effect::Arm(_)
+        | Effect::Read
+        | Effect::Start { .. }
+        | Effect::Switch { .. }
+        | Effect::Signal(_)
+        | Effect::Refresh => None,
     })
+}
+
+/// The signal `e` says, if it says one.
+fn signal(e: &Effect<Win>) -> Option<&Signal<Win>> {
+    match e {
+        Effect::Signal(signal) => Some(signal),
+        Effect::Arm(_)
+        | Effect::Read
+        | Effect::Start { .. }
+        | Effect::Write { .. }
+        | Effect::Switch { .. }
+        | Effect::Refresh => None,
+    }
 }
 
 /// A look while one is under way waits for it, and the clock is armed again
@@ -89,9 +112,12 @@ fn written(fx: &[Effect<Win>]) -> Option<&[Schedule]> {
 #[test]
 fn a_look_waits_for_the_one_under_way() {
     let mut clock = clock();
-    assert_eq!(clock.handle(Input::Elapsed, NOW, &Utc)[0], Effect::Read);
     assert_eq!(
-        clock.handle(Input::Elapsed, NOW, &Utc),
+        clock.handle(Input::Elapsed, at_secs(NOW), &Utc)[0],
+        Effect::Read
+    );
+    assert_eq!(
+        clock.handle(Input::Elapsed, at_secs(NOW), &Utc),
         vec![Effect::Arm(EVERY)]
     );
 }
@@ -128,7 +154,7 @@ fn a_due_schedule_starts_in_the_first_window_that_holds_it() {
     let fx = started(&mut clock, "t-b");
     let looked = written(&fx).expect("what moved is written");
     assert!(looked.iter().all(|s| s.last_fired == Some(NOW)));
-    let fx = clock.handle(Input::Written(Ok(looked.to_vec())), NOW, &Utc);
+    let fx = clock.handle(Input::Written(Ok(looked.to_vec())), at_secs(NOW), &Utc);
     assert_eq!(fx, vec![Effect::Refresh]);
     assert_eq!(clock.read(), Some(&Ok(())));
     assert_eq!(clock.listed().len(), 2);
@@ -161,7 +187,7 @@ fn a_busy_schedule_is_skipped_or_held_until_its_task_is_done() {
     let fx = started(&mut clock, "ts");
     clock.handle(
         Input::Written(Ok(written(&fx).unwrap().to_vec())),
-        NOW,
+        at_secs(NOW),
         &Utc,
     );
     // Both still working at the next time.
@@ -181,7 +207,7 @@ fn a_busy_schedule_is_skipped_or_held_until_its_task_is_done() {
         Some("the last run was still going")
     );
     assert_eq!(looked[0].said, None, "held, not said");
-    clock.handle(Input::Written(Ok(looked.to_vec())), NOW, &Utc);
+    clock.handle(Input::Written(Ok(looked.to_vec())), at_secs(NOW), &Utc);
     // Its task done, the held time goes even with nothing newly due.
     q.last_fired = Some(NOW);
     let fx = look(&mut clock, vec![q.clone()], &[("q", 1)], &[]);
@@ -196,7 +222,7 @@ fn a_busy_schedule_is_skipped_or_held_until_its_task_is_done() {
     let fx = look(&mut clock, vec![busy.clone()], &[("q", 1)], &["tq2"]);
     clock.handle(
         Input::Written(Ok(written(&fx).unwrap().to_vec())),
-        NOW,
+        at_secs(NOW),
         &Utc,
     );
     busy.on = false;
@@ -223,7 +249,11 @@ fn a_start_that_cannot_go_is_said_once_per_reason() {
     };
     let told = |fx: &[Effect<Win>]| {
         fx.iter()
-            .filter(|e| matches!(e, Effect::Signal(Signal::NotStarted { .. })))
+            .filter_map(signal)
+            .filter(|s| match s {
+                Signal::NotStarted { .. } => true,
+                Signal::SwitchFailed { .. } | Signal::Log(_) => false,
+            })
             .count()
     };
     let fx = look(&mut clock, vec![s.clone()], &[("a", 1)], &[]);
@@ -233,13 +263,13 @@ fn a_start_that_cannot_go_is_said_once_per_reason() {
         looked[0].said.as_deref(),
         Some("did not start: no workflow with id gone in the library")
     );
-    clock.handle(Input::Written(Ok(looked.to_vec())), NOW, &Utc);
+    clock.handle(Input::Written(Ok(looked.to_vec())), at_secs(NOW), &Utc);
     s.last_fired = Some(NOW - 60);
     let fx = look(&mut clock, vec![s.clone()], &[("a", 1)], &[]);
     assert_eq!(told(&fx), 0, "the same reason is said once");
     clock.handle(
         Input::Written(Ok(written(&fx).unwrap().to_vec())),
-        NOW,
+        at_secs(NOW),
         &Utc,
     );
     // A refusal is another reason.
@@ -248,7 +278,7 @@ fn a_start_that_cannot_go_is_said_once_per_reason() {
     look(&mut clock, vec![p], &[("a", 1)], &[]);
     let fx = clock.handle(
         Input::Started(Ok(("t".into(), Placed::Refused("busy".into())))),
-        NOW,
+        at_secs(NOW),
         &Utc,
     );
     assert_eq!(told(&fx), 1);
@@ -262,8 +292,16 @@ fn a_switch_being_written_stands_over_a_look() {
     let mut off = every_minute("a");
     off.on = false;
     look(&mut clock, vec![off.clone()], &[], &[]);
-    let fx = clock.set_on("a", true, NOW, 9);
-    assert!(matches!(&fx[1], Effect::Switch { id, on: true, since: NOW, window: 9 } if id == "a"));
+    let fx = clock.set_on("a", true, at_secs(NOW), 9);
+    assert_eq!(
+        fx[1],
+        Effect::Switch {
+            id: "a".into(),
+            on: true,
+            since: NOW,
+            window: 9
+        }
+    );
     assert!(clock.listed()[0].on, "shown at once");
     // A look lands before the switch is written: it still reads off.
     look(&mut clock, vec![off.clone()], &[], &[]);
@@ -276,17 +314,15 @@ fn a_switch_being_written_stands_over_a_look() {
             failed: Some("disk full".into()),
             kept: Some(vec![off]),
         },
-        NOW,
+        at_secs(NOW),
         &Utc,
     );
-    assert!(matches!(
-        &fx[0],
-        Effect::Signal(Signal::SwitchFailed {
-            window: 9,
-            on: true,
-            ..
-        })
-    ));
+    match signal(&fx[0]) {
+        Some(Signal::SwitchFailed { window, on, .. }) => assert_eq!((*window, *on), (9, true)),
+        said @ (Some(Signal::NotStarted { .. } | Signal::Log(_)) | None) => {
+            panic!("not a failed switch: {said:?} of {fx:?}")
+        }
+    }
     assert!(!clock.listed()[0].on, "what the file holds is put back");
 }
 
@@ -307,4 +343,12 @@ fn a_look_writes_only_what_it_moved() {
     assert!(crate::schedule::switch(&mut all, "b", true, NOW).is_err());
     crate::schedule::switch(&mut all, "a", false, NOW).unwrap();
     assert!(!all[0].on);
+}
+
+/// The time `secs` past the epoch, as the clock is told it.
+fn at_secs(secs: u64) -> crate::Now {
+    crate::Now {
+        secs,
+        at: std::time::Instant::now(),
+    }
 }

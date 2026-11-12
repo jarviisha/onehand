@@ -5,7 +5,6 @@
 
 use super::IssuesView;
 use gpui::Context;
-use onehand_core::issues;
 use onehand_core::task::work::drive::Project;
 
 impl IssuesView {
@@ -30,7 +29,7 @@ impl IssuesView {
     /// Read every project's pull requests when it is due.
     pub(super) fn read_prs_if_due(&mut self, cx: &mut Context<Self>) {
         let projects = self.pr_projects(cx);
-        let effects = self.work.page_drawn(&projects, issues::now());
+        let effects = self.work.page_drawn(&projects, onehand_core::Now::read());
         self.carry(effects, cx);
     }
 

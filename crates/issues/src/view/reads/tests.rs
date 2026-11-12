@@ -135,7 +135,7 @@ fn waiting_on_checks(storage: &Path, project: &Path, number: u64) -> IssueWork {
             forge: Some(FORGE.name.into()),
         },
     );
-    let run = task.runs.last_mut().unwrap();
+    let run = task.runs_mut().last_mut().unwrap();
     run.step = 2;
     let key = IssueKey {
         file: onehand_core::issues::file_for(storage, project),

@@ -6,8 +6,8 @@
 
 use super::{Effect, Next, SessionDrive, Signal};
 use crate::acp::AcpEvent;
-use crate::chat::Now;
 use crate::workspace::HostName;
+use crate::Now;
 
 /// What a host session waits on, while it does.
 #[derive(Clone, Debug, PartialEq)]
@@ -96,7 +96,10 @@ impl SessionDrive {
     /// Stop waiting on the host's busy sessions, taking back the line that
     /// said so: `true` when it was waiting.
     pub fn forget_host_wait(&mut self) -> (bool, Vec<Effect>) {
-        match self.hold.take_if(|hold| matches!(hold, Hold::Busy(_))) {
+        match self.hold.take_if(|hold| match hold {
+            Hold::Busy(_) => true,
+            Hold::Away(_) => false,
+        }) {
             Some(_) => (true, self.unsay_host_wait()),
             None => (false, Vec::new()),
         }
@@ -105,7 +108,10 @@ impl SessionDrive {
     /// No longer out of reach of the host, taking back the line that said
     /// so: `true` when it was.
     pub fn forget_host_away(&mut self) -> (bool, Vec<Effect>) {
-        match self.hold.take_if(|hold| matches!(hold, Hold::Away(_))) {
+        match self.hold.take_if(|hold| match hold {
+            Hold::Away(_) => true,
+            Hold::Busy(_) => false,
+        }) {
             Some(_) => (true, self.unsay_host_wait()),
             None => (false, Vec::new()),
         }
@@ -161,9 +167,8 @@ impl SessionDrive {
         link: Option<&HostLink>,
         now: Now,
     ) -> (Vec<Effect>, Next) {
-        let Some(link) = link.filter(|link| {
-            matches!(event, AcpEvent::Disconnected(_)) && link.closed && !link.taken
-        }) else {
+        let Some(link) = link.filter(|link| event.ends_stream() && link.closed && !link.taken)
+        else {
             return self.apply(event, now);
         };
         self.chat.tell_time(now);

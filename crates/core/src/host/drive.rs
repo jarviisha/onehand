@@ -63,6 +63,16 @@ pub enum HostState {
     Taken,
 }
 
+impl HostState {
+    /// Whether its connection went, or no attach reaches it.
+    pub(crate) fn lost(&self) -> bool {
+        match self {
+            HostState::Lost(_) => true,
+            HostState::Unknown | HostState::Attaching | HostState::Live | HostState::Taken => false,
+        }
+    }
+}
+
 /// Which wait on a host.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -175,7 +185,7 @@ impl HostDrive {
             false => self.slots.get(host).copied(),
         };
         match (found, by) {
-            (Some(Slot::Ready(_)), _) if alive => return Got::Ready,
+            (Some(Slot::Ready(_)), Asker::Poll | Asker::Person) if alive => return Got::Ready,
             (
                 Some(Slot::Attaching {
                     made,
@@ -183,8 +193,10 @@ impl HostDrive {
                 }),
                 Asker::Person,
             ) => return Got::Wait(made),
-            (Some(Slot::Attaching { made, .. }), _) => return Got::Join(made),
-            (Some(Slot::Ready(_)) | None, _) => {}
+            (Some(Slot::Attaching { made, .. }), Asker::Poll | Asker::Person) => {
+                return Got::Join(made)
+            }
+            (Some(Slot::Ready(_)) | None, Asker::Poll | Asker::Person) => {}
         }
         self.made += 1;
         let made = self.made;
@@ -213,7 +225,11 @@ impl HostDrive {
         result: &Result<(), HostFailure>,
     ) -> Vec<Effect> {
         let mut polled = false;
-        if let Some(Slot::Attaching { made: m, by }) = self.slots.get(host).copied() {
+        let attaching = match self.slots.get(host).copied() {
+            Some(Slot::Attaching { made, by }) => Some((made, by)),
+            Some(Slot::Ready(_)) | None => None,
+        };
+        if let Some((m, by)) = attaching {
             if m == made {
                 polled = by == Asker::Poll;
                 match result {

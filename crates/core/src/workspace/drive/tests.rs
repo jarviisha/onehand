@@ -57,7 +57,24 @@ fn armed(fx: &[Effect]) -> u64 {
     fx.iter()
         .find_map(|effect| match effect {
             Effect::Arm { token, .. } => Some(*token),
-            _ => None,
+            Effect::Close(_)
+            | Effect::Forgot(_)
+            | Effect::ForgotOffload(_)
+            | Effect::ForgotHere(_)
+            | Effect::Show
+            | Effect::Changed
+            | Effect::Put(_)
+            | Effect::Write(_)
+            | Effect::WriteOnClose(_)
+            | Effect::Remember { .. }
+            | Effect::Sweep { .. }
+            | Effect::Resweep
+            | Effect::GitRead
+            | Effect::LookForRuns(_)
+            | Effect::EndOnHost { .. }
+            | Effect::ListHostSessions
+            | Effect::ReadConversation(_)
+            | Effect::Signal(_) => None,
         })
         .expect("a wait armed")
 }
@@ -66,9 +83,53 @@ fn written(fx: Vec<Effect>) -> Pending<Thing, Value> {
     fx.into_iter()
         .find_map(|effect| match effect {
             Effect::Write(write) => Some(write.pending),
-            _ => None,
+            Effect::Close(_)
+            | Effect::Forgot(_)
+            | Effect::ForgotOffload(_)
+            | Effect::ForgotHere(_)
+            | Effect::Show
+            | Effect::Changed
+            | Effect::Put(_)
+            | Effect::WriteOnClose(_)
+            | Effect::Arm { .. }
+            | Effect::Remember { .. }
+            | Effect::Sweep { .. }
+            | Effect::Resweep
+            | Effect::GitRead
+            | Effect::LookForRuns(_)
+            | Effect::EndOnHost { .. }
+            | Effect::ListHostSessions
+            | Effect::ReadConversation(_)
+            | Effect::Signal(_) => None,
         })
         .expect("a write")
+}
+
+/// The sweep `effect` asks for: its token and the projects it reads.
+fn swept(effect: Effect) -> (u64, Vec<SweepProject>) {
+    match effect {
+        Effect::Sweep { token, roots } => (token, roots),
+        e @ (Effect::Close(_)
+        | Effect::Forgot(_)
+        | Effect::ForgotOffload(_)
+        | Effect::ForgotHere(_)
+        | Effect::Show
+        | Effect::Changed
+        | Effect::Put(_)
+        | Effect::Write(_)
+        | Effect::WriteOnClose(_)
+        | Effect::Arm { .. }
+        | Effect::Remember { .. }
+        | Effect::Resweep
+        | Effect::GitRead
+        | Effect::LookForRuns(_)
+        | Effect::EndOnHost { .. }
+        | Effect::ListHostSessions
+        | Effect::ReadConversation(_)
+        | Effect::Signal(_)) => {
+            panic!("not a sweep: {:?}", names(&[e]))
+        }
+    }
 }
 
 // Sessions.
@@ -300,7 +361,7 @@ fn a_window_closing_writes_the_burst_still_waiting_and_only_that() {
     let mut drive = bound();
     assert!(drive.flush().is_none());
     drive.rename("one");
-    assert!(matches!(drive.flush(), Some(Effect::WriteOnClose(_))));
+    assert_eq!(names(drive.flush().as_slice()), ["WriteOnClose"]);
     assert!(drive.flush().is_none());
 }
 
@@ -487,14 +548,10 @@ fn a_sweep_reads_what_it_can_and_keeps_only_the_newest_answer() {
     drive.open_host_project(HostName("box".into()), "/srv".into());
     drive.open_host_project(HostName("off".into()), "/x".into());
     drive.open_host_project(HostName("box".into()), "/a".into());
-    let Effect::Sweep { token: old, roots } = drive.sweep(|host| host.0 == "box") else {
-        panic!("a sweep");
-    };
+    let (old, roots) = swept(drive.sweep(|host| host.0 == "box"));
     let read: Vec<_> = roots.iter().map(|r| r.path.display().to_string()).collect();
     assert_eq!(read, ["/a", "/srv"]);
-    let Effect::Sweep { token: new, .. } = drive.sweep(|_| true) else {
-        panic!("a sweep");
-    };
+    let (new, _) = swept(drive.sweep(|_| true));
     let status = |branch: &str| crate::gitstat::GitStatus {
         branch: branch.into(),
         changed: 0,
@@ -526,9 +583,7 @@ fn a_sweep_reads_what_it_can_and_keeps_only_the_newest_answer() {
 fn a_sweep_under_way_when_a_project_leaves_is_dropped() {
     let mut drive = bound();
     drive.open_project("/b".into());
-    let Effect::Sweep { token, .. } = drive.sweep(|_| false) else {
-        panic!("a sweep");
-    };
+    let (token, _) = swept(drive.sweep(|_| false));
     drive.forget(1);
     let status = crate::gitstat::GitStatus {
         branch: "main".into(),
@@ -550,9 +605,7 @@ fn a_sweep_under_way_when_a_project_leaves_is_dropped() {
 fn a_late_sweep_does_not_give_a_host_folder_the_local_one_s_status() {
     let mut drive = bound();
     drive.open_host_project(HostName("box".into()), "/a".into());
-    let Effect::Sweep { token, roots } = drive.sweep(|_| true) else {
-        panic!("a sweep");
-    };
+    let (token, roots) = swept(drive.sweep(|_| true));
     assert_eq!(roots.len(), 1, "the host's folder on /a is not read");
     drive.forget(0);
     let status = crate::gitstat::GitStatus {
@@ -576,9 +629,7 @@ fn runs_are_offered_on_a_chosen_repository_here_once_set_up() {
     let mut drive = bound();
     drive.open_project("/b".into());
     drive.add_run_session(Path::new("/run"), spec(), 1);
-    let Effect::Sweep { token, .. } = drive.sweep(|_| true) else {
-        panic!("a sweep");
-    };
+    let (token, _) = swept(drive.sweep(|_| true));
     let status = crate::gitstat::GitStatus {
         branch: "main".into(),
         changed: 0,
@@ -672,10 +723,12 @@ fn ending_on_a_host_closes_its_watcher_first_and_says_a_failure() {
     };
     assert_eq!(names(&drive.handle(ended(Ok(())))), ["ListHostSessions"]);
     let fx = drive.handle(ended(Err("away".into())));
-    assert!(matches!(
-        fx.as_slice(),
-        [Effect::Signal(Signal::EndOnHostFailed { why, .. })] if why == "away"
-    ));
+    let failed = Signal::EndOnHostFailed {
+        host: host.clone(),
+        label: "Fix".into(),
+        why: "away".into(),
+    };
+    assert_eq!(names(&fx), [format!("{failed:?}")]);
 }
 
 /// What a session is added on is what it starts on when first shown, once;
@@ -772,10 +825,10 @@ fn a_live_conversation_is_shown_where_it_is_else_read() {
         Reach::Here(fx) => assert!(names(&fx).contains(&"Show".to_string())),
         Reach::There(..) => panic!("here"),
     }
-    assert!(matches!(
-        drive.open_conversation("c1", Live::There(8, 'w')),
-        Reach::There(8, 'w')
-    ));
+    match drive.open_conversation("c1", Live::There(8, 'w')) {
+        Reach::There(uid, window) => assert_eq!((uid, window), (8, 'w')),
+        Reach::Here(fx) => panic!("there: {:?}", names(&fx)),
+    }
     match drive.open_conversation::<u8>("c1", Live::Nowhere) {
         Reach::Here(fx) => assert_eq!(names(&fx), ["ReadConversation(c1)"]),
         Reach::There(..) => panic!("read"),

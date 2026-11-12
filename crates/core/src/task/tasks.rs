@@ -618,8 +618,9 @@ impl<W: Copy> TasksDrive<W> {
         let Some(task) = self.task_mut(id) else {
             return Vec::new();
         };
-        let super::Source::Issue(issue) = &mut task.source else {
-            return Vec::new();
+        let issue = match &mut task.source {
+            super::Source::Issue(issue) => issue,
+            super::Source::Workflow | super::Source::Check => return Vec::new(),
         };
         change(issue);
         vec![Effect::Save(Box::new(task.clone()))]

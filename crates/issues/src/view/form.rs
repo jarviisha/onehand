@@ -67,9 +67,9 @@ impl IssuesView {
         let current = editing.and_then(|n| self.issues_of(&root, cx)?.get(n).cloned());
         let (title, labels, body) = match &current {
             Some(issue) => (
-                issue.title.clone(),
-                issue.labels.join(", "),
-                issue.body.clone(),
+                issue.title().to_string(),
+                issue.labels().join(", "),
+                issue.body().to_string(),
             ),
             None => Default::default(),
         };

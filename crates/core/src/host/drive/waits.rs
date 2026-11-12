@@ -188,7 +188,7 @@ impl Waits {
     pub(super) fn listen(&mut self, host: &HostName, kind: Kind) -> Option<(u64, Vec<Effect>)> {
         let waits = match kind {
             Kind::Busy if self.busy.contains_key(host) => &mut self.waits,
-            Kind::Back if matches!(self.state(host), HostState::Lost(_)) => &mut self.backs,
+            Kind::Back if self.state(host).lost() => &mut self.backs,
             Kind::Busy | Kind::Back => return None,
         };
         let minted = &mut self.minted;

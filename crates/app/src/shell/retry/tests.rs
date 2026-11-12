@@ -23,7 +23,12 @@ fn settle(cx: &mut gpui::VisualTestContext, done: impl Fn(&mut gpui::VisualTestC
 /// Whether each of task `id`'s runs has ended, oldest first.
 fn ended(id: &str, cx: &mut gpui::VisualTestContext) -> Vec<bool> {
     cx.update(|_, cx| crate::task::task(id, cx))
-        .map(|task| task.runs.iter().map(|run| run.outcome.is_some()).collect())
+        .map(|task| {
+            task.runs()
+                .iter()
+                .map(|run| run.outcome.is_some())
+                .collect()
+        })
         .unwrap_or_default()
 }
 

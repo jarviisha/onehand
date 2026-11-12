@@ -23,6 +23,7 @@
 //! two carriers disagreeing made before.
 
 use crate::chat::{Chat, Link};
+use crate::Now;
 
 use crate::unattended::Budget;
 use crate::workflow::{Action, ApprovalAt, Failure, Pick, Run, Stop};
@@ -119,7 +120,7 @@ impl RunDrive {
         first: Action,
         pinned: usize,
         issue: bool,
-        now: Instant,
+        now: Now,
         chat: Option<&Chat>,
     ) -> (Self, Vec<Effect>) {
         let limit = run
@@ -145,7 +146,7 @@ impl RunDrive {
             mode_out: None,
             picks: Vec::new(),
             noted: None,
-            budget: Budget::start(limit, now),
+            budget: Budget::start(limit, now.at),
             card: false,
             after_work: false,
             command: false,
@@ -228,14 +229,14 @@ impl RunDrive {
     }
 
     /// Working time spent on the run, sessions before this one included.
-    pub fn spent_secs(&self, now: Instant) -> u64 {
-        let used = self.budget.limit().saturating_sub(self.budget.left(now));
+    pub fn spent_secs(&self, now: Now) -> u64 {
+        let used = self.budget.limit().saturating_sub(self.budget.left(now.at));
         self.spent_before + used.as_secs()
     }
 
     /// A person approved what they read at `at`. Held while a mark is
     /// pinned, and refused by the engine once the run no longer waits there.
-    pub fn approve(&mut self, at: ApprovalAt, chat: Option<&Chat>, now: Instant) -> Vec<Effect> {
+    pub fn approve(&mut self, at: ApprovalAt, chat: Option<&Chat>, now: Now) -> Vec<Effect> {
         self.command_with(chat, now, |d, chat, now, fx| {
             d.answer(Answer::Approved(at), chat, now, fx);
             fx.push(Effect::Unattended(Said::Answered));
@@ -249,7 +250,7 @@ impl RunDrive {
         at: ApprovalAt,
         note: String,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
     ) -> Vec<Effect> {
         self.command_with(chat, now, |d, chat, now, fx| {
             d.answer(Answer::Revised(at, note), chat, now, fx);
@@ -259,7 +260,7 @@ impl RunDrive {
 
     /// A person pressed Stop: the turn under way is cancelled and the run
     /// ends, once a command running has exited.
-    pub fn stop(&mut self, chat: Option<&Chat>, now: Instant) -> Vec<Effect> {
+    pub fn stop(&mut self, chat: Option<&Chat>, now: Now) -> Vec<Effect> {
         self.command_with(chat, now, |d, chat, now, fx| {
             d.cut(Stop::ByPerson, chat, now, fx)
         })
@@ -269,8 +270,8 @@ impl RunDrive {
     fn command_with(
         &mut self,
         chat: Option<&Chat>,
-        now: Instant,
-        command: impl FnOnce(&mut Self, Option<&Chat>, Instant, &mut Vec<Effect>),
+        now: Now,
+        command: impl FnOnce(&mut Self, Option<&Chat>, Now, &mut Vec<Effect>),
     ) -> Vec<Effect> {
         let mut fx = Vec::new();
         if !self.over {
@@ -281,7 +282,7 @@ impl RunDrive {
 
     /// Something happened: what to do about it. A run that has finished does
     /// nothing more.
-    pub fn handle(&mut self, input: Input, chat: Option<&Chat>, now: Instant) -> Vec<Effect> {
+    pub fn handle(&mut self, input: Input, chat: Option<&Chat>, now: Now) -> Vec<Effect> {
         let mut fx = Vec::new();
         if self.over {
             return fx;
@@ -295,7 +296,7 @@ impl RunDrive {
             Input::Notified => {
                 if self.card && chat.is_some_and(|chat| !chat.awaiting_permission()) {
                     self.card = false;
-                    self.budget.resume(now);
+                    self.budget.resume(now.at);
                     fx.push(Effect::Unattended(Said::Answered));
                 }
                 if let Some(chat) = chat.filter(|chat| self.after_work && !self.step_at_work(chat))
@@ -314,23 +315,28 @@ impl RunDrive {
             }
             Input::Pinned(pinned) => self.landed(pinned, chat, now, &mut fx),
             Input::Measured(Ok(mark)) => {
-                self.advance(chat, now, &mut fx, move |run| run.measured(mark))
+                self.advance(chat, now, &mut fx, move |run| run.measured(mark, now.secs))
             }
             Input::Measured(Err(why)) | Input::TurnRead(Err(why)) => {
                 self.advance(chat, now, &mut fx, move |run| {
-                    run.failed(format!("the work could not be read: {why}"), Failure::Other)
+                    run.failed(
+                        format!("the work could not be read: {why}"),
+                        Failure::Other,
+                        now.secs,
+                    )
                 })
             }
             Input::TurnRead(Ok(facts)) => {
                 let answer = self.answer.take().unwrap_or_default();
                 self.advance(chat, now, &mut fx, move |run| {
-                    run.turn_ended(&facts, &answer)
+                    run.turn_ended(&facts, &answer, now.secs)
                 })
             }
             Input::NotTaken => self.advance(chat, now, &mut fx, |run| {
                 run.failed(
                     "the agent did not take the prompt".to_string(),
                     Failure::Other,
+                    now.secs,
                 )
             }),
             Input::CommandExited(ran) => {
@@ -346,7 +352,9 @@ impl RunDrive {
                     };
                     fx.push(Effect::Note(said.to_string()));
                 }
-                self.advance(chat, now, &mut fx, move |run| run.command_finished(ran));
+                self.advance(chat, now, &mut fx, move |run| {
+                    run.command_finished(ran, now.secs)
+                });
             }
             Input::Pushed(pushed) => self.pushed(pushed, chat, now, &mut fx),
             Input::PullRequestFound(found) => self.found(found, chat, now, &mut fx),
@@ -365,7 +373,7 @@ impl RunDrive {
             // spent waiting on a person did not count; end the run once
             // nothing is left.
             Input::Elapsed(Timer::Timeout) => {
-                let left = self.budget.left(now);
+                let left = self.budget.left(now.at);
                 match left.is_zero() {
                     true => self.cut(Stop::TimedOut, chat, now, &mut fx),
                     false => fx.push(Effect::Arm {
@@ -383,14 +391,14 @@ impl RunDrive {
         &mut self,
         stop: Stop,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
         mut fx: Vec<Effect>,
     ) -> Vec<Effect> {
-        self.advance(chat, now, &mut fx, move |run| run.stopped(stop));
+        self.advance(chat, now, &mut fx, move |run| run.stopped(stop, now.secs));
         fx
     }
 
-    fn on_event(&mut self, input: Input, chat: Option<&Chat>, now: Instant, fx: &mut Vec<Effect>) {
+    fn on_event(&mut self, input: Input, chat: Option<&Chat>, now: Now, fx: &mut Vec<Effect>) {
         let Some(chat) = chat else {
             return;
         };
@@ -421,7 +429,7 @@ impl RunDrive {
             Input::TurnEnded if judge_turn && chat.failed() => {
                 let why = chat.failure().unwrap_or_default().to_string();
                 self.advance(Some(chat), now, fx, move |run| {
-                    run.failed(why, Failure::Other)
+                    run.failed(why, Failure::Other, now.secs)
                 });
             }
             // What the agent left running is part of the step: a build in the
@@ -432,7 +440,7 @@ impl RunDrive {
             // A person answers the card; the clock waits for them.
             Input::AwaitingUser => {
                 self.card = true;
-                self.budget.pause(now);
+                self.budget.pause(now.at);
                 fx.push(Effect::Unattended(Said::Waiting));
             }
             Input::Disconnected => self.end(Stop::LinkLost, Some(chat), now, fx),
@@ -463,16 +471,16 @@ impl RunDrive {
     /// is pinned, then judged by the engine against the visit it was drawn
     /// from. The clock goes on only once the engine took it, so a refused
     /// press leaves the run waiting as it was.
-    fn answer(&mut self, answer: Answer, chat: Option<&Chat>, now: Instant, fx: &mut Vec<Effect>) {
+    fn answer(&mut self, answer: Answer, chat: Option<&Chat>, now: Now, fx: &mut Vec<Effect>) {
         if self.hold(false, Held::Answer(answer.clone())) {
             return;
         }
         let action = match answer {
-            Answer::Approved(at) => self.run.approved(&at),
-            Answer::Revised(at, note) => self.run.revised(&at, note),
+            Answer::Approved(at) => self.run.approved(&at, now.secs),
+            Answer::Revised(at, note) => self.run.revised(&at, note, now.secs),
         };
         if action != Action::Idle {
-            self.budget.resume(now);
+            self.budget.resume(now.at);
         }
         self.act(action, chat, now, fx);
     }
@@ -480,7 +488,7 @@ impl RunDrive {
     /// Cancel the turn under way and end the run as `stop`, as one call: held
     /// together while a mark is pinned, so the cancel never runs before a
     /// prompt the pin is still holding back.
-    fn cut(&mut self, stop: Stop, chat: Option<&Chat>, now: Instant, fx: &mut Vec<Effect>) {
+    fn cut(&mut self, stop: Stop, chat: Option<&Chat>, now: Now, fx: &mut Vec<Effect>) {
         if self.hold(true, Held::Cut(stop)) {
             return;
         }
@@ -495,7 +503,7 @@ impl RunDrive {
     /// exited; while a forge call runs, once it has landed. A run said to be
     /// stopped never leaves a build or a test writing to the work behind it.
     /// The first reason given is the one the run ends with.
-    fn end(&mut self, stop: Stop, chat: Option<&Chat>, now: Instant, fx: &mut Vec<Effect>) {
+    fn end(&mut self, stop: Stop, chat: Option<&Chat>, now: Now, fx: &mut Vec<Effect>) {
         if self.hold(true, Held::End(stop)) {
             return;
         }
@@ -506,7 +514,7 @@ impl RunDrive {
                 // Its Stop waits on its button until the command has exited.
                 fx.push(Effect::Refresh);
             }
-            false => self.advance(chat, now, fx, move |run| run.stopped(stop)),
+            false => self.advance(chat, now, fx, move |run| run.stopped(stop, now.secs)),
         }
     }
 
@@ -514,7 +522,7 @@ impl RunDrive {
     fn advance(
         &mut self,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
         report: impl FnOnce(&mut Run) -> Action,
     ) {

@@ -27,7 +27,7 @@ pub(super) struct Drain {
 /// Keep `task`, new, and ask for its place from `window`: the one way in for
 /// a task that did not exist before, whatever started it.
 pub(crate) fn submit(task: Task, window: AnyWindowHandle, cx: &mut App) {
-    let id = task.id.clone();
+    let id = task.id().to_string();
     super::add(task, cx);
     request(id, window, cx);
 }
@@ -40,7 +40,7 @@ pub(crate) fn submit_told(
     window: AnyWindowHandle,
     cx: &mut App,
 ) -> oneshot::Receiver<Placed> {
-    let id = task.id.clone();
+    let id = task.id().to_string();
     let told = told(&id, cx);
     super::add(task, cx);
     request(id, window, cx);
@@ -79,7 +79,9 @@ fn request(id: String, window: AnyWindowHandle, cx: &mut App) {
 /// Task `id`, holding its place, could not start for `why`, of `kind`: the
 /// drive says whether its run ends failed or its place only passes on.
 pub(crate) fn not_started(id: String, why: String, kind: Failure, cx: &mut App) {
-    with_drive(cx, |d| ((), d.not_started(&id, why, kind)));
+    with_drive(cx, |d| {
+        ((), d.not_started(&id, why, kind, onehand_core::Now::read()))
+    });
 }
 
 /// Tell the tasks' drive what the world found, and carry out what it says.
@@ -105,7 +107,7 @@ pub(super) fn perform(
                 .detach();
             }
             Effect::SaveDismissed(task) => {
-                let id = task.id.clone();
+                let id = task.id().to_string();
                 let written = cx.global::<Tasks>().writer.save_said(*task);
                 cx.spawn(async move |cx| {
                     let written = written.await;

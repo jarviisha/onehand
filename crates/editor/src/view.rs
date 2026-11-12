@@ -172,7 +172,12 @@ impl EditorView {
                                 async move { disk.read_file(&path) }
                             })
                             .await;
-                        let input = Input::Read { root, path, read };
+                        let input = Input::Read {
+                            root,
+                            path,
+                            read,
+                            uid: next_uid(),
+                        };
                         let _ = match handle {
                             Some(handle) => cx.update_window(handle, |_, window, cx| {
                                 let _ = view.update(cx, |view: &mut Self, cx| {
@@ -525,6 +530,15 @@ impl Render for EditorView {
             .children(standing.map(|status| status_line(status, status_ink(cx).warning)))
             .children(locked.map(|why| status_line(why, cx.theme().muted_foreground)))
     }
+}
+
+/// A tab id no other tab in the process has: widget operations run against
+/// every window, so a buffer's id must not repeat in another window's copy
+/// of the same file.
+fn next_uid() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
 #[cfg(test)]

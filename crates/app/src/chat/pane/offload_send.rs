@@ -94,7 +94,7 @@ impl ChatPane {
                                 result,
                                 still,
                             },
-                            crate::chat::session::now(),
+                            onehand_core::Now::read(),
                         );
                         let left = session.perform(fx, cx);
                         cx.notify();

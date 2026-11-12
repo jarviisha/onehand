@@ -7,7 +7,7 @@ use super::{Effect, RunDrive, Signal};
 use crate::chat::Chat;
 use crate::task::marks;
 use crate::workflow::{Action, ApprovalAt, Stop};
-use std::time::Instant;
+use crate::Now;
 
 /// A call held until a mark is pinned.
 #[derive(Debug, Clone)]
@@ -45,7 +45,7 @@ impl RunDrive {
         &mut self,
         action: Action,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
         if ends_run(&action) || action == Action::Idle {
@@ -70,7 +70,7 @@ impl RunDrive {
         &mut self,
         pinned: Result<String, String>,
         chat: Option<&Chat>,
-        now: Instant,
+        now: Now,
         fx: &mut Vec<Effect>,
     ) {
         let Some((action, from, total)) = self.waiting.take() else {
@@ -96,7 +96,7 @@ impl RunDrive {
         }
     }
 
-    fn replay(&mut self, held: Held, chat: Option<&Chat>, now: Instant, fx: &mut Vec<Effect>) {
+    fn replay(&mut self, held: Held, chat: Option<&Chat>, now: Now, fx: &mut Vec<Effect>) {
         match held {
             Held::Answer(answer) => self.answer(answer, chat, now, fx),
             Held::Cut(stop) => self.cut(stop, chat, now, fx),

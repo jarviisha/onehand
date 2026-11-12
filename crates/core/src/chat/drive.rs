@@ -28,11 +28,12 @@
 //! closes it. How many events a front end takes at most is its own cap.
 
 use super::attention::Attention;
-use super::model::{Away, Chat, Link, Now, QueuedPrompt, SubmitBlock, UserAsk};
+use super::model::{Away, Chat, Link, QueuedPrompt, SubmitBlock, UserAsk};
 use super::store::PendingWrite;
 use crate::acp::{AcpEvent, AcpRequest};
 use crate::attachment::StagedAttachment;
 use crate::workspace::HostName;
+use crate::Now;
 use std::time::Duration;
 
 /// How long an agent writes nothing, between turns, before what it wrote is
@@ -401,7 +402,10 @@ impl SessionDrive {
             }
             return (Intake::Refused(Refusal::NotTaken), Vec::new());
         }
-        let queues = matches!(origin, Origin::Person | Origin::Remote);
+        let queues = match origin {
+            Origin::Person | Origin::Remote => true,
+            Origin::Tools | Origin::Run | Origin::Issue => false,
+        };
         if queues && blocker == Some(SubmitBlock::Busy) {
             if origin == Origin::Remote && self.chat.queued.is_some() {
                 return (Intake::Refused(Refusal::AlreadyQueued), Vec::new());

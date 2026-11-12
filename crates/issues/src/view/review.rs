@@ -297,7 +297,7 @@ impl IssuesView {
         }
 
         // How the work will be judged, one click away.
-        if let Some(acceptance) = section(&issue.body, "Acceptance") {
+        if let Some(acceptance) = section(issue.body(), "Acceptance") {
             let open = look.acceptance;
             block = block.child(
                 div()

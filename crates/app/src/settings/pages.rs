@@ -206,13 +206,8 @@ pub(super) fn connections_page(cx: &App) -> AnyElement {
     let checking = crate::unattended::accounts_checking(cx);
     // ponytail: read when the page is drawn, so it goes stale while nothing
     // redraws it; every check that lands redraws, which is when it matters.
-    let checked = crate::unattended::accounts_checked_at(cx).map(|at| {
-        let secs = |t: std::time::SystemTime| {
-            t.duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_secs())
-        };
-        crate::chat::pane::rel_time(secs(std::time::SystemTime::now()), secs(at))
-    });
+    let checked = crate::unattended::accounts_checked_at(cx)
+        .map(|at| crate::chat::pane::rel_time(onehand_core::Now::read().secs, at));
     let rows = crate::features::connectors()
         .iter()
         .map(|connector| {

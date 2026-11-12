@@ -101,3 +101,5 @@ gpui-terminal = { path = "../../vendor/gpui-terminal" }
 toml = "0.8"
 # An Issues view open on a file, to see a write from outside the views land.
 onehand-issues = { path = "../issues", features = ["test-support"] }
+# A task set up as a test needs it, past the fields only the tasks' drive writes.
+onehand-core = { path = "../core", features = ["test-support"] }

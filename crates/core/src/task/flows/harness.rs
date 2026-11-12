@@ -7,7 +7,7 @@
 
 use crate::acp::{AcpEvent, AcpRequest, ReqTx};
 use crate::chat::drive::{Effect as SessionEffect, SessionDrive};
-use crate::chat::{Chat, Now};
+use crate::chat::Chat;
 use crate::config::AgentSpec;
 use crate::schedule::drive::{Effect as ScheduleEffect, Input as ScheduleInput, ScheduleDrive};
 use crate::schedule::Schedule;
@@ -24,10 +24,10 @@ use crate::unattended::link::{Joined, Out};
 use crate::unattended::Project;
 use crate::workflow::{Facts, Mark, Template};
 use crate::workspace::WorkspaceDrive;
+use crate::Now;
 use chrono::Utc;
 use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
-use std::time::{Instant, SystemTime};
 
 /// A window, as a front end names it.
 pub(super) type Win = u8;
@@ -91,7 +91,10 @@ impl Flow {
         library: Vec<Template>,
         now: u64,
     ) -> Self {
-        let (schedule, _) = ScheduleDrive::new(now - 600);
+        let (schedule, _) = ScheduleDrive::new(Now {
+            secs: now - 600,
+            ..self::now()
+        });
         Self {
             tasks: TasksDrive::default(),
             unattended,
@@ -160,7 +163,7 @@ impl Flow {
             j.unattended(|u, seen| {
                 (
                     (),
-                    u.handle(input, seen, roots.to_vec(), world, SystemTime::UNIX_EPOCH),
+                    u.handle(input, seen, roots.to_vec(), world, Now { secs: 0, ..now() }),
                 )
             })
             .1
@@ -168,7 +171,14 @@ impl Flow {
     }
 
     fn schedule_input(&mut self, input: ScheduleInput<Win>) {
-        let fx = self.schedule.handle(input, self.now, &Utc);
+        let fx = self.schedule.handle(
+            input,
+            Now {
+                secs: self.now,
+                ..now()
+            },
+            &Utc,
+        );
         self.queue.extend(fx.into_iter().map(Work::Schedule));
     }
 
@@ -300,7 +310,7 @@ impl Flow {
             .tasks
             .resumable_run(&id)
             .is_some_and(|run| run.setup.dir.is_dir());
-        let (start, opening) = match self.tasks.begin(&id, there) {
+        let (start, opening) = match self.tasks.begin(&id, there, crate::Now::read()) {
             Begin::Session { start, opening, .. } => (start, opening),
             Begin::Check(_) => panic!("these flows run no check"),
             // As the shell does: the drive is answered at once, and the
@@ -310,7 +320,10 @@ impl Flow {
                     task: id.clone(),
                     started: Err(why.clone()),
                 });
-                return self.joined(|j, _, _| j.tasks(|t| ((), t.not_started(&id, why, kind))).1);
+                return self.joined(|j, _, _| {
+                    j.tasks(|t| ((), t.not_started(&id, why, kind, crate::Now::read())))
+                        .1
+                });
             }
         };
         let (mut session, rx) = session();
@@ -327,7 +340,7 @@ impl Flow {
             first,
             pinned,
             issue,
-            Instant::now(),
+            now(),
             Some(&mut session),
         );
         self.next_uid += 1;
@@ -354,12 +367,7 @@ impl Flow {
         let Some(driven) = self.runs.get_mut(id) else {
             return;
         };
-        let (fx, asked) = link::handle(
-            &mut driven.run,
-            input,
-            Some(&mut driven.session),
-            Instant::now(),
-        );
+        let (fx, asked) = link::handle(&mut driven.run, input, Some(&mut driven.session), now());
         self.queue
             .extend(asked.into_iter().map(|e| Work::Session(id.to_string(), e)));
         self.queue
@@ -613,10 +621,7 @@ fn session() -> (SessionDrive, Rx) {
 }
 
 pub(super) fn now() -> Now {
-    Now {
-        secs: crate::chat::now_secs(),
-        at: Instant::now(),
-    }
+    Now::read()
 }
 
 /// A scratch git repository on `main` with one commit, keeping its own

@@ -141,7 +141,7 @@ fn a_tools_issue_is_written_once_and_not_again_while_open(cx: &mut TestAppContex
     let titles: Vec<_> = shown
         .listed()
         .iter()
-        .map(|issue| issue.title.clone())
+        .map(|issue| issue.title().to_string())
         .collect();
     assert_eq!(titles, ["Crash"]);
     assert_eq!(

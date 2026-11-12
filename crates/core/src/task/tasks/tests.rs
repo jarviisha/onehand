@@ -45,18 +45,161 @@ fn has<W>(fx: &[Effect<W>], wanted: impl Fn(&Effect<W>) -> bool) -> bool {
     fx.iter().any(wanted)
 }
 
+/// Every effect's variant by name, a signal's as `Signal::` and its own:
+/// matched whole, so a new variant is named here before any test passes it.
+fn name<W>(e: &Effect<W>) -> &'static str {
+    match e {
+        Effect::Save(_) => "Save",
+        Effect::SaveDismissed(_) => "SaveDismissed",
+        Effect::Remove(_) => "Remove",
+        Effect::DropMarks { .. } => "DropMarks",
+        Effect::FindPlace { .. } => "FindPlace",
+        Effect::Drive { .. } => "Drive",
+        Effect::WatchDrain { .. } => "WatchDrain",
+        Effect::Pin { .. } => "Pin",
+        Effect::Cut(_) => "Cut",
+        Effect::Keep(_) => "Keep",
+        Effect::Ask { .. } => "Ask",
+        Effect::Defer(_) => "Defer",
+        Effect::IssueEnded(_) => "IssueEnded",
+        Effect::Deliver(_) => "Deliver",
+        Effect::DeliverAll => "DeliverAll",
+        Effect::Told { .. } => "Told",
+        Effect::Asked(_) => "Asked",
+        Effect::JudgeRemoval(_) => "JudgeRemoval",
+        Effect::ReadReview { .. } => "ReadReview",
+        Effect::ConfirmAnswer { .. } => "ConfirmAnswer",
+        Effect::ConfirmRemoval { .. } => "ConfirmRemoval",
+        Effect::RemoveWorktree { .. } => "RemoveWorktree",
+        Effect::CloseSession { .. } => "CloseSession",
+        Effect::Refresh => "Refresh",
+        Effect::Signal(signal) => match signal {
+            Signal::Queued { .. } => "Signal::Queued",
+            Signal::Refused { .. } => "Signal::Refused",
+            Signal::NotResumed { .. } => "Signal::NotResumed",
+            Signal::CheckEnded { .. } => "Signal::CheckEnded",
+            Signal::ScheduleEnded { .. } => "Signal::ScheduleEnded",
+            Signal::DismissFailed { .. } => "Signal::DismissFailed",
+            Signal::NotRemoved { .. } => "Signal::NotRemoved",
+            Signal::Removed { .. } => "Signal::Removed",
+            Signal::RemoveFailed { .. } => "Signal::RemoveFailed",
+            Signal::ReviewNotRead { .. } => "Signal::ReviewNotRead",
+            Signal::SaveFailed(_) => "Signal::SaveFailed",
+            Signal::PinFailed(_) => "Signal::PinFailed",
+        },
+    }
+}
+
+fn named<W>(fx: &[Effect<W>], wanted: &str) -> bool {
+    fx.iter().any(|e| name(e) == wanted)
+}
+
+/// The task an effect is about, when it names one.
+fn task_of<W>(e: &Effect<W>) -> Option<&str> {
+    match e {
+        Effect::Save(task) | Effect::SaveDismissed(task) => Some(&task.id),
+        Effect::Remove(id)
+        | Effect::IssueEnded(id)
+        | Effect::Deliver(id)
+        | Effect::Asked(id)
+        | Effect::DropMarks { id, .. } => Some(id),
+        Effect::FindPlace { task, .. }
+        | Effect::Drive { task, .. }
+        | Effect::WatchDrain { task, .. }
+        | Effect::Pin { task, .. }
+        | Effect::Ask { task, .. }
+        | Effect::Told { task, .. }
+        | Effect::ReadReview { task, .. }
+        | Effect::ConfirmAnswer { task, .. }
+        | Effect::ConfirmRemoval { task, .. }
+        | Effect::RemoveWorktree { task, .. } => Some(task),
+        Effect::Cut(start) | Effect::Keep(start) => Some(&start.task),
+        Effect::JudgeRemoval(judging) => Some(&judging.task),
+        Effect::Defer(_)
+        | Effect::DeliverAll
+        | Effect::CloseSession { .. }
+        | Effect::Signal(_)
+        | Effect::Refresh => None,
+    }
+}
+
+/// The task an effect writes, whole.
+fn written<W>(e: &Effect<W>) -> Option<&Task> {
+    match e {
+        Effect::Save(task) | Effect::SaveDismissed(task) => Some(task),
+        Effect::Remove(_)
+        | Effect::DropMarks { .. }
+        | Effect::FindPlace { .. }
+        | Effect::Drive { .. }
+        | Effect::WatchDrain { .. }
+        | Effect::Pin { .. }
+        | Effect::Cut(_)
+        | Effect::Keep(_)
+        | Effect::Ask { .. }
+        | Effect::Defer(_)
+        | Effect::IssueEnded(_)
+        | Effect::Deliver(_)
+        | Effect::DeliverAll
+        | Effect::Told { .. }
+        | Effect::Asked(_)
+        | Effect::JudgeRemoval(_)
+        | Effect::ReadReview { .. }
+        | Effect::ConfirmAnswer { .. }
+        | Effect::ConfirmRemoval { .. }
+        | Effect::RemoveWorktree { .. }
+        | Effect::CloseSession { .. }
+        | Effect::Signal(_)
+        | Effect::Refresh => None,
+    }
+}
+
+/// The start a cut or a keep carries.
+fn start_of<W>(e: Effect<W>) -> Option<OffScreen<W>> {
+    match e {
+        Effect::Cut(start) | Effect::Keep(start) => Some(start),
+        Effect::Save(_)
+        | Effect::SaveDismissed(_)
+        | Effect::Remove(_)
+        | Effect::DropMarks { .. }
+        | Effect::FindPlace { .. }
+        | Effect::Drive { .. }
+        | Effect::WatchDrain { .. }
+        | Effect::Pin { .. }
+        | Effect::Ask { .. }
+        | Effect::Defer(_)
+        | Effect::IssueEnded(_)
+        | Effect::Deliver(_)
+        | Effect::DeliverAll
+        | Effect::Told { .. }
+        | Effect::Asked(_)
+        | Effect::JudgeRemoval(_)
+        | Effect::ReadReview { .. }
+        | Effect::ConfirmAnswer { .. }
+        | Effect::ConfirmRemoval { .. }
+        | Effect::RemoveWorktree { .. }
+        | Effect::CloseSession { .. }
+        | Effect::Signal(_)
+        | Effect::Refresh => None,
+    }
+}
+
+fn begun(begin: &Begin) -> &'static str {
+    match begin {
+        Begin::Check(_) => "Check",
+        Begin::Session { .. } => "Session",
+        Begin::Refused { .. } => "Refused",
+    }
+}
+
 fn saves<W>(fx: &[Effect<W>]) -> usize {
-    fx.iter().filter(|e| matches!(e, Effect::Save(_))).count()
+    fx.iter().filter(|e| name(e) == "Save").count()
 }
 
 /// Ask for task `id`'s place, and find it at `place`, from an open window.
 fn ask(tasks: &mut TasksDrive<Win>, id: &str, place: &str) -> Vec<Effect<Win>> {
     let fx = tasks.request(id, WINDOW, None);
     assert!(
-        has(
-            &fx,
-            |e| matches!(e, Effect::FindPlace { task, .. } if task == id)
-        ),
+        has(&fx, |e| name(e) == "FindPlace" && task_of(e) == Some(id)),
         "{fx:?}"
     );
     tasks.handle(Input::PlaceFound {
@@ -68,10 +211,7 @@ fn ask(tasks: &mut TasksDrive<Win>, id: &str, place: &str) -> Vec<Effect<Win>> {
 }
 
 fn drives<W>(fx: &[Effect<W>], id: &str) -> bool {
-    has(
-        fx,
-        |e| matches!(e, Effect::Drive { task, .. } if task == id),
-    )
+    has(fx, |e| name(e) == "Drive" && task_of(e) == Some(id))
 }
 
 /// Task `id` ran and ended done, its session's turn over.
@@ -80,7 +220,11 @@ fn ended_done(tasks: &mut TasksDrive<Win>, id: &str) -> Vec<Effect<Win>> {
     run.outcome = Some(Outcome::Done);
     let fx = tasks.run_ended(id, run, usize::MAX, false, None, None, WINDOW);
     assert!(
-        has(&fx, |e| matches!(e, Effect::Defer(Input::Free { .. }))),
+        has(&fx, |e| *e
+            == Effect::Defer(Input::Free {
+                task: id.into(),
+                from: usize::MAX
+            })),
         "{fx:?}"
     );
     tasks.handle(Input::Free {
@@ -107,14 +251,14 @@ fn a_taken_place_queues_the_task_and_says_behind_whom() {
     ask(&mut tasks, "1", "/a");
     let fx = ask(&mut tasks, "2", "/a");
     assert!(!drives(&fx, "2"), "{fx:?}");
-    let said = fx.iter().find_map(|e| match e {
-        Effect::Told {
-            placed: Placed::Queued(said),
-            ..
-        } => Some(said.clone()),
-        _ => None,
-    });
-    assert_eq!(said, Some(queue::queued_said("Second", Some("First"), "a")));
+    assert_eq!(
+        told(&fx),
+        Some(&Placed::Queued(queue::queued_said(
+            "Second",
+            Some("First"),
+            "a"
+        )))
+    );
     assert_eq!(tasks.working("2"), Some(Working::Queued));
     // The first ends: the second starts in the window it was asked from.
     let fx = ended_done(&mut tasks, "1");
@@ -137,13 +281,10 @@ fn a_task_already_at_work_is_refused_a_second_start() {
     ask(&mut tasks, "1", "/a");
     let fx = ask(&mut tasks, "1", "/a");
     assert!(!drives(&fx, "1"));
-    assert!(has(&fx, |e| matches!(
-        e,
-        Effect::Told {
-            placed: Placed::Refused(_),
-            ..
-        }
-    )));
+    match told(&fx) {
+        Some(Placed::Refused(_)) => {}
+        placed @ (Some(Placed::Started | Placed::Queued(_)) | None) => panic!("{placed:?}"),
+    }
 }
 
 #[test]
@@ -172,11 +313,12 @@ fn a_start_over_the_cap_is_refused_and_an_unbegun_retry_dropped() {
     assert!(made);
     assert_eq!(tasks.task("1").unwrap().runs.len(), 2);
     let fx = tasks.request("1", WINDOW, Some("two runs already work".into()));
-    assert!(!has(&fx, |e| matches!(e, Effect::FindPlace { .. })));
-    assert!(has(&fx, |e| matches!(
-        e,
-        Effect::Signal(Signal::Refused { why, .. }) if why == "two runs already work"
-    )));
+    assert!(!named(&fx, "FindPlace"));
+    assert!(has(&fx, |e| *e
+        == Effect::Signal(Signal::Refused {
+            window: WINDOW,
+            why: "two runs already work".into()
+        })));
     assert_eq!(tasks.task("1").unwrap().runs.len(), 1);
 }
 
@@ -204,7 +346,7 @@ fn stop_on_a_queued_task_that_never_ran_keeps_no_empty_run() {
     tasks.add(check("2", "/a"));
     ask(&mut tasks, "1", "/a");
     ask(&mut tasks, "2", "/a");
-    let (queued, fx) = tasks.stop_queued("2");
+    let (queued, fx) = tasks.stop_queued("2", crate::Now::read());
     assert!(queued);
     assert_eq!(saves(&fx), 1);
     let task = tasks.task("2").unwrap();
@@ -212,7 +354,7 @@ fn stop_on_a_queued_task_that_never_ran_keeps_no_empty_run() {
     assert_eq!(task.outcome(), Some(Outcome::Stopped(Stop::ByPerson)));
     assert_eq!(tasks.working("1"), Some(Working::Running));
     // Not queued: nothing to call off.
-    assert!(!tasks.stop_queued("1").0);
+    assert!(!tasks.stop_queued("1", crate::Now::read()).0);
 }
 
 #[test]
@@ -235,8 +377,8 @@ fn an_ended_run_holds_its_place_until_its_turn_is_over() {
     ask(&mut tasks, "1", "/a");
     ask(&mut tasks, "2", "/a");
     let mut run = tasks.task("1").unwrap().runs[0].clone();
-    run.resume();
-    run.stopped(Stop::ByPerson);
+    run.resume(0);
+    run.stopped(Stop::ByPerson, 0);
     let fx = tasks.run_ended("1", run, 0, true, None, Some(7), WINDOW);
     assert!(
         has(&fx, |e| *e
@@ -251,7 +393,30 @@ fn an_ended_run_holds_its_place_until_its_turn_is_over() {
     let fx = tasks.handle(Input::Drained("1".into()));
     let pin = fx.iter().find_map(|e| match e {
         Effect::Pin { task, from, .. } => Some((task.clone(), *from)),
-        _ => None,
+        Effect::Save(_)
+        | Effect::SaveDismissed(_)
+        | Effect::Remove(_)
+        | Effect::DropMarks { .. }
+        | Effect::FindPlace { .. }
+        | Effect::Drive { .. }
+        | Effect::WatchDrain { .. }
+        | Effect::Cut(_)
+        | Effect::Keep(_)
+        | Effect::Ask { .. }
+        | Effect::Defer(_)
+        | Effect::IssueEnded(_)
+        | Effect::Deliver(_)
+        | Effect::DeliverAll
+        | Effect::Told { .. }
+        | Effect::Asked(_)
+        | Effect::JudgeRemoval(_)
+        | Effect::ReadReview { .. }
+        | Effect::ConfirmAnswer { .. }
+        | Effect::ConfirmRemoval { .. }
+        | Effect::RemoveWorktree { .. }
+        | Effect::CloseSession { .. }
+        | Effect::Signal(_)
+        | Effect::Refresh => None,
     });
     assert_eq!(pin, Some(("1".to_string(), 0)), "{fx:?}");
     assert!(!drives(&fx, "2"), "the place waits for the pin");
@@ -296,10 +461,7 @@ fn a_check_says_how_it_came_out_and_a_stopped_one_says_nothing() {
         })));
     run.outcome = Some(Outcome::Stopped(Stop::ByPerson));
     let fx = tasks.run_ended("1", run, 0, false, None, None, WINDOW);
-    assert!(!has(&fx, |e| matches!(
-        e,
-        Effect::Signal(Signal::CheckEnded { .. })
-    )));
+    assert!(!named(&fx, "Signal::CheckEnded"));
 }
 
 fn scheduled(id: &str) -> Task {
@@ -331,10 +493,15 @@ fn a_schedules_finished_task_closes_its_session_and_says_so() {
         task: "1".into(),
         from: usize::MAX,
     });
-    assert!(has(&fx, |e| matches!(
-        e,
-        Effect::Signal(Signal::ScheduleEnded { name, .. }) if name == "Nightly"
-    )));
+    let said = tasks.task("1").unwrap().ended_said().unwrap();
+    assert!(
+        has(&fx, |e| *e
+            == Effect::Signal(Signal::ScheduleEnded {
+                name: "Nightly".into(),
+                said: said.clone()
+            })),
+        "{fx:?}"
+    );
 }
 
 fn of_issue(id: &str) -> Task {
@@ -362,8 +529,9 @@ fn of_issue(id: &str) -> Task {
 fn an_issue_runs_end_is_kept_in_the_write_that_keeps_the_run() {
     let mut tasks = TasksDrive::default();
     let mut task = of_issue("1");
-    if let Source::Issue(issue) = &mut task.source {
-        issue.notes = vec!["No acceptance written".into()];
+    match &mut task.source {
+        Source::Issue(issue) => issue.notes = vec!["No acceptance written".into()],
+        source @ (Source::Workflow | Source::Check) => panic!("{source:?}"),
     }
     tasks.add(task);
     ask(&mut tasks, "1", "/a");
@@ -380,10 +548,8 @@ fn an_issue_runs_end_is_kept_in_the_write_that_keeps_the_run() {
     );
     let saves: Vec<_> = fx
         .iter()
-        .filter_map(|e| match e {
-            Effect::Save(task) => task.issue().cloned(),
-            _ => None,
-        })
+        .filter(|e| name(e) == "Save")
+        .filter_map(|e| written(e).and_then(|task| task.issue().cloned()))
         .collect();
     let [issue] = saves.as_slice() else {
         panic!("one write: {fx:?}");
@@ -406,19 +572,24 @@ fn a_task_that_cannot_start_fails_only_when_nobody_watches_it() {
     tasks.add(titled("2", "Mine", "/b"));
     ask(&mut tasks, "1", "/a");
     ask(&mut tasks, "2", "/b");
-    let fx = tasks.not_started("1", "no agent".into(), Failure::Other);
+    let fx = tasks.not_started("1", "no agent".into(), Failure::Other, crate::Now::read());
     // Its report is in the task that is written, before the issue is told.
     let saved = fx.iter().position(|e| {
-        matches!(e, Effect::Save(task) if task.id == "1"
-            && task.issue().is_some_and(|issue| issue.unsent.len() == 1))
+        name(e) == "Save"
+            && written(e).is_some_and(|task| {
+                task.id == "1" && task.issue().is_some_and(|issue| issue.unsent.len() == 1)
+            })
     });
     let told = fx.iter().position(|e| *e == Effect::IssueEnded("1".into()));
     assert!(saved.is_some() && saved < told, "{fx:?}");
-    assert!(matches!(
-        tasks.task("1").unwrap().outcome(),
-        Some(Outcome::Failed(_))
-    ));
-    tasks.not_started("2", "no agent".into(), Failure::Other);
+    match tasks.task("1").unwrap().outcome() {
+        Some(Outcome::Failed(_)) => {}
+        outcome
+        @ (Some(Outcome::Done | Outcome::Stopped(_) | Outcome::Exhausted { .. }) | None) => {
+            panic!("{outcome:?}")
+        }
+    }
+    tasks.not_started("2", "no agent".into(), Failure::Other, crate::Now::read());
     assert_eq!(tasks.task("2").unwrap().outcome(), None);
     assert_eq!(tasks.working("2"), None);
 }
@@ -429,10 +600,8 @@ fn a_dismiss_is_kept_once_written_and_put_back_when_not() {
     tasks.add(check("1", "/a"));
     tasks.add(check("2", "/a"));
     let fx = tasks.dismiss("1", WINDOW);
-    assert!(has(
-        &fx,
-        |e| matches!(e, Effect::SaveDismissed(task) if task.dismissed)
-    ));
+    assert!(has(&fx, |e| name(e) == "SaveDismissed"
+        && written(e).is_some_and(|task| task.dismissed)));
     tasks.handle(Input::Dismissed {
         task: "1".into(),
         written: Ok(()),
@@ -444,10 +613,11 @@ fn a_dismiss_is_kept_once_written_and_put_back_when_not() {
         written: Err("disk full".into()),
     });
     assert!(!tasks.task("2").unwrap().dismissed);
-    assert!(has(&fx, |e| matches!(
-        e,
-        Effect::Signal(Signal::DismissFailed { why, .. }) if why == "disk full"
-    )));
+    assert!(has(&fx, |e| *e
+        == Effect::Signal(Signal::DismissFailed {
+            window: WINDOW,
+            why: "disk full".into()
+        })));
 }
 
 #[test]
@@ -462,8 +632,7 @@ fn a_task_at_work_is_not_dismissed() {
 #[test]
 fn a_failed_write_is_said_once_until_one_lands() {
     let mut tasks = TasksDrive::<Win>::default();
-    let failed =
-        |fx: &[Effect<Win>]| has(fx, |e| matches!(e, Effect::Signal(Signal::SaveFailed(_))));
+    let failed = |fx: &[Effect<Win>]| named(fx, "Signal::SaveFailed");
     assert!(failed(&tasks.handle(Input::Saved(Err("full".into())))));
     assert!(!failed(&tasks.handle(Input::Saved(Err("full".into())))));
     tasks.handle(Input::Saved(Ok(())));
@@ -482,14 +651,9 @@ fn a_finished_task_past_the_history_is_let_go() {
         read.push(task);
     }
     let fx = tasks.loaded(read);
-    assert_eq!(
-        fx.iter().filter(|e| matches!(e, Effect::Remove(_))).count(),
-        1
-    );
-    assert!(has(
-        &fx,
-        |e| matches!(e, Effect::DropMarks { id, .. } if id == "1000")
-    ));
+    assert_eq!(fx.iter().filter(|e| name(e) == "Remove").count(), 1);
+    assert!(has(&fx, |e| name(e) == "DropMarks"
+        && task_of(e) == Some("1000")));
     assert!(has(&fx, |e| *e == Effect::DeliverAll));
     assert_eq!(tasks.tasks().len(), history::KEPT);
     assert_eq!(tasks.removed(Path::new("/a")), 1);
@@ -520,27 +684,35 @@ fn a_task_begins_as_its_kind_and_a_tools_first_drive_is_off_screen() {
     tasks.add(titled("3", "A tool's", "/c"));
     tasks.add(of_issue("4"));
     tasks.drive_off_screen("3");
-    assert!(matches!(tasks.begin("1", true), Begin::Check(_)));
+    assert_eq!(begun(&tasks.begin("1", true, crate::Now::read())), "Check");
     let off = |begun| match begun {
         Begin::Session { off_screen, .. } => off_screen,
-        other => panic!("{other:?}"),
+        begun @ (Begin::Check(_) | Begin::Refused { .. }) => panic!("{begun:?}"),
     };
-    assert!(!off(tasks.begin("2", true)));
-    assert!(off(tasks.begin("3", true)));
+    assert!(!off(tasks.begin("2", true, crate::Now::read())));
+    assert!(off(tasks.begin("3", true, crate::Now::read())));
     // Only its first drive: a Resume a person presses later shows.
-    assert!(!off(tasks.begin("3", true)));
-    assert!(off(tasks.begin("4", true)));
+    assert!(!off(tasks.begin("3", true, crate::Now::read())));
+    assert!(off(tasks.begin("4", true, crate::Now::read())));
 }
 
 #[test]
 fn a_task_whose_folder_is_gone_or_with_nothing_to_run_is_refused() {
     let mut tasks = TasksDrive::<Win>::default();
     tasks.add(titled("1", "Mine", "/b"));
-    assert!(matches!(
-        tasks.begin("1", false),
-        Begin::Refused { why, .. } if why.starts_with("The folder that task works in is gone")
-    ));
-    assert!(matches!(tasks.begin("9", true), Begin::Refused { .. }));
+    match tasks.begin("1", false, crate::Now::read()) {
+        Begin::Refused { why, .. } => {
+            assert!(
+                why.starts_with("The folder that task works in is gone"),
+                "{why}"
+            )
+        }
+        begun @ (Begin::Check(_) | Begin::Session { .. }) => panic!("{begun:?}"),
+    }
+    assert_eq!(
+        begun(&tasks.begin("9", true, crate::Now::read())),
+        "Refused"
+    );
 }
 
 /// A session that did not start because its agent is no longer configured
@@ -550,7 +722,7 @@ fn a_session_not_started_for_a_gone_agent_fails_as_found_late() {
     let mut tasks = TasksDrive::<Win>::default();
     tasks.add(of_issue("1"));
     ask(&mut tasks, "1", "/a");
-    tasks.session_not_started("1", true);
+    tasks.session_not_started("1", true, crate::Now::read());
     let run = tasks.task("1").unwrap().runs.last().unwrap().clone();
     assert_eq!(
         run.failure,
@@ -568,10 +740,7 @@ fn a_check_is_retried_at_once_from_its_one_step_and_others_are_not() {
     let (retry, fx) = tasks.retry_asked("1", "1b".into(), WINDOW);
     assert_eq!(retry, Retry::AtOnce);
     assert_eq!(saves(&fx), 1);
-    assert!(has(
-        &fx,
-        |e| matches!(e, Effect::Ask { task, .. } if task == "1")
-    ));
+    assert!(has(&fx, |e| name(e) == "Ask" && task_of(e) == Some("1")));
     assert_eq!(tasks.task("1").unwrap().runs.len(), 2);
     let (retry, fx) = tasks.retry_asked("2", "2b".into(), WINDOW);
     assert_eq!(retry, Retry::Confirm);
@@ -584,12 +753,21 @@ fn a_check_is_retried_at_once_from_its_one_step_and_others_are_not() {
 fn a_resume_refused_is_said_and_one_let_through_asks() {
     let mut tasks = TasksDrive::<Win>::default();
     let fx = tasks.resume("1", Some("no agent".into()), WINDOW);
-    assert!(matches!(
-        fx.as_slice(),
-        [Effect::Signal(Signal::NotResumed { why, .. })] if why == "no agent"
-    ));
+    assert_eq!(
+        fx,
+        [Effect::Signal(Signal::NotResumed {
+            window: WINDOW,
+            why: "no agent".into()
+        })]
+    );
     let fx = tasks.resume("1", None, WINDOW);
-    assert!(matches!(fx.as_slice(), [Effect::Ask { task, .. }] if task == "1"));
+    assert_eq!(
+        fx,
+        [Effect::Ask {
+            task: "1".into(),
+            window: WINDOW
+        }]
+    );
 }
 
 fn starting(place: crate::workflow::Place) -> crate::task::Starting {
@@ -617,11 +795,33 @@ fn launch(place: crate::workflow::Place) -> Launch {
 }
 
 fn told<W>(fx: &[Effect<W>]) -> Option<&Placed> {
-    let Some(Effect::Told { placed, .. }) = fx.iter().find(|e| matches!(e, Effect::Told { .. }))
-    else {
-        return None;
-    };
-    Some(placed)
+    fx.iter().find_map(|e| match e {
+        Effect::Told { placed, .. } => Some(placed),
+        Effect::Save(_)
+        | Effect::SaveDismissed(_)
+        | Effect::Remove(_)
+        | Effect::DropMarks { .. }
+        | Effect::FindPlace { .. }
+        | Effect::Drive { .. }
+        | Effect::WatchDrain { .. }
+        | Effect::Pin { .. }
+        | Effect::Cut(_)
+        | Effect::Keep(_)
+        | Effect::Ask { .. }
+        | Effect::Defer(_)
+        | Effect::IssueEnded(_)
+        | Effect::Deliver(_)
+        | Effect::DeliverAll
+        | Effect::Asked(_)
+        | Effect::JudgeRemoval(_)
+        | Effect::ReadReview { .. }
+        | Effect::ConfirmAnswer { .. }
+        | Effect::ConfirmRemoval { .. }
+        | Effect::RemoveWorktree { .. }
+        | Effect::CloseSession { .. }
+        | Effect::Signal(_)
+        | Effect::Refresh => None,
+    })
 }
 
 /// A start refused by what blocks it is told so under its id, and keeps
@@ -645,9 +845,8 @@ fn a_start_off_screen_keeps_its_project_then_its_task_and_asks() {
         Ok(launch(crate::workflow::Place::Checkout)),
         WINDOW,
     );
-    let Some(Effect::Keep(start)) = fx.into_iter().next() else {
-        panic!("the project kept first");
-    };
+    assert_eq!(fx.first().map(name), Some("Keep"), "the project kept first");
+    let start = fx.into_iter().next().and_then(start_of).unwrap();
     assert_eq!(start.launch.dir(), Path::new("/p"));
     assert!(tasks.tasks().is_empty(), "nothing kept before its project");
     let mut workspace =
@@ -662,14 +861,11 @@ fn a_start_off_screen_keeps_its_project_then_its_task_and_asks() {
     );
     assert_eq!(workspace.active_root, 0, "and not put on screen");
     assert_eq!(saves(&fx), 1);
-    assert!(has(
-        &fx,
-        |e| matches!(e, Effect::Ask { task, .. } if task == "t")
-    ));
+    assert!(has(&fx, |e| name(e) == "Ask" && task_of(e) == Some("t")));
     assert_eq!(tasks.task("t").unwrap().origin, Some(Origin::Tool));
     let fx = ask(&mut tasks, "t", "/p");
     assert!(drives(&fx, "t"));
-    match tasks.begin("t", true) {
+    match tasks.begin("t", true, crate::Now::read()) {
         Begin::Session { off_screen, .. } => assert!(off_screen),
         Begin::Check(_) | Begin::Refused { .. } => panic!("a session's run"),
     }
@@ -703,9 +899,8 @@ fn a_start_off_screen_on_a_worktree_is_cut_first() {
         Ok(launch(crate::workflow::Place::Worktree)),
         WINDOW,
     );
-    let Some(Effect::Cut(start)) = fx.into_iter().next() else {
-        panic!("cut first");
-    };
+    assert_eq!(fx.first().map(name), Some("Cut"), "cut first");
+    let start = fx.into_iter().next().and_then(start_of).unwrap();
     let cut = |made: Cut| Input::Cut {
         start: start.clone(),
         made,
@@ -717,10 +912,10 @@ fn a_start_off_screen_on_a_worktree_is_cut_first() {
         branch: "onehand/tidy".into(),
         forge: None,
     })));
-    assert!(
-        matches!(fx.as_slice(), [Effect::Keep(start)] if start.launch.dir() == Path::new("/w")),
-        "{fx:?}"
-    );
+    let names: Vec<_> = fx.iter().map(name).collect();
+    assert_eq!(names, ["Keep"], "{fx:?}");
+    let start = fx.into_iter().next().and_then(start_of).unwrap();
+    assert_eq!(start.launch.dir(), Path::new("/w"));
 }
 
 /// A session's run begins with what its task was given and, an issue's,
@@ -732,7 +927,7 @@ fn a_sessions_run_begins_with_its_grant_and_an_issues_opening() {
     mine.grant.tools = vec!["start_task".into()];
     tasks.add(mine);
     tasks.add(of_issue("2"));
-    let begun = |tasks: &mut TasksDrive<Win>, id| match tasks.begin(id, true) {
+    let begun = |tasks: &mut TasksDrive<Win>, id| match tasks.begin(id, true, crate::Now::read()) {
         Begin::Session { grant, opening, .. } => (grant, opening),
         Begin::Check(_) | Begin::Refused { .. } => panic!("a session's run"),
     };
@@ -807,40 +1002,44 @@ fn a_worktree_is_judged_asked_judged_again_then_removed() {
         tasks.handle(Input::Judged { asked, judged })
     };
     let fx = tasks.remove_worktree("1", false, WINDOW);
-    assert!(has(&fx, |e| matches!(
-        e,
-        Effect::JudgeRemoval(Judging {
+    assert!(has(&fx, |e| *e
+        == Effect::JudgeRemoval(Judging {
+            task: "1".into(),
+            dir: PathBuf::from("/w"),
+            repo: PathBuf::from("/w"),
+            branch: None,
+            forge: None,
             confirmed: false,
-            ..
-        })
-    )));
+            window: WINDOW,
+        })));
     assert_eq!(tasks.acting("1"), Some(Act::RemoveWorktree));
     let remove = Judged::Remove {
         branch: Some("b".into()),
         why: "merged".into(),
     };
     let fx = judged(&mut tasks, false, Some((facts("/w"), remove.clone())));
-    assert!(has(&fx, |e| matches!(e, Effect::ConfirmRemoval { .. })));
+    assert!(named(&fx, "ConfirmRemoval"));
     assert_eq!(tasks.acting("1"), None);
     // The window went before what uses the folder was read: nothing more.
     let _ = tasks.remove_worktree("1", true, WINDOW);
     let fx = judged(&mut tasks, true, None);
-    assert!(!has(&fx, |e| matches!(e, Effect::RemoveWorktree { .. })));
+    assert!(!named(&fx, "RemoveWorktree"));
     assert_eq!(tasks.acting("1"), None);
     let fx = judged(
         &mut tasks,
         true,
         Some((facts("/w"), Judged::Refused(vec!["no".into()]))),
     );
-    assert!(has(&fx, |e| matches!(
-        e,
-        Effect::Signal(Signal::NotRemoved { .. })
-    )));
+    assert!(named(&fx, "Signal::NotRemoved"));
     let fx = judged(&mut tasks, true, Some((facts("/w"), remove)));
-    assert!(has(&fx, |e| matches!(
-        e,
-        Effect::RemoveWorktree { folder, branch: Some(b), .. } if folder == Path::new("/w") && b == "b"
-    )));
+    assert!(has(&fx, |e| *e
+        == Effect::RemoveWorktree {
+            task: "1".into(),
+            repo: PathBuf::from("/r"),
+            folder: PathBuf::from("/w"),
+            branch: Some("b".into()),
+            window: WINDOW,
+        }));
     assert_eq!(tasks.acting("1"), Some(Act::RemoveWorktree));
     let fx = tasks.handle(Input::WorktreeRemoved {
         task: "1".into(),
@@ -851,10 +1050,7 @@ fn a_worktree_is_judged_asked_judged_again_then_removed() {
     });
     assert_eq!(saves(&fx), 1);
     assert!(tasks.task("1").unwrap().worktree_removed);
-    assert!(has(&fx, |e| matches!(
-        e,
-        Effect::Signal(Signal::Removed { .. })
-    )));
+    assert!(named(&fx, "Signal::Removed"));
     assert_eq!(tasks.acting("1"), None);
 }
 
@@ -865,7 +1061,7 @@ fn a_review_is_read_before_it_is_asked() {
     let mut tasks = TasksDrive::<Win>::default();
     tasks.add(titled("1", "Mine", "/w"));
     let fx = tasks.answer_review("1", WINDOW);
-    assert!(has(&fx, |e| matches!(e, Effect::ReadReview { .. })));
+    assert!(named(&fx, "ReadReview"));
     assert_eq!(tasks.acting("1"), Some(Act::AnswerReview));
     let read = |tasks: &mut TasksDrive<Win>, read| {
         tasks.handle(Input::ReviewRead {
@@ -875,11 +1071,8 @@ fn a_review_is_read_before_it_is_asked() {
         })
     };
     let fx = read(&mut tasks, Ok(()));
-    assert!(has(&fx, |e| matches!(e, Effect::ConfirmAnswer { .. })));
+    assert!(named(&fx, "ConfirmAnswer"));
     assert_eq!(tasks.acting("1"), None);
     let fx = read(&mut tasks, Err("gone".into()));
-    assert!(has(&fx, |e| matches!(
-        e,
-        Effect::Signal(Signal::ReviewNotRead { .. })
-    )));
+    assert!(named(&fx, "Signal::ReviewNotRead"));
 }

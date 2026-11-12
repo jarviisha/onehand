@@ -93,10 +93,10 @@ fn a_write_lands_once_and_its_maker_hears_it(cx: &mut TestAppContext) {
         file.issues
             .as_ref()
             .and_then(|kept| kept.get(1))
-            .map(|issue| issue.open)
+            .map(|issue| issue.open())
     });
     assert_eq!(open, Some(false));
-    assert!(!issues::load_blocking(&path).unwrap().get(1).unwrap().open);
+    assert!(!issues::load_blocking(&path).unwrap().get(1).unwrap().open());
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -218,7 +218,7 @@ fn an_outside_write_lands_once_and_its_maker_hears_it(cx: &mut TestAppContext) {
     settle(cx);
     assert_eq!(*heard.borrow(), [Ok(Applied::Named(1))]);
     let said = file.read_with(cx, |file, _| {
-        file.issues.as_ref().unwrap().get(1).unwrap().notes.len()
+        file.issues.as_ref().unwrap().get(1).unwrap().notes().len()
     });
     assert_eq!(said, 1);
     assert_eq!(
@@ -226,7 +226,7 @@ fn an_outside_write_lands_once_and_its_maker_hears_it(cx: &mut TestAppContext) {
             .unwrap()
             .get(1)
             .unwrap()
-            .notes
+            .notes()
             .len(),
         1
     );
@@ -288,7 +288,7 @@ fn a_refused_outside_write_answers_why_once_and_reads_again(cx: &mut TestAppCont
         file.issues
             .as_ref()
             .and_then(|kept| kept.get(1))
-            .map(|issue| issue.notes.len())
+            .map(|issue| issue.notes().len())
     });
     assert_eq!(noted, Some(1), "shown at once");
     until_heard(&heard, cx);

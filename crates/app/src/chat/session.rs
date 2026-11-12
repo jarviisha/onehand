@@ -370,26 +370,16 @@ impl ChatSession {
 
     /// The wait on the host's busy sessions ended on `why`.
     pub(crate) fn wait_failed(&mut self, why: &str, cx: &mut Context<Self>) {
-        let fx = self.chat.wait_failed(why, now());
+        let fx = self.chat.wait_failed(why, onehand_core::Now::read());
         self.perform(fx, cx);
         cx.notify();
     }
 
     /// The wait for the host to be back ended on `why`.
     pub(crate) fn back_failed(&mut self, why: &str, cx: &mut Context<Self>) {
-        let fx = self.chat.back_failed(why, now());
+        let fx = self.chat.back_failed(why, onehand_core::Now::read());
         self.perform(fx, cx);
         cx.notify();
-    }
-}
-
-/// The time now, read here for the session's drive: the model reads no clock
-/// of its own, so every event and command that may stamp or time something
-/// carries this.
-pub(crate) fn now() -> onehand_core::chat::Now {
-    onehand_core::chat::Now {
-        secs: onehand_core::chat::now_secs(),
-        at: std::time::Instant::now(),
     }
 }
 
@@ -536,8 +526,11 @@ impl ChatSession {
                         while let Some(event) = next.take() {
                             taken += 1;
                             let link = session.host_link();
-                            let (fx, more) =
-                                session.chat.apply_watched(event, link.as_ref(), now());
+                            let (fx, more) = session.chat.apply_watched(
+                                event,
+                                link.as_ref(),
+                                onehand_core::Now::read(),
+                            );
                             session.perform(fx, cx);
                             let more = match more {
                                 Next::Stop => false,
@@ -563,7 +556,9 @@ impl ChatSession {
 
                 // The stream ended, which only this loop knows.
                 let _ = session.update(cx, |session: &mut Self, cx| {
-                    let fx = session.chat.handle(Input::StreamEnded, now());
+                    let fx = session
+                        .chat
+                        .handle(Input::StreamEnded, onehand_core::Now::read());
                     session.perform(fx, cx);
                     cx.notify();
                 });
@@ -600,7 +595,9 @@ impl ChatSession {
                         // whole transcript, and the store keeps this write's
                         // lines from standing twice.
                         let _ = session.update(cx, |session: &mut Self, cx| {
-                            let fx = session.chat.handle(Input::Saved { write, result }, now());
+                            let fx = session
+                                .chat
+                                .handle(Input::Saved { write, result }, onehand_core::Now::read());
                             session.perform(fx, cx);
                         });
                     })
@@ -610,7 +607,9 @@ impl ChatSession {
                     self._armed = Some(cx.spawn(async move |session, cx| {
                         cx.background_executor().timer(wait).await;
                         let _ = session.update(cx, |session: &mut Self, cx| {
-                            let fx = session.chat.handle(Input::Elapsed { token }, now());
+                            let fx = session
+                                .chat
+                                .handle(Input::Elapsed { token }, onehand_core::Now::read());
                             session.perform(fx, cx);
                             cx.notify();
                         });
@@ -643,7 +642,7 @@ impl ChatSession {
                                     title,
                                     result,
                                 },
-                                now(),
+                                onehand_core::Now::read(),
                             );
                             session.perform(fx, cx);
                             cx.notify();
@@ -670,7 +669,9 @@ impl ChatSession {
         code: Code,
         cx: &mut Context<Self>,
     ) -> (Intake, Vec<Effect>) {
-        let (intake, fx) = self.chat.prompt(text, staged, origin, code, now());
+        let (intake, fx) = self
+            .chat
+            .prompt(text, staged, origin, code, onehand_core::Now::read());
         let left = self.perform(fx, cx);
         cx.notify();
         (intake, left)
@@ -684,7 +685,9 @@ impl ChatSession {
         origin: Origin,
         cx: &mut Context<Self>,
     ) -> Intake {
-        let (intake, fx) = self.chat.prompt_when_up(text, origin, now());
+        let (intake, fx) = self
+            .chat
+            .prompt_when_up(text, origin, onehand_core::Now::read());
         self.perform(fx, cx);
         cx.notify();
         intake
@@ -693,7 +696,7 @@ impl ChatSession {
     /// Send the last prompt again, after a turn that failed; see
     /// [`SessionDrive::resend`].
     pub(crate) fn resend(&mut self, cx: &mut Context<Self>) {
-        let (_, fx) = self.chat.resend(now());
+        let (_, fx) = self.chat.resend(onehand_core::Now::read());
         self.perform(fx, cx);
         cx.notify();
     }

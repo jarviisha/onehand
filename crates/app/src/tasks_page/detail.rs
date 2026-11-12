@@ -97,13 +97,13 @@ impl TasksPage {
             return;
         };
         let forge =
-            task.setup.forge.as_deref().and_then(|name| {
+            task.setup().forge.as_deref().and_then(|name| {
                 onehand_core::connector::named(crate::features::connectors(), name)
             });
-        let (Some(forge), Some(branch)) = (forge, task.setup.branch.clone()) else {
+        let (Some(forge), Some(branch)) = (forge, task.setup().branch.clone()) else {
             return;
         };
-        let repo = task.setup.repo.clone();
+        let repo = task.setup().repo.clone();
         cx.spawn(async move |page, cx| {
             let read = cx
                 .background_executor()
@@ -225,12 +225,12 @@ pub(super) fn task_detail(
     cx: &mut Context<TasksPage>,
 ) -> Vec<gpui::AnyElement> {
     let muted = cx.theme().muted_foreground;
-    let last = task.runs.last();
+    let last = task.runs().last();
     // What waits on the person below holds the view's one primary while it
     // shows, so the trail's first action steps down beside it.
     let review = last
         .and_then(UnderReview::of)
-        .map(|review| review_card(&task.id, row, &review, cx));
+        .map(|review| review_card(task.id(), row, &review, cx));
     let way = match (last, row.group) {
         (Some(_), Group::Ended) => way_out(task, cx),
         _ => None,
@@ -251,7 +251,7 @@ pub(super) fn task_detail(
             .child(div().text_xs().text_color(muted).child(row_said(row, page)))
             .into_any_element(),
     );
-    let Some((last, earlier)) = task.runs.split_last() else {
+    let Some((last, earlier)) = task.runs().split_last() else {
         return out;
     };
     out.extend(review);
@@ -262,7 +262,7 @@ pub(super) fn task_detail(
         Group::Running | Group::Waiting => true,
         Group::Ended | Group::Queued | Group::Finished => false,
     };
-    let title = format!("Run {}", task.runs.len());
+    let title = format!("Run {}", task.runs().len());
     out.push(
         page_card(title, Some(last.visits().len()), None, cx)
             .children(visits::timeline(detail, last, live, cx))
@@ -360,21 +360,21 @@ fn trail(
     let answer = answers_review(task).then(|| {
         (
             "Answer the pull request review…",
-            Rc::new(super::emit(&task.id, cx, TasksPageEvent::AnswerReview)) as Press,
+            Rc::new(super::emit(task.id(), cx, TasksPageEvent::AnswerReview)) as Press,
         )
     });
     let remove = removable(task, detail)
-        .then(|| Rc::new(super::emit(&task.id, cx, TasksPageEvent::RemoveWorktree)) as Press);
+        .then(|| Rc::new(super::emit(task.id(), cx, TasksPageEvent::RemoveWorktree)) as Press);
     let rest: Vec<_> = rest.into_iter().chain(answer).collect();
     let empty = rest.is_empty() && remove.is_none();
     // What ⋯ holds and is still being read or done waits on ⋯ itself.
     let waits = matches!(
-        crate::task::pressed(&task.id, cx),
+        crate::task::pressed(task.id(), cx),
         Some(Act::AnswerReview | Act::RemoveWorktree)
     );
     let danger = crate::theme::status_ink(cx).danger;
     let more = crate::controls::menu_below(
-        SharedString::from(format!("task-more-{}", task.id)),
+        SharedString::from(format!("task-more-{}", task.id())),
         crate::controls::action("task-more")
             .short_icon()
             .quiet_icon(false, cx)
@@ -450,7 +450,7 @@ fn answers_review(task: &onehand_core::task::Task) -> bool {
     task.reviewable()
         && task.opened_pull_request()
         && task
-            .runs
+            .runs()
             .last()
             .is_some_and(|run| run.outcome == Some(onehand_core::workflow::Outcome::Done))
 }
@@ -499,7 +499,7 @@ fn way_out(
             true => button.primary(),
             false => button.quiet(cx),
         };
-        button.on_click(super::emit(&task.id, cx, TasksPageEvent::RetryTaskCurrent))
+        button.on_click(super::emit(task.id(), cx, TasksPageEvent::RetryTaskCurrent))
     });
     Some((
         page_card("Way out", None, None, cx)

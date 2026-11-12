@@ -11,7 +11,8 @@ use super::press::{self, Press};
 use super::types::Button;
 use super::Announcement;
 use crate::chat::drive::{Code, Effect, Intake, Origin, Refusal};
-use crate::chat::{Away, ChatItem, Now, SessionDrive, UserAsk};
+use crate::chat::{Away, ChatItem, SessionDrive, UserAsk};
+use crate::Now;
 
 /// How much of a finished answer rides along with the turn-ended announcement.
 ///
@@ -130,8 +131,19 @@ pub fn press(session: &mut SessionDrive, press: Press) -> (String, Vec<Effect>) 
     let said = |words: &str| (words.to_string(), Vec::new());
     match press {
         Press::Permission { option, .. } => {
-            let Some(ChatItem::Permission(perm)) = session.items.get(item) else {
-                return said(SETTLED);
+            let perm = match session.items.get(item) {
+                Some(ChatItem::Permission(perm)) => perm,
+                Some(
+                    ChatItem::User(_)
+                    | ChatItem::Agent(_)
+                    | ChatItem::Thought(_)
+                    | ChatItem::Tool(_)
+                    | ChatItem::Plan(_)
+                    | ChatItem::Ask(_)
+                    | ChatItem::Subagent(_)
+                    | ChatItem::Notice { .. },
+                )
+                | None => return said(SETTLED),
             };
             if perm.resolved.is_some() {
                 return said(SETTLED);

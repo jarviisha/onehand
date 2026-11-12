@@ -348,7 +348,7 @@ pub(crate) fn each<R>(cx: &App, look: impl Fn(&Task, bool) -> Option<R>) -> Vec<
     };
     t.tasks()
         .iter()
-        .filter_map(|task| look(task, t.busy(&task.id)))
+        .filter_map(|task| look(task, t.busy(task.id())))
         .collect()
 }
 
@@ -396,7 +396,7 @@ pub(crate) fn task(id: &str, cx: &App) -> Option<Task> {
 // down by the cap on rows drawn; keep the answers beside the issue works if a
 // long Tasks page ever stutters.
 pub(crate) fn resume_refused(task: &Task, cx: &App) -> Option<String> {
-    let template = task.runs.last()?.template.clone();
+    let template = task.runs().last()?.template.clone();
     let facts = crate::unattended::task_facts(task, template, cx);
     onehand_core::preflight::refusal(onehand_core::preflight::Kind::Resume, &facts)
 }
@@ -410,13 +410,13 @@ pub(crate) fn holder_at(place: &std::path::Path, except: Option<&str>, cx: &App)
         .queue()
         .holder_at(place)
         .filter(|holder| Some(*holder) != except)?;
-    t.task(holder).map(|task| task.brief.title.clone())
+    t.task(holder).map(|task| task.brief().title.clone())
 }
 
 /// A person pressed Stop on task `id`, whatever it is doing: a queued one is
 /// called off, and a run under way is stopped.
 pub(crate) fn stop_task(id: &str, cx: &mut App) {
-    if with_drive(cx, |d| d.stop_queued(id)) == Some(false) {
+    if with_drive(cx, |d| d.stop_queued(id, onehand_core::Now::read())) == Some(false) {
         carrier::stop_task(id, cx);
     }
 }
@@ -466,7 +466,9 @@ pub(crate) fn resume(id: &str, window: AnyWindowHandle, cx: &mut App) {
 /// or not: how it is driven, or why it cannot be.
 pub(crate) fn begin(id: &str, folder_there: bool, cx: &mut App) -> Begin {
     match cx.has_global::<Tasks>() {
-        true => cx.update_global::<Tasks, _>(|t, _| t.drive.begin(id, folder_there)),
+        true => cx.update_global::<Tasks, _>(|t, _| {
+            t.drive.begin(id, folder_there, onehand_core::Now::read())
+        }),
         false => Begin::Refused {
             why: "That task has nothing left to run".to_string(),
             kind: onehand_core::workflow::Failure::Other,
@@ -476,7 +478,12 @@ pub(crate) fn begin(id: &str, folder_there: bool, cx: &mut App) -> Begin {
 
 /// Task `id`'s session did not start, its agent gone from Settings or not.
 pub(crate) fn session_not_started(id: String, agent_gone: bool, cx: &mut App) {
-    with_drive(cx, |d| ((), d.session_not_started(&id, agent_gone)));
+    with_drive(cx, |d| {
+        (
+            (),
+            d.session_not_started(&id, agent_gone, onehand_core::Now::read()),
+        )
+    });
 }
 
 /// Run check task `id` from `start`, whose place it now holds: pin the work,

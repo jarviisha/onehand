@@ -20,6 +20,7 @@ use super::{decide, Act, Schedule, Starts};
 use crate::task::tasks::Placed;
 use crate::task::{Grant, Origin, Starting};
 use crate::workflow::Template;
+use crate::Now;
 use chrono::TimeZone;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
@@ -144,9 +145,9 @@ pub struct ScheduleDrive<W> {
 impl<W: Copy> ScheduleDrive<W> {
     /// The clock of a process that opened at `opened_at`, its first look
     /// armed.
-    pub fn new(opened_at: u64) -> (Self, Vec<Effect<W>>) {
+    pub fn new(opened_at: Now) -> (Self, Vec<Effect<W>>) {
         let drive = Self {
-            opened_at,
+            opened_at: opened_at.secs,
             last_task: HashMap::new(),
             queued: HashSet::new(),
             told: HashMap::new(),
@@ -185,7 +186,8 @@ impl<W: Copy> ScheduleDrive<W> {
     /// Switch schedule `id` on or off at `now`, asked from `window`: at once
     /// on screen, then in the file. Switched on, nothing due before now is
     /// caught up.
-    pub fn set_on(&mut self, id: &str, on: bool, now: u64, window: W) -> Vec<Effect<W>> {
+    pub fn set_on(&mut self, id: &str, on: bool, now: Now, window: W) -> Vec<Effect<W>> {
+        let now = now.secs;
         let Some(s) = self
             .all
             .iter_mut()
@@ -211,7 +213,8 @@ impl<W: Copy> ScheduleDrive<W> {
     }
 
     /// Something the world found at `now`, in time zone `tz`: what to do.
-    pub fn handle(&mut self, input: Input<W>, now: u64, tz: &impl TimeZone) -> Vec<Effect<W>> {
+    pub fn handle(&mut self, input: Input<W>, now: Now, tz: &impl TimeZone) -> Vec<Effect<W>> {
+        let now = now.secs;
         match input {
             Input::Elapsed => {
                 let mut fx = match self.reading || self.looking.is_some() {

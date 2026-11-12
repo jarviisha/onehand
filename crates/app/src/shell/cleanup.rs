@@ -80,14 +80,15 @@ impl Shell {
             processes.extend(running);
         }
         users.extend(crate::task::each(cx, |task, working| {
-            (working && task.setup.dir.starts_with(folder)).then(|| {
+            (working && task.setup().dir.starts_with(folder)).then(|| {
                 // A command step running there is named by its step.
-                match task.runs.last().and_then(|run| run.current()) {
+                match task.runs().last().and_then(|run| run.current()) {
                     Some(step) => format!(
                         "Task “{}”, at its step {}, still working there,",
-                        task.brief.title, step.label
+                        task.brief().title,
+                        step.label
                     ),
-                    None => format!("Task “{}”, still working there,", task.brief.title),
+                    None => format!("Task “{}”, still working there,", task.brief().title),
                 }
             })
         }));

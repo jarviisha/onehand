@@ -8,11 +8,12 @@
 //! ended and for how long, so a conversation read back later still shows it.
 
 use super::items::{ChatItem, NoticeLevel};
-use super::{ApplyOutcome, Chat, Link, Now, Replay};
+use super::{ApplyOutcome, Chat, Link, Replay};
 use crate::acp::{
     AcpRequest, BackgroundEnd, BackgroundReport, LimitStatus, RateLimit, ToolStatus, Usage,
 };
 use crate::chat::activity::first_line_trunc;
+use crate::Now;
 use std::time::{Duration, Instant};
 
 /// One piece of work the agent started that runs on after its turn.

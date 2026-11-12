@@ -2,8 +2,9 @@ use super::items::{
     AskItem, ChatItem, Md, NoticeLevel, PermItem, PlanItem, Thought, ToolItem, UserMsg,
     MAX_TERM_BYTES,
 };
-use super::{Chat, Link, Now, Replay};
+use super::{Chat, Link, Replay};
 use crate::acp::{AcpEvent, PlanEntry, ToolCall, ToolCallUpdate, ToolContent, ToolStatus};
+use crate::Now;
 
 /// What applying one event did, for the front end that has to react to it.
 ///

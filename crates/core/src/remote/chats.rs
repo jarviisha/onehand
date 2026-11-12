@@ -602,13 +602,13 @@ pub fn scan_archives(roots: Vec<(PathBuf, String)>) -> (Vec<ArchiveRow>, usize) 
     (found, total)
 }
 
-/// The `/archive` reply.
-pub fn archive_listing(found: &[ArchiveRow], total: usize) -> String {
+/// The `/archive` reply, its ages counted back from `now`, in seconds past
+/// the epoch.
+pub fn archive_listing(found: &[ArchiveRow], total: usize, now: u64) -> String {
     if found.is_empty() {
         return "Nothing saved yet — a conversation is written at the end of its first turn."
             .to_string();
     }
-    let now = crate::chat::now_secs();
     let mut out = String::from("Archive\n\n");
     for (place, pick) in found.iter().enumerate() {
         out.push_str(&format!(
@@ -678,7 +678,7 @@ mod tests {
             dir: PathBuf::from("/p/c"),
             agent: "Claude Code".into(),
             title: format!("t{place}"),
-            updated: crate::chat::now_secs(),
+            updated: 0,
         }
     }
 
@@ -686,8 +686,8 @@ mod tests {
     /// how to put one back; with nothing saved it says that instead.
     #[test]
     fn the_archive_listing_counts_what_it_cut() {
-        assert!(archive_listing(&[], 0).starts_with("Nothing saved yet"));
-        let text = archive_listing(&[saved(1), saved(2)], 12);
+        assert!(archive_listing(&[], 0, 0).starts_with("Nothing saved yet"));
+        let text = archive_listing(&[saved(1), saved(2)], 12, 0);
         assert!(
             text.contains("1 · p — t1\n    Claude Code · just now"),
             "{text}"
@@ -699,7 +699,7 @@ mod tests {
         );
         assert!(text.ends_with("/open <number> puts one back."), "{text}");
         // Nothing was cut: nothing is said about it.
-        assert!(!archive_listing(&[saved(1)], 1).contains("newest of"));
+        assert!(!archive_listing(&[saved(1)], 1, 0).contains("newest of"));
     }
 
     /// The failure mode this exists to prevent: an enabled bridge whose list was

@@ -314,8 +314,8 @@ fn perform_now(
                     let lines = kept
                         .listed()
                         .into_iter()
-                        .filter(|issue| issue.open)
-                        .map(|issue| format!("#{} — {}", issue.number, issue.title))
+                        .filter(|issue| issue.open())
+                        .map(|issue| format!("#{} — {}", issue.number(), issue.title()))
                         .collect();
                     control::listed(lines, "No open issue in this project")
                 });

@@ -384,7 +384,7 @@ impl IssuesView {
             .map(|(root, issue)| {
                 let key = IssueKey {
                     file: issues::file_for(&storage, root),
-                    number: issue.number,
+                    number: issue.number(),
                 };
                 let work = works.iter().find(|work| work.key == key);
                 Item {
@@ -419,7 +419,7 @@ impl IssuesView {
         page.shown = listed
             .rows
             .iter()
-            .map(|row| (row.item.root.to_path_buf(), row.item.issue.number))
+            .map(|row| (row.item.root.to_path_buf(), row.item.issue.number()))
             .collect();
         let scroll = page.scroll.clone();
         // The picked row into view; the handle scrolls by child, and each row
@@ -434,7 +434,7 @@ impl IssuesView {
         }
         let labels: Vec<String> = items
             .iter()
-            .flat_map(|item| item.issue.labels.iter().cloned())
+            .flat_map(|item| item.issue.labels().iter().cloned())
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();

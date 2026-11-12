@@ -785,8 +785,9 @@ impl ControlDrive {
         let Some(chat) = chat else {
             return self.fail(&key, "the session was closed before it was ready".into());
         };
-        let Phase::Up { picked, .. } = &pending.phase else {
-            return Vec::new();
+        let picked = match &pending.phase {
+            Phase::Up { picked, .. } => picked,
+            Phase::Resolving | Phase::Starting { .. } => return Vec::new(),
         };
         let next = open::step(
             chat,
@@ -802,12 +803,9 @@ impl ControlDrive {
                 prompt: pending.open.prompt.clone(),
             }],
             Step::Pick(pick) => {
-                if let Some(Pending {
-                    phase: Phase::Up { picked, .. },
-                    ..
-                }) = self.pending.get_mut(&key)
-                {
-                    picked.push(pick.group().to_string());
+                match self.pending.get_mut(&key).map(|pending| &mut pending.phase) {
+                    Some(Phase::Up { picked, .. }) => picked.push(pick.group().to_string()),
+                    Some(Phase::Resolving | Phase::Starting { .. }) | None => {}
                 }
                 vec![Effect::Pick { uid, pick }]
             }

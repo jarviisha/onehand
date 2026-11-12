@@ -108,14 +108,14 @@ fn a_task_reads_as_its_last_run() {
     let mut t = task("1");
     assert_eq!(t.outcome(), None);
     assert!(t.resumable(), "a run cut off before it started");
-    t.runs[0].resume();
-    t.runs[0].stopped(Stop::LinkLost);
+    t.runs[0].resume(0);
+    t.runs[0].stopped(Stop::LinkLost, 0);
     assert!(t.resumable());
     t.dismissed = true;
     assert!(!t.resumable(), "a dismissed task is history");
     let mut t = task("2");
-    t.runs[0].resume();
-    t.runs[0].stopped(Stop::TimedOut);
+    t.runs[0].resume(0);
+    t.runs[0].stopped(Stop::TimedOut, 0);
     assert!(!t.resumable());
     // Called off before its run started: it reads as stopped by a person.
     let mut t = task("3");
@@ -131,8 +131,8 @@ fn a_refused_retry_is_dropped_but_a_tasks_only_run_stays() {
     let mut t = task("1");
     assert!(!t.drop_unbegun_retry(), "the only run stays");
     assert_eq!(t.runs.len(), 1);
-    t.runs[0].resume();
-    t.runs[0].stopped(Stop::LinkLost);
+    t.runs[0].resume(0);
+    t.runs[0].stopped(Stop::LinkLost, 0);
     let again = t.runs[0].clone();
     t.runs.push(again);
     assert!(
@@ -157,7 +157,7 @@ fn a_stopped_task_gives_up_an_unbegun_run() {
     );
     assert!(t.runs.is_empty());
     let mut t = task("2");
-    t.runs[0].resume();
+    t.runs[0].resume(0);
     assert!(t.take_unbegun().is_none());
     assert_eq!(t.runs.len(), 1);
 }
@@ -186,7 +186,7 @@ fn an_old_run_becomes_a_task_of_the_same_id_and_the_old_folder_goes() {
     let (old, new) = (root.join("old"), root.join("new"));
     std::fs::create_dir_all(&old).unwrap();
     let mut run = task("5").runs.remove(0);
-    run.resume();
+    run.resume(0);
     // As a build from before visits and outcomes wrote it.
     let mut json = serde_json::to_value(&run).unwrap();
     json.as_object_mut().unwrap().remove("visits");
@@ -215,7 +215,7 @@ fn a_task_already_moved_wins_and_an_unreadable_run_stays() {
     )
     .unwrap();
     // The moved task went on after a crash left the old file behind.
-    t.runs[0].resume();
+    t.runs[0].resume(0);
     let ahead = serde_json::to_string_pretty(&t).unwrap();
     std::fs::write(new.join("5.json"), &ahead).unwrap();
     std::fs::write(old.join("6.json"), "{ not a run").unwrap();
@@ -294,13 +294,13 @@ fn a_mark_holds_untracked_work_and_leaves_the_persons_index_alone() {
 fn the_refs_still_to_pin_name_every_boundary_from_the_count_pinned() {
     let mut t = task("9");
     let run = &mut t.runs[0];
-    run.resume();
+    run.resume(0);
     assert_eq!(
         marks::refs_from("9", run, 0),
         ["refs/onehand/tasks/9/9/1/start"]
     );
     assert!(marks::refs_from("9", run, 1).is_empty());
-    run.stopped(Stop::ByPerson);
+    run.stopped(Stop::ByPerson, 0);
     assert_eq!(
         marks::refs_from("9", run, 1),
         ["refs/onehand/tasks/9/9/1/end"]
@@ -363,11 +363,11 @@ fn a_check_task_passes_or_fails_on_its_command() {
         assert_eq!(t.source, Source::Check);
         let run = &mut t.runs[0];
         assert_eq!(
-            run.resume(),
+            run.resume(0),
             crate::workflow::Action::RunCommand("make check".into())
         );
         assert_eq!(
-            run.command_finished(ran),
+            run.command_finished(ran, 0),
             crate::workflow::Action::Finish(outcome)
         );
     }
@@ -376,8 +376,8 @@ fn a_check_task_passes_or_fails_on_its_command() {
 #[test]
 fn a_retry_pushes_a_new_run_and_keeps_the_old_one() {
     let mut t = task("1");
-    t.runs[0].resume();
-    t.runs[0].stopped(Stop::TimedOut);
+    t.runs[0].resume(0);
+    t.runs[0].stopped(Stop::TimedOut, 0);
     let template = t.runs[0].template.clone();
     assert_eq!(
         t.retry("2".into(), template, None, None).map(|r| r.step),
@@ -391,8 +391,8 @@ fn a_retry_pushes_a_new_run_and_keeps_the_old_one() {
 fn finished(id: &str, repo: &str, at: u64) -> Task {
     let mut t = task(id);
     t.setup.repo = PathBuf::from(repo);
-    t.runs[0].resume();
-    t.runs[0].stopped(Stop::ByPerson);
+    t.runs[0].resume(0);
+    t.runs[0].stopped(Stop::ByPerson, 0);
     for move_ in &mut t.runs[0].history {
         move_.at = at;
     }
@@ -582,8 +582,8 @@ fn a_visits_changes_and_a_files_diff_read_between_two_marks() {
 #[test]
 fn retrying_a_task_let_go_makes_it_live_again() {
     let mut t = task("1");
-    t.runs[0].resume();
-    t.runs[0].stopped(Stop::TimedOut);
+    t.runs[0].resume(0);
+    t.runs[0].stopped(Stop::TimedOut, 0);
     t.dismissed = true;
     assert_eq!(t.group(None), Group::Finished);
     let template = t.runs[0].template.clone();
@@ -662,8 +662,8 @@ fn a_task_stopped_before_it_ran_is_as_new_as_when_it_was_made() {
 fn a_check_says_whether_it_passed() {
     let mut t = Task::check("1".into(), "true".into(), task("1").setup);
     assert_eq!(t.ended_said(), None);
-    t.runs[0].resume();
-    t.runs[0].command_finished(passed(None));
+    t.runs[0].resume(0);
+    t.runs[0].command_finished(passed(None), 0);
     assert_eq!(t.ended_said().as_deref(), Some("Check passed"));
     t.runs[0].outcome = Some(Outcome::Failed("exit 1".into()));
     assert_eq!(t.ended_said().as_deref(), Some("Check failed: exit 1"));
@@ -680,7 +680,7 @@ fn a_prompts_task_is_not_said_as_a_workflow() {
     t.runs[0].template = crate::schedule::prompt_template();
     assert!(t.runs[0].template.is_prompt());
     assert!(!task("2").runs[0].template.is_prompt());
-    t.runs[0].resume();
+    t.runs[0].resume(0);
     let mut said = |outcome| {
         t.runs[0].outcome = Some(outcome);
         t.ended_said().unwrap()
@@ -697,8 +697,8 @@ fn a_prompts_task_is_not_said_as_a_workflow() {
 #[test]
 fn a_retry_with_a_note_tells_its_first_step_what_to_change() {
     let mut t = task("1");
-    t.runs[0].resume();
-    t.runs[0].stopped(Stop::TimedOut);
+    t.runs[0].resume(0);
+    t.runs[0].stopped(Stop::TimedOut, 0);
     let template = t.runs[0].template.clone();
     let run = t
         .retry(
@@ -755,8 +755,8 @@ fn a_task_file_from_before_part_b_reads_and_saves_unchanged() {
 #[test]
 fn a_retry_with_current_settings_runs_the_new_setup_from_its_start() {
     let mut t = task("1");
-    t.runs[0].resume();
-    t.runs[0].stopped(Stop::TimedOut);
+    t.runs[0].resume(0);
+    t.runs[0].stopped(Stop::TimedOut, 0);
     let mut setup = t.runs[0].setup.clone();
     setup.mode = Some("auto".into());
     let plan = crate::workflow::WithCurrent {

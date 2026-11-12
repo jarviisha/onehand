@@ -46,25 +46,56 @@ fn lead_on() -> ControlDrive {
     drive
 }
 
+/// The open's key and effects, when it resolves; a panic when it does not.
+fn resolves(begun: Result<Begun, String>) -> (Key, Vec<Effect>) {
+    match begun {
+        Ok(Begun::Resolve { key, fx, .. }) => (key, fx),
+        Ok(Begun::Said(said)) => panic!("said: {said}"),
+        Err(why) => panic!("refused: {why}"),
+    }
+}
+
+/// Each effect by its name, with the fields the tests read.
+fn shown(fx: &[Effect]) -> Vec<String> {
+    fx.iter()
+        .map(|effect| match effect {
+            Effect::ToolsChanged(uid) => format!("ToolsChanged {uid}"),
+            Effect::Start { folder, .. } => format!("Start {folder}"),
+            Effect::Watch(uid) => format!("Watch {uid}"),
+            Effect::Unwatch(uid) => format!("Unwatch {uid}"),
+            Effect::Pick { uid, .. } => format!("Pick {uid}"),
+            Effect::Begin { uid, prompt } => format!("Begin {uid} {prompt:?}"),
+            Effect::Arm { token, wait } => format!("Arm {token} {wait:?}"),
+            Effect::Drop { uid, added, .. } => format!("Drop {uid} {added}"),
+            Effect::Answer { .. } => "Answer".into(),
+            Effect::Changed => "Changed".into(),
+        })
+        .collect()
+}
+
+fn standing(standing: Standing) -> String {
+    match standing {
+        Standing::On => "On".into(),
+        Standing::Off => "Off".into(),
+        Standing::Only(tools) => format!("Only {tools:?}"),
+        Standing::Refused(why) => format!("Refused {why}"),
+    }
+}
+
 /// A drive whose lead 1's open of `r1` started worker 7: its key.
 fn up(drive: &mut ControlDrive) -> Key {
-    let Ok(Begun::Resolve { key, .. }) = drive.open_worker(asked("go"), &projects(), None) else {
-        panic!("a new request resolves");
-    };
+    let (key, _) = resolves(drive.open_worker(asked("go"), &projects(), None));
     let fx = drive.handle(Input::Resolved {
         key: key.clone(),
         resolved: Ok(resolved()),
         world: world(),
     });
-    assert!(
-        matches!(&fx[..], [Effect::Start { folder, .. }] if folder == "repo"),
-        "{fx:?}"
-    );
+    assert_eq!(shown(&fx), ["Start repo"]);
     let fx = drive.handle(Input::Started {
         key: key.clone(),
         started: Ok(7),
     });
-    assert!(fx.iter().any(|e| matches!(e, Effect::Watch(7))), "{fx:?}");
+    assert!(shown(&fx).contains(&"Watch 7".to_string()), "{fx:?}");
     key
 }
 
@@ -77,7 +108,15 @@ fn connected() -> Chat {
 fn answer(fx: &[Effect]) -> Option<&Result<String, String>> {
     fx.iter().find_map(|effect| match effect {
         Effect::Answer { outcome, .. } => Some(outcome),
-        _ => None,
+        Effect::ToolsChanged(_)
+        | Effect::Start { .. }
+        | Effect::Watch(_)
+        | Effect::Unwatch(_)
+        | Effect::Pick { .. }
+        | Effect::Begin { .. }
+        | Effect::Arm { .. }
+        | Effect::Drop { .. }
+        | Effect::Changed => None,
     })
 }
 
@@ -113,7 +152,7 @@ fn a_worker_up_is_given_its_prompt_then_answered() {
         chat: Some(&connected()),
         lead_here: true,
     });
-    assert!(matches!(&fx[..], [Effect::Begin { uid: 7, prompt: Some(p) }] if p == "go"));
+    assert_eq!(shown(&fx), [r#"Begin 7 Some("go")"#]);
     let fx = drive.handle(Input::Begun {
         uid: 7,
         facts: facts(Some(Intake::Sent)),
@@ -132,8 +171,10 @@ fn a_worker_up_is_given_its_prompt_then_answered() {
         }]
     );
     // The same request again answers the same, opening nothing.
-    let Ok(Begun::Said(again)) = drive.open_worker(asked("go"), &projects(), None) else {
-        panic!("answered again");
+    let again = match drive.open_worker(asked("go"), &projects(), None) {
+        Ok(Begun::Said(again)) => again,
+        Ok(Begun::Resolve { key, .. }) => panic!("opened again: {key:?}"),
+        Err(why) => panic!("refused: {why}"),
     };
     assert_eq!(&again, said);
 }
@@ -148,23 +189,13 @@ fn a_prompt_not_taken_leaves_nothing_behind() {
         uid: 7,
         facts: facts(Some(Intake::Queued)),
     });
-    assert!(fx.iter().any(|e| matches!(
-        e,
-        Effect::Drop {
-            uid: 7,
-            added: false,
-            ..
-        }
-    )));
+    assert!(shown(&fx).contains(&"Drop 7 false".to_string()), "{fx:?}");
     assert_eq!(
         answer(&fx),
         Some(&Err("the prompt was not accepted".into()))
     );
     assert!(drive.workers_of(1).is_empty());
-    assert!(matches!(
-        drive.open_worker(asked("go"), &projects(), None),
-        Ok(Begun::Resolve { .. })
-    ));
+    resolves(drive.open_worker(asked("go"), &projects(), None));
 }
 
 /// A lead switched off or closed abandons its opens at once.
@@ -177,7 +208,10 @@ fn a_lead_that_goes_abandons_its_open() {
         answer(&fx),
         Some(&Err("the lead went before its worker was ready".into()))
     );
-    assert!(fx.iter().any(|e| matches!(e, Effect::Drop { uid: 7, .. })));
+    assert!(
+        shown(&fx).iter().any(|e| e.starts_with("Drop 7 ")),
+        "{fx:?}"
+    );
 
     let mut drive = lead_on();
     up(&mut drive);
@@ -204,14 +238,24 @@ fn a_wake_without_its_lead_fails() {
 #[test]
 fn an_open_past_its_deadline_fails_once() {
     let mut drive = lead_on();
-    let Ok(Begun::Resolve { key, fx, .. }) = drive.open_worker(asked("go"), &projects(), None)
-    else {
-        panic!("resolves");
+    let (key, fx) = resolves(drive.open_worker(asked("go"), &projects(), None));
+    let token = match fx[..] {
+        [Effect::Arm { token, wait }] => {
+            assert_eq!(wait, OPEN_DEADLINE);
+            token
+        }
+        []
+        | [_, _, ..]
+        | [Effect::ToolsChanged(_)
+        | Effect::Start { .. }
+        | Effect::Watch(_)
+        | Effect::Unwatch(_)
+        | Effect::Pick { .. }
+        | Effect::Begin { .. }
+        | Effect::Drop { .. }
+        | Effect::Answer { .. }
+        | Effect::Changed] => panic!("the deadline is armed at the call: {fx:?}"),
     };
-    let [Effect::Arm { token, wait }] = fx[..] else {
-        panic!("the deadline is armed at the call: {fx:?}");
-    };
-    assert_eq!(wait, OPEN_DEADLINE);
     drive.handle(Input::Resolved {
         key: key.clone(),
         resolved: Ok(resolved()),
@@ -234,9 +278,7 @@ fn an_open_past_its_deadline_fails_once() {
 #[test]
 fn a_folder_in_use_or_a_full_cap_refuses() {
     let mut drive = lead_on();
-    let Ok(Begun::Resolve { key, .. }) = drive.open_worker(asked("go"), &projects(), None) else {
-        panic!("resolves");
-    };
+    let (key, _) = resolves(drive.open_worker(asked("go"), &projects(), None));
     let busy = World {
         counts: vec![(PathBuf::from("/repo"), 1)],
         ..world()
@@ -248,9 +290,8 @@ fn a_folder_in_use_or_a_full_cap_refuses() {
     });
     assert!(answer(&fx).is_some_and(|o| o.as_ref().unwrap_err().contains("already has a session")));
 
-    let Ok(Begun::Resolve { key, .. }) = drive.open_worker(asked("go"), &projects(), None) else {
-        panic!("a failed request opens afresh");
-    };
+    // A failed request opens afresh.
+    let (key, _) = resolves(drive.open_worker(asked("go"), &projects(), None));
     let full = World {
         opened: (2..6).map(|uid| (uid, PathBuf::from("/x"))).collect(),
         ..world()
@@ -262,17 +303,13 @@ fn a_folder_in_use_or_a_full_cap_refuses() {
     });
     assert!(answer(&fx).is_some_and(|o| o.as_ref().unwrap_err().contains("4 sessions open")));
     // The folder was given back.
-    let Ok(Begun::Resolve { key, .. }) = drive.open_worker(asked("go"), &projects(), None) else {
-        panic!("resolves");
-    };
-    assert!(matches!(
-        &drive.handle(Input::Resolved {
-            key: key.clone(),
-            resolved: Ok(resolved()),
-            world: world()
-        })[..],
-        [Effect::Start { .. }]
-    ));
+    let (key, _) = resolves(drive.open_worker(asked("go"), &projects(), None));
+    let fx = drive.handle(Input::Resolved {
+        key: key.clone(),
+        resolved: Ok(resolved()),
+        world: world(),
+    });
+    assert_eq!(shown(&fx), ["Start repo"]);
 }
 
 /// A prompt needs a turn, and a turn a prompt.
@@ -288,14 +325,16 @@ fn a_prompt_and_its_turn_go_together() {
 #[test]
 fn standing_follows_the_switches() {
     let mut drive = ControlDrive::default();
+    let first = standing(drive.standing(&Peer::Outside));
     assert!(
-        matches!(drive.standing(&Peer::Outside), Standing::Refused(why) if why.contains("Settings"))
+        first.starts_with("Refused ") && first.contains("Settings"),
+        "{first}"
     );
     drive.set_outside(true);
-    assert!(matches!(drive.standing(&Peer::Outside), Standing::On));
+    assert_eq!(standing(drive.standing(&Peer::Outside)), "On");
     let token = drive.mint();
     let peer = Peer::Session(token.clone());
-    assert!(matches!(drive.standing(&peer), Standing::Off), "unclaimed");
+    assert_eq!(standing(drive.standing(&peer)), "Off", "unclaimed");
     drive.claim(&token, 3);
     drive.grant(
         3,
@@ -304,14 +343,11 @@ fn standing_follows_the_switches() {
             labels: Vec::new(),
         },
     );
-    assert!(matches!(drive.standing(&peer), Standing::Only(tools) if tools == ["list_issues"]));
-    assert!(matches!(
-        &drive.switch(3, true)[..],
-        [Effect::ToolsChanged(3)]
-    ));
-    assert!(matches!(drive.standing(&peer), Standing::On));
+    assert_eq!(standing(drive.standing(&peer)), r#"Only ["list_issues"]"#);
+    assert_eq!(shown(&drive.switch(3, true)), ["ToolsChanged 3"]);
+    assert_eq!(standing(drive.standing(&peer)), "On");
     drive.release(&token);
-    assert!(matches!(drive.standing(&peer), Standing::Refused(_)));
+    assert!(standing(drive.standing(&peer)).starts_with("Refused "));
 }
 
 /// Give back: offered while the person holds a worker whose lead is open and

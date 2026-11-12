@@ -37,6 +37,7 @@ fn edited(
                 root: root.to_path_buf(),
                 path: path.to_path_buf(),
                 read: Ok(("mine".into(), mtime)),
+                uid: super::next_uid(),
             },
             None,
             cx,

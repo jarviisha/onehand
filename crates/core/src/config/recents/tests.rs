@@ -15,6 +15,17 @@ fn written(fx: &[Effect]) -> (u64, &AppState) {
     }
 }
 
+/// The one signal an effect list holds.
+fn said(fx: &[Effect]) -> &Signal {
+    let [effect] = fx else {
+        panic!("one effect, not {}", fx.len());
+    };
+    match effect {
+        Effect::Signal(signal) => signal,
+        Effect::Write { pending, .. } => panic!("a signal, not write {pending}"),
+    }
+}
+
 #[test]
 fn each_change_writes_the_list_as_it_stands() {
     let mut d = drive();
@@ -47,19 +58,19 @@ fn only_an_unbinds_failed_forget_is_said() {
         result: Err("disk full".into()),
     };
     // The touch's failure lands after the forget was asked: still only logged.
-    assert!(matches!(
-        &d.handle(failed(touch))[..],
-        [Effect::Signal(Signal::WriteFailed(_))]
-    ));
-    assert!(matches!(
-        &d.handle(failed(forget))[..],
-        [Effect::Signal(Signal::ForgetFailed(_))]
-    ));
+    assert_eq!(
+        said(&d.handle(failed(touch))),
+        &Signal::WriteFailed("disk full".into())
+    );
+    assert_eq!(
+        said(&d.handle(failed(forget))),
+        &Signal::ForgetFailed("disk full".into())
+    );
     let (gone, _) = written(&d.forgot(Path::new("/b"), Forgot::Gone));
-    assert!(matches!(
-        &d.handle(failed(gone))[..],
-        [Effect::Signal(Signal::WriteFailed(_))]
-    ));
+    assert_eq!(
+        said(&d.handle(failed(gone))),
+        &Signal::WriteFailed("disk full".into())
+    );
     let (landed, _) = written(&d.forgot(Path::new("/c"), Forgot::Unbound));
     assert!(d
         .handle(Input::Written {

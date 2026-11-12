@@ -714,5 +714,45 @@ pub enum AcpEvent {
     Disconnected(String),
 }
 
+impl AcpEvent {
+    /// Whether it ends the stream: nothing comes after it from this worker.
+    pub(crate) fn ends_stream(&self) -> bool {
+        match self {
+            AcpEvent::Disconnected(_) => true,
+            AcpEvent::Connected { .. }
+            | AcpEvent::SessionId(_)
+            | AcpEvent::AgentChunk { .. }
+            | AcpEvent::ThoughtChunk(_)
+            | AcpEvent::UserChunk(_)
+            | AcpEvent::ToolCall(_)
+            | AcpEvent::ToolUpdate(_)
+            | AcpEvent::Plan(_)
+            | AcpEvent::Usage(_)
+            | AcpEvent::Background(_)
+            | AcpEvent::SubagentSpawned { .. }
+            | AcpEvent::SubagentEnded { .. }
+            | AcpEvent::InChild { .. }
+            | AcpEvent::StopRefused { .. }
+            | AcpEvent::Permission(_)
+            | AcpEvent::Elicitation(_)
+            | AcpEvent::AvailableCommands(_)
+            | AcpEvent::Modes { .. }
+            | AcpEvent::ModeChanged(_)
+            | AcpEvent::PickConfirmed { .. }
+            | AcpEvent::PickRefused { .. }
+            | AcpEvent::ConfigOptions(_)
+            | AcpEvent::TerminalOutput { .. }
+            | AcpEvent::TerminalExit { .. }
+            | AcpEvent::TurnEnded { .. }
+            | AcpEvent::Error { .. }
+            | AcpEvent::Interrupted
+            | AcpEvent::LoginRequired { .. }
+            | AcpEvent::Notice(_)
+            | AcpEvent::Echo(_)
+            | AcpEvent::At(_) => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;

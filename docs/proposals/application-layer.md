@@ -25,7 +25,8 @@
     drives with no front end (`task::flows`).
   - Phase 11 takes every leftover of phases 4 to 10, in five PRs by area; its plan is under
     *Plan*. PR 11a, tasks and unattended runs, is built, as are sessions and hosts (11b1, 11b2),
-    the workspace and the shell (11c), and issues and the Workbench (11d).
+    the workspace and the shell (11c), issues and the Workbench (11d), and the first half of what
+    runs across the drives (11e1).
   - What is left here is what each phase left for later, the record of the trial and the
     decisions; *Done when* is not met until phase 11 is built, and the proposal leaves
     `docs/proposals/` with phase 11's last PR.
@@ -758,12 +759,43 @@ Left for later (PR 11d):
   conversation. Its rule is tested in core.
 - `connector::memory::Forge` stays `cfg(test)`: nothing outside core needs it yet.
 
-PR 11e, across the drives:
-- `Task`'s fields `pub(crate)` behind read accessors;
-- one `Now` for every drive, and the Editor's tab ids handed in, so a replay gives the same ids;
-- no arm in a link or a drive, or their tests, that matches the rest of our own enum;
-- the proposal leaves `docs/proposals/`: its standard is `docs/drives.md`'s already, and its
-  decisions move there or into the feature documents.
+PR 11e, across the drives, in two PRs (D46). The first, 11e1, built:
+- `Task`'s and `LocalIssue`'s fields are `pub(crate)` behind read accessors; the app's tests that
+  set a task up reach it through core's `test-support` feature (`Task::runs_mut`,
+  `Task::with_source`).
+- Every drive is told the time in one shape, `onehand_core::Now` (moved from `chat`), read by a
+  carrier with `Now::read`: `RunDrive` and `PluginsDrive` took an `Instant`, `WorkDrive` and
+  `ScheduleDrive` seconds, `UnattendedDrive` a `SystemTime`. When an agent started
+  (`PluginsDrive::agent_started`) stays an `Instant`: it is a fact the session reports, not the
+  time the drive is told. The two clocks a model read itself
+  are gone (D47): a run's moves and visits are stamped with the time the run's or the tasks'
+  drive was told (`TasksDrive::begin`, `not_started`, `session_not_started` and `stop_queued`
+  take it), and the remote bridge's archive listing counts its ages from the time its scan
+  landed (`Input::Scanned { now }`).
+- The Editor's tab ids are handed in with the read's answer (`Input::Read { uid }`), minted by
+  `EditorView` from the process-wide counter.
+- No drive, link or their tests match part of our own enum and let the rest through (D48): the
+  production matches name every variant, the routers in `unattended::link` list what they hand
+  the front end, the reads several places share are matched once beside their enums
+  (`AcpEvent::ends_stream`, `HostState::lost`), and the tests read effects through exhaustive
+  helpers.
+- What a window said, for a test, is one record: `Shell.refused`, the words of each refusal the
+  window put up, replacing 11c's `Shell.said` and 11d's thread-local `SAID`.
+
+Phase 11 changed, on purpose (PR 11e1):
+- A run waiting on its pull request's status checks keeps waiting when a forge answer it did not
+  ask for lands (a log read, a draft taken out of draft); before, that answer dropped the wait, and
+  the run never looked at its checks again. Found by the audit (its own commit).
+- A run's history and visits are stamped with the time its drive was told rather than one the
+  model read: the same moment in practice, and a replay now stamps the same.
+- The remote bridge's archive listing counts ages from the moment its scan landed, not from when
+  its words were made: the same moment in practice.
+
+Left for later (PR 11e1):
+- What 11e2 takes: the proposal leaves `docs/proposals/`, its decisions moving into
+  `docs/drives.md` and the feature documents; the user-visible changes go into the changelog;
+  three leftovers are built (D50); every other one is placed in `docs/known-gaps.md` or the
+  feature document that owns it.
 
 ## What the trial showed
 
@@ -1029,6 +1061,20 @@ Made on 2026-11-11, with phase 11's audit:
   pressed (`acting`), each window's share of a host's waits, an agent's *Test*, a second launch's
   window, the Issues sync timer, the Workbench's mode choice and a start off screen's kept project.
 - **D41. The proposal leaves `docs/proposals/` with phase 11's last PR.**
+
+Made on 2026-11-12, with PR 11e's audit:
+- **D46. 11e in two PRs**: the code first (accessors, one `Now`, the Editor's ids, whole matches,
+  one test record), then the proposal leaves with the leftovers placed.
+- **D47. One `Now` reaches the models too**: a run's stamps and the archive listing, found
+  reading the clock, are told it.
+- **D48. Every partial match on our own enums goes**, tests included: `matches!`, `if let` and
+  `let … else` as well as rest arms.
+- **D49. The proposal is deleted when it leaves**, as earlier proposals were: what still binds
+  becomes a rule in `docs/drives.md` or a sentence in a feature document, what a person sees
+  changed goes into the changelog, and the rest stays in the history.
+- **D50. 11e2 builds three leftovers**: a session's watched host session read from the workspace
+  alone (no `OnHost` copy), a window's host waits pruned at the moments a wait can end, and an
+  issues file's drive told of an unattended run's sync; every other leftover is placed.
 
 Made on 2026-11-11, with PR 11b's audit:
 - **D42. 11b in two PRs**: the small moves that change nothing (an unattached host session, a

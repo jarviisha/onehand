@@ -110,7 +110,7 @@ pub(crate) fn offered(spec: &AgentSpec, cx: &App) -> Option<onehand_core::workfl
 /// A Resume or a Retry of `task` on `template`: judged by its last run's own
 /// setup, never what Settings says now, since that is what will run.
 pub(crate) fn of_task(task: &Task, template: Template, cx: &App) -> Facts {
-    let setup = task.runs.last().map_or(&task.setup, |run| &run.setup);
+    let setup = task.runs().last().map_or(task.setup(), |run| &run.setup);
     with_setup(task, setup, Ok(template), cx)
 }
 
@@ -139,7 +139,7 @@ pub(crate) fn with_setup(
     });
     // Held to the cap as the tick is: an issue's task not already counted.
     let slots = crate::task::unattended(cx, |u, seen| {
-        (task.issue().is_some() && !u.counted(&task.id, seen)).then(|| u.slots(seen))
+        (task.issue().is_some() && !u.counted(task.id(), seen)).then(|| u.slots(seen))
     })
     .flatten();
     Facts {

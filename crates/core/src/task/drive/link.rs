@@ -10,9 +10,9 @@
 
 use super::{Input, RunDrive};
 use crate::chat::drive::{Code, Effect as SessionEffect, Intake, Origin, SessionDrive, Signal};
-use crate::chat::{Chat, Now};
+use crate::chat::Chat;
 use crate::workflow::{Action, Run};
-use std::time::Instant;
+use crate::Now;
 
 /// Start driving `run` on `session`: what [`RunDrive::start`] answers, and what
 /// naming the session and putting the first step's settings in force ask of
@@ -29,7 +29,7 @@ pub fn start(
     first: Action,
     pinned: usize,
     issue: bool,
-    now: Instant,
+    now: Now,
     mut session: Option<&mut SessionDrive>,
 ) -> (RunDrive, Vec<super::Effect>, Vec<SessionEffect>) {
     let mut named = Vec::new();
@@ -48,7 +48,7 @@ pub fn handle(
     drive: &mut RunDrive,
     input: Input,
     session: Option<&mut SessionDrive>,
-    now: Instant,
+    now: Now,
 ) -> (Vec<super::Effect>, Vec<SessionEffect>) {
     command(drive, session, |drive, chat| drive.handle(input, chat, now))
 }

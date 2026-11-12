@@ -52,6 +52,35 @@ pub mod workflow;
 pub mod workspace;
 pub mod worktree;
 
+/// The time, as a front end read it and told a drive: the wall clock, in
+/// seconds since the epoch, for what is written down, and an instant, for
+/// how long something took. No drive and no model reads a clock of its own;
+/// each is told this, so a replay of what it was told gives the same answer.
+#[derive(Debug, Clone, Copy)]
+pub struct Now {
+    pub secs: u64,
+    pub at: std::time::Instant,
+}
+
+impl Now {
+    /// The time now, read by a carrier for the drive it tells.
+    pub fn read() -> Self {
+        Self {
+            secs: chat::now_secs(),
+            at: std::time::Instant::now(),
+        }
+    }
+}
+
+/// Time passing, for a test: the wall clock and the instant move together.
+#[cfg(test)]
+impl std::ops::AddAssign<std::time::Duration> for Now {
+    fn add_assign(&mut self, by: std::time::Duration) {
+        self.secs += by.as_secs();
+        self.at += by;
+    }
+}
+
 /// `12s` / `1m 12s`: how long something took, at the coarseness it is read
 /// at. Seconds alone up to a minute; past it, a bare count of seconds is a
 /// number the reader has to divide before it means anything.

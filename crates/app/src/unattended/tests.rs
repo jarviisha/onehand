@@ -63,8 +63,8 @@ fn issue_task(id: &str, number: u64, file: &Path, dir: &Path, unsent: Vec<Pendin
         mode: None,
         forge: None,
     };
-    let mut task = Task::check(id.into(), "true".into(), setup);
-    task.source = Source::Issue(IssueSource {
+    let task = Task::check(id.into(), "true".into(), setup);
+    task.with_source(Source::Issue(IssueSource {
         tracker: TrackerRef::Local {
             file: file.to_path_buf(),
         },
@@ -75,8 +75,7 @@ fn issue_task(id: &str, number: u64, file: &Path, dir: &Path, unsent: Vec<Pendin
         picked: false,
         unsent,
         notes: Vec::new(),
-    });
-    task
+    }))
 }
 
 /// A report of a run cut off and let go.
@@ -132,7 +131,7 @@ fn notes(file: &Path, number: u64) -> Vec<String> {
     let kept = onehand_core::issues::load_blocking(file).unwrap();
     kept.get(number)
         .unwrap()
-        .notes
+        .notes()
         .iter()
         .map(|note| note.text.clone())
         .collect()
@@ -337,13 +336,13 @@ fn a_runs_taken_up_note_is_written_once(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(notes(&file, 1), ["Taken up by an unattended run"]);
     let kept = onehand_core::issues::load_blocking(&file).unwrap();
-    let session = kept.get(1).unwrap().notes[0].session.clone();
+    let session = kept.get(1).unwrap().notes()[0].session.clone();
     assert_eq!(session.as_deref(), Some("s-1"));
     let shown = cx.update(|cx| view.shown(cx)).unwrap();
     let said: Vec<_> = shown
         .get(1)
         .unwrap()
-        .notes
+        .notes()
         .iter()
         .map(|n| n.text.clone())
         .collect();

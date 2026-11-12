@@ -94,7 +94,18 @@ impl Rig {
     }
 
     fn handle(&mut self, input: Input<Win>, roots: Vec<On>) -> Out<Win> {
-        self.fx(|u, seen, world| u.handle(input, seen, roots, world, SystemTime::UNIX_EPOCH))
+        self.fx(|u, seen, world| {
+            u.handle(
+                input,
+                seen,
+                roots,
+                world,
+                crate::Now {
+                    secs: 0,
+                    at: std::time::Instant::now(),
+                },
+            )
+        })
     }
 
     fn tick(&mut self, roots: Vec<On>) -> Out<Win> {
@@ -169,18 +180,115 @@ fn issue_task(id: &str, number: u64, file: &Path, dir: &Path) -> Task {
     )
 }
 
+/// Every effect's variant by name, a signal's as `Signal::` and its own:
+/// matched whole, so a new variant is named here before any test passes it.
+fn name<W>(e: &Effect<W>) -> &'static str {
+    match e {
+        Effect::Arm(_) => "Arm",
+        Effect::Check { .. } => "Check",
+        Effect::Look(_) => "Look",
+        Effect::Claim { .. } => "Claim",
+        Effect::Take { .. } => "Take",
+        Effect::ClaimPicked { .. } => "ClaimPicked",
+        Effect::Tell { .. } => "Tell",
+        Effect::Submit { .. } => "Submit",
+        Effect::AnswerReview { .. } => "AnswerReview",
+        Effect::Send(_) => "Send",
+        Effect::Drain { .. } => "Drain",
+        Effect::Teardown { .. } => "Teardown",
+        Effect::NoteTakenUp { .. } => "NoteTakenUp",
+        Effect::Tick => "Tick",
+        Effect::Refresh => "Refresh",
+        Effect::Signal(Signal::Warn { .. }) => "Signal::Warn",
+        Effect::Signal(Signal::Log(_)) => "Signal::Log",
+    }
+}
+
 fn looks<W>(out: &Out<W>) -> Option<&Look<W>> {
     out.unattended.iter().find_map(|e| match e {
         Effect::Look(look) => Some(&**look),
-        _ => None,
+        Effect::Arm(_)
+        | Effect::Check { .. }
+        | Effect::Claim { .. }
+        | Effect::Take { .. }
+        | Effect::ClaimPicked { .. }
+        | Effect::Tell { .. }
+        | Effect::Submit { .. }
+        | Effect::AnswerReview { .. }
+        | Effect::Send(_)
+        | Effect::Drain { .. }
+        | Effect::Teardown { .. }
+        | Effect::NoteTakenUp { .. }
+        | Effect::Tick
+        | Effect::Signal(_)
+        | Effect::Refresh => None,
+    })
+}
+
+/// The first look in `out`, taken out of it.
+fn take_look<W>(out: Out<W>) -> Option<Look<W>> {
+    out.unattended.into_iter().find_map(|e| match e {
+        Effect::Look(look) => Some(*look),
+        Effect::Arm(_)
+        | Effect::Check { .. }
+        | Effect::Claim { .. }
+        | Effect::Take { .. }
+        | Effect::ClaimPicked { .. }
+        | Effect::Tell { .. }
+        | Effect::Submit { .. }
+        | Effect::AnswerReview { .. }
+        | Effect::Send(_)
+        | Effect::Drain { .. }
+        | Effect::Teardown { .. }
+        | Effect::NoteTakenUp { .. }
+        | Effect::Tick
+        | Effect::Signal(_)
+        | Effect::Refresh => None,
     })
 }
 
 fn warned<W>(out: &Out<W>) -> Option<&str> {
     out.unattended.iter().find_map(|e| match e {
         Effect::Signal(Signal::Warn { said, .. }) => Some(said.as_str()),
-        _ => None,
+        Effect::Signal(Signal::Log(_))
+        | Effect::Arm(_)
+        | Effect::Check { .. }
+        | Effect::Look(_)
+        | Effect::Claim { .. }
+        | Effect::Take { .. }
+        | Effect::ClaimPicked { .. }
+        | Effect::Tell { .. }
+        | Effect::Submit { .. }
+        | Effect::AnswerReview { .. }
+        | Effect::Send(_)
+        | Effect::Drain { .. }
+        | Effect::Teardown { .. }
+        | Effect::NoteTakenUp { .. }
+        | Effect::Tick
+        | Effect::Refresh => None,
     })
+}
+
+/// How long an arm waits.
+fn armed<W>(e: &Effect<W>) -> Option<Duration> {
+    match e {
+        Effect::Arm(every) => Some(*every),
+        Effect::Check { .. }
+        | Effect::Look(_)
+        | Effect::Claim { .. }
+        | Effect::Take { .. }
+        | Effect::ClaimPicked { .. }
+        | Effect::Tell { .. }
+        | Effect::Submit { .. }
+        | Effect::AnswerReview { .. }
+        | Effect::Send(_)
+        | Effect::Drain { .. }
+        | Effect::Teardown { .. }
+        | Effect::NoteTakenUp { .. }
+        | Effect::Tick
+        | Effect::Signal(_)
+        | Effect::Refresh => None,
+    }
 }
 
 /// A config that cannot work is filed as what stops every run, and the
@@ -196,7 +304,7 @@ fn a_config_that_cannot_work_stops_every_run_and_the_clock_still_runs() {
         .blocked(&World::default())
         .unwrap()
         .contains("no label is set"));
-    assert!(matches!(fx.last(), Some(Effect::Arm(every)) if *every == Duration::from_secs(1800)));
+    assert_eq!(fx.last().and_then(armed), Some(Duration::from_secs(1800)));
     let mut rig = Rig {
         u,
         ..Rig::new(config(1, None))
@@ -205,10 +313,7 @@ fn a_config_that_cannot_work_stops_every_run_and_the_clock_still_runs() {
     let out = rig.handle(Input::Elapsed, vec![(project.clone(), false)]);
     let look = looks(&out).expect("the projects are still looked at");
     assert!(look.search.is_none(), "but nothing is searched");
-    assert!(
-        matches!(out.unattended.last(), Some(Effect::Arm(_))),
-        "armed again"
-    );
+    assert_eq!(out.unattended.last().map(name), Some("Arm"), "armed again");
     let _ = std::fs::remove_dir_all(project.root);
 }
 
@@ -233,10 +338,7 @@ fn a_tick_claims_an_issue_and_its_task_asks_for_its_place() {
     let out = rig.tick(roots.clone());
     assert!(rig.u.claiming(), "a second tick waits for this one");
     assert!(looks(&rig.tick(roots.clone())).unwrap().search.is_none());
-    let look = out.unattended.into_iter().find_map(|e| match e {
-        Effect::Look(look) => Some(*look),
-        _ => None,
-    });
+    let look = take_look(out);
     let looked = look.unwrap().run_blocking();
     let out = rig.handle(Input::Looked(Box::new(looked)), roots.clone());
     let (found, label) = out
@@ -244,7 +346,21 @@ fn a_tick_claims_an_issue_and_its_task_asks_for_its_place() {
         .into_iter()
         .find_map(|e| match e {
             Effect::Claim { found, label, .. } => Some((found, label)),
-            _ => None,
+            Effect::Arm(_)
+            | Effect::Check { .. }
+            | Effect::Look(_)
+            | Effect::Take { .. }
+            | Effect::ClaimPicked { .. }
+            | Effect::Tell { .. }
+            | Effect::Submit { .. }
+            | Effect::AnswerReview { .. }
+            | Effect::Send(_)
+            | Effect::Drain { .. }
+            | Effect::Teardown { .. }
+            | Effect::NoteTakenUp { .. }
+            | Effect::Tick
+            | Effect::Signal(_)
+            | Effect::Refresh => None,
         })
         .expect("the issue found is claimed");
     let begun = blocking::claim_found(*found, &label);
@@ -262,12 +378,15 @@ fn a_tick_claims_an_issue_and_its_task_asks_for_its_place() {
     assert_eq!(task.issue().unwrap().number, 1);
     assert!(!task.issue().unwrap().picked);
     assert_eq!(task.setup.agent.as_deref(), Some("a"));
-    assert!(out
-        .tasks
-        .iter()
-        .any(|e| matches!(e, tasks::Effect::FindPlace { task, .. } if task == "t1")));
-    assert!(
-        matches!(out.unattended.last(), Some(Effect::Tick)),
+    let find = tasks::Effect::FindPlace {
+        task: "t1".into(),
+        dir: task_dir(&rig, "t1"),
+        window: WINDOW,
+    };
+    assert!(out.tasks.contains(&find), "{:?}", out.tasks);
+    assert_eq!(
+        out.unattended.last().map(name),
+        Some("Tick"),
         "and looks again"
     );
     assert!(!rig.u.claiming());
@@ -304,10 +423,7 @@ fn a_search_asked_for_now_always_says_what_came_of_it() {
     let project = repo("now", &[("Unlabelled", &[])]);
     let roots = vec![(project.clone(), false)];
     let out = rig.fx(|u, seen, world| u.look_now(WINDOW, seen, roots.clone(), world));
-    let look = out.unattended.into_iter().find_map(|e| match e {
-        Effect::Look(look) => Some(*look),
-        _ => None,
-    });
+    let look = take_look(out);
     let out = rig.handle(Input::Looked(Box::new(look.unwrap().run_blocking())), roots);
     assert_eq!(
         warned(&out),
@@ -328,17 +444,22 @@ fn a_start_is_held_to_the_cap_and_a_counted_one_never_is() {
     rig.u.starting.insert("a".into());
     let Rig { tasks, u, .. } = &mut rig;
     assert_eq!(u.over_cap("a", &Seen::new(tasks, [])), None);
+    let why = u.over_cap("b", &Seen::new(tasks, [])).unwrap();
+    assert!(why.contains("Slots: 1 of 1"), "{why}");
     let out = rig.request("b");
-    assert!(out.tasks.iter().any(|e| matches!(
-        e,
-        tasks::Effect::Signal(tasks::Signal::Refused { why, .. }) if why.contains("Slots: 1 of 1")
-    )));
+    let refused = tasks::Effect::Signal(tasks::Signal::Refused {
+        window: WINDOW,
+        why,
+    });
+    assert!(out.tasks.contains(&refused), "{:?}", out.tasks);
     // Asking for its place lets the count go.
     let out = rig.request("a");
-    assert!(out
-        .tasks
-        .iter()
-        .any(|e| matches!(e, tasks::Effect::FindPlace { .. })));
+    let find = tasks::Effect::FindPlace {
+        task: "a".into(),
+        dir: PathBuf::from("/w/a"),
+        window: WINDOW,
+    };
+    assert!(out.tasks.contains(&find), "{:?}", out.tasks);
     rig.found_place("a", "/w/a");
     let slots = rig.slots();
     assert_eq!(
@@ -431,21 +552,41 @@ fn an_ended_run_drops_its_project_unless_a_person_has_it_and_is_told_once() {
     ] {
         let mut rig = Rig::new(config(1, None));
         let mut task = issue_task("a", 1, Path::new("/kept/issues.json"), Path::new("/w/a"));
-        if let crate::task::Source::Issue(issue) = &mut task.source {
-            issue.picked = picked;
+        match &mut task.source {
+            crate::task::Source::Issue(issue) => issue.picked = picked,
+            source @ (crate::task::Source::Workflow | crate::task::Source::Check) => {
+                panic!("{source:?}")
+            }
         }
         task.runs[0].outcome = Some(outcome.clone());
         let run = task.runs[0].clone();
-        if let crate::task::Source::Issue(issue) = &mut task.source {
-            issue.keep_report(&run, None);
+        match &mut task.source {
+            crate::task::Source::Issue(issue) => issue.keep_report(&run, None),
+            source @ (crate::task::Source::Workflow | crate::task::Source::Check) => {
+                panic!("{source:?}")
+            }
         }
         rig.tasks.add(task);
         let out = rig.fx(|u, seen, _| u.ended("a", seen));
-        assert!(
-            matches!(&out.unattended[0], Effect::Teardown { keep: k, .. } if *k == keep),
-            "{picked} {outcome:?}"
-        );
-        assert!(matches!(out.unattended[1], Effect::Send(_)));
+        match &out.unattended[0] {
+            Effect::Teardown { keep: k, .. } => assert_eq!(*k, keep, "{picked} {outcome:?}"),
+            e @ (Effect::Arm(_)
+            | Effect::Check { .. }
+            | Effect::Look(_)
+            | Effect::Claim { .. }
+            | Effect::Take { .. }
+            | Effect::ClaimPicked { .. }
+            | Effect::Tell { .. }
+            | Effect::Submit { .. }
+            | Effect::AnswerReview { .. }
+            | Effect::Send(_)
+            | Effect::Drain { .. }
+            | Effect::NoteTakenUp { .. }
+            | Effect::Tick
+            | Effect::Signal(_)
+            | Effect::Refresh) => panic!("{} first: {picked} {outcome:?}", name(e)),
+        }
+        assert_eq!(name(&out.unattended[1]), "Send");
         let again = rig.fx(|u, seen, _| u.deliver("a", seen));
         assert!(again.unattended.is_empty(), "sent once while it is out");
         let out = rig.handle(
@@ -463,10 +604,8 @@ fn an_ended_run_drops_its_project_unless_a_person_has_it_and_is_told_once() {
             .unwrap()
             .unsent
             .is_empty());
-        assert!(out
-            .tasks
-            .iter()
-            .any(|e| matches!(e, tasks::Effect::Save(_))));
+        let saved = tasks::Effect::Save(Box::new(rig.tasks.task("a").unwrap().clone()));
+        assert!(out.tasks.contains(&saved), "{:?}", out.tasks);
     }
 }
 
@@ -485,10 +624,30 @@ fn a_run_coming_up_notes_its_session_on_an_issue_kept_here() {
         session: session.map(str::to_string),
     };
     let out = rig.said("a", came_up(Some("s-1")), Vec::new());
-    assert!(matches!(
-        &out.unattended[..],
-        [Effect::NoteTakenUp { number: 4, session, .. }] if session == "s-1"
-    ));
+    match &out.unattended[..] {
+        [Effect::NoteTakenUp {
+            number, session, ..
+        }] => assert_eq!((*number, session.as_str()), (4, "s-1")),
+        [e @ (Effect::Arm(_)
+        | Effect::Check { .. }
+        | Effect::Look(_)
+        | Effect::Claim { .. }
+        | Effect::Take { .. }
+        | Effect::ClaimPicked { .. }
+        | Effect::Tell { .. }
+        | Effect::Submit { .. }
+        | Effect::AnswerReview { .. }
+        | Effect::Send(_)
+        | Effect::Drain { .. }
+        | Effect::Teardown { .. }
+        | Effect::Tick
+        | Effect::Signal(_)
+        | Effect::Refresh)] => panic!("{}", name(e)),
+        fx => panic!(
+            "one note, not {:?}",
+            fx.iter().map(name).collect::<Vec<_>>()
+        ),
+    }
     let out = rig.said("a", came_up(None), Vec::new());
     assert!(out.unattended.is_empty());
 }
@@ -526,5 +685,5 @@ fn a_check_waits_until_it_answers_and_prunes_what_is_switched_off() {
     );
     assert_eq!(rig.u.problem(&off), None, "switched off since");
     assert_eq!(rig.u.problem(&on), Some("not a git repository"));
-    assert_eq!(rig.u.checked_at(), Some(SystemTime::UNIX_EPOCH));
+    assert_eq!(rig.u.checked_at(), Some(0));
 }

@@ -76,18 +76,46 @@ fn heard(
     result: Result<(), HostFailure>,
     by_poll: bool,
 ) -> bool {
-    let Got::Make(made) = drive.ask(host, true, asker(by_poll), false) else {
-        unreachable!()
-    };
+    let made = make(drive.ask(host, true, asker(by_poll), false));
     let landed = land(drive, host, made, result);
-    landed.fx.iter().any(|e| matches!(e, Effect::Refresh))
+    names(&landed.fx).contains(&"Refresh")
+}
+
+/// The attempt `got` makes, or a panic when it makes none.
+fn make(got: Got) -> u64 {
+    match got {
+        Got::Make(made) => made,
+        Got::Ready | Got::Join(_) | Got::Wait(_) => panic!("made nothing: {got:?}"),
+    }
+}
+
+fn name(e: &Effect) -> &'static str {
+    match e {
+        Effect::Arm { .. } => "Arm",
+        Effect::Attach { .. } => "Attach",
+        Effect::Ended { .. } => "Ended",
+        Effect::Refresh => "Refresh",
+    }
+}
+
+fn names(fx: &[Effect]) -> Vec<&'static str> {
+    fx.iter().map(name).collect()
+}
+
+/// How long the one clock `fx` arm runs.
+fn armed_after(fx: &[Effect]) -> Duration {
+    assert_eq!(fx.len(), 1, "{fx:?}");
+    match &fx[0] {
+        Effect::Arm { after, .. } => *after,
+        Effect::Attach { .. } | Effect::Ended { .. } | Effect::Refresh => panic!("{fx:?}"),
+    }
 }
 
 fn ended(fx: &[Effect]) -> Vec<(u64, WaitEnd)> {
     fx.iter()
         .filter_map(|e| match e {
             Effect::Ended { id, how } => Some((*id, how.clone())),
-            _ => None,
+            Effect::Arm { .. } | Effect::Attach { .. } | Effect::Refresh => None,
         })
         .collect()
 }
@@ -99,9 +127,7 @@ fn heard_ending(
     result: Result<(), HostFailure>,
     by_poll: bool,
 ) -> Vec<(u64, WaitEnd)> {
-    let Got::Make(made) = drive.ask(host, true, asker(by_poll), false) else {
-        unreachable!()
-    };
+    let made = make(drive.ask(host, true, asker(by_poll), false));
     ended(&land(drive, host, made, result).fx)
 }
 
@@ -213,7 +239,7 @@ fn a_busy_host_waits_until_an_attach_lands() {
     heard(&mut drive, &host, busy(&host, &["1-1"]), false);
     heard(&mut drive, &host, busy(&host, &["1-1", "2-1"]), false);
     let (a, armed) = drive.listen(&host, Kind::Busy).unwrap();
-    assert!(matches!(&armed[..], [Effect::Arm { after, .. }] if *after == HOST_IDLE_POLL));
+    assert_eq!(armed_after(&armed), HOST_IDLE_POLL);
     let (b, armed) = drive.listen(&host, Kind::Busy).unwrap();
     assert!(armed.is_empty(), "one clock per wait");
     assert_eq!(a, b, "one wait");
@@ -275,22 +301,22 @@ fn the_wait_ends_with_its_last_listener() {
     heard(&mut drive, &host, busy(&host, &["1-1"]), false);
     let (a, _) = drive.listen(&host, Kind::Busy).unwrap();
     drive.listen(&host, Kind::Busy).unwrap();
-    assert!(matches!(
-        &drive.handle(Input::Elapsed {
+    assert_eq!(
+        names(&drive.handle(Input::Elapsed {
             host: host.clone(),
             kind: Kind::Busy,
             id: a
-        })[..],
-        [Effect::Attach { .. }]
-    ));
-    assert!(matches!(
-        &drive.handle(Input::Polled {
+        })),
+        ["Attach"]
+    );
+    assert_eq!(
+        names(&drive.handle(Input::Polled {
             host: host.clone(),
             kind: Kind::Busy,
             id: a
-        })[..],
-        [Effect::Arm { .. }]
-    ));
+        })),
+        ["Arm"]
+    );
     assert!(!drive.leave(&host, a), "one still listens");
     assert!(drive.leave(&host, a), "the last");
     assert!(
@@ -392,10 +418,7 @@ fn a_lost_hosts_clock_backs_off() {
     heard(&mut drive, &host, Ok(()), false);
     closed(&mut drive, &host, false, false);
     let (id, armed) = drive.listen(&host, Kind::Back).unwrap();
-    let after = |fx: &[Effect]| match fx {
-        [Effect::Arm { after, .. }] => after.as_secs(),
-        _ => panic!("{fx:?}"),
-    };
+    let after = |fx: &[Effect]| armed_after(fx).as_secs();
     assert_eq!(after(&armed), 2);
     let mut said = Vec::new();
     for _ in 0..4 {
@@ -422,9 +445,7 @@ fn taken_never_reconnects() {
     let host = vps();
     let mut drive = HostDrive::default();
     assert_eq!(drive.state(&host), HostState::Unknown);
-    let Got::Make(made) = ask(&mut drive, false) else {
-        unreachable!()
-    };
+    let made = make(ask(&mut drive, false));
     assert_eq!(drive.state(&host), HostState::Attaching);
     land(&mut drive, &host, made, Ok(()));
     assert_eq!(drive.state(&host), HostState::Live);
@@ -446,7 +467,7 @@ fn a_closing_behind_a_newer_attach_is_not_heard() {
     assert_eq!(drive.state(&host), HostState::Live);
     // Seen closed before the watch on its closing is heard: lost already.
     drive.settle(&host, Some(false));
-    assert!(matches!(drive.state(&host), HostState::Lost(_)));
+    assert!(drive.state(&host).lost());
 }
 
 /// A connection lost is attached again while anything listens: misses never
@@ -479,7 +500,7 @@ fn lost_is_listened_to_until_the_last_listener_goes() {
             "misses never end it"
         );
     }
-    assert!(matches!(drive.state(&host), HostState::Lost(_)));
+    assert!(drive.state(&host).lost());
     assert!(!drive.leave(&host, a));
     assert!(drive.leave(&host, a), "the loop stops");
     assert!(!drive.retrying(&host));
@@ -589,10 +610,7 @@ fn only_a_change_of_state_is_told() {
     let mut drive = HostDrive::default();
     assert!(heard(&mut drive, &host, Ok(()), false));
     assert!(!heard(&mut drive, &host, Ok(()), false));
-    assert!(matches!(
-        &closed(&mut drive, &host, false, false)[..],
-        [Effect::Refresh]
-    ));
+    assert_eq!(names(&closed(&mut drive, &host, false, false)), ["Refresh"]);
     assert!(closed(&mut drive, &host, false, false).is_empty());
     assert!(heard(&mut drive, &host, gone(), true), "a new why is news");
     assert!(!heard(&mut drive, &host, gone(), true));

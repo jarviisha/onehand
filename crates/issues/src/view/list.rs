@@ -58,7 +58,7 @@ impl Narrowing<'_> {
         issues::matches_query(issue, self.query)
             && self
                 .label
-                .is_none_or(|label| issue.labels.iter().any(|l| l == label))
+                .is_none_or(|label| issue.labels().iter().any(|l| l == label))
     }
 }
 
@@ -86,11 +86,11 @@ fn listed<'a>(
         .into_iter()
         .filter(|issue| narrowing.lets_through(issue))
         .collect();
-    let open = through.iter().filter(|issue| issue.open).count();
+    let open = through.iter().filter(|issue| issue.open()).count();
     let closed = through.len() - open;
     let rows = through
         .into_iter()
-        .filter(|issue| issue.open == (showing == Showing::Open))
+        .filter(|issue| issue.open() == (showing == Showing::Open))
         .collect();
     (rows, open, closed)
 }
@@ -111,7 +111,7 @@ impl IssuesView {
             .0
             .iter()
             .take(LIST_CAP)
-            .map(|issue| issue.number)
+            .map(|issue| issue.number())
             .collect()
     }
 
@@ -176,7 +176,7 @@ impl IssuesView {
         let Some((number, open, labels)) = self
             .issues_of(&root, cx)
             .and_then(|kept| named(kept, query))
-            .map(|issue| (issue.number, issue.open, issue.labels.clone()))
+            .map(|issue| (issue.number(), issue.open(), issue.labels().to_vec()))
         else {
             return;
         };
@@ -212,7 +212,7 @@ impl IssuesView {
             && !issues
                 .listed()
                 .iter()
-                .any(|issue| issue.labels.contains(label))
+                .any(|issue| issue.labels().contains(label))
         {
             self.label = None;
         }
@@ -344,14 +344,14 @@ impl IssuesView {
         let drawn: Vec<AnyElement> = rows
             .iter()
             .take(LIST_CAP)
-            .map(|issue| self.row(issue, selected == Some(issue.number), now, cx))
+            .map(|issue| self.row(issue, selected == Some(issue.number()), now, cx))
             .collect();
         // How many a search or a label left of the half that shows, said only
         // while one narrows it: unnarrowed, the count on the choice says it.
         let of = issues
             .listed()
             .iter()
-            .filter(|issue| issue.open == (self.showing == Showing::Open))
+            .filter(|issue| issue.open() == (self.showing == Showing::Open))
             .count();
         let showing = (narrowed && !drawn.is_empty()).then(|| {
             let which = match self.showing {
@@ -410,7 +410,7 @@ impl IssuesView {
         let labels: Vec<String> = issues
             .listed()
             .iter()
-            .flat_map(|issue| issue.labels.iter().cloned())
+            .flat_map(|issue| issue.labels().iter().cloned())
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
@@ -489,7 +489,7 @@ impl IssuesView {
         let warning = status_ink(cx).warning;
         // A project that was kept in step once still holds its links, which is
         // what tells a pause from never having started.
-        let paused = issues.listed().iter().any(|issue| issue.link.is_some());
+        let paused = issues.listed().iter().any(|issue| issue.link().is_some());
         let (ink, line, detail) = match (on, syncing, &synced) {
             (true, true, _) => (
                 muted,
@@ -614,7 +614,7 @@ impl IssuesView {
         now: u64,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let number = issue.number;
+        let number = issue.number();
         let theme = cx.theme();
         // On the selected fill the quieter ink is taken under that fill's
         // own, so it stays a step quieter there rather than sinking into it.
@@ -622,7 +622,7 @@ impl IssuesView {
             true => middle_ink(theme.accent_foreground, theme.muted_foreground),
             false => theme.muted_foreground,
         };
-        let conflicted = issue.link.as_ref().is_some_and(|l| l.conflict.is_some());
+        let conflicted = issue.link().is_some_and(|l| l.conflict.is_some());
         let working = issue.working_in(&self.live).is_some();
         let meta = div()
             .h_flex()
@@ -636,7 +636,7 @@ impl IssuesView {
             // in a line of meta a badge is the heaviest thing on the row. The
             // one part of the line that gives way, so a long label shortens
             // and the reference and the time stay whole.
-            .when_some(issue.labels.first(), |meta, label| {
+            .when_some(issue.labels().first(), |meta, label| {
                 meta.child(div().flex_none().child("·"))
                     .child(
                         div()
@@ -645,11 +645,11 @@ impl IssuesView {
                             .text_color(label_ink(label, selected, muted, cx))
                             .child(label.clone()),
                     )
-                    .when(issue.labels.len() > 1, |meta| {
+                    .when(issue.labels().len() > 1, |meta| {
                         meta.child(
                             div()
                                 .flex_none()
-                                .child(format!("+{}", issue.labels.len() - 1)),
+                                .child(format!("+{}", issue.labels().len() - 1)),
                         )
                     })
             })
@@ -657,7 +657,7 @@ impl IssuesView {
             .child(
                 div()
                     .flex_none()
-                    .child(onehand_core::rel_time(now, issue.updated)),
+                    .child(onehand_core::rel_time(now, issue.updated())),
             )
             // An issue waiting on a person is marked in words, in the warning
             // ink: it is the one row nothing will move until somebody opens it.
@@ -689,8 +689,10 @@ impl IssuesView {
                     .text_ellipsis()
                     // A closed issue stays in the list as a record, drawn
                     // quieter than the work that is still open.
-                    .when(!issue.open, |title| title.text_color(muted).line_through())
-                    .child(issue.title.clone()),
+                    .when(!issue.open(), |title| {
+                        title.text_color(muted).line_through()
+                    })
+                    .child(issue.title().to_string()),
             )
             .child(meta)
             .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {

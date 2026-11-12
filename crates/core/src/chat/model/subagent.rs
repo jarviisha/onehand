@@ -7,8 +7,9 @@
 
 use super::apply::{plan, seal_thought, settle_steps, tool_call, tool_update};
 use super::items::{ChatItem, Md, Thought};
-use super::{Chat, Now, Replay};
+use super::{Chat, Replay};
 use crate::acp::{AcpEvent, SubagentEnd};
+use crate::Now;
 
 /// Where a subagent is in its life.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

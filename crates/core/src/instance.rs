@@ -366,7 +366,7 @@ mod tests {
         std::fs::write(&file, "").unwrap();
         match forward(&socket, Some(&file)) {
             Err(Unforwarded::Refused(why)) => assert!(why.contains("is not a folder"), "{why}"),
-            other => panic!("{other:?}"),
+            other @ (Ok(()) | Err(Unforwarded::Unreachable)) => panic!("{other:?}"),
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -378,7 +378,7 @@ mod tests {
         let nowhere = Path::new("/nonexistent/onehand.sock");
         match forward(nowhere, Some(path)) {
             Err(Unforwarded::Refused(why)) => assert!(why.contains("UTF-8"), "{why}"),
-            other => panic!("{other:?}"),
+            other @ (Ok(()) | Err(Unforwarded::Unreachable)) => panic!("{other:?}"),
         }
     }
 
@@ -388,10 +388,10 @@ mod tests {
         let socket = dir.join("onehand.sock");
         // What a crashed process leaves behind: the file, and nobody on it.
         drop(std::os::unix::net::UnixListener::bind(&socket).unwrap());
-        assert!(matches!(
-            forward(&socket, None),
-            Err(Unforwarded::Unreachable)
-        ));
+        match forward(&socket, None) {
+            Err(Unforwarded::Unreachable) => {}
+            other @ (Ok(()) | Err(Unforwarded::Refused(_))) => panic!("{other:?}"),
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

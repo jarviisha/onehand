@@ -66,19 +66,19 @@ struct Rig {
     drive: RunDrive,
     chat: Chat,
     _rx: tokio::sync::mpsc::UnboundedReceiver<crate::acp::AcpRequest>,
-    now: Instant,
+    now: crate::Now,
 }
 
 impl Rig {
     fn start(template: Template, mode: Option<&str>, chat: (Chat, RxOf)) -> (Self, Vec<Effect>) {
         let task = Task::new("t1".into(), template, brief(), setup(mode));
         let mut run = task.runs[0].clone();
-        let first = run.resume();
+        let first = run.resume(0);
         Self::start_run(run, first, chat)
     }
 
     fn start_run(run: Run, first: Action, (chat, rx): (Chat, RxOf)) -> (Self, Vec<Effect>) {
-        let now = Instant::now();
+        let now = crate::Now::read();
         let (drive, fx) = RunDrive::start("t1".into(), run, first, 0, false, now, Some(&chat));
         let mut rig = Self {
             drive,
@@ -120,7 +120,25 @@ impl Rig {
                     assert!(self.chat.submit(text, &[]), "the session took {text:?}");
                 }
                 Effect::CancelTurn => self.chat.cancel_turn(),
-                _ => {}
+                Effect::Pin { .. }
+                | Effect::Measure { .. }
+                | Effect::ReadFacts { .. }
+                | Effect::Note(_)
+                | Effect::RunCommand { .. }
+                | Effect::CallOffCommand
+                | Effect::Push { .. }
+                | Effect::FindPullRequest
+                | Effect::OpenPullRequest
+                | Effect::ReadLogs { .. }
+                | Effect::MarkReady { .. }
+                | Effect::Arm { .. }
+                | Effect::Defer(_)
+                | Effect::Save
+                | Effect::Unattended(_)
+                | Effect::Refresh
+                | Effect::SessionChanged
+                | Effect::Signal(_)
+                | Effect::Finish { .. } => {}
             }
         }
     }
@@ -144,33 +162,159 @@ fn has(fx: &[Effect], wanted: impl Fn(&Effect) -> bool) -> bool {
     fx.iter().any(wanted)
 }
 
+/// An effect's name, every variant listed so a new one must be named here;
+/// a clock, a signal and a word to unattended runs carry their own kind.
+fn name(e: &Effect) -> &'static str {
+    match e {
+        Effect::Pin { .. } => "Pin",
+        Effect::Measure { .. } => "Measure",
+        Effect::ReadFacts { .. } => "ReadFacts",
+        Effect::Submit(_) => "Submit",
+        Effect::CancelTurn => "CancelTurn",
+        Effect::Note(_) => "Note",
+        Effect::RunCommand { .. } => "RunCommand",
+        Effect::CallOffCommand => "CallOffCommand",
+        Effect::Push { .. } => "Push",
+        Effect::FindPullRequest => "FindPullRequest",
+        Effect::OpenPullRequest => "OpenPullRequest",
+        Effect::ReadLogs { .. } => "ReadLogs",
+        Effect::MarkReady { .. } => "MarkReady",
+        Effect::Arm { timer, .. } => match timer {
+            Timer::Timeout => "Arm(Timeout)",
+            Timer::Checks => "Arm(Checks)",
+        },
+        Effect::Defer(_) => "Defer",
+        Effect::Save => "Save",
+        Effect::Unattended(said) => match said {
+            Said::Waiting => "Unattended(Waiting)",
+            Said::Answered => "Unattended(Answered)",
+            Said::CameUp { .. } => "Unattended(CameUp)",
+            Said::Pause { .. } => "Unattended(Pause)",
+        },
+        Effect::Refresh => "Refresh",
+        Effect::SessionChanged => "SessionChanged",
+        Effect::Signal(signal) => match signal {
+            Signal::SaveFailed(_) => "Signal(SaveFailed)",
+            Signal::PinFailed(_) => "Signal(PinFailed)",
+        },
+        Effect::Finish { .. } => "Finish",
+    }
+}
+
+fn names(fx: &[Effect]) -> Vec<&'static str> {
+    fx.iter().map(name).collect()
+}
+
 fn finished(fx: &[Effect]) -> Option<&Outcome> {
     fx.iter().find_map(|e| match e {
         Effect::Finish { outcome } => Some(outcome),
-        _ => None,
+        Effect::Pin { .. }
+        | Effect::Measure { .. }
+        | Effect::ReadFacts { .. }
+        | Effect::Submit(_)
+        | Effect::CancelTurn
+        | Effect::Note(_)
+        | Effect::RunCommand { .. }
+        | Effect::CallOffCommand
+        | Effect::Push { .. }
+        | Effect::FindPullRequest
+        | Effect::OpenPullRequest
+        | Effect::ReadLogs { .. }
+        | Effect::MarkReady { .. }
+        | Effect::Arm { .. }
+        | Effect::Defer(_)
+        | Effect::Save
+        | Effect::Unattended(_)
+        | Effect::Refresh
+        | Effect::SessionChanged
+        | Effect::Signal(_) => None,
     })
 }
 
+/// Why the run failed, if it finished failed.
+fn failed(fx: &[Effect]) -> Option<&str> {
+    match finished(fx) {
+        Some(Outcome::Failed(why)) => Some(why),
+        Some(Outcome::Done | Outcome::Stopped(_) | Outcome::Exhausted { .. }) | None => None,
+    }
+}
+
+/// The notes said, in order.
+fn notes(fx: &[Effect]) -> Vec<&str> {
+    fx.iter()
+        .filter_map(|e| match e {
+            Effect::Note(n) => Some(n.as_str()),
+            Effect::Pin { .. }
+            | Effect::Measure { .. }
+            | Effect::ReadFacts { .. }
+            | Effect::Submit(_)
+            | Effect::CancelTurn
+            | Effect::RunCommand { .. }
+            | Effect::CallOffCommand
+            | Effect::Push { .. }
+            | Effect::FindPullRequest
+            | Effect::OpenPullRequest
+            | Effect::ReadLogs { .. }
+            | Effect::MarkReady { .. }
+            | Effect::Arm { .. }
+            | Effect::Defer(_)
+            | Effect::Save
+            | Effect::Unattended(_)
+            | Effect::Refresh
+            | Effect::SessionChanged
+            | Effect::Signal(_)
+            | Effect::Finish { .. } => None,
+        })
+        .collect()
+}
+
+/// The fix of every pause said to unattended runs.
+fn pause_fixes(fx: &[Effect]) -> Vec<&str> {
+    fx.iter()
+        .filter_map(|e| match e {
+            Effect::Unattended(Said::Pause { fix, .. }) => Some(fix.as_str()),
+            Effect::Unattended(Said::Waiting | Said::Answered | Said::CameUp { .. })
+            | Effect::Pin { .. }
+            | Effect::Measure { .. }
+            | Effect::ReadFacts { .. }
+            | Effect::Submit(_)
+            | Effect::CancelTurn
+            | Effect::Note(_)
+            | Effect::RunCommand { .. }
+            | Effect::CallOffCommand
+            | Effect::Push { .. }
+            | Effect::FindPullRequest
+            | Effect::OpenPullRequest
+            | Effect::ReadLogs { .. }
+            | Effect::MarkReady { .. }
+            | Effect::Arm { .. }
+            | Effect::Defer(_)
+            | Effect::Save
+            | Effect::Refresh
+            | Effect::SessionChanged
+            | Effect::Signal(_)
+            | Effect::Finish { .. } => None,
+        })
+        .collect()
+}
+
 fn submitted(fx: &[Effect]) -> bool {
-    has(fx, |e| matches!(e, Effect::Submit(_)))
+    names(fx).contains(&"Submit")
 }
 
 /// A checkout run through its plan, at its approval: started, pinned,
 /// measured, its plan prompted and answered, and the next marks landed.
 fn at_approval() -> Rig {
     let (mut rig, fx) = Rig::start(checkout(), None, connected());
-    assert!(has(&fx, |e| matches!(e, Effect::Pin { .. })), "{fx:?}");
+    assert!(names(&fx).contains(&"Pin"), "{fx:?}");
     let fx = rig.on(Input::Pinned(Ok("c0".into())));
-    assert!(has(&fx, |e| matches!(e, Effect::Measure { .. })), "{fx:?}");
+    assert!(names(&fx).contains(&"Measure"), "{fx:?}");
     let fx = rig.on(Input::Measured(Ok(mark("a", "d0"))));
     assert!(submitted(&fx), "{fx:?}");
     let fx = rig.turn_ends("The plan.");
-    assert!(
-        has(&fx, |e| matches!(e, Effect::ReadFacts { .. })),
-        "{fx:?}"
-    );
+    assert!(names(&fx).contains(&"ReadFacts"), "{fx:?}");
     let fx = rig.on(Input::TurnRead(Ok(facts("a", "d0"))));
-    let fx = match has(&fx, |e| matches!(e, Effect::Pin { .. })) {
+    let fx = match names(&fx).contains(&"Pin") {
         true => rig.on(Input::Pinned(Ok("c1".into()))),
         false => fx,
     };
@@ -187,7 +331,7 @@ fn a_pin_holds_what_is_asked_meanwhile_and_an_ending_wins() {
     let mut rig = at_approval();
     let at = approval_at(&rig);
     let fx = rig.approve(at);
-    assert!(has(&fx, |e| matches!(e, Effect::Pin { .. })), "{fx:?}");
+    assert!(names(&fx).contains(&"Pin"), "{fx:?}");
     assert!(!submitted(&fx), "the prompt waits on the pin");
     assert!(rig.stop().is_empty(), "held while the pin lands");
     let fx = rig.on(Input::Pinned(Ok("c2".into())));
@@ -201,10 +345,7 @@ fn a_turn_ending_while_a_pin_is_held_is_not_judged() {
     let at = approval_at(&rig);
     rig.approve(at);
     let fx = rig.on(Input::TurnEnded);
-    assert!(
-        !has(&fx, |e| matches!(e, Effect::ReadFacts { .. })),
-        "{fx:?}"
-    );
+    assert!(!names(&fx).contains(&"ReadFacts"), "{fx:?}");
 }
 
 /// A run at its approval waits on a person as one held by a card does,
@@ -224,25 +365,19 @@ fn an_approval_answers_and_says_so() {
     let mut rig = at_approval();
     let at = approval_at(&rig);
     let fx = rig.approve(at.clone());
-    assert!(has(&fx, |e| matches!(
-        e,
-        Effect::Unattended(Said::Answered)
-    )));
+    assert!(names(&fx).contains(&"Unattended(Answered)"));
     // A second press of the same approval is judged stale and moves nothing.
     rig.on(Input::Pinned(Ok("c2".into())));
     let fx = rig.approve(at);
-    assert!(
-        !has(&fx, |e| matches!(e, Effect::Pin { .. } | Effect::Submit(_))),
-        "{fx:?}"
-    );
+    assert!(!names(&fx).contains(&"Pin") && !submitted(&fx), "{fx:?}");
 }
 
 fn checking() -> (Rig, Vec<Effect>) {
     let task = Task::check("t1".into(), "make check".into(), setup(None));
     let mut run = task.runs[0].clone();
-    let first = run.resume();
+    let first = run.resume(0);
     let (mut rig, fx) = Rig::start_run(run, first, connected());
-    let fx = match has(&fx, |e| matches!(e, Effect::Pin { .. })) {
+    let fx = match names(&fx).contains(&"Pin") {
         true => rig.on(Input::Pinned(Ok("c0".into()))),
         false => fx,
     };
@@ -262,12 +397,9 @@ fn ran(passed: bool) -> CommandResult {
 #[test]
 fn a_stop_while_a_command_runs_waits_for_it() {
     let (mut rig, fx) = checking();
-    assert!(
-        has(&fx, |e| matches!(e, Effect::RunCommand { .. })),
-        "{fx:?}"
-    );
+    assert!(names(&fx).contains(&"RunCommand"), "{fx:?}");
     let fx = rig.stop();
-    assert!(has(&fx, |e| matches!(e, Effect::CallOffCommand)));
+    assert!(names(&fx).contains(&"CallOffCommand"));
     assert_eq!(finished(&fx), None, "ended only once the command exits");
     assert!(rig.drive.stopping());
     let fx = rig.on(Input::CommandExited(ran(false)));
@@ -288,11 +420,8 @@ fn the_first_stop_reason_is_the_one_kept() {
 fn a_command_that_passes_is_said_and_judged() {
     let (mut rig, _) = checking();
     let fx = rig.on(Input::CommandExited(ran(true)));
-    assert!(has(
-        &fx,
-        |e| matches!(e, Effect::Note(n) if n == "The command passed")
-    ));
-    assert!(finished(&fx).is_some() || has(&fx, |e| matches!(e, Effect::Pin { .. })));
+    assert!(notes(&fx).contains(&"The command passed"));
+    assert!(finished(&fx).is_some() || names(&fx).contains(&"Pin"));
 }
 
 #[test]
@@ -302,16 +431,7 @@ fn the_budget_does_not_run_while_a_person_is_waited_on() {
     rig.now += fired;
     let fx = rig.on(Input::Elapsed(Timer::Timeout));
     assert_eq!(finished(&fx), None, "{fx:?}");
-    assert!(
-        has(&fx, |e| matches!(
-            e,
-            Effect::Arm {
-                timer: Timer::Timeout,
-                ..
-            }
-        )),
-        "{fx:?}"
-    );
+    assert!(names(&fx).contains(&"Arm(Timeout)"), "{fx:?}");
 }
 
 #[test]
@@ -349,15 +469,12 @@ fn a_gone_session_only_lets_the_run_end() {
     let now = rig.now;
     // The session went while the next step's mark was pinned.
     let fx = rig.drive.approve(at, None, now);
-    assert!(has(&fx, |e| matches!(e, Effect::Pin { .. })), "{fx:?}");
+    assert!(names(&fx).contains(&"Pin"), "{fx:?}");
     let fx = rig.drive.handle(Input::Pinned(Ok("c2".into())), None, now);
     assert!(fx.is_empty(), "nothing to prompt: {fx:?}");
     let fx = rig.drive.stop(None, now);
     assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::ByPerson)));
-    assert!(
-        !has(&fx, |e| matches!(e, Effect::Note(_))),
-        "nowhere to say it"
-    );
+    assert!(!names(&fx).contains(&"Note"), "nowhere to say it");
 }
 
 #[test]
@@ -365,12 +482,8 @@ fn the_step_is_announced_once_per_step() {
     let (mut rig, _) = Rig::start(checkout(), None, connected());
     let a = rig.on(Input::Pinned(Ok("c0".into())));
     let b = rig.on(Input::Measured(Ok(mark("a", "d0"))));
-    let notes = |fx: &[Effect]| {
-        fx.iter()
-            .filter(|e| matches!(e, Effect::Note(n) if n.starts_with("Step ")))
-            .count()
-    };
-    assert_eq!(notes(&a) + notes(&b), 1, "{a:?} {b:?}");
+    let steps = |fx: &[Effect]| notes(fx).iter().filter(|n| n.starts_with("Step ")).count();
+    assert_eq!(steps(&a) + steps(&b), 1, "{a:?} {b:?}");
 }
 
 #[test]
@@ -378,7 +491,7 @@ fn spent_time_is_folded_into_what_is_saved() {
     let (mut rig, _) = Rig::start(checkout(), None, connected());
     rig.now += Duration::from_secs(90);
     let fx = rig.on(Input::Pinned(Ok("c0".into())));
-    assert!(has(&fx, |e| matches!(e, Effect::Save)));
+    assert!(names(&fx).contains(&"Save"));
     assert_eq!(rig.drive.run().spent_secs, 90);
 }
 
@@ -399,10 +512,7 @@ fn a_prompt_waits_for_the_agent_to_come_up() {
     });
     let fx = rig.on(Input::Appended);
     assert!(submitted(&fx), "{fx:?}");
-    assert!(has(&fx, |e| matches!(
-        e,
-        Effect::Unattended(Said::CameUp { .. })
-    )));
+    assert!(names(&fx).contains(&"Unattended(CameUp)"));
 }
 
 #[test]
@@ -433,11 +543,8 @@ fn a_mode_the_agent_does_not_offer_fails_the_run_on_its_mode() {
     let (mut rig, _) = Rig::start(checkout(), Some("acceptEdits"), with_modes(&["default"]));
     rig.on(Input::Pinned(Ok("c0".into())));
     let fx = rig.on(Input::Measured(Ok(mark("a", "d0"))));
-    assert!(
-        has(&fx, |e| matches!(e, Effect::Unattended(Said::Pause { .. }))),
-        "{fx:?}"
-    );
-    assert!(matches!(finished(&fx), Some(Outcome::Failed(_))), "{fx:?}");
+    assert!(names(&fx).contains(&"Unattended(Pause)"), "{fx:?}");
+    assert!(failed(&fx).is_some(), "{fx:?}");
     assert!(!submitted(&fx));
 }
 
@@ -447,13 +554,7 @@ fn the_runs_mode_is_set_before_its_first_prompt() {
     rig.on(Input::Pinned(Ok("c0".into())));
     let fx = rig.on(Input::Measured(Ok(mark("a", "d0"))));
     assert!(rig.chat.pick_waiting(crate::chat::MODE_SELECTOR));
-    assert!(
-        has(
-            &fx,
-            |e| matches!(e, Effect::Note(n) if n == "Mode plan set")
-        ),
-        "{fx:?}"
-    );
+    assert!(notes(&fx).contains(&"Mode plan set"), "{fx:?}");
     assert!(!submitted(&fx), "the prompt waits for the mode's answer");
     rig.chat.apply(AcpEvent::PickConfirmed {
         group: crate::chat::MODE_SELECTOR.into(),
@@ -467,10 +568,16 @@ fn the_runs_mode_is_set_before_its_first_prompt() {
 
 fn wanting_model() -> Template {
     let mut t = checkout();
-    let StepKind::Agent { options, .. } = &mut t.steps[0].kind else {
-        panic!("the first step of checkout() is an agent step")
+    match &mut t.steps[0].kind {
+        StepKind::Agent { options, .. } => options.insert("model".into(), "strong".into()),
+        other @ (StepKind::Command { .. }
+        | StepKind::Approval { .. }
+        | StepKind::Push
+        | StepKind::PullRequest
+        | StepKind::StatusChecks { .. }) => {
+            panic!("the first step of checkout() is an agent step: {other:?}")
+        }
     };
-    options.insert("model".into(), "strong".into());
     t
 }
 
@@ -504,10 +611,7 @@ fn picks_go_one_at_a_time_and_the_prompt_waits() {
     });
     let fx = rig.on(Input::PicksAnswered);
     assert!(submitted(&fx), "{fx:?}");
-    assert!(has(
-        &fx,
-        |e| matches!(e, Effect::Note(n) if n.starts_with("Settings: "))
-    ));
+    assert!(notes(&fx).iter().any(|n| n.starts_with("Settings: ")));
 }
 
 #[test]
@@ -521,11 +625,11 @@ fn a_refused_pick_fails_the_run_at_the_step() {
     });
     let fx = rig.on(Input::PickRefused("no".into()));
     assert!(
-        matches!(finished(&fx), Some(Outcome::Failed(why)) if why.contains("strong")),
+        failed(&fx).is_some_and(|why| why.contains("strong")),
         "{fx:?}"
     );
     assert!(
-        !has(&fx, |e| matches!(e, Effect::Unattended(Said::Pause { .. }))),
+        !names(&fx).contains(&"Unattended(Pause)"),
         "a launcher run pauses nothing"
     );
 }
@@ -540,11 +644,8 @@ fn a_refusal_of_the_runs_mode_is_not_a_steps() {
         why: "not now".into(),
     });
     let fx = rig.on(Input::PickRefused("not now".into()));
-    assert!(has(
-        &fx,
-        |e| matches!(e, Effect::Unattended(Said::Pause { fix, .. }) if fix == "unattended.mode is fixed")
-    ));
-    assert!(matches!(finished(&fx), Some(Outcome::Failed(why)) if why.contains("mode `plan`")));
+    assert!(pause_fixes(&fx).contains(&"unattended.mode is fixed"));
+    assert!(failed(&fx).is_some_and(|why| why.contains("mode `plan`")));
 }
 
 #[test]
@@ -558,7 +659,7 @@ fn a_persons_own_pick_refused_is_not_the_runs() {
 fn a_prompt_not_taken_fails_the_run() {
     let mut rig = at_approval();
     let fx = rig.on(Input::NotTaken);
-    assert!(matches!(finished(&fx), Some(Outcome::Failed(_))));
+    assert!(failed(&fx).is_some());
 }
 
 // ── The session's events ─────────────────────────────────────────────────
@@ -575,7 +676,7 @@ fn in_turn() -> Rig {
 #[test]
 fn a_step_is_judged_once_the_work_its_turn_left_is_done() {
     use crate::acp::{BackgroundReport, Usage};
-    let read = |fx: &[Effect]| has(fx, |e| matches!(e, Effect::ReadFacts { .. }));
+    let read = |fx: &[Effect]| names(fx).contains(&"ReadFacts");
     let mut rig = in_turn();
     rig.chat
         .apply(AcpEvent::Background(BackgroundReport::Spawned {
@@ -619,7 +720,7 @@ fn a_step_is_judged_once_the_work_its_turn_left_is_done() {
 fn work_an_earlier_step_left_running_does_not_hold_this_one() {
     use crate::acp::BackgroundReport;
     let (mut rig, _) = Rig::start(checkout(), None, connected());
-    rig.chat.tell_time(crate::chat::Now {
+    rig.chat.tell_time(crate::Now {
         secs: crate::chat::now_secs(),
         at: Instant::now(),
     });
@@ -631,15 +732,12 @@ fn work_an_earlier_step_left_running_does_not_hold_this_one() {
         }));
     // The step's prompt goes after the server started.
     std::thread::sleep(std::time::Duration::from_millis(2));
-    rig.now = Instant::now();
+    rig.now = crate::Now::read();
     rig.on(Input::Pinned(Ok("c0".into())));
     let fx = rig.on(Input::Measured(Ok(mark("a", "d0"))));
     assert!(submitted(&fx));
     let fx = rig.turn_ends("The plan.");
-    assert!(
-        has(&fx, |e| matches!(e, Effect::ReadFacts { .. })),
-        "{fx:?}"
-    );
+    assert!(names(&fx).contains(&"ReadFacts"), "{fx:?}");
 }
 
 #[test]
@@ -665,7 +763,7 @@ fn a_failed_turn_fails_the_run_in_its_words() {
     });
     let fx = rig.on(Input::TurnEnded);
     assert!(
-        matches!(finished(&fx), Some(Outcome::Failed(why)) if why.contains("out of credit")),
+        failed(&fx).is_some_and(|why| why.contains("out of credit")),
         "{fx:?}"
     );
 }
@@ -674,7 +772,7 @@ fn a_failed_turn_fails_the_run_in_its_words() {
 fn a_card_pauses_the_budget_and_says_it_waits() {
     let mut rig = in_turn();
     let fx = rig.on(Input::AwaitingUser);
-    assert!(has(&fx, |e| matches!(e, Effect::Unattended(Said::Waiting))));
+    assert!(names(&fx).contains(&"Unattended(Waiting)"));
     assert!(rig.drive.card() && rig.drive.waits_on_person());
     rig.now += rig.drive.run().template.timeout_limit() * 2;
     let fx = rig.on(Input::Elapsed(Timer::Timeout));
@@ -711,7 +809,7 @@ fn a_turn_read_judges_the_answer_since_the_prompt() {
     rig.turn_ends("The plan.");
     let fx = rig.on(Input::TurnRead(Ok(facts("a", "d0"))));
     assert!(
-        rig.drive.run().awaiting_approval() || has(&fx, |e| matches!(e, Effect::Pin { .. })),
+        rig.drive.run().awaiting_approval() || names(&fx).contains(&"Pin"),
         "{fx:?}"
     );
     assert_eq!(
@@ -761,24 +859,21 @@ fn a_chunk_is_heeded_only_when_it_can_move_the_run() {
 fn check_drive() -> (RunDrive, Vec<Effect>) {
     let task = Task::check("t1".into(), "make check".into(), setup(None));
     let mut run = task.runs[0].clone();
-    let first = run.resume();
-    RunDrive::start("t1".into(), run, first, 0, false, Instant::now(), None)
+    let first = run.resume(0);
+    RunDrive::start("t1".into(), run, first, 0, false, crate::Now::read(), None)
 }
 
 #[test]
 fn a_check_runs_its_command_and_finishes_without_a_session() {
     let (mut drive, fx) = check_drive();
-    let now = Instant::now();
-    let fx = match has(&fx, |e| matches!(e, Effect::Pin { .. })) {
+    let now = crate::Now::read();
+    let fx = match names(&fx).contains(&"Pin") {
         true => drive.handle(Input::Pinned(Ok("c0".into())), None, now),
         false => fx,
     };
-    assert!(
-        has(&fx, |e| matches!(e, Effect::RunCommand { .. })),
-        "{fx:?}"
-    );
+    assert!(names(&fx).contains(&"RunCommand"), "{fx:?}");
     let fx = drive.handle(Input::CommandExited(ran(true)), None, now);
-    let fx = match has(&fx, |e| matches!(e, Effect::Pin { .. })) {
+    let fx = match names(&fx).contains(&"Pin") {
         true => drive.handle(Input::Pinned(Ok("c1".into())), None, now),
         false => fx,
     };
@@ -788,35 +883,27 @@ fn a_check_runs_its_command_and_finishes_without_a_session() {
 #[test]
 fn a_check_has_no_timeout() {
     let (_, fx) = check_drive();
-    assert!(
-        !has(&fx, |e| matches!(
-            e,
-            Effect::Arm {
-                timer: Timer::Timeout,
-                ..
-            }
-        )),
-        "{fx:?}"
-    );
+    assert!(!names(&fx).contains(&"Arm(Timeout)"), "{fx:?}");
 }
 
 #[test]
 fn a_check_stopped_before_its_command_runs_none() {
     let (mut drive, fx) = check_drive();
-    assert!(has(&fx, |e| matches!(e, Effect::Pin { .. })), "{fx:?}");
-    let now = Instant::now();
+    assert!(names(&fx).contains(&"Pin"), "{fx:?}");
+    let now = crate::Now::read();
     assert!(drive.stop(None, now).is_empty());
     let fx = drive.handle(Input::Pinned(Ok("c0".into())), None, now);
     assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::ByPerson)));
-    assert!(!has(&fx, |e| matches!(e, Effect::RunCommand { .. })));
+    assert!(!names(&fx).contains(&"RunCommand"));
 }
 
 #[test]
 fn a_failed_write_is_said_once_until_one_lands() {
     let mut rig = at_approval();
     let failed = |fx: &[Effect]| {
-        fx.iter()
-            .filter(|e| matches!(e, Effect::Signal(Signal::SaveFailed(_))))
+        names(fx)
+            .iter()
+            .filter(|n| **n == "Signal(SaveFailed)")
             .count()
     };
     assert_eq!(failed(&rig.on(Input::Saved(Err("disk full".into())))), 1);
@@ -830,16 +917,13 @@ fn a_failed_write_is_said_once_until_one_lands() {
 #[test]
 fn a_mark_not_pinned_is_told_and_the_run_goes_on() {
     let (mut rig, fx) = Rig::start(checkout(), None, connected());
-    assert!(has(&fx, |e| matches!(e, Effect::Pin { .. })), "{fx:?}");
+    assert!(names(&fx).contains(&"Pin"), "{fx:?}");
     let fx = rig.on(Input::Pinned(Err("no git".into())));
     assert!(
-        has(
-            &fx,
-            |e| matches!(e, Effect::Signal(Signal::PinFailed(why)) if why == "no git")
-        ),
+        fx.contains(&Effect::Signal(Signal::PinFailed("no git".into()))),
         "{fx:?}"
     );
-    assert!(has(&fx, |e| matches!(e, Effect::Measure { .. })), "{fx:?}");
+    assert!(names(&fx).contains(&"Measure"), "{fx:?}");
 }
 
 /// A run on a branch with a forge: a check that passes on `a`, then the
@@ -874,19 +958,36 @@ fn forging() -> Rig {
     setup.forge = Some("github".into());
     let task = Task::new("t1".into(), template, brief(), setup);
     let mut run = task.runs[0].clone();
-    let first = run.resume();
+    let first = run.resume(0);
     let (mut rig, fx) = Rig::start_run(run, first, connected());
     let mut fx = fx;
     // Pinned, measured and checked, until the push.
     for _ in 0..8 {
-        if let Some(Effect::Push { .. }) = fx.iter().find(|e| matches!(e, Effect::Push { .. })) {
+        if names(&fx).contains(&"Push") {
             return rig;
         }
         let next = fx.iter().find_map(|e| match e {
             Effect::Pin { .. } => Some(Input::Pinned(Ok("c".into()))),
             Effect::Measure { .. } => Some(Input::Measured(Ok(mark("a", "d1")))),
             Effect::RunCommand { .. } => Some(Input::CommandExited(ran(true))),
-            _ => None,
+            Effect::ReadFacts { .. }
+            | Effect::Submit(_)
+            | Effect::CancelTurn
+            | Effect::Note(_)
+            | Effect::CallOffCommand
+            | Effect::Push { .. }
+            | Effect::FindPullRequest
+            | Effect::OpenPullRequest
+            | Effect::ReadLogs { .. }
+            | Effect::MarkReady { .. }
+            | Effect::Arm { .. }
+            | Effect::Defer(_)
+            | Effect::Save
+            | Effect::Unattended(_)
+            | Effect::Refresh
+            | Effect::SessionChanged
+            | Effect::Signal(_)
+            | Effect::Finish { .. } => None,
         });
         fx = rig.on(next.expect("the run moves on to its push"));
     }
@@ -918,7 +1019,7 @@ fn pr(draft: bool, checks: &[CheckState]) -> PullRequest {
 fn watching() -> Rig {
     let mut rig = forging();
     let fx = rig.on(Input::Pushed(Ok(())));
-    let fx = match has(&fx, |e| matches!(e, Effect::Pin { .. })) {
+    let fx = match names(&fx).contains(&"Pin") {
         true => rig.on(Input::Pinned(Ok("c".into()))),
         false => fx,
     };
@@ -926,7 +1027,7 @@ fn watching() -> Rig {
     let fx = rig.on(Input::PullRequestFound(Ok(None)));
     assert!(has(&fx, |e| *e == Effect::OpenPullRequest), "{fx:?}");
     let fx = rig.on(Input::PullRequestOpened(Ok(Ok(Some(pr(true, &[]))))));
-    let fx = match has(&fx, |e| matches!(e, Effect::Pin { .. })) {
+    let fx = match names(&fx).contains(&"Pin") {
         true => rig.on(Input::Pinned(Ok("c".into()))),
         false => fx,
     };
@@ -973,6 +1074,18 @@ fn a_stop_while_the_pull_request_is_looked_for_opens_none() {
     assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::ByPerson)));
 }
 
+/// An answer the run did not ask for now (a log read, a draft taken out of
+/// draft) lands on nothing: the run still waits on its status checks, and
+/// looks again on the clock.
+#[test]
+fn a_forge_answer_not_asked_for_leaves_the_checks_waited_on() {
+    let mut rig = watching();
+    assert!(rig.on(Input::LogsRead(Vec::new())).is_empty());
+    assert!(rig.on(Input::MarkedReady(Ok(()))).is_empty());
+    let fx = rig.on(Input::Elapsed(Timer::Checks));
+    assert_eq!(fx, vec![Effect::FindPullRequest]);
+}
+
 #[test]
 fn checks_still_running_are_looked_at_again_on_the_clock() {
     let mut rig = watching();
@@ -1017,16 +1130,7 @@ fn a_draft_that_cannot_leave_draft_is_waited_on() {
         &[CheckState::Passed],
     )))));
     let fx = rig.on(Input::MarkedReady(Err("forbidden".into())));
-    assert!(
-        has(&fx, |e| matches!(
-            e,
-            Effect::Arm {
-                timer: Timer::Checks,
-                ..
-            }
-        )),
-        "{fx:?}"
-    );
+    assert!(names(&fx).contains(&"Arm(Checks)"), "{fx:?}");
 }
 
 /// Failing checks hand at most three logs to the repair, a log that could
@@ -1039,7 +1143,26 @@ fn failing_checks_carry_at_most_three_logs_to_the_repair() {
     let fx = rig.on(Input::PullRequestFound(Ok(Some(pr(false, &failed)))));
     let checks = fx.iter().find_map(|e| match e {
         Effect::ReadLogs { checks } => Some(checks.len()),
-        _ => None,
+        Effect::Pin { .. }
+        | Effect::Measure { .. }
+        | Effect::ReadFacts { .. }
+        | Effect::Submit(_)
+        | Effect::CancelTurn
+        | Effect::Note(_)
+        | Effect::RunCommand { .. }
+        | Effect::CallOffCommand
+        | Effect::Push { .. }
+        | Effect::FindPullRequest
+        | Effect::OpenPullRequest
+        | Effect::MarkReady { .. }
+        | Effect::Arm { .. }
+        | Effect::Defer(_)
+        | Effect::Save
+        | Effect::Unattended(_)
+        | Effect::Refresh
+        | Effect::SessionChanged
+        | Effect::Signal(_)
+        | Effect::Finish { .. } => None,
     });
     assert_eq!(checks, Some(3), "{fx:?}");
     let logs = vec![
