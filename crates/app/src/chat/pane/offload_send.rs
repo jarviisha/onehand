@@ -10,6 +10,13 @@ use crate::chat::session::ChatSession;
 use gpui::{App, Entity, Window};
 use onehand_core::chat::drive::{Code, Effect, Input};
 
+// The send of a project's code: the offloaded projects' carrier's, and in a
+// test one that test answers.
+#[cfg(not(test))]
+use crate::offload::send_up;
+#[cfg(test)]
+use tests::send_up;
+
 impl ChatPane {
     /// Where the code of `session`'s project stands, for a person's prompt.
     pub(super) fn code_at(session: &Entity<ChatSession>, cx: &App) -> Code {
@@ -77,7 +84,7 @@ impl ChatPane {
         let root = session.read(cx).chat.root.clone();
         // Claimed at once, so a second press waits on this send rather than
         // starting one of its own.
-        let sending = crate::offload::send_up(cx, &root);
+        let sending = send_up(cx, &root);
         let (session, composer) = (session.clone(), composer.clone());
         window
             .spawn(cx, async move |cx| {
@@ -106,3 +113,6 @@ impl ChatPane {
             .detach();
     }
 }
+
+#[cfg(test)]
+mod tests;
