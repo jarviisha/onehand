@@ -178,6 +178,7 @@ impl Showing {
 
     /// Another project is on screen, a host's folder when `on_host`: the
     /// first mode offered there shows when the one showing is not.
+    #[must_use = "the place that came to show is to be told so"]
     pub fn set_root(&mut self, on_host: bool) -> Option<usize> {
         self.on_host = on_host;
         if self.offers(self.specs[self.active]) {
@@ -191,6 +192,7 @@ impl Showing {
     /// A file is to be opened: the modes offered are asked in strip order
     /// whether each takes it (`took`, given its place), and the first that
     /// does shows. Nothing is asked while a refusal stands.
+    #[must_use = "the place that came to show is to be told so"]
     pub fn opened(&mut self, mut took: impl FnMut(usize) -> bool) -> Option<usize> {
         if self.refused {
             return None;
@@ -205,6 +207,7 @@ impl Showing {
     /// The mode `id` is picked: it shows, the one showing included, so
     /// picking it again asks it again. Refused while a refusal stands, or
     /// where it is not offered.
+    #[must_use = "the place that came to show is to be told so"]
     pub fn pick(&mut self, id: ModeId) -> Option<usize> {
         if self.refused {
             return None;

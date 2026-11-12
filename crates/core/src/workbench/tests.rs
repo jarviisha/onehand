@@ -34,7 +34,7 @@ fn a_file_opens_in_the_first_offered_mode_that_takes_it() {
     });
     assert_eq!(took, Some(1));
     assert_eq!(asked, [0, 1]);
-    showing.set_root(true);
+    assert_eq!(showing.set_root(true), None, "the Editor is offered there");
     let mut asked = Vec::new();
     assert_eq!(
         showing.opened(|place| {
@@ -58,7 +58,7 @@ fn a_pick_shows_it_unless_refused_or_not_offered() {
         Some(0),
         "picked again, told again"
     );
-    showing.set_root(true);
+    assert_eq!(showing.set_root(true), Some(1));
     assert_eq!(showing.pick(MARKDOWN.id), None);
     showing.refuse(true);
     assert_eq!(showing.pick(EDITOR.id), None);

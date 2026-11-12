@@ -28,6 +28,7 @@ impl TakenUp {
 
     /// The session is as `chat` says: the file and the change to write in
     /// it, the first time its conversation is named, and never again.
+    #[must_use = "the change is to be written"]
     pub fn heard(&mut self, chat: &Chat) -> Option<(PathBuf, Change)> {
         let session = chat.session_id.clone().filter(|_| !self.told)?;
         self.told = true;
