@@ -359,3 +359,6 @@ fn version_of(binary: &std::path::Path) -> Option<String> {
     let line = text.lines().next()?.trim();
     (!line.is_empty()).then(|| line.to_string())
 }
+
+#[cfg(test)]
+mod tests;
