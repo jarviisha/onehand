@@ -135,6 +135,95 @@ pub fn again(disk: &Disk) -> Again {
     }
 }
 
+/// Which mode the Workbench shows, among its modes in strip order: the one
+/// picked, unless the project on screen does not offer it, and never another
+/// while the panel says why it has nothing for the project.
+///
+/// A model whose commands answer the place that has just come to show, if
+/// any, which is the one to tell it shows; it has no effects of its own, and
+/// the front end holds the modes themselves.
+pub struct Showing {
+    specs: Vec<WorkbenchModeSpec>,
+    active: usize,
+    on_host: bool,
+    refused: bool,
+}
+
+impl Showing {
+    /// The modes, in strip order; the first shows. There is at least one.
+    pub fn new(specs: Vec<WorkbenchModeSpec>) -> Self {
+        assert!(!specs.is_empty(), "the Workbench has no modes");
+        Self {
+            specs,
+            active: 0,
+            on_host: false,
+            refused: false,
+        }
+    }
+
+    /// The place of the mode showing.
+    pub fn active(&self) -> usize {
+        self.active
+    }
+
+    /// Whether the project on screen is a host's folder.
+    pub fn on_host(&self) -> bool {
+        self.on_host
+    }
+
+    /// Whether `spec` is offered on the project on screen.
+    pub fn offers(&self, spec: WorkbenchModeSpec) -> bool {
+        spec.offered(self.on_host)
+    }
+
+    /// Another project is on screen, a host's folder when `on_host`: the
+    /// first mode offered there shows when the one showing is not.
+    pub fn set_root(&mut self, on_host: bool) -> Option<usize> {
+        self.on_host = on_host;
+        if self.offers(self.specs[self.active]) {
+            return None;
+        }
+        let place = self.specs.iter().position(|spec| self.offers(*spec))?;
+        self.active = place;
+        Some(place)
+    }
+
+    /// A file is to be opened: the modes offered are asked in strip order
+    /// whether each takes it (`took`, given its place), and the first that
+    /// does shows. Nothing is asked while a refusal stands.
+    pub fn opened(&mut self, mut took: impl FnMut(usize) -> bool) -> Option<usize> {
+        if self.refused {
+            return None;
+        }
+        let on_host = self.on_host;
+        let place = (0..self.specs.len())
+            .find(|&place| self.specs[place].offered(on_host) && took(place))?;
+        self.active = place;
+        Some(place)
+    }
+
+    /// The mode `id` is picked: it shows, the one showing included, so
+    /// picking it again asks it again. Refused while a refusal stands, or
+    /// where it is not offered.
+    pub fn pick(&mut self, id: ModeId) -> Option<usize> {
+        if self.refused {
+            return None;
+        }
+        let place = self
+            .specs
+            .iter()
+            .position(|spec| spec.id == id && self.offers(*spec))?;
+        self.active = place;
+        Some(place)
+    }
+
+    /// The panel says why it has nothing for the project (`refused`), or no
+    /// longer.
+    pub fn refuse(&mut self, refused: bool) {
+        self.refused = refused;
+    }
+}
+
 /// Something asked of the Workbench without naming which mode answers it.
 ///
 /// One vocabulary in **both** directions. The panel broadcasts these down; a
@@ -239,3 +328,6 @@ pub enum Request<'a> {
     /// the copy, and says how it went.
     SendToHost(&'a Path),
 }
+
+#[cfg(test)]
+mod tests;
