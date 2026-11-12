@@ -33,7 +33,10 @@ impl Shell {
         let (idx, file) = match work_here(self.root_index(root), self.issues_file(root)) {
             Ok(here) => here,
             Err(why) => {
-                window.push_notification(crate::toast::warning(not_here(why)), cx);
+                let said = not_here(why);
+                #[cfg(test)]
+                tests::SAID.with(|told| told.borrow_mut().push(said));
+                window.push_notification(crate::toast::warning(said), cx);
                 return;
             }
         };

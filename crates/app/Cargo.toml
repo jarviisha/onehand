@@ -99,3 +99,5 @@ alacritty_terminal = "0.25.1"
 gpui-terminal = { path = "../../vendor/gpui-terminal" }
 # Reads the pinned icon manifest in the registry consistency test.
 toml = "0.8"
+# An Issues view open on a file, to see a write from outside the views land.
+onehand-issues = { path = "../issues", features = ["test-support"] }

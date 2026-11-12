@@ -265,28 +265,41 @@ fn a_views_write_after_an_outside_one_is_still_the_newest(cx: &mut TestAppContex
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// A refused outside write answers why, once, and what is shown is what
-/// is on disk.
+/// A refused outside write answers why, once, and what it showed at once
+/// goes: the file is read again, so what is shown is what is on disk.
 #[gpui::test]
-fn a_refused_outside_write_answers_why_once(cx: &mut TestAppContext) {
+fn a_refused_outside_write_answers_why_once_and_reads_again(cx: &mut TestAppContext) {
     cx.executor().allow_parking();
     let (dir, path) = file("refused");
     let file = cx.update(|cx| IssuesFile::get(&dir, path.clone(), &[], cx));
     file.update(cx, |file, cx| file.load_if_stale(cx));
     settle(cx);
+    // Issue 1 leaves the disk behind the view's back: shown, the note on it
+    // applies; written, it is refused.
+    std::fs::remove_file(&path).unwrap();
+    issues::drive::write_blocking(&path, Change::SyncWith(None), 1).unwrap();
     let heard = Heard::default();
-    let elsewhere = Change::Note {
-        number: 9,
-        text: "nowhere".into(),
+    let note = Change::Note {
+        number: 1,
+        text: "on a gone issue".into(),
     };
-    file.update(cx, |file, cx| {
-        file.write_outside(elsewhere, ear(&heard), cx)
+    file.update(cx, |file, cx| file.write_outside(note, ear(&heard), cx));
+    let noted = file.read_with(cx, |file, _| {
+        file.issues
+            .as_ref()
+            .and_then(|kept| kept.get(1))
+            .map(|issue| issue.notes.len())
     });
+    assert_eq!(noted, Some(1), "shown at once");
     until_heard(&heard, cx);
     settle(cx);
     assert_eq!(heard.borrow().len(), 1);
     assert!(heard.borrow()[0].is_err());
     let shown = file.read_with(cx, |file, _| file.issues.clone());
+    assert!(
+        shown.as_ref().is_some_and(|kept| kept.get(1).is_none()),
+        "read again"
+    );
     assert_eq!(shown, Some(issues::load_blocking(&path).unwrap()));
     let _ = std::fs::remove_dir_all(&dir);
 }

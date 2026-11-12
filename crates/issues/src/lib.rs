@@ -15,6 +15,8 @@ use std::rc::Rc;
 
 mod view;
 use view::IssuesView;
+#[cfg(feature = "test-support")]
+pub use view::testing;
 
 // The issue list's keys, which the app's keymap binds in the `Issues`
 // context the page and the Workbench tab both take: the row above, the row

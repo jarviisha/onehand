@@ -57,6 +57,49 @@ pub(crate) fn write_outside(
     shared.update(cx, |shared, cx| shared.write_outside(change, answer, cx));
 }
 
+/// An Issues view open on one project, for the tests of what writes an
+/// issues file from outside the views.
+#[cfg(feature = "test-support")]
+pub mod testing {
+    use super::IssuesView;
+    use gpui::{App, Entity};
+    use onehand_core::issues::Issues;
+    use std::path::{Path, PathBuf};
+    use std::rc::Rc;
+
+    /// A view of the Workbench's Issues mode, on the project at `root` of a
+    /// workspace keeping its issues in `storage`, its file read.
+    pub struct OpenView {
+        view: Entity<IssuesView>,
+        root: PathBuf,
+    }
+
+    impl OpenView {
+        pub fn new(storage: &Path, root: &Path, cx: &mut App) -> Self {
+            let view =
+                IssuesView::new(&[], Rc::new(|_, _, _| {}), Rc::new(|_, _, _| {}), false, cx);
+            view.update(cx, |view, cx| {
+                view.set_storage(Some(storage.to_path_buf()), cx);
+                view.set_root(root, cx);
+                if let Some(state) = view.state_for(root, cx) {
+                    let file = state.file.clone();
+                    file.update(cx, |file, cx| file.load_if_stale(cx));
+                }
+            });
+            Self {
+                view,
+                root: root.to_path_buf(),
+            }
+        }
+
+        /// What the view shows of its project's issues.
+        pub fn shown(&self, cx: &App) -> Option<Issues> {
+            let state = self.view.read(cx).roots.get(&self.root)?;
+            state.file.read(cx).issues.clone()
+        }
+    }
+}
+
 /// How often the view is drawn again with nothing having changed, so the
 /// footer's "synced 3m ago" keeps telling the time. When a file syncs is its
 /// drive's clock.
