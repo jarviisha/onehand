@@ -207,12 +207,12 @@ fn perform_now(
     // A session's call lands in its own window, about its own project; an
     // outside program's in the window in front.
     let aim = control::calls::aim(&peer, holder(&peer), &call)?;
-    let (handle, shell, caller) = match aim.window {
-        control::calls::Window::Front => {
+    let (handle, shell, caller) = match aim.lands {
+        control::calls::Lands::Front => {
             let (handle, shell) = crate::state::front(cx).ok_or("no onehand window is open")?;
             (handle, shell, None)
         }
-        control::calls::Window::Holding(uid) => {
+        control::calls::Lands::Holding(uid) => {
             let windows: Vec<_> = Shared::global(cx)
                 .windows
                 .iter()
@@ -544,7 +544,7 @@ fn issue_file(
     caller: &Option<(u64, PathBuf)>,
     cx: &App,
 ) -> Result<PathBuf, String> {
-    let root = control::calls::issues_root(
+    let root = control::calls::issues_project(
         projects,
         named.as_deref(),
         caller.as_ref().map(|(_, project)| project.as_path()),

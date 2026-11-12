@@ -8,7 +8,7 @@ use std::path::{Component, Path, PathBuf};
 
 /// The window a call lands in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Window {
+pub enum Lands {
     /// The window in front, else the first: an outside program's call.
     Front,
     /// The window holding session `uid`: a session's call, about its own
@@ -19,7 +19,7 @@ pub enum Window {
 /// Where a call goes, and the calling session, if a session called.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Aim {
-    pub window: Window,
+    pub lands: Lands,
     pub caller: Option<u64>,
 }
 
@@ -34,13 +34,13 @@ pub fn aim(peer: &Peer, holder: Option<u64>, call: &Call) -> Result<Aim, String>
     if caller.is_none() && matches!(call, Call::OpenWorker { .. }) {
         return Err("`open_worker` is for a session's agent".to_string());
     }
-    let window = caller.map_or(Window::Front, Window::Holding);
-    Ok(Aim { window, caller })
+    let lands = caller.map_or(Lands::Front, Lands::Holding);
+    Ok(Aim { lands, caller })
 }
 
 /// The project an issue tool works on: the one `named`, else the calling
 /// session's (`caller`), else none.
-pub fn issues_root(
+pub fn issues_project(
     projects: &[(String, PathBuf)],
     named: Option<&str>,
     caller: Option<&Path>,
@@ -187,14 +187,14 @@ mod tests {
         assert_eq!(
             aim(&Peer::Outside, None, &Call::ListProjects),
             Ok(Aim {
-                window: Window::Front,
+                lands: Lands::Front,
                 caller: None
             })
         );
         assert_eq!(
             aim(&session, Some(7), &Call::ListProjects),
             Ok(Aim {
-                window: Window::Holding(7),
+                lands: Lands::Holding(7),
                 caller: Some(7)
             })
         );
@@ -220,18 +220,18 @@ mod tests {
     fn an_issue_tools_project_is_the_named_else_the_callers() {
         let caller = Some(Path::new("/repo/own"));
         assert_eq!(
-            issues_root(&here(), Some("app"), caller),
+            issues_project(&here(), Some("app"), caller),
             Ok(PathBuf::from("/repo/app"))
         );
         assert_eq!(
-            issues_root(&here(), None, caller),
+            issues_project(&here(), None, caller),
             Ok(PathBuf::from("/repo/own"))
         );
         assert_eq!(
-            issues_root(&here(), None, None),
+            issues_project(&here(), None, None),
             Err("name a project".into())
         );
-        assert!(issues_root(&here(), Some("nothing"), caller).is_err());
+        assert!(issues_project(&here(), Some("nothing"), caller).is_err());
     }
 
     #[test]

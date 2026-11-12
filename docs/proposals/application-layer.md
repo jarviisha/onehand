@@ -647,9 +647,9 @@ The note on an issue a session took up moved to 11d, with the other writers of t
 - The recents list is `config::recents::RecentsDrive`, held on `Shared`: a workspace opened, bound,
   named or forgotten answers one write of the list as it stands, and `AppState`'s mutators are
   `pub(crate)`. What is told is as before: only an unbind's failed forget is said.
-- Where a tool call goes is core's: `control::calls::aim` answers the window (the one in front for
-  an outside program, the one holding the session for a session's) and refuses what a peer cannot
-  ask; `issues_root` and `workflow_of` pick an issue tool's project and `start_issue`'s workflow;
+- Where a tool call goes is core's: `control::calls::aim` answers where it lands (`Lands`: the
+  window in front for an outside program, the one holding the session for a session's) and refuses
+  what a peer cannot ask; `issues_project` and `workflow_of` pick an issue tool's project and `start_issue`'s workflow;
   `ControlDrive::admit_plain` counts a plain open under a session's cap only. The window in front is
   `instance::front`, shared with a second launch.
 - What reaches the socket before the first window is held by `instance::Arrivals` and handed back,

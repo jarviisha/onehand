@@ -92,14 +92,14 @@ pub(crate) fn listen(cx: &mut App) {
 
 /// What has reached the socket and waits for the first window.
 #[derive(Default)]
-struct Held(Arrivals<Incoming>);
+struct HeldLines(Arrivals<Incoming>);
 
-impl gpui::Global for Held {}
+impl gpui::Global for HeldLines {}
 
 /// `incoming` reached the socket: carried now when a window is up, else held
 /// for the first.
 fn arrived(incoming: Incoming, cx: &mut App) {
-    let passed = cx.default_global::<Held>().0.arrived(incoming);
+    let passed = cx.default_global::<HeldLines>().0.arrived(incoming);
     if let Some(incoming) = passed {
         carry(incoming, cx);
     }
@@ -108,7 +108,7 @@ fn arrived(incoming: Incoming, cx: &mut App) {
 /// The first window is registered: carry what waited for it, in order.
 /// Never inside an entity's update: a call reaches into its window's shell.
 pub(crate) fn window_up(cx: &mut App) {
-    let held = cx.default_global::<Held>().0.up();
+    let held = cx.default_global::<HeldLines>().0.up();
     for incoming in held {
         carry(incoming, cx);
     }
