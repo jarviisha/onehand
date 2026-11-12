@@ -155,7 +155,9 @@ impl RunDrive {
                 }
             }
             // Not what the run asked about now.
-            other => self.forging = other,
+            other @ (None | Some(Forging::Pushing | Forging::Logs(..) | Forging::Readying(..))) => {
+                self.forging = other
+            }
         }
     }
 
@@ -182,8 +184,13 @@ impl RunDrive {
         now: Now,
         fx: &mut Vec<Effect>,
     ) {
-        let Some(Forging::Logs(watch, said)) = self.forging.take() else {
-            return;
+        let (watch, said) = match self.forging.take() {
+            Some(Forging::Logs(watch, said)) => (watch, said),
+            // Not what the run asked about now.
+            other @ (None
+            | Some(
+                Forging::Pushing | Forging::Opening | Forging::Watching(_) | Forging::Readying(..),
+            )) => return self.forging = other,
         };
         let logs: Vec<(String, String)> = logs
             .into_iter()
@@ -201,8 +208,13 @@ impl RunDrive {
         now: Now,
         fx: &mut Vec<Effect>,
     ) {
-        let Some(Forging::Readying(watch, url)) = self.forging.take() else {
-            return;
+        let (watch, url) = match self.forging.take() {
+            Some(Forging::Readying(watch, url)) => (watch, url),
+            // Not what the run asked about now.
+            other @ (None
+            | Some(
+                Forging::Pushing | Forging::Opening | Forging::Watching(_) | Forging::Logs(..),
+            )) => return self.forging = other,
         };
         self.command = false;
         if let Some(stop) = self.stopping.take() {

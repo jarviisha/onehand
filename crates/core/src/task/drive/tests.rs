@@ -973,6 +973,18 @@ fn a_stop_while_the_pull_request_is_looked_for_opens_none() {
     assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::ByPerson)));
 }
 
+/// An answer the run did not ask for now (a log read, a draft taken out of
+/// draft) lands on nothing: the run still waits on its status checks, and
+/// looks again on the clock.
+#[test]
+fn a_forge_answer_not_asked_for_leaves_the_checks_waited_on() {
+    let mut rig = watching();
+    assert!(rig.on(Input::LogsRead(Vec::new())).is_empty());
+    assert!(rig.on(Input::MarkedReady(Ok(()))).is_empty());
+    let fx = rig.on(Input::Elapsed(Timer::Checks));
+    assert_eq!(fx, vec![Effect::FindPullRequest]);
+}
+
 #[test]
 fn checks_still_running_are_looked_at_again_on_the_clock() {
     let mut rig = watching();
