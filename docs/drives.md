@@ -261,9 +261,10 @@ nothing, and a failed switch put back. The remote bridge's carrier (`crates/app/
 session no window holds said gone, a scan landing once off the UI thread and nothing told after the
 channel ends; the tools' (`crates/app/src/control/tests.rs`) a switch told to each connection
 once, after the call, an open's deadline coming round on the clock, and a call landing in the
-window in front or in its session's, and (`control/workers/tests.rs`, its agents played over a
-channel) a worker's open carried through a window: its start, watch and first prompt, and a
-window closed before its start; the settings' (`crates/app/src/saves/tests.rs`) a write landing
+window in front or in its session's with another window in front, and
+(`control/workers/tests.rs`, its agents played over a channel) a worker's open carried through a
+window: its start, watch and first prompt, and a window closed before its start, with its lead or
+apart from it; the settings' (`crates/app/src/saves/tests.rs`) a write landing
 once, a failed appearance put back, the agent list kept, and an agent check's probe answered once
 or failing after its wait, against a channel; the recents'
 (`crates/app/src/shell/storage/tests.rs`) a bind and an unbind landing in the file, and only an

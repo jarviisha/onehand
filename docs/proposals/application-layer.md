@@ -665,10 +665,15 @@ The note on an issue a session took up moved to 11d, with the other writers of t
   the settings by command line; the look's blocking body is `config::look_blocking`.
 - Characterisation tests written first pin where tool calls land, the Issues page's starts and an
   agent's *Test* on a real shell. The recents' carrier, the hold before the first window, an agent
-  check's probe (against a channel) and a worker's open through a window (its agent played over a
-  channel) are tested on their carriers.
+  check's probe (against a channel), a session's call landing in its window with another in front
+  (the rig opens a second window, `shell::rig::another`) and a worker's open through a window (its
+  agent played over a channel, and its window closing before its start) are tested on their
+  carriers; the Issues page's refusals are asserted by their words.
 
 Phase 11 changed, on purpose (PR 11c):
+- `open_worker` from an outside program is refused ("`open_worker` is for a session's agent") before
+  anything else is looked at; before, "no onehand window is open" and a project on a host's
+  refusal came first.
 - A line from a second launch, or a tool's call, that arrives before the first window is carried
   the moment that window registers, rather than up to 50 ms after.
 - A saved conversation whose agent is no longer set up is refused and said, and its folder is not
