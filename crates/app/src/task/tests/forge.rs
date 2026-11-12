@@ -216,6 +216,14 @@ fn run_on(branch: &str, forge: &str, id: &str, cx: &mut TestAppContext) -> (Task
 fn a_runs_forge_calls_go_once_and_in_order(cx: &mut TestAppContext) {
     let (task, commit) = run_on("in-order", "Recording", "20", cx);
     assert_eq!(task.outcome(), Some(Outcome::Done));
+    let kept = task.runs()[0]
+        .pull_request
+        .as_ref()
+        .expect("its pull request");
+    assert_eq!(
+        (kept.number, kept.url.as_str()),
+        (7, "https://forge.test/in-order")
+    );
     assert_eq!(
         FORGE.asked_of("in-order"),
         [

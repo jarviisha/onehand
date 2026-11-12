@@ -15,7 +15,7 @@ use gpui_component::Root;
 use onehand_core::acp::{AcpEvent, AcpRequest};
 use onehand_core::chat::drive::{Code, Intake, Origin, Signal};
 use onehand_core::chat::{Chat, QueuedPrompt};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::path::Path;
 
@@ -24,11 +24,16 @@ type Sent = Result<(), String>;
 thread_local! {
     /// The sends asked for and not yet answered, oldest first.
     static ASKED: RefCell<VecDeque<oneshot::Sender<Sent>>> = RefCell::default();
+    /// Whether the code is no longer this machine's to send.
+    static GONE: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Stands in for the offloaded projects' send: asked, and answered when the
-/// test says how it went.
+/// test says how it went, or refused as a send of code no longer here is.
 pub(super) fn send_up(_: &mut gpui::App, _: &Path) -> Option<impl Future<Output = Sent> + use<>> {
+    if GONE.get() {
+        return None;
+    }
     let (tx, rx) = oneshot::channel();
     ASKED.with_borrow_mut(|asked| asked.push_back(tx));
     Some(async move { rx.await.unwrap_or_else(|_| Err("dropped".into())) })
@@ -58,6 +63,7 @@ fn rig(cx: &mut TestAppContext) -> (Rig, &mut VisualTestContext) {
     cx.executor().allow_parking();
     cx.update(gpui_component::init);
     ASKED.with_borrow_mut(VecDeque::clear);
+    GONE.set(false);
     let (session, mut tx, seen) = carrier::driven(cx, Chat::default());
     let requests = carrier::up(&mut tx);
     let mut made = None;
@@ -193,4 +199,17 @@ fn a_late_answer_sends_nothing(cx: &mut TestAppContext) {
     answer(Ok(()), cx);
     assert_eq!((rig.prompts(), rig.failures()), (1, 0));
     assert_eq!(rig.written(cx), "");
+}
+
+/// Code that is no longer this machine's to send is a send that failed: said
+/// once, and the prompt stays unsent in the composer.
+#[gpui::test]
+fn code_no_longer_here_to_send_is_a_failed_send(cx: &mut TestAppContext) {
+    let (mut rig, cx) = rig(cx);
+    GONE.set(true);
+    rig.write("go", cx);
+    rig.prompt_code_first(cx);
+    assert_eq!((asked(), rig.failures()), (0, 1));
+    assert_eq!(rig.prompts(), 0);
+    assert_eq!(rig.written(cx), "go");
 }

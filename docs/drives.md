@@ -261,12 +261,13 @@ cancel at the stream's end, a close with a save in flight and a wait armed, and 
 its host's lost connection said as out of reach, one taken by another machine ended. The pane's
 half of it (`crates/app/src/chat/pane/offload_send/tests.rs`, the send itself stood in for) holds
 the code asked for once, the prompt going once from the composer after it and not when it was
-rewritten meanwhile, a failed send reaching the drive, and a late answer sending nothing. The run's and
+rewritten meanwhile, a failed send and code no longer here to send reaching the drive, and a late answer sending
+nothing. The run's and
 the tasks' carriers' tests (`crates/app/src/task/tests.rs`) hold a run's prompt going once, its
 failed writes reaching its drive and said once, a session closed under a run leaving nothing
 listening, a finished run hearing nothing more, the place held while a cancelled turn drains, a
 Stop before a command starts, a dismiss put back when its write fails, a worktree's removal
-landing with its task after its window closed, and (`task/tests/forge.rs`, against a forge that
+landing with its task after its window closed, and (`crates/app/src/task/tests/forge.rs`, against a forge that
 records what it is asked) a run's push, pull request look, open and read back reaching the forge
 once and in order, a refused push reaching its drive and opening nothing, and a forge not built in
 said; on a real shell (`crates/app/src/shell/rig.rs`), a
@@ -312,7 +313,8 @@ buffer was read from, a failure said once, and a save asked while one writes run
 the text typed since; the Plugins mode's (`crates/claude-plugins/src/view/tests.rs`, against a
 `claude` of its own) one change at a time, what went through counted, and a refusal said only in
 its project. Still untested: `SaveTitle` (written on the ordered writer's own thread, which
-GPUI's test scheduler does not wait for), deferred work, a command called off while it runs (the test scheduler runs it to its end before a
+GPUI's test scheduler does not wait for), deferred work, a run's look at its status checks on the clock, the failing ones' logs read and
+a draft taken out of draft (the recording forge is asked none of the three), a command called off while it runs (the test scheduler runs it to its end before a
 Stop can reach it), a host's real attach, which runs on a runtime GPUI's test
 scheduler does not drive, and so a project page on a host letting go of its wait as it is left
 or listed again (the window's waits are tested let go of as a session closes or restarts and as

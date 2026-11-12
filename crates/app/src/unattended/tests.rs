@@ -4,6 +4,7 @@
 //! issue once and leaves its task once it has landed, and a run's project is
 //! kept or dropped at its end in every window holding it.
 
+use crate::shell::rig::run_added as held;
 use crate::state::Shared;
 use crate::task::Tasks;
 use gpui::{AnyWindowHandle, AppContext as _, TestAppContext};
@@ -362,8 +363,6 @@ fn run_in(shell: &gpui::Entity<crate::shell::Shell>, dir: &Path, cx: &mut gpui::
     })
     .expect("a run's session");
 }
-
-use crate::shell::rig::run_added as held;
 
 /// A run that ends with nothing to keep takes the project it added out of
 /// every window holding it, and leaves a window that never had it alone.
