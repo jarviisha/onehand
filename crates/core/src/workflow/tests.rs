@@ -746,7 +746,7 @@ fn a_timeout_that_does_not_read_falls_back_to_a_new_workflows() {
 #[test]
 fn a_kept_field_reads_the_same_as_its_change() {
     let prev = failed_at_push();
-    let now = Now {
+    let now = Current {
         agent: Some("codex".into()),
         ..same_now()
     };
@@ -1806,8 +1806,8 @@ fn failed_at_push() -> Run {
 }
 
 /// What Settings say now, the same as the run in [`failed_at_push`].
-fn same_now() -> Now {
-    Now {
+fn same_now() -> Current {
+    Current {
         agent: Some("claude".into()),
         mode: None,
         check: Some("make check".into()),
@@ -1830,7 +1830,7 @@ fn a_retry_with_current_settings_starts_where_a_command_changes() {
     );
     assert!(carried.changes.is_empty());
 
-    let now = Now {
+    let now = Current {
         check: Some("make check2".into()),
         ..same_now()
     };
@@ -1857,7 +1857,7 @@ fn a_retry_with_current_settings_starts_where_a_command_changes() {
     assert_eq!(plan.changes[0].field, Field::WorkflowVersion);
 
     // Who runs it, and for how long, moves no start.
-    let now = Now {
+    let now = Current {
         agent: Some("codex".into()),
         mode: Some("auto".into()),
         timeout: Some("2h".into()),

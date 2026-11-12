@@ -248,7 +248,7 @@ start is held at or before the last command step up to it (`Run::recheck`): a re
 the commit the last check passed on. Enter in the dialog retries as *Retry* does.
 `Run::with_current` works out a retry with current settings from the last run, the workflow on
 offer by its id (`crate::workflow::newest`) and what a new task of its kind takes now
-(`workflow::Now`, from `unattended::now_for`): what changes, the setup, and the start.
+(`workflow::Current`, from `unattended::now_for`): what changes, the setup, and the start.
 `Task::retry_with` pushes that run, and `Shell::begin_retry_current` asks first. The Issues views
 and the task detail are told, per ended task, whether the timeout it would run with now differs
 from its last run's (`Work::timeout_moved`, from `unattended::timeout_moved`), which is when a

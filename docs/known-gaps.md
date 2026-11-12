@@ -393,7 +393,9 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   - `hosts::attach_waiting` waits out a busy host and attaches again in `HostDrive`'s carrier,
     for the terminal dock, the Workbench and the folder list; what a failed attach comes to is
     core's (`HostFailure::after_attach`).
-  - An unbind's failed forget is said at every failure, not once at the edge of a run of them.
+  - An unbind's failed forget is said at every failure, not once at the edge of a run of them:
+    each is another workspace that would come back at the next launch, and the words do not name
+    which.
 - **Some view state is kept in core's models**: the panels' layout in the workspace file
   (`WorkspaceDrive::layout_mut`), and which Editor tab is on screen (`RootEditors::active`). No
   drive decides anything by either.
@@ -405,9 +407,7 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   fails is seen on the next read too.
 - **The app's views read the clock themselves** for the ages they draw (`chat::now_secs()`); no
   drive reads those ages.
-- **Smaller things the refactor into drives left:** `workflow::Now`, the facts a retry is judged
-  on, shares its name with the crate-root `onehand_core::Now` the drives are told; models and
-  their tests still match part of our own enums in places (`workflow/tests.rs`,
-  `task/work/list.rs`), outside the drives and links the whole-match rule holds; a cut worktree is
-  a bare `Result` alias (`task::tasks::Cut`); and `connector::memory::Forge`, the forge kept in
-  memory, is `cfg(test)`, as nothing outside core needs it.
+- **Smaller things the refactor into drives left:** the workflow engine's tests assert one
+  variant of our own enums with `matches!` (`workflow/tests.rs`), outside the drives and links the
+  whole-match rule holds; and `connector::memory::Forge`, the forge kept in memory, is
+  `cfg(test)`, as nothing outside core needs it.

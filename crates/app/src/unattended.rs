@@ -439,7 +439,7 @@ pub(crate) fn now_for(
     task: &onehand_core::task::Task,
     check: Option<String>,
     cx: &App,
-) -> onehand_core::workflow::Now {
+) -> onehand_core::workflow::Current {
     let agents = &Shared::global(cx).settings.agents;
     let first = onehand_core::config::agent_or_first(agents, None).map(|spec| spec.name.clone());
     let runs = read(cx, |u| u.run_settings(agents));

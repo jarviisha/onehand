@@ -382,7 +382,13 @@ fn done_with_pr(work: &super::Work) -> bool {
 
 fn in_progress(item: &Item<'_>, progress: Progress, pr: Option<Option<&PullRequest>>) -> bool {
     let Some(issue_work) = item.work else {
-        return matches!(progress, Progress::All | Progress::NoRunRecorded);
+        return match progress {
+            Progress::All | Progress::NoRunRecorded => true,
+            Progress::NeedsAttention
+            | Progress::Running
+            | Progress::Queued
+            | Progress::PullRequestOpen => false,
+        };
     };
     let work = &issue_work.work;
     match progress {
