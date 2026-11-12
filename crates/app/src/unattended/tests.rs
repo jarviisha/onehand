@@ -95,15 +95,15 @@ fn report() -> PendingReport {
 fn issues(dir: &Path) -> PathBuf {
     let file = dir.join("issues.json");
     for title in ["Fix it", "And this"] {
-        onehand_core::issues::update_blocking(&file, |kept| {
-            kept.create(
-                onehand_core::issues::Draft {
-                    title: title.into(),
-                    ..Default::default()
-                },
-                1,
-            )
-        })
+        let draft = onehand_core::issues::Draft {
+            title: title.into(),
+            ..Default::default()
+        };
+        onehand_core::issues::drive::write_blocking(
+            &file,
+            onehand_core::issues::drive::Change::Create(draft),
+            1,
+        )
         .unwrap();
     }
     file

@@ -67,37 +67,138 @@ pub enum Change {
     Resolve { number: u64, keep_mine: bool },
     /// The file kept in step with the forge so named, or with none.
     SyncWith(Option<String>),
+    /// `text` added to what has been said about issue `number`.
+    Note { number: u64, text: String },
+    /// Said on issue `number`, in the words `text`, that the conversation
+    /// `session` took it up.
+    TakenUp {
+        number: u64,
+        text: String,
+        session: String,
+    },
+    /// `label` taken off issue `number`, if it carries it.
+    RemoveLabel { number: u64, label: String },
+    /// A new issue, as drafted, unless an open one already has its title,
+    /// case and surrounding spaces aside.
+    CreateUnlessOpen(Draft),
+}
+
+/// What a change came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Applied {
+    /// It names no issue.
+    Nothing,
+    /// It changed the issue so numbered.
+    Named(u64),
+    /// It opened a new issue, so numbered.
+    New(u64),
+    /// An open issue, so numbered, already has the title: nothing changed.
+    Already(u64),
+}
+
+impl Applied {
+    /// The issue it names, for whoever made the change to select.
+    pub fn issue(self) -> Option<u64> {
+        match self {
+            Self::Nothing => None,
+            Self::Named(number) | Self::New(number) | Self::Already(number) => Some(number),
+        }
+    }
 }
 
 impl Change {
-    /// Make the change on `kept` at `at`, seconds since the epoch: the issue
-    /// it names, if any, for whoever made it to select.
-    pub fn apply(self, kept: &mut Issues, at: u64) -> Result<Option<u64>, String> {
+    /// Make the change on `kept` at `at`, seconds since the epoch, and say
+    /// what it came to.
+    pub fn apply(self, kept: &mut Issues, at: u64) -> Result<Applied, String> {
         match self {
-            Self::Create(draft) => kept.create(draft, at).map(Some),
-            Self::Edit { number, draft } => kept.edit(number, draft, at).map(|()| Some(number)),
-            Self::SetOpen { number, open } => {
-                kept.set_open(number, open, at).map(|()| Some(number))
-            }
-            Self::Resolve { number, keep_mine } => {
-                kept.resolve(number, keep_mine, at).map(|()| Some(number))
-            }
+            Self::Create(draft) => kept.create(draft, at).map(Applied::New),
+            Self::Edit { number, draft } => kept
+                .edit(number, draft, at)
+                .map(|()| Applied::Named(number)),
+            Self::SetOpen { number, open } => kept
+                .set_open(number, open, at)
+                .map(|()| Applied::Named(number)),
+            Self::Resolve { number, keep_mine } => kept
+                .resolve(number, keep_mine, at)
+                .map(|()| Applied::Named(number)),
             Self::SyncWith(forge) => {
                 kept.sync_with(forge);
-                Ok(None)
+                Ok(Applied::Nothing)
+            }
+            Self::Note { number, text } => kept
+                .note(number, &text, at)
+                .map(|()| Applied::Named(number)),
+            Self::TakenUp {
+                number,
+                text,
+                session,
+            } => kept
+                .taken_up(number, &text, session, at)
+                .map(|()| Applied::Named(number)),
+            Self::RemoveLabel { number, label } => kept
+                .remove_label(number, &label, at)
+                .map(|()| Applied::Named(number)),
+            Self::CreateUnlessOpen(draft) => {
+                let title = draft.title.trim().to_lowercase();
+                match kept
+                    .issues
+                    .iter()
+                    .find(|i| i.open && i.title.trim().to_lowercase() == title)
+                {
+                    Some(open) => Ok(Applied::Already(open.number)),
+                    None => kept.create(draft, at).map(Applied::New),
+                }
             }
         }
     }
+
+    /// Whether it is shown before its write lands. A new issue unless one
+    /// is open with its title is not: whether the title is taken is decided
+    /// on disk alone, under the write's lock.
+    fn shown_first(&self) -> bool {
+        match self {
+            Self::CreateUnlessOpen(_) => false,
+            Self::Create(_)
+            | Self::Edit { .. }
+            | Self::SetOpen { .. }
+            | Self::Resolve { .. }
+            | Self::SyncWith(_)
+            | Self::Note { .. }
+            | Self::TakenUp { .. }
+            | Self::RemoveLabel { .. } => true,
+        }
+    }
+}
+
+/// Who made a change: a view of the file, or a writer outside every view
+/// (a tool, a session's note, a run's). Only a view's change can move a
+/// view's selection, so only the views' changes count toward which is the
+/// newest ([`FileDrive::newest`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Maker {
+    View,
+    Outside,
+}
+
+/// Read `path`, make `change` on it at `at` and write it back, under the
+/// file's lock: what is kept now, and what the change came to. A change
+/// that changed nothing ([`Applied::Already`]) writes nothing.
+pub fn write_blocking(path: &Path, change: Change, at: u64) -> Result<(Issues, Applied), String> {
+    super::update_unless(
+        path,
+        |kept| change.apply(kept, at),
+        |applied| matches!(applied, Applied::Already(_)),
+    )
 }
 
 /// What a person is told.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Signal {
-    /// Change `of`'s write landed: the issue it names, or why it was refused.
+    /// Change `of`'s write landed: what it came to, or why it was refused.
     /// Said to whoever made the change, whose form and selection it moves.
     Wrote {
         of: u64,
-        done: Result<Option<u64>, String>,
+        done: Result<Applied, String>,
     },
     /// Issue `number` could not be sent to the forge: why.
     PublishFailed { number: u64, why: String },
@@ -105,8 +206,8 @@ pub enum Signal {
 
 /// What the front end carries out.
 pub enum Effect {
-    /// Read the file, make `change` on it at `at` ([`Change::apply`]) and
-    /// write it ([`super::update_blocking`]), off the UI loop and after every
+    /// Read the file, make `change` on it at `at` and write it
+    /// ([`write_blocking`]), off the UI loop and after every
     /// write before it, and report [`Input::Written`] with `of`. A late
     /// answer is **recorded**: the change is on disk or it is not, whatever
     /// changed since.
@@ -156,11 +257,11 @@ pub enum Input {
         done: Result<(Issues, Report), String>,
         now: Now,
     },
-    /// Change `of`'s write landed: what it left on disk and the issue it
-    /// names, or why it was refused.
+    /// Change `of`'s write landed: what it left on disk and what the change
+    /// came to, or why it was refused.
     Written {
         of: u64,
-        done: Result<(Issues, Option<u64>), String>,
+        done: Result<(Issues, Applied), String>,
         now: Now,
     },
     /// Sending issue `number` to the forge came to this.
@@ -254,6 +355,9 @@ impl FileDrive {
     /// not apply to what is shown is left for its write to refuse.
     #[must_use = "its effects are to be carried"]
     pub fn show(&mut self, change: &Change, now: Now) -> Vec<Effect> {
+        if !change.shown_first() {
+            return Vec::new();
+        }
         let shown = self.kept.issues.as_mut();
         match shown.map(|kept| change.clone().apply(kept, now.secs)) {
             Some(Ok(_)) => vec![Effect::Changed],
@@ -261,16 +365,16 @@ impl FileDrive {
         }
     }
 
-    /// Write `change` after every change before it: which change it is, and
-    /// the write.
+    /// Write `change`, made by `maker`, after every change before it: which
+    /// change it is, and the write.
     #[must_use = "its effects are to be carried"]
-    pub fn write(&mut self, change: Change, now: Now) -> (u64, Effect) {
-        let of = self.pending.send();
+    pub fn write(&mut self, change: Change, maker: Maker, now: Now) -> (u64, Effect) {
+        let of = self.pending.send(maker);
         let at = now.secs;
         (of, Effect::Write { of, change, at })
     }
 
-    /// Whether change `of` is the newest one made.
+    /// Whether change `of` is the newest one a view made.
     pub fn newest(&self, of: u64) -> bool {
         self.pending.newest(of)
     }
@@ -365,11 +469,12 @@ impl FileDrive {
                     Effect::Changed,
                     Effect::Signal(Signal::Wrote { of, done: said }),
                 ];
-                match (landed, self.newest(of)) {
+                match (landed, self.pending.last(of)) {
                     // Sent at once, so an edit reaches the forge without
                     // waiting for the gap.
                     (true, _) => fx.extend(self.sync(true, now)),
-                    // The newest change refused: what is on disk is shown.
+                    // The newest change of anyone's refused: what is on disk
+                    // is shown.
                     (false, true) => fx.extend(self.load()),
                     (false, false) => {}
                 }
@@ -449,9 +554,12 @@ impl LocalIssue {
 /// lands the newest of what came in and what the writes left is shown.
 #[derive(Default)]
 struct Pending {
-    /// The newest change sent to be written: the one whose write decides
-    /// what to show should it fail.
+    /// The newest change sent to be written, by anyone: the one whose write
+    /// decides what to show should it fail.
     sent: u64,
+    /// The newest change a view sent: the one whose write may move a
+    /// view's selection.
+    viewed: u64,
     /// How many writes have landed, done or refused.
     landed: u64,
     /// The newest copy that came in while a write was on its way.
@@ -468,13 +576,23 @@ impl Pending {
         }
     }
 
-    /// A change is sent to be written: which one it is.
-    fn send(&mut self) -> u64 {
+    /// A change made by `maker` is sent to be written: which one it is.
+    fn send(&mut self, maker: Maker) -> u64 {
         self.sent += 1;
+        match maker {
+            Maker::View => self.viewed = self.sent,
+            Maker::Outside => {}
+        }
         self.sent
     }
 
+    /// Whether `of` is the newest change a view made.
     fn newest(&self, of: u64) -> bool {
+        of == self.viewed
+    }
+
+    /// Whether `of` is the newest change anyone made.
+    fn last(&self, of: u64) -> bool {
         of == self.sent
     }
 

@@ -25,7 +25,7 @@ fn kept(name: &str) -> (PathBuf, PathBuf) {
         title: "one".into(),
         ..Draft::default()
     };
-    issues::update_blocking(&file, move |kept| kept.create(draft, 1)).unwrap();
+    issues::drive::write_blocking(&file, issues::drive::Change::Create(draft), 1).unwrap();
     (dir, project)
 }
 

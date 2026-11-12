@@ -150,18 +150,15 @@ impl Tracker {
     ) -> Result<(), String> {
         match self {
             Self::Forge(c) => c.remove_label_blocking(root, number, label),
-            Self::Local(file) => issues::update_blocking(file, |kept| {
-                kept.remove_label(number, label, issues::now())
-            })
-            .map(drop),
+            Self::Local(file) => {
+                issues::drive::write_blocking(file, unlabel(number, label), issues::now()).map(drop)
+            }
             // Off here first, which is the claim; the sync then takes it off
             // the forge. A sync that fails now is retried by the next, and the
             // issue is not found again meanwhile because only this side is
             // searched.
             Self::Synced { file, forge } => {
-                issues::update_blocking(file, |kept| {
-                    kept.remove_label(number, label, issues::now())
-                })?;
+                issues::drive::write_blocking(file, unlabel(number, label), issues::now())?;
                 let _ = issues::sync::sync_blocking(file, root, *forge, issues::now());
                 Ok(())
             }
@@ -174,14 +171,13 @@ impl Tracker {
         match self {
             Self::Forge(c) => c.comment_blocking(root, number, body),
             Self::Local(file) => {
-                issues::update_blocking(file, |kept| kept.note(number, body, issues::now()))
-                    .map(drop)
+                issues::drive::write_blocking(file, note(number, body), issues::now()).map(drop)
             }
             // A note here, and the same words on the forge's issue when it has
             // one — somebody reading it there should hear what happened too.
             Self::Synced { file, forge } => {
-                let (kept, ()) =
-                    issues::update_blocking(file, |kept| kept.note(number, body, issues::now()))?;
+                let (kept, _) =
+                    issues::drive::write_blocking(file, note(number, body), issues::now())?;
                 let key = kept
                     .get(number)
                     .and_then(|i| i.link_on(forge.name()))
@@ -192,6 +188,22 @@ impl Tracker {
                 }
             }
         }
+    }
+}
+
+/// `label` taken off issue `number`, as a change to its file.
+fn unlabel(number: u64, label: &str) -> issues::drive::Change {
+    issues::drive::Change::RemoveLabel {
+        number,
+        label: label.to_string(),
+    }
+}
+
+/// `body` said on issue `number`, as a change to its file.
+fn note(number: u64, body: &str) -> issues::drive::Change {
+    issues::drive::Change::Note {
+        number,
+        text: body.to_string(),
     }
 }
 

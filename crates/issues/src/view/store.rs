@@ -10,7 +10,9 @@
 use gpui::{App, AppContext as _, Context, Entity, Global, WeakEntity};
 use onehand_core::chat::Now;
 use onehand_core::connector::Connector;
-use onehand_core::issues::drive::{Change, Effect, FileDrive, Input, Signal, read_blocking};
+use onehand_core::issues::drive::{
+    Change, Effect, FileDrive, Input, Maker, Signal, read_blocking, write_blocking,
+};
 use onehand_core::issues::{self, sync};
 use onehand_core::saving::OrderedWriter;
 use std::collections::HashMap;
@@ -85,7 +87,7 @@ impl IssuesFile {
     /// Write `change` after every change made before it: which change it
     /// is, for the view that made it to hear its write in [`Signal::Wrote`].
     pub(super) fn write(&mut self, change: Change, cx: &mut Context<Self>) -> u64 {
-        let (of, write) = self.drive.write(change, now());
+        let (of, write) = self.drive.write(change, Maker::View, now());
         self.carry(vec![write], cx);
         of
     }
@@ -146,9 +148,7 @@ impl IssuesFile {
                 }
                 Effect::Write { of, change, at } => {
                     let (_, path) = self.drive.place();
-                    let written = self.writer.write(move || {
-                        issues::update_blocking(&path, move |kept| change.apply(kept, at))
-                    });
+                    let written = self.writer.write(move || write_blocking(&path, change, at));
                     // Held strongly: every write lands, whether or not a view
                     // is still there, so what was read meanwhile is let through.
                     let file = cx.entity();

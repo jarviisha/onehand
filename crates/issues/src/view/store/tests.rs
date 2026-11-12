@@ -4,7 +4,7 @@
 
 use super::IssuesFile;
 use gpui::TestAppContext;
-use onehand_core::issues::drive::Signal;
+use onehand_core::issues::drive::{Applied, Change, Signal};
 use onehand_core::issues::{self, Draft};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -22,7 +22,7 @@ fn file(name: &str) -> (PathBuf, PathBuf) {
         title: "one".into(),
         ..Draft::default()
     };
-    issues::update_blocking(&path, move |kept| kept.create(draft, 1)).unwrap();
+    issues::drive::write_blocking(&path, Change::Create(draft), 1).unwrap();
     (dir, path)
 }
 
@@ -86,7 +86,7 @@ fn a_write_lands_once_and_its_maker_hears_it(cx: &mut TestAppContext) {
         *heard.borrow(),
         [Signal::Wrote {
             of,
-            done: Ok(Some(1))
+            done: Ok(Applied::Named(1))
         }]
     );
     let open = file.read_with(cx, |file, _| {
@@ -113,7 +113,6 @@ fn writes(path: &std::path::Path) -> u64 {
 #[gpui::test]
 fn the_view_syncs_its_projects_file_every_five_minutes(cx: &mut TestAppContext) {
     use super::super::IssuesView;
-    use onehand_core::issues::drive::Change;
     cx.executor().allow_parking();
     let dir = std::env::temp_dir().join(format!("onehand-issues-clock-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
