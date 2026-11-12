@@ -62,6 +62,8 @@ minor bump may break any of them.
   this build; *Restart now* asks before stopping them. Files, the editor, git and the
   terminal on a host, and onehand's tools, workflows, tasks, issues and unattended runs for a
   host project, are not built yet.
+- Putting the offload form away no longer stops a send of the code under way: it runs to its end,
+  and what went is kept for the next offload.
 
 ### The window
 
@@ -180,6 +182,57 @@ minor bump may break any of them.
 
 ### Fixed
 
+- A run waiting on its pull request's status checks keeps waiting when a forge answer it did not
+  ask for lands; before, the run could stop looking at its checks for good.
+- A worktree removed while the window it was asked from closed is kept with its task, and its
+  button no longer waits for good (#319). A removal's judgement, or a review's read, whose window
+  closed meanwhile lets its button go at once.
+- *Look for an issue now* refused at once (no project switched on, the cap reached, a run already
+  starting) says why in its window; before, the warning was dropped.
+- *Answer the pull request review* asks about the task and the project's check as they are once
+  the review is read, and two quick presses open one question, not two. A Retry on a check that
+  never ran does nothing.
+- A run whose progress could not be saved says so in its window, once until a save succeeds;
+  before, it was only logged.
+- Work on an offloaded project that crashes says *Something went wrong here; try again* instead of
+  leaving the folder locked.
+- A session restarted starts with no unread badge.
+- A worker opened by a lead's tools has its 120 seconds counted from the call, and the cap of four
+  counts the sessions a lead's tools opened in every window, not only the lead's own.
+- A program outside onehand that asks to open a worker is told at once that only a session's agent
+  can, rather than first hearing that no window is open or that the project is on a host.
+- Going back to the header's history keeps the live session running out of sight until a past
+  conversation is chosen, and picking one takes the picker down at once; a history still loading
+  for a session restarted or closed meanwhile shows nothing.
+- A session resuming a kept conversation shows as opening while the file is read, rather than
+  holding the window.
+- A session waiting on a busy host's sessions is no longer announced as a lost agent when its
+  stream ends.
+- A removed project takes its worktree and branch forms with it, and a git status still being read
+  no longer brings its status back; an order put back after a failed write tells a local and a
+  host project on one path apart.
+- A failed note on an issue a session took up is said in its window, once; before, it was only
+  logged.
+- A fork whose project left the workspace while its conversation was read says so.
+- *End on <host>*, once confirmed, reaches the host even when its window is closed before onehand
+  has reached the host.
+- A host session opened from a project page with no agent set up says a session needs an agent.
+- A saved conversation whose agent is no longer set up is refused and said, and its folder is not
+  added back; one live in another window is shown there instead of resumed a second time here.
+- *Open session* of a task with no session, *Run workflow…* on the Issues page for a project no
+  longer in the workspace or on a host, and *Run check* with a host project or no project selected
+  each say why nothing happened.
+- A folder handed over by a second launch, or a tool's call, that arrives while onehand is still
+  starting is taken up as soon as its first window is up, rather than up to 50 ms later.
+- What *Test* found beside an agent shows in every window's Settings, and a second *Test* while one
+  runs starts nothing.
+- A tool's new issue, and an unattended run's or a session's note that it took an issue up, show at
+  once in every Issues view of the file, the Issues page included, and reach the forge of a file
+  kept in step at once; a tool's issue whose title is already open writes and sends nothing.
+- An issues file kept in step syncs five minutes after its last sync, once however many views are
+  on it, and a sync pressed by hand puts the next one back. An unattended run's search or claim
+  that synced the file counts as that last sync, and what it brought shows in the views at once.
+- Working an issue whose project left the workspace, or in a workspace keeping no issues, says why.
 - A save in the Editor that wrote nothing, because the file changed on disk or is gone, is said
   under that project's files only; before, its line stood over whichever project was on screen.
 - A file still being read when its project was removed no longer brings that project's tabs back.
@@ -266,7 +319,8 @@ minor bump may break any of them.
 - A free unattended slot is filled at once rather than at the next tick, and labelled issues are
   read oldest first so the oldest are never the ones past the list's limit.
 - A cancelled turn the agent never ends lets go of its slot after 30 seconds.
-- Stop waits for a push or a pull request in flight, and no pull request is opened after it.
+- Stop waits for a push, a pull request or a draft being taken out of draft in flight, and no pull
+  request is opened after it.
 - Publishing an issue that timed out says it may have been created, so it is not published twice.
 - Each project's issues file has its own lock, so one slow sync holds no other project.
 - The maximize key never blows up a panel that is off screen; a removed project's check field goes

@@ -154,8 +154,8 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   (`Chat::apply`, `GitStatus::label`); what happens next is a drive's (`SessionDrive`,
   `RunDrive`), and the app's carriers only carry it out. New code changes application state
   only through a drive, with no exceptions, and no drive changes another drive's model; reads
-  go to the model. Older code is moved phase by phase: until its phase, a model mutator may still
-  be `pub` and an entity may still hold state outside a drive. The app matches on core's enums,
+  go to the model. The little a front end still keeps is listed, with its reason, in
+  [docs/known-gaps.md](docs/known-gaps.md). The app matches on core's enums,
   never on the labels core shows. The standard is [docs/drives.md](docs/drives.md).
 - **`crates/app/src/guards.rs` checks recurring violations rustc cannot catch.** These source
   scans are partial checks, not proof of every rule. Their coverage and review gaps are in

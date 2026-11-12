@@ -375,7 +375,10 @@ views goes through the same copy (`onehand_issues::write`): a run's note that
 it took its issue up, a tool's issue and a session's note on an issue worked by
 hand each show in every view as they land. A run's claim and reports are
 written by the claim's own blocking work, and a view sees them on its next
-read.
+read. On a file kept in step, each sync a search or a claim makes is told the
+file's drive (`Effect::Synced`, `FileDrive::synced_outside`): the views show what
+it left at once, and the file's own clock starts again from it rather than
+syncing again right after.
 
 **A project with no check command is still searched**, issue by issue: one
 whose workflow (the default or its workflow label's) runs the check command is
