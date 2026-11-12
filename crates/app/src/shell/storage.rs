@@ -1,10 +1,11 @@
 use super::Shell;
 use super::boot::open_or_focus;
 use crate::state::Shared;
-use gpui::{App, BorrowAppContext, Context, Entity, Window};
+use gpui::{AnyWindowHandle, App, BorrowAppContext, Context, Entity, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::input::InputState;
 use gpui_component::notification::Notification;
+use onehand_core::config::recents::{Effect as RecentsEffect, Forgot, Input, Signal};
 use onehand_core::config::{WorkspaceConfig, WorkspaceLoad};
 use onehand_core::workspace::{self, Workspace};
 use std::path::{Path, PathBuf};
@@ -89,23 +90,11 @@ impl Shell {
         // Forget the recent too, or the next launch reopens the workspace that
         // was just unbound -- `recent_workspaces[0]` takes precedence over
         // everything, including the CLI root.
-        // Said once if it fails, unlike a touch: the workspace would come
-        // back at the next launch.
         if let Some(dir) = was {
-            cx.update_global::<Shared, _>(|shared, _| shared.recents.forget(&dir));
-            let written = save_recents(cx);
-            window
-                .spawn(cx, async move |cx| {
-                    if let Err(why) = written.await {
-                        let _ = cx.update(|window, cx| {
-                            window.push_notification(
-                                crate::toast::failed("Forgetting the unbound workspace", why),
-                                cx,
-                            )
-                        });
-                    }
-                })
-                .detach();
+            let fx = cx.update_global::<Shared, _>(|shared, _| {
+                shared.recents.forgot(&dir, Forgot::Unbound)
+            });
+            carry_recents(fx, Some(window.window_handle()), cx);
         }
         cx.notify();
     }
@@ -125,11 +114,9 @@ impl Shell {
         self.tell_issues_page(&onehand_workbench::Request::SetStorage(Some(&dir)), cx);
         self.carry_workspace(fx, window, cx);
         self.set_window_identity(Some(dir.clone()), window, cx);
-        cx.update_global::<Shared, _>(|shared, _| {
-            shared.recents.touch(dir.clone());
-            shared.recents.set_name(&dir, &self.window.workspace.name);
-        });
-        log_failed(save_recents(cx), cx);
+        let name = self.window.workspace.name.clone();
+        let fx = cx.update_global::<Shared, _>(|shared, _| shared.recents.bound(dir, &name));
+        carry_recents(fx, Some(window.window_handle()), cx);
         cx.notify();
     }
 
@@ -367,10 +354,10 @@ impl Shell {
                 WorkspaceLoad::Missing => {
                     shell
                         .update(cx, |_shell, cx| {
-                            cx.update_global::<Shared, _>(|shared, _| {
-                                shared.recents.forget(&dir);
+                            let fx = cx.update_global::<Shared, _>(|shared, _| {
+                                shared.recents.forgot(&dir, Forgot::Gone)
                             });
-                            log_failed(save_recents(cx), cx);
+                            carry_recents(fx, None, cx);
                             cx.notify();
                         })
                         .ok();
@@ -450,36 +437,48 @@ fn say(shell: &gpui::WeakEntity<Shell>, note: Notification, cx: &mut gpui::Async
         .ok();
 }
 
-/// Write the recents as they stand now, on the ordered writer every recents
-/// write goes through, so an older copy queued behind it cannot land over it.
-pub(super) fn save_recents(
-    cx: &App,
-) -> impl std::future::Future<Output = Result<(), String>> + use<> {
-    let recents = Shared::global(cx).recents.clone();
-    Shared::global(cx)
-        .writer
-        .write(move || recents.save().map_err(|e| e.to_string()))
-}
-
-/// Log a recents write that fails: a convenience, not state the app depends
-/// on, so nothing more.
-pub(super) fn log_failed(
-    written: impl std::future::Future<Output = Result<(), String>> + Send + 'static,
-    cx: &App,
-) {
-    cx.background_executor()
-        .spawn(async move {
-            if let Err(why) = written.await {
+/// Carry out the recents' effects, in order, each once: a write on the
+/// ordered writer every settings file goes through, its answer reported back,
+/// and what the drive says, in window `at` when one asked.
+pub(super) fn carry_recents(fx: Vec<RecentsEffect>, at: Option<AnyWindowHandle>, cx: &mut App) {
+    for effect in fx {
+        match effect {
+            RecentsEffect::Write {
+                pending,
+                state,
+                path,
+            } => {
+                let written = Shared::global(cx)
+                    .writer
+                    .write(move || state.save_to(&path).map_err(|e| e.to_string()));
+                cx.spawn(async move |cx| {
+                    let result = written.await;
+                    cx.update(|cx| {
+                        let fx = cx.update_global::<Shared, _>(|shared, _| {
+                            shared.recents.handle(Input::Written { pending, result })
+                        });
+                        carry_recents(fx, at, cx);
+                    });
+                })
+                .detach();
+            }
+            RecentsEffect::Signal(Signal::ForgetFailed(why)) => match at {
+                Some(at) => {
+                    let _ = at.update(cx, |_, window, cx| {
+                        window.push_notification(
+                            crate::toast::failed("Forgetting the unbound workspace", why),
+                            cx,
+                        )
+                    });
+                }
+                None => eprintln!("onehand: failed to forget a workspace: {why}"),
+            },
+            RecentsEffect::Signal(Signal::WriteFailed(why)) => {
                 eprintln!("onehand: failed to save recents: {why}");
             }
-        })
-        .detach();
-}
-
-/// Remember `dir`'s name among the recents, so the switcher reads it as the
-/// rail does, and write them when that changed anything.
-pub(super) fn remember_name(dir: &Path, name: &str, cx: &mut App) {
-    if cx.update_global::<Shared, _>(|shared, _| shared.recents.set_name(dir, name)) {
-        log_failed(save_recents(cx), cx);
+        }
     }
 }
+
+#[cfg(test)]
+mod tests;

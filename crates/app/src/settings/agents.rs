@@ -9,6 +9,7 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants;
 use gpui_component::{ActiveTheme, Icon, StyledExt};
+use onehand_core::config::drive::Tested;
 use onehand_core::config::{AgentSpec, Preset, Runs};
 use onehand_ui::ShortIcon as _;
 use onehand_ui::Tall as _;
@@ -91,13 +92,13 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
     // about. Keyed by the command line rather than the row, so it follows the
     // agent through a reorder and is dropped the moment the line is edited. It
     // names the program because the program is all it looked for.
-    let check = shell
-        .read(cx)
-        .agent_check(&check_key(spec))
+    let check = crate::state::Shared::global(cx)
+        .settings
+        .tested(spec)
         .map(|check| match check {
-            AgentCheck::Running => ("Checking…".to_string(), muted),
+            Tested::Running => ("Checking…".to_string(), muted),
             // Found is the state at rest: muted, as a fact is.
-            AgentCheck::Found(at, version) => {
+            Tested::Found(at, version) => {
                 let what = match (spec.preset(), version) {
                     (Some(_), Some(version)) => version.clone(),
                     (Some(preset), None) => preset.info().binary.to_string(),
@@ -106,7 +107,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
                 (format!("{what} found at {}", at.display()), muted)
             }
             // A built-in agent is missing in the words a start would use.
-            AgentCheck::Missing => (
+            Tested::Missing => (
                 match spec.launch(Some(std::ffi::OsStr::new(""))) {
                     Err(why) if spec.preset().is_some() => why,
                     _ => format!(
@@ -141,8 +142,8 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
     // with the order.
     let is_default = idx == 0;
     let running = matches!(
-        shell.read(cx).agent_check(&check_key(spec)),
-        Some(AgentCheck::Running)
+        crate::state::Shared::global(cx).settings.tested(spec),
+        Some(Tested::Running)
     );
 
     list_row(
@@ -238,29 +239,6 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
             ),
         cx,
     )
-}
-
-/// What a *Test* result is filed under: everything that decides what starts,
-/// so two agents that share a launcher and differ in their arguments are two
-/// entries, and an edit to any of it drops the answer about the old one.
-pub fn check_key(spec: &AgentSpec) -> String {
-    format!(
-        "{:?}\0{:?}\0{}\0{}\0{:?}",
-        spec.preset,
-        spec.version,
-        spec.command,
-        spec.args_line(),
-        spec.env
-    )
-}
-
-/// What the last *Test* of an agent's command found.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum AgentCheck {
-    Running,
-    /// Where it was found, and the version a built-in agent's binary gave.
-    Found(std::path::PathBuf, Option<String>),
-    Missing,
 }
 
 /// Where a form open on `editing` belongs once the agent at `promoted` has been

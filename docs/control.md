@@ -23,8 +23,9 @@ is written for them.
   line: `onehand/open` is a second launch, answered and closed; anything else starts an MCP
   conversation, carried on until the client hangs up. A first line that does not come within five
   seconds, or any line past 64 KiB without a newline, drops the connection.
-- **Where the rule lives:** core's `instance` reads and writes a second launch's lines, core's
-  `control` every MCP message, and the tools' drive (`control::drive::ControlDrive`) each
+- **Where the rule lives:** core's `instance` reads and writes a second launch's lines and holds
+  what arrives before the first window, core's `control` every MCP message and where each call
+  goes (`control::calls`), and the tools' drive (`control::drive::ControlDrive`) each
   connection's standing, every token, switch and grant, the cap, and a worker's open from the call
   to its answer. The socket is served on `onehand_io::socket`'s runtime, which crosses to GPUI over
   a channel only to carry out a call; the app's `instance` and `control` carry what the drive
@@ -45,7 +46,7 @@ answer, and exits.
 
 | Answer | The running process | The second launch |
 |---|---|---|
-| a folder | opens it as a project in the window in front (the first one when none is), selecting it if it is one already, and raises that window; a line that lands before the first window is up waits for it | exits 0 |
+| a folder | opens it as a project in the window in front (the first one when none is), selecting it if it is one already, and raises that window; a line that lands before the first window is up is held until that window registers | exits 0 |
 | no path | raises that window | exits 0 |
 | not a folder (`-32602`) | nothing | prints `onehand: <path> is not a folder`, exits 1 |
 | a path that is not UTF-8 | (never sent) | prints `onehand: <path> is not a UTF-8 path`, exits 1 |
@@ -63,8 +64,10 @@ answer, and exits.
 - **A refusal the caller can act on is the tool's answer**, marked `isError`: an argument missing
   or of the wrong type, a project or task not found, a file outside the project on screen. An
   unknown tool is `-32602`; a malformed line `-32700`, and the conversation goes on.
-- **Where a call lands:** the window in front, or the first one. A call that arrives before the
-  first window is up waits for it.
+- **Where a call lands:** an outside program's in the window in front, or the first one; a
+  session's in the window holding that session, about its own project (`control::calls::aim`). A
+  call that arrives before the first window is up is held, and carried the moment that window
+  registers (`instance::Arrivals`).
 
 ## The tools
 

@@ -51,18 +51,15 @@ pub(super) fn open_plain(
     let spec = agent_named(agent, cx)?;
     let dir = control::pick_project(projects, project)?.to_path_buf();
     let name = spec.name.clone();
-    if let Some((lead, _)) = caller {
-        let open = still_open(*lead, cx);
-        drive().admit(*lead, &open)?;
-    }
+    let lead = caller.map(|(lead, _)| *lead);
+    let open = lead.map(|lead| still_open(lead, cx)).unwrap_or_default();
+    drive().admit_plain(lead, &open)?;
     let (uid, session) = shell
         .update(cx, |shell, cx| {
             shell.run_unattended(dir, spec, Vec::new(), cx)
         })
         .ok_or("the session did not start")?;
-    if let Some((lead, _)) = caller {
-        drive().opened_one(*lead, uid);
-    }
+    drive().opened_plain(lead, uid);
     if let Some(prompt) = prompt {
         // As a person would after watching it connect; dropped if it never
         // comes up.
@@ -362,3 +359,6 @@ fn still_open(lead: u64, cx: &App) -> Vec<(u64, PathBuf)> {
 
 pub(super) mod turns;
 pub(super) mod whose;
+
+#[cfg(test)]
+mod tests;

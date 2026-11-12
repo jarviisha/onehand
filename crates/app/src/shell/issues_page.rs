@@ -88,7 +88,9 @@ impl Shell {
             } => self.work_issue_here(&root, number, &prompt, window, cx),
             E::OpenConversation(session) => self.open_conversation(&session, window, cx),
             E::RunIssueWorkflow { root, number } => {
-                if let Some(idx) = self.root_index(&root) {
+                let (found, fx) = self.window.workspace.find_project(&root);
+                self.carry_workspace(fx, window, cx);
+                if let Ok(idx) = found {
                     self.begin_pick(idx, Some(number), window, cx);
                 }
             }
@@ -106,11 +108,7 @@ impl Shell {
                 cx.defer(move |cx| crate::task::revise(approval, note, cx));
             }
             E::OpenTask(id) => self.show_task(&id, window, cx),
-            E::OpenTaskSession(id) => {
-                if let Some((uid, at)) = crate::task::session_of(&id, cx) {
-                    self.show_session_in(uid, at, window, cx);
-                }
-            }
+            E::OpenTaskSession(id) => self.open_task_session(&id, window, cx),
             E::ResumeTask(id) => self.resume_task(id, window, cx),
             E::RetryTask(id) => self.begin_retry(id, window, cx),
             E::RetryTaskCurrent(id) => self.begin_retry_current(id, window, cx),
@@ -258,3 +256,6 @@ impl Shell {
         });
     }
 }
+
+#[cfg(test)]
+mod tests;

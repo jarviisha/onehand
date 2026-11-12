@@ -423,14 +423,12 @@ impl Shell {
         Ok(())
     }
 
-    /// Run the check command of the project at `root` as a task of its own,
-    /// once its place is free.
-    pub fn run_check(&mut self, root: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(check) = self.check_of(&root) else {
-            window.push_notification(
-                crate::toast::warning("This project has no check command to run"),
-                cx,
-            );
+    /// Run the check command of the project selected as a task of its own,
+    /// once its place is free; or say why there is none to run.
+    pub fn run_check(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let (target, fx) = self.window.workspace.check_target();
+        self.carry_workspace(fx, window, cx);
+        let Ok((root, check)) = target else {
             return;
         };
         let setup = Setup {

@@ -4,7 +4,7 @@
 //! is about the window rather than about one panel.
 
 use crate::chat::ChatPane;
-use crate::settings::{AgentCheck, AgentDraft, SettingsPage};
+use crate::settings::{AgentDraft, SettingsPage};
 use crate::state::WorkspaceWindow;
 use crate::terminal::TerminalPanel;
 use crate::workbench::Workbench;
@@ -21,6 +21,7 @@ mod carry;
 mod check_commands;
 mod cleanup;
 mod confirm;
+mod conversation;
 pub(crate) use confirm::{Confirm, confirm_on};
 mod dock_rules;
 mod dock_skin;
@@ -239,8 +240,6 @@ pub struct Shell {
     settings_focus: gpui::FocusHandle,
     keymap_editor: Entity<crate::keymap::Editor>,
     settings_view: Entity<crate::settings::SettingsView>,
-    /// What each agent's last *Test* found, by `settings::check_key`.
-    agent_checks: HashMap<String, AgentCheck>,
     held_commands: std::collections::HashSet<&'static str>,
     /// The app's menus, drawn in the title bar.
     menu_bar: Entity<gpui_component::menu::AppMenuBar>,
@@ -323,6 +322,10 @@ pub struct Shell {
     /// What the Workbench was last told of the tasks working issues.
     /// And of the projects a run may be started on.
     issue_works: (Vec<onehand_core::task::work::IssueWork>, Vec<PathBuf>),
+    /// What the workspace's drive said in this window, in order, for a test
+    /// to read the words of.
+    #[cfg(test)]
+    said: Vec<onehand_core::workspace::drive::Signal>,
     /// The rail's filter, search and keyboard row, which no launch keeps.
     rail: crate::rail::RailState,
     /// Whether each project's sessions are showing under it in the rail.

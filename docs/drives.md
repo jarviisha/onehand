@@ -30,14 +30,16 @@ The drives so far:
 | `onehand_core::host::drive::HostDrive` | one attach per host, what is known of each, the waits on a busy or lost host | `crates/app/src/hosts.rs`, its drive held on `Shared`, the attach run by `onehand_io::host` |
 | `onehand_core::host::offload::drive::OffloadDrive` | every offloaded folder: who holds its code, its moves, the poll, a branch's updates | `crates/app/src/offload.rs`, its drive held in the `Offloads` global |
 | `onehand_core::remote::drive::RemoteDrive` | the remote bridge: a line or a press from a chat, what it asks of a session (`remote::link`), what is said back, whether the person is away | `crates/app/src/remote.rs`, its drive held on `Shared`, the channel run by `onehand_io::remote` |
-| `onehand_core::control::drive::ControlDrive` | onehand's tools: tokens and standing, each session's switch and grant, the cap, a worker's open | `crates/app/src/control.rs`, `control/workers.rs`, its drive held in one process lock, the socket served by `onehand_io::socket` |
-| `onehand_core::config::drive::SettingsDrive` | the agents, the appearance, outside control's save, what each agent offers and its check | `crates/app/src/saves.rs`, its drive held on `Shared` |
+| `onehand_core::control::drive::ControlDrive` | onehand's tools: tokens and standing, each session's switch and grant, the cap, a worker's open; where each call goes is `control::calls::aim` | `crates/app/src/control.rs`, `control/workers.rs`, its drive held in one process lock, the socket served by `onehand_io::socket` |
+| `onehand_core::config::drive::SettingsDrive` | the agents, the appearance, outside control's save, what each agent offers and its check, an agent's *Test* | `crates/app/src/saves.rs`, its drive held on `Shared` |
 | `onehand_core::issues::drive::FileDrive` | one issues file: its read, a change shown before its write, when it syncs with its forge, an issue sent there | `IssuesFile` (`crates/issues/src/view/store.rs`), one per file for the process |
-| `onehand_core::workspace::WorkspaceDrive` | one window's workspace: its projects, where each session sits and what goes with it, what a new session starts on and which host session each watches, the selection, the workspace file and what a failed write puts back, each project's `git status` | `crates/app/src/shell/carry.rs`, its drive held per window on the `Shell` |
+| `onehand_core::workspace::WorkspaceDrive` | one window's workspace: its projects, where each session sits and what goes with it, what a new session starts on and which host session each watches, a conversation asked for again, what a start finds to start on, the selection, the workspace file and what a failed write puts back, each project's `git status` | `crates/app/src/shell/carry.rs`, its drive held per window on the `Shell` |
 | `onehand_core::host::waits::WindowWaits` | one window's share of its hosts' waits: what waits there on each host, and what a wait's end comes to there; a model whose commands answer what lands, with no effects of its own | `crates/app/src/shell/host_project.rs`, held per window on the `Shell`, which keeps the listening |
 | `onehand_core::editor::drive::EditorDrive` | one Workbench's open files: a read landing as a tab, a save and the one asked while it runs, a conflict, a locked folder, a close that would lose edits | `EditorView` (`crates/editor/src/view.rs`), one per mode |
 | `onehand_core::claude_plugins::drive::PluginsDrive` | one Plugins mode: when its list is read, one change at a time, a refusal said in its project, what the agent on screen has not loaded | `PluginsView` (`crates/claude-plugins/src/view.rs`), one per mode |
 | `onehand_core::task::work::drive::WorkDrive` | what one Issues view reads of the work on its issues and when (a pull request, every project's on the page, what the work left), and whether a review press goes to the run | `IssuesView` (`crates/issues/src/view/reads.rs`), one per view |
+| `onehand_core::config::recents::RecentsDrive` | the recents list: a workspace opened, bound, named or forgotten, its write, and which failure is said | `crates/app/src/shell/storage.rs`, its drive held on `Shared` |
+| `onehand_core::instance::Arrivals` | what reaches the socket before the first window, held until it registers; a model whose commands answer what is carried, as `WindowWaits` is | `crates/app/src/instance.rs`, held in a global beside the socket |
 
 ## Rules
 
@@ -172,7 +174,7 @@ state and the settings are kept in their drives too, and so is each window's wor
 mutators are `pub(crate)` and which `WorkspaceDrive` derefs to without `DerefMut`, and what is
 shown of an issues file, which `FileDrive` derefs to (`Issues`' own methods are still public, for
 the writers outside it: a tool, an unattended run): `Chats`' mutators are `pub(crate)`, the tools'
-state is private to `ControlDrive`, and `SettingsDrive` derefs to its settings without `DerefMut`. A Workbench's open files are
+state is private to `ControlDrive`, and `SettingsDrive` derefs to its settings without `DerefMut`, as `RecentsDrive` does to the recents, whose mutators are `pub(crate)`. A Workbench's open files are
 `EditorDrive`'s, which derefs to them, and `RootEditors`' fields are `pub(crate)`; the Plugins
 mode's state is private to `PluginsDrive`.
 A schedule is the file's data, and
@@ -189,7 +191,8 @@ places, as every guard in `crates/app/src/guards.rs` was.
 tasks' `core/src/task/tasks.rs`, unattended runs' `core/src/unattended/drive.rs`, the clock's
 `core/src/schedule/drive.rs`, hosts' `core/src/host/drive.rs` and offloaded projects'
 `core/src/host/offload/drive.rs`, the remote bridge's `core/src/remote/drive.rs`, the tools'
-`core/src/control/drive.rs`, the settings' `core/src/config/drive.rs`, a window's workspace
+`core/src/control/drive.rs`, the settings' `core/src/config/drive.rs`, the recents'
+`core/src/config/recents.rs`, a window's workspace
 `core/src/workspace/drive.rs`, an issues file's `core/src/issues/drive.rs`, the Editor's
 `core/src/editor/drive.rs`, the Plugins mode's `core/src/claude_plugins/drive.rs` and an Issues
 view's reads of the work `core/src/task/work/drive.rs`. The
@@ -257,9 +260,16 @@ its first look after its wait, a file it cannot read said, a look that moves not
 nothing, and a failed switch put back. The remote bridge's carrier (`crates/app/src/remote/tests.rs`) holds a line answered once, a
 session no window holds said gone, a scan landing once off the UI thread and nothing told after the
 channel ends; the tools' (`crates/app/src/control/tests.rs`) a switch told to each connection
-once, after the call, and an open's deadline coming round on the clock; the settings'
-(`crates/app/src/saves/tests.rs`) a write landing once, a failed appearance put back and the agent
-list kept; the workspace's (`crates/app/src/shell/carry/tests.rs`, on a real `Shell`) a burst
+once, after the call, an open's deadline coming round on the clock, and a call landing in the
+window in front or in its session's with another window in front, and
+(`control/workers/tests.rs`, its agents played over a channel) a worker's open carried through a
+window: its start, watch and first prompt, and a window closed before its start, with its lead or
+apart from it; the settings' (`crates/app/src/saves/tests.rs`) a write landing
+once, a failed appearance put back, the agent list kept, and an agent check's probe answered once
+or failing after its wait, against a channel; the recents'
+(`crates/app/src/shell/storage/tests.rs`) a bind and an unbind landing in the file, and only an
+unbind's failed forget said; a second launch's (`crates/app/src/instance.rs`) what arrives before
+the first window carried once it registers, in order; the workspace's (`crates/app/src/shell/carry/tests.rs`, on a real `Shell`) a burst
 written once after its wait, a failed write put back on screen and in its field, a window closing
 writing the burst still waiting, and a run's session ended leaving no agent and no project; an
 issues file's (`crates/issues/src/view/store/tests.rs`) one file for every view, read once, and a
@@ -270,9 +280,7 @@ the text typed since; the Plugins mode's (`crates/claude-plugins/src/view/tests.
 `claude` of its own) one change at a time, what went through counted, and a refusal said only in
 its project. Still untested: the Issues views' carrying of `WorkDrive`'s pull request reads (the forge
 connectors are the ones built in; what the work left is read in
-`crates/issues/src/view/reads/tests.rs`), a worker's
-open carried through a window (its start, watch and first prompt), an agent check's probe, which
-starts a real agent, `SendCode`'s late answer and the pane's half
+`crates/issues/src/view/reads/tests.rs`), `SendCode`'s late answer and the pane's half
 of the session (`ChatPane::carry`), `SaveTitle` (written on the ordered writer's own thread, which
 GPUI's test scheduler does not wait for), deferred work, the forge calls (the connectors are the
 ones built in), a command called off while it runs (the test scheduler runs it to its end before a

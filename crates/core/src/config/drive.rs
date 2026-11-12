@@ -100,6 +100,15 @@ pub enum Checking {
     Failed(String),
 }
 
+/// What an agent's *Test* found of its command, or that it is looking.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Tested {
+    Running,
+    /// Where it was found, and the version a built-in agent's binary gave.
+    Found(PathBuf, Option<String>),
+    Missing,
+}
+
 /// What the settings are, read through the drive.
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
@@ -111,9 +120,21 @@ pub struct Settings {
     pub offers_seen: Vec<(AgentSpec, Offer)>,
     /// The checks under way, or the last one that failed, per spec.
     pub checks: Vec<(AgentSpec, Checking)>,
+    /// What the last *Test* of each command line found, or that it runs.
+    /// For this process, every window's.
+    tested: Vec<(String, Tested)>,
 }
 
 impl Settings {
+    /// What the last *Test* of `spec`'s command line found, if one ran.
+    pub fn tested(&self, spec: &AgentSpec) -> Option<&Tested> {
+        let key = super::look_key(spec);
+        self.tested
+            .iter()
+            .find(|(seen, _)| *seen == key)
+            .map(|(_, tested)| tested)
+    }
+
     /// The check of `spec` under way, or its last failure.
     pub fn checking(&self, spec: &AgentSpec) -> Option<&Checking> {
         self.checks
@@ -151,6 +172,15 @@ pub enum Effect {
         cwd: PathBuf,
         token: u64,
     },
+    /// Look for `spec`'s command where a start would, from `root` for a
+    /// relative one, off the UI loop (`look_blocking`), and report
+    /// [`Input::Looked`]. A late answer is **recorded**: what the machine held
+    /// is filed under the command line it was looked for by, whatever changed
+    /// since.
+    Look {
+        spec: AgentSpec,
+        root: Option<PathBuf>,
+    },
     /// Call off the check `token`: drop its agent.
     CallOff {
         token: u64,
@@ -175,6 +205,11 @@ pub enum Input {
     },
     /// The check `token` ran out of time.
     Elapsed { token: u64 },
+    /// What [`Effect::Look`] for `spec` found: where, and the version.
+    Looked {
+        spec: AgentSpec,
+        found: Option<(PathBuf, Option<String>)>,
+    },
 }
 
 /// The settings' drive. See the module header.
@@ -310,6 +345,18 @@ impl SettingsDrive {
         vec![Effect::Changed, Effect::Probe { spec, cwd, token }]
     }
 
+    /// *Test* `spec`: look for its command from `root`, the project on
+    /// screen. A second press while one of the same command line runs starts
+    /// nothing.
+    #[must_use = "its effects are to be carried"]
+    pub fn test(&mut self, spec: AgentSpec, root: Option<PathBuf>) -> Vec<Effect> {
+        if self.settings.tested(&spec) == Some(&Tested::Running) {
+            return Vec::new();
+        }
+        self.set_tested(&spec, Tested::Running);
+        vec![Effect::Changed, Effect::Look { spec, root }]
+    }
+
     /// What the front end reports back.
     pub fn handle(&mut self, input: Input) -> Vec<Effect> {
         match input {
@@ -355,7 +402,21 @@ impl SettingsDrive {
                 self.set_check(&spec, Some(Checking::Failed(why)));
                 vec![Effect::CallOff { token }, Effect::Changed]
             }
+            Input::Looked { spec, found } => {
+                let tested = match found {
+                    Some((at, version)) => Tested::Found(at, version),
+                    None => Tested::Missing,
+                };
+                self.set_tested(&spec, tested);
+                vec![Effect::Changed]
+            }
         }
+    }
+
+    fn set_tested(&mut self, spec: &AgentSpec, to: Tested) {
+        let key = super::look_key(spec);
+        self.settings.tested.retain(|(seen, _)| *seen != key);
+        self.settings.tested.push((key, to));
     }
 
     fn write(&mut self, key: Setting, before: Value, after: Value, edit: Edit) -> Effect {

@@ -271,12 +271,7 @@ impl Shell {
                     E::RestartHost(host) => shell.ask_restart_host(host.clone(), window, cx),
                     E::TakeHostCode(path) => shell.ask_take_host_code(path.clone(), window, cx),
                     E::UpdateHost(path) => shell.update_host_from_laptop(path.clone(), cx),
-                    E::RunCheck => {
-                        let active = shell.window.workspace.active_root;
-                        if let Some(root) = shell.local_root(active).map(|p| p.to_path_buf()) {
-                            shell.run_check(root, window, cx);
-                        }
-                    }
+                    E::RunCheck => shell.run_check(window, cx),
                 }
                 // A finished turn also changes what the rail's session dots
                 // say, and the rail is drawn from a query rather than from
@@ -498,7 +493,6 @@ impl Shell {
                 let shell = cx.weak_entity();
                 cx.new(|_| crate::settings::SettingsView::new(shell))
             },
-            agent_checks: HashMap::new(),
             held_commands: Default::default(),
             menu_bar: super::frame::menu_bar(cx),
             close_guard,
@@ -540,6 +534,8 @@ impl Shell {
             rail_sessions: Vec::new(),
             live_conversations: Vec::new(),
             issue_works: (Vec::new(), Vec::new()),
+            #[cfg(test)]
+            said: Vec::new(),
             rail: crate::rail::RailState::new(window, cx),
             folds: HashMap::new(),
             last_panel: FocusedPanel::Chat,
@@ -581,8 +577,8 @@ pub fn open_or_focus(workspace: Workspace, cx: &mut App) {
                 .ok();
             return;
         }
-        cx.update_global::<Shared, _>(|shared, _| shared.recents.touch(dir));
-        super::storage::log_failed(super::storage::save_recents(cx), cx);
+        let fx = cx.update_global::<Shared, _>(|shared, _| shared.recents.opened(dir));
+        super::storage::carry_recents(fx, None, cx);
     }
     open_window(workspace, cx);
 }
@@ -660,8 +656,12 @@ fn open_window(workspace: Workspace, cx: &mut App) {
             // not from the first tick, half an hour in. After the push, because
             // the look finds projects through this registry.
             crate::unattended::recheck(cx);
+            // What reached the socket before any window waited for this one.
+            crate::instance::window_up(cx);
             if let Some(dir) = &storage_dir {
-                super::storage::remember_name(dir, &name, cx);
+                let fx =
+                    cx.update_global::<Shared, _>(|shared, _| shared.recents.named(dir, &name));
+                super::storage::carry_recents(fx, None, cx);
             }
         });
     })
