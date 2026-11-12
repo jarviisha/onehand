@@ -119,8 +119,8 @@ pub enum Refusal {
     /// The project asked about is no longer a project of the workspace on
     /// this machine.
     ProjectGone,
-    /// What was asked runs on a project on this machine, and the one
-    /// selected is not.
+    /// What was asked runs on a project on this machine, and the one it
+    /// names is on a host.
     NotHere,
     /// The project has no check command to run.
     NoCheck,

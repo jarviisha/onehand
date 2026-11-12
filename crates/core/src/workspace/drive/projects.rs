@@ -30,27 +30,25 @@ impl WorkspaceDrive {
     }
 
     /// The folder of project `idx` on this machine; refused, and said, when
-    /// there is none: gone, or on a host.
+    /// there is no such project, or it is on a host.
     #[must_use = "a refusal is to be said"]
     pub fn local_project(&self, idx: usize) -> (Result<PathBuf, Refusal>, Vec<Effect>) {
-        let local = self
-            .workspace
-            .roots
-            .get(idx)
-            .and_then(|root| root.local_path());
-        match local {
+        let Some(root) = self.workspace.roots.get(idx) else {
+            return refused(Refusal::ProjectGone);
+        };
+        match root.local_path() {
             Some(path) => (Ok(path.to_path_buf()), Vec::new()),
-            None => refused(Refusal::ProjectGone),
+            None => refused(Refusal::NotHere),
         }
     }
 
     /// What *Run check* runs: the active project on this machine and its
-    /// check command; refused, and said, when the project selected is not on
-    /// this machine or has no check command.
+    /// check command; refused, and said, when there is no project, the one
+    /// selected is not on this machine, or it has no check command.
     #[must_use = "a refusal is to be said"]
     pub fn check_target(&self) -> (Result<(PathBuf, String), Refusal>, Vec<Effect>) {
         let Some(root) = self.workspace.active_root() else {
-            return refused(Refusal::NotHere);
+            return refused(Refusal::NoProject);
         };
         match (root.local_path(), &root.check) {
             (Some(path), Some(check)) => (Ok((path.to_path_buf(), check.clone())), Vec::new()),

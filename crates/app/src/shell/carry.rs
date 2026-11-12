@@ -95,7 +95,7 @@ impl Shell {
                             crate::toast::warning(PROJECT_GONE)
                         }
                         Signal::Refused(Refusal::NotHere) => {
-                            crate::toast::warning("Run check runs on a project on this machine")
+                            crate::toast::warning("That runs on a project on this machine")
                         }
                         Signal::Refused(Refusal::NoCheck) => {
                             crate::toast::warning("This project has no check command to run")

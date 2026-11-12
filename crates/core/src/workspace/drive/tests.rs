@@ -840,6 +840,12 @@ fn a_project_gone_is_refused_and_said() {
     assert_eq!(names(&fx), ["Refused(ProjectGone)"]);
     assert_eq!(drive.local_project(0).0, Ok(PathBuf::from("/a")));
     assert_eq!(drive.local_project(5).0, Err(Refusal::ProjectGone));
+    let mut drive = drive;
+    let host = HostName("far".into());
+    let idx = tree(&mut drive).add_host_root(host, PathBuf::from("/srv/b"));
+    let (on_host, fx) = drive.local_project(idx);
+    assert_eq!(on_host, Err(Refusal::NotHere), "still a project, on a host");
+    assert_eq!(names(&fx), ["Refused(NotHere)"]);
 }
 
 #[test]
@@ -858,5 +864,5 @@ fn a_run_check_needs_a_project_here_with_a_check_command() {
     tree(&mut drive).select_root(idx);
     assert_eq!(drive.check_target().0, Err(Refusal::NotHere));
     tree(&mut drive).roots.clear();
-    assert_eq!(drive.check_target().0, Err(Refusal::NotHere));
+    assert_eq!(drive.check_target().0, Err(Refusal::NoProject));
 }

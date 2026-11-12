@@ -659,7 +659,8 @@ The note on an issue a session took up moved to 11d, with the other writers of t
   own agent; `open_conversation` moved to `shell/conversation.rs`. A task's session is
   `show_task_session`.
 - What a start finds to start on is `WorkspaceDrive`'s: `find_project`, `local_project` and
-  `check_target`, each refusal said (`ProjectGone`, `NotHere`, `NoCheck`, `NoSession`).
+  `check_target`, each refusal said (`ProjectGone`, `NotHere`, `NoCheck`, `NoSession`, and
+  `NoProject` for a *Run check* with no project).
 - An agent's *Test* is `SettingsDrive::test` (`Effect::Look`, `Input::Looked`), its finding kept on
   the settings by command line; the look's blocking body is `config::look_blocking`.
 - Characterisation tests written first pin where tool calls land, the Issues page's starts and an
@@ -674,9 +675,12 @@ Phase 11 changed, on purpose (PR 11c):
   added back; before, the first agent was handed it without a word.
 - A conversation live in another window is shown there; before, a second session resumed it here.
 - *Open session* of a task with no session open says so; before, nothing happened.
-- *Run workflow…* on the Issues page for a project no longer in the workspace says so, as does the
-  picker asked for a project not on this machine; before, nothing happened.
-- *Run check* with no project on this machine selected says so; before, nothing happened.
+- *Run workflow…* on the Issues page for a project no longer in the workspace says so; the picker
+  asked for a project on a host says it runs on a project on this machine, and for one gone that
+  it is gone; before, nothing happened.
+- *Run check* with a project on a host selected says it runs on a project on this machine, and
+  with no project at all asks for one, in the words a new session's refusal uses; before, nothing
+  happened.
 - What *Test* found beside an agent is the process's, shown in every window's Settings; before, each
   window kept its own.
 - A second *Test* of an agent while one runs starts nothing; before, it looked again and the later
