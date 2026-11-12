@@ -642,6 +642,55 @@ PR 11c, the workspace and the shell:
 - an agent's *Test* (`check_agent`) into the settings' drive;
 - a worker's open carried through a window, and an agent check's probe, tested.
 
+The note on an issue a session took up moved to 11d, with the other writers of the issues. Built:
+- The recents list is `config::recents::RecentsDrive`, held on `Shared`: a workspace opened, bound,
+  named or forgotten answers one write of the list as it stands, and `AppState`'s mutators are
+  `pub(crate)`. What is told is as before: only an unbind's failed forget is said.
+- Where a tool call goes is core's: `control::calls::aim` answers the window (the one in front for
+  an outside program, the one holding the session for a session's) and refuses what a peer cannot
+  ask; `issues_root` and `workflow_of` pick an issue tool's project and `start_issue`'s workflow;
+  `ControlDrive::admit_plain` counts a plain open under a session's cap only. The window in front is
+  `instance::front`, shared with a second launch.
+- What reaches the socket before the first window is held by `instance::Arrivals` and handed back,
+  in order, when that window registers; the 50 ms poll is gone.
+- A conversation asked for again is `WorkspaceDrive::open_conversation`: its live session shown in
+  whichever window holds it, else its saved copy read (`Effect::ReadConversation`) and resumed by its
+  own agent; `open_conversation` moved to `shell/conversation.rs`. A task's session is
+  `show_task_session`.
+- What a start finds to start on is `WorkspaceDrive`'s: `find_project`, `local_project` and
+  `check_target`, each refusal said (`ProjectGone`, `NotHere`, `NoCheck`, `NoSession`).
+- An agent's *Test* is `SettingsDrive::test` (`Effect::Look`, `Input::Looked`), its finding kept on
+  the settings by command line; the look's blocking body is `config::look_blocking`.
+- Characterisation tests written first pin where tool calls land, the Issues page's starts and an
+  agent's *Test* on a real shell. The recents' carrier, the hold before the first window, an agent
+  check's probe (against a channel) and a worker's open through a window (its agent played over a
+  channel) are tested on their carriers.
+
+Phase 11 changed, on purpose (PR 11c):
+- A line from a second launch, or a tool's call, that arrives before the first window is carried
+  the moment that window registers, rather than up to 50 ms after.
+- A saved conversation whose agent is no longer set up is refused and said, and its folder is not
+  added back; before, the first agent was handed it without a word.
+- A conversation live in another window is shown there; before, a second session resumed it here.
+- *Open session* of a task with no session open says so; before, nothing happened.
+- *Run workflow…* on the Issues page for a project no longer in the workspace says so, as does the
+  picker asked for a project not on this machine; before, nothing happened.
+- *Run check* with no project on this machine selected says so; before, nothing happened.
+- What *Test* found beside an agent is the process's, shown in every window's Settings; before, each
+  window kept its own.
+- A second *Test* of an agent while one runs starts nothing; before, it looked again and the later
+  answer won.
+
+Left for later (PR 11c):
+- `open_or_focus`'s choice (focus the window showing a workspace, else open one) stays the shell's.
+- `WorkspaceDrive`'s `Effect::Remember` is carried as `RecentsDrive::named` by the window's carrier:
+  the two drives have different owners (a window, the process), as `Effect::Keep` is carried, so no
+  link joins them in one call.
+- An unbind's failed forget is still said at every failure, not once at the edge of a run of
+  failures: the telling was kept as it was.
+- The per-call bodies of `perform_now` that read a window or start async work stay the carrier's;
+  `create_issue`'s body is 11d's.
+
 PR 11d, issues and the Workbench:
 - `Issues`' writers outside `FileDrive` (a tool, an unattended run's notes, the issue work's note)
   made through its `Change`s, and its methods `pub(crate)`;
