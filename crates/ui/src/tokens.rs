@@ -13,7 +13,7 @@ use gpui_component::ActiveTheme as _;
 /// a page's column heads, so bars side by side line up across the window.
 /// A small control and a little room over and under it, as an editor's
 /// title bars stand: taller and the bars read as a band of their own.
-pub const BAR_H: Rems = rems(2.1875);
+pub const BAR_H: Rems = rems(2.25);
 
 /// The mark saying which tab of a dock's bar is open: a stroke along its
 /// top, a step heavier than a line.
@@ -29,7 +29,7 @@ pub const MODE_BAR_H: Rems = rems(1.875);
 /// Workbench tree takes [`TREE_ROW_H`] instead. A step over a small control,
 /// so a row holding one keeps a little room round it, and one figure, so
 /// every list in the window stands at one pitch.
-pub const ROW_H: Rems = rems(1.5);
+pub const ROW_H: Rems = rems(1.75);
 
 /// A small control the pointer has to hit: a transcript button, a composer
 /// chip, a blocking card's answers.
@@ -39,16 +39,16 @@ pub const ROW_H: Rems = rems(1.5);
 /// box, one holding only an icon as tall as the icon, and side by side they
 /// came out about seven pixels apart on the same row.
 ///
-/// Under the library's small row: at its 24 a strip of chips and a card's
-/// answers stood taller than the chrome text they carry. Every control the
-/// app sizes as small is pinned to this, so controls a few inches apart keep
-/// one floor rather than a library size beside an app one.
-pub const CONTROL_H: Rems = rems(1.375);
+/// The library's small row, 24 at the base rem: room round a line of chrome
+/// text without a strip of chips standing as a band of its own. Every control
+/// the app sizes as small is pinned to this, so controls a few inches apart
+/// keep one floor rather than a library size beside an app one.
+pub const CONTROL_H: Rems = rems(1.5);
 
 /// A page's control: its head, its form, its choices and its actions. Under
 /// the library's medium 32, which stood large beside rows of 13px text; set
 /// by [`crate::Tall`] over the library's small size.
-pub const FIELD_H: Rems = rems(1.625);
+pub const FIELD_H: Rems = rems(1.75);
 
 /// Where a tree row's content starts from a dock's edge, and how far each
 /// level of the tree steps in: Files and Markdown share both, so their trees
@@ -65,14 +65,14 @@ pub const ROW_GUTTER: Rems = rems(0.5);
 
 /// A tree row's pitch (Files, Markdown): tighter than [`ROW_H`], since a tree
 /// is a long run of one-line names scanned down a narrow dock.
-pub const TREE_ROW_H: Rems = rems(1.375);
+pub const TREE_ROW_H: Rems = rems(1.625);
 
 /// A tree row's fill, an odd number of pixels at the base rem. The text
 /// system lays the baseline on a whole pixel, rounding down: at the chrome
 /// size an even fill loses most of a pixel and the name sits a pixel high in
 /// it, an odd one loses about a quarter. Only the base rem lands on whole
 /// pixels; under another zoom the name may still sit a pixel off.
-pub const TREE_ROW_FILL: Rems = rems(1.1875);
+pub const TREE_ROW_FILL: Rems = rems(1.4375);
 
 /// The room over and under a tree row's fill. Rows stack, so every gap between
 /// two fills is the sum and no fill touches its neighbour; split one and two
@@ -213,7 +213,7 @@ mod tests {
             px(TREE_ROW_ABOVE) + px(TREE_ROW_FILL) + px(TREE_ROW_BELOW),
             px(TREE_ROW_H)
         );
-        assert_eq!(px(TREE_ROW_H), 22.);
+        assert_eq!(px(TREE_ROW_H), 26.);
     }
 
     #[test]
