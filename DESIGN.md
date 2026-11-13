@@ -164,14 +164,14 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 | Role | Size |
 |---|---|
 | Meta, hints, counts, a small label | `.text_xs()`, in `muted_foreground` when it is meta |
-| A caption inside a small object (an attachment's plate) | `MICRO_TEXT` (11px), a step under the meta size |
+| A caption inside a small object (an attachment's plate) | `MICRO_TEXT`, a step under the meta size |
 | Machine text | `CODE_TEXT`, in `mono_font_family` |
-| Chrome: a panel's rows, boxes, forms and strips, a menu's rows, a `.tall()` control's words | `CHROME_TEXT` (13px), a step under the library's control size |
+| Chrome: a panel's rows, boxes, forms and strips, a menu's rows, a `.tall()` control's words | `CHROME_TEXT`, a step under the library's control size |
 | A control's words (`.short()`) | `.text_xs()` |
-| Reading text: the transcript, the composer's field, a document | 13px on the reading leading: the transcript's `TEXT`, `CHROME_TEXT` elsewhere |
-| The transcript's record: activity, thoughts, notices, a card's question | a step under the reading size, the transcript's `TEXT_SM` (12px) |
+| Reading text: the transcript, the composer's field, a document | the chrome size on the reading leading: the transcript's `TEXT`, `CHROME_TEXT` elsewhere |
+| The transcript's record: activity, thoughts, notices, a card's question | a step under the reading size, the transcript's `TEXT_SM` |
 | A heading in reading text | a step up the scale per level, two at most; then the body's size |
-| A page's or an issue's title | `.text_lg()` (18px) |
+| A page's or an issue's title | `.text_lg()` |
 
 - **Weight carries hierarchy before size does**: `font_medium` for a name in a header,
   `font_semibold` for a page's title and any other title or heading; nothing bolder. A list page's rows,
@@ -200,9 +200,9 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   terminal's). Fixed chrome heights stay outside the
   zoom wrapper. A size the steps lack is a named constant (shared ones in
   `onehand_ui::tokens`, others beside their use), its reason in its doc comment.
-- **The library's corners.** What a person presses or what holds content takes `radius`, 6px:
+- **The library's corners.** What a person presses or what holds content takes `radius`:
   a control, a field, a row, a chip, a well, a box on a page (`card_box`). A dock and its tab bar's tabs stand square, flush with the dock. A large surface takes
-  `radius_lg`, 8px: a floating panel, a dialog, a toast, and a Settings group; the library's own
+  `radius_lg`, a step rounder: a floating panel, a dialog, a toast, and a Settings group; the library's own
   follow. The composer and a pinned card take `radius`, so the card tucked under the composer
   meets it at one corner. A badge (a `Tag`) takes the library's
   own corner and size, its edge halfway from its fill to its ink (`badge_edge`); inside a line of
@@ -210,7 +210,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   `rounded_full`. The library's small parts keep its half
   corner (*Components*). A part joined to its container's edge takes its corner there.
 - **Lines** part regions and are a 1px `border`. A **mark** says where the person is, not where
-  a region ends: the stroke of the primary along an open tab's top is 2px, a step heavier than a
+  a region ends: the stroke of the primary along an open tab's top (`TAB_MARK`) is a step heavier than a
   line, and the tab's name is in the content ink. A list page's line over its foot is a step fainter (`faint_rule`), so the edge-to-edge
   list reads as one surface; a page's top draws no line under it. A box on a page takes a step
   stronger edge, a control's (`input`); a folding block and a Settings group keep the hairline.
