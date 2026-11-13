@@ -69,7 +69,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | Chat or Workbench in the area | `presentation` | `crates/app/src/shell/presentation.rs` |
 | A toast | `toast::failed(what, why)`, `toast::error`, `warning`, `success`, `info` | `crates/ui/src/toast.rs`; the app says `crate::toast` |
 | A confirmation | `Confirm` with `confirm_on`, or `Shell::confirm` from the shell | `crates/ui/src/confirm.rs`; `crates/app/src/shell/confirm.rs` |
-| A change shown at once and saved in the order made, a failure one toast | `OrderedWriter`, `Saving` and `Saves`, as `ChatPane::save_title` uses them; `saves::write_config` for `onehand.toml`, `Shell::save_change` for the workspace file | `crates/core/src/saving.rs`; `crates/app/src/chat/pane/sessions.rs`, `crates/app/src/saves.rs`, `crates/app/src/shell/storage.rs` |
+| A change shown at once and saved in the order made, a failure one toast | `OrderedWriter`, `Saving` and `Saves`, as `ChatPane::save_title` uses them; `saves::write_config` for `onehand.toml`, `Shell::save_workspace_soon` for the workspace file | `crates/core/src/saving.rs`; `crates/app/src/chat/pane/sessions.rs`, `crates/app/src/saves.rs`, `crates/app/src/shell/storage.rs` |
 | A dialog's title row | `title_row` | `crates/app/src/dialogs.rs` |
 | A form field | `field` (its line about the setting in meta text) | `crates/ui/src/field.rs`, re-exported by `crates/app/src/settings.rs` |
 | A Settings group, a box at `radius_lg` with its heading inside (`lead_section` the same, for the first), a Settings row (its controls wrap under its words when narrow), a group's rows parted by hairlines | `section`, `lead_section`, `list_row`, `list_rows` | `crates/app/src/settings.rs` |
