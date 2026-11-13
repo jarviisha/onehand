@@ -232,7 +232,7 @@ pub(super) fn issue_view(
                     div()
                         .text_xs()
                         .text_color(match chosen {
-                            true => middle_ink(cx.theme().accent_foreground, muted),
+                            true => middle_ink(onehand_ui::chosen_ink(cx), muted),
                             false => muted,
                         })
                         .child(count.to_string())

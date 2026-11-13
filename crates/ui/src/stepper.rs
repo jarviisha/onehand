@@ -41,7 +41,10 @@ pub fn step_dot(mark: StepMark, cx: &App) -> Div {
         StepMark::Waiting(_) => (theme.background, theme.input, theme.muted_foreground),
         StepMark::Current(_) => (theme.background, theme.info, theme.info),
         StepMark::Done => (theme.primary, theme.primary, theme.primary_foreground),
-        StepMark::Picked(_) => (theme.accent, theme.accent, theme.accent_foreground),
+        StepMark::Picked(_) => {
+            let fill = crate::chosen_fill(cx);
+            (fill, fill, crate::chosen_ink(cx))
+        }
     };
     let inside = match mark {
         StepMark::Done => Icon::new(IconName::Check).xsmall().into_any_element(),

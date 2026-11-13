@@ -1,16 +1,17 @@
-//! The app's palette: gpui-kit's own Default Light and Default Dark, as the
-//! component library ships them, with the app's fonts.
+//! The app's palette: onehand's own, in both modes, installed through the
+//! component library's theme with the app's fonts.
 //!
 //! ## Where every value comes from
 //!
-//! Every colour token is the library's: [`install`] clones the two shipped
-//! configs and changes one colour in them, the primary (see
-//! [`primary_overrides`]), so a library part and the app's own parts read one
-//! palette. The few steps no library token holds (the
-//! composer's lift, a well on a floating card, a hue tempered for ink) are
-//! derived here from those tokens, never written as values of their own. The
-//! terminal's sixteen colours are not the library's: they stay
-//! `onehand_terminal_ui::ansi`, as a program's colours are its own.
+//! [`palette`] is the one place a colour is written. [`install`] lays it over
+//! the library's two shipped configs, so a library part and the app's own
+//! parts read one palette, and a slot it leaves alone (a status hue, the
+//! ring, a chart's series) stays the library's. The steps no slot holds (the
+//! composer's lift, a well on a floating card, a hue tempered for ink, the
+//! chosen row's tint) are derived from the slots, here or in `onehand_ui`,
+//! never written as values of their own. The terminal's sixteen colours are
+//! not the palette's: they stay `onehand_terminal_ui::ansi`, as a program's
+//! colours are its own.
 //!
 //! ## Status colour is still not a surface
 //!
@@ -39,12 +40,13 @@ pub(crate) use onehand_ui::dock_surface;
 /// a name as well, and named through this module like the two above.
 pub(crate) use onehand_ui::meta_ink;
 
-/// Take the library's two configs, named for the app and set in its fonts.
+/// Take the library's two configs, named for the app, set in its fonts and
+/// laid over with its palette.
 ///
 /// **The configs, not the theme.** Choosing a mode applies a whole config, so
-/// a family set only on the theme would last until the first switch. Corners
-/// are the library's too: its configs leave `radius` and `radius.lg` unset, so
-/// they stay at its own 6 and 8.
+/// a family or a colour set only on the theme would last until the first
+/// switch. Corners are the library's: its configs leave `radius` and
+/// `radius.lg` unset, so they stay at its own 6 and 8.
 ///
 /// Runs at boot, before a mode is chosen, because choosing one applies whichever
 /// of these two configs the mode names.
@@ -59,30 +61,104 @@ pub(crate) fn install(cx: &mut App) {
         config.font_family = Some(crate::fonts::UI_FAMILY.into());
         config.mono_font_family = Some(crate::fonts::MONO_FAMILY.into());
     }
-    primary_overrides(&mut light.colors);
-    primary_overrides(&mut dark.colors);
+    palette(&mut light.colors, false);
+    palette(&mut dark.colors, true);
 
     let theme = Theme::global_mut(cx);
     theme.light_theme = Rc::new(light);
     theme.dark_theme = Rc::new(dark);
 }
 
-/// The one colour the app changes in the kit's palette: the primary, blue in
-/// both modes.
+/// The palette, the only place a colour value is written: each slot's value
+/// on the dark page, then on the light one.
 ///
-/// The kit's primary is its neutral at the far end of the ramp, white on the
-/// dark page and near black on the light one, and beside a secondary button
-/// that block outweighed the whole row it stood in. A blue carries "the one
-/// to press" at the weight of its neighbours. Named by the kit's own ramp, so
-/// the value stays the library's colour and no hex is written here.
-fn primary_overrides(colors: &mut gpui_component::ThemeConfigColors) {
-    // Pointed at and pressed both go darker, in either mode: a lighter blue
-    // under white words drops below what small text needs.
-    let (rest, hover, pressed) = ("blue-600", "blue-700", "blue-800");
-    colors.primary = Some(rest.into());
-    colors.primary_hover = Some(hover.into());
-    colors.primary_active = Some(pressed.into());
-    colors.primary_foreground = Some("neutral-50".into());
+/// **Charcoal, not black.** On the dark page the reading surface is a
+/// charcoal a clear step off black, the rail, the docks and the bars a step
+/// under it, and a floating surface a step over it, so each region is told
+/// from its neighbour by its own fill and a floating one by more than its
+/// edge. The light page is white over a pale grey for the same regions.
+///
+/// **One blue.** The primary is the one hue among the surfaces and inks: the
+/// action to press, and through `onehand_ui::chosen_fill` the item chosen
+/// among several. What the pointer or the keys merely rest on (`accent`,
+/// `list_hover`, `sidebar_accent`) stays a neutral step, because the library
+/// draws every quiet button's and every menu row's hover in `accent`.
+fn palette(colors: &mut gpui_component::ThemeConfigColors, dark: bool) {
+    macro_rules! set {
+        ($($slot:ident: $dark:literal, $light:literal;)*) => {$(
+            colors.$slot = Some(if dark { $dark } else { $light }.into());
+        )*};
+    }
+    set! {
+        // The reading surface, and what the library draws as part of it.
+        background: "#1f1f1f", "#ffffff";
+        list: "#1f1f1f", "#ffffff";
+        table: "#1f1f1f", "#ffffff";
+        accordion: "#1f1f1f", "#ffffff";
+        group_box: "#1f1f1f", "#f8f8f8";
+        tab_active: "#1f1f1f", "#ffffff";
+        slider_thumb: "#1f1f1f", "#ffffff";
+        scrollbar: "#1f1f1f00", "#ffffff00";
+        // The rail, the docks and the bars: a step under the reading surface.
+        sidebar: "#181818", "#f8f8f8";
+        title_bar: "#181818", "#f8f8f8";
+        status_bar: "#181818", "#f8f8f8";
+        tab_bar: "#181818", "#f8f8f8";
+        tab_bar_segmented: "#181818", "#f3f3f3";
+        description_list_label: "#181818", "#f8f8f8";
+        list_even: "#18181866", "#f8f8f8";
+        list_head: "#18181866", "#f8f8f8";
+        // A floating surface: a step over it.
+        popover: "#252526", "#ffffff";
+        // The well, the step past it, and what rests under the pointer.
+        muted: "#2b2b2b", "#f3f3f3";
+        skeleton: "#2b2b2b", "#f3f3f3";
+        secondary: "#313131", "#e5e5e5";
+        secondary_hover: "#3c3c3c", "#dcdcdc";
+        secondary_active: "#2b2b2b", "#d0d0d0";
+        accent: "#37373d", "#e8e8e8";
+        list_hover: "#2a2d2e", "#f2f2f2";
+        sidebar_accent: "#2a2d2e", "#ebebeb";
+        switch: "#4d4d4d", "#c4c4c4";
+        scrollbar_thumb: "#79797966", "#64646466";
+        scrollbar_thumb_hover: "#646464b3", "#646464b3";
+        // Lines.
+        border: "#333333", "#e5e5e5";
+        input: "#3c3c3c", "#cecece";
+        sidebar_border: "#333333", "#e5e5e5";
+        title_bar_border: "#333333", "#e5e5e5";
+        status_bar_border: "#333333", "#e5e5e5";
+        window_border: "#333333", "#e5e5e5";
+        table_row_border: "#333333b3", "#e5e5e5b3";
+        // Inks.
+        foreground: "#cccccc", "#3b3b3b";
+        popover_foreground: "#cccccc", "#3b3b3b";
+        accent_foreground: "#cccccc", "#3b3b3b";
+        secondary_foreground: "#cccccc", "#3b3b3b";
+        sidebar_foreground: "#cccccc", "#3b3b3b";
+        sidebar_accent_foreground: "#cccccc", "#3b3b3b";
+        group_box_foreground: "#cccccc", "#3b3b3b";
+        description_list_label_foreground: "#cccccc", "#3b3b3b";
+        tab_active_foreground: "#ffffff", "#3b3b3b";
+        tab_foreground: "#9d9d9d", "#616161";
+        caret: "#cccccc", "#3b3b3b";
+        link: "#cccccc", "#3b3b3b";
+        link_active: "#cccccc", "#3b3b3b";
+        link_hover: "#ffffff", "#616161";
+        muted_foreground: "#9d9d9d", "#616161";
+        table_head_foreground: "#9d9d9d", "#616161";
+        // The one blue, darker under the pointer and pressed in either mode;
+        // its word reads on all three.
+        primary: "#0078d4", "#005fb8";
+        primary_hover: "#026ec1", "#0258a8";
+        primary_active: "#0264ad", "#014c91";
+        primary_foreground: "#ffffff", "#ffffff";
+        // The library's own chosen list row, near the fill the app's rows take.
+        list_active: "#04395e", "#005fb81f";
+        list_active_border: "#0078d4", "#005fb8";
+        table_active: "#04395e", "#005fb81f";
+        table_active_border: "#0078d4", "#005fb8";
+    }
 }
 
 /// A base hue tempered for use as ink where it is already legible.
@@ -101,12 +177,6 @@ fn temper(base: Hsla, neutral: Hsla) -> Hsla {
     base.mix_oklab(neutral, 0.70)
 }
 
-/// The fill of the rail's chosen row: the row on screen, or the keyboard's.
-/// The library's sidebar marks its active item on `sidebar_accent`.
-pub(crate) fn rail_chosen(cx: &App) -> Hsla {
-    cx.theme().sidebar_accent
-}
-
 /// The fill of a card that waits on the person, tucked under the composer: a
 /// step off the page, so it reads as a second layer under the composer rather
 /// than as the same surface carried on.
@@ -115,8 +185,8 @@ pub(crate) fn waiting_card(cx: &App) -> Hsla {
 }
 
 fn waiting_card_of(theme: &Theme) -> Hsla {
-    // Halfway to the secondary grey on the near-black page: the whole step
-    // stood as a heavy slab beside the composer. On the white page the kit's
+    // Halfway to the secondary grey on the dark page: the whole step stood
+    // as a heavy slab beside the composer. On the white page the kit's
     // secondary is its hairline's own grey, so a card in it swallowed every
     // edge drawn on it; the muted grey a step lighter keeps them.
     match theme.mode.is_dark() {
@@ -142,18 +212,14 @@ pub(crate) fn inset(cx: &App) -> Hsla {
 }
 
 /// A well on a waiting card: the command a pinned permission asks to run.
-/// A step lighter than the card in either mode (sunk to the near-black page
-/// it stood as a dark hole in the card): the library's well on the dark page,
-/// the page's own white on the light one, where the well is the card's grey.
+/// The page's own fill in either mode, a step off the card on the other side
+/// from the hairlines and the keyboard row's fill drawn on it.
 pub(crate) fn floating_well(cx: &App) -> Hsla {
     floating_well_of(cx.theme())
 }
 
 fn floating_well_of(theme: &Theme) -> Hsla {
-    match theme.mode.is_dark() {
-        true => theme.muted,
-        false => theme.background,
-    }
+    theme.background
 }
 
 /// The composer's lift, in pixels as a hairline is: the tight shadow's blur,
@@ -253,15 +319,15 @@ mod tests {
         theme
     }
 
-    /// The palette as [`install`] leaves it: the library's, under the app's
-    /// own overrides.
+    /// The palette as [`install`] leaves it: the library's config, under the
+    /// app's own.
     fn installed(mode: ThemeMode) -> Theme {
         let mut theme = shipped(mode);
         let mut config = ThemeConfig {
             mode,
             ..Default::default()
         };
-        primary_overrides(&mut config.colors);
+        palette(&mut config.colors, mode == ThemeMode::Dark);
         theme.apply_config(&Rc::new(config));
         theme
     }
@@ -286,6 +352,114 @@ mod tests {
                 "{name}: primary is not a blue but {:?}",
                 theme.primary
             );
+        }
+    }
+
+    /// Each region is told from its neighbour by its own fill, and the dark
+    /// page is a charcoal rather than a black.
+    #[test]
+    fn the_regions_stand_a_step_apart() {
+        for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
+            let theme = installed(mode);
+            for (region, fill) in [("rail and docks", theme.sidebar), ("bars", theme.title_bar)] {
+                assert!(
+                    contrast(fill, theme.background) >= 1.04,
+                    "{name}: the {region} are the reading surface"
+                );
+            }
+        }
+        let dark = installed(ThemeMode::Dark);
+        assert!(dark.background.l > 0.1, "dark: the page is near black");
+        assert!(
+            contrast(dark.popover, dark.background) >= 1.04,
+            "dark: a floating surface is the page's own fill"
+        );
+    }
+
+    /// The three neutral inks read on every neutral surface text lies on.
+    #[test]
+    fn the_inks_read_on_every_neutral_surface() {
+        for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
+            let theme = installed(mode);
+            let middle = onehand_ui::middle_ink(theme.foreground, theme.muted_foreground);
+            for (surface, fill) in [
+                ("page", theme.background),
+                ("rail", theme.sidebar),
+                ("floating surface", theme.popover),
+            ] {
+                for (ink, colour) in [
+                    ("content", theme.foreground),
+                    ("middle", middle),
+                    ("muted", theme.muted_foreground),
+                ] {
+                    let ratio = contrast(colour, fill);
+                    assert!(
+                        ratio >= AA,
+                        "{name}: {ink} ink on the {surface} is {ratio:.2}"
+                    );
+                }
+            }
+            let ratio = contrast(theme.foreground, theme.muted);
+            assert!(ratio >= AA, "{name}: content ink in a well is {ratio:.2}");
+        }
+    }
+
+    /// What the pointer or the keys rest on is a grey: the hue is kept for
+    /// the primary and the chosen item.
+    #[test]
+    fn hover_stays_neutral() {
+        for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
+            let theme = installed(mode);
+            for (slot, fill) in [
+                ("accent", theme.accent),
+                ("list_hover", theme.list_hover),
+                ("sidebar_accent", theme.sidebar_accent),
+            ] {
+                assert!(fill.s < 0.1, "{name}: {slot} carries a hue: {fill:?}");
+            }
+        }
+    }
+
+    /// The chosen item's name, and a quieter ink beside it, read on its fill,
+    /// and the fill, solid and a blue, stands off every surface a row lies on
+    /// and a hovered row beside it.
+    #[test]
+    fn the_chosen_row_reads_and_stands_off_a_hovered_one() {
+        for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
+            let theme = installed(mode);
+            let fill = onehand_ui::chosen_fill_of(
+                theme.primary,
+                theme.background,
+                mode == ThemeMode::Dark,
+            );
+            let ink = theme.foreground;
+            let quiet = onehand_ui::middle_ink(ink, theme.muted_foreground);
+            for (what, colour) in [("name", ink), ("quieter ink", quiet)] {
+                let ratio = contrast(colour, fill);
+                assert!(ratio >= AA, "{name}: the chosen row's {what} is {ratio:.2}");
+            }
+            assert!(fill.a == 1., "{name}: the chosen fill is see-through");
+            assert!(fill.s > 0.2, "{name}: the chosen fill is a grey: {fill:?}");
+            for (surface, under) in [
+                ("page", theme.background),
+                ("rail", theme.sidebar),
+                ("floating surface", theme.popover),
+            ] {
+                assert!(
+                    contrast(fill, under) >= 1.08,
+                    "{name}: the chosen fill sinks into the {surface}"
+                );
+            }
+            // A hovered row beside it is told apart by hue, not by weight.
+            for (row, hover) in [
+                ("row", theme.list_hover),
+                ("rail row", theme.sidebar_accent),
+            ] {
+                assert!(
+                    fill.s - hover.s > 0.15,
+                    "{name}: the chosen fill reads as a hovered {row}"
+                );
+            }
         }
     }
 
@@ -350,7 +524,7 @@ mod tests {
     #[test]
     fn status_ink_is_readable_on_every_surface_it_lands_on() {
         for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
-            let theme = shipped(mode);
+            let theme = installed(mode);
             for (role, base) in [
                 ("danger", theme.red),
                 ("warning", theme.yellow),
@@ -385,7 +559,7 @@ mod tests {
     #[test]
     fn a_tint_reads_on_its_own_fill() {
         for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
-            let theme = shipped(mode);
+            let theme = installed(mode);
             for (hue, base) in [
                 ("accent", theme.blue),
                 ("success", theme.green),
@@ -416,7 +590,7 @@ mod tests {
     #[test]
     fn a_diff_line_reads_on_its_wash() {
         for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
-            let theme = shipped(mode);
+            let theme = installed(mode);
             for (side, base) in [("added", theme.green), ("removed", theme.red)] {
                 let wash = onehand_ui::tint_over(base, theme.muted, theme.foreground);
                 assert!(
@@ -451,7 +625,7 @@ mod tests {
         use onehand_ui::middle_ink;
 
         for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
-            let theme = shipped(mode);
+            let theme = installed(mode);
             let middle = middle_ink(theme.foreground, theme.muted_foreground);
 
             let ratio = contrast(middle, theme.popover);
@@ -475,12 +649,13 @@ mod tests {
                 "{name}: the middle ink on the reading surface is {on_surface:.2}, under {AA}"
             );
 
-            // On the selected fill the step is taken under that fill's own ink.
+            // On the keys' highlight in a popup the step is taken under that
+            // fill's own ink.
             let picked = middle_ink(theme.accent_foreground, theme.muted_foreground);
             let on_picked = contrast(picked, theme.accent);
             assert!(
                 on_picked >= AA,
-                "{name}: the middle ink on the selected fill is {on_picked:.2}, under {AA}"
+                "{name}: the middle ink on the highlight is {on_picked:.2}, under {AA}"
             );
         }
     }
@@ -502,7 +677,7 @@ mod tests {
             .into()
         }
 
-        let light = shipped(ThemeMode::Light);
+        let light = installed(ThemeMode::Light);
         let alpha = onehand_ui::tokens::lift_alpha(false);
         let ratio = contrast(under(light.popover, alpha), light.popover);
         assert!(
@@ -510,7 +685,7 @@ mod tests {
             "light: the lift is {ratio:.2} against the card it falls on"
         );
 
-        let dark = shipped(ThemeMode::Dark);
+        let dark = installed(ThemeMode::Dark);
         let ratio = contrast(dark.border, dark.popover);
         assert!(
             ratio >= SHADOW,
@@ -523,7 +698,7 @@ mod tests {
     #[test]
     fn the_composer_lift_outlines_the_card_on_both_palettes() {
         for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
-            let theme = shipped(mode);
+            let theme = installed(mode);
             let (edge, soft) =
                 composer_shades(mode == ThemeMode::Dark, theme.foreground, theme.border);
             let ratio = contrast(over(edge, theme.background), theme.background);
@@ -547,7 +722,7 @@ mod tests {
     #[test]
     fn a_tempered_hue_loses_saturation_and_keeps_its_contrast() {
         for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
-            let theme = shipped(mode);
+            let theme = installed(mode);
             let ink = temper(theme.blue, theme.muted_foreground);
 
             assert!(

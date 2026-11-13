@@ -9,24 +9,26 @@ and density, use [UI patterns](../../../docs/ui-patterns.md#spacing-and-density)
 
 ## Colour
 
-Read from `cx.theme()`. They are gpui-kit's Default Light and Default Dark as the library ships
-them; `crates/app/src/theme.rs` installs them unchanged, with contrast tests. The terminal's
+Read from `cx.theme()`. The palette is onehand's own, written once in `palette`
+(`crates/app/src/theme.rs`) and laid over the library's two configs, with contrast tests; a slot
+it leaves alone stays the library's. The terminal's
 sixteen colours are `onehand_terminal_ui::ansi`. Roles: `DESIGN.md`, *Colour and state*.
 
 Slot names that mislead (the library's names, kept because its own controls read them):
 
 | Slot | Holds |
 |---|---|
-| `accent`, `accent_foreground` | the selected fill and its ink: a fill, not a hue |
+| `accent`, `accent_foreground` | what the pointer or the keys rest on in a control or a popup (the library draws a ghost's hover and a menu's highlighted row in it): neutral, not the chosen item, which is `chosen_fill(cx)` |
 | `link` | a link, in the prose ink |
 | `info` | what runs |
 | `muted` | the well's fill |
 | `secondary` | a step past the well: a document's code on a dock, an attached file's plate |
 | `button_secondary`, `button_secondary_foreground` | the secondary button's own fill at rest (its pointed-at step under the pointer or pressed) and its ink |
-| `primary` | the primary action: near black with white on it (light), near white with black on it (dark) |
+| `primary` | the primary action, the one blue; its word in `primary_foreground` |
 | `danger`, `warning`, `success` | fills with white on them; their text is `status_ink(cx)` |
 | `sidebar` | the rail's fill, the docks' too, read for a dock through `dock_surface(cx)` |
-| `sidebar_accent` | the rail's hovered row, and its chosen row through `rail_chosen(cx)` |
+| `sidebar_accent` | the rail's hovered row |
+| `list_active` | the library's own chosen list row, set to the tint `chosen_fill(cx)` gives |
 
 Helpers:
 
@@ -36,6 +38,7 @@ Helpers:
 | `tint(base, cx)` | a label's `Tint { fill, ink }` by its hue | `crates/ui/src/ink.rs` |
 | `dock_surface(cx)` | the Workbench's and the terminal's surface | `crates/ui/src/surface.rs` |
 | `badge_edge(tint)` | a badge's edge: halfway from its `Tint`'s fill to its ink | `crates/ui/src/badge.rs` |
+| `chosen_fill(cx)`, `chosen_ink(cx)` | the item chosen among several: the primary laid thin over the reading surface, solid, and its name's ink, the content ink | `crates/ui/src/ink.rs` |
 | `control_fill(cx)` | a ghost control's fill hovered, pressed or chosen; between `list_hover` and `accent` | `crates/ui/src/ink.rs` |
 | `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: a list page's line over its foot, and the Issues tab's filter bar's line | `crates/ui/src/ink.rs` |
 | `meta_ink(cx)` | the middle ink: a detail beside a name, between prose and muted | `crates/ui/src/ink.rs`; the app says `crate::theme::meta_ink` |
@@ -43,8 +46,7 @@ Helpers:
 | `hue_ink(base, cx)` | a hue tempered for ink: code inside prose | `crates/app/src/theme.rs` |
 | `raised(cx)` | the composer card's fill: the page's | `crates/app/src/theme.rs` |
 | `inset(cx)` | a badge in the rail: the page's fill | `crates/app/src/theme.rs` |
-| `rail_chosen(cx)` | the rail's chosen row | `crates/app/src/theme.rs` |
-| `floating_well(cx)` | a well on a floating card, the command a pinned permission asks to run: the library's `muted` | `crates/app/src/theme.rs` |
+| `floating_well(cx)` | a well on a floating card, the command a pinned permission asks to run: the page's fill | `crates/app/src/theme.rs` |
 
 Inks (roles: `DESIGN.md`, *Type, space and shape*; by place: UI patterns, *Hierarchy*). The three
 neutral ones, for text on a neutral surface:
@@ -63,8 +65,8 @@ Text on a fill takes the ink paired with it:
 | `button_secondary`; a `quiet` ghost | `button_secondary_foreground`; `secondary_foreground`, set by the builder |
 | a ghost's hover or selected fill, under an icon alone (`quiet_icon`) | `secondary_foreground`, as at rest |
 | none, a title bar dock toggle (`panel_toggle`) | its glyph `foreground` while its dock is open, `muted_foreground` while closed |
-| `accent`, the selected row | `accent_foreground` |
-| `rail_chosen(cx)`, the rail's current row | `sidebar_accent_foreground` |
+| `chosen_fill(cx)`, the chosen row, the rail's too | `chosen_ink(cx)`; a quieter ink `middle_ink(chosen_ink(cx), muted_foreground)` |
+| `accent`, the row the keys are on in a popup | `accent_foreground` |
 | `muted` (a well, the prompt bubble) | the neutral inks, as on the surface: a neutral fill, not a paired one |
 | `primary` (the primary button) | `primary_foreground` |
 | a badge's `Tint` fill | that `Tint`'s `ink` |

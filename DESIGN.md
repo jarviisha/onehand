@@ -1,8 +1,8 @@
 # DESIGN.md: onehand UI contract
 
 The whole-app UI contract for `onehand`: the principles every view follows, the window's frame,
-the transcript and the visual system, as structure and behaviour, not values (the palette is the
-component library's own: *Colour and state*). It binds at the level written here; below
+the transcript and the visual system, as structure and behaviour, not values (the palette is onehand's
+own, written once: *Colour and state*). It binds at the level written here; below
 it, the code and its tests decide. `docs/screens.md` says what each region holds and in what
 order, a feature's own document (`docs/tasks.md`, `docs/workflows.md`, `docs/unattended.md`) its
 screens' detail, and `docs/ui-patterns.md` the patterns every screen repeats and how they behave.
@@ -13,8 +13,8 @@ compact controls and predictable alignment. It keeps no standing exceptions: a t
 differs is a rule of the role it belongs to, written where that role is. A departure is a bug,
 put right or recorded in `docs/known-gaps.md` with its reason within the change that makes it.
 
-**The palette is gpui-kit's Default Light and Default Dark** (*Colour and state*), as the
-component library ships them, the primary alone made blue (`crate::theme::install`, with its
+**The palette is onehand's own, in both modes** (*Colour and state*), written once and
+installed through the component library's theme (`crate::theme::install`, with its
 contrast tests). Every colour,
 radius and size is a token read at the call site (see `.claude/skills/ui/tokens.md`);
 a hex literal is a bug even when it looks right, as no theme switch reaches it.
@@ -26,8 +26,9 @@ a hex literal is a bug even when it looks right, as no theme switch reaches it.
    narrow for both, the Workbench takes the area under *← Conversation*, which steps it aside. Pages
    take the agent pane and put the docks away; a page opens over a session only when picked.
 2. **Content leads; navigation recedes.** Neutral surfaces carry the layout. Hue identifies a
-   state, a link, a label's kind or code in prose, never a decorative section background.
-   Focus is a grey, as the library's palette has it; the primary action is the palette's one blue. Attention is earned: the signals that call for the person
+   state, a link, a label's kind, code in prose or where the person is, never a decorative
+   section background.
+   Focus is a grey; the palette's one blue is the primary action and the item chosen among several. Attention is earned: the signals that call for the person
    (a state's hue, a count or badge of what waits, a dot, weight past what the role takes) mark
    only what needs them or has just changed, so a view at rest is calm. Hierarchy and identity are not attention: a heading keeps
    its weight, a list its muted count, a label its kind's hue. Nor is a mode switched on: the
@@ -182,7 +183,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   location; `theme::meta_ink` for a detail beside a name on its line (its folder, its number, its
   kind); `muted_foreground`, still readable, for labels, counts, hints, placeholders and a row's
   second line. Text on a fill takes the ink paired with that fill: a
-  button's variant and the library's controls set their own, a selected row `accent_foreground`,
+  button's variant and the library's controls set their own, a chosen row the chosen ink (`chosen_ink`),
   a badge its `Tint`'s ink. Meaning takes its semantic ink: a state `status_ink()`, a link `link`,
   what runs `info`, code in prose `hue_ink`. No fourth neutral ink, and a quieter ink is a mixed
   step, never an alpha on the text or its container: see-through text reads differently on
@@ -210,25 +211,29 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   corner (*Components*). A part joined to its container's edge takes its corner there.
 - **Lines** part regions and are a 1px `border`. A **mark** says where the person is, not where
   a region ends: the stroke of the primary along an open tab's top is 2px, a step heavier than a
-  line. A list page's line over its foot is a step fainter (`faint_rule`), so the edge-to-edge
+  line, and the tab's name is in the content ink. A list page's line over its foot is a step fainter (`faint_rule`), so the edge-to-edge
   list reads as one surface; a page's top draws no line under it. A box on a page takes a step
   stronger edge, a control's (`input`); a folding block and a Settings group keep the hairline.
 
 ## Colour and state
 
-The palette is the component library's own: gpui-kit's **Default Light** and **Default Dark**,
-as the library ships them (`default-theme.json`). `crate::theme::install` takes both configs and
-changes no colour in them, so a library part and the app's own parts read one palette. A role
-takes the library token named for it; a step no token holds is derived in `crate::theme` or
-`onehand_ui::ink` from the tokens, never written as a value. The terminal's sixteen colours are
-not the library's: they stay VS Code's (`onehand_terminal_ui::ansi`), as a program's colours are
+The palette is onehand's own, a light one and a dark one under one set of rules. Its values are
+written in one place, `crate::theme`'s `palette`, and `crate::theme::install` lays them over the
+component library's two theme configs, so a library part and the app's own parts read one
+palette; a slot the palette leaves alone (a status hue, the ring, a chart's series) stays the
+library's. A role takes the slot named for it; a step no slot holds is derived in `crate::theme`
+or `onehand_ui::ink` from the slots, never written as a value. The terminal's sixteen colours are
+not the palette's: they stay VS Code's (`onehand_terminal_ui::ansi`), as a program's colours are
 its own. A chart's series and a label's kind take the library's base hues.
 
-The library's surfaces are neutral greys a step apart and its focus ring is a grey. Its primary,
-near black on the light palette and near white on the dark one, outweighed every row it stood in,
-so the app overrides that one colour: the kit's own `blue-600` in both modes, darker under the
-pointer and pressed (`theme::install`). On the dark palette its
-surfaces are near black, so a floating surface is told apart by its edge rather than its shadow.
+The surfaces are neutral greys, each region a visible step from its neighbour: on the dark
+palette the reading surface is a charcoal clear of black, the rail, the docks and the bars a step
+under it, and a floating surface a step over it, told apart by its fill and its edge. The light
+palette is white over a pale grey for the same regions. The focus ring is a grey. The one hue
+among them is the blue: the primary action, and laid over the reading surface as a fill, the item
+chosen among several (`chosen_fill`; the fill carries the hue and its name stays the content ink,
+`chosen_ink`). What the pointer or the keys merely rest on stays a neutral
+step, a row's hover and a popup's highlighted row alike.
 Pairs under WCAG AA are in `docs/known-gaps.md`; `crate::theme`'s tests hold each at what it
 reaches.
 
@@ -240,11 +245,12 @@ reaches.
 | `theme::meta_ink` | the middle ink: a detail beside a name, between prose and meta, contrast-tested |
 | `border` | every hairline, a folding block's and a Settings group's edge; a box on a page takes `input` |
 | `ring` | keyboard focus, drawn only when the keyboard moved it; the composer while a file is dragged over it |
-| `accent` | the one item selected among several (a fill, not a hue) |
+| `chosen_fill`, `chosen_ink` | the one item chosen among several, where the person is: a row, a rail entry; the primary laid over the surface, and the content ink on it |
+| `accent` | what the pointer or the keys rest on in a control or a popup: a ghost's hover, a menu's highlighted row; a neutral fill |
 | `link` | a link: the library draws it in the prose ink, underlined |
 | `info` | what runs |
 | `list_hover` | hover on a pickable row |
-| `primary` | the single primary action in a view, an open tab's mark; blue, the palette's one override |
+| `primary` | the single primary action in a view, an open tab's mark; the palette's one blue |
 | `status_ink()` | danger, warning and success text, and `closed` for what is over and settled (a closed issue) |
 | `popover` | floating surfaces |
 | `theme::raised` | the composer card |
@@ -254,8 +260,11 @@ reaches.
   inherits its surface unless it has a distinct role: well, selection or floating content.
 - Boxes are borders; wells and the bubbles are fills. Ordinary sections remain unboxed. Do not
   combine a border, contrasting fill and shadow just to make a group visible.
-- Hover and selection are fills: distinct steps on a row (`list_hover`, `accent`; on the rail's side bar surface its
-  own pair, `sidebar_accent` and `rail_chosen`, as a fill is a step from the surface under it), and the library's own hover on a ghost button. A secondary button rests on a fill of its own and takes
+- Hover and selection are fills, told apart by hue: a hovered row a neutral step (`list_hover`; on the rail
+  `sidebar_accent`, as a fill is a step from the surface under it), the chosen row the primary's fill
+  (`chosen_fill`, solid, as a row's fade and the controls over a row are painted in it) with its name in
+  `chosen_ink`; the library's own hover on a ghost button. The row the keys are on inside a popup is a
+  cursor, not a place: it takes the neutral highlight (`accent`). A secondary button rests on a fill of its own and takes
   its pointed-at step under the pointer; the selected step is a chosen row's. Keyboard
   focus on a control is the ring. A field is edged at rest and ringed on focus, as the library
   draws it; the composer, the input surface, shows focus by its caret (*Components*).

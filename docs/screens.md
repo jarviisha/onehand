@@ -50,8 +50,8 @@ under it with no gap, *Add a project on a host…*, which opens the form naming 
 folder there; a foot with *Settings*, a page row like the five above, filled while it shows. The
 rail is drawn as the
 library's sidebar draws its items: a row's name in the sidebar's ink and its second line muted, the
-row under the pointer on the sidebar's accent fill, and the one where the person is on that fill
-too, in the ink paired with it and at medium weight. The *Sessions* label is the small muted
+row under the pointer on the sidebar's accent fill, and the one where the person is on the chosen
+fill, in the chosen ink and at medium weight. The *Sessions* label is the small muted
 heading the library gives a group. A neutral badge
 stands on the page's fill.
 
@@ -228,7 +228,7 @@ dragged height kept).
 - Strips as tall as the header, a mode's own bar under the Workbench's a step lower. The
   Workbench's, the terminal's and the Editor's files are the library's tab panel bars (`tab_bar`):
   on the tab bar's fill with a line under, the tabs flush and parted by lines, the open one on the
-  tab's fill under a stroke of the primary along its top, the controls at the end. The
+  tab's fill under a stroke of the primary along its top, its name in the content ink, the controls at the end. The
   Workbench's: *← Conversation* while it has the area, the modes as tabs
   (Editor, Markdown, Issues, Plugins only where a Claude Code agent is set up when the window
   opens, Neovim; a select under 26rem), maximize, hide. The terminal's:

@@ -125,6 +125,38 @@ pub fn control_fill_of(hover: Hsla, selected: Hsla) -> Hsla {
     hover.mix_oklab(selected, CONTROL_FILL)
 }
 
+/// How much of the primary the chosen fill takes, on the dark page and on
+/// the light one: the rest is the reading surface.
+const CHOSEN_FILL_DARK: f32 = 0.45;
+const CHOSEN_FILL_LIGHT: f32 = 0.12;
+
+/// The fill of the item chosen among several, the place the person is: a row,
+/// a rail entry, a tab. The primary laid thin over the reading surface, the
+/// one fill with a hue beside the neutral hover. Solid, as a row's fade and
+/// the controls laid over a row are painted in its fill and have to cover
+/// what is under them. A row the pointer or the keys merely rest on takes
+/// `list_hover` or `accent` instead.
+pub fn chosen_fill(cx: &App) -> Hsla {
+    let theme = cx.theme();
+    chosen_fill_of(theme.primary, theme.background, theme.mode.is_dark())
+}
+
+/// [`chosen_fill`] from the primary and the surface. `pub` for the reason
+/// [`status_hue`] is: the app's contrast test works from a resolved ramp.
+pub fn chosen_fill_of(primary: Hsla, surface: Hsla, dark: bool) -> Hsla {
+    surface.blend(primary.opacity(match dark {
+        true => CHOSEN_FILL_DARK,
+        false => CHOSEN_FILL_LIGHT,
+    }))
+}
+
+/// The ink of the chosen item's name, on [`chosen_fill`]: the content ink,
+/// as the fill carries the hue. A quieter ink beside it is [`middle_ink`]
+/// under this one.
+pub fn chosen_ink(cx: &App) -> Hsla {
+    cx.theme().foreground
+}
+
 /// How much of a hue a pale fill keeps; the rest is the surface it sits on.
 const TINT: f32 = 0.16;
 

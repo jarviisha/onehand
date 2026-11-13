@@ -120,7 +120,11 @@ fn step_row(
             },
         )
     };
-    let muted = crate::theme::meta_ink(cx);
+    // On the open step's fill the quieter ink is taken under that fill's own.
+    let muted = match open {
+        true => onehand_ui::middle_ink(onehand_ui::chosen_ink(cx), cx.theme().muted_foreground),
+        false => crate::theme::meta_ink(cx),
+    };
     let danger = crate::theme::status_ink(cx).danger;
     let label = step.label.read(cx).value().trim().to_string();
     let name = match label.is_empty() {
@@ -139,8 +143,8 @@ fn step_row(
         // The step open beside is marked as a picked row is.
         .map(|row| match open {
             true => row
-                .bg(cx.theme().accent)
-                .text_color(cx.theme().accent_foreground),
+                .bg(onehand_ui::chosen_fill(cx))
+                .text_color(onehand_ui::chosen_ink(cx)),
             false => row.hover(|row| row.bg(cx.theme().list_hover)),
         })
         .on_click(click(handle, move |page, window, cx| {

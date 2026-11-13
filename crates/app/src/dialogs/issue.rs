@@ -479,8 +479,8 @@ fn issue_list(
     let theme = cx.theme();
     let (muted, accent, accent_ink) = (
         theme.muted_foreground,
-        theme.accent,
-        theme.accent_foreground,
+        onehand_ui::chosen_fill(cx),
+        onehand_ui::chosen_ink(cx),
     );
     let (rows, cut, unread) = match found {
         None => {
@@ -543,9 +543,12 @@ fn issue_list(
                         trailing,
                         cx,
                     )
-                    // The chosen one on the selected step, in its ink.
+                    // The chosen one on the chosen fill, in its ink, under
+                    // the pointer too.
                     .when(chosen == Some(i), |row| {
-                        row.bg(accent).text_color(accent_ink)
+                        row.bg(accent)
+                            .text_color(accent_ink)
+                            .hover(move |row| row.bg(accent))
                     })
                     .on_click(
                         move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
