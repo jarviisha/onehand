@@ -13,7 +13,7 @@ use gpui_component::ActiveTheme as _;
 /// a page's column heads, so bars side by side line up across the window.
 /// A small control and a little room over and under it, as an editor's
 /// title bars stand: taller and the bars read as a band of their own.
-pub const BAR_H: Rems = rems(2.5);
+pub const BAR_H: Rems = rems(2.1875);
 
 /// The mark saying which tab of a dock's bar is open: a stroke along its
 /// top, a step heavier than a line.
@@ -23,7 +23,7 @@ pub const TAB_MARK: Rems = rems(0.125);
 /// reader's bar. A step under [`BAR_H`], so the second bar reads as the
 /// mode's rather than as the panel's a second time; its controls keep their
 /// size and stand on it with a little room.
-pub const MODE_BAR_H: Rems = rems(2.125);
+pub const MODE_BAR_H: Rems = rems(1.875);
 
 /// A single-line list row: a rail row, a choice in the composer's popup. A
 /// Workbench tree takes [`TREE_ROW_H`] instead. A step over a small control,
