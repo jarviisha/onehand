@@ -103,8 +103,8 @@ elsewhere (a page naming the session, a folded project's badge) says *Not connec
 alone. `Ctrl+Shift+R` on a waiting one asks the host's restart question, as its *Restart now* does. `↑`/`↓` move the list's row, ringed while the keys move it, `Enter` and `←`/`→`
 act on it, `Alt+↑`/`↓` step through sessions in its order. The tree's order is the user's, set by
 dragging; pinned projects stay on top and sessions never leave their project. `Ctrl+Shift+B` hides
-the rail completely, never to an icon column. It resizes between 232 and 448px, on the side bar's
-surface.
+the rail completely, never to an icon column. It resizes between a least and a most width (`PanelLayout::RAIL_MIN`,
+`RAIL_MAX`), on the side bar's surface.
 
 A worker of a lead in the window is listed under that lead, whatever project it runs in: set in
 once more than the lead's row, tied to it by a rule down from the lead's mark, in the order the
@@ -231,7 +231,7 @@ dragged height kept).
   tab's fill under a stroke of the primary along its top, its name in the content ink, the controls at the end. The
   Workbench's: *← Conversation* while it has the area, the modes as tabs
   (Editor, Markdown, Issues, Plugins only where a Claude Code agent is set up when the window
-  opens, Neovim; a select under 26rem), maximize, hide. The terminal's:
+  opens, Neovim; a select where the bar is too narrow for the tabs, `MODES_MIN_W`), maximize, hide. The terminal's:
   shell tabs (each capped in width, scrolling, so none is left out, the chosen one brought into
   view), `+`, maximize, hide. File tabs never shrink: the newest that fit stay, the current one
   among them, and the older ones go into an *N more* menu after them.
