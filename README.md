@@ -41,6 +41,15 @@ Beside the conversation:
 - **Unattended runs**: an issue carrying a label, on GitHub or kept in onehand,
   worked in a worktree and session of its own while nobody watches, and told how
   it went.
+- **Schedules**: work started by the clock while onehand is open, each start a
+  task like any other.
+- **Lead and workers**: a session's agent that has been given onehand's tools
+  can open other sessions to work for it, listed under it in the rail.
+- **Hosts**: a project whose sessions run on another machine reached over SSH,
+  and keep going while this one is off.
+- **Control from outside**: a socket beside the instance lock, which a second
+  launch and, when Settings allows, an outside program reach onehand's tools
+  through.
 - **A Telegram bridge** for following and answering sessions away from the
   machine.
 
@@ -144,10 +153,15 @@ Code's plugins, not onehand's.
 ## Documentation
 
 - [CONTEXT.md](CONTEXT.md): the glossary.
-- [DESIGN.md](DESIGN.md): the UI as built.
-- [docs/](docs/): workflows, tasks and unattended runs end to end, the known
-  gaps, and the reasons behind the repository's rules.
-- [AGENTS.md](AGENTS.md): working in the repository.
+- [DESIGN.md](DESIGN.md): the UI's binding overview, with
+  [docs/screens.md](docs/screens.md) and [docs/ui-patterns.md](docs/ui-patterns.md)
+  under it.
+- [docs/](docs/): each feature as built (workflows, tasks, unattended runs,
+  agents, control, schedules, hosts), where behaviour lives
+  ([drives.md](docs/drives.md)), the known gaps, and the reasons behind the
+  repository's rules.
+- [AGENTS.md](AGENTS.md): working in the repository, and which document owns
+  what.
 - [CHANGELOG.md](CHANGELOG.md): what changed in each release.
 
 ## Licence

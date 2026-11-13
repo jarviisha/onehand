@@ -61,6 +61,9 @@ the comments beside its code, starting from each module's header; `crates/app/sr
   the task explicitly calls for it, and reconcile it with the current contracts before
   implementation. A proposal that is built moves into its owning documents and leaves
   `docs/proposals/` in the same PR.
+- `docs/superpowers/` holds the spec and the plans of work under way, and nothing else: they
+  say how a change is to be built, never what the build does. The last PR of that work removes
+  them, its behaviour by then written into the owning documents; git history keeps them.
 - Keep a rule in one owning document. Link to it from entrypoints and skills rather than
   copying it or creating a competing design system.
 

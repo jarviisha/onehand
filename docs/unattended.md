@@ -884,6 +884,15 @@ accumulate one row per issue ever worked.
   second implementation of `Connector`, not an abstraction to write first.
 - **Issue triage.** Whether an issue is small enough is the label, set by a
   human. The app does not judge.
+- **A queue for slots.** A full slot refuses; only a place queues. Turning the
+  refusal into a wait changes the start itself: when the issue is claimed
+  (before the wait, and it is told a run started while nothing runs, or after,
+  and another start can take it), whether a task waiting for a slot counts
+  against `waiting`, what *Stop* tells the issue, whether the wait survives a
+  restart, and the order across windows and projects.
+- **Saying before a start that its place is taken.** The queue's notification
+  says which task it waits behind once it is queued; saying it in the
+  preflight needs git read for the place before the start.
 
 ## The checks worth writing
 
