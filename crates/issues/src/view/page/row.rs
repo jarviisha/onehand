@@ -184,8 +184,8 @@ pub(super) fn issue_row(
         .cloned()
         .collect::<Vec<_>>()
         .join(", ");
-    // A neutral label is drawn on the bubble, which the picked row's fill
-    // swallows; there it takes the well instead.
+    // A neutral label is drawn on the bubble's grey; on the picked row it
+    // takes the well instead, a step clearer of that row's fill.
     let well = theme.muted;
     let labels = div()
         .h_flex()

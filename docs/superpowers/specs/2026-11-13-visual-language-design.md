@@ -92,17 +92,17 @@ not figures to defend: where a test fails, move the ink, keep the surface.
 | Title bar, tab bar (`title_bar`, `tab_bar`) | `#18191a` | `#f8f8f8` |
 | Well, quiet fill (`muted`) | `#2b2c2f` | `#f0f1f2` |
 | Past the well (`secondary`) | `#303134` | `#e7e8ea` |
-| Floating surface (`popover`) | `#2b2c2f` | `#ffffff` |
+| Floating surface (`popover`) | `#242528`, a step under the well so a well shows on it | `#ffffff` |
 | Hairline (`border`) | `#303134` | `#dddee1` |
 | A box's and a field's edge (`input`) | `#3a3b3f` | `#c9cace` |
 | Content ink (`foreground`) | `#e2e3e6` | `#292a2e` |
-| Muted ink (`muted_foreground`) | `#96999e` | `#6b6e76` |
+| Muted ink (`muted_foreground`) | `#96999e` | `#656870`, so it reads in a well |
 | Hover on a row (`list_hover`, `sidebar_accent`) | a neutral step over its surface | same rule |
 | Primary (`primary`, hover, active) | `#669df1`, lighter under the pointer | `#1868db`, darker under the pointer |
 | Ink on the primary | `#1f1f21` | `#ffffff` |
 | Hover and highlight on a control or a menu row (`accent`, `accent_foreground`) | a neutral step, the content ink | same rule |
-| Chosen fill (onehand's own role; also `list_active`) | `#1c2b42` | `#e9f2fe` |
-| Chosen ink (onehand's own role) | `#669df1` | `#1868db` |
+| Chosen fill (onehand's own role) | the primary laid thin over the reading surface, solid | same rule |
+| Chosen ink (onehand's own role) | the primary, a step toward the content ink | same rule |
 
 - The composer card (`theme::raised`), the waiting card, the floating well and every other
   derived step keep their derivations; their tests keep their thresholds. Where a derivation

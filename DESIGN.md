@@ -261,7 +261,7 @@ reaches.
   combine a border, contrasting fill and shadow just to make a group visible.
 - Hover and selection are fills, told apart by hue: a hovered row a neutral step (`list_hover`; on the rail
   `sidebar_accent`, as a fill is a step from the surface under it), the chosen row the primary's tint
-  (`chosen_fill`, see-through, so it is one step off whatever surface the row lies on) with its name in
+  (`chosen_fill`, solid, as a row's fade and the controls over a row are painted in it) with its name in
   `chosen_ink`; the library's own hover on a ghost button. The row the keys are on inside a popup is a
   cursor, not a place: it takes the neutral highlight (`accent`). A secondary button rests on a fill of its own and takes
   its pointed-at step under the pointer; the selected step is a chosen row's. Keyboard

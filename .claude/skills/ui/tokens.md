@@ -38,7 +38,7 @@ Helpers:
 | `tint(base, cx)` | a label's `Tint { fill, ink }` by its hue | `crates/ui/src/ink.rs` |
 | `dock_surface(cx)` | the Workbench's and the terminal's surface | `crates/ui/src/surface.rs` |
 | `badge_edge(tint)` | a badge's edge: halfway from its `Tint`'s fill to its ink | `crates/ui/src/badge.rs` |
-| `chosen_fill(cx)`, `chosen_ink(cx)` | the item chosen among several: the primary thinned over the surface under it, and its name's ink | `crates/ui/src/ink.rs` |
+| `chosen_fill(cx)`, `chosen_ink(cx)` | the item chosen among several: the primary laid thin over the reading surface, solid, and its name's ink | `crates/ui/src/ink.rs` |
 | `control_fill(cx)` | a ghost control's fill hovered, pressed or chosen; between `list_hover` and `accent` | `crates/ui/src/ink.rs` |
 | `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: a list page's line over its foot, and the Issues tab's filter bar's line | `crates/ui/src/ink.rs` |
 | `meta_ink(cx)` | the middle ink: a detail beside a name, between prose and muted | `crates/ui/src/ink.rs`; the app says `crate::theme::meta_ink` |

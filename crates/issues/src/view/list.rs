@@ -674,8 +674,8 @@ impl IssuesView {
                 meta.child(div().flex_none().child("·"))
                     .child(div().flex_none().child("working"))
             });
-        // A selection is a fill and only a fill, the selected step the ramp
-        // holds clear of the hover step: no bar or ring beside it.
+        // A selection is a fill and only a fill, the chosen fill, told from
+        // the hover step by its hue: no bar or ring beside it.
         row_surface(selected, cx)
             .id(("issue-row", number))
             .v_flex()

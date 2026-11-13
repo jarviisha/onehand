@@ -40,8 +40,8 @@ pub(super) fn hover_fill(cx: &App) -> Hsla {
 }
 
 /// The fill of the row that is chosen, the session on screen or the project
-/// whose page shows: the primary's tint over the rail, as every chosen row
-/// in the window takes, told from a hovered row by its hue.
+/// whose page shows: the fill every chosen row in the window takes, told
+/// from a hovered row by its hue.
 pub(super) fn chosen_fill(cx: &App) -> Hsla {
     onehand_ui::chosen_fill(cx)
 }

@@ -421,36 +421,44 @@ mod tests {
         }
     }
 
-    /// The chosen item's name, and a quieter ink beside it, read on its tint
-    /// over every surface a row lies on, and the tint is told from a hovered
-    /// row by its hue.
+    /// The chosen item's name, and a quieter ink beside it, read on its fill,
+    /// and the fill, solid and a blue, stands off every surface a row lies on
+    /// and a hovered row beside it.
     #[test]
     fn the_chosen_row_reads_and_stands_off_a_hovered_one() {
         for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
             let theme = installed(mode);
-            let tint = onehand_ui::chosen_fill_of(theme.primary, mode == ThemeMode::Dark);
+            let fill = onehand_ui::chosen_fill_of(
+                theme.primary,
+                theme.background,
+                mode == ThemeMode::Dark,
+            );
             let ink = onehand_ui::chosen_ink_of(theme.primary, theme.foreground);
             let quiet = onehand_ui::middle_ink(ink, theme.muted_foreground);
+            for (what, colour) in [("name", ink), ("quieter ink", quiet)] {
+                let ratio = contrast(colour, fill);
+                assert!(ratio >= AA, "{name}: the chosen row's {what} is {ratio:.2}");
+            }
+            assert!(fill.a == 1., "{name}: the chosen fill is see-through");
+            assert!(fill.s > 0.2, "{name}: the chosen fill is a grey: {fill:?}");
             for (surface, under) in [
                 ("page", theme.background),
                 ("rail", theme.sidebar),
                 ("floating surface", theme.popover),
             ] {
-                let fill = over(tint, under);
-                for (what, colour) in [("name", ink), ("quieter ink", quiet)] {
-                    let ratio = contrast(colour, fill);
-                    assert!(
-                        ratio >= AA,
-                        "{name}: the chosen row's {what} on the {surface} is {ratio:.2}"
-                    );
-                }
-                assert!(
-                    fill.s > 0.2,
-                    "{name}: the chosen fill on the {surface} is a grey: {fill:?}"
-                );
                 assert!(
                     contrast(fill, under) >= 1.08,
                     "{name}: the chosen fill sinks into the {surface}"
+                );
+            }
+            // A hovered row beside it is told apart by hue, not by weight.
+            for (row, hover) in [
+                ("row", theme.list_hover),
+                ("rail row", theme.sidebar_accent),
+            ] {
+                assert!(
+                    fill.s - hover.s > 0.15,
+                    "{name}: the chosen fill reads as a hovered {row}"
                 );
             }
             assert!(ink.s > 0.4, "{name}: the chosen ink is not a blue: {ink:?}");
