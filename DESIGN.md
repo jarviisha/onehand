@@ -264,7 +264,9 @@ reaches.
   `sidebar_accent`, as a fill is a step from the surface under it), the chosen row the primary's fill
   (`chosen_fill`, solid, as a row's fade and the controls over a row are painted in it) with its name in
   `chosen_ink`; the library's own hover on a ghost button. The row the keys are on inside a popup is a
-  cursor, not a place: it takes the neutral highlight (`accent`). A secondary button rests on a fill of its own and takes
+  cursor, not a place: it takes the neutral highlight (`accent`). A choice that holds in a pick-one control
+  (a switch's half, a filter chip) is a setting, not a place: it takes the neutral control fill (`control_fill`),
+  as the blue on a small control outweighed the bar it stands in. A secondary button rests on a fill of its own and takes
   its pointed-at step under the pointer; the selected step is a chosen row's. Keyboard
   focus on a control is the ring. A field is edged at rest and ringed on focus, as the library
   draws it; the composer, the input surface, shows focus by its caret (*Components*).
