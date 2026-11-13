@@ -82,27 +82,23 @@ builder's call), the only place a colour value lives. `DESIGN.md` stops saying t
 library's; it says the palette is onehand's own, installed through the library's theme so library
 parts read it, and that a derived step is still mixed from tokens, never written.
 
-Starting values, from the approved mockup. They are targets to tune against the contrast tests,
-not figures to defend: where a test fails, move the ink, keep the surface.
+The owner saw the first values (a Jira-like charcoal with a pale blue) in the running app,
+rejected them, and picked VS Code's default pair instead, Dark Modern and Light Modern. Those are
+the values built:
 
 | Role (slot) | Dark | Light |
 |---|---|---|
-| Reading surface (`background`) | `#1f1f21` | `#ffffff` |
-| Rail and docks (`sidebar`) | `#18191a` | `#f8f8f8` |
-| Title bar, tab bar (`title_bar`, `tab_bar`) | `#18191a` | `#f8f8f8` |
-| Well, quiet fill (`muted`) | `#2b2c2f` | `#f0f1f2` |
-| Past the well (`secondary`) | `#303134` | `#e7e8ea` |
-| Floating surface (`popover`) | `#242528`, a step under the well so a well shows on it | `#ffffff` |
-| Hairline (`border`) | `#303134` | `#dddee1` |
-| A box's and a field's edge (`input`) | `#3a3b3f` | `#c9cace` |
-| Content ink (`foreground`) | `#e2e3e6` | `#292a2e` |
-| Muted ink (`muted_foreground`) | `#96999e` | `#656870`, so it reads in a well |
-| Hover on a row (`list_hover`, `sidebar_accent`) | a neutral step over its surface | same rule |
-| Primary (`primary`, hover, active) | `#669df1`, lighter under the pointer | `#1868db`, darker under the pointer |
-| Ink on the primary | `#1f1f21` | `#ffffff` |
-| Hover and highlight on a control or a menu row (`accent`, `accent_foreground`) | a neutral step, the content ink | same rule |
-| Chosen fill (onehand's own role) | the primary laid thin over the reading surface, solid | same rule |
-| Chosen ink (onehand's own role) | the primary, a step toward the content ink | same rule |
+| Reading surface (`background`) | `#1f1f1f` | `#ffffff` |
+| Rail, docks, title bar, tab bar, status bar | `#181818` | `#f8f8f8` |
+| Well (`muted`); past the well (`secondary`) | `#2b2b2b`; `#313131` | `#f3f3f3`; `#e5e5e5` |
+| Floating surface (`popover`) | `#252526` | `#ffffff` |
+| Hairline (`border`) | `#333333`, a step over VS Code's so it shows on a waiting card | `#e5e5e5` |
+| A box's and a field's edge (`input`) | `#3c3c3c` | `#cecece` |
+| Content ink; muted ink | `#cccccc`; `#9d9d9d` | `#3b3b3b`; `#616161` |
+| Hover and highlight (`accent`, `list_hover`, `sidebar_accent`) | neutral steps | same rule |
+| Primary | `#0078d4`, white on it | `#005fb8`, white on it |
+| Chosen fill (onehand's own role) | the primary laid over the reading surface, solid, near VS Code's `#04395e` | the same rule, a pale blue |
+| Chosen ink (onehand's own role) | the content ink: the fill carries the hue | same rule |
 
 - The composer card (`theme::raised`), the waiting card, the floating well and every other
   derived step keep their derivations; their tests keep their thresholds. Where a derivation
@@ -115,11 +111,11 @@ not figures to defend: where a test fails, move the ink, keep the surface.
 
 - The chosen fill and the chosen ink are two helpers in `onehand_ui::ink`, beside `control_fill`,
   their values in the palette with the rest; feature crates reach them there.
-- A picked row (`onehand_ui::row`): the chosen fill and the chosen ink. A quieter ink on it is
+- A picked row (`onehand_ui::row`): the chosen fill, its name in the chosen ink (the content ink). A quieter ink on it is
   `middle_ink(chosen ink, muted_foreground)`.
 - The rail's chosen row: the same fill and ink (`rail_chosen` returns the chosen fill, or goes
   away in favour of the shared helper: builder's call).
-- An open tab: its 2px primary mark stays where it is, and its label takes the chosen ink.
+- An open tab: its 2px primary mark stays where it is, and its label is the content ink.
 - The row the keys are on inside a popup (the composer's completion rows, a menu, the command
   list) is a cursor, not a location: it stays the neutral highlight.
 - Hover stays neutral and distinct from selected; a hovered selected row stays blue.

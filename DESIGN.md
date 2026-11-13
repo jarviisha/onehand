@@ -211,7 +211,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   corner (*Components*). A part joined to its container's edge takes its corner there.
 - **Lines** part regions and are a 1px `border`. A **mark** says where the person is, not where
   a region ends: the stroke of the primary along an open tab's top is 2px, a step heavier than a
-  line, and the tab's name is in the chosen ink. A list page's line over its foot is a step fainter (`faint_rule`), so the edge-to-edge
+  line, and the tab's name is in the content ink. A list page's line over its foot is a step fainter (`faint_rule`), so the edge-to-edge
   list reads as one surface; a page's top draws no line under it. A box on a page takes a step
   stronger edge, a control's (`input`); a folding block and a Settings group keep the hairline.
 
@@ -230,8 +230,9 @@ The surfaces are neutral greys, each region a visible step from its neighbour: o
 palette the reading surface is a charcoal clear of black, the rail, the docks and the bars a step
 under it, and a floating surface a step over it, told apart by its fill and its edge. The light
 palette is white over a pale grey for the same regions. The focus ring is a grey. The one hue
-among them is the blue: the primary action, and thinned to a tint, the item chosen among several
-(`chosen_fill`, in `chosen_ink`). What the pointer or the keys merely rest on stays a neutral
+among them is the blue: the primary action, and laid over the reading surface as a fill, the item
+chosen among several (`chosen_fill`; the fill carries the hue and its name stays the content ink,
+`chosen_ink`). What the pointer or the keys merely rest on stays a neutral
 step, a row's hover and a popup's highlighted row alike.
 Pairs under WCAG AA are in `docs/known-gaps.md`; `crate::theme`'s tests hold each at what it
 reaches.
@@ -244,7 +245,7 @@ reaches.
 | `theme::meta_ink` | the middle ink: a detail beside a name, between prose and meta, contrast-tested |
 | `border` | every hairline, a folding block's and a Settings group's edge; a box on a page takes `input` |
 | `ring` | keyboard focus, drawn only when the keyboard moved it; the composer while a file is dragged over it |
-| `chosen_fill`, `chosen_ink` | the one item chosen among several, where the person is: a row, a rail entry, a tab's name; the primary's tint and its ink |
+| `chosen_fill`, `chosen_ink` | the one item chosen among several, where the person is: a row, a rail entry; the primary laid over the surface, and the content ink on it |
 | `accent` | what the pointer or the keys rest on in a control or a popup: a ghost's hover, a menu's highlighted row; a neutral fill |
 | `link` | a link: the library draws it in the prose ink, underlined |
 | `info` | what runs |
@@ -260,7 +261,7 @@ reaches.
 - Boxes are borders; wells and the bubbles are fills. Ordinary sections remain unboxed. Do not
   combine a border, contrasting fill and shadow just to make a group visible.
 - Hover and selection are fills, told apart by hue: a hovered row a neutral step (`list_hover`; on the rail
-  `sidebar_accent`, as a fill is a step from the surface under it), the chosen row the primary's tint
+  `sidebar_accent`, as a fill is a step from the surface under it), the chosen row the primary's fill
   (`chosen_fill`, solid, as a row's fade and the controls over a row are painted in it) with its name in
   `chosen_ink`; the library's own hover on a ghost button. The row the keys are on inside a popup is a
   cursor, not a place: it takes the neutral highlight (`accent`). A secondary button rests on a fill of its own and takes

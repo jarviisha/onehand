@@ -91,74 +91,73 @@ fn palette(colors: &mut gpui_component::ThemeConfigColors, dark: bool) {
     }
     set! {
         // The reading surface, and what the library draws as part of it.
-        background: "#1f1f21", "#ffffff";
-        list: "#1f1f21", "#ffffff";
-        table: "#1f1f21", "#ffffff";
-        accordion: "#1f1f21", "#ffffff";
-        group_box: "#1f1f21", "#f8f8f8";
-        tab_active: "#1f1f21", "#ffffff";
-        slider_thumb: "#1f1f21", "#ffffff";
-        scrollbar: "#1f1f2100", "#ffffff00";
+        background: "#1f1f1f", "#ffffff";
+        list: "#1f1f1f", "#ffffff";
+        table: "#1f1f1f", "#ffffff";
+        accordion: "#1f1f1f", "#ffffff";
+        group_box: "#1f1f1f", "#f8f8f8";
+        tab_active: "#1f1f1f", "#ffffff";
+        slider_thumb: "#1f1f1f", "#ffffff";
+        scrollbar: "#1f1f1f00", "#ffffff00";
         // The rail, the docks and the bars: a step under the reading surface.
-        sidebar: "#18191a", "#f8f8f8";
-        title_bar: "#18191a", "#f8f8f8";
-        status_bar: "#18191a", "#f8f8f8";
-        tab_bar: "#18191a", "#f8f8f8";
-        tab_bar_segmented: "#18191a", "#f0f1f2";
-        description_list_label: "#18191a", "#f8f8f8";
-        list_even: "#18191a66", "#f8f8f8";
-        list_head: "#18191a66", "#f8f8f8";
+        sidebar: "#181818", "#f8f8f8";
+        title_bar: "#181818", "#f8f8f8";
+        status_bar: "#181818", "#f8f8f8";
+        tab_bar: "#181818", "#f8f8f8";
+        tab_bar_segmented: "#181818", "#f3f3f3";
+        description_list_label: "#181818", "#f8f8f8";
+        list_even: "#18181866", "#f8f8f8";
+        list_head: "#18181866", "#f8f8f8";
         // A floating surface: a step over it.
-        popover: "#242528", "#ffffff";
+        popover: "#252526", "#ffffff";
         // The well, the step past it, and what rests under the pointer.
-        muted: "#2b2c2f", "#f0f1f2";
-        skeleton: "#2b2c2f", "#f0f1f2";
-        secondary: "#303134", "#e7e8ea";
-        secondary_hover: "#37383b", "#dfe0e3";
-        secondary_active: "#2b2c2f", "#d3d4d8";
-        accent: "#303134", "#f0f1f2";
-        list_hover: "#28292c", "#f3f4f5";
-        sidebar_accent: "#242528", "#ebecee";
-        switch: "#45464a", "#c9cace";
-        scrollbar_thumb: "#5a5b60e6", "#a3a5aae6";
-        scrollbar_thumb_hover: "#5a5b60", "#a3a5aa";
+        muted: "#2b2b2b", "#f3f3f3";
+        skeleton: "#2b2b2b", "#f3f3f3";
+        secondary: "#313131", "#e5e5e5";
+        secondary_hover: "#3c3c3c", "#dcdcdc";
+        secondary_active: "#2b2b2b", "#d0d0d0";
+        accent: "#37373d", "#e8e8e8";
+        list_hover: "#2a2d2e", "#f2f2f2";
+        sidebar_accent: "#2a2d2e", "#ebebeb";
+        switch: "#4d4d4d", "#c4c4c4";
+        scrollbar_thumb: "#79797966", "#64646466";
+        scrollbar_thumb_hover: "#646464b3", "#646464b3";
         // Lines.
-        border: "#303134", "#dddee1";
-        input: "#3a3b3f", "#c9cace";
-        sidebar_border: "#303134", "#dddee1";
-        title_bar_border: "#303134", "#dddee1";
-        status_bar_border: "#303134", "#dddee1";
-        window_border: "#303134", "#dddee1";
-        table_row_border: "#303134b3", "#dddee1b3";
+        border: "#333333", "#e5e5e5";
+        input: "#3c3c3c", "#cecece";
+        sidebar_border: "#333333", "#e5e5e5";
+        title_bar_border: "#333333", "#e5e5e5";
+        status_bar_border: "#333333", "#e5e5e5";
+        window_border: "#333333", "#e5e5e5";
+        table_row_border: "#333333b3", "#e5e5e5b3";
         // Inks.
-        foreground: "#e2e3e6", "#292a2e";
-        popover_foreground: "#e2e3e6", "#292a2e";
-        accent_foreground: "#e2e3e6", "#292a2e";
-        secondary_foreground: "#e2e3e6", "#292a2e";
-        sidebar_foreground: "#e2e3e6", "#292a2e";
-        sidebar_accent_foreground: "#e2e3e6", "#292a2e";
-        group_box_foreground: "#e2e3e6", "#292a2e";
-        description_list_label_foreground: "#e2e3e6", "#292a2e";
-        tab_active_foreground: "#e2e3e6", "#292a2e";
-        tab_foreground: "#cecfd2", "#505258";
-        caret: "#e2e3e6", "#292a2e";
-        link: "#e2e3e6", "#292a2e";
-        link_active: "#cecfd2", "#292a2e";
-        link_hover: "#ffffff", "#505258";
-        muted_foreground: "#96999e", "#656870";
-        table_head_foreground: "#96999e", "#656870";
-        // The one blue. Under the pointer it goes lighter on the dark page
-        // and darker on the light one, away from the surface either way, and
-        // darker pressed; its word reads on all three.
-        primary: "#669df1", "#1868db";
-        primary_hover: "#85b0f4", "#1558bc";
-        primary_active: "#5a90e6", "#124a9e";
-        primary_foreground: "#1f1f21", "#ffffff";
-        // The library's own chosen list row, at the tint the app's rows take.
-        list_active: "#669df12e", "#1868db1f";
-        list_active_border: "#669df1", "#1868db";
-        table_active: "#669df12e", "#1868db1f";
-        table_active_border: "#669df1", "#1868db";
+        foreground: "#cccccc", "#3b3b3b";
+        popover_foreground: "#cccccc", "#3b3b3b";
+        accent_foreground: "#cccccc", "#3b3b3b";
+        secondary_foreground: "#cccccc", "#3b3b3b";
+        sidebar_foreground: "#cccccc", "#3b3b3b";
+        sidebar_accent_foreground: "#cccccc", "#3b3b3b";
+        group_box_foreground: "#cccccc", "#3b3b3b";
+        description_list_label_foreground: "#cccccc", "#3b3b3b";
+        tab_active_foreground: "#ffffff", "#3b3b3b";
+        tab_foreground: "#9d9d9d", "#616161";
+        caret: "#cccccc", "#3b3b3b";
+        link: "#cccccc", "#3b3b3b";
+        link_active: "#cccccc", "#3b3b3b";
+        link_hover: "#ffffff", "#616161";
+        muted_foreground: "#9d9d9d", "#616161";
+        table_head_foreground: "#9d9d9d", "#616161";
+        // The one blue, darker under the pointer and pressed in either mode;
+        // its word reads on all three.
+        primary: "#0078d4", "#005fb8";
+        primary_hover: "#026ec1", "#0258a8";
+        primary_active: "#0264ad", "#014c91";
+        primary_foreground: "#ffffff", "#ffffff";
+        // The library's own chosen list row, near the fill the app's rows take.
+        list_active: "#04395e", "#005fb81f";
+        list_active_border: "#0078d4", "#005fb8";
+        table_active: "#04395e", "#005fb81f";
+        table_active_border: "#0078d4", "#005fb8";
     }
 }
 
@@ -433,7 +432,7 @@ mod tests {
                 theme.background,
                 mode == ThemeMode::Dark,
             );
-            let ink = onehand_ui::chosen_ink_of(theme.primary, theme.foreground);
+            let ink = theme.foreground;
             let quiet = onehand_ui::middle_ink(ink, theme.muted_foreground);
             for (what, colour) in [("name", ink), ("quieter ink", quiet)] {
                 let ratio = contrast(colour, fill);
@@ -461,7 +460,6 @@ mod tests {
                     "{name}: the chosen fill reads as a hovered {row}"
                 );
             }
-            assert!(ink.s > 0.4, "{name}: the chosen ink is not a blue: {ink:?}");
         }
     }
 

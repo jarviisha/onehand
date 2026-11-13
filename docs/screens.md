@@ -228,7 +228,7 @@ dragged height kept).
 - Strips as tall as the header, a mode's own bar under the Workbench's a step lower. The
   Workbench's, the terminal's and the Editor's files are the library's tab panel bars (`tab_bar`):
   on the tab bar's fill with a line under, the tabs flush and parted by lines, the open one on the
-  tab's fill under a stroke of the primary along its top, its name in the chosen ink, the controls at the end. The
+  tab's fill under a stroke of the primary along its top, its name in the content ink, the controls at the end. The
   Workbench's: *← Conversation* while it has the area, the modes as tabs
   (Editor, Markdown, Issues, Plugins only where a Claude Code agent is set up when the window
   opens, Neovim; a select under 26rem), maximize, hide. The terminal's:

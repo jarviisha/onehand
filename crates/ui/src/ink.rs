@@ -127,12 +127,8 @@ pub fn control_fill_of(hover: Hsla, selected: Hsla) -> Hsla {
 
 /// How much of the primary the chosen fill takes, on the dark page and on
 /// the light one: the rest is the reading surface.
-const CHOSEN_FILL_DARK: f32 = 0.18;
+const CHOSEN_FILL_DARK: f32 = 0.45;
 const CHOSEN_FILL_LIGHT: f32 = 0.12;
-
-/// How far the chosen ink is pulled from the primary toward the content ink,
-/// so it and a quieter ink under it read on the chosen fill.
-const CHOSEN_INK: f32 = 0.3;
 
 /// The fill of the item chosen among several, the place the person is: a row,
 /// a rail entry, a tab. The primary laid thin over the reading surface, the
@@ -154,17 +150,11 @@ pub fn chosen_fill_of(primary: Hsla, surface: Hsla, dark: bool) -> Hsla {
     }))
 }
 
-/// The ink of the chosen item's name, on [`chosen_fill`]: the primary, a
-/// step toward the content ink. A quieter ink beside it is
-/// [`middle_ink`] under this one.
+/// The ink of the chosen item's name, on [`chosen_fill`]: the content ink,
+/// as the fill carries the hue. A quieter ink beside it is [`middle_ink`]
+/// under this one.
 pub fn chosen_ink(cx: &App) -> Hsla {
-    let theme = cx.theme();
-    chosen_ink_of(theme.primary, theme.foreground)
-}
-
-/// [`chosen_ink`] from the two inks it lies between.
-pub fn chosen_ink_of(primary: Hsla, foreground: Hsla) -> Hsla {
-    primary.mix_oklab(foreground, 1. - CHOSEN_INK)
+    cx.theme().foreground
 }
 
 /// How much of a hue a pale fill keeps; the rest is the surface it sits on.
