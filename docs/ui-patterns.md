@@ -287,7 +287,7 @@ least width, up to four, a short last row keeping the column's width.
 ### Lists
 
 A single-line row is `ROW_H` tall, padded `px_2` with `gap_2`, at `radius`. Hover fills it with
-`list_hover`, the selected row with `accent`. A row standing on a region's bare surface, with no
+`list_hover`, the selected row with `chosen_fill` in `chosen_ink`. A row standing on a region's bare surface, with no
 frame of its own around the list, keeps those fills off that region's edges: a tree in a dock by
 `tokens::ROW_GUTTER`, any other list in a dock by its own padding, a list page by its inset. In a
 list where a row can be selected, two fills never touch: a hovered row beside the selected one

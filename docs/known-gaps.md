@@ -5,12 +5,13 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 [workflows.md](workflows.md#not-built), [tasks.md](tasks.md#not-built) and
 [unattended.md](unattended.md#not-built-on-purpose).
 
-- **Meta text on a well, some status words and the focus ring fall under WCAG AA.** The palette is
-  gpui-kit's own and is not changed here. For text: the library's `muted_foreground` on its
-  `muted` (about 4.4 on the light palette), and status ink, a tint's words and a diff line's sign
-  on some surfaces they land on, held at `HUE_INK` in `crates/app/src/theme.rs`. For a control:
-  the focus ring, the library's grey, at about 2.5 on the light page. Fixing them means changing
-  the library's values, which this palette does not do.
+- **Some status words and the focus ring fall under WCAG AA.** The status hues and the ring are
+  the library's, which the app's palette leaves alone. For text: status ink, a tint's words and a
+  diff line's sign on some surfaces they land on, held at `HUE_INK` in `crates/app/src/theme.rs`.
+  For a control: the focus ring, the library's grey. Fixing them means giving the palette hues
+  and a ring of its own.
+- **A chosen choice is still a grey.** A switch's half and a filter chip that holds take the
+  neutral control fill, not the blue a chosen row, rail entry and tab take.
 - **Some window behaviour has no automated test**: Settings' drafts kept across leaving the page,
   a failed write said once, and the keyboard handed back when a dialog closes. The app runs
   window tests through gpui's harness (the terminal dock, the Workbench panel), but none covers
