@@ -131,7 +131,7 @@ fn hide_control(cx: &mut Context<Workbench>) -> Button {
 }
 
 /// One mode on the bar: a tab panel's tab, the showing one on the tab's fill
-/// with the primary's stroke along its top, at most a tab's width and
+/// with the primary's stroke along its top and its name in the chosen ink, at most a tab's width and
 /// truncating. Its press is a text button inside the tab, so the keyboard
 /// reaches it.
 fn mode_tab(
@@ -142,7 +142,7 @@ fn mode_tab(
 ) -> impl IntoElement + use<> {
     let chosen = which == active;
     let ink = match chosen {
-        true => cx.theme().tab_active_foreground,
+        true => onehand_ui::chosen_ink(cx),
         false => cx.theme().tab_foreground,
     };
     onehand_ui::panel_tab_frame(

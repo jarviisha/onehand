@@ -619,7 +619,7 @@ impl IssuesView {
         // On the selected fill the quieter ink is taken under that fill's
         // own, so it stays a step quieter there rather than sinking into it.
         let muted = match selected {
-            true => middle_ink(theme.accent_foreground, theme.muted_foreground),
+            true => middle_ink(onehand_ui::chosen_ink(cx), theme.muted_foreground),
             false => theme.muted_foreground,
         };
         let conflicted = issue.link().is_some_and(|l| l.conflict.is_some());

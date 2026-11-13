@@ -45,8 +45,9 @@ pub use control_size::{ControlSize, Short, ShortIcon, Tall, TallIcon};
 pub use field::{field, search_input, text_area, text_input};
 pub use icon::AppIcon;
 pub use ink::{
-    StatusInk, Tint, control_fill, control_fill_of, faint_rule, meta_ink, middle_ink, neutral_tint,
-    status_hue, status_ink, tint, tint_over,
+    StatusInk, Tint, chosen_fill, chosen_fill_of, chosen_ink, chosen_ink_of, control_fill,
+    control_fill_of, faint_rule, meta_ink, middle_ink, neutral_tint, status_hue, status_ink, tint,
+    tint_over,
 };
 pub use list_detail::{ListDetail, ListWidths, back_link, crumb_link, crumbs, list_detail};
 pub use menu::{

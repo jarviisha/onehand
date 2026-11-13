@@ -205,10 +205,10 @@ pub fn tab_chip(
         .rounded(theme.radius)
         .cursor_pointer()
         .text_color(match chosen {
-            true => theme.accent_foreground,
+            true => crate::chosen_ink(cx),
             false => theme.muted_foreground,
         })
-        .when(chosen, |tab| tab.bg(theme.accent))
+        .when(chosen, |tab| tab.bg(crate::chosen_fill(cx)))
         .when(!chosen, |tab| tab.hover(|tab| tab.bg(theme.list_hover)))
         .tooltip(crate::tip(move |window, cx| {
             Tooltip::new(hint.clone()).build(window, cx)
@@ -277,15 +277,18 @@ pub fn panel_tab_frame(
         .border_color(theme.border)
         .text_size(crate::tokens::CHROME_TEXT)
         .map(|tab| match chosen {
-            true => tab.bg(theme.tab_active).text_color(lit).child(
-                gpui::div()
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .right_0()
-                    .h(crate::tokens::TAB_MARK)
-                    .bg(theme.primary),
-            ),
+            true => tab
+                .bg(theme.tab_active)
+                .text_color(crate::chosen_ink(cx))
+                .child(
+                    gpui::div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .right_0()
+                        .h(crate::tokens::TAB_MARK)
+                        .bg(theme.primary),
+                ),
             false => tab
                 .text_color(theme.tab_foreground)
                 .hover(move |tab| tab.text_color(lit)),

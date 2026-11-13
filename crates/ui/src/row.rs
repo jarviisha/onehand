@@ -1,6 +1,6 @@
 //! A list row's surface, a tree's row, and the slot a row's mark stands in.
 
-use crate::tokens;
+use crate::{chosen_fill, chosen_ink, tokens};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Div, ElementId, InteractiveElement as _, IntoElement, ParentElement as _, Styled as _, div,
@@ -60,9 +60,9 @@ pub fn tree_row(
 
 /// A list row's surface: at least [`tokens::ROW_H`] tall, inset `px_2`, at
 /// the theme's corner, answering the pointer. The hover fills it with
-/// `list_hover` and leaves its inks; the picked row stands on `accent` in
-/// that fill's paired ink, a quieter ink on it taken through [`middle_ink`](crate::middle_ink)
-/// under that pair. The caller lays it out, a line or a line over a second,
+/// `list_hover` and leaves its inks; the picked row stands on the chosen fill in
+/// the chosen ink, a quieter ink on it taken through [`middle_ink`](crate::middle_ink)
+/// under that ink. The caller lays it out, a line or a line over a second,
 /// and adds the ring where the keyboard is.
 pub fn row(picked: bool, cx: &App) -> Div {
     let theme = cx.theme();
@@ -73,7 +73,7 @@ pub fn row(picked: bool, cx: &App) -> Div {
         .rounded(theme.radius)
         .cursor_pointer()
         .map(|row| match picked {
-            true => row.bg(theme.accent).text_color(theme.accent_foreground),
+            true => row.bg(chosen_fill(cx)).text_color(chosen_ink(cx)),
             false => row.hover(move |row| row.bg(hover)),
         })
 }

@@ -72,7 +72,7 @@ pub(super) fn issue_row(
     // Every quieter ink on the picked row is taken under the selected fill's
     // own ink, so it stays a step quieter there rather than sinking into it.
     let muted = match place.picked {
-        true => middle_ink(theme.accent_foreground, theme.muted_foreground),
+        true => middle_ink(onehand_ui::chosen_ink(cx), theme.muted_foreground),
         false => theme.muted_foreground,
     };
     let ink = status_ink(cx);
@@ -156,7 +156,7 @@ pub(super) fn issue_row(
     };
     let changed = issue.changed();
     let age_ink = match place.picked {
-        true => theme.accent_foreground,
+        true => onehand_ui::chosen_ink(cx),
         false => meta_ink(cx),
     };
     let updated = div()

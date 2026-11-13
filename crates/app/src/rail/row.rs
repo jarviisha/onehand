@@ -40,10 +40,10 @@ pub(super) fn hover_fill(cx: &App) -> Hsla {
 }
 
 /// The fill of the row that is chosen, the session on screen or the project
-/// whose page shows: the hover's own step, as the library's sidebar marks its
-/// active item, told from a hovered row by its weight.
+/// whose page shows: the primary's tint over the rail, as every chosen row
+/// in the window takes, told from a hovered row by its hue.
 pub(super) fn chosen_fill(cx: &App) -> Hsla {
-    crate::theme::rail_chosen(cx)
+    onehand_ui::chosen_fill(cx)
 }
 
 /// A page's row, the rail's and Settings' nav alike, as the library's sidebar
@@ -54,7 +54,7 @@ pub(crate) fn page_fill<E: Styled + InteractiveElement>(row: E, on: bool, cx: &A
     match on {
         true => row
             .bg(chosen_fill(cx))
-            .text_color(cx.theme().sidebar_accent_foreground)
+            .text_color(onehand_ui::chosen_ink(cx))
             .font_weight(gpui::FontWeight::MEDIUM),
         false => {
             let hover = hover_fill(cx);
@@ -73,7 +73,7 @@ pub(super) fn row_inks(chosen: bool, cx: &App) -> (Hsla, Hsla) {
     let muted = cx.theme().muted_foreground;
     match chosen {
         true => {
-            let ink = cx.theme().sidebar_accent_foreground;
+            let ink = onehand_ui::chosen_ink(cx);
             (ink, onehand_ui::middle_ink(ink, muted))
         }
         false => (cx.theme().sidebar_foreground, muted),
@@ -305,7 +305,8 @@ impl Render for DragGhost {
             .px_2()
             .py_0p5()
             .rounded(cx.theme().radius)
-            .bg(chosen_fill(cx))
+            // Solid, as the ghost floats over whatever it is dragged across.
+            .bg(hover_fill(cx))
             .text_size(crate::tokens::CHROME_TEXT)
             .text_color(cx.theme().sidebar_accent_foreground)
             .child(self.0.clone())

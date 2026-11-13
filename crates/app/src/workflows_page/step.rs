@@ -139,8 +139,8 @@ fn step_row(
         // The step open beside is marked as a picked row is.
         .map(|row| match open {
             true => row
-                .bg(cx.theme().accent)
-                .text_color(cx.theme().accent_foreground),
+                .bg(onehand_ui::chosen_fill(cx))
+                .text_color(onehand_ui::chosen_ink(cx)),
             false => row.hover(|row| row.bg(cx.theme().list_hover)),
         })
         .on_click(click(handle, move |page, window, cx| {
