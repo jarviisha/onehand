@@ -120,7 +120,7 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 - **`.tall()` is the ceiling.** No control stands taller than `FIELD_H`; a page gives a field
   room by its size, never by a larger control.
 - **One size, one measure.** A button's `.short()` is the library's extra small held at
-  `CONTROL_H` (24px) and its `.tall()` the library's small held at `FIELD_H` (28px), its words at
+  `CONTROL_H` and its `.tall()` the library's small held at `FIELD_H`, a step over it, its words at
   `CHROME_TEXT`; a field takes the library's small at both heights, its words at `CHROME_TEXT`; their icons and insets the
   library's. A size a component gets wrong is corrected in its shared
   wrapper, never at the call site. An icon-only button beside `.short()` is `.short_icon()`: the
