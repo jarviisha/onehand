@@ -170,7 +170,7 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 
 | Token | Value | What |
 |---|---|---|
-| `BAR_H` | 2.1875rem | every strip along the top of a region: 35px |
+| `BAR_H` | 2.25rem | every strip along the top of a region: 36px, so a small control stands centred on whole pixels |
 | `TAB_MARK` | 0.125rem | the stroke along the top of a dock's open tab |
 | `MODE_BAR_H` | 1.875rem | a mode's own bar under the Workbench's strip (the editor's tabs, the reader's bar) |
 | `ROW_H` | 1.75rem | a list row (the rail, the composer's popup): 28px |

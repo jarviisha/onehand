@@ -13,7 +13,7 @@ use gpui_component::ActiveTheme as _;
 /// a page's column heads, so bars side by side line up across the window.
 /// A small control and a little room over and under it, as an editor's
 /// title bars stand: taller and the bars read as a band of their own.
-pub const BAR_H: Rems = rems(2.1875);
+pub const BAR_H: Rems = rems(2.25);
 
 /// The mark saying which tab of a dock's bar is open: a stroke along its
 /// top, a step heavier than a line.
