@@ -334,11 +334,11 @@ draws on (a radio's or a checkbox's ring on the selected step), `choice_mark` dr
 
 **A size names a role, and the role follows the room the control stands in.** A control takes
 one of the library's two sizes. On a page, where there is room and the person reads and types
-what a control holds, it takes `.tall()` (26px; a button is the library's small held at `FIELD_H`, its words at `CHROME_TEXT`): a page's head and a page's
+what a control holds, it takes `.tall()` (28px; a button is the library's small held at `FIELD_H`, its words at `CHROME_TEXT`): a page's head and a page's
 form, its fields, pickers and buttons alike, so a field's words stand at its title's size; a
 dialog holding a form at `DIALOG_FORM` is that room too. In dense chrome (the rail, a dock, a
 strip, a dock's filter bar, a dialog that asks one thing, a row, a box's title row, the composer) it takes
-`.short()` (22px; a button is the library's extra small, a field its small, held at `CONTROL_H`), so it never outweighs what it acts on. An icon alone is
+`.short()` (24px; a button is the library's extra small, a field its small, held at `CONTROL_H`), so it never outweighs what it acts on. An icon alone is
 square at its row's height: `.short_icon()` beside `.short()` peers, `.tall_icon()` beside tall ones.
 `.tall()` (`FIELD_H`) is the ceiling: no control stands taller.
 **What a small object holds scales with the object.** Inside a fixed object smaller than a row of

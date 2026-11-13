@@ -440,7 +440,7 @@ dragged height kept).
 ## Settings
 
 Settings is a page named in its own head, as the workspace pages are, over a nav column with
-Appearance, Workspace, Agents, Connections and Shortcuts (rows as the rail's page rows, at 22px, a
+Appearance, Workspace, Agents, Connections and Shortcuts (rows as the rail's page rows, at 26px, a
 step under a list row), and beside
 it the sub-page, untitled (its nav row names it), opening on its scope as a badge and a hint, its
 groups in the library's setting-page shape: each a box with an edge, its semibold heading and the

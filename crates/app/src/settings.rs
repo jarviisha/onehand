@@ -426,7 +426,7 @@ impl SettingsPage {
 
 /// A row of the Settings page's own list: a step under a list row, as an
 /// editor's settings index stands, since the page beside it carries the weight.
-const NAV_ROW_H: gpui::Rems = gpui::rems(1.375);
+const NAV_ROW_H: gpui::Rems = gpui::rems(1.625);
 
 /// One row in the nav column.
 ///
