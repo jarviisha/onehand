@@ -10,8 +10,6 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   diff line's sign on some surfaces they land on, held at `HUE_INK` in `crates/app/src/theme.rs`.
   For a control: the focus ring, the library's grey. Fixing them means giving the palette hues
   and a ring of its own.
-- **A chosen choice is still a grey.** A switch's half and a filter chip that holds take the
-  neutral control fill, not the blue a chosen row, rail entry and tab take.
 - **Some window behaviour has no automated test**: Settings' drafts kept across leaving the page,
   a failed write said once, and the keyboard handed back when a dialog closes. The app runs
   window tests through gpui's harness (the terminal dock, the Workbench panel), but none covers
