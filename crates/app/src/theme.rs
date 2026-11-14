@@ -8,7 +8,7 @@
 //! parts read one palette, and a slot it leaves alone (a status hue, the
 //! ring, a chart's series) stays the library's. The steps no slot holds (the
 //! composer's lift, a well on a floating card, a hue tempered for ink, the
-//! chosen row's tint) are derived from the slots, here or in `onehand_ui`,
+//! chosen row's fill) are derived from the slots, here or in `onehand_ui`,
 //! never written as values of their own. The terminal's sixteen colours are
 //! not the palette's: they stay `onehand_terminal_ui::ansi`, as a program's
 //! colours are its own.
@@ -79,10 +79,10 @@ pub(crate) fn install(cx: &mut App) {
 /// edge. The light page is white over a pale grey for the same regions.
 ///
 /// **One blue.** The primary is the one hue among the surfaces and inks: the
-/// action to press, and through `onehand_ui::chosen_fill` the item chosen
-/// among several. What the pointer or the keys merely rest on (`accent`,
-/// `list_hover`, `sidebar_accent`) stays a neutral step, because the library
-/// draws every quiet button's and every menu row's hover in `accent`.
+/// action to press. The item chosen among several stands on the selected
+/// grey (`accent`), a step past what the pointer rests on (`list_hover`,
+/// `sidebar_accent`), as VS Code marks a selection in a list that does not
+/// hold the keys.
 fn palette(colors: &mut gpui_component::ThemeConfigColors, dark: bool) {
     macro_rules! set {
         ($($slot:ident: $dark:literal, $light:literal;)*) => {$(
@@ -116,7 +116,7 @@ fn palette(colors: &mut gpui_component::ThemeConfigColors, dark: bool) {
         secondary: "#313131", "#e5e5e5";
         secondary_hover: "#3c3c3c", "#dcdcdc";
         secondary_active: "#2b2b2b", "#d0d0d0";
-        accent: "#37373d", "#e8e8e8";
+        accent: "#37373d", "#e4e4e4";
         list_hover: "#2a2d2e", "#f2f2f2";
         sidebar_accent: "#2a2d2e", "#ebebeb";
         switch: "#4d4d4d", "#c4c4c4";
@@ -153,11 +153,11 @@ fn palette(colors: &mut gpui_component::ThemeConfigColors, dark: bool) {
         primary_hover: "#026ec1", "#0258a8";
         primary_active: "#0264ad", "#014c91";
         primary_foreground: "#ffffff", "#ffffff";
-        // The library's own chosen list row, near the fill the app's rows take.
-        list_active: "#04395e", "#005fb81f";
-        list_active_border: "#0078d4", "#005fb8";
-        table_active: "#04395e", "#005fb81f";
-        table_active_border: "#0078d4", "#005fb8";
+        // The library's own chosen list row, at the fill the app's rows take.
+        list_active: "#37373d", "#e4e4e4";
+        list_active_border: "#37373d", "#e4e4e4";
+        table_active: "#37373d", "#e4e4e4";
+        table_active_border: "#37373d", "#e4e4e4";
     }
 }
 
@@ -404,8 +404,8 @@ mod tests {
         }
     }
 
-    /// What the pointer or the keys rest on is a grey: the hue is kept for
-    /// the primary and the chosen item.
+    /// What the pointer or the keys rest on, and the item chosen, are greys:
+    /// the hue is kept for the primary.
     #[test]
     fn hover_stays_neutral() {
         for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
@@ -421,43 +421,29 @@ mod tests {
     }
 
     /// The chosen item's name, and a quieter ink beside it, read on its fill,
-    /// and the fill, solid and a blue, stands off every surface a row lies on
-    /// and a hovered row beside it.
+    /// and the fill stands off every surface a row lies on and a hovered row
+    /// beside it.
     #[test]
     fn the_chosen_row_reads_and_stands_off_a_hovered_one() {
         for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
             let theme = installed(mode);
-            let fill = onehand_ui::chosen_fill_of(
-                theme.primary,
-                theme.background,
-                mode == ThemeMode::Dark,
-            );
+            let fill = theme.accent;
             let ink = theme.foreground;
             let quiet = onehand_ui::middle_ink(ink, theme.muted_foreground);
             for (what, colour) in [("name", ink), ("quieter ink", quiet)] {
                 let ratio = contrast(colour, fill);
                 assert!(ratio >= AA, "{name}: the chosen row's {what} is {ratio:.2}");
             }
-            assert!(fill.a == 1., "{name}: the chosen fill is see-through");
-            assert!(fill.s > 0.2, "{name}: the chosen fill is a grey: {fill:?}");
             for (surface, under) in [
                 ("page", theme.background),
                 ("rail", theme.sidebar),
                 ("floating surface", theme.popover),
+                ("hovered row", theme.list_hover),
+                ("hovered rail row", theme.sidebar_accent),
             ] {
                 assert!(
-                    contrast(fill, under) >= 1.08,
+                    contrast(fill, under) >= 1.05,
                     "{name}: the chosen fill sinks into the {surface}"
-                );
-            }
-            // A hovered row beside it is told apart by hue, not by weight.
-            for (row, hover) in [
-                ("row", theme.list_hover),
-                ("rail row", theme.sidebar_accent),
-            ] {
-                assert!(
-                    fill.s - hover.s > 0.15,
-                    "{name}: the chosen fill reads as a hovered {row}"
                 );
             }
         }

@@ -18,7 +18,7 @@ Slot names that mislead (the library's names, kept because its own controls read
 
 | Slot | Holds |
 |---|---|
-| `accent`, `accent_foreground` | what the pointer or the keys rest on in a control or a popup (the library draws a ghost's hover and a menu's highlighted row in it): neutral, not the chosen item, which is `chosen_fill(cx)` |
+| `accent`, `accent_foreground` | the selected grey and its ink: the chosen item (read through `chosen_fill(cx)`), and, as the library draws them, a menu's highlighted row and a ghost's hover |
 | `link` | a link, in the prose ink |
 | `info` | what runs |
 | `muted` | the well's fill |
@@ -28,7 +28,7 @@ Slot names that mislead (the library's names, kept because its own controls read
 | `danger`, `warning`, `success` | fills with white on them; their text is `status_ink(cx)` |
 | `sidebar` | the rail's fill, the docks' too, read for a dock through `dock_surface(cx)` |
 | `sidebar_accent` | the rail's hovered row |
-| `list_active` | the library's own chosen list row, set to the tint `chosen_fill(cx)` gives |
+| `list_active` | the library's own chosen list row, set to the selected grey |
 
 Helpers:
 
@@ -38,7 +38,7 @@ Helpers:
 | `tint(base, cx)` | a label's `Tint { fill, ink }` by its hue | `crates/ui/src/ink.rs` |
 | `dock_surface(cx)` | the Workbench's and the terminal's surface | `crates/ui/src/surface.rs` |
 | `badge_edge(tint)` | a badge's edge: halfway from its `Tint`'s fill to its ink | `crates/ui/src/badge.rs` |
-| `chosen_fill(cx)`, `chosen_ink(cx)` | the item chosen among several: the primary laid thin over the reading surface, solid, and its name's ink, the content ink | `crates/ui/src/ink.rs` |
+| `chosen_fill(cx)`, `chosen_ink(cx)` | the item chosen among several: the selected grey (`accent`), a step past the hover step, and its name's ink, the content ink | `crates/ui/src/ink.rs` |
 | `control_fill(cx)` | a ghost control's fill hovered, pressed or chosen; between `list_hover` and `accent` | `crates/ui/src/ink.rs` |
 | `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: a list page's line over its foot, and the Issues tab's filter bar's line | `crates/ui/src/ink.rs` |
 | `meta_ink(cx)` | the middle ink: a detail beside a name, between prose and muted | `crates/ui/src/ink.rs`; the app says `crate::theme::meta_ink` |

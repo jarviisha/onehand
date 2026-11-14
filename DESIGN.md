@@ -26,9 +26,8 @@ a hex literal is a bug even when it looks right, as no theme switch reaches it.
    narrow for both, the Workbench takes the area under *← Conversation*, which steps it aside. Pages
    take the agent pane and put the docks away; a page opens over a session only when picked.
 2. **Content leads; navigation recedes.** Neutral surfaces carry the layout. Hue identifies a
-   state, a link, a label's kind, code in prose or where the person is, never a decorative
-   section background.
-   Focus is a grey; the palette's one blue is the primary action and the item chosen among several. Attention is earned: the signals that call for the person
+   state, a link, a label's kind or code in prose, never a decorative section background.
+   Focus and selection are greys; the palette's one blue is the primary action. Attention is earned: the signals that call for the person
    (a state's hue, a count or badge of what waits, a dot, weight past what the role takes) mark
    only what needs them or has just changed, so a view at rest is calm. Hierarchy and identity are not attention: a heading keeps
    its weight, a list its muted count, a label its kind's hue. Nor is a mode switched on: the
@@ -230,10 +229,9 @@ The surfaces are neutral greys, each region a visible step from its neighbour: o
 palette the reading surface is a charcoal clear of black, the rail, the docks and the bars a step
 under it, and a floating surface a step over it, told apart by its fill and its edge. The light
 palette is white over a pale grey for the same regions. The focus ring is a grey. The one hue
-among them is the blue: the primary action, and laid over the reading surface as a fill, the item
-chosen among several (`chosen_fill`; the fill carries the hue and its name stays the content ink,
-`chosen_ink`). What the pointer or the keys merely rest on stays a neutral
-step, a row's hover and a popup's highlighted row alike.
+among them is the blue of the primary action. The item chosen among several stands on the
+selected grey (`chosen_fill`), a step past the hover step, its name in the content ink
+(`chosen_ink`), as VS Code marks a selection in a list that does not hold the keys.
 Pairs under WCAG AA are in `docs/known-gaps.md`; `crate::theme`'s tests hold each at what it
 reaches.
 
@@ -245,8 +243,8 @@ reaches.
 | `theme::meta_ink` | the middle ink: a detail beside a name, between prose and meta, contrast-tested |
 | `border` | every hairline, a folding block's and a Settings group's edge; a box on a page takes `input` |
 | `ring` | keyboard focus, drawn only when the keyboard moved it; the composer while a file is dragged over it |
-| `chosen_fill`, `chosen_ink` | the one item chosen among several, where the person is: a row, a rail entry; the primary laid over the surface, and the content ink on it |
-| `accent` | what the pointer or the keys rest on in a control or a popup: a ghost's hover, a menu's highlighted row; a neutral fill |
+| `chosen_fill`, `chosen_ink` | the one item chosen among several, where the person is: a row, a rail entry; the selected grey (`accent`), and the content ink on it |
+| `accent` | the selected grey: the chosen item (through `chosen_fill`), and what the keys rest on in a popup and the pointer on a ghost, as the library draws them |
 | `link` | a link: the library draws it in the prose ink, underlined |
 | `info` | what runs |
 | `list_hover` | hover on a pickable row |
@@ -260,11 +258,11 @@ reaches.
   inherits its surface unless it has a distinct role: well, selection or floating content.
 - Boxes are borders; wells and the bubbles are fills. Ordinary sections remain unboxed. Do not
   combine a border, contrasting fill and shadow just to make a group visible.
-- Hover and selection are fills, told apart by hue: a hovered row a neutral step (`list_hover`; on the rail
-  `sidebar_accent`, as a fill is a step from the surface under it), the chosen row the primary's fill
+- Hover and selection are fills, neutral steps apart: a hovered row the hover step (`list_hover`; on the rail
+  `sidebar_accent`, as a fill is a step from the surface under it), the chosen row a step past it
   (`chosen_fill`, solid, as a row's fade and the controls over a row are painted in it) with its name in
-  `chosen_ink`; the library's own hover on a ghost button. The row the keys are on inside a popup is a
-  cursor, not a place: it takes the neutral highlight (`accent`). A secondary button rests on a fill of its own and takes
+  `chosen_ink`; the library's own hover on a ghost button. The row the keys are on inside a popup takes
+  the same selected step (`accent`). A secondary button rests on a fill of its own and takes
   its pointed-at step under the pointer; the selected step is a chosen row's. Keyboard
   focus on a control is the ring. A field is edged at rest and ringed on focus, as the library
   draws it; the composer, the input surface, shows focus by its caret (*Components*).

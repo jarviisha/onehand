@@ -51,7 +51,7 @@ folder there; a foot with *Settings*, a page row like the five above, filled whi
 rail is drawn as the
 library's sidebar draws its items: a row's name in the sidebar's ink and its second line muted, the
 row under the pointer on the sidebar's accent fill, and the one where the person is on the chosen
-fill, in the chosen ink and at medium weight. The *Sessions* label is the small muted
+fill, a step past it, in the content ink and at medium weight. The *Sessions* label is the small muted
 heading the library gives a group. A neutral badge
 stands on the page's fill.
 
