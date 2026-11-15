@@ -11,8 +11,8 @@
 //!
 //! **Its commands are the link's to give.** Nothing outside this crate calls
 //! them: a front end gives each through [`link::Joined`], which holds the
-//! run with its session for the call, so no call can leave what the run
-//! asked of its session unmade.
+//! run with its session for the call and makes what the run asked of its
+//! session there before it answers.
 //!
 //! **What the run asks of its session is never a front end's to carry.** The
 //! mode and the settings picks are not made on the session's model here: the

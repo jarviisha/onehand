@@ -297,7 +297,10 @@ fn a_pin_holds_what_is_asked_meanwhile_and_an_ending_wins() {
     let fx = rig.approve(at);
     assert!(names(&fx).contains(&"Pin"), "{fx:?}");
     assert!(!rig.submitted(), "the prompt waits on the pin");
-    assert!(rig.stop().is_empty(), "held while the pin lands");
+    assert!(
+        rig.stop().is_empty() && rig.asked.is_empty(),
+        "held while the pin lands"
+    );
     let fx = rig.on(Input::Pinned(Ok("c2".into())));
     assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::ByPerson)));
     assert!(!rig.submitted(), "no prompt to a run said to be over");
@@ -416,13 +419,13 @@ fn a_finished_drive_ignores_everything() {
     let (mut rig, _) = checking();
     rig.stop();
     rig.on(Input::CommandExited(ran(true)));
-    assert!(rig.stop().is_empty());
+    assert!(rig.stop().is_empty() && rig.asked.is_empty());
     for input in [
         Input::TurnEnded,
         Input::Elapsed(Timer::Timeout),
         Input::Appended,
     ] {
-        assert!(rig.on(input).is_empty());
+        assert!(rig.on(input).is_empty() && rig.asked.is_empty());
     }
 }
 
@@ -622,7 +625,7 @@ fn a_refusal_of_the_runs_mode_is_not_a_steps() {
 fn a_persons_own_pick_refused_is_not_the_runs() {
     let mut rig = at_approval();
     let fx = rig.on(Input::PickRefused("no".into()));
-    assert!(fx.is_empty(), "{fx:?}");
+    assert!(fx.is_empty() && rig.asked.is_empty(), "{fx:?}");
 }
 
 #[test]
@@ -756,7 +759,10 @@ fn an_answered_card_resumes_and_says_so() {
     let fx = rig.on(Input::Notified);
     assert_eq!(fx, vec![Effect::Unattended(Said::Answered)]);
     assert!(!rig.drive.card());
-    assert!(rig.on(Input::Notified).is_empty(), "said once");
+    assert!(
+        rig.on(Input::Notified).is_empty() && rig.asked.is_empty(),
+        "said once"
+    );
 }
 
 #[test]
@@ -878,7 +884,7 @@ fn a_failed_write_is_said_once_until_one_lands() {
     };
     assert_eq!(failed(&rig.on(Input::Saved(Err("disk full".into())))), 1);
     assert_eq!(failed(&rig.on(Input::Saved(Err("disk full".into())))), 0);
-    assert!(rig.on(Input::Saved(Ok(()))).is_empty());
+    assert!(rig.on(Input::Saved(Ok(()))).is_empty() && rig.asked.is_empty());
     assert_eq!(failed(&rig.on(Input::Saved(Err("disk full".into())))), 1);
 }
 
@@ -1047,8 +1053,8 @@ fn a_stop_while_the_pull_request_is_looked_for_opens_none() {
 #[test]
 fn a_forge_answer_not_asked_for_leaves_the_checks_waited_on() {
     let mut rig = watching();
-    assert!(rig.on(Input::LogsRead(Vec::new())).is_empty());
-    assert!(rig.on(Input::MarkedReady(Ok(()))).is_empty());
+    assert!(rig.on(Input::LogsRead(Vec::new())).is_empty() && rig.asked.is_empty());
+    assert!(rig.on(Input::MarkedReady(Ok(()))).is_empty() && rig.asked.is_empty());
     let fx = rig.on(Input::Elapsed(Timer::Checks));
     assert_eq!(fx, vec![Effect::FindPullRequest]);
 }

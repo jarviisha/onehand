@@ -246,7 +246,8 @@ write of no consequence there, a clock, a redraw) is passed over.
 **A drive reads another drive's model, and never changes it.** The run's drive reads its
 session's `Chat` and decides the mode and the settings picks to put in force; it keeps them, and
 the link makes each through `SessionDrive::pick` before anything else reaches the run. A run's
-commands are `pub(crate)`, so a call that goes round its link does not compile.
+commands are `pub(crate)`, so a front end cannot call its drive without the link; joining it with
+the session it runs on is still the carrier's to get right.
 
 ### 11. Every carrier is tested against its contract
 
