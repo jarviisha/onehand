@@ -3,10 +3,10 @@
 //!
 //! **Routing is behaviour, so it lives here and not in a front end.** Which
 //! of a session's signals moves a run, which streamed chunk is worth asking it
-//! about, that a run's picks are made before its notes and its prompt, that
-//! its prompt never queues and a refused one fails it, and that only a
-//! running turn is cancelled: each is a rule a front end would otherwise
-//! restate in its event handlers, untested. A front end joins the two drives
+//! about, that a run's picks are made before its notes and its prompt, and
+//! that its prompt never queues and a refused one is told to it where it was
+//! asked: each is a rule a front end would otherwise restate in its event
+//! handlers, untested. A front end joins the two drives
 //! it holds for one call ([`Joined`]), and carries out what comes back
 //! ([`Out`]): the session's effects, then the run's.
 
@@ -58,10 +58,10 @@ impl<'a> Joined<'a> {
     ) -> (RunDrive, Out) {
         let mut out = Out::default();
         if let Some(session) = session.as_deref_mut() {
-            // Named or not, a session a run starts on is drawn again.
-            out.told = true;
             if session.custom_title.is_none() {
-                out.session = session.rename(&run.brief.title).1;
+                let (named, fx) = session.rename(&run.brief.title);
+                out.told = named;
+                out.session = fx;
             }
         }
         let chat = session.as_deref().map(|session| &**session);
@@ -102,48 +102,56 @@ impl<'a> Joined<'a> {
     }
 
     /// Make what the run asked of its session there, picks first and then
-    /// the rest in order, until it asks nothing more: a prompt the session
-    /// does not take is told to the run at once, which may ask again.
+    /// the rest in order, and add what the run said to do, `fx`, to `out`.
     fn settle(&mut self, fx: Vec<Effect>, now: Now, out: &mut Out) {
+        let fx = self.made(fx, now, out);
         out.run.extend(fx);
-        loop {
-            let picks = self.run.take_picks();
-            let asked = self.run.take_asked();
-            if picks.is_empty() && asked.is_empty() {
-                return;
-            }
-            // Without a session there is nothing to pick on or say to, and
-            // no one to take a prompt.
-            let Some(session) = self.session.as_deref_mut() else {
-                for asked in asked {
-                    match asked {
-                        Asked::Prompt(_) => {
-                            out.run.extend(self.run.handle(Input::NotTaken, None, now))
-                        }
-                        Asked::Note(_) | Asked::Cancel => {}
-                    }
-                }
-                continue;
-            };
-            for pick in &picks {
-                out.session.extend(session.pick(pick));
-            }
-            for asked in asked {
-                out.told = true;
-                match asked {
-                    Asked::Note(text) => out.session.extend(session.note(text)),
-                    Asked::Cancel => out.session.extend(cancel(session)),
-                    Asked::Prompt(text) => {
-                        let (answer, fx) = submit(session, &text, now);
-                        out.session.extend(fx);
-                        if let Some(input) = answer {
-                            out.run
-                                .extend(self.run.handle(input, Some(&**session), now));
-                        }
+    }
+
+    /// `fx`, the run's answer to one call, once what it asked of its session
+    /// with it is made. A prompt the session does not take is told to the
+    /// run at once, and what the run says to that stands where the prompt was
+    /// asked, ahead of what the call answered after it: a run that ends on a
+    /// refusal has finished before the save its prompt was to be followed by.
+    fn made(&mut self, mut fx: Vec<Effect>, now: Now, out: &mut Out) -> Vec<Effect> {
+        let picks = self.run.take_picks();
+        let asked = self.run.take_asked();
+        let Some(session) = self.session.as_deref_mut() else {
+            // A run reads its session before it asks anything of it, so one
+            // joined with none has asked nothing.
+            debug_assert!(picks.is_empty() && asked.is_empty());
+            return fx;
+        };
+        for pick in &picks {
+            out.session.extend(session.pick(pick));
+        }
+        let mut refused = Vec::new();
+        for asked in asked {
+            out.told = true;
+            match asked {
+                Asked::Note(text) => out.session.extend(session.note(text)),
+                Asked::Cancel => out.session.extend(session.stop()),
+                Asked::Prompt { text, at } => {
+                    let (answer, said) = submit(session, &text, now);
+                    out.session.extend(said);
+                    if let Some(input) = answer {
+                        refused.push((at, input));
                     }
                 }
             }
         }
+        // Each refusal's answer goes in where its prompt was asked, counted
+        // past what earlier ones put in.
+        let mut shift = 0;
+        for (at, input) in refused {
+            let chat = self.session.as_deref().map(|session| &**session);
+            let said = self.run.handle(input, chat, now);
+            let said = self.made(said, now, out);
+            let at = (at + shift).min(fx.len());
+            shift += said.len();
+            fx.splice(at..at, said);
+        }
+        fx
     }
 }
 
@@ -183,14 +191,6 @@ pub fn notified(drive: &RunDrive, session: &SessionDrive) -> Option<Input> {
 fn submit(session: &mut SessionDrive, text: &str, now: Now) -> (Option<Input>, Vec<SessionEffect>) {
     let (intake, fx) = session.prompt(text, &[], Origin::Run, Code::Here, now);
     ((intake != Intake::Sent).then_some(Input::NotTaken), fx)
-}
-
-/// The run's cancel: only a turn that runs is stopped.
-fn cancel(session: &mut SessionDrive) -> Vec<SessionEffect> {
-    match session.busy {
-        true => session.stop(),
-        false => Vec::new(),
-    }
 }
 
 #[cfg(test)]

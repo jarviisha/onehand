@@ -134,7 +134,7 @@ impl RunDrive {
         self.sent += 1;
         self.answer_from = chat.items.len();
         self.sent_at = Some(now.at);
-        self.asked.push(Asked::Prompt(text));
+        self.asked.push(Asked::Prompt { text, at: fx.len() });
     }
 
     /// The agent is up, the first time in this session: put it in the run's

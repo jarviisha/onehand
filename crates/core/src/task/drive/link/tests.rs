@@ -91,6 +91,13 @@ impl Pair {
         out.run
     }
 
+    /// A person pressed Stop.
+    fn stop(&mut self) -> Vec<Effect> {
+        let out = Joined::new(&mut self.drive, Some(&mut self.session)).stop(self.now);
+        self.send(out.session);
+        out.run
+    }
+
     /// Send what the session asks of its agent on its channel, as its
     /// carrier does.
     fn send(&self, fx: Vec<SessionEffect>) {
@@ -304,7 +311,13 @@ fn a_prompt_its_session_does_not_take_fails_the_run_at_once() {
     busy.busy = true;
     pair.session = SessionDrive::new(busy);
     let fx = pair.on(Input::Measured(Ok(mark("a"))));
-    assert!(names(&fx).contains(&"Finish"), "{fx:?}");
+    let names = names(&fx);
+    let place = |name| names.iter().position(|n| *n == name);
+    assert!(place("Finish").is_some(), "{fx:?}");
+    assert!(
+        place("Finish") < place("Save"),
+        "the run is over before the save its prompt was followed by: {names:?}"
+    );
     assert!(
         lines(&pair.session)
             .iter()
@@ -335,19 +348,26 @@ fn a_runs_prompt_to_a_busy_session_is_not_taken_and_the_run_hears_it() {
     assert!(session.queued.is_none(), "a run's prompt never queues");
 }
 
+/// Only a turn that runs is cancelled, which the run decides: a Stop on an
+/// idle session asks its agent nothing, and one on a running turn cancels it.
 #[test]
-fn a_runs_cancel_leaves_an_idle_session_alone() {
-    let (mut session, mut rx) = session();
-    let fx = cancel(&mut session);
-    send(&session, fx);
-    assert!(rx.try_recv().is_err(), "nothing to cancel");
-    let (_, fx) = session.prompt("go", &[], Origin::Person, Code::Here, now());
-    send(&session, fx);
-    rx.try_recv().ok();
-    let fx = cancel(&mut session);
-    send(&session, fx);
+fn a_stop_cancels_only_a_turn_that_runs() {
+    let (mut pair, _) = Pair::start();
+    pair.on(Input::Pinned(Ok("c0".into())));
+    let fx = pair.stop();
+    assert!(names(&fx).contains(&"Finish"), "{fx:?}");
+    assert!(pair.rx.try_recv().is_err(), "nothing to cancel");
+
+    let (mut pair, _) = Pair::start();
+    pair.on(Input::Pinned(Ok("c0".into())));
+    pair.on(Input::Measured(Ok(mark("a"))));
     assert_eq!(
-        rx.try_recv().ok().as_ref().map(request_name),
+        pair.rx.try_recv().ok().as_ref().map(request_name),
+        Some("Prompt")
+    );
+    pair.stop();
+    assert_eq!(
+        pair.rx.try_recv().ok().as_ref().map(request_name),
         Some("Cancel")
     );
 }

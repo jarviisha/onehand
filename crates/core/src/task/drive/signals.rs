@@ -90,9 +90,11 @@ pub(crate) enum Asked {
     /// Say this in the run's transcript.
     Note(String),
     /// Send this prompt. A session that does not take it says so at once,
-    /// and the run is told [`Input::NotTaken`]: it is never late.
-    Prompt(String),
-    /// Cancel the session's turn, if one runs.
+    /// and the run is told [`Input::NotTaken`]: it is never late. `at` is
+    /// how many effects the call had answered when the prompt was asked,
+    /// which is where what a refusal says to do belongs among them.
+    Prompt { text: String, at: usize },
+    /// Cancel the session's turn. Asked only while one runs.
     Cancel,
 }
 

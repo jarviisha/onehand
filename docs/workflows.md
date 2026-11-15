@@ -269,8 +269,7 @@ the run's history, capped at 200.
 The run's drive decides in core, and its carrier acts in the app. `onehand_core::task::drive::RunDrive` is given a
 person's commands as methods (`approve`, `revise`, `stop`) and told what happened (an `Input`),
 each with the run's session as it stands, and answers with what to do (`Effect`s): pin, measure,
-read the work, send a prompt, run a command, call the forge, arm a clock, say something, save,
-finish. It has no timer or I/O of its own, so every rule below is tested in core. Each effect that
+read the work, run a command, call the forge, arm a clock, save, finish. It has no timer or I/O of its own, so every rule below is tested in core. Each effect that
 is answered says what its late answer gets: a pin, a command, a push, opening a pull request and
 taking a draft out of draft are awaited, so a Stop waits for them; a read, a look and a clock are
 dropped; a save is recorded, and a failed one is said once in the run's window until a write lands

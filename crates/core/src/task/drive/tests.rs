@@ -121,7 +121,7 @@ impl Rig {
         self.asked = self.drive.take_asked();
         for asked in &self.asked {
             match asked {
-                Asked::Prompt(text) => {
+                Asked::Prompt { text, .. } => {
                     assert!(self.chat.submit(text, &[]), "the session took {text:?}");
                 }
                 Asked::Cancel => self.chat.cancel_turn(),
@@ -136,7 +136,7 @@ impl Rig {
             .iter()
             .filter_map(|asked| match asked {
                 Asked::Note(note) => Some(note.as_str()),
-                Asked::Prompt(_) | Asked::Cancel => None,
+                Asked::Prompt { .. } | Asked::Cancel => None,
             })
             .collect()
     }
@@ -144,7 +144,7 @@ impl Rig {
     /// Whether the last call sent the run's prompt.
     fn submitted(&self) -> bool {
         self.asked.iter().any(|asked| match asked {
-            Asked::Prompt(_) => true,
+            Asked::Prompt { .. } => true,
             Asked::Note(_) | Asked::Cancel => false,
         })
     }

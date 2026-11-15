@@ -133,8 +133,8 @@ pub(crate) fn start(
         cx.defer(move |cx| feed(&id, Input::SessionGone, cx));
     });
     let now = Now::read();
-    let (drive, effects) = session.update(cx, |session, cx| {
-        let (drive, out) = Joined::start(
+    let (drive, out) = session.update(cx, |session, _| {
+        Joined::start(
             task.clone(),
             run,
             first,
@@ -142,11 +142,7 @@ pub(crate) fn start(
             issue,
             now,
             Some(&mut session.chat),
-        );
-        session.perform(out.session, cx);
-        // Named for the task: what shows it is drawn again.
-        cx.notify();
-        (drive, out.run)
+        )
     });
     let driven = Driven {
         drive,
@@ -160,7 +156,29 @@ pub(crate) fn start(
     cx.default_global::<Tasks>()
         .live
         .insert(task.clone(), driven);
-    perform(&task, effects, cx);
+    // Only once the run is listed: what the session says of its first prompt
+    // has a run to reach.
+    carry_session(session, out.session, out.told, cx);
+    perform(&task, out.run, cx);
+}
+
+/// Carry out what a joined call said of the run's session, and tell
+/// whatever watches the session when it was told something.
+fn carry_session(
+    session: &Entity<ChatSession>,
+    effects: Vec<onehand_core::chat::drive::Effect>,
+    told: bool,
+    cx: &mut App,
+) {
+    if effects.is_empty() && !told {
+        return;
+    }
+    session.update(cx, |session, cx| {
+        session.perform(effects, cx);
+        if told {
+            cx.notify();
+        }
+    });
 }
 
 /// Drive check task `task`'s run with no session, from `start`; what it
@@ -261,12 +279,7 @@ fn give(id: &str, cx: &mut App, command: impl FnOnce(&mut Joined<'_>, Now) -> Ou
         return;
     };
     if let Some(session) = session {
-        session.update(cx, |session, cx| {
-            session.perform(out.session, cx);
-            if out.told {
-                cx.notify();
-            }
-        });
+        carry_session(&session, out.session, out.told, cx);
     }
     perform(id, out.run, cx);
 }
