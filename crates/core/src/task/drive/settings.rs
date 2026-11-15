@@ -8,7 +8,7 @@
 //! One the step only takes from the start and the agent no longer offers is
 //! left as the agent has it.
 
-use super::{Effect, RunDrive, Said};
+use super::{Asked, Effect, RunDrive, Said};
 use crate::chat::{Chat, MODE_SELECTOR};
 use crate::preflight::{found_late, About};
 use crate::workflow::{next, Next, Pick, Settings};
@@ -205,7 +205,7 @@ fn plan(
             d.run.ran_with(held);
             d.settled = open_visit(d);
             if !picking.picked.is_empty() {
-                fx.push(Effect::Note(said));
+                d.asked.push(Asked::Note(said));
             }
             Some(picking.text)
         }

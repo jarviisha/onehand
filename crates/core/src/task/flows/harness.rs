@@ -334,7 +334,7 @@ impl Flow {
             pinned,
             issue,
         } = start;
-        let (run, fx, asked) = link::start(
+        let (run, out) = link::Joined::start(
             id.clone(),
             run,
             first,
@@ -353,10 +353,7 @@ impl Flow {
                 rx,
             },
         );
-        self.queue
-            .extend(asked.into_iter().map(|e| Work::Session(id.clone(), e)));
-        self.queue
-            .extend(fx.into_iter().map(|e| Work::Run(id.clone(), e)));
+        self.carry_out(&id, out);
         self.tasks_input(TasksInput::Driven {
             task: id,
             started: Ok(()),
@@ -367,11 +364,20 @@ impl Flow {
         let Some(driven) = self.runs.get_mut(id) else {
             return;
         };
-        let (fx, asked) = link::handle(&mut driven.run, input, Some(&mut driven.session), now());
+        let out =
+            link::Joined::new(&mut driven.run, Some(&mut driven.session)).handle(input, now());
+        self.carry_out(id, out);
+    }
+
+    /// Queue what a joined call said to do: the session's, then the run's.
+    fn carry_out(&mut self, id: &str, out: link::Out) {
+        self.queue.extend(
+            out.session
+                .into_iter()
+                .map(|e| Work::Session(id.to_string(), e)),
+        );
         self.queue
-            .extend(asked.into_iter().map(|e| Work::Session(id.to_string(), e)));
-        self.queue
-            .extend(fx.into_iter().map(|e| Work::Run(id.to_string(), e)));
+            .extend(out.run.into_iter().map(|e| Work::Run(id.to_string(), e)));
     }
 
     fn carry_run(&mut self, id: &str, effect: RunEffect) {
@@ -388,22 +394,6 @@ impl Flow {
             RunEffect::ReadFacts { dir, from } => {
                 self.run_input(id, RunInput::TurnRead(Facts::read_blocking(&dir, &from)))
             }
-            RunEffect::Submit(text) => {
-                let driven = self.runs.get_mut(id).expect("a run under way");
-                let (answer, fx) = link::submit(&mut driven.session, &text, now());
-                self.queue
-                    .extend(fx.into_iter().map(|e| Work::Session(id.to_string(), e)));
-                if let Some(input) = answer {
-                    self.run_input(id, input);
-                }
-            }
-            RunEffect::CancelTurn => {
-                let driven = self.runs.get_mut(id).expect("a run under way");
-                let fx = link::cancel(&mut driven.session);
-                self.queue
-                    .extend(fx.into_iter().map(|e| Work::Session(id.to_string(), e)));
-            }
-            RunEffect::Note(note) => self.said.push(note),
             RunEffect::Arm { .. } | RunEffect::Refresh | RunEffect::SessionChanged => {}
             RunEffect::Defer(input) => self.run_input(id, input),
             RunEffect::Save => {

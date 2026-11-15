@@ -81,7 +81,22 @@ pub enum Signal {
     PinFailed(String),
 }
 
-/// What to do, in the order given.
+/// What a run asks of its session, in the order given. The link makes each
+/// through the session's own drive, so none is a front end's to carry: a
+/// line said after the prompt it announces, or a prompt sent twice, cannot
+/// be written there.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Asked {
+    /// Say this in the run's transcript.
+    Note(String),
+    /// Send this prompt. A session that does not take it says so at once,
+    /// and the run is told [`Input::NotTaken`]: it is never late.
+    Prompt(String),
+    /// Cancel the session's turn, if one runs.
+    Cancel,
+}
+
+/// What a front end is to do, in the order given.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Effect {
     /// Pin these marks in the work, and report [`Input::Pinned`].
@@ -98,13 +113,6 @@ pub enum Effect {
     /// Dropped late: a read leaves nothing behind, and a turn ending while
     /// a mark is pinned is not judged.
     ReadFacts { dir: PathBuf, from: Mark },
-    /// Send this prompt to the session; report [`Input::NotTaken`] if it
-    /// does not take it, which the session says at once: it is never late.
-    Submit(String),
-    /// Cancel the session's turn.
-    CancelTurn,
-    /// Say this in the run's transcript.
-    Note(String),
     /// Run this command in the work, and report [`Input::CommandExited`].
     ///
     /// Awaited: a run stopped while it runs calls it off and ends only once

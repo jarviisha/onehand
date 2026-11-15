@@ -4,7 +4,7 @@
 use super::*;
 use crate::acp::{AcpEvent, AcpRequest, ReqTx};
 use crate::chat::drive::Effect as SessionEffect;
-use crate::chat::Chat;
+use crate::chat::{Chat, ChatItem};
 use crate::task::drive::Effect;
 use crate::task::Task;
 use crate::workflow::{builtin, Brief, Mark, Setup};
@@ -72,70 +72,29 @@ impl Pair {
         (task, run, first): (String, Run, Action),
     ) -> (Self, Vec<Effect>) {
         let now = now();
-        let (drive, fx, asked) = start(task, run, first, 0, false, now, Some(&mut session));
-        let mut pair = Self {
+        let (drive, out) = Joined::start(task, run, first, 0, false, now, Some(&mut session));
+        let pair = Self {
             drive,
             session,
             rx,
             now,
         };
-        pair.send(asked);
-        let fx = pair.carry(fx);
-        (pair, fx)
+        pair.send(out.session);
+        (pair, out.run)
     }
 
-    /// Tell the run `input`, and carry out what it says on its session.
+    /// Tell the run `input`; what it asks of its session is made there by
+    /// the link, and what is left is the front end's (pins, reads, saves).
     fn on(&mut self, input: Input) -> Vec<Effect> {
-        let (fx, asked) = handle(&mut self.drive, input, Some(&mut self.session), self.now);
-        self.send(asked);
-        self.carry(fx)
+        let out = Joined::new(&mut self.drive, Some(&mut self.session)).handle(input, self.now);
+        self.send(out.session);
+        out.run
     }
 
     /// Send what the session asks of its agent on its channel, as its
     /// carrier does.
     fn send(&self, fx: Vec<SessionEffect>) {
         send(&self.session, fx);
-    }
-
-    /// Carry out the run's session effects through the link; what is left is
-    /// the front end's (pins, reads, saves, notes).
-    fn carry(&mut self, fx: Vec<Effect>) -> Vec<Effect> {
-        let mut left = Vec::new();
-        for effect in fx {
-            match effect {
-                Effect::Submit(text) => {
-                    let (answer, fx) = submit(&mut self.session, &text, now());
-                    self.send(fx);
-                    if let Some(input) = answer {
-                        left.extend(self.on(input));
-                    }
-                }
-                Effect::CancelTurn => {
-                    let fx = cancel(&mut self.session);
-                    self.send(fx);
-                }
-                other @ (Effect::Pin { .. }
-                | Effect::Measure { .. }
-                | Effect::ReadFacts { .. }
-                | Effect::Note(_)
-                | Effect::RunCommand { .. }
-                | Effect::CallOffCommand
-                | Effect::Push { .. }
-                | Effect::FindPullRequest
-                | Effect::OpenPullRequest
-                | Effect::ReadLogs { .. }
-                | Effect::MarkReady { .. }
-                | Effect::Arm { .. }
-                | Effect::Defer(_)
-                | Effect::Save
-                | Effect::Unattended(_)
-                | Effect::Refresh
-                | Effect::SessionChanged
-                | Effect::Signal(_)
-                | Effect::Finish { .. }) => left.push(other),
-            }
-        }
-        left
     }
 
     /// The agent's event reaches the session, and what the session signals
@@ -203,9 +162,6 @@ fn name(e: &Effect) -> &'static str {
         Effect::Pin { .. } => "Pin",
         Effect::Measure { .. } => "Measure",
         Effect::ReadFacts { .. } => "ReadFacts",
-        Effect::Submit(_) => "Submit",
-        Effect::CancelTurn => "CancelTurn",
-        Effect::Note(_) => "Note",
         Effect::RunCommand { .. } => "RunCommand",
         Effect::CallOffCommand => "CallOffCommand",
         Effect::Push { .. } => "Push",
@@ -296,6 +252,77 @@ fn a_runs_prompt_reaches_its_session_and_the_turns_end_moves_the_run_on() {
         names(&fx).contains(&"ReadFacts"),
         "the turn's end reached the run: {fx:?}"
     );
+}
+
+/// The lines onehand said in `session`'s transcript and the prompts sent
+/// there, in order.
+fn lines(session: &SessionDrive) -> Vec<String> {
+    session
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            ChatItem::Notice { text, .. } => Some(format!("note: {text}")),
+            ChatItem::User(_) => Some("prompt".to_string()),
+            ChatItem::Agent(_)
+            | ChatItem::Thought(_)
+            | ChatItem::Tool(_)
+            | ChatItem::Plan(_)
+            | ChatItem::Permission(_)
+            | ChatItem::Ask(_)
+            | ChatItem::Subagent(_) => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_runs_step_is_said_in_its_transcript_before_its_prompt() {
+    let (mut pair, _) = Pair::start();
+    pair.on(Input::Pinned(Ok("c0".into())));
+    let fx = pair.on(Input::Measured(Ok(mark("a"))));
+    let lines = lines(&pair.session);
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert!(lines[0].starts_with("note: Step 1 of "), "{lines:?}");
+    assert_eq!(lines[1], "prompt");
+    assert!(names(&fx).contains(&"Save"), "{fx:?}");
+}
+
+/// A session that does not take the run's prompt fails the run in the same
+/// call: nothing is left for a front end to report.
+#[test]
+fn a_prompt_its_session_does_not_take_fails_the_run_at_once() {
+    let (session, rx) = session();
+    let (mut pair, _) = Pair::start_on((session, rx), run());
+    pair.on(Input::Pinned(Ok("c0".into())));
+    // A turn of somebody else's runs, which no prompt of the run's began.
+    let mut busy = Chat::default();
+    let (tx, _rx2): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
+    busy.apply(AcpEvent::Connected {
+        tx,
+        resumed: false,
+        forkable: false,
+    });
+    busy.busy = true;
+    pair.session = SessionDrive::new(busy);
+    let fx = pair.on(Input::Measured(Ok(mark("a"))));
+    assert!(names(&fx).contains(&"Finish"), "{fx:?}");
+    assert!(
+        lines(&pair.session)
+            .iter()
+            .all(|line| line.starts_with("note: ")),
+        "no prompt went"
+    );
+    assert!(pair.session.queued.is_none(), "a run's prompt never queues");
+}
+
+/// A check's run has no session: it is driven through the same link, and
+/// nothing is asked of anyone.
+#[test]
+fn a_run_with_no_session_asks_nothing_of_one() {
+    let (task, run, first) = run();
+    let (mut drive, out) = Joined::start(task, run, first, 0, false, now(), None);
+    assert!(out.session.is_empty() && !out.told);
+    let out = Joined::new(&mut drive, None).stop(now());
+    assert!(out.session.is_empty() && !out.told);
 }
 
 #[test]

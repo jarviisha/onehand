@@ -278,7 +278,11 @@ dropped; a save is recorded, and a failed one is said once in the run's window u
 carries out the effects and brings their results back. The drive decides the mode and the settings
 picks against its session's `Chat`, which it only reads; the link makes each through the session's
 own drive (`SessionDrive::pick`) before anything else reaches the run, and the next is planned once
-the agent has answered.
+the agent has answered. The run's notes in its transcript, its prompt and its cancel are asked of
+the session the same way, after the picks and in order, so none is an effect a carrier sees: every
+command to a run goes through `task::drive::link::Joined`, which holds the run with its session for
+the call, tells the run at once of a prompt its session did not take, and answers the session's
+effects and then the run's.
 
 The `Tasks` global (`crate::task::Tasks`) holds every run under way by its task id (a check's run
 has no session), beside the tasks' drive, which a run's end is handed to;
