@@ -79,13 +79,10 @@ pub fn write_blocking(conv_dir: &Path, kept: &Kept) -> std::io::Result<()> {
             Ok(()) | Err(_) => Ok(()),
         };
     }
-    // A lead's first turn may still be running, before its conversation
-    // was first written.
-    std::fs::create_dir_all(conv_dir)?;
     let text = serde_json::to_string_pretty(kept).map_err(std::io::Error::other)?;
-    let tmp = conv_dir.join(format!("{FILE}.tmp"));
-    std::fs::write(&tmp, text)?;
-    std::fs::rename(&tmp, &path)
+    // Its directory too: a lead's first turn may still be running, before
+    // its conversation was first written.
+    crate::config::write_atomic(&path, &text)
 }
 
 #[cfg(test)]
