@@ -1,4 +1,6 @@
 //! What the dock area draws around the window's three panels: a box each.
+//! The conversation and the Workbench share the centre's split, and the
+//! terminal is the bottom dock under both.
 //!
 //! Each region holds one panel in a group of its own, and no group draws a tab
 //! bar -- a single tab that can never have a sibling is a duplicate title, and
@@ -70,17 +72,14 @@ impl DockAreaRenderer for DockSkin {
         _: &mut App,
     ) -> AnyElement {
         let placement = dock.placement();
-        // One id per placement: the docks render under one stateful ancestor,
-        // and a shared id would share the handles' state.
-        let (id, edge) = match placement {
-            DockPlacement::Left => ("dock-edge-left", HandleEdge::Trailing),
-            DockPlacement::Right => ("dock-edge-right", HandleEdge::Leading),
-            DockPlacement::Bottom => ("dock-edge-bottom", HandleEdge::Leading),
-            DockPlacement::Center => ("dock-edge-center", HandleEdge::Leading),
-        };
-        let axis = match placement {
-            DockPlacement::Bottom => Axis::Vertical,
-            _ => Axis::Horizontal,
+        // The terminal is the one dock the window mounts: the Workbench sits
+        // in the centre beside the conversation. One id per placement all the
+        // same, since the docks render under one stateful ancestor and a
+        // shared id would share the handles' state.
+        let (id, edge, axis) = match placement {
+            DockPlacement::Bottom => ("dock-edge-bottom", HandleEdge::Leading, Axis::Vertical),
+            DockPlacement::Left => ("dock-edge-left", HandleEdge::Trailing, Axis::Horizontal),
+            _ => ("dock-edge-side", HandleEdge::Leading, Axis::Horizontal),
         };
         let resizing = self.resizing.clone();
         let handle = onehand_ui::edge_handle(id, axis, edge)

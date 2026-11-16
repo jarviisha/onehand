@@ -49,6 +49,7 @@ mod sessions;
 mod settings_page;
 pub(crate) use settings_page::apply_appearance;
 mod storage;
+mod workbench_slot;
 mod workers;
 mod workflows;
 pub use crate::instance::hold_or_forward;
@@ -304,7 +305,7 @@ pub struct Shell {
     _pending_save: Option<gpui::Task<()>>,
     /// The docks' open state as last saved, so opening or closing one
     /// schedules a save.
-    docks_saved: Option<crate::chat::DocksOpen>,
+    docks_saved: Option<docks::DocksOpen>,
     /// Whether a shell of the active project is running a command, for the
     /// dot on the title bar's terminal toggle.
     terminal_live: bool,
@@ -382,8 +383,8 @@ pub struct Shell {
     /// The centre panel, kept by handle so selecting a session in the rail can
     /// reach it. The dock owns its placement; the shell owns what it shows.
     chat: Entity<ChatPane>,
-    /// The right dock, kept for the same reason: switching roots swaps its
-    /// tabs and its tree.
+    /// The centre's right slot, kept for the same reason: switching roots
+    /// swaps its tabs and its tree.
     workbench: Entity<Workbench>,
     /// The bottom dock. Per-root shells, so it follows the selection too.
     terminal: Entity<TerminalPanel>,

@@ -221,13 +221,6 @@ impl ProjectFacts {
     }
 }
 
-/// Which of the window's docks are open.
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
-pub struct DocksOpen {
-    pub terminal: bool,
-    pub workbench: bool,
-}
-
 pub struct ChatPane {
     focus_handle: FocusHandle,
     /// Every session the user has opened, in whatever phase it has reached.
@@ -284,9 +277,9 @@ pub struct ChatPane {
     /// while its menu holds focus even after the last item ended: a trigger
     /// that leaves the frame with its menu takes focus with it, and the keymap.
     background_menu: std::cell::Cell<Option<u64>>,
-    /// Which docks are open, so their header buttons can show it. Pushed by
-    /// the shell, which owns the docks.
-    docks_open: DocksOpen,
+    /// Whether the pane is on screen: off while the Workbench takes the whole
+    /// centre. Its slot stays in the dock's tree either way.
+    shown: bool,
     /// The active project's branch and change count, as one line.
     ///
     /// Pushed by the shell like the two flags above, and for the same reason:
@@ -412,7 +405,7 @@ impl ChatPane {
                 held_dirs: HashMap::new(),
                 resuming: HashMap::new(),
                 background_menu: std::cell::Cell::new(None),
-                docks_open: DocksOpen::default(),
+                shown: true,
                 git: None,
                 composer_h: Default::default(),
                 composer_drawn: false,
@@ -535,12 +528,13 @@ impl ChatPane {
         cx.notify();
     }
 
-    /// Which docks are open.
-    pub fn set_docks_open(&mut self, open: DocksOpen, cx: &mut Context<Self>) {
-        if self.docks_open == open {
+    /// Put the pane on screen or take it off. Guarded: the shell pushes it
+    /// on paths that run whether or not anything changed.
+    pub fn set_shown(&mut self, shown: bool, cx: &mut Context<Self>) {
+        if self.shown == shown {
             return;
         }
-        self.docks_open = open;
+        self.shown = shown;
         cx.notify();
     }
 
@@ -603,6 +597,10 @@ impl ChatPane {
 impl Panel for ChatPane {
     fn panel_name(&self) -> &'static str {
         "AgentPane"
+    }
+
+    fn visible(&self, _: &App) -> bool {
+        self.shown
     }
 }
 

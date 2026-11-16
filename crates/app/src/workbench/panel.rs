@@ -1,4 +1,4 @@
-//! The Workbench dock panel: Editor, Markdown, Issues, Plugins and Neovim, one at a time.
+//! The Workbench panel: Editor, Markdown, Issues, Plugins and Neovim, one at a time.
 //!
 //! **The panel owns no mode's state and draws no mode's body.** It keeps the
 //! list, remembers which one is showing, draws the strip that switches between
@@ -84,6 +84,9 @@ pub struct Workbench {
     /// shell, which decides it; the strip leads with the way back while it
     /// holds.
     fills_area: bool,
+    /// Whether the panel is on screen. Its slot in the centre stays in the
+    /// dock's tree either way; this is what takes it out of the frame.
+    shown: bool,
     /// The panel's width in rems as last laid out, which the strip reads to
     /// decide whether its modes fit side by side. Infinite until measured, so
     /// the first frame draws them side by side.
@@ -121,6 +124,7 @@ impl Workbench {
                 zoom,
                 maximized: false,
                 fills_area: false,
+                shown: false,
                 width: onehand_ui::unmeasured(),
             }
         })
@@ -312,6 +316,27 @@ impl Workbench {
         cx.notify();
     }
 
+    /// The panel's width as last laid out, for a test.
+    #[cfg(test)]
+    pub(crate) fn drawn_width(&self) -> gpui::Rems {
+        self.width.get()
+    }
+
+    /// Whether the panel is on screen.
+    pub fn shown(&self) -> bool {
+        self.shown
+    }
+
+    /// Put the panel on screen or take it off. Guarded, for the reason
+    /// [`Self::set_maximized`] is.
+    pub fn set_shown(&mut self, shown: bool, cx: &mut Context<Self>) {
+        if self.shown == shown {
+            return;
+        }
+        self.shown = shown;
+        cx.notify();
+    }
+
     /// Put focus where the showing mode's work happens.
     ///
     /// A panel shortcut that opens a dock without moving focus makes the user
@@ -500,6 +525,10 @@ fn failed(why: SharedString, cx: &mut Context<Workbench>) -> gpui::AnyElement {
 impl Panel for Workbench {
     fn panel_name(&self) -> &'static str {
         "Workbench"
+    }
+
+    fn visible(&self, _: &App) -> bool {
+        self.shown
     }
 }
 

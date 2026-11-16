@@ -5,7 +5,6 @@ use crate::state::Shared;
 use crate::workbench::Refusal;
 use gpui::{App, Context, SharedString, Window};
 use gpui_component::WindowExt as _;
-use gpui_component::dock::DockPlacement;
 use onehand_core::disk::Disk;
 use onehand_core::workspace::HostName;
 use onehand_core::workspace::drive::Losses;
@@ -119,16 +118,11 @@ impl Shell {
         // The terminal needs nothing here, since the arrival's handover
         // restores it.
         //
-        // Opened as a dock and not through `show_workbench`, which would take
-        // the caret: the arrival has just given it to the conversation, and
+        // Shown and not through `show_workbench`, which would take the
+        // caret: the arrival has just given it to the conversation, and
         // whoever left the page for a session wants to type there.
-        if !self.page_shown(cx)
-            && std::mem::take(&mut self.page_hid_workbench)
-            && !self.dock.read(cx).is_dock_open(DockPlacement::Right)
-        {
-            self.dock.update(cx, |dock, cx| {
-                dock.toggle_dock(DockPlacement::Right, window, cx)
-            });
+        if !self.page_shown(cx) && std::mem::take(&mut self.page_hid_workbench) {
+            super::workbench_slot::set_open(self, true, window, cx);
         }
     }
 
@@ -415,15 +409,8 @@ impl Shell {
         }
         self.workbench
             .update(cx, |panel, cx| panel.open_file(path, window, cx));
-        // Opening a file is what makes the Workbench worth showing -- but only
-        // if it is closed, since toggling an open dock would hide the file
-        // just asked for.
-        self.dock.update(cx, |dock, cx| {
-            use gpui_component::dock::DockPlacement;
-            if !dock.is_dock_open(DockPlacement::Right) {
-                dock.toggle_dock(DockPlacement::Right, window, cx);
-            }
-        });
+        // Opening a file is what makes the Workbench worth showing.
+        super::workbench_slot::set_open(self, true, window, cx);
     }
 
     /// Add `dir` as a project and select it, or select it if it is one

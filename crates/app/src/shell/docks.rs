@@ -1,4 +1,4 @@
-use super::{FocusedPanel, Shell, ZoomStep, dock_rules};
+use super::{FocusedPanel, Shell, ZoomStep, dock_rules, workbench_slot};
 use crate::workbench::NEOVIM_MODE;
 use gpui::{App, Context, Focusable as _, Window, px};
 use gpui::{Entity, EntityId};
@@ -7,9 +7,9 @@ use onehand_core::config::PanelLayout;
 use std::path::Path;
 
 impl Shell {
-    /// Whether the Workbench is on screen: its dock open.
+    /// Whether the Workbench is on screen: its slot shown.
     pub(super) fn workbench_open(&self, cx: &App) -> bool {
-        self.dock.read(cx).is_dock_open(DockPlacement::Right)
+        self.workbench.read(cx).shown()
     }
 
     /// The panel a panel-scoped command addresses: whichever holds focus, else
@@ -46,16 +46,14 @@ impl Shell {
         }
     }
 
-    /// Tell the conversation header which docks are open, so their buttons can
-    /// show it. Guarded on the pane's side; run on every frame the window draws,
-    /// because a dock opens from more places than any one hook sees.
+    /// Save the docks' open state when it moved. Run on every frame the
+    /// window draws, because a dock opens from more places than any one hook
+    /// sees.
     pub(super) fn sync_docks_open(&mut self, cx: &mut Context<Self>) {
-        let open = crate::chat::DocksOpen {
+        let open = DocksOpen {
             terminal: self.dock.read(cx).is_dock_open(DockPlacement::Bottom),
             workbench: self.workbench_open(cx),
         };
-        self.chat
-            .update(cx, |pane, cx| pane.set_docks_open(open, cx));
         // Opening or closing a dock is saved, as a dragged size is, and never
         // put back. The first frame only learns the state it opened with.
         if self
@@ -150,14 +148,9 @@ impl Shell {
         }
         self.last_panel = FocusedPanel::Workbench;
         self.stepped_aside = false;
-        let open = self.dock.read(cx).is_dock_open(DockPlacement::Right);
         self.workbench
             .update(cx, |panel, cx| panel.set_mode(mode, cx));
-        if !open {
-            self.dock.update(cx, |dock, cx| {
-                dock.toggle_dock(DockPlacement::Right, window, cx)
-            });
-        }
+        workbench_slot::set_open(self, true, window, cx);
         self.workbench
             .update(cx, |panel, cx| panel.focus_active(window, cx));
         cx.notify();
@@ -173,40 +166,26 @@ impl Shell {
         }
     }
 
-    /// Close the dock and recover focus if its focused content disappears.
+    /// Put the Workbench away, the caret given back to the conversation if
+    /// it was in there (see [`workbench_slot::set_open`]).
     pub(super) fn hide_workbench(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.stepped_aside = false;
-        self.leave_workbench_focus(window, cx);
-        let had_focus = self.workbench.focus_handle(cx).contains_focused(window, cx);
-        // A maximized panel cannot be left blown up over a dock that is no
-        // longer open, and the way back out of that is the button that just
-        // went away with it.
+        self.leave_workbench_focus(cx);
+        // A maximized panel cannot be left filling the window once it is put
+        // away, and the way back out of that is the button that just went
+        // away with it.
         if self.app_maximized == Some(FocusedPanel::Workbench) {
             self.set_app_maximized(None, cx);
-            self.dock
-                .update(cx, |dock, cx| dock.set_zoomed_out(window, cx));
+            workbench_slot::set_chat_shown(self, true, cx);
         }
-        self.dock.update(cx, |dock, cx| {
-            if dock.is_dock_open(DockPlacement::Right) {
-                dock.toggle_dock(DockPlacement::Right, window, cx);
-            }
-        });
-        // The caret may be inside the panel going off screen, and a closed dock
-        // draws none of its content -- so leaving focus there leaves the window
-        // pointing at an element no frame contains, which is a window no
-        // shortcut reaches.
-        if had_focus {
-            self.last_panel = FocusedPanel::Chat;
-            self.chat
-                .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
-        }
+        workbench_slot::set_open(self, false, window, cx);
         cx.notify();
     }
 
     /// Toggle the bottom terminal regardless of focus. A shell is spawned on
     /// first open and never at boot (see [`crate::terminal`]).
     pub fn show_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // Stepping aside touches only the Workbench's dock, so the bottom
+        // Stepping aside touches only the Workbench's slot, so the bottom
         // dock read here is the one the press acts on.
         let press = dock_rules::terminal_press(
             self.page_shown(cx),
@@ -412,23 +391,44 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.app_maximized.is_some() {
+        if let Some(was) = self.app_maximized {
             self.set_app_maximized(None, cx);
-            self.dock
-                .update(cx, |dock, cx| dock.set_zoomed_out(window, cx));
+            match was {
+                FocusedPanel::Workbench => workbench_slot::set_chat_shown(self, true, cx),
+                FocusedPanel::Chat | FocusedPanel::Terminal => self
+                    .dock
+                    .update(cx, |dock, cx| dock.set_zoomed_out(window, cx)),
+            }
             cx.notify();
             return;
         }
         // The rail goes with everything else but the panel, so a caret in it
         // moves into the panel that stays.
         let rail_had_focus = self.rail.holds_focus(window, cx);
-        let (placement, id) = match panel {
-            FocusedPanel::Chat => (DockPlacement::Center, self.chat.entity_id()),
-            FocusedPanel::Workbench => (DockPlacement::Right, self.workbench.entity_id()),
-            FocusedPanel::Terminal => (DockPlacement::Bottom, self.terminal.entity_id()),
-        };
-        self.dock
-            .update(cx, |dock, cx| zoom_in(dock, placement, id, window, cx));
+        match panel {
+            FocusedPanel::Chat => {
+                let id = self.chat.entity_id();
+                self.dock.update(cx, |dock, cx| {
+                    zoom_in(dock, DockPlacement::Center, id, window, cx)
+                });
+            }
+            // The Workbench fills the window by the conversation stepping out
+            // of the centre, not by a zoom, so the terminal under both stays
+            // where it was. A caret in the conversation goes with it into the
+            // Workbench, or it would point at nothing.
+            FocusedPanel::Workbench => {
+                if self.chat.focus_handle(cx).contains_focused(window, cx) {
+                    self.workbench.focus_handle(cx).focus(window, cx);
+                }
+                workbench_slot::set_chat_shown(self, false, cx);
+            }
+            FocusedPanel::Terminal => {
+                let id = self.terminal.entity_id();
+                self.dock.update(cx, |dock, cx| {
+                    zoom_in(dock, DockPlacement::Bottom, id, window, cx)
+                });
+            }
+        }
         if rail_had_focus {
             match panel {
                 FocusedPanel::Chat => self
@@ -565,6 +565,13 @@ impl Shell {
     }
 }
 
+/// Which of the window's docks are open, as last saved.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) struct DocksOpen {
+    terminal: bool,
+    workbench: bool,
+}
+
 /// Put the terminal into the bottom dock at `height`: a fresh dock every time,
 /// since unmounting takes the dock away (see [`Shell::set_terminal_visible`]).
 pub(super) fn mount_terminal(
@@ -588,7 +595,7 @@ pub(super) fn mount_terminal(
 
 /// Fill the area with the group holding panel `id` in `placement`. A zoom
 /// names the group, never the panel, so the group is looked up first.
-pub(super) fn zoom_in(
+fn zoom_in(
     area: &mut DockArea,
     placement: DockPlacement,
     id: EntityId,

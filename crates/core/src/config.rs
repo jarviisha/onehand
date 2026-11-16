@@ -482,14 +482,14 @@ pub struct WorkspaceConfig {
 /// held by the shell, so the shell's handles would end up pointing at orphans.
 ///
 /// This carries the part that is actually variable. onehand's arrangement is
-/// fixed by design — conversation in the centre, Workbench right, terminal
-/// bottom — so what the user changes is how wide, how tall, and whether each is
+/// fixed by design — conversation and Workbench side by side in the centre,
+/// the terminal under both — so what the user changes is how wide, how tall, and whether each is
 /// showing. Four facts, no GUI types, and nothing here that stops compiling
 /// when the library's layout format moves.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PanelLayout {
-    /// Width of the Workbench dock, in pixels.
+    /// Width of the Workbench's slot beside the conversation, in pixels.
     pub workbench_w: f32,
     pub workbench_open: bool,
     /// Height of the terminal dock, in pixels.

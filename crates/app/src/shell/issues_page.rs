@@ -8,7 +8,6 @@
 use super::Shell;
 use crate::workbench::WorkbenchEvent;
 use gpui::{Context, Focusable as _, SharedString, Window};
-use gpui_component::dock::DockPlacement;
 use onehand_issues::{IssuesEvent, Page, Tell};
 use onehand_workbench::{Ask, Asker, Request};
 use std::path::Path;
@@ -234,11 +233,7 @@ impl Shell {
         self.select_root(idx, window, cx);
         self.workbench
             .update(cx, |panel, cx| panel.open_file(path, window, cx));
-        self.dock.update(cx, |dock, cx| {
-            if !dock.is_dock_open(DockPlacement::Right) {
-                dock.toggle_dock(DockPlacement::Right, window, cx);
-            }
-        });
+        super::workbench_slot::set_open(self, true, window, cx);
     }
 }
 

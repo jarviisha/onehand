@@ -23,4 +23,4 @@ pub mod transcript;
 pub mod viewport;
 
 pub(crate) use pane::is_open;
-pub use pane::{ChatPane, DocksOpen};
+pub use pane::ChatPane;
