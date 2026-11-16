@@ -23,7 +23,10 @@ use onehand_ui::ShortIcon as _;
 /// It leads with the workspace's name and a chevron, a button of its own and
 /// so a tab stop of its own, which opens the workspace menu when pressed and
 /// on Enter; past it, the field searches. The name is cut at a character, as
-/// a menu row's is: the field is the room the search has, not the name.
+/// a menu row's is: the field is the room the search has, not the name. A
+/// press on it stays its own: the button takes focus on its way down and
+/// marks the press taken, so the field round it takes neither the caret nor
+/// the click.
 pub(crate) fn search_field(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
     let state = shell.rail_state();
     let workspace = &shell.workspace_window().workspace;
@@ -37,22 +40,16 @@ pub(crate) fn search_field(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoE
         .h_flex()
         .items_center()
         .gap_1()
-        .child(
-            div()
-                .pr_1()
-                .border_r_1()
-                .border_color(cx.theme().border)
-                .child(onehand_ui::menu_below(
-                    "workspace-menu",
-                    crate::controls::action("workspace-segment")
-                        .quiet(cx)
-                        .short()
-                        .label(name)
-                        .dropdown_caret(true)
-                        .named("Open another workspace, or start one"),
-                    menu,
-                )),
-        )
+        .child(onehand_ui::menu_below(
+            "workspace-menu",
+            crate::controls::action("workspace-segment")
+                .quiet(cx)
+                .short()
+                .label(name)
+                .dropdown_caret(true)
+                .named("Open another workspace, or start one"),
+            menu,
+        ))
         .child(
             Icon::new(IconName::Search)
                 .small()

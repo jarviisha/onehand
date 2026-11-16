@@ -167,3 +167,14 @@ fn a_watched_host_session_is_the_workspaces_as_its_host_says_it(cx: &mut gpui::T
     assert_eq!(watched, None, "gone with its session");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// The rail's toggle shows the rail whenever it is off screen, hidden or
+/// under a panel filling the window, and hides it only while it shows.
+#[test]
+fn the_rail_toggle_shows_a_rail_a_maximized_panel_hides() {
+    use docks::{RailToggle, rail_toggle};
+    assert_eq!(rail_toggle(false, false), RailToggle::Hide);
+    assert_eq!(rail_toggle(true, false), RailToggle::Show);
+    assert_eq!(rail_toggle(false, true), RailToggle::Show);
+    assert_eq!(rail_toggle(true, true), RailToggle::Show);
+}

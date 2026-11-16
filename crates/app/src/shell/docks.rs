@@ -517,15 +517,21 @@ impl Shell {
     }
 
     /// Show or hide the rail. The title bar's toggle is the way back to a
-    /// hidden one, beside its key.
+    /// hidden one, beside its key. A rail off screen under a panel filling
+    /// the window is shown, not hidden further, so a press always shows what
+    /// the toggle's ink said was missing.
     pub fn toggle_rail(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let hidden = !self.rail_hidden;
-        if hidden && self.rail.holds_focus(window, cx) {
-            self.chat
-                .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
+        match rail_toggle(self.rail_hidden, self.app_maximized.is_some()) {
+            RailToggle::Show => self.show_rail(window, cx),
+            RailToggle::Hide => {
+                if self.rail.holds_focus(window, cx) {
+                    self.chat
+                        .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
+                }
+                self.rail_hidden = true;
+                cx.notify();
+            }
         }
-        self.rail_hidden = hidden;
-        cx.notify();
     }
 
     /// Bring the rail back, whatever asked for it: a panel filling the window
@@ -534,10 +540,10 @@ impl Shell {
         if self.app_maximized.is_some() {
             self.toggle_maximize(window, cx);
         }
-        if !self.rail_hidden {
-            return;
+        if self.rail_hidden {
+            self.rail_hidden = false;
+            cx.notify();
         }
-        self.toggle_rail(window, cx);
     }
 
     /// Open issue `number` of the project at `root`: that project selected,
@@ -594,5 +600,22 @@ pub(super) fn zoom_in(
         .and_then(|tree| tree.find_panel_node(PanelId::from(id)));
     if let Some(node) = node {
         area.set_zoomed_in(node, window, cx);
+    }
+}
+
+/// What the rail's toggle does.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum RailToggle {
+    Show,
+    Hide,
+}
+
+/// The rail's toggle, from whether the rail is `hidden` and whether a panel
+/// fills the window (`maximized`): shown whenever it is off screen, either
+/// way, and hidden only while it shows.
+pub(super) fn rail_toggle(hidden: bool, maximized: bool) -> RailToggle {
+    match hidden || maximized {
+        true => RailToggle::Show,
+        false => RailToggle::Hide,
     }
 }

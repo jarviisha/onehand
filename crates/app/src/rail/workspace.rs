@@ -141,7 +141,9 @@ pub(super) fn new_session_hint(root: Option<&str>, agent: Option<&str>) -> Share
 /// first of the rail's rows, a page's row set apart by its weight and the
 /// full ink, the key's hint at its end. Its menu, choosing another project or
 /// agent, opens from a chevron at the row's end, shown under the pointer and
-/// while the keys are on the row, and from a right-click anywhere on it. With
+/// while the keys are on the row, and from a right-click anywhere on it. A tab
+/// stop: Enter on it starts the session as a press does, the window turning
+/// Enter on a focused row into its click. With
 /// no project only *Add project…* helps: the row refuses, and its hint says so.
 pub(super) fn new_session_row(
     shell: &Shell,
