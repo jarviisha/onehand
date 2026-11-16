@@ -19,7 +19,7 @@ pub mod state;
 pub mod turns;
 pub mod workers;
 
-pub use catalogue::{session_only_count, tool_names};
+pub use catalogue::tool_names;
 use catalogue::{tool, tools, Tool};
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};

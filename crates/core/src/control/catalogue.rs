@@ -50,12 +50,6 @@ pub fn tool_names() -> &'static [&'static str] {
     NAMES.get_or_init(|| tools().iter().map(|tool| tool.name).collect())
 }
 
-/// How many tools are for a session's agent alone, never offered to an
-/// outside program.
-pub fn session_only_count() -> usize {
-    tools().iter().filter(|tool| tool.for_sessions_only).count()
-}
-
 /// Each tool, with its description and input schema.
 fn catalogue() -> Vec<Tool> {
     let none = || json!({"type": "object", "properties": {}, "additionalProperties": false});
