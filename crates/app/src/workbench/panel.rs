@@ -575,9 +575,6 @@ impl Render for Workbench {
                 self.width.clone(),
                 cx.entity().downgrade(),
             ))
-            // A surface of its own, set off from the conversation by its fill
-            // alone; the dock's grip runs along that edge.
-            .bg(crate::theme::dock_surface(cx))
             // Mounted bare, so nothing else tracks this handle. A `TabPanel`
             // calls `track_focus` on the panel it holds, which is what normally
             // makes `contains_focused` answer for a dock panel at all -- and

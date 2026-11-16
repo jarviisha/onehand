@@ -57,11 +57,13 @@ impl IssuesView {
                             .child(
                                 div()
                                     .size_full()
-                                    // The one hairline between the halves,
-                                    // on the divider: its grip draws a line
-                                    // only while it is dragged.
-                                    .border_r_1()
-                                    .border_color(cx.theme().border)
+                                    // Parted from the issue by fill, never a
+                                    // line, as the Files tree is from the
+                                    // editor: the list stands on the window's
+                                    // fill, a step off the box's. Its corner
+                                    // at the box's foot is the box's own.
+                                    .bg(cx.theme().sidebar)
+                                    .rounded_bl(cx.theme().radius_lg)
                                     .child(list),
                             ),
                     )

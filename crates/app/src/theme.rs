@@ -100,7 +100,8 @@ fn palette(colors: &mut gpui_component::ThemeConfigColors, dark: bool) {
         tab_active: "#181818", "#f8f8f8";
         slider_thumb: "#181818", "#f8f8f8";
         scrollbar: "#18181800", "#f8f8f800";
-        // The rail, the docks and the bars: a step over the reading surface.
+        // The window's fill under the title bar, the rail and the gaps
+        // between the boxes: a step over the reading surface.
         sidebar: "#1f1f1f", "#ffffff";
         title_bar: "#1f1f1f", "#ffffff";
         status_bar: "#1f1f1f", "#ffffff";
@@ -359,7 +360,7 @@ mod tests {
     fn the_regions_stand_a_step_apart() {
         for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
             let theme = installed(mode);
-            for (region, fill) in [("rail and docks", theme.sidebar), ("bars", theme.title_bar)] {
+            for (region, fill) in [("rail and gaps", theme.sidebar), ("bars", theme.title_bar)] {
                 assert!(
                     contrast(fill, theme.background) >= 1.04,
                     "{name}: the {region} are the reading surface"
@@ -376,6 +377,19 @@ mod tests {
             contrast(dark.popover, dark.background) >= 1.04,
             "dark: a floating surface is the page's own fill"
         );
+    }
+
+    /// A box (the page fill) stands apart from the window's fill it sits on
+    /// by at least the gap the owner approved in the dark palette's mock-up.
+    const BOX_ON_WINDOW: f32 = 1.06;
+
+    #[test]
+    fn a_box_stands_apart_from_the_window() {
+        for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
+            let theme = installed(mode);
+            let ratio = contrast(theme.background, theme.sidebar);
+            assert!(ratio >= BOX_ON_WINDOW, "{name}: box on window {ratio:.3}");
+        }
     }
 
     /// The three neutral inks read on every neutral surface text lies on.
@@ -523,7 +537,7 @@ mod tests {
                 let mut on = vec![
                     ("surface", theme.background),
                     ("well", theme.muted),
-                    ("dock", theme.sidebar),
+                    ("rail", theme.sidebar),
                 ];
                 // A removal on a secondary button is its word in the danger
                 // ink, on the button's own fill.

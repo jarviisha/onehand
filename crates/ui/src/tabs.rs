@@ -217,27 +217,19 @@ pub fn tab_chip(
         .child(gpui::div().min_w_0().truncate().child(label))
 }
 
-/// A dock's bar of tabs, as the library's tab panel draws one: a strip on
-/// the tab bar's fill with a line under it, its tabs ([`panel_tab`]) flush
-/// with its start and each other, its controls inset at its end. The caller
-/// adds the tabs, then whatever ends the bar.
+/// A dock's bar of tabs: a strip with no fill and no line of its own, on
+/// the box it heads, its tabs ([`panel_tab`]) parted from each other by
+/// space, its controls at its end. The caller adds the tabs, then whatever
+/// ends the bar.
 pub fn tab_bar(cx: &App) -> gpui::Div {
-    crate::strip(cx)
-        .px_0()
-        .pr_1()
-        .gap_0()
-        .items_stretch()
-        .bg(cx.theme().tab_bar)
-        .border_b_1()
-        .border_color(cx.theme().border)
+    crate::strip(cx).px_1().gap_1()
 }
 
-/// One tab of a [`tab_bar`]: as tall as the bar, parted from the next by a
-/// line, the chosen one on the tab's own fill in its ink with a stroke of the
-/// primary along its top, the rest in the bar's muted ink and inked under
-/// the pointer, truncating with its full `hint` on hover. The caller caps its
-/// width, says what a press does, and adds what follows the name: a mark,
-/// then [`tab_close`].
+/// One tab of a [`tab_bar`]: a step short of the bar, the chosen one a
+/// rounded fill (`secondary`) with its name in the content ink, the rest in
+/// the bar's muted ink and inked under the pointer, truncating with its full
+/// `hint` on hover. The caller caps its width, says what a press does, and
+/// adds what follows the name: a mark, then [`tab_close`].
 pub fn panel_tab(
     id: impl Into<ElementId>,
     label: SharedString,
@@ -256,8 +248,8 @@ pub fn panel_tab(
 }
 
 /// A [`panel_tab`]'s frame alone, for a tab whose press is a control of its
-/// own (a button the keyboard reaches): the bar's height, the line after it,
-/// the chosen fill and stroke and the inks. The caller insets what it holds.
+/// own (a button the keyboard reaches): a small control's height, the
+/// chosen fill and the inks. The caller insets what it holds.
 pub fn panel_tab_frame(
     id: impl Into<ElementId>,
     chosen: bool,
@@ -271,24 +263,12 @@ pub fn panel_tab_frame(
         .h_flex()
         .items_center()
         .flex_none()
-        .h_full()
+        .h(crate::tokens::CONTROL_H)
         .gap_1()
-        .border_r_1()
-        .border_color(theme.border)
+        .rounded(theme.radius)
         .text_size(crate::tokens::CHROME_TEXT)
         .map(|tab| match chosen {
-            true => tab
-                .bg(theme.tab_active)
-                .text_color(crate::chosen_ink(cx))
-                .child(
-                    gpui::div()
-                        .absolute()
-                        .top_0()
-                        .left_0()
-                        .right_0()
-                        .h(crate::tokens::TAB_MARK)
-                        .bg(theme.primary),
-                ),
+            true => tab.bg(theme.secondary).text_color(crate::chosen_ink(cx)),
             false => tab
                 .text_color(theme.tab_foreground)
                 .hover(move |tab| tab.text_color(lit)),

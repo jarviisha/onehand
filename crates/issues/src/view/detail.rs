@@ -108,9 +108,6 @@ pub(super) fn issue_view(
     // sits is muted; the issue itself, the place the person is, takes the
     // full ink.
     let trail = onehand_ui::workbench_strip(cx)
-        // Where the issue's head ends and the issue begins.
-        .border_b_1()
-        .border_color(theme.border)
         .child(
             div()
                 .h_flex()

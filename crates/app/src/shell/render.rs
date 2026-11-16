@@ -45,15 +45,9 @@ impl Render for Shell {
                         .size(px(self.window.workspace.layout.rail_w))
                         .size_range(px(PanelLayout::RAIL_MIN)..px(PanelLayout::RAIL_MAX))
                         .fixed()
-                        // A line down its edge, parting the chrome from what it
-                        // navigates.
-                        .child(
-                            div()
-                                .size_full()
-                                .border_r_1()
-                                .border_color(cx.theme().border)
-                                .child(rail),
-                        ),
+                        // No line down its edge: the boxes beside it stand off
+                        // the window's fill it shares.
+                        .child(div().size_full().child(rail)),
                 )
                 .child(resizable_panel().child(dock))
                 // Called once, when a drag ends: the one thing that changes the
@@ -71,7 +65,17 @@ impl Render for Shell {
         // is left as it is because the body still has to be allowed to shrink
         // below its content rather than growing the window: both forms of it
         // are `size_full`, so this wrapper sets no direction of its own.
-        let body = div().flex_1().min_h_0().w_full().child(body);
+        // On the window's fill, which shows in the gaps between the boxes.
+        // Each box carries the gap along its own left and top, so the body
+        // pads only the window's right and foot to match.
+        let body = div()
+            .flex_1()
+            .min_h_0()
+            .w_full()
+            .pr(onehand_ui::tokens::REGION_GAP)
+            .pb(onehand_ui::tokens::REGION_GAP)
+            .bg(cx.theme().sidebar)
+            .child(body);
         let frame = div()
             .size_full()
             .v_flex()

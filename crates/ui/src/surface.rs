@@ -23,11 +23,9 @@ pub fn well(cx: &App) -> Div {
         .text_size(tokens::CODE_TEXT)
 }
 
-/// The surface a dock draws on: the palette's panel step, one off the reading
-/// surface the conversation sits on, so a dock reads as a surface of its own
-/// beside the conversation rather than as a card inset in it. The rail stands
-/// on the same step, so the app writes it into the sidebar slot read here,
-/// with its contrast tested beside the rest of its ramp.
+/// The surface a dock draws on: the reading surface, as every region's box
+/// is, so the Workbench and the terminal read as boxes of the same kind as
+/// the conversation's, parted from it by the window's fill around them.
 ///
 /// Here rather than in the app for the reason [`action`](crate::action) is: the Neovim mode
 /// draws a terminal grid and has to hand it the surface it is sitting on, and
@@ -36,7 +34,22 @@ pub fn well(cx: &App) -> Div {
 /// second copy of this answer is visible as a rectangle of the wrong shade
 /// behind a running program.
 pub fn dock_surface(cx: &App) -> Hsla {
-    cx.theme().sidebar
+    cx.theme().background
+}
+
+/// A region's box: the agent pane, the Workbench, the terminal. Filling what
+/// it is given, on the reading surface, at the large corner, with no edge:
+/// it stands on the window's fill and is parted from its neighbours by the
+/// gap around it ([`tokens::REGION_GAP`]). Clipped, so nothing inside paints
+/// past it; the clip is square, so what touches a corner leaves its own fill
+/// off.
+pub fn region(cx: &App) -> Div {
+    let theme = cx.theme();
+    div()
+        .size_full()
+        .bg(theme.background)
+        .rounded(theme.radius_lg)
+        .overflow_hidden()
 }
 
 /// A vertical scrollbar at the app's weight: every scrolling region draws its

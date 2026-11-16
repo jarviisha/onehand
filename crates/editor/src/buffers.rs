@@ -21,9 +21,8 @@ use onehand_ui::{
 };
 use std::path::Path;
 
-/// Tabs stand flush, as a tab panel's do, each parted from the next by its
-/// own line.
-const TAB_GAP: Rems = rems(0.);
+/// Tabs are parted by space, never a line: the bar's own gap (`gap_1`).
+const TAB_GAP: Rems = rems(0.25);
 /// The unsaved-edits mark on a tab.
 const DIRTY_DOT: Rems = rems(0.375);
 
@@ -219,11 +218,12 @@ pub(crate) fn tab_strip<T: 'static>(
     let tab_list = div()
         .h_full()
         .h_flex()
+        .gap(TAB_GAP)
         .children(tabs)
         .children(more.map(|more| div().h_flex().items_center().px_1().child(more)));
 
-    // The library's tab panel bar, a mode's bar a step lower than the
-    // Workbench's over it, its line under it where the code begins.
+    // A mode's bar, a step lower than the Workbench's over it, with no line
+    // between it and the code it heads.
     onehand_ui::tab_bar(cx)
         .h(onehand_ui::tokens::MODE_BAR_H)
         .child(div().h_flex().items_center().px_1().child(lead))

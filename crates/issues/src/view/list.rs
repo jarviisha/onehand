@@ -20,8 +20,8 @@ use onehand_ui::Short as _;
 use onehand_ui::ShortIcon as _;
 use onehand_ui::search_input;
 use onehand_ui::{
-    ControlSize, Tint, action, faint_rule, menu_below, menu_item, middle_ink, picker,
-    row as row_surface, status_ink, switch,
+    ControlSize, Tint, action, menu_below, menu_item, middle_ink, picker, row as row_surface,
+    status_ink, switch,
 };
 use std::collections::BTreeSet;
 
@@ -220,8 +220,8 @@ impl IssuesView {
         let narrowed = !query.read(cx).value().is_empty() || self.label.is_some();
         // The form's *Save* holds the tab's one primary while it shows.
         let drafting = self.state_mut().is_some_and(|state| state.form.is_some());
-        // A filter bar, parted from what is under it by a line the tab's
-        // whole width, as a page's toolbar is from its list. A filter picked
+        // A filter bar, with no line under it: nothing is drawn between a
+        // box's strips and what they head. A filter picked
         // behind the issue changes nothing on screen, so a narrow tab shows
         // the list it narrowed.
         div()
@@ -233,8 +233,6 @@ impl IssuesView {
             .flex_none()
             .px(onehand_ui::tokens::ROW_INSET)
             .py_2()
-            .border_b_1()
-            .border_color(faint_rule(cx))
             .child(
                 div()
                     .flex_1()

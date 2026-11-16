@@ -26,7 +26,7 @@ Slot names that mislead (the library's names, kept because its own controls read
 | `button_secondary`, `button_secondary_foreground` | the secondary button's own fill at rest (its pointed-at step under the pointer or pressed) and its ink |
 | `primary` | the primary action, the one blue; its word in `primary_foreground` |
 | `danger`, `warning`, `success` | fills with white on them; their text is `status_ink(cx)` |
-| `sidebar` | the rail's fill, the docks' too, read for a dock through `dock_surface(cx)` |
+| `sidebar` | the window's fill: the title bar, the rail, the gaps between the boxes, and a tree standing beside its file inside a box |
 | `sidebar_accent` | the rail's hovered row |
 | `list_active` | the library's own chosen list row, set to the selected grey |
 
@@ -36,7 +36,7 @@ Helpers:
 |---|---|---|
 | `status_ink(cx).danger`, `.warning`, `.success`, `.closed` | status text and marks; `closed` for what is over and settled (a closed issue) | `crates/ui/src/ink.rs`; the app says `crate::theme::status_ink` |
 | `tint(base, cx)` | a label's `Tint { fill, ink }` by its hue | `crates/ui/src/ink.rs` |
-| `dock_surface(cx)` | the Workbench's and the terminal's surface | `crates/ui/src/surface.rs` |
+| `dock_surface(cx)` | the Workbench's and the terminal's surface: the reading surface (`background`), as every box is | `crates/ui/src/surface.rs` |
 | `badge_edge(tint)` | a badge's edge: halfway from its `Tint`'s fill to its ink | `crates/ui/src/badge.rs` |
 | `chosen_fill(cx)`, `chosen_ink(cx)` | the item chosen among several: the selected grey (`accent`), a step past the hover step, and its name's ink, the content ink | `crates/ui/src/ink.rs` |
 | `control_fill(cx)` | a ghost control's fill hovered, pressed or chosen; between `list_hover` and `accent` | `crates/ui/src/ink.rs` |

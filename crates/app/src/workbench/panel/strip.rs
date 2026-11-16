@@ -29,30 +29,20 @@ impl Workbench {
         // While the panel refuses, there is no mode to switch to: the space
         // stays, so the controls at the row's end do not move.
         let offered = self.refused.is_none();
-        // The library's tab panel bar, as tall as the conversation's header
-        // beside it so the two line up across the seam, its line under it
-        // parting the panel's modes from a mode's own bar.
-        let edge = cx.theme().border;
+        // The dock's tab bar, as tall as the conversation's header beside it
+        // so the two line up across the gap.
         onehand_ui::tab_bar(cx)
             // The way back to the conversation, while this panel has taken the
             // area because the window cannot hold the two side by side. A
             // maximized panel has its own way back at the other end.
             .when(self.fills_area && !full, |strip| {
-                strip.child(
-                    div()
-                        .h_flex()
-                        .items_center()
-                        .px_1()
-                        .border_r_1()
-                        .border_color(edge)
-                        .child(
-                            onehand_ui::back_link("step-aside", "Conversation", cx).on_click(
-                                cx.listener(|_: &mut Self, _, _, cx| {
-                                    cx.emit(WorkbenchEvent::StepAside);
-                                }),
-                            ),
-                        ),
-                )
+                strip.child(div().h_flex().items_center().px_1().child(
+                    onehand_ui::back_link("step-aside", "Conversation", cx).on_click(cx.listener(
+                        |_: &mut Self, _, _, cx| {
+                            cx.emit(WorkbenchEvent::StepAside);
+                        },
+                    )),
+                ))
             })
             // The modes are the one part of the row that gives way, so the
             // controls at its end are on screen at any width.
@@ -69,7 +59,7 @@ impl Workbench {
                             showing.id,
                             cx,
                         )),
-                        false => modes.children(
+                        false => modes.gap_1().children(
                             specs
                                 .into_iter()
                                 .map(|spec| mode_tab(spec.label, spec.id, showing.id, cx)),
@@ -130,10 +120,9 @@ fn hide_control(cx: &mut Context<Workbench>) -> Button {
         }))
 }
 
-/// One mode on the bar: a tab panel's tab, the showing one on the tab's fill
-/// with the primary's stroke along its top and its name in the chosen ink, at most a tab's width and
-/// truncating. Its press is a text button inside the tab, so the keyboard
-/// reaches it.
+/// One mode on the bar: a dock's tab, the showing one on the open tab's fill
+/// with its name in the chosen ink, at most a tab's width and truncating.
+/// Its press is a text button inside the tab, so the keyboard reaches it.
 fn mode_tab(
     label: &'static str,
     which: ModeId,

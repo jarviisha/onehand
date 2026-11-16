@@ -584,14 +584,11 @@ impl Render for TerminalPanel {
         self.sync_theme(cx);
         div()
             .size_full()
-            // Flush with its dock, as the Workbench is with its own: the
-            // dock's line along its top parts it from the conversation, and
-            // its tab bar runs the panel's whole width.
+            // Filling its dock's box, which paints the surface: the grid is
+            // handed the same one as its background, so a shell is the panel
+            // rather than a plate laid on it.
             .v_flex()
             .overflow_hidden()
-            // The grid is handed the same surface as its background, so a
-            // shell is the panel rather than a plate laid on it.
-            .bg(crate::theme::dock_surface(cx))
             // Tracked here because this panel is mounted bare. A `TabPanel` calls
             // `track_focus` on the panel it holds, which is what normally puts
             // that handle in the focus tree; without a tab group nothing does,
@@ -665,8 +662,8 @@ impl TerminalPanel {
             .size_full()
             .v_flex()
             .child(
-                // The library's tab panel bar: the shells as its tabs, the
-                // chosen one on the tab's fill under the primary's stroke.
+                // The dock's tab bar: the shells as its tabs, the chosen one
+                // on the open tab's fill.
                 onehand_ui::tab_bar(cx)
                     .id("terminal-tabs")
                     // The tabs live in a box of their own that scrolls sideways,
@@ -677,6 +674,7 @@ impl TerminalPanel {
                             .id("terminal-tab-list")
                             .track_scroll(&self.tab_scroll)
                             .h_flex()
+                            .gap_1()
                             .flex_1()
                             .min_w_0()
                             .overflow_x_scroll()
