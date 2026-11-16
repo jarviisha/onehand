@@ -389,6 +389,9 @@ impl ControlDrive {
             if !on && !self.only_has(uid, "open_worker") {
                 fx.extend(self.abandon_of(uid, false));
             }
+            if !on && !self.only_has(uid, "send_prompt") {
+                fx.extend(self.turns_of_lead_ended(uid, "the lead's tools were switched off"));
+            }
         }
         fx
     }
@@ -421,6 +424,7 @@ impl ControlDrive {
     pub fn forget(&mut self, uid: u64) -> Vec<Effect> {
         let mut fx = self.abandon_of(uid, true);
         fx.extend(self.turn_forgotten(uid));
+        fx.extend(self.turns_of_lead_ended(uid, "the lead was closed"));
         if let Some(key) = self.key_of(uid) {
             fx.extend(self.fail(&key, "the session was closed before it was ready".into()));
         }

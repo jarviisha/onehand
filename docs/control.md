@@ -243,7 +243,10 @@ offered `open_worker`, and `open_session` takes none of its further arguments.
     picks it, after the checks above, so a retried turn picks nothing. The turn goes once the
     pick is answered and that model is in force: an agent that offers no model option, or not
     that value, or refuses the pick, refuses the turn, naming what it offers, and nothing is
-    sent; a pick not answered within 120 seconds refuses it too. The model stays in force for
+    sent; a pick not answered within 120 seconds refuses it too. While the pick is under way,
+    another `send_prompt` is refused, the same turn and text again told it is waiting; the turn
+    is checked once more before it goes, and the lead closing or its tools switched off refuses
+    it. The model stays in force for
     the worker's next turns, since it is the session's own setting, and `session_state`'s
     `model:` says it.
 - **`cancel_turn`** cancels the turn the caller's worker runs, as the person's Stop does. It is

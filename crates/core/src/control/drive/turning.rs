@@ -94,6 +94,37 @@ impl ControlDrive {
         Some(self.turn_over(uid, Err(why)))
     }
 
+    /// What a `send_prompt` of turn `turn`, `text`, to worker `uid` comes
+    /// to while a turn of its waits on its model: the same turn again is
+    /// told so and sends nothing, any other is refused. `None` when none
+    /// waits.
+    pub fn turn_waiting(&self, uid: u64, turn: u64, text: &str) -> Option<Result<String, String>> {
+        let waiting = self.turning.get(&uid)?;
+        let said = format!("turn {} is waiting on its model pick", waiting.turn);
+        Some(match waiting.turn == turn && waiting.text == text {
+            true => Ok(said),
+            false => Err(said),
+        })
+    }
+
+    /// Every turn waiting on a model for `lead`'s workers is refused with
+    /// `why`: its lead went, or its tools did.
+    pub(super) fn turns_of_lead_ended(&mut self, lead: u64, why: &str) -> Vec<Effect> {
+        let uids: Vec<u64> = self
+            .turning
+            .keys()
+            .copied()
+            .filter(|uid| {
+                self.workers
+                    .get(uid)
+                    .is_some_and(|relation| relation.lead == lead)
+            })
+            .collect();
+        uids.into_iter()
+            .flat_map(|uid| self.turn_over(uid, Err(why.to_string())))
+            .collect()
+    }
+
     /// Worker `uid` closed: a turn of its waiting on a model is refused.
     pub(super) fn turn_forgotten(&mut self, uid: u64) -> Vec<Effect> {
         match self.turning.contains_key(&uid) {

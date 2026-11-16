@@ -1013,3 +1013,39 @@ fn closing_the_lead_mid_coming_back_writes_one_final_keep() {
     let closed: Vec<&str> = keeps[0].closed.iter().map(|c| c.handle.as_str()).collect();
     assert!(closed.contains(&a) && closed.contains(&b), "{closed:?}");
 }
+
+#[test]
+fn a_lead_closed_or_switched_off_ends_its_turns_waiting_on_a_model() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let _ = drive.turn_with_model(7, 2, "next".into(), "strong".into());
+    let fx = shown(&drive.switch(1, false));
+    assert!(
+        fx.contains(&r#"TurnAnswer 7 Err("the lead's tools were switched off")"#.to_string()),
+        "{fx:?}"
+    );
+    assert!(
+        woke_on(&mut drive, &on_model("strong")) == ["Unwatch 7"],
+        "nothing sent"
+    );
+
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let _ = drive.turn_with_model(7, 2, "next".into(), "strong".into());
+    let fx = shown(&drive.forget(1));
+    assert!(
+        fx.contains(&r#"TurnAnswer 7 Err("the lead was closed")"#.to_string()),
+        "{fx:?}"
+    );
+}
+
+#[test]
+fn a_turn_waiting_on_its_model_refuses_another() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    assert_eq!(drive.turn_waiting(7, 2, "next"), None);
+    let _ = drive.turn_with_model(7, 2, "next".into(), "strong".into());
+    let waiting = "turn 2 is waiting on its model pick".to_string();
+    assert_eq!(drive.turn_waiting(7, 2, "next"), Some(Ok(waiting.clone())));
+    assert_eq!(drive.turn_waiting(7, 3, "other"), Some(Err(waiting)));
+}

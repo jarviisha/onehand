@@ -92,6 +92,10 @@ pub(in crate::control) fn send(
     cx: &mut App,
 ) -> Result<String, String> {
     let (uid, worker) = find(caller, session, cx)?.ok_or(format!("{session} is closed"))?;
+    // A turn still waiting on its model goes first, or not at all.
+    if let Some(waiting) = drive().turn_waiting(uid, turn, text) {
+        return waiting;
+    }
     let last = drive().last(uid).ok_or(format!("{session} is closed"))?;
     let send = read_chat(&worker, cx, |chat| turns::send(chat, &last, turn, text))?;
     // A chat still connecting has refused the turn above.
@@ -122,10 +126,20 @@ impl Global for Turning {}
 
 /// Send worker `uid` turn `turn`, `text`, its model now in force, and
 /// answer the call that asked.
+///
+/// Checked again first, as the call was: the person may have taken the
+/// worker, or a turn begun, while the model was picked.
 pub(in crate::control) fn send_now(uid: u64, turn: u64, text: &str, cx: &mut App) {
-    let outcome = match session_of(uid, cx) {
-        Some(worker) => send_now_to(uid, &worker, turn, text, cx),
-        None => Err("the session was closed before the turn went".to_string()),
+    let closed = || Err("the session was closed before the turn went".to_string());
+    let outcome = match (session_of(uid, cx), drive().last(uid)) {
+        (Some(worker), Some(last)) => {
+            match turns::send(worker.read(cx).chat(), &last, turn, text) {
+                Ok(turns::Send::Go) => send_now_to(uid, &worker, turn, text, cx),
+                Ok(turns::Send::AlreadySent(turn)) => Ok(format!("turn {turn} already sent")),
+                Err(why) => Err(why),
+            }
+        }
+        (None, _) | (_, None) => closed(),
     };
     answered(uid, outcome, cx);
 }
