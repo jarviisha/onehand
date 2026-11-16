@@ -146,7 +146,7 @@ impl ControlDrive {
             self.reserved.release(&resolved.folder);
             return self.fail(key, why);
         }
-        if let Err(why) = self.admit(lead, &world.opened) {
+        if let Err(why) = self.admit_but(lead, &world.opened, Some(key)) {
             self.reserved.release(&resolved.folder);
             return self.fail(key, why);
         }

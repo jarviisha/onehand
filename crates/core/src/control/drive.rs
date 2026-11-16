@@ -503,10 +503,29 @@ impl ControlDrive {
     /// sessions they opened that are still open, with their projects. Keeps
     /// only those.
     pub fn admit(&mut self, lead: u64, open: &[(u64, PathBuf)]) -> Result<(), String> {
-        if open.len() >= OPENED_CAP {
+        self.admit_but(lead, open, None)
+    }
+
+    /// [`Self::admit`], its workers still coming back counted too, but for
+    /// the open `except`, which is the one asking.
+    fn admit_but(
+        &mut self,
+        lead: u64,
+        open: &[(u64, PathBuf)],
+        except: Option<&Key>,
+    ) -> Result<(), String> {
+        let coming: Vec<String> = self
+            .pending
+            .iter()
+            .filter(|(key, _)| key.0 == lead && Some(*key) != except)
+            .filter_map(|(_, pending)| pending.open.back.as_ref())
+            .map(|back| format!("a worker coming back on {}", back.folder.display()))
+            .collect();
+        if open.len() + coming.len() >= OPENED_CAP {
             let said: Vec<String> = open
                 .iter()
                 .map(|(uid, at)| format!("session {uid} on {}", at.display()))
+                .chain(coming)
                 .collect();
             return Err(format!(
                 "this session's tools already have {OPENED_CAP} sessions open: {}; \

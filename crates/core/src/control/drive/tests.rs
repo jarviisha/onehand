@@ -1049,3 +1049,24 @@ fn a_turn_waiting_on_its_model_refuses_another() {
     assert_eq!(drive.turn_waiting(7, 2, "next"), Some(Ok(waiting.clone())));
     assert_eq!(drive.turn_waiting(7, 3, "other"), Some(Err(waiting)));
 }
+
+#[test]
+fn a_worker_coming_back_counts_under_its_leads_cap() {
+    let mut drive = lead_on();
+    let _back = coming_back(&mut drive, kept_one(false));
+    let (key, _) = resolves(drive.open_worker(asked("go"), &projects(), None));
+    let three = World {
+        opened: (2..5).map(|uid| (uid, PathBuf::from("/x"))).collect(),
+        ..world()
+    };
+    let fx = drive.handle(Input::Resolved {
+        key,
+        resolved: Ok(resolved()),
+        world: three,
+    });
+    let why = answer(&fx).unwrap().as_ref().unwrap_err();
+    assert!(
+        why.contains("4 sessions open") && why.contains("coming back"),
+        "{why}"
+    );
+}
