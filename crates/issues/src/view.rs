@@ -19,7 +19,7 @@ use onehand_core::issues::{self, Issues, LocalIssue};
 use onehand_core::task::work::IssueWork;
 use onehand_core::task::work::drive::WorkDrive;
 use onehand_ui::{Confirm, confirm_on, hint, measure_width, status_ink, status_line};
-use onehand_workbench::{Ask, Request};
+use onehand_workbench::Asker;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -176,7 +176,7 @@ pub(crate) struct IssuesView {
     label: Option<String>,
     /// How the mode asks the Workbench for something — a file opened in the
     /// editor.
-    ask: Ask,
+    ask: Asker,
     /// How the view reaches the shell with what is the app's own to do.
     tell: Tell,
     /// The conversations with a live session in this window, by the agent's
@@ -240,7 +240,7 @@ impl IssuesView {
     /// the Issues page does, across every project of the workspace.
     pub(crate) fn new(
         connectors: &'static [&'static dyn Connector],
-        ask: Ask,
+        ask: Asker,
         tell: Tell,
         page: bool,
         cx: &mut App,
@@ -261,7 +261,7 @@ impl IssuesView {
 
     fn made(
         connectors: &'static [&'static dyn Connector],
-        ask: Ask,
+        ask: Asker,
         tell: Tell,
         page: bool,
         cx: &mut Context<Self>,

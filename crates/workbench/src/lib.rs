@@ -22,7 +22,7 @@ use gpui::{AnyView, App, Window};
 /// still names the type its `set_root` is handed without depending on core.
 pub use onehand_core::disk::Disk;
 pub use onehand_core::workbench::{
-    ModeId, Request, TERMINAL_KEY_CONTEXT, WORKBENCH_KEY_CONTEXT, WorkbenchModeSpec,
+    Ask, ModeId, Request, TERMINAL_KEY_CONTEXT, WORKBENCH_KEY_CONTEXT, WorkbenchModeSpec,
 };
 use std::path::Path;
 use std::rc::Rc;
@@ -56,8 +56,8 @@ pub trait WorkbenchMode {
     ///
     /// A method rather than a broadcast [`Request`] for the reason
     /// [`Self::focus`] is: building a buffer needs a `Window`, and a request
-    /// can arrive from a path that has none. [`Request::OpenFile`] is the same
-    /// thing travelling the other way — what a mode raises through its [`Ask`]
+    /// can arrive from a path that has none. [`Ask::OpenFile`] is the same
+    /// thing travelling the other way — what a mode raises through its [`Asker`]
     /// when a click inside it means a file should be opened.
     fn open_file(&mut self, _path: &Path, _window: &mut Window, _cx: &mut App) -> bool {
         false
@@ -104,4 +104,4 @@ pub trait WorkbenchMode {
 ///
 /// Handed to a mode when it is built rather than set afterwards, so there is no
 /// window in which a mode is on screen holding nothing to ask through.
-pub type Ask = Rc<dyn Fn(&Request<'_>, &mut Window, &mut App)>;
+pub type Asker = Rc<dyn Fn(&Ask<'_>, &mut Window, &mut App)>;

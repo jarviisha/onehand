@@ -19,7 +19,7 @@ use onehand_ui::Named as _;
 use onehand_ui::Quiet as _;
 use onehand_ui::Short as _;
 use onehand_ui::{Refuses as _, action, menu_below, menu_item, menu_row, status_ink};
-use onehand_workbench::Request;
+use onehand_workbench::Ask;
 
 impl PluginsView {
     /// One installed plugin.
@@ -272,7 +272,7 @@ impl PluginsView {
                     let ask = ask.clone();
                     about.push(menu_item("View changelog").on_click(
                         move |_, window: &mut Window, cx: &mut App| {
-                            ask(&Request::OpenFile(&path), window, cx)
+                            ask(&Ask::OpenFile(&path), window, cx)
                         },
                     ));
                 }

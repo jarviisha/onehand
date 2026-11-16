@@ -227,27 +227,20 @@ impl Showing {
     }
 }
 
-/// Something asked of the Workbench without naming which mode answers it.
+/// Something the panel asks of its modes without naming which one answers.
 ///
-/// One vocabulary in **both** directions. The panel broadcasts these down; a
-/// mode sends one back up through the way its front end gives it to ask the
-/// panel, when a click inside it means something the panel owns, or another
-/// mode does — a row in the file tree opens a file, which is the quick
-/// editor's business and not the tree's. What is the app's own to answer, as
-/// an issue's work is, does not travel here: a view with such a thing to say
-/// speaks to the shell directly.
+/// It only travels **down**: the panel puts these to its modes, and the shell
+/// tells its Issues page the one it needs. What a mode asks of
+/// the panel goes up as an [`Ask`] instead, so no mode names what only goes
+/// the other way. What is the app's own to answer, as an issue's work is,
+/// does not travel here: a view with such a thing to say speaks to the shell
+/// directly.
 ///
 /// This enum is what keeps a mode's trait from growing a method per shell
 /// feature. Every mode matches it whole, naming what it has no answer to, so a
 /// new request is a compile error in each mode until it is decided there
 /// rather than a silent fall-through.
 pub enum Request<'a> {
-    /// Open a file in whichever mode edits files, and switch to it.
-    ///
-    /// Only ever travels **upward**: it is what a mode raises, and the panel
-    /// puts it to the modes through the mount's own open, which has what
-    /// building a buffer needs.
-    OpenFile(&'a Path),
     /// Write the active buffer. `Ctrl+S`, which is bound so that a program in a
     /// PTY keeps it — so this only ever reaches a mode drawing an element tree.
     Save,
@@ -303,10 +296,6 @@ pub enum Request<'a> {
     /// record of which conversation took something up can tell whether that
     /// one is still going.
     LiveConversations(&'a [String]),
-    /// Restart the agent of the session on screen. Only ever travels
-    /// **upward**: the shell owns sessions, and a mode asking for this has
-    /// changed something an agent reads only when it starts.
-    RestartAgent,
     /// The work on every issue a project in this window keeps itself that a
     /// task works, one summary per issue, and the projects a run may be
     /// started on (git repositories that are not a run's own worktree).
@@ -325,11 +314,30 @@ pub enum Request<'a> {
     /// The offloaded project folders, each with the host its sessions run
     /// on. Broadcast whenever the set changes, whole.
     Offloaded(&'a HashMap<PathBuf, String>),
+}
+
+/// What a mode asks of the panel it is mounted in, through the way its front
+/// end gives it to ask: what the panel owns, the shell behind it, or another
+/// mode — a row in the file tree opens a file, which is the quick editor's
+/// business and not the tree's. Only the panel matches it.
+pub enum Ask<'a> {
+    /// Open a file in whichever mode edits files, and switch to it.
+    ///
+    /// The panel puts it to the modes through the mount's own open, which has
+    /// what building a buffer needs.
+    OpenFile(&'a Path),
+    /// Restart the agent of the session on screen. The shell owns
+    /// sessions, and a mode asking for this has changed something an agent
+    /// reads only when it starts.
+    RestartAgent,
     /// Copy this file, or this folder with everything under it, ignored
     /// files included, to the same place in its offloaded project's copy on
-    /// the host. Only ever travels **upward**: the shell knows the host and
-    /// the copy, and says how it went.
+    /// the host. The shell knows the host and the copy, and says how it
+    /// went.
     SendToHost(&'a Path),
+    /// A child this mode runs has exited: collect it, and move the caret out
+    /// of the view that is about to stop existing if it was there.
+    Reap,
 }
 
 #[cfg(test)]

@@ -55,8 +55,7 @@ impl WorkbenchMode for Stub {
                 .borrow_mut()
                 .push((PathBuf::from("rescan"), None)),
             Request::Shown => self.told.borrow_mut().push((self.spec.id, "shown")),
-            Request::OpenFile(_)
-            | Request::Save
+            Request::Save
             | Request::Start
             | Request::Reap
             | Request::SetGit(_)
@@ -66,10 +65,8 @@ impl WorkbenchMode for Stub {
             | Request::AgentStarted(_)
             | Request::LiveConversations(_)
             | Request::IssueWork { .. }
-            | Request::RestartAgent
             | Request::Locked(_)
-            | Request::Offloaded(_)
-            | Request::SendToHost(_) => {}
+            | Request::Offloaded(_) => {}
         }
         false
     }

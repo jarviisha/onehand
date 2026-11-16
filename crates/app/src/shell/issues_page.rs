@@ -10,7 +10,7 @@ use crate::workbench::WorkbenchEvent;
 use gpui::{Context, Focusable as _, SharedString, Window};
 use gpui_component::dock::DockPlacement;
 use onehand_issues::{IssuesEvent, Page, Tell};
-use onehand_workbench::{Ask, Request};
+use onehand_workbench::{Ask, Asker, Request};
 use std::path::Path;
 use std::rc::Rc;
 
@@ -30,27 +30,12 @@ impl Shell {
     /// names to the Workbench, everything else to [`Self::on_issues_event`].
     pub(super) fn new_issues_page(tell: Tell, cx: &mut Context<Self>) -> Page {
         let shell = cx.weak_entity();
-        let ask: Ask = Rc::new(move |request, window, cx| {
+        let ask: Asker = Rc::new(move |request, window, cx| {
             let _ = shell.update(cx, |shell: &mut Self, cx| {
                 match request {
-                    Request::OpenFile(path) => shell.open_page_file(path, window, cx),
+                    Ask::OpenFile(path) => shell.open_page_file(path, window, cx),
                     // The page raises nothing else.
-                    Request::Save
-                    | Request::Start
-                    | Request::Rescan
-                    | Request::Shown
-                    | Request::Reap
-                    | Request::SetGit(_)
-                    | Request::SetStorage(_)
-                    | Request::SetFontSize(_)
-                    | Request::ShowIssue(_)
-                    | Request::AgentStarted(_)
-                    | Request::LiveConversations(_)
-                    | Request::RestartAgent
-                    | Request::IssueWork { .. }
-                    | Request::Locked(_)
-                    | Request::Offloaded(_)
-                    | Request::SendToHost(_) => {}
+                    Ask::RestartAgent | Ask::SendToHost(_) | Ask::Reap => {}
                 }
             });
         });

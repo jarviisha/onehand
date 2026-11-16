@@ -9,7 +9,7 @@
 use gpui::{AnyView, App, Entity, SharedString, Window};
 use onehand_core::connector::Connector;
 use onehand_core::task::Approval;
-use onehand_workbench::{Ask, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
+use onehand_workbench::{Asker, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -76,7 +76,7 @@ pub enum IssuesEvent {
 }
 
 /// How an Issues view reaches the shell. Handed to the view when it is
-/// built, as its [`Ask`] is, so it is never on screen with nobody to tell.
+/// built, as its [`Asker`] is, so it is never on screen with nobody to tell.
 pub type Tell = Rc<dyn Fn(IssuesEvent, &mut Window, &mut App)>;
 
 /// The Issues mode: a view and nothing else.
@@ -87,7 +87,7 @@ pub struct Mode {
 impl Mode {
     pub fn new(
         connectors: &'static [&'static dyn Connector],
-        ask: Ask,
+        ask: Asker,
         tell: Tell,
         cx: &mut App,
     ) -> Self {
@@ -129,7 +129,7 @@ pub struct Page {
 impl Page {
     pub fn new(
         connectors: &'static [&'static dyn Connector],
-        ask: Ask,
+        ask: Asker,
         tell: Tell,
         cx: &mut App,
     ) -> Self {
@@ -223,18 +223,15 @@ fn handle(view: &Entity<IssuesView>, request: &Request<'_>, cx: &mut App) -> boo
             view.update(cx, |view, cx| view.show_issue(*number, cx));
             true
         }
-        // Not an Issues view's to answer: a file to edit, a PTY, the agent,
-        // and what a view asks upward rather than is told.
-        Request::OpenFile(_)
-        | Request::Save
+        // Not an Issues view's to answer: a file to save, a PTY, the agent,
+        // and the tree's and the editor's facts.
+        Request::Save
         | Request::Start
         | Request::Reap
         | Request::SetGit(_)
         | Request::SetFontSize(_)
         | Request::AgentStarted(_)
-        | Request::RestartAgent
         | Request::Locked(_)
-        | Request::Offloaded(_)
-        | Request::SendToHost(_) => false,
+        | Request::Offloaded(_) => false,
     }
 }

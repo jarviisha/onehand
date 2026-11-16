@@ -11,7 +11,7 @@ use onehand_ui::h_resizable;
 use onehand_ui::{
     ListWidths, back_link, hint, list_detail, measure_width, status_ink, status_line,
 };
-use onehand_workbench::{Ask, Request};
+use onehand_workbench::{Ask, Asker};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -92,11 +92,11 @@ pub(crate) struct MarkdownView {
     /// by a read that works.
     status: Option<String>,
     /// How the header's *Edit source* reaches the mode that edits files.
-    ask: Ask,
+    ask: Asker,
 }
 
 impl MarkdownView {
-    pub(crate) fn new(ask: Ask, cx: &mut App) -> Entity<Self> {
+    pub(crate) fn new(ask: Asker, cx: &mut App) -> Entity<Self> {
         cx.new(|cx| Self {
             root: None,
             docs: HashMap::new(),
@@ -450,7 +450,7 @@ impl MarkdownView {
                     // Handing it to the editor switches the mode, which is the
                     // honest answer: this one does not edit.
                     if let Some(path) = path.clone() {
-                        ask(&Request::OpenFile(&path), window, cx);
+                        ask(&Ask::OpenFile(&path), window, cx);
                     }
                 },
                 cx,

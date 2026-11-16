@@ -30,7 +30,7 @@ use gpui_component::StyledExt;
 use gpui_component::button::ButtonVariants as _;
 use onehand_core::gitstat::GitStatus;
 use onehand_core::workbench::{Again, Showing};
-use onehand_workbench::{Ask, Disk, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
+use onehand_workbench::{Ask, Asker, Disk, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -96,14 +96,14 @@ impl Workbench {
     /// the builder in, so what a mode needs beyond the panel — the shell's
     /// own ear for an issue's events — is the shell's to close over.
     pub fn new(
-        build: impl FnOnce(Ask, Pixels, &mut App) -> Vec<Box<dyn WorkbenchMode>>,
+        build: impl FnOnce(Asker, Pixels, &mut App) -> Vec<Box<dyn WorkbenchMode>>,
         cx: &mut App,
     ) -> Entity<Self> {
         cx.new(|cx| {
             // Handed to the modes as they are built rather than set afterwards,
             // so none of them is ever on screen holding nothing to ask through.
             let panel = cx.weak_entity();
-            let ask: Ask = Rc::new(move |request, window, cx| {
+            let ask: Asker = Rc::new(move |request, window, cx| {
                 let _ = panel.update(cx, |panel: &mut Self, cx| {
                     panel.answer(request, window, cx);
                 });
@@ -126,18 +126,15 @@ impl Workbench {
         })
     }
 
-    /// Answer a request a mode raised, which is the panel's half of
-    /// [`onehand_workbench::Ask`].
-    ///
-    /// The vocabulary is the same in both directions, so what arrives here is
-    /// either something one mode is asking of another — opening a file is the
-    /// quick editor's business and the file tree cannot reach it — or something
-    /// only the panel can decide.
-    fn answer(&mut self, request: &Request<'_>, window: &mut Window, cx: &mut Context<Self>) {
-        match request {
-            Request::OpenFile(path) => self.open_file(path, window, cx),
-            Request::RestartAgent => cx.emit(WorkbenchEvent::RestartAgent),
-            Request::SendToHost(path) => cx.emit(WorkbenchEvent::SendToHost(path.to_path_buf())),
+    /// Answer what a mode asked, which is the panel's half of
+    /// [`onehand_workbench::Asker`]: something one mode asks of another —
+    /// opening a file is the quick editor's business and the file tree cannot
+    /// reach it — or something only the panel or the shell can decide.
+    fn answer(&mut self, asked: &Ask<'_>, window: &mut Window, cx: &mut Context<Self>) {
+        match asked {
+            Ask::OpenFile(path) => self.open_file(path, window, cx),
+            Ask::RestartAgent => cx.emit(WorkbenchEvent::RestartAgent),
+            Ask::SendToHost(path) => cx.emit(WorkbenchEvent::SendToHost(path.to_path_buf())),
             // The caret is the panel's half of reaping: a view dropped while it
             // holds focus leaves the window pointing at an element no frame
             // contains, and GPUI resolves a key along the path down to the
@@ -146,27 +143,11 @@ impl Workbench {
             // handle no longer drawn cannot answer. Only moved when focus was
             // inside this panel already: a child exiting in the background must
             // not take the caret from what the user is doing.
-            Request::Reap => {
+            Ask::Reap => {
                 let held = self.focus_handle.contains_focused(window, cx);
                 if self.broadcast(&Request::Reap, cx) && held {
                     self.focus_active(window, cx);
                 }
-            }
-            // Asked of the modes, which answer what they recognise.
-            Request::Save
-            | Request::Start
-            | Request::Rescan
-            | Request::Shown
-            | Request::SetGit(_)
-            | Request::SetStorage(_)
-            | Request::SetFontSize(_)
-            | Request::ShowIssue(_)
-            | Request::AgentStarted(_)
-            | Request::LiveConversations(_)
-            | Request::IssueWork { .. }
-            | Request::Locked(_)
-            | Request::Offloaded(_) => {
-                self.broadcast(request, cx);
             }
         }
     }
