@@ -965,3 +965,51 @@ fn a_sibling_failing_to_come_back_keeps_the_others() {
     });
     assert_eq!(handles_kept(kept(&fx, 1).expect("kept once back")), [b]);
 }
+
+#[test]
+fn closing_the_lead_mid_coming_back_writes_one_final_keep() {
+    let (a, b) = (BACK, "w-0000000000000000000000000000000b");
+    let mut drive = ControlDrive::default();
+    let keys: Vec<Key> = drive
+        .back(1, kept_two(), &projects())
+        .into_iter()
+        .map(|begun| match begun {
+            Begun::Resolve { key, .. } => key,
+            Begun::Said(said) => panic!("said: {said}"),
+        })
+        .collect();
+    drive.handle(Input::Resolved {
+        key: keys[0].clone(),
+        resolved: Ok(resolved()),
+        world: world(),
+    });
+    drive.handle(Input::Started {
+        key: keys[0].clone(),
+        started: Ok(9),
+    });
+    // B is still coming back as the lead closes.
+    let fx = drive.forget(1);
+    let keeps: Vec<&Kept> = fx
+        .iter()
+        .filter_map(|effect| match effect {
+            Effect::Keep { lead: 1, kept } => Some(kept),
+            Effect::Keep { .. }
+            | Effect::ToolsChanged(_)
+            | Effect::Start { .. }
+            | Effect::Watch(_)
+            | Effect::Unwatch(_)
+            | Effect::Pick { .. }
+            | Effect::Begin { .. }
+            | Effect::Arm { .. }
+            | Effect::Drop { .. }
+            | Effect::Answer { .. }
+            | Effect::Changed
+            | Effect::Send { .. }
+            | Effect::TurnAnswer { .. } => None,
+        })
+        .collect();
+    assert_eq!(keeps.len(), 1, "{fx:?}");
+    assert!(keeps[0].workers.is_empty());
+    let closed: Vec<&str> = keeps[0].closed.iter().map(|c| c.handle.as_str()).collect();
+    assert!(closed.contains(&a) && closed.contains(&b), "{closed:?}");
+}

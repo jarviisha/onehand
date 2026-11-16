@@ -458,6 +458,23 @@ impl ControlDrive {
             self.closed_workers
                 .insert(handle, Closed { lead: uid, why });
         }
+        // What it keeps is written once, whole, last: one written on the
+        // way, by an open failing, still lists workers this lets go.
+        fx.retain(|effect| match effect {
+            Effect::Keep { lead, .. } => *lead != uid,
+            Effect::ToolsChanged(_)
+            | Effect::Start { .. }
+            | Effect::Watch(_)
+            | Effect::Unwatch(_)
+            | Effect::Pick { .. }
+            | Effect::Begin { .. }
+            | Effect::Arm { .. }
+            | Effect::Drop { .. }
+            | Effect::Answer { .. }
+            | Effect::Changed
+            | Effect::Send { .. }
+            | Effect::TurnAnswer { .. } => true,
+        });
         if self.keeps(uid) {
             fx.push(self.keep(uid));
         }
