@@ -152,8 +152,8 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   a typed answer sits under the list, with the answers and no line between them,
   as a field with its `Kbd`: edged in `input` on the card's own fill, two
   lines tall at rest and growing as it is written (Shift+Enter a newline), ringed while the keys
-  are on it. A permission's command sits in a well a step lighter than the card (`muted` on the dark page,
-  the page's white on the light one, where the card itself is `muted`). Each answer in a pinned card's footer shows its key beside its words, always in
+  are on it. A permission's command sits in a well on the page's own fill, a step off the card, which
+  is halfway from the page to the `secondary` grey in either mode. Each answer in a pinned card's footer shows its key beside its words, always in
   sight, as that key reaches the card from anywhere in the conversation.
   The card holds the one primary while it shows. A question card always ends on *Skip*; one
   asking a single pick-one question answers on the pick, its primary only for a typed answer.
@@ -226,9 +226,9 @@ not the palette's: they stay VS Code's (`onehand_terminal_ui::ansi`), as a progr
 its own. A chart's series and a label's kind take the library's base hues.
 
 The surfaces are neutral greys, each region a visible step from its neighbour: on the dark
-palette the reading surface is a charcoal clear of black, the rail, the docks and the bars a step
-under it, and a floating surface a step over it, told apart by its fill and its edge. The light
-palette is white over a pale grey for the same regions. The focus ring is a grey. The one hue
+palette the reading surface is the deepest, a charcoal still clear of black, the rail, the docks and
+the bars a step over it, and a floating surface a step over the page, told apart by its fill and its
+edge. The light palette is a pale grey page under white chrome for the same regions. The focus ring is a grey. The one hue
 among them is the blue of the primary action. The item chosen among several stands on the
 selected grey (`chosen_fill`), a step past the hover step, its name in the content ink
 (`chosen_ink`), as VS Code marks a selection in a list that does not hold the keys.
@@ -254,7 +254,8 @@ reaches.
 | `theme::raised` | the composer card |
 | `secondary` | a document's code on a dock |
 
-- Reading content is the visual anchor; rail and dock chrome remain quieter. A nested container
+- Reading content is the visual anchor, on the deepest surface; rail and dock chrome stand a step
+  over it and stay quieter by their inks. A nested container
   inherits its surface unless it has a distinct role: well, selection or floating content.
 - Boxes are borders; wells and the bubbles are fills. Ordinary sections remain unboxed. Do not
   combine a border, contrasting fill and shadow just to make a group visible.

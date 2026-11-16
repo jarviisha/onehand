@@ -67,6 +67,9 @@ minor bump may break any of them.
 
 ### The window
 
+- The conversation now sits on the deepest surface, and the rail, the Workbench, the terminal and the
+  bars a step over it, the other way round from before: on the dark palette the conversation is
+  `#181818` under `#1f1f1f` chrome, on the light one a pale grey under white.
 - The whole interface is redrawn after gpui-kit's components: its own Default Light and Default
   Dark palette with a blue primary (the terminal keeps its own sixteen ANSI colours), its corners,
   its edged buttons and fields, and its tags for states and labels, at an editor's density: 13px

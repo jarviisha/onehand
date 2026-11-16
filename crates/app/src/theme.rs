@@ -72,11 +72,12 @@ pub(crate) fn install(cx: &mut App) {
 /// The palette, the only place a colour value is written: each slot's value
 /// on the dark page, then on the light one.
 ///
-/// **Charcoal, not black.** On the dark page the reading surface is a
-/// charcoal a clear step off black, the rail, the docks and the bars a step
-/// under it, and a floating surface a step over it, so each region is told
-/// from its neighbour by its own fill and a floating one by more than its
-/// edge. The light page is white over a pale grey for the same regions.
+/// **The page under the chrome.** The reading surface is the deepest of the
+/// regions: on the dark page a charcoal still clear of black, the rail, the
+/// docks and the bars a step over it, and a floating surface a step over the
+/// page, so each region is told from its neighbour by its own fill and a
+/// floating one by more than its edge. The light page is a pale grey under
+/// white chrome for the same regions.
 ///
 /// **One blue.** The primary is the one hue among the surfaces and inks: the
 /// action to press. The item chosen among several stands on the selected
@@ -91,23 +92,23 @@ fn palette(colors: &mut gpui_component::ThemeConfigColors, dark: bool) {
     }
     set! {
         // The reading surface, and what the library draws as part of it.
-        background: "#1f1f1f", "#ffffff";
-        list: "#1f1f1f", "#ffffff";
-        table: "#1f1f1f", "#ffffff";
-        accordion: "#1f1f1f", "#ffffff";
-        group_box: "#1f1f1f", "#f8f8f8";
-        tab_active: "#1f1f1f", "#ffffff";
-        slider_thumb: "#1f1f1f", "#ffffff";
-        scrollbar: "#1f1f1f00", "#ffffff00";
-        // The rail, the docks and the bars: a step under the reading surface.
-        sidebar: "#181818", "#f8f8f8";
-        title_bar: "#181818", "#f8f8f8";
-        status_bar: "#181818", "#f8f8f8";
-        tab_bar: "#181818", "#f8f8f8";
-        tab_bar_segmented: "#181818", "#f3f3f3";
-        description_list_label: "#181818", "#f8f8f8";
-        list_even: "#18181866", "#f8f8f8";
-        list_head: "#18181866", "#f8f8f8";
+        background: "#181818", "#f8f8f8";
+        list: "#181818", "#f8f8f8";
+        table: "#181818", "#f8f8f8";
+        accordion: "#181818", "#f8f8f8";
+        group_box: "#181818", "#ffffff";
+        tab_active: "#181818", "#f8f8f8";
+        slider_thumb: "#181818", "#f8f8f8";
+        scrollbar: "#18181800", "#f8f8f800";
+        // The rail, the docks and the bars: a step over the reading surface.
+        sidebar: "#1f1f1f", "#ffffff";
+        title_bar: "#1f1f1f", "#ffffff";
+        status_bar: "#1f1f1f", "#ffffff";
+        tab_bar: "#1f1f1f", "#ffffff";
+        tab_bar_segmented: "#1f1f1f", "#f3f3f3";
+        description_list_label: "#1f1f1f", "#ffffff";
+        list_even: "#1f1f1f66", "#ffffff";
+        list_head: "#1f1f1f66", "#ffffff";
         // A floating surface: a step over it.
         popover: "#252526", "#ffffff";
         // The well, the step past it, and what rests under the pointer.
@@ -185,14 +186,11 @@ pub(crate) fn waiting_card(cx: &App) -> Hsla {
 }
 
 fn waiting_card_of(theme: &Theme) -> Hsla {
-    // Halfway to the secondary grey on the dark page: the whole step stood
-    // as a heavy slab beside the composer. On the white page the kit's
-    // secondary is its hairline's own grey, so a card in it swallowed every
-    // edge drawn on it; the muted grey a step lighter keeps them.
-    match theme.mode.is_dark() {
-        true => theme.background.mix_oklab(theme.secondary, 0.5),
-        false => theme.muted,
-    }
+    // Halfway to the secondary grey in either mode: the whole step stood as
+    // a heavy slab beside the composer, and on the light page the secondary
+    // is the hairline's own grey, so a card in it swallowed every edge drawn
+    // on it. Halfway keeps the card off the page and the lines on it.
+    theme.background.mix_oklab(theme.secondary, 0.5)
 }
 
 /// The composer card's fill: the page's own, as the card is told apart by its
@@ -356,7 +354,7 @@ mod tests {
     }
 
     /// Each region is told from its neighbour by its own fill, and the dark
-    /// page is a charcoal rather than a black.
+    /// page, the deepest of them, is a charcoal rather than a black.
     #[test]
     fn the_regions_stand_a_step_apart() {
         for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
@@ -369,7 +367,11 @@ mod tests {
             }
         }
         let dark = installed(ThemeMode::Dark);
-        assert!(dark.background.l > 0.1, "dark: the page is near black");
+        let black = gpui::hsla(0., 0., 0., 1.);
+        assert!(
+            contrast(dark.background, black) >= 1.15,
+            "dark: the page is near black"
+        );
         assert!(
             contrast(dark.popover, dark.background) >= 1.04,
             "dark: a floating surface is the page's own fill"
