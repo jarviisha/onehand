@@ -129,8 +129,7 @@ lead closes or is lost, its workers are listed again under their project.
 
 ## Agent pane header
 
-Left to right: the show-rail button (only while the rail is hidden); the conversation's name, medium
-weight; a dots menu (*Rename…*, *Export as Markdown…*; *Resume in this session…*, refused mid-turn,
+Left to right: the conversation's name, medium weight; a dots menu (*Rename…*, *Export as Markdown…*; *Resume in this session…*, refused mid-turn,
 and *Restart the agent*; *Delete conversation* in the danger tint, refused until the first turn
 ends, and on a host's session *End on <host>…* in the danger tint after it); a spacer; *N in background* (only while the session's agent has work running in the
 background: a menu of each item's name, its kind and how long it has run, each row stopping that
@@ -138,7 +137,7 @@ one item and never the turn, 12 listed and then *N more*; when an item ends, the
 notice of how and after how long: *Background work finished after 2m 14s: npm test*, an error when it
 failed, *interrupted* when the agent went away first); past conversations (not on a host session,
 whose conversations are not kept on this machine) and *Close session* (only while a session
-shows). The docks' toggles are the title bar's. On the overview, Tasks, Issues,
+shows). The rail's and the docks' toggles are the title bar's. On the overview, Tasks, Issues,
 Workflows, Schedules and Settings, which name themselves in their head, it carries no name; none of these has a dots menu. As the pane narrows, the name gives way
 first, down to a minimum. Without a session it carries no name, the page naming the project, but
 keeps the project's dots menu, holding the project's actions but *New session* and *Open

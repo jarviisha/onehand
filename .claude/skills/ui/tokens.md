@@ -40,7 +40,7 @@ Helpers:
 | `badge_edge(tint)` | a badge's edge: halfway from its `Tint`'s fill to its ink | `crates/ui/src/badge.rs` |
 | `chosen_fill(cx)`, `chosen_ink(cx)` | the item chosen among several: the selected grey (`accent`), a step past the hover step, and its name's ink, the content ink | `crates/ui/src/ink.rs` |
 | `control_fill(cx)` | a ghost control's fill hovered, pressed or chosen; between `list_hover` and `accent` | `crates/ui/src/ink.rs` |
-| `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: a list page's line over its foot, and the Issues tab's filter bar's line | `crates/ui/src/ink.rs` |
+| `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: a list page's line over its foot | `crates/ui/src/ink.rs` |
 | `meta_ink(cx)` | the middle ink: a detail beside a name, between prose and muted | `crates/ui/src/ink.rs`; the app says `crate::theme::meta_ink` |
 | `middle_ink(full, meta)` | the same step under another full ink: on a fill, under that fill's paired ink | `crates/ui/src/ink.rs` |
 | `hue_ink(base, cx)` | a hue tempered for ink: code inside prose | `crates/app/src/theme.rs` |
@@ -177,7 +177,6 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 | Token | Value | What |
 |---|---|---|
 | `BAR_H` | 2.25rem | every strip along the top of a region: 36px, so a small control stands centred on whole pixels |
-| `TAB_MARK` | 0.125rem | the stroke along the top of a dock's open tab |
 | `MODE_BAR_H` | 1.875rem | a mode's own bar under the Workbench's strip (the editor's tabs, the reader's bar) |
 | `ROW_H` | 1.75rem | a list row (the rail, the composer's popup): 28px |
 | `TREE_ROW_H` | 1.625rem | a Workbench tree's row pitch (Files, Markdown) |
