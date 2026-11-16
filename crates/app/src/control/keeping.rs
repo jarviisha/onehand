@@ -107,7 +107,7 @@ pub(super) fn keep(lead: u64, kept: Kept, cx: &mut App) {
     };
     cx.background_executor()
         .spawn(async move {
-            let newest = newest();
+            let mut newest = newest();
             if let Some(before) = moved_from {
                 let _ = kept::write_blocking(&before, &Kept::default());
             }
@@ -116,6 +116,11 @@ pub(super) fn keep(lead: u64, kept: Kept, cx: &mut App) {
             }
             if let Err(why) = kept::write_blocking(&dir, &kept) {
                 eprintln!("onehand: cannot keep workers in {}: {why}", dir.display());
+            }
+            // A lead gone has written its last: nothing is numbered for it
+            // again.
+            if !here {
+                newest.remove(&lead);
             }
         })
         .detach();

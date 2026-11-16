@@ -532,6 +532,7 @@ impl ChatPane {
             .and_then(|session| session.read(cx).chat().conversation_dir());
         self.conversations.remove(&uid);
         self.resuming.remove(&uid);
+        self.held_dirs.remove(&uid);
         crate::control::forget(uid, conversation, cx);
         if self.active == Some(uid) {
             // What the composer still holds is dropped by the next `show`,
