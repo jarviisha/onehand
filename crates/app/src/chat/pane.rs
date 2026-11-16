@@ -139,6 +139,8 @@ struct OverlayRoom {
     /// composer.
     connected: bool,
     items: usize,
+    /// Where the composer rests above the well's foot while greeting.
+    greet_offset: gpui::Pixels,
 }
 
 /// The space between two ordinary blocks of one turn, and the step every other

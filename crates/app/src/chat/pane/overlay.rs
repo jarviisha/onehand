@@ -31,7 +31,7 @@ impl ChatPane {
         blocked: Option<onehand_core::chat::SubmitBlock>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> (gpui::AnyElement, bool) {
+    ) -> gpui::AnyElement {
         let super::body::Pinned {
             stack: pinned,
             tucked,
@@ -56,15 +56,18 @@ impl ChatPane {
         let git = self.git.clone();
         let pane = cx.entity();
 
-        let overlay = div()
+        div()
             .absolute()
-            .bottom_0()
+            .bottom(if greeting {
+                room.greet_offset
+            } else {
+                gpui::px(0.)
+            })
             .left_0()
             .right_0()
             .v_flex()
-            // Greeting, the overlay fills the well and centres what it holds:
-            // the heading and, under it, the composer.
-            .when(greeting, |overlay| overlay.top_0().justify_center())
+            // Greeting, the composer rests at the well's middle, anchored from
+            // the foot so a popup grows upward over the heading.
             // A step over the gap the cards keep between themselves: a pinned
             // card and the composer are two objects and the cards in a stack
             // are one, so the seam that has to read as a seam is this one.
@@ -365,7 +368,6 @@ impl ChatPane {
                             ),
                     ),
             )
-            .into_any_element();
-        (overlay, greeting)
+            .into_any_element()
     }
 }

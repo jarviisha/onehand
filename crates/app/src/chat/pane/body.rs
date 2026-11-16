@@ -475,7 +475,7 @@ impl ChatPane {
         let narrow_strip =
             list_w > px(0.) && stack_w < crate::chat::composer::COMPOSER_SPLIT.to_pixels(rem);
         self.composer_drawn = true;
-        let (overlay, greeted) = self.overlay(
+        let overlay = self.overlay(
             &session,
             measure,
             OverlayRoom {
@@ -483,6 +483,10 @@ impl ChatPane {
                 well,
                 narrow_strip,
                 connected: link == Link::Connected,
+                greet_offset: super::greeting::offset(
+                    list_state.viewport_bounds().size.height + cut,
+                    overlay_h,
+                ),
                 items,
             },
             blocked,
@@ -500,119 +504,117 @@ impl ChatPane {
                     .relative()
                     .flex_1()
                     .min_h_0()
-                    .when(!greeted, |well| {
+                    .child(
+                        // The list runs to the well's top edge, so it clips
+                        // exactly at the header's rule rather than at an inset
+                        // below it -- a band of blank surface above a line of
+                        // text sliced in half reads as a rendering fault, not
+                        // as a margin. At the bottom it stops at the cut, and
+                        // that edge is under the composer where no slice shows.
+                        // Its breathing room is *inside* the scroll: padding on
+                        // the list is part of what scrolls, which is how the
+                        // transcript comes to rest above the composer rather
+                        // than merely disappearing behind it.
+                        div()
+                            .absolute()
+                            .top_0()
+                            .left_0()
+                            .right_0()
+                            .bottom(cut)
+                            .overflow_hidden()
+                            .child(
+                                list(
+                                    list_state.clone(),
+                                    move |ix, window: &mut Window, cx: &mut App| {
+                                        this.read(cx).run_element(
+                                            ix,
+                                            &for_render,
+                                            room.clone(),
+                                            window,
+                                            cx,
+                                        )
+                                    },
+                                )
+                                .size_full()
+                                .pt(LIST_HEAD)
+                                .pb(tail_pad),
+                            )
+                            // On the panel's edge, over the clipped list, so
+                            // it ends where the conversation does and never
+                            // runs down behind the composer.
+                            .child(onehand_ui::scrollbar(&list_state)),
+                    )
+                    // The transcript dissolving into the surface it is drawn
+                    // on, right down to the clip. Between the list and every
+                    // control, so what fades is the conversation alone: the
+                    // jump pill, the pinned cards and the composer are all
+                    // drawn after this and each carries its own opaque
+                    // surface. It ends *at the clip* rather than at the top of
+                    // the composer, because the composer's card is narrower
+                    // than the panel -- a fade stopping at the card's own edge
+                    // would leave the strips either side of it showing full
+                    // strength text for the height of the card.
+                    .child(div().absolute().bottom(cut).left_0().right_0().h(SMOKE).bg(
+                        gpui::linear_gradient(
+                            180.,
+                            gpui::linear_color_stop(cx.theme().background.alpha(0.), 0.),
+                            // Solid a little before the end, so the last of
+                            // the text is gone by the time the clip takes
+                            // it rather than exactly as it does.
+                            gpui::linear_color_stop(cx.theme().background, 0.9),
+                        ),
+                    ))
+                    // Over the transcript rather than in a row of its own: a
+                    // control that appears and disappears cannot own layout, or
+                    // the whole conversation shifts by its height every time the
+                    // reader scrolls up and back down.
+                    .when(scrolled_up, |well| {
                         well.child(
-                            // The list runs to the well's top edge, so it clips
-                            // exactly at the header's rule rather than at an inset
-                            // below it -- a band of blank surface above a line of
-                            // text sliced in half reads as a rendering fault, not
-                            // as a margin. At the bottom it stops at the cut, and
-                            // that edge is under the composer where no slice shows.
-                            // Its breathing room is *inside* the scroll: padding on
-                            // the list is part of what scrolls, which is how the
-                            // transcript comes to rest above the composer rather
-                            // than merely disappearing behind it.
                             div()
                                 .absolute()
-                                .top_0()
+                                // **Measured from the composer's own top edge,
+                                // not from where the transcript comes to rest.**
+                                // It was placed against that resting line, which
+                                // is deliberately the widest space in the
+                                // conversation -- so the control floated most of
+                                // an inch clear of the thing it belongs beside.
+                                // Held off by a block's gap and no more: two
+                                // floating surfaces touching read as one surface
+                                // with a notch taken out of it.
+                                .bottom(overlay_h + BLOCK_GAP.to_pixels(window.rem_size()))
                                 .left_0()
                                 .right_0()
-                                .bottom(cut)
-                                .overflow_hidden()
+                                .h_flex()
+                                .justify_center()
                                 .child(
-                                    list(
-                                        list_state.clone(),
-                                        move |ix, window: &mut Window, cx: &mut App| {
-                                            this.read(cx).run_element(
-                                                ix,
-                                                &for_render,
-                                                room.clone(),
-                                                window,
-                                                cx,
-                                            )
-                                        },
-                                    )
-                                    .size_full()
-                                    .pt(LIST_HEAD)
-                                    .pb(tail_pad),
-                                )
-                                // On the panel's edge, over the clipped list, so
-                                // it ends where the conversation does and never
-                                // runs down behind the composer.
-                                .child(onehand_ui::scrollbar(&list_state)),
+                                    // The floating control's lift, on an opaque
+                                    // raised surface, so transcript text
+                                    // scrolling beneath cannot show through
+                                    // its corners.
+                                    div()
+                                        .rounded(cx.theme().radius)
+                                        .bg(cx.theme().popover.alpha(1.))
+                                        .shadow(crate::tokens::lift(cx))
+                                        .child(
+                                            // **The arrow alone**, a quiet
+                                            // control at a strip's size: the
+                                            // surface under it is what floats,
+                                            // and what it means is in the
+                                            // tooltip.
+                                            crate::controls::action("to-bottom")
+                                                .quiet_icon(false, cx)
+                                                .short_icon()
+                                                .rounded(cx.theme().radius)
+                                                .icon(Icon::new(IconName::ChevronDown))
+                                                .named("Jump to the latest activity")
+                                                .on_click(cx.listener(
+                                                    |pane: &mut Self, _, _, cx| {
+                                                        pane.jump_to_latest(cx);
+                                                    },
+                                                )),
+                                        ),
+                                ),
                         )
-                        // The transcript dissolving into the surface it is drawn
-                        // on, right down to the clip. Between the list and every
-                        // control, so what fades is the conversation alone: the
-                        // jump pill, the pinned cards and the composer are all
-                        // drawn after this and each carries its own opaque
-                        // surface. It ends *at the clip* rather than at the top of
-                        // the composer, because the composer's card is narrower
-                        // than the panel -- a fade stopping at the card's own edge
-                        // would leave the strips either side of it showing full
-                        // strength text for the height of the card.
-                        .child(div().absolute().bottom(cut).left_0().right_0().h(SMOKE).bg(
-                            gpui::linear_gradient(
-                                180.,
-                                gpui::linear_color_stop(cx.theme().background.alpha(0.), 0.),
-                                // Solid a little before the end, so the last of
-                                // the text is gone by the time the clip takes
-                                // it rather than exactly as it does.
-                                gpui::linear_color_stop(cx.theme().background, 0.9),
-                            ),
-                        ))
-                        // Over the transcript rather than in a row of its own: a
-                        // control that appears and disappears cannot own layout, or
-                        // the whole conversation shifts by its height every time the
-                        // reader scrolls up and back down.
-                        .when(scrolled_up, |well| {
-                            well.child(
-                                div()
-                                    .absolute()
-                                    // **Measured from the composer's own top edge,
-                                    // not from where the transcript comes to rest.**
-                                    // It was placed against that resting line, which
-                                    // is deliberately the widest space in the
-                                    // conversation -- so the control floated most of
-                                    // an inch clear of the thing it belongs beside.
-                                    // Held off by a block's gap and no more: two
-                                    // floating surfaces touching read as one surface
-                                    // with a notch taken out of it.
-                                    .bottom(overlay_h + BLOCK_GAP.to_pixels(window.rem_size()))
-                                    .left_0()
-                                    .right_0()
-                                    .h_flex()
-                                    .justify_center()
-                                    .child(
-                                        // The floating control's lift, on an opaque
-                                        // raised surface, so transcript text
-                                        // scrolling beneath cannot show through
-                                        // its corners.
-                                        div()
-                                            .rounded(cx.theme().radius)
-                                            .bg(cx.theme().popover.alpha(1.))
-                                            .shadow(crate::tokens::lift(cx))
-                                            .child(
-                                                // **The arrow alone**, a quiet
-                                                // control at a strip's size: the
-                                                // surface under it is what floats,
-                                                // and what it means is in the
-                                                // tooltip.
-                                                crate::controls::action("to-bottom")
-                                                    .quiet_icon(false, cx)
-                                                    .short_icon()
-                                                    .rounded(cx.theme().radius)
-                                                    .icon(Icon::new(IconName::ChevronDown))
-                                                    .named("Jump to the latest activity")
-                                                    .on_click(cx.listener(
-                                                        |pane: &mut Self, _, _, cx| {
-                                                            pane.jump_to_latest(cx);
-                                                        },
-                                                    )),
-                                            ),
-                                    ),
-                            )
-                        })
                     })
                     .child(overlay),
             )

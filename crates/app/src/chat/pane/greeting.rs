@@ -11,6 +11,13 @@ pub(super) fn greets(connected: bool, items: usize, over_composer: bool) -> bool
     connected && items == 0 && !over_composer
 }
 
+/// How far above the well's foot the composer rests so it sits at the well's
+/// middle. Anchored from the foot, so a popup opening over it grows upward and
+/// moves nothing.
+pub(super) fn offset(well: gpui::Pixels, composer: gpui::Pixels) -> gpui::Pixels {
+    ((well - composer) / 2.).max(gpui::px(0.))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -21,5 +28,12 @@ mod tests {
         assert!(!greets(false, 0, false)); // connecting or failed
         assert!(!greets(true, 1, false)); // first item moves the composer down
         assert!(!greets(true, 0, true)); // a card or banner stands over the composer
+    }
+
+    #[test]
+    fn the_composer_rests_at_the_wells_middle_and_never_below_its_foot() {
+        use gpui::px;
+        assert_eq!(offset(px(600.), px(100.)), px(250.));
+        assert_eq!(offset(px(80.), px(100.)), px(0.));
     }
 }
