@@ -70,7 +70,7 @@ Smaller steps are for component internals; the largest step is for a deliberate 
 not a second page-padding convention. Use the named pattern's defaults before another legal step.
 Equal relationships keep equal gaps across screens. Space between groups exceeds space within
 them; align titles, row labels and field labels to consistent text axes. Marks down one column
-(icons, state dots, the workspace tile) share one centre line, each in a slot of one width, so the
+(icons, state dots) share one centre line, each in a slot of one width, so the
 labels after them start on one edge. A number or a time in a column takes a fixed-width slot, so a
 longer value does not push its neighbours.
 

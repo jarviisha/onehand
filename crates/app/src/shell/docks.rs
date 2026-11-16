@@ -516,11 +516,8 @@ impl Shell {
         &self.window
     }
 
-    /// Show or hide the rail.
-    ///
-    /// The chat pane is told, because it is what offers the way back: with the
-    /// rail gone the key is the only route to it, and a key nobody has been
-    /// told about is not a route.
+    /// Show or hide the rail. The title bar's toggle is the way back to a
+    /// hidden one, beside its key.
     pub fn toggle_rail(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let hidden = !self.rail_hidden;
         if hidden && self.rail.holds_focus(window, cx) {
@@ -528,8 +525,6 @@ impl Shell {
                 .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
         }
         self.rail_hidden = hidden;
-        self.chat
-            .update(cx, |pane, cx| pane.set_rail_hidden(hidden, cx));
         cx.notify();
     }
 

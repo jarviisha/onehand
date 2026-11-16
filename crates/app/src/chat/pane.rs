@@ -272,12 +272,6 @@ pub struct ChatPane {
     /// The conversation each session added off screen resumes, by its id,
     /// open from the moment it is added, whether or not it connected yet.
     resuming: HashMap<u64, String>,
-    /// Whether the window's rail is hidden, so this pane can offer the way
-    /// back.
-    ///
-    /// Pushed for the same reason, and read in the panel's toolbar: the rail is
-    /// the window's chrome and a dock panel has no handle on the window.
-    rail_hidden: bool,
     /// The session whose background menu is open, so its button stays drawn
     /// while its menu holds focus even after the last item ended: a trigger
     /// that leaves the frame with its menu takes focus with it, and the keymap.
@@ -409,7 +403,6 @@ impl ChatPane {
                 reading: HashMap::new(),
                 held_dirs: HashMap::new(),
                 resuming: HashMap::new(),
-                rail_hidden: false,
                 background_menu: std::cell::Cell::new(None),
                 docks_open: DocksOpen::default(),
                 git: None,
@@ -487,15 +480,9 @@ impl ChatPane {
         cx.notify();
     }
 
-    /// Told by the shell when the rail comes and goes.
-    pub fn set_rail_hidden(&mut self, hidden: bool, cx: &mut Context<Self>) {
-        self.rail_hidden = hidden;
-        cx.notify();
-    }
-
     /// Told by the shell when a shell starts or dies on the active project.
     ///
-    /// **Guarded**, unlike the rail's flag: a terminal notifies once per chunk
+    /// **Guarded**: a terminal notifies once per chunk
     /// of whatever is printing into it, and the shell's own guard upstream is
     /// about its own repaint. Repainting the whole conversation on every line a
     /// build prints, to redraw a dot that has not moved, is the one thing this

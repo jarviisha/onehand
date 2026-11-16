@@ -568,8 +568,8 @@ fn a_plain_folder_still_answers_on_hover() {
 /// then says how many.
 #[test]
 fn the_tasks_pill_shows_only_a_count_above_zero() {
-    assert_eq!(super::attention_pill(0), None);
-    assert_eq!(super::attention_pill(3).as_deref(), Some("3"));
+    assert_eq!(super::pages::attention_pill(0), None);
+    assert_eq!(super::pages::attention_pill(3).as_deref(), Some("3"));
 }
 
 /// The seed with session 1 the lead of 2 (running) and of 7 (failed, in
