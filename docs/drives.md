@@ -328,11 +328,13 @@ the text typed since; the Plugins mode's (`crates/claude-plugins/src/view/tests.
 its project. Still untested: `SaveTitle` (written on the ordered writer's own thread, which
 GPUI's test scheduler does not wait for), deferred work but that teardown, a command called off while it runs (the test scheduler runs it to its end before a
 Stop can reach it), a host's real attach, which runs on a runtime GPUI's test
-scheduler does not drive, and so a project page on a host letting go of its wait as it is left
-or listed again (the window's waits are tested let go of as a session closes or restarts and as
-the form is put away, in `crates/app/src/shell/host_project/tests.rs`). A window's waits let
-go of as a past conversation is picked in a session's place and as the form adds its project
-are tested by hand. The issue work's note is
+scheduler does not drive, and so a project page on a host letting go of its wait as it is listed
+again (the window's waits are tested let go of as a session closes or restarts, as a page is
+left, and as the form is put away or adds its project, in
+`crates/app/src/shell/host_project/tests.rs`). A window's waits let go of as a past conversation
+is picked in a session's place are tested by hand: the rig's host has no wait of its own, so the
+listener ends by itself as soon as the conversation's read is let run, and a test of it passes
+whether the waits are let go of or not. The issue work's note is
 not tested on a real shell, as the rig's agents cannot name a conversation; its rule is
 tested in core. The flows' harness drives a task in the shell's order (`Flow::drive`)
 rather than through the shell, which needs a window; and the flows do not reach a pick by hand,
