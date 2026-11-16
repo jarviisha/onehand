@@ -101,14 +101,14 @@ const STABLE: &str = "w-";
 
 /// What a handle names.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Handle {
+pub(crate) enum Handle {
     /// A worker, by the handle minted when it opened, the same in every run.
     Stable(String),
 }
 
 /// A handle for a worker opening now: its own for good, so it names the same
 /// worker in a later run, whatever uid its session has then.
-pub fn mint_handle() -> String {
+pub(crate) fn mint_handle() -> String {
     format!("{STABLE}{}", super::new_token())
 }
 
@@ -116,7 +116,7 @@ pub fn mint_handle() -> String {
 /// shape earlier builds gave, a run and a uid, is refused as an earlier
 /// run's: uids count from 1 again in every run, so its number may belong to
 /// another session now.
-pub fn parse_handle(text: &str, run: &str) -> Result<Handle, String> {
+pub(crate) fn parse_handle(text: &str, run: &str) -> Result<Handle, String> {
     let text = text.trim();
     let minted = text
         .strip_prefix(STABLE)

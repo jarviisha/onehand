@@ -104,12 +104,12 @@ impl ControlDrive {
     // A lead's calls on its workers.
 
     /// The session `handle` names while it is open.
-    pub fn uid_of(&self, handle: &str) -> Option<u64> {
+    pub(super) fn uid_of(&self, handle: &str) -> Option<u64> {
         self.handles.get(handle).copied()
     }
 
     /// The handle of worker `uid`, from the moment its session starts.
-    pub fn handle_of(&self, uid: u64) -> Option<String> {
+    pub(super) fn handle_of(&self, uid: u64) -> Option<String> {
         self.handles
             .iter()
             .find(|(_, worker)| **worker == uid)
@@ -126,8 +126,8 @@ impl ControlDrive {
         open: impl Fn(u64) -> bool,
     ) -> Result<Found, String> {
         let Handle::Stable(stable) = parse_handle(handle, &this_run())?;
-        let (uid, whose) = match self.handles.get(&stable) {
-            Some(&uid) => (uid, whose(self.workers.get(&uid), None, caller, open(uid))),
+        let (uid, whose) = match self.uid_of(&stable) {
+            Some(uid) => (uid, whose(self.workers.get(&uid), None, caller, open(uid))),
             None => {
                 let closed = self.closed_workers.get(&stable).map(|closed| closed.lead);
                 (0, whose(None, closed, caller, false))

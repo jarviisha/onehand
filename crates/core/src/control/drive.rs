@@ -579,7 +579,7 @@ impl ControlDrive {
 /// This run of the app, as handles of earlier builds named it: a handle in
 /// that shape is told apart by its length, and refused. Never written
 /// anywhere.
-pub fn this_run() -> String {
+pub(crate) fn this_run() -> String {
     static RUN: std::sync::LazyLock<String> =
         std::sync::LazyLock::new(|| super::new_token()[..8].to_string());
     RUN.clone()
