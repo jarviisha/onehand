@@ -28,20 +28,10 @@ pub(crate) fn spec_for(agent: Option<&str>, cx: &App) -> Option<AgentSpec> {
 pub(super) fn teardown(dir: &Path, keep: bool, cx: &mut App) {
     let dir = dir.to_path_buf();
     cx.defer(move |cx| {
-        let holding: Vec<_> = Shared::global(cx)
-            .windows
-            .iter()
-            .map(|w| (w.handle, w.shell.clone()))
-            .collect();
-        for (handle, shell) in holding {
-            let Some(shell) = shell.upgrade() else {
-                continue;
-            };
-            let _ = handle.update(cx, |_, window, cx| {
-                shell.update(cx, |shell, cx| match keep {
-                    true => shell.take_over_unattended(&dir, window, cx),
-                    false => shell.end_unattended(&dir, window, cx),
-                })
+        for (handle, _) in crate::windows::live(cx) {
+            crate::windows::with_shell(handle, cx, |shell, window, cx| match keep {
+                true => shell.take_over_unattended(&dir, window, cx),
+                false => shell.end_unattended(&dir, window, cx),
             });
         }
     });

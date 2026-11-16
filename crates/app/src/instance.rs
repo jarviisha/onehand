@@ -125,7 +125,7 @@ fn carry(incoming: Incoming, cx: &mut App) {
 /// one, and raise it. Never inside another entity's update: this runs from the
 /// channel's own task.
 fn open_forwarded(forwarded: Forwarded, cx: &mut App) {
-    let Some((handle, shell)) = crate::state::front(cx) else {
+    let Some((handle, shell)) = crate::windows::front(cx) else {
         return;
     };
     handle

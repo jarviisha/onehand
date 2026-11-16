@@ -57,13 +57,8 @@ impl Shell {
         if let Some(uid) = self.chat.read(cx).uid_of_conversation(id, cx) {
             return Live::Here(uid);
         }
-        // This shell is being updated, so it is never read again here.
-        let me = cx.entity_id();
-        Shared::global(cx)
-            .windows
-            .iter()
-            .filter_map(|w| Some((w.handle, w.shell.upgrade()?)))
-            .filter(|(_, shell)| shell.entity_id() != me)
+        crate::windows::others(cx.entity_id(), cx)
+            .into_iter()
             .find_map(|(at, shell)| {
                 let uid = shell.read(cx).chat.read(cx).uid_of_conversation(id, cx)?;
                 Some(Live::There(uid, at))

@@ -230,7 +230,7 @@ pub(super) fn carry_one(effect: Effect, cx: &mut App) {
                     .map(|asked| asked.window)
             });
             if let Some(window) = window {
-                crate::state::with_shell(window, cx, |shell, window, cx| {
+                crate::windows::with_shell(window, cx, |shell, window, cx| {
                     shell.drop_opened(uid, &root, added, window, cx)
                 });
             }
@@ -274,7 +274,7 @@ fn begin(uid: u64, session: &Entity<ChatSession>, prompt: Option<String>, cx: &m
     });
     let name = window_of(uid, cx)
         .and_then(|window| {
-            crate::state::with_shell(window, cx, |shell, _, cx| shell.session_label(uid, cx))
+            crate::windows::with_shell(window, cx, |shell, _, cx| shell.session_label(uid, cx))
         })
         .unwrap_or_default();
     let chat = &session.read(cx).chat();
@@ -293,26 +293,13 @@ fn asked_of(key: &Key, cx: &mut App) -> Option<(Entity<Shell>, AgentSpec)> {
     Some((asked.shell.upgrade()?, asked.spec.clone()))
 }
 
-fn shells(cx: &App) -> Vec<(AnyWindowHandle, Entity<Shell>)> {
-    crate::state::Shared::global(cx)
-        .windows
-        .iter()
-        .filter_map(|window| Some((window.handle, window.shell.upgrade()?)))
-        .collect()
-}
-
 /// Session `uid`, in whichever window holds it.
 pub(super) fn session_of(uid: u64, cx: &App) -> Option<Entity<ChatSession>> {
-    shells(cx)
-        .into_iter()
-        .find_map(|(_, shell)| shell.read(cx).session_entity(uid, cx))
+    crate::windows::session(uid, cx)
 }
 
 fn window_of(uid: u64, cx: &App) -> Option<AnyWindowHandle> {
-    shells(cx)
-        .into_iter()
-        .find(|(_, shell)| shell.read(cx).session_project(uid).is_some())
-        .map(|(window, _)| window)
+    crate::windows::holding_session(uid, cx).map(|(window, _)| window)
 }
 
 /// Whether session `uid` is still a session of some window.
@@ -328,7 +315,7 @@ pub(super) fn session_here_of_lead(uid: u64, cx: &App) -> bool {
 
 /// Every window's project roots on this machine, with their sessions.
 fn counts(cx: &App) -> Vec<(PathBuf, usize)> {
-    shells(cx)
+    crate::windows::live(cx)
         .into_iter()
         .flat_map(|(_, shell)| shell.read(cx).roots_with_sessions())
         .collect()
@@ -336,7 +323,7 @@ fn counts(cx: &App) -> Vec<(PathBuf, usize)> {
 
 /// Every session open in any window.
 fn live(cx: &App) -> Vec<u64> {
-    shells(cx)
+    crate::windows::live(cx)
         .into_iter()
         .flat_map(|(_, shell)| shell.read(cx).session_uids())
         .collect()
@@ -345,14 +332,13 @@ fn live(cx: &App) -> Vec<u64> {
 /// The sessions `lead`'s tools opened that are still open, with their
 /// projects.
 fn still_open(lead: u64, cx: &App) -> Vec<(u64, PathBuf)> {
-    let all = shells(cx);
     drive()
         .opened_by(lead)
         .into_iter()
         .filter_map(|uid| {
-            all.iter()
-                .find_map(|(_, shell)| shell.read(cx).session_project(uid))
-                .map(|at| (uid, at))
+            let (_, shell) = crate::windows::holding_session(uid, cx)?;
+            let at = shell.read(cx).session_project(uid)?;
+            Some((uid, at))
         })
         .collect()
 }

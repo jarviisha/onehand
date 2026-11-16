@@ -760,24 +760,11 @@ impl Shell {
             self.show_session(uid, window, cx);
             return;
         }
-        let Some(shell) = Shared::global(cx)
-            .windows
-            .iter()
-            .find(|w| w.handle == at)
-            .map(|w| w.shell.clone())
-        else {
-            return;
-        };
-        // Deferred: that window's shell is not to be reached into from inside
+        // Later: that window's shell is not to be reached into from inside
         // this one's update.
-        cx.defer(move |cx| {
-            at.update(cx, |_, window, cx| {
-                window.activate_window();
-                shell
-                    .update(cx, |shell, cx| shell.show_session(uid, window, cx))
-                    .ok();
-            })
-            .ok();
+        crate::windows::later(at, cx, move |shell, window, cx| {
+            window.activate_window();
+            shell.show_session(uid, window, cx);
         });
     }
 }

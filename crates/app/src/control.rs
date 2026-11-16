@@ -209,23 +209,15 @@ fn perform_now(
     let aim = control::calls::aim(&peer, holder(&peer), &call)?;
     let (handle, shell, caller) = match aim.lands {
         control::calls::Lands::Front => {
-            let (handle, shell) = crate::state::front(cx).ok_or("no onehand window is open")?;
+            let (handle, shell) = crate::windows::front(cx).ok_or("no onehand window is open")?;
             (handle, shell, None)
         }
-        control::calls::Lands::Holding(uid) => {
-            let windows: Vec<_> = Shared::global(cx)
-                .windows
-                .iter()
-                .filter_map(|w| Some((w.handle, w.shell.upgrade()?)))
-                .collect();
-            windows
-                .into_iter()
-                .find_map(|(handle, shell)| {
-                    let project = shell.read(cx).session_project(uid)?;
-                    Some((handle, shell, Some((uid, project))))
-                })
-                .ok_or("this session is no longer open")?
-        }
+        control::calls::Lands::Holding(uid) => crate::windows::holding_session(uid, cx)
+            .and_then(|(handle, shell)| {
+                let project = shell.read(cx).session_project(uid)?;
+                Some((handle, shell, Some((uid, project))))
+            })
+            .ok_or("this session is no longer open")?,
     };
     // Only the folders on this machine: a project on a host has no issue
     // file, worktree or check here for a tool to reach, and is refused by
@@ -484,7 +476,7 @@ fn perform_now(
                     .map(|(name, root)| (name.as_ref(), root.as_path())),
                 Path::is_file,
             )?;
-            crate::state::with_shell(handle, cx, |shell, window, cx| {
+            crate::windows::with_shell(handle, cx, |shell, window, cx| {
                 shell.open_file(&path, window, cx)
             })
             .ok_or("the window closed")?;

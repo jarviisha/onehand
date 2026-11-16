@@ -133,15 +133,7 @@ impl Shell {
     ) {
         let dir = dir.map(workspace::canon_dir);
         let handle = window.window_handle();
-        cx.update_global::<Shared, _>(|shared, _| {
-            if let Some(entry) = shared
-                .windows
-                .iter_mut()
-                .find(|w| w.handle.window_id() == handle.window_id())
-            {
-                entry.storage_dir = dir;
-            }
-        });
+        crate::windows::bind_storage(handle, dir, cx);
     }
 
     /// Bind this workspace to a storage folder, chosen with the native picker.

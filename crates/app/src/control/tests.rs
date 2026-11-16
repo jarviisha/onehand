@@ -251,7 +251,7 @@ fn a_sessions_call_lands_in_its_window_not_the_one_in_front(cx: &mut TestAppCont
     let (behind_window, other) = crate::shell::rig::another(cx, &behind);
     cx.update(|window, _| window.activate_window());
     cx.run_until_parked();
-    let front = cx.update(|_, cx| crate::state::front(cx).map(|(handle, _)| handle));
+    let front = cx.update(|_, cx| crate::windows::front(cx).map(|(handle, _)| handle));
     assert_eq!(front, Some(front_window), "the rig's window is in front");
     assert_ne!(front, Some(behind_window));
     let token = Token::mint();

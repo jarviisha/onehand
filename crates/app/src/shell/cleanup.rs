@@ -8,7 +8,6 @@
 //! named, and the removal waits until they are gone.
 
 use super::Shell;
-use crate::state::Shared;
 use gpui::{App, Context, Window};
 use onehand_core::worktree::removal::{self, Judged, Process};
 use std::path::Path;
@@ -69,12 +68,7 @@ impl Shell {
         cx: &Context<Self>,
     ) -> (Vec<String>, Vec<Process>) {
         let (mut users, mut processes) = self.users_here(folder, "this window", cx);
-        // This shell is the one being updated, so it is read as `self`.
-        let this = cx.entity_id();
-        for open in &Shared::global(cx).windows {
-            let Some(other) = open.shell.upgrade().filter(|o| o.entity_id() != this) else {
-                continue;
-            };
+        for (_, other) in crate::windows::others(cx.entity_id(), cx) {
             let (more, running) = other.read(cx).users_here(folder, "another window", cx);
             users.extend(more);
             processes.extend(running);

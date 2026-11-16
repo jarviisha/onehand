@@ -3,7 +3,7 @@ use super::settings_page::apply_appearance;
 use super::{APP_ID, CloseGuard, FocusedPanel, Shell, init_keymap};
 use crate::chat::ChatPane;
 use crate::settings::{AgentDraft, SettingsPage};
-use crate::state::{OpenWindow, Shared, WorkspaceWindow};
+use crate::state::{Shared, WorkspaceWindow};
 use crate::terminal::TerminalPanel;
 use crate::workbench::Workbench;
 use gpui::{App, AppContext, BorrowAppContext, Context, Focusable as _, Window, px};
@@ -574,7 +574,7 @@ pub fn seed_workspace() -> Workspace {
 /// the way in, so symlink and `..` aliases deduplicate.
 pub fn open_or_focus(workspace: Workspace, cx: &mut App) {
     if let Some(dir) = workspace.storage_dir.clone() {
-        if let Some(handle) = Shared::global(cx).window_for(&dir) {
+        if let Some(handle) = crate::windows::window_for(&dir, cx) {
             handle
                 .update(cx, |_, window, _| window.activate_window())
                 .ok();
@@ -647,13 +647,7 @@ fn open_window(workspace: Workspace, cx: &mut App) {
             // registry is what deduplicates windows, so an entry is filed either
             // way rather than the whole window being dropped from it.
             let shell = built.expect("the window was built without a shell");
-            cx.update_global::<Shared, _>(|shared, _| {
-                shared.windows.push(OpenWindow {
-                    storage_dir: storage_dir.clone(),
-                    handle: handle.into(),
-                    shell,
-                });
-            });
+            crate::windows::register(storage_dir.clone(), handle.into(), shell, cx);
             // The projects it has switched on for unattended runs are looked at
             // now, so a row that cannot work says so from the first frame and
             // not from the first tick, half an hour in. After the push, because
@@ -791,7 +785,7 @@ fn use_installed_mono(configured: Option<&str>, cx: &mut App) {
 ///
 /// Two jobs, one hook, because they are the same fact arriving:
 ///
-/// - **Prune.** `Shared.windows` exists so that opening a workspace already on
+/// - **Prune.** The window list exists so that opening a workspace already on
 ///   screen focuses it instead of duplicating it. A closed window left in that
 ///   list makes `window_for` hand back a dead handle, and `open_or_focus` then
 ///   "focuses" nothing and returns -- so *Open workspace…* on a folder whose
@@ -802,9 +796,7 @@ fn use_installed_mono(configured: Option<&str>, cx: &mut App) {
 ///   window, with no UI and no way to reach it.
 fn watch_window_close(cx: &mut App) {
     cx.on_window_closed(|cx, closed| {
-        cx.update_global::<Shared, _>(|shared, _| {
-            shared.windows.retain(|w| w.handle.window_id() != closed);
-        });
+        crate::windows::forget(closed, cx);
         // The window is already gone by the time this runs, so the count is
         // the count *after* the close.
         if cx.windows().is_empty() {
