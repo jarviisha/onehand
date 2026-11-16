@@ -26,6 +26,7 @@ mod body;
 mod bridge;
 mod events;
 mod fork;
+mod greeting;
 mod header;
 pub(crate) use header::LIVE_DOT;
 pub(crate) use history::is_open;
@@ -133,6 +134,11 @@ struct OverlayRoom {
     /// Whether the composer stack is narrower than the strip under it can hold
     /// on one line, measured on the panel rather than the window.
     narrow_strip: bool,
+    /// Whether the session is connected, and how many transcript items it
+    /// holds: what the greeting is decided on, with what stands over the
+    /// composer.
+    connected: bool,
+    items: usize,
 }
 
 /// The space between two ordinary blocks of one turn, and the step every other

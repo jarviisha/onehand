@@ -6,7 +6,7 @@ use crate::chat::session::ChatSession;
 use crate::chat::transcript::{self};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{Context, Entity, InteractiveElement, IntoElement, ParentElement, Styled, Window, div};
-use gpui_component::StyledExt;
+use gpui_component::{ActiveTheme as _, StyledExt};
 
 /// The gap between the overlay's slots: the cards and the composer.
 const COLUMN_GAP: gpui::Rems = gpui::rems(0.5);
@@ -31,7 +31,7 @@ impl ChatPane {
         blocked: Option<onehand_core::chat::SubmitBlock>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement + use<> {
+    ) -> (gpui::AnyElement, bool) {
         let super::body::Pinned {
             stack: pinned,
             tucked,
@@ -44,21 +44,43 @@ impl ChatPane {
         // The column's gap goes too, or the two would stand apart. While
         // workers run the lead's strip tops the composer, opaque and edged as
         // it is, and the card's foot runs under the strip instead.
+        // Everything that can stand over the composer is known here: the
+        // pinned stack holds the reconnect line, the queue, staged files and
+        // the cards, and the lead's strip or worker's band is `lead`.
+        let greeting = super::greeting::greets(
+            room.connected,
+            room.items,
+            !pinned.is_empty() || lead.is_some(),
+        );
         let tuck = tucked.then(|| -gpui::rems(COLUMN_GAP.0 + transcript::TUCK.0));
         let git = self.git.clone();
         let pane = cx.entity();
 
-        div()
+        let overlay = div()
             .absolute()
             .bottom_0()
             .left_0()
             .right_0()
             .v_flex()
+            // Greeting, the overlay fills the well and centres what it holds:
+            // the heading and, under it, the composer.
+            .when(greeting, |overlay| overlay.top_0().justify_center())
             // A step over the gap the cards keep between themselves: a pinned
             // card and the composer are two objects and the cards in a stack
             // are one, so the seam that has to read as a seam is this one.
             .gap(COLUMN_GAP)
             .w_full()
+            .when(greeting, |overlay| {
+                overlay.child(
+                    div()
+                        .w_full()
+                        .text_center()
+                        .text_xl()
+                        .font_semibold()
+                        .text_color(cx.theme().foreground)
+                        .child(super::greeting::GREETING),
+                )
+            })
             // Reading the conversation is a way of saying the popup is done
             // with. It hangs off this whole block rather than off the list, so
             // a click on a chip, a row or the field -- every one of which is a
@@ -343,5 +365,7 @@ impl ChatPane {
                             ),
                     ),
             )
+            .into_any_element();
+        (overlay, greeting)
     }
 }
