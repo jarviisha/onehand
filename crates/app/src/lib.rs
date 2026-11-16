@@ -43,6 +43,7 @@ mod terminal;
 mod text_drag;
 mod theme;
 mod unattended;
+mod windows;
 mod workbench;
 mod workflow;
 mod workflows_page;

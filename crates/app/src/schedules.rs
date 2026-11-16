@@ -183,12 +183,10 @@ fn read_file(cx: &mut App) {
 fn holders(all: &[Schedule], cx: &App) -> Vec<(PathBuf, AnyWindowHandle)> {
     all.iter()
         .filter_map(|s| {
-            let window = Shared::global(cx).windows.iter().find(|w| {
-                w.shell
-                    .upgrade()
-                    .is_some_and(|shell| shell.read(cx).holds_root(&s.project))
-            })?;
-            Some((s.project.clone(), window.handle))
+            let (window, _) = crate::windows::holding_root(&s.project, cx)
+                .into_iter()
+                .next()?;
+            Some((s.project.clone(), window))
         })
         .collect()
 }
@@ -196,11 +194,9 @@ fn holders(all: &[Schedule], cx: &App) -> Vec<(PathBuf, AnyWindowHandle)> {
 /// Start `starting` in `window`, as every task off screen starts, and tell
 /// the clock where it landed.
 fn start(starting: onehand_core::task::Starting, window: AnyWindowHandle, cx: &mut App) {
-    let shell = Shared::global(cx)
-        .windows
-        .iter()
-        .find(|w| w.handle == window)
-        .and_then(|w| w.shell.upgrade());
+    let shell = crate::windows::live(cx)
+        .into_iter()
+        .find_map(|(handle, shell)| (handle == window).then_some(shell));
     let Some(shell) = shell else {
         return feed(Input::Started(Err("the window closed".to_string())), cx);
     };

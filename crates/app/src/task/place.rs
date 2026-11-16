@@ -133,7 +133,7 @@ pub(super) fn perform(
                         .await;
                     cx.update(|cx| {
                         let window_open =
-                            crate::state::with_shell(window, cx, |_, _, _| ()).is_some();
+                            crate::windows::with_shell(window, cx, |_, _, _| ()).is_some();
                         feed(
                             Input::PlaceFound {
                                 task,
@@ -171,7 +171,7 @@ pub(super) fn perform(
                 let Some(read) = super::take_review(&task, cx) else {
                     return;
                 };
-                crate::state::with_shell(window, cx, |shell, window, cx| {
+                crate::windows::with_shell(window, cx, |shell, window, cx| {
                     shell.confirm_answer(task, read, window, cx)
                 });
             }),
@@ -182,7 +182,7 @@ pub(super) fn perform(
                 judged,
                 window,
             } => cx.defer(move |cx| {
-                crate::state::with_shell(window, cx, |shell, window, cx| {
+                crate::windows::with_shell(window, cx, |shell, window, cx| {
                     shell.confirm_removal(task, *facts, judged, window, cx)
                 });
             }),
@@ -236,7 +236,7 @@ pub(super) fn perform(
             Effect::Defer(input) => cx.defer(move |cx| feed(input, cx)),
             Effect::Told { task, placed } => tell(&task, placed, cx),
             Effect::CloseSession { uid, window } => cx.defer(move |cx| {
-                crate::state::with_shell(window, cx, |shell, window, cx| {
+                crate::windows::with_shell(window, cx, |shell, window, cx| {
                     shell.close_finished(uid, window, cx)
                 });
             }),
@@ -259,7 +259,7 @@ fn keep(start: OffScreen<AnyWindowHandle>, cx: &mut App) {
     };
     let window = start.window;
     let asked = start.clone();
-    let in_window = crate::state::with_shell(window, cx, |shell, window, cx| {
+    let in_window = crate::windows::with_shell(window, cx, |shell, window, cx| {
         shell.with_workspace(
             |workspace, cx| {
                 let (kept, out) = link(Some(workspace), asked, cx);
@@ -324,7 +324,7 @@ fn judge_removal(asked: Judging<AnyWindowHandle>, cx: &mut App) {
             })
             .await;
         let reading = cx.update(|cx| {
-            let (users, processes) = crate::state::with_shell(window, cx, |shell, _, cx| {
+            let (users, processes) = crate::windows::with_shell(window, cx, |shell, _, cx| {
                 shell.folder_users(&folder, cx)
             })?;
             Some(removal::Asked {
@@ -365,7 +365,7 @@ fn tell(id: &str, placed: Placed, cx: &mut App) {
 /// in the window, and comes back to the drive as a start that failed.
 fn drive(id: String, window: AnyWindowHandle, cx: &mut App) {
     let task = id.clone();
-    let driven = crate::state::with_shell(window, cx, |shell, window, cx| {
+    let driven = crate::windows::with_shell(window, cx, |shell, window, cx| {
         shell.drive_task(task, window, cx)
     });
     match driven {

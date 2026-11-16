@@ -181,10 +181,11 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 - Async work runs as `cx.spawn` plus `cx.background_executor()`, and results come back through
   `entity.update`. Native dialogs, directory scans and file reads never run inline in a render or
   action handler.
-- Data model: `Shared` (the process-wide global: agent menu, windows, recents, keymap, ACP
-  runtime, remote bridge, unattended runs, among others) → `Shell` per window →
+- Data model: `Shared` (the process-wide global: agent menu, recents, keymap, ACP runtime,
+  remote bridge, unattended runs, among others) → `Shell` per window →
   `Workspace { roots }` → `ProjectRoot { sessions }` → `Session { spec, uid }`. Sessions connect
-  lazily, on first show.
+  lazily, on first show. The open windows are `crate::windows`'s alone: reach another window's
+  shell, a session by uid or a project's windows through it.
 
 ## Rules
 

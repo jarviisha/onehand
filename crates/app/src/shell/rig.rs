@@ -4,7 +4,7 @@
 
 use crate::state::Shared;
 use crate::task::Tasks;
-use gpui::{BorrowAppContext as _, Entity, TestAppContext, VisualTestContext};
+use gpui::{Entity, TestAppContext, VisualTestContext};
 use gpui_component::Root;
 use onehand_core::config::AgentSpec;
 use onehand_core::config::drive::SettingsDrive;
@@ -58,15 +58,7 @@ pub(crate) fn shell(
     let handle: gpui::AnyWindowHandle = window.into();
     let shell = made.expect("the shell");
     let weak = shell.downgrade();
-    cx.update(|cx| {
-        cx.update_global::<Shared, _>(|shared, _| {
-            shared.windows.push(crate::state::OpenWindow {
-                storage_dir: None,
-                handle,
-                shell: weak,
-            })
-        })
-    });
+    cx.update(|cx| crate::windows::register(None, handle, weak, cx));
     let cx = VisualTestContext::from_window(handle, cx).into_mut();
     (handle, shell, cx)
 }
@@ -135,14 +127,7 @@ pub(crate) fn another(
     let handle: gpui::AnyWindowHandle = window.into();
     let shell = made.expect("the shell");
     let weak = shell.downgrade();
-    cx.cx.update(|cx| {
-        cx.update_global::<Shared, _>(|shared, _| {
-            shared.windows.push(crate::state::OpenWindow {
-                storage_dir: None,
-                handle,
-                shell: weak,
-            })
-        })
-    });
+    cx.cx
+        .update(|cx| crate::windows::register(None, handle, weak, cx));
     (handle, shell)
 }

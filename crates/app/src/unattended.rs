@@ -15,7 +15,7 @@
 //! belongs to no window and asks each in turn for its projects.
 
 use crate::state::Shared;
-use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Global, WeakEntity};
+use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Global};
 use onehand_core::config::UnattendedConfig;
 use onehand_core::connector::{self, Connector};
 use onehand_core::issues::drive::Change;
@@ -79,22 +79,15 @@ fn roots(cx: &App) -> Vec<On> {
 /// Whether the project at `root` has a check command, in whichever window
 /// holds it.
 fn has_check(root: &Path, cx: &App) -> bool {
-    Shared::global(cx)
-        .windows
-        .iter()
-        .filter_map(|w| w.shell.upgrade())
-        .any(|shell| shell.read(cx).check_of(root).is_some())
+    crate::windows::live(cx)
+        .into_iter()
+        .any(|(_, shell)| shell.read(cx).check_of(root).is_some())
 }
 
 /// Every switched-on project across every window, in rail order, once each.
 fn opted_in_roots(cx: &App) -> Vec<Project> {
     let mut roots: Vec<Project> = Vec::new();
-    let shells: Vec<_> = Shared::global(cx)
-        .windows
-        .iter()
-        .map(|w| w.shell.clone())
-        .collect();
-    for shell in shells.iter().filter_map(WeakEntity::upgrade) {
+    for (_, shell) in crate::windows::live(cx) {
         for project in shell.read(cx).unattended_roots() {
             if !roots.iter().any(|p| p.root == project.root) {
                 roots.push(project);
@@ -110,16 +103,9 @@ fn holding(repo: Option<&Path>, cx: &App) -> Vec<(AnyWindowHandle, Option<String
     let Some(repo) = repo else {
         return Vec::new();
     };
-    Shared::global(cx)
-        .windows
-        .iter()
-        .filter_map(|w| {
-            let shell = w.shell.upgrade()?;
-            let shell = shell.read(cx);
-            shell
-                .holds_root(repo)
-                .then(|| (w.handle, shell.check_of(repo)))
-        })
+    crate::windows::holding_root(repo, cx)
+        .into_iter()
+        .map(|(handle, shell)| (handle, shell.read(cx).check_of(repo)))
         .collect()
 }
 

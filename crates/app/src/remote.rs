@@ -222,27 +222,13 @@ fn carry(fx: Vec<Effect>, cx: &mut App) {
     }
 }
 
-/// Every window's shell, in the order the windows were opened; one closed
-/// since the registry's prune is left for its caller to skip.
-fn shells(cx: &App) -> Vec<gpui::WeakEntity<crate::shell::Shell>> {
-    Shared::global(cx)
-        .windows
-        .iter()
-        .map(|w| w.shell.clone())
-        .collect()
-}
-
 /// Every session this process is running, across every window, in one order:
 /// windows in the order they were opened, each one's by uid, so the numbers in
 /// a listing stay put between one message and the next.
 fn sessions(cx: &App) -> Vec<RemoteSession> {
-    let shells = shells(cx);
-    shells
-        .iter()
-        // A window closed between the registry's prune and this walk is one
-        // fewer window.
-        .filter_map(|shell| shell.upgrade())
-        .flat_map(|shell| shell.read(cx).remote_sessions(cx))
+    crate::windows::live(cx)
+        .into_iter()
+        .flat_map(|(_, shell)| shell.read(cx).remote_sessions(cx))
         .collect()
 }
 
@@ -253,11 +239,7 @@ fn on_session<R>(
     cx: &mut App,
     act: impl FnOnce(&Entity<ChatSession>, &mut App) -> R,
 ) -> Option<R> {
-    let shells = shells(cx);
-    let session = shells
-        .into_iter()
-        .filter_map(|shell| shell.upgrade())
-        .find_map(|shell| shell.read(cx).session_entity(uid, cx))?;
+    let session = crate::windows::session(uid, cx)?;
     Some(act(&session, cx))
 }
 
@@ -270,19 +252,14 @@ fn back_or_away(away: bool, cx: &mut App) {
     if away {
         return;
     }
-    let active: Vec<_> = Shared::global(cx)
-        .windows
-        .iter()
-        .filter(|w| cx.active_window() == Some(w.handle))
-        .map(|w| w.shell.clone())
-        .collect();
-    // Deferred: a caller can already be holding the active window's shell, and
-    // updating it again would panic.
-    cx.defer(move |cx| {
-        for shell in active.into_iter().filter_map(|shell| shell.upgrade()) {
-            shell.update(cx, |shell, cx| shell.mark_active_seen(cx));
+    let active = cx.active_window();
+    for (handle, _) in crate::windows::live(cx) {
+        if Some(handle) == active {
+            // Later: a caller can already be holding the active window's
+            // shell.
+            crate::windows::later(handle, cx, |shell, _, cx| shell.mark_active_seen(cx));
         }
-    });
+    }
 }
 
 /// Scan the stored conversations of every project here, off the UI thread.
@@ -313,9 +290,8 @@ fn scan(chat: String, cx: &mut App) {
 /// Every project root on this machine that runs its sessions here, once each:
 /// two windows can hold one folder.
 fn roots(cx: &App) -> Vec<(std::path::PathBuf, String)> {
-    let shells = shells(cx);
     let mut out: Vec<(std::path::PathBuf, String)> = Vec::new();
-    for shell in shells.into_iter().filter_map(|shell| shell.upgrade()) {
+    for (_, shell) in crate::windows::live(cx) {
         for root in shell.read(cx).remote_roots() {
             if !out.iter().any(|(path, _)| *path == root.0) {
                 out.push(root);
@@ -328,24 +304,16 @@ fn roots(cx: &App) -> Vec<(std::path::PathBuf, String)> {
 /// Reopen `pick` in the window holding its project: showing the new session is
 /// what starts its agent.
 fn reopen(pick: &onehand_core::remote::chats::ArchiveRow, cx: &mut App) -> Option<u64> {
-    let windows: Vec<_> = Shared::global(cx)
-        .windows
-        .iter()
-        .map(|w| (w.handle, w.shell.clone()))
-        .collect();
     let agent = gpui::SharedString::from(pick.agent.clone());
-    windows.into_iter().find_map(|(handle, shell)| {
-        let shell = shell.upgrade()?;
-        let (root, dir, agent) = (pick.root.clone(), pick.dir.clone(), agent.clone());
-        handle
-            .update(cx, |_, window, cx| {
-                shell.update(cx, |shell, cx| {
-                    shell.remote_open(&root, dir, Some(agent), window, cx)
-                })
+    crate::windows::live(cx)
+        .into_iter()
+        .find_map(|(handle, _)| {
+            let (root, dir, agent) = (pick.root.clone(), pick.dir.clone(), agent.clone());
+            crate::windows::with_shell(handle, cx, |shell, window, cx| {
+                shell.remote_open(&root, dir, Some(agent), window, cx)
             })
-            .ok()
             .flatten()
-    })
+        })
 }
 
 /// Say a session's news to every chat following it.
