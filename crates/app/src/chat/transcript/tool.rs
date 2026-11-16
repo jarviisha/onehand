@@ -70,7 +70,7 @@ pub(super) fn tool(
     target: TranscriptItemId,
     cx: &App,
 ) -> impl IntoElement + use<> {
-    let root = session.read(cx).chat.root.clone();
+    let root = session.read(cx).chat().root.clone();
     let presented = activity::presentation(t);
     let opens = t.opens_by_itself();
     let open = session.read(cx).item_is_open(target, opens);
@@ -81,7 +81,7 @@ pub(super) fn tool(
     // as the build takes, which is exactly when somebody is looking at it.
     let live: Option<&onehand_core::chat::TermView> =
         t.call.content.iter().find_map(|section| match section {
-            ToolContent::Terminal(id) => session.read(cx).chat.terminals.get(id),
+            ToolContent::Terminal(id) => session.read(cx).chat().terminals.get(id),
             _ => None,
         });
     let detail = tool_detail(t, &presented, &root, live, open);

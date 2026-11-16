@@ -50,7 +50,7 @@ impl ChatPane {
     pub fn open_conversations(&self, cx: &gpui::App) -> std::collections::HashSet<String> {
         self.conversations
             .values()
-            .filter_map(|conv| conv.session()?.read(cx).chat.session_id.clone())
+            .filter_map(|conv| conv.session()?.read(cx).chat().session_id.clone())
             .collect()
     }
 

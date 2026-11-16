@@ -37,7 +37,7 @@ pub(super) fn plan(
     let hidden = p.entries.len().saturating_sub(MAX_TODO_ITEMS);
     let muted = cx.theme().muted_foreground;
     // Only the running turn's plan is worked through now.
-    let busy = session.read(cx).chat.in_running_turn(target);
+    let busy = session.read(cx).chat().in_running_turn(target);
 
     let line = fold_line(("plan", fold_key(target)), open, false, cx)
         .on_click({

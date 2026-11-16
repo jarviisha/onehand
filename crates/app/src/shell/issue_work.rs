@@ -58,7 +58,7 @@ impl Shell {
         let mut owed = TakenUp::new(file, number);
         let place = root.to_path_buf();
         cx.subscribe(&session, move |_, session, _: &ChatEvent, cx| {
-            let Some((file, change)) = owed.heard(&session.read(cx).chat) else {
+            let Some((file, change)) = owed.heard(session.read(cx).chat()) else {
                 return;
             };
             // Through the file's drive, which every view of it shares: each

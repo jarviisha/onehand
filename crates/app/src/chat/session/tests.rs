@@ -91,7 +91,8 @@ pub(crate) mod carrier {
 
     fn prompt(session: &Entity<ChatSession>, cx: &mut TestAppContext) {
         session.update(cx, |session, cx| {
-            session.prompt("go", &[], Origin::Person, Code::Here, cx);
+            // The code is here, so nothing is handed back to send.
+            let _ = session.prompt("go", &[], Origin::Person, Code::Here, cx);
         });
     }
 

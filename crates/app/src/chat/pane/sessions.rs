@@ -246,7 +246,7 @@ impl ChatPane {
         // read from it, and the new chat would start it from nothing.
         let sent = conv
             .session()
-            .map_or(0, |session| session.read(cx).chat.prompts_sent);
+            .map_or(0, |session| session.read(cx).chat().prompts_sent);
         let (on_host, start, sent_before) = match &conv.host {
             None => (None, start, sent),
             Some((host, cwd)) => {
@@ -258,7 +258,7 @@ impl ChatPane {
         // Its names too: a worker's stand-in is never saved, and a name its
         // lead gave is not written down until a turn ends.
         let titles = conv.session().map(|session| {
-            let chat = &session.read(cx).chat;
+            let chat = &session.read(cx).chat();
             (chat.custom_title.clone(), chat.stand_in_title.clone())
         });
         // Whatever the session was on goes *before* the replacement is spawned.
@@ -279,10 +279,20 @@ impl ChatPane {
             cx,
         );
         if sent_before > 0 {
-            session.update(cx, |session, _| session.chat.carry_sent(sent_before));
+            session.update(cx, |session, cx| {
+                session.drive(cx, |chat, _| {
+                    chat.carry_sent(sent_before);
+                    ((), Vec::new())
+                })
+            });
         }
         if let Some((custom, stand_in)) = titles {
-            session.update(cx, |session, _| session.chat.carry_titles(custom, stand_in));
+            session.update(cx, |session, cx| {
+                session.drive(cx, |chat, _| {
+                    chat.carry_titles(custom, stand_in);
+                    ((), Vec::new())
+                })
+            });
         }
         cx.emit(ChatPaneEvent::AgentStarted);
         // The conversation is adopted *before* the adapter's replay lands,
@@ -317,7 +327,7 @@ impl ChatPane {
                     ChatEvent::Session(said @ (Signal::CycleEnded | Signal::TurnEnded)) => {
                         let (root, on_host) = {
                             let session = session.read(cx);
-                            (session.chat.root.clone(), session.on_host)
+                            (session.chat().root.clone(), session.on_host)
                         };
                         crate::offload::session_said(cx, &root, on_host, said);
                         // The turn that just ended is what wrote the archive, so
@@ -504,7 +514,7 @@ impl ChatPane {
                 // over with the restart.
                 s.forget_host_wait(cx);
                 s.forget_host_offline(cx);
-                s.chat.take_snapshot(onehand_core::Now::read())
+                s.drive(cx, |chat, now| (chat.take_snapshot(now), Vec::new()))
             })
         });
         // `connect_as` drops the old adapter before spawning the new one, so
@@ -613,7 +623,7 @@ impl ChatPane {
     }
 
     pub(super) fn active_chat<'a>(&self, cx: &'a App) -> Option<&'a Chat> {
-        Some(&self.active_conversation()?.session()?.read(cx).chat)
+        Some(self.active_conversation()?.session()?.read(cx).chat())
     }
 
     pub(super) fn session(&self) -> Option<Entity<ChatSession>> {
@@ -635,15 +645,15 @@ impl ChatPane {
         // nothing has been asked of the user, so it is not a signal.
         let conv = self.conversations.get(&uid)?;
         let session = conv.session()?.read(cx);
-        let chat = &session.chat;
+        let chat = &session.chat();
         SessionSignal::pick(
-            session.chat.host_waiting().is_some(),
-            session.chat.host_away().is_some(),
+            session.chat().host_waiting().is_some(),
+            session.chat().host_away().is_some(),
             chat.link,
             chat.failed(),
             chat.awaiting_permission() || crate::task::waits_on_person(uid, cx),
             chat.running(),
-            session.chat.unseen(),
+            session.chat().unseen(),
         )
     }
 
@@ -659,7 +669,7 @@ impl ChatPane {
     /// The host session `uid` is out of reach of, until it is back.
     pub(crate) fn host_lost(&self, uid: u64, cx: &App) -> Option<HostName> {
         let conv = self.conversations.get(&uid)?;
-        conv.session()?.read(cx).chat.host_away().cloned()
+        conv.session()?.read(cx).chat().host_away().cloned()
     }
 
     /// The wait for `uid`'s host to be back ended on `why`, the host taken
@@ -675,7 +685,7 @@ impl ChatPane {
     /// The host session `uid` waits on, its busy sessions to finish.
     pub(crate) fn host_wait(&self, uid: u64, cx: &App) -> Option<HostName> {
         let conv = self.conversations.get(&uid)?;
-        conv.session()?.read(cx).chat.host_waiting().cloned()
+        conv.session()?.read(cx).chat().host_waiting().cloned()
     }
 
     /// How many background items `uid`'s agent has alive, how many subagents
@@ -685,7 +695,7 @@ impl ChatPane {
             .get(&uid)
             .and_then(|conv| conv.session())
             .map_or((0, 0, false), |session| {
-                let chat = &session.read(cx).chat;
+                let chat = &session.read(cx).chat();
                 (chat.background().len(), chat.subagents_working(), chat.busy)
             })
     }
@@ -705,13 +715,13 @@ impl ChatPane {
     /// at once.
     pub fn closing(&self, uid: u64, cx: &App) -> Closing {
         self.session_of(uid)
-            .map_or(Closing::Now, |session| session.read(cx).chat.closing())
+            .map_or(Closing::Now, |session| session.read(cx).chat().closing())
     }
 
     /// What restarting session `uid`'s agent asks first.
     pub fn restarting(&self, uid: u64, cx: &App) -> Restarting {
         self.session_of(uid).map_or(Restarting::Now, |session| {
-            session.read(cx).chat.restarting()
+            session.read(cx).chat().restarting()
         })
     }
 
@@ -733,8 +743,7 @@ impl ChatPane {
             return;
         };
         session.update(cx, |session, cx| {
-            let fx = session.chat.handle(Input::Shown, onehand_core::Now::read());
-            session.perform(fx, cx);
+            session.drive(cx, |chat, now| ((), chat.handle(Input::Shown, now)))
         });
         cx.notify();
     }

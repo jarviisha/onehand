@@ -183,7 +183,7 @@ fn offline(
             away.then_some((host, last)),
             onehand_core::Now::read(),
         );
-        session.perform(fx, cx);
+        session.carry(fx, cx);
         cx.notify();
     });
 }
@@ -201,7 +201,7 @@ fn wait(
     let _ = session.update(cx, |session, cx| {
         let fx = session.chat.wait_on_host(host, n, terms);
         cx.emit(ChatEvent::HostBusy);
-        session.perform(fx, cx);
+        session.carry(fx, cx);
         cx.notify();
     });
 }

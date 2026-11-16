@@ -239,7 +239,7 @@ impl ChatPane {
         if self.background_menu.get().is_some_and(|open| open != key) {
             self.background_menu.set(None);
         }
-        let items = session.read(cx).chat.background();
+        let items = session.read(cx).chat().background();
         // Kept while its menu is open: the menu holds focus, and dropping its
         // trigger mid-open would leave focus on nothing. Closing the menu
         // hands focus back to where it was, and the button goes after.
@@ -306,8 +306,7 @@ impl ChatPane {
                         })
                         .on_click(move |_, _, cx: &mut App| {
                             session.update(cx, |session, cx| {
-                                let fx = session.chat.stop_background(&id);
-                                session.perform(fx, cx);
+                                session.drive(cx, |chat, _| ((), chat.stop_background(&id)))
                             });
                         }),
                     )

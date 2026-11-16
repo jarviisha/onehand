@@ -42,7 +42,7 @@ pub(in crate::control) fn answer(
         return Ok("link: closed".to_string());
     };
     let held = drive().held(uid).ok_or("link: closed")?;
-    Ok(state(&worker.read(cx).chat, &held))
+    Ok(state(worker.read(cx).chat(), &held))
 }
 
 /// Give the worker `session` names turn `turn`, `text`.
@@ -55,13 +55,16 @@ pub(in crate::control) fn send(
 ) -> Result<String, String> {
     let (uid, worker) = find(caller, session, cx)?.ok_or(format!("{session} is closed"))?;
     let last = drive().last(uid).ok_or(format!("{session} is closed"))?;
-    match turns::send(&worker.read(cx).chat, &last, turn, text)? {
+    match turns::send(worker.read(cx).chat(), &last, turn, text)? {
         turns::Send::AlreadySent(turn) => Ok(format!("turn {turn} already sent")),
         turns::Send::Go => {
-            let (intake, _) = worker.update(cx, |worker, cx| {
-                worker.prompt(text, &[], Origin::Tools, Code::Here, cx)
-            });
-            let sent = worker.read(cx).chat.prompts_sent;
+            // A tool's prompt sends no code first: that is a person's.
+            let intake = worker
+                .update(cx, |worker, cx| {
+                    worker.prompt(text, &[], Origin::Tools, Code::Here, cx)
+                })
+                .intake;
+            let sent = worker.read(cx).chat().prompts_sent;
             drive().sent(uid, turn, text, &intake, sent)
         }
     }
@@ -75,7 +78,7 @@ pub(in crate::control) fn cancel(
 ) -> Result<String, String> {
     let (uid, worker) = find(caller, session, cx)?.ok_or(format!("{session} is closed"))?;
     let last = drive().last(uid).ok_or(format!("{session} is closed"))?;
-    let turn = turns::cancel(&worker.read(cx).chat, &last)?;
+    let turn = turns::cancel(worker.read(cx).chat(), &last)?;
     worker.update(cx, |worker, cx| worker.stop(cx));
     Ok(format!("cancelling turn {turn}"))
 }

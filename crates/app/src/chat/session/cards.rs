@@ -240,7 +240,7 @@ impl ChatSession {
     /// Answer the permission card at `idx` with `option_id`.
     pub fn answer_permission(&mut self, idx: usize, option_id: &str, cx: &mut Context<Self>) {
         let fx = self.chat.answer_permission(idx, option_id);
-        self.perform(fx, cx);
+        self.carry(fx, cx);
     }
 
     /// Pick `option` of `field` on the question at `idx`, the keyboard landing
@@ -250,13 +250,13 @@ impl ChatSession {
         place.point_at(option);
         self.set_ask_place(idx, place);
         let (_, fx) = self.chat.ask_pick(idx, field, option);
-        self.perform(fx, cx);
+        self.carry(fx, cx);
     }
 
     /// Type `text` as the answer to `field` of the question at `idx`.
     pub fn ask_type(&mut self, idx: usize, field: usize, text: String, cx: &mut Context<Self>) {
         let fx = self.chat.ask_type(idx, field, text);
-        self.perform(fx, cx);
+        self.carry(fx, cx);
     }
 
     /// Pass on `field` of the question at `idx`, showing the next one if the
@@ -264,7 +264,7 @@ impl ChatSession {
     pub fn ask_skip(&mut self, idx: usize, field: usize, cx: &mut Context<Self>) {
         let (next, fx) = self.chat.ask_skip(idx, field);
         self.show_question(idx, next);
-        self.perform(fx, cx);
+        self.carry(fx, cx);
     }
 
     /// Move the question at `idx` on from `field`; see
@@ -272,13 +272,13 @@ impl ChatSession {
     pub fn ask_advance(&mut self, idx: usize, field: usize, cx: &mut Context<Self>) {
         let (next, fx) = self.chat.ask_advance(idx, field);
         self.show_question(idx, next);
-        self.perform(fx, cx);
+        self.carry(fx, cx);
     }
 
     /// Send the question at `idx` as it stands, if it holds an answer.
     pub fn ask_submit(&mut self, idx: usize, cx: &mut Context<Self>) {
         let fx = self.chat.ask_submit(idx);
-        self.perform(fx, cx);
+        self.carry(fx, cx);
     }
 
     fn show_question(&mut self, idx: usize, next: Option<usize>) {

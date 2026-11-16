@@ -164,8 +164,10 @@ pub(super) fn carry_one(effect: Effect, cx: &mut App) {
                     // No conversation file exists yet; the first turn's end
                     // writes the given name with the rest.
                     session.update(cx, |session, cx| {
-                        session.chat.name_for_folder(folder, name);
-                        cx.notify();
+                        session.drive(cx, |chat, _| {
+                            chat.name_for_folder(folder, name);
+                            ((), Vec::new())
+                        })
                     });
                     uid
                 });
@@ -185,9 +187,7 @@ pub(super) fn carry_one(effect: Effect, cx: &mut App) {
         Effect::Pick { uid, pick } => {
             if let Some(session) = session_of(uid, cx) {
                 session.update(cx, |session, cx| {
-                    let fx = session.chat.pick(&pick);
-                    session.perform(fx, cx);
-                    cx.notify();
+                    session.drive(cx, |chat, _| ((), chat.pick(&pick)))
                 });
             }
         }
@@ -252,7 +252,7 @@ fn wake(uid: u64, cx: &mut App) {
     let lead_here = session_here_of_lead(uid, cx);
     let session = session_of(uid, cx);
     let fx = {
-        let chat = session.as_ref().map(|session| &session.read(cx).chat);
+        let chat = session.as_ref().map(|session| session.read(cx).chat());
         drive().handle(Input::Woke {
             uid,
             chat: chat.map(|chat| &**chat),
@@ -270,14 +270,14 @@ fn begin(uid: u64, session: &Entity<ChatSession>, prompt: Option<String>, cx: &m
             .update(cx, |session, cx| {
                 session.prompt(&prompt, &[], Origin::Tools, Code::Here, cx)
             })
-            .0
+            .intake
     });
     let name = window_of(uid, cx)
         .and_then(|window| {
             crate::state::with_shell(window, cx, |shell, _, cx| shell.session_label(uid, cx))
         })
         .unwrap_or_default();
-    let chat = &session.read(cx).chat;
+    let chat = &session.read(cx).chat();
     Facts {
         intake,
         sent: chat.prompts_sent,
