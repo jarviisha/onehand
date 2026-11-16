@@ -46,20 +46,18 @@ impl Shell {
         }
     }
 
-    /// Save the docks' open state when it moved. Run on every frame the
-    /// window draws, because a dock opens from more places than any one hook
-    /// sees.
-    pub(super) fn sync_docks_open(&mut self, cx: &mut Context<Self>) {
-        let open = DocksOpen {
-            terminal: self.dock.read(cx).is_dock_open(DockPlacement::Bottom),
-            workbench: self.workbench_open(cx),
-        };
-        // Opening or closing a dock is saved, as a dragged size is, and never
-        // put back. The first frame only learns the state it opened with.
+    /// Save the docks' layout when it moved. Run on every frame the window
+    /// draws, after the frame's sizes are settled, because a dock opens and a
+    /// size is dragged from more places than any one hook sees -- and a
+    /// window resized, which re-sizes the split without changing what the
+    /// person wants, saves nothing.
+    pub(super) fn sync_layout_saved(&mut self, cx: &mut Context<Self>) {
+        let layout = self.dock_layout(cx);
+        // The first frame only learns the layout it opened with.
         if self
-            .docks_saved
-            .replace(open)
-            .is_some_and(|was| was != open)
+            .layout_saved
+            .replace(layout)
+            .is_some_and(|was| was != layout)
         {
             self.save_workspace_soon(cx);
         }
@@ -185,27 +183,21 @@ impl Shell {
     /// Toggle the bottom terminal regardless of focus. A shell is spawned on
     /// first open and never at boot (see [`crate::terminal`]).
     pub fn show_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // Stepping aside touches only the Workbench's slot, so the bottom
-        // dock read here is the one the press acts on.
         let press = dock_rules::terminal_press(
             self.page_shown(cx),
-            self.workbench_fills_area(),
             self.dock.read(cx).is_dock_open(DockPlacement::Bottom),
             self.terminal.read(cx).has_shell(),
         );
-        let (step_aside, spawn) = match press {
+        let spawn = match press {
             dock_rules::TerminalPress::Nothing => return,
             dock_rules::TerminalPress::Close => {
                 self.last_panel = FocusedPanel::Terminal;
                 self.set_terminal_visible(false, window, cx);
                 return;
             }
-            dock_rules::TerminalPress::Open { step_aside, spawn } => (step_aside, spawn),
+            dock_rules::TerminalPress::Open { spawn } => spawn,
         };
         self.last_panel = FocusedPanel::Terminal;
-        if step_aside {
-            self.step_aside(window, cx);
-        }
         self.set_terminal_visible(true, window, cx);
         self.terminal.update(cx, |panel, cx| {
             if spawn {
@@ -563,13 +555,6 @@ impl Shell {
         self.workbench
             .update(cx, |panel, cx| panel.show_issue(number, cx));
     }
-}
-
-/// Which of the window's docks are open, as last saved.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) struct DocksOpen {
-    terminal: bool,
-    workbench: bool,
 }
 
 /// Put the terminal into the bottom dock at `height`: a fresh dock every time,

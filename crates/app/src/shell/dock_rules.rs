@@ -81,37 +81,28 @@ pub(super) enum TerminalPress {
     /// A page shows: the terminal is one project's, and a page stands on none.
     Nothing,
     Close,
-    /// Put the dock on screen, first giving the area back to the conversation
-    /// the terminal sits under, and start a shell where it has none.
+    /// Put the dock on screen, and start a shell where it has none.
     Open {
-        step_aside: bool,
         spawn: bool,
     },
 }
 
-/// The terminal key, pressed with a page showing or not, the Workbench filling
-/// the area or not, the dock `open` or not and with a shell in it or not.
+/// The terminal key, pressed with a page showing or not, the dock `open` or
+/// not and with a shell in it or not.
 ///
 /// **An open dock with nothing in it is not a dock to close.** Closing the
 /// last tab's ✕ leaves exactly that, and the panel it leaves offers *New
-/// terminal* — so a press means "open one". And while the Workbench has the
-/// area, the press brings the conversation back and opens, never closes.
-pub(super) fn terminal_press(
-    page: bool,
-    workbench_fills: bool,
-    open: bool,
-    has_shell: bool,
-) -> TerminalPress {
+/// terminal* — so a press means "open one". The Workbench plays no part: the
+/// terminal spans under it and the conversation alike, so a Workbench that
+/// has the whole area hides no terminal.
+pub(super) fn terminal_press(page: bool, open: bool, has_shell: bool) -> TerminalPress {
     if page {
         return TerminalPress::Nothing;
     }
-    if open && !workbench_fills && has_shell {
+    if open && has_shell {
         return TerminalPress::Close;
     }
-    TerminalPress::Open {
-        step_aside: workbench_fills,
-        spawn: !has_shell,
-    }
+    TerminalPress::Open { spawn: !has_shell }
 }
 
 /// The panel a panel command means when no panel holds the caret: the one

@@ -108,6 +108,9 @@ pub(super) fn set_open(
             .chat
             .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
     }
+    if shell.workbench.read(cx).shown() == open {
+        return;
+    }
     shell
         .workbench
         .update(cx, |panel, cx| panel.set_shown(open, cx));
@@ -117,6 +120,9 @@ pub(super) fn set_open(
 /// Show the conversation's slot or hide it, the Workbench then taking the
 /// whole centre over the terminal.
 pub(super) fn set_chat_shown(shell: &mut Shell, shown: bool, cx: &mut Context<Shell>) {
+    if gpui_component::dock::BasePanel::visible(shell.chat.read(cx), cx) == shown {
+        return;
+    }
     shell.chat.update(cx, |pane, cx| pane.set_shown(shown, cx));
     shell.dock.update(cx, |_, cx| cx.notify());
 }

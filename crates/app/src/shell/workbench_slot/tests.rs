@@ -289,3 +289,67 @@ fn closing_the_workbench_gives_its_caret_back(cx: &mut TestAppContext) {
     draw(cx);
     assert_eq!(holds(cx), (false, true));
 }
+
+/// A resized window re-sizes the split without changing the layout the
+/// person wants, so it asks for no save; opening the Workbench does.
+#[gpui::test]
+fn a_resize_saves_nothing_and_an_opening_does(cx: &mut TestAppContext) {
+    let (_, shell, cx) =
+        crate::shell::rig::shell(cx, crate::shell::rig::folder("slot-resize"), Vec::new());
+    cx.simulate_resize(size(px(1600.), px(1000.)));
+    let draw = |cx: &mut VisualTestContext| {
+        cx.run_until_parked();
+        for _ in 0..3 {
+            cx.update(|window, _| window.refresh());
+            cx.update(|window, cx| window.draw(cx).clear(cx));
+        }
+    };
+    draw(cx);
+    let asked = |cx: &mut VisualTestContext| cx.update(|_, cx| shell.read(cx).saves_asked);
+    let before = asked(cx);
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.toggle_workbench(window, cx)));
+    draw(cx);
+    let opened = asked(cx);
+    assert!(opened > before, "opening the Workbench is saved");
+    cx.simulate_resize(size(px(1800.), px(1000.)));
+    draw(cx);
+    cx.simulate_resize(size(px(1500.), px(900.)));
+    draw(cx);
+    assert_eq!(asked(cx), opened, "a resize is not saved");
+}
+
+/// A window that opens with the Workbench showing draws it at its width once
+/// laid out, on frames it asked for itself rather than on a later redraw.
+#[gpui::test]
+fn an_open_workbench_lands_at_its_width_on_the_first_frames(cx: &mut TestAppContext) {
+    cx.executor().allow_parking();
+    cx.update(gpui_component::init);
+    cx.update(|cx| {
+        cx.set_global(crate::state::Shared::for_test());
+        cx.set_global(crate::task::Tasks::in_dir(crate::shell::rig::folder(
+            "slot-first",
+        )));
+    });
+    let mut made = None;
+    let window = cx.add_window(|window, cx| {
+        let mut ws = onehand_core::workspace::Workspace::seeded("/tmp");
+        ws.layout.workbench_open = true;
+        let shell = gpui::AppContext::new(cx, |cx| Shell::new(ws, window, cx));
+        made = Some(shell.clone());
+        gpui_component::Root::new(shell, window, cx)
+    });
+    let shell = made.expect("the shell");
+    let cx = VisualTestContext::from_window(window.into(), cx).into_mut();
+    // Frames the window schedules itself: no resize and no forced refresh.
+    cx.run_until_parked();
+    let drawn = cx.update(|_, cx| width(shell.read(cx).dock.read(cx), cx));
+    let centre = cx.update(|_, cx| shell.read(cx).dock.read(cx).bounds().size.width);
+    assert!(centre > px(0.), "the area was laid out");
+    let chat_slot = cx.update(|_, cx| super::split(shell.read(cx).dock.read(cx)));
+    assert_eq!(drawn, Some(px(480.)));
+    assert_eq!(
+        chat_slot.map(|(_, sizes)| sizes[0]),
+        Some(Some(centre - px(480.))),
+        "the conversation's slot is sized to what the centre leaves"
+    );
+}

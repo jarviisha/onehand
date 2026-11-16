@@ -104,8 +104,13 @@ impl Shell {
         let rem = f32::from(window.rem_size());
         let dock = self.dock.read(cx);
         let avail = rems(f32::from(dock.bounds().size.width) / rem);
-        // Nothing measured yet: the first frame has no bounds to share.
+        // Nothing measured yet: the first frame has no bounds to share. An
+        // open Workbench asks for the next one, so its width lands once the
+        // area is laid out rather than whenever something else redraws.
         if avail.0 <= 0. {
+            if self.workbench_open(cx) {
+                window.request_animation_frame();
+            }
             return;
         }
         let Some(size) = workbench_slot::width(dock, cx) else {
@@ -233,11 +238,6 @@ impl Shell {
         self.last_panel = FocusedPanel::Chat;
         self.chat
             .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
-    }
-
-    /// Whether the Workbench has the area beside the rail.
-    pub(super) fn workbench_fills_area(&self) -> bool {
-        self.presentation == Presentation::WorkbenchFocus
     }
 
     /// Give the area back to the conversation now, rather than on the next

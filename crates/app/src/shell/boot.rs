@@ -408,9 +408,10 @@ impl Shell {
             })
             .detach();
 
-        cx.subscribe(&dock, |shell: &mut Self, _, event: &DockEvent, cx| {
+        cx.subscribe(&dock, |_: &mut Self, _, event: &DockEvent, cx| {
+            // Redrawn, not saved: the frame reads the sizes back, and saves
+            // only what changed the layout the person wants.
             if matches!(event, DockEvent::LayoutChanged) {
-                shell.save_workspace_soon(cx);
                 cx.notify();
             }
         })
@@ -518,7 +519,7 @@ impl Shell {
             workspace_page,
             terminal,
             _pending_save: None,
-            docks_saved: None,
+            layout_saved: None,
             terminal_live: false,
             _pending_warm: None,
             _host_files: None,
@@ -527,6 +528,8 @@ impl Shell {
             issue_works: (Vec::new(), Vec::new()),
             #[cfg(test)]
             refused: Vec::new(),
+            #[cfg(test)]
+            saves_asked: 0,
             rail: crate::rail::RailState::new(window, cx),
             folds: HashMap::new(),
             last_panel: FocusedPanel::Chat,
