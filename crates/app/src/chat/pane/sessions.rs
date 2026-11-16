@@ -514,7 +514,11 @@ impl ChatPane {
                 // over with the restart.
                 s.forget_host_wait(cx);
                 s.forget_host_offline(cx);
-                s.drive(cx, |chat, now| (chat.take_snapshot(now), Vec::new()))
+                // Lent, not driven: the session is being emptied for its
+                // replacement, and nothing watching it is to hear it changed.
+                let (snapshot, owed) = s.lend(|chat, now| (chat.take_snapshot(now), Vec::new()));
+                debug_assert!(owed.is_empty());
+                snapshot
             })
         });
         // `connect_as` drops the old adapter before spawning the new one, so

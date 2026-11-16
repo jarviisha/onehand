@@ -170,7 +170,7 @@ the window, which the session entity does not have. So the session's carrier kee
 private and changes it only through its own commands: `ChatSession::drive` gives the drive a
 command and carries out everything it says, and the three commands whose answer is partly the
 pane's (`prompt`, `code_sent`, `seen`) carry the rest out too and hand the pane's share back as
-a type of its own, which the compiler will not let a caller drop. A caller that has to carry the
+a type of its own, which the compiler warns a caller about when it is thrown away. A caller that has to carry the
 effects after an update of its own borrows the drive with `lend` and settles what it owes after.
 Whichever part carries an effect, it is carried exactly once.
 

@@ -617,8 +617,8 @@ impl ChatSession {
 
     /// Give the drive `command` and hold what it says to do for
     /// [`Self::settle`], for a caller that must carry it out after an update
-    /// of its own is over. What is owed has to be settled: dropping it
-    /// unsettled is a warning, and the build denies warnings.
+    /// of its own is over. What is owed has to be settled: the build warns
+    /// when a caller throws it away unread.
     pub(crate) fn lend<R>(
         &mut self,
         command: impl FnOnce(&mut SessionDrive, Now) -> (R, Vec<Effect>),

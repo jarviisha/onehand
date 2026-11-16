@@ -161,8 +161,8 @@ pub(crate) fn start(
 /// whatever watches the session when it was told something.
 fn carry_session(session: &Entity<ChatSession>, owed: Owed, told: bool, cx: &mut App) {
     if owed.is_empty() && !told {
-        // Nothing to carry out and nothing told: settled where it stands.
-        return std::mem::drop(owed);
+        // Nothing to carry out and nothing told.
+        return;
     }
     session.update(cx, |session, cx| session.settle(owed, cx));
 }
