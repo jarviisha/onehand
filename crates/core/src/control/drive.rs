@@ -30,19 +30,14 @@
 //! request id are freed.
 
 use super::kept::Kept;
-use super::open::{self, Step};
-use super::state as said;
-use super::workers::{
-    sessions_in, Asked, Relation, Requests, Reservations, Resolved, Seen, Target, Worker,
-};
+use super::workers::{Asked, Relation, Requests, Reservations, Resolved, Target, Worker};
 use super::{Peer, Standing};
 use crate::chat::drive::Intake;
 use crate::chat::Chat;
 use crate::task::Grant;
 use crate::workflow::Pick;
-use crate::worktree::occupants::Occupants;
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
 /// How many sessions one session's tools may have open at once.
@@ -176,7 +171,7 @@ pub enum Effect {
         name: Option<String>,
     },
     /// Report [`Input::Woke`] for `uid` whenever its session changes, and
-    /// once now. A late report, for a worker no open holds any more, is
+    /// once now. A late report, for a worker no open nor turn holds any more, is
     /// **dropped**: the drive answers it by unwatching.
     Watch(u64),
     /// Stop watching `uid`.
@@ -191,7 +186,7 @@ pub enum Effect {
     /// to is being closed.
     Begin { uid: u64, prompt: Option<String> },
     /// Report [`Input::Elapsed`] with `token` after `wait`. A late
-    /// answer is **dropped** by its token: the open it timed is over.
+    /// answer is **dropped** by its token: the open or turn it timed is over.
     Arm { token: u64, wait: Duration },
     /// Close worker `uid`'s session, open `key`'s, and its project when the
     /// open added it and nothing else stands on it.
@@ -213,6 +208,18 @@ pub enum Effect {
     /// nothing. Late answers do not exist: a later `Keep` for the same lead
     /// is the whole of it again, and the last asked for is what stays.
     Keep { lead: u64, kept: Kept },
+    /// Send worker `uid` the lead's turn `turn`, `text`, from onehand's
+    /// tools, as a turn without a model goes, then tell the drive it was
+    /// sent (`ControlDrive::sent`), and answer the turn's call with what
+    /// that says. A session gone meanwhile answers that the worker is
+    /// closed.
+    Send { uid: u64, turn: u64, text: String },
+    /// Answer the turn worker `uid` was given with `outcome`. One for a call
+    /// already answered, or never asked, is **dropped**.
+    TurnAnswer {
+        uid: u64,
+        outcome: Result<String, String>,
+    },
 }
 
 /// Where an open in flight stands.
@@ -288,6 +295,8 @@ pub struct ControlDrive {
     /// The conversation each session was last said to be on.
     conversations: HashMap<u64, String>,
     pending: HashMap<Key, Pending>,
+    /// Each worker's turn waiting on its model's pick.
+    turning: HashMap<u64, turning::Turning>,
     minted: u64,
 }
 
@@ -406,6 +415,7 @@ impl ControlDrive {
     /// its opens are abandoned, and an open whose session it was fails.
     pub fn forget(&mut self, uid: u64) -> Vec<Effect> {
         let mut fx = self.abandon_of(uid);
+        fx.extend(self.turn_forgotten(uid));
         if let Some(key) = self.key_of(uid) {
             fx.extend(self.fail(&key, "the session was closed before it was ready".into()));
         }
@@ -493,67 +503,6 @@ impl ControlDrive {
         self.opened.get(&lead).cloned().unwrap_or_default()
     }
 
-    // A worker's open.
-
-    /// Begin `open`, the window's projects being `projects` and `mode` the
-    /// one its agent is put in.
-    pub fn open_worker(
-        &mut self,
-        open: Open,
-        projects: &[(String, PathBuf)],
-        mode: Option<String>,
-    ) -> Result<Begun, String> {
-        match (&open.prompt, open.turn) {
-            (Some(_), None) => return Err("`turn` is required with a prompt".to_string()),
-            (None, Some(_)) => return Err("`turn` goes with a prompt; there is none".to_string()),
-            _ => {}
-        }
-        let key = (open.lead, open.request.clone());
-        match self.requests.see(open.lead, &open.request, &open.asked())? {
-            Seen::New => {}
-            Seen::Opening(uid) => {
-                return Ok(Begun::Said(match uid.and_then(|uid| self.handle_of(uid)) {
-                    Some(handle) => {
-                        format!("{handle} is still opening; call again with the same request")
-                    }
-                    None => {
-                        "the session is still opening; call again with the same request".to_string()
-                    }
-                }))
-            }
-            Seen::Answered(answer) => return Ok(Begun::Said(answer)),
-        }
-        let target = match super::pick_project(projects, &open.project) {
-            Ok(dir) => Target::Project(dir.to_path_buf()),
-            Err(_) if Path::new(&open.project).is_absolute() => {
-                Target::Worktree(PathBuf::from(&open.project))
-            }
-            Err(why) => {
-                self.requests.failed(open.lead, &open.request);
-                return Err(why);
-            }
-        };
-        self.minted += 1;
-        let token = self.minted;
-        self.pending.insert(
-            key.clone(),
-            Pending {
-                open,
-                mode,
-                phase: Phase::Resolving,
-                token,
-            },
-        );
-        Ok(Begun::Resolve {
-            key,
-            target,
-            fx: vec![Effect::Arm {
-                token,
-                wait: OPEN_DEADLINE,
-            }],
-        })
-    }
-
     /// What the world reports back.
     pub fn handle(&mut self, input: Input<'_>) -> Vec<Effect> {
         match input {
@@ -577,332 +526,6 @@ impl ControlDrive {
             } => self.conversation(uid, session_id, prompts_sent),
         }
     }
-
-    /// Open `key`'s folder was read, as `resolved` says, with `world` as it
-    /// stands: refuse it, or reserve it and start.
-    fn resolved(
-        &mut self,
-        key: &Key,
-        resolved: Result<Resolved, String>,
-        world: &World,
-    ) -> Vec<Effect> {
-        let Some(pending) = self.pending.get(key) else {
-            return Vec::new();
-        };
-        let lead = pending.open.lead;
-        let resolved = match resolved {
-            Ok(resolved) => resolved,
-            Err(why) => return self.fail(key, why),
-        };
-        // The lead may have gone while the folder was read: nothing is
-        // started for nobody, nor counted under a cap it no longer has.
-        if !self.lead_allowed(lead, world.lead_here) {
-            return self.fail(key, "the lead went before its worker was ready".into());
-        }
-        let roots: Vec<(PathBuf, PathBuf, usize)> = resolved
-            .canonical
-            .iter()
-            .map(|(path, real)| {
-                let count = world
-                    .counts
-                    .iter()
-                    .filter(|(root, _)| root == path)
-                    .map(|(_, count)| count)
-                    .sum();
-                (path.clone(), real.clone(), count)
-            })
-            .collect();
-        if let Some(root) = sessions_in(&resolved.folder, &roots).first() {
-            let why = format!(
-                "{} already has a session open on it; a worker never shares its folder",
-                root.display()
-            );
-            return self.fail(key, why);
-        }
-        // A window closing ends its sessions without closing them one by one.
-        self.reserved.prune(|uid| world.live.contains(&uid));
-        if let Err(why) = self.reserved.take(&resolved.folder) {
-            return self.fail(key, why);
-        }
-        let refused = match &resolved.occupants {
-            Occupants::None => None,
-            Occupants::Found(found) => Some(format!(
-                "{} processes work in {}: {}; the person has to stop them before a worker opens there",
-                found.len(),
-                resolved.folder.display(),
-                found.join(", ")
-            )),
-            Occupants::Unknown(unread) => Some(format!(
-                "could not tell whether anything works in {}: {}",
-                resolved.folder.display(),
-                unread.join(", ")
-            )),
-        };
-        if let Some(why) = refused {
-            self.reserved.release(&resolved.folder);
-            return self.fail(key, why);
-        }
-        if let Err(why) = self.admit(lead, &world.opened) {
-            self.reserved.release(&resolved.folder);
-            return self.fail(key, why);
-        }
-        // Named for what it works on, else for its folder, never for its
-        // prompt, which is the lead's instructions.
-        let folder = resolved.root.file_name().map_or_else(
-            || resolved.root.display().to_string(),
-            |last| last.to_string_lossy().into_owned(),
-        );
-        let added = resolved.same.is_empty();
-        let pending = self.pending.get_mut(key).expect("looked up above");
-        let name = pending.open.name.clone();
-        pending.phase = Phase::Starting {
-            folder: resolved.folder,
-            added,
-            root: resolved.root.clone(),
-            dirs: resolved.dirs.clone(),
-        };
-        vec![Effect::Start {
-            key: key.clone(),
-            root: resolved.root,
-            dirs: resolved.dirs,
-            folder,
-            name,
-        }]
-    }
-
-    /// Open `key`'s session started as `uid`, or why not.
-    fn started(&mut self, key: &Key, started: Result<u64, String>) -> Vec<Effect> {
-        let Some(pending) = self.pending.get_mut(key) else {
-            // Failed while it started: what it started goes.
-            return match started {
-                Ok(uid) => vec![Effect::Drop {
-                    key: key.clone(),
-                    uid,
-                    root: PathBuf::new(),
-                    added: false,
-                }],
-                Err(_) => Vec::new(),
-            };
-        };
-        let Phase::Starting {
-            folder,
-            added,
-            root,
-            dirs,
-        } = std::mem::replace(&mut pending.phase, Phase::Resolving)
-        else {
-            return Vec::new();
-        };
-        let lead = pending.open.lead;
-        let uid = match started {
-            Ok(uid) => uid,
-            Err(why) => {
-                self.reserved.release(&folder);
-                return self.fail(key, why);
-            }
-        };
-        self.reserved.bind(&folder, uid);
-        self.opened_one(lead, uid);
-        self.requests.started(lead, &key.1, uid);
-        let handle = open::mint_handle();
-        self.handles.insert(handle.clone(), uid);
-        let pending = self.pending.get_mut(key).expect("looked up above");
-        pending.phase = Phase::Up {
-            uid,
-            root,
-            added,
-            dirs,
-            picked: Vec::new(),
-            handle,
-        };
-        vec![Effect::Changed, Effect::Watch(uid)]
-    }
-
-    /// Worker `uid`'s session changed, or is gone (`chat` is `None`);
-    /// `lead_here` says whether its lead is still a session of some window.
-    fn woke(&mut self, uid: u64, chat: Option<&Chat>, lead_here: bool) -> Vec<Effect> {
-        let Some(key) = self.key_of(uid) else {
-            return vec![Effect::Unwatch(uid)];
-        };
-        let pending = &self.pending[&key];
-        if !self.lead_allowed(pending.open.lead, lead_here) {
-            return self.fail(&key, "the lead went before its worker was ready".into());
-        }
-        let Some(chat) = chat else {
-            return self.fail(&key, "the session was closed before it was ready".into());
-        };
-        let picked = match &pending.phase {
-            Phase::Up { picked, .. } => picked,
-            Phase::Resolving | Phase::Starting { .. } => return Vec::new(),
-        };
-        let next = open::step(
-            chat,
-            pending.mode.as_deref(),
-            pending.open.model.as_deref(),
-            picked,
-        );
-        match next {
-            Step::Wait => Vec::new(),
-            Step::Refused(why) => self.fail(&key, why),
-            Step::Ready => vec![Effect::Begin {
-                uid,
-                prompt: pending.open.prompt.clone(),
-            }],
-            Step::Pick(pick) => {
-                match self.pending.get_mut(&key).map(|pending| &mut pending.phase) {
-                    Some(Phase::Up { picked, .. }) => picked.push(pick.group().to_string()),
-                    Some(Phase::Resolving | Phase::Starting { .. }) | None => {}
-                }
-                vec![Effect::Pick { uid, pick }]
-            }
-        }
-    }
-
-    /// Worker `uid`'s first prompt went as `facts` say: write the relation and
-    /// answer, or fail.
-    fn begun(&mut self, uid: u64, facts: Facts) -> Vec<Effect> {
-        let Some(key) = self.key_of(uid) else {
-            return Vec::new();
-        };
-        match facts.intake {
-            None | Some(Intake::Sent) => {}
-            Some(Intake::Refused(why)) => return self.fail(&key, why.hint()),
-            Some(Intake::Queued | Intake::Held | Intake::Waiting | Intake::CodeFirst) => {
-                return self.fail(&key, "the prompt was not accepted".into())
-            }
-        }
-        let Some(Pending {
-            open,
-            phase: Phase::Up {
-                root, dirs, handle, ..
-            },
-            token,
-            ..
-        }) = self.pending.remove(&key)
-        else {
-            return Vec::new();
-        };
-        let mut lines = vec![
-            format!("session: {handle}"),
-            format!("name: {}", facts.name),
-            format!("project: {}", root.display()),
-            format!("mode: {}", facts.mode),
-            format!("model: {}", facts.model),
-            format!("dirs: {}", said::dirs_said(&dirs)),
-        ];
-        if let Some(turn) = open.turn {
-            lines.push(format!("turn: {turn} accepted"));
-        }
-        let answer = lines.join("\n");
-        // Written last, once the prompt went, so a lead forgotten in between
-        // can never have one made again after it.
-        self.workers.insert(
-            uid,
-            Relation {
-                lead: open.lead,
-                turn: open.turn,
-                text: open.prompt,
-                sent: facts.sent,
-                dirs,
-                handle,
-                folder: root,
-                agent: open.agent.clone(),
-                name: open.name.clone(),
-                conversation: self.conversations.get(&uid).cloned(),
-                person: false,
-                seq: token,
-            },
-        );
-        self.requests
-            .answered(open.lead, &open.request, answer.clone());
-        vec![
-            Effect::Unwatch(uid),
-            Effect::Changed,
-            self.keep(open.lead),
-            Effect::Answer {
-                key,
-                outcome: Ok(answer),
-            },
-        ]
-    }
-
-    /// The wait armed with `token` ran out.
-    fn elapsed(&mut self, token: u64) -> Vec<Effect> {
-        let key = self
-            .pending
-            .iter()
-            .find(|(_, pending)| pending.token == token)
-            .map(|(key, _)| key.clone());
-        match key {
-            Some(key) => self.fail(
-                &key,
-                format!(
-                    "the agent was not ready within {} seconds",
-                    OPEN_DEADLINE.as_secs()
-                ),
-            ),
-            None => Vec::new(),
-        }
-    }
-
-    /// The open in flight whose session is `uid`.
-    fn key_of(&self, uid: u64) -> Option<Key> {
-        self.pending
-            .iter()
-            .find_map(|(key, pending)| match &pending.phase {
-                Phase::Up { uid: up, .. } if *up == uid => Some(key.clone()),
-                Phase::Up { .. } | Phase::Resolving | Phase::Starting { .. } => None,
-            })
-    }
-
-    /// Fail every open `lead` has in flight: it went.
-    fn abandon_of(&mut self, lead: u64) -> Vec<Effect> {
-        let keys: Vec<Key> = self
-            .pending
-            .keys()
-            .filter(|(of, _)| *of == lead)
-            .cloned()
-            .collect();
-        keys.iter()
-            .flat_map(|key| self.fail(key, "the lead went before its worker was ready".into()))
-            .collect()
-    }
-
-    /// Fail open `key` with `why`: close what it started, free its request,
-    /// and answer.
-    fn fail(&mut self, key: &Key, why: String) -> Vec<Effect> {
-        let Some(pending) = self.pending.remove(key) else {
-            return Vec::new();
-        };
-        self.requests.failed(key.0, &key.1);
-        let mut fx = Vec::new();
-        match pending.phase {
-            Phase::Up {
-                uid,
-                root,
-                added,
-                handle,
-                ..
-            } => {
-                self.handles.remove(&handle);
-                fx.push(Effect::Unwatch(uid));
-                fx.push(Effect::Drop {
-                    key: key.clone(),
-                    uid,
-                    root,
-                    added,
-                });
-                fx.push(Effect::Changed);
-            }
-            Phase::Starting { folder, .. } => self.reserved.release(&folder),
-            Phase::Resolving => {}
-        }
-        fx.push(Effect::Answer {
-            key: key.clone(),
-            outcome: Err(why),
-        });
-        fx
-    }
 }
 
 /// This run of the app, as handles of earlier builds named it: a handle in
@@ -914,7 +537,9 @@ pub fn this_run() -> String {
     RUN.clone()
 }
 
+mod opening;
 mod relations;
+mod turning;
 
 #[cfg(test)]
 mod tests;

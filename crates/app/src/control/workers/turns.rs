@@ -6,14 +6,15 @@
 //! **A worker of the caller's whose session is gone reads `link: closed`**,
 //! the one answer that proves it stopped: closing a session ends its agent.
 
-use super::super::{carry, drive};
+use super::super::{Answer, carry, drive};
 use super::session_of;
 use crate::chat::session::ChatSession;
-use gpui::{App, Entity};
+use gpui::{App, Entity, Global};
 use onehand_core::chat::drive::{Code, Origin};
 use onehand_core::control::drive::Found;
 use onehand_core::control::state::state;
 use onehand_core::control::turns;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// The caller's worker `session` names: its uid and session while open.
@@ -43,31 +44,79 @@ pub(in crate::control) fn answer(
     Ok(state(worker.read(cx).chat(), &held))
 }
 
-/// Give the worker `session` names turn `turn`, `text`.
+/// Give the worker `session` names turn `turn`, `text`, on `model` when one
+/// is named: then answered once the model is picked and the turn went, or
+/// refused, through `answer`.
 pub(in crate::control) fn send(
     caller: Option<(u64, PathBuf)>,
     session: &str,
     text: &str,
     turn: u64,
+    model: Option<String>,
+    answer: &mut Option<Answer>,
     cx: &mut App,
 ) -> Result<String, String> {
     let (uid, worker) = find(caller, session, cx)?.ok_or(format!("{session} is closed"))?;
     let last = drive().last(uid).ok_or(format!("{session} is closed"))?;
     match turns::send(worker.read(cx).chat(), &last, turn, text)? {
         turns::Send::AlreadySent(turn) => Ok(format!("turn {turn} already sent")),
-        turns::Send::Go => {
-            // A tool's prompt sends no code first: that is a person's.
-            let intake = worker
-                .update(cx, |worker, cx| {
-                    worker.prompt(text, &[], Origin::Tools, Code::Here, cx)
-                })
-                .intake;
-            let sent = worker.read(cx).chat().prompts_sent;
-            let (said, fx) = drive().sent(uid, turn, text, &intake, sent);
-            carry(fx, cx);
-            said
-        }
+        turns::Send::Go => match model {
+            None => send_now_to(uid, &worker, turn, text, cx),
+            Some(model) => {
+                if let Some(answer) = answer.take() {
+                    cx.default_global::<Turning>().answers.insert(uid, answer);
+                }
+                let fx = drive().turn_with_model(uid, turn, text.to_string(), model);
+                carry(fx, cx);
+                Ok(String::new())
+            }
+        },
     }
+}
+
+/// Where each worker's turn waiting on its model is answered.
+#[derive(Default)]
+struct Turning {
+    answers: HashMap<u64, Answer>,
+}
+
+impl Global for Turning {}
+
+/// Send worker `uid` turn `turn`, `text`, its model now in force, and
+/// answer the call that asked.
+pub(in crate::control) fn send_now(uid: u64, turn: u64, text: &str, cx: &mut App) {
+    let outcome = match session_of(uid, cx) {
+        Some(worker) => send_now_to(uid, &worker, turn, text, cx),
+        None => Err("the session was closed before the turn went".to_string()),
+    };
+    answered(uid, outcome, cx);
+}
+
+/// Answer the call that gave worker `uid` its turn with `outcome`.
+pub(in crate::control) fn answered(uid: u64, outcome: Result<String, String>, cx: &mut App) {
+    if let Some(answer) = cx.default_global::<Turning>().answers.remove(&uid) {
+        let _ = answer.send(outcome);
+    }
+}
+
+/// Send `worker` the lead's turn `turn`, `text`, and what the drive says of it.
+fn send_now_to(
+    uid: u64,
+    worker: &Entity<ChatSession>,
+    turn: u64,
+    text: &str,
+    cx: &mut App,
+) -> Result<String, String> {
+    // A tool's prompt sends no code first: that is a person's.
+    let intake = worker
+        .update(cx, |worker, cx| {
+            worker.prompt(text, &[], Origin::Tools, Code::Here, cx)
+        })
+        .intake;
+    let sent = worker.read(cx).chat().prompts_sent;
+    let (said, fx) = drive().sent(uid, turn, text, &intake, sent);
+    carry(fx, cx);
+    said
 }
 
 /// Cancel the turn the worker `session` names is running.

@@ -70,6 +70,8 @@ fn shown(fx: &[Effect]) -> Vec<String> {
             Effect::Drop { uid, added, .. } => format!("Drop {uid} {added}"),
             Effect::Answer { .. } => "Answer".into(),
             Effect::Changed => "Changed".into(),
+            Effect::Send { uid, turn, text } => format!("Send {uid} {turn} {text}"),
+            Effect::TurnAnswer { uid, outcome } => format!("TurnAnswer {uid} {outcome:?}"),
             Effect::Keep { lead, kept } => {
                 format!("Keep {lead} {} {}", kept.workers.len(), kept.closed.len())
             }
@@ -121,7 +123,9 @@ fn answer(fx: &[Effect]) -> Option<&Result<String, String>> {
         | Effect::Arm { .. }
         | Effect::Drop { .. }
         | Effect::Changed
-        | Effect::Keep { .. } => None,
+        | Effect::Keep { .. }
+        | Effect::Send { .. }
+        | Effect::TurnAnswer { .. } => None,
     })
 }
 
@@ -261,7 +265,9 @@ fn an_open_past_its_deadline_fails_once() {
         | Effect::Drop { .. }
         | Effect::Answer { .. }
         | Effect::Changed
-        | Effect::Keep { .. }] => panic!("the deadline is armed at the call: {fx:?}"),
+        | Effect::Keep { .. }
+        | Effect::Send { .. }
+        | Effect::TurnAnswer { .. }] => panic!("the deadline is armed at the call: {fx:?}"),
     };
     drive.handle(Input::Resolved {
         key: key.clone(),
@@ -468,7 +474,9 @@ fn kept(fx: &[Effect], lead: u64) -> Option<&Kept> {
         | Effect::Arm { .. }
         | Effect::Drop { .. }
         | Effect::Answer { .. }
-        | Effect::Changed => None,
+        | Effect::Changed
+        | Effect::Send { .. }
+        | Effect::TurnAnswer { .. } => None,
     })
 }
 
@@ -589,4 +597,109 @@ fn an_old_handle_of_a_closed_lead_reads_closed() {
         Ok(Found::Closed)
     ));
     assert!(later.find(4, &handle, |_| false).is_err(), "not another's");
+}
+
+/// A connected chat whose model option offers `weak` and `strong`, with
+/// `current` in force.
+fn on_model(current: &str) -> Chat {
+    use crate::acp::{AcpEvent, ConfigChoice, ConfigOption};
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    // The agent's end stays open for the picks sent to it.
+    std::mem::forget(rx);
+    let mut chat = Chat::default();
+    chat.apply(AcpEvent::Connected {
+        tx,
+        resumed: false,
+        forkable: false,
+    });
+    let choice = |value: &str| ConfigChoice {
+        value: value.into(),
+        name: value.into(),
+        description: None,
+    };
+    chat.apply(AcpEvent::ConfigOptions(vec![ConfigOption {
+        id: "model".into(),
+        name: "Model".into(),
+        category: Some("model".into()),
+        current: Some(current.into()),
+        choices: vec![choice("weak"), choice("strong")],
+    }]));
+    chat
+}
+
+fn woke_on(drive: &mut ControlDrive, chat: &Chat) -> Vec<String> {
+    shown(&drive.handle(Input::Woke {
+        uid: 7,
+        chat: Some(chat),
+        lead_here: true,
+    }))
+}
+
+#[test]
+fn a_turn_with_a_model_picks_before_sending() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let fx = drive.turn_with_model(7, 2, "next".into(), "strong".into());
+    let shown = shown(&fx);
+    assert_eq!(shown[0], "Watch 7");
+    assert!(shown[1].starts_with("Arm "), "{shown:?}");
+    assert_eq!(woke_on(&mut drive, &on_model("weak")), ["Pick 7"]);
+}
+
+#[test]
+fn a_turn_with_a_model_sends_once_in_force() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let _ = drive.turn_with_model(7, 2, "next".into(), "strong".into());
+    assert_eq!(
+        woke_on(&mut drive, &on_model("strong")),
+        ["Unwatch 7", "Send 7 2 next"]
+    );
+    // Over: a later wake is no turn's.
+    assert_eq!(woke_on(&mut drive, &on_model("strong")), ["Unwatch 7"]);
+}
+
+#[test]
+fn a_model_not_offered_refuses_the_turn() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let _ = drive.turn_with_model(7, 2, "next".into(), "huge".into());
+    let fx = woke_on(&mut drive, &on_model("weak"));
+    assert_eq!(fx.len(), 2, "{fx:?}");
+    assert_eq!(fx[0], "Unwatch 7");
+    assert!(
+        fx[1].starts_with("TurnAnswer 7 Err") && fx[1].contains("strong"),
+        "{fx:?}"
+    );
+}
+
+#[test]
+fn a_model_pick_that_never_answers_runs_out() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let fx = drive.turn_with_model(7, 2, "next".into(), "strong".into());
+    let token = match fx[1] {
+        Effect::Arm { token, .. } => token,
+        Effect::ToolsChanged(_)
+        | Effect::Start { .. }
+        | Effect::Watch(_)
+        | Effect::Unwatch(_)
+        | Effect::Pick { .. }
+        | Effect::Begin { .. }
+        | Effect::Drop { .. }
+        | Effect::Answer { .. }
+        | Effect::Changed
+        | Effect::Keep { .. }
+        | Effect::Send { .. }
+        | Effect::TurnAnswer { .. } => panic!("{fx:?}"),
+    };
+    woke_on(&mut drive, &on_model("weak"));
+    assert_eq!(
+        shown(&drive.handle(Input::Elapsed { token })),
+        [
+            "Unwatch 7",
+            r#"TurnAnswer 7 Err("the agent did not answer the model pick in time")"#
+        ]
+    );
+    assert!(drive.handle(Input::Elapsed { token }).is_empty());
 }

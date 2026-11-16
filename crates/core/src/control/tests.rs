@@ -817,6 +817,7 @@ fn send_prompt_and_cancel_turn_parse() {
             session: "3f2a9c01-7".into(),
             text: "next".into(),
             turn: 2,
+            model: None,
         }
     );
     assert_eq!(
@@ -825,6 +826,43 @@ fn send_prompt_and_cancel_turn_parse() {
             session: "3f2a9c01-7".into()
         }
     );
+}
+
+#[test]
+fn send_prompt_takes_an_optional_model() {
+    let handled = handle(
+        &mut session_ready(),
+        &line(
+            "tools/call",
+            json!({"name": "send_prompt", "arguments":
+                {"session": "w-1", "text": "next", "turn": 2, "model": "strong"}}),
+        ),
+        on,
+    );
+    let call = match handled {
+        Handled::Perform { call, .. } => call,
+        Handled::Reply(reply) => panic!("{reply}"),
+        Handled::Quiet => panic!("quiet"),
+    };
+    assert_eq!(
+        *call,
+        Call::SendPrompt {
+            session: "w-1".into(),
+            text: "next".into(),
+            turn: 2,
+            model: Some("strong".into()),
+        }
+    );
+    let why = refusal(handle(
+        &mut session_ready(),
+        &line(
+            "tools/call",
+            json!({"name": "send_prompt", "arguments":
+                {"session": "w-1", "text": "next", "turn": 2, "model": 3}}),
+        ),
+        on,
+    ));
+    assert!(why.contains("model"), "{why}");
 }
 
 #[test]

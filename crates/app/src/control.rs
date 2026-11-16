@@ -491,7 +491,8 @@ fn perform_now(
             session,
             text,
             turn,
-        } => workers::turns::send(caller, &session, &text, turn, cx),
+            model,
+        } => workers::turns::send(caller, &session, &text, turn, model, answer, cx),
         Call::CancelTurn { session } => workers::turns::cancel(caller, &session, cx),
         Call::CloseWorker { session } => workers::turns::close(caller, &session, cx),
         Call::OpenSession {
