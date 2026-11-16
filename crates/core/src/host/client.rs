@@ -467,6 +467,9 @@ impl HostConn {
     }
 }
 
+/// When each call's caller stops waiting, by the call's id, with the wait.
+type Deadlines = std::collections::BTreeMap<(tokio::time::Instant, u64), Duration>;
+
 /// The task that owns the stream. It ends when the stream does, or when
 /// nothing is left that could ask or read anything of it.
 async fn pump<R, W>(
@@ -483,6 +486,18 @@ async fn pump<R, W>(
 {
     // Held so the attach process lives exactly as long as this task.
     let _child = child;
+    // The stream is written by a task of its own, so a host that stops
+    // reading holds up only the writes: this task still reads what comes,
+    // and still ends each call whose caller stopped waiting. It ends once
+    // this task does and what was queued is written, or once a write fails.
+    let (outgoing, mut to_write) = mpsc::unbounded_channel::<String>();
+    tokio::spawn(async move {
+        while let Some(text) = to_write.recv().await {
+            if write.write_all(text.as_bytes()).await.is_err() {
+                return;
+            }
+        }
+    });
     let mut lines = BufReader::new(read).lines();
     let mut pending: HashMap<u64, Pending> = HashMap::new();
     let mut watchers: HashMap<HostSession, Watcher> = HashMap::new();
@@ -493,15 +508,13 @@ async fn pump<R, W>(
     let mut terms = terms::Terms::default();
     // When each call's caller stops waiting, soonest first. An entry whose
     // call was answered is passed over when it comes due.
-    let mut deadlines: std::collections::BTreeMap<(tokio::time::Instant, u64), Duration> =
-        std::collections::BTreeMap::new();
-    let soonest =
-        |deadlines: &std::collections::BTreeMap<(tokio::time::Instant, u64), Duration>| {
-            deadlines
-                .keys()
-                .next()
-                .map_or_else(tokio::time::Instant::now, |(at, _)| *at)
-        };
+    let mut deadlines = Deadlines::new();
+    let soonest = |deadlines: &Deadlines| {
+        deadlines
+            .keys()
+            .next()
+            .map_or_else(tokio::time::Instant::now, |(at, _)| *at)
+    };
     // Ids start at 1: the host answers a line it cannot read with id 0.
     let mut next = 1_u64;
     let why = loop {
@@ -646,7 +659,7 @@ async fn pump<R, W>(
                 text.push('\n');
                 // A write that fails means the stream is gone, which the read
                 // side is about to say.
-                let _ = write.write_all(text.as_bytes()).await;
+                let _ = outgoing.send(text);
             }
         }
     };

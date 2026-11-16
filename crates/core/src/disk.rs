@@ -31,7 +31,8 @@ pub async fn read_host_dir(conn: &HostConn, dir: &Path) -> Result<(Vec<TreeEntry
 impl Disk {
     /// `dir`'s listing, sorted, and how many entries its bound left out.
     ///
-    /// Blocking: never call it on a UI loop.
+    /// Blocking: never call it on a UI loop, nor on the runtime a host's
+    /// connection runs on, whose task it waits for.
     pub fn read_dir(&self, dir: &Path) -> Result<(Vec<TreeEntry>, usize), String> {
         match self {
             Disk::Local => Ok(tree::read_dir_sorted(dir)),
@@ -41,7 +42,8 @@ impl Disk {
 
     /// A file for the editor, and its modification time.
     ///
-    /// Blocking: never call it on a UI loop.
+    /// Blocking: never call it on a UI loop, nor on the runtime a host's
+    /// connection runs on, whose task it waits for.
     pub fn read_file(&self, path: &Path) -> Result<(String, Option<SystemTime>), String> {
         match self {
             Disk::Local => editor::read_blocking(path),
@@ -53,7 +55,8 @@ impl Disk {
 
     /// Write `text` unless the file changed since `expected`.
     ///
-    /// Blocking: never call it on a UI loop.
+    /// Blocking: never call it on a UI loop, nor on the runtime a host's
+    /// connection runs on, whose task it waits for.
     pub fn save_file(
         &self,
         path: &Path,
@@ -70,7 +73,8 @@ impl Disk {
     /// The repository status of `root`; None when it is not in one, or a
     /// host could not say.
     ///
-    /// Blocking: never call it on a UI loop.
+    /// Blocking: never call it on a UI loop, nor on the runtime a host's
+    /// connection runs on, whose task it waits for.
     pub fn git_status(&self, root: &Path) -> Option<GitStatus> {
         match self {
             Disk::Local => gitstat::read_blocking(root),

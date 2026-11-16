@@ -756,6 +756,25 @@ async fn a_call_is_answered_where_no_runtime_runs() {
     assert!(listed.unwrap().is_empty());
 }
 
+/// A host that stops reading what it is sent still has every call end at its
+/// deadline: what is written waits, and the waits are kept apart from it.
+#[tokio::test(start_paused = true)]
+async fn a_host_that_stops_reading_still_lets_calls_end_at_their_deadline() {
+    let (conn, _host) = pair();
+    // More than the pipe holds, which the host never reads.
+    let big = "x".repeat(1 << 17);
+    let saving = tokio::spawn({
+        let conn = conn.clone();
+        async move { conn.save_file(Path::new("/a"), big, None).await }
+    });
+    let listing = tokio::spawn(async move { conn.list().await });
+    assert!(matches!(
+        listing.await.unwrap(),
+        Err(HostError::Protocol(why)) if why == "the host did not answer within 30 s"
+    ));
+    assert!(saving.await.unwrap().is_err());
+}
+
 #[tokio::test]
 async fn a_hello_left_alone_is_held_and_says_whether_it_takes() {
     let (conn, mut host) = pair();
