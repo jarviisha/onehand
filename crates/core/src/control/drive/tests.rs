@@ -1108,3 +1108,49 @@ fn a_late_start_of_a_coming_back_that_failed_drops_its_project() {
     });
     assert_eq!(root, Some(PathBuf::from("/repo")));
 }
+
+#[test]
+fn a_lead_keeps_only_its_newest_ended_workers() {
+    let mut drive = ControlDrive::default();
+    let closed: Vec<KeptClosed> = (0..70)
+        .map(|n| KeptClosed {
+            handle: format!("w-{n:032x}"),
+            why: None,
+        })
+        .collect();
+    let seventy = Kept {
+        workers: Vec::new(),
+        closed,
+    };
+    let _ = drive.back(1, seventy, &projects());
+    let fx = said_conversation(&mut drive, 1, "c1", 0);
+    let written = kept(&fx, 1).expect("kept");
+    assert_eq!(written.closed.len(), 64);
+    assert_eq!(
+        written.closed[0].handle,
+        format!("w-{:032x}", 6),
+        "the oldest went"
+    );
+    assert_eq!(written.closed[63].handle, format!("w-{:032x}", 69));
+    let oldest = format!("w-{:032x}", 0);
+    assert!(drive.find(1, &oldest, |_| false).is_err());
+}
+
+#[test]
+fn ended_workers_stay_with_the_conversation_they_ended_in() {
+    let mut drive = ControlDrive::default();
+    said_conversation(&mut drive, 1, "c1", 0);
+    let _ = drive.back(1, kept_one(false), &projects());
+    let closed = "w-00000000000000000000000000000002";
+    // Resume in this session: the lead's session goes on another
+    // conversation, leading no worker.
+    let fx = drive.handle(Input::Resolved {
+        key: (1, BACK.to_string()),
+        resolved: Err("gone".into()),
+        world: world(),
+    });
+    assert!(kept(&fx, 1).is_some());
+    let fx = said_conversation(&mut drive, 1, "c2", 0);
+    assert!(kept(&fx, 1).is_none(), "nothing moves: {fx:?}");
+    assert!(drive.find(1, closed, |_| false).is_err());
+}

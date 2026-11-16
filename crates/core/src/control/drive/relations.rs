@@ -21,7 +21,9 @@ use super::super::state::Held;
 use super::super::turns::Last;
 use super::super::workers::Target;
 use super::super::workers::{offered, whose, Whose};
-use super::{this_run, Begun, Closed, ControlDrive, Effect, Found, Open, Pending, Phase, Worker};
+use super::{
+    this_run, Begun, Closed, ControlDrive, Effect, Found, Open, Pending, Phase, Worker, KEPT_CLOSED,
+};
 use crate::chat::drive::Intake;
 use std::path::PathBuf;
 
@@ -207,8 +209,8 @@ impl ControlDrive {
         session_id: String,
         prompts_sent: usize,
     ) -> Vec<Effect> {
-        let moved = self.conversations.get(&uid) != Some(&session_id);
-        self.conversations.insert(uid, session_id.clone());
+        let before = self.conversations.insert(uid, session_id.clone());
+        let moved = before.as_ref() != Some(&session_id);
         let mut fx = Vec::new();
         if let Some(relation) = self.workers.get_mut(&uid) {
             let mut changed = false;
@@ -226,9 +228,35 @@ impl ControlDrive {
             }
         }
         if moved && self.keeps(uid) {
-            fx.push(self.keep(uid));
+            match before.is_some() && !self.leads_workers(uid) {
+                // Another conversation in this session: what ended stays in
+                // the file of the one it ended in.
+                true => self.closed_workers.retain(|_, closed| closed.lead != uid),
+                false => fx.push(self.keep(uid)),
+            }
         }
         fx
+    }
+
+    /// Worker `handle` of `lead` ended, `why` saying why when it did not come
+    /// back; only the newest of a lead's ends are kept.
+    pub(super) fn close_record(&mut self, handle: String, lead: u64, why: Option<String>) {
+        self.minted += 1;
+        let seq = self.minted;
+        self.closed_workers
+            .insert(handle, Closed { lead, why, seq });
+        let mut of_lead: Vec<u64> = self
+            .closed_workers
+            .values()
+            .filter(|closed| closed.lead == lead)
+            .map(|closed| closed.seq)
+            .collect();
+        if of_lead.len() > KEPT_CLOSED {
+            of_lead.sort_unstable();
+            let oldest_kept = of_lead[of_lead.len() - KEPT_CLOSED];
+            self.closed_workers
+                .retain(|_, closed| closed.lead != lead || closed.seq >= oldest_kept);
+        }
     }
 
     /// Whether `lead` keeps anything: a worker, or a worker's end.
@@ -273,16 +301,20 @@ impl ControlDrive {
                 .filter_map(|(_, pending)| Some((pending.token, pending.open.back.clone()?))),
         );
         held.sort_by_key(|(seq, _)| *seq);
-        let mut closed: Vec<KeptClosed> = self
+        let mut closed: Vec<(u64, KeptClosed)> = self
             .closed_workers
             .iter()
             .filter(|(_, closed)| closed.lead == lead)
-            .map(|(handle, closed)| KeptClosed {
-                handle: handle.clone(),
-                why: closed.why.clone(),
+            .map(|(handle, closed)| {
+                let kept = KeptClosed {
+                    handle: handle.clone(),
+                    why: closed.why.clone(),
+                };
+                (closed.seq, kept)
             })
             .collect();
-        closed.sort_by(|a, b| a.handle.cmp(&b.handle));
+        closed.sort_by_key(|(seq, _)| *seq);
+        let closed = closed.into_iter().map(|(_, closed)| closed).collect();
         Effect::Keep {
             lead,
             kept: Kept {
@@ -298,10 +330,9 @@ impl ControlDrive {
     /// comes back, in the order kept, through the checks an open runs. One
     /// that cannot ends, its handle reading closed with why.
     pub fn back(&mut self, lead: u64, kept: Kept, projects: &[(String, PathBuf)]) -> Vec<Begun> {
+        // Oldest first, as kept, so the newest stay.
         for closed in kept.closed {
-            let why = closed.why;
-            self.closed_workers
-                .insert(closed.handle, Closed { lead, why });
+            self.close_record(closed.handle, lead, closed.why);
         }
         kept.workers
             .into_iter()

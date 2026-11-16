@@ -6,9 +6,7 @@ use super::super::kept::KeptWorker;
 use super::super::open::{self, Step};
 use super::super::state as said;
 use super::super::workers::{sessions_in, Relation, Resolved, Seen, Target};
-use super::{
-    Begun, Closed, ControlDrive, Effect, Facts, Key, Open, Pending, Phase, World, OPEN_DEADLINE,
-};
+use super::{Begun, ControlDrive, Effect, Facts, Key, Open, Pending, Phase, World, OPEN_DEADLINE};
 use crate::chat::drive::Intake;
 use crate::chat::Chat;
 use crate::worktree::occupants::Occupants;
@@ -411,9 +409,7 @@ impl ControlDrive {
                 self.reserved.release(folder);
             }
             let lead = pending.open.lead;
-            let why = Some(why);
-            self.closed_workers
-                .insert(back.handle.clone(), Closed { lead, why });
+            self.close_record(back.handle.clone(), lead, Some(why));
             fx.push(self.keep(lead));
             return fx;
         }

@@ -271,7 +271,13 @@ struct Closed {
     lead: u64,
     /// Why it did not come back, when that is what ended it.
     why: Option<String>,
+    /// When it ended, among the others: the newest are the ones kept.
+    seq: u64,
 }
+
+/// How many ended workers each lead keeps, the newest: a lead working for
+/// months must not write an ever longer file at every change.
+const KEPT_CLOSED: usize = 64;
 
 /// onehand's tools' drive. See the module header.
 #[derive(Default)]
@@ -439,11 +445,7 @@ impl ControlDrive {
         self.requests.forget_lead(uid);
         self.conversations.remove(&uid);
         if let Some(relation) = self.workers.remove(&uid) {
-            let closed = Closed {
-                lead: relation.lead,
-                why: None,
-            };
-            self.closed_workers.insert(relation.handle, closed);
+            self.close_record(relation.handle, relation.lead, None);
             fx.push(self.keep(relation.lead));
         }
         // Its own handle goes, and its workers' with their relations: the
@@ -461,9 +463,7 @@ impl ControlDrive {
         });
         self.handles.retain(|_, worker| !gone.contains(worker));
         for handle in ended {
-            let why = Some("its lead was closed".to_string());
-            self.closed_workers
-                .insert(handle, Closed { lead: uid, why });
+            self.close_record(handle, uid, Some("its lead was closed".to_string()));
         }
         // What it keeps is written once, whole, last: one written on the
         // way, by an open failing, still lists workers this lets go.

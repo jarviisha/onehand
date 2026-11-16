@@ -281,7 +281,7 @@ offered `open_worker`, and `open_session` takes none of its further arguments.
   conversation directory, so it moves and is deleted with that conversation: for each worker the
   lead still holds, in the order they opened and once its conversation is known, its handle,
   conversation, agent, folder, `dirs`, name, the lead's last turn number and text, and whether the
-  person holds it; and the handles of the workers that ended. It is written whenever any of it
+  person holds it; and the handles of the 64 workers that ended last. It is written whenever any of it
   changes, through the one atomic write, off the UI thread. A file that cannot be read keeps
   nothing, and the next write replaces it. The request ids and the worker's transient project
   last as long as the run of the app. A clean quit ends every worker with its agent's process
@@ -291,7 +291,8 @@ offered `open_worker`, and `open_session` takes none of its further arguments.
   person closing the lead lets its workers go for good: they go back under their own project as
   the person's, and their entries become ended ones. A worker closed by the person or by the lead
   ends its entry. An ended worker's handle keeps answering `link: closed` to its lead in later
-  runs.
+  runs. A session that leads no worker and goes on another conversation (*Resume in this
+  session…*) leaves the ended ones with the conversation they ended in.
 - **Coming back.** When a session opens a lead's conversation, from the history, the project
   page or *Resume in this session…*, each worker kept there comes back as a worker of that
   session, in the order kept, through the checks an open runs: its folder resolved again off the
