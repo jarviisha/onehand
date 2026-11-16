@@ -269,6 +269,9 @@ pub struct ChatPane {
     /// The folders each session added off screen and not connected yet may
     /// write besides its own, taken when it connects.
     held_dirs: HashMap<u64, Vec<std::path::PathBuf>>,
+    /// The conversation each session added off screen resumes, by its id,
+    /// open from the moment it is added, whether or not it connected yet.
+    resuming: HashMap<u64, String>,
     /// Whether the window's rail is hidden, so this pane can offer the way
     /// back.
     ///
@@ -405,6 +408,7 @@ impl ChatPane {
                 pending_fork: None,
                 reading: HashMap::new(),
                 held_dirs: HashMap::new(),
+                resuming: HashMap::new(),
                 rail_hidden: false,
                 background_menu: std::cell::Cell::new(None),
                 docks_open: DocksOpen::default(),

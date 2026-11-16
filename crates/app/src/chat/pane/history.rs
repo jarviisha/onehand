@@ -267,13 +267,20 @@ struct HistoryRow {
 }
 
 impl ChatPane {
-    /// The conversations this pane's sessions have open, by their ids.
+    /// The conversations this pane's sessions have open, by their ids: a
+    /// session added to resume one counts before it has connected.
     pub(crate) fn open_ids(&self, cx: &App) -> Vec<String> {
-        self.conversations
+        let live = self
+            .conversations
             .values()
             .filter_map(Conversation::session)
-            .filter_map(|session| session.read(cx).chat().session_id.clone())
-            .collect()
+            .filter_map(|session| session.read(cx).chat().session_id.clone());
+        let resuming = self
+            .resuming
+            .iter()
+            .filter(|(uid, _)| self.session_of(**uid).is_none())
+            .map(|(_, id)| id.clone());
+        live.chain(resuming).collect()
     }
 }
 

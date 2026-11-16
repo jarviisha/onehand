@@ -38,10 +38,11 @@ impl ChatPane {
         self.session_of(uid).cloned()
     }
 
-    /// Session `uid`, added and not connected, may also write `dirs` once it
-    /// connects.
-    pub fn hold_dirs(&mut self, uid: u64, dirs: Vec<PathBuf>) {
+    /// Session `uid`, added and not connected, resumes `conversation`, and
+    /// may also write `dirs` once it connects.
+    pub fn hold(&mut self, uid: u64, dirs: Vec<PathBuf>, conversation: String) {
         self.held_dirs.insert(uid, dirs);
+        self.resuming.insert(uid, conversation);
     }
 
     /// Connect `uid` on `root` without putting it on screen, starting on

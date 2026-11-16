@@ -395,7 +395,14 @@ fn come_back(key: Key, root: PathBuf, dirs: Vec<PathBuf>, conversation: String, 
                     let spec = spec?;
                     shell
                         .update(cx, |shell, cx| {
-                            shell.add_unshown_resuming(root, spec, dirs, meta.dir, cx)
+                            shell.add_unshown_resuming(
+                                root,
+                                spec,
+                                dirs,
+                                meta.dir,
+                                meta.session_id,
+                                cx,
+                            )
                         })
                         .ok_or_else(|| "the session did not start".to_string())
                 });

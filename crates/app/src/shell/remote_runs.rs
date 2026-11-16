@@ -191,7 +191,8 @@ impl Shell {
     }
 
     /// Add a session of `spec` on `dir`, off screen, that resumes the
-    /// conversation kept in `archive` once it is shown or called on, its
+    /// conversation `conversation`, kept in `archive`, once it is shown or
+    /// called on, its
     /// agent then also writing `dirs`; its project as
     /// [`Self::run_unattended`] finds or adds it. Nothing connects now.
     pub fn add_unshown_resuming(
@@ -200,13 +201,15 @@ impl Shell {
         spec: AgentSpec,
         dirs: Vec<PathBuf>,
         archive: PathBuf,
+        conversation: String,
         cx: &mut Context<Self>,
     ) -> Option<u64> {
         let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
         self.window
             .workspace
             .add_run_session_on(&dir, spec, uid, StartsOn::Resume(archive))?;
-        self.chat.update(cx, |pane, _| pane.hold_dirs(uid, dirs));
+        self.chat
+            .update(cx, |pane, _| pane.hold(uid, dirs, conversation));
         self.refresh_git(cx);
         cx.notify();
         Some(uid)
