@@ -11,8 +11,7 @@ use super::session_of;
 use crate::chat::session::ChatSession;
 use gpui::{App, Entity};
 use onehand_core::chat::drive::{Code, Origin};
-use onehand_core::control::drive::{Found, this_run};
-use onehand_core::control::open::parse_handle;
+use onehand_core::control::drive::Found;
 use onehand_core::control::state::state;
 use onehand_core::control::turns;
 use std::path::PathBuf;
@@ -24,10 +23,9 @@ fn find(
     cx: &App,
 ) -> Result<Option<(u64, Entity<ChatSession>)>, String> {
     let (caller, _) = caller.ok_or("this tool is for a session's agent")?;
-    let uid = parse_handle(session, &this_run())?;
-    let entity = session_of(uid, cx);
-    match drive().find(caller, uid, session, entity.is_some())? {
-        Found::Open { uid } => Ok(entity.map(|entity| (uid, entity))),
+    let found = drive().find(caller, session, |uid| session_of(uid, cx).is_some())?;
+    match found {
+        Found::Open { uid } => Ok(session_of(uid, cx).map(|entity| (uid, entity))),
         Found::Closed => Ok(None),
     }
 }

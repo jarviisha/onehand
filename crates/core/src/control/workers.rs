@@ -197,6 +197,8 @@ pub struct Relation {
     pub sent: usize,
     /// The folders it may write besides its own.
     pub dirs: Vec<PathBuf>,
+    /// What the lead names it by.
+    pub handle: String,
 }
 
 /// One of a lead's workers, as the person's view draws it.

@@ -395,3 +395,39 @@ fn a_turn_not_taken_moves_nothing() {
     );
     assert_eq!(drive.last(7).map(|last| last.turn), Some(Some(2)));
 }
+
+/// The open answers with a handle minted for the worker, which names its
+/// session while it is open.
+#[test]
+fn the_open_answers_with_a_stable_handle() {
+    let mut drive = lead_on();
+    up(&mut drive);
+    drive.handle(Input::Woke {
+        uid: 7,
+        chat: Some(&connected()),
+        lead_here: true,
+    });
+    let fx = drive.handle(Input::Begun {
+        uid: 7,
+        facts: facts(Some(Intake::Sent)),
+    });
+    let said = answer(&fx).unwrap().as_ref().unwrap();
+    let handle = said
+        .lines()
+        .find_map(|line| line.strip_prefix("session: "))
+        .unwrap();
+    assert!(handle.starts_with("w-"), "{said}");
+    assert_eq!(drive.uid_of(handle), Some(7));
+    assert_eq!(drive.handle_of(7).as_deref(), Some(handle));
+    assert!(matches!(
+        drive.find(1, handle, |_| true),
+        Ok(Found::Open { uid: 7 })
+    ));
+    assert!(drive.find(2, handle, |_| true).is_err(), "another lead's");
+    drive.forget(7);
+    assert_eq!(drive.uid_of(handle), None);
+    assert!(matches!(
+        drive.find(1, handle, |_| false),
+        Ok(Found::Closed)
+    ));
+}

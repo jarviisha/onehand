@@ -220,6 +220,8 @@ enum Phase {
         added: bool,
         dirs: Vec<PathBuf>,
         picked: Vec<String>,
+        /// The handle minted for it as it started.
+        handle: String,
     },
 }
 
@@ -237,6 +239,11 @@ pub enum Found {
     Open { uid: u64 },
     /// Its session is gone.
     Closed,
+}
+
+/// A worker gone, as its handle still reads to the lead it had.
+struct Closed {
+    lead: u64,
 }
 
 /// onehand's tools' drive. See the module header.
@@ -258,8 +265,11 @@ pub struct ControlDrive {
     requests: Requests,
     /// Each worker's lead, by the worker's uid.
     workers: HashMap<u64, Relation>,
-    /// The lead each closed worker had, so it alone reads it as closed.
-    closed_workers: HashMap<u64, u64>,
+    /// The uid each worker's handle names while its session is open, from
+    /// the moment it starts.
+    handles: HashMap<String, u64>,
+    /// What each closed worker's handle still answers, by the handle.
+    closed_workers: HashMap<String, Closed>,
     pending: HashMap<Key, Pending>,
     minted: u64,
 }
@@ -389,9 +399,21 @@ impl ControlDrive {
         self.reserved.release_worker(uid);
         self.requests.forget_lead(uid);
         if let Some(relation) = self.workers.remove(&uid) {
-            self.closed_workers.insert(uid, relation.lead);
+            let closed = Closed {
+                lead: relation.lead,
+            };
+            self.closed_workers.insert(relation.handle, closed);
         }
-        self.workers.retain(|_, relation| relation.lead != uid);
+        // Its own handle goes, and its workers' with their relations.
+        let mut gone = vec![uid];
+        self.workers.retain(|&worker, relation| {
+            let mine = relation.lead == uid;
+            if mine {
+                gone.push(worker);
+            }
+            !mine
+        });
+        self.handles.retain(|_, worker| !gone.contains(worker));
         fx
     }
 
@@ -458,11 +480,10 @@ impl ControlDrive {
         match self.requests.see(open.lead, &open.request, &open.asked())? {
             Seen::New => {}
             Seen::Opening(uid) => {
-                return Ok(Begun::Said(match uid {
-                    Some(uid) => format!(
-                        "{} is still opening; call again with the same request",
-                        open::handle(&this_run(), uid)
-                    ),
+                return Ok(Begun::Said(match uid.and_then(|uid| self.handle_of(uid)) {
+                    Some(handle) => {
+                        format!("{handle} is still opening; call again with the same request")
+                    }
                     None => {
                         "the session is still opening; call again with the same request".to_string()
                     }
@@ -646,6 +667,8 @@ impl ControlDrive {
         self.reserved.bind(&folder, uid);
         self.opened_one(lead, uid);
         self.requests.started(lead, &key.1, uid);
+        let handle = open::mint_handle();
+        self.handles.insert(handle.clone(), uid);
         let pending = self.pending.get_mut(key).expect("looked up above");
         pending.phase = Phase::Up {
             uid,
@@ -653,6 +676,7 @@ impl ControlDrive {
             added,
             dirs,
             picked: Vec::new(),
+            handle,
         };
         vec![Effect::Changed, Effect::Watch(uid)]
     }
@@ -712,14 +736,16 @@ impl ControlDrive {
         }
         let Some(Pending {
             open,
-            phase: Phase::Up { root, dirs, .. },
+            phase: Phase::Up {
+                root, dirs, handle, ..
+            },
             ..
         }) = self.pending.remove(&key)
         else {
             return Vec::new();
         };
         let mut lines = vec![
-            format!("session: {}", open::handle(&this_run(), uid)),
+            format!("session: {handle}"),
             format!("name: {}", facts.name),
             format!("project: {}", root.display()),
             format!("mode: {}", facts.mode),
@@ -740,6 +766,7 @@ impl ControlDrive {
                 text: open.prompt,
                 sent: facts.sent,
                 dirs,
+                handle,
             },
         );
         self.requests
@@ -806,8 +833,13 @@ impl ControlDrive {
         let mut fx = Vec::new();
         match pending.phase {
             Phase::Up {
-                uid, root, added, ..
+                uid,
+                root,
+                added,
+                handle,
+                ..
             } => {
+                self.handles.remove(&handle);
                 fx.push(Effect::Unwatch(uid));
                 fx.push(Effect::Drop {
                     key: key.clone(),
@@ -828,9 +860,9 @@ impl ControlDrive {
     }
 }
 
-/// This run of the app, as a worker's handle names it: uids count from 1 in
-/// every run, so a handle from an earlier one must never reach whichever
-/// session took its number. Never written anywhere.
+/// This run of the app, as handles of earlier builds named it: a handle in
+/// that shape is told apart by its length, and refused. Never written
+/// anywhere.
 pub fn this_run() -> String {
     static RUN: std::sync::LazyLock<String> =
         std::sync::LazyLock::new(|| super::new_token()[..8].to_string());

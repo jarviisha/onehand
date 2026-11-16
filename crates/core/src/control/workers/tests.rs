@@ -150,6 +150,7 @@ fn relation(lead: u64) -> Relation {
         text: Some("go".into()),
         sent: 1,
         dirs: Vec::new(),
+        handle: "w-1".into(),
     }
 }
 

@@ -4,10 +4,11 @@
 //! prompt went, moved on by each turn the lead hands over, and given back
 //! by the person.
 
+use super::super::open::{parse_handle, Handle};
 use super::super::state::Held;
 use super::super::turns::Last;
 use super::super::workers::{offered, whose, Whose};
-use super::{ControlDrive, Found, Worker};
+use super::{this_run, ControlDrive, Found, Worker};
 use crate::chat::drive::Intake;
 
 impl ControlDrive {
@@ -69,16 +70,40 @@ impl ControlDrive {
 
     // A lead's calls on its workers.
 
+    /// The session `handle` names while it is open.
+    pub fn uid_of(&self, handle: &str) -> Option<u64> {
+        self.handles.get(handle).copied()
+    }
+
+    /// The handle of worker `uid`, from the moment its session starts.
+    pub fn handle_of(&self, uid: u64) -> Option<String> {
+        self.handles
+            .iter()
+            .find(|(_, worker)| **worker == uid)
+            .map(|(handle, _)| handle.clone())
+    }
+
     /// The caller's worker `handle` names, `open` saying whether a window
-    /// holds its session; anything that is not the caller's own worker, open
+    /// holds a session; anything that is not the caller's own worker, open
     /// or closed, gets the same refusal.
-    pub fn find(&self, caller: u64, uid: u64, handle: &str, open: bool) -> Result<Found, String> {
-        let relation = self.workers.get(&uid);
-        let closed = self.closed_workers.get(&uid).copied();
-        match whose(relation, closed, caller, open) {
-            Whose::Mine if open => Ok(Found::Open { uid }),
-            Whose::Mine | Whose::Closed => Ok(Found::Closed),
-            Whose::NotYours => Err(format!("{handle} is not a worker you opened")),
+    pub fn find(
+        &self,
+        caller: u64,
+        handle: &str,
+        open: impl Fn(u64) -> bool,
+    ) -> Result<Found, String> {
+        let Handle::Stable(stable) = parse_handle(handle, &this_run())?;
+        let (uid, whose) = match self.handles.get(&stable) {
+            Some(&uid) => (uid, whose(self.workers.get(&uid), None, caller, open(uid))),
+            None => {
+                let closed = self.closed_workers.get(&stable).map(|closed| closed.lead);
+                (0, whose(None, closed, caller, false))
+            }
+        };
+        match whose {
+            Whose::Mine => Ok(Found::Open { uid }),
+            Whose::Closed => Ok(Found::Closed),
+            Whose::NotYours => Err(format!("{} is not a worker you opened", handle.trim())),
         }
     }
 
