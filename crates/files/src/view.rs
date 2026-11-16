@@ -15,7 +15,7 @@ use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::gitstat::{FileChange, GitStatus};
 use onehand_core::tree::{FileTree, TreeEntry};
 use onehand_ui::{hint, mark_slot, menu_item, status_ink, status_line, tokens, tree_row};
-use onehand_workbench::{Ask, Disk, Request};
+use onehand_workbench::{Ask, Asker, Disk};
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
@@ -39,7 +39,7 @@ pub(crate) struct FilesView {
     git: HashMap<PathBuf, GitStatus>,
     /// How a click on a file reaches the mode that edits files. Opening one is
     /// the quick editor's business, and this tree has no way to reach it.
-    ask: Ask,
+    ask: Asker,
     /// The file open in the editor beside the tree: its row is the tree's
     /// selected one, as the open document is the Markdown list's.
     active: Option<PathBuf>,
@@ -49,7 +49,7 @@ pub(crate) struct FilesView {
 }
 
 impl FilesView {
-    pub(crate) fn new(ask: Ask, cx: &mut App) -> Entity<Self> {
+    pub(crate) fn new(ask: Asker, cx: &mut App) -> Entity<Self> {
         cx.new(|_| Self {
             root: None,
             trees: HashMap::new(),
@@ -205,7 +205,7 @@ impl FilesView {
         if entry.is_dir {
             self.toggle_dir(entry.path.clone(), cx);
         } else {
-            (self.ask)(&Request::OpenFile(&entry.path), window, cx);
+            (self.ask)(&Ask::OpenFile(&entry.path), window, cx);
         }
     }
 
@@ -303,7 +303,7 @@ fn change_color(change: FileChange, cx: &App) -> gpui::Hsla {
 /// A row's *Send to <host>*, on an offloaded root.
 struct Send {
     host: String,
-    ask: Ask,
+    ask: Asker,
 }
 
 /// The trailing slot a row's change mark stands in, held on every row so the
@@ -405,7 +405,7 @@ fn rows(
                         Some(send) => {
                             let (ask, path) = (send.ask.clone(), path.clone());
                             menu.item(menu_item(format!("Send to {}", send.host)).on_click(
-                                move |_, window, cx| ask(&Request::SendToHost(&path), window, cx),
+                                move |_, window, cx| ask(&Ask::SendToHost(&path), window, cx),
                             ))
                         }
                         None => menu,

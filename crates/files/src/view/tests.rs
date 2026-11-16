@@ -8,12 +8,11 @@ use std::rc::Rc;
 /// A view whose requests upward are written down rather than answered.
 fn view(cx: &mut TestAppContext) -> (Entity<FilesView>, Rc<RefCell<Vec<PathBuf>>>) {
     let opened = Rc::new(RefCell::new(Vec::new()));
-    let ask: Ask = Rc::new({
+    let ask: Asker = Rc::new({
         let opened = opened.clone();
-        move |request: &Request<'_>, _: &mut Window, _: &mut App| {
-            if let Request::OpenFile(path) = request {
-                opened.borrow_mut().push(path.to_path_buf());
-            }
+        move |asked: &Ask<'_>, _: &mut Window, _: &mut App| match asked {
+            Ask::OpenFile(path) => opened.borrow_mut().push(path.to_path_buf()),
+            Ask::RestartAgent | Ask::SendToHost(_) | Ask::Reap => {}
         }
     });
     (cx.update(|cx| FilesView::new(ask, cx)), opened)

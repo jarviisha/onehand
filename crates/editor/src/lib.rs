@@ -4,7 +4,7 @@
 #![warn(unreachable_pub)]
 
 use gpui::{AnyView, App, Entity, Window};
-use onehand_workbench::{Ask, Disk, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
+use onehand_workbench::{Asker, Disk, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
 use std::path::Path;
 
 mod buffers;
@@ -37,7 +37,7 @@ pub struct Mode {
 }
 
 impl Mode {
-    pub fn new(ask: Ask, cx: &mut App) -> Self {
+    pub fn new(ask: Asker, cx: &mut App) -> Self {
         let view = EditorView::new(cx);
         let files = onehand_files::Mode::new(ask, cx);
         let split = CodeView::new(files.view(), files.active_setter(), view.clone(), cx);
@@ -91,8 +91,7 @@ impl WorkbenchMode for Mode {
                 self.view.update(cx, |view, cx| view.set_locked(locks, cx));
                 self.files.handle(request, cx)
             }
-            Request::OpenFile(_)
-            | Request::Start
+            Request::Start
             | Request::Rescan
             | Request::Shown
             | Request::Reap
@@ -102,10 +101,8 @@ impl WorkbenchMode for Mode {
             | Request::ShowIssue(_)
             | Request::AgentStarted(_)
             | Request::LiveConversations(_)
-            | Request::RestartAgent
             | Request::IssueWork { .. }
-            | Request::Offloaded(_)
-            | Request::SendToHost(_) => self.files.handle(request, cx),
+            | Request::Offloaded(_) => self.files.handle(request, cx),
         }
     }
 

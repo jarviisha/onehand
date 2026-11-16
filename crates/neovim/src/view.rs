@@ -15,7 +15,7 @@ use gpui_component::{ActiveTheme as _, StyledExt};
 use onehand_terminal_ui::{Program, PtyTab, TerminalThemeKey, spawn_pty, terminal_palette};
 use onehand_ui::Short as _;
 use onehand_ui::{action, hint, status_ink, status_line};
-use onehand_workbench::{Ask, Request};
+use onehand_workbench::{Ask, Asker};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -51,14 +51,14 @@ pub(crate) struct NeovimView {
     /// the path down to the focused node — so every shortcut stops working,
     /// including the one that would reopen this panel. Only the panel knows
     /// whether the caret was inside it.
-    ask: Ask,
+    ask: Asker,
     /// The folders nothing may be typed into now, with why: a grid on one
     /// drops what is typed, and says so under it.
     locked: HashMap<PathBuf, String>,
 }
 
 impl NeovimView {
-    pub(crate) fn new(ask: Ask, font_size: Pixels, cx: &mut App) -> Entity<Self> {
+    pub(crate) fn new(ask: Asker, font_size: Pixels, cx: &mut App) -> Entity<Self> {
         cx.new(|cx| Self {
             root: None,
             tabs: HashMap::new(),
@@ -131,7 +131,7 @@ impl NeovimView {
             self.font_size,
             onehand_ui::dock_surface(cx),
             cx,
-            move |window, cx| ask(&Request::Reap, window, cx),
+            move |window, cx| ask(&Ask::Reap, window, cx),
         );
         match spawned {
             Ok(tab) => {

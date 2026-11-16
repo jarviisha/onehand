@@ -6,7 +6,7 @@
 #![warn(unreachable_pub)]
 
 use gpui::{AnyView, App, Entity, Pixels, Window};
-use onehand_workbench::{Ask, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
+use onehand_workbench::{Asker, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
 use std::path::Path;
 
 mod view;
@@ -23,7 +23,7 @@ pub struct Mode {
 }
 
 impl Mode {
-    pub fn new(ask: Ask, font_size: Pixels, cx: &mut App) -> Self {
+    pub fn new(ask: Asker, font_size: Pixels, cx: &mut App) -> Self {
         Self {
             view: NeovimView::new(ask, font_size, cx),
         }
@@ -78,8 +78,7 @@ impl WorkbenchMode for Mode {
                 true
             }
             // Not this mode's to answer.
-            Request::OpenFile(_)
-            | Request::Save
+            Request::Save
             | Request::Rescan
             | Request::Shown
             | Request::SetGit(_)
@@ -87,10 +86,8 @@ impl WorkbenchMode for Mode {
             | Request::ShowIssue(_)
             | Request::AgentStarted(_)
             | Request::LiveConversations(_)
-            | Request::RestartAgent
             | Request::IssueWork { .. }
-            | Request::Offloaded(_)
-            | Request::SendToHost(_) => false,
+            | Request::Offloaded(_) => false,
         }
     }
 }

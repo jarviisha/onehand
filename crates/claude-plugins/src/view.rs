@@ -19,7 +19,7 @@ use onehand_ui::search_input;
 use onehand_ui::{
     ControlSize, Refuses as _, action, choice, hint, status_ink, status_line, switch,
 };
-use onehand_workbench::{Ask, Request};
+use onehand_workbench::{Ask, Asker};
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Instant;
@@ -137,11 +137,11 @@ pub(crate) struct PluginsView {
     /// stops too.
     offered: Vec<FocusHandle>,
     /// How the banner's *Restart agent* reaches the shell.
-    ask: Ask,
+    ask: Asker,
 }
 
 impl PluginsView {
-    pub(crate) fn new(ask: Ask, cx: &mut App) -> Entity<Self> {
+    pub(crate) fn new(ask: Asker, cx: &mut App) -> Entity<Self> {
         cx.new(|_| Self {
             drive: PluginsDrive::default(),
             tab: Tab::Installed,
@@ -596,7 +596,7 @@ impl PluginsView {
                         .secondary()
                         .label("Restart the agent")
                         .refuses(self.drive.busy().is_some().then_some(ONE_AT_A_TIME))
-                        .on_click(move |_, window, cx| ask(&Request::RestartAgent, window, cx)),
+                        .on_click(move |_, window, cx| ask(&Ask::RestartAgent, window, cx)),
                 )
                 .into_any_element(),
         )

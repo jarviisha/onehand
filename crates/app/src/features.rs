@@ -11,7 +11,7 @@
 
 use gpui::{App, Pixels};
 use onehand_core::connector::Connector;
-use onehand_workbench::{Ask, WorkbenchMode};
+use onehand_workbench::{Asker, WorkbenchMode};
 
 /// How a remote channel is opened, once its credential has been read.
 pub type RemoteChannelFactory = fn(String) -> Box<dyn onehand_core::remote::types::RemoteChannel>;
@@ -22,7 +22,7 @@ pub type RemoteChannelFactory = fn(String) -> Box<dyn onehand_core::remote::type
 /// entities: a view is bound to the window that renders it, and a second window
 /// showing the same one would be the same entity mounted twice.
 pub fn workbench_modes(
-    ask: Ask,
+    ask: Asker,
     tell: onehand_issues::Tell,
     font_size: Pixels,
     cx: &mut App,

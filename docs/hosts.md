@@ -586,7 +586,7 @@ In the window (decided by `OffloadDrive`, `crates/core/src/host/offload/drive.rs
   changed here after the backup stays as it is and stops the copy again, *Files changed here
   while the code came back; they stay as this machine has them*.
 - **Send to <host>**, on a row of the Files tree of an offloaded project (its right-click menu,
-  `crates/files/src/view.rs`, raising `Request::SendToHost`), copies that file, or that folder
+  `crates/files/src/view.rs`, raising `Ask::SendToHost`), copies that file, or that folder
   with everything under it, ignored files included, to the same place in the mirror
   (`send_path_blocking`), whoever holds the key. A toast says how it went; nothing is remembered,
   so a file git ignores is not kept in step after that.

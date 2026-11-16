@@ -4,6 +4,7 @@
 //! put once the view is no longer being updated.
 
 use super::*;
+use onehand_workbench::Ask;
 
 impl IssuesView {
     /// Put a request to the Workbench about the project on screen, once this
@@ -14,7 +15,7 @@ impl IssuesView {
         &self,
         window: &mut Window,
         cx: &mut Context<Self>,
-        put: impl FnOnce(&Ask, &Path, &mut Window, &mut App) + 'static,
+        put: impl FnOnce(&Asker, &Path, &mut Window, &mut App) + 'static,
     ) {
         let Some(root) = self.root.clone() else {
             return;
@@ -114,7 +115,7 @@ impl IssuesView {
     pub(super) fn open_path(&mut self, path: &str, window: &mut Window, cx: &mut Context<Self>) {
         let path = path.to_string();
         self.ask_later(window, cx, move |ask, root, window, cx| {
-            ask(&Request::OpenFile(&root.join(&path)), window, cx)
+            ask(&Ask::OpenFile(&root.join(&path)), window, cx)
         });
     }
 }

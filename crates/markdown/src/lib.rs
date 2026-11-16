@@ -6,7 +6,7 @@
 #![warn(unreachable_pub)]
 
 use gpui::{AnyView, App, Entity};
-use onehand_workbench::{Ask, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
+use onehand_workbench::{Asker, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
 use std::path::Path;
 
 mod document;
@@ -25,7 +25,7 @@ pub struct Mode {
 }
 
 impl Mode {
-    pub fn new(ask: Ask, cx: &mut App) -> Self {
+    pub fn new(ask: Asker, cx: &mut App) -> Self {
         Self {
             view: MarkdownView::new(ask, cx),
         }
@@ -60,8 +60,7 @@ impl WorkbenchMode for Mode {
                 true
             }
             // Not this mode's to answer.
-            Request::OpenFile(_)
-            | Request::Save
+            Request::Save
             | Request::Start
             | Request::Reap
             | Request::SetGit(_)
@@ -70,11 +69,9 @@ impl WorkbenchMode for Mode {
             | Request::ShowIssue(_)
             | Request::AgentStarted(_)
             | Request::LiveConversations(_)
-            | Request::RestartAgent
             | Request::IssueWork { .. }
             | Request::Locked(_)
-            | Request::Offloaded(_)
-            | Request::SendToHost(_) => false,
+            | Request::Offloaded(_) => false,
         }
     }
 }
