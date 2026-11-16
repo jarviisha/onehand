@@ -241,8 +241,9 @@ impl ControlDrive {
     }
 
     /// Everything `lead` keeps, to be written beside its conversation: its
-    /// workers whose conversation is known, in the order they opened, and
-    /// the handles of those that ended.
+    /// workers whose conversation is known, in the order they opened, those
+    /// still coming back as they were kept, and the handles of those that
+    /// ended.
     pub(super) fn keep(&self, lead: u64) -> Effect {
         let mut held: Vec<_> = self
             .workers
@@ -263,6 +264,14 @@ impl ControlDrive {
                 Some((relation.seq, worker))
             })
             .collect();
+        // Not yet back, but not let go either: a write meanwhile must not
+        // drop them.
+        held.extend(
+            self.pending
+                .iter()
+                .filter(|((of, _), _)| *of == lead)
+                .filter_map(|(_, pending)| Some((pending.token, pending.open.back.clone()?))),
+        );
         held.sort_by_key(|(seq, _)| *seq);
         let mut closed: Vec<KeptClosed> = self
             .closed_workers

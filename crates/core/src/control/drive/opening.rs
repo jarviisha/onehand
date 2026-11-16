@@ -472,6 +472,7 @@ impl ControlDrive {
                 seq: pending.token,
             },
         );
-        vec![Effect::Changed]
+        let lead = pending.open.lead;
+        vec![Effect::Changed, self.keep(lead)]
     }
 }

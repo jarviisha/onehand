@@ -783,7 +783,11 @@ fn a_kept_worker_comes_back_under_its_lead() {
     // A new run: the lead's tools are off until the person switches them on.
     let mut drive = ControlDrive::default();
     let fx = came_back(&mut drive, kept_one(false));
-    assert_eq!(shown(&fx), ["Changed"], "no pick, prompt or answer");
+    assert_eq!(
+        shown(&fx),
+        ["Changed", "Keep 1 1 1"],
+        "no pick, prompt or answer"
+    );
     assert_eq!(drive.lead_of(9), Some(1));
     assert_eq!(drive.uid_of(BACK), Some(9));
     let last = drive.last(9).unwrap();
@@ -912,4 +916,52 @@ fn a_lead_with_workers_leads_workers() {
     assert!(!drive.leads_workers(7), "a worker leads nothing");
     let _ = drive.forget(7);
     assert!(!drive.leads_workers(1), "its one worker closed");
+}
+
+/// What lead 1 kept of two workers, `A` on `/repo` and `B` on `/other`.
+fn kept_two() -> Kept {
+    let mut kept = kept_one(false);
+    let mut b = kept.workers[0].clone();
+    b.handle = "w-0000000000000000000000000000000b".into();
+    b.conversation = "c8".into();
+    b.folder = PathBuf::from("/other");
+    kept.workers.push(b);
+    kept
+}
+
+fn handles_kept(kept: &Kept) -> Vec<String> {
+    kept.workers
+        .iter()
+        .map(|worker| worker.handle.clone())
+        .collect()
+}
+
+#[test]
+fn a_sibling_failing_to_come_back_keeps_the_others() {
+    let b = "w-0000000000000000000000000000000b";
+    let mut drive = ControlDrive::default();
+    let begun = drive.back(1, kept_two(), &projects());
+    let keys: Vec<Key> = begun
+        .into_iter()
+        .map(|begun| match begun {
+            Begun::Resolve { key, .. } => key,
+            Begun::Said(said) => panic!("said: {said}"),
+        })
+        .collect();
+    let fx = drive.handle(Input::Resolved {
+        key: keys[0].clone(),
+        resolved: Err("/repo: No such file or directory".into()),
+        world: world(),
+    });
+    assert_eq!(handles_kept(kept(&fx, 1).unwrap()), [b]);
+    drive.handle(Input::Resolved {
+        key: keys[1].clone(),
+        resolved: Ok(resolved()),
+        world: world(),
+    });
+    let fx = drive.handle(Input::Started {
+        key: keys[1].clone(),
+        started: Ok(9),
+    });
+    assert_eq!(handles_kept(kept(&fx, 1).expect("kept once back")), [b]);
 }
