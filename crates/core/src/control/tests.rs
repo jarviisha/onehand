@@ -881,3 +881,27 @@ fn a_plain_open_counts_only_a_sessions() {
     d.opened_plain(Some(9), 5);
     assert_eq!(d.opened_by(9), vec![5]);
 }
+
+/// Every tool in the table is read by `parse`; one called without an argument
+/// its schema requires is refused naming it; an argument its schema does not
+/// list is refused.
+#[test]
+fn every_listed_tool_parses_and_holds_to_its_schema() {
+    for tool in tools() {
+        let required: Vec<&str> = tool.input["required"]
+            .as_array()
+            .map(|keys| keys.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default();
+        let empty = parse(tool.name, &json!({}));
+        match required.first() {
+            None => assert!(empty.is_ok(), "{}: {empty:?}", tool.name),
+            Some(key) => {
+                let why = empty.expect_err(tool.name);
+                assert!(why.contains(key), "{}: {why}", tool.name);
+            }
+        }
+        let why = parse(tool.name, &json!({"nonsense": 1})).expect_err(tool.name);
+        assert!(why.contains("nonsense"), "{}: {why}", tool.name);
+    }
+    assert!(parse("no_such_tool", &json!({})).is_err());
+}
