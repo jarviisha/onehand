@@ -8,10 +8,9 @@
 
 use futures::channel::oneshot;
 use onehand_core::host::HostFailure;
-use onehand_core::host::client::{self, HostConn, HostError};
+use onehand_core::host::client::{self, HostConn};
 use onehand_core::host::wire::build_id;
 use onehand_core::workspace::HostName;
-use std::future::Future;
 use std::path::{Path, PathBuf};
 use tokio::runtime::Handle;
 
@@ -40,25 +39,6 @@ pub fn attach(rt: &Handle, host: HostName, fresh: bool, take: bool) -> Attaching
         }
     });
     Attaching { landed, closed }
-}
-
-/// `work`, a call over a host's attach, run on `rt` and awaited wherever.
-pub fn ask<T, F>(rt: &Handle, work: F) -> impl Future<Output = Result<T, HostError>> + use<T, F>
-where
-    T: Send + 'static,
-    F: Future<Output = Result<T, HostError>> + Send + 'static,
-{
-    let (tx, rx) = oneshot::channel();
-    rt.spawn(async move {
-        let _ = tx.send(work.await);
-    });
-    async move {
-        rx.await.unwrap_or_else(|_| {
-            Err(HostError::Unreachable(
-                "the question to the host was dropped".into(),
-            ))
-        })
-    }
 }
 
 async fn attach_now(host: HostName, fresh: bool, take: bool) -> Result<HostConn, HostFailure> {

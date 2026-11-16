@@ -192,15 +192,7 @@ impl Shell {
         let attaching = crate::hosts::conn(cx, &host);
         cx.spawn(async move |shell, cx| {
             let result = match attaching.await {
-                Ok(conn) => {
-                    let ending = cx.update(|cx| {
-                        crate::hosts::on_runtime(
-                            cx,
-                            async move { conn.end_session(&session).await },
-                        )
-                    });
-                    ending.await.map_err(|e| e.to_string())
-                }
+                Ok(conn) => conn.end_session(&session).await.map_err(|e| e.to_string()),
                 Err(failure) => Err(failure.said()),
             };
             let input = Input::EndedOnHost {

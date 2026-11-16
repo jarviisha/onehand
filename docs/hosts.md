@@ -49,7 +49,9 @@ it. What is refused, and how, is under *What a host project does not do*.
   if it fails, held or otherwise, the person's own attach, taking the host, follows. Only the
   latest attempt for a host says what is known of it: one a restart replaced is not heard. The
   attach runs on the agent runtime (`crates/io/src/host.rs`) and its answer crosses back on a
-  oneshot.
+  oneshot. A call over a live attach needs no runtime of its own: the connection's task keeps
+  each call's wait, so the window awaits it where it asks, and the tree and the editor block on it
+  on their own threads (`Disk::Host`).
 - **What a host is to this run** (`HostState`, `crates/core/src/host/drive.rs`): never tried, attaching,
   live, **lost** (an attach failed, or a live connection closed, without another machine taking the
   host), **taken** (another machine attached; the connection keeps it, `HostConn::taken`), or

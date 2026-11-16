@@ -50,22 +50,25 @@ enum Start {
 type Listed = Result<(PathBuf, Vec<TreeEntry>, usize), String>;
 
 /// List the folder `start` names over `conn`.
-async fn list_from(conn: HostConn, start: Start, cx: &mut gpui::AsyncApp) -> Listed {
-    let read = |at: PathBuf, cx: &mut gpui::AsyncApp| {
-        let reading = cx.update(|cx| hosts::read_dir(cx, conn.clone(), at.clone()));
-        async move { reading.await.map(|(entries, cut)| (at, entries, cut)) }
+async fn list_from(conn: HostConn, start: Start) -> Listed {
+    let read = |at: PathBuf| {
+        let conn = conn.clone();
+        async move {
+            let (entries, cut) = onehand_core::disk::read_host_dir(&conn, &at).await?;
+            Ok((at, entries, cut))
+        }
     };
     match start {
-        Start::At(at) => return read(at, cx).await,
+        Start::At(at) => return read(at).await,
         Start::Folder(folder) => {
-            if let Ok(listed) = read(folder, cx).await {
+            if let Ok(listed) = read(folder).await {
                 return Ok(listed);
             }
         }
         Start::Home => {}
     }
-    let home = cx.update(|cx| hosts::home(cx, conn.clone())).await?;
-    read(home, cx).await
+    let home = hosts::home(conn.clone()).await?;
+    read(home).await
 }
 
 impl Shell {
@@ -131,7 +134,7 @@ impl Shell {
                 });
             };
             let listed = match hosts::attach_waiting(&host, cx, waiting).await {
-                Ok(conn) => list_from(conn, start, cx).await,
+                Ok(conn) => list_from(conn, start).await,
                 Err(why) => Err(why),
             };
             let _ = shell.update(cx, |shell: &mut Self, cx| {

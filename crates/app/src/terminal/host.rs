@@ -87,11 +87,7 @@ impl TerminalPanel {
                 |line: String, cx: &mut gpui::AsyncApp| say(Said::Waiting(line.into()), cx);
             match hosts::attach_waiting(&host, cx, waiting).await {
                 Ok(conn) => {
-                    let asking = conn.clone();
-                    let listed = cx
-                        .update(|cx| hosts::on_runtime(cx, async move { asking.term_list().await }))
-                        .await
-                        .map_err(|e| e.to_string());
+                    let listed = conn.term_list().await.map_err(|e| e.to_string());
                     let _ = panel.update(cx, |panel: &mut Self, cx| {
                         panel.listed(home, conn, listed, cx)
                     });
@@ -173,10 +169,12 @@ impl TerminalPanel {
             return self.show_host(cx);
         };
         let (cols, rows) = onehand_terminal_ui::start_size();
-        let (asking, cwd) = (conn.clone(), home.1.clone());
-        let opening = hosts::on_runtime(cx, async move { asking.term_open(cwd, cols, rows).await });
+        let cwd = home.1.clone();
         cx.spawn(async move |panel, cx| {
-            let opened = opening.await.map_err(|e| e.to_string());
+            let opened = conn
+                .term_open(cwd.clone(), cols, rows)
+                .await
+                .map_err(|e| e.to_string());
             let _ = cx.update_window(window, |_, window, cx| {
                 panel.update(cx, |panel: &mut Self, cx| {
                     panel.opened(home, conn, opened, window, cx)

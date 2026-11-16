@@ -668,7 +668,7 @@ async fn what_was_queued_as_the_stream_ended_is_refused() {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let (asked, answer) = oneshot::channel();
     let (watched, mut events) = events::unbounded();
-    tx.send(Cmd::Ask(Call::List, asked)).ok().unwrap();
+    tx.send(Cmd::Ask(Call::List, asked, ASK_WAIT)).ok().unwrap();
     tx.send(Cmd::Watch(s1(), watched, None)).ok().unwrap();
     refuse_queued(&mut rx, "gone");
     assert!(matches!(answer.await, Ok(Err(HostError::Unreachable(why))) if why == "gone"));
@@ -738,6 +738,41 @@ async fn an_unanswered_hello_ends_at_its_deadline() {
     let Question { id, .. } = host.ask().await;
     host.answer(id, Reply::Sessions(vec![])).await;
     assert!(listing.await.unwrap().unwrap().is_empty());
+}
+
+/// A call awaited on a thread with no tokio runtime, as the window's own
+/// executor awaits one, is answered: the task that owns the stream keeps the
+/// wait.
+#[tokio::test]
+async fn a_call_is_answered_where_no_runtime_runs() {
+    let (conn, mut host) = pair();
+    let asking = std::thread::spawn(move || futures::executor::block_on(conn.list()));
+    let Question { id, call } = host.ask().await;
+    assert!(matches!(call, Call::List), "{call:?}");
+    host.answer(id, Reply::Sessions(vec![])).await;
+    let listed = tokio::task::spawn_blocking(move || asking.join().unwrap())
+        .await
+        .unwrap();
+    assert!(listed.unwrap().is_empty());
+}
+
+/// A host that stops reading what it is sent still has every call end at its
+/// deadline: what is written waits, and the waits are kept apart from it.
+#[tokio::test(start_paused = true)]
+async fn a_host_that_stops_reading_still_lets_calls_end_at_their_deadline() {
+    let (conn, _host) = pair();
+    // More than the pipe holds, which the host never reads.
+    let big = "x".repeat(1 << 17);
+    let saving = tokio::spawn({
+        let conn = conn.clone();
+        async move { conn.save_file(Path::new("/a"), big, None).await }
+    });
+    let listing = tokio::spawn(async move { conn.list().await });
+    assert!(matches!(
+        listing.await.unwrap(),
+        Err(HostError::Protocol(why)) if why == "the host did not answer within 30 s"
+    ));
+    assert!(saving.await.unwrap().is_err());
 }
 
 #[tokio::test]

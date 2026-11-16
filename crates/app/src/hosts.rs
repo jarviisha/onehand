@@ -17,11 +17,9 @@ use futures::FutureExt as _;
 use futures::channel::oneshot;
 use futures::future::{self, LocalBoxFuture};
 use gpui::{App, AsyncApp};
-use onehand_core::disk::{Disk, HostDisk};
-use onehand_core::host::client::{HostConn, HostError};
+use onehand_core::host::client::HostConn;
 use onehand_core::host::drive::{Asker, Effect, Got, HostDrive, Input, Kind};
 use onehand_core::host::wire::HostSession;
-use onehand_core::tree::TreeEntry;
 use onehand_core::workspace::HostName;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
@@ -270,11 +268,6 @@ pub(crate) fn live(cx: &App, host: &HostName) -> Option<HostConn> {
     h.ready(host).filter(|c| !c.is_closed()).cloned()
 }
 
-/// The files of a host reached over `conn`.
-pub(crate) fn disk_over(cx: &App, conn: HostConn) -> Disk {
-    Disk::Host(HostDisk::new(conn, Shared::global(cx).acp.handle()))
-}
-
 /// The attach to `host`, as [`conn`] makes it, waiting out a host found
 /// busy: `waiting` is handed the line to say each time it is, and the attach
 /// is made again once its sessions are done. `Err` is why it could not be
@@ -301,19 +294,6 @@ pub(crate) async fn attach_waiting(
     }
 }
 
-/// `work`, a call over a host's attach, run on the ACP runtime and awaited
-/// from the UI thread.
-pub(crate) fn on_runtime<T, F>(
-    cx: &App,
-    work: F,
-) -> impl Future<Output = Result<T, HostError>> + use<T, F>
-where
-    T: Send + 'static,
-    F: Future<Output = Result<T, HostError>> + Send + 'static,
-{
-    onehand_io::host::ask(&Shared::global(cx).acp.handle(), work)
-}
-
 /// Whether anything waits on `host`'s busy sessions.
 pub(crate) fn waited(cx: &App, host: &HostName) -> bool {
     held(cx).borrow().drive.waited(host)
@@ -329,66 +309,39 @@ pub(crate) fn restart(
     attach_with(cx, host, true, false)
 }
 
-/// Whether `path` is a folder on `host`, asked over `conn` on the ACP runtime.
+/// Whether `path` is a folder on `host`, asked over `conn`.
 pub(crate) fn is_dir(
-    cx: &App,
     host: &HostName,
     conn: HostConn,
     path: PathBuf,
 ) -> impl Future<Output = Result<bool, HostFailure>> + use<> {
-    let asking = on_runtime(cx, async move { conn.is_dir(&path).await });
     let host = host.clone();
     async move {
-        asking
+        conn.is_dir(&path)
             .await
             .map_err(|e| HostFailure::Other(format!("Could not ask {host} about the folder: {e}")))
     }
 }
 
-/// `dir`'s listing on the host reached over `conn`, and how many entries its
-/// bound left out, asked on the ACP runtime.
-pub(crate) fn read_dir(
-    cx: &App,
-    conn: HostConn,
-    dir: PathBuf,
-) -> impl Future<Output = Result<(Vec<TreeEntry>, usize), String>> + use<> {
+/// The home folder of the account signed in over `conn`, asked over it.
+pub(crate) fn home(conn: HostConn) -> impl Future<Output = Result<PathBuf, String>> + use<> {
     let host = conn.host().to_string();
-    let path = dir.clone();
-    let asking = on_runtime(cx, async move { conn.read_dir(&path).await });
     async move {
-        asking
-            .await
-            .map_err(|e| format!("Could not read {} on {host}: {e}", dir.display()))
-    }
-}
-
-/// The home folder of the account signed in over `conn`, asked on the ACP
-/// runtime.
-pub(crate) fn home(
-    cx: &App,
-    conn: HostConn,
-) -> impl Future<Output = Result<PathBuf, String>> + use<> {
-    let host = conn.host().to_string();
-    let asking = on_runtime(cx, async move { conn.home().await });
-    async move {
-        asking
+        conn.home()
             .await
             .map_err(|e| format!("Could not read the home folder on {host}: {e}"))
     }
 }
 
-/// Have the host reached over `conn` `git clone` `url` into `into`, on the
-/// ACP runtime.
+/// Have the host reached over `conn` `git clone` `url` into `into`.
 pub(crate) fn clone_repo(
-    cx: &App,
     conn: HostConn,
     url: String,
     into: PathBuf,
 ) -> impl Future<Output = Result<(), String>> + use<> {
     let host = conn.host().to_string();
-    let asking = on_runtime(cx, async move { conn.clone_repo(&url, &into).await });
     async move {
-        asking
+        conn.clone_repo(&url, &into)
             .await
             .map_err(|e| format!("Could not clone on {host}: {e}"))
     }

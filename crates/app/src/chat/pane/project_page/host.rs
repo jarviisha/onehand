@@ -147,25 +147,13 @@ impl ChatPane {
         cx.spawn(async move |pane, cx| {
             let (listed, bypass) = match attaching.await {
                 Ok(conn) => {
-                    let listed = crate::chat::session::host_list(conn.clone(), cx)
-                        .await
-                        .map_err(|e| {
-                            HostFailure::Other(format!(
-                                "Could not read the sessions on {host}: {e}"
-                            ))
-                        });
+                    let listed = conn.list().await.map_err(|e| {
+                        HostFailure::Other(format!("Could not read the sessions on {host}: {e}"))
+                    });
                     // ponytail: a switch that could not be read is not drawn,
                     // and the next listing reads it again.
                     let bypass = match &listed {
-                        Ok(_) => cx
-                            .update(|cx| {
-                                crate::hosts::on_runtime(
-                                    cx,
-                                    async move { conn.bypass(&path).await },
-                                )
-                            })
-                            .await
-                            .ok(),
+                        Ok(_) => conn.bypass(&path).await.ok(),
                         Err(_) => None,
                     };
                     (listed, bypass)
@@ -293,15 +281,7 @@ impl ChatPane {
         let attaching = crate::hosts::conn(cx, &host);
         cx.spawn_in(window, async move |pane, cx| {
             let set = match attaching.await {
-                Ok(conn) => {
-                    let at = path.clone();
-                    cx.update(|_, cx| {
-                        crate::hosts::on_runtime(cx, async move { conn.set_bypass(&at, on).await })
-                    })
-                    .map_err(|e| e.to_string())?
-                    .await
-                    .map_err(|e| e.to_string())
-                }
+                Ok(conn) => conn.set_bypass(&path, on).await.map_err(|e| e.to_string()),
                 Err(
                     HostFailure::Other(why) | HostFailure::Refused(why) | HostFailure::Taken(why),
                 ) => Err(why),

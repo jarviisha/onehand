@@ -93,11 +93,7 @@ impl Recorded {
         while let Ok(cmd) = rx.try_recv() {
             match cmd {
                 Cmd::Fire(call) => fired.push(call),
-                Cmd::Ask(..)
-                | Cmd::Watch(..)
-                | Cmd::Request(..)
-                | Cmd::TermWatch(..)
-                | Cmd::Forget => {}
+                Cmd::Ask(..) | Cmd::Watch(..) | Cmd::Request(..) | Cmd::TermWatch(..) => {}
             }
         }
         fired

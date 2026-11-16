@@ -163,7 +163,9 @@ impl Answer {
 
 /// What a caller asks of the task that owns the stream.
 enum Cmd {
-    Ask(Call, oneshot::Sender<Result<Reply, HostError>>),
+    /// A call, who waits on its answer, and how long they wait: the task
+    /// keeps the wait, so a caller awaits the answer on any executor.
+    Ask(Call, oneshot::Sender<Result<Reply, HostError>>, Duration),
     Watch(
         HostSession,
         events::UnboundedSender<AcpEvent>,
@@ -173,8 +175,6 @@ enum Cmd {
     /// A call whose answer nobody waits on.
     Fire(Call),
     TermWatch(HostTerm, std::sync::mpsc::Sender<Vec<u8>>),
-    /// Let go of every call whose caller stopped waiting.
-    Forget,
 }
 
 /// Who waits on an answer.
@@ -353,22 +353,15 @@ impl HostConn {
         Self::start("vps".into(), read, write, None)
     }
 
-    /// Ask `call`, giving up on its answer after `wait`.
+    /// Ask `call`, giving up on its answer after `wait`. Needs no runtime of
+    /// its own: the task that owns the stream keeps the wait.
     async fn ask_within(&self, call: Call, wait: Duration) -> Result<Reply, HostError> {
         let (tx, rx) = oneshot::channel();
         let lost = || HostError::Unreachable("the connection to the host is closed".into());
-        self.cmds.send(Cmd::Ask(call, tx)).map_err(|_| lost())?;
-        match tokio::time::timeout(wait, rx).await {
-            Ok(answer) => answer.map_err(|_| lost())?,
-            Err(_) => {
-                // Dropping `rx` closed its slot; the task lets it go.
-                let _ = self.cmds.send(Cmd::Forget);
-                Err(HostError::Protocol(format!(
-                    "the host did not answer within {} s",
-                    wait.as_secs()
-                )))
-            }
-        }
+        self.cmds
+            .send(Cmd::Ask(call, tx, wait))
+            .map_err(|_| lost())?;
+        rx.await.map_err(|_| lost())?
     }
 
     /// Ask `call`, and take from its answer the slot `take` names.
@@ -474,6 +467,9 @@ impl HostConn {
     }
 }
 
+/// When each call's caller stops waiting, by the call's id, with the wait.
+type Deadlines = std::collections::BTreeMap<(tokio::time::Instant, u64), Duration>;
+
 /// The task that owns the stream. It ends when the stream does, or when
 /// nothing is left that could ask or read anything of it.
 async fn pump<R, W>(
@@ -490,6 +486,18 @@ async fn pump<R, W>(
 {
     // Held so the attach process lives exactly as long as this task.
     let _child = child;
+    // The stream is written by a task of its own, so a host that stops
+    // reading holds up only the writes: this task still reads what comes,
+    // and still ends each call whose caller stopped waiting. It ends once
+    // this task does and what was queued is written, or once a write fails.
+    let (outgoing, mut to_write) = mpsc::unbounded_channel::<String>();
+    tokio::spawn(async move {
+        while let Some(text) = to_write.recv().await {
+            if write.write_all(text.as_bytes()).await.is_err() {
+                return;
+            }
+        }
+    });
     let mut lines = BufReader::new(read).lines();
     let mut pending: HashMap<u64, Pending> = HashMap::new();
     let mut watchers: HashMap<HostSession, Watcher> = HashMap::new();
@@ -498,6 +506,15 @@ async fn pump<R, W>(
     let mut forwarders: HashMap<HostSession, mpsc::WeakUnboundedSender<AcpRequest>> =
         HashMap::new();
     let mut terms = terms::Terms::default();
+    // When each call's caller stops waiting, soonest first. An entry whose
+    // call was answered is passed over when it comes due.
+    let mut deadlines = Deadlines::new();
+    let soonest = |deadlines: &Deadlines| {
+        deadlines
+            .keys()
+            .next()
+            .map_or_else(tokio::time::Instant::now, |(at, _)| *at)
+    };
     // Ids start at 1: the host answers a line it cannot read with id 0.
     let mut next = 1_u64;
     let why = loop {
@@ -594,18 +611,26 @@ async fn pump<R, W>(
                     }
                 }
             }
+            _ = tokio::time::sleep_until(soonest(&deadlines)), if !deadlines.is_empty() => {
+                let now = tokio::time::Instant::now();
+                while let Some(entry) = deadlines.first_entry().filter(|e| e.key().0 <= now) {
+                    let ((_, id), wait) = entry.remove_entry();
+                    // Answered already, or a call whose caller went: nothing to say.
+                    let Some(Pending::Caller(tx)) = pending.remove(&id) else { continue };
+                    let _ = tx.send(Err(HostError::Protocol(format!(
+                        "the host did not answer within {} s",
+                        wait.as_secs()
+                    ))));
+                }
+            }
             cmd = cmds.recv() => {
                 let Some(cmd) = cmd else { return };
                 let id = next;
                 let (call, waiter) = match cmd {
-                    Cmd::Forget => {
-                        pending.retain(|_, p| match p {
-                            Pending::Caller(tx) => !tx.is_closed(),
-                            Pending::Watch(..) | Pending::Request(_) | Pending::TermWatch(_) => true,
-                        });
-                        continue;
+                    Cmd::Ask(call, tx, wait) => {
+                        deadlines.insert((tokio::time::Instant::now() + wait, id), wait);
+                        (call, Some(Pending::Caller(tx)))
                     }
-                    Cmd::Ask(call, tx) => (call, Some(Pending::Caller(tx))),
                     Cmd::Watch(session, tx, copy) => {
                         let watcher = Watcher::new(tx.clone(), copy);
                         let after = watcher.after;
@@ -634,7 +659,7 @@ async fn pump<R, W>(
                 text.push('\n');
                 // A write that fails means the stream is gone, which the read
                 // side is about to say.
-                let _ = write.write_all(text.as_bytes()).await;
+                let _ = outgoing.send(text);
             }
         }
     };
@@ -678,14 +703,14 @@ fn refuse_queued(cmds: &mut mpsc::UnboundedReceiver<Cmd>, why: &str) {
     cmds.close();
     while let Ok(cmd) = cmds.try_recv() {
         match cmd {
-            Cmd::Ask(_, tx) => {
+            Cmd::Ask(_, tx, _) => {
                 let _ = tx.send(Err(HostError::Unreachable(why.to_string())));
             }
             Cmd::Watch(_, tx, _) => {
                 own(&tx, AcpEvent::Disconnected(why.to_string()));
             }
             // A terminal watch's sender drops here, and its reader ends.
-            Cmd::Request(..) | Cmd::Fire(_) | Cmd::TermWatch(..) | Cmd::Forget => {}
+            Cmd::Request(..) | Cmd::Fire(_) | Cmd::TermWatch(..) => {}
         }
     }
 }

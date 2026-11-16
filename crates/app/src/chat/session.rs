@@ -25,7 +25,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub(crate) use host::{BeginOnHost, list as host_list};
+pub(crate) use host::BeginOnHost;
 use host::{Source, host_events, new_chat};
 
 mod cards;
