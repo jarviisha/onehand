@@ -42,7 +42,7 @@ fn a_switch_tells_each_connection_once(cx: &mut TestAppContext) {
         standing(&Peer::Session(name.clone())),
         Standing::On
     ));
-    cx.update(|cx| forget(uid, cx));
+    cx.update(|cx| forget(uid, None, cx));
     drop(token);
     assert!(matches!(
         standing(&Peer::Session(name.clone())),

@@ -18,6 +18,9 @@ pub struct Last {
     pub text: Option<String>,
     /// The worker's prompts sent once that turn went.
     pub sent: usize,
+    /// The person holds it, as it was kept across a restart, whatever its
+    /// prompts sent say now.
+    pub person: bool,
 }
 
 /// What a send does.
@@ -67,7 +70,7 @@ pub fn cancel(chat: &Chat, last: &Last) -> Result<u64, String> {
 
 /// Refused once a prompt of the person's has gone since the lead's last.
 fn held_by_lead(chat: &Chat, last: &Last) -> Result<(), String> {
-    match chat.prompted_since(last.sent) {
+    match last.person || chat.prompted_since(last.sent) {
         true => Err(
             "the person holds this worker: they have prompted it since your last turn".to_string(),
         ),

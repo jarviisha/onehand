@@ -6,7 +6,7 @@
 //! **A worker of the caller's whose session is gone reads `link: closed`**,
 //! the one answer that proves it stopped: closing a session ends its agent.
 
-use super::super::drive;
+use super::super::{carry, drive};
 use super::session_of;
 use crate::chat::session::ChatSession;
 use gpui::{App, Entity};
@@ -63,7 +63,9 @@ pub(in crate::control) fn send(
                 })
                 .intake;
             let sent = worker.read(cx).chat().prompts_sent;
-            drive().sent(uid, turn, text, &intake, sent)
+            let (said, fx) = drive().sent(uid, turn, text, &intake, sent);
+            carry(fx, cx);
+            said
         }
     }
 }

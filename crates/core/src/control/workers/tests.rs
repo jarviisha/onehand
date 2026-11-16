@@ -151,6 +151,12 @@ fn relation(lead: u64) -> Relation {
         sent: 1,
         dirs: Vec::new(),
         handle: "w-1".into(),
+        folder: "/repo".into(),
+        agent: "a".into(),
+        name: None,
+        conversation: None,
+        person: false,
+        seq: 1,
     }
 }
 
@@ -264,6 +270,7 @@ fn given_back_the_lead_holds_it() {
         turn: given.turn,
         sent: given.sent,
         dirs: Vec::new(),
+        person: false,
     };
     let said = crate::control::state::state(&chat, &held);
     assert!(said.contains("held by: lead"), "{said}");

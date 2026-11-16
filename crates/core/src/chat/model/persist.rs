@@ -97,6 +97,15 @@ impl Chat {
         self.meta_write(self.persisted)
     }
 
+    /// Where this conversation is kept, once the agent named it; never for
+    /// a chat that does not persist.
+    pub fn conversation_dir(&self) -> Option<std::path::PathBuf> {
+        Some(store::conv_dir(
+            self.store.as_ref()?,
+            self.session_id.as_ref()?,
+        ))
+    }
+
     /// The metadata half of a save, with no lines in it yet.
     fn meta_write(&self, items: usize) -> Option<PendingWrite> {
         let store = self.store.as_ref()?;

@@ -244,6 +244,7 @@ pub(super) fn carry_one(effect: Effect, cx: &mut App) {
         // The person's view reads the relation: nothing in a session changed.
         Effect::Changed => cx.refresh_windows(),
         Effect::ToolsChanged(uid) => super::tell_changed(uid),
+        Effect::Keep { lead, kept } => super::keeping::keep(lead, kept, cx),
     }
 }
 

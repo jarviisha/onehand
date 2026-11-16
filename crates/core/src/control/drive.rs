@@ -29,6 +29,7 @@
 //! it when the open added it; its folder, its place under the cap and its
 //! request id are freed.
 
+use super::kept::Kept;
 use super::open::{self, Step};
 use super::state as said;
 use super::workers::{
@@ -149,6 +150,13 @@ pub enum Input<'a> {
     Begun { uid: u64, facts: Facts },
     /// The wait armed with `token` ran out.
     Elapsed { token: u64 },
+    /// Session `uid`'s conversation is `session_id`, and it has sent
+    /// `prompts_sent` prompts: said when either changes.
+    Conversation {
+        uid: u64,
+        session_id: String,
+        prompts_sent: usize,
+    },
 }
 
 /// What the front end carries out.
@@ -200,6 +208,11 @@ pub enum Effect {
     },
     /// What the person's view reads of the workers changed.
     Changed,
+    /// Write `kept` beside lead `lead`'s conversation, replacing what was
+    /// there, off the UI thread. A lead with no conversation yet writes
+    /// nothing. Late answers do not exist: a later `Keep` for the same lead
+    /// is the whole of it again, and the last asked for is what stays.
+    Keep { lead: u64, kept: Kept },
 }
 
 /// Where an open in flight stands.
@@ -244,6 +257,8 @@ pub enum Found {
 /// A worker gone, as its handle still reads to the lead it had.
 struct Closed {
     lead: u64,
+    /// Why it did not come back, when that is what ended it.
+    why: Option<String>,
 }
 
 /// onehand's tools' drive. See the module header.
@@ -270,6 +285,8 @@ pub struct ControlDrive {
     handles: HashMap<String, u64>,
     /// What each closed worker's handle still answers, by the handle.
     closed_workers: HashMap<String, Closed>,
+    /// The conversation each session was last said to be on.
+    conversations: HashMap<u64, String>,
     pending: HashMap<Key, Pending>,
     minted: u64,
 }
@@ -398,22 +415,37 @@ impl ControlDrive {
         self.only.remove(&uid);
         self.reserved.release_worker(uid);
         self.requests.forget_lead(uid);
+        self.conversations.remove(&uid);
         if let Some(relation) = self.workers.remove(&uid) {
             let closed = Closed {
                 lead: relation.lead,
+                why: None,
             };
             self.closed_workers.insert(relation.handle, closed);
+            fx.push(self.keep(relation.lead));
         }
-        // Its own handle goes, and its workers' with their relations.
+        // Its own handle goes, and its workers' with their relations: the
+        // person closing a lead lets its workers go for good, so none of
+        // them comes back with its conversation.
         let mut gone = vec![uid];
+        let mut ended = Vec::new();
         self.workers.retain(|&worker, relation| {
             let mine = relation.lead == uid;
             if mine {
                 gone.push(worker);
+                ended.push(relation.handle.clone());
             }
             !mine
         });
         self.handles.retain(|_, worker| !gone.contains(worker));
+        for handle in ended {
+            let why = Some("its lead was closed".to_string());
+            self.closed_workers
+                .insert(handle, Closed { lead: uid, why });
+        }
+        if self.keeps(uid) {
+            fx.push(self.keep(uid));
+        }
         fx
     }
 
@@ -538,6 +570,11 @@ impl ControlDrive {
             } => self.woke(uid, chat, lead_here),
             Input::Begun { uid, facts } => self.begun(uid, facts),
             Input::Elapsed { token } => self.elapsed(token),
+            Input::Conversation {
+                uid,
+                session_id,
+                prompts_sent,
+            } => self.conversation(uid, session_id, prompts_sent),
         }
     }
 
@@ -739,6 +776,7 @@ impl ControlDrive {
             phase: Phase::Up {
                 root, dirs, handle, ..
             },
+            token,
             ..
         }) = self.pending.remove(&key)
         else {
@@ -767,6 +805,12 @@ impl ControlDrive {
                 sent: facts.sent,
                 dirs,
                 handle,
+                folder: root,
+                agent: open.agent.clone(),
+                name: open.name.clone(),
+                conversation: self.conversations.get(&uid).cloned(),
+                person: false,
+                seq: token,
             },
         );
         self.requests
@@ -774,6 +818,7 @@ impl ControlDrive {
         vec![
             Effect::Unwatch(uid),
             Effect::Changed,
+            self.keep(open.lead),
             Effect::Answer {
                 key,
                 outcome: Ok(answer),
