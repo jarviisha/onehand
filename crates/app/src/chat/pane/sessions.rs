@@ -143,6 +143,17 @@ impl ChatPane {
     pub(super) fn start(&mut self, uid: u64, resume: Option<ConvMeta>, cx: &mut Context<Self>) {
         match resume {
             Some(meta) => {
+                let open: Vec<String> = self
+                    .open_ids(cx)
+                    .into_iter()
+                    .chain(super::history::open_elsewhere(cx.entity_id(), cx))
+                    .collect();
+                if open.contains(&meta.session_id) {
+                    cx.emit(ChatPaneEvent::ResumeRefused(
+                        "This conversation is already open in a session".to_string(),
+                    ));
+                    return;
+                }
                 // Off the picker at once, so nothing else is chosen while
                 // the conversation is read; the session it held goes with it.
                 if let Some(conv) = self.conversations.get_mut(&uid) {

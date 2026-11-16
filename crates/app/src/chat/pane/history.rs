@@ -7,7 +7,7 @@ use crate::controls::Named as _;
 use gpui::{App, Context, IntoElement, ParentElement, SharedString, Styled, Window, div};
 use gpui_component::menu::DropdownMenu as _;
 use gpui_component::{ActiveTheme, IconName, StyledExt};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 impl ChatPane {
     /// Go back to choosing which past conversation this session should run.
@@ -24,6 +24,14 @@ impl ChatPane {
         let Some(uid) = self.active else {
             return;
         };
+        // Its workers would be left with no lead, or merged with the ones
+        // the other conversation brings back.
+        if crate::control::leads_workers(uid) {
+            cx.emit(ChatPaneEvent::ResumeRefused(
+                "This session leads workers; close them or the session first".to_string(),
+            ));
+            return;
+        }
         let Some(conv) = self.conversations.get(&uid) else {
             return;
         };
@@ -119,10 +127,9 @@ impl ChatPane {
         // Owned rather than borrowed out of the sessions: the menu is built
         // later, from a closure that outlives this borrow of the pane.
         let open: Vec<String> = self
-            .conversations
-            .values()
-            .filter_map(Conversation::session)
-            .filter_map(|session| session.read(cx).chat().session_id.clone())
+            .open_ids(cx)
+            .into_iter()
+            .chain(open_elsewhere(cx.entity_id(), cx))
             .collect();
         let now = onehand_core::chat::now_secs();
         let held = self.archives.as_ref().and_then(|held| held.found.as_ref());
@@ -257,4 +264,34 @@ struct HistoryRow {
     open: bool,
     agent: SharedString,
     dir: PathBuf,
+}
+
+impl ChatPane {
+    /// The conversations this pane's sessions have open, by their ids.
+    pub(crate) fn open_ids(&self, cx: &App) -> Vec<String> {
+        self.conversations
+            .values()
+            .filter_map(Conversation::session)
+            .filter_map(|session| session.read(cx).chat().session_id.clone())
+            .collect()
+    }
+}
+
+/// The conversations a session of another window has open, by their ids,
+/// `skip` being this window's pane.
+pub(crate) fn open_elsewhere(skip: gpui::EntityId, cx: &App) -> Vec<String> {
+    crate::windows::live(cx)
+        .into_iter()
+        .map(|(_, shell)| shell.read(cx).chat_pane().clone())
+        .filter(|pane| pane.entity_id() != skip)
+        .flat_map(|pane| pane.read(cx).open_ids(cx))
+        .collect()
+}
+
+/// Whether one of `open`, conversations by their ids, is the one kept in
+/// `dir`.
+pub(crate) fn is_open(open: &[String], dir: &Path) -> bool {
+    let store = onehand_core::chat::conversations_dir();
+    open.iter()
+        .any(|id| onehand_core::chat::conv_dir(&store, id) == dir)
 }

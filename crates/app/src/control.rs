@@ -27,6 +27,11 @@ pub(crate) use keeping::watch as watch_conversation;
 pub(crate) use start::start_task;
 use start::{start, template};
 pub(crate) use workers::bring_back;
+
+/// Whether session `uid` leads workers, open or opening.
+pub(crate) fn leads_workers(uid: u64) -> bool {
+    drive().leads_workers(uid)
+}
 pub(crate) use workers::whose::{Worker, give_back, give_back_offered, lead_of, workers_of};
 
 /// The tools' drive, held for the whole process: an agent's token is minted

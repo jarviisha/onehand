@@ -28,6 +28,7 @@ mod events;
 mod fork;
 mod header;
 pub(crate) use header::LIVE_DOT;
+pub(crate) use history::is_open;
 mod history;
 mod lead_strip;
 mod offload_send;

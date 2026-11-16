@@ -10,6 +10,9 @@ use onehand_core::host::wire::HostSession;
 use onehand_core::workspace::drive::StartsOn;
 use std::path::PathBuf;
 
+/// A conversation already open in some session, refused a second.
+const ALREADY_OPEN: &str = "This conversation is already open in a session";
+
 impl Shell {
     /// What the rail draws on a session row.
     ///
@@ -482,6 +485,27 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<u64> {
+        // One conversation in one session: two would each write it back as
+        // only what came after.
+        if let Some(dir) = &resume {
+            let me = cx.entity_id();
+            let open: Vec<String> = self
+                .chat
+                .read(cx)
+                .open_ids(cx)
+                .into_iter()
+                .chain(
+                    crate::windows::live(cx)
+                        .into_iter()
+                        .filter(|(_, shell)| shell.entity_id() != me)
+                        .flat_map(|(_, shell)| shell.read(cx).chat.read(cx).open_ids(cx)),
+                )
+                .collect();
+            if crate::chat::is_open(&open, dir) {
+                window.push_notification(crate::toast::warning(ALREADY_OPEN), cx);
+                return None;
+            }
+        }
         let idx = agent_index(agent, cx);
         self.spawn_session(idx, resume, None, window, cx)
     }

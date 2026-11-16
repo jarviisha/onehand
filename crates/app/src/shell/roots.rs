@@ -381,6 +381,11 @@ impl Shell {
     }
 
     /// The project session `uid` is on, when this window holds it.
+    /// This window's chat pane.
+    pub(crate) fn chat_pane(&self) -> &gpui::Entity<crate::chat::ChatPane> {
+        &self.chat
+    }
+
     pub(crate) fn session_project(&self, uid: u64) -> Option<PathBuf> {
         self.window
             .workspace

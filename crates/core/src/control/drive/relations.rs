@@ -63,6 +63,14 @@ impl ControlDrive {
         workers
     }
 
+    /// Whether session `uid` leads workers, open or opening: its
+    /// conversation is then resumed nowhere else, so two leads' workers
+    /// never merge past the cap.
+    pub fn leads_workers(&self, uid: u64) -> bool {
+        self.workers.values().any(|relation| relation.lead == uid)
+            || self.pending.keys().any(|(lead, _)| *lead == uid)
+    }
+
     /// Whether *Give back to the lead* is offered for worker `uid`, which has
     /// sent `prompts_sent` prompts, `lead_open` saying its lead is still a
     /// session of some window.

@@ -259,6 +259,9 @@ impl Shell {
                         crate::toast::failed("Deleting the conversation", why),
                         cx,
                     ),
+                    E::ResumeRefused(why) => {
+                        window.push_notification(crate::toast::warning(why), cx)
+                    }
                     E::Fork { root, spec } => shell.fork_session(root, spec.clone(), window, cx),
                     E::ForkFailed { uid, why } => {
                         let lead = uid.and_then(crate::control::lead_of);

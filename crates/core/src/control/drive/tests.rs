@@ -894,3 +894,22 @@ fn closed_records_read_closed_after_back() {
     assert_eq!(drive.why_closed(closed), None);
     assert!(drive.find(2, closed, |_| false).is_err());
 }
+
+#[test]
+fn a_lead_with_workers_leads_workers() {
+    let mut drive = lead_on();
+    assert!(!drive.leads_workers(1));
+    let (key, _) = resolves(drive.open_worker(asked("go"), &projects(), None));
+    assert!(drive.leads_workers(1), "opening one");
+    drive.handle(Input::Resolved {
+        key,
+        resolved: Ok(resolved()),
+        world: world(),
+    });
+    let mut drive = lead_on();
+    begun(&mut drive);
+    assert!(drive.leads_workers(1));
+    assert!(!drive.leads_workers(7), "a worker leads nothing");
+    let _ = drive.forget(7);
+    assert!(!drive.leads_workers(1), "its one worker closed");
+}
