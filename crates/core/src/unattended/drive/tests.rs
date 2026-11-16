@@ -55,13 +55,13 @@ fn config(at_once: u32, waiting: Option<u32>) -> UnattendedConfig {
 /// workflows `plain` and `cmd` (which runs the check), and one agent.
 struct Rig {
     tasks: TasksDrive<Win>,
-    u: UnattendedDrive,
+    u: UnattendedDrive<Win>,
     world: World,
 }
 
 impl Rig {
     fn new(cfg: UnattendedConfig) -> Self {
-        let (u, _) = UnattendedDrive::new::<Win>(&cfg, &[]);
+        let (u, _) = UnattendedDrive::new(&cfg, &[]);
         Self {
             tasks: TasksDrive::default(),
             u,
@@ -79,7 +79,7 @@ impl Rig {
     /// Give unattended runs `command`, routed through the link.
     fn on<R: Default>(
         &mut self,
-        command: impl FnOnce(&mut UnattendedDrive, &Seen<Win>, &World) -> (R, Vec<Effect<Win>>),
+        command: impl FnOnce(&mut UnattendedDrive<Win>, &Seen<Win>, &World) -> (R, Vec<Effect<Win>>),
     ) -> (R, Out<Win>) {
         let Rig { tasks, u, world } = self;
         let mut joined = Joined::new(tasks, [], Some(u));
@@ -88,7 +88,7 @@ impl Rig {
 
     fn fx(
         &mut self,
-        command: impl FnOnce(&mut UnattendedDrive, &Seen<Win>, &World) -> Vec<Effect<Win>>,
+        command: impl FnOnce(&mut UnattendedDrive<Win>, &Seen<Win>, &World) -> Vec<Effect<Win>>,
     ) -> Out<Win> {
         self.on(|u, seen, world| ((), command(u, seen, world))).1
     }
@@ -191,10 +191,7 @@ fn name<W>(e: &Effect<W>) -> &'static str {
         Effect::Take { .. } => "Take",
         Effect::ClaimPicked { .. } => "ClaimPicked",
         Effect::Tell { .. } => "Tell",
-        Effect::Submit { .. } => "Submit",
-        Effect::AnswerReview { .. } => "AnswerReview",
         Effect::Send(_) => "Send",
-        Effect::Drain { .. } => "Drain",
         Effect::Teardown { .. } => "Teardown",
         Effect::NoteTakenUp { .. } => "NoteTakenUp",
         Effect::Synced(_) => "Synced",
@@ -214,10 +211,7 @@ fn looks<W>(out: &Out<W>) -> Option<&Look<W>> {
         | Effect::Take { .. }
         | Effect::ClaimPicked { .. }
         | Effect::Tell { .. }
-        | Effect::Submit { .. }
-        | Effect::AnswerReview { .. }
         | Effect::Send(_)
-        | Effect::Drain { .. }
         | Effect::Teardown { .. }
         | Effect::NoteTakenUp { .. }
         | Effect::Synced(_)
@@ -237,10 +231,7 @@ fn take_look<W>(out: Out<W>) -> Option<Look<W>> {
         | Effect::Take { .. }
         | Effect::ClaimPicked { .. }
         | Effect::Tell { .. }
-        | Effect::Submit { .. }
-        | Effect::AnswerReview { .. }
         | Effect::Send(_)
-        | Effect::Drain { .. }
         | Effect::Teardown { .. }
         | Effect::NoteTakenUp { .. }
         | Effect::Synced(_)
@@ -261,10 +252,7 @@ fn warned<W>(out: &Out<W>) -> Option<&str> {
         | Effect::Take { .. }
         | Effect::ClaimPicked { .. }
         | Effect::Tell { .. }
-        | Effect::Submit { .. }
-        | Effect::AnswerReview { .. }
         | Effect::Send(_)
-        | Effect::Drain { .. }
         | Effect::Teardown { .. }
         | Effect::NoteTakenUp { .. }
         | Effect::Synced(_)
@@ -283,10 +271,7 @@ fn armed<W>(e: &Effect<W>) -> Option<Duration> {
         | Effect::Take { .. }
         | Effect::ClaimPicked { .. }
         | Effect::Tell { .. }
-        | Effect::Submit { .. }
-        | Effect::AnswerReview { .. }
         | Effect::Send(_)
-        | Effect::Drain { .. }
         | Effect::Teardown { .. }
         | Effect::NoteTakenUp { .. }
         | Effect::Synced(_)
@@ -304,7 +289,7 @@ fn a_config_that_cannot_work_stops_every_run_and_the_clock_still_runs() {
         label: " ".into(),
         ..config(1, None)
     };
-    let (u, fx) = UnattendedDrive::new::<Win>(&cfg, &[]);
+    let (u, fx) = UnattendedDrive::new(&cfg, &[]);
     assert!(u
         .blocked(&World::default())
         .unwrap()
@@ -357,10 +342,7 @@ fn a_tick_claims_an_issue_and_its_task_asks_for_its_place() {
             | Effect::Take { .. }
             | Effect::ClaimPicked { .. }
             | Effect::Tell { .. }
-            | Effect::Submit { .. }
-            | Effect::AnswerReview { .. }
             | Effect::Send(_)
-            | Effect::Drain { .. }
             | Effect::Teardown { .. }
             | Effect::NoteTakenUp { .. }
             | Effect::Synced(_)
@@ -452,10 +434,7 @@ fn synced_of<W>(effect: &Effect<W>) -> Option<&crate::issues::sync::OutsideSync>
         | Effect::Take { .. }
         | Effect::ClaimPicked { .. }
         | Effect::Tell { .. }
-        | Effect::Submit { .. }
-        | Effect::AnswerReview { .. }
         | Effect::Send(_)
-        | Effect::Drain { .. }
         | Effect::Teardown { .. }
         | Effect::NoteTakenUp { .. }
         | Effect::Tick
@@ -635,10 +614,7 @@ fn an_ended_run_drops_its_project_unless_a_person_has_it_and_is_told_once() {
             | Effect::Take { .. }
             | Effect::ClaimPicked { .. }
             | Effect::Tell { .. }
-            | Effect::Submit { .. }
-            | Effect::AnswerReview { .. }
             | Effect::Send(_)
-            | Effect::Drain { .. }
             | Effect::NoteTakenUp { .. }
             | Effect::Synced(_)
             | Effect::Tick
@@ -694,10 +670,7 @@ fn a_run_coming_up_notes_its_session_on_an_issue_kept_here() {
         | Effect::Take { .. }
         | Effect::ClaimPicked { .. }
         | Effect::Tell { .. }
-        | Effect::Submit { .. }
-        | Effect::AnswerReview { .. }
         | Effect::Send(_)
-        | Effect::Drain { .. }
         | Effect::Teardown { .. }
         | Effect::Tick
         | Effect::Signal(_)

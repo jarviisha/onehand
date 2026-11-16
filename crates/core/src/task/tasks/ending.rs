@@ -1,7 +1,7 @@
 //! A run that ended, kept in its task: what its end tells, and the place it
 //! holds given up once its work has stopped and its last mark is pinned.
 
-use super::{Effect, Input, Signal, TasksDrive, DRAIN_LIMIT};
+use super::{Effect, Input, Linked, Signal, TasksDrive, DRAIN_LIMIT};
 use crate::task::{marks, Origin, Source, Task};
 use crate::workflow::{Failure, Outcome, Run};
 use crate::Now;
@@ -167,7 +167,7 @@ impl<W: Copy> TasksDrive<W> {
                 Some(Origin::Tool) | None => {}
             }
             if task.issue().is_some() {
-                fx.push(Effect::IssueEnded(id.to_string()));
+                self.linked.push(Linked::IssueEnded(id.to_string()));
             }
         }
         self.release(id, fx);

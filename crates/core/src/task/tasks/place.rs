@@ -2,7 +2,7 @@
 //! it, and giving it up to the next one waiting, in the window it was asked
 //! from.
 
-use super::{Effect, Placed, Signal, TasksDrive};
+use super::{Effect, Linked, Placed, Signal, TasksDrive};
 use crate::task::queue;
 use crate::task::Task;
 use crate::workflow::Stop;
@@ -31,7 +31,7 @@ impl<W: Copy> TasksDrive<W> {
             return fx;
         }
         let Some(task) = self.task(id) else {
-            fx.push(Effect::Asked(id.to_string()));
+            self.linked.push(Linked::Asked(id.to_string()));
             fx.push(told(Placed::Refused("that task is gone".to_string())));
             return fx;
         };
@@ -59,12 +59,12 @@ impl<W: Copy> TasksDrive<W> {
         // it: the cap lets go here, and the task reads cut off, as after a
         // restart, rather than holding a slot until one.
         if !window_open {
-            fx.push(Effect::Asked(id.clone()));
+            self.linked.push(Linked::Asked(id.clone()));
             fx.push(told(Placed::Refused("the window closed".to_string())));
             return;
         }
         if self.busy(&id) {
-            fx.push(Effect::Asked(id.clone()));
+            self.linked.push(Linked::Asked(id.clone()));
             fx.push(told(Placed::Refused(
                 "that task is already running or waiting".to_string(),
             )));
@@ -76,7 +76,7 @@ impl<W: Copy> TasksDrive<W> {
         }
         // Asked for: an issue's run counts against the cap from here as
         // queued or running.
-        fx.push(Effect::Asked(id.clone()));
+        self.linked.push(Linked::Asked(id.clone()));
         if free {
             return fx.push(Effect::Drive { task: id, window });
         }
@@ -130,7 +130,7 @@ impl<W: Copy> TasksDrive<W> {
             fx.push(Effect::Save(Box::new(task.clone())));
         }
         if told {
-            fx.push(Effect::Deliver(id.to_string()));
+            self.linked.push(Linked::Deliver(id.to_string()));
         }
         fx.extend(self.enforce_cap());
         fx.push(Effect::Refresh);

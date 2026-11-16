@@ -235,13 +235,6 @@ pub(super) fn perform(
             }
             Effect::Defer(input) => cx.defer(move |cx| feed(input, cx)),
             Effect::Told { task, placed } => tell(&task, placed, cx),
-            // Unattended runs' to act on: the link hands them over, and
-            // never on to here.
-            Effect::IssueEnded(_)
-            | Effect::Deliver(_)
-            | Effect::DeliverAll
-            | Effect::Asked(_)
-            | Effect::Ask { .. } => {}
             Effect::CloseSession { uid, window } => cx.defer(move |cx| {
                 crate::state::with_shell(window, cx, |shell, window, cx| {
                     shell.close_finished(uid, window, cx)

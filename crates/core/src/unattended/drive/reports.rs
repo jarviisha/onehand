@@ -8,16 +8,11 @@ use crate::task::Task;
 use crate::unattended::TrackerRef;
 use crate::workflow::{Outcome, Stop};
 
-impl UnattendedDrive {
+impl<W: Copy + PartialEq> UnattendedDrive<W> {
     /// The agent of issue task `id` came up in the session named `session`:
     /// an issue kept in onehand notes which conversation works it. One that
     /// lives only on the forge has nowhere to keep it.
-    pub fn came_up<W: Copy>(
-        &self,
-        id: &str,
-        session: Option<String>,
-        seen: &Seen<W>,
-    ) -> Vec<Effect<W>> {
+    pub fn came_up(&self, id: &str, session: Option<String>, seen: &Seen<W>) -> Vec<Effect<W>> {
         let Some(task) = seen.task(id) else {
             return Vec::new();
         };
@@ -47,7 +42,7 @@ impl UnattendedDrive {
 
     /// Issue task `id`'s run has ended and given its place up: drop its
     /// project unless a person has it, then tell the issue how it ended.
-    pub fn ended<W: Copy>(&mut self, id: &str, seen: &Seen<W>) -> Vec<Effect<W>> {
+    pub fn ended(&mut self, id: &str, seen: &Seen<W>) -> Vec<Effect<W>> {
         let Some(task) = seen.task(id) else {
             return Vec::new();
         };
@@ -70,7 +65,7 @@ impl UnattendedDrive {
 
     /// Send what issue task `id` has not told its issue yet, oldest first.
     /// A delivery already on its way sends nothing more.
-    pub fn deliver<W: Copy>(&mut self, id: &str, seen: &Seen<W>) -> Vec<Effect<W>> {
+    pub fn deliver(&mut self, id: &str, seen: &Seen<W>) -> Vec<Effect<W>> {
         let Some(task) = seen.task(id) else {
             return Vec::new();
         };
@@ -104,7 +99,7 @@ impl UnattendedDrive {
     }
 
     /// Send every report not yet delivered, of every issue task.
-    pub fn deliver_all<W: Copy>(&mut self, seen: &Seen<W>) -> Vec<Effect<W>> {
+    pub fn deliver_all(&mut self, seen: &Seen<W>) -> Vec<Effect<W>> {
         let undelivered: Vec<String> = seen
             .all()
             .iter()

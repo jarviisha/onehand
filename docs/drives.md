@@ -224,7 +224,10 @@ its notes, its prompt and its cancel, and tells the run of a prompt not taken, i
 `task::tasks::link` a run and its task, and `unattended::link` unattended runs and the tasks (every
 start held to the cap, a task started off screen among them, a claim kept as a task, what a run
 tells unattended runs, a run's end telling its issue, and the workflows a setting puts in force,
-`unattended::link::shown`). A start off screen's project is kept in its window's workspace by
+`unattended::link::shown`). What one of these two drives asks of the other is no effect of its
+own: each keeps it in a queue (`Linked`), which only their link takes, so no carrier matches it,
+and one left there by a call that went round the link is settled at the next that goes through
+it. A start off screen's project is kept in its window's workspace by
 `task::tasks::link::keep`, which the window lends its `WorkspaceDrive` for. The note a session
 working an issue by hand owes it once its conversation is named is `issues::link::TakenUp`'s,
 which reads the session's `Chat` and answers the `Change` its file's drive writes. A drive that reads
