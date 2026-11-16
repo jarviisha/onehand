@@ -352,7 +352,7 @@ impl Composer {
             let session = session.read(cx);
             match trigger.kind {
                 TriggerKind::File => !session.files_scanned,
-                TriggerKind::Command => session.chat.commands.is_empty(),
+                TriggerKind::Command => session.chat().commands.is_empty(),
             }
         });
         // Measured once, on the frame the popup opens, against an empty query,

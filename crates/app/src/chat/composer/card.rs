@@ -113,11 +113,7 @@ impl Composer {
                 let session = session.clone();
                 move |_: &crate::shell::CycleMode, _, cx| {
                     session.update(cx, |session, cx| {
-                        let (moved, fx) = session.chat.cycle_mode();
-                        session.perform(fx, cx);
-                        if moved.is_some() {
-                            cx.notify();
-                        }
+                        session.drive(cx, |chat, _| chat.cycle_mode());
                     });
                 }
             })
@@ -230,7 +226,7 @@ impl Composer {
                         send_controls(
                             blocked.clone(),
                             !self.text(cx).trim().is_empty() || !self.attachments.is_empty(),
-                            (session.read(cx).chat.cancelled, waits),
+                            (session.read(cx).chat().cancelled, waits),
                             cx.listener(|_: &mut Self, _, _, cx| {
                                 cx.emit(ComposerEvent::SendPressed);
                             }),
@@ -328,7 +324,7 @@ impl Composer {
         let branch = branch.map(|chip| self.opens_menu(Overlay::Branch, chip));
         let control = control_chip(session, cx);
         let meters: Vec<_> = {
-            let chat = &session.read(cx).chat;
+            let chat = &session.read(cx).chat();
             [chat.context_meter(), chat.limit_meter()]
         }
         .into_iter()
@@ -409,7 +405,7 @@ fn control_chip(
     session: &Entity<ChatSession>,
     cx: &mut Context<Composer>,
 ) -> Option<impl IntoElement + use<>> {
-    let uid = session.read(cx).chat.uid;
+    let uid = session.read(cx).chat().uid;
     if !crate::control::switched_on(uid) {
         return None;
     }

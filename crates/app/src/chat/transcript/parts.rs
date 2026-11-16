@@ -206,7 +206,7 @@ pub(super) fn copy_turn_button(
     let session = session.clone();
     copy_control("copy-answer", "Copy the closing paragraph", cx).on_click(
         move |_, _, cx: &mut App| {
-            let closing = session.read(cx).chat.turn_closing(target);
+            let closing = session.read(cx).chat().turn_closing(target);
             cx.write_to_clipboard(gpui::ClipboardItem::new_string(closing));
         },
     )

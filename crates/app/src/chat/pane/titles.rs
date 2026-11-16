@@ -16,7 +16,7 @@ impl ChatPane {
     /// unnamed conversation is the caller's to label, and for the rail that
     /// means falling back to the agent's name.
     pub fn title_for(&self, uid: u64, cx: &App) -> Option<String> {
-        self.session_of(uid)?.read(cx).chat.conversation_title()
+        self.session_of(uid)?.read(cx).chat().conversation_title()
     }
 
     /// Give a conversation a name of the user's choosing, written down at
@@ -48,6 +48,6 @@ impl ChatPane {
     /// summary the app guessed, or accepting the prefilled value would silently
     /// freeze that guess in place forever.
     pub fn custom_title(&self, uid: u64, cx: &App) -> Option<String> {
-        self.session_of(uid)?.read(cx).chat.custom_title.clone()
+        self.session_of(uid)?.read(cx).chat().custom_title.clone()
     }
 }

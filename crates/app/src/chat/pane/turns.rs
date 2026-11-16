@@ -44,19 +44,19 @@ impl ChatPane {
         // prompt waits in the composer meanwhile: sent once the host holds
         // the code, kept there when it could not get it.
         let code = Self::code_at(session, cx);
-        let (intake, left) = session.update(cx, |session, cx| {
+        let prompted = session.update(cx, |session, cx| {
             session.prompt(&text, &staged, Origin::Person, code, cx)
         });
         // Clear only on a prompt that went somewhere -- sent, or queued behind
         // the turn that is running. A refused one (no agent yet, an unreadable
         // attachment) must not silently eat what the user typed or staged.
-        match intake {
+        match prompted.intake {
             Intake::Sent | Intake::Queued => {
                 composer.update(cx, |composer, cx| composer.clear(window, cx))
             }
             Intake::Held | Intake::Waiting | Intake::CodeFirst | Intake::Refused(_) => {}
         }
-        Self::carry(session, composer, text, left, window, cx);
+        Self::carry(session, composer, text, prompted.send_code, window, cx);
     }
 
     /// Put the queued prompt back in the composer.
@@ -69,11 +69,7 @@ impl ChatPane {
             return;
         };
         let Some(pending) = session.update(cx, |session, cx| {
-            let pending = session.chat.unqueue();
-            if pending.is_some() {
-                cx.notify();
-            }
-            pending
+            session.drive(cx, |chat, _| (chat.unqueue(), Vec::new()))
         }) else {
             return;
         };
@@ -102,7 +98,7 @@ impl ChatPane {
     /// Whether session `uid` has a failed turn whose prompt can go again.
     pub fn can_resend(&self, uid: u64, cx: &App) -> bool {
         self.session_of(uid)
-            .is_some_and(|session| session.read(cx).chat.resend_text().is_some())
+            .is_some_and(|session| session.read(cx).chat().resend_text().is_some())
     }
 
     /// Send session `uid`'s last prompt again, after a turn that failed.

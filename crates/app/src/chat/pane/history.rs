@@ -122,7 +122,7 @@ impl ChatPane {
             .conversations
             .values()
             .filter_map(Conversation::session)
-            .filter_map(|session| session.read(cx).chat.session_id.clone())
+            .filter_map(|session| session.read(cx).chat().session_id.clone())
             .collect();
         let now = onehand_core::chat::now_secs();
         let held = self.archives.as_ref().and_then(|held| held.found.as_ref());

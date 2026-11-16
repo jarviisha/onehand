@@ -87,7 +87,7 @@ pub(super) fn diff_detail(
             );
     }
 
-    let root = session.read(cx).chat.root.clone();
+    let root = session.read(cx).chat().root.clone();
     let mut budget = MAX_DIFF_LINES;
     let mut rows: Vec<gpui::AnyElement> = Vec::new();
     let files = t

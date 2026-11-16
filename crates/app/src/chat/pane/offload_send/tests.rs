@@ -107,11 +107,18 @@ impl Rig {
             let code = Code::MustGo {
                 line: "Sending the code".into(),
             };
-            let (intake, left) = self.session.update(cx, |session, cx| {
+            let prompted = self.session.update(cx, |session, cx| {
                 session.prompt(&text, &[], Origin::Person, code, cx)
             });
-            assert_eq!(intake, Intake::CodeFirst);
-            ChatPane::carry(&self.session, &self.composer, text, left, window, cx);
+            assert_eq!(prompted.intake, Intake::CodeFirst);
+            ChatPane::carry(
+                &self.session,
+                &self.composer,
+                text,
+                prompted.send_code,
+                window,
+                cx,
+            );
         });
         cx.run_until_parked();
     }

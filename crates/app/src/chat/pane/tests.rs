@@ -336,7 +336,7 @@ mod lifecycle {
     fn unseen(pane: &Entity<ChatPane>, uid: u64, cx: &mut VisualTestContext) -> bool {
         pane.read_with(cx, |pane, cx| {
             pane.session_of(uid)
-                .is_some_and(|session| session.read(cx).chat.unseen())
+                .is_some_and(|session| session.read(cx).chat().unseen())
         })
     }
 

@@ -264,7 +264,7 @@ impl ChatPane {
             .any(|session| {
                 session
                     .read(cx)
-                    .chat
+                    .chat()
                     .session_id
                     .as_deref()
                     .is_some_and(|sid| onehand_core::chat::conv_dir(&store, sid) == dir)

@@ -31,7 +31,7 @@ impl ChatPane {
         };
         let Some(point) = conv
             .session()
-            .and_then(|session| session.read(cx).chat.fork_point(target))
+            .and_then(|session| session.read(cx).chat().fork_point(target))
         else {
             return;
         };

@@ -159,7 +159,7 @@ pub fn item(
     window: &Window,
     cx: &App,
 ) -> impl IntoElement + use<> {
-    let chat = &session.read(cx).chat;
+    let chat = &session.read(cx).chat();
     // Only an answer has a footer, and only its turn's last one draws it.
     let turn = matches!(it, ChatItem::Agent(_))
         .then(|| chat.turn_answer(target))
@@ -209,7 +209,7 @@ pub fn item(
             // restart that host's service now, in place of the key that
             // would only find it waiting again.
             match lost
-                .then(|| session.read(cx).chat.host_waiting().cloned())
+                .then(|| session.read(cx).chat().host_waiting().cloned())
                 .flatten()
             {
                 Some(host) => host_waiting(text, session, host, cx),

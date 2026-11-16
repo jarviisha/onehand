@@ -1,6 +1,5 @@
 use super::ChatPane;
 use gpui::{App, Context};
-use onehand_core::chat::drive::{Effect, Input};
 use onehand_core::chat::{Away, Presence, SessionSignal};
 
 impl ChatPane {
@@ -39,7 +38,7 @@ impl ChatPane {
                         .file_name()
                         .map(|n| n.to_string_lossy().into_owned())
                         .unwrap_or_else(|| conv.root.display().to_string()),
-                    conversation: session.read(cx).chat.conversation_title(),
+                    conversation: session.read(cx).chat().conversation_title(),
                     agent: conv.spec.name.clone(),
                     // The rail's own word for the same condition, so a row on
                     // screen and a line on a phone cannot end up calling one
@@ -66,32 +65,9 @@ impl ChatPane {
         };
         let attention = self.presence(cx).seeing(uid);
         let origin = self.origin(uid, agent, root, cx);
-        let left = session.update(cx, |session, cx| {
-            let fx = session
-                .chat
-                .handle(Input::Seen { what, attention }, onehand_core::Now::read());
-            session.perform(fx, cx)
-        });
-        for effect in left {
-            match effect {
-                Effect::Tell {
-                    what,
-                    desktop,
-                    chat,
-                } => self.tell(&origin, what, desktop, chat, cx),
-                // Only a tell answers a look; the rest the session carried.
-                Effect::Signal(_)
-                | Effect::Changed
-                | Effect::OfferChanged
-                | Effect::Save(_)
-                | Effect::Arm { .. }
-                | Effect::Disarm
-                | Effect::SendCode { .. }
-                | Effect::PromptAgain
-                | Effect::Request(_)
-                | Effect::SaveTitle { .. }
-                | Effect::Look(_) => {}
-            }
+        let tells = session.update(cx, |session, cx| session.seen(what, attention, cx));
+        for tell in tells {
+            self.tell(&origin, tell.what, tell.desktop, tell.chat, cx);
         }
         cx.notify();
     }
@@ -117,7 +93,7 @@ impl ChatPane {
         }
         if chat && let Some(session) = self.session_of(origin.uid) {
             let news =
-                onehand_core::remote::link::announcement(&session.read(cx).chat, origin.uid, what);
+                onehand_core::remote::link::announcement(session.read(cx).chat(), origin.uid, what);
             crate::remote::announce(origin, news, cx);
         }
     }

@@ -105,17 +105,19 @@ fn permission_record(
                             .text_color(cx.theme().foreground)
                             .child(onehand_core::chat::redact(p.command())),
                     )
-                    .children(command_cwd(&session.read(cx).chat.root).map(|(shown, _)| {
-                        div()
-                            .w_full()
-                            .min_w_0()
-                            .border_t_1()
-                            .border_color(cx.theme().border)
-                            .py(STACK_GAP)
-                            .px(FRAME_PAD)
-                            .text_color(cx.theme().muted_foreground)
-                            .child(format!("in {shown}"))
-                    })),
+                    .children(
+                        command_cwd(&session.read(cx).chat().root).map(|(shown, _)| {
+                            div()
+                                .w_full()
+                                .min_w_0()
+                                .border_t_1()
+                                .border_color(cx.theme().border)
+                                .py(STACK_GAP)
+                                .px(FRAME_PAD)
+                                .text_color(cx.theme().muted_foreground)
+                                .child(format!("in {shown}"))
+                        }),
+                    ),
             ))
         })
         .into_any_element()
@@ -146,7 +148,7 @@ pub(in crate::chat) fn permission(
     // unrecognised kind has no word, so the slot stays empty rather than
     // printing one this build made up.
     let kind = (p.req.kind != ToolKind::Other).then(|| tool_label(p.req.kind));
-    let cwd = command_cwd(&session.read(cx).chat.root);
+    let cwd = command_cwd(&session.read(cx).chat().root);
 
     let warning = crate::theme::status_ink(cx).warning;
     pinned_card(idx.is_some(), cx)
@@ -351,7 +353,7 @@ pub(in crate::chat) fn answer_pinned(
     weight: PermissionWeight,
     cx: &mut App,
 ) {
-    let chat = &session.read(cx).chat;
+    let chat = &session.read(cx).chat();
     let Some(super::Pinned::Permission(idx)) = super::pinned(chat) else {
         return;
     };

@@ -55,7 +55,7 @@ fn act_rows(query: &str, session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
         Act::Mode => mode_action(session, cx).is_some(),
         Act::Fast => fast_action(session, cx).is_some(),
         Act::Attach | Act::Mention | Act::Command | Act::Workflow => true,
-        Act::Control => crate::control::offered(session.read(cx).chat.uid, cx),
+        Act::Control => crate::control::offered(session.read(cx).chat().uid, cx),
     };
     // Hoisted, for the reason the folder run hoists its own: inside the filter
     // it is an allocation per row, on a list rebuilt at every keystroke.
@@ -208,7 +208,7 @@ impl Composer {
                     }),
                     (None, Act::Mention) => self.insert_trigger('@', window, cx),
                     (None, Act::Control) => {
-                        let uid = session.read(cx).chat.uid;
+                        let uid = session.read(cx).chat().uid;
                         crate::control::switch(uid, !crate::control::switched_on(uid), cx);
                         cx.notify();
                     }
@@ -225,9 +225,7 @@ impl Composer {
             Pick::Mode(id) => {
                 let id = id.clone();
                 session.update(cx, |session, cx| {
-                    let fx = session.chat.set_mode(&id);
-                    session.perform(fx, cx);
-                    cx.notify();
+                    session.drive(cx, |chat, _| ((), chat.set_mode(&id)))
                 });
                 self.close_overlay(cx);
                 true
@@ -235,9 +233,9 @@ impl Composer {
             Pick::Config { config_id, value } => {
                 let (config_id, value) = (config_id.clone(), value.clone());
                 session.update(cx, |session, cx| {
-                    let fx = session.chat.set_config_option(&config_id, &value);
-                    session.perform(fx, cx);
-                    cx.notify();
+                    session.drive(cx, |chat, _| {
+                        ((), chat.set_config_option(&config_id, &value))
+                    })
                 });
                 self.close_overlay(cx);
                 true
@@ -287,11 +285,12 @@ impl Composer {
             return false;
         };
         session.update(cx, |session, cx| {
-            let fx = session
-                .chat
-                .set_config_option(&toggle.config_id, &toggle.flip_to);
-            session.perform(fx, cx);
-            cx.notify();
+            session.drive(cx, |chat, _| {
+                (
+                    (),
+                    chat.set_config_option(&toggle.config_id, &toggle.flip_to),
+                )
+            })
         });
         cx.notify();
         true
@@ -379,7 +378,7 @@ impl Composer {
         };
         let entity = session;
         let session = entity.read(cx);
-        let chat = &session.chat;
+        let chat = &session.chat();
         match trigger.kind {
             TriggerKind::File => {
                 let artifacts = chat.artifacts(MAX_ARTIFACT_SCAN);

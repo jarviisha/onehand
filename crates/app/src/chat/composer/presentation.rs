@@ -133,7 +133,7 @@ impl Default for Pick {
 /// five characters of a word the chip's tooltip already carries. What is left
 /// is the only part that ever changes.
 pub(super) fn mode_action(session: &Entity<ChatSession>, cx: &App) -> Option<SharedString> {
-    let chat = &session.read(cx).chat;
+    let chat = &session.read(cx).chat();
     (!chat.modes.is_empty()).then(|| {
         chat.current_mode
             .as_ref()
@@ -161,7 +161,7 @@ fn has_own_chip(option: &onehand_core::acp::ConfigOption) -> bool {
 pub(super) fn effort_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
     session
         .read(cx)
-        .chat
+        .chat()
         .config_options
         .iter()
         .find(|option| has_own_chip(option))
@@ -199,7 +199,7 @@ pub(super) struct FastPick {
 /// setting's own name until one is; lit once a value in force is not one of
 /// the words that name a fast group's off side.
 pub(super) fn fast_action(session: &Entity<ChatSession>, cx: &App) -> Option<FastPick> {
-    let option = fast_group(&session.read(cx).chat.config_options)?;
+    let option = fast_group(&session.read(cx).chat().config_options)?;
     let current = option.in_force();
     Some(FastPick {
         lit: current.is_some_and(|choice| !choice.reads_off()),
@@ -213,7 +213,7 @@ pub(super) fn fast_action(session: &Entity<ChatSession>, cx: &App) -> Option<Fas
 
 /// The choices behind it.
 pub(super) fn fast_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
-    let options = &session.read(cx).chat.config_options;
+    let options = &session.read(cx).chat().config_options;
     fast_group(options).map(rows_of).unwrap_or_default()
 }
 
@@ -255,7 +255,7 @@ fn rows_of(option: &onehand_core::acp::ConfigOption) -> Vec<Row> {
 ///
 /// `None` where the model's list would hold nothing.
 pub(super) fn options_action(session: &Entity<ChatSession>, cx: &App) -> Option<SharedString> {
-    let options = &session.read(cx).chat.config_options;
+    let options = &session.read(cx).chat().config_options;
     if !options.iter().any(|option| listed(option, options)) {
         return None;
     }
@@ -271,7 +271,7 @@ pub(super) fn options_action(session: &Entity<ChatSession>, cx: &App) -> Option<
 /// in the middle ink, so the two read as a name and what it is run at. `None`
 /// where the group has no chip of its own.
 pub(super) fn effort_action(session: &Entity<ChatSession>, cx: &App) -> Option<SharedString> {
-    let options = &session.read(cx).chat.config_options;
+    let options = &session.read(cx).chat().config_options;
     options
         .iter()
         .find(|option| has_own_chip(option))
@@ -292,7 +292,7 @@ pub(super) struct FastToggle {
 
 /// The fast group as a switch, where the agent offers one that reads as one.
 pub(super) fn fast_toggle(session: &Entity<ChatSession>, cx: &App) -> Option<FastToggle> {
-    let option = fast_group(&session.read(cx).chat.config_options)?;
+    let option = fast_group(&session.read(cx).chat().config_options)?;
     let switch = option.switch()?;
     Some(FastToggle {
         on: switch.on,
@@ -313,7 +313,7 @@ pub(super) fn fast_toggle(session: &Entity<ChatSession>, cx: &App) -> Option<Fas
 /// Its words are short enough to keep whole beside the check, and read as the
 /// state the check says. Not offered in an unattended run's session.
 pub(super) fn add_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
-    let uid = session.read(cx).chat.uid;
+    let uid = session.read(cx).chat().uid;
     let control = crate::control::offered(uid, cx).then(|| Row {
         label: "Agent controls onehand".into(),
         group: Some("This session".into()),
@@ -395,7 +395,7 @@ pub(super) fn branch_rows() -> Vec<Row> {
 }
 
 pub(super) fn mode_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
-    let chat = &session.read(cx).chat;
+    let chat = &session.read(cx).chat();
     chat.modes
         .iter()
         .enumerate()
@@ -439,7 +439,7 @@ fn listed(
 }
 
 pub(super) fn options_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
-    let chat = &session.read(cx).chat;
+    let chat = &session.read(cx).chat();
     let mut options: Vec<_> = chat
         .config_options
         .iter()

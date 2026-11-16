@@ -29,7 +29,7 @@ pub(super) fn ask_take(
                 let handle = state.read(cx).focus_handle(cx);
                 window.focus(&handle, cx);
                 session.update(cx, |s, cx| {
-                    if let Some(rows) = s.chat.ask_at(idx).map(|item| item.row_count(field)) {
+                    if let Some(rows) = s.chat().ask_at(idx).map(|item| item.row_count(field)) {
                         let mut place = s.ask_place(idx);
                         place.point_at(rows.saturating_sub(1));
                         s.set_ask_place(idx, place);
@@ -96,7 +96,7 @@ pub(super) fn walk(
     window.focus(card, cx);
     session.update(cx, |s, cx| {
         let mut place = s.ask_place(idx);
-        if let Some(item) = s.chat.ask_at(idx) {
+        if let Some(item) = s.chat().ask_at(idx) {
             place.move_cursor(item, active, delta);
         }
         s.set_ask_place(idx, place);

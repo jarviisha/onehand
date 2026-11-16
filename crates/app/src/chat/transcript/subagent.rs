@@ -62,7 +62,7 @@ pub(super) fn subagent(
     } else {
         (shown.start, steps - shown.end)
     };
-    let root = session.read(cx).chat.root.clone();
+    let root = session.read(cx).chat().root.clone();
     let rows: Vec<gpui::AnyElement> = shown
         .clone()
         .filter_map(|ix| {

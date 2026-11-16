@@ -23,7 +23,7 @@ impl ChatPane {
     /// accent, then how many steps run (*N running*) and what the agent says
     /// it is doing.
     fn working_strip(&self, session: &Entity<ChatSession>, cx: &App) -> gpui::AnyElement {
-        let chat = &session.read(cx).chat;
+        let chat = &session.read(cx).chat();
         let running = chat
             .items
             .iter()
@@ -174,13 +174,13 @@ impl ChatPane {
         let handle = self.handle.clone();
         let conv = self.conversations.get_mut(&uid)?;
         conv.viewport.replan(
-            &session.chat,
+            session.chat(),
             session.folds(),
             |anchor, default| session.activity_is_open(anchor, default),
             |target, default| session.item_is_open(target, default),
             |anchor, default| session.turn_is_open(anchor, default),
         );
-        let state = conv.viewport.list_state(session.chat.busy, room);
+        let state = conv.viewport.list_state(session.chat().busy, room);
         // Asked for once the state exists, and only then: the list is what
         // knows it has been scrolled, and the pane is what draws the control
         // that depends on it. Without this the pill waited for whatever
@@ -229,7 +229,7 @@ impl ChatPane {
         window: &Window,
         cx: &App,
     ) -> gpui::AnyElement {
-        let chat = &session.read(cx).chat;
+        let chat = &session.read(cx).chat();
         let conv = self.conversations.get(&chat.uid);
         let Some(plan) = conv.and_then(|conv| conv.viewport.run(ix)) else {
             return div().into_any_element();
@@ -390,7 +390,7 @@ impl ChatPane {
         window: &Window,
         cx: &App,
     ) -> gpui::AnyElement {
-        let chat = &session.read(cx).chat;
+        let chat = &session.read(cx).chat();
         let body =
             |targets: &[TranscriptItemId], room: &transcript::Room| -> Vec<gpui::AnyElement> {
                 targets

@@ -8,7 +8,7 @@ use super::ChatPane;
 use crate::chat::composer::Composer;
 use crate::chat::session::ChatSession;
 use gpui::{App, Entity, Window};
-use onehand_core::chat::drive::{Code, Effect, Input};
+use onehand_core::chat::drive::Code;
 
 // The send of a project's code: the offloaded projects' carrier's, and in a
 // test one that test answers.
@@ -24,7 +24,7 @@ impl ChatPane {
         if !session.on_host {
             return Code::Here;
         }
-        let root = &session.chat.root;
+        let root = &session.chat().root;
         if crate::offload::sending(cx, root).is_some() {
             return Code::Going;
         }
@@ -37,36 +37,17 @@ impl ChatPane {
     }
 
     /// Carry out what only the pane can of a person's prompt to `session`,
-    /// whose words were `text`: the code sent first, and the prompt sent again
-    /// from the composer once the code is up.
+    /// whose words were `text`: the code sent first, under `send_code`.
     pub(super) fn carry(
         session: &Entity<ChatSession>,
         composer: &Entity<Composer>,
         text: String,
-        fx: Vec<Effect>,
+        send_code: Option<u64>,
         window: &mut Window,
         cx: &mut App,
     ) {
-        for effect in fx {
-            match effect {
-                Effect::SendCode { token } => {
-                    Self::send_code(session, composer, text.clone(), token, window, cx)
-                }
-                Effect::PromptAgain => Self::submit_from(session, composer, window, cx),
-                // The session carried these out itself.
-                Effect::Signal(_)
-                | Effect::Changed
-                | Effect::OfferChanged
-                | Effect::Save(_)
-                | Effect::Arm { .. }
-                | Effect::Disarm
-                | Effect::SaveTitle { .. }
-                | Effect::Look(_)
-                | Effect::Request(_) => {}
-                // Only the answer to a look tells, and the pane carries that
-                // answer's effects itself (`ChatPane::look`).
-                Effect::Tell { .. } => {}
-            }
+        if let Some(token) = send_code {
+            Self::send_code(session, composer, text, token, window, cx)
         }
     }
 
@@ -81,7 +62,7 @@ impl ChatPane {
         window: &mut Window,
         cx: &mut App,
     ) {
-        let root = session.read(cx).chat.root.clone();
+        let root = session.read(cx).chat().root.clone();
         // Claimed at once, so a second press waits on this send rather than
         // starting one of its own.
         let sending = send_up(cx, &root);
@@ -94,20 +75,14 @@ impl ChatPane {
                 };
                 let _ = cx.update(|window, cx| {
                     let still = composer.read(cx).text(cx) == text;
-                    let left = session.update(cx, |session, cx| {
-                        let fx = session.chat.handle(
-                            Input::CodeSent {
-                                token,
-                                result,
-                                still,
-                            },
-                            onehand_core::Now::read(),
-                        );
-                        let left = session.perform(fx, cx);
-                        cx.notify();
-                        left
+                    let again = session.update(cx, |session, cx| {
+                        session.code_sent(token, result, still, cx)
                     });
-                    Self::carry(&session, &composer, text, left, window, cx);
+                    // The code is up and the words still wait in the
+                    // composer: they go now.
+                    if again {
+                        Self::submit_from(&session, &composer, window, cx);
+                    }
                 });
             })
             .detach();

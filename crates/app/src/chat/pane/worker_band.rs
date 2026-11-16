@@ -57,14 +57,14 @@ impl ChatPane {
         let lead = crate::control::lead_of(uid)?;
         let prompts = move |pane: &Self, cx: &App| {
             pane.session_of(uid)
-                .map_or(0, |session| session.read(cx).chat.prompts_sent)
+                .map_or(0, |session| session.read(cx).chat().prompts_sent)
         };
         // Still opening, the lead has sent nothing yet the person could hold.
         let held = crate::control::workers_of(lead)
             .into_iter()
             .find(|worker| worker.uid == uid)
             .zip(self.session_of(uid))
-            .is_some_and(|(worker, session)| worker.held(&session.read(cx).chat));
+            .is_some_and(|(worker, session)| worker.held(session.read(cx).chat()));
         let name = self
             .conversations
             .contains_key(&lead)

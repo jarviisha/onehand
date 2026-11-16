@@ -10,7 +10,7 @@
 //! has no session at all.
 
 use super::Tasks;
-use crate::chat::session::{ChatEvent, ChatSession};
+use crate::chat::session::{ChatEvent, ChatSession, Owed};
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Task, WeakEntity};
 use gpui_component::WindowExt as _;
 use onehand_core::Now;
@@ -98,7 +98,7 @@ pub(crate) fn start(
             // Which signal moves the run, and which streamed chunk is worth
             // asking it about, is the link's.
             ChatEvent::Session(signal) => {
-                let chat = &session.read(cx).chat;
+                let chat = &session.read(cx).chat();
                 match read(&id, cx, |d| link::input_of(signal, &d.drive, chat)).flatten() {
                     Some(input) => input,
                     None => return,
@@ -120,7 +120,7 @@ pub(crate) fn start(
     // from one.
     let id = task.clone();
     let answered = cx.observe(session, move |session, cx| {
-        let chat = &session.read(cx).chat;
+        let chat = &session.read(cx).chat();
         if let Some(input) = read(&id, cx, |d| link::notified(&d.drive, chat)).flatten() {
             feed(&id, input, cx);
         }
@@ -132,17 +132,12 @@ pub(crate) fn start(
         let id = id.clone();
         cx.defer(move |cx| feed(&id, Input::SessionGone, cx));
     });
-    let now = Now::read();
-    let (drive, out) = session.update(cx, |session, _| {
-        Joined::start(
-            task.clone(),
-            run,
-            first,
-            pinned,
-            issue,
-            now,
-            Some(&mut session.chat),
-        )
+    let ((drive, effects, told), owed) = session.update(cx, |session, _| {
+        session.lend(|chat, now| {
+            let (drive, out) =
+                Joined::start(task.clone(), run, first, pinned, issue, now, Some(chat));
+            ((drive, out.run, out.told), out.session)
+        })
     });
     let driven = Driven {
         drive,
@@ -158,27 +153,18 @@ pub(crate) fn start(
         .insert(task.clone(), driven);
     // Only once the run is listed: what the session says of its first prompt
     // has a run to reach.
-    carry_session(session, out.session, out.told, cx);
-    perform(&task, out.run, cx);
+    carry_session(session, owed, told, cx);
+    perform(&task, effects, cx);
 }
 
 /// Carry out what a joined call said of the run's session, and tell
 /// whatever watches the session when it was told something.
-fn carry_session(
-    session: &Entity<ChatSession>,
-    effects: Vec<onehand_core::chat::drive::Effect>,
-    told: bool,
-    cx: &mut App,
-) {
-    if effects.is_empty() && !told {
+fn carry_session(session: &Entity<ChatSession>, owed: Owed, told: bool, cx: &mut App) {
+    if owed.is_empty() && !told {
+        // Nothing to carry out and nothing told.
         return;
     }
-    session.update(cx, |session, cx| {
-        session.perform(effects, cx);
-        if told {
-            cx.notify();
-        }
-    });
+    session.update(cx, |session, cx| session.settle(owed, cx));
 }
 
 /// Drive check task `task`'s run with no session, from `start`; what it
@@ -266,22 +252,26 @@ fn give(id: &str, cx: &mut App, command: impl FnOnce(&mut Joined<'_>, Now) -> Ou
     let now = Now::read();
     let given = cx.update_global::<Tasks, _>(|t, cx| {
         let d = t.live.get_mut(id)?;
-        let session = d.session();
-        let out = match &session {
-            Some(session) => session.update(cx, |session, _| {
-                command(&mut Joined::new(&mut d.drive, Some(&mut session.chat)), now)
-            }),
-            None => command(&mut Joined::new(&mut d.drive, None), now),
-        };
-        Some((out, session))
+        Some(match d.session() {
+            Some(session) => {
+                let ((effects, told), owed) = session.update(cx, |s, _| {
+                    s.lend(|chat, _| {
+                        let out = command(&mut Joined::new(&mut d.drive, Some(chat)), now);
+                        ((out.run, out.told), out.session)
+                    })
+                });
+                (effects, Some((session, owed, told)))
+            }
+            None => (command(&mut Joined::new(&mut d.drive, None), now).run, None),
+        })
     });
-    let Some((out, session)) = given else {
+    let Some((effects, session)) = given else {
         return;
     };
-    if let Some(session) = session {
-        carry_session(&session, out.session, out.told, cx);
+    if let Some((session, owed, told)) = session {
+        carry_session(&session, owed, told, cx);
     }
-    perform(id, out.run, cx);
+    perform(id, effects, cx);
 }
 
 /// Do what task `id`'s run said, in order.
@@ -420,7 +410,7 @@ fn finish(id: &str, session: Option<&Entity<ChatSession>>, cx: &mut App) {
     };
     let out = cx.update_global::<Tasks, _>(|t, cx| {
         let on = session.zip(driven.uid());
-        let chat = on.map(|(session, uid)| (&session.read(cx).chat as &Chat, uid));
+        let chat = on.map(|(session, uid)| (session.read(cx).chat() as &Chat, uid));
         t.joined()
             .tasks(|d| {
                 (

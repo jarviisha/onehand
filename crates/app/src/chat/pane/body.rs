@@ -98,7 +98,7 @@ impl ChatPane {
             s.sync_ask_inputs(window, cx);
             s.sync_perm_focus(composer_idle, window, cx);
         });
-        let chat = &session.read(cx).chat;
+        let chat = &session.read(cx).chat();
         let permissions = chat.pending_permissions();
         let asks = chat.pending_asks();
         // Two lists merged back into transcript order: the agent can park on a
@@ -235,9 +235,7 @@ impl ChatPane {
                         .on_click(cx.listener(|pane: &mut Self, _, _, cx| {
                             if let Some(session) = pane.session() {
                                 session.update(cx, |session, cx| {
-                                    if session.chat.unqueue().is_some() {
-                                        cx.notify();
-                                    }
+                                    session.drive(cx, |chat, _| (chat.unqueue(), Vec::new()))
                                 });
                             }
                         })),

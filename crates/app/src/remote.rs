@@ -173,11 +173,7 @@ fn carry(fx: Vec<Effect>, cx: &mut App) {
             Effect::Prompt { chat, uid, text } => {
                 let handled = on_session(uid, cx, |session, cx| {
                     session.update(cx, |session, cx| {
-                        let (handled, fx) =
-                            link::prompt(&mut session.chat, &text, onehand_core::Now::read());
-                        session.perform(fx, cx);
-                        cx.notify();
-                        handled
+                        session.drive(cx, |chat, now| link::prompt(chat, &text, now))
                     })
                 });
                 feed(Input::Prompted { chat, uid, handled }, cx);
@@ -185,17 +181,14 @@ fn carry(fx: Vec<Effect>, cx: &mut App) {
             Effect::Stop { chat, uid } => {
                 let stopped = on_session(uid, cx, |session, cx| {
                     session.update(cx, |session, cx| {
-                        let (stopped, fx) = link::stop(&mut session.chat);
-                        session.perform(fx, cx);
-                        cx.notify();
-                        stopped
+                        session.drive(cx, |chat, _| link::stop(chat))
                     })
                 });
                 feed(Input::Stopped { chat, uid, stopped }, cx);
             }
             Effect::Options { chat, uid } => {
                 let offered = on_session(uid, cx, |session, cx| {
-                    link::options(&session.read(cx).chat, uid)
+                    link::options(session.read(cx).chat(), uid)
                 });
                 feed(Input::Offered { chat, uid, offered }, cx);
             }
@@ -207,10 +200,7 @@ fn carry(fx: Vec<Effect>, cx: &mut App) {
                 let uid = press.uid();
                 let said = on_session(uid, cx, |session, cx| {
                     session.update(cx, |session, cx| {
-                        let (said, fx) = link::press(&mut session.chat, press);
-                        session.perform(fx, cx);
-                        cx.notify();
-                        said
+                        session.drive(cx, |chat, _| link::press(chat, press))
                     })
                 });
                 feed(

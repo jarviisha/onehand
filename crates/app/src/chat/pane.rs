@@ -569,7 +569,7 @@ impl ChatPane {
             .conversations
             .values()
             .filter_map(|conversation| {
-                let chat = &conversation.session()?.read(cx).chat;
+                let chat = &conversation.session()?.read(cx).chat();
                 (chat.link != onehand_core::chat::Link::Lost)
                     .then(|| chat.session_id.clone())
                     .flatten()
@@ -584,7 +584,7 @@ impl ChatPane {
     pub fn uid_of_conversation(&self, id: &str, cx: &App) -> Option<u64> {
         self.conversations.iter().find_map(|(uid, conversation)| {
             let session = conversation.session()?;
-            (session.read(cx).chat.session_id.as_deref() == Some(id)).then_some(*uid)
+            (session.read(cx).chat().session_id.as_deref() == Some(id)).then_some(*uid)
         })
     }
 }

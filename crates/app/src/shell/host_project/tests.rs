@@ -25,8 +25,8 @@ fn waiting<'a>(
     cx.update(|window, cx| {
         shell.update(cx, |shell, cx| {
             let session = shell.chat.read(cx).session_entity(uid).expect("live");
-            session.update(cx, |session, _| {
-                let _ = session.chat.wait_on_host(host(), 1, 0);
+            session.update(cx, |session, cx| {
+                session.drive(cx, |chat, _| ((), chat.wait_on_host(host(), 1, 0)))
             });
             shell.host_busy(Some(uid), host(), window, cx);
             assert!(!shell.host_waits.is_empty(), "the session waits");

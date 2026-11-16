@@ -515,7 +515,7 @@ impl AskForm<'_> {
                     let session_ = session.read(cx);
                     let place = session_.ask_place(idx);
                     let row = session_
-                        .chat
+                        .chat()
                         .ask_at(idx)
                         .and_then(|item| place.cursor_row(item, active));
                     if let Some(row) = row {
@@ -548,7 +548,7 @@ impl AskForm<'_> {
             .on_action(move |pick: &super::QuestionPick, window, cx| {
                 let row = session
                     .read(cx)
-                    .chat
+                    .chat()
                     .ask_at(idx)
                     .and_then(|item| item.row(active, pick.index));
                 if let Some(row) = row {
@@ -585,7 +585,7 @@ pub(in crate::chat) fn pick_pinned(
 
 /// The pinned card where it is a question: its live index and the question.
 fn pinned_question<'a>(session: &Entity<ChatSession>, cx: &'a App) -> Option<(usize, &'a AskItem)> {
-    let chat = &session.read(cx).chat;
+    let chat = &session.read(cx).chat();
     match super::pinned(chat)? {
         super::Pinned::Question(idx) => chat.ask_at(idx).map(|item| (idx, item)),
         super::Pinned::Permission(_) => None,

@@ -166,9 +166,13 @@ A carrier does these things, and nothing else:
 An `if` about what happens next in a carrier is a rule in the wrong place.
 
 A drive's effects may need more than one part of a front end. `SendCode` needs the composer and
-the window, which the session entity does not have. So `ChatSession::perform` carries out what
-it can and hands the rest back to the pane (`ChatPane::carry`). Whichever part carries an
-effect, it is carried exactly once.
+the window, which the session entity does not have. So the session's carrier keeps its drive
+private and changes it only through its own commands: `ChatSession::drive` gives the drive a
+command and carries out everything it says, and the three commands whose answer is partly the
+pane's (`prompt`, `code_sent`, `seen`) carry the rest out too and hand the pane's share back as
+a type of its own, which the compiler warns a caller about when it is thrown away. A caller that has to carry the
+effects after an update of its own borrows the drive with `lend` and settles what it owes after.
+Whichever part carries an effect, it is carried exactly once.
 
 ### 8. The compiler holds the rule
 

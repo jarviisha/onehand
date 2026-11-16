@@ -12,6 +12,7 @@ use gpui::{
 };
 use gpui_component::input::TextareaState;
 use gpui_component::text::TextViewState;
+use onehand_core::Now;
 use onehand_core::chat::drive::HostLink;
 use onehand_core::chat::drive::{Code, Effect, Input, Intake, Next, Origin, Signal};
 use onehand_core::chat::{ChatItem, Md, MdId, SessionDrive, TranscriptItemId};
@@ -170,10 +171,39 @@ type AskBox = (usize, usize, String, String);
 /// The most ACP events one update takes, so a flood still yields to a frame.
 const EVENT_BATCH: usize = 64;
 
+/// What a person's prompt came to: whether it was sent, and the send its
+/// project's code must go up first under, which the pane carries.
+#[must_use]
+pub(crate) struct Prompted {
+    pub(crate) intake: Intake,
+    pub(crate) send_code: Option<u64>,
+}
+
+/// News to tell a person, outside the window: on the desktop, and to the
+/// chats following the session.
+pub(crate) struct Tell {
+    pub(crate) what: onehand_core::chat::Away,
+    pub(crate) desktop: bool,
+    pub(crate) chat: bool,
+}
+
+/// What a lent command said to do, held until [`ChatSession::settle`]
+/// carries it out.
+#[must_use = "what the drive said to do is lost unless it is settled"]
+pub(crate) struct Owed(Vec<Effect>);
+
+impl Owed {
+    /// Whether there is nothing to carry out.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 pub struct ChatSession {
-    /// The session's drive, which owns its transcript: read through it as
-    /// the transcript, changed through its methods.
-    pub chat: SessionDrive,
+    /// The session's drive, which owns its transcript. Read through
+    /// [`Self::chat`]; changed only here, through [`Self::drive`] and the
+    /// commands beside it, so every effect it answers is carried out once.
+    chat: SessionDrive,
     /// The agent this session runs, as its offer is kept for the next start.
     agent: AgentSpec,
     /// When this session's adapter was started — for one warmed ahead of the
@@ -347,7 +377,7 @@ impl ChatSession {
     /// `true` when it was waiting.
     pub(crate) fn forget_host_wait(&mut self, cx: &mut Context<Self>) -> bool {
         let (was, fx) = self.chat.forget_host_wait();
-        self.perform(fx, cx);
+        self.carry(fx, cx);
         was
     }
 
@@ -355,7 +385,7 @@ impl ChatSession {
     /// so: `true` when it was.
     pub(crate) fn forget_host_offline(&mut self, cx: &mut Context<Self>) -> bool {
         let (was, fx) = self.chat.forget_host_away();
-        self.perform(fx, cx);
+        self.carry(fx, cx);
         was
     }
 
@@ -371,14 +401,14 @@ impl ChatSession {
     /// The wait on the host's busy sessions ended on `why`.
     pub(crate) fn wait_failed(&mut self, why: &str, cx: &mut Context<Self>) {
         let fx = self.chat.wait_failed(why, onehand_core::Now::read());
-        self.perform(fx, cx);
+        self.carry(fx, cx);
         cx.notify();
     }
 
     /// The wait for the host to be back ended on `why`.
     pub(crate) fn back_failed(&mut self, why: &str, cx: &mut Context<Self>) {
         let fx = self.chat.back_failed(why, onehand_core::Now::read());
-        self.perform(fx, cx);
+        self.carry(fx, cx);
         cx.notify();
     }
 }
@@ -388,7 +418,7 @@ impl ChatSession {
 pub(crate) fn note(session: &Entity<ChatSession>, text: String, cx: &mut App) {
     session.update(cx, |session, cx| {
         let fx = session.chat.note(text);
-        session.perform(fx, cx);
+        session.carry(fx, cx);
         cx.notify();
     });
 }
@@ -531,7 +561,7 @@ impl ChatSession {
                                 link.as_ref(),
                                 onehand_core::Now::read(),
                             );
-                            session.perform(fx, cx);
+                            session.carry(fx, cx);
                             let more = match more {
                                 Next::Stop => false,
                                 Next::More => taken < EVENT_BATCH,
@@ -544,7 +574,7 @@ impl ChatSession {
                             }
                         }
                         let fx = session.chat.end_batch();
-                        session.perform(fx, cx);
+                        session.carry(fx, cx);
                         cx.notify();
                     });
                     // The entity is gone (session closed, window closed): stop
@@ -559,17 +589,63 @@ impl ChatSession {
                     let fx = session
                         .chat
                         .handle(Input::StreamEnded, onehand_core::Now::read());
-                    session.perform(fx, cx);
+                    session.carry(fx, cx);
                     cx.notify();
                 });
             }),
         }
     }
 
+    /// The session's drive, to read: its transcript and everything the
+    /// session knows.
+    pub(crate) fn chat(&self) -> &SessionDrive {
+        &self.chat
+    }
+
+    /// Give the drive `command`, told the time, and carry out what it says:
+    /// what the command answers besides. Whatever watches the session is
+    /// told it changed.
+    pub(crate) fn drive<R>(
+        &mut self,
+        cx: &mut Context<Self>,
+        command: impl FnOnce(&mut SessionDrive, Now) -> (R, Vec<Effect>),
+    ) -> R {
+        let (answer, owed) = self.lend(command);
+        self.settle(owed, cx);
+        answer
+    }
+
+    /// Give the drive `command` and hold what it says to do for
+    /// [`Self::settle`], for a caller that must carry it out after an update
+    /// of its own is over. What is owed has to be settled: the build warns
+    /// when a caller throws it away unread.
+    pub(crate) fn lend<R>(
+        &mut self,
+        command: impl FnOnce(&mut SessionDrive, Now) -> (R, Vec<Effect>),
+    ) -> (R, Owed) {
+        let (answer, fx) = command(&mut self.chat, Now::read());
+        (answer, Owed(fx))
+    }
+
+    /// Carry out what a lent command said to do, and tell whatever watches
+    /// the session it changed.
+    pub(crate) fn settle(&mut self, owed: Owed, cx: &mut Context<Self>) {
+        self.carry(owed.0, cx);
+        cx.notify();
+    }
+
+    /// Carry out `fx`, none of which is the pane's: only a person's prompt,
+    /// the answer to its code's send, and the answer to where the person is
+    /// ask anything of the pane, and each has a command of its own here.
+    fn carry(&mut self, fx: Vec<Effect>, cx: &mut Context<Self>) {
+        let left = self.perform(fx, cx);
+        debug_assert!(left.is_empty(), "the pane's effects were dropped");
+    }
+
     /// Carry out what the drive said, in order, and hand back what only the
-    /// caller can do: send an offloaded project's code first, and send the
-    /// person's prompt again from where it waits once it is up.
-    pub(crate) fn perform(&mut self, fx: Vec<Effect>, cx: &mut Context<Self>) -> Vec<Effect> {
+    /// pane can do: send an offloaded project's code first, send the
+    /// person's prompt again once it is up, and tell a person news.
+    fn perform(&mut self, fx: Vec<Effect>, cx: &mut Context<Self>) -> Vec<Effect> {
         let mut left = Vec::new();
         for effect in fx {
             match effect {
@@ -598,7 +674,7 @@ impl ChatSession {
                             let fx = session
                                 .chat
                                 .handle(Input::Saved { write, result }, onehand_core::Now::read());
-                            session.perform(fx, cx);
+                            session.carry(fx, cx);
                         });
                     })
                     .detach();
@@ -610,7 +686,7 @@ impl ChatSession {
                             let fx = session
                                 .chat
                                 .handle(Input::Elapsed { token }, onehand_core::Now::read());
-                            session.perform(fx, cx);
+                            session.carry(fx, cx);
                             cx.notify();
                         });
                     }));
@@ -644,7 +720,7 @@ impl ChatSession {
                                 },
                                 onehand_core::Now::read(),
                             );
-                            session.perform(fx, cx);
+                            session.carry(fx, cx);
                             cx.notify();
                         });
                     })
@@ -659,8 +735,9 @@ impl ChatSession {
         left
     }
 
-    /// Send `text` with `staged` from `origin`; what became of it, and what
-    /// only the caller can do (see [`Self::perform`]).
+    /// Send `text` with `staged` from `origin`: what became of it, and the
+    /// send the project's code must go up first under, which only the pane
+    /// can carry (it needs the composer the words are in).
     pub(crate) fn prompt(
         &mut self,
         text: &str,
@@ -668,13 +745,112 @@ impl ChatSession {
         origin: Origin,
         code: Code,
         cx: &mut Context<Self>,
-    ) -> (Intake, Vec<Effect>) {
-        let (intake, fx) = self
-            .chat
-            .prompt(text, staged, origin, code, onehand_core::Now::read());
-        let left = self.perform(fx, cx);
+    ) -> Prompted {
+        let (intake, fx) = self.chat.prompt(text, staged, origin, code, Now::read());
+        let mut send_code = None;
+        for effect in self.perform(fx, cx) {
+            match effect {
+                Effect::SendCode { token } => send_code = Some(token),
+                Effect::Signal(_)
+                | Effect::Changed
+                | Effect::OfferChanged
+                | Effect::Save(_)
+                | Effect::Arm { .. }
+                | Effect::Disarm
+                | Effect::Request(_)
+                | Effect::SaveTitle { .. }
+                | Effect::Look(_)
+                | Effect::PromptAgain
+                | Effect::Tell { .. } => {
+                    debug_assert!(false, "not a prompt's to hand back")
+                }
+            }
+        }
         cx.notify();
-        (intake, left)
+        Prompted { intake, send_code }
+    }
+
+    /// What came of sending the code a prompt waited on (`token`), and
+    /// whether the composer `still` holds its words: whether the pane is to
+    /// send the prompt again from the composer.
+    #[must_use]
+    pub(crate) fn code_sent(
+        &mut self,
+        token: u64,
+        result: Result<(), String>,
+        still: bool,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let input = Input::CodeSent {
+            token,
+            result,
+            still,
+        };
+        let fx = self.chat.handle(input, Now::read());
+        let mut again = false;
+        for effect in self.perform(fx, cx) {
+            match effect {
+                Effect::PromptAgain => again = true,
+                Effect::Signal(_)
+                | Effect::Changed
+                | Effect::OfferChanged
+                | Effect::Save(_)
+                | Effect::Arm { .. }
+                | Effect::Disarm
+                | Effect::Request(_)
+                | Effect::SaveTitle { .. }
+                | Effect::Look(_)
+                | Effect::SendCode { .. }
+                | Effect::Tell { .. } => {
+                    debug_assert!(false, "not a code send's to hand back")
+                }
+            }
+        }
+        cx.notify();
+        again
+    }
+
+    /// The person is where `attention` says as the drive asked about `what`:
+    /// what to tell them, which the pane says.
+    #[must_use]
+    pub(crate) fn seen(
+        &mut self,
+        what: onehand_core::chat::Away,
+        attention: onehand_core::chat::Attention,
+        cx: &mut Context<Self>,
+    ) -> Vec<Tell> {
+        let fx = self
+            .chat
+            .handle(Input::Seen { what, attention }, Now::read());
+        let mut tells = Vec::new();
+        for effect in self.perform(fx, cx) {
+            match effect {
+                Effect::Tell {
+                    what,
+                    desktop,
+                    chat,
+                } => tells.push(Tell {
+                    what,
+                    desktop,
+                    chat,
+                }),
+                Effect::Signal(_)
+                | Effect::Changed
+                | Effect::OfferChanged
+                | Effect::Save(_)
+                | Effect::Arm { .. }
+                | Effect::Disarm
+                | Effect::Request(_)
+                | Effect::SaveTitle { .. }
+                | Effect::Look(_)
+                | Effect::SendCode { .. }
+                | Effect::PromptAgain => {
+                    debug_assert!(false, "not a look's to hand back")
+                }
+            }
+        }
+        cx.notify();
+        tells
     }
 
     /// Send `text` from `origin` once the agent is up; see
@@ -688,7 +864,7 @@ impl ChatSession {
         let (intake, fx) = self
             .chat
             .prompt_when_up(text, origin, onehand_core::Now::read());
-        self.perform(fx, cx);
+        self.carry(fx, cx);
         cx.notify();
         intake
     }
@@ -697,14 +873,14 @@ impl ChatSession {
     /// [`SessionDrive::resend`].
     pub(crate) fn resend(&mut self, cx: &mut Context<Self>) {
         let (_, fx) = self.chat.resend(onehand_core::Now::read());
-        self.perform(fx, cx);
+        self.carry(fx, cx);
         cx.notify();
     }
 
     /// Stop the running turn.
     pub(crate) fn stop(&mut self, cx: &mut Context<Self>) {
         let fx = self.chat.stop();
-        self.perform(fx, cx);
+        self.carry(fx, cx);
         cx.notify();
     }
 
@@ -712,7 +888,7 @@ impl ChatSession {
     /// [`SessionDrive::rename`].
     pub(crate) fn rename(&mut self, title: &str, cx: &mut Context<Self>) -> bool {
         let (renamed, fx) = self.chat.rename(title);
-        self.perform(fx, cx);
+        self.carry(fx, cx);
         cx.notify();
         renamed
     }
@@ -720,14 +896,14 @@ impl ChatSession {
     /// Drop the name a person gave, back to the automatic one.
     pub(crate) fn reset_title(&mut self, cx: &mut Context<Self>) {
         let fx = self.chat.reset_title();
-        self.perform(fx, cx);
+        self.carry(fx, cx);
         cx.notify();
     }
 
     /// Write the conversation's name and settings alone.
     pub(crate) fn save_meta(&mut self, cx: &mut Context<Self>) {
         let fx = self.chat.save_meta();
-        self.perform(fx, cx);
+        self.carry(fx, cx);
     }
 
     /// A cached handle for an inline image result.
@@ -777,7 +953,7 @@ impl ChatSession {
     ) {
         let fx = self.chat.resume(snapshot);
         self.forget_folds();
-        self.perform(fx, cx);
+        self.carry(fx, cx);
         cx.notify();
     }
 
@@ -786,7 +962,7 @@ impl ChatSession {
     pub fn adopt_fork(&mut self, seed: onehand_core::chat::ForkSeed, cx: &mut Context<Self>) {
         let fx = self.chat.fork(seed);
         self.forget_folds();
-        self.perform(fx, cx);
+        self.carry(fx, cx);
         cx.notify();
     }
 
