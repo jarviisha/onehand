@@ -380,12 +380,13 @@ impl Shell {
         .detach();
     }
 
-    /// The project session `uid` is on, when this window holds it.
-    /// This window's chat pane.
+    /// This window's chat pane, for what another window reads of its
+    /// sessions.
     pub(crate) fn chat_pane(&self) -> &gpui::Entity<crate::chat::ChatPane> {
         &self.chat
     }
 
+    /// The project session `uid` is on, when this window holds it.
     pub(crate) fn session_project(&self, uid: u64) -> Option<PathBuf> {
         self.window
             .workspace
