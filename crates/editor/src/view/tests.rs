@@ -6,7 +6,6 @@
 use super::*;
 use gpui::TestAppContext;
 use gpui_component::Root;
-use onehand_core::disk::HostDisk;
 use onehand_core::host::client::HostConn;
 
 /// The view in a window of its own.
@@ -92,10 +91,7 @@ fn typed(
 
 #[gpui::test]
 fn a_buffer_saves_through_its_roots_disk(cx: &mut TestAppContext) {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap();
-    let host = Disk::Host(HostDisk::new(HostConn::closed("vps"), rt.handle().clone()));
+    let host = Disk::Host(HostConn::closed("vps"));
     let (local, _) = folder("host");
     // A folder this machine could write, so a save that took the wrong disk
     // would leave a file behind.
@@ -129,10 +125,7 @@ fn a_buffer_saves_through_its_roots_disk(cx: &mut TestAppContext) {
 /// written back here even once the root's disk is the host's.
 #[gpui::test]
 fn a_buffer_saves_through_the_disk_it_was_read_from(cx: &mut TestAppContext) {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap();
-    let host = Disk::Host(HostDisk::new(HostConn::closed("vps"), rt.handle().clone()));
+    let host = Disk::Host(HostConn::closed("vps"));
     let (root, file) = folder("read");
 
     let (view, window) = mounted(cx);

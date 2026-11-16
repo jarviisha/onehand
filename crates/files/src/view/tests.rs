@@ -1,6 +1,5 @@
 use super::*;
 use gpui::TestAppContext;
-use onehand_core::disk::HostDisk;
 use onehand_core::host::client::HostConn;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -20,10 +19,7 @@ fn view(cx: &mut TestAppContext) -> (Entity<FilesView>, Rc<RefCell<Vec<PathBuf>>
 
 #[gpui::test]
 fn a_folder_the_disk_cannot_read_says_so(cx: &mut TestAppContext) {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap();
-    let disk = Disk::Host(HostDisk::new(HostConn::closed("vps"), rt.handle().clone()));
+    let disk = Disk::Host(HostConn::closed("vps"));
     let (view, _) = view(cx);
     let root = PathBuf::from("/srv/app");
 

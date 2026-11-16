@@ -1,6 +1,5 @@
 use super::*;
 use gpui::{AnyView, TestAppContext};
-use onehand_core::disk::HostDisk;
 use onehand_core::host::client::HostConn;
 use std::cell::RefCell;
 
@@ -114,8 +113,8 @@ fn panel_taking(
     (panel, editor, markdown, told)
 }
 
-fn host_disk(rt: &tokio::runtime::Runtime) -> Disk {
-    Disk::Host(HostDisk::new(HostConn::closed("vps"), rt.handle().clone()))
+fn host_disk() -> Disk {
+    Disk::Host(HostConn::closed("vps"))
 }
 
 fn offered_ids(panel: &Workbench) -> Vec<ModeId> {
@@ -130,9 +129,6 @@ fn offered_ids(panel: &Workbench) -> Vec<ModeId> {
 
 #[gpui::test]
 fn a_host_root_offers_only_modes_that_run_there(cx: &mut TestAppContext) {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap();
     let (panel, _, markdown) = panel(cx);
     let root = PathBuf::from("/srv/app");
     panel.update(cx, |panel, cx| {
@@ -141,7 +137,7 @@ fn a_host_root_offers_only_modes_that_run_there(cx: &mut TestAppContext) {
     });
 
     panel.update(cx, |panel, cx| {
-        panel.set_root(root.clone(), host_disk(&rt), cx)
+        panel.set_root(root.clone(), host_disk(), cx)
     });
     panel.read_with(cx, |panel, _| {
         assert_eq!(panel.mode(), EDITOR.id);
@@ -168,12 +164,9 @@ fn a_host_root_offers_only_modes_that_run_there(cx: &mut TestAppContext) {
 /// and the modes read the root again through it.
 #[gpui::test]
 fn the_same_root_on_another_disk_reaches_the_modes(cx: &mut TestAppContext) {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap();
     let (panel, editor, _) = panel(cx);
     let root = PathBuf::from("/srv/app");
-    for disk in [host_disk(&rt), host_disk(&rt), Disk::Local, Disk::Local] {
+    for disk in [host_disk(), host_disk(), Disk::Local, Disk::Local] {
         panel.update(cx, |panel, cx| panel.set_root(root.clone(), disk, cx));
     }
     let seen: Vec<_> = editor
@@ -191,13 +184,10 @@ fn the_same_root_on_another_disk_reaches_the_modes(cx: &mut TestAppContext) {
 /// the tree again rather than keep what the dead one said.
 #[gpui::test]
 fn a_host_attach_made_again_reads_the_tree_again(cx: &mut TestAppContext) {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap();
     let (panel, editor, _) = panel(cx);
     let root = PathBuf::from("/srv/app");
     panel.update(cx, |panel, cx| {
-        panel.set_root(root.clone(), host_disk(&rt), cx)
+        panel.set_root(root.clone(), host_disk(), cx)
     });
     assert!(panel.update(cx, |panel, cx| panel.attach_again(cx)));
 
@@ -209,7 +199,7 @@ fn a_host_attach_made_again_reads_the_tree_again(cx: &mut TestAppContext) {
 
     editor.borrow_mut().clear();
     panel.update(cx, |panel, cx| {
-        panel.set_root(root.clone(), host_disk(&rt), cx)
+        panel.set_root(root.clone(), host_disk(), cx)
     });
     let seen: Vec<_> = editor.borrow().iter().map(|(r, _)| r.clone()).collect();
     assert_eq!(seen, [root, PathBuf::from("rescan")]);
@@ -230,14 +220,8 @@ fn a_local_root_is_never_lost(cx: &mut TestAppContext) {
 /// again: the panel says who holds the host, and *Try again* is the way back.
 #[gpui::test]
 fn a_host_taken_by_another_machine_is_not_attached_again(cx: &mut TestAppContext) {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap();
     let (panel, _, _) = panel(cx);
-    let taken = Disk::Host(HostDisk::new(
-        HostConn::taken_from("vps"),
-        rt.handle().clone(),
-    ));
+    let taken = Disk::Host(HostConn::taken_from("vps"));
     panel.update(cx, |panel, cx| {
         panel.set_root(PathBuf::from("/srv/app"), taken, cx)
     });
@@ -294,9 +278,6 @@ fn forgetting_a_host_root_reaches_only_modes_that_run_there(cx: &mut TestAppCont
 /// keeps the mode on screen offered tells nobody.
 #[gpui::test]
 fn a_switch_shows_the_first_mode_offered_when_the_one_showing_is_not(cx: &mut TestAppContext) {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap();
     let (panel, _, _, told) = panel_taking([false, false], cx);
     let root = PathBuf::from("/srv/app");
     panel.update(cx, |panel, cx| {
@@ -305,7 +286,7 @@ fn a_switch_shows_the_first_mode_offered_when_the_one_showing_is_not(cx: &mut Te
     });
     told.borrow_mut().clear();
     panel.update(cx, |panel, cx| {
-        panel.set_root(root.clone(), host_disk(&rt), cx)
+        panel.set_root(root.clone(), host_disk(), cx)
     });
     assert_eq!(*told.borrow(), [(EDITOR.id, "shown")]);
     told.borrow_mut().clear();

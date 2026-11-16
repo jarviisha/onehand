@@ -10,13 +10,11 @@ use gpui::{AsyncApp, WeakEntity};
 use onehand_core::acp::Opening;
 use onehand_core::chat::Chat;
 use onehand_core::config::AgentSpec;
-use onehand_core::host::client::{HostConn, HostError};
 use onehand_core::host::copy;
 use onehand_core::host::session::host_restart;
 use onehand_core::host::session::{
     AfterCopy, Carried, HostBegin, OfflineStart, Restarted, offline_start, reads_copy,
 };
-use onehand_core::host::wire::SessionInfo;
 use onehand_core::workspace::HostName;
 use onehand_io::acp::Events;
 use onehand_io::acp::HostStart;
@@ -105,7 +103,8 @@ pub(super) async fn host_events(
     let start = match decided {
         Ok(start) => start,
         Err((id, carried, cwd, spec)) => {
-            let listed = list(conn.clone(), cx)
+            let listed = conn
+                .list()
                 .await
                 .map_err(|e| format!("Could not read the sessions on {host}: {e}"));
             let found = listed
@@ -157,12 +156,6 @@ fn carry(
             session.adopt(stored, cx);
         }
     });
-}
-
-/// What the host lists, read on the ACP runtime.
-pub(crate) async fn list(conn: HostConn, cx: &mut AsyncApp) -> Result<Vec<SessionInfo>, HostError> {
-    cx.update(|cx| crate::hosts::on_runtime(cx, async move { conn.list().await }))
-        .await
 }
 
 /// Show what this machine kept of the session's journal, and, `away`, the

@@ -65,8 +65,9 @@ impl Shell {
             .filter_map(|root| {
                 let disk = match &root.host {
                     None => Disk::Local,
-                    Some(host) => crate::hosts::live(cx, host)
-                        .map(|conn| crate::hosts::disk_over(cx, conn))?,
+                    Some(host) => {
+                        crate::hosts::live(cx, host).map(onehand_core::disk::Disk::Host)?
+                    }
                 };
                 Some((root.path, disk))
             })

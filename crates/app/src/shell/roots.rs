@@ -279,7 +279,7 @@ impl Shell {
     ) {
         if let Some(conn) = crate::hosts::live(cx, &host) {
             self._host_files = None;
-            let disk = crate::hosts::disk_over(cx, conn);
+            let disk = onehand_core::disk::Disk::Host(conn);
             self.workbench
                 .update(cx, |panel, cx| panel.set_root(path, disk, cx));
             return;
@@ -311,7 +311,7 @@ impl Shell {
                 }
                 match attached {
                     Ok(conn) => {
-                        let disk = crate::hosts::disk_over(cx, conn);
+                        let disk = onehand_core::disk::Disk::Host(conn);
                         shell
                             .workbench
                             .update(cx, |panel, cx| panel.set_root(path.clone(), disk, cx));

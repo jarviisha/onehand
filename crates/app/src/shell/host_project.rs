@@ -76,13 +76,8 @@ impl HostProjectDraft {
 }
 
 /// Whether `path` is a folder on `host`: `Ok` to add it.
-async fn folder_found(
-    host: &HostName,
-    conn: HostConn,
-    path: &Path,
-    cx: &mut gpui::AsyncApp,
-) -> Result<(), HostFailure> {
-    let asking = cx.update(|cx| hosts::is_dir(cx, host, conn, path.to_path_buf()));
+async fn folder_found(host: &HostName, conn: HostConn, path: &Path) -> Result<(), HostFailure> {
+    let asking = hosts::is_dir(host, conn, path.to_path_buf());
     match asking.await? {
         true => Ok(()),
         false => Err(HostFailure::Other(format!(
@@ -100,16 +95,15 @@ async fn cloned(
     conn: HostConn,
     repo: String,
     target: &Path,
-    cx: &mut gpui::AsyncApp,
 ) -> Result<(), HostFailure> {
-    let asking = cx.update(|cx| hosts::is_dir(cx, host, conn.clone(), target.to_path_buf()));
+    let asking = hosts::is_dir(host, conn.clone(), target.to_path_buf());
     if asking.await? {
         return Err(HostFailure::Other(format!(
             "There is already {} on {host}",
             target.display()
         )));
     }
-    let cloning = cx.update(|cx| hosts::clone_repo(cx, conn, repo, target.to_path_buf()));
+    let cloning = hosts::clone_repo(conn, repo, target.to_path_buf());
     cloning.await.map_err(HostFailure::Other)
 }
 
@@ -245,8 +239,8 @@ impl Shell {
         let attaching = hosts::conn(cx, &host);
         cx.spawn_in(window, async move |shell, cx| {
             let found = match (attaching.await, clone) {
-                (Ok(conn), None) => folder_found(&host, conn, &path, cx).await,
-                (Ok(conn), Some(repo)) => cloned(&host, conn, repo, &path, cx).await,
+                (Ok(conn), None) => folder_found(&host, conn, &path).await,
+                (Ok(conn), Some(repo)) => cloned(&host, conn, repo, &path).await,
                 (Err(failure), _) => Err(failure),
             };
             shell

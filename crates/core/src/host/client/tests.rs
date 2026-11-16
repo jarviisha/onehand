@@ -668,7 +668,7 @@ async fn what_was_queued_as_the_stream_ended_is_refused() {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let (asked, answer) = oneshot::channel();
     let (watched, mut events) = events::unbounded();
-    tx.send(Cmd::Ask(Call::List, asked)).ok().unwrap();
+    tx.send(Cmd::Ask(Call::List, asked, ASK_WAIT)).ok().unwrap();
     tx.send(Cmd::Watch(s1(), watched, None)).ok().unwrap();
     refuse_queued(&mut rx, "gone");
     assert!(matches!(answer.await, Ok(Err(HostError::Unreachable(why))) if why == "gone"));
@@ -738,6 +738,22 @@ async fn an_unanswered_hello_ends_at_its_deadline() {
     let Question { id, .. } = host.ask().await;
     host.answer(id, Reply::Sessions(vec![])).await;
     assert!(listing.await.unwrap().unwrap().is_empty());
+}
+
+/// A call awaited on a thread with no tokio runtime, as the window's own
+/// executor awaits one, is answered: the task that owns the stream keeps the
+/// wait.
+#[tokio::test]
+async fn a_call_is_answered_where_no_runtime_runs() {
+    let (conn, mut host) = pair();
+    let asking = std::thread::spawn(move || futures::executor::block_on(conn.list()));
+    let Question { id, call } = host.ask().await;
+    assert!(matches!(call, Call::List), "{call:?}");
+    host.answer(id, Reply::Sessions(vec![])).await;
+    let listed = tokio::task::spawn_blocking(move || asking.join().unwrap())
+        .await
+        .unwrap();
+    assert!(listed.unwrap().is_empty());
 }
 
 #[tokio::test]

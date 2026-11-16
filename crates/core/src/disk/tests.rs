@@ -27,11 +27,7 @@ fn local_reads_and_saves_like_the_editor() {
 
 #[test]
 fn a_host_disk_over_a_closed_connection_says_so() {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-    let disk = Disk::Host(HostDisk::new(HostConn::closed("vps"), rt.handle().clone()));
+    let disk = Disk::Host(HostConn::closed("vps"));
     std::thread::spawn(move || {
         let err = disk.read_dir(Path::new("/srv/app")).unwrap_err();
         assert!(err.contains("on vps"), "{err}");
