@@ -229,7 +229,8 @@ impl Showing {
 
 /// Something the panel asks of its modes without naming which one answers.
 ///
-/// It only travels **down**: the panel broadcasts these. What a mode asks of
+/// It only travels **down**: the panel puts these to its modes, and the shell
+/// tells its Issues page the one it needs. What a mode asks of
 /// the panel goes up as an [`Ask`] instead, so no mode names what only goes
 /// the other way. What is the app's own to answer, as an issue's work is,
 /// does not travel here: a view with such a thing to say speaks to the shell

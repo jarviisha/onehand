@@ -5,7 +5,7 @@ use onehand_core::host::client::HostConn;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-/// A view whose requests upward are written down rather than answered.
+/// A view whose asks of the panel are written down rather than answered.
 fn view(cx: &mut TestAppContext) -> (Entity<FilesView>, Rc<RefCell<Vec<PathBuf>>>) {
     let opened = Rc::new(RefCell::new(Vec::new()));
     let ask: Asker = Rc::new({

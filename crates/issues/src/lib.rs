@@ -76,7 +76,7 @@ pub enum IssuesEvent {
 }
 
 /// How an Issues view reaches the shell. Handed to the view when it is
-/// built, as its [`Ask`] is, so it is never on screen with nobody to tell.
+/// built, as its [`Asker`] is, so it is never on screen with nobody to tell.
 pub type Tell = Rc<dyn Fn(IssuesEvent, &mut Window, &mut App)>;
 
 /// The Issues mode: a view and nothing else.
@@ -223,8 +223,8 @@ fn handle(view: &Entity<IssuesView>, request: &Request<'_>, cx: &mut App) -> boo
             view.update(cx, |view, cx| view.show_issue(*number, cx));
             true
         }
-        // Not an Issues view's to answer: a file to edit, a PTY, the agent,
-        // and what a view asks upward rather than is told.
+        // Not an Issues view's to answer: a file to save, a PTY, the agent,
+        // and the tree's and the editor's facts.
         Request::Save
         | Request::Start
         | Request::Reap
