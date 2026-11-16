@@ -171,6 +171,26 @@ pub enum Signal<W> {
     PinFailed(String),
 }
 
+/// What the tasks ask of their link, which carries it out in the same call
+/// (asking a place held to the cap, or telling unattended runs), in the
+/// order asked. Never a front end's: it is kept on the drive until the link
+/// takes it.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Linked<W> {
+    /// Ask for task `task`'s place from `window`, held to the cap on
+    /// unattended runs.
+    Ask { task: String, window: W },
+    /// Task `task` asked for its place, or was refused it: an issue's run no
+    /// longer counts as starting.
+    Asked(String),
+    /// Task `task`, of an issue, has let its place go: tell the issue.
+    IssueEnded(String),
+    /// Send task `task`'s issue the reports it has not been given yet.
+    Deliver(String),
+    /// Send every issue the reports it has not been given yet.
+    DeliverAll,
+}
+
 /// What to do, in the order given.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Effect<W> {
@@ -223,22 +243,10 @@ pub enum Effect<W> {
     /// it on screen, then its task: carried through [`link::keep`] with that
     /// window's workspace, at once.
     Keep(OffScreen<W>),
-    /// Ask for task `task`'s place from `window`, held to the cap on
-    /// unattended runs: the link's, which asks it.
-    Ask { task: String, window: W },
     /// Report this input once the call being handled is over.
     Defer(Input<W>),
-    /// Task `task`, of an issue, has let its place go: tell the issue.
-    IssueEnded(String),
-    /// Send task `task`'s issue the reports it has not been given yet.
-    Deliver(String),
-    /// Send every issue the reports it has not been given yet.
-    DeliverAll,
     /// Where task `task`'s request landed, for whoever asked to be told.
     Told { task: String, placed: Placed },
-    /// Task `task` asked for its place, or was refused it: an issue's run no
-    /// longer counts as starting.
-    Asked(String),
     /// Read what uses the worktree the removal works in (its top found
     /// first), then judge it, off the UI loop, and report [`Input::Judged`]
     /// with it. Recorded: the press waits until it lands.
@@ -310,6 +318,8 @@ pub struct TasksDrive<W> {
     /// What a person pressed on each task that is still being done, so its
     /// button waits.
     acting: HashMap<String, Act>,
+    /// What was asked of the link and it has not taken yet, in order.
+    linked: Vec<Linked<W>>,
 }
 
 impl<W> Default for TasksDrive<W> {
@@ -324,11 +334,23 @@ impl<W> Default for TasksDrive<W> {
             off_screen: HashSet::new(),
             save_failed: false,
             acting: HashMap::new(),
+            linked: Vec::new(),
         }
     }
 }
 
 impl<W: Copy> TasksDrive<W> {
+    /// What was asked of the link since last asked, in order: the link's.
+    pub(crate) fn take_linked(&mut self) -> Vec<Linked<W>> {
+        std::mem::take(&mut self.linked)
+    }
+
+    /// Whether something asked of the link waits for it: only after a call
+    /// that went round the link, which is a mistake.
+    pub(crate) fn linked_waiting(&self) -> bool {
+        !self.linked.is_empty()
+    }
+
     /// Every task kept, oldest first.
     pub fn tasks(&self) -> &[Task] {
         &self.tasks
@@ -391,7 +413,7 @@ impl<W: Copy> TasksDrive<W> {
         self.tasks.extend(added);
         let mut fx = self.enforce_cap();
         // An issue not told how its run ended before the last quit is told now.
-        fx.push(Effect::DeliverAll);
+        self.linked.push(Linked::DeliverAll);
         fx.push(Effect::Refresh);
         fx
     }
@@ -522,7 +544,7 @@ impl<W: Copy> TasksDrive<W> {
                     if let Some(task) = self.task(&id) {
                         fx.push(Effect::Save(Box::new(task.clone())));
                     }
-                    fx.push(Effect::Deliver(id));
+                    self.linked.push(Linked::Deliver(id));
                 }
                 fx.extend(self.enforce_cap());
             }
@@ -576,10 +598,13 @@ impl<W: Copy> TasksDrive<W> {
     pub fn resume(&mut self, id: &str, refused: Option<String>, window: W) -> Vec<Effect<W>> {
         match refused {
             Some(why) => vec![Effect::Signal(Signal::NotResumed { window, why })],
-            None => vec![Effect::Ask {
-                task: id.to_string(),
-                window,
-            }],
+            None => {
+                self.linked.push(Linked::Ask {
+                    task: id.to_string(),
+                    window,
+                });
+                Vec::new()
+            }
         }
     }
 
@@ -597,19 +622,15 @@ impl<W: Copy> TasksDrive<W> {
         let Some(task) = self.task_mut(id) else {
             return (false, Vec::new());
         };
-        match make(task) {
-            true => (
-                true,
-                vec![
-                    Effect::Save(Box::new(task.clone())),
-                    Effect::Ask {
-                        task: id.to_string(),
-                        window,
-                    },
-                ],
-            ),
-            false => (false, Vec::new()),
+        if !make(task) {
+            return (false, Vec::new());
         }
+        let saved = Effect::Save(Box::new(task.clone()));
+        self.linked.push(Linked::Ask {
+            task: id.to_string(),
+            window,
+        });
+        (true, vec![saved])
     }
 
     /// Change the issue task `id` works, and write the task.

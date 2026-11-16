@@ -10,7 +10,7 @@
 //! would otherwise restate, untested. A front end holds the drives, joins
 //! them here for one call, and carries out what comes back.
 
-use super::drive::{Effect, On, UnattendedDrive, World};
+use super::drive::{Effect, Linked, On, UnattendedDrive, World};
 use crate::task::drive::{RunDrive, Said};
 use crate::task::tasks::link::Seen;
 use crate::task::tasks::{self, TasksDrive};
@@ -18,7 +18,10 @@ use std::collections::VecDeque;
 
 /// Put `value`, shown by the settings' drive, in force on unattended runs:
 /// the workflows issues are worked with are theirs, the save the settings'.
-pub fn shown(unattended: &mut UnattendedDrive, value: &crate::config::drive::Value) {
+pub fn shown<W: Copy + PartialEq>(
+    unattended: &mut UnattendedDrive<W>,
+    value: &crate::config::drive::Value,
+) {
     use crate::config::drive::Value;
     match value {
         Value::Workflows { default, by_label } => {
@@ -39,15 +42,22 @@ pub struct Out<W> {
 pub struct Joined<'a, W> {
     tasks: &'a mut TasksDrive<W>,
     runs: Vec<&'a RunDrive>,
-    unattended: Option<&'a mut UnattendedDrive>,
+    unattended: Option<&'a mut UnattendedDrive<W>>,
 }
 
-impl<'a, W: Copy> Joined<'a, W> {
+impl<'a, W: Copy + PartialEq> Joined<'a, W> {
     pub fn new(
         tasks: &'a mut TasksDrive<W>,
         runs: impl IntoIterator<Item = &'a RunDrive>,
-        unattended: Option<&'a mut UnattendedDrive>,
+        unattended: Option<&'a mut UnattendedDrive<W>>,
     ) -> Self {
+        // A call that went round the link left what it asked waiting: a
+        // mistake, which a debug build stops at. A release build settles it
+        // at this call's end, late, rather than lose it.
+        debug_assert!(
+            !tasks.linked_waiting() && !unattended.as_deref().is_some_and(|u| u.linked_waiting()),
+            "a drive was called round its link"
+        );
         Self {
             tasks,
             runs: runs.into_iter().collect(),
@@ -68,7 +78,7 @@ impl<'a, W: Copy> Joined<'a, W> {
     /// route what it says. Nothing happens before they are set up.
     pub fn unattended<R: Default>(
         &mut self,
-        command: impl FnOnce(&mut UnattendedDrive, &Seen<W>) -> (R, Vec<Effect<W>>),
+        command: impl FnOnce(&mut UnattendedDrive<W>, &Seen<W>) -> (R, Vec<Effect<W>>),
     ) -> (R, Out<W>) {
         let Some(u) = self.unattended.as_deref_mut() else {
             return (R::default(), self.settle(Vec::new(), Vec::new()));
@@ -82,10 +92,7 @@ impl<'a, W: Copy> Joined<'a, W> {
     /// and routed. `world` is the projects switched on and the world as they
     /// are, read for what [`Said::looks`]; without it there is nothing to
     /// look at.
-    pub fn run_said(&mut self, task: &str, said: Said, world: Option<(Vec<On>, &World)>) -> Out<W>
-    where
-        W: PartialEq,
-    {
+    pub fn run_said(&mut self, task: &str, said: Said, world: Option<(Vec<On>, &World)>) -> Out<W> {
         self.unattended(|u, seen| {
             let fx = match (said, world) {
                 (Said::Waiting, Some((roots, world))) => u.waiting(task, seen, roots, world),
@@ -115,69 +122,59 @@ impl<'a, W: Copy> Joined<'a, W> {
         self.tasks.request(id, window, over_cap)
     }
 
-    /// Route each drive's effects meant for the other into its commands,
-    /// until none is left, and hand back the rest to carry out.
+    /// Hand what each drive asked of the other to it, until neither asks
+    /// anything more, and hand back the rest, `tfx` and `ufx` with what came
+    /// after them, for the front end to carry out. What the tasks asked is
+    /// settled before each thing unattended runs asked.
     fn settle(&mut self, tfx: Vec<tasks::Effect<W>>, ufx: Vec<Effect<W>>) -> Out<W> {
         let mut out = Out {
-            tasks: Vec::new(),
-            unattended: Vec::new(),
+            tasks: tfx,
+            unattended: ufx,
         };
-        let (mut tq, mut uq) = (VecDeque::from(tfx), VecDeque::from(ufx));
+        let (mut tq, mut uq) = (VecDeque::new(), VecDeque::new());
         loop {
-            if let Some(effect) = tq.pop_front() {
+            tq.extend(self.tasks.take_linked());
+            if let Some(u) = self.unattended.as_deref_mut() {
+                uq.extend(u.take_linked());
+            }
+            if let Some(asked) = tq.pop_front() {
                 // Without unattended runs set up, what is theirs goes nowhere.
                 let seen = Seen::new(&*self.tasks, self.runs.iter().copied());
                 let u = self.unattended.as_deref_mut();
-                match (effect, u) {
-                    (tasks::Effect::Ask { task, window }, _) => tq.extend(self.ask(&task, window)),
-                    (tasks::Effect::Asked(id), Some(u)) => u.placed(&id),
-                    (tasks::Effect::IssueEnded(id), Some(u)) => uq.extend(u.ended(&id, &seen)),
-                    (tasks::Effect::Deliver(id), Some(u)) => uq.extend(u.deliver(&id, &seen)),
-                    (tasks::Effect::DeliverAll, Some(u)) => uq.extend(u.deliver_all(&seen)),
+                match (asked, u) {
+                    (tasks::Linked::Ask { task, window }, _) => {
+                        out.tasks.extend(self.ask(&task, window))
+                    }
+                    (tasks::Linked::Asked(id), Some(u)) => u.placed(&id),
+                    (tasks::Linked::IssueEnded(id), Some(u)) => {
+                        out.unattended.extend(u.ended(&id, &seen))
+                    }
+                    (tasks::Linked::Deliver(id), Some(u)) => {
+                        out.unattended.extend(u.deliver(&id, &seen))
+                    }
+                    (tasks::Linked::DeliverAll, Some(u)) => {
+                        out.unattended.extend(u.deliver_all(&seen))
+                    }
                     (
-                        tasks::Effect::Asked(_)
-                        | tasks::Effect::IssueEnded(_)
-                        | tasks::Effect::Deliver(_)
-                        | tasks::Effect::DeliverAll,
+                        tasks::Linked::Asked(_)
+                        | tasks::Linked::IssueEnded(_)
+                        | tasks::Linked::Deliver(_)
+                        | tasks::Linked::DeliverAll,
                         None,
                     ) => {}
-                    // The rest is the front end's to carry out.
-                    (
-                        other @ (tasks::Effect::Save(_)
-                        | tasks::Effect::SaveDismissed(_)
-                        | tasks::Effect::Remove(_)
-                        | tasks::Effect::DropMarks { .. }
-                        | tasks::Effect::FindPlace { .. }
-                        | tasks::Effect::Drive { .. }
-                        | tasks::Effect::WatchDrain { .. }
-                        | tasks::Effect::Pin { .. }
-                        | tasks::Effect::Cut(_)
-                        | tasks::Effect::Keep(_)
-                        | tasks::Effect::Defer(_)
-                        | tasks::Effect::Told { .. }
-                        | tasks::Effect::JudgeRemoval(_)
-                        | tasks::Effect::ReadReview { .. }
-                        | tasks::Effect::ConfirmAnswer { .. }
-                        | tasks::Effect::ConfirmRemoval { .. }
-                        | tasks::Effect::RemoveWorktree { .. }
-                        | tasks::Effect::CloseSession { .. }
-                        | tasks::Effect::Signal(_)
-                        | tasks::Effect::Refresh),
-                        _,
-                    ) => out.tasks.push(other),
                 }
                 continue;
             }
-            let Some(effect) = uq.pop_front() else {
+            let Some(asked) = uq.pop_front() else {
                 break;
             };
-            match effect {
-                Effect::Submit { task, window } => {
+            match asked {
+                Linked::Submit { task, window } => {
                     let id = task.id.clone();
-                    tq.extend(self.tasks.add(*task));
-                    tq.extend(self.ask(&id, window));
+                    out.tasks.extend(self.tasks.add(*task));
+                    out.tasks.extend(self.ask(&id, window));
                 }
-                Effect::AnswerReview {
+                Linked::AnswerReview {
                     task,
                     run,
                     template,
@@ -195,33 +192,18 @@ impl<'a, W: Copy> Joined<'a, W> {
                     );
                     // It asks for its place itself; one a run took up since
                     // the claim looked no longer counts as starting.
-                    tq.extend(fx);
+                    out.tasks.extend(fx);
                     if !made {
                         if let Some(u) = self.unattended.as_deref_mut() {
                             u.placed(&task);
                         }
                     }
                 }
-                Effect::Drain { task, landed } => {
-                    tq.extend(self.tasks.change_issue(&task, |issue| {
+                Linked::Drain { task, landed } => {
+                    out.tasks.extend(self.tasks.change_issue(&task, |issue| {
                         issue.unsent.drain(..landed.min(issue.unsent.len()));
                     }));
                 }
-                // The rest is the front end's to carry out.
-                other @ (Effect::Arm(_)
-                | Effect::Check { .. }
-                | Effect::Look(_)
-                | Effect::Claim { .. }
-                | Effect::Take { .. }
-                | Effect::ClaimPicked { .. }
-                | Effect::Tell { .. }
-                | Effect::Send(_)
-                | Effect::Teardown { .. }
-                | Effect::NoteTakenUp { .. }
-                | Effect::Synced(_)
-                | Effect::Tick
-                | Effect::Signal(_)
-                | Effect::Refresh) => out.unattended.push(other),
             }
         }
         out

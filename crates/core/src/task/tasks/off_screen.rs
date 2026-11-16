@@ -4,7 +4,7 @@
 //! screen, then kept as a task and asking for its place like any other.
 //! Where it landed is said to whoever asked ([`Effect::Told`]).
 
-use super::{Effect, Placed, TasksDrive};
+use super::{Effect, Linked, Placed, TasksDrive};
 use crate::task::{Launch, Worktree};
 
 /// A start off screen under way: the task it is to be, what it launches,
@@ -67,7 +67,7 @@ impl<W: Copy> TasksDrive<W> {
         }
         fx.extend(self.add(launch.task(task.clone())));
         self.drive_off_screen(&task);
-        fx.push(Effect::Ask { task, window });
+        self.linked.push(Linked::Ask { task, window });
     }
 }
 

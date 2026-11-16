@@ -59,13 +59,8 @@ fn name<W>(e: &Effect<W>) -> &'static str {
         Effect::Pin { .. } => "Pin",
         Effect::Cut(_) => "Cut",
         Effect::Keep(_) => "Keep",
-        Effect::Ask { .. } => "Ask",
         Effect::Defer(_) => "Defer",
-        Effect::IssueEnded(_) => "IssueEnded",
-        Effect::Deliver(_) => "Deliver",
-        Effect::DeliverAll => "DeliverAll",
         Effect::Told { .. } => "Told",
-        Effect::Asked(_) => "Asked",
         Effect::JudgeRemoval(_) => "JudgeRemoval",
         Effect::ReadReview { .. } => "ReadReview",
         Effect::ConfirmAnswer { .. } => "ConfirmAnswer",
@@ -90,6 +85,14 @@ fn name<W>(e: &Effect<W>) -> &'static str {
     }
 }
 
+/// Whether the tasks asked their link for task `id`'s place.
+fn asks(tasks: &mut TasksDrive<Win>, id: &str) -> bool {
+    tasks.take_linked().iter().any(|linked| match linked {
+        Linked::Ask { task, .. } => task == id,
+        Linked::Asked(_) | Linked::IssueEnded(_) | Linked::Deliver(_) | Linked::DeliverAll => false,
+    })
+}
+
 fn named<W>(fx: &[Effect<W>], wanted: &str) -> bool {
     fx.iter().any(|e| name(e) == wanted)
 }
@@ -98,16 +101,11 @@ fn named<W>(fx: &[Effect<W>], wanted: &str) -> bool {
 fn task_of<W>(e: &Effect<W>) -> Option<&str> {
     match e {
         Effect::Save(task) | Effect::SaveDismissed(task) => Some(&task.id),
-        Effect::Remove(id)
-        | Effect::IssueEnded(id)
-        | Effect::Deliver(id)
-        | Effect::Asked(id)
-        | Effect::DropMarks { id, .. } => Some(id),
+        Effect::Remove(id) | Effect::DropMarks { id, .. } => Some(id),
         Effect::FindPlace { task, .. }
         | Effect::Drive { task, .. }
         | Effect::WatchDrain { task, .. }
         | Effect::Pin { task, .. }
-        | Effect::Ask { task, .. }
         | Effect::Told { task, .. }
         | Effect::ReadReview { task, .. }
         | Effect::ConfirmAnswer { task, .. }
@@ -115,11 +113,9 @@ fn task_of<W>(e: &Effect<W>) -> Option<&str> {
         | Effect::RemoveWorktree { task, .. } => Some(task),
         Effect::Cut(start) | Effect::Keep(start) => Some(&start.task),
         Effect::JudgeRemoval(judging) => Some(&judging.task),
-        Effect::Defer(_)
-        | Effect::DeliverAll
-        | Effect::CloseSession { .. }
-        | Effect::Signal(_)
-        | Effect::Refresh => None,
+        Effect::Defer(_) | Effect::CloseSession { .. } | Effect::Signal(_) | Effect::Refresh => {
+            None
+        }
     }
 }
 
@@ -135,13 +131,8 @@ fn written<W>(e: &Effect<W>) -> Option<&Task> {
         | Effect::Pin { .. }
         | Effect::Cut(_)
         | Effect::Keep(_)
-        | Effect::Ask { .. }
         | Effect::Defer(_)
-        | Effect::IssueEnded(_)
-        | Effect::Deliver(_)
-        | Effect::DeliverAll
         | Effect::Told { .. }
-        | Effect::Asked(_)
         | Effect::JudgeRemoval(_)
         | Effect::ReadReview { .. }
         | Effect::ConfirmAnswer { .. }
@@ -165,13 +156,8 @@ fn start_of<W>(e: Effect<W>) -> Option<OffScreen<W>> {
         | Effect::Drive { .. }
         | Effect::WatchDrain { .. }
         | Effect::Pin { .. }
-        | Effect::Ask { .. }
         | Effect::Defer(_)
-        | Effect::IssueEnded(_)
-        | Effect::Deliver(_)
-        | Effect::DeliverAll
         | Effect::Told { .. }
-        | Effect::Asked(_)
         | Effect::JudgeRemoval(_)
         | Effect::ReadReview { .. }
         | Effect::ConfirmAnswer { .. }
@@ -239,7 +225,7 @@ fn a_free_place_starts_the_task_at_once() {
     tasks.add(check("1", "/a"));
     let fx = ask(&mut tasks, "1", "/a");
     assert!(drives(&fx, "1"), "{fx:?}");
-    assert!(has(&fx, |e| *e == Effect::Asked("1".into())), "{fx:?}");
+    assert!(tasks.take_linked().contains(&Linked::Asked("1".into())));
     assert_eq!(tasks.working("1"), Some(Working::Running));
 }
 
@@ -402,13 +388,8 @@ fn an_ended_run_holds_its_place_until_its_turn_is_over() {
         | Effect::WatchDrain { .. }
         | Effect::Cut(_)
         | Effect::Keep(_)
-        | Effect::Ask { .. }
         | Effect::Defer(_)
-        | Effect::IssueEnded(_)
-        | Effect::Deliver(_)
-        | Effect::DeliverAll
         | Effect::Told { .. }
-        | Effect::Asked(_)
         | Effect::JudgeRemoval(_)
         | Effect::ReadReview { .. }
         | Effect::ConfirmAnswer { .. }
@@ -580,8 +561,11 @@ fn a_task_that_cannot_start_fails_only_when_nobody_watches_it() {
                 task.id == "1" && task.issue().is_some_and(|issue| issue.unsent.len() == 1)
             })
     });
-    let told = fx.iter().position(|e| *e == Effect::IssueEnded("1".into()));
-    assert!(saved.is_some() && saved < told, "{fx:?}");
+    assert!(saved.is_some(), "{fx:?}");
+    // Told through the link, which acts once what was said to do is taken.
+    assert!(tasks
+        .take_linked()
+        .contains(&Linked::IssueEnded("1".into())));
     match tasks.task("1").unwrap().outcome() {
         Some(Outcome::Failed(_)) => {}
         outcome
@@ -654,7 +638,7 @@ fn a_finished_task_past_the_history_is_let_go() {
     assert_eq!(fx.iter().filter(|e| name(e) == "Remove").count(), 1);
     assert!(has(&fx, |e| name(e) == "DropMarks"
         && task_of(e) == Some("1000")));
-    assert!(has(&fx, |e| *e == Effect::DeliverAll));
+    assert!(tasks.take_linked().contains(&Linked::DeliverAll));
     assert_eq!(tasks.tasks().len(), history::KEPT);
     assert_eq!(tasks.removed(Path::new("/a")), 1);
 }
@@ -740,7 +724,7 @@ fn a_check_is_retried_at_once_from_its_one_step_and_others_are_not() {
     let (retry, fx) = tasks.retry_asked("1", "1b".into(), WINDOW);
     assert_eq!(retry, Retry::AtOnce);
     assert_eq!(saves(&fx), 1);
-    assert!(has(&fx, |e| name(e) == "Ask" && task_of(e) == Some("1")));
+    assert!(asks(&mut tasks, "1"));
     assert_eq!(tasks.task("1").unwrap().runs.len(), 2);
     let (retry, fx) = tasks.retry_asked("2", "2b".into(), WINDOW);
     assert_eq!(retry, Retry::Confirm);
@@ -761,9 +745,10 @@ fn a_resume_refused_is_said_and_one_let_through_asks() {
         })]
     );
     let fx = tasks.resume("1", None, WINDOW);
+    assert!(fx.is_empty(), "{fx:?}");
     assert_eq!(
-        fx,
-        [Effect::Ask {
+        tasks.take_linked(),
+        [Linked::Ask {
             task: "1".into(),
             window: WINDOW
         }]
@@ -807,12 +792,7 @@ fn told<W>(fx: &[Effect<W>]) -> Option<&Placed> {
         | Effect::Pin { .. }
         | Effect::Cut(_)
         | Effect::Keep(_)
-        | Effect::Ask { .. }
         | Effect::Defer(_)
-        | Effect::IssueEnded(_)
-        | Effect::Deliver(_)
-        | Effect::DeliverAll
-        | Effect::Asked(_)
         | Effect::JudgeRemoval(_)
         | Effect::ReadReview { .. }
         | Effect::ConfirmAnswer { .. }
@@ -861,7 +841,7 @@ fn a_start_off_screen_keeps_its_project_then_its_task_and_asks() {
     );
     assert_eq!(workspace.active_root, 0, "and not put on screen");
     assert_eq!(saves(&fx), 1);
-    assert!(has(&fx, |e| name(e) == "Ask" && task_of(e) == Some("t")));
+    assert!(asks(&mut tasks, "t"));
     assert_eq!(tasks.task("t").unwrap().origin, Some(Origin::Tool));
     let fx = ask(&mut tasks, "t", "/p");
     assert!(drives(&fx, "t"));

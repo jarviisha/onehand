@@ -2,15 +2,15 @@
 //! the task a claim is kept as.
 
 use super::{
-    earlier, issue_task, tell, Effect, Look, Looked, On, Pick, Search, Signal, UnattendedDrive,
-    World,
+    earlier, issue_task, tell, Effect, Linked, Look, Looked, On, Pick, Search, Signal,
+    UnattendedDrive, World,
 };
 use crate::task::tasks::link::Seen;
 use crate::unattended::{self as core, Claimed, Skip, Taking, Unstarted, Work};
 use crate::workflow::Setup;
 use crate::Now;
 
-impl UnattendedDrive {
+impl<W: Copy + PartialEq> UnattendedDrive<W> {
     /// Look at every switched-on project (`roots`), and search them for an
     /// issue if a slot is free and nothing stops every run. `asked_from` is
     /// the window a person asked from, to be told what came of it.
@@ -21,7 +21,7 @@ impl UnattendedDrive {
     /// switched on or not, since an issue picked by hand needs no switch.
     /// **Nothing switched on asks no connector anything**, so the feature
     /// costs nobody who has not switched a project on.
-    pub fn tick<W: Copy + PartialEq>(
+    pub fn tick(
         &mut self,
         asked_from: Option<W>,
         seen: &Seen<W>,
@@ -65,7 +65,7 @@ impl UnattendedDrive {
     /// Look for a labelled issue now, rather than at the next tick, saying in
     /// `window` what came of it: every way it can do nothing is said rather
     /// than left to look like nothing happened.
-    pub fn look_now<W: Copy + PartialEq>(
+    pub fn look_now(
         &mut self,
         window: W,
         seen: &Seen<W>,
@@ -99,7 +99,7 @@ impl UnattendedDrive {
     /// **Refused while the cap is reached**, the rule for picked and found
     /// alike, and **before the claim** for whatever would fail the run: the
     /// issue would otherwise be claimed and commented on for nothing.
-    pub fn pick<W: Copy>(
+    pub fn pick(
         &mut self,
         pick: Pick,
         window: W,
@@ -131,7 +131,7 @@ impl UnattendedDrive {
 
     /// The look landed: file what it found, and claim what the search found
     /// if no task took the issue up meanwhile.
-    pub(super) fn looked<W: Copy>(
+    pub(super) fn looked(
         &mut self,
         looked: Looked<W>,
         seen: &Seen<W>,
@@ -182,7 +182,7 @@ impl UnattendedDrive {
 
     /// Nothing was claimed: a search somebody asked for says so, with why
     /// when something held it; one the tick ran says nothing.
-    fn unclaimed<W>(&mut self, asked_from: Option<W>, held: Option<String>) -> Vec<Effect<W>> {
+    fn unclaimed(&mut self, asked_from: Option<W>, held: Option<String>) -> Vec<Effect<W>> {
         self.claiming = false;
         let mut fx = vec![Effect::Refresh];
         if let Some(window) = asked_from {
@@ -199,7 +199,7 @@ impl UnattendedDrive {
 
     /// A claim came back: start its task, or tell the issue why not.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn landed<W: Copy + PartialEq>(
+    pub(super) fn landed(
         &mut self,
         begun: Option<Result<Claimed, Unstarted>>,
         asked_from: Option<W>,
@@ -235,7 +235,7 @@ impl UnattendedDrive {
     /// Keep a claimed issue as a task of its workflow, then ask for its place
     /// in the window holding its project: the one it was picked in when that
     /// one does, so its session comes up in front of the person who asked.
-    fn start<W: Copy + PartialEq>(
+    fn start(
         &mut self,
         claimed: Claimed,
         picked_in: Option<W>,
@@ -291,16 +291,17 @@ impl UnattendedDrive {
         );
         // Counted against the cap until it has asked for its place.
         self.starting.insert(task.id.clone());
-        Ok(vec![Effect::Submit {
+        self.linked.push(Linked::Submit {
             task: Box::new(task),
             window,
-        }])
+        });
+        Ok(Vec::new())
     }
 
     /// Answer the review on the pull request of issue task `task` with a new
     /// run `run`, telling it `note`, from the step its status checks send
     /// back to.
-    fn answer_review<W: Copy>(
+    fn answer_review(
         &mut self,
         claimed: Claimed,
         task: String,
@@ -320,19 +321,20 @@ impl UnattendedDrive {
         }
         let from = last.template.repair_step().map(str::to_string);
         self.starting.insert(task.clone());
-        Ok(vec![Effect::AnswerReview {
+        self.linked.push(Linked::AnswerReview {
             task,
             run,
             template: Box::new(last.template.clone()),
             from,
             note,
             window,
-        }])
+        });
+        Ok(Vec::new())
     }
 
     /// What claiming a picked issue would come to landed: claim it, if no
     /// task took it up meanwhile, or say in `window` why not.
-    pub(super) fn taken<W: Copy>(
+    pub(super) fn taken(
         &mut self,
         pick: Pick,
         window: W,
@@ -365,7 +367,7 @@ impl UnattendedDrive {
     /// A picked issue's claim landed: start it, or say why not where it was
     /// picked, and on the issue once it was claimed.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn pick_claimed<W: Copy + PartialEq>(
+    pub(super) fn pick_claimed(
         &mut self,
         window: W,
         named: &str,
@@ -401,7 +403,7 @@ impl UnattendedDrive {
         fx
     }
 
-    fn refused_pick<W>(&mut self, window: W, why: String) -> Vec<Effect<W>> {
+    fn refused_pick(&mut self, window: W, why: String) -> Vec<Effect<W>> {
         self.claiming = false;
         vec![
             Effect::Refresh,

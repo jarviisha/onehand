@@ -103,12 +103,18 @@ fn ask(task: Task, window: AnyWindowHandle, cx: &mut TestAppContext) -> bool {
     cx.update(|cx| {
         add(task, cx);
         cx.update_global::<Tasks, _>(|t, _| {
-            t.drive.request(&id, window, None);
-            t.drive.handle(Input::PlaceFound {
-                task: id.clone(),
-                place,
-                window,
-                window_open: true,
+            // Through the link, which settles what each call asks of it; what
+            // it hands back to carry out is left undone.
+            let mut joined = t.joined();
+            joined.tasks(|d| ((), d.request(&id, window, None)));
+            joined.tasks(|d| {
+                let fx = d.handle(Input::PlaceFound {
+                    task: id.clone(),
+                    place,
+                    window,
+                    window_open: true,
+                });
+                ((), fx)
             });
             t.drive.queue().holds(&id)
         })

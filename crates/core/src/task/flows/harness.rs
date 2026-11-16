@@ -55,7 +55,7 @@ enum Work {
 /// Every drive a front end holds, and what reached a person or a file.
 pub(super) struct Flow {
     pub(super) tasks: TasksDrive<Win>,
-    pub(super) unattended: Option<UnattendedDrive>,
+    pub(super) unattended: Option<UnattendedDrive<Win>>,
     pub(super) world: World,
     pub(super) schedule: ScheduleDrive<Win>,
     /// The workspace of the one window, [`WINDOW`].
@@ -87,7 +87,7 @@ impl Flow {
     /// Every drive, unattended runs set up when given, one agent `a`, and
     /// `library` on offer.
     pub(super) fn new(
-        unattended: Option<UnattendedDrive>,
+        unattended: Option<UnattendedDrive<Win>>,
         library: Vec<Template>,
         now: u64,
     ) -> Self {
@@ -295,11 +295,6 @@ impl Flow {
             TasksEffect::CloseSession { .. } => {}
             TasksEffect::Signal(signal) => self.said.push(format!("{signal:?}")),
             TasksEffect::Refresh => {}
-            TasksEffect::Ask { .. }
-            | TasksEffect::Asked(_)
-            | TasksEffect::IssueEnded(_)
-            | TasksEffect::Deliver(_)
-            | TasksEffect::DeliverAll => panic!("the link's to route"),
         }
     }
 
@@ -545,9 +540,6 @@ impl Flow {
             UEffect::Signal(signal) => self.said.push(format!("{signal:?}")),
             UEffect::Take { .. } | UEffect::ClaimPicked { .. } => {
                 panic!("these flows pick nothing by hand")
-            }
-            UEffect::Submit { .. } | UEffect::AnswerReview { .. } | UEffect::Drain { .. } => {
-                panic!("the link's to route")
             }
         }
     }

@@ -48,7 +48,7 @@ fn a_tick_claims_an_issue_whose_run_prompts_its_session_and_reports_once_done() 
         at_once: 1,
         ..Default::default()
     };
-    let (unattended, _) = UnattendedDrive::new::<u8>(&cfg, &[]);
+    let (unattended, _) = UnattendedDrive::<u8>::new(&cfg, &[]);
     let mut flow = Flow::new(Some(unattended), vec![plain()], 1_800_000_000);
     flow.roots = vec![project.clone()];
 

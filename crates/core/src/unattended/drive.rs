@@ -23,14 +23,14 @@
 //!   stops every run, search them ([`Effect::Look`]). What the search found
 //!   is checked again against the tasks as they are when it lands, then
 //!   claimed ([`Effect::Claim`]); the claim kept as a task asks for its place
-//!   ([`Effect::Submit`]), and the tick looks again at once for the next slot.
+//!   ([`Linked::Submit`]), and the tick looks again at once for the next slot.
 //! - **A pick**: refused before the claim for what would refuse any run;
 //!   otherwise what claiming the issue comes to is read ([`Effect::Take`]),
 //!   checked again, claimed ([`Effect::ClaimPicked`]) and started as a found
 //!   one is, in the window it was picked in.
 //! - **A run's end**: its project is dropped unless a person has it, and its
 //!   reports are sent, oldest first ([`Effect::Send`]); each is dropped from
-//!   its task only once it landed ([`Effect::Drain`]).
+//!   its task only once it landed ([`Linked::Drain`]).
 
 use super::{
     could_not_start, Accounts, Claimed, Earlier, Found, Holder, IssueRow, IssueSource,
@@ -148,6 +148,28 @@ pub enum Signal<W> {
     Log(String),
 }
 
+/// What unattended runs ask of the tasks, which their link hands the tasks'
+/// drive in the same call, in the order asked. Never a front end's: it is
+/// kept on the drive until the link takes it.
+#[derive(Debug)]
+pub(crate) enum Linked<W> {
+    /// Keep `task`, new, and ask for its place in `window`.
+    Submit { task: Box<Task>, window: W },
+    /// Give task `task` a new run `run` of `template` from step `from`,
+    /// telling it `note`, and ask for its place in `window`.
+    AnswerReview {
+        task: String,
+        run: String,
+        template: Box<Template>,
+        from: Option<String>,
+        note: String,
+        window: W,
+    },
+    /// The first `landed` of task `task`'s unsent reports reached its issue:
+    /// drop them.
+    Drain { task: String, landed: usize },
+}
+
 /// What to do, in the order given.
 pub enum Effect<W> {
     /// Report [`Input::Elapsed`] after this long. One clock for the life of
@@ -199,27 +221,10 @@ pub enum Effect<W> {
         number: u64,
         body: String,
     },
-    /// Keep `task`, new, and ask for its place in `window`. Carried by the
-    /// link, which hands it to the tasks' drive.
-    Submit { task: Box<Task>, window: W },
-    /// Give task `task` a new run `run` of `template` from step `from`,
-    /// telling it `note`, and ask for its place in `window`. Carried by the
-    /// link.
-    AnswerReview {
-        task: String,
-        run: String,
-        template: Box<Template>,
-        from: Option<String>,
-        note: String,
-        window: W,
-    },
     /// Send task `task`'s unsent reports ([`Sending::send_blocking`]), then
     /// report [`Input::Sent`]. Recorded: what landed is dropped whatever
     /// happened since.
     Send(Box<Sending>),
-    /// The first `landed` of task `task`'s unsent reports reached its issue:
-    /// drop them. Carried by the link.
-    Drain { task: String, landed: usize },
     /// Keep the project at `dir` a run worked in for good (`keep`), or drop
     /// it, in every window holding it: only one the run added is dropped.
     Teardown { dir: PathBuf, keep: bool },
@@ -251,7 +256,7 @@ pub enum Effect<W> {
 
 /// Unattended runs in this process: their settings and what is under way.
 /// The runs themselves are tasks, kept by the tasks' drive.
-pub struct UnattendedDrive {
+pub struct UnattendedDrive<W> {
     connectors: Connectors,
     label: String,
     /// How long a run may work, put over the workflow's own timeout.
@@ -285,6 +290,9 @@ pub struct UnattendedDrive {
     /// against the cap meanwhile, so a tick landing in between cannot start
     /// one more.
     starting: HashSet<String>,
+    /// What was asked of the tasks and their link has not taken yet, in
+    /// order.
+    linked: Vec<Linked<W>>,
     /// What each connector last said about its account; `None` until the
     /// first answer lands.
     accounts: Option<Accounts>,
@@ -299,7 +307,18 @@ pub struct UnattendedDrive {
     problems: HashMap<PathBuf, String>,
 }
 
-impl UnattendedDrive {
+impl<W: Copy + PartialEq> UnattendedDrive<W> {
+    /// What was asked of the tasks since last asked, in order: the link's.
+    pub(crate) fn take_linked(&mut self) -> Vec<Linked<W>> {
+        std::mem::take(&mut self.linked)
+    }
+
+    /// Whether something asked of the tasks waits for the link: only after a
+    /// call that went round the link, which is a mistake.
+    pub(crate) fn linked_waiting(&self) -> bool {
+        !self.linked.is_empty()
+    }
+
     /// Unattended runs as `cfg` sets them up, with `connectors`, and its
     /// clock armed.
     ///
@@ -307,7 +326,7 @@ impl UnattendedDrive {
     /// stops the search and is on every switched-on row, while the projects
     /// and the accounts are still looked at, so the clock runs whatever the
     /// config says.
-    pub fn new<W>(cfg: &UnattendedConfig, connectors: Connectors) -> (Self, Vec<Effect<W>>) {
+    pub fn new(cfg: &UnattendedConfig, connectors: Connectors) -> (Self, Vec<Effect<W>>) {
         let label = cfg.label.trim().to_string();
         let every = super::parse_every(&cfg.every);
         let timeout = super::parse_every(&cfg.timeout).map(|_| cfg.timeout.clone());
@@ -349,6 +368,7 @@ impl UnattendedDrive {
             paused: None,
             delivering: HashSet::new(),
             starting: HashSet::new(),
+            linked: Vec::new(),
             accounts: None,
             checked_at: None,
             checks_out: 0,
@@ -403,7 +423,7 @@ impl UnattendedDrive {
     }
 
     /// The slots as they stand, across every window.
-    pub fn slots<W: Copy>(&self, seen: &Seen<W>) -> Slots {
+    pub fn slots(&self, seen: &Seen<W>) -> Slots {
         Slots {
             holders: slot_holders(seen),
             starting: self.starting.len(),
@@ -420,13 +440,13 @@ impl UnattendedDrive {
 
     /// Whether issue task `id` is counted against the cap already: kept and
     /// not yet placed, or queued, running or waiting.
-    pub fn counted<W: Copy>(&self, id: &str, seen: &Seen<W>) -> bool {
+    pub fn counted(&self, id: &str, seen: &Seen<W>) -> bool {
         self.starting.contains(id) || seen.busy(id)
     }
 
     /// Why issue task `id` may not start now: the cap is reached. One counted
     /// already never is, and a task of no issue never is.
-    pub fn over_cap<W: Copy>(&self, id: &str, seen: &Seen<W>) -> Option<String> {
+    pub fn over_cap(&self, id: &str, seen: &Seen<W>) -> Option<String> {
         let issue = seen.task(id).is_some_and(|task| task.issue().is_some());
         if !issue || self.counted(id, seen) {
             return None;
@@ -444,7 +464,7 @@ impl UnattendedDrive {
     /// Ask every connector again and look at `roots`: *Check again*, a
     /// window opening (`prune`, `roots` being every switched-on project), or
     /// one project just switched on.
-    pub fn check<W>(&mut self, roots: Vec<Project>, prune: bool) -> Vec<Effect<W>> {
+    pub fn check(&mut self, roots: Vec<Project>, prune: bool) -> Vec<Effect<W>> {
         self.checks_out += 1;
         vec![
             Effect::Refresh,
@@ -465,7 +485,7 @@ impl UnattendedDrive {
     /// A run of task `id` now waits on a person, or on its status checks,
     /// and gives its slot up: an issue's looks for the next issue at once
     /// rather than at the next tick.
-    pub fn waiting<W: Copy + PartialEq>(
+    pub fn waiting(
         &mut self,
         id: &str,
         seen: &Seen<W>,
@@ -481,7 +501,7 @@ impl UnattendedDrive {
     /// A person answered the run of task `id` that waited on them: under a
     /// cap on waiting runs that is room made, so an issue's looks for the
     /// next issue at once.
-    pub fn answered<W: Copy + PartialEq>(
+    pub fn answered(
         &mut self,
         id: &str,
         seen: &Seen<W>,
@@ -498,7 +518,7 @@ impl UnattendedDrive {
     /// A run failed on a setting, `why`: every later run would fail the same
     /// way, each on a fresh issue, so runs stop until what `fix` names is
     /// fixed and onehand restarted, which is the only thing that lifts it.
-    pub fn pause<W>(&mut self, why: &str, fix: &str) -> Vec<Effect<W>> {
+    pub fn pause(&mut self, why: &str, fix: &str) -> Vec<Effect<W>> {
         let why = format!("{why}. Unattended runs are paused until {fix} and onehand restarted.");
         let fx = vec![Effect::Signal(Signal::Log(why.clone())), Effect::Refresh];
         self.paused = Some(why);
@@ -507,7 +527,7 @@ impl UnattendedDrive {
 
     /// Something the world found: what to do about it. `roots` and `world`
     /// are as they are now; `now` is when it landed.
-    pub fn handle<W: Copy + PartialEq>(
+    pub fn handle(
         &mut self,
         input: Input<W>,
         seen: &Seen<W>,
@@ -564,14 +584,15 @@ impl UnattendedDrive {
             }
             Input::Sent { task, landed } => {
                 self.delivering.remove(&task);
-                vec![Effect::Drain { task, landed }]
+                self.linked.push(Linked::Drain { task, landed });
+                Vec::new()
             }
         }
     }
 
     /// Why no more runs may start while these work: every slot is taken,
     /// said with who holds each, or as many runs wait on a person as may.
-    fn at_cap<W: Copy>(&self, seen: &Seen<W>) -> Option<String> {
+    fn at_cap(&self, seen: &Seen<W>) -> Option<String> {
         self.slots(seen).full()
     }
 

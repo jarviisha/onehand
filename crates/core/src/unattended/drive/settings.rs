@@ -8,7 +8,7 @@ use crate::task::tasks::link::Seen;
 use crate::unattended::{Choosing, Judging};
 use crate::workflow::{Offer, Template};
 
-impl UnattendedDrive {
+impl<W: Copy + PartialEq> UnattendedDrive<W> {
     /// The agent a run starts, by name: the one set for runs, else the first
     /// configured.
     pub fn run_agent(&self, agents: &[AgentSpec]) -> Option<String> {
@@ -75,7 +75,7 @@ impl UnattendedDrive {
 
     /// What every new issue run on the configuration as it stands shares:
     /// the agent, its mode and what is known of it, and the slots.
-    pub fn common<W: Copy>(&self, seen: &Seen<W>, world: &World) -> Facts {
+    pub fn common(&self, seen: &Seen<W>, world: &World) -> Facts {
         let agent = self.run_agent(&world.agents);
         let spec = agent
             .as_deref()
@@ -130,7 +130,7 @@ impl UnattendedDrive {
     }
 
     /// What a search judges each new task by.
-    pub(super) fn judging<W: Copy>(&self, seen: &Seen<W>, world: &World) -> Judging {
+    pub(super) fn judging(&self, seen: &Seen<W>, world: &World) -> Judging {
         let templates = std::iter::once(&self.workflow)
             .chain(self.workflows.values())
             .map(|id| (id.clone(), self.template(id, world)))

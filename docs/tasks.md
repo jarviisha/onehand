@@ -412,7 +412,7 @@ migration it protects.
   check*); a schedule's or a tool's through `task::start_off_screen`, whose drive asks once the
   task is kept; an unattended claim's task is kept and asks through the same link; Retry, Resume and a
   review's answer ask for an existing one, the drive asking itself once a retry's run is made
-  (`Effect::Ask`). A free place starts the task at once
+  (`Linked::Ask`, which only the link takes). A free place starts the task at once
   (`Shell::drive_task`, as `TasksDrive::begin` says); a taken one queues it and says so in a
   notification. A task already running or waiting is left alone.
 - **The run's drive and carrier stay the only code that turns session events into reports.** They

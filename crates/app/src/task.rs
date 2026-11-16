@@ -36,7 +36,7 @@ pub(crate) struct Tasks {
     drive: TasksDrive<AnyWindowHandle>,
     /// Unattended runs, once they are set up: one per process, beside the
     /// tasks they start, since two would be two agents on one issue.
-    unattended: Option<UnattendedDrive>,
+    unattended: Option<UnattendedDrive<AnyWindowHandle>>,
     /// Runs under way, by their task's id; a check's has no session.
     live: HashMap<String, carrier::Driven>,
     /// What watches each run that ended while its session's turn still goes.
@@ -175,7 +175,7 @@ pub(crate) fn with_joined<R>(
 pub(crate) fn with_unattended<R: Default>(
     cx: &mut App,
     command: impl FnOnce(
-        &mut UnattendedDrive,
+        &mut UnattendedDrive<AnyWindowHandle>,
         &Seen<'_, AnyWindowHandle>,
     ) -> (
         R,
@@ -186,14 +186,14 @@ pub(crate) fn with_unattended<R: Default>(
 }
 
 /// Set unattended runs up with `drive`.
-pub(crate) fn set_unattended(drive: UnattendedDrive, cx: &mut App) {
+pub(crate) fn set_unattended(drive: UnattendedDrive<AnyWindowHandle>, cx: &mut App) {
     cx.default_global::<Tasks>().unattended = Some(drive);
 }
 
 /// What `read` makes of unattended runs and the tasks, once they are set up.
 pub(crate) fn unattended<R>(
     cx: &App,
-    read: impl FnOnce(&UnattendedDrive, &Seen<'_, AnyWindowHandle>) -> R,
+    read: impl FnOnce(&UnattendedDrive<AnyWindowHandle>, &Seen<'_, AnyWindowHandle>) -> R,
 ) -> Option<R> {
     let t = cx.try_global::<Tasks>()?;
     Some(read(t.unattended.as_ref()?, &t.seen()))

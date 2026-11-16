@@ -280,9 +280,6 @@ pub(crate) fn perform(effects: Vec<Effect<AnyWindowHandle>>, cx: &mut App) {
             Effect::Signal(Signal::Warn { window, said }) => launch::warn(window, said, cx),
             Effect::Signal(Signal::Log(said)) => eprintln!("onehand: {said}"),
             Effect::Refresh => cx.refresh_windows(),
-            // The tasks' to act on: the link hands them over, and never on
-            // to here.
-            Effect::Submit { .. } | Effect::AnswerReview { .. } | Effect::Drain { .. } => {}
         }
     }
 }
@@ -304,7 +301,7 @@ pub(super) fn tick(asked_from: Option<AnyWindowHandle>, cx: &mut App) {
 }
 
 /// Read unattended runs, once they are set up.
-fn read<R>(cx: &App, read: impl FnOnce(&UnattendedDrive) -> R) -> Option<R> {
+fn read<R>(cx: &App, read: impl FnOnce(&UnattendedDrive<AnyWindowHandle>) -> R) -> Option<R> {
     crate::task::unattended(cx, |u, _| read(u))
 }
 
