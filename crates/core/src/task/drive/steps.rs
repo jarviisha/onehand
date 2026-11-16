@@ -2,7 +2,7 @@
 //! the transcript, the prompt sent once the agent is up, the command run,
 //! the forge called, the wait begun, the run finished.
 
-use super::{settings, Effect, RunDrive, Said};
+use super::{settings, Asked, Effect, RunDrive, Said};
 use crate::chat::{Chat, Link};
 use crate::preflight::{found_late, mode_refused, About};
 use crate::workflow::{Action, Outcome, Pick, Stop};
@@ -25,7 +25,7 @@ impl RunDrive {
             return self.carry_out_without_session(action, now, fx);
         };
         if !ends_run(&action) {
-            self.announce_step(fx);
+            self.announce_step();
         }
         let dir = self.run.setup.dir.clone();
         match action {
@@ -33,30 +33,31 @@ impl RunDrive {
             Action::Prompt(text) => self.send(text, chat, now, fx),
             Action::RunCommand(command) => {
                 self.command = true;
-                fx.push(Effect::Note(format!("Running: {command}")));
+                self.asked.push(Asked::Note(format!("Running: {command}")));
                 fx.push(Effect::RunCommand { dir, command });
             }
             Action::AwaitApproval => {
                 self.budget.pause(now.at);
-                fx.push(Effect::Note(
+                self.asked.push(Asked::Note(
                     "Waiting for approval: Continue or Revise… under the header".to_string(),
                 ));
                 fx.push(Effect::Unattended(Said::Waiting));
             }
             Action::Push(commit) => {
-                fx.push(Effect::Note(format!(
+                self.asked.push(Asked::Note(format!(
                     "Pushing {}, which the check passed on",
                     short(&commit)
                 )));
                 self.push(commit, fx);
             }
             Action::OpenPullRequest => {
-                fx.push(Effect::Note("Opening the pull request".to_string()));
+                self.asked
+                    .push(Asked::Note("Opening the pull request".to_string()));
                 self.open_pull_request(fx);
             }
             Action::AwaitStatusChecks { wait, pushed } => {
                 self.budget.pause(now.at);
-                fx.push(Effect::Note(
+                self.asked.push(Asked::Note(
                     "Waiting for the pull request's status checks".to_string(),
                 ));
                 self.watch_checks(pushed, wait, now, fx);
@@ -99,14 +100,14 @@ impl RunDrive {
 
     /// Tell the transcript the step the run is now in, once per step entered.
     /// A prompt's run has no steps to tell apart, so it says none.
-    fn announce_step(&mut self, fx: &mut Vec<Effect>) {
+    fn announce_step(&mut self) {
         let fresh = self.noted != Some(self.run.step);
         self.noted = Some(self.run.step);
         let Some(step) = self.run.current() else {
             return;
         };
         if fresh && !self.run.template.is_prompt() {
-            fx.push(Effect::Note(format!(
+            self.asked.push(Asked::Note(format!(
                 "Step {} of {}: {}",
                 self.run.step + 1,
                 self.run.template.steps.len(),
@@ -133,7 +134,7 @@ impl RunDrive {
         self.sent += 1;
         self.answer_from = chat.items.len();
         self.sent_at = Some(now.at);
-        fx.push(Effect::Submit(text));
+        self.asked.push(Asked::Prompt { text, at: fx.len() });
     }
 
     /// The agent is up, the first time in this session: put it in the run's
@@ -165,7 +166,7 @@ impl RunDrive {
         }
         self.picks.push(Pick::Mode(mode.clone()));
         self.mode_out = Some(mode.clone());
-        fx.push(Effect::Note(format!("Mode {mode} set")));
+        self.asked.push(Asked::Note(format!("Mode {mode} set")));
         self.start_settings(chat, Some(mode));
         true
     }
@@ -208,7 +209,7 @@ impl RunDrive {
                 true => format!("{said}; resume it from the Tasks page"),
                 false => said,
             };
-            fx.push(Effect::Note(said));
+            self.asked.push(Asked::Note(said));
         }
         self.run.spent_secs = self.spent_secs(now);
         fx.push(Effect::Finish { outcome });

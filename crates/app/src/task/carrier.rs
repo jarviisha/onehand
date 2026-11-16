@@ -1,18 +1,22 @@
 //! The run's carrier: what the run's session says, and what a person
 //! presses, goes to its [`RunDrive`], which decides, and what the drive says
-//! to do is done here — the marks pinned, the prompt sent, the command
-//! run, the forge called, the clock armed — and what came of it goes back.
+//! to do is done here — the marks pinned, the command run, the forge
+//! called, the clock armed — and what came of it goes back. What the run asks
+//! of its session (a note, its prompt, a cancel) is made by their link, which
+//! every call goes through; here only the session's effects are carried.
 //!
 //! Every rule is the drive's (`onehand_core::task::drive`); nothing here
 //! decides what a run does next. A run is found by its task; a check's run
 //! has no session at all.
 
 use super::Tasks;
-use crate::chat::session::{ChatEvent, ChatSession, note};
+use crate::chat::session::{ChatEvent, ChatSession};
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Task, WeakEntity};
 use gpui_component::WindowExt as _;
+use onehand_core::Now;
 use onehand_core::chat::Chat;
-use onehand_core::task::drive::{Effect, Input, RunDrive, Signal, Timer, link};
+use onehand_core::task::drive::link::{self, Joined, Out};
+use onehand_core::task::drive::{Effect, Input, RunDrive, Signal, Timer};
 use onehand_core::task::tasks::{Start, link as tasks_link};
 use onehand_core::task::{Approval, marks};
 use onehand_core::workflow::{Facts, Mark, Run, run_command_blocking};
@@ -128,9 +132,9 @@ pub(crate) fn start(
         let id = id.clone();
         cx.defer(move |cx| feed(&id, Input::SessionGone, cx));
     });
-    let now = onehand_core::Now::read();
-    let (drive, effects) = session.update(cx, |session, cx| {
-        let (drive, effects, asked) = link::start(
+    let now = Now::read();
+    let (drive, out) = session.update(cx, |session, _| {
+        Joined::start(
             task.clone(),
             run,
             first,
@@ -138,11 +142,7 @@ pub(crate) fn start(
             issue,
             now,
             Some(&mut session.chat),
-        );
-        session.perform(asked, cx);
-        // Named for the task: what shows it is drawn again.
-        cx.notify();
-        (drive, effects)
+        )
     });
     let driven = Driven {
         drive,
@@ -156,7 +156,29 @@ pub(crate) fn start(
     cx.default_global::<Tasks>()
         .live
         .insert(task.clone(), driven);
-    perform(&task, effects, cx);
+    // Only once the run is listed: what the session says of its first prompt
+    // has a run to reach.
+    carry_session(session, out.session, out.told, cx);
+    perform(&task, out.run, cx);
+}
+
+/// Carry out what a joined call said of the run's session, and tell
+/// whatever watches the session when it was told something.
+fn carry_session(
+    session: &Entity<ChatSession>,
+    effects: Vec<onehand_core::chat::drive::Effect>,
+    told: bool,
+    cx: &mut App,
+) {
+    if effects.is_empty() && !told {
+        return;
+    }
+    session.update(cx, |session, cx| {
+        session.perform(effects, cx);
+        if told {
+            cx.notify();
+        }
+    });
 }
 
 /// Drive check task `task`'s run with no session, from `start`; what it
@@ -165,15 +187,8 @@ pub(crate) fn start_check(task: String, start: Start, window: AnyWindowHandle, c
     let Start {
         run, first, pinned, ..
     } = start;
-    let (drive, effects) = RunDrive::start(
-        task.clone(),
-        run,
-        first,
-        pinned,
-        false,
-        onehand_core::Now::read(),
-        None,
-    );
+    let (drive, out) = Joined::start(task.clone(), run, first, pinned, false, Now::read(), None);
+    let effects = out.run;
     let driven = Driven {
         drive,
         session: None,
@@ -194,16 +209,14 @@ pub(crate) fn start_check(task: String, start: Start, window: AnyWindowHandle, c
 /// A person approved what they read, as `approval` names it.
 pub(crate) fn approve(approval: Approval, cx: &mut App) {
     let at = approval.at;
-    give(&approval.task, cx, move |d, chat, now| {
-        d.approve(at, chat, now)
-    });
+    give(&approval.task, cx, move |run, now| run.approve(at, now));
 }
 
 /// A person sent what they read, as `approval` names it, back with `note`.
 pub(crate) fn revise(approval: Approval, note: String, cx: &mut App) {
     let at = approval.at;
-    give(&approval.task, cx, move |d, chat, now| {
-        d.revise(at, note, chat, now)
+    give(&approval.task, cx, move |run, now| {
+        run.revise(at, note, now)
     });
 }
 
@@ -217,7 +230,7 @@ pub(crate) fn stop(uid: u64, cx: &mut App) {
 
 /// A person pressed Stop on task `task`'s run, a check's included.
 pub(super) fn stop_task(task: &str, cx: &mut App) {
-    give(task, cx, |d, chat, now| d.stop(chat, now));
+    give(task, cx, |run, now| run.stop(now));
 }
 
 /// Read task `id`'s run. Apart from [`with`] because every event the session
@@ -237,37 +250,38 @@ pub(super) fn with<R>(id: &str, cx: &mut App, act: impl FnOnce(&mut Driven) -> R
 /// Tell task `id`'s run what happened, with its session as it stands, and do
 /// what it says.
 pub(super) fn feed(id: &str, input: Input, cx: &mut App) {
-    give(id, cx, move |d, chat, now| d.handle(input, chat, now));
+    give(id, cx, move |run, now| run.handle(input, now));
 }
 
-/// Give task `id`'s run `command`, with its session as it stands, and do
-/// what it says.
-fn give(
-    id: &str,
-    cx: &mut App,
-    command: impl FnOnce(&mut RunDrive, Option<&Chat>, onehand_core::Now) -> Vec<Effect>,
-) {
+/// Give task `id`'s run `command`, joined with its session as it stands, and
+/// do what comes back: the session's effects, then the run's.
+///
+/// The two drives are joined inside the tasks' update, which is where the
+/// run's is held; what they said is carried out once that update is over, so
+/// nothing the session's carrier does reads the tasks while they are lent.
+fn give(id: &str, cx: &mut App, command: impl FnOnce(&mut Joined<'_>, Now) -> Out) {
     if !cx.has_global::<Tasks>() {
         return;
     }
-    let now = onehand_core::Now::read();
-    let effects = cx.update_global::<Tasks, _>(|t, cx| {
+    let now = Now::read();
+    let given = cx.update_global::<Tasks, _>(|t, cx| {
         let d = t.live.get_mut(id)?;
-        Some(match d.session() {
-            Some(session) => session.update(cx, |session, cx| {
-                let (effects, asked) =
-                    link::command(&mut d.drive, Some(&mut session.chat), |drive, chat| {
-                        command(drive, chat, now)
-                    });
-                session.perform(asked, cx);
-                effects
+        let session = d.session();
+        let out = match &session {
+            Some(session) => session.update(cx, |session, _| {
+                command(&mut Joined::new(&mut d.drive, Some(&mut session.chat)), now)
             }),
-            None => command(&mut d.drive, None, now),
-        })
+            None => command(&mut Joined::new(&mut d.drive, None), now),
+        };
+        Some((out, session))
     });
-    if let Some(effects) = effects {
-        perform(id, effects, cx);
+    let Some((out, session)) = given else {
+        return;
+    };
+    if let Some(session) = session {
+        carry_session(&session, out.session, out.told, cx);
     }
+    perform(id, out.run, cx);
 }
 
 /// Do what task `id`'s run said, in order.
@@ -284,35 +298,6 @@ fn perform(id: &str, effects: Vec<Effect>, cx: &mut App) {
             Effect::ReadFacts { dir, from } => spawn_feed(id, cx, move || {
                 Input::TurnRead(Facts::read_blocking(&dir, &from))
             }),
-            Effect::Submit(text) => {
-                let answer = match session {
-                    Some(session) => session.update(cx, |session, cx| {
-                        let (answer, fx) =
-                            link::submit(&mut session.chat, &text, onehand_core::Now::read());
-                        session.perform(fx, cx);
-                        cx.notify();
-                        answer
-                    }),
-                    None => Some(Input::NotTaken),
-                };
-                if let Some(input) = answer {
-                    feed(id, input, cx);
-                }
-            }
-            Effect::CancelTurn => {
-                if let Some(session) = session {
-                    session.update(cx, |session, cx| {
-                        let fx = link::cancel(&mut session.chat);
-                        session.perform(fx, cx);
-                        cx.notify();
-                    });
-                }
-            }
-            Effect::Note(said) => {
-                if let Some(session) = session {
-                    note(&session, said, cx);
-                }
-            }
             Effect::RunCommand { dir, command } => run_command(id, dir, command, cx),
             Effect::CallOffCommand => {
                 if let Some(cancel) = read(id, cx, |d| d.command.clone()).flatten() {

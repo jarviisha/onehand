@@ -65,6 +65,8 @@ fn connected() -> (
 struct Rig {
     drive: RunDrive,
     chat: Chat,
+    /// What the last call asked of the session, beside its picks.
+    asked: Vec<Asked>,
     _rx: tokio::sync::mpsc::UnboundedReceiver<crate::acp::AcpRequest>,
     now: crate::Now,
 }
@@ -83,64 +85,68 @@ impl Rig {
         let mut rig = Self {
             drive,
             chat,
+            asked: Vec::new(),
             _rx: rx,
             now,
         };
-        rig.play(&fx);
+        rig.play();
         (rig, fx)
     }
 
     fn on(&mut self, input: Input) -> Vec<Effect> {
         let fx = self.drive.handle(input, Some(&self.chat), self.now);
-        self.play(&fx);
+        self.play();
         fx
     }
 
     fn approve(&mut self, at: ApprovalAt) -> Vec<Effect> {
         let fx = self.drive.approve(at, Some(&self.chat), self.now);
-        self.play(&fx);
+        self.play();
         fx
     }
 
     fn stop(&mut self) -> Vec<Effect> {
         let fx = self.drive.stop(Some(&self.chat), self.now);
-        self.play(&fx);
+        self.play();
         fx
     }
 
     /// What the app does to the session for an effect.
-    fn play(&mut self, fx: &[Effect]) {
+    fn play(&mut self) {
         // What the link makes on the session first: the run's mode and picks.
         for pick in self.drive.take_picks() {
             self.chat.pick(&pick);
         }
-        for effect in fx {
-            match effect {
-                Effect::Submit(text) => {
+        // Then the rest of what it asked of the session, in order.
+        self.asked = self.drive.take_asked();
+        for asked in &self.asked {
+            match asked {
+                Asked::Prompt { text, .. } => {
                     assert!(self.chat.submit(text, &[]), "the session took {text:?}");
                 }
-                Effect::CancelTurn => self.chat.cancel_turn(),
-                Effect::Pin { .. }
-                | Effect::Measure { .. }
-                | Effect::ReadFacts { .. }
-                | Effect::Note(_)
-                | Effect::RunCommand { .. }
-                | Effect::CallOffCommand
-                | Effect::Push { .. }
-                | Effect::FindPullRequest
-                | Effect::OpenPullRequest
-                | Effect::ReadLogs { .. }
-                | Effect::MarkReady { .. }
-                | Effect::Arm { .. }
-                | Effect::Defer(_)
-                | Effect::Save
-                | Effect::Unattended(_)
-                | Effect::Refresh
-                | Effect::SessionChanged
-                | Effect::Signal(_)
-                | Effect::Finish { .. } => {}
+                Asked::Cancel => self.chat.cancel_turn(),
+                Asked::Note(_) => {}
             }
         }
+    }
+
+    /// The notes the last call said, in order.
+    fn notes(&self) -> Vec<&str> {
+        self.asked
+            .iter()
+            .filter_map(|asked| match asked {
+                Asked::Note(note) => Some(note.as_str()),
+                Asked::Prompt { .. } | Asked::Cancel => None,
+            })
+            .collect()
+    }
+
+    /// Whether the last call sent the run's prompt.
+    fn submitted(&self) -> bool {
+        self.asked.iter().any(|asked| match asked {
+            Asked::Prompt { .. } => true,
+            Asked::Note(_) | Asked::Cancel => false,
+        })
     }
 
     /// The agent answers the turn under way with `text`.
@@ -169,9 +175,6 @@ fn name(e: &Effect) -> &'static str {
         Effect::Pin { .. } => "Pin",
         Effect::Measure { .. } => "Measure",
         Effect::ReadFacts { .. } => "ReadFacts",
-        Effect::Submit(_) => "Submit",
-        Effect::CancelTurn => "CancelTurn",
-        Effect::Note(_) => "Note",
         Effect::RunCommand { .. } => "RunCommand",
         Effect::CallOffCommand => "CallOffCommand",
         Effect::Push { .. } => "Push",
@@ -211,9 +214,6 @@ fn finished(fx: &[Effect]) -> Option<&Outcome> {
         Effect::Pin { .. }
         | Effect::Measure { .. }
         | Effect::ReadFacts { .. }
-        | Effect::Submit(_)
-        | Effect::CancelTurn
-        | Effect::Note(_)
         | Effect::RunCommand { .. }
         | Effect::CallOffCommand
         | Effect::Push { .. }
@@ -239,35 +239,6 @@ fn failed(fx: &[Effect]) -> Option<&str> {
     }
 }
 
-/// The notes said, in order.
-fn notes(fx: &[Effect]) -> Vec<&str> {
-    fx.iter()
-        .filter_map(|e| match e {
-            Effect::Note(n) => Some(n.as_str()),
-            Effect::Pin { .. }
-            | Effect::Measure { .. }
-            | Effect::ReadFacts { .. }
-            | Effect::Submit(_)
-            | Effect::CancelTurn
-            | Effect::RunCommand { .. }
-            | Effect::CallOffCommand
-            | Effect::Push { .. }
-            | Effect::FindPullRequest
-            | Effect::OpenPullRequest
-            | Effect::ReadLogs { .. }
-            | Effect::MarkReady { .. }
-            | Effect::Arm { .. }
-            | Effect::Defer(_)
-            | Effect::Save
-            | Effect::Unattended(_)
-            | Effect::Refresh
-            | Effect::SessionChanged
-            | Effect::Signal(_)
-            | Effect::Finish { .. } => None,
-        })
-        .collect()
-}
-
 /// The fix of every pause said to unattended runs.
 fn pause_fixes(fx: &[Effect]) -> Vec<&str> {
     fx.iter()
@@ -277,9 +248,6 @@ fn pause_fixes(fx: &[Effect]) -> Vec<&str> {
             | Effect::Pin { .. }
             | Effect::Measure { .. }
             | Effect::ReadFacts { .. }
-            | Effect::Submit(_)
-            | Effect::CancelTurn
-            | Effect::Note(_)
             | Effect::RunCommand { .. }
             | Effect::CallOffCommand
             | Effect::Push { .. }
@@ -296,10 +264,6 @@ fn pause_fixes(fx: &[Effect]) -> Vec<&str> {
             | Effect::Finish { .. } => None,
         })
         .collect()
-}
-
-fn submitted(fx: &[Effect]) -> bool {
-    names(fx).contains(&"Submit")
 }
 
 /// A checkout run through its plan, at its approval: started, pinned,
@@ -310,7 +274,7 @@ fn at_approval() -> Rig {
     let fx = rig.on(Input::Pinned(Ok("c0".into())));
     assert!(names(&fx).contains(&"Measure"), "{fx:?}");
     let fx = rig.on(Input::Measured(Ok(mark("a", "d0"))));
-    assert!(submitted(&fx), "{fx:?}");
+    assert!(rig.submitted(), "{fx:?}");
     let fx = rig.turn_ends("The plan.");
     assert!(names(&fx).contains(&"ReadFacts"), "{fx:?}");
     let fx = rig.on(Input::TurnRead(Ok(facts("a", "d0"))));
@@ -332,11 +296,14 @@ fn a_pin_holds_what_is_asked_meanwhile_and_an_ending_wins() {
     let at = approval_at(&rig);
     let fx = rig.approve(at);
     assert!(names(&fx).contains(&"Pin"), "{fx:?}");
-    assert!(!submitted(&fx), "the prompt waits on the pin");
-    assert!(rig.stop().is_empty(), "held while the pin lands");
+    assert!(!rig.submitted(), "the prompt waits on the pin");
+    assert!(
+        rig.stop().is_empty() && rig.asked.is_empty(),
+        "held while the pin lands"
+    );
     let fx = rig.on(Input::Pinned(Ok("c2".into())));
     assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::ByPerson)));
-    assert!(!submitted(&fx), "no prompt to a run said to be over");
+    assert!(!rig.submitted(), "no prompt to a run said to be over");
 }
 
 #[test]
@@ -369,7 +336,7 @@ fn an_approval_answers_and_says_so() {
     // A second press of the same approval is judged stale and moves nothing.
     rig.on(Input::Pinned(Ok("c2".into())));
     let fx = rig.approve(at);
-    assert!(!names(&fx).contains(&"Pin") && !submitted(&fx), "{fx:?}");
+    assert!(!names(&fx).contains(&"Pin") && !rig.submitted(), "{fx:?}");
 }
 
 fn checking() -> (Rig, Vec<Effect>) {
@@ -420,7 +387,7 @@ fn the_first_stop_reason_is_the_one_kept() {
 fn a_command_that_passes_is_said_and_judged() {
     let (mut rig, _) = checking();
     let fx = rig.on(Input::CommandExited(ran(true)));
-    assert!(notes(&fx).contains(&"The command passed"));
+    assert!(rig.notes().contains(&"The command passed"));
     assert!(finished(&fx).is_some() || names(&fx).contains(&"Pin"));
 }
 
@@ -452,13 +419,13 @@ fn a_finished_drive_ignores_everything() {
     let (mut rig, _) = checking();
     rig.stop();
     rig.on(Input::CommandExited(ran(true)));
-    assert!(rig.stop().is_empty());
+    assert!(rig.stop().is_empty() && rig.asked.is_empty());
     for input in [
         Input::TurnEnded,
         Input::Elapsed(Timer::Timeout),
         Input::Appended,
     ] {
-        assert!(rig.on(input).is_empty());
+        assert!(rig.on(input).is_empty() && rig.asked.is_empty());
     }
 }
 
@@ -474,16 +441,22 @@ fn a_gone_session_only_lets_the_run_end() {
     assert!(fx.is_empty(), "nothing to prompt: {fx:?}");
     let fx = rig.drive.stop(None, now);
     assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::ByPerson)));
-    assert!(!names(&fx).contains(&"Note"), "nowhere to say it");
+    assert!(rig.drive.take_asked().is_empty(), "nowhere to say it");
 }
 
 #[test]
 fn the_step_is_announced_once_per_step() {
     let (mut rig, _) = Rig::start(checkout(), None, connected());
-    let a = rig.on(Input::Pinned(Ok("c0".into())));
-    let b = rig.on(Input::Measured(Ok(mark("a", "d0"))));
-    let steps = |fx: &[Effect]| notes(fx).iter().filter(|n| n.starts_with("Step ")).count();
-    assert_eq!(steps(&a) + steps(&b), 1, "{a:?} {b:?}");
+    let steps = |rig: &Rig| {
+        rig.notes()
+            .iter()
+            .filter(|n| n.starts_with("Step "))
+            .count()
+    };
+    rig.on(Input::Pinned(Ok("c0".into())));
+    let a = steps(&rig);
+    rig.on(Input::Measured(Ok(mark("a", "d0"))));
+    assert_eq!(a + steps(&rig), 1);
 }
 
 #[test]
@@ -501,8 +474,8 @@ fn spent_time_is_folded_into_what_is_saved() {
 fn a_prompt_waits_for_the_agent_to_come_up() {
     let (mut rig, _) = Rig::start(checkout(), None, (Chat::default(), connected().1));
     rig.on(Input::Pinned(Ok("c0".into())));
-    let fx = rig.on(Input::Measured(Ok(mark("a", "d0"))));
-    assert!(!submitted(&fx), "not up yet");
+    rig.on(Input::Measured(Ok(mark("a", "d0"))));
+    assert!(!rig.submitted(), "not up yet");
     let (tx, rx): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
     rig._rx = rx;
     rig.chat.apply(AcpEvent::Connected {
@@ -511,7 +484,7 @@ fn a_prompt_waits_for_the_agent_to_come_up() {
         forkable: false,
     });
     let fx = rig.on(Input::Appended);
-    assert!(submitted(&fx), "{fx:?}");
+    assert!(rig.submitted(), "{fx:?}");
     assert!(names(&fx).contains(&"Unattended(CameUp)"));
 }
 
@@ -545,7 +518,7 @@ fn a_mode_the_agent_does_not_offer_fails_the_run_on_its_mode() {
     let fx = rig.on(Input::Measured(Ok(mark("a", "d0"))));
     assert!(names(&fx).contains(&"Unattended(Pause)"), "{fx:?}");
     assert!(failed(&fx).is_some(), "{fx:?}");
-    assert!(!submitted(&fx));
+    assert!(!rig.submitted());
 }
 
 #[test]
@@ -554,8 +527,8 @@ fn the_runs_mode_is_set_before_its_first_prompt() {
     rig.on(Input::Pinned(Ok("c0".into())));
     let fx = rig.on(Input::Measured(Ok(mark("a", "d0"))));
     assert!(rig.chat.pick_waiting(crate::chat::MODE_SELECTOR));
-    assert!(notes(&fx).contains(&"Mode plan set"), "{fx:?}");
-    assert!(!submitted(&fx), "the prompt waits for the mode's answer");
+    assert!(rig.notes().contains(&"Mode plan set"), "{fx:?}");
+    assert!(!rig.submitted(), "the prompt waits for the mode's answer");
     rig.chat.apply(AcpEvent::PickConfirmed {
         group: crate::chat::MODE_SELECTOR.into(),
         value: "plan".into(),
@@ -563,7 +536,7 @@ fn the_runs_mode_is_set_before_its_first_prompt() {
     let fx = rig.on(Input::Appended);
     assert_eq!(fx, vec![Effect::Defer(Input::PicksAnswered)]);
     let fx = rig.on(Input::PicksAnswered);
-    assert!(submitted(&fx), "{fx:?}");
+    assert!(rig.submitted(), "{fx:?}");
 }
 
 fn wanting_model() -> Template {
@@ -604,14 +577,14 @@ fn picks_go_one_at_a_time_and_the_prompt_waits() {
     rig.on(Input::Pinned(Ok("c0".into())));
     let fx = rig.on(Input::Measured(Ok(mark("a", "d0"))));
     assert!(rig.chat.pick_waiting("model"), "{fx:?}");
-    assert!(!submitted(&fx));
+    assert!(!rig.submitted());
     rig.chat.apply(AcpEvent::PickConfirmed {
         group: "model".into(),
         value: "strong".into(),
     });
     let fx = rig.on(Input::PicksAnswered);
-    assert!(submitted(&fx), "{fx:?}");
-    assert!(notes(&fx).iter().any(|n| n.starts_with("Settings: ")));
+    assert!(rig.submitted(), "{fx:?}");
+    assert!(rig.notes().iter().any(|n| n.starts_with("Settings: ")));
 }
 
 #[test]
@@ -652,7 +625,7 @@ fn a_refusal_of_the_runs_mode_is_not_a_steps() {
 fn a_persons_own_pick_refused_is_not_the_runs() {
     let mut rig = at_approval();
     let fx = rig.on(Input::PickRefused("no".into()));
-    assert!(fx.is_empty(), "{fx:?}");
+    assert!(fx.is_empty() && rig.asked.is_empty(), "{fx:?}");
 }
 
 #[test]
@@ -668,8 +641,8 @@ fn a_prompt_not_taken_fails_the_run() {
 fn in_turn() -> Rig {
     let (mut rig, _) = Rig::start(checkout(), None, connected());
     rig.on(Input::Pinned(Ok("c0".into())));
-    let fx = rig.on(Input::Measured(Ok(mark("a", "d0"))));
-    assert!(submitted(&fx));
+    rig.on(Input::Measured(Ok(mark("a", "d0"))));
+    assert!(rig.submitted());
     rig
 }
 
@@ -734,8 +707,8 @@ fn work_an_earlier_step_left_running_does_not_hold_this_one() {
     std::thread::sleep(std::time::Duration::from_millis(2));
     rig.now = crate::Now::read();
     rig.on(Input::Pinned(Ok("c0".into())));
-    let fx = rig.on(Input::Measured(Ok(mark("a", "d0"))));
-    assert!(submitted(&fx));
+    rig.on(Input::Measured(Ok(mark("a", "d0"))));
+    assert!(rig.submitted());
     let fx = rig.turn_ends("The plan.");
     assert!(names(&fx).contains(&"ReadFacts"), "{fx:?}");
 }
@@ -786,7 +759,10 @@ fn an_answered_card_resumes_and_says_so() {
     let fx = rig.on(Input::Notified);
     assert_eq!(fx, vec![Effect::Unattended(Said::Answered)]);
     assert!(!rig.drive.card());
-    assert!(rig.on(Input::Notified).is_empty(), "said once");
+    assert!(
+        rig.on(Input::Notified).is_empty() && rig.asked.is_empty(),
+        "said once"
+    );
 }
 
 #[test]
@@ -908,7 +884,7 @@ fn a_failed_write_is_said_once_until_one_lands() {
     };
     assert_eq!(failed(&rig.on(Input::Saved(Err("disk full".into())))), 1);
     assert_eq!(failed(&rig.on(Input::Saved(Err("disk full".into())))), 0);
-    assert!(rig.on(Input::Saved(Ok(()))).is_empty());
+    assert!(rig.on(Input::Saved(Ok(()))).is_empty() && rig.asked.is_empty());
     assert_eq!(failed(&rig.on(Input::Saved(Err("disk full".into())))), 1);
 }
 
@@ -971,9 +947,6 @@ fn forging() -> Rig {
             Effect::Measure { .. } => Some(Input::Measured(Ok(mark("a", "d1")))),
             Effect::RunCommand { .. } => Some(Input::CommandExited(ran(true))),
             Effect::ReadFacts { .. }
-            | Effect::Submit(_)
-            | Effect::CancelTurn
-            | Effect::Note(_)
             | Effect::CallOffCommand
             | Effect::Push { .. }
             | Effect::FindPullRequest
@@ -1080,8 +1053,8 @@ fn a_stop_while_the_pull_request_is_looked_for_opens_none() {
 #[test]
 fn a_forge_answer_not_asked_for_leaves_the_checks_waited_on() {
     let mut rig = watching();
-    assert!(rig.on(Input::LogsRead(Vec::new())).is_empty());
-    assert!(rig.on(Input::MarkedReady(Ok(()))).is_empty());
+    assert!(rig.on(Input::LogsRead(Vec::new())).is_empty() && rig.asked.is_empty());
+    assert!(rig.on(Input::MarkedReady(Ok(()))).is_empty() && rig.asked.is_empty());
     let fx = rig.on(Input::Elapsed(Timer::Checks));
     assert_eq!(fx, vec![Effect::FindPullRequest]);
 }
@@ -1146,9 +1119,6 @@ fn failing_checks_carry_at_most_three_logs_to_the_repair() {
         Effect::Pin { .. }
         | Effect::Measure { .. }
         | Effect::ReadFacts { .. }
-        | Effect::Submit(_)
-        | Effect::CancelTurn
-        | Effect::Note(_)
         | Effect::RunCommand { .. }
         | Effect::CallOffCommand
         | Effect::Push { .. }

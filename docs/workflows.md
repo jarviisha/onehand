@@ -269,8 +269,7 @@ the run's history, capped at 200.
 The run's drive decides in core, and its carrier acts in the app. `onehand_core::task::drive::RunDrive` is given a
 person's commands as methods (`approve`, `revise`, `stop`) and told what happened (an `Input`),
 each with the run's session as it stands, and answers with what to do (`Effect`s): pin, measure,
-read the work, send a prompt, run a command, call the forge, arm a clock, say something, save,
-finish. It has no timer or I/O of its own, so every rule below is tested in core. Each effect that
+read the work, run a command, call the forge, arm a clock, save, finish. It has no timer or I/O of its own, so every rule below is tested in core. Each effect that
 is answered says what its late answer gets: a pin, a command, a push, opening a pull request and
 taking a draft out of draft are awaited, so a Stop waits for them; a read, a look and a clock are
 dropped; a save is recorded, and a failed one is said once in the run's window until a write lands
@@ -278,7 +277,11 @@ dropped; a save is recorded, and a failed one is said once in the run's window u
 carries out the effects and brings their results back. The drive decides the mode and the settings
 picks against its session's `Chat`, which it only reads; the link makes each through the session's
 own drive (`SessionDrive::pick`) before anything else reaches the run, and the next is planned once
-the agent has answered.
+the agent has answered. The run's notes in its transcript, its prompt and its cancel are asked of
+the session the same way, after the picks and in order, so none is an effect a carrier sees: every
+command to a run goes through `task::drive::link::Joined`, which holds the run with its session for
+the call, tells the run at once of a prompt its session did not take, and answers the session's
+effects and then the run's.
 
 The `Tasks` global (`crate::task::Tasks`) holds every run under way by its task id (a check's run
 has no session), beside the tasks' drive, which a run's end is handed to;

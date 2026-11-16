@@ -218,7 +218,9 @@ two.
 
 A drive never holds another. Where one drive's effects become another's commands, and one's
 signals another's inputs, is behaviour too. So it is a GUI-free module of core tested with the
-real drives on both sides, as `task::drive::link` joins a run and its session,
+real drives on both sides, as `task::drive::link` joins a run and its session (`Joined`, the only
+way a front end gives a run a command: it makes what the run asks of its session there, its picks,
+its notes, its prompt and its cancel, and tells the run of a prompt not taken, in the same call),
 `task::tasks::link` a run and its task, and `unattended::link` unattended runs and the tasks (every
 start held to the cap, a task started off screen among them, a claim kept as a task, what a run
 tells unattended runs, a run's end telling its issue, and the workflows a setting puts in force,
@@ -243,7 +245,9 @@ write of no consequence there, a clock, a redraw) is passed over.
 
 **A drive reads another drive's model, and never changes it.** The run's drive reads its
 session's `Chat` and decides the mode and the settings picks to put in force; it keeps them, and
-the link makes each through `SessionDrive::pick` before anything else reaches the run.
+the link makes each through `SessionDrive::pick` before anything else reaches the run. A run's
+commands are `pub(crate)`, so a front end cannot call its drive without the link; joining it with
+the session it runs on is still the carrier's to get right.
 
 ### 11. Every carrier is tested against its contract
 

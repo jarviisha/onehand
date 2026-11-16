@@ -5,16 +5,22 @@
 //! person's commands as methods ([`RunDrive::approve`], [`RunDrive::revise`],
 //! [`RunDrive::stop`]) and told what happened ([`Input`]) with the run's
 //! session as it stands, and answers with what to do ([`Effect`]): pin a
-//! mark, send a prompt, run a command, call the forge, wait, say something,
-//! save, finish. It has no timer, no thread and
-//! no I/O of its own, so every rule below is a rule a test can hold it to; the
-//! front end does the work and brings back what came of it.
+//! mark, run a command, call the forge, wait, save, finish. It has no timer,
+//! no thread and no I/O of its own, so every rule below is a rule a test can
+//! hold it to; the front end does the work and brings back what came of it.
 //!
-//! **The mode and the settings picks are asked of the session**, never made
-//! on its model here: the drive reads its session and keeps the picks it
-//! decided ([`RunDrive::take_picks`]), which the link makes through the
-//! session's own drive before anything else reaches the run. The next pick
-//! is planned only once the agent answered the last one.
+//! **Its commands are the link's to give.** Nothing outside this crate calls
+//! them: a front end gives each through [`link::Joined`], which holds the
+//! run with its session for the call and makes what the run asked of its
+//! session there before it answers.
+//!
+//! **What the run asks of its session is never a front end's to carry.** The
+//! mode and the settings picks are not made on the session's model here: the
+//! drive reads its session and keeps the picks it decided
+//! ([`RunDrive::take_picks`]), and after them its notes, its prompt and its
+//! cancel ([`RunDrive::take_asked`]), in order. The link makes each through
+//! the session's own drive before anything else reaches the run. The next
+//! pick is planned only once the agent answered the last one.
 //!
 //! **Every Stop goes through the engine the same way.** A person's Stop, a
 //! prompt of their own, the timeout, the agent going and the session closing
@@ -37,6 +43,7 @@ mod signals;
 mod steps;
 
 use pin::{Answer, Held};
+pub(crate) use signals::Asked;
 pub use signals::{Effect, Input, Said, Signal, Timer};
 
 /// A run under way on one session.
@@ -82,6 +89,9 @@ pub struct RunDrive {
     mode_out: Option<String>,
     /// Picks decided and not yet handed to the session, in order.
     picks: Vec<Pick>,
+    /// What else the run asked of its session and the link has not made yet,
+    /// in order: its notes, its prompt, its cancel.
+    asked: Vec<Asked>,
     /// The step the transcript was last told of.
     noted: Option<usize>,
     /// How much of the timeout is left; it does not run while a card or an
@@ -114,7 +124,7 @@ impl RunDrive {
     /// Drive `run`, the last run of `task`, starting with `first`: what
     /// [`Run::resume`] said to do. `pinned` boundaries of it had their mark
     /// pinned before; `issue` says it is an issue's run.
-    pub fn start(
+    pub(crate) fn start(
         task: String,
         run: Run,
         first: Action,
@@ -145,6 +155,7 @@ impl RunDrive {
             picking: None,
             mode_out: None,
             picks: Vec::new(),
+            asked: Vec::new(),
             noted: None,
             budget: Budget::start(limit, now.at),
             card: false,
@@ -171,6 +182,12 @@ impl RunDrive {
     /// in order before anything else reaches the run.
     pub(crate) fn take_picks(&mut self) -> Vec<Pick> {
         std::mem::take(&mut self.picks)
+    }
+
+    /// What else the run asked of its session since last asked, to be made
+    /// there in order, after its picks.
+    pub(crate) fn take_asked(&mut self) -> Vec<Asked> {
+        std::mem::take(&mut self.asked)
     }
 
     /// The task the run is of.
@@ -236,7 +253,7 @@ impl RunDrive {
 
     /// A person approved what they read at `at`. Held while a mark is
     /// pinned, and refused by the engine once the run no longer waits there.
-    pub fn approve(&mut self, at: ApprovalAt, chat: Option<&Chat>, now: Now) -> Vec<Effect> {
+    pub(crate) fn approve(&mut self, at: ApprovalAt, chat: Option<&Chat>, now: Now) -> Vec<Effect> {
         self.command_with(chat, now, |d, chat, now, fx| {
             d.answer(Answer::Approved(at), chat, now, fx);
             fx.push(Effect::Unattended(Said::Answered));
@@ -245,7 +262,7 @@ impl RunDrive {
 
     /// A person sent what they read at `at` back with `note`, as
     /// [`Self::approve`] is judged.
-    pub fn revise(
+    pub(crate) fn revise(
         &mut self,
         at: ApprovalAt,
         note: String,
@@ -260,7 +277,7 @@ impl RunDrive {
 
     /// A person pressed Stop: the turn under way is cancelled and the run
     /// ends, once a command running has exited.
-    pub fn stop(&mut self, chat: Option<&Chat>, now: Now) -> Vec<Effect> {
+    pub(crate) fn stop(&mut self, chat: Option<&Chat>, now: Now) -> Vec<Effect> {
         self.command_with(chat, now, |d, chat, now, fx| {
             d.cut(Stop::ByPerson, chat, now, fx)
         })
@@ -282,7 +299,7 @@ impl RunDrive {
 
     /// Something happened: what to do about it. A run that has finished does
     /// nothing more.
-    pub fn handle(&mut self, input: Input, chat: Option<&Chat>, now: Now) -> Vec<Effect> {
+    pub(crate) fn handle(&mut self, input: Input, chat: Option<&Chat>, now: Now) -> Vec<Effect> {
         let mut fx = Vec::new();
         if self.over {
             return fx;
@@ -350,7 +367,7 @@ impl RunDrive {
                         true => "The command passed",
                         false => "The command failed",
                     };
-                    fx.push(Effect::Note(said.to_string()));
+                    self.asked.push(Asked::Note(said.to_string()));
                 }
                 self.advance(chat, now, &mut fx, move |run| {
                     run.command_finished(ran, now.secs)
@@ -493,7 +510,7 @@ impl RunDrive {
             return;
         }
         if chat.is_some_and(|chat| chat.busy) {
-            fx.push(Effect::CancelTurn);
+            self.asked.push(Asked::Cancel);
         }
         self.end(stop, chat, now, fx);
     }
