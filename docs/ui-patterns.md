@@ -57,7 +57,7 @@ and a word.
 | Compact metadata or a tightly coupled mark and label | `gap_1` |
 | Icon and label in a row the app draws; adjacent controls; parts within a box | `gap_2` |
 | Row inset | `px_2` |
-| Strip inset; box padding | `px_3`, inside the Workbench `tokens::ROW_INSET` (a tab bar's tabs sit flush); `p_3` |
+| Strip inset; box padding | `px_3`, inside the Workbench `tokens::ROW_INSET` (a tab bar's tabs stand a step in from its ends and apart, so their fills never touch); `p_3` |
 | A box whose body scrolls inside it (a pinned card) | `p_4`, a step more so the scrollbar's thumb has room beside the text |
 | Form fields | `gap_4` |
 | Page sections; page outer padding | `gap_6`; `px_8` `py_6` |
@@ -105,7 +105,7 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 | Every other button with words: a strip's, a box's, a row's, a secondary action inside dense content (a line of meta text, a transcript block, a chip), a tab, a fold toggle, a pinned card's answers | Button | `.short()`, under a row, so the controls never outweigh what they act on |
 | Every other icon-only button: a strip's, a row's, a copy control, a split action's caret beside `.short()`, the composer's send | Button | `.short_icon()`, square at `CONTROL_H`, so an icon alone is as tall as a worded peer beside it |
 | A field in a strip, the rail or the title bar (the search) | Input | `.short()`, as tall as the buttons beside it |
-| The rail's *New*, the one action the rail is opened for | Button | `.tall()`, its caret `.tall_icon()`, the whole row wide, so it reads as the rail's action rather than one of its rows' |
+| The rail's *New session*, the one action the rail is opened for | drawn by the app, a row as a page's | `ROW_H`; its chevron a row's icon-only button, so it reads as the first of the rail's rows, set apart by its weight |
 | An icon in a button | Icon | the button's own, as the library sizes it for the button's size |
 | An icon leading a label the app draws: a row, a menu item | Icon | `.small()` |
 | A state's mark leading a row's label (a session's) | Icon | `.xsmall()`, a step under the label |
@@ -162,12 +162,12 @@ shows a region the strip's own panel hid may lead (the way back to the rail, a l
 Filters belong below the region header with the content they filter. Reserve the action group's
 width while labels truncate; showing hover actions must not move the text beside them.
 
-The Workbench's strip, the terminal's and the Editor's file tabs are tab panel bars (`tab_bar`),
-the Editor's at `tokens::MODE_BAR_H`, each with a line under it. Any other bar inside the
-Workbench is a `workbench_strip`, padded `tokens::ROW_INSET` so its words and the tree rows'
-names read down one edge, with a hairline (`border`) where its head ends: the reader's bar is a
-`mode_strip`, `MODE_BAR_H` tall, a step under the strip over it; an issue's trail draws its own.
-The conversation's header draws no line and keeps `px_3`.
+The Workbench's row (its mode picker, then the Editor's file tabs) and the terminal's bar are tab
+panel bars (`tab_bar`): no fill and no line of their own, the open tab a rounded `secondary` fill.
+Any other bar inside the Workbench is a `workbench_strip`, padded `tokens::ROW_INSET` so its words
+and the tree rows' names read down one edge: the reader's bar is a `mode_strip`, `MODE_BAR_H`
+tall, a step under the row over it; an issue's trail draws its own. No bar inside a region's box
+draws a line where it ends, and the conversation's header draws none either and keeps `px_3`.
 
 ### Cuts
 

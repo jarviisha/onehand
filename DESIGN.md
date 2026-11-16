@@ -39,7 +39,7 @@ a hex literal is a bug even when it looks right, as no theme switch reaches it.
 4. **Same role, same treatment.** Across app and feature crates, equivalent rows, headers and controls
    share size, spacing, corners and states. A valid token alone does not make a consistent view.
 5. **Say nothing twice.** If a fact is already on screen near what it describes, don't repeat it
-   in a badge, a status bar or a title.
+   in a badge, a bar or a title.
 6. **Bounded, and say so.** Every list has a named cap, and when the cap cuts something off, the
    screen says how many were left out.
 7. **Calm and immediate.** What a person changes shows at once, and the work behind it follows.
@@ -48,53 +48,57 @@ a hex literal is a bug even when it looks right, as no theme switch reaches it.
 
 ## Layout
 
-One window hosts one workspace. A title bar holding the app's mark, its menus, the search and the
-docks' toggles runs along the top and a status bar holding the branch along the foot; between them the Workbench runs the full height and the terminal sits
-under the agent pane only. The diagram is plain ASCII and box-drawing, so it stays aligned in any
-mono font.
+One window hosts one workspace. A title bar holding the app's mark, its menus, the search led by
+the workspace's name and the rail's and the docks' toggles runs along the top; nothing runs along
+the foot. The title bar and the rail stand on the window's fill, unboxed. Beside the rail, every
+other region is a box of its own on that fill: the agent pane and the Workbench side by side, the
+Workbench the right half of a split in the `DockArea`'s centre, and under both, across their whole
+width, the terminal, the bottom dock. The boxes are parted from each other and from the window's
+edge by the region gap, which shows the window's fill (*Type, space and shape*). The diagram is
+plain ASCII and box-drawing, so it stays aligned in any mono font.
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│ o onehand  File View Go Session  [ Search...  ^K ]  term wb    _  []  x  │
-├──────────────────┬────────────────────────────────────┬──────────────────┤
-│ W Workspace   v <│ Title (...)            past close  │ modes   max hide │
-│ [    New     | v]│                                    │                  │
-│ Overview         │ workflow > step > step   Stop      │                  │
-│ Tasks         2  │                                    │                  │
-│ Issues           │                                    │                  │
-│ Workflows        │                                    │                  │
-│ Sessions  2 need │                                    │    Workbench     │
-│ ──────────────── │          agent pane                │  (right dock,    │
-│ v project  main  │        (centre, flexes)            │   full height)   │
-│   o session      │                                    │                  │
-│     Idle . agent │  ┌──────────── composer ──────┐    │                  │
-│ + Add project... │  │ +  Fast  model        Send │    │                  │
-│                  │  └────────────────────────────┘    │                  │
-│                  │    branch                mode      │                  │
-│                  ├────────────────────────────────────┤                  │
-│                  │ shell tabs  +                      │                  │
-│ Settings         │ terminal (bottom dock)             │                  │
-├──────────────────┴────────────────────────────────────┴──────────────────┤
-│ branch                                                                   │
-└──────────────────────────────────────────────────────────────────────────┘
-        rail                     DockArea
+┌────────────────────────────────────────────────────────────────────────────────────┐
+│ o onehand  File View Go Session  [ Workspace v | Search ^K ]  rail term wb  _ [] x │
+│ + New session ^N ┌────────────────────────────┐ ┌────────────────────────────────┐ │
+│ Overview         │ Title (...)     past close │ │ Editor v  file tabs   max hide │ │
+│ Tasks         2  │ workflow > step >     Stop │ │                                │ │
+│ Issues           │                            │ │                                │ │
+│ Workflows        │                            │ │                                │ │
+│ Sessions  Q 2 v  │        agent pane          │ │           Workbench            │ │
+│ ──────────────── │      (centre, flexes)      │ │     (beside the agent pane)    │ │
+│ v project  main  │                            │ │                                │ │
+│   o session      │ ┌──────── composer ──────┐ │ │                                │ │
+│     Idle . agent │ │ +  Fast  model    Send │ │ │  open file              tree   │ │
+│ + Add project... │ └────────────────────────┘ │ │                                │ │
+│                  │   branch             mode  │ │                                │ │
+│                  └────────────────────────────┘ └────────────────────────────────┘ │
+│                  ┌───────────────────────────────────────────────────────────────┐ │
+│                  │ shell 1                                          +  max hide  │ │
+│                  │ terminal (bottom dock, under both boxes)       shell 1        │ │
+│ Settings         │                                                 shell 2       │ │
+│                  └───────────────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 What each region holds, and in what order, is `docs/screens.md`'s, under the region's name:
 
-- **Title bar**: the app's mark and name, its menus, the search over the rail's sessions, the terminal's and the Workbench's toggles, and the window's own controls where the app decorates it.
-- **Rail**: app chrome outside the dock, from the workspace bar down to *Settings*.
+- **Title bar**: the app's mark and name, its menus, the search over the rail's sessions led by the
+  workspace's name and its menu, the rail's, the terminal's and the Workbench's toggles, and the
+  window's own controls where the app decorates it.
+- **Rail**: app chrome outside the dock, on the window's fill, from *New session* down to *Settings*.
 - **Agent pane header**: the conversation's name, its menu and the session's controls; chrome alone over
   a page that names itself in its head.
 - **Step strip**: a run's steps under the header, while it drives the session on screen.
+- **Empty session**: a heading over the composer, both centred, while a session holds nothing.
 - **Composer**: the input surface under the transcript, and what waits pinned above it.
-- **Docks**: the Workbench and the terminal, bare panels flush with their docks, each opening on a tab bar.
+- **Docks**: the Workbench beside the agent pane and the terminal under both, each a box opening on
+  its bar.
 - **Pages without a session**: a project's page, the overview, Tasks, Issues and Workflows.
 - **Settings**: a page of its own, a nav column beside the sub-page it shows.
-- **Status bar**: the branch.
 - **Persistence**: what the layout saves.
-- **Nothing else in the title or status bar, and no right toolbar.** Transient status goes in a
-  toast; modals are `Dialog`s.
+- **Nothing else in the title bar, nothing along the window's foot, and no right toolbar.**
+  Transient status goes in a toast; modals are `Dialog`s.
 
 ## Transcript
 
@@ -171,11 +175,13 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 | The transcript's record: activity, thoughts, notices, a card's question | a step under the reading size, the transcript's `TEXT_SM` |
 | A heading in reading text | a step up the scale per level, two at most; then the body's size |
 | A page's or an issue's title | `.text_lg()` |
+| The empty session's heading, the display size | `.text_xl()` |
 
 - **Weight carries hierarchy before size does**: `font_medium` for a name in a header,
   `font_semibold` for a page's title and any other title or heading; nothing bolder. A list page's rows,
   at the meta size, carry their name and the column read down the list in `font_medium`
-  (`docs/ui-patterns.md`, *List pages*). Line height is gpui's,
+  (`docs/ui-patterns.md`, *List pages*). A navigation or tab row's weight is its kind's, never
+  its being chosen, which its fill alone says (`docs/screens.md`, *Rail*, *Docks*). Line height is gpui's,
   but `LEADING` for reading text and `LEADING_TIGHT` for a wrapped title.
 - **Inks by role.** Text on a neutral surface (the reading surface, a dock, the rail, a floating
   surface, a well) takes one of three: `foreground` for content and the current
@@ -200,17 +206,22 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   zoom wrapper. A size the steps lack is a named constant (shared ones in
   `onehand_ui::tokens`, others beside their use), its reason in its doc comment.
 - **The library's corners.** What a person presses or what holds content takes `radius`:
-  a control, a field, a row, a chip, a well, a box on a page (`card_box`). A dock and its tab bar's tabs stand square, flush with the dock. A large surface takes
-  `radius_lg`, a step rounder: a floating panel, a dialog, a toast, and a Settings group; the library's own
+  a control, a field, a row, a chip, a well, a box on a page (`card_box`), and the open tab's fill in
+  a dock's bar. A large surface takes `radius_lg`, a step rounder: a region's box (the agent pane, the
+  Workbench, the terminal), a floating panel, a dialog, a toast, and a Settings group; the library's own
   follow. The composer and a pinned card take `radius`, so the card tucked under the composer
   meets it at one corner. A badge (a `Tag`) takes the library's
   own corner and size, its edge halfway from its fill to its ink (`badge_edge`); inside a line of
   meta text a label is written in its kind's ink instead, unframed. A dot or a status mark is
   `rounded_full`. The library's small parts keep its half
   corner (*Components*). A part joined to its container's edge takes its corner there.
-- **Lines** part regions and are a 1px `border`. A **mark** says where the person is, not where
-  a region ends: the stroke of the primary along an open tab's top (`TAB_MARK`) is a step heavier than a
-  line, and the tab's name is in the content ink. A list page's line over its foot is a step fainter (`faint_rule`), so the edge-to-edge
+- **Regions part by the gap, never a line.** A region's box has no edge: it stands on the window's
+  fill, its fill a step off it, parted from its neighbours and the window's edge by the region gap
+  (`REGION_GAP`), which shows the window's fill. Inside a box nothing is drawn between its strips
+  and what they head, nor between two areas side by side (the Files tree beside the editor); where
+  two areas must still part, they part by fill. An open tab in a dock's bar is a rounded fill
+  (`secondary`), its name in the content ink, the tabs parted by space and not by lines.
+- **Lines** part content inside a region and are a 1px `border`. A list page's line over its foot is a step fainter (`faint_rule`), so the edge-to-edge
   list reads as one surface; a page's top draws no line under it. A box on a page takes a step
   stronger edge, a control's (`input`); a folding block and a Settings group keep the hairline.
 
@@ -226,9 +237,11 @@ not the palette's: they stay VS Code's (`onehand_terminal_ui::ansi`), as a progr
 its own. A chart's series and a label's kind take the library's base hues.
 
 The surfaces are neutral greys, each region a visible step from its neighbour: on the dark
-palette the reading surface is the deepest, a charcoal still clear of black, the rail, the docks and
-the bars a step over it, and a floating surface a step over the page, told apart by its fill and its
-edge. The light palette is a pale grey page under white chrome for the same regions. The focus ring is a grey. The one hue
+palette the reading surface is the deepest, a charcoal still clear of black, and every region's box
+stands on it, the agent pane, the Workbench and the terminal alike; the window's fill, under the
+title bar, the rail and the gaps between the boxes, a step over it; and a floating surface a step
+over the page, told apart by its fill and its edge. The light palette is a pale grey page under a
+white window for the same regions. The focus ring is a grey. The one hue
 among them is the blue of the primary action. The item chosen among several stands on the
 selected grey (`chosen_fill`), a step past the hover step, its name in the content ink
 (`chosen_ink`), as VS Code marks a selection in a list that does not hold the keys.
@@ -237,8 +250,9 @@ reaches.
 
 | Token | Use |
 |---|---|
-| `background` / `foreground` | surface and text |
-| `theme::dock_surface` | the Workbench and the terminal, a step off the reading surface |
+| `background` / `foreground` | surface and text: every region's box |
+| `sidebar` | the window's fill: the title bar, the rail and the gaps between the boxes |
+| `theme::dock_surface` | the Workbench and the terminal: the reading surface, as every box is |
 | `muted` / `muted_foreground` | quiet fills (every well), meta text |
 | `theme::meta_ink` | the middle ink: a detail beside a name, between prose and meta, contrast-tested |
 | `border` | every hairline, a folding block's and a Settings group's edge; a box on a page takes `input` |
@@ -248,16 +262,16 @@ reaches.
 | `link` | a link: the library draws it in the prose ink, underlined |
 | `info` | what runs |
 | `list_hover` | hover on a pickable row |
-| `primary` | the single primary action in a view, an open tab's mark; the palette's one blue |
+| `primary` | the single primary action in a view; the palette's one blue |
 | `status_ink()` | danger, warning and success text, and `closed` for what is over and settled (a closed issue) |
 | `popover` | floating surfaces |
 | `theme::raised` | the composer card |
-| `secondary` | a document's code on a dock |
+| `secondary` | a document's code on a dock, a dock's open tab |
 
-- Reading content is the visual anchor, on the deepest surface; rail and dock chrome stand a step
-  over it and stay quieter by their inks. A nested container
+- Reading content is the visual anchor, on the deepest surface; the title bar and the rail stand a
+  step over it on the window's fill, and a box's own chrome stays quieter by its inks. A nested container
   inherits its surface unless it has a distinct role: well, selection or floating content.
-- Boxes are borders; wells and the bubbles are fills. Ordinary sections remain unboxed. Do not
+- A box on a page is a border; a region's box, wells and the bubbles are fills. Ordinary sections remain unboxed. Do not
   combine a border, contrasting fill and shadow just to make a group visible.
 - Hover and selection are fills, neutral steps apart: a hovered row the hover step (`list_hover`; on the rail
   `sidebar_accent`, as a fill is a step from the surface under it), the chosen row a step past it
@@ -287,7 +301,7 @@ page's top and a search alike; a search adds the search mark and the clear butto
 composer's field is its card's. A button names its variant by role, each drawn as the library
 draws it: `primary` the one commitment in a decision area, `secondary` (edged, on its own fill)
 an ordinary action beside it, a set picker's trigger (an unset one is a ghost, through `picker`),
-every Settings button and the rail's *New*; `outline` an action that needs a boundary with less
+every Settings button; `outline` an action that needs a boundary with less
 weight; `choice` in a pick-one row; `danger` as below; and ghost (`.quiet(cx)`) the familiar,
 low-emphasis commands of a toolbar, a strip or a row. A control that refuses says so and why
 (`.refuses(why)`, the reason its tooltip) and goes back to the arrow.

@@ -90,6 +90,9 @@ are not steps and stay allowed. A named spacing constant (`BLOCK_GAP`, `TIGHT_GA
 | `6` | 1.5 | 24 |
 | `8` | 2 | 32 |
 
+`tokens::REGION_GAP` is the `1p5` step: the gap between the regions' boxes, and between them and
+the window's edge, through which the window's fill shows.
+
 ## Type
 
 | Write | rem | px |
@@ -113,8 +116,11 @@ are not steps and stay allowed. A named spacing constant (`BLOCK_GAP`, `TIGHT_GA
 | Write | px |
 |---|---|
 | `cx.theme().radius` | 6, the library's |
-| `cx.theme().radius_lg` | 8, the library's: large surfaces |
+| `cx.theme().radius_lg` | 8, the library's: large surfaces, a region's box |
 | `.rounded_full()` | a dot, a status mark |
+
+A region's box (the agent pane, the Workbench, the terminal) is `radius_lg` on `background`, with
+no edge, standing on the window's fill (`sidebar`); a dock's open tab is `radius` on `secondary`.
 
 The theme leaves both at the library's values, so its tooltips, menus, popovers, dialogs and
 toasts take them. What the library draws at half its corner (`radius_tokens().sm`: checkboxes,
