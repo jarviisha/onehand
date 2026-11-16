@@ -242,3 +242,83 @@ fn an_open_whose_window_closed_before_its_start_says_so(cx: &mut TestAppContext)
     drop(token);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Ask `call` for `peer` and wait for its answer.
+fn asked(peer: Peer, call: Call, cx: &mut VisualTestContext) -> Result<String, String> {
+    let (tx, mut answer) = oneshot::channel();
+    cx.update(|_, cx| cx.defer(move |cx| perform(peer, call, tx, cx)));
+    let mut said = None;
+    until(cx, |_| {
+        said = answer.try_recv().unwrap();
+        said.is_some()
+    });
+    said.unwrap()
+}
+
+/// A lead closes its idle worker: the session leaves its window, the
+/// handle reads closed, and closing again answers the same. A turn still
+/// running refuses the close.
+#[gpui::test]
+fn a_lead_closes_its_idle_worker(cx: &mut TestAppContext) {
+    let dir = folder("worker-close");
+    let (_, shell, cx) = shell(cx, dir.join("tasks"), vec![agent()]);
+    let _lead_events = canned(cx);
+    let (lead, token) = lead(&shell, 910_400, cx);
+    let project = dir.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let at = project.clone();
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
+    let mut worker_events = canned(cx);
+    let (peer, call) = open("project", &token);
+    let (tx, mut answer) = oneshot::channel();
+    cx.update(|_, cx| cx.defer(move |cx| perform(peer, call, tx, cx)));
+    let mut worker = None;
+    until(cx, |_| {
+        worker = super::super::workers_of(lead).first().map(|w| w.uid);
+        worker.is_some()
+    });
+    let worker = worker.unwrap();
+    let _requests = up(&mut worker_events);
+    let mut said = None;
+    until(cx, |_| {
+        said = answer.try_recv().unwrap();
+        said.is_some()
+    });
+    let said = said.unwrap().expect("opened");
+    let handle = said
+        .lines()
+        .find_map(|line| line.strip_prefix("session: "))
+        .unwrap()
+        .to_string();
+    let peer = || Peer::Session(token.0.clone());
+    let close = || Call::CloseWorker {
+        session: handle.clone(),
+    };
+    assert_eq!(
+        asked(peer(), close(), cx),
+        Err("a turn is running; cancel it first".into())
+    );
+    worker_events
+        .try_send(AcpEvent::TurnEnded {
+            stop_reason: "end_turn".into(),
+        })
+        .unwrap();
+    until(cx, |cx| {
+        cx.update(|_, cx| {
+            super::session_of(worker, cx).is_some_and(|session| !session.read(cx).chat().busy)
+        })
+    });
+    assert_eq!(asked(peer(), close(), cx), Ok("closed".into()));
+    until(cx, |cx| {
+        cx.update(|_, cx| shell.read(cx).session_project(worker))
+            .is_none()
+    });
+    let state = Call::SessionState {
+        session: handle.clone(),
+    };
+    assert_eq!(asked(peer(), state, cx), Ok("link: closed".into()));
+    assert_eq!(asked(peer(), close(), cx), Ok("closed".into()));
+    let _ = drive().forget(lead);
+    drop(token);
+    let _ = std::fs::remove_dir_all(dir);
+}

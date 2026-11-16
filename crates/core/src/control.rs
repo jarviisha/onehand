@@ -98,6 +98,9 @@ pub enum Call {
     CancelTurn {
         session: String,
     },
+    CloseWorker {
+        session: String,
+    },
 }
 
 impl Call {
@@ -120,7 +123,8 @@ impl Call {
             | Call::OpenFile { .. }
             | Call::SessionState { .. }
             | Call::SendPrompt { .. }
-            | Call::CancelTurn { .. } => None,
+            | Call::CancelTurn { .. }
+            | Call::CloseWorker { .. } => None,
         }
     }
 }
@@ -402,6 +406,9 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
                 .ok_or("`turn` must be a turn number, a whole number from 1")?,
         },
         "cancel_turn" => Call::CancelTurn {
+            session: required("session")?,
+        },
+        "close_worker" => Call::CloseWorker {
             session: required("session")?,
         },
         _ => return Err(format!("no tool named `{name}`")),

@@ -1,7 +1,7 @@
-//! `session_state`, `send_prompt` and `cancel_turn`, carried out on a lead's
-//! worker. Whose worker a handle names and what the lead last sent it is the
-//! tools' drive's, whether a turn may go `control::turns`'; this finds the
-//! session and does it.
+//! `session_state`, `send_prompt`, `cancel_turn` and `close_worker`, carried
+//! out on a lead's worker. Whose worker a handle names and what the lead
+//! last sent it is the tools' drive's, whether a turn may go or the worker
+//! close `control::turns`'; this finds the session and does it.
 //!
 //! **A worker of the caller's whose session is gone reads `link: closed`**,
 //! the one answer that proves it stopped: closing a session ends its agent.
@@ -81,4 +81,30 @@ pub(in crate::control) fn cancel(
     let turn = turns::cancel(worker.read(cx).chat(), &last)?;
     worker.update(cx, |worker, cx| worker.stop(cx));
     Ok(format!("cancelling turn {turn}"))
+}
+
+/// Close the worker `session` names, as the person's *Close session* does:
+/// its session and agent end, its conversation and folder stay. A worker
+/// already closed answers so again, so a retry is harmless.
+pub(in crate::control) fn close(
+    caller: Option<(u64, PathBuf)>,
+    session: &str,
+    cx: &mut App,
+) -> Result<String, String> {
+    let closed = || Ok("closed".to_string());
+    let Some((uid, worker)) = find(caller, session, cx)? else {
+        return closed();
+    };
+    let Some(last) = drive().last(uid) else {
+        return closed();
+    };
+    turns::close(worker.read(cx).chat(), &last)?;
+    let (window, _) = crate::windows::holding_session(uid, cx).ok_or("the window closed")?;
+    // Not from inside whatever window update the call came through.
+    cx.defer(move |cx| {
+        crate::windows::with_shell(window, cx, |shell, window, cx| {
+            shell.end_session(uid, window, cx)
+        });
+    });
+    closed()
 }

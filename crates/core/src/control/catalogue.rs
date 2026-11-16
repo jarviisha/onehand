@@ -283,6 +283,18 @@ fn catalogue() -> Vec<Tool> {
                 &["session"],
             ),
         ),
+        (
+            "close_worker",
+            true,
+            "Close a worker you opened: its session ends and its agent with it; its \
+             conversation and its folder stay. Refused while the person holds it, while a \
+             permission or a question waits on a person, and while a turn runs: cancel it \
+             first, and close once session_state says the turn is over",
+            schema(
+                json!({"session": text("The worker's handle, as open_worker answered it")}),
+                &["session"],
+            ),
+        ),
     ];
     tools
         .into_iter()

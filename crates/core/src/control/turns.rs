@@ -7,8 +7,9 @@
 //! even while that turn still runs, so the retry is checked before anything
 //! else. The same number with other text is a mistake, not a retry.
 //!
-//! **No tool answers a card.** A cancel is refused while a permission or a
-//! question waits, so a lead never cuts off what a person is about to answer.
+//! **No tool answers a card.** A cancel or a close is refused while a
+//! permission or a question waits, so a lead never cuts off what a person is
+//! about to answer.
 
 use crate::chat::Chat;
 
@@ -66,6 +67,19 @@ pub fn cancel(chat: &Chat, last: &Last) -> Result<u64, String> {
         return Err("no turn is running".to_string());
     }
     Ok(last.turn.unwrap_or(0))
+}
+
+/// Whether the lead may close the worker on `chat`: never one the person
+/// holds or a card waits on, which are the person's, nor while a turn runs.
+pub fn close(chat: &Chat, last: &Last) -> Result<(), String> {
+    held_by_lead(chat, last)?;
+    if !chat.pending_permissions().is_empty() || !chat.pending_asks().is_empty() {
+        return Err("a card waits on a person; only they answer it".to_string());
+    }
+    if chat.busy {
+        return Err("a turn is running; cancel it first".to_string());
+    }
+    Ok(())
 }
 
 /// Refused once a prompt of the person's has gone since the lead's last.

@@ -250,7 +250,7 @@ impl Shell {
     /// No toast: the row leaving the rail and the pane moving to whatever is
     /// left say it, where removing a project has to announce itself because
     /// most of what it destroys was never on screen.
-    pub(super) fn end_session(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn end_session(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
         // A worker on screen closing gives the pane back to its lead rather
         // than to its worktree, emptied.
         let fx = self.window.workspace.end(uid, crate::control::lead_of(uid));
