@@ -12,8 +12,7 @@
 //! painted inside it.
 
 use gpui::{
-    AnyElement, Axis, ElementId, IntoElement, Pixels, Render, Styled as _, div,
-    prelude::FluentBuilder as _, px,
+    Axis, ElementId, IntoElement, Pixels, Render, Styled as _, div, prelude::FluentBuilder as _, px,
 };
 use gpui_base::{
     HandleEdge, ResizablePanelGroup, ResizeHandle, ResizeHandleContext, ResizeHandleRenderer,
@@ -47,13 +46,14 @@ pub fn edge_handle<T: 'static, E: 'static + Render>(
 }
 
 fn seam() -> ResizeHandleRenderer {
-    Rc::new(|handle, _, cx| Some(seam_line(handle, cx.theme().ring)))
+    Rc::new(|handle, _, cx| Some(seam_line(handle, cx.theme().ring).into_any_element()))
 }
 
 /// The painted part of a handle: nothing at rest or under the pointer, the
 /// line while held. Never `None`, which would put the library's own resting
-/// line back.
-fn seam_line(handle: &ResizeHandleContext, ink: gpui::Hsla) -> AnyElement {
+/// line back. Public for a skin that draws a handle's line somewhere else in
+/// its band (the dock area, down the middle of the gap between boxes).
+pub fn seam_line(handle: &ResizeHandleContext, ink: gpui::Hsla) -> gpui::Div {
     div()
         .flex_none()
         .map(|line| match handle.axis() {
@@ -61,5 +61,4 @@ fn seam_line(handle: &ResizeHandleContext, ink: gpui::Hsla) -> AnyElement {
             Axis::Vertical => line.w_full().h(SEAM_LINE),
         })
         .when(handle.is_active(), |line| line.bg(ink))
-        .into_any_element()
 }

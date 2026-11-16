@@ -56,7 +56,7 @@ pub use notice::{hint, status_line};
 pub use onehand_core::worktree::removal::Process;
 pub use page::{page_head, page_search, page_top};
 pub use prose::{no_code_label, unedged_code};
-pub use resize::{edge_handle, h_resizable, v_resizable};
+pub use resize::{edge_handle, h_resizable, seam_line, v_resizable};
 pub use row::{mark_slot, row, tree_row};
 pub use row_actions::{HoverSlot, Press, RowAct, hover_slot, row_menu_items, row_more};
 pub use stepper::{STEP_LINE_H, StepMark, step_dot, step_line};

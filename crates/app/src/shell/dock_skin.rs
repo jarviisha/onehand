@@ -19,7 +19,7 @@
 use gpui::{
     AnyElement, AnyView, App, AppContext as _, Axis, Context, DispatchPhase, Empty, EntityId,
     IntoElement, MouseMoveEvent, MouseUpEvent, ParentElement as _, Render, StyleRefinement,
-    Styled as _, WeakEntity, Window, canvas, div, prelude::FluentBuilder as _, px,
+    Styled as _, WeakEntity, Window, canvas, div, prelude::FluentBuilder as _,
 };
 use gpui_base::{HandleEdge, ResizeHandleContext};
 use gpui_component::ActiveTheme as _;
@@ -83,8 +83,9 @@ impl DockAreaRenderer for DockSkin {
             _ => Axis::Horizontal,
         };
         let resizing = self.resizing.clone();
-        let handle =
-            onehand_ui::edge_handle(id, axis, edge).on_drag(ResizeDock, move |drag, _, _, cx| {
+        let handle = onehand_ui::edge_handle(id, axis, edge)
+            .with_appearance(Rc::new(|handle, _, cx| Some(gap_seam(handle, cx))))
+            .on_drag(ResizeDock, move |drag, _, _, cx| {
                 cx.stop_propagation();
                 resizing.set(Some(placement));
                 cx.new(|_| drag.clone())
@@ -99,24 +100,13 @@ impl DockAreaRenderer for DockSkin {
             .into_any_element()
     }
 
-    /// The held line of a divider between two slots, drawn down the middle
-    /// of the gap the later slot's box leaves before it rather than against
-    /// the earlier box. Nothing at rest, as every seam in the app.
     fn render_split_handle(
         &self,
         handle: &ResizeHandleContext,
         _: &mut Window,
         cx: &mut App,
     ) -> Option<AnyElement> {
-        let mid = REGION_GAP / 2.;
-        let line = div()
-            .flex_none()
-            .map(|line| match handle.axis() {
-                Axis::Horizontal => line.h_full().w(px(1.)).ml(mid),
-                Axis::Vertical => line.w_full().h(px(1.)).mt(mid),
-            })
-            .when(handle.is_active(), |line| line.bg(cx.theme().ring));
-        Some(line.into_any_element())
+        Some(gap_seam(handle, cx))
     }
 
     fn tab_group_renderer(&self) -> Rc<dyn TabGroupRenderer> {
@@ -157,6 +147,20 @@ impl DockSkin {
         .absolute()
         .size_0()
     }
+}
+
+/// The held line of a split's divider or a dock's edge, drawn down the middle
+/// of the gap the later box leaves before it rather than against either box.
+/// Both bands start their line at the gap's leading edge, so half a gap in
+/// centres it. Nothing at rest, as every seam in the app.
+fn gap_seam(handle: &ResizeHandleContext, cx: &App) -> AnyElement {
+    let mid = REGION_GAP / 2.;
+    onehand_ui::seam_line(handle, cx.theme().ring)
+        .map(|line| match handle.axis() {
+            Axis::Horizontal => line.ml(mid),
+            Axis::Vertical => line.mt(mid),
+        })
+        .into_any_element()
 }
 
 /// A group that draws only its panel, in its box.
