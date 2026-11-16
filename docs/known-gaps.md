@@ -230,14 +230,6 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   is written only once it has ended, and the file is only ever added to, so every turn after a
   card still working waits for it. They are written when the session closes, the card as
   interrupted; a crash before that loses them.
-- **A lead's workers do not outlive the run of the app.** The handle, the relation and the
-  worker's project are kept in memory only, so after a restart the lead opens new workers and each
-  rebuilds its context from its worktree; the old conversation stays on disk, attached to nothing.
-  Keeping them would mean the relation on disk, keyed by the conversation, the worker's project
-  kept rather than transient, and the lead switched on again taking its workers back.
-- **A lead cannot close a worker, nor pick a model per turn.** A finished worker holds its place
-  under the cap until the person closes it; the refusal lists the four open. A worker runs on the
-  model it was opened with; a model per turn needs agents that change model inside a session.
 - **Only a session's agent leads.** An outside program may open sessions but never workers, since
   it has no session to own them by; owning what it opened for as long as its connection lasts is
   not built.

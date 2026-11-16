@@ -167,13 +167,22 @@ fn what_is_in_force_already_is_not_picked_again() {
 }
 
 #[test]
-fn the_handle_names_the_run() {
-    assert_eq!(handle("3f2a9c01", 7), "3f2a9c01-7");
+fn a_minted_handle_parses_and_is_not_a_run_handle() {
+    let minted = mint_handle();
+    assert!(minted.starts_with("w-"), "{minted}");
+    assert_eq!(parse_handle(&minted, "r1"), Ok(Handle::Stable(minted)));
 }
 
 #[test]
-fn parse_handle_reads_this_run() {
-    assert_eq!(parse_handle("3f2a9c01-7", "3f2a9c01"), Ok(7));
+fn a_run_uid_handle_is_from_an_earlier_run() {
+    let why = parse_handle("r0-7", "r1").unwrap_err();
+    assert!(why.contains("earlier run"), "{why}");
+}
+
+#[test]
+fn an_old_handle_of_this_run_is_refused_too() {
+    let why = parse_handle("3f2a9c01-7", "3f2a9c01").unwrap_err();
+    assert!(why.contains("earlier run"), "{why}");
 }
 
 #[test]
@@ -184,7 +193,7 @@ fn parse_handle_refuses_another_run() {
 
 #[test]
 fn parse_handle_refuses_nonsense() {
-    for text in ["7", "3f2a9c01-", "3f2a9c01-x", ""] {
+    for text in ["7", "3f2a9c01-", "3f2a9c01-x", "", "w-", "w-xyz"] {
         let why = parse_handle(text, "3f2a9c01").unwrap_err();
         assert!(why.contains("not a session's handle"), "{text}: {why}");
     }
@@ -200,5 +209,9 @@ fn parse_handle_calls_only_a_run_id_an_earlier_run() {
 
 #[test]
 fn parse_handle_trims_spaces() {
-    assert_eq!(parse_handle(" 3f2a9c01-7 ", "3f2a9c01"), Ok(7));
+    let minted = mint_handle();
+    assert_eq!(
+        parse_handle(&format!(" {minted} "), "3f2a9c01"),
+        Ok(Handle::Stable(minted))
+    );
 }

@@ -88,8 +88,9 @@ answer, and exits.
 | `list_issues` | optional `project` | the project's own open issues, as its Issues tab keeps them (a synced project's imported ones too); the calling session's project when none is named | `#<n> — <title>`, one per line |
 | `create_issue` | optional `project`, `title`, optional `body` | writes one issue into the project's own issue file, through the copy every view of it shares, so it shows in every window's views of the file as it lands; an open issue with the same title (case and spaces aside) is not written again. It takes no labels: the issue gets those of the calling session's schedule, so no agent labels its own issue for an unattended run | `Wrote issue #<n>: …`, or `Issue #<n> is already open with that title` |
 | `session_state` | `session`, a worker's handle | for a session's agent, about a worker it opened; never listed to an outside program | the worker's state, one fact per line; `link: closed` once it is gone; or why not |
-| `send_prompt` | `session`, `text`, `turn` | for a session's agent, gives a worker it opened its next turn; never listed to an outside program | `turn <n> accepted`, `turn <n> already sent`, or why not |
+| `send_prompt` | `session`, `text`, `turn`, optional `model` | for a session's agent, gives a worker it opened its next turn, on `model` when named; never listed to an outside program | `turn <n> accepted`, `turn <n> already sent`, or why not |
 | `cancel_turn` | `session` | for a session's agent, cancels the turn a worker it opened runs, as the person's Stop does | `cancelling turn <n>`, or why not |
+| `close_worker` | `session` | for a session's agent, closes a worker it opened, as the person's *Close session* does; never listed to an outside program | `closed`, or why not |
 
 - **A task a tool starts is driven off screen**, the way an issue's run is: its session is in the
   rail (a schedule's that ends done leaves it, `docs/schedules.md`) and the task on the Tasks page,
@@ -196,11 +197,13 @@ offered `open_worker`, and `open_session` takes none of its further arguments.
     model option, or not that value, refuses the open, naming what it offers; one that refuses
     the pick does too. A worker never runs on another model.
   - A `prompt` needs a `turn`, the caller's number for it, and a `turn` needs a prompt.
-- **What it answers**, one fact per line: `session:` the handle, `<run>-<uid>`, which names this
-  run of the app since uids count from 1 in every run; `name:` as the rail shows it; `project:`;
+- **What it answers**, one fact per line: `session:` the handle, `w-` and 32 hex digits, minted
+  when the worker's session starts and the worker's for good: it names the same worker in every
+  run, whatever uid its session has then; `name:` as the rail shows it; `project:`;
   `mode:` and `model:` in force, or *the agent's own*; `dirs:` or *none*; and `turn: <n>
   accepted` with a prompt, which means the agent was handed it, nothing more.
-- **`request` is the caller's id for the open**, per lead and for this run of the app. The same
+- **`request` is the caller's id for the open**, per lead and for this run of the app; a lead
+  retrying an open across a restart opens afresh. The same
   id with the same arguments, while the open runs, answers that it is still opening; once it
   answered, the same answer again; once it failed, it opens afresh. The same id with other
   arguments is refused. Nothing is opened, sent or counted under the cap twice.
@@ -212,7 +215,7 @@ offered `open_worker`, and `open_session` takes none of its further arguments.
   facts rather than the rail's single mark:
   - `link`: `connecting`, `connected` or `lost`; once the worker's session is gone the whole
     answer is `link: closed`, the one line that proves it stopped, since closing a session ends
-    its agent.
+    its agent, with `why:` on a second line for a worker that did not come back with its lead.
   - `turn`: `none`, `running`, `failed: <its words>`, `cancelled` (a person's Stop is not a
     failure), `lost with the link` (cut off, so how it ended is not known) or `ended`.
   - `waiting`: the permissions and questions parked, which only a person answers, or `none`.
@@ -221,24 +224,42 @@ offered `open_worker`, and `open_session` takes none of its further arguments.
     lost link clears what onehand held. `none reported` is enough to send the next turn, never
     proof the agent stopped.
   - `held by`: `person` once a prompt of theirs has gone to the agent, else `lead`; a restart of
-    the worker's agent keeps the count it is read from.
+    the worker's agent keeps the count it is read from, and a restart of the app keeps the hold
+    itself.
   - `turns`: the lead's last turn number, `ended` once it is over, the link up and the lead still
     holding the worker, else `not yet ended`.
   - `mode`, `model`, `dirs`, as in force.
 
-  A handle from an earlier run is refused as such. Anything that is not the caller's own worker,
-  open or closed, or a uid that never was one, gets the same refusal, so a lead learns nothing of
-  sessions that are not its own.
+  A handle in the shape earlier builds gave, `<run>-<uid>`, is refused as an earlier run's.
+  Anything that is not the caller's own worker, open or closed, or a handle that never was one,
+  gets the same refusal, so a lead learns nothing of sessions that are not its own.
 - **`send_prompt`** gives the caller's worker its next turn, and is checked in this order:
   refused once the person holds the worker; the same turn and text again answers `turn <n>
   already sent` and sends nothing, even while that turn still runs, so a lost answer can be
   retried; the same turn with other text, or a turn below the last sent, is refused; then
   refused, not queued, while a turn runs, while connecting or once the link is lost, in the
   composer's own words. `turn <n> accepted` means the agent was handed it, nothing more.
+  - **`model`**, when named, is a value of the worker's model option, picked as the composer
+    picks it, after the checks above, so a retried turn picks nothing. The turn goes once the
+    pick is answered and that model is in force: an agent that offers no model option, or not
+    that value, or refuses the pick, refuses the turn, naming what it offers, and nothing is
+    sent; a pick not answered within 120 seconds refuses it too. While the pick is under way,
+    another `send_prompt` is refused, the same turn and text again told it is waiting; the turn
+    is checked once more before it goes, and the lead closing or its tools switched off refuses
+    it. The model stays in force for
+    the worker's next turns, since it is the session's own setting, and `session_state`'s
+    `model:` says it.
 - **`cancel_turn`** cancels the turn the caller's worker runs, as the person's Stop does. It is
   refused while a permission or a question waits, which only a person answers, while the person
   holds the worker, and with no turn running; it answers no card. `cancelling turn <n>` means the
   cancel was sent; `session_state` says when the turn is over.
+- **`close_worker`** closes the caller's worker as the person's *Close session* does: its session
+  and its agent end, its conversation and its worktree stay, its project goes when it was added
+  for the worker and holds nothing else, and its folder and its place under the cap are freed.
+  It is refused while the person holds the worker, while a permission or a question waits on a
+  person, and while a turn runs (`cancel_turn` first, then close once `session_state` says the
+  turn is over). It answers `closed`, and so does a worker already closed, so a retry is
+  harmless; its handle reads `link: closed` from then on.
 - ***Give back to the lead***, on the band over the worker's composer, is offered while the person holds
   the worker and its lead is open and switched on: it counts every prompt the person sent as the
   lead's, so the lead holds it again. Nothing is sent, nothing said in the transcript; the lead
@@ -252,12 +273,42 @@ offered `open_worker`, and `open_session` takes none of its further arguments.
   its prompt never sent. A person watching a worker whose open failed is put back on what is
   active.
 - **The lead closing or lost** drops its relations: its workers stay open, owned by nobody, and
-  are the person's to close. Switched off, a lead abandons its opens in progress; its open workers
-  keep their relation, unusable until it is switched on again. The cap of four counts workers still
+  are the person's to close. Switched off, a lead abandons its opens in progress, though not its
+  workers coming back; its open workers keep their relation, unusable until it is switched on
+  again. The cap of four counts workers still
   open, the ones opening included; one that failed to open gives its place back.
-- **Nothing of a worker is written to disk**: the handle, the relation, the request ids and the
-  worker's transient project last as long as the run of the app. Its conversation is kept as any
-  session's is. A clean quit ends every worker with its agent's process group; a crash may leave
-  one working, which the next `open_worker` on its folder finds through the process reading
-  above. After a restart the lead opens new workers, and each picks its job up from what it left
-  in its worktree.
+- **What a lead holds is kept beside its conversation**, in `workers.json` in the lead's
+  conversation directory, so it moves and is deleted with that conversation: for each worker the
+  lead still holds, in the order they opened and once its conversation is known, its handle,
+  conversation, agent, folder, `dirs`, name, the lead's last turn number and text, and whether the
+  person holds it; and the handles of the 64 workers that ended last. It is written whenever any of it
+  changes, through the one atomic write, off the UI thread. A file that cannot be read keeps
+  nothing, and the next write replaces it. The request ids and the worker's transient project
+  last as long as the run of the app. A clean quit ends every worker with its agent's process
+  group; a crash may leave one working, which the coming back finds through the process reading
+  above.
+- **What ends a kept worker.** Quitting the app or closing the window keeps every worker. The
+  person closing the lead lets its workers go for good: they go back under their own project as
+  the person's, and their entries become ended ones. A worker closed by the person or by the lead
+  ends its entry. An ended worker's handle keeps answering `link: closed` to its lead in later
+  runs. A session that leads no worker and goes on another conversation (*Resume in this
+  session…*) leaves the ended ones with the conversation they ended in.
+- **Coming back.** When a session opens a lead's conversation, from the history, the project
+  page or *Resume in this session…*, each worker kept there comes back as a worker of that
+  session, in the order kept, through the checks an open runs: its folder resolved again off the
+  UI thread, refused when a session of any window or a process works in it or another worker
+  holds it, reserved again, and counted under the cap. A folder that is no project of the window
+  comes back as a transient project, selecting nothing. It resumes its own conversation, on the
+  `dirs` it had, and keeps its relation: the handle the lead already holds, the lead's last turn,
+  and who holds it. It comes back idle: its agent connects only once it is shown or its lead
+  calls a tool on it, and until then `session_state` reads `link: connecting` and `send_prompt`
+  is refused in the composer's connecting words; the lead calls again. A turn that was running
+  at quit reads `lost with the link`. It needs its lead open, not its lead's tools switched on,
+  which every new run leaves off until the person switches them on. A worker that cannot come
+  back (its folder or its conversation gone, its agent no longer in the agent list, its folder
+  held) is not opened: its entry ends, and its handle answers `link: closed` with `why:` saying
+  so. The person sees only its absence from the rail.
+- **One lead conversation, one session.** *Resume in this session…* is refused while the session
+  leads workers, so two leads' workers are never merged past the cap; and a conversation a
+  session of any window already has open is not opened again, the history marking it
+  *already open*. Each is said in a toast.

@@ -13,6 +13,7 @@
 pub mod calls;
 mod catalogue;
 pub mod drive;
+pub mod kept;
 pub mod link;
 pub mod open;
 pub mod state;
@@ -93,8 +94,14 @@ pub enum Call {
         session: String,
         text: String,
         turn: u64,
+        /// The model the turn runs on, by the agent's own value, kept for
+        /// the worker's next turns.
+        model: Option<String>,
     },
     CancelTurn {
+        session: String,
+    },
+    CloseWorker {
         session: String,
     },
 }
@@ -119,7 +126,8 @@ impl Call {
             | Call::OpenFile { .. }
             | Call::SessionState { .. }
             | Call::SendPrompt { .. }
-            | Call::CancelTurn { .. } => None,
+            | Call::CancelTurn { .. }
+            | Call::CloseWorker { .. } => None,
         }
     }
 }
@@ -399,8 +407,12 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
                 .and_then(Value::as_u64)
                 .filter(|&n| n > 0)
                 .ok_or("`turn` must be a turn number, a whole number from 1")?,
+            model: optional("model")?,
         },
         "cancel_turn" => Call::CancelTurn {
+            session: required("session")?,
+        },
+        "close_worker" => Call::CloseWorker {
             session: required("session")?,
         },
         _ => return Err(format!("no tool named `{name}`")),

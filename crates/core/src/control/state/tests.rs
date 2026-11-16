@@ -25,6 +25,7 @@ fn prompted() -> (Chat, Rx, Held) {
         turn: Some(1),
         sent: chat.prompts_sent,
         dirs: Vec::new(),
+        person: false,
     };
     (chat, rx, held)
 }
@@ -49,6 +50,7 @@ fn a_connected_idle_worker_reads_none_reported() {
         turn: None,
         sent: 0,
         dirs: Vec::new(),
+        person: false,
     };
     let state = state(&chat, &held);
     assert_eq!(line(&state, "link"), "connected");
@@ -165,6 +167,7 @@ fn dirs_are_named() {
         turn: None,
         sent: 0,
         dirs: vec!["/run".into(), "/r/.git".into()],
+        person: false,
     };
     assert_eq!(line(&state(&chat, &held), "dirs"), "/run, /r/.git");
 }

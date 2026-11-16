@@ -19,11 +19,19 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 
+mod keeping;
 mod start;
 mod workers;
 
+pub(crate) use keeping::watch as watch_conversation;
 pub(crate) use start::start_task;
 use start::{start, template};
+pub(crate) use workers::bring_back;
+
+/// Whether session `uid` leads workers, open or opening.
+pub(crate) fn leads_workers(uid: u64) -> bool {
+    drive().leads_workers(uid)
+}
 pub(crate) use workers::whose::{Worker, give_back, give_back_offered, lead_of, workers_of};
 
 /// The tools' drive, held for the whole process: an agent's token is minted
@@ -127,8 +135,10 @@ pub(crate) fn grant(uid: u64, grant: &onehand_core::task::Grant, cx: &mut App) {
     carry_later(fx, cx);
 }
 
-/// Session `uid` is closed: its switch and what its tools opened go with it.
-pub(crate) fn forget(uid: u64, cx: &mut App) {
+/// Session `uid` is closed, on `conversation` when it had one: its switch
+/// and what its tools opened go with it.
+pub(crate) fn forget(uid: u64, conversation: Option<PathBuf>, cx: &mut App) {
+    keeping::closed(uid, conversation, cx);
     let fx = drive().forget(uid);
     carry_later(fx, cx);
 }
@@ -487,8 +497,10 @@ fn perform_now(
             session,
             text,
             turn,
-        } => workers::turns::send(caller, &session, &text, turn, cx),
+            model,
+        } => workers::turns::send(caller, &session, &text, turn, model, answer, cx),
         Call::CancelTurn { session } => workers::turns::cancel(caller, &session, cx),
+        Call::CloseWorker { session } => workers::turns::close(caller, &session, cx),
         Call::OpenSession {
             project,
             agent,
@@ -526,6 +538,7 @@ fn perform_now(
                     turn,
                     model,
                     name,
+                    back: None,
                 },
                 handle,
                 shell,

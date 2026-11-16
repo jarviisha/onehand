@@ -53,7 +53,7 @@ fn a_host_root_is_never_given_local_work() {
     // Arriving warms an agent on the local folder only.
     assert_eq!(drive.roots[0].local_path(), Some(local.as_path()));
     assert_eq!(drive.roots[1].local_path(), None);
-    assert_eq!(sessions::page_roots_in(&drive), vec![local]);
+    assert_eq!(pages::page_roots_in(&drive), vec![local]);
     // Its menus offer no worktree, check or switch, even where a folder of
     // the same path here is a repository.
     let mut host = ProjectRoot::new("/srv/app");
@@ -82,13 +82,13 @@ fn the_overview_keeps_a_host_project_and_the_other_pages_do_not() {
         &mut drive,
         vec![(PathBuf::from("/srv/app"), status("main"))],
     );
-    let overview = sessions::page_projects_in(&drive, sessions::Reach::Overview);
+    let overview = pages::page_projects_in(&drive, pages::Reach::Overview);
     assert_eq!(overview.len(), 2);
     let (here, there) = (&overview[0], &overview[1]);
     assert!(here.host.is_none() && here.git.is_some() && here.issues.is_some());
     assert_eq!(there.host, Some(HostName("vps".into())));
     assert!(there.git.is_none() && there.issues.is_none());
-    let local = sessions::page_projects_in(&drive, sessions::Reach::Local);
+    let local = pages::page_projects_in(&drive, pages::Reach::Local);
     assert_eq!(local.len(), 1);
     assert!(local[0].host.is_none());
 }

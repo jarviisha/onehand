@@ -95,31 +95,45 @@ fn lost(chat: &Chat) -> String {
         .unwrap_or_else(|| "its link was lost".to_string())
 }
 
-/// The handle a tool names a worker by: the run of the app and its uid, since
-/// uids count from 1 again in every run.
-pub fn handle(run: &str, uid: u64) -> String {
-    format!("{run}-{uid}")
+/// What a stable handle starts with: never the start of an earlier run's
+/// `<run>-<uid>`, whose run is hex.
+const STABLE: &str = "w-";
+
+/// What a handle names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Handle {
+    /// A worker, by the handle minted when it opened, the same in every run.
+    Stable(String),
 }
 
-/// The uid `text` names, when it is a handle of this run, `run`. One from an
-/// earlier run is refused as such: its number may belong to another session
-/// now.
-pub fn parse_handle(text: &str, run: &str) -> Result<u64, String> {
+/// A handle for a worker opening now: its own for good, so it names the same
+/// worker in a later run, whatever uid its session has then.
+pub(crate) fn mint_handle() -> String {
+    format!("{STABLE}{}", super::new_token())
+}
+
+/// What `text` names, `run` being this run of the app. A handle in the
+/// shape earlier builds gave, a run and a uid, is refused as an earlier
+/// run's: uids count from 1 again in every run, so its number may belong to
+/// another session now.
+pub(crate) fn parse_handle(text: &str, run: &str) -> Result<Handle, String> {
     let text = text.trim();
+    let minted = text
+        .strip_prefix(STABLE)
+        .is_some_and(|id| id.len() == 32 && id.chars().all(|c| c.is_ascii_hexdigit()));
+    if minted {
+        return Ok(Handle::Stable(text.to_string()));
+    }
     let refused = || format!("{text} is not a session's handle");
     let (from, uid) = text.rsplit_once('-').ok_or_else(refused)?;
-    let uid: u64 = uid.parse().map_err(|_| refused())?;
+    uid.parse::<u64>().map_err(|_| refused())?;
     // Only something shaped like a run's id is called an earlier run's.
-    let a_run = from.len() == run.len() && from.chars().all(|c| c.is_ascii_hexdigit());
-    if !a_run {
+    if from.len() != run.len() || !from.chars().all(|c| c.is_ascii_alphanumeric()) {
         return Err(refused());
     }
-    if from != run {
-        return Err(format!(
-            "{text} is from an earlier run of onehand; its worker is gone"
-        ));
-    }
-    Ok(uid)
+    Err(format!(
+        "{text} is from an earlier run of onehand; its worker is gone"
+    ))
 }
 
 #[cfg(test)]

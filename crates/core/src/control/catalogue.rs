@@ -258,7 +258,9 @@ fn catalogue() -> Vec<Tool> {
             "Give a worker you opened its next turn. Never queued: refused while a turn runs, \
              while it connects or once its link is lost, and while a person holds it. Each turn \
              number goes once: the same turn and text again answers that it was already sent, \
-             so a lost answer can be retried; the same turn with other text is refused",
+             so a lost answer can be retried; the same turn with other text is refused. With \
+             a model, that model is picked first; an agent that does not offer it refuses the \
+             turn and nothing is sent",
             schema(
                 json!({
                     "session": text("The worker's handle, as open_worker answered it"),
@@ -268,6 +270,10 @@ fn catalogue() -> Vec<Tool> {
                         "minimum": 1,
                         "description": "Your number for this turn, above the last you sent",
                     },
+                    "model": text(
+                        "A value of the worker's model option; picked before the prompt and \
+                         kept for its next turns"
+                    ),
                 }),
                 &["session", "text", "turn"],
             ),
@@ -278,6 +284,18 @@ fn catalogue() -> Vec<Tool> {
             "Cancel the turn a worker you opened is running, as the person's Stop does. \
              Refused while a permission or a question waits on a person, which only they \
              answer, and while a person holds the worker",
+            schema(
+                json!({"session": text("The worker's handle, as open_worker answered it")}),
+                &["session"],
+            ),
+        ),
+        (
+            "close_worker",
+            true,
+            "Close a worker you opened: its session ends and its agent with it; its \
+             conversation and its folder stay. Refused while the person holds it, while a \
+             permission or a question waits on a person, and while a turn runs: cancel it \
+             first, and close once session_state says the turn is over",
             schema(
                 json!({"session": text("The worker's handle, as open_worker answered it")}),
                 &["session"],

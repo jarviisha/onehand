@@ -37,6 +37,7 @@ pub(crate) use offload::offload_refusal;
 mod issue_work;
 mod issues_page;
 mod offload;
+mod pages;
 mod presentation;
 mod remote_runs;
 mod render;

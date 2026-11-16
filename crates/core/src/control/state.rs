@@ -24,11 +24,13 @@ pub struct Held {
     pub sent: usize,
     /// The folders the worker may write besides its own.
     pub dirs: Vec<PathBuf>,
+    /// The person holds it, as it was kept across a restart.
+    pub person: bool,
 }
 
 /// The worker's state, one fact per line.
 pub fn state(chat: &Chat, held: &Held) -> String {
-    let person = chat.prompted_since(held.sent);
+    let person = held.person || chat.prompted_since(held.sent);
     let lines = [
         format!("link: {}", link(chat)),
         format!("turn: {}", turn(chat)),

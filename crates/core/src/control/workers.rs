@@ -197,6 +197,21 @@ pub struct Relation {
     pub sent: usize,
     /// The folders it may write besides its own.
     pub dirs: Vec<PathBuf>,
+    /// What the lead names it by.
+    pub handle: String,
+    /// The folder its session is on.
+    pub folder: PathBuf,
+    pub agent: String,
+    /// Its name, as the lead gave it.
+    pub name: Option<String>,
+    /// Its conversation's session id, once known.
+    pub conversation: Option<String>,
+    /// The person holds it: they prompted it since the lead's last turn.
+    /// Kept so the hold outlives a restart, where the count it is read
+    /// from starts again.
+    pub person: bool,
+    /// Where it stands among its lead's workers, in the order they opened.
+    pub seq: u64,
 }
 
 /// One of a lead's workers, as the person's view draws it.
@@ -208,6 +223,8 @@ pub struct Worker {
     /// Its prompts sent once the lead's last went; `None` while it is still
     /// opening, before any relation.
     pub sent: Option<usize>,
+    /// The person holds it, as it was kept across a restart.
+    pub person: bool,
 }
 
 impl Worker {
@@ -215,7 +232,7 @@ impl Worker {
     /// last, `chat` being the worker's own conversation. A worker still
     /// opening has had nothing from its lead yet to be taken over from.
     pub fn held(&self, chat: &crate::chat::Chat) -> bool {
-        self.sent.is_some_and(|sent| chat.prompted_since(sent))
+        self.person || self.sent.is_some_and(|sent| chat.prompted_since(sent))
     }
 }
 
@@ -227,7 +244,9 @@ pub(crate) fn offered(
     lead_on: bool,
     lead_open: bool,
 ) -> bool {
-    relation.is_some_and(|relation| prompts_sent > relation.sent) && lead_on && lead_open
+    relation.is_some_and(|relation| relation.person || prompts_sent > relation.sent)
+        && lead_on
+        && lead_open
 }
 
 /// What a handle is to the caller.

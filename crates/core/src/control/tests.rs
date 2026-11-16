@@ -275,7 +275,8 @@ fn the_catalogue_lists_every_tool_with_a_schema() {
             "create_issue",
             "session_state",
             "send_prompt",
-            "cancel_turn"
+            "cancel_turn",
+            "close_worker"
         ]
     );
     for tool in tools {
@@ -816,6 +817,7 @@ fn send_prompt_and_cancel_turn_parse() {
             session: "3f2a9c01-7".into(),
             text: "next".into(),
             turn: 2,
+            model: None,
         }
     );
     assert_eq!(
@@ -824,6 +826,83 @@ fn send_prompt_and_cancel_turn_parse() {
             session: "3f2a9c01-7".into()
         }
     );
+}
+
+#[test]
+fn send_prompt_takes_an_optional_model() {
+    let handled = handle(
+        &mut session_ready(),
+        &line(
+            "tools/call",
+            json!({"name": "send_prompt", "arguments":
+                {"session": "w-1", "text": "next", "turn": 2, "model": "strong"}}),
+        ),
+        on,
+    );
+    let call = match handled {
+        Handled::Perform { call, .. } => call,
+        Handled::Reply(reply) => panic!("{reply}"),
+        Handled::Quiet => panic!("quiet"),
+    };
+    assert_eq!(
+        *call,
+        Call::SendPrompt {
+            session: "w-1".into(),
+            text: "next".into(),
+            turn: 2,
+            model: Some("strong".into()),
+        }
+    );
+    let why = refusal(handle(
+        &mut session_ready(),
+        &line(
+            "tools/call",
+            json!({"name": "send_prompt", "arguments":
+                {"session": "w-1", "text": "next", "turn": 2, "model": 3}}),
+        ),
+        on,
+    ));
+    assert!(why.contains("model"), "{why}");
+}
+
+#[test]
+fn close_worker_parses() {
+    let handled = handle(
+        &mut session_ready(),
+        &line(
+            "tools/call",
+            json!({"name": "close_worker", "arguments": {"session": "w-1"}}),
+        ),
+        on,
+    );
+    let call = match handled {
+        Handled::Perform { call, .. } => call,
+        Handled::Reply(reply) => panic!("{reply}"),
+        Handled::Quiet => panic!("quiet"),
+    };
+    assert_eq!(
+        *call,
+        Call::CloseWorker {
+            session: "w-1".into()
+        }
+    );
+    let why = refusal(handle(
+        &mut session_ready(),
+        &line(
+            "tools/call",
+            json!({"name": "close_worker", "arguments": {}}),
+        ),
+        on,
+    ));
+    assert!(why.contains("session"), "{why}");
+}
+
+#[test]
+fn close_worker_is_never_listed_to_an_outside_program() {
+    let listed = names_listed(&mut ready(), on);
+    assert!(!listed.contains(&"close_worker".to_string()));
+    let why = refusal(call("close_worker", json!({"session": "w-1"})));
+    assert!(why.contains("session's agent"), "{why}");
 }
 
 #[test]

@@ -2,7 +2,7 @@
 //! given back to its lead. The relation is the tools' drive's; this asks the
 //! windows whether a lead is still open.
 
-use super::super::drive;
+use super::super::{carry, drive};
 use super::session_here_of_lead;
 use gpui::App;
 
@@ -28,7 +28,10 @@ pub(crate) fn give_back_offered(uid: u64, prompts_sent: usize, cx: &App) -> bool
 /// Give worker `uid` back to its lead: what the person sent so far is
 /// counted as the lead's. Nothing is sent, nothing said. False when it is
 /// no longer offered by the time it is pressed.
-pub(crate) fn give_back(uid: u64, prompts_sent: usize, cx: &App) -> bool {
+pub(crate) fn give_back(uid: u64, prompts_sent: usize, cx: &mut App) -> bool {
     let open = session_here_of_lead(uid, cx);
-    drive().give_back(uid, prompts_sent, open)
+    let given = drive().give_back(uid, prompts_sent, open);
+    let back = given.is_some();
+    carry(given.unwrap_or_default(), cx);
+    back
 }

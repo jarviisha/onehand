@@ -42,7 +42,7 @@ fn a_switch_tells_each_connection_once(cx: &mut TestAppContext) {
         standing(&Peer::Session(name.clone())),
         Standing::On
     ));
-    cx.update(|cx| forget(uid, cx));
+    cx.update(|cx| forget(uid, None, cx));
     drop(token);
     assert!(matches!(
         standing(&Peer::Session(name.clone())),
@@ -67,6 +67,7 @@ fn an_opens_deadline_comes_round_and_frees_its_request(cx: &mut TestAppContext) 
         turn: None,
         model: None,
         name: None,
+        back: None,
     };
     let projects = vec![("repo".to_string(), PathBuf::from("/repo"))];
     let Ok(Begun::Resolve { fx, .. }) = drive().open_worker(open(), &projects, None) else {

@@ -4,6 +4,7 @@ use gpui::{App, AppContext as _, BorrowAppContext, Context, Entity, SharedString
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputState, TextareaState};
 use onehand_core::config::AgentSpec;
+use onehand_core::workspace::drive::StartsOn;
 use std::path::{Path, PathBuf};
 
 impl Shell {
@@ -187,6 +188,46 @@ impl Shell {
         self.refresh_git(cx);
         cx.notify();
         Some((uid, session?))
+    }
+
+    /// Add a session of `spec` on `dir`, off screen, that resumes the
+    /// conversation `conversation`, kept in `archive`, once it is shown or
+    /// called on, its
+    /// agent then also writing `dirs`; its project as
+    /// [`Self::run_unattended`] finds or adds it. Nothing connects now.
+    pub fn add_unshown_resuming(
+        &mut self,
+        dir: PathBuf,
+        spec: AgentSpec,
+        dirs: Vec<PathBuf>,
+        archive: PathBuf,
+        conversation: String,
+        cx: &mut Context<Self>,
+    ) -> Option<u64> {
+        let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
+        self.window
+            .workspace
+            .add_run_session_on(&dir, spec, uid, StartsOn::Resume(archive))?;
+        self.chat
+            .update(cx, |pane, _| pane.hold(uid, dirs, conversation));
+        self.refresh_git(cx);
+        cx.notify();
+        Some(uid)
+    }
+
+    /// Connect session `uid` without showing it, on what it was added to
+    /// start on; nothing when it is not here or is connected already.
+    pub fn connect_unshown(&mut self, uid: u64, cx: &mut Context<Self>) {
+        let Some((root, spec)) = self.window.workspace.roots.iter().find_map(|root| {
+            let session = root.sessions.iter().find(|session| session.uid == uid)?;
+            Some((root.path.clone(), session.spec.clone()))
+        }) else {
+            return;
+        };
+        let starts = self.window.workspace.take_start(uid);
+        self.chat.update(cx, |pane, cx| {
+            pane.connect_unshown(uid, root, &spec, starts, cx)
+        });
     }
 
     /// End a run's session and drop its project, if the run added it.

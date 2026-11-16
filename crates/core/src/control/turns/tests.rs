@@ -24,6 +24,7 @@ fn after_turn_one() -> (Chat, Rx, Last) {
         turn: Some(1),
         text: Some("go".into()),
         sent: chat.prompts_sent,
+        person: false,
     };
     (chat, rx, last)
 }
@@ -71,6 +72,7 @@ fn the_same_turn_while_it_runs_is_already_sent() {
         turn: Some(1),
         text: Some("go".into()),
         sent: chat.prompts_sent,
+        person: false,
     };
     assert_eq!(send(&chat, &last, 1, "go"), Ok(Send::AlreadySent(1)));
 }
@@ -98,6 +100,7 @@ fn a_busy_worker_refuses_a_new_turn_without_queueing() {
         turn: Some(1),
         text: Some("go".into()),
         sent: chat.prompts_sent,
+        person: false,
     };
     assert!(send(&chat, &last, 2, "next").is_err());
     assert!(chat.queued.is_none());
@@ -127,6 +130,7 @@ fn a_running_turn_can_be_cancelled() {
         turn: Some(1),
         text: Some("go".into()),
         sent: chat.prompts_sent,
+        person: false,
     };
     assert_eq!(cancel(&chat, &last), Ok(1));
 }
@@ -140,6 +144,7 @@ fn a_card_waiting_refuses_the_cancel() {
         turn: Some(1),
         text: Some("go".into()),
         sent: chat.prompts_sent,
+        person: false,
     };
     let why = cancel(&chat, &last).unwrap_err();
     assert!(why.contains("card"), "{why}");
@@ -183,7 +188,70 @@ fn a_subagent_s_card_after_the_turn_refuses_the_cancel() {
         turn: Some(1),
         text: Some("go".into()),
         sent: chat.prompts_sent,
+        person: false,
     };
     let why = cancel(&chat, &last).unwrap_err();
     assert!(why.contains("card"), "{why}");
+}
+
+#[test]
+fn a_worker_held_across_a_restart_refuses_the_lead() {
+    let (chat, _rx) = connected();
+    assert_eq!(chat.prompts_sent, 0);
+    let last = Last {
+        turn: Some(1),
+        text: Some("go".into()),
+        sent: 0,
+        person: true,
+    };
+    let why = send(&chat, &last, 2, "next").unwrap_err();
+    assert!(why.contains("the person holds this worker"), "{why}");
+}
+
+/// A worker the person holds is theirs to close.
+#[test]
+fn close_refuses_a_held_worker() {
+    let (chat, _rx, mut last) = after_turn_one();
+    last.person = true;
+    let why = close(&chat, &last).unwrap_err();
+    assert!(why.contains("the person holds this worker"), "{why}");
+}
+
+#[test]
+fn close_takes_an_idle_worker() {
+    let (chat, _rx, last) = after_turn_one();
+    assert_eq!(close(&chat, &last), Ok(()));
+}
+
+#[test]
+fn close_refuses_while_a_card_waits() {
+    let (mut chat, _rx) = connected();
+    assert!(chat.submit("go", &[]));
+    card(&mut chat);
+    let last = Last {
+        turn: Some(1),
+        text: Some("go".into()),
+        sent: chat.prompts_sent,
+        person: false,
+    };
+    assert_eq!(
+        close(&chat, &last),
+        Err("a card waits on a person; only they answer it".into())
+    );
+}
+
+#[test]
+fn close_refuses_while_a_turn_runs() {
+    let (mut chat, _rx) = connected();
+    assert!(chat.submit("go", &[]));
+    let last = Last {
+        turn: Some(1),
+        text: Some("go".into()),
+        sent: chat.prompts_sent,
+        person: false,
+    };
+    assert_eq!(
+        close(&chat, &last),
+        Err("a turn is running; cancel it first".into())
+    );
 }

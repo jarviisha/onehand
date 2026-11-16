@@ -49,6 +49,7 @@ impl ChatPane {
         if let Entry::Vacant(slot) = self.conversations.entry(uid) {
             slot.insert(Conversation {
                 host,
+                dirs: self.held_dirs.remove(&uid).unwrap_or_default(),
                 ..Conversation::opening(root.clone(), spec.clone())
             });
             // **A new session connects; it does not ask.** Every session in this
@@ -103,32 +104,6 @@ impl ChatPane {
         cx.notify();
     }
 
-    /// Start `uid` on `root` and connect it, without putting it on screen.
-    ///
-    /// The other half of the lazy rule [`Self::show`] keeps. A session normally
-    /// connects the first time it is shown, so that a workspace of a dozen roots
-    /// does not launch a dozen agents at boot; an unattended run is one agent
-    /// that was asked for, and showing it would swap the conversation somebody
-    /// is reading for one they did not start. Nothing here needs a window — it
-    /// is showing, not connecting, that does.
-    pub fn open_unshown(
-        &mut self,
-        uid: u64,
-        root: PathBuf,
-        spec: &AgentSpec,
-        dirs: Vec<PathBuf>,
-        cx: &mut Context<Self>,
-    ) -> Option<Entity<ChatSession>> {
-        if let Entry::Vacant(slot) = self.conversations.entry(uid) {
-            slot.insert(Conversation {
-                dirs,
-                ..Conversation::opening(root, spec.clone())
-            });
-            self.connect(uid, None, cx);
-        }
-        self.session_of(uid).cloned()
-    }
-
     /// Put down everything that belonged to the session leaving the screen.
     ///
     /// One place, because both of these are the same rule wearing two hats:
@@ -168,6 +143,17 @@ impl ChatPane {
     pub(super) fn start(&mut self, uid: u64, resume: Option<ConvMeta>, cx: &mut Context<Self>) {
         match resume {
             Some(meta) => {
+                let open: Vec<String> = self
+                    .open_ids(cx)
+                    .into_iter()
+                    .chain(super::history::open_elsewhere(cx.entity_id(), cx))
+                    .collect();
+                if open.contains(&meta.session_id) {
+                    cx.emit(ChatPaneEvent::ResumeRefused(
+                        "This conversation is already open in a session".to_string(),
+                    ));
+                    return;
+                }
                 // Off the picker at once, so nothing else is chosen while
                 // the conversation is read; the session it held goes with it.
                 if let Some(conv) = self.conversations.get_mut(&uid) {
@@ -184,7 +170,9 @@ impl ChatPane {
     /// thread first. Only the last read asked for lands, and only on a
     /// session still opening: one closed, connected or sent back to the
     /// picker meanwhile is not taken over by it.
-    fn resume(&mut self, uid: u64, archive: PathBuf, cx: &mut Context<Self>) {
+    ///
+    /// A lead's conversation brings back the workers it still held.
+    pub(super) fn resume(&mut self, uid: u64, archive: PathBuf, cx: &mut Context<Self>) {
         self.reading.insert(uid, archive.clone());
         cx.spawn(async move |pane, cx| {
             let read = archive.clone();
@@ -203,6 +191,7 @@ impl ChatPane {
                     .is_some_and(Conversation::is_opening)
                 {
                     pane.connect(uid, stored, cx);
+                    crate::control::bring_back(uid, archive.clone(), cx);
                 }
             });
         })
@@ -215,7 +204,7 @@ impl ChatPane {
     /// shows until the agent's replay arrives -- adopting it up front is what
     /// keeps a resume (or a restart) from blanking the pane while the adapter
     /// comes up.
-    fn connect(
+    pub(super) fn connect(
         &mut self,
         uid: u64,
         stored: Option<onehand_core::chat::ConversationSnapshot>,
@@ -294,6 +283,7 @@ impl ChatPane {
                 })
             });
         }
+        crate::control::watch_conversation(uid, &session, cx);
         cx.emit(ChatPaneEvent::AgentStarted);
         // The conversation is adopted *before* the adapter's replay lands,
         // so a stale resume still shows it instead of a blank pane. Through
@@ -535,8 +525,15 @@ impl ChatPane {
     /// the way that fails is silent: forget one and a closed session keeps a
     /// dot on a rail row that no longer exists.
     pub fn close(&mut self, uid: u64, cx: &mut Context<Self>) {
+        // Read before it goes: what a lead's close keeps is written beside
+        // its conversation.
+        let conversation = self
+            .session_of(uid)
+            .and_then(|session| session.read(cx).chat().conversation_dir());
         self.conversations.remove(&uid);
-        crate::control::forget(uid, cx);
+        self.resuming.remove(&uid);
+        self.held_dirs.remove(&uid);
+        crate::control::forget(uid, conversation, cx);
         if self.active == Some(uid) {
             // What the composer still holds is dropped by the next `show`,
             // which treats an unaddressed draft as unaddressed.
