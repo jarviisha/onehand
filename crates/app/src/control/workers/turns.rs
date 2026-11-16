@@ -29,10 +29,11 @@ use std::path::PathBuf;
 type Open = (u64, Option<Entity<ChatSession>>);
 
 /// The caller's worker `session` names, while open; one not connected yet
-/// is connected now.
+/// is connected now when `connect` says so.
 fn find(
     caller: Option<(u64, PathBuf)>,
     session: &str,
+    connect: bool,
     cx: &mut App,
 ) -> Result<Option<Open>, String> {
     let (caller, _) = caller.ok_or("this tool is for a session's agent")?;
@@ -43,6 +44,7 @@ fn find(
     };
     let worker = session_of(uid, cx);
     if worker.is_none()
+        && connect
         && let Some((_, shell)) = crate::windows::holding_session(uid, cx)
     {
         shell.update(cx, |shell, cx| shell.connect_unshown(uid, cx));
@@ -69,7 +71,7 @@ pub(in crate::control) fn answer(
     session: &str,
     cx: &mut App,
 ) -> Result<String, String> {
-    let Some((uid, worker)) = find(caller, session, cx)? else {
+    let Some((uid, worker)) = find(caller, session, true, cx)? else {
         return Ok(match drive().why_closed(session) {
             Some(why) => format!("link: closed\nwhy: {why}"),
             None => "link: closed".to_string(),
@@ -91,7 +93,7 @@ pub(in crate::control) fn send(
     answer: &mut Option<Answer>,
     cx: &mut App,
 ) -> Result<String, String> {
-    let (uid, worker) = find(caller, session, cx)?.ok_or(format!("{session} is closed"))?;
+    let (uid, worker) = find(caller, session, true, cx)?.ok_or(format!("{session} is closed"))?;
     // A turn still waiting on its model goes first, or not at all.
     if let Some(waiting) = drive().turn_waiting(uid, turn, text) {
         return waiting;
@@ -177,7 +179,7 @@ pub(in crate::control) fn cancel(
     session: &str,
     cx: &mut App,
 ) -> Result<String, String> {
-    let (uid, worker) = find(caller, session, cx)?.ok_or(format!("{session} is closed"))?;
+    let (uid, worker) = find(caller, session, true, cx)?.ok_or(format!("{session} is closed"))?;
     let last = drive().last(uid).ok_or(format!("{session} is closed"))?;
     let turn = read_chat(&worker, cx, |chat| turns::cancel(chat, &last))?;
     // A chat still connecting has refused the cancel above.
@@ -195,12 +197,14 @@ pub(in crate::control) fn close(
     cx: &mut App,
 ) -> Result<String, String> {
     let closed = || Ok("closed".to_string());
-    let Some((uid, worker)) = find(caller, session, cx)? else {
+    let Some((uid, worker)) = find(caller, session, false, cx)? else {
         return closed();
     };
     let Some(last) = drive().last(uid) else {
         return closed();
     };
+    // One not connected yet runs no turn and has no card: it closes as it
+    // is, its agent never started.
     read_chat(&worker, cx, |chat| turns::close(chat, &last))?;
     let (window, _) = crate::windows::holding_session(uid, cx).ok_or("the window closed")?;
     // Not from inside whatever window update the call came through.
