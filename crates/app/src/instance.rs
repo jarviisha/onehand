@@ -276,7 +276,10 @@ mod tests {
         for name in ["open_worker", "session_state", "send_prompt", "cancel_turn"] {
             assert!(!listed.contains(&name.to_string()), "{listed:?}");
         }
-        assert_eq!(listed.len(), onehand_core::control::tool_names().len() - 4);
+        assert_eq!(
+            listed.len(),
+            onehand_core::control::tool_names().len() - onehand_core::control::session_only_count()
+        );
         let call = json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": {"name": "list_agents", "arguments": {}}});
         let reply = ask(&mut stream, call);

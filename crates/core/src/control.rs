@@ -11,6 +11,7 @@
 //! person, whoever asks; there is nothing here to call for them.
 
 pub mod calls;
+mod catalogue;
 pub mod drive;
 pub mod link;
 pub mod open;
@@ -18,6 +19,8 @@ pub mod state;
 pub mod turns;
 pub mod workers;
 
+pub use catalogue::{session_only_count, tool_names};
+use catalogue::{tool, tools, Tool};
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 
@@ -231,26 +234,28 @@ pub fn handle(conn: &mut Conn, line: &str, standing: impl Fn(&Peer) -> Standing)
                 return fail(NOT_ALLOWED, why);
             }
             let outside = matches!(peer, Peer::Outside);
+            let for_sessions = |name: &str| tool(name).is_some_and(|t| t.for_sessions_only);
             let allowed = |name: &str| match &standing {
-                _ if outside && SESSION_ONLY.contains(&name) => false,
+                _ if outside && for_sessions(name) => false,
                 Standing::On => true,
                 Standing::Only(names) => names.iter().any(|n| n == name),
                 Standing::Off | Standing::Refused(_) => false,
             };
             if method == "tools/list" {
-                let tools: Vec<Value> = catalogue()
-                    .into_iter()
-                    .filter(|tool| tool["name"].as_str().is_some_and(allowed))
+                let tools: Vec<Value> = tools()
+                    .iter()
+                    .filter(|tool| allowed(tool.name))
+                    .map(Tool::listed)
                     .collect();
                 return reply(json!({ "tools": tools }));
             }
             let name = params["name"].as_str().unwrap_or("");
-            if !TOOLS.contains(&name) {
+            if tool(name).is_none() {
                 return fail(-32602, &format!("no tool named `{name}`"));
             }
             if !allowed(name) {
                 let why = match standing {
-                    _ if outside && SESSION_ONLY.contains(&name) => {
+                    _ if outside && for_sessions(name) => {
                         format!("`{name}` is for a session's agent, about its workers")
                     }
                     Standing::Only(_) => format!("`{name}` is not among this session's tools"),
@@ -291,260 +296,6 @@ fn error(id: &Value, code: i64, message: &str) -> String {
     json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}}).to_string()
 }
 
-/// The tools, in the order they are listed.
-const TOOLS: [&str; 17] = [
-    "list_projects",
-    "list_agents",
-    "open_session",
-    "open_worker",
-    "list_workflows",
-    "read_workflow",
-    "save_workflow",
-    "start_workflow",
-    "start_issue",
-    "list_tasks",
-    "stop_task",
-    "open_file",
-    "list_issues",
-    "create_issue",
-    "session_state",
-    "send_prompt",
-    "cancel_turn",
-];
-
-/// The tools about a session's workers: an outside program owns none, so it
-/// is never offered them.
-const SESSION_ONLY: [&str; 4] = ["open_worker", "session_state", "send_prompt", "cancel_turn"];
-
-/// The tools' names, in the order they are listed: what a schedule may give
-/// its sessions.
-pub fn tool_names() -> &'static [&'static str] {
-    &TOOLS
-}
-
-/// Each tool's description and input schema, as `tools/list` gives them.
-fn catalogue() -> Vec<Value> {
-    let none = || json!({"type": "object", "properties": {}, "additionalProperties": false});
-    let text = |about: &str| json!({"type": "string", "description": about});
-    let schema = |properties: Value, required: &[&str]| {
-        json!({
-            "type": "object",
-            "properties": properties,
-            "required": required,
-            "additionalProperties": false,
-        })
-    };
-    let project = "A project of the window, by its name or its path";
-    let tools = [
-        (
-            "list_projects",
-            "The projects of the window, with their paths and whether each has a check command",
-            none(),
-        ),
-        (
-            "list_agents",
-            "The agents a session can be opened with",
-            none(),
-        ),
-        (
-            "open_session",
-            "Open a session on a project with an agent, without showing it, and send it a \
-             first prompt if one is given. It appears in the rail, the person's own, and \
-             shares the project with any session already on it. To hand a job to a worker \
-             you then follow, use open_worker",
-            schema(
-                json!({
-                    "project": text(project),
-                    "agent": text("An agent's name, as list_agents gives it"),
-                    "prompt": text("The session's first prompt"),
-                }),
-                &["project", "agent"],
-            ),
-        ),
-        (
-            "open_worker",
-            "Open a worker: a session that works a job for you on a folder of its own, shown \
-             under you rather than in the rail, which you follow with session_state and give \
-             turns with send_prompt. It answers once the worker is up, on its model, its first \
-             prompt accepted, with the handle it is named by. A folder another session is open \
-             on is refused",
-            schema(
-                json!({
-                    "project": text(
-                        "A project of the window, by its name or its path, or the top level of \
-                         a git worktree of a repository one of the window's projects belongs to"
-                    ),
-                    "agent": text("An agent's name, as list_agents gives it"),
-                    "prompt": text("The worker's first prompt"),
-                    "dirs": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Absolute folders outside the project the worker may \
-                                        also write",
-                    },
-                    "request": text(
-                        "Your id for this open: the same id again answers with the worker it \
-                         opened rather than opening another"
-                    ),
-                    "turn": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "description": "The turn number the prompt is, required with a prompt",
-                    },
-                    "model": text("The model the worker runs, by the agent's own value"),
-                    "name": text(
-                        "A short name saying what the worker works on, shown wherever it is \
-                         listed, at most 40 characters"
-                    ),
-                }),
-                &["project", "agent", "request"],
-            ),
-        ),
-        (
-            "list_workflows",
-            "The workflows in the library, by id and name",
-            none(),
-        ),
-        (
-            "read_workflow",
-            "A workflow's file, as TOML: what save_workflow takes back once changed",
-            schema(
-                json!({"workflow": text("A workflow's id, as list_workflows gives it")}),
-                &["workflow"],
-            ),
-        ),
-        (
-            "save_workflow",
-            "Save a workflow from its TOML, as read_workflow gives it. It goes over the \
-             person's own workflow with its id, else into a new one: a shipped workflow \
-             (its id starting builtin:) is never changed, only copied under a name of its \
-             own. Refused, saying why, when the TOML does not read, when the workflow has \
-             problems, or when another workflow has its name",
-            schema(
-                json!({"toml": text("The whole workflow file, as TOML")}),
-                &["toml"],
-            ),
-        ),
-        (
-            "start_workflow",
-            "Start a task of a workflow on a project, on a brief, as the Run workflow \
-             dialog does. It runs off screen and is listed on the Tasks page; it waits its \
-             turn when another task works in the same checkout",
-            schema(
-                json!({
-                    "project": text(project),
-                    "workflow": text("A workflow's id, as list_workflows gives it"),
-                    "title": text("What to do, in one line"),
-                    "brief": text("The details: what, why, and how to tell it is done"),
-                }),
-                &["project", "workflow", "title"],
-            ),
-        ),
-        (
-            "start_issue",
-            "Start a task working one of the project's own issues, the issue as its brief, \
-             with a person watching. Nothing is claimed or said on the forge",
-            schema(
-                json!({
-                    "project": text(project),
-                    "issue": {"type": "integer", "minimum": 1,
-                              "description": "The issue's number in the project's Issues tab"},
-                    "workflow": text(
-                        "A workflow's id; the one unattended runs use when left out"
-                    ),
-                }),
-                &["project", "issue"],
-            ),
-        ),
-        (
-            "list_tasks",
-            "The tasks of the window's projects, with their state and what can be done next",
-            schema(json!({"project": text(project)}), &[]),
-        ),
-        (
-            "stop_task",
-            "Stop a task, as the Tasks page's Stop does",
-            schema(
-                json!({"task": text("A task's id, as list_tasks gives it")}),
-                &["task"],
-            ),
-        ),
-        (
-            "open_file",
-            "Open a file of the project on screen in the Workbench, without taking focus",
-            schema(json!({"path": text("The file's absolute path")}), &["path"]),
-        ),
-        (
-            "list_issues",
-            "The project's own open issues, as its Issues tab keeps them. Read them before \
-             writing one, so a problem already written is not written twice",
-            schema(
-                json!({"project": text("A project of the window; this session's when left out")}),
-                &[],
-            ),
-        ),
-        (
-            "create_issue",
-            "Write one issue into the project's own issues. An open issue with the same title \
-             is not written again; its number is answered instead",
-            schema(
-                json!({
-                    "project": text("A project of the window; this session's when left out"),
-                    "title": text("What is wrong, in one line"),
-                    "body": text("Where it is (file and line), why it matters, how to see it"),
-                }),
-                &["title"],
-            ),
-        ),
-        (
-            "session_state",
-            "What a worker you opened is doing, one fact per line: its link, its turn and how \
-             the last ended, what waits on a person, its activity, who holds it, your turns sent \
-             and over, what it runs with. It never says the worker stopped: only `link: closed` \
-             does",
-            schema(
-                json!({"session": text("The worker's handle, as open_worker answered it")}),
-                &["session"],
-            ),
-        ),
-        (
-            "send_prompt",
-            "Give a worker you opened its next turn. Never queued: refused while a turn runs, \
-             while it connects or once its link is lost, and while a person holds it. Each turn \
-             number goes once: the same turn and text again answers that it was already sent, \
-             so a lost answer can be retried; the same turn with other text is refused",
-            schema(
-                json!({
-                    "session": text("The worker's handle, as open_worker answered it"),
-                    "text": text("The turn's prompt"),
-                    "turn": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "description": "Your number for this turn, above the last you sent",
-                    },
-                }),
-                &["session", "text", "turn"],
-            ),
-        ),
-        (
-            "cancel_turn",
-            "Cancel the turn a worker you opened is running, as the person's Stop does. \
-             Refused while a permission or a question waits on a person, which only they \
-             answer, and while a person holds the worker",
-            schema(
-                json!({"session": text("The worker's handle, as open_worker answered it")}),
-                &["session"],
-            ),
-        ),
-    ];
-    tools
-        .into_iter()
-        .map(|(name, description, input)| {
-            json!({"name": name, "description": description, "inputSchema": input})
-        })
-        .collect()
-}
-
 /// Read tool `name`'s `arguments` into a call, or say which argument is wrong.
 fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
     let empty = Map::new();
@@ -553,26 +304,10 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
         Value::Object(args) => args,
         _ => return Err("the arguments must be an object".to_string()),
     };
-    let known: &[&str] = match name {
-        "list_tasks" => &["project"],
-        "stop_task" => &["task"],
-        "open_file" => &["path"],
-        "list_issues" => &["project"],
-        "create_issue" => &["project", "title", "body"],
-        "open_session" => &["project", "agent", "prompt"],
-        "open_worker" => &[
-            "project", "agent", "prompt", "dirs", "request", "turn", "model", "name",
-        ],
-        "read_workflow" => &["workflow"],
-        "save_workflow" => &["toml"],
-        "start_workflow" => &["project", "workflow", "title", "brief"],
-        "start_issue" => &["project", "issue", "workflow"],
-        "session_state" => &["session"],
-        "send_prompt" => &["session", "text", "turn"],
-        "cancel_turn" => &["session"],
-        _ => &[],
+    let Some(tool) = tool(name) else {
+        return Err(format!("no tool named `{name}`"));
     };
-    if let Some(extra) = args.keys().find(|k| !known.contains(&k.as_str())) {
+    if let Some(extra) = args.keys().find(|k| !tool.takes(k)) {
         return Err(format!("`{name}` takes no argument `{extra}`"));
     }
     let optional = |key: &str| -> Result<Option<String>, String> {

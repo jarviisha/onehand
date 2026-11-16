@@ -30,7 +30,9 @@ pub fn aim(peer: &Peer, holder: Option<u64>, call: &Call) -> Result<Aim, String>
         Peer::Outside => None,
         Peer::Session(_) => Some(holder.ok_or("no such session")?),
     };
-    // Never listed to an outside program, so never called by one.
+    // Never listed to an outside program, and refused before it is read when
+    // one calls it anyway; said again here for a call that reaches the app
+    // some other way.
     if caller.is_none() && matches!(call, Call::OpenWorker { .. }) {
         return Err("`open_worker` is for a session's agent".to_string());
     }
