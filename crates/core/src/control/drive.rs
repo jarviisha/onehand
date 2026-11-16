@@ -29,7 +29,7 @@
 //! it when the open added it; its folder, its place under the cap and its
 //! request id are freed.
 
-use super::kept::Kept;
+use super::kept::{Kept, KeptWorker};
 use super::workers::{Asked, Relation, Requests, Reservations, Resolved, Target, Worker};
 use super::{Peer, Standing};
 use crate::chat::drive::Intake;
@@ -62,6 +62,8 @@ pub struct Open {
     pub turn: Option<u64>,
     pub model: Option<String>,
     pub name: Option<String>,
+    /// A worker coming back with its lead's conversation, as it was kept.
+    pub back: Option<KeptWorker>,
 }
 
 impl Open {
@@ -169,6 +171,9 @@ pub enum Effect {
         dirs: Vec<PathBuf>,
         folder: String,
         name: Option<String>,
+        /// A worker coming back: its session goes on this conversation, by
+        /// its session id, and connects only once shown or called on.
+        resume: Option<String>,
     },
     /// Report [`Input::Woke`] for `uid` whenever its session changes, and
     /// once now. A late report, for a worker no open nor turn holds any more, is
@@ -382,7 +387,7 @@ impl ControlDrive {
         if changed {
             fx.push(Effect::ToolsChanged(uid));
             if !on && !self.only_has(uid, "open_worker") {
-                fx.extend(self.abandon_of(uid));
+                fx.extend(self.abandon_of(uid, false));
             }
         }
         fx
@@ -414,7 +419,7 @@ impl ControlDrive {
     /// Session `uid` closed: its switch and what its tools opened go with it,
     /// its opens are abandoned, and an open whose session it was fails.
     pub fn forget(&mut self, uid: u64) -> Vec<Effect> {
-        let mut fx = self.abandon_of(uid);
+        let mut fx = self.abandon_of(uid, true);
         fx.extend(self.turn_forgotten(uid));
         if let Some(key) = self.key_of(uid) {
             fx.extend(self.fail(&key, "the session was closed before it was ready".into()));

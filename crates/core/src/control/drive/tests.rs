@@ -1,6 +1,6 @@
 use super::*;
 use crate::chat::model::Link;
-use crate::control::kept::KeptClosed;
+use crate::control::kept::{KeptClosed, KeptWorker};
 use crate::worktree::occupants::Occupants;
 
 fn asked(prompt: &str) -> Open {
@@ -14,6 +14,7 @@ fn asked(prompt: &str) -> Open {
         turn: Some(1),
         model: None,
         name: None,
+        back: None,
     }
 }
 
@@ -702,4 +703,194 @@ fn a_model_pick_that_never_answers_runs_out() {
         ]
     );
     assert!(drive.handle(Input::Elapsed { token }).is_empty());
+}
+
+/// What lead 1 kept of one worker on `/repo`, held by the person when
+/// `person` says so.
+fn kept_one(person: bool) -> Kept {
+    Kept {
+        workers: vec![KeptWorker {
+            handle: "w-00000000000000000000000000000001".into(),
+            conversation: "c7".into(),
+            agent: "agent".into(),
+            folder: PathBuf::from("/repo"),
+            dirs: vec![PathBuf::from("/x")],
+            name: Some("fix".into()),
+            turn: Some(3),
+            text: Some("go on".into()),
+            person,
+        }],
+        closed: vec![KeptClosed {
+            handle: "w-00000000000000000000000000000002".into(),
+            why: None,
+        }],
+    }
+}
+
+const BACK: &str = "w-00000000000000000000000000000001";
+
+/// Lead 1, its conversation opened again keeping `kept`: the key its one
+/// worker comes back by.
+fn coming_back(drive: &mut ControlDrive, kept: Kept) -> Key {
+    let begun = drive.back(1, kept, &projects());
+    assert_eq!(begun.len(), 1);
+    match begun.into_iter().next() {
+        Some(Begun::Resolve { key, target, fx }) => {
+            assert!(fx.is_empty(), "{fx:?}");
+            assert!(matches!(target, Target::Project(dir) if dir == std::path::Path::new("/repo")));
+            key
+        }
+        Some(Begun::Said(said)) => panic!("said: {said}"),
+        None => panic!("nothing comes back"),
+    }
+}
+
+/// Worker 9 came back for lead 1 from `kept`.
+fn came_back(drive: &mut ControlDrive, kept: Kept) -> Vec<Effect> {
+    let key = coming_back(drive, kept);
+    let fx = drive.handle(Input::Resolved {
+        key: key.clone(),
+        resolved: Ok(resolved()),
+        world: world(),
+    });
+    let resume = fx.iter().find_map(|effect| match effect {
+        Effect::Start { resume, dirs, .. } => Some((resume.clone(), dirs.clone())),
+        Effect::ToolsChanged(_)
+        | Effect::Watch(_)
+        | Effect::Unwatch(_)
+        | Effect::Pick { .. }
+        | Effect::Begin { .. }
+        | Effect::Arm { .. }
+        | Effect::Drop { .. }
+        | Effect::Answer { .. }
+        | Effect::Changed
+        | Effect::Keep { .. }
+        | Effect::Send { .. }
+        | Effect::TurnAnswer { .. } => None,
+    });
+    assert_eq!(
+        resume,
+        Some((Some("c7".to_string()), vec![PathBuf::from("/x")]))
+    );
+    drive.handle(Input::Started {
+        key,
+        started: Ok(9),
+    })
+}
+
+#[test]
+fn a_kept_worker_comes_back_under_its_lead() {
+    // A new run: the lead's tools are off until the person switches them on.
+    let mut drive = ControlDrive::default();
+    let fx = came_back(&mut drive, kept_one(false));
+    assert_eq!(shown(&fx), ["Changed"], "no pick, prompt or answer");
+    assert_eq!(drive.lead_of(9), Some(1));
+    assert_eq!(drive.uid_of(BACK), Some(9));
+    let last = drive.last(9).unwrap();
+    assert_eq!((last.turn, last.text.as_deref()), (Some(3), Some("go on")));
+    assert_eq!(drive.held(9).unwrap().dirs, [PathBuf::from("/x")]);
+    // It counts under its lead and holds its folder again.
+    assert_eq!(drive.opened_by(1), [9]);
+    let (key, _) = resolves(drive.open_worker(asked("go"), &projects(), None));
+    drive.switch(1, true);
+    let live = World {
+        live: vec![1, 9],
+        ..world()
+    };
+    let fx = drive.handle(Input::Resolved {
+        key,
+        resolved: Ok(resolved()),
+        world: live,
+    });
+    assert!(answer(&fx).is_some_and(|o| o.as_ref().unwrap_err().contains("already has a worker")));
+}
+
+#[test]
+fn a_kept_worker_whose_folder_is_gone_is_closed_with_why() {
+    let mut drive = ControlDrive::default();
+    let key = coming_back(&mut drive, kept_one(false));
+    let why = "/repo: No such file or directory (os error 2)".to_string();
+    let fx = drive.handle(Input::Resolved {
+        key,
+        resolved: Err(why.clone()),
+        world: world(),
+    });
+    assert_eq!(shown(&fx), ["Keep 1 0 2"]);
+    let kept = kept(&fx, 1).unwrap();
+    assert!(kept.closed.contains(&KeptClosed {
+        handle: BACK.into(),
+        why: Some(why.clone()),
+    }));
+    assert!(matches!(drive.find(1, BACK, |_| false), Ok(Found::Closed)));
+    assert_eq!(drive.why_closed(BACK), Some(why));
+}
+
+#[test]
+fn a_kept_worker_on_a_held_folder_does_not_come_back() {
+    let mut drive = ControlDrive::default();
+    let key = coming_back(&mut drive, kept_one(false));
+    // Its conversation is open as an ordinary session on that folder.
+    let busy = World {
+        counts: vec![(PathBuf::from("/repo"), 1)],
+        ..world()
+    };
+    let fx = drive.handle(Input::Resolved {
+        key,
+        resolved: Ok(resolved()),
+        world: busy,
+    });
+    assert_eq!(shown(&fx), ["Keep 1 0 2"]);
+    assert!(drive
+        .why_closed(BACK)
+        .is_some_and(|why| why.contains("already has a session")));
+    assert_eq!(drive.uid_of(BACK), None);
+}
+
+#[test]
+fn a_kept_worker_whose_lead_went_does_not_come_back() {
+    let mut drive = ControlDrive::default();
+    let key = coming_back(&mut drive, kept_one(false));
+    let gone = World {
+        lead_here: false,
+        ..world()
+    };
+    let fx = drive.handle(Input::Resolved {
+        key,
+        resolved: Ok(resolved()),
+        world: gone,
+    });
+    assert_eq!(shown(&fx), ["Keep 1 0 2"]);
+}
+
+#[test]
+fn a_held_kept_worker_comes_back_held() {
+    let mut drive = ControlDrive::default();
+    came_back(&mut drive, kept_one(true));
+    let last = drive.last(9).unwrap();
+    assert!(last.person);
+    assert_eq!(last.sent, 0);
+    assert!(drive.held(9).unwrap().person);
+}
+
+#[test]
+fn a_returned_worker_prompted_by_the_person_is_held() {
+    let mut drive = ControlDrive::default();
+    came_back(&mut drive, kept_one(false));
+    assert!(!drive.last(9).unwrap().person);
+    let fx = said_conversation(&mut drive, 9, "c7", 1);
+    assert!(kept(&fx, 1).unwrap().workers[0].person);
+    assert!(drive.last(9).unwrap().person);
+}
+
+#[test]
+fn closed_records_read_closed_after_back() {
+    let mut drive = ControlDrive::default();
+    let _ = drive.back(1, kept_one(false), &projects());
+    let closed = "w-00000000000000000000000000000002";
+    assert!(matches!(
+        drive.find(1, closed, |_| false),
+        Ok(Found::Closed)
+    ));
+    assert_eq!(drive.why_closed(closed), None);
+    assert!(drive.find(2, closed, |_| false).is_err());
 }

@@ -30,7 +30,8 @@ struct Opens {
 struct Asked {
     window: AnyWindowHandle,
     shell: WeakEntity<Shell>,
-    spec: AgentSpec,
+    /// The agent it starts, or why there is none.
+    spec: Result<AgentSpec, String>,
     answer: Option<Answer>,
 }
 
@@ -94,28 +95,100 @@ pub(super) fn open(
     let spec = agent_named(&open.agent, cx)?;
     let mode = crate::unattended::worker_mode(&spec.name, cx);
     let dirs = open.dirs.clone();
-    let lead = open.lead;
     let begun = drive().open_worker(open, projects, mode)?;
     let (key, target, fx) = match begun {
         Begun::Said(said) => return Ok(said),
         Begun::Resolve { key, target, fx } => (key, target, fx),
     };
+    let asked = Asked {
+        window,
+        shell: shell.downgrade(),
+        spec: Ok(spec),
+        answer: answer.take(),
+    };
+    resolve(key, target, fx, &dirs, asked, projects, cx);
+    Ok(String::new())
+}
+
+/// Lead `lead`'s conversation, kept in `archive`, was opened again: the
+/// workers it still held come back, read off the UI thread first.
+pub(crate) fn bring_back(lead: u64, archive: PathBuf, cx: &mut App) {
+    cx.spawn(async move |cx| {
+        let kept = cx
+            .background_executor()
+            .spawn(async move { onehand_core::control::kept::read_blocking(&archive) })
+            .await;
+        if kept == onehand_core::control::kept::Kept::default() {
+            return;
+        }
+        cx.update(|cx| {
+            let Some((window, shell)) = crate::windows::holding_session(lead, cx) else {
+                return;
+            };
+            let projects: Vec<(String, PathBuf)> = shell
+                .read(cx)
+                .remote_roots()
+                .into_iter()
+                .map(|(path, name)| (name, path))
+                .collect();
+            let agents: HashMap<String, String> = kept
+                .workers
+                .iter()
+                .map(|worker| (worker.handle.clone(), worker.agent.clone()))
+                .collect();
+            let begun = drive().back(lead, kept, &projects);
+            for begun in begun {
+                let (key, target, fx) = match begun {
+                    Begun::Resolve { key, target, fx } => (key, target, fx),
+                    // Nobody asked: nothing is answered.
+                    Begun::Said(_) => continue,
+                };
+                let agent = agents.get(&key.1).cloned().unwrap_or_default();
+                let spec = agent_named(&agent, cx)
+                    .map_err(|_| format!("its agent {agent} is no longer in the agent list"));
+                let asked = Asked {
+                    window,
+                    shell: shell.downgrade(),
+                    spec,
+                    answer: None,
+                };
+                resolve(key, target, fx, &[], asked, &projects, cx);
+            }
+        });
+    })
+    .detach();
+}
+
+/// Read open `key`'s folder off the UI thread, as `asked`, the further
+/// folders being `dirs` and the window's projects `projects`, and carry
+/// `fx` now.
+fn resolve(
+    key: Key,
+    target: onehand_core::control::workers::Target,
+    fx: Vec<Effect>,
+    dirs: &[PathBuf],
+    asked: Asked,
+    projects: &[(String, PathBuf)],
+    cx: &mut App,
+) {
+    let lead = key.0;
+    let dirs = dirs.to_vec();
     let skip: Vec<u32> = std::iter::once(std::process::id())
-        .chain(shell.read(cx).shell_pids(cx))
+        .chain(
+            asked
+                .shell
+                .upgrade()
+                .map(|shell| shell.read(cx).shell_pids(cx))
+                .unwrap_or_default(),
+        )
         .collect();
     let roots: Vec<PathBuf> = projects.iter().map(|(_, path)| path.clone()).collect();
     // Every window's projects, to find a session on the folder or inside it.
     let everywhere: Vec<PathBuf> = counts(cx).into_iter().map(|(path, _)| path).collect();
     let home = std::env::var_os("HOME").map(PathBuf::from);
-    cx.default_global::<Opens>().asked.insert(
-        key.clone(),
-        Asked {
-            window,
-            shell: shell.downgrade(),
-            spec,
-            answer: answer.take(),
-        },
-    );
+    cx.default_global::<Opens>()
+        .asked
+        .insert(key.clone(), asked);
     carry(fx, cx);
     cx.spawn(async move |cx| {
         let resolved = cx
@@ -140,7 +213,6 @@ pub(super) fn open(
         });
     })
     .detach();
-    Ok(String::new())
 }
 
 /// Carry one of the drive's effects.
@@ -150,11 +222,21 @@ pub(super) fn carry_one(effect: Effect, cx: &mut App) {
             key,
             root,
             dirs,
+            folder: _,
+            name: _,
+            resume: Some(conversation),
+        } => come_back(key, root, dirs, conversation, cx),
+        Effect::Start {
+            key,
+            root,
+            dirs,
             folder,
             name,
+            resume: None,
         } => {
             let started = asked_of(&key, cx)
                 .ok_or_else(|| "the window closed".to_string())
+                .and_then(|(shell, spec)| Ok((shell, spec?)))
                 .and_then(|(shell, spec)| {
                     shell
                         .update(cx, |shell, cx| shell.run_unattended(root, spec, dirs, cx))
@@ -290,8 +372,44 @@ fn begin(uid: u64, session: &Entity<ChatSession>, prompt: Option<String>, cx: &m
     }
 }
 
-/// Where open `key` was asked, and the agent it starts.
-fn asked_of(key: &Key, cx: &mut App) -> Option<(Entity<Shell>, AgentSpec)> {
+/// Start worker `key`, coming back, on `root` with `dirs`, on the
+/// conversation `conversation` names, found off the UI thread; its agent
+/// connects once it is shown or called on.
+fn come_back(key: Key, root: PathBuf, dirs: Vec<PathBuf>, conversation: String, cx: &mut App) {
+    cx.spawn(async move |cx| {
+        let found = cx
+            .background_executor()
+            .spawn(async move {
+                onehand_core::chat::find_conversation(
+                    &onehand_core::chat::conversations_dir(),
+                    &conversation,
+                )
+            })
+            .await;
+        cx.update(|cx| {
+            let started = found
+                .ok_or_else(|| "its conversation is gone".to_string())
+                .and_then(|(_, meta)| {
+                    let (shell, spec) =
+                        asked_of(&key, cx).ok_or_else(|| "the window closed".to_string())?;
+                    let spec = spec?;
+                    shell
+                        .update(cx, |shell, cx| {
+                            shell.add_unshown_resuming(root, spec, dirs, meta.dir, cx)
+                        })
+                        .ok_or_else(|| "the session did not start".to_string())
+                });
+            // No call waits on a worker coming back: what was asked goes now.
+            cx.default_global::<Opens>().asked.remove(&key);
+            let fx = drive().handle(Input::Started { key, started });
+            carry(fx, cx);
+        });
+    })
+    .detach();
+}
+
+/// Where open `key` was asked, and the agent it starts or why none.
+fn asked_of(key: &Key, cx: &mut App) -> Option<(Entity<Shell>, Result<AgentSpec, String>)> {
     let asked = cx.default_global::<Opens>().asked.get(key)?;
     Some((asked.shell.upgrade()?, asked.spec.clone()))
 }

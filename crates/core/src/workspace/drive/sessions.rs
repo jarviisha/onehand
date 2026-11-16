@@ -197,6 +197,20 @@ impl WorkspaceDrive {
         }
     }
 
+    /// [`Self::add_run_session`], the session starting on `starts` once it
+    /// is shown or connected.
+    pub fn add_run_session_on(
+        &mut self,
+        dir: &Path,
+        spec: AgentSpec,
+        uid: u64,
+        starts: StartsOn,
+    ) -> Option<usize> {
+        let idx = self.add_run_session(dir, spec, uid)?;
+        self.starts.insert(uid, starts);
+        Some(idx)
+    }
+
     /// Close session `uid`, no question asked, and show what is left. A
     /// project only a worker or a run was on, left empty, goes with it. When
     /// the session was on screen and `lead` (its lead, for a worker) is in

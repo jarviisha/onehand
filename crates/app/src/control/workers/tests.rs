@@ -215,6 +215,7 @@ fn an_open_whose_window_closed_before_its_start_says_so(cx: &mut TestAppContext)
             turn: Some(1),
             model: None,
             name: None,
+            back: None,
         };
         let begun = super::open(
             open,

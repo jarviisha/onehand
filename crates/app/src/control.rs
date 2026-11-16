@@ -26,6 +26,7 @@ mod workers;
 pub(crate) use keeping::watch as watch_conversation;
 pub(crate) use start::start_task;
 use start::{start, template};
+pub(crate) use workers::bring_back;
 pub(crate) use workers::whose::{Worker, give_back, give_back_offered, lead_of, workers_of};
 
 /// The tools' drive, held for the whole process: an agent's token is minted
@@ -532,6 +533,7 @@ fn perform_now(
                     turn,
                     model,
                     name,
+                    back: None,
                 },
                 handle,
                 shell,

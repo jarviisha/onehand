@@ -19,8 +19,9 @@ use super::super::kept::{Kept, KeptClosed, KeptWorker};
 use super::super::open::{parse_handle, Handle};
 use super::super::state::Held;
 use super::super::turns::Last;
+use super::super::workers::Target;
 use super::super::workers::{offered, whose, Whose};
-use super::{this_run, Closed, ControlDrive, Effect, Found, Worker};
+use super::{this_run, Begun, Closed, ControlDrive, Effect, Found, Open, Pending, Phase, Worker};
 use crate::chat::drive::Intake;
 use std::path::PathBuf;
 
@@ -127,6 +128,12 @@ impl ControlDrive {
             Whose::Closed => Ok(Found::Closed),
             Whose::NotYours => Err(format!("{} is not a worker you opened", handle.trim())),
         }
+    }
+
+    /// Why the worker `handle` names did not come back, when that is what
+    /// ended it.
+    pub fn why_closed(&self, handle: &str) -> Option<String> {
+        self.closed_workers.get(handle.trim())?.why.clone()
     }
 
     /// What the lead last sent worker `uid`, for `turns`' rules.
@@ -270,19 +277,53 @@ impl ControlDrive {
 
     /// Lead `lead`'s conversation was opened again, keeping `kept`, the
     /// window's projects being `projects`: the handles of the workers that
-    /// ended read closed to it from now on.
-    pub fn back(
-        &mut self,
-        lead: u64,
-        kept: Kept,
-        projects: &[(String, PathBuf)],
-    ) -> Vec<super::Begun> {
-        let _ = projects;
+    /// ended read closed to it from now on, and each worker it still held
+    /// comes back, in the order kept, through the checks an open runs. One
+    /// that cannot ends, its handle reading closed with why.
+    pub fn back(&mut self, lead: u64, kept: Kept, projects: &[(String, PathBuf)]) -> Vec<Begun> {
         for closed in kept.closed {
             let why = closed.why;
             self.closed_workers
                 .insert(closed.handle, Closed { lead, why });
         }
-        Vec::new()
+        kept.workers
+            .into_iter()
+            .map(|back| {
+                let named = back.folder.display().to_string();
+                let target = match super::super::pick_project(projects, &named) {
+                    Ok(dir) => Target::Project(dir.to_path_buf()),
+                    Err(_) => Target::Worktree(back.folder.clone()),
+                };
+                self.minted += 1;
+                let token = self.minted;
+                let key = (lead, back.handle.clone());
+                let open = Open {
+                    lead,
+                    project: named,
+                    agent: back.agent.clone(),
+                    prompt: None,
+                    // Checked again as kept; what it may write is not
+                    // read again.
+                    dirs: Vec::new(),
+                    request: back.handle.clone(),
+                    turn: None,
+                    model: None,
+                    name: back.name.clone(),
+                    back: Some(back),
+                };
+                let pending = Pending {
+                    open,
+                    mode: None,
+                    phase: Phase::Resolving,
+                    token,
+                };
+                self.pending.insert(key.clone(), pending);
+                Begun::Resolve {
+                    key,
+                    target,
+                    fx: Vec::new(),
+                }
+            })
+            .collect()
     }
 }

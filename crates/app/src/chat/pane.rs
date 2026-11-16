@@ -41,6 +41,7 @@ mod sessions;
 mod step_strip;
 mod titles;
 mod turns;
+mod unshown;
 mod worker_band;
 pub use events::{ChatPaneEvent, ProjectAction, Restart, SessionSignal};
 use header::Archives;
@@ -264,6 +265,9 @@ pub struct ChatPane {
     /// The archive each session is reading to resume on, the last one asked
     /// for: a read that lands after another was asked for is not the choice.
     reading: HashMap<u64, std::path::PathBuf>,
+    /// The folders each session added off screen and not connected yet may
+    /// write besides its own, taken when it connects.
+    held_dirs: HashMap<u64, Vec<std::path::PathBuf>>,
     /// Whether the window's rail is hidden, so this pane can offer the way
     /// back.
     ///
@@ -399,6 +403,7 @@ impl ChatPane {
                 archives: None,
                 pending_fork: None,
                 reading: HashMap::new(),
+                held_dirs: HashMap::new(),
                 rail_hidden: false,
                 background_menu: std::cell::Cell::new(None),
                 docks_open: DocksOpen::default(),

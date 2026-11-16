@@ -2,10 +2,13 @@
 //! the world reports at each step and what the open does next. See the
 //! drive's header for the steps and what a failure leaves behind.
 
+use super::super::kept::KeptWorker;
 use super::super::open::{self, Step};
 use super::super::state as said;
 use super::super::workers::{sessions_in, Relation, Resolved, Seen, Target};
-use super::{Begun, ControlDrive, Effect, Facts, Key, Open, Pending, Phase, World, OPEN_DEADLINE};
+use super::{
+    Begun, Closed, ControlDrive, Effect, Facts, Key, Open, Pending, Phase, World, OPEN_DEADLINE,
+};
 use crate::chat::drive::Intake;
 use crate::chat::Chat;
 use crate::worktree::occupants::Occupants;
@@ -90,8 +93,14 @@ impl ControlDrive {
             Err(why) => return self.fail(key, why),
         };
         // The lead may have gone while the folder was read: nothing is
-        // started for nobody, nor counted under a cap it no longer has.
-        if !self.lead_allowed(lead, world.lead_here) {
+        // started for nobody, nor counted under a cap it no longer has. A
+        // worker coming back needs only its lead open: the lead's tools are
+        // off in every new run until the person switches them on.
+        let allowed = match pending.open.back {
+            Some(_) => world.lead_here,
+            None => self.lead_allowed(lead, world.lead_here),
+        };
+        if !allowed {
             return self.fail(key, "the lead went before its worker was ready".into());
         }
         let roots: Vec<(PathBuf, PathBuf, usize)> = resolved
@@ -150,18 +159,25 @@ impl ControlDrive {
         let added = resolved.same.is_empty();
         let pending = self.pending.get_mut(key).expect("looked up above");
         let name = pending.open.name.clone();
+        // A worker coming back keeps the folders it had; its own was read
+        // again only to be checked.
+        let (dirs, resume) = match &pending.open.back {
+            Some(back) => (back.dirs.clone(), Some(back.conversation.clone())),
+            None => (resolved.dirs, None),
+        };
         pending.phase = Phase::Starting {
             folder: resolved.folder,
             added,
             root: resolved.root.clone(),
-            dirs: resolved.dirs.clone(),
+            dirs: dirs.clone(),
         };
         vec![Effect::Start {
             key: key.clone(),
             root: resolved.root,
-            dirs: resolved.dirs,
+            dirs,
             folder,
             name,
+            resume,
         }]
     }
 
@@ -189,6 +205,7 @@ impl ControlDrive {
             return Vec::new();
         };
         let lead = pending.open.lead;
+        let back = pending.open.back.clone();
         let uid = match started {
             Ok(uid) => uid,
             Err(why) => {
@@ -198,6 +215,9 @@ impl ControlDrive {
         };
         self.reserved.bind(&folder, uid);
         self.opened_one(lead, uid);
+        if let Some(back) = back {
+            return self.came_back(key, uid, back, root, dirs);
+        }
         self.requests.started(lead, &key.1, uid);
         let handle = open::mint_handle();
         self.handles.insert(handle.clone(), uid);
@@ -356,13 +376,14 @@ impl ControlDrive {
             })
     }
 
-    /// Fail every open `lead` has in flight: it went.
-    pub(super) fn abandon_of(&mut self, lead: u64) -> Vec<Effect> {
+    /// Fail every open `lead` has in flight: it went, or only its tools did
+    /// (`closed` false), which leaves its workers coming back alone.
+    pub(super) fn abandon_of(&mut self, lead: u64, closed: bool) -> Vec<Effect> {
         let keys: Vec<Key> = self
             .pending
-            .keys()
-            .filter(|(of, _)| *of == lead)
-            .cloned()
+            .iter()
+            .filter(|((of, _), pending)| *of == lead && (closed || pending.open.back.is_none()))
+            .map(|(key, _)| key.clone())
             .collect();
         keys.iter()
             .flat_map(|key| self.fail(key, "the lead went before its worker was ready".into()))
@@ -370,13 +391,25 @@ impl ControlDrive {
     }
 
     /// Fail open `key` with `why`: close what it started, free its request,
-    /// and answer.
+    /// and answer. A worker coming back is answered to nobody: it ends, its
+    /// handle reading closed with `why`.
     pub(super) fn fail(&mut self, key: &Key, why: String) -> Vec<Effect> {
         let Some(pending) = self.pending.remove(key) else {
             return Vec::new();
         };
         self.requests.failed(key.0, &key.1);
         let mut fx = Vec::new();
+        if let Some(back) = &pending.open.back {
+            if let Phase::Starting { folder, .. } = &pending.phase {
+                self.reserved.release(folder);
+            }
+            let lead = pending.open.lead;
+            let why = Some(why);
+            self.closed_workers
+                .insert(back.handle.clone(), Closed { lead, why });
+            fx.push(self.keep(lead));
+            return fx;
+        }
         match pending.phase {
             Phase::Up {
                 uid,
@@ -403,5 +436,42 @@ impl ControlDrive {
             outcome: Err(why),
         });
         fx
+    }
+
+    /// Worker `back` came back as session `uid`, its lead's again: its
+    /// relation as it was kept, its handle naming its new session. Nothing is
+    /// picked or sent, and no call waits on it.
+    fn came_back(
+        &mut self,
+        key: &Key,
+        uid: u64,
+        back: KeptWorker,
+        root: PathBuf,
+        dirs: Vec<PathBuf>,
+    ) -> Vec<Effect> {
+        let Some(pending) = self.pending.remove(key) else {
+            return Vec::new();
+        };
+        self.handles.insert(back.handle.clone(), uid);
+        self.conversations.insert(uid, back.conversation.clone());
+        self.workers.insert(
+            uid,
+            Relation {
+                lead: pending.open.lead,
+                turn: back.turn,
+                text: back.text,
+                // Its chat counts its prompts from nothing again.
+                sent: 0,
+                dirs,
+                handle: back.handle,
+                folder: root,
+                agent: back.agent,
+                name: back.name,
+                conversation: Some(back.conversation),
+                person: back.person,
+                seq: pending.token,
+            },
+        );
+        vec![Effect::Changed]
     }
 }
