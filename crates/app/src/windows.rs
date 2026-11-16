@@ -89,8 +89,8 @@ pub(crate) fn window_for(dir: &Path, cx: &App) -> Option<AnyWindowHandle> {
 }
 
 /// Every window whose shell is still alive, with it, in the order they were
-/// opened. Never call from inside a shell's own update and then read that
-/// shell: use [`others`].
+/// opened. Reads no shell, so it is safe anywhere; a caller inside a shell's
+/// own update that goes on to read the shells uses [`others`].
 pub(crate) fn live(cx: &App) -> Vec<(AnyWindowHandle, Entity<Shell>)> {
     all(cx)
         .iter()
@@ -108,7 +108,8 @@ pub(crate) fn others(me: EntityId, cx: &App) -> Vec<(AnyWindowHandle, Entity<She
         .collect()
 }
 
-/// Session `uid`, in whichever window holds it.
+/// Session `uid`, in whichever window holds it. Reads every shell: never
+/// from inside one's own update, as the two below.
 pub(crate) fn session(uid: u64, cx: &App) -> Option<Entity<ChatSession>> {
     live(cx)
         .into_iter()
