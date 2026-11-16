@@ -1070,3 +1070,41 @@ fn a_worker_coming_back_counts_under_its_leads_cap() {
         "{why}"
     );
 }
+
+#[test]
+fn a_late_start_of_a_coming_back_that_failed_drops_its_project() {
+    let mut drive = ControlDrive::default();
+    let key = coming_back(&mut drive, kept_one(false));
+    // A worktree no project of the window holds: its project is added.
+    let added = Resolved {
+        same: Vec::new(),
+        ..resolved()
+    };
+    drive.handle(Input::Resolved {
+        key: key.clone(),
+        resolved: Ok(added),
+        world: world(),
+    });
+    let _ = drive.forget(1);
+    let fx = drive.handle(Input::Started {
+        key,
+        started: Ok(9),
+    });
+    assert_eq!(shown(&fx), ["Drop 9 true"]);
+    let root = fx.iter().find_map(|effect| match effect {
+        Effect::Drop { root, .. } => Some(root.clone()),
+        Effect::ToolsChanged(_)
+        | Effect::Start { .. }
+        | Effect::Watch(_)
+        | Effect::Unwatch(_)
+        | Effect::Pick { .. }
+        | Effect::Begin { .. }
+        | Effect::Arm { .. }
+        | Effect::Answer { .. }
+        | Effect::Changed
+        | Effect::Keep { .. }
+        | Effect::Send { .. }
+        | Effect::TurnAnswer { .. } => None,
+    });
+    assert_eq!(root, Some(PathBuf::from("/repo")));
+}

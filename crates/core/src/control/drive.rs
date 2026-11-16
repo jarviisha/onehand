@@ -300,6 +300,9 @@ pub struct ControlDrive {
     /// The conversation each session was last said to be on.
     conversations: HashMap<u64, String>,
     pending: HashMap<Key, Pending>,
+    /// Where each open that failed while its session was starting would
+    /// have started it, and whether it added that project.
+    abandoned: HashMap<Key, (PathBuf, bool)>,
     /// Each worker's turn waiting on its model's pick.
     turning: HashMap<u64, turning::Turning>,
     minted: u64,

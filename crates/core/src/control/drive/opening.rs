@@ -184,13 +184,15 @@ impl ControlDrive {
     /// Open `key`'s session started as `uid`, or why not.
     pub(super) fn started(&mut self, key: &Key, started: Result<u64, String>) -> Vec<Effect> {
         let Some(pending) = self.pending.get_mut(key) else {
-            // Failed while it started: what it started goes.
+            // Failed while it started: what it started goes, its project
+            // with it when the open added it.
+            let (root, added) = self.abandoned.remove(key).unwrap_or_default();
             return match started {
                 Ok(uid) => vec![Effect::Drop {
                     key: key.clone(),
                     uid,
-                    root: PathBuf::new(),
-                    added: false,
+                    root,
+                    added,
                 }],
                 Err(_) => Vec::new(),
             };
@@ -399,6 +401,11 @@ impl ControlDrive {
         };
         self.requests.failed(key.0, &key.1);
         let mut fx = Vec::new();
+        // Its session may still be starting: what it started and where is
+        // read when its start lands.
+        if let Phase::Starting { root, added, .. } = &pending.phase {
+            self.abandoned.insert(key.clone(), (root.clone(), *added));
+        }
         if let Some(back) = &pending.open.back {
             if let Phase::Starting { folder, .. } = &pending.phase {
                 self.reserved.release(folder);
