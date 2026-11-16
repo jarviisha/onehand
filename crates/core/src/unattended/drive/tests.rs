@@ -719,3 +719,64 @@ fn a_check_waits_until_it_answers_and_prunes_what_is_switched_off() {
     assert_eq!(rig.u.problem(&on), Some("not a git repository"));
     assert_eq!(rig.u.checked_at(), Some(0));
 }
+
+/// An issue's task that could not start goes through the link whole: its
+/// report is in the task the tasks write, and the report is sent to its
+/// issue, which a front end carries after the tasks' write.
+#[test]
+fn an_issue_task_that_cannot_start_is_written_with_its_report_then_sent() {
+    let mut rig = Rig::new(config(1, None));
+    rig.tasks.add(issue_task(
+        "a",
+        1,
+        Path::new("/kept/issues.json"),
+        Path::new("/w/a"),
+    ));
+    let mut joined = Joined::new(&mut rig.tasks, [], Some(&mut rig.u));
+    joined.request("a", WINDOW);
+    joined.tasks(|t| {
+        let fx = t.handle(TasksInput::PlaceFound {
+            task: "a".into(),
+            place: "/w/a".into(),
+            window: WINDOW,
+            window_open: true,
+        });
+        ((), fx)
+    });
+    let ((), out) = joined.tasks(|t| {
+        let fx = t.not_started(
+            "a",
+            "no agent".into(),
+            crate::workflow::Failure::Other,
+            crate::Now::read(),
+        );
+        ((), fx)
+    });
+    let saved = out.tasks.iter().any(|e| match e {
+        tasks::Effect::Save(task) => task.issue().is_some_and(|issue| issue.unsent.len() == 1),
+        tasks::Effect::SaveDismissed(_)
+        | tasks::Effect::Remove(_)
+        | tasks::Effect::DropMarks { .. }
+        | tasks::Effect::FindPlace { .. }
+        | tasks::Effect::Drive { .. }
+        | tasks::Effect::WatchDrain { .. }
+        | tasks::Effect::Pin { .. }
+        | tasks::Effect::Cut(_)
+        | tasks::Effect::Keep(_)
+        | tasks::Effect::Defer(_)
+        | tasks::Effect::Told { .. }
+        | tasks::Effect::JudgeRemoval(_)
+        | tasks::Effect::ReadReview { .. }
+        | tasks::Effect::ConfirmAnswer { .. }
+        | tasks::Effect::ConfirmRemoval { .. }
+        | tasks::Effect::RemoveWorktree { .. }
+        | tasks::Effect::CloseSession { .. }
+        | tasks::Effect::Signal(_)
+        | tasks::Effect::Refresh => false,
+    });
+    assert!(saved, "the report is written with its task");
+    assert!(
+        out.unattended.iter().any(|e| name(e) == "Send"),
+        "and sent to its issue"
+    );
+}

@@ -23,14 +23,14 @@
 //!   stops every run, search them ([`Effect::Look`]). What the search found
 //!   is checked again against the tasks as they are when it lands, then
 //!   claimed ([`Effect::Claim`]); the claim kept as a task asks for its place
-//!   ([`Effect::Submit`]), and the tick looks again at once for the next slot.
+//!   ([`Linked::Submit`]), and the tick looks again at once for the next slot.
 //! - **A pick**: refused before the claim for what would refuse any run;
 //!   otherwise what claiming the issue comes to is read ([`Effect::Take`]),
 //!   checked again, claimed ([`Effect::ClaimPicked`]) and started as a found
 //!   one is, in the window it was picked in.
 //! - **A run's end**: its project is dropped unless a person has it, and its
 //!   reports are sent, oldest first ([`Effect::Send`]); each is dropped from
-//!   its task only once it landed ([`Effect::Drain`]).
+//!   its task only once it landed ([`Linked::Drain`]).
 
 use super::{
     could_not_start, Accounts, Claimed, Earlier, Found, Holder, IssueRow, IssueSource,
@@ -308,23 +308,23 @@ pub struct UnattendedDrive<W> {
 }
 
 impl<W: Copy + PartialEq> UnattendedDrive<W> {
+    /// What was asked of the tasks since last asked, in order: the link's.
+    pub(crate) fn take_linked(&mut self) -> Vec<Linked<W>> {
+        std::mem::take(&mut self.linked)
+    }
+
+    /// Whether something asked of the tasks waits for the link: only after a
+    /// call that went round the link, which is a mistake.
+    pub(crate) fn linked_waiting(&self) -> bool {
+        !self.linked.is_empty()
+    }
+
     /// Unattended runs as `cfg` sets them up, with `connectors`, and its
     /// clock armed.
     ///
     /// **A config that cannot work is filed, not only logged**: its reason
     /// stops the search and is on every switched-on row, while the projects
     /// and the accounts are still looked at, so the clock runs whatever the
-    /// What was asked of the tasks since last asked, in order: the link's.
-    pub(crate) fn take_linked(&mut self) -> Vec<Linked<W>> {
-        std::mem::take(&mut self.linked)
-    }
-
-    /// Whether something asked of the tasks waits for the link: only between
-    /// a call that went round the link and the next that goes through it.
-    pub(crate) fn linked_waiting(&self) -> bool {
-        !self.linked.is_empty()
-    }
-
     /// config says.
     pub fn new(cfg: &UnattendedConfig, connectors: Connectors) -> (Self, Vec<Effect<W>>) {
         let label = cfg.label.trim().to_string();

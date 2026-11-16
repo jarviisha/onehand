@@ -345,8 +345,8 @@ impl<W: Copy> TasksDrive<W> {
         std::mem::take(&mut self.linked)
     }
 
-    /// Whether something asked of the link waits for it: only between a
-    /// call that went round the link and the next that goes through it.
+    /// Whether something asked of the link waits for it: only after a call
+    /// that went round the link, which is a mistake.
     pub(crate) fn linked_waiting(&self) -> bool {
         !self.linked.is_empty()
     }

@@ -51,8 +51,9 @@ impl<'a, W: Copy + PartialEq> Joined<'a, W> {
         runs: impl IntoIterator<Item = &'a RunDrive>,
         unattended: Option<&'a mut UnattendedDrive<W>>,
     ) -> Self {
-        // A call that went round the link left what it asked waiting; it is
-        // settled at this call's end, late. Tests are told.
+        // A call that went round the link left what it asked waiting: a
+        // mistake, which a debug build stops at. A release build settles it
+        // at this call's end, late, rather than lose it.
         debug_assert!(
             !tasks.linked_waiting() && !unattended.as_deref().is_some_and(|u| u.linked_waiting()),
             "a drive was called round its link"
@@ -91,10 +92,7 @@ impl<'a, W: Copy + PartialEq> Joined<'a, W> {
     /// and routed. `world` is the projects switched on and the world as they
     /// are, read for what [`Said::looks`]; without it there is nothing to
     /// look at.
-    pub fn run_said(&mut self, task: &str, said: Said, world: Option<(Vec<On>, &World)>) -> Out<W>
-    where
-        W: PartialEq,
-    {
+    pub fn run_said(&mut self, task: &str, said: Said, world: Option<(Vec<On>, &World)>) -> Out<W> {
         self.unattended(|u, seen| {
             let fx = match (said, world) {
                 (Said::Waiting, Some((roots, world))) => u.waiting(task, seen, roots, world),
@@ -145,8 +143,7 @@ impl<'a, W: Copy + PartialEq> Joined<'a, W> {
                 let u = self.unattended.as_deref_mut();
                 match (asked, u) {
                     (tasks::Linked::Ask { task, window }, _) => {
-                        let fx = self.ask(&task, window);
-                        out.tasks.extend(fx);
+                        out.tasks.extend(self.ask(&task, window))
                     }
                     (tasks::Linked::Asked(id), Some(u)) => u.placed(&id),
                     (tasks::Linked::IssueEnded(id), Some(u)) => {
