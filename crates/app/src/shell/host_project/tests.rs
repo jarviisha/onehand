@@ -98,3 +98,26 @@ fn a_page_left_waits_no_longer(cx: &mut TestAppContext) {
     cx.update(|window, cx| shell.update(cx, |shell, cx| shell.show_tasks(None, window, cx)));
     assert!(waits_nothing(&shell, cx));
 }
+
+/// The form that adds its project, its host done waiting, takes its wait
+/// with it.
+#[gpui::test]
+fn the_form_that_adds_its_project_waits_no_longer(cx: &mut TestAppContext) {
+    let (shell, _, cx) = waiting("waits-form-added", cx);
+    cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| {
+            shell.close_session(0, 0, window, cx);
+            shell.begin_host_project(window, cx);
+            let attempt = shell.host_waits.attempt();
+            if let Some(draft) = shell.host_project.as_mut() {
+                draft.attempt = Some(attempt);
+                draft.waiting = Some(host());
+            }
+            shell.wait_on_host(host(), Want::Add(attempt), window, cx);
+            assert!(!shell.host_waits.is_empty(), "the form waits");
+            let path = std::path::PathBuf::from("/srv/app");
+            shell.host_project_found(attempt, host(), path, Ok(()), window, cx);
+        })
+    });
+    assert!(waits_nothing(&shell, cx));
+}
