@@ -211,7 +211,7 @@ pub struct Relation {
     /// from starts again.
     pub person: bool,
     /// The lead's last turn has not been seen to end: set as it goes,
-    /// cleared once a turn this run of its chat ran is over. Kept, so a turn
+    /// cleared once a turn is seen running, then over. Kept, so a turn
     /// running at quit reads cut off once the worker comes back.
     pub unended: bool,
     /// Its turn was running at the last report since the lead's last turn
