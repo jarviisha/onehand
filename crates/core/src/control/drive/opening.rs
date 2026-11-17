@@ -312,6 +312,8 @@ impl ControlDrive {
             lines.push(format!("turn: {turn} accepted"));
         }
         let answer = lines.join("\n");
+        // Its first prompt is the lead's first turn, running now.
+        let unended = open.prompt.is_some();
         // Written last, once the prompt went, so a lead forgotten in between
         // can never have one made again after it.
         self.workers.insert(
@@ -328,20 +330,20 @@ impl ControlDrive {
                 name: open.name.clone(),
                 conversation: self.conversations.get(&uid).cloned(),
                 person: false,
+                unended,
+                running: false,
                 seq: token,
             },
         );
         self.requests
             .answered(open.lead, &open.request, answer.clone());
-        vec![
-            Effect::Unwatch(uid),
-            Effect::Changed,
-            self.keep(open.lead),
-            Effect::Answer {
-                key,
-                outcome: Ok(answer),
-            },
-        ]
+        let mut fx = vec![Effect::Unwatch(uid), Effect::Changed];
+        fx.extend(self.keep(open.lead));
+        fx.push(Effect::Answer {
+            key,
+            outcome: Ok(answer),
+        });
+        fx
     }
 
     /// The wait armed with `token` ran out.
@@ -410,7 +412,7 @@ impl ControlDrive {
             }
             let lead = pending.open.lead;
             self.close_record(back.handle.clone(), lead, Some(why));
-            fx.push(self.keep(lead));
+            fx.extend(self.keep(lead));
             return fx;
         }
         match pending.phase {
@@ -472,10 +474,14 @@ impl ControlDrive {
                 name: back.name,
                 conversation: Some(back.conversation),
                 person: back.person,
+                unended: back.unended,
+                running: false,
                 seq: pending.token,
             },
         );
         let lead = pending.open.lead;
-        vec![Effect::Changed, self.keep(lead)]
+        let mut fx = vec![Effect::Changed];
+        fx.extend(self.keep(lead));
+        fx
     }
 }

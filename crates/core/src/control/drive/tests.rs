@@ -43,8 +43,16 @@ fn world() -> World {
 }
 
 fn lead_on() -> ControlDrive {
-    let mut drive = ControlDrive::default();
+    let mut drive = lead_kept();
     drive.switch(1, true);
+    drive
+}
+
+/// A drive whose lead 1 said its conversation `c1`, kept in `/store/c1`:
+/// what it keeps is written there.
+fn lead_kept() -> ControlDrive {
+    let mut drive = ControlDrive::default();
+    said_conversation(&mut drive, 1, "c1", 0);
     drive
 }
 
@@ -73,7 +81,7 @@ fn shown(fx: &[Effect]) -> Vec<String> {
             Effect::Changed => "Changed".into(),
             Effect::Send { uid, turn, text } => format!("Send {uid} {turn} {text}"),
             Effect::TurnAnswer { uid, outcome } => format!("TurnAnswer {uid} {outcome:?}"),
-            Effect::Keep { lead, kept } => {
+            Effect::Keep { lead, kept, .. } => {
                 format!("Keep {lead} {} {}", kept.workers.len(), kept.closed.len())
             }
         })
@@ -338,7 +346,7 @@ fn a_prompt_and_its_turn_go_together() {
 /// Standing, read on every message.
 #[test]
 fn standing_follows_the_switches() {
-    let mut drive = ControlDrive::default();
+    let mut drive = lead_kept();
     let first = standing(drive.standing(&Peer::Outside));
     assert!(
         first.starts_with("Refused ") && first.contains("Settings"),
@@ -401,12 +409,16 @@ fn a_turn_not_taken_moves_nothing() {
         uid: 7,
         facts: facts(Some(Intake::Sent)),
     });
-    let (said, fx) = drive.sent(7, 2, "next", &Intake::Queued, 2);
-    assert!(said.is_err() && fx.is_empty());
-    assert_eq!(drive.last(7).map(|last| last.turn), Some(Some(1)));
+    let fx = turn_sent(&mut drive, 7, 2, Some((Intake::Queued, 2)));
     assert_eq!(
-        drive.sent(7, 2, "next", &Intake::Sent, 2).0,
-        Ok("turn 2 accepted".into())
+        shown(&fx),
+        [r#"TurnAnswer 7 Err("the prompt was not accepted")"#]
+    );
+    assert_eq!(drive.last(7).map(|last| last.turn), Some(Some(1)));
+    let fx = turn_sent(&mut drive, 7, 2, Some((Intake::Sent, 2)));
+    assert_eq!(
+        shown(&fx).last().map(String::as_str),
+        Some(r#"TurnAnswer 7 Ok("turn 2 accepted")"#)
     );
     assert_eq!(drive.last(7).map(|last| last.turn), Some(Some(2)));
 }
@@ -447,6 +459,21 @@ fn the_open_answers_with_a_stable_handle() {
     ));
 }
 
+/// Worker `uid` was given turn `turn`, `next`, which came to `went`.
+fn turn_sent(
+    drive: &mut ControlDrive,
+    uid: u64,
+    turn: u64,
+    went: Option<(Intake, usize)>,
+) -> Vec<Effect> {
+    drive.handle(Input::TurnSent {
+        uid,
+        turn,
+        text: "next".into(),
+        went,
+    })
+}
+
 /// Lead 1's worker 7, open: its relation written.
 fn begun(drive: &mut ControlDrive) -> Vec<Effect> {
     up(drive);
@@ -464,7 +491,7 @@ fn begun(drive: &mut ControlDrive) -> Vec<Effect> {
 /// What the last `Keep` in `fx` keeps, for lead `lead`.
 fn kept(fx: &[Effect], lead: u64) -> Option<&Kept> {
     fx.iter().rev().find_map(|effect| match effect {
-        Effect::Keep { lead: of, kept } if *of == lead => Some(kept),
+        Effect::Keep { lead: of, kept, .. } if *of == lead => Some(kept),
         Effect::Keep { .. }
         | Effect::ToolsChanged(_)
         | Effect::Start { .. }
@@ -482,10 +509,35 @@ fn kept(fx: &[Effect], lead: u64) -> Option<&Kept> {
 }
 
 fn said_conversation(drive: &mut ControlDrive, uid: u64, id: &str, sent: usize) -> Vec<Effect> {
+    said_over(drive, uid, id, sent, false)
+}
+
+/// Session `uid` said its conversation `id`, its prompts sent, and whether
+/// its turn is over (`over`).
+fn said_over(drive: &mut ControlDrive, uid: u64, id: &str, sent: usize, over: bool) -> Vec<Effect> {
+    said_as(drive, uid, id, sent, over, false)
+}
+
+/// Session `uid` said its turn runs.
+fn said_busy(drive: &mut ControlDrive, uid: u64, id: &str, sent: usize) -> Vec<Effect> {
+    said_as(drive, uid, id, sent, false, true)
+}
+
+fn said_as(
+    drive: &mut ControlDrive,
+    uid: u64,
+    id: &str,
+    sent: usize,
+    over: bool,
+    busy: bool,
+) -> Vec<Effect> {
     drive.handle(Input::Conversation {
         uid,
         session_id: id.into(),
         prompts_sent: sent,
+        turn_over: over,
+        busy,
+        dir: Some(PathBuf::from(format!("/store/{id}"))),
     })
 }
 
@@ -543,8 +595,11 @@ fn a_lead_turn_never_reads_as_the_persons() {
     said_conversation(&mut drive, 7, "c7", 1);
     // The lead's own prompt is counted before its turn is.
     said_conversation(&mut drive, 7, "c7", 2);
-    let (said, fx) = drive.sent(7, 2, "next", &Intake::Sent, 2);
-    assert_eq!(said, Ok("turn 2 accepted".into()));
+    let fx = turn_sent(&mut drive, 7, 2, Some((Intake::Sent, 2)));
+    assert!(
+        shown(&fx).contains(&r#"TurnAnswer 7 Ok("turn 2 accepted")"#.to_string()),
+        "{fx:?}"
+    );
     assert!(!drive.last(7).unwrap().person);
     let kept = kept(&fx, 1).unwrap();
     assert!(!kept.workers[0].person);
@@ -719,6 +774,7 @@ fn kept_one(person: bool) -> Kept {
             turn: Some(3),
             text: Some("go on".into()),
             person,
+            unended: false,
         }],
         closed: vec![KeptClosed {
             handle: "w-00000000000000000000000000000002".into(),
@@ -781,7 +837,7 @@ fn came_back(drive: &mut ControlDrive, kept: Kept) -> Vec<Effect> {
 #[test]
 fn a_kept_worker_comes_back_under_its_lead() {
     // A new run: the lead's tools are off until the person switches them on.
-    let mut drive = ControlDrive::default();
+    let mut drive = lead_kept();
     let fx = came_back(&mut drive, kept_one(false));
     assert_eq!(
         shown(&fx),
@@ -811,7 +867,7 @@ fn a_kept_worker_comes_back_under_its_lead() {
 
 #[test]
 fn a_kept_worker_whose_folder_is_gone_is_closed_with_why() {
-    let mut drive = ControlDrive::default();
+    let mut drive = lead_kept();
     let key = coming_back(&mut drive, kept_one(false));
     let why = "/repo: No such file or directory (os error 2)".to_string();
     let fx = drive.handle(Input::Resolved {
@@ -831,7 +887,7 @@ fn a_kept_worker_whose_folder_is_gone_is_closed_with_why() {
 
 #[test]
 fn a_kept_worker_on_a_held_folder_does_not_come_back() {
-    let mut drive = ControlDrive::default();
+    let mut drive = lead_kept();
     let key = coming_back(&mut drive, kept_one(false));
     // Its conversation is open as an ordinary session on that folder.
     let busy = World {
@@ -852,7 +908,7 @@ fn a_kept_worker_on_a_held_folder_does_not_come_back() {
 
 #[test]
 fn a_kept_worker_whose_lead_went_does_not_come_back() {
-    let mut drive = ControlDrive::default();
+    let mut drive = lead_kept();
     let key = coming_back(&mut drive, kept_one(false));
     let gone = World {
         lead_here: false,
@@ -868,7 +924,7 @@ fn a_kept_worker_whose_lead_went_does_not_come_back() {
 
 #[test]
 fn a_held_kept_worker_comes_back_held() {
-    let mut drive = ControlDrive::default();
+    let mut drive = lead_kept();
     came_back(&mut drive, kept_one(true));
     let last = drive.last(9).unwrap();
     assert!(last.person);
@@ -878,7 +934,7 @@ fn a_held_kept_worker_comes_back_held() {
 
 #[test]
 fn a_returned_worker_prompted_by_the_person_is_held() {
-    let mut drive = ControlDrive::default();
+    let mut drive = lead_kept();
     came_back(&mut drive, kept_one(false));
     assert!(!drive.last(9).unwrap().person);
     let fx = said_conversation(&mut drive, 9, "c7", 1);
@@ -888,7 +944,7 @@ fn a_returned_worker_prompted_by_the_person_is_held() {
 
 #[test]
 fn closed_records_read_closed_after_back() {
-    let mut drive = ControlDrive::default();
+    let mut drive = lead_kept();
     let _ = drive.back(1, kept_one(false), &projects());
     let closed = "w-00000000000000000000000000000002";
     assert!(matches!(
@@ -939,7 +995,7 @@ fn handles_kept(kept: &Kept) -> Vec<String> {
 #[test]
 fn a_sibling_failing_to_come_back_keeps_the_others() {
     let b = "w-0000000000000000000000000000000b";
-    let mut drive = ControlDrive::default();
+    let mut drive = lead_kept();
     let begun = drive.back(1, kept_two(), &projects());
     let keys: Vec<Key> = begun
         .into_iter()
@@ -969,7 +1025,7 @@ fn a_sibling_failing_to_come_back_keeps_the_others() {
 #[test]
 fn closing_the_lead_mid_coming_back_writes_one_final_keep() {
     let (a, b) = (BACK, "w-0000000000000000000000000000000b");
-    let mut drive = ControlDrive::default();
+    let mut drive = lead_kept();
     let keys: Vec<Key> = drive
         .back(1, kept_two(), &projects())
         .into_iter()
@@ -992,7 +1048,7 @@ fn closing_the_lead_mid_coming_back_writes_one_final_keep() {
     let keeps: Vec<&Kept> = fx
         .iter()
         .filter_map(|effect| match effect {
-            Effect::Keep { lead: 1, kept } => Some(kept),
+            Effect::Keep { lead: 1, kept, .. } => Some(kept),
             Effect::Keep { .. }
             | Effect::ToolsChanged(_)
             | Effect::Start { .. }
@@ -1073,7 +1129,7 @@ fn a_worker_coming_back_counts_under_its_leads_cap() {
 
 #[test]
 fn a_late_start_of_a_coming_back_that_failed_drops_its_project() {
-    let mut drive = ControlDrive::default();
+    let mut drive = lead_kept();
     let key = coming_back(&mut drive, kept_one(false));
     // A worktree no project of the window holds: its project is added.
     let added = Resolved {
@@ -1138,7 +1194,7 @@ fn a_lead_keeps_only_its_newest_ended_workers() {
 
 #[test]
 fn ended_workers_stay_with_the_conversation_they_ended_in() {
-    let mut drive = ControlDrive::default();
+    let mut drive = lead_kept();
     said_conversation(&mut drive, 1, "c1", 0);
     let _ = drive.back(1, kept_one(false), &projects());
     let closed = "w-00000000000000000000000000000002";
@@ -1153,4 +1209,379 @@ fn ended_workers_stay_with_the_conversation_they_ended_in() {
     let fx = said_conversation(&mut drive, 1, "c2", 0);
     assert!(kept(&fx, 1).is_none(), "nothing moves: {fx:?}");
     assert!(drive.find(1, closed, |_| false).is_err());
+    // A worker opened on the new conversation writes there, and leaves the
+    // file of the one before alone.
+    drive.switch(1, true);
+    let fx = begun(&mut drive);
+    assert_eq!(keep_at(&fx, 1), Some((store("c2"), None, false)));
+}
+
+#[test]
+fn a_lead_turn_is_kept_unended_until_it_ends() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let fx = said_busy(&mut drive, 7, "c7", 1);
+    assert!(
+        kept(&fx, 1).unwrap().workers[0].unended,
+        "its first turn runs"
+    );
+    let fx = said_over(&mut drive, 7, "c7", 1, true);
+    assert!(!kept(&fx, 1).unwrap().workers[0].unended, "and ended");
+    assert!(said_over(&mut drive, 7, "c7", 1, true).is_empty());
+}
+
+#[test]
+fn a_worker_coming_back_keeps_its_turn_unended_until_a_new_one() {
+    let mut drive = lead_kept();
+    let mut kept_unended = kept_one(false);
+    kept_unended.workers[0].unended = true;
+    came_back(&mut drive, kept_unended);
+    assert!(drive.held(9).unwrap().unended);
+    // Idle and connected, it has run nothing in this run.
+    let fx = said_over(&mut drive, 9, "c7", 0, true);
+    assert!(
+        kept(&fx, 1).is_none_or(|kept| kept.workers[0].unended),
+        "{fx:?}"
+    );
+    assert!(drive.held(9).unwrap().unended);
+    let _ = turn_sent(&mut drive, 9, 4, Some((Intake::Sent, 1)));
+    said_busy(&mut drive, 9, "c7", 1);
+    let fx = said_over(&mut drive, 9, "c7", 1, true);
+    assert!(!kept(&fx, 1).unwrap().workers[0].unended);
+}
+
+#[test]
+fn a_link_lost_mid_turn_keeps_it_unended() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    said_over(&mut drive, 7, "c7", 1, false);
+    assert!(drive.held(7).unwrap().unended);
+}
+
+#[test]
+fn workers_come_back_in_the_order_kept() {
+    let mut drive = lead_kept();
+    let keys: Vec<Key> = drive
+        .back(1, kept_two(), &projects())
+        .into_iter()
+        .map(|begun| match begun {
+            Begun::Resolve { key, .. } => key,
+            Begun::Said(said) => panic!("said: {said}"),
+        })
+        .collect();
+    for (key, folder) in keys.iter().zip(["/repo", "/other"]) {
+        let at = Resolved {
+            folder: PathBuf::from(folder),
+            ..resolved()
+        };
+        drive.handle(Input::Resolved {
+            key: key.clone(),
+            resolved: Ok(at),
+            world: world(),
+        });
+    }
+    // The second kept starts first, so it has the lower uid.
+    drive.handle(Input::Started {
+        key: keys[1].clone(),
+        started: Ok(11),
+    });
+    drive.handle(Input::Started {
+        key: keys[0].clone(),
+        started: Ok(12),
+    });
+    let uids: Vec<u64> = drive.workers_of(1).iter().map(|w| w.uid).collect();
+    assert_eq!(uids, [12, 11]);
+}
+
+#[test]
+fn an_opening_worker_lists_after_the_older_ones() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let mut second = asked("more");
+    second.request = "r2".into();
+    second.project = "repo".into();
+    let (key, _) = resolves(drive.open_worker(second, &projects(), None));
+    let other = Resolved {
+        folder: PathBuf::from("/other"),
+        ..resolved()
+    };
+    drive.handle(Input::Resolved {
+        key: key.clone(),
+        resolved: Ok(other),
+        world: world(),
+    });
+    drive.handle(Input::Started {
+        key,
+        started: Ok(3),
+    });
+    let uids: Vec<u64> = drive.workers_of(1).iter().map(|w| w.uid).collect();
+    assert_eq!(uids, [7, 3]);
+}
+
+#[test]
+fn a_lead_may_not_leave_its_conversation() {
+    let mut drive = lead_on();
+    assert_eq!(drive.may_leave_conversation(1), Ok(()));
+    let (key, _) = resolves(drive.open_worker(asked("go"), &projects(), None));
+    assert_eq!(
+        drive.may_leave_conversation(1),
+        Err(ResumeRefused::LeadsWorkers),
+        "one opening"
+    );
+    let _ = drive.handle(Input::Resolved {
+        key,
+        resolved: Err("gone".into()),
+        world: world(),
+    });
+    begun(&mut drive);
+    assert_eq!(
+        drive.may_leave_conversation(1),
+        Err(ResumeRefused::LeadsWorkers)
+    );
+    assert_eq!(drive.may_leave_conversation(7), Ok(()), "a worker");
+    let _ = drive.forget(7);
+    assert_eq!(drive.may_leave_conversation(1), Ok(()));
+}
+
+#[test]
+fn a_conversation_open_anywhere_is_not_resumed_again() {
+    let drive = ControlDrive::default();
+    assert_eq!(
+        drive.may_resume("c1", &["c1".into()]),
+        Err(ResumeRefused::AlreadyOpen)
+    );
+    assert_eq!(drive.may_resume("c2", &["c1".into()]), Ok(()));
+    assert_eq!(drive.may_resume("c1", &[]), Ok(()));
+}
+
+#[test]
+fn a_turn_goes_as_a_send_and_is_answered_once_it_went() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let (sending, fx) = drive.send_prompt(7, "w", 2, "next", None, Some(&on_model("weak")));
+    assert_eq!(sending, Sending::Later);
+    assert_eq!(shown(&fx), ["Send 7 2 next"]);
+    let fx = turn_sent(&mut drive, 7, 2, Some((Intake::Sent, 2)));
+    let shown = shown(&fx);
+    assert!(shown[0].starts_with("Keep 1 "), "{shown:?}");
+    assert_eq!(shown[1], r#"TurnAnswer 7 Ok("turn 2 accepted")"#);
+    assert_eq!(drive.last(7).unwrap().turn, Some(2));
+}
+
+#[test]
+fn a_turn_sent_again_is_said_and_sends_nothing() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let _ = drive.send_prompt(7, "w", 2, "next", None, Some(&on_model("weak")));
+    let _ = turn_sent(&mut drive, 7, 2, Some((Intake::Sent, 2)));
+    let mut chat = connected();
+    chat.prompts_sent = 2;
+    let (sending, fx) = drive.send_prompt(7, "w", 2, "next", None, Some(&chat));
+    assert_eq!(sending, Sending::Said(Ok("turn 2 already sent".into())));
+    assert!(fx.is_empty());
+}
+
+#[test]
+fn a_turn_to_a_worker_still_connecting_is_refused() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let (sending, fx) = drive.send_prompt(7, "w", 2, "next", None, None);
+    assert!(matches!(sending, Sending::Said(Err(_))), "{sending:?}");
+    assert!(fx.is_empty());
+    let (sending, fx) = drive.send_prompt(7, "w", 1, "go", None, None);
+    assert_eq!(sending, Sending::Said(Err("w is still connecting".into())));
+    assert!(fx.is_empty());
+}
+
+#[test]
+fn a_turn_with_a_model_waits_on_it() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let (sending, fx) = drive.send_prompt(
+        7,
+        "w",
+        2,
+        "next",
+        Some("strong".into()),
+        Some(&on_model("weak")),
+    );
+    assert_eq!(sending, Sending::Later);
+    let shown = shown(&fx);
+    assert_eq!(shown[0], "Watch 7");
+    assert!(shown[1].starts_with("Arm "), "{shown:?}");
+    let (sending, _) = drive.send_prompt(7, "w", 3, "other", None, Some(&on_model("weak")));
+    assert_eq!(
+        sending,
+        Sending::Said(Err("turn 2 is waiting on its model pick".into()))
+    );
+}
+
+#[test]
+fn a_turn_waiting_on_its_model_is_checked_again_before_it_goes() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let _ = drive.send_prompt(
+        7,
+        "w",
+        2,
+        "next",
+        Some("strong".into()),
+        Some(&on_model("weak")),
+    );
+    // The person prompted the worker while the model was picked.
+    let mut chat = on_model("strong");
+    chat.prompts_sent = 3;
+    let fx = woke_on(&mut drive, &chat);
+    assert_eq!(fx.len(), 2, "{fx:?}");
+    assert_eq!(fx[0], "Unwatch 7");
+    assert!(
+        fx[1].starts_with("TurnAnswer 7 Err(\"the person holds this worker"),
+        "{fx:?}"
+    );
+}
+
+#[test]
+fn a_turn_whose_session_went_before_it_was_sent_says_so() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let fx = turn_sent(&mut drive, 7, 2, None);
+    assert_eq!(
+        shown(&fx),
+        [r#"TurnAnswer 7 Err("the session was closed before the turn went")"#]
+    );
+}
+
+fn store(id: &str) -> PathBuf {
+    PathBuf::from(format!("/store/{id}"))
+}
+
+/// Where the last `Keep` in `fx` for lead `lead` writes, the folder it
+/// empties first, and whether it is the lead's last.
+fn keep_at(fx: &[Effect], lead: u64) -> Option<(PathBuf, Option<PathBuf>, bool)> {
+    fx.iter().rev().find_map(|effect| match effect {
+        Effect::Keep {
+            lead: of,
+            dir,
+            moved_from,
+            last,
+            ..
+        } if *of == lead => Some((dir.clone(), moved_from.clone(), *last)),
+        Effect::Keep { .. }
+        | Effect::ToolsChanged(_)
+        | Effect::Start { .. }
+        | Effect::Watch(_)
+        | Effect::Unwatch(_)
+        | Effect::Pick { .. }
+        | Effect::Begin { .. }
+        | Effect::Arm { .. }
+        | Effect::Drop { .. }
+        | Effect::Answer { .. }
+        | Effect::Changed
+        | Effect::Send { .. }
+        | Effect::TurnAnswer { .. } => None,
+    })
+}
+
+#[test]
+fn a_lead_with_no_folder_yet_writes_nothing() {
+    let mut drive = ControlDrive::default();
+    drive.switch(1, true);
+    let fx = begun(&mut drive);
+    assert_eq!(keep_at(&fx, 1), None, "{fx:?}");
+    let fx = said_conversation(&mut drive, 1, "c1", 0);
+    assert_eq!(keep_at(&fx, 1), Some((store("c1"), None, false)));
+}
+
+#[test]
+fn a_lead_whose_conversation_moved_removes_its_old_file() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let fx = said_conversation(&mut drive, 1, "c2", 0);
+    assert_eq!(
+        keep_at(&fx, 1),
+        Some((store("c2"), Some(store("c1")), false))
+    );
+    let fx = said_conversation(&mut drive, 7, "c7", 1);
+    assert_eq!(keep_at(&fx, 1), Some((store("c2"), None, false)));
+}
+
+#[test]
+fn a_closed_lead_writes_its_last_keep_where_its_conversation_was() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let fx = drive.forget(1);
+    let keeps: Vec<_> = fx
+        .iter()
+        .filter(|effect| keep_at(std::slice::from_ref(*effect), 1).is_some())
+        .collect();
+    assert_eq!(keeps.len(), 1, "{fx:?}");
+    assert_eq!(keep_at(&fx, 1), Some((store("c1"), None, true)));
+    // Where it wrote is forgotten with it.
+    let fx = said_conversation(&mut drive, 1, "c9", 0);
+    assert_eq!(keep_at(&fx, 1), Some((store("c9"), None, false)));
+}
+
+#[test]
+fn a_closed_window_rewrites_no_kept_file() {
+    let mut drive = lead_kept();
+    let key = coming_back(&mut drive, kept_one(false));
+    drive.handle(Input::Resolved {
+        key: key.clone(),
+        resolved: Ok(resolved()),
+        world: world(),
+    });
+    assert!(drive
+        .handle(Input::WindowClosed { uids: vec![1] })
+        .is_empty());
+    let fx = drive.handle(Input::Started {
+        key,
+        started: Err("the window closed".into()),
+    });
+    assert_eq!(keep_at(&fx, 1), None, "{fx:?}");
+}
+
+#[test]
+fn a_dead_leads_late_failure_does_not_overwrite_a_new_lead() {
+    let mut drive = lead_kept();
+    let key = coming_back(&mut drive, kept_one(false));
+    let _ = drive.handle(Input::WindowClosed { uids: vec![1] });
+    // Its conversation opened again in another window, by lead 2.
+    said_conversation(&mut drive, 2, "c1", 0);
+    // The old lead's worker, still coming back, fails late.
+    let fx = drive.handle(Input::Resolved {
+        key,
+        resolved: Err("/repo: No such file or directory".into()),
+        world: world(),
+    });
+    assert_eq!(keep_at(&fx, 1), None, "{fx:?}");
+}
+
+#[test]
+fn a_restart_after_a_lost_turn_keeps_it_unended() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    said_busy(&mut drive, 7, "c7", 1);
+    // The link is lost mid-turn.
+    said_over(&mut drive, 7, "c7", 1, false);
+    // The agent restarted: a new chat with the count carried, idle.
+    let fx = said_over(&mut drive, 7, "c7", 1, true);
+    assert!(
+        kept(&fx, 1).is_none_or(|kept| kept.workers[0].unended),
+        "{fx:?}"
+    );
+    assert!(drive.held(7).unwrap().unended);
+}
+
+#[test]
+fn a_turn_seen_running_then_over_clears_unended() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    said_conversation(&mut drive, 7, "c7", 1);
+    // Over with no running seen since the turn went: a count alone.
+    said_over(&mut drive, 7, "c7", 1, true);
+    assert!(drive.held(7).unwrap().unended);
+    said_busy(&mut drive, 7, "c7", 1);
+    let fx = said_over(&mut drive, 7, "c7", 1, true);
+    assert!(!kept(&fx, 1).unwrap().workers[0].unended);
+    assert!(!drive.held(7).unwrap().unended);
 }

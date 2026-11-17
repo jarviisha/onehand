@@ -323,3 +323,61 @@ fn a_lead_closes_its_idle_worker(cx: &mut TestAppContext) {
     drop(token);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A lead gives its idle worker the next turn: answered once it went, and
+/// the same turn again is told it already went.
+#[gpui::test]
+fn a_lead_gives_its_idle_worker_its_next_turn(cx: &mut TestAppContext) {
+    let dir = folder("worker-turn");
+    let (_, shell, cx) = shell(cx, dir.join("tasks"), vec![agent()]);
+    let _lead_events = canned(cx);
+    let (lead, token) = lead(&shell, 910_500, cx);
+    let project = dir.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let at = project.clone();
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
+    let mut worker_events = canned(cx);
+    let (peer, call) = open("project", &token);
+    let (tx, mut answer) = oneshot::channel();
+    cx.update(|_, cx| cx.defer(move |cx| perform(peer, call, tx, cx)));
+    let mut worker = None;
+    until(cx, |_| {
+        worker = super::super::workers_of(lead).first().map(|w| w.uid);
+        worker.is_some()
+    });
+    let worker = worker.unwrap();
+    let _requests = up(&mut worker_events);
+    let mut said = None;
+    until(cx, |_| {
+        said = answer.try_recv().unwrap();
+        said.is_some()
+    });
+    let said = said.unwrap().expect("opened");
+    let handle = said
+        .lines()
+        .find_map(|line| line.strip_prefix("session: "))
+        .unwrap()
+        .to_string();
+    worker_events
+        .try_send(AcpEvent::TurnEnded {
+            stop_reason: "end_turn".into(),
+        })
+        .unwrap();
+    until(cx, |cx| {
+        cx.update(|_, cx| {
+            super::session_of(worker, cx).is_some_and(|session| !session.read(cx).chat().busy)
+        })
+    });
+    let peer = || Peer::Session(token.0.clone());
+    let send = || Call::SendPrompt {
+        session: handle.clone(),
+        text: "next".into(),
+        turn: 2,
+        model: None,
+    };
+    assert_eq!(asked(peer(), send(), cx), Ok("turn 2 accepted".into()));
+    assert_eq!(asked(peer(), send(), cx), Ok("turn 2 already sent".into()));
+    let _ = drive().forget(lead);
+    drop(token);
+    let _ = std::fs::remove_dir_all(dir);
+}

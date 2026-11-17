@@ -42,6 +42,11 @@ pub struct KeptWorker {
     pub text: Option<String>,
     /// The person holds it: they prompted it since the lead's last turn.
     pub person: bool,
+    /// The lead's last turn had not been seen to end: one running at quit
+    /// reads cut off once the worker comes back. Absent from a file written
+    /// before it was kept, which reads it as ended.
+    #[serde(default)]
+    pub unended: bool,
 }
 
 /// A worker that ended, by its handle.

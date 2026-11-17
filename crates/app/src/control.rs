@@ -28,10 +28,6 @@ pub(crate) use start::start_task;
 use start::{start, template};
 pub(crate) use workers::bring_back;
 
-/// Whether session `uid` leads workers, open or opening.
-pub(crate) fn leads_workers(uid: u64) -> bool {
-    drive().leads_workers(uid)
-}
 pub(crate) use workers::whose::{Worker, give_back, give_back_offered, lead_of, workers_of};
 
 /// The tools' drive, held for the whole process: an agent's token is minted
@@ -135,11 +131,17 @@ pub(crate) fn grant(uid: u64, grant: &onehand_core::task::Grant, cx: &mut App) {
     carry_later(fx, cx);
 }
 
-/// Session `uid` is closed, on `conversation` when it had one: its switch
-/// and what its tools opened go with it.
-pub(crate) fn forget(uid: u64, conversation: Option<PathBuf>, cx: &mut App) {
-    keeping::closed(uid, conversation, cx);
+/// Session `uid` is closed: its switch and what its tools opened go with it.
+pub(crate) fn forget(uid: u64, cx: &mut App) {
+    keeping::closed(uid, cx);
     let fx = drive().forget(uid);
+    carry_later(fx, cx);
+}
+
+/// The window holding sessions `uids` closed: nothing is written for them
+/// again.
+pub(crate) fn window_closed(uids: Vec<u64>, cx: &mut App) {
+    let fx = drive().handle(onehand_core::control::drive::Input::WindowClosed { uids });
     carry_later(fx, cx);
 }
 

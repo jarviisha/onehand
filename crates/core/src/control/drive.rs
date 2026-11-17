@@ -147,12 +147,32 @@ pub enum Input<'a> {
     Begun { uid: u64, facts: Facts },
     /// The wait armed with `token` ran out.
     Elapsed { token: u64 },
-    /// Session `uid`'s conversation is `session_id`, and it has sent
-    /// `prompts_sent` prompts: said when either changes.
+    /// The window holding sessions `uids` closed, without closing them one
+    /// by one: what they keep on disk stays exactly as it was, so nothing is
+    /// written for them again, while their opens in flight still end as
+    /// they would.
+    WindowClosed { uids: Vec<u64> },
+    /// Worker `uid` was given the lead's turn `turn`, `text`
+    /// ([`Effect::Send`]): what its prompt came to and its prompts sent
+    /// since, or `None` when its session was gone.
+    TurnSent {
+        uid: u64,
+        turn: u64,
+        text: String,
+        went: Option<(Intake, usize)>,
+    },
+    /// Session `uid`'s conversation is `session_id`, it has sent
+    /// `prompts_sent` prompts, `turn_over` says its turn is over with the
+    /// link up (`state::turn_over`) and `busy` that a turn runs: said when
+    /// any of them changes. `dir` is the folder the conversation is kept in,
+    /// when its chat keeps one on disk.
     Conversation {
         uid: u64,
         session_id: String,
         prompts_sent: usize,
+        turn_over: bool,
+        busy: bool,
+        dir: Option<PathBuf>,
     },
 }
 
@@ -208,16 +228,24 @@ pub enum Effect {
     },
     /// What the person's view reads of the workers changed.
     Changed,
-    /// Write `kept` beside lead `lead`'s conversation, replacing what was
-    /// there, off the UI thread. A lead with no conversation yet writes
-    /// nothing. Late answers do not exist: a later `Keep` for the same lead
-    /// is the whole of it again, and the last asked for is what stays.
-    Keep { lead: u64, kept: Kept },
+    /// Write `kept` in `dir`, lead `lead`'s conversation folder, replacing
+    /// what was there, off the UI thread; first, when `moved_from` names the
+    /// folder it was last written in, write nothing there (its file goes).
+    /// `last`: the lead is gone, and this is the last write for it. Late
+    /// answers do not exist: a later `Keep` for the same lead is the whole
+    /// of it again, and the last asked for is what stays.
+    Keep {
+        lead: u64,
+        kept: Kept,
+        dir: PathBuf,
+        moved_from: Option<PathBuf>,
+        last: bool,
+    },
     /// Send worker `uid` the lead's turn `turn`, `text`, from onehand's
-    /// tools, as a turn without a model goes, then tell the drive it was
-    /// sent (`ControlDrive::sent`), and answer the turn's call with what
-    /// that says. A session gone meanwhile answers that the worker is
-    /// closed.
+    /// tools, then report [`Input::TurnSent`] in the same pass. A late
+    /// answer is **recorded**: the prompt went, so the relation moves on and
+    /// the turn's call is answered; an answer for a call already answered is
+    /// dropped by [`Effect::TurnAnswer`].
     Send { uid: u64, turn: u64, text: String },
     /// Answer the turn worker `uid` was given with `outcome`. One for a call
     /// already answered, or never asked, is **dropped**.
@@ -225,6 +253,16 @@ pub enum Effect {
         uid: u64,
         outcome: Result<String, String>,
     },
+}
+
+/// What a `send_prompt` came to at once.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Sending {
+    /// Answered now, with this; nothing was sent.
+    Said(Result<String, String>),
+    /// Answered later, by [`Effect::TurnAnswer`] for this worker: hold the
+    /// call's answer until then.
+    Later,
 }
 
 /// Where an open in flight stands.
@@ -266,6 +304,15 @@ pub enum Found {
     Closed,
 }
 
+/// Why a session is not put on another conversation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResumeRefused {
+    /// It leads workers, open or opening.
+    LeadsWorkers,
+    /// A session of some window already has that conversation open.
+    AlreadyOpen,
+}
+
 /// A worker gone, as its handle still reads to the lead it had.
 struct Closed {
     lead: u64,
@@ -305,6 +352,10 @@ pub struct ControlDrive {
     closed_workers: HashMap<String, Closed>,
     /// The conversation each session was last said to be on.
     conversations: HashMap<u64, String>,
+    /// The folder each session's conversation is kept in, when it keeps one.
+    kept_in: HashMap<u64, PathBuf>,
+    /// Where each lead's workers were last written.
+    written: HashMap<u64, PathBuf>,
     pending: HashMap<Key, Pending>,
     /// Where each open that failed while its session was starting would
     /// have started it, and whether it added that project.
@@ -446,7 +497,7 @@ impl ControlDrive {
         self.conversations.remove(&uid);
         if let Some(relation) = self.workers.remove(&uid) {
             self.close_record(relation.handle, relation.lead, None);
-            fx.push(self.keep(relation.lead));
+            fx.extend(self.keep(relation.lead));
         }
         // Its own handle goes, and its workers' with their relations: the
         // person closing a lead lets its workers go for good, so none of
@@ -483,8 +534,11 @@ impl ControlDrive {
             | Effect::TurnAnswer { .. } => true,
         });
         if self.keeps(uid) {
-            fx.push(self.keep(uid));
+            fx.extend(self.keep_last(uid));
         }
+        // Kept until that last write, which goes where its conversation was.
+        self.kept_in.remove(&uid);
+        self.written.remove(&uid);
         fx
     }
 
@@ -567,11 +621,27 @@ impl ControlDrive {
             } => self.woke(uid, chat, lead_here),
             Input::Begun { uid, facts } => self.begun(uid, facts),
             Input::Elapsed { token } => self.elapsed(token),
+            Input::WindowClosed { uids } => {
+                for uid in uids {
+                    self.kept_in.remove(&uid);
+                    self.written.remove(&uid);
+                }
+                Vec::new()
+            }
+            Input::TurnSent {
+                uid,
+                turn,
+                text,
+                went,
+            } => self.turn_sent(uid, turn, &text, went),
             Input::Conversation {
                 uid,
                 session_id,
                 prompts_sent,
-            } => self.conversation(uid, session_id, prompts_sent),
+                turn_over,
+                busy,
+                dir,
+            } => self.conversation(uid, session_id, prompts_sent, (turn_over, busy), dir),
         }
     }
 }

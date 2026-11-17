@@ -20,6 +20,7 @@ fn kept() -> Kept {
             turn: Some(2),
             text: Some("go".into()),
             person: true,
+            unended: true,
         }],
         closed: vec![KeptClosed {
             handle: "w-2".into(),
@@ -74,5 +75,20 @@ fn a_write_leaves_no_temporary_file() {
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
     assert_eq!(names, [FILE]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A file written before whether the lead's turn ended was kept still
+/// reads whole, that turn read as ended.
+#[test]
+fn a_file_kept_before_unended_was_kept_reads_whole() {
+    let dir = dir("before-unended");
+    let text = r#"{"workers":[{"handle":"w-1","conversation":"c1","agent":"a",
+        "folder":"/repo","dirs":["/x"],"name":"fix","turn":2,"text":"go","person":true}],
+        "closed":[{"handle":"w-2","why":"its folder is gone"}]}"#;
+    std::fs::write(dir.join(FILE), text).unwrap();
+    let mut expected = kept();
+    expected.workers[0].unended = false;
+    assert_eq!(read_blocking(&dir), expected);
     let _ = std::fs::remove_dir_all(dir);
 }
