@@ -227,7 +227,7 @@ impl IssuesView {
             .h_flex()
             .items_stretch()
             .w_full()
-            .h(onehand_ui::tokens::MODE_BAR_H)
+            .h(onehand_ui::tokens::BAR_H)
             .flex_none()
             .border_b_1()
             .border_color(cx.theme().border)
