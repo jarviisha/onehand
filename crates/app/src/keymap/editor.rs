@@ -124,8 +124,8 @@ impl Render for Editor {
                 .on_action(cx.listener(|editor, _: &CancelShortcut, window, cx| {
                     editor.cancel(window, cx);
                 }))
-                // The page and its nav stay: the command is named by a line,
-                // not a title the size of a page's.
+                // The page and its nav stay: the command is named by a line in
+                // the page's body, not by a head of its own.
                 .child(page_head("Edit the keys of a command", APP, cx))
                 .child(
                     div()

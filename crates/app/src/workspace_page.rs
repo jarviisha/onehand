@@ -560,7 +560,13 @@ impl WorkspacePage {
             // The head stays put over a line, as every page's does.
             .child(page_top(
                 Some(PAGE_WIDE),
-                [page_head("Overview", None, Vec::new(), cx).into_any_element()],
+                [page_head(
+                    "Overview",
+                    Some("What runs in this workspace, and what waits on you".into_any_element()),
+                    Vec::new(),
+                    cx,
+                )
+                .into_any_element()],
             ))
             .child(
                 // **The cards scroll as one, from the top.** Cards that fill

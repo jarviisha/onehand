@@ -15,8 +15,8 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::chat::ConvMeta;
+use onehand_ui::ShortIcon as _;
 use onehand_ui::Tall as _;
-use onehand_ui::TallIcon as _;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -371,7 +371,7 @@ impl ChatPane {
             .chain(self.git.as_ref().map(ToString::to_string))
             .collect::<Vec<_>>()
             .join(" · ");
-        // The head: the project named at the page's title size over where it
+        // The head: the project named as every page is, over where it
         // is, and what it can start at the end.
         let head = page_head(
             project.label.clone(),
@@ -381,7 +381,7 @@ impl ChatPane {
                 .check
                 .then(|| {
                     crate::controls::action("project-run-check")
-                        .tall()
+                        .short()
                         .secondary()
                         .label("Run check")
                         .loading(checking)
@@ -678,7 +678,7 @@ fn new_session(cx: &mut Context<ChatPane>) -> gpui::AnyElement {
     // At the head's size, as *Run check* beside it is: one row of actions
     // stands at one height.
     let start = crate::controls::action("project-new-session")
-        .tall()
+        .short()
         .primary()
         .label("New session")
         .tooltip_with_action(
@@ -699,11 +699,11 @@ fn new_session(cx: &mut Context<ChatPane>) -> gpui::AnyElement {
     crate::controls::split_action(
         "project-new-session-menu",
         start,
-        // Square at the head's height: an icon alone under `tall`'s word
+        // Square at the head's height: an icon alone under a worded size's
         // padding was left a couple of pixels and drew as a dot.
         crate::controls::action("project-new-session-agent")
             .primary()
-            .tall_icon()
+            .short_icon()
             .named("Start a session with another agent"),
         cx.theme().background,
         gpui::Anchor::TopRight,

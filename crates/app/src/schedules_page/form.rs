@@ -12,7 +12,7 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme as _, IconName, StyledExt as _};
-use onehand_ui::{ControlSize, Tall as _, TallIcon as _};
+use onehand_ui::{ControlSize, Short as _, ShortIcon as _, Tall as _};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -82,7 +82,7 @@ pub(super) fn head(
             crate::controls::menu_below(
                 "schedule-more",
                 crate::controls::action("schedule-more-trigger")
-                    .tall_icon()
+                    .short_icon()
                     .quiet_icon(false, cx)
                     .icon(IconName::Ellipsis)
                     .named("More"),
@@ -108,7 +108,7 @@ pub(super) fn head(
     actions.push({
         let handle = handle.clone();
         crate::controls::action("schedule-cancel")
-            .tall()
+            .short()
             .secondary()
             .label("Cancel")
             .on_click(move |_, window: &mut Window, cx: &mut App| {
@@ -119,7 +119,7 @@ pub(super) fn head(
     actions.push({
         let handle = handle.clone();
         crate::controls::action("schedule-save")
-            .tall()
+            .short()
             .primary()
             .loading(writing)
             .label("Save")
@@ -131,7 +131,12 @@ pub(super) fn head(
     });
     crate::page_parts::page_head(
         title,
-        (!facts.is_empty()).then(|| facts.join(" · ").into_any_element()),
+        // A new schedule, with nothing yet to say of itself, says what it is for.
+        Some(if facts.is_empty() {
+            super::SCHEDULES_ARE_FOR.into_any_element()
+        } else {
+            facts.join(" · ").into_any_element()
+        }),
         actions,
         cx,
     )

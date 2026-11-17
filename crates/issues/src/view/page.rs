@@ -519,7 +519,10 @@ impl IssuesView {
             .overflow_y_scroll()
             .track_scroll(&scroll)
             .px_6()
-            .py_2()
+            // Stood clear of the top above it as every page's body is; a
+            // step under at its foot, where nothing follows.
+            .pt_6()
+            .pb_2()
             // The table's head over its rows, only while there are rows to
             // name the columns of.
             .children((!rows.is_empty()).then(|| head_row(columns, cx)))

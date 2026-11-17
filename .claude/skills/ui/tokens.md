@@ -192,9 +192,9 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 | `TREE_ROW_FILL` | 1.4375rem | a tree row's fill: 23px, odd so the name centres on a whole pixel |
 | `TREE_ROW_ABOVE`, `TREE_ROW_BELOW` | 0.0625rem, 0.125rem | the room over and under a tree row's fill; between two fills, their sum |
 | `CONTROL_H` | 1.5rem | a small control: `.short()`, and an icon-only `.short_icon()` button |
-| `FIELD_H` | 1.75rem | the tallest control, a step over `.short()`: a page's head and form (`.tall()`); nothing stands taller |
+| `FIELD_H` | 1.75rem | the tallest control, a step over `.short()`: a page's form (`.tall()`); nothing stands taller |
 | `SCROLLBAR_THUMB`, `SCROLLBAR_THUMB_ACTIVE` | 4px, 6px | a scrollbar's thumb at rest, and hovered or dragged |
-| `CHROME_TEXT` | 0.8125rem | chrome text: a panel's rows, boxes, forms and strips, a `.tall()` control's words, a document's reading text |
+| `CHROME_TEXT` | 0.8125rem | chrome text: a panel's rows, boxes, forms and strips, a page's title, a `.tall()` control's words, a document's reading text |
 | `MICRO_TEXT` | 0.6875rem | a caption inside a small object (an attachment's plate), a badge's words |
 | `CODE_TEXT` | 0.75rem | machine text |
 | `LEADING` | 1.6 | reading text |

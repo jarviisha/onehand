@@ -18,8 +18,7 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::InputState;
 use gpui_component::{ActiveTheme, IconName, StyledExt};
 use onehand_core::workflow::{self as core, StepKind};
-use onehand_ui::Tall as _;
-use onehand_ui::TallIcon as _;
+use onehand_ui::ShortIcon as _;
 use std::path::PathBuf;
 
 /// The least a card takes before the row holds one fewer: room for a name,
@@ -84,15 +83,15 @@ pub(super) fn head(
 ) -> [AnyElement; 2] {
     let count = crate::workflow::templates(cx).len();
     let facts = match count {
-        1 => "1 workflow".to_string(),
-        n => format!("{n} workflows"),
+        1 => "The steps a task runs through · 1 workflow".to_string(),
+        n => format!("The steps a task runs through · {n} workflows"),
     };
     let more = {
         let handle = handle.clone();
         crate::controls::menu_below(
             "workflows-more",
             crate::controls::action("workflows-more-trigger")
-                .tall_icon()
+                .short_icon()
                 .quiet_icon(false, cx)
                 .icon(IconName::Ellipsis)
                 .named("More"),
@@ -112,7 +111,7 @@ pub(super) fn head(
             Some(facts.into_any_element()),
             vec![
                 crate::controls::action("new-workflow")
-                    .tall()
+                    .short()
                     .primary()
                     .label("New")
                     .tooltip("New workflow")

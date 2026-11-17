@@ -13,8 +13,8 @@ use gpui::{
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::{IconName, StyledExt};
-use onehand_ui::Tall as _;
-use onehand_ui::TallIcon as _;
+use onehand_ui::Short as _;
+use onehand_ui::ShortIcon as _;
 use std::path::{Path, PathBuf};
 
 /// *Run…*: which project to start the workflow of id `workflow` on, the
@@ -133,14 +133,14 @@ pub(in crate::workflows_page) fn editor_head(
         refuses,
         "run-workflow",
         crate::controls::action("run-workflow-trigger")
-            .tall()
+            .short()
             .secondary()
             .label("Run…"),
     )];
     if draft.shipped {
         actions.push(
             crate::controls::action("duplicate-to-edit")
-                .tall()
+                .short()
                 .primary()
                 .label("Duplicate to edit")
                 .on_click({
@@ -162,7 +162,7 @@ pub(in crate::workflows_page) fn editor_head(
         },
         "workflow-more",
         crate::controls::action("workflow-more-trigger")
-            .tall_icon()
+            .short_icon()
             .quiet_icon(false, cx)
             .icon(IconName::Ellipsis)
             .named("More"),
@@ -174,7 +174,7 @@ pub(in crate::workflows_page) fn editor_head(
         let problems = super::problems(draft, cx);
         actions.push(
             crate::controls::action("clear-workflow")
-                .tall()
+                .short()
                 .secondary()
                 .label("Cancel")
                 // Asks first when the form holds changes, as Esc does.
@@ -185,7 +185,7 @@ pub(in crate::workflows_page) fn editor_head(
         );
         actions.push(
             crate::controls::action("save-workflow")
-                .tall()
+                .short()
                 .primary()
                 .loading(writing)
                 .label("Save")
@@ -197,6 +197,10 @@ pub(in crate::workflows_page) fn editor_head(
         );
     }
     crate::page_parts::page_head(title, Some(facts.into_any_element()), actions, cx)
+        // No hairline of its own: the edge over the editor's columns, which
+        // their own edges meet, already parts the head from them.
+        .border_b_0()
+        .pb_0()
         .into_any_element()
 }
 
@@ -224,7 +228,7 @@ pub(in crate::workflows_page) fn unreadable(
             ),
             vec![
                 crate::controls::action("delete-unreadable-workflow")
-                    .tall()
+                    .short()
                     .quiet(cx)
                     .text_color(crate::theme::status_ink(cx).danger)
                     .label("Delete…")
