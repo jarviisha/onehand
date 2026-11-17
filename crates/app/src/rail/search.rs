@@ -36,6 +36,9 @@ pub(crate) fn workspace_control(
     let tile = div()
         .size_5()
         .flex_none()
+        // A step past the button's own gap, so the tile stands apart from
+        // the name rather than reading as its first letter.
+        .mr_1()
         .flex()
         .items_center()
         .justify_center()
