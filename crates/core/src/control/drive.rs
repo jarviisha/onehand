@@ -158,12 +158,15 @@ pub enum Input<'a> {
     },
     /// Session `uid`'s conversation is `session_id`, it has sent
     /// `prompts_sent` prompts, and `turn_over` says its turn is over with the
-    /// link up (`state::turn_over`): said when any of them changes.
+    /// link up (`state::turn_over`): said when any of them changes. `dir`
+    /// is the folder the conversation is kept in, when its chat keeps one on
+    /// disk.
     Conversation {
         uid: u64,
         session_id: String,
         prompts_sent: usize,
         turn_over: bool,
+        dir: Option<PathBuf>,
     },
 }
 
@@ -219,11 +222,19 @@ pub enum Effect {
     },
     /// What the person's view reads of the workers changed.
     Changed,
-    /// Write `kept` beside lead `lead`'s conversation, replacing what was
-    /// there, off the UI thread. A lead with no conversation yet writes
-    /// nothing. Late answers do not exist: a later `Keep` for the same lead
-    /// is the whole of it again, and the last asked for is what stays.
-    Keep { lead: u64, kept: Kept },
+    /// Write `kept` in `dir`, lead `lead`'s conversation folder, replacing
+    /// what was there, off the UI thread; first, when `moved_from` names the
+    /// folder it was last written in, write nothing there (its file goes).
+    /// `last`: the lead is gone, and this is the last write for it. Late
+    /// answers do not exist: a later `Keep` for the same lead is the whole
+    /// of it again, and the last asked for is what stays.
+    Keep {
+        lead: u64,
+        kept: Kept,
+        dir: PathBuf,
+        moved_from: Option<PathBuf>,
+        last: bool,
+    },
     /// Send worker `uid` the lead's turn `turn`, `text`, from onehand's
     /// tools, then report [`Input::TurnSent`] in the same pass. A late
     /// answer is **recorded**: the prompt went, so the relation moves on and
@@ -335,6 +346,10 @@ pub struct ControlDrive {
     closed_workers: HashMap<String, Closed>,
     /// The conversation each session was last said to be on.
     conversations: HashMap<u64, String>,
+    /// The folder each session's conversation is kept in, when it keeps one.
+    kept_in: HashMap<u64, PathBuf>,
+    /// Where each lead's workers were last written.
+    written: HashMap<u64, PathBuf>,
     pending: HashMap<Key, Pending>,
     /// Where each open that failed while its session was starting would
     /// have started it, and whether it added that project.
@@ -476,7 +491,7 @@ impl ControlDrive {
         self.conversations.remove(&uid);
         if let Some(relation) = self.workers.remove(&uid) {
             self.close_record(relation.handle, relation.lead, None);
-            fx.push(self.keep(relation.lead));
+            fx.extend(self.keep(relation.lead));
         }
         // Its own handle goes, and its workers' with their relations: the
         // person closing a lead lets its workers go for good, so none of
@@ -513,8 +528,11 @@ impl ControlDrive {
             | Effect::TurnAnswer { .. } => true,
         });
         if self.keeps(uid) {
-            fx.push(self.keep(uid));
+            fx.extend(self.keep_last(uid));
         }
+        // Kept until that last write, which goes where its conversation was.
+        self.kept_in.remove(&uid);
+        self.written.remove(&uid);
         fx
     }
 
@@ -608,7 +626,8 @@ impl ControlDrive {
                 session_id,
                 prompts_sent,
                 turn_over,
-            } => self.conversation(uid, session_id, prompts_sent, turn_over),
+                dir,
+            } => self.conversation(uid, session_id, prompts_sent, turn_over, dir),
         }
     }
 }

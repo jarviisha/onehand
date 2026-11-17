@@ -131,10 +131,9 @@ pub(crate) fn grant(uid: u64, grant: &onehand_core::task::Grant, cx: &mut App) {
     carry_later(fx, cx);
 }
 
-/// Session `uid` is closed, on `conversation` when it had one: its switch
-/// and what its tools opened go with it.
-pub(crate) fn forget(uid: u64, conversation: Option<PathBuf>, cx: &mut App) {
-    keeping::closed(uid, conversation, cx);
+/// Session `uid` is closed: its switch and what its tools opened go with it.
+pub(crate) fn forget(uid: u64, cx: &mut App) {
+    keeping::closed(uid, cx);
     let fx = drive().forget(uid);
     carry_later(fx, cx);
 }

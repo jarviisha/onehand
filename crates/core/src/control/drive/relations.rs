@@ -130,7 +130,7 @@ impl ControlDrive {
         relation.sent = prompts_sent;
         relation.person = false;
         let lead = relation.lead;
-        Some(vec![self.keep(lead)])
+        Some(self.keep(lead).into_iter().collect())
     }
 
     // A lead's calls on its workers.
@@ -229,7 +229,7 @@ impl ControlDrive {
             relation.person = false;
             relation.unended = true;
             let lead = relation.lead;
-            fx.push(self.keep(lead));
+            fx.extend(self.keep(lead));
         }
         fx.push(answer(Ok(format!("turn {turn} accepted"))));
         fx
@@ -251,7 +251,12 @@ impl ControlDrive {
         session_id: String,
         prompts_sent: usize,
         turn_over: bool,
+        dir: Option<PathBuf>,
     ) -> Vec<Effect> {
+        match dir {
+            Some(dir) => self.kept_in.insert(uid, dir),
+            None => self.kept_in.remove(&uid),
+        };
         let before = self.conversations.insert(uid, session_id.clone());
         let moved = before.as_ref() != Some(&session_id);
         let mut fx = Vec::new();
@@ -271,15 +276,18 @@ impl ControlDrive {
             }
             if changed {
                 let lead = relation.lead;
-                fx.push(self.keep(lead));
+                fx.extend(self.keep(lead));
             }
         }
         if moved && self.keeps(uid) {
             match before.is_some() && !self.leads_workers(uid) {
                 // Another conversation in this session: what ended stays in
-                // the file of the one it ended in.
-                true => self.closed_workers.retain(|_, closed| closed.lead != uid),
-                false => fx.push(self.keep(uid)),
+                // the file of the one it ended in, which is not written again.
+                true => {
+                    self.closed_workers.retain(|_, closed| closed.lead != uid);
+                    self.written.remove(&uid);
+                }
+                false => fx.extend(self.keep(uid)),
             }
         }
         fx
@@ -315,11 +323,27 @@ impl ControlDrive {
                 .any(|closed| closed.lead == lead)
     }
 
-    /// Everything `lead` keeps, to be written beside its conversation: its
-    /// workers whose conversation is known, in the order they opened, those
-    /// still coming back as they were kept, and the handles of those that
-    /// ended.
-    pub(super) fn keep(&self, lead: u64) -> Effect {
+    /// Everything `lead` keeps, to be written in its conversation's folder:
+    /// its workers whose conversation is known, in the order they opened,
+    /// those still coming back as they were kept, and the handles of those
+    /// that ended. Nothing while it has no folder yet: its conversation,
+    /// once said, writes it all. A conversation that moved has the file in
+    /// the folder last written emptied first.
+    pub(super) fn keep(&mut self, lead: u64) -> Option<Effect> {
+        self.keep_as(lead, false)
+    }
+
+    /// [`Self::keep`], the last for `lead`, which is gone.
+    pub(super) fn keep_last(&mut self, lead: u64) -> Option<Effect> {
+        self.keep_as(lead, true)
+    }
+
+    fn keep_as(&mut self, lead: u64, last: bool) -> Option<Effect> {
+        let dir = self.kept_in.get(&lead)?.clone();
+        let moved_from = self
+            .written
+            .insert(lead, dir.clone())
+            .filter(|before| *before != dir);
         let mut held: Vec<_> = self
             .workers
             .values()
@@ -363,13 +387,16 @@ impl ControlDrive {
             .collect();
         closed.sort_by_key(|(seq, _)| *seq);
         let closed = closed.into_iter().map(|(_, closed)| closed).collect();
-        Effect::Keep {
+        Some(Effect::Keep {
             lead,
             kept: Kept {
                 workers: held.into_iter().map(|(_, worker)| worker).collect(),
                 closed,
             },
-        }
+            dir,
+            moved_from,
+            last,
+        })
     }
 
     /// Lead `lead`'s conversation was opened again, keeping `kept`, the

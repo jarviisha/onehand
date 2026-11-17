@@ -521,15 +521,10 @@ impl ChatPane {
     /// the way that fails is silent: forget one and a closed session keeps a
     /// dot on a rail row that no longer exists.
     pub fn close(&mut self, uid: u64, cx: &mut Context<Self>) {
-        // Read before it goes: what a lead's close keeps is written beside
-        // its conversation.
-        let conversation = self
-            .session_of(uid)
-            .and_then(|session| session.read(cx).chat().conversation_dir());
         self.conversations.remove(&uid);
         self.resuming.remove(&uid);
         self.held_dirs.remove(&uid);
-        crate::control::forget(uid, conversation, cx);
+        crate::control::forget(uid, cx);
         if self.active == Some(uid) {
             // What the composer still holds is dropped by the next `show`,
             // which treats an unaddressed draft as unaddressed.

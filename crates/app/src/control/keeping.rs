@@ -1,9 +1,9 @@
 //! What a lead keeps of its workers, written beside its conversation, and
 //! each session's conversation and prompts said to the tools' drive.
 //!
-//! What is kept, and when, is the drive's (`Effect::Keep`); this finds the
-//! lead's conversation directory and writes there off the UI thread. A
-//! lead whose conversation moved to a new id has its file moved with it.
+//! What is kept, when, in which folder, and which old file goes when a
+//! lead's conversation moved, is the drive's (`Effect::Keep`); this writes
+//! there off the UI thread.
 //!
 //! **The last write asked for is the one that stays.** Writes run on the
 //! background executor in any order, so each is numbered as it is asked
@@ -24,11 +24,6 @@ struct Keeping {
     /// The watch on each session, and the conversation, prompts sent and
     /// whether its turn is over it last said.
     watches: HashMap<u64, (Subscription, Option<Said>)>,
-    /// Where each lead's workers were last written.
-    written: HashMap<u64, PathBuf>,
-    /// Where the conversation each lead closed on is kept, read before it
-    /// went.
-    closed: HashMap<u64, PathBuf>,
 }
 
 impl Global for Keeping {}
@@ -55,12 +50,17 @@ pub(crate) fn watch(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
 }
 
 fn said(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
-    let (session_id, prompts_sent, turn_over) = {
+    let (session_id, prompts_sent, turn_over, dir) = {
         let chat = session.read(cx).chat();
         let Some(id) = chat.session_id.clone() else {
             return;
         };
-        (id, chat.prompts_sent, turn_over(chat))
+        (
+            id,
+            chat.prompts_sent,
+            turn_over(chat),
+            chat.conversation_dir(),
+        )
     };
     let now = (session_id.clone(), prompts_sent, turn_over);
     match cx.default_global::<Keeping>().watches.get_mut(&uid) {
@@ -72,39 +72,26 @@ fn said(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
         session_id,
         prompts_sent,
         turn_over,
+        dir,
     });
     carry(fx, cx);
 }
 
-/// Session `uid` closed on the conversation kept in `conversation`: its
-/// watch goes, and what its close keeps is written beside it.
-pub(super) fn closed(uid: u64, conversation: Option<PathBuf>, cx: &mut App) {
-    let keeping = cx.default_global::<Keeping>();
-    keeping.watches.remove(&uid);
-    if let Some(conversation) = conversation {
-        keeping.closed.insert(uid, conversation);
-    }
+/// Session `uid` closed: its watch goes.
+pub(super) fn closed(uid: u64, cx: &mut App) {
+    cx.default_global::<Keeping>().watches.remove(&uid);
 }
 
-/// Write `kept` beside lead `lead`'s conversation; nothing while it has
-/// none yet, nor for a chat that keeps nothing on disk.
-pub(super) fn keep(lead: u64, kept: Kept, cx: &mut App) {
-    let live = crate::windows::session(lead, cx)
-        .and_then(|session| session.read(cx).chat().conversation_dir());
-    let here = live.is_some();
-    let keeping = cx.default_global::<Keeping>();
-    let Some(dir) = live.or_else(|| keeping.closed.get(&lead).cloned()) else {
-        return;
-    };
-    let moved_from = keeping
-        .written
-        .insert(lead, dir.clone())
-        .filter(|before| *before != dir);
-    // A lead gone writes once more, its last.
-    if !here {
-        keeping.written.remove(&lead);
-        keeping.closed.remove(&lead);
-    }
+/// Write `kept` in `dir`, beside lead `lead`'s conversation, emptying
+/// `moved_from` first; `last` says nothing is numbered for the lead again.
+pub(super) fn keep(
+    lead: u64,
+    kept: Kept,
+    dir: PathBuf,
+    moved_from: Option<PathBuf>,
+    last: bool,
+    cx: &mut App,
+) {
     let asked = {
         let mut newest = newest();
         let asked = newest.get(&lead).map_or(1, |n| n + 1);
@@ -123,9 +110,7 @@ pub(super) fn keep(lead: u64, kept: Kept, cx: &mut App) {
             if let Err(why) = kept::write_blocking(&dir, &kept) {
                 eprintln!("onehand: cannot keep workers in {}: {why}", dir.display());
             }
-            // A lead gone has written its last: nothing is numbered for it
-            // again.
-            if !here {
+            if last {
                 newest.remove(&lead);
             }
         })

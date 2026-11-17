@@ -336,15 +336,13 @@ impl ControlDrive {
         );
         self.requests
             .answered(open.lead, &open.request, answer.clone());
-        vec![
-            Effect::Unwatch(uid),
-            Effect::Changed,
-            self.keep(open.lead),
-            Effect::Answer {
-                key,
-                outcome: Ok(answer),
-            },
-        ]
+        let mut fx = vec![Effect::Unwatch(uid), Effect::Changed];
+        fx.extend(self.keep(open.lead));
+        fx.push(Effect::Answer {
+            key,
+            outcome: Ok(answer),
+        });
+        fx
     }
 
     /// The wait armed with `token` ran out.
@@ -413,7 +411,7 @@ impl ControlDrive {
             }
             let lead = pending.open.lead;
             self.close_record(back.handle.clone(), lead, Some(why));
-            fx.push(self.keep(lead));
+            fx.extend(self.keep(lead));
             return fx;
         }
         match pending.phase {
@@ -480,6 +478,8 @@ impl ControlDrive {
             },
         );
         let lead = pending.open.lead;
-        vec![Effect::Changed, self.keep(lead)]
+        let mut fx = vec![Effect::Changed];
+        fx.extend(self.keep(lead));
+        fx
     }
 }
