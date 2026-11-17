@@ -12,7 +12,7 @@ use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{Anchor, Context, InteractiveElement as _, IntoElement, ParentElement, Styled, div};
 use gpui_component::menu::DropdownMenu as _;
-use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, StyledExt, h_flex};
 use onehand_ui::ShortIcon as _;
 
 /// The workspace's name and a chevron, a quiet button and a tab stop of its
@@ -32,13 +32,11 @@ pub(crate) fn workspace_control(
         .unwrap_or_default();
     let theme = cx.theme();
     // A letter tile before the name, so the workspace reads as the window's
-    // owner rather than one more control in the bar.
+    // owner rather than one more control in the bar. It stands outside the
+    // button: it marks the workspace, and only the name opens its menu.
     let tile = div()
         .size_5()
         .flex_none()
-        // A step past the button's own gap, so the tile stands apart from
-        // the name rather than reading as its first letter.
-        .mr_1()
         .flex()
         .items_center()
         .justify_center()
@@ -62,17 +60,21 @@ pub(crate) fn workspace_control(
         shell.recents(cx),
         cx.entity().downgrade(),
     );
-    onehand_ui::menu_below(
-        "workspace-menu",
-        crate::controls::action("workspace-segment")
-            .quiet(cx)
-            .short()
-            .child(tile)
-            .child(label)
-            .dropdown_caret(true)
-            .named("Open another workspace, or start one"),
-        menu,
-    )
+    h_flex()
+        .flex_none()
+        .items_center()
+        .gap_1p5()
+        .child(tile)
+        .child(onehand_ui::menu_below(
+            "workspace-menu",
+            crate::controls::action("workspace-segment")
+                .quiet(cx)
+                .short()
+                .child(label)
+                .dropdown_caret(true)
+                .named("Open another workspace, or start one"),
+            menu,
+        ))
 }
 
 /// The search field, the library's edged field, with the key that reaches it
