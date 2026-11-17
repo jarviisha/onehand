@@ -39,8 +39,9 @@ fn newest() -> std::sync::MutexGuard<'static, HashMap<u64, u64>> {
 }
 
 /// Say session `uid`'s conversation, prompts sent and whether its turn is
-/// over to the drive whenever any of them changes, from `session` on: each new session of `uid` replaces
-/// the watch on the one before.
+/// over or running to the drive whenever any of them changes, from
+/// `session` on: each new session of `uid` replaces the watch on the one
+/// before.
 pub(crate) fn watch(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
     let watch = cx.observe(session, move |session, cx| said(uid, &session, cx));
     cx.default_global::<Keeping>()
