@@ -38,9 +38,9 @@ pub fn dock_surface(cx: &App) -> Hsla {
 }
 
 /// A region's box: the agent pane, the Workbench, the terminal. Filling what
-/// it is given, on the reading surface, at the large corner, wrapped in a
-/// faint hairline ([`crate::faint_rule`]) so its edge holds where the two
-/// fills sit close: it stands on the window's fill and is parted from its
+/// it is given, on the reading surface, at the large corner, wrapped in the
+/// theme's hairline (`border`) so its edge holds where the two fills sit
+/// close: it stands on the window's fill and is parted from its
 /// neighbours by the gap around it ([`tokens::REGION_GAP`]). Clipped, so nothing inside paints
 /// past it; the clip is square, so what touches a corner leaves its own fill
 /// off.
@@ -51,7 +51,7 @@ pub fn region(cx: &App) -> Div {
         .bg(theme.background)
         .rounded(theme.radius_lg)
         .border_1()
-        .border_color(crate::faint_rule(cx))
+        .border_color(theme.border)
         .overflow_hidden()
 }
 

@@ -93,7 +93,7 @@ are not steps and stay allowed. A named spacing constant (`BLOCK_GAP`, `TIGHT_GA
 `tokens::REGION_GAP` is the `1p5` step: the gap between the regions' boxes, and between them and
 the window's edge, through which the window's fill shows.
 
-The boxes themselves take a faint hairline (`faint_rule`). Inside one, a strip has a 1px `border` line under it and a list beside
+The boxes themselves take a 1px `border` hairline. Inside one, a strip has a 1px `border` line under it and a list beside
 its detail one down its side facing the detail.
 
 ## Type
@@ -123,7 +123,7 @@ its detail one down its side facing the detail.
 | `.rounded_full()` | a dot, a status mark |
 
 A region's box (the agent pane, the Workbench, the terminal) is `radius_lg` on `background`, in
-a `faint_rule` hairline, standing on the window's fill (`sidebar`); a dock's open tab is `radius` on `secondary`.
+a `border` hairline, standing on the window's fill (`sidebar`); a dock's open tab is `radius` on `secondary`.
 
 The theme leaves both at the library's values, so its tooltips, menus, popovers, dialogs and
 toasts take them. What the library draws at half its corner (`radius_tokens().sm`: checkboxes,
