@@ -88,6 +88,17 @@ impl ControlDrive {
         }
     }
 
+    /// Whether the conversation with session id `id` may be resumed, `open`
+    /// being the ids of every conversation a session of any window has
+    /// open: one conversation runs in one session, or each would write it
+    /// back holding only what came after.
+    pub fn may_resume(&self, id: &str, open: &[String]) -> Result<(), ResumeRefused> {
+        match open.iter().any(|open| open == id) {
+            true => Err(ResumeRefused::AlreadyOpen),
+            false => Ok(()),
+        }
+    }
+
     /// Whether session `uid` leads workers, open or opening.
     pub(super) fn leads_workers(&self, uid: u64) -> bool {
         self.workers.values().any(|relation| relation.lead == uid)

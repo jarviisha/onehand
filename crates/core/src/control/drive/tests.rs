@@ -1288,3 +1288,14 @@ fn a_lead_may_not_leave_its_conversation() {
     let _ = drive.forget(7);
     assert_eq!(drive.may_leave_conversation(1), Ok(()));
 }
+
+#[test]
+fn a_conversation_open_anywhere_is_not_resumed_again() {
+    let drive = ControlDrive::default();
+    assert_eq!(
+        drive.may_resume("c1", &["c1".into()]),
+        Err(ResumeRefused::AlreadyOpen)
+    );
+    assert_eq!(drive.may_resume("c2", &["c1".into()]), Ok(()));
+    assert_eq!(drive.may_resume("c1", &[]), Ok(()));
+}

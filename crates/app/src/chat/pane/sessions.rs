@@ -143,14 +143,10 @@ impl ChatPane {
     pub(super) fn start(&mut self, uid: u64, resume: Option<ConvMeta>, cx: &mut Context<Self>) {
         match resume {
             Some(meta) => {
-                let open: Vec<String> = self
-                    .open_ids(cx)
-                    .into_iter()
-                    .chain(super::history::open_elsewhere(cx.entity_id(), cx))
-                    .collect();
-                if open.contains(&meta.session_id) {
+                let open = self.open_everywhere(cx);
+                if let Err(why) = crate::control::drive().may_resume(&meta.session_id, &open) {
                     cx.emit(ChatPaneEvent::ResumeRefused(
-                        "This conversation is already open in a session".to_string(),
+                        super::history::resume_refused(why),
                     ));
                     return;
                 }

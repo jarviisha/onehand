@@ -123,11 +123,7 @@ impl ChatPane {
     pub(super) fn history_control(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         // Owned rather than borrowed out of the sessions: the menu is built
         // later, from a closure that outlives this borrow of the pane.
-        let open: Vec<String> = self
-            .open_ids(cx)
-            .into_iter()
-            .chain(open_elsewhere(cx.entity_id(), cx))
-            .collect();
+        let open = self.open_everywhere(cx);
         let now = onehand_core::chat::now_secs();
         let held = self.archives.as_ref().and_then(|held| held.found.as_ref());
         let rows: Vec<HistoryRow> = held
@@ -279,6 +275,14 @@ impl ChatPane {
             .map(|(_, id)| id.clone());
         live.chain(resuming).collect()
     }
+
+    /// The conversations a session of any window has open, by their ids.
+    pub(super) fn open_everywhere(&self, cx: &Context<Self>) -> Vec<String> {
+        self.open_ids(cx)
+            .into_iter()
+            .chain(open_elsewhere(cx.entity_id(), cx))
+            .collect()
+    }
 }
 
 /// What a person is told when a session is not put on another
@@ -295,7 +299,7 @@ pub(super) fn resume_refused(why: ResumeRefused) -> String {
 
 /// The conversations a session of another window has open, by their ids,
 /// `skip` being this window's pane.
-pub(crate) fn open_elsewhere(skip: gpui::EntityId, cx: &App) -> Vec<String> {
+fn open_elsewhere(skip: gpui::EntityId, cx: &App) -> Vec<String> {
     crate::windows::live(cx)
         .into_iter()
         .map(|(_, shell)| shell.read(cx).chat_pane().clone())
