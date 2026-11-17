@@ -76,16 +76,16 @@ div().px_2().cursor_pointer().child("Retry").on_click(retry)
 crate::controls::action("retry-task").quiet(cx).short().label("Retry…").on_click(retry)
 // No variant and no size: the library's default, edged and lettered at the body size
 action("run-check").label("Run check")
-action("run-check").secondary().tall().label("Run check")
+action("run-check").secondary().short().label("Run check")
 // Refuses the press yet keeps the pointer, and never says why
 action(("plugin-update", i)).short().secondary().disabled(busy)
 action(("plugin-update", i)).short().secondary().refuses(busy.then_some("Another change is running"))
 // A row's icon at the extra small size, under the height of a worded peer beside it
 action(("session-more", i)).quiet_icon(false, cx).xsmall().icon(IconName::Ellipsis)
 action(("session-more", i)).quiet_icon(false, cx).short_icon().icon(IconName::Ellipsis)
-// A page form's button at the library's default size, lettered at the body size
-action("save-workflow").primary().label("Save")
-action("save-workflow").primary().tall().label("Save")
+// A page form's field at the library's default size, lettered at the body size
+text_input(&draft.name, cx)
+text_input(&draft.name, cx).tall()
 // A badge drawn by hand
 div().px(CHIP_PAD_X).py(CHIP_PAD_Y).rounded(cx.theme().radius).bg(fill).text_color(ink)
 badge(text, tint)

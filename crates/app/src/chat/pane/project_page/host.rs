@@ -21,7 +21,7 @@ use gpui_component::{ActiveTheme as _, Icon, Sizable as _, StyledExt as _};
 use onehand_core::host::copy::{self, copies_dir};
 use onehand_core::host::wire::SessionInfo;
 use onehand_core::workspace::HostName;
-use onehand_ui::TallIcon as _;
+use onehand_ui::ShortIcon as _;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -316,7 +316,7 @@ impl ChatPane {
 /// *Refresh*, for the page's head: ask the host again.
 pub(super) fn refresh(host: &HostName, listing: bool, cx: &mut Context<ChatPane>) -> AnyElement {
     crate::controls::action("host-sessions-refresh")
-        .tall_icon()
+        .short_icon()
         .quiet_icon(false, cx)
         .icon(Icon::new(crate::icons::Icon::RefreshCw))
         .loading(listing)

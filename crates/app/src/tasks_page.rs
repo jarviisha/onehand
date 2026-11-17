@@ -184,7 +184,7 @@ impl TasksPage {
                 .iter()
                 .map(|project| (project.label.clone(), project.root.clone())),
             page.filter.clone(),
-            onehand_ui::ControlSize::Tall,
+            onehand_ui::ControlSize::Short,
             move |only, cx| {
                 this.update(cx, |page: &mut Self, cx| page.filter_tasks(only, cx));
             },
@@ -244,7 +244,16 @@ impl TasksPage {
         // which hold the counts. The cards two by two while the column holds
         // two.
         let top = vec![
-            page_head("Tasks", None, Vec::new(), cx).into_any_element(),
+            page_head(
+                "Tasks",
+                Some(
+                    "Agent work started by hand, by a schedule or from an issue."
+                        .into_any_element(),
+                ),
+                Vec::new(),
+                cx,
+            )
+            .into_any_element(),
             div()
                 .h_flex()
                 .justify_end()

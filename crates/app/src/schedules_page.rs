@@ -26,7 +26,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme as _, StyledExt as _};
 use onehand_core::schedule::{self, Schedule};
-use onehand_ui::Tall as _;
+use onehand_ui::Short as _;
 use std::path::PathBuf;
 
 /// How many schedules the page lists before saying how many more there are.
@@ -338,7 +338,12 @@ impl Render for SchedulesPage {
             .cloned()
             .collect();
         let on = mine.iter().filter(|s| s.on).count();
-        let facts = (!mine.is_empty()).then(|| format!("{on} on · {} off", mine.len() - on));
+        // With none yet, the head says what a schedule is for instead.
+        let facts = if mine.is_empty() {
+            "Start tasks on a cadence you choose.".to_string()
+        } else {
+            format!("{on} on · {} off", mine.len() - on)
+        };
         let left_out = mine.len().saturating_sub(SCHEDULES_SHOWN);
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -400,10 +405,10 @@ impl Render for SchedulesPage {
                 [
                     page_head(
                         "Schedules",
-                        facts.map(IntoElement::into_any_element),
+                        Some(facts.into_any_element()),
                         vec![
                             crate::controls::action("new-schedule")
-                                .tall()
+                                .short()
                                 .primary()
                                 .label("New schedule")
                                 .refuses(self.projects.is_empty().then_some("Add a project first"))
@@ -453,7 +458,7 @@ impl SchedulesPage {
                 .iter()
                 .map(|(root, label)| (label.clone(), root.clone())),
             self.filter.clone(),
-            onehand_ui::ControlSize::Tall,
+            onehand_ui::ControlSize::Short,
             move |only, cx| {
                 this.update(cx, |page: &mut Self, cx| {
                     page.filter = only;

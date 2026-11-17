@@ -174,7 +174,8 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 | Reading text: the transcript, the composer's field, a document | the chrome size on the reading leading: the transcript's `TEXT`, `CHROME_TEXT` elsewhere |
 | The transcript's record: activity, thoughts, notices, a card's question | a step under the reading size, the transcript's `TEXT_SM` |
 | A heading in reading text | a step up the scale per level, two at most; then the body's size |
-| A page's or an issue's title | `.text_lg()` |
+| A page's title, in its head | `CHROME_TEXT`, semibold: weight sets it apart, so the head letters as the chrome around it |
+| An issue's title | `.text_lg()` |
 | The empty session's heading, the display size | `.text_xl()` |
 
 - **Weight carries hierarchy before size does**: `font_medium` for a name in a header,
@@ -357,9 +358,9 @@ draws on (a radio's or a checkbox's ring on the selected step), `choice_mark` dr
 
 **A size names a role, and the role follows the room the control stands in.** A control takes
 one of the library's two sizes. On a page, where there is room and the person reads and types
-what a control holds, it takes `.tall()` (a button is the library's small held at `FIELD_H`, its words at `CHROME_TEXT`): a page's head and a page's
+what a control holds, it takes `.tall()` (a button is the library's small held at `FIELD_H`, its words at `CHROME_TEXT`): a page's
 form, its fields, pickers and buttons alike, so a field's words stand at its title's size; a
-dialog holding a form at `DIALOG_FORM` is that room too. In dense chrome (the rail, a dock, a
+dialog holding a form at `DIALOG_FORM` is that room too. In dense chrome (a page's head and the search and filters under it, the rail, a dock, a
 strip, a dock's filter bar, a dialog that asks one thing, a row, a box's title row, the composer) it takes
 `.short()` (a button is the library's extra small, a field its small, held at `CONTROL_H`), so it never outweighs what it acts on. An icon alone is
 square at its row's height: `.short_icon()` beside `.short()` peers, `.tall_icon()` beside tall ones.
