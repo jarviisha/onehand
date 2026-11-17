@@ -240,8 +240,8 @@ The surfaces are neutral greys, each region a visible step from its neighbour: o
 palette the reading surface is the deepest, a charcoal still clear of black, and every region's box
 stands on it, the agent pane, the Workbench and the terminal alike; the window's fill, under the
 title bar, the rail and the gaps between the boxes, a step over it; and a floating surface a step
-over the page, told apart by its fill and its edge. The light palette is a pale grey page under a
-white window for the same regions. The focus ring is a grey. The one hue
+over the page, told apart by its fill and its edge. The light palette turns it over: the boxes white on a
+pale grey window, so the reading surface is the brightest. The focus ring is a grey. The one hue
 among them is the blue of the primary action. The item chosen among several stands on the
 selected grey (`chosen_fill`), a step past the hover step, its name in the content ink
 (`chosen_ink`), as VS Code marks a selection in a list that does not hold the keys.

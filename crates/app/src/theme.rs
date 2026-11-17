@@ -92,24 +92,26 @@ fn palette(colors: &mut gpui_component::ThemeConfigColors, dark: bool) {
     }
     set! {
         // The reading surface, and what the library draws as part of it.
-        background: "#181818", "#f8f8f8";
-        list: "#181818", "#f8f8f8";
-        table: "#181818", "#f8f8f8";
-        accordion: "#181818", "#f8f8f8";
+        background: "#181818", "#ffffff";
+        list: "#181818", "#ffffff";
+        table: "#181818", "#ffffff";
+        accordion: "#181818", "#ffffff";
         group_box: "#181818", "#ffffff";
-        tab_active: "#181818", "#f8f8f8";
-        slider_thumb: "#181818", "#f8f8f8";
-        scrollbar: "#18181800", "#f8f8f800";
+        tab_active: "#181818", "#ffffff";
+        slider_thumb: "#181818", "#ffffff";
+        scrollbar: "#18181800", "#ffffff00";
         // The window's fill under the title bar, the rail and the gaps
-        // between the boxes: a step over the reading surface.
-        sidebar: "#1f1f1f", "#ffffff";
-        title_bar: "#1f1f1f", "#ffffff";
-        status_bar: "#1f1f1f", "#ffffff";
-        tab_bar: "#1f1f1f", "#ffffff";
+        // between the boxes: a step off the reading surface, over it in the
+        // dark palette and under it in the light one, so the boxes are the
+        // brighter surface by day.
+        sidebar: "#1f1f1f", "#f8f8f8";
+        title_bar: "#1f1f1f", "#f8f8f8";
+        status_bar: "#1f1f1f", "#f8f8f8";
+        tab_bar: "#1f1f1f", "#f8f8f8";
         tab_bar_segmented: "#1f1f1f", "#f3f3f3";
-        description_list_label: "#1f1f1f", "#ffffff";
-        list_even: "#1f1f1f66", "#ffffff";
-        list_head: "#1f1f1f66", "#ffffff";
+        description_list_label: "#1f1f1f", "#f8f8f8";
+        list_even: "#1f1f1f66", "#f8f8f8";
+        list_head: "#1f1f1f66", "#f8f8f8";
         // A floating surface: a step over it.
         popover: "#252526", "#ffffff";
         // The well, the step past it, and what rests under the pointer.
