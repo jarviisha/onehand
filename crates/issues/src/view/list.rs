@@ -270,9 +270,9 @@ impl IssuesView {
                         action("issues-new")
                             .when(drafting, |button| button.secondary())
                             .when(!drafting, |button| button.primary())
-                            .short_icon()
+                            .short()
                             .icon(Icon::new(IconName::Plus))
-                            .named("New issue")
+                            .label("New issue")
                             .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
                                 view.open_form(None, window, cx)
                             })),
