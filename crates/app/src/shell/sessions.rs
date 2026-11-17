@@ -701,7 +701,3 @@ pub(super) fn agent_index(name: Option<SharedString>, cx: &App) -> usize {
     })
     .unwrap_or(0)
 }
-
-mod pages;
-#[cfg(test)]
-pub(super) use pages::{Reach, page_projects_in, page_roots_in};
