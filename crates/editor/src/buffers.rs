@@ -8,8 +8,8 @@
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyView, App, AppContext, Entity, IntoElement, ParentElement, Rems, SharedString, Styled,
-    Window, div, rems,
+    AnyView, App, AppContext, Entity, InteractiveElement as _, IntoElement, ParentElement, Rems,
+    SharedString, StatefulInteractiveElement as _, Styled, Window, div, rems,
 };
 use gpui_component::input::{Editor, EditorState};
 use gpui_component::popover::Popover;
@@ -65,10 +65,10 @@ pub(crate) type OnPress = On<gpui::ClickEvent>;
 pub(crate) type On<T> = Box<dyn Fn(&T, &mut Window, &mut App)>;
 
 /// The tree's dropdown: wide enough for a nested name to be read and a
-/// change mark beside it, tall enough for a folder or two unfolded, and its
-/// own scroll past that. In rems, so they follow the panel's zoom.
+/// change mark beside it, as tall as the tree up to a folder or two unfolded,
+/// and its own scroll past that. In rems, so they follow the panel's zoom.
 const TREE_DROPDOWN_W: Rems = rems(20.);
-const TREE_DROPDOWN_H: Rems = rems(24.);
+const TREE_DROPDOWN_MAX_H: Rems = rems(24.);
 
 /// The tree's control on the bar: the toggle at its end, or the way back at its start.
 pub(crate) enum Lead {
@@ -152,7 +152,16 @@ pub(crate) fn file_bar(
             .on_open_change(on_pick)
             .p_0()
             .w(TREE_DROPDOWN_W)
-            .content(move |_, _, _| div().h(TREE_DROPDOWN_H).v_flex().child(tree.clone()));
+            // The scroll is this wrapper's, not the tree's own: under a
+            // height only capped, the tree stands at its content's height,
+            // and what passes the cap scrolls here.
+            .content(move |_, _, _| {
+                div()
+                    .id("editor-file-tree-scroll")
+                    .max_h(TREE_DROPDOWN_MAX_H)
+                    .overflow_y_scroll()
+                    .child(tree.clone())
+            });
         div()
             .h_flex()
             .items_center()

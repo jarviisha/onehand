@@ -264,18 +264,6 @@ fn closing_a_tab_with_edits_asks_and_discarding_drops_its_buffer() {
         }
         Closing::Closed(_) => panic!("closed a tab with edits"),
     }
-    match drive.close_all(&root()) {
-        Closing::Asks {
-            close,
-            unsaved,
-            label,
-        } => {
-            assert_eq!(close, Close::All(root()));
-            assert_eq!(unsaved, 1);
-            assert_eq!(label, None);
-        }
-        Closing::Closed(_) => panic!("closed tabs with edits"),
-    }
     let effects = drive.discard(&Close::Tab(root(), uid));
     assert_eq!(forgot(&effects), uid);
     assert_eq!(drive.tabs(&root()).map(|t| t.files().len()), Some(0));

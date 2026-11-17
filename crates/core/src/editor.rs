@@ -114,13 +114,6 @@ impl RootEditors {
             }
         }
     }
-
-    /// Close every tab at once (discarding unsaved edits) — the one-touch
-    /// escape that hands the whole well back to the chat.
-    pub(crate) fn close_all(&mut self) {
-        self.files.clear();
-        self.active = 0;
-    }
 }
 
 /// Every project's open files in one Workbench: their tabs, where each
@@ -347,17 +340,6 @@ mod tests {
         assert_eq!(ed.open(PathBuf::from("/a.rs"), None, 3), (0, false));
         assert_eq!(ed.files.len(), 2);
         assert_eq!(ed.active, 0);
-    }
-
-    #[test]
-    fn close_all_empties_the_panel() {
-        let mut ed = RootEditors::default();
-        ed.open(PathBuf::from("/a.rs"), None, 1);
-        ed.open(PathBuf::from("/b.rs"), None, 2);
-        ed.close_all();
-        assert!(ed.files.is_empty());
-        assert_eq!(ed.active, 0);
-        assert!(ed.active_file().is_none());
     }
 
     #[test]

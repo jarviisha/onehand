@@ -107,11 +107,10 @@ pub enum Closing {
     },
 }
 
-/// What a close is about: one tab of a project, or all of its tabs.
+/// What a close is about: one tab of a project.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Close {
     Tab(PathBuf, u64),
-    All(PathBuf),
 }
 
 /// A write on its way: whether another save was asked for while it ran, and
@@ -195,15 +194,6 @@ impl EditorDrive {
         (true, vec![read])
     }
 
-    /// Show tab `idx` of `root`.
-    pub fn select(&mut self, root: &Path, idx: usize) {
-        if let Some(tabs) = self.editors.roots.get_mut(root) {
-            if idx < tabs.files.len() {
-                tabs.active = idx;
-            }
-        }
-    }
-
     /// Tab `uid` in `root` was typed into.
     pub fn typed(&mut self, root: &Path, uid: u64) {
         if let Some(file) = self.file_mut(root, uid) {
@@ -280,51 +270,23 @@ impl EditorDrive {
         Closing::Closed(self.discard(&close))
     }
 
-    /// Ask to close every tab of `root`: closed at once unless one holds edits.
-    #[must_use = "its effects are to be carried"]
-    pub fn close_all(&mut self, root: &Path) -> Closing {
-        let close = Close::All(root.to_path_buf());
-        match self.editors.unsaved(root) {
-            0 => Closing::Closed(self.discard(&close)),
-            unsaved => Closing::Asks {
-                close,
-                unsaved,
-                label: None,
-            },
-        }
-    }
-
     /// Close without asking; the question, if there was one, is answered.
     /// Named by project and a tab by `uid`, so it still means what it said
     /// if the strip changed while it was asked.
     #[must_use = "its effects are to be carried"]
     pub fn discard(&mut self, close: &Close) -> Vec<Effect> {
         let editors = &mut self.editors;
-        let (Close::Tab(root, _) | Close::All(root)) = close;
+        let Close::Tab(root, uid) = close;
         let Some(tabs) = editors.roots.get_mut(root) else {
             return Vec::new();
         };
-        let gone: Vec<u64> = match close {
-            Close::Tab(_, uid) => {
-                let Some(idx) = tabs.files.iter().position(|f| f.uid == *uid) else {
-                    return Vec::new();
-                };
-                tabs.close(idx);
-                vec![*uid]
-            }
-            Close::All(_) => {
-                let uids = tabs.files.iter().map(|f| f.uid).collect();
-                tabs.close_all();
-                uids
-            }
+        let Some(idx) = tabs.files.iter().position(|f| f.uid == *uid) else {
+            return Vec::new();
         };
+        tabs.close(idx);
         editors.standing.remove(root);
-        gone.into_iter()
-            .map(|uid| {
-                editors.read_through.remove(&uid);
-                Effect::Forget { uid }
-            })
-            .collect()
+        editors.read_through.remove(uid);
+        vec![Effect::Forget { uid: *uid }]
     }
 
     /// What the world reports back.
