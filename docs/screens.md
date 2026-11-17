@@ -255,9 +255,12 @@ room and leaves the terminal as it is.
   files are reached through either tree; there is no list of them. The tree's toggle ends the
   bar, beside the tree it shows and hides. Under the bar, the file's top edge fades from the
   box's fill to nothing, over the file, in place of a line.
+- Markdown's: the open document's name, then *Edit source*, then the documents list's toggle at
+  the bar's end, beside the list it shows and hides. While the list and the reader are one at a
+  time, the *Documents* link back stands at the bar's start instead of the toggle.
 - The terminal's: the open shell's name at its start, then `+`, maximize, hide. While the dock
   holds more than one shell, a list of them runs down the box's right side beside the grid, at a
-  fixed width, neither dragged nor saved: a row per shell, its terminal mark, its name (numbered,
+  fixed width, neither dragged nor saved, parted from the grid by a line down its left edge: a row per shell, its terminal mark, its name (numbered,
   capped, whole on hover), the live dot while it runs a command, and its close on hover and on
   the keyboard's row, the chosen one on the open tab's fill and brought into view; 30 rows, then
   *N more*. Each row is a tab stop: `↑`/`↓` step the rows, Delete closes one, and Enter or a

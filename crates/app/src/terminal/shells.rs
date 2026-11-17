@@ -181,6 +181,9 @@ impl TerminalPanel {
             .flex_none()
             .w(onehand_ui::tokens::SHELL_LIST_W)
             .h_full()
+            // Parted from the grid by a line on the side facing it.
+            .border_l_1()
+            .border_color(cx.theme().border)
             .v_flex()
             .overflow_y_scroll();
         let (shown, left_out) = shown_rows(rows.len());

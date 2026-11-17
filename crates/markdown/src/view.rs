@@ -401,33 +401,43 @@ impl MarkdownView {
         let layout = list_detail(self.split.read(cx), &DOC_LIST, self.width.get(), rem);
         let alone = !layout.side_by_side;
 
-        // What leads the reader's header: the way back to the list while the
-        // two are one at a time, else the toggle hiding the list beside it.
+        // The reader's header: the way back to the list at its start while the
+        // two are one at a time, else the toggle hiding the list at its end.
         // The toggle's icon says which way the press goes rather than which
         // state is in force: a panel drawn open beside a list that is open is
         // a control that looks like a reading.
         let lead = match alone {
-            true => back_link("markdown-back", "Documents", cx)
-                .on_click(cx.listener(|view: &mut Self, _, _, cx| {
-                    view.detail = false;
-                    cx.notify();
-                }))
-                .into_any_element(),
-            false => onehand_ui::strip_control(
-                "markdown-toggle-list",
-                match self.list_shown {
-                    true => IconName::PanelRightClose,
-                    false => IconName::PanelRightOpen,
-                },
-                false,
-                cx,
-            )
-            .named(match self.list_shown {
-                true => "Hide the document list",
-                false => "Show the document list",
-            })
-            .on_click(cx.listener(|view: &mut Self, _, _, cx| view.toggle_list(cx)))
-            .into_any_element(),
+            true => (
+                Some(
+                    back_link("markdown-back", "Documents", cx)
+                        .on_click(cx.listener(|view: &mut Self, _, _, cx| {
+                            view.detail = false;
+                            cx.notify();
+                        }))
+                        .into_any_element(),
+                ),
+                None,
+            ),
+            false => (
+                None,
+                Some(
+                    onehand_ui::strip_control(
+                        "markdown-toggle-list",
+                        match self.list_shown {
+                            true => IconName::PanelRightClose,
+                            false => IconName::PanelRightOpen,
+                        },
+                        false,
+                        cx,
+                    )
+                    .named(match self.list_shown {
+                        true => "Hide the document list",
+                        false => "Show the document list",
+                    })
+                    .on_click(cx.listener(|view: &mut Self, _, _, cx| view.toggle_list(cx)))
+                    .into_any_element(),
+                ),
+            ),
         };
         let reader = {
             let path = docs.open.as_ref().map(|doc| doc.path.clone());

@@ -273,8 +273,9 @@ fn doc_row(
 }
 
 /// The reading side: the document, under a header that is always drawn,
-/// led by `lead`: the toggle that hides the list beside it, or the way back to
-/// the list while the two show one at a time.
+/// opened by the way back to the list while the two show one at a time, and
+/// closed by the toggle that hides the list beside it otherwise (`back`,
+/// `toggle`).
 ///
 /// **Always**, and that is what makes the list hideable at all. The control
 /// that brings the list back lives in this header, so a header that appeared
@@ -288,7 +289,7 @@ fn doc_row(
 /// inside the same override. Handed one, the caller has to say which it means.
 pub(crate) fn reader(
     doc: Option<&OpenDoc>,
-    lead: gpui::AnyElement,
+    (back, toggle): (Option<gpui::AnyElement>, Option<gpui::AnyElement>),
     rem: gpui::Pixels,
     page: (Rems, gpui::AnyElement),
     on_edit: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
@@ -305,7 +306,7 @@ pub(crate) fn reader(
         .v_flex()
         .child(
             onehand_ui::mode_strip(cx)
-                .child(lead)
+                .children(back)
                 // What the strip names: the document, in full ink.
                 .child(
                     div()
@@ -330,7 +331,10 @@ pub(crate) fn reader(
                         .label("Edit source")
                         .tooltip("Open this file in the editor")
                         .on_click(on_edit)
-                })),
+                }))
+                // The list stands on the reader's right, so its toggle ends
+                // the bar beside it.
+                .children(toggle),
         )
         .child(match doc {
             // The column at the app's reading size, a step over its chrome,
