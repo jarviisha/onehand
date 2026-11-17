@@ -19,6 +19,7 @@ use onehand_ui::{
     Measured, TAB_MAX_W, TAB_MENU_CAP, TabStrip, TabWidths, measure_tab, menu_below, menu_row,
     tab_strip as tab_strip_rule, tab_width,
 };
+use onehand_workbench::BarEnds;
 use std::path::Path;
 
 /// Tabs are parted by space, never a line: the bar's own gap (`gap_1`).
@@ -68,7 +69,7 @@ pub(crate) type OnPress = Box<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App)>;
 /// Shared, because every tab's closure holds one.
 pub(crate) type OnTab = std::rc::Rc<dyn Fn(&usize, &mut Window, &mut App)>;
 
-/// What leads the strip, at the end nearest the tree.
+/// What follows the Workbench's own start on the strip.
 pub(crate) enum Lead {
     /// The toggle that hides the tree beside the buffers, or brings it back:
     /// whether it is showing.
@@ -77,8 +78,9 @@ pub(crate) enum Lead {
     Back,
 }
 
-/// The file-tab strip: the tree's toggle or the way back to it, the tabs, and a
-/// trailing close-all.
+/// The file-tab strip, which is the Workbench's one row while this mode shows:
+/// the Workbench's start (`ends`), the tree's toggle or the way back to it, the
+/// tabs, a close-all, and the Workbench's end.
 ///
 /// The tabs fit the width actually left to them, `measured` last frame (in
 /// rems) by the box they sit in, each at the width it was last drawn at
@@ -91,7 +93,7 @@ pub(crate) fn tab_strip<T: 'static>(
     tabs: &RootEditors,
     (measured, widths): (&Measured, &TabWidths),
     view: WeakEntity<T>,
-    lead: Lead,
+    (lead, ends): (Lead, Option<&BarEnds>),
     on: StripHandlers,
     cx: &App,
 ) -> gpui::AnyElement {
@@ -104,7 +106,7 @@ pub(crate) fn tab_strip<T: 'static>(
         close_all: on_close_all,
     } = on;
 
-    // At the end nearest the tree. The toggle's icon is the panel's *state*,
+    // The toggle's icon is the panel's *state*,
     // open or shut, and the tooltip says what a press does -- so the two never
     // disagree about which way round it is.
     let lead = match lead {
@@ -113,8 +115,8 @@ pub(crate) fn tab_strip<T: 'static>(
             .into_any_element(),
         Lead::Toggle(shown) => {
             let (icon, hint) = match shown {
-                true => (IconName::PanelLeftClose, "Hide the file tree"),
-                false => (IconName::PanelLeftOpen, "Show the file tree"),
+                true => (IconName::PanelRightClose, "Hide the file tree"),
+                false => (IconName::PanelRightOpen, "Show the file tree"),
             };
             onehand_ui::strip_control("toggle-file-tree", icon, false, cx)
                 .named(hint)
@@ -222,10 +224,10 @@ pub(crate) fn tab_strip<T: 'static>(
         .children(tabs)
         .children(more.map(|more| div().h_flex().items_center().px_1().child(more)));
 
-    // A mode's bar, a step lower than the Workbench's over it, with no line
-    // between it and the code it heads.
+    // The dock's tab bar, as tall as the conversation's header beside it, with
+    // no line between it and the code it heads.
     onehand_ui::tab_bar(cx)
-        .h(onehand_ui::tokens::MODE_BAR_H)
+        .children(ends.map(|ends| ends.lead.clone()))
         .child(div().h_flex().items_center().px_1().child(lead))
         // The one part of the row that gives way, and the box the tabs are
         // laid out to: `flex_1` + `min_w_0`, so its width is what is left
@@ -250,7 +252,20 @@ pub(crate) fn tab_strip<T: 'static>(
                 ),
             )
         })
+        .children(ends.map(|ends| ends.end.clone()))
         .into_any_element()
+}
+
+/// The Workbench's row with nothing of this mode's in it, over the tree shown
+/// alone or a project not yet picked.
+pub(crate) fn ends_row(ends: Option<&BarEnds>, cx: &App) -> Option<gpui::Div> {
+    let ends = ends?;
+    Some(
+        onehand_ui::tab_bar(cx)
+            .child(ends.lead.clone())
+            .child(div().flex_1().min_w_0())
+            .child(ends.end.clone()),
+    )
 }
 
 /// The cross that closes tab `i`. `stop_propagation` keeps the press that

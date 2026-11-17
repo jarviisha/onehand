@@ -113,8 +113,8 @@ impl NeovimView {
     /// Start Neovim on the active root, if it is not already running.
     ///
     /// Separate from becoming the active mode on purpose: switching to this
-    /// mode is a view change and must not launch a process, or the mode strip
-    /// becomes three buttons of which one spawns something. The key does this
+    /// mode is a view change and must not launch a process, or the mode picker
+    /// becomes a menu of which one row spawns something. The key does this
     /// first and then switches; the empty state's own button is the other way
     /// in.
     pub(crate) fn start(&mut self, cx: &mut Context<Self>) {

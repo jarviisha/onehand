@@ -1,5 +1,5 @@
-//! The mode's two halves side by side: the project's file tree, then the
-//! buffers open out of it.
+//! The mode's two halves side by side: the buffers, then the project's file
+//! tree they are opened out of, on the right.
 //!
 //! They were two entries on the mode strip, and the strip is where the cost
 //! showed: picking a file meant Files, reading it meant Editor, and going back
@@ -35,7 +35,7 @@ use onehand_ui::{ListWidths, Measured, list_detail, measure_width};
 /// ceiling is a preference: the half being squeezed by a wide tree is the one
 /// with the long lines in it, and a drag never takes the file under its own
 /// least useful width. In rems, so they follow the panel's zoom.
-const TREE: ListWidths = ListWidths::new(12.5, 8.75, 26.25);
+const TREE: ListWidths = ListWidths::new(12.5, 8.75, 26.25).last();
 
 /// What tells the tree which file is open.
 type SetActive = Box<dyn Fn(Option<std::path::PathBuf>, &mut App)>;
@@ -95,56 +95,74 @@ impl Render for CodeView {
             )
         };
         (self.set_active)(active, cx);
+        // The Workbench's one row, across the whole pair so its end closes it
+        // at the panel's edge: the buffers' strip, or, over the tree shown
+        // alone, the Workbench's two ends with nothing between.
+        let tree_alone = alone && !showing_file;
+        let row = match tree_alone {
+            true => self
+                .editor
+                .read(cx)
+                .ends_row(cx)
+                .map(IntoElement::into_any_element),
+            false => self.editor.update(cx, |editor, cx| editor.strip(cx)),
+        };
         let frame = div()
             .size_full()
             .relative()
-            .child(measure_width(self.width.clone(), cx.entity().downgrade()));
+            .v_flex()
+            .child(measure_width(self.width.clone(), cx.entity().downgrade()))
+            .children(row);
         // `flex` and not `h_flex`: that one also centres its children across
         // the row, which drew a half at its content's height in the middle of
         // the panel instead of stretched down it.
+        let halves = div().flex_1().min_h_0().flex();
         if alone {
             return frame
-                .flex()
-                .map(|frame| match showing_file {
-                    true => frame.child(self.editor.clone()),
-                    false => frame.child(div().size_full().v_flex().child(self.files.clone())),
-                })
+                .child(halves.map(|halves| match tree_alone {
+                    false => halves.child(self.editor.clone()),
+                    true => halves.child(div().size_full().v_flex().child(self.files.clone())),
+                }))
                 .into_any_element();
         }
         // Hidden, the buffers are drawn alone rather than beside a panel marked
         // invisible: the group still draws the divider's grip on the second
-        // panel, which would leave a drag handle along the left edge moving
+        // panel, which would leave a drag handle along the right edge moving
         // nothing. The divider's state is untouched, so the tree comes back at
         // the width it was dragged to.
         if !tree_shown {
-            return frame.flex().child(self.editor.clone()).into_any_element();
+            return frame
+                .child(halves.child(self.editor.clone()))
+                .into_any_element();
         }
         frame
             .child(
-                h_resizable("workbench-code")
-                    .with_state(&self.divider)
-                    .child(
-                        // `flex_none`: the panel sets `flex_grow: 1` on itself,
-                        // and a tree that grows is a tree taking whatever the
-                        // editor is not using, which is most of the panel.
-                        resizable_panel()
-                            .size(layout.start)
-                            .size_range(layout.range)
-                            .flex_none()
-                            .child(
-                                div()
-                                    .size_full()
-                                    .v_flex()
-                                    // Parted from the editor by fill, never a
-                                    // line: the tree stands on the window's
-                                    // fill, a step off the box's. Its corner
-                                    // at the box's foot is the box's own.
-                                    .bg(cx.theme().sidebar)
-                                    .rounded_bl(cx.theme().radius_lg)
-                                    .child(self.files.clone()),
-                            ),
-                    )
-                    .child(resizable_panel().child(self.editor.clone())),
+                halves.child(
+                    h_resizable("workbench-code")
+                        .with_state(&self.divider)
+                        .child(resizable_panel().child(self.editor.clone()))
+                        .child(
+                            // `flex_none`: the panel sets `flex_grow: 1` on itself,
+                            // and a tree that grows is a tree taking whatever the
+                            // editor is not using, which is most of the panel.
+                            resizable_panel()
+                                .size(layout.start)
+                                .size_range(layout.range)
+                                .flex_none()
+                                .child(
+                                    div()
+                                        .size_full()
+                                        .v_flex()
+                                        // Parted from the editor by fill, never a
+                                        // line: the tree stands on the window's
+                                        // fill, a step off the box's. Its corner
+                                        // at the box's foot is the box's own.
+                                        .bg(cx.theme().sidebar)
+                                        .rounded_br(cx.theme().radius_lg)
+                                        .child(self.files.clone()),
+                                ),
+                        ),
+                ),
             )
             .into_any_element()
     }

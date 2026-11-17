@@ -29,7 +29,7 @@ const DOC_POLL: Duration = Duration::from_millis(750);
 /// file names inside a dock the user has already sized, so the floor is what a
 /// name needs to be readable at and the ceiling is the point past which the
 /// list is taking the room the document was opened for.
-const DOC_LIST: ListWidths = ListWidths::new(13.75, 8.75, 26.25);
+const DOC_LIST: ListWidths = ListWidths::new(13.75, 8.75, 26.25).last();
 
 pub(crate) struct MarkdownView {
     root: Option<PathBuf>,
@@ -416,8 +416,8 @@ impl MarkdownView {
             false => onehand_ui::strip_control(
                 "markdown-toggle-list",
                 match self.list_shown {
-                    true => IconName::PanelLeftClose,
-                    false => IconName::PanelLeftOpen,
+                    true => IconName::PanelRightClose,
+                    false => IconName::PanelRightOpen,
                 },
                 false,
                 cx,
@@ -487,7 +487,7 @@ impl MarkdownView {
             // on the window's fill, a step off the box's. Its corner at the
             // box's foot is the box's own.
             .bg(cx.theme().sidebar)
-            .rounded_bl(cx.theme().radius_lg)
+            .rounded_br(cx.theme().radius_lg)
             .child(self.list(&root, cx));
         div()
             .flex_1()
@@ -495,6 +495,7 @@ impl MarkdownView {
             .child(
                 h_resizable("markdown-split")
                     .with_state(&self.split)
+                    .child(resizable_panel().child(reader))
                     .child(
                         // `flex_none`, as the rail's own panel is: the group
                         // sets `flex_grow: 1` on a panel, and a list that grows
@@ -507,8 +508,7 @@ impl MarkdownView {
                             .size_range(layout.range)
                             .flex_none()
                             .child(list),
-                    )
-                    .child(resizable_panel().child(reader)),
+                    ),
             )
             .into_any_element()
     }

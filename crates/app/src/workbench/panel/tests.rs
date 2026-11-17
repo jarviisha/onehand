@@ -372,3 +372,51 @@ fn the_mode_showing_picked_again_is_told_again(cx: &mut TestAppContext) {
         [(MARKDOWN.id, "shown"), (MARKDOWN.id, "shown")]
     );
 }
+
+/// The modes this binary composes, built as a window builds them, Plugins
+/// among them: the Editor alone draws the row in a bar of its own; over every
+/// other mode the panel draws it.
+#[gpui::test]
+fn only_the_editor_draws_the_workbench_row_itself(cx: &mut TestAppContext) {
+    use onehand_core::config::{AgentSpec, Preset, drive::SettingsDrive};
+    cx.update(gpui_component::init);
+    let mut shared = crate::state::Shared::for_test();
+    let claude = AgentSpec {
+        name: "Claude Code".into(),
+        preset: Some(Preset::ClaudeCode.into()),
+        ..Default::default()
+    };
+    shared.settings = SettingsDrive::new(vec![claude], Default::default());
+    cx.update(|cx| cx.set_global(shared));
+    let panel = cx.update(|cx| {
+        Workbench::new(
+            |ask, font_size, cx| {
+                let tell: onehand_issues::Tell = Rc::new(|_, _, _| {});
+                crate::features::workbench_modes(ask, tell, font_size, cx)
+            },
+            cx,
+        )
+    });
+    let (drawing, others) = panel.read_with(cx, |panel, _| {
+        let ids = |own: bool| -> Vec<ModeId> {
+            panel
+                .modes
+                .iter()
+                .zip(&panel.own_row)
+                .filter(|(_, takes)| **takes == own)
+                .map(|(mode, _)| mode.spec().id)
+                .collect()
+        };
+        (ids(true), ids(false))
+    });
+    assert_eq!(drawing, vec![EDITOR_MODE]);
+    assert_eq!(
+        others,
+        vec![
+            MARKDOWN_MODE,
+            ISSUES_MODE,
+            onehand_claude_plugins::SPEC.id,
+            NEOVIM_MODE
+        ]
+    );
+}

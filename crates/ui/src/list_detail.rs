@@ -26,6 +26,9 @@ pub struct ListWidths {
     pub start: Rems,
     pub min: Rems,
     pub max: Rems,
+    /// Whether the list is the split's last panel, on the right of its
+    /// detail, rather than its first.
+    pub last: bool,
 }
 
 impl ListWidths {
@@ -35,7 +38,13 @@ impl ListWidths {
             start: gpui::rems(start),
             min: gpui::rems(min),
             max: gpui::rems(max),
+            last: false,
         }
+    }
+
+    /// The same widths for a list on the right of its detail.
+    pub const fn last(self) -> Self {
+        Self { last: true, ..self }
     }
 }
 
@@ -61,7 +70,12 @@ pub fn list_detail(
 ) -> ListDetail {
     // A size outside the range is the split seeding its panels before anything
     // was measured, not a width anybody dragged to.
-    let dragged = split.sizes().first().map(|w| *w / rem);
+    let sizes = split.sizes();
+    let list = match widths.last {
+        true => sizes.last(),
+        false => sizes.first(),
+    };
+    let dragged = list.map(|w| *w / rem);
     let (side_by_side, max) = fit(dragged, widths, container.0);
     ListDetail {
         side_by_side,

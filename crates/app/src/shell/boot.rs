@@ -358,7 +358,7 @@ impl Shell {
         )
         .detach();
 
-        // The same two, from the Workbench's mode strip. It is mounted bare
+        // The same two, from the Workbench's row. It is mounted bare
         // too, so the library's own dock subscription never sees it -- and
         // neither of these is the panel's to do: the `DockArea` is here.
         cx.subscribe_in(

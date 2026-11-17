@@ -115,7 +115,7 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 | A checkbox, a switch | Checkbox, Switch | `.small()` beside chrome text, at the library's own geometry |
 | A single-line row; a row with a second line | drawn by the app | `ROW_H`; at least `ROW_H` |
 | A strip along the top of a region | `strip` (`onehand_ui`) | `BAR_H` |
-| A mode's own bar under the Workbench's strip | `mode_strip` | `MODE_BAR_H` |
+| A mode's own bar under the Workbench's row | `mode_strip` | `MODE_BAR_H` |
 
 - **`.tall()` is the ceiling.** No control stands taller than `FIELD_H`; a page gives a field
   room by its size, never by a larger control.
