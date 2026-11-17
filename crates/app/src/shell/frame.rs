@@ -124,6 +124,9 @@ impl Shell {
             // No line under it: the bar stands on the window's fill, as the
             // rail does, and the regions under it part from it by the gap.
             .border_b_0()
+            // Its controls sit a little low in the bar, off the window's top
+            // edge, so the bar breathes rather than pressing against it.
+            .pt_1p5()
             .child(self.title_start(cx))
             .child(
                 h_flex()
