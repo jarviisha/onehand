@@ -200,23 +200,26 @@ impl ControlDrive {
     }
 
     /// The lead's turn `turn`, `text`, was handed to worker `uid` and came
-    /// to `intake`, the worker having sent `sent` prompts since: what the
-    /// lead is answered. Only a prompt the agent took moves the relation on.
+    /// to `went`, its prompt's intake and the worker's prompts sent since,
+    /// `None` when its session was gone: the turn's call is answered. Only a
+    /// prompt the agent took moves the relation on.
     ///
     /// It clears the person's hold: a turn goes only while the lead holds
     /// the worker, and its own prompt, counted before this, may have been
     /// read as the person's meanwhile.
-    #[must_use = "its effects are to be carried"]
-    pub fn sent(
+    pub(super) fn turn_sent(
         &mut self,
         uid: u64,
         turn: u64,
         text: &str,
-        intake: &Intake,
-        sent: usize,
-    ) -> (Result<String, String>, Vec<Effect>) {
-        if *intake != Intake::Sent {
-            return (Err("the prompt was not accepted".to_string()), Vec::new());
+        went: Option<(Intake, usize)>,
+    ) -> Vec<Effect> {
+        let answer = |outcome| Effect::TurnAnswer { uid, outcome };
+        let Some((intake, sent)) = went else {
+            return vec![answer(super::turning::gone())];
+        };
+        if intake != Intake::Sent {
+            return vec![answer(Err("the prompt was not accepted".to_string()))];
         }
         let mut fx = Vec::new();
         if let Some(relation) = self.workers.get_mut(&uid) {
@@ -228,7 +231,8 @@ impl ControlDrive {
             let lead = relation.lead;
             fx.push(self.keep(lead));
         }
-        (Ok(format!("turn {turn} accepted")), fx)
+        fx.push(answer(Ok(format!("turn {turn} accepted"))));
+        fx
     }
 
     // What is kept beside a lead's conversation.

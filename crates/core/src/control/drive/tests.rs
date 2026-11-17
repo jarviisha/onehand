@@ -401,12 +401,16 @@ fn a_turn_not_taken_moves_nothing() {
         uid: 7,
         facts: facts(Some(Intake::Sent)),
     });
-    let (said, fx) = drive.sent(7, 2, "next", &Intake::Queued, 2);
-    assert!(said.is_err() && fx.is_empty());
-    assert_eq!(drive.last(7).map(|last| last.turn), Some(Some(1)));
+    let fx = turn_sent(&mut drive, 7, 2, Some((Intake::Queued, 2)));
     assert_eq!(
-        drive.sent(7, 2, "next", &Intake::Sent, 2).0,
-        Ok("turn 2 accepted".into())
+        shown(&fx),
+        [r#"TurnAnswer 7 Err("the prompt was not accepted")"#]
+    );
+    assert_eq!(drive.last(7).map(|last| last.turn), Some(Some(1)));
+    let fx = turn_sent(&mut drive, 7, 2, Some((Intake::Sent, 2)));
+    assert_eq!(
+        shown(&fx).last().map(String::as_str),
+        Some(r#"TurnAnswer 7 Ok("turn 2 accepted")"#)
     );
     assert_eq!(drive.last(7).map(|last| last.turn), Some(Some(2)));
 }
@@ -445,6 +449,21 @@ fn the_open_answers_with_a_stable_handle() {
         drive.find(1, handle, |_| false),
         Ok(Found::Closed)
     ));
+}
+
+/// Worker `uid` was given turn `turn`, `next`, which came to `went`.
+fn turn_sent(
+    drive: &mut ControlDrive,
+    uid: u64,
+    turn: u64,
+    went: Option<(Intake, usize)>,
+) -> Vec<Effect> {
+    drive.handle(Input::TurnSent {
+        uid,
+        turn,
+        text: "next".into(),
+        went,
+    })
 }
 
 /// Lead 1's worker 7, open: its relation written.
@@ -550,8 +569,11 @@ fn a_lead_turn_never_reads_as_the_persons() {
     said_conversation(&mut drive, 7, "c7", 1);
     // The lead's own prompt is counted before its turn is.
     said_conversation(&mut drive, 7, "c7", 2);
-    let (said, fx) = drive.sent(7, 2, "next", &Intake::Sent, 2);
-    assert_eq!(said, Ok("turn 2 accepted".into()));
+    let fx = turn_sent(&mut drive, 7, 2, Some((Intake::Sent, 2)));
+    assert!(
+        shown(&fx).contains(&r#"TurnAnswer 7 Ok("turn 2 accepted")"#.to_string()),
+        "{fx:?}"
+    );
     assert!(!drive.last(7).unwrap().person);
     let kept = kept(&fx, 1).unwrap();
     assert!(!kept.workers[0].person);
@@ -1191,7 +1213,7 @@ fn a_worker_coming_back_keeps_its_turn_unended_until_a_new_one() {
         "{fx:?}"
     );
     assert!(drive.held(9).unwrap().unended);
-    let _ = drive.sent(9, 4, "next", &Intake::Sent, 1);
+    let _ = turn_sent(&mut drive, 9, 4, Some((Intake::Sent, 1)));
     let fx = said_over(&mut drive, 9, "c7", 1, true);
     assert!(!kept(&fx, 1).unwrap().workers[0].unended);
 }
@@ -1298,4 +1320,101 @@ fn a_conversation_open_anywhere_is_not_resumed_again() {
     );
     assert_eq!(drive.may_resume("c2", &["c1".into()]), Ok(()));
     assert_eq!(drive.may_resume("c1", &[]), Ok(()));
+}
+
+#[test]
+fn a_turn_goes_as_a_send_and_is_answered_once_it_went() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let (sending, fx) = drive.send_prompt(7, "w", 2, "next", None, Some(&on_model("weak")));
+    assert_eq!(sending, Sending::Later);
+    assert_eq!(shown(&fx), ["Send 7 2 next"]);
+    let fx = turn_sent(&mut drive, 7, 2, Some((Intake::Sent, 2)));
+    let shown = shown(&fx);
+    assert!(shown[0].starts_with("Keep 1 "), "{shown:?}");
+    assert_eq!(shown[1], r#"TurnAnswer 7 Ok("turn 2 accepted")"#);
+    assert_eq!(drive.last(7).unwrap().turn, Some(2));
+}
+
+#[test]
+fn a_turn_sent_again_is_said_and_sends_nothing() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let _ = drive.send_prompt(7, "w", 2, "next", None, Some(&on_model("weak")));
+    let _ = turn_sent(&mut drive, 7, 2, Some((Intake::Sent, 2)));
+    let mut chat = connected();
+    chat.prompts_sent = 2;
+    let (sending, fx) = drive.send_prompt(7, "w", 2, "next", None, Some(&chat));
+    assert_eq!(sending, Sending::Said(Ok("turn 2 already sent".into())));
+    assert!(fx.is_empty());
+}
+
+#[test]
+fn a_turn_to_a_worker_still_connecting_is_refused() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let (sending, fx) = drive.send_prompt(7, "w", 2, "next", None, None);
+    assert!(matches!(sending, Sending::Said(Err(_))), "{sending:?}");
+    assert!(fx.is_empty());
+    let (sending, fx) = drive.send_prompt(7, "w", 1, "go", None, None);
+    assert_eq!(sending, Sending::Said(Err("w is still connecting".into())));
+    assert!(fx.is_empty());
+}
+
+#[test]
+fn a_turn_with_a_model_waits_on_it() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let (sending, fx) = drive.send_prompt(
+        7,
+        "w",
+        2,
+        "next",
+        Some("strong".into()),
+        Some(&on_model("weak")),
+    );
+    assert_eq!(sending, Sending::Later);
+    let shown = shown(&fx);
+    assert_eq!(shown[0], "Watch 7");
+    assert!(shown[1].starts_with("Arm "), "{shown:?}");
+    let (sending, _) = drive.send_prompt(7, "w", 3, "other", None, Some(&on_model("weak")));
+    assert_eq!(
+        sending,
+        Sending::Said(Err("turn 2 is waiting on its model pick".into()))
+    );
+}
+
+#[test]
+fn a_turn_waiting_on_its_model_is_checked_again_before_it_goes() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let _ = drive.send_prompt(
+        7,
+        "w",
+        2,
+        "next",
+        Some("strong".into()),
+        Some(&on_model("weak")),
+    );
+    // The person prompted the worker while the model was picked.
+    let mut chat = on_model("strong");
+    chat.prompts_sent = 3;
+    let fx = woke_on(&mut drive, &chat);
+    assert_eq!(fx.len(), 2, "{fx:?}");
+    assert_eq!(fx[0], "Unwatch 7");
+    assert!(
+        fx[1].starts_with("TurnAnswer 7 Err(\"the person holds this worker"),
+        "{fx:?}"
+    );
+}
+
+#[test]
+fn a_turn_whose_session_went_before_it_was_sent_says_so() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let fx = turn_sent(&mut drive, 7, 2, None);
+    assert_eq!(
+        shown(&fx),
+        [r#"TurnAnswer 7 Err("the session was closed before the turn went")"#]
+    );
 }

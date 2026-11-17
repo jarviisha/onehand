@@ -1,7 +1,8 @@
 //! `session_state`, `send_prompt`, `cancel_turn` and `close_worker`, carried
-//! out on a lead's worker. Whose worker a handle names and what the lead
-//! last sent it is the tools' drive's, whether a turn may go or the worker
-//! close `control::turns`'; this finds the session and does it.
+//! out on a lead's worker. Whose worker a handle names, what the lead last
+//! sent it and the whole of a turn's send are the tools' drive's, whether
+//! a turn may be cancelled or the worker closed `control::turns`'; this
+//! finds the session and does what they answer.
 //!
 //! **A worker of the caller's whose session is gone reads `link: closed`**,
 //! the one answer that proves it stopped: closing a session ends its agent.
@@ -18,7 +19,7 @@ use crate::chat::session::ChatSession;
 use gpui::{App, Entity, Global};
 use onehand_core::chat::Chat;
 use onehand_core::chat::drive::{Code, Origin};
-use onehand_core::control::drive::Found;
+use onehand_core::control::drive::{Found, Input, Sending};
 use onehand_core::control::state::state;
 use onehand_core::control::turns;
 use std::collections::HashMap;
@@ -82,8 +83,8 @@ pub(in crate::control) fn answer(
 }
 
 /// Give the worker `session` names turn `turn`, `text`, on `model` when one
-/// is named: then answered once the model is picked and the turn went, or
-/// refused, through `answer`.
+/// is named: answered now, or once the turn went or was refused, through
+/// `answer`, as the drive says.
 pub(in crate::control) fn send(
     caller: Option<(u64, PathBuf)>,
     session: &str,
@@ -94,31 +95,26 @@ pub(in crate::control) fn send(
     cx: &mut App,
 ) -> Result<String, String> {
     let (uid, worker) = find(caller, session, true, cx)?.ok_or(format!("{session} is closed"))?;
-    // A turn still waiting on its model goes first, or not at all.
-    if let Some(waiting) = drive().turn_waiting(uid, turn, text) {
-        return waiting;
-    }
-    let last = drive().last(uid).ok_or(format!("{session} is closed"))?;
-    let send = read_chat(&worker, cx, |chat| turns::send(chat, &last, turn, text))?;
-    // A chat still connecting has refused the turn above.
-    let worker = worker.ok_or(format!("{session} is still connecting"))?;
-    match send {
-        turns::Send::AlreadySent(turn) => Ok(format!("turn {turn} already sent")),
-        turns::Send::Go => match model {
-            None => send_now_to(uid, &worker, turn, text, cx),
-            Some(model) => {
-                if let Some(answer) = answer.take() {
-                    cx.default_global::<Turning>().answers.insert(uid, answer);
-                }
-                let fx = drive().turn_with_model(uid, turn, text.to_string(), model);
-                carry(fx, cx);
-                Ok(String::new())
+    let (sending, fx) = {
+        let chat = worker.as_ref().map(|worker| worker.read(cx).chat());
+        drive().send_prompt(uid, session, turn, text, model, chat.map(|chat| &**chat))
+    };
+    match sending {
+        Sending::Said(said) => {
+            carry(fx, cx);
+            said
+        }
+        Sending::Later => {
+            if let Some(answer) = answer.take() {
+                cx.default_global::<Turning>().answers.insert(uid, answer);
             }
-        },
+            carry(fx, cx);
+            Ok(String::new())
+        }
     }
 }
 
-/// Where each worker's turn waiting on its model is answered.
+/// Where each worker's turn answered later is answered, by the worker.
 #[derive(Default)]
 struct Turning {
     answers: HashMap<u64, Answer>,
@@ -126,24 +122,25 @@ struct Turning {
 
 impl Global for Turning {}
 
-/// Send worker `uid` turn `turn`, `text`, its model now in force, and
-/// answer the call that asked.
-///
-/// Checked again first, as the call was: the person may have taken the
-/// worker, or a turn begun, while the model was picked.
-pub(in crate::control) fn send_now(uid: u64, turn: u64, text: &str, cx: &mut App) {
-    let closed = || Err("the session was closed before the turn went".to_string());
-    let outcome = match (session_of(uid, cx), drive().last(uid)) {
-        (Some(worker), Some(last)) => {
-            match turns::send(worker.read(cx).chat(), &last, turn, text) {
-                Ok(turns::Send::Go) => send_now_to(uid, &worker, turn, text, cx),
-                Ok(turns::Send::AlreadySent(turn)) => Ok(format!("turn {turn} already sent")),
-                Err(why) => Err(why),
-            }
-        }
-        (None, _) | (_, None) => closed(),
-    };
-    answered(uid, outcome, cx);
+/// Send worker `uid` the lead's turn `turn`, `text`, and report what it
+/// came to.
+pub(in crate::control) fn send_now(uid: u64, turn: u64, text: String, cx: &mut App) {
+    let went = session_of(uid, cx).map(|worker| {
+        // A tool's prompt sends no code first: that is a person's.
+        let intake = worker
+            .update(cx, |worker, cx| {
+                worker.prompt(&text, &[], Origin::Tools, Code::Here, cx)
+            })
+            .intake;
+        (intake, worker.read(cx).chat().prompts_sent)
+    });
+    let fx = drive().handle(Input::TurnSent {
+        uid,
+        turn,
+        text,
+        went,
+    });
+    carry(fx, cx);
 }
 
 /// Answer the call that gave worker `uid` its turn with `outcome`.
@@ -151,26 +148,6 @@ pub(in crate::control) fn answered(uid: u64, outcome: Result<String, String>, cx
     if let Some(answer) = cx.default_global::<Turning>().answers.remove(&uid) {
         let _ = answer.send(outcome);
     }
-}
-
-/// Send `worker` the lead's turn `turn`, `text`, and what the drive says of it.
-fn send_now_to(
-    uid: u64,
-    worker: &Entity<ChatSession>,
-    turn: u64,
-    text: &str,
-    cx: &mut App,
-) -> Result<String, String> {
-    // A tool's prompt sends no code first: that is a person's.
-    let intake = worker
-        .update(cx, |worker, cx| {
-            worker.prompt(text, &[], Origin::Tools, Code::Here, cx)
-        })
-        .intake;
-    let sent = worker.read(cx).chat().prompts_sent;
-    let (said, fx) = drive().sent(uid, turn, text, &intake, sent);
-    carry(fx, cx);
-    said
 }
 
 /// Cancel the turn the worker `session` names is running.

@@ -147,6 +147,15 @@ pub enum Input<'a> {
     Begun { uid: u64, facts: Facts },
     /// The wait armed with `token` ran out.
     Elapsed { token: u64 },
+    /// Worker `uid` was given the lead's turn `turn`, `text`
+    /// ([`Effect::Send`]): what its prompt came to and its prompts sent
+    /// since, or `None` when its session was gone.
+    TurnSent {
+        uid: u64,
+        turn: u64,
+        text: String,
+        went: Option<(Intake, usize)>,
+    },
     /// Session `uid`'s conversation is `session_id`, it has sent
     /// `prompts_sent` prompts, and `turn_over` says its turn is over with the
     /// link up (`state::turn_over`): said when any of them changes.
@@ -216,10 +225,10 @@ pub enum Effect {
     /// is the whole of it again, and the last asked for is what stays.
     Keep { lead: u64, kept: Kept },
     /// Send worker `uid` the lead's turn `turn`, `text`, from onehand's
-    /// tools, as a turn without a model goes, then tell the drive it was
-    /// sent (`ControlDrive::sent`), and answer the turn's call with what
-    /// that says. A session gone meanwhile answers that the worker is
-    /// closed.
+    /// tools, then report [`Input::TurnSent`] in the same pass. A late
+    /// answer is **recorded**: the prompt went, so the relation moves on and
+    /// the turn's call is answered; an answer for a call already answered is
+    /// dropped by [`Effect::TurnAnswer`].
     Send { uid: u64, turn: u64, text: String },
     /// Answer the turn worker `uid` was given with `outcome`. One for a call
     /// already answered, or never asked, is **dropped**.
@@ -227,6 +236,16 @@ pub enum Effect {
         uid: u64,
         outcome: Result<String, String>,
     },
+}
+
+/// What a `send_prompt` came to at once.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Sending {
+    /// Answered now, with this; nothing was sent.
+    Said(Result<String, String>),
+    /// Answered later, by [`Effect::TurnAnswer`] for this worker: hold the
+    /// call's answer until then.
+    Later,
 }
 
 /// Where an open in flight stands.
@@ -578,6 +597,12 @@ impl ControlDrive {
             } => self.woke(uid, chat, lead_here),
             Input::Begun { uid, facts } => self.begun(uid, facts),
             Input::Elapsed { token } => self.elapsed(token),
+            Input::TurnSent {
+                uid,
+                turn,
+                text,
+                went,
+            } => self.turn_sent(uid, turn, &text, went),
             Input::Conversation {
                 uid,
                 session_id,
