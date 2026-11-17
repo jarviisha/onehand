@@ -271,9 +271,10 @@ the terminal as it is.
 - Plugins: the search and filters a filter bar; a row's actions on hover and on keyboard focus, its
   ⋯ menu also on a right-click (refused while another change runs), its switch always; what runs and what waits on a restart under the list, so neither moves it.
 - The Issues tab: one filter bar over the list and the issue both, with a line under it: the
-  search, the label picker, while the search or a label narrows the list *Clear filters*, and `+`
-  (*New issue*, primary, secondary while the form holds that) at the end, the filters wrapping
-  under the search when narrow; a filter picked while the issue shows alone shows the list. Over
+  search, a bare field filling the bar's height and framed by the bar's lines above and below,
+  parted by one vertical line from the label picker, while the search or a label narrows the list
+  *Clear filters*, and `+` (*New issue*, primary, secondary while the form holds that) at the end;
+  when narrow the search shrinks and the filters never wrap; a filter picked while the issue shows alone shows the list. Over
   the rows, *Open* and *Closed* with their counts; *Showing N of M open issues* at the list's end
   while it is narrowed, *No issues match* when nothing is left. `↑`/`↓` step the list as on the
   Issues page (where the list shows alone, the first press opens the row picked); Esc closes the

@@ -31,7 +31,7 @@ const LABELS_SHOWN: usize = 100;
 
 /// The least the search is squeezed to before the choices after it wrap under
 /// it: room for its hint to be read.
-const SEARCH_MIN: Rems = rems(10.);
+const SEARCH_MIN: Rems = rems(6.);
 
 /// Which half of the issues the list shows. Open by default: an open issue is
 /// work, a closed one a record.
@@ -198,8 +198,8 @@ impl IssuesView {
 
     /// The dock's filter bar, over the list and the issue both, so it stays
     /// in reach while the two show one at a time: the search, the label,
-    /// *Clear filters*, and the way to start a new issue. The filters wrap
-    /// under the search where the dock is too narrow for all.
+    /// *Clear filters*, and the way to start a new issue. The search
+    /// shrinks where the dock is too narrow for all.
     pub(super) fn search_bar(
         &mut self,
         issues: &Issues,
@@ -220,26 +220,25 @@ impl IssuesView {
         let narrowed = !query.read(cx).value().is_empty() || self.label.is_some();
         // The form's *Save* holds the tab's one primary while it shows.
         let drafting = self.state_mut().is_some_and(|state| state.form.is_some());
-        // A filter bar, with no line under it: nothing is drawn between a
-        // box's strips and what they head. A filter picked
+        // A filter bar. A filter picked
         // behind the issue changes nothing on screen, so a narrow tab shows
         // the list it narrowed.
         div()
             .h_flex()
-            .flex_wrap()
-            .items_center()
-            .gap_2()
+            .items_stretch()
             .w_full()
             .flex_none()
-            .px(onehand_ui::tokens::ROW_INSET)
-            .py_2()
             .border_b_1()
             .border_color(cx.theme().border)
+            // The search is bare and fills the bar, framed by the line over
+            // the bar and the one under it; it shrinks, never wraps, so the
+            // line parting it from the filters always stands between them.
             .child(
                 div()
                     .flex_1()
                     .min_w(SEARCH_MIN)
-                    .child(search_input(&query, cx).short()),
+                    .h_flex()
+                    .child(search_input(&query, cx).appearance(false).short().h_full()),
             )
             // Kept to the row's end, on a line of their own when the search
             // leaves them no room; *Clear filters* last of the filters, so
@@ -247,10 +246,13 @@ impl IssuesView {
             .child(
                 div()
                     .flex_none()
-                    .ml_auto()
                     .h_flex()
                     .items_center()
                     .gap_2()
+                    .px(onehand_ui::tokens::ROW_INSET)
+                    .py_2()
+                    .border_l_1()
+                    .border_color(cx.theme().border)
                     .children(self.label_menu(issues, cx))
                     .when(narrowed, |group| {
                         group.child(
