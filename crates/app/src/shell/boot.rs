@@ -486,7 +486,6 @@ impl Shell {
                 cx.new(|_| crate::settings::SettingsView::new(shell))
             },
             held_commands: Default::default(),
-            menu_bar: super::frame::menu_bar(cx),
             close_guard,
             workspace_name,
             renaming: None,

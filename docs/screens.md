@@ -14,13 +14,8 @@ panel at the left, its glyph in the foreground ink while the rail is shown and i
 while hidden, no fill at rest, its key in its tooltip, dispatching the command its key does), then
 the workspace's name and a chevron, a quiet button at the chrome size and a tab stop of its own,
 which opens the workspace menu (the recent workspaces, *Open workspace…*, *New workspace…*) when
-pressed and on Enter. Then the app's menus, *File*, *View*, *Go* and *Session*, lettered at the chrome size, each item a command the keymap holds, under the name
-the menu gives it and with the key the keymap binds: *File* holds *New session*, *Run a workflow on
-this project…*, *Save the open file* and *Open Settings*; *View* the rail's, the Workbench's and
-the terminal's toggles, *Open Editor*, *Open Markdown*, *Open Neovim*, maximizing the focused panel
-and its zoom; *Go* the search, the composer, Tasks, Schedules and stepping through sessions;
-*Session* *Restart the agent* and *Close the session*. A menu offers nothing no
-key reaches. Centred in the room left and narrowing with it, the search over session
+pressed and on Enter. The window draws no menus of its own: every command is the keymap's,
+and the platform's own menu bar holds them where there is one. Centred in the room left and narrowing with it, the search over session
 titles and project names, the library's edged field at `.short()` with no fill of its own, its edge alone parting it from the bar, with its key's hint (`Ctrl+K`
 outside a terminal, showing a hidden rail); what it narrows is the rail's list, so typing into it
 shows a hidden rail too, a panel filling the window giving way as it does for the key, and a press in it selects words rather than moving the window.

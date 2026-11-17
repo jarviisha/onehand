@@ -243,8 +243,6 @@ pub struct Shell {
     keymap_editor: Entity<crate::keymap::Editor>,
     settings_view: Entity<crate::settings::SettingsView>,
     held_commands: std::collections::HashSet<&'static str>,
-    /// The app's menus, drawn in the title bar.
-    menu_bar: Entity<gpui_component::menu::AppMenuBar>,
     /// What closing the window asks first, from the compositor's close and the
     /// title bar's alike: `true` lets it close.
     close_guard: CloseGuard,

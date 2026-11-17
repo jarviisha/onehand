@@ -13,17 +13,11 @@ use crate::controls::{Named as _, Quiet as _, action};
 use crate::keymap::{CLOSE_SESSION, COMMANDS, NEW_SESSION, RESTART};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, Entity, InteractiveElement as _, IntoElement, Menu, MenuItem, ParentElement as _,
-    Styled as _, div,
+    App, InteractiveElement as _, IntoElement, Menu, MenuItem, ParentElement as _, Styled as _, div,
 };
 use gpui_component::dock::DockPlacement;
-use gpui_component::menu::AppMenuBar;
-use gpui_component::{ActiveTheme as _, GlobalState, Icon, IconName, TitleBar, h_flex};
+use gpui_component::{ActiveTheme as _, Icon, IconName, TitleBar, h_flex};
 use onehand_ui::ShortIcon as _;
-
-/// The title bar's menus at the chrome size: `CHROME_TEXT` over the library's
-/// `text_sm` (0.875rem).
-const MENU_TEXT: f32 = crate::tokens::CHROME_TEXT.0 / 0.875;
 
 /// A menu item: a command's keymap id and the name it takes in the menu, or
 /// `None` for a separator.
@@ -112,23 +106,15 @@ fn menus() -> Vec<Menu> {
         .collect()
 }
 
-/// Give the app its menus, once, before the first window: the platform's menu
-/// bar where there is one, and the library's, which each window draws in its
-/// title bar.
+/// Give the app its menus, once, before the first window, where the platform
+/// has a menu bar of its own. The window draws none: every item is a command a
+/// key reaches.
 pub(super) fn install_menus(cx: &mut App) {
     cx.set_menus(menus());
-    let owned = menus().into_iter().map(|menu| menu.owned()).collect();
-    GlobalState::global_mut(cx).set_app_menus(owned);
-}
-
-/// The menu bar a window draws in its title bar.
-pub(super) fn menu_bar(cx: &mut App) -> Entity<AppMenuBar> {
-    AppMenuBar::new(cx)
 }
 
 impl Shell {
-    /// The title bar: the rail's toggle and the workspace, then its menus, at
-    /// the start; the search over the rail's sessions and projects, centred in
+    /// The title bar: the rail's toggle and the workspace at the start; the search over the rail's sessions and projects, centred in
     /// the room left; the terminal's and the Workbench's toggles at the end. The
     /// window's own controls are the library's, drawn where the window is
     /// decorated by the app.
@@ -139,23 +125,6 @@ impl Shell {
             // rail does, and the regions under it part from it by the gap.
             .border_b_0()
             .child(self.title_start(cx))
-            // The library letters its menu buttons at its control size (`text_sm`)
-            // with no way in, so the bar is laid out a step down to the chrome
-            // size. The open menus come along: a deferred draw keeps the rem in
-            // force where it was made, so their rows letter at the chrome size
-            // too, as every other menu's do.
-            // Its buttons also take the arrow cursor, which every other button
-            // here does not, so a pane painted over them asks for the pointer:
-            // drawn last, its cursor wins, and with nothing to occlude a press
-            // still reaches the menu under it.
-            .child(crate::zoom::scaled(
-                MENU_TEXT,
-                h_flex()
-                    .relative()
-                    .items_center()
-                    .child(self.menu_bar.clone())
-                    .child(div().absolute().inset_0().cursor_pointer()),
-            ))
             .child(
                 h_flex()
                     .flex_1()
