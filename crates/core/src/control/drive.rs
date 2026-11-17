@@ -268,6 +268,15 @@ pub enum Found {
     Closed,
 }
 
+/// Why a session is not put on another conversation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResumeRefused {
+    /// It leads workers, open or opening.
+    LeadsWorkers,
+    /// A session of some window already has that conversation open.
+    AlreadyOpen,
+}
+
 /// A worker gone, as its handle still reads to the lead it had.
 struct Closed {
     lead: u64,

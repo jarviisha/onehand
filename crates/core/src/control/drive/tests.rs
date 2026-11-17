@@ -1263,3 +1263,28 @@ fn an_opening_worker_lists_after_the_older_ones() {
     let uids: Vec<u64> = drive.workers_of(1).iter().map(|w| w.uid).collect();
     assert_eq!(uids, [7, 3]);
 }
+
+#[test]
+fn a_lead_may_not_leave_its_conversation() {
+    let mut drive = lead_on();
+    assert_eq!(drive.may_leave_conversation(1), Ok(()));
+    let (key, _) = resolves(drive.open_worker(asked("go"), &projects(), None));
+    assert_eq!(
+        drive.may_leave_conversation(1),
+        Err(ResumeRefused::LeadsWorkers),
+        "one opening"
+    );
+    let _ = drive.handle(Input::Resolved {
+        key,
+        resolved: Err("gone".into()),
+        world: world(),
+    });
+    begun(&mut drive);
+    assert_eq!(
+        drive.may_leave_conversation(1),
+        Err(ResumeRefused::LeadsWorkers)
+    );
+    assert_eq!(drive.may_leave_conversation(7), Ok(()), "a worker");
+    let _ = drive.forget(7);
+    assert_eq!(drive.may_leave_conversation(1), Ok(()));
+}

@@ -22,7 +22,8 @@ use super::super::turns::Last;
 use super::super::workers::Target;
 use super::super::workers::{offered, whose, Whose};
 use super::{
-    this_run, Begun, Closed, ControlDrive, Effect, Found, Open, Pending, Phase, Worker, KEPT_CLOSED,
+    this_run, Begun, Closed, ControlDrive, Effect, Found, Open, Pending, Phase, ResumeRefused,
+    Worker, KEPT_CLOSED,
 };
 use crate::chat::drive::Intake;
 use std::path::PathBuf;
@@ -77,10 +78,18 @@ impl ControlDrive {
         workers.into_iter().map(|(_, worker)| worker).collect()
     }
 
-    /// Whether session `uid` leads workers, open or opening: its
-    /// conversation is then resumed nowhere else, so two leads' workers
-    /// never merge past the cap.
-    pub fn leads_workers(&self, uid: u64) -> bool {
+    /// Whether session `uid` may leave its conversation to choose another:
+    /// never while it leads workers, which would be left with no lead, or
+    /// merged past the cap with the ones the other conversation brings back.
+    pub fn may_leave_conversation(&self, uid: u64) -> Result<(), ResumeRefused> {
+        match self.leads_workers(uid) {
+            true => Err(ResumeRefused::LeadsWorkers),
+            false => Ok(()),
+        }
+    }
+
+    /// Whether session `uid` leads workers, open or opening.
+    pub(super) fn leads_workers(&self, uid: u64) -> bool {
         self.workers.values().any(|relation| relation.lead == uid)
             || self.pending.keys().any(|(lead, _)| *lead == uid)
     }

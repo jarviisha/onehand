@@ -7,6 +7,7 @@ use crate::controls::Named as _;
 use gpui::{App, Context, IntoElement, ParentElement, SharedString, Styled, Window, div};
 use gpui_component::menu::DropdownMenu as _;
 use gpui_component::{ActiveTheme, IconName, StyledExt};
+use onehand_core::control::drive::ResumeRefused;
 use std::path::{Path, PathBuf};
 
 impl ChatPane {
@@ -24,12 +25,8 @@ impl ChatPane {
         let Some(uid) = self.active else {
             return;
         };
-        // Its workers would be left with no lead, or merged with the ones
-        // the other conversation brings back.
-        if crate::control::leads_workers(uid) {
-            cx.emit(ChatPaneEvent::ResumeRefused(
-                "This session leads workers; close them or the session first".to_string(),
-            ));
+        if let Err(why) = crate::control::drive().may_leave_conversation(uid) {
+            cx.emit(ChatPaneEvent::ResumeRefused(resume_refused(why)));
             return;
         }
         let Some(conv) = self.conversations.get(&uid) else {
@@ -282,6 +279,18 @@ impl ChatPane {
             .map(|(_, id)| id.clone());
         live.chain(resuming).collect()
     }
+}
+
+/// What a person is told when a session is not put on another
+/// conversation.
+pub(super) fn resume_refused(why: ResumeRefused) -> String {
+    match why {
+        ResumeRefused::LeadsWorkers => {
+            "This session leads workers; close them or the session first"
+        }
+        ResumeRefused::AlreadyOpen => "This conversation is already open in a session",
+    }
+    .to_string()
 }
 
 /// The conversations a session of another window has open, by their ids,
