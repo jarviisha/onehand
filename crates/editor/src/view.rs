@@ -7,7 +7,7 @@ use crate::buffers::{Lead, StripHandlers, body, file_bar, new_buffer, standing_l
 
 use gpui::{
     AnyView, AnyWindowHandle, App, AppContext as _, Context, Entity, Focusable as _, IntoElement,
-    ParentElement, Render, SharedString, Styled, Window, div,
+    ParentElement, Render, Styled, Window, div,
 };
 use gpui_component::WindowExt as _;
 use gpui_component::input::{EditorState, InputEvent};
@@ -397,39 +397,17 @@ impl EditorView {
     /// Carry out a close, or ask first in a dialog rather than by arming the ✕
     /// for a second press: an armed control looks like one that did nothing.
     fn closing(&mut self, closing: Closing, window: &mut Window, cx: &mut Context<Self>) {
-        let (close, unsaved, label) = match closing {
+        let (close, label) = match closing {
             Closing::Closed(effects) => return self.perform(effects, Some(window), cx),
-            Closing::Asks {
-                close,
-                unsaved,
-                label,
-            } => (close, unsaved, label),
-        };
-        let (title, description): (SharedString, String) = match label {
-            Some(label) => (
-                format!("Close {label}?").into(),
-                "It has edits that were never saved. Closing it throws them away.".into(),
-            ),
-            None => {
-                let s = if unsaved == 1 {
-                    "file has"
-                } else {
-                    "files have"
-                };
-                (
-                    "Close all files?".into(),
-                    format!(
-                        "{unsaved} {s} edits that were never saved. Closing them throws those away."
-                    ),
-                )
-            }
+            Closing::Asks { close, label } => (close, label),
         };
         onehand_ui::confirm_on(
             cx.entity(),
             onehand_ui::Confirm {
                 id: "discard-edits",
-                title,
-                description: description.into(),
+                title: format!("Close {label}?").into(),
+                description: "It has edits that were never saved. Closing it throws them away."
+                    .into(),
                 // The verb of the control that asked.
                 act: "Close",
                 ..Default::default()

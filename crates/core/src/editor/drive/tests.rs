@@ -258,10 +258,7 @@ fn closing_a_tab_with_edits_asks_and_discarding_drops_its_buffer() {
     let (mut drive, uid) = opened(None);
     drive.typed(&root(), uid);
     match drive.close_tab(&root(), 0) {
-        Closing::Asks { unsaved, label, .. } => {
-            assert_eq!(unsaved, 1);
-            assert_eq!(label.as_deref(), Some("a.rs"));
-        }
+        Closing::Asks { label, .. } => assert_eq!(label, "a.rs"),
         Closing::Closed(_) => panic!("closed a tab with edits"),
     }
     let effects = drive.discard(&Close::Tab(root(), uid));

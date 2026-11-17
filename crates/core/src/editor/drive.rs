@@ -97,14 +97,9 @@ pub enum Input {
 pub enum Closing {
     /// Closed, with these effects.
     Closed(Vec<Effect>),
-    /// It would throw away edits: ask first, about this many files (the tab
-    /// named by `label` when it is one). [`EditorDrive::discard`] with
-    /// `close` closes once the person agrees.
-    Asks {
-        close: Close,
-        unsaved: usize,
-        label: Option<String>,
-    },
+    /// It would throw away the edits of the tab named `label`: ask first.
+    /// [`EditorDrive::discard`] with `close` closes once the person agrees.
+    Asks { close: Close, label: String },
 }
 
 /// What a close is about: one tab of a project.
@@ -263,8 +258,7 @@ impl EditorDrive {
         if file.dirty {
             return Closing::Asks {
                 close,
-                unsaved: 1,
-                label: Some(file.label.clone()),
+                label: file.label.clone(),
             };
         }
         Closing::Closed(self.discard(&close))
