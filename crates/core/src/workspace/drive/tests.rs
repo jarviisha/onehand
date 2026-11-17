@@ -19,10 +19,10 @@ fn tree(drive: &mut WorkspaceDrive) -> &mut Workspace {
     &mut drive.workspace
 }
 
-/// A drive on a workspace of `/a`, bound to a folder of its own.
+/// A drive on a workspace of `/a`, kept in a folder of its own.
 fn bound() -> WorkspaceDrive {
     let mut ws = Workspace::seeded("/a");
-    ws.storage_dir = Some(PathBuf::from("/store"));
+    ws.storage_dir = PathBuf::from("/store");
     WorkspaceDrive::new(ws)
 }
 
@@ -329,14 +329,6 @@ fn a_worker_stands_under_its_lead_s_project_when_the_lead_is_here() {
 }
 
 // The workspace file.
-
-#[test]
-fn an_unbound_workspace_writes_nothing() {
-    let mut drive = WorkspaceDrive::new(Workspace::seeded("/a"));
-    assert!(drive.save().is_empty());
-    assert!(drive.save_soon().is_empty());
-    assert!(drive.flush().is_none());
-}
 
 /// A burst is one write, once the last change's wait runs out; an earlier
 /// wait running out writes nothing.

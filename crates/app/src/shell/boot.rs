@@ -34,7 +34,7 @@ impl Shell {
             cx,
         );
         workbench.update(cx, |panel, cx| {
-            panel.set_storage(workspace.storage_dir.as_deref(), cx)
+            panel.set_storage(Some(&workspace.storage_dir), cx)
         });
         let terminal = TerminalPanel::new(cx);
         let issues_page = Self::new_issues_page(tell, cx);
@@ -111,7 +111,7 @@ impl Shell {
             window.on_window_should_close(cx, move |window, cx| guard(window, cx));
         }
         issues_page.handle(
-            &onehand_workbench::Request::SetStorage(workspace.storage_dir.as_deref()),
+            &onehand_workbench::Request::SetStorage(Some(&workspace.storage_dir)),
             cx,
         );
 
@@ -563,16 +563,15 @@ pub fn seed_workspace() -> Workspace {
 /// storage directory, in which case focus it. Storage dirs are canonicalized on
 /// the way in, so symlink and `..` aliases deduplicate.
 pub fn open_or_focus(workspace: Workspace, cx: &mut App) {
-    if let Some(dir) = workspace.storage_dir.clone() {
-        if let Some(handle) = crate::windows::window_for(&dir, cx) {
-            handle
-                .update(cx, |_, window, _| window.activate_window())
-                .ok();
-            return;
-        }
-        let fx = cx.update_global::<Shared, _>(|shared, _| shared.recents.opened(dir));
-        super::storage::carry_recents(fx, None, cx);
+    let dir = workspace.storage_dir.clone();
+    if let Some(handle) = crate::windows::window_for(&dir, cx) {
+        handle
+            .update(cx, |_, window, _| window.activate_window())
+            .ok();
+        return;
     }
+    let fx = cx.update_global::<Shared, _>(|shared, _| shared.recents.opened(dir));
+    super::storage::carry_recents(fx, None, cx);
     open_window(workspace, cx);
 }
 
@@ -645,11 +644,9 @@ fn open_window(workspace: Workspace, cx: &mut App) {
             crate::unattended::recheck(cx);
             // What reached the socket before any window waited for this one.
             crate::instance::window_up(cx);
-            if let Some(dir) = &storage_dir {
-                let fx =
-                    cx.update_global::<Shared, _>(|shared, _| shared.recents.named(dir, &name));
-                super::storage::carry_recents(fx, None, cx);
-            }
+            let fx = cx
+                .update_global::<Shared, _>(|shared, _| shared.recents.named(&storage_dir, &name));
+            super::storage::carry_recents(fx, None, cx);
         });
     })
     .detach();

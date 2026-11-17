@@ -220,9 +220,16 @@ pub fn canon_dir(path: PathBuf) -> PathBuf {
 /// next — a hash that moved under a toolchain upgrade would point every
 /// existing project at a fresh empty workspace.
 pub fn storage_for(root: &Path) -> PathBuf {
+    crate::config::workspaces_dir().join(stem_for(root))
+}
+
+/// Where what belongs to the project at `path` itself, and to no one
+/// workspace, is kept: what an offload keeps, among others. Apart from the
+/// workspaces' folders, so a folder there is always a workspace.
+pub fn project_dir(path: &Path) -> PathBuf {
     crate::config::config_dir()
-        .join("workspaces")
-        .join(stem_for(root))
+        .join("projects")
+        .join(stem_for(path))
 }
 
 /// `root` as a name something about it can be kept under: its folder's name,
@@ -267,9 +274,9 @@ pub struct Workspace {
     pub name: String,
     pub roots: Vec<ProjectRoot>,
     pub active_root: usize,
-    /// Storage directory this workspace persists to, if bound. `None` ⇒
-    /// nothing persists.
-    pub storage_dir: Option<PathBuf>,
+    /// The folder onehand keeps this workspace in. Every workspace has one:
+    /// none is on screen that nothing on disk remembers.
+    pub storage_dir: PathBuf,
     /// How the window's side panels were left. Per window, like the panels
     /// themselves — not per root, because the dock owns the sizes and the dock
     /// is the window's.
@@ -277,14 +284,15 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    /// Seed a workspace from a single project root (the CLI-arg path).
+    /// Seed a workspace from a single project root (the CLI-arg path), kept
+    /// in the folder a workspace made from that root is kept in.
     pub fn seeded(root: impl Into<PathBuf>) -> Self {
         let root = ProjectRoot::new(root);
         Self {
             name: "Workspace".into(),
+            storage_dir: storage_for(&root.path),
             roots: vec![root],
             active_root: 0,
-            storage_dir: None,
             layout: PanelLayout::default(),
         }
     }
@@ -332,7 +340,7 @@ impl Workspace {
             },
             roots,
             active_root,
-            storage_dir: Some(storage_dir),
+            storage_dir,
             // Clamped on the way in, not on the way out: a size that came back
             // from disk has not been through the dock's own drag limits.
             layout: cfg.layout.clamped(),

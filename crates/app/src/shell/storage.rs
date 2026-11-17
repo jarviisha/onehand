@@ -1,7 +1,7 @@
 use super::Shell;
 use super::boot::open_or_focus;
 use crate::state::Shared;
-use gpui::{AnyWindowHandle, App, BorrowAppContext, Context, Entity, Window};
+use gpui::{AnyWindowHandle, App, BorrowAppContext, Context, Entity};
 use gpui_component::WindowExt as _;
 use gpui_component::input::InputState;
 use gpui_component::notification::Notification;
@@ -80,110 +80,8 @@ impl Shell {
         &self.workspace_name
     }
 
-    pub fn storage_dir(&self) -> Option<&std::path::PathBuf> {
-        self.window.workspace.storage_dir.as_ref()
-    }
-
-    /// Drop the storage binding. An unbound workspace persists nothing.
-    pub fn unbind_storage(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let was = self.window.workspace.unbind();
-        self.workbench
-            .update(cx, |panel, cx| panel.set_storage(None, cx));
-        self.tell_issues_page(&onehand_workbench::Request::SetStorage(None), cx);
-        self.set_window_identity(None, window, cx);
-        // Forget the recent too, or the next launch reopens the workspace that
-        // was just unbound -- `recent_workspaces[0]` takes precedence over
-        // everything, including the CLI root.
-        if let Some(dir) = was {
-            let fx = cx.update_global::<Shared, _>(|shared, _| {
-                shared.recents.forgot(&dir, Forgot::Unbound)
-            });
-            carry_recents(fx, Some(window.window_handle()), cx);
-        }
-        cx.notify();
-    }
-
-    /// Point this workspace at a storage folder and write it there.
-    ///
-    /// One function for all four writes because they are one fact arriving, and
-    /// splitting them is what let them drift: binding used to set
-    /// `workspace.storage_dir` and nothing else, leaving this window's registry
-    /// entry saying `None` forever -- so opening the very same workspace from
-    /// recents made a *second* window for it, which is the one thing the
-    /// registry exists to prevent.
-    fn bind_storage(&mut self, dir: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        let fx = self.window.workspace.bind(dir.clone());
-        self.workbench
-            .update(cx, |panel, cx| panel.set_storage(Some(&dir), cx));
-        self.tell_issues_page(&onehand_workbench::Request::SetStorage(Some(&dir)), cx);
-        self.carry_workspace(fx, window, cx);
-        self.set_window_identity(Some(dir.clone()), window, cx);
-        let name = self.window.workspace.name.clone();
-        let fx = cx.update_global::<Shared, _>(|shared, _| shared.recents.bound(dir, &name));
-        carry_recents(fx, Some(window.window_handle()), cx);
-        cx.notify();
-    }
-
-    /// Update what the process-wide registry thinks this window is showing.
-    ///
-    /// Canonicalized on the way in, exactly as `open_or_focus` does, so a
-    /// symlinked or `..`-laden path binds to the same identity it would be
-    /// looked up by.
-    fn set_window_identity(
-        &mut self,
-        dir: Option<PathBuf>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let dir = dir.map(workspace::canon_dir);
-        let handle = window.window_handle();
-        crate::windows::bind_storage(handle, dir, cx);
-    }
-
-    /// Bind this workspace to a storage folder, chosen with the native picker.
-    ///
-    /// **Overwrite guard:** a folder that already holds another workspace's
-    /// `onehand-workspace.toml` is never overwritten -- that workspace is opened
-    /// (or its window focused) and this one is left as it was. Binding a folder
-    /// is a choice about *this* workspace; it must not be a way to lose another
-    /// one.
-    pub fn pick_storage_dir(&mut self, cx: &mut Context<Self>) {
-        cx.spawn(async move |shell, cx| {
-            let Some(dir) = pick_folder(cx).await else {
-                return;
-            };
-
-            match workspace_in(&dir, cx).await {
-                // Opening it is the guard doing its job, but from the picker it
-                // is also the one outcome with nothing on screen to show for it
-                // -- a folder already open in a window just re-focuses that
-                // window, which reads exactly like a control that did nothing.
-                Ok(Some(workspace)) => {
-                    cx.update(|cx| open_or_focus(workspace, cx));
-                    say(
-                        &shell,
-                        crate::toast::info(format!(
-                            "{} already holds a workspace — opened it, and this one is unchanged",
-                            dir.display()
-                        )),
-                        cx,
-                    );
-                }
-                Ok(None) => {
-                    shell
-                        .update_in(cx, |shell, window, cx| {
-                            shell.bind_storage(dir.clone(), window, cx);
-                        })
-                        .ok();
-                }
-                Err(message) => say(
-                    &shell,
-                    crate::toast::failed("Using that folder", message),
-                    cx,
-                ),
-            }
-        })
-        .detach();
+    pub fn storage_dir(&self) -> &std::path::PathBuf {
+        &self.window.workspace.storage_dir
     }
 
     /// Pick a project folder and open it as a *new* workspace in its own window.
@@ -224,7 +122,6 @@ impl Shell {
                     // this makes and every one of them being called "Workspace"
                     // leaves the rail's identity row naming nothing.
                     workspace.name = workspace::label_for(&root);
-                    workspace.storage_dir = Some(dir.clone());
                     let written = cx
                         .background_executor()
                         .spawn({

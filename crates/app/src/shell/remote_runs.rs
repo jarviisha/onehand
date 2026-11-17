@@ -154,10 +154,12 @@ impl Shell {
         }
     }
 
-    /// Where `root`'s own issues are kept, if this workspace keeps anything.
+    /// Where `root`'s own issues are kept.
     pub fn issues_file(&self, root: &Path) -> Option<PathBuf> {
-        let storage = self.window.workspace.storage_dir.as_deref()?;
-        Some(onehand_core::issues::file_for(storage, root))
+        Some(onehand_core::issues::file_for(
+            &self.window.workspace.storage_dir,
+            root,
+        ))
     }
 
     /// Start `spec` on `dir`, off screen: on the project already open there,

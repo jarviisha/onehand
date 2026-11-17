@@ -636,3 +636,14 @@ fn an_offload_checks_rsync_before_it_attaches() {
     assert_eq!(names(&fx), ["Offload"]);
     assert!(drive.is_empty(), "kept only once the window keeps it");
 }
+
+#[test]
+fn backup_dir_is_under_the_project_dir() {
+    let path = std::path::Path::new("/home/me/code/app");
+    assert_eq!(
+        backup_dir(path, "2026-11-17 10.00"),
+        crate::workspace::project_dir(path)
+            .join("backups")
+            .join("2026-11-17 10.00")
+    );
+}

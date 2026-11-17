@@ -1,5 +1,4 @@
 use super::{APP, about, field, list_row, list_rows, page_head, section};
-use crate::controls::Refuses as _;
 use crate::controls::Short as _;
 use crate::controls::text_input;
 use crate::shell::Shell;
@@ -73,8 +72,9 @@ pub(super) fn appearance_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .into_any_element()
 }
 
-/// The workspace page: this workspace's name and storage binding, then the two
-/// ways to reach another one, then the unattended runs it may start.
+/// The workspace page: this workspace's name and the folder onehand keeps it
+/// in, shown so it can be found for a backup and never chosen, then the ways
+/// to reach another one, then the unattended runs it may start.
 ///
 /// No workspace is ever *replaced* in place -- one window hosts exactly one
 /// workspace, so both of those buttons open another window, or focus the one
@@ -85,31 +85,12 @@ pub(super) fn appearance_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
 /// row named by its folder with the parent beside it, the one on screen checked
 /// and unpickable. A second copy here printed each absolute path whole into a
 /// button, uncapped, so the longer the app was used the further it pushed
-/// everything else off the bottom. What stays is the binding, which has nowhere
-/// else to live.
+/// everything else off the bottom.
 pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let shell = handle.read(cx);
     let name = shell.workspace_name_input().clone();
-    let storage = shell
-        .storage_dir()
-        .map(|dir| SharedString::from(dir.display().to_string()));
-    let bound = storage.is_some();
-    let (bind, unbind, new, open) = (
-        handle.clone(),
-        handle.clone(),
-        handle.clone(),
-        handle.clone(),
-    );
-    // An unbound workspace persists nothing; say so rather than showing a
-    // blank where the folder would be.
-    let storage = match storage {
-        Some(dir) => div()
-            .font_family(cx.theme().mono_font_family.clone())
-            .text_xs()
-            .child(dir)
-            .into_any_element(),
-        None => "Not bound — nothing about this workspace is saved".into_any_element(),
-    };
+    let storage = SharedString::from(shell.storage_dir().display().to_string());
+    let (new, open) = (handle.clone(), handle.clone());
 
     let general = section(None, None, cx)
         .child(field(
@@ -120,29 +101,12 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         ))
         .child(field(
             "Storage folder",
-            Some(storage),
+            about("Where onehand keeps this workspace"),
             div()
-                .h_flex()
-                .gap_2()
-                .child(
-                    crate::controls::action("bind-storage")
-                        .tall()
-                        .secondary()
-                        .label("Choose folder…")
-                        .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                            bind.update(cx, |shell, cx| shell.pick_storage_dir(cx));
-                        }),
-                )
-                .child(
-                    crate::controls::action("unbind-storage")
-                        .tall()
-                        .secondary()
-                        .refuses((!bound).then_some("No storage folder is bound"))
-                        .label("Unbind")
-                        .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-                            unbind.update(cx, |shell, cx| shell.unbind_storage(window, cx));
-                        }),
-                ),
+                .min_w_0()
+                .font_family(cx.theme().mono_font_family.clone())
+                .text_xs()
+                .child(storage),
             cx,
         ));
     let others = section(

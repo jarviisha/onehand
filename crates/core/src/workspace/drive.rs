@@ -19,8 +19,7 @@
 //! write that fails puts back each thing no later write carries, to its last
 //! value known saved, and is said once ([`Signal::SaveFailed`]). That rule is
 //! [`crate::saving::Saves`]'. A change made in a burst (a name typed, a size
-//! dragged) is written once things have been still for [`SAVE_DEBOUNCE`]. An
-//! unbound workspace writes nothing.
+//! dragged) is written once things have been still for [`SAVE_DEBOUNCE`].
 
 use super::{HostName, ProjectRoot, Workspace};
 use crate::config::{AgentSpec, PanelLayout, WorkspaceConfig};
@@ -341,7 +340,7 @@ impl WorkspaceDrive {
     }
 
     /// Write the workspace now: a change nothing puts back, such as a project
-    /// added or a size dragged. Nothing when it is bound to no folder.
+    /// added or a size dragged.
     #[must_use = "its effects are to be carried"]
     pub fn save(&mut self) -> Vec<Effect> {
         self.soon = None;
@@ -351,9 +350,6 @@ impl WorkspaceDrive {
     /// Write the workspace once it has been still for [`SAVE_DEBOUNCE`].
     #[must_use = "its effects are to be carried"]
     pub fn save_soon(&mut self) -> Vec<Effect> {
-        if self.workspace.storage_dir.is_none() {
-            return Vec::new();
-        }
         self.minted += 1;
         self.soon = Some(self.minted);
         vec![Effect::Arm {
@@ -370,20 +366,6 @@ impl WorkspaceDrive {
         self.snapshot().map(Effect::WriteOnClose)
     }
 
-    /// Bind the workspace to the folder `dir`, and write it there.
-    #[must_use = "its effects are to be carried"]
-    pub fn bind(&mut self, dir: PathBuf) -> Vec<Effect> {
-        self.workspace.storage_dir = Some(dir);
-        self.save()
-    }
-
-    /// Bind the workspace to no folder: it writes nothing from now on, and a
-    /// burst's write still waiting is dropped. Answers the folder it had.
-    pub fn unbind(&mut self) -> Option<PathBuf> {
-        self.soon = None;
-        self.workspace.storage_dir.take()
-    }
-
     /// Change `thing` from `before` to `after`, as already done to the tree,
     /// and write it now (`soon` false) or after the burst.
     fn change(&mut self, thing: Thing, before: Value, after: Value, soon: bool) -> Vec<Effect> {
@@ -398,9 +380,9 @@ impl WorkspaceDrive {
         self.snapshot().map(Effect::Write)
     }
 
-    /// The whole file as it now stands, and where it goes; none unbound.
+    /// The whole file as it now stands, and where it goes.
     fn snapshot(&mut self) -> Option<Box<FileWrite>> {
-        let dir = self.workspace.storage_dir.clone()?;
+        let dir = self.workspace.storage_dir.clone();
         Some(Box::new(FileWrite {
             pending: self.saves.write_all(),
             config: self.workspace.to_config(),
@@ -425,9 +407,9 @@ impl WorkspaceDrive {
                 }
                 // A name is remembered once its workspace holds it, never
                 // while it could yet be put back.
-                if let Some(dir) = self.workspace.storage_dir.clone().filter(|_| landed) {
+                if landed {
                     fx.push(Effect::Remember {
-                        dir,
+                        dir: self.workspace.storage_dir.clone(),
                         name: self.workspace.name.clone(),
                     });
                 }

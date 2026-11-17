@@ -411,12 +411,25 @@ impl AppConfig {
 /// its own: two on one root refuse each other at the instance lock. It names
 /// onehand's root only, where moving `XDG_CONFIG_HOME` would move every
 /// tool's, and `gh`, git and the agents a session starts read theirs there.
+///
+/// **A test build never reaches the person's own root.** Every workspace has
+/// a folder of its own there, so a test that renames one or adds a project
+/// would write into the real data; a build with tests in it falls back to a
+/// scratch root per process instead.
 pub fn config_dir() -> PathBuf {
     own_root().unwrap_or_else(|| {
+        #[cfg(any(test, feature = "test-support"))]
+        return std::env::temp_dir().join(format!("onehand-test-root-{}", std::process::id()));
+        #[cfg(not(any(test, feature = "test-support")))]
         dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("onehand")
     })
+}
+
+/// Where onehand keeps its workspaces, one folder each.
+pub fn workspaces_dir() -> PathBuf {
+    config_dir().join("workspaces")
 }
 
 /// `$ONEHAND_CONFIG_DIR`, when it names a root.

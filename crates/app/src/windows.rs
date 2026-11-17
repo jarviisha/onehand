@@ -23,10 +23,8 @@ use std::path::{Path, PathBuf};
 
 /// A window this process has open.
 struct OpenWindow {
-    /// The workspace's storage directory, canonicalized. `None` for an
-    /// unbound workspace, which can never be deduplicated because it has no
-    /// identity.
-    storage_dir: Option<PathBuf>,
+    /// The workspace's storage directory, canonicalized.
+    storage_dir: PathBuf,
     handle: AnyWindowHandle,
     /// This window's shell. Weak, so this list is never the reason a closed
     /// window's shell stays alive: a strong handle would make the moment
@@ -47,7 +45,7 @@ fn all(cx: &App) -> &[OpenWindow] {
 /// File window `handle`, showing `shell` and the workspace kept in
 /// `storage_dir`, once it is built.
 pub(crate) fn register(
-    storage_dir: Option<PathBuf>,
+    storage_dir: PathBuf,
     handle: AnyWindowHandle,
     shell: WeakEntity<Shell>,
     cx: &mut App,
@@ -84,24 +82,11 @@ pub(crate) fn forget(closed: WindowId, cx: &mut App) {
         .retain(|w| w.handle.window_id() != closed);
 }
 
-/// Window `handle`'s workspace is now kept in `dir` (canonicalized), or in
-/// none.
-pub(crate) fn bind_storage(handle: AnyWindowHandle, dir: Option<PathBuf>, cx: &mut App) {
-    let windows = cx.default_global::<Windows>();
-    if let Some(entry) = windows
-        .0
-        .iter_mut()
-        .find(|w| w.handle.window_id() == handle.window_id())
-    {
-        entry.storage_dir = dir;
-    }
-}
-
 /// The window already showing the workspace kept in `dir`, if any.
 pub(crate) fn window_for(dir: &Path, cx: &App) -> Option<AnyWindowHandle> {
     all(cx)
         .iter()
-        .find(|w| w.storage_dir.as_deref() == Some(dir))
+        .find(|w| w.storage_dir == dir)
         .map(|w| w.handle)
 }
 

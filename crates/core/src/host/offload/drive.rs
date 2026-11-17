@@ -730,7 +730,7 @@ fn took_over(
 /// is taken over them: a folder of their own in the project's storage, named
 /// for `when` (a local date and time).
 pub fn backup_dir(path: &Path, when: &str) -> PathBuf {
-    crate::workspace::storage_for(path)
+    crate::workspace::project_dir(path)
         .join("backups")
         .join(when)
 }

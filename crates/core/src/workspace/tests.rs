@@ -370,7 +370,7 @@ fn config_roundtrips_roots_and_active() {
     assert_eq!(back.name, "Mine");
     assert_eq!(back.roots.len(), 3);
     assert_eq!(back.active_root, 1);
-    assert_eq!(back.storage_dir, Some(PathBuf::from("/store")));
+    assert_eq!(back.storage_dir, PathBuf::from("/store"));
     assert!(back.roots[0].sessions.is_empty());
 }
 
@@ -740,4 +740,23 @@ fn an_order_put_back_tells_a_local_and_a_host_root_on_one_path_apart() {
         ],
         "the host root goes back after the local one"
     );
+}
+
+#[test]
+fn seeded_is_kept_beside_the_other_workspaces() {
+    let ws = Workspace::seeded("/x/proj");
+    assert_eq!(ws.storage_dir, storage_for(Path::new("/x/proj")));
+    assert_eq!(
+        ws.storage_dir.parent(),
+        Some(crate::config::workspaces_dir().as_path())
+    );
+}
+
+#[test]
+fn a_project_dir_is_named_as_its_issues_are() {
+    let path = Path::new("/home/me/code/app");
+    let dir = project_dir(path);
+    assert_eq!(dir.file_name().unwrap().to_string_lossy(), stem_for(path));
+    assert_eq!(dir.parent().unwrap().file_name().unwrap(), "projects");
+    assert_ne!(dir.parent(), storage_for(path).parent());
 }

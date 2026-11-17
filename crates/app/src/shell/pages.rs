@@ -153,12 +153,8 @@ pub(super) fn page_projects_in(
                     .map(|session| (session.uid, SharedString::from(session.title().to_string())))
                     .collect(),
                 git: workspace.git_of(root).map(gitstat::GitStatus::label),
-                issues: local.and_then(|path| {
-                    Some(onehand_core::issues::file_for(
-                        workspace.storage_dir.as_deref()?,
-                        path,
-                    ))
-                }),
+                issues: local
+                    .map(|path| onehand_core::issues::file_for(&workspace.storage_dir, path)),
             }
         })
         .collect()

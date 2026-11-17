@@ -42,6 +42,9 @@ pub(crate) fn shell(
 ) {
     cx.executor().allow_parking();
     cx.update(gpui_component::init);
+    // A folder of this test's own: every rig's workspace is of `/tmp`, and
+    // tests running side by side must not share one.
+    let storage = store.with_extension("workspace");
     cx.update(|cx| {
         let mut shared = Shared::for_test();
         shared.settings = SettingsDrive::new(agents, Default::default());
@@ -50,7 +53,8 @@ pub(crate) fn shell(
     });
     let mut made = None;
     let window = cx.add_window(|window, cx| {
-        let ws = Workspace::seeded("/tmp");
+        let mut ws = Workspace::seeded("/tmp");
+        ws.storage_dir = storage.clone();
         let shell = gpui::AppContext::new(cx, |cx| crate::shell::Shell::new(ws, window, cx));
         made = Some(shell.clone());
         Root::new(shell, window, cx)
@@ -58,23 +62,9 @@ pub(crate) fn shell(
     let handle: gpui::AnyWindowHandle = window.into();
     let shell = made.expect("the shell");
     let weak = shell.downgrade();
-    cx.update(|cx| crate::windows::register(None, handle, weak, cx));
+    cx.update(|cx| crate::windows::register(storage, handle, weak, cx));
     let cx = VisualTestContext::from_window(handle, cx).into_mut();
     (handle, shell, cx)
-}
-
-/// Bind `shell`'s workspace to `dir`, where it keeps its issues.
-pub(crate) fn keep_in(
-    shell: &Entity<crate::shell::Shell>,
-    dir: PathBuf,
-    cx: &mut VisualTestContext,
-) {
-    cx.update(|window, cx| {
-        shell.update(cx, |shell, cx| {
-            let fx = shell.window.workspace.bind(dir);
-            shell.carry_workspace(fx, window, cx);
-        })
-    });
 }
 
 /// The titles of the open issues `shell`'s workspace page lists.
@@ -118,8 +108,10 @@ pub(crate) fn another(
     root: &std::path::Path,
 ) -> (gpui::AnyWindowHandle, Entity<crate::shell::Shell>) {
     let mut made = None;
+    let mut storage = PathBuf::new();
     let window = cx.cx.add_window(|window, cx| {
         let ws = Workspace::seeded(root);
+        storage = ws.storage_dir.clone();
         let shell = gpui::AppContext::new(cx, |cx| crate::shell::Shell::new(ws, window, cx));
         made = Some(shell.clone());
         Root::new(shell, window, cx)
@@ -128,6 +120,6 @@ pub(crate) fn another(
     let shell = made.expect("the shell");
     let weak = shell.downgrade();
     cx.cx
-        .update(|cx| crate::windows::register(None, handle, weak, cx));
+        .update(|cx| crate::windows::register(storage, handle, weak, cx));
     (handle, shell)
 }
