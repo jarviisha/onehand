@@ -240,8 +240,8 @@ impl IssuesView {
                     .h_flex()
                     .child(search_input(&query, cx).appearance(false).short().h_full()),
             )
-            // Kept to the row's end, on a line of their own when the search
-            // leaves them no room; *Clear filters* last of the filters, so
+            // Kept to the row's end, past the line parting them from the
+            // search; *Clear filters* last of the filters, so
             // nothing moves as it comes and goes, and `+` at the very end.
             .child(
                 div()
