@@ -195,10 +195,9 @@ fn normalize_root(path: PathBuf) -> PathBuf {
     std::fs::canonicalize(&path).unwrap_or(path)
 }
 
-/// Canonicalize a workspace *storage* dir when it resolves; keep it as given
-/// otherwise. Applied at every point a storage dir enters the system (bind,
-/// open, recents) so symlink/`..` aliases of the same dir compare equal —
-/// the open-workspace dedup and the recents list key off this path.
+/// Canonicalize a folder a person picked when it resolves; keep it as given
+/// otherwise, so symlink/`..` aliases of one folder name one workspace —
+/// the workspace made from a folder is kept under a name taken from its path.
 pub fn canon_dir(path: PathBuf) -> PathBuf {
     std::fs::canonicalize(&path).unwrap_or(path)
 }

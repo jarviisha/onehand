@@ -40,7 +40,7 @@ The drives so far:
 | `onehand_core::editor::drive::EditorDrive` | one Workbench's open files: a read landing as a tab, a save and the one asked while it runs, a conflict, a locked folder, a close that would lose edits | `EditorView` (`crates/editor/src/view.rs`), one per mode |
 | `onehand_core::claude_plugins::drive::PluginsDrive` | one Plugins mode: when its list is read, one change at a time, a refusal said in its project, what the agent on screen has not loaded | `PluginsView` (`crates/claude-plugins/src/view.rs`), one per mode |
 | `onehand_core::task::work::drive::WorkDrive` | what one Issues view reads of the work on its issues and when (a pull request, every project's on the page, what the work left), and whether a review press goes to the run | `IssuesView` (`crates/issues/src/view/reads.rs`), one per view |
-| `onehand_core::config::recents::RecentsDrive` | the recents list: a workspace opened, bound, named or forgotten, its write, and which failure is said | `crates/app/src/shell/storage.rs`, its drive held on `Shared` |
+| `onehand_core::config::recents::RecentsDrive` | the list of every workspace onehand keeps: read from their folders at launch, which one a launch opens, a workspace opened, renamed, made or deleted, and the order's write | `crates/app/src/shell/storage.rs`, its drive held on `Shared` |
 | `onehand_core::instance::Arrivals` | what reaches the socket before the first window, held until it registers; a model whose commands answer what is carried, as `WindowWaits` is | `crates/app/src/instance.rs`, held in a global beside the socket |
 | `onehand_core::workbench::Showing` | which Workbench mode shows: after a switch of project, for a file opened, for a mode picked, and none other while the panel refuses; a model whose commands answer the place that came to show, with no effects of its own | `Workbench` (`crates/app/src/workbench/panel.rs`), one per panel, which holds the modes and tells the one that came to show |
 
@@ -306,8 +306,8 @@ window: its start, watch and first prompt, and a window closed before its start,
 apart from it; the settings' (`crates/app/src/saves/tests.rs`) a write landing
 once, a failed appearance put back, the agent list kept, and an agent check's probe answered once
 or failing after its wait, against a channel; the recents'
-(`crates/app/src/shell/storage/tests.rs`) a bind and an unbind landing in the file, and only an
-unbind's failed forget said; a second launch's (`crates/app/src/instance.rs`) what arrives before
+(`crates/app/src/shell/storage/tests.rs`) a deleted workspace's folder gone once its window has
+closed, and the list without it; a second launch's (`crates/app/src/instance.rs`) what arrives before
 the first window carried once it registers, in order; the workspace's (`crates/app/src/shell/carry/tests.rs`, on a real `Shell`) a burst
 written once after its wait, a failed write put back on screen and in its field, a window closing
 writing the burst still waiting, and a run's session ended leaving no agent and no project; an

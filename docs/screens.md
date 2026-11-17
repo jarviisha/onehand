@@ -13,7 +13,8 @@ The library's `TitleBar` on the window's fill with no line under it, its whole w
 move the window. At its start, a tile holding the workspace's initial on the accent fill,
 standing apart and not pressable (none for a name with no letter), then the workspace's name in
 medium weight and the content ink with a chevron (a name cut short said whole in its tooltip), a quiet button of its own at `.short()` and a tab stop of its own, which opens
-the workspace menu (the recent workspaces, *Open workspace…*, *New workspace…*) when pressed and
+the workspace menu (every workspace onehand keeps, most recently opened first and capped, then
+*New workspace…*) when pressed and
 on Enter; then the rail's toggle (a panel at the left, its glyph in the foreground ink while the
 rail is shown and in the muted ink while hidden, no fill at rest, its key in its tooltip,
 dispatching the command its key does). The window draws no menus of its own: every command is

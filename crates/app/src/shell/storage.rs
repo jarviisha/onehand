@@ -137,11 +137,9 @@ impl Shell {
 
     /// Pick a project folder and open it as a *new* workspace in its own window.
     ///
-    /// The workspace is bound and written before the window opens. An unbound
-    /// workspace persists nothing, so one made this way was remembered nowhere:
-    /// the next launch could not reopen it, and the folder it was created in did
-    /// not open it either -- picking that folder answered "no workspace here",
-    /// which is what a folder with nothing written into it truthfully is.
+    /// The workspace is written before the window opens, and a write that fails
+    /// opens nothing: a workspace on screen that nothing on disk remembers would
+    /// be gone at the next launch.
     ///
     /// It is written to `workspace::storage_for` and never into the project
     /// itself, and where that lands is stable for a given folder -- which is

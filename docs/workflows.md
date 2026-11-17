@@ -413,7 +413,7 @@ The composer's `+` menu and the keymap's `run_workflow` (no default key) open th
 project on screen. A checkout workflow starts a session there; a worktree workflow first cuts
 `workflow/<title>` (or the first free `-N`) off `HEAD` beside the project and adds it as a project.
 A workflow with a command step that names no command needs the project's check command, set on
-the project's page beside *Run check* and kept in the workspace file (`WorkspaceConfig::checks`).
+the project's page beside *Run check* and kept in its record in the workspace file (`ProjectConfig::check`).
 
 **Workflows are written on a page of their own**, opened from the rail's *Workflows* row: the
 workflows on offer as cards, the person's own first, and a search over their names and
