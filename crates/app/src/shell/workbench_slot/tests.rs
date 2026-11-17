@@ -74,14 +74,12 @@ impl Rig<'_> {
     }
 
     /// The dock area's width, and the gap each box keeps on its left.
+    /// The centre's width, and what a box takes off a panel's: the gap it is
+    /// inset by and its hairline on both sides.
     fn centre_and_gap(&mut self) -> (Pixels, Pixels) {
         let area = self.area.clone();
-        self.cx.update(|window, cx| {
-            (
-                area.read(cx).bounds().size.width,
-                REGION_GAP.to_pixels(window.rem_size()),
-            )
-        })
+        self.cx
+            .update(|window, cx| (area.read(cx).bounds().size.width, inset(window.rem_size())))
     }
 
     fn set_width(&mut self, width: Pixels) {
@@ -94,6 +92,12 @@ impl Rig<'_> {
 
 /// A dock area in the app's skin, the two probes mounted as the shell mounts
 /// the conversation and the Workbench, and a probe in the bottom dock.
+/// What a box takes off its panel's width: the region gap it is inset by,
+/// and its 1px hairline on either side.
+fn inset(rem: Pixels) -> Pixels {
+    REGION_GAP.to_pixels(rem) + px(2.)
+}
+
 fn rig(cx: &mut TestAppContext, layout: PanelLayout) -> Rig<'_> {
     cx.update(gpui_component::init);
     let made = |shown: bool, cx: &mut App| {
@@ -240,7 +244,7 @@ fn the_saved_width_comes_back_when_reopened(cx: &mut TestAppContext) {
         let shell = shell.read(cx);
         (
             shell.workbench.read(cx).drawn_width().to_pixels(rem),
-            REGION_GAP.to_pixels(rem),
+            inset(rem),
         )
     });
     assert!(
