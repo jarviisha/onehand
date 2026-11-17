@@ -48,7 +48,7 @@ a hex literal is a bug even when it looks right, as no theme switch reaches it.
 
 ## Layout
 
-One window hosts one workspace. A title bar holding the rail's toggle, the workspace's name, the search
+One window hosts one workspace. A title bar holding the workspace's name, the rail's toggle, the search
 and the docks' toggles runs along the top; nothing runs along
 the foot. The title bar and the rail stand on the window's fill, unboxed. Beside the rail, every
 other region is a box of its own on that fill: the agent pane and the Workbench side by side, the
@@ -59,7 +59,7 @@ plain ASCII and box-drawing, so it stays aligned in any mono font.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────┐
-│ rail Workspace v              [ Search sessions ^K ]               term wb  _ [] x │
+│ W Workspace v rail            [ Search sessions ^K ]               term wb  _ [] x │
 │ + New session ^N ┌────────────────────────────┐ ┌────────────────────────────────┐ │
 │ Overview         │ Title (...)     past close │ │ Editor Markdown ...   max hide │ │
 │ Tasks         2  │ workflow > step >     Stop │ │ open file v               tree │ │
@@ -83,7 +83,7 @@ plain ASCII and box-drawing, so it stays aligned in any mono font.
 
 What each region holds, and in what order, is `docs/screens.md`'s, under the region's name:
 
-- **Title bar**: the rail's toggle, the workspace's name and its menu, the search
+- **Title bar**: the workspace's name and its menu, the rail's toggle, the search
   over the rail's sessions, the terminal's and the Workbench's toggles, and the window's own
   controls where the app decorates it.
 - **Rail**: app chrome outside the dock, on the window's fill, from *New session* down to *Settings*.

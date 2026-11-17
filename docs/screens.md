@@ -9,12 +9,11 @@ never cites this file.
 
 ## Title bar
 
-The library's `TitleBar` on the window's fill with no line under it, its whole width a handle to move the window. At its start, the rail's toggle (a
-panel at the left, its glyph in the foreground ink while the rail is shown and in the muted ink
-while hidden, no fill at rest, its key in its tooltip, dispatching the command its key does), then
-a tile holding the workspace's initial on the accent fill, the workspace's name a step over the chrome size at medium weight in the content ink and a chevron, a quiet button at the chrome size and a tab stop of its own,
+The library's `TitleBar` on the window's fill with no line under it, its whole width a handle to move the window. At its start, a tile holding the workspace's initial on the accent fill, the workspace's name a step over the chrome size at medium weight in the content ink and a chevron, a quiet button at the chrome size and a tab stop of its own,
 which opens the workspace menu (the recent workspaces, *Open workspace…*, *New workspace…*) when
-pressed and on Enter. The window draws no menus of its own: every command is the keymap's,
+pressed and on Enter; then the rail's toggle (a panel at the left, its glyph in the foreground ink
+while the rail is shown and in the muted ink while hidden, no fill at rest, its key in its tooltip,
+dispatching the command its key does). The window draws no menus of its own: every command is the keymap's,
 and the platform's own menu bar holds them where there is one. Centred in the room left and narrowing with it, the search over session
 titles and project names, the library's edged field at `.short()` with no fill of its own, its edge alone parting it from the bar, with its key's hint (`Ctrl+K`
 outside a terminal, showing a hidden rail); what it narrows is the rail's list, so typing into it

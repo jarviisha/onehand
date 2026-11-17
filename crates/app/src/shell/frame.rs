@@ -1,6 +1,6 @@
 //! The window's frame around the rail and the dock: the title bar, holding the
-//! rail's toggle and the workspace, its menus, the search over the rail's
-//! sessions, and the docks' toggles. Nothing runs along the
+//! workspace and the rail's toggle, the search over the rail's sessions, and
+//! the docks' toggles. Nothing runs along the
 //! foot: the branch stands under the composer.
 //!
 //! **The menus hold only the keymap's commands.** Each item is a command the
@@ -114,7 +114,7 @@ pub(super) fn install_menus(cx: &mut App) {
 }
 
 impl Shell {
-    /// The title bar: the rail's toggle and the workspace at the start; the search over the rail's sessions and projects, centred in
+    /// The title bar: the workspace and the rail's toggle at the start; the search over the rail's sessions and projects, centred in
     /// the room left; the terminal's and the Workbench's toggles at the end. The
     /// window's own controls are the library's, drawn where the window is
     /// decorated by the app.
@@ -146,9 +146,9 @@ impl Shell {
             })
     }
 
-    /// The rail's toggle and the workspace control, at the title bar's start.
-    /// The workspace control is a quiet button after a toggle, so no ghost
-    /// stands alone at the line's start. A press here stops before the bar,
+    /// The workspace control and the rail's toggle, at the title bar's start.
+    /// The workspace leads, its tile holding the line's start, and the rail's
+    /// toggle follows it, beside the rail it shows and hides. A press here stops before the bar,
     /// as the end toggles' does, so a nudge presses rather than moving the
     /// window.
     fn title_start(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement + use<> {
@@ -167,8 +167,8 @@ impl Shell {
             .mr_2()
             .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_mouse_down(gpui::MouseButton::Right, |_, _, cx| cx.stop_propagation())
-            .child(rail)
             .child(crate::rail::workspace_control(self, cx))
+            .child(rail)
     }
 
     /// The terminal's and the Workbench's toggles, at the title bar's end, in
