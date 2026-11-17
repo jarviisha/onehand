@@ -1,4 +1,4 @@
-//! The search over the list, drawn in the title bar and led by the workspace, and the header that
+//! The workspace control and the search over the list, drawn in the title bar, and the header that
 //! names the list: how many sessions wait on the person, the way to the search, and the filter.
 
 use super::RailState;
@@ -12,23 +12,16 @@ use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{Anchor, Context, InteractiveElement as _, IntoElement, ParentElement, Styled, div};
 use gpui_component::menu::DropdownMenu as _;
-use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, StyledExt};
 use onehand_ui::ShortIcon as _;
 
-/// The search field, the library's edged field, with the key that reaches it
-/// from anywhere. It stands in the title bar, whose press drags the window and
-/// whose right press opens the window's menu, so either stops here before the
-/// bar: a drag selects words, not the window.
-///
-/// It leads with the workspace's name and a chevron, a button of its own and
-/// so a tab stop of its own, which opens the workspace menu when pressed and
-/// on Enter; past it, the field searches. The name is cut at a character, as
-/// a menu row's is: the field is the room the search has, not the name. A
-/// press on it stays its own: the button takes focus on its way down and
-/// marks the press taken, so the field round it takes neither the caret nor
-/// the click.
-pub(crate) fn search_field(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
-    let state = shell.rail_state();
+/// The workspace's name and a chevron, a quiet button and a tab stop of its
+/// own, which opens the workspace menu when pressed and on Enter. It stands at
+/// the title bar's start; the name is cut at a character, as a menu row's is.
+pub(crate) fn workspace_control(
+    shell: &Shell,
+    cx: &mut Context<Shell>,
+) -> impl IntoElement + use<> {
     let workspace = &shell.workspace_window().workspace;
     let name = ellipsize(&workspace.name, MAX_LABEL);
     let menu = super::workspace::workspace_menu(
@@ -36,42 +29,34 @@ pub(crate) fn search_field(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoE
         shell.recents(cx),
         cx.entity().downgrade(),
     );
-    let segment = div()
-        .h_flex()
-        .items_center()
-        .gap_1()
-        .child(onehand_ui::menu_below(
-            "workspace-menu",
-            crate::controls::action("workspace-segment")
-                .quiet(cx)
-                .short()
-                .label(name)
-                .dropdown_caret(true)
-                .named("Open another workspace, or start one"),
-            menu,
-        ))
-        .child(
-            Icon::new(IconName::Search)
-                .small()
-                .text_color(cx.theme().muted_foreground),
-        );
+    onehand_ui::menu_below(
+        "workspace-menu",
+        crate::controls::action("workspace-segment")
+            .quiet(cx)
+            .short()
+            .label(name)
+            .dropdown_caret(true)
+            .named("Open another workspace, or start one"),
+        menu,
+    )
+}
+
+/// The search field, the library's edged field, with the key that reaches it
+/// from anywhere. It stands in the title bar, whose press drags the window and
+/// whose right press opens the window's menu, so either stops here before the
+/// bar: a drag selects words, not the window.
+pub(crate) fn search_field(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
+    let state = shell.rail_state();
     div()
         .flex_1()
         .min_w_0()
         .max_w(crate::tokens::TITLE_SEARCH_W)
         .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_mouse_down(gpui::MouseButton::Right, |_, _, cx| cx.stop_propagation())
-        .child(
-            // The lead takes the place of the field's own search mark, so it
-            // carries that mark after the name.
-            search_input(&state.search, cx)
-                .prefix(segment)
-                .short()
-                .when_some(
-                    crate::keymap::first_key("focus_rail_search", cx),
-                    |input, key| input.suffix(gpui_component::kbd::Kbd::new(key)),
-                ),
-        )
+        .child(search_input(&state.search, cx).short().when_some(
+            crate::keymap::first_key("focus_rail_search", cx),
+            |input, key| input.suffix(gpui_component::kbd::Kbd::new(key)),
+        ))
 }
 
 /// *Sessions*, how many wait on the person, the search and the filter: a heading over

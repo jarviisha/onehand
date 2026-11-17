@@ -48,8 +48,8 @@ a hex literal is a bug even when it looks right, as no theme switch reaches it.
 
 ## Layout
 
-One window hosts one workspace. A title bar holding the app's mark, its menus, the search led by
-the workspace's name and the rail's and the docks' toggles runs along the top; nothing runs along
+One window hosts one workspace. A title bar holding the rail's toggle, the workspace's name, its menus, the search
+and the docks' toggles runs along the top; nothing runs along
 the foot. The title bar and the rail stand on the window's fill, unboxed. Beside the rail, every
 other region is a box of its own on that fill: the agent pane and the Workbench side by side, the
 Workbench the right half of a split in the `DockArea`'s centre, and under both, across their whole
@@ -59,7 +59,7 @@ plain ASCII and box-drawing, so it stays aligned in any mono font.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────┐
-│ o onehand  File View Go Session  [ Workspace v | Search ^K ]  rail term wb  _ [] x │
+│ rail Workspace v  File View Go Session    [ Search sessions ^K ]   term wb  _ [] x │
 │ + New session ^N ┌────────────────────────────┐ ┌────────────────────────────────┐ │
 │ Overview         │ Title (...)     past close │ │ Editor Markdown ...   max hide │ │
 │ Tasks         2  │ workflow > step >     Stop │ │ open file v               tree │ │
@@ -83,9 +83,9 @@ plain ASCII and box-drawing, so it stays aligned in any mono font.
 
 What each region holds, and in what order, is `docs/screens.md`'s, under the region's name:
 
-- **Title bar**: the app's mark and name, its menus, the search over the rail's sessions led by the
-  workspace's name and its menu, the rail's, the terminal's and the Workbench's toggles, and the
-  window's own controls where the app decorates it.
+- **Title bar**: the rail's toggle, the workspace's name and its menu, the app's menus, the search
+  over the rail's sessions, the terminal's and the Workbench's toggles, and the window's own
+  controls where the app decorates it.
 - **Rail**: app chrome outside the dock, on the window's fill, from *New session* down to *Settings*.
 - **Agent pane header**: the conversation's name, its menu and the session's controls; chrome alone over
   a page that names itself in its head.

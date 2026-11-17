@@ -9,8 +9,12 @@ never cites this file.
 
 ## Title bar
 
-The library's `TitleBar` on the window's fill with no line under it, its whole width a handle to move the window. At its start, the app's mark
-in its own colours and its name, *onehand*. Then the app's menus, *File*, *View*, *Go* and *Session*, lettered at the chrome size, each item a command the keymap holds, under the name
+The library's `TitleBar` on the window's fill with no line under it, its whole width a handle to move the window. At its start, the rail's toggle (a
+panel at the left, its glyph in the foreground ink while the rail is shown and in the muted ink
+while hidden, no fill at rest, its key in its tooltip, dispatching the command its key does), then
+the workspace's name and a chevron, a quiet button at the chrome size and a tab stop of its own,
+which opens the workspace menu (the recent workspaces, *Open workspace…*, *New workspace…*) when
+pressed and on Enter. Then the app's menus, *File*, *View*, *Go* and *Session*, lettered at the chrome size, each item a command the keymap holds, under the name
 the menu gives it and with the key the keymap binds: *File* holds *New session*, *Run a workflow on
 this project…*, *Save the open file* and *Open Settings*; *View* the rail's, the Workbench's and
 the terminal's toggles, *Open Editor*, *Open Markdown*, *Open Neovim*, maximizing the focused panel
@@ -20,11 +24,9 @@ key reaches. Centred in the room left and narrowing with it, the search over ses
 titles and project names, the library's edged field at `.short()` with its key's hint (`Ctrl+K`
 outside a terminal, showing a hidden rail); what it narrows is the rail's list, so typing into it
 shows a hidden rail too, a panel filling the window giving way as it does for the key, and a press in it selects words rather than moving the window.
-The field leads with the workspace's name and a chevron, a segment of its own and a tab stop of
-its own, which opens the workspace menu (the recent workspaces, *Open workspace…*, *New
-workspace…*) when pressed and on Enter; the rest of the field still searches. Toward its
-end, the rail's, the terminal's and the Workbench's toggles, in that order, each an icon alone
-(a panel at the left, the bottom and the right), its glyph in the
+Toward its
+end, the terminal's and the Workbench's toggles, in that order, each an icon alone
+(a panel at the bottom and the right), its glyph in the
 foreground ink while what it shows is open and in the muted ink while closed, with no fill at rest,
 its key in its tooltip, and dispatching the command its key does;
 the terminal's carries an `info` dot while its dock is closed over a shell running a command. At
