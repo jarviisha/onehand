@@ -214,7 +214,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   a Settings group, and a region's box (the agent pane, the Workbench, the terminal); the
   library's own dialogs and toasts follow. A small mark (the workspace's letter tile) takes
   `radius`. A badge (a `Tag`) takes `radius`,
-  its tint's fill with no edge, its words at the micro size and medium weight on a slim inset; inside a line of
+  its tint's fill edged halfway from its fill to its ink (`badge_edge`), its words at the micro size and medium weight on a slim inset; inside a line of
   meta text a label is written in its kind's ink instead, unframed. A dot or a status mark is
   `rounded_full`. The library's small parts keep its half
   corner (*Components*). A part joined to its container's edge takes its corner there.

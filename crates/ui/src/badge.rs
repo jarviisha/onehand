@@ -35,11 +35,12 @@ pub fn label_tint(label: &str, cx: &App) -> Tint {
 }
 
 /// A short state or label: the library's `Tag` at its corner, in the
-/// `tint`'s fill and ink with no edge of its own, lettered at the micro size
-/// a step heavier than the text around it and held to a slim inset, so it
-/// marks a row without outweighing it.
+/// `tint`'s fill and ink and an edge of its own ([`badge_edge`]) that parts it
+/// from whatever it stands on, lettered at the micro size a step heavier than
+/// the text around it and held to a slim inset, so it marks a row without
+/// outweighing it.
 pub fn badge(text: impl Into<SharedString>, tint: Tint) -> gpui_component::tag::Tag {
-    gpui_component::tag::Tag::custom(tint.fill, tint.ink, tint.fill)
+    gpui_component::tag::Tag::custom(tint.fill, tint.ink, badge_edge(tint))
         .text_size(crate::tokens::MICRO_TEXT)
         .font_medium()
         .px_1p5()
@@ -47,9 +48,9 @@ pub fn badge(text: impl Into<SharedString>, tint: Tint) -> gpui_component::tag::
         .child(text.into())
 }
 
-/// An edge in a tint's own hue, halfway from its fill to its ink, for a tinted
-/// part that still draws one so it reads the same on any surface under it. A
-/// badge draws none.
+/// A badge's edge: halfway from its fill to its ink, in its own hue, so the
+/// badge stands out of the row it sits in rather than lying on it as a smudge
+/// of colour, and reads the same on any surface under it.
 pub fn badge_edge(tint: Tint) -> Hsla {
     tint.ink.mix_oklab(tint.fill, 0.5)
 }

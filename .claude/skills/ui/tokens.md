@@ -37,7 +37,7 @@ Helpers:
 | `status_ink(cx).danger`, `.warning`, `.success`, `.closed` | status text and marks; `closed` for what is over and settled (a closed issue) | `crates/ui/src/ink.rs`; the app says `crate::theme::status_ink` |
 | `tint(base, cx)` | a label's `Tint { fill, ink }` by its hue | `crates/ui/src/ink.rs` |
 | `dock_surface(cx)` | the Workbench's and the terminal's surface: the reading surface (`background`), as every box is | `crates/ui/src/surface.rs` |
-| `badge_edge(tint)` | halfway from a `Tint`'s fill to its ink: an edge in that hue where one is still drawn (a transcript part), no longer a badge's | `crates/ui/src/badge.rs` |
+| `badge_edge(tint)` | a badge's edge: halfway from its `Tint`'s fill to its ink | `crates/ui/src/badge.rs` |
 | `chosen_fill(cx)`, `chosen_ink(cx)` | the item chosen among several: the selected grey (`accent`), a step past the hover step, and its name's ink, the content ink | `crates/ui/src/ink.rs` |
 | `control_fill(cx)` | a ghost control's fill hovered, pressed or chosen; between `list_hover` and `accent` | `crates/ui/src/ink.rs` |
 | `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: a list page's line over its foot | `crates/ui/src/ink.rs` |
@@ -171,7 +171,7 @@ Components that keep geometry of their own, centred in their row rather than siz
 
 | Component | Geometry |
 |---|---|
-| `Tag` through `badge` | words 11 (`MICRO_TEXT`) at 1.25 and medium weight, inset 6 × 0, no edge; its height follows its line |
+| `Tag` through `badge` | words 11 (`MICRO_TEXT`) at 1.25 and medium weight, inset 6 × 0, edged in `badge_edge`; its height follows its line |
 | `Checkbox` | box 12 / 14 / 16 at `.xsmall()` / `.small()` / default; its label 12 / 14 / 16 |
 | `Switch` | track 28 × 16 **px** at `.xsmall()` and `.small()`, 36 × 20 **px** at the default; thumb 12 / 16 **px** |
 | `Kbd` | words 12, inset 4 × 2 |
