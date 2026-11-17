@@ -255,7 +255,7 @@ the terminal as it is.
 - A list beside its detail (files, documents, issues) only while the dock holds both; else one at a
   time, the detail under a link back naming the list. Picking shows it; going back keeps it. Files
   and Markdown draw one tree row (`tree_row`); the tree stands on the right of the file or
-  document it opens, parted from it by fill rather than a line, and that file or document is its
+  document it opens, parted from it by space on the box's own fill, not by a line, and that file or document is its
   picked row, a changed file's letter in its state's ink at the row's end.
 - A failed open or save in the Editor or Markdown is a toast; a file changed on disk, a Neovim that
   would not start and a listing that failed stand as a status line under the mode.

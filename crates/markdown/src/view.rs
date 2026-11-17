@@ -5,7 +5,7 @@ use crate::document::{RootDocs, list, reader};
 use gpui::{
     App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
 };
-use gpui_component::{ActiveTheme, IconName, StyledExt, resizable_panel};
+use gpui_component::{IconName, StyledExt, resizable_panel};
 use onehand_ui::Named as _;
 use onehand_ui::h_resizable;
 use onehand_ui::{
@@ -483,11 +483,8 @@ impl MarkdownView {
 
         let list = div()
             .size_full()
-            // Parted from the document by fill, never a line: the tree stands
-            // on the window's fill, a step off the box's. Its corner at the
-            // box's foot is the box's own.
-            .bg(cx.theme().sidebar)
-            .rounded_br(cx.theme().radius_lg)
+            // The tree belongs to the box and parts from the document by
+            // space alone: no fill, no line.
             .child(self.list(&root, cx));
         div()
             .flex_1()

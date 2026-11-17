@@ -26,7 +26,7 @@ Slot names that mislead (the library's names, kept because its own controls read
 | `button_secondary`, `button_secondary_foreground` | the secondary button's own fill at rest (its pointed-at step under the pointer or pressed) and its ink |
 | `primary` | the primary action, the one blue; its word in `primary_foreground` |
 | `danger`, `warning`, `success` | fills with white on them; their text is `status_ink(cx)` |
-| `sidebar` | the window's fill: the title bar, the rail, the gaps between the boxes, and a tree standing beside its file inside a box |
+| `sidebar` | the window's fill: the title bar, the rail, and the gaps between the boxes |
 | `sidebar_accent` | the rail's hovered row |
 | `list_active` | the library's own chosen list row, set to the selected grey |
 

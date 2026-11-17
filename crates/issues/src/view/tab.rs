@@ -9,7 +9,7 @@ use gpui::{
     AnyElement, App, Context, InteractiveElement as _, IntoElement, ParentElement, Styled, Window,
     div,
 };
-use gpui_component::{ActiveTheme, StyledExt, resizable_panel};
+use gpui_component::{StyledExt, resizable_panel};
 use onehand_core::issues::Issues;
 use onehand_ui::h_resizable;
 use onehand_ui::{ListWidths, back_link, list_detail};
@@ -57,13 +57,9 @@ impl IssuesView {
                             .child(
                                 div()
                                     .size_full()
-                                    // Parted from the issue by fill, never a
-                                    // line, as the Files tree is from the
-                                    // editor: the list stands on the window's
-                                    // fill, a step off the box's. Its corner
-                                    // at the box's foot is the box's own.
-                                    .bg(cx.theme().sidebar)
-                                    .rounded_bl(cx.theme().radius_lg)
+                                    // The list belongs to the box and parts
+                                    // from the issue by space alone, as the
+                                    // Files tree does from the editor.
                                     .child(list),
                             ),
                     )

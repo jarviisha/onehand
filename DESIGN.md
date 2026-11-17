@@ -219,7 +219,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   fill, its fill a step off it, parted from its neighbours and the window's edge by the region gap
   (`REGION_GAP`), which shows the window's fill. Inside a box nothing is drawn between its strips
   and what they head, nor between two areas side by side (the Files tree beside the editor); where
-  two areas must still part, they part by fill. An open tab in a dock's bar is a rounded fill
+  two areas must still part, they part by space, on the box's own fill. An open tab in a dock's bar is a rounded fill
   (`secondary`), its name in the content ink, the tabs parted by space and not by lines.
 - **Lines** part content inside a region and are a 1px `border`. A list page's line over its foot is a step fainter (`faint_rule`), so the edge-to-edge
   list reads as one surface; a page's top draws no line under it. A box on a page takes a step
