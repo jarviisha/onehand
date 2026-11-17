@@ -24,6 +24,12 @@ pub(super) fn shown_rows(count: usize) -> (usize, usize) {
     (shown, count - shown)
 }
 
+/// Row `to` of a list of `count`, if the list draws it: a row past the cap is
+/// in no frame, and a caret put on it takes every key with it.
+pub(super) fn drawn_row(to: Option<usize>, count: usize) -> Option<usize> {
+    to.filter(|&to| to < shown_rows(count).0)
+}
+
 /// Whether the dock draws its list of shells: a lone shell has nothing to be
 /// picked from, and its name already heads the bar.
 pub(super) fn lists_shells(count: usize) -> bool {
@@ -272,13 +278,13 @@ impl TerminalPanel {
         })
     }
 
-    /// Put the keyboard on row `to` of the list, when there is one. Closing a
+    /// Put the keyboard on row `to` of the list, when it is drawn. Closing a
     /// row goes through [`Self::close_tab`], which hands the caret to the shell
     /// then chosen before the row leaves.
     fn focus_row(&mut self, to: Option<usize>, window: &mut Window, cx: &mut Context<Self>) {
-        let handle = to.and_then(|to| {
-            let set = self.active_set()?;
-            Some(set.tabs.get(to)?.row.clone())
+        let handle = self.active_set().and_then(|set| {
+            let to = drawn_row(to, set.tabs.len())?;
+            Some(set.tabs[to].row.clone())
         });
         if let Some(handle) = handle {
             handle.focus(window, cx);

@@ -1,4 +1,4 @@
-use super::shells::{SHELL_LIST_CAP, lists_shells, shell_rows, shown_rows};
+use super::shells::{SHELL_LIST_CAP, drawn_row, lists_shells, shell_rows, shown_rows};
 use super::{busy_changed, place_of, selection_after};
 
 /// Closing a tab ahead of the selected one must move the selection back by
@@ -296,4 +296,19 @@ fn the_list_stops_at_its_cap_and_counts_the_rest() {
     assert_eq!(shown_rows(3), (3, 0));
     assert_eq!(shown_rows(SHELL_LIST_CAP), (SHELL_LIST_CAP, 0));
     assert_eq!(shown_rows(SHELL_LIST_CAP + 4), (SHELL_LIST_CAP, 4));
+}
+
+/// ↓ on the last drawn row stays there: the rows past the cap are in no frame,
+/// so a caret on one would take every key with it.
+#[test]
+fn the_keys_step_only_through_drawn_rows() {
+    let count = SHELL_LIST_CAP + 5;
+    assert_eq!(drawn_row(Some(0), count), Some(0));
+    assert_eq!(
+        drawn_row(Some(SHELL_LIST_CAP - 1), count),
+        Some(SHELL_LIST_CAP - 1)
+    );
+    assert_eq!(drawn_row(Some(SHELL_LIST_CAP), count), None);
+    assert_eq!(drawn_row(Some(3), 3), None);
+    assert_eq!(drawn_row(None, count), None);
 }
