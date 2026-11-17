@@ -194,6 +194,7 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 | `PAGE_PROSE` | 48rem | an editor, or one thing read in full |
 | `PAGE_WIDE` | 64rem | boxes side by side, a table |
 | `TITLE_SEARCH_W` | 24rem | the widest the title bar's search grows |
+| `SHELL_LIST_W` | 10rem | the terminal's list of shells beside the grid, fixed: neither dragged nor saved |
 | `DIALOG_FORM` | 40rem | a dialog that holds a form (the agent form, one that starts a run), its controls `.tall()`, never wider than the window less its margins |
 | `ROW_INSET` | 1rem | where a tree row's content starts from a dock's edge (Files, Markdown), and a Workbench bar's words |
 | `ROW_GUTTER` | 0.5rem | how far a tree row's fill stands off the dock's side edges, inside `ROW_INSET` |

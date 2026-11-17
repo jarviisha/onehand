@@ -1,3 +1,4 @@
+use super::shells::{lists_shells, shell_rows};
 use super::{place_of, selection_after};
 
 /// Closing a tab ahead of the selected one must move the selection back by
@@ -244,4 +245,32 @@ fn a_listing_adds_its_folders_terminals_and_opens_one_only_when_none() {
         from_listing(&elsewhere, folder, &[HostTerm(1)], true),
         (vec![], false)
     );
+}
+
+/// A lone shell has nothing to be picked from, so the dock draws no list.
+#[test]
+fn one_shell_draws_no_list() {
+    assert!(!lists_shells(0));
+    assert!(!lists_shells(1));
+    assert!(lists_shells(2));
+}
+
+/// The dot is the shell's, not the selection's: a command running in a shell
+/// the user is not looking at is the one the dot is there to tell of.
+#[test]
+fn a_busy_shell_that_is_not_chosen_keeps_its_dot() {
+    let rows = shell_rows(
+        &[("zsh".into(), Some(false)), ("zsh".into(), Some(true))],
+        0,
+    );
+    assert_eq!(rows.len(), 2);
+    assert!(rows[0].chosen && !rows[0].live);
+    assert!(rows[1].live, "the running shell keeps its dot");
+    assert!(!rows[1].chosen);
+    assert_eq!(rows[1].name.as_ref(), "zsh 2");
+    // A lone shell is named by its program alone; one that will not say
+    // whether it is busy is not counted as running.
+    let lone = shell_rows(&[("zsh".into(), None)], 0);
+    assert_eq!(lone[0].name.as_ref(), "zsh");
+    assert!(!lone[0].live);
 }

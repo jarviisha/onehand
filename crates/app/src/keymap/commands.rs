@@ -235,6 +235,30 @@ pub const COMMANDS: &[Command] = &[
         super::RAIL_SCOPE
     ),
     command!(
+        "shell_row_up",
+        "Move to the shell above",
+        ["up"],
+        crate::terminal::ShellRowUp,
+        "ShellRow && !Input",
+        "Terminal shell list"
+    ),
+    command!(
+        "shell_row_down",
+        "Move to the shell below",
+        ["down"],
+        crate::terminal::ShellRowDown,
+        "ShellRow && !Input",
+        "Terminal shell list"
+    ),
+    command!(
+        "shell_row_close",
+        "Close the shell",
+        ["delete"],
+        crate::terminal::CloseShellRow,
+        "ShellRow && !Input",
+        "Terminal shell list"
+    ),
+    command!(
         "issues_up",
         "Pick the issue above",
         ["up"],

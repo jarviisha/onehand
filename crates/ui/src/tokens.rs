@@ -138,6 +138,11 @@ pub const PAGE_WIDE: Rems = rems(64.);
 /// toggles, and narrowing with the window.
 pub const TITLE_SEARCH_W: Rems = rems(24.);
 
+/// How wide the terminal's list of shells stands beside the grid: a name
+/// and its number with room for the live dot and the close. Fixed, neither
+/// dragged nor saved, since the list only ever holds short names.
+pub const SHELL_LIST_W: Rems = rems(10.);
+
 /// How wide a dialog that holds a form stands, its controls at a page
 /// form's height: one that starts a run says what the workflow does, where
 /// it works and what blocks it before its fields, and at the library's own

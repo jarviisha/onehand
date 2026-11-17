@@ -21,11 +21,13 @@ mod host;
 mod lock;
 mod shells;
 
+pub(crate) use shells::{CloseShellRow, ShellRowDown, ShellRowUp};
+
 use crate::controls::Short as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, ParentElement, Render, ScrollHandle, SharedString, Styled, Window, div,
+    IntoElement, ParentElement, Render, ScrollHandle, Styled, Window, div,
 };
 use gpui_base::dock::{Panel, PanelEvent};
 use gpui_component::StyledExt;
@@ -62,15 +64,19 @@ struct Tab {
     shell: PtyTab,
     /// The host's terminal this tab shows, and the attach it is read over.
     on_host: Option<(HostConn, HostTerm)>,
+    /// The shell's row in the dock's list, a tab stop, so the keyboard can
+    /// stand on a row and its close shows there.
+    row: FocusHandle,
 }
 
 impl RootShells {
     /// Add `shell` as the newest tab, and select it.
-    fn push(&mut self, shell: PtyTab, on_host: Option<(HostConn, HostTerm)>) {
+    fn push(&mut self, shell: PtyTab, on_host: Option<(HostConn, HostTerm)>, row: FocusHandle) {
         self.tabs.push(Tab {
             id: self.next,
             shell,
             on_host,
+            row,
         });
         self.next += 1;
         self.active = self.tabs.len() - 1;
@@ -156,9 +162,9 @@ pub struct TerminalPanel {
     watching: bool,
     /// The folders here nothing may be typed into now, with why.
     locked: HashMap<PathBuf, String>,
-    /// The tab strip's scroll, and the project, tab and count it was last
-    /// scrolled for: a new or chosen shell is brought into view once, so
-    /// the strip stays where the pointer scrolled it until the next.
+    /// The shell list's scroll, and the project, shell and count it was
+    /// last scrolled for: a new or chosen shell is brought into view once,
+    /// so the list stays where the pointer scrolled it until the next.
     tab_scroll: ScrollHandle,
     tab_shown: Option<(Home, usize, usize)>,
 }
@@ -317,7 +323,11 @@ impl TerminalPanel {
         let had_tabs = self.has_shell();
         match spawned {
             Ok(shell) => {
-                self.shells.entry(home).or_default().push(shell, None);
+                self.shells.entry(home).or_default().push(
+                    shell,
+                    None,
+                    cx.focus_handle().tab_stop(true),
+                );
                 self.apply_locks();
                 self.status = None;
                 self.watch_running(cx);
@@ -630,49 +640,42 @@ impl TerminalPanel {
         let body = set
             .and_then(|set| set.tabs.get(active))
             .map(|tab| tab.shell.view().clone());
-        // A tab is named by the PTY's program alone, which is the same word for
-        // every tab a root has open, so three shells came out three tabs
-        // reading `zsh`. **Numbered, and only where there is more than one**: a
-        // lone tab has nothing to be told apart from and `zsh 1` beside no
-        // `zsh 2` is a question about where the rest went.
-        //
-        // Not the project, which was tried and is the same word on every tab
-        // for a stronger reason than the shell is -- this panel draws one
-        // root's tabs and only ever that root's, so the part of the name
-        // carrying the project was constant by construction, repeated on every
-        // tab, and first in line to be cut by the width cap. Which project the
-        // terminal is on is the project the whole window is on.
-        //
-        // Composed here and not in `PtyTab::label`, which the Neovim mode also
-        // reads: that mode has one grid and no strip, so a name built to
-        // separate siblings would be a name with nothing to separate it from.
         let empty = body.is_none();
         let tabs = set.map_or(&[][..], |set| set.tabs.as_slice());
-        let labels: Vec<SharedString> = tabs
+        let facts: Vec<_> = tabs
             .iter()
-            .enumerate()
-            .map(|(i, tab)| match tabs.len() {
-                1 => tab.shell.label(),
-                _ => SharedString::from(format!("{} {}", tab.shell.label(), i + 1)),
-            })
+            .map(|tab| (tab.shell.label(), tab.shell.busy()))
             .collect();
+        let rows = shells::shell_rows(&facts, active);
+        let name = rows.get(active).map(|row| row.name.clone());
+        let focus: Vec<FocusHandle> = tabs.iter().map(|tab| tab.row.clone()).collect();
+        let list = shells::lists_shells(rows.len()).then(|| self.shell_list(rows, focus, cx));
 
         div()
             .size_full()
             .v_flex()
-            .child(self.tab_bar(labels, active, cx))
+            .child(self.top_bar(name, cx))
             .children(body.map(|view| {
                 div()
                     .flex_1()
                     .min_h_0()
-                    // The grid draws from its own top-left corner outward, so
-                    // without an inset the first column sits against the dock's
-                    // edge. The view measures its own bounds and reports the
-                    // cell count back through the PTY resize, so this costs the
-                    // shell a column and a row rather than painting over them.
-                    .px_3()
-                    .py_2()
-                    .child(view)
+                    .h_flex()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            // The grid draws from its own top-left corner
+                            // outward, so without an inset the first column
+                            // sits against the dock's edge. The view measures
+                            // its own bounds and reports the cell count back
+                            // through the PTY resize, so this costs the shell
+                            // a column and a row rather than painting over them.
+                            .px_3()
+                            .py_2()
+                            .child(view),
+                    )
+                    .children(list)
                     .into_any_element()
             }))
             .children(self.locked_line(cx))
