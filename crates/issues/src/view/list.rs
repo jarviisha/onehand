@@ -29,9 +29,21 @@ use std::collections::BTreeSet;
 /// is said to have them under the last one.
 const LABELS_SHOWN: usize = 100;
 
-/// The least the search is squeezed to before the choices after it wrap under
-/// it: room for its hint to be read.
+/// The least the search is squeezed to, room for its hint to be read; past
+/// it the label picker gives way instead.
 const SEARCH_MIN: Rems = rems(6.);
+
+/// The least width at which *New issue* keeps its word beside its `+`: under
+/// it the search at its floor, the label picker and *Clear filters* leave no
+/// room for the word, and the press would be cut off at the box's edge. Not
+/// tied to whether a filter is set, so the button keeps its shape as
+/// *Clear filters* comes and goes.
+const NEW_ISSUE_WORD_MIN: Rems = rems(26.);
+
+/// Whether *New issue* says its word, the bar being `width` wide.
+fn new_issue_worded(width: Rems) -> bool {
+    width.0 >= NEW_ISSUE_WORD_MIN.0
+}
 
 /// Which half of the issues the list shows. Open by default: an open issue is
 /// work, a closed one a record.
@@ -198,8 +210,9 @@ impl IssuesView {
 
     /// The dock's filter bar, over the list and the issue both, so it stays
     /// in reach while the two show one at a time: the search, the label,
-    /// *Clear filters*, and the way to start a new issue. The search
-    /// shrinks where the dock is too narrow for all.
+    /// *Clear filters*, and the way to start a new issue. Where the dock is
+    /// too narrow for all, the search shrinks, then the label picker, and
+    /// *New issue* keeps only its `+`.
     pub(super) fn search_bar(
         &mut self,
         issues: &Issues,
@@ -220,6 +233,8 @@ impl IssuesView {
         let narrowed = !query.read(cx).value().is_empty() || self.label.is_some();
         // The form's *Save* holds the tab's one primary while it shows.
         let drafting = self.state_mut().is_some_and(|state| state.form.is_some());
+        // The bar spans the tab, so the tab's width is the bar's.
+        let worded = new_issue_worded(self.width.get());
         // A filter bar. A filter picked
         // behind the issue changes nothing on screen, so a narrow tab shows
         // the list it narrowed.
@@ -256,10 +271,12 @@ impl IssuesView {
                     .child(end_fade(cx)),
             )
             // Kept to the row's end, past the search; *Clear filters* last of the filters, so
-            // nothing moves as it comes and goes, and `+` at the very end.
+            // nothing moves as it comes and goes, and `+` at the very end. The
+            // label picker is the part that gives way once the search is at
+            // its floor, so the presses after it are never cut off.
             .child(
                 div()
-                    .flex_none()
+                    .min_w_0()
                     .h_flex()
                     .items_center()
                     .gap_2()
@@ -284,7 +301,10 @@ impl IssuesView {
                             .when(!drafting, |button| button.primary())
                             .short()
                             .icon(Icon::new(IconName::Plus))
-                            .label("New issue")
+                            .map(|button| match worded {
+                                true => button.label("New issue"),
+                                false => button.short_icon().named("New issue"),
+                            })
                             .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
                                 view.open_form(None, window, cx)
                             })),
@@ -439,7 +459,10 @@ impl IssuesView {
             ControlSize::Short,
             cx,
         )
-        .tooltip("Show only issues with a label");
+        .tooltip("Show only issues with a label")
+        // Its name truncates where the bar is too narrow for every filter.
+        .flex_shrink(1.)
+        .min_w_0();
         let root = self.root.as_ref()?.display().to_string();
         let view = cx.entity();
         let pick = move |label: Option<String>| {
@@ -480,6 +503,13 @@ impl IssuesView {
                     }
                     menu
                 },
+            )
+            // The wrapper the bar lays out gives way with the picker in it.
+            .trigger_style(
+                gpui::StyleRefinement::default()
+                    .flex()
+                    .min_w_0()
+                    .flex_shrink(1.),
             )
             .into_any_element(),
         )

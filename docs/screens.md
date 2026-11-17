@@ -281,8 +281,9 @@ room and leaves the terminal as it is.
   (text running past its end fades into the filters, always standing at the field's end), the
   filters centred in the bar, while the search or a label narrows the list *Clear filters*
   (secondary, the one way to clear them), and *New issue* (its `+` and its word, primary,
-  secondary while the form holds that) at the end; when narrow the search shrinks and the filters
-  never wrap; a filter picked while the issue shows alone shows the list. Over
+  secondary while the form holds that) at the end; when narrow the search shrinks to its floor, then the label picker
+  gives way (its name truncating), *New issue* keeps only its `+` (its name in its tooltip), and
+  the filters never wrap, so nothing in the bar is ever cut off; a filter picked while the issue shows alone shows the list. Over
   the rows, *Open* and *Closed* with their counts; *Showing N of M open issues* at the list's end
   while it is narrowed, *No issues match* when nothing is left. `↑`/`↓` step the list as on the
   Issues page (where the list shows alone, the first press opens the row picked); Esc closes the

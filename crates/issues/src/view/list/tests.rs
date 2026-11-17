@@ -77,3 +77,13 @@ fn a_label_narrows_to_the_issues_carrying_it() {
     );
     assert_eq!(titles(&rows), ["Fix the footer"]);
 }
+
+/// *New issue* drops its word under the threshold and keeps it at and past
+/// it; a tab not measured yet draws as though there were room.
+#[test]
+fn new_issue_drops_its_word_where_the_bar_is_narrow() {
+    assert!(!new_issue_worded(rems(24.)));
+    assert!(!new_issue_worded(rems(NEW_ISSUE_WORD_MIN.0 - 0.1)));
+    assert!(new_issue_worded(NEW_ISSUE_WORD_MIN));
+    assert!(new_issue_worded(rems(f32::INFINITY)));
+}
