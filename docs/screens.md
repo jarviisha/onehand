@@ -21,7 +21,7 @@ the terminal's toggles, *Open Editor*, *Open Markdown*, *Open Neovim*, maximizin
 and its zoom; *Go* the search, the composer, Tasks, Schedules and stepping through sessions;
 *Session* *Restart the agent* and *Close the session*. A menu offers nothing no
 key reaches. Centred in the room left and narrowing with it, the search over session
-titles and project names, the library's edged field at `.short()` with its key's hint (`Ctrl+K`
+titles and project names, the library's edged field at `.short()` with no fill of its own, its edge alone parting it from the bar, with its key's hint (`Ctrl+K`
 outside a terminal, showing a hidden rail); what it narrows is the rail's list, so typing into it
 shows a hidden rail too, a panel filling the window giving way as it does for the key, and a press in it selects words rather than moving the window.
 Toward its

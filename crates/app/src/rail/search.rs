@@ -53,10 +53,17 @@ pub(crate) fn search_field(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoE
         .max_w(crate::tokens::TITLE_SEARCH_W)
         .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_mouse_down(gpui::MouseButton::Right, |_, _, cx| cx.stop_propagation())
-        .child(search_input(&state.search, cx).short().when_some(
-            crate::keymap::first_key("focus_rail_search", cx),
-            |input, key| input.suffix(gpui_component::kbd::Kbd::new(key)),
-        ))
+        .child(
+            search_input(&state.search, cx)
+                .short()
+                // Its edge alone parts it from the bar: no fill of its own,
+                // so it stands on the window's fill as the bar does.
+                .bg(gpui::transparent_black())
+                .when_some(
+                    crate::keymap::first_key("focus_rail_search", cx),
+                    |input, key| input.suffix(gpui_component::kbd::Kbd::new(key)),
+                ),
+        )
 }
 
 /// *Sessions*, how many wait on the person, the search and the filter: a heading over
