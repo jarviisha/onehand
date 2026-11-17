@@ -138,6 +138,13 @@ pub(crate) fn forget(uid: u64, cx: &mut App) {
     carry_later(fx, cx);
 }
 
+/// The window holding sessions `uids` closed: nothing is written for them
+/// again.
+pub(crate) fn window_closed(uids: Vec<u64>, cx: &mut App) {
+    let fx = drive().handle(onehand_core::control::drive::Input::WindowClosed { uids });
+    carry_later(fx, cx);
+}
+
 /// Carry `fx` once whatever asked has let go of its entities: an open's
 /// failure closes a session and may drop a project.
 fn carry_later(fx: Vec<Effect>, cx: &mut App) {

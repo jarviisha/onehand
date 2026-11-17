@@ -147,6 +147,11 @@ pub enum Input<'a> {
     Begun { uid: u64, facts: Facts },
     /// The wait armed with `token` ran out.
     Elapsed { token: u64 },
+    /// The window holding sessions `uids` closed, without closing them one
+    /// by one: what they keep on disk stays exactly as it was, so nothing is
+    /// written for them again, while their opens in flight still end as
+    /// they would.
+    WindowClosed { uids: Vec<u64> },
     /// Worker `uid` was given the lead's turn `turn`, `text`
     /// ([`Effect::Send`]): what its prompt came to and its prompts sent
     /// since, or `None` when its session was gone.
@@ -615,6 +620,13 @@ impl ControlDrive {
             } => self.woke(uid, chat, lead_here),
             Input::Begun { uid, facts } => self.begun(uid, facts),
             Input::Elapsed { token } => self.elapsed(token),
+            Input::WindowClosed { uids } => {
+                for uid in uids {
+                    self.kept_in.remove(&uid);
+                    self.written.remove(&uid);
+                }
+                Vec::new()
+            }
             Input::TurnSent {
                 uid,
                 turn,

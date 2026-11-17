@@ -1502,3 +1502,38 @@ fn a_closed_lead_writes_its_last_keep_where_its_conversation_was() {
     let fx = said_conversation(&mut drive, 1, "c9", 0);
     assert_eq!(keep_at(&fx, 1), Some((store("c9"), None, false)));
 }
+
+#[test]
+fn a_closed_window_rewrites_no_kept_file() {
+    let mut drive = lead_kept();
+    let key = coming_back(&mut drive, kept_one(false));
+    drive.handle(Input::Resolved {
+        key: key.clone(),
+        resolved: Ok(resolved()),
+        world: world(),
+    });
+    assert!(drive
+        .handle(Input::WindowClosed { uids: vec![1] })
+        .is_empty());
+    let fx = drive.handle(Input::Started {
+        key,
+        started: Err("the window closed".into()),
+    });
+    assert_eq!(keep_at(&fx, 1), None, "{fx:?}");
+}
+
+#[test]
+fn a_dead_leads_late_failure_does_not_overwrite_a_new_lead() {
+    let mut drive = lead_kept();
+    let key = coming_back(&mut drive, kept_one(false));
+    let _ = drive.handle(Input::WindowClosed { uids: vec![1] });
+    // Its conversation opened again in another window, by lead 2.
+    said_conversation(&mut drive, 2, "c1", 0);
+    // The old lead's worker, still coming back, fails late.
+    let fx = drive.handle(Input::Resolved {
+        key,
+        resolved: Err("/repo: No such file or directory".into()),
+        world: world(),
+    });
+    assert_eq!(keep_at(&fx, 1), None, "{fx:?}");
+}

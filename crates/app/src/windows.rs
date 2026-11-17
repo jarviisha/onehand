@@ -52,6 +52,13 @@ pub(crate) fn register(
     shell: WeakEntity<Shell>,
     cx: &mut App,
 ) {
+    // Its sessions end with it, and what they keep on disk stays as it was.
+    if let Some(alive) = shell.upgrade() {
+        cx.observe_release(&alive, |shell, cx| {
+            crate::control::window_closed(shell.session_uids(), cx)
+        })
+        .detach();
+    }
     cx.default_global::<Windows>().0.push(OpenWindow {
         storage_dir,
         handle,
@@ -62,6 +69,16 @@ pub(crate) fn register(
 /// Window `closed` has gone. Left listed, opening its workspace again would
 /// "focus" a dead handle and do nothing.
 pub(crate) fn forget(closed: WindowId, cx: &mut App) {
+    // Told now, when its shell is still there to read; else its release
+    // tells.
+    let shell = all(cx)
+        .iter()
+        .find(|w| w.handle.window_id() == closed)
+        .and_then(|w| w.shell.upgrade());
+    if let Some(shell) = shell {
+        let uids = shell.read(cx).session_uids();
+        crate::control::window_closed(uids, cx);
+    }
     cx.default_global::<Windows>()
         .0
         .retain(|w| w.handle.window_id() != closed);
