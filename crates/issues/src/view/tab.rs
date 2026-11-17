@@ -59,7 +59,7 @@ impl IssuesView {
                                     .size_full()
                                     // A line down the list's side facing
                                     // the issue, as on the Files tree.
-                                    .border_l_1()
+                                    .border_r_1()
                                     .border_color(cx.theme().border)
                                     .child(list),
                             ),
