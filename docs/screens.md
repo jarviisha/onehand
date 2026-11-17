@@ -226,10 +226,10 @@ form; both are drawn as `docs/workflows.md` describes.
 
 ## Docks
 
-Each a box on the reading surface, as the agent pane is, with no edge: the Workbench beside the
+Each a box on the reading surface, as the agent pane is, in a faint hairline: the Workbench beside the
 conversation, the right half of the `DockArea`'s centre, and the terminal, the bottom dock, under
 the two across their whole width. Each opens on its own bar, with a line under it, and a list beside its detail inside the box is
-parted from it by a line; the box itself has no edge. The terminal is drawn no taller than leaves the conversation a readable height
+parted from it by a line; the box itself is edged in a faint hairline. The terminal is drawn no taller than leaves the conversation a readable height
 (its dragged height kept). Maximizing the Workbench gives it the conversation's room and leaves
 the terminal as it is.
 

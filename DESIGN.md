@@ -215,7 +215,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   meta text a label is written in its kind's ink instead, unframed. A dot or a status mark is
   `rounded_full`. The library's small parts keep its half
   corner (*Components*). A part joined to its container's edge takes its corner there.
-- **Regions part by the gap, never a line.** A region's box has no edge: it stands on the window's
+- **Regions part by the gap.** A region's box is wrapped in a faint hairline (`faint_rule`): it stands on the window's
   fill, its fill a step off it, parted from its neighbours and the window's edge by the region gap
   (`REGION_GAP`), which shows the window's fill. Inside a box a strip has a line under it, parting
   it from what it heads, and a list beside its detail (the Files tree beside the editor) is parted
