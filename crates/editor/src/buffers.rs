@@ -152,6 +152,9 @@ pub(crate) fn file_bar(
             .open(picking)
             .on_open_change(on_pick)
             .p_0()
+            // A container's corner over the library's, which draws a
+            // popover at a control's.
+            .rounded(cx.theme().radius_lg)
             .w(TREE_DROPDOWN_W)
             .content(move |_, _, cx| tree_dropdown(tree.clone(), active, on_close.clone(), cx))
     });

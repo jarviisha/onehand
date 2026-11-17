@@ -44,7 +44,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | An issue's label | `label_badge(label, cx)`: a badge tinted by the label's kind; `label_tint(label, cx)` the kind's tint, whose ink writes a label inside a line of meta text | `crates/ui/src/badge.rs` |
 | A block held folded | `fold_toggle(id, label, open)`: the chevron first, on the secondary fill, `.short()` | `crates/ui/src/button.rs` |
 | A region's box (the agent pane, the Workbench, the terminal) | `region(cx)`: `size_full`, `background`, `radius_lg`, no edge, clipped; the dock area draws one per panel, inset `REGION_GAP` along its left and top | `crates/ui/src/surface.rs` |
-| A box on a page | `card_box(cx)`: a control's edge (`input`), no fill, `p_3`, `gap_2` | `crates/ui/src/surface.rs` |
+| A box on a page | `card_box(cx)`: a control's edge (`input`) at `radius_lg`, no fill, `p_3`, `gap_2` | `crates/ui/src/surface.rs` |
 | A radio or checkbox at a choice row's head | `choice_mark(on, single, cx)`: drawn in ink, round for one choice and square for several, so it shows on the selected step where the library's ring vanishes | `crates/ui/src/choice_mark.rs` |
 | A picker's trigger | `picker(id, label, set, size, cx)`: a ghost in the muted ink naming what it picks, on the secondary fill once set (in a form, whatever it holds), with the caret | `crates/ui/src/choice.rs` |
 | A list or table row's surface | `row(picked, cx)`: `ROW_H`, `px_2`, the hover and picked fills with their inks; the caller lays it out. | `crates/ui/src/row.rs` |
@@ -90,7 +90,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A prompt | the library's `Bubble` with `BubbleVariant::Muted`, its size on a `BubbleContent` | `crates/app/src/chat/transcript/user.rs` |
 | Transcript sizes | the constants | `crates/app/src/chat/transcript/metrics.rs` |
 | The composer card | `card` | `crates/app/src/chat/composer/card.rs` |
-| A line over the composer (a lead's strip, a worker's band) | `over_composer(id, cx)`: one `ROW_H` row on the raised surface, edged and lifted as the card, open at its foot | `crates/app/src/chat/pane/over_composer.rs` |
+| A line over the composer (a lead's strip, a worker's band) | `over_composer(id, cx)`: one `ROW_H` row on the raised surface, edged, lifted and cornered as the card, open at its foot | `crates/app/src/chat/pane/over_composer.rs` |
 | An attached file's plate (a picture's preview), pressable; a picture whole in a dialog | `plate`, `opens`; `show_image` | `crates/app/src/chat/transcript/user.rs`, `image_view.rs` |
 | The composer popup and its parts | `popup_surface`, `popup_header`, `popup_title`, `candidate_row`, `choice_row` | `crates/app/src/chat/composer/popup.rs`, `rows.rs` |
 | A rail row's fills, inks and controls | `row_surfaces`, `row_inks`, `hover_fill`, `chosen_fill`, `key_ring`, `row_control`, `meta_control`, `menu_button` | `crates/app/src/rail/row.rs` |

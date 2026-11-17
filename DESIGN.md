@@ -142,7 +142,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   key that restarts it. A failed turn holds until a prompt goes out; a restart does not answer it. An
   error that failed no turn (one answering a *Stop*, a resume that fell back) is past at once.
 - **The pinned cards** (a permission, a question) share one neutral shell: an edge in `input` at
-  `radius`, no wash, the tone only in the mark and the title (a permission's warning ink). While
+  `radius_lg`, no wash, the tone only in the mark and the title (a permission's warning ink). While
   they wait they stand a step off the page (`theme::waiting_card`), lifted, as wide as the
   composer, their foot tucked under it (`TUCK`, under the lead's strip while it shows) so the
   composer reads as laid over them, without motion; the ones waiting behind peek over the shown one's top edge as slivers, at most two,
@@ -205,12 +205,15 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   terminal's). Fixed chrome heights stay outside the
   zoom wrapper. A size the steps lack is a named constant (shared ones in
   `onehand_ui::tokens`, others beside their use), its reason in its doc comment.
-- **The library's corners.** What a person presses or what holds content takes `radius`:
-  a control, a field, a row, a chip, a well, a box on a page (`card_box`), and the open tab's fill in
-  a dock's bar. A large surface takes `radius_lg`, a step rounder: a region's box (the agent pane, the
-  Workbench, the terminal), a floating panel, a dialog, a toast, and a Settings group; the library's own
-  follow. The composer and a pinned card take `radius`, so the card tucked under the composer
-  meets it at one corner. A badge (a `Tag`) takes the library's
+- **Corners by role.** What a person presses takes `radius`, 4px: a control, a field, a menu
+  or rail row, a tree row, a tab and the open tab's fill in a dock's bar, a chip, and the fill a
+  choosable item shows on hover or when chosen. What wraps a block of information or an area
+  holding several actions takes `radius_lg`, 6px, a step rounder: a well, a box on a page
+  (`card_box`), a card, the composer and a pinned card (so the card tucked under the composer
+  meets it at one corner), a strip waiting on it, a popup, a floating panel, a dialog, a toast,
+  a Settings group, and a region's box (the agent pane, the Workbench, the terminal); the
+  library's own dialogs and toasts follow. A small mark (the workspace's letter tile) takes
+  `radius`. A badge (a `Tag`) takes the library's
   own corner and size, its edge halfway from its fill to its ink (`badge_edge`); inside a line of
   meta text a label is written in its kind's ink instead, unframed. A dot or a status mark is
   `rounded_full`. The library's small parts keep its half
@@ -328,7 +331,7 @@ and the button confirming a removal inside its modal. Nothing that destroys noth
 danger ink.
 
 **The composer is the input surface**, a role of its own rather than a box or a field: a card
-edged in `input` at `radius`, standing off the page on its own fill (`theme::raised`) and a light
+edged in `input` at `radius_lg`, standing off the page on its own fill (`theme::raised`) and a light
 lift (`composer_lift`), showing focus by the caret alone; what waits on it (a lead's strip or a worker's band, the
 strip of queued and staged things, over any waiting card) takes the same edge. Its pickers (the model, the effort, the mode, *Fast*, the
 branch) are `.short()` ghosts with a caret whatever they hold (*Fast* is its bolt alone, lit in

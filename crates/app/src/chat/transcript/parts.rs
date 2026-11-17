@@ -537,7 +537,7 @@ pub(in crate::chat) fn floating_card(pinned: bool, cx: &App) -> gpui::Div {
     };
     div()
         .w_full()
-        .rounded(cx.theme().radius)
+        .rounded(cx.theme().radius_lg)
         .border_1()
         .border_color(cx.theme().input)
         .bg(fill)

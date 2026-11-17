@@ -148,7 +148,7 @@ fn anchor(overlay: &Overlay) -> Anchor {
 }
 
 /// The surface every popup is drawn on: the floating fill, a control's edge
-/// and a menu's corner, the app's lift, and the wheel held so the conversation behind does not move
+/// and a container's corner, the app's lift, and the wheel held so the conversation behind does not move
 /// with the list.
 ///
 /// **The wheel is claimed on the surface**, so the header and the inset swallow
@@ -159,7 +159,7 @@ pub(super) fn popup_surface(cx: &App) -> gpui::Div {
     div()
         .v_flex()
         .w_full()
-        .rounded(cx.theme().radius)
+        .rounded(cx.theme().radius_lg)
         .border_1()
         .border_color(cx.theme().border)
         .bg(cx.theme().popover.alpha(1.))

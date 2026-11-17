@@ -118,18 +118,23 @@ its detail one down its side facing the detail.
 
 | Write | px |
 |---|---|
-| `cx.theme().radius` | 6, the library's |
-| `cx.theme().radius_lg` | 8, the library's: large surfaces, a region's box |
+| `cx.theme().radius` | 4: a control (a button, a field, a menu or rail row, a tree row, a tab, a chip, a badge, a choosable item's fill, the workspace's letter tile) |
+| `cx.theme().radius_lg` | 6: a container (a card, a box, a well, the composer and a pinned card, a strip over the composer, a popup, a floating panel, a Settings group, a region's box) |
 | `.rounded_full()` | a dot, a status mark |
 
+What a person presses is `radius`; what wraps a block of information or holds several actions
+is `radius_lg`, a step rounder, so a container never looks sharper than what it holds.
 A region's box (the agent pane, the Workbench, the terminal) is `radius_lg` on `background`, in
 a `border` hairline, standing on the window's fill (`sidebar`); a dock's open tab is `radius` on `secondary`.
 
-The theme leaves both at the library's values, so its tooltips, menus, popovers, dialogs and
-toasts take them. What the library draws at half its corner (`radius_tokens().sm`: checkboxes,
-`Kbd`, its tabs) comes out at 3px and is left to it. A button
-(`action`, `ButtonRounded::Medium`) and a text field (`text_input`, `search_input`, `text_area`)
-set `radius` where they are built; a `Tag` keeps the library's corner through `badge`.
+The theme sets both on its configs (`theme::install`). The library's dialogs, toasts and
+command palette read `radius_lg` and land at 6px. Its tooltips, popup menus, select and
+completion lists and popovers read `radius` and land at 4px; a popover the app builds with its
+own appearance (the file tree's dropdown) sets `radius_lg` on it, and the rest are left to the
+library. What the library draws at half its corner (`radius_tokens().sm`: checkboxes, `Kbd`, a
+small menu row, its tabs) comes out at 2px and is left to it. A button (`action`,
+`ButtonRounded::Medium`) and a text field (`text_input`, `search_input`, `text_area`) set
+`radius` where they are built; a `Tag` keeps the library's corner through `badge`.
 
 ## Elevation
 

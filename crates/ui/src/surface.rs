@@ -4,7 +4,7 @@ use crate::tokens;
 use gpui::{App, Div, Hsla, Styled as _, div};
 use gpui_component::{ActiveTheme as _, StyledExt as _};
 
-/// A sunk box of machine text: full width, the muted fill, the theme's corner,
+/// A sunk box of machine text: full width, the muted fill, the large corner,
 /// the mono family at [`tokens::CODE_TEXT`], clipped so a long line cannot push
 /// the column wider. The caller sets the padding, which differs by what is in it.
 ///
@@ -17,7 +17,7 @@ pub fn well(cx: &App) -> Div {
         .w_full()
         .min_w_0()
         .overflow_hidden()
-        .rounded(theme.radius)
+        .rounded(theme.radius_lg)
         .bg(theme.muted)
         .font_family(theme.mono_font_family.clone())
         .text_size(tokens::CODE_TEXT)
@@ -82,7 +82,7 @@ pub fn card_box(cx: &App) -> Div {
         .gap_2()
         .min_w_0()
         .p_3()
-        .rounded(cx.theme().radius)
+        .rounded(cx.theme().radius_lg)
         .border_1()
         .border_color(cx.theme().input)
 }

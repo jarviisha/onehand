@@ -69,7 +69,7 @@ impl ChatPane {
                 .border_1()
                 .border_color(cx.theme().input)
                 .shadow(crate::theme::composer_lift(cx))
-                .rounded(cx.theme().radius)
+                .rounded(cx.theme().radius_lg)
                 .children(lines)
                 .into_any_element()
         }));
@@ -272,7 +272,7 @@ fn peek(depth: usize, cx: &App) -> gpui::AnyElement {
         .border_1()
         .border_b_0()
         .border_color(theme.input)
-        .rounded_t(theme.radius)
+        .rounded_t(theme.radius_lg)
         .into_any_element()
 }
 

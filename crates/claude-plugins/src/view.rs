@@ -466,7 +466,7 @@ impl PluginsView {
                     .child(
                         div()
                             .v_flex()
-                            .rounded(cx.theme().radius)
+                            .rounded(cx.theme().radius_lg)
                             .border_1()
                             .border_color(cx.theme().border)
                             .overflow_hidden()
@@ -580,7 +580,7 @@ impl PluginsView {
                 .gap_2()
                 .px_3()
                 .py_2()
-                .rounded(cx.theme().radius)
+                .rounded(cx.theme().radius_lg)
                 .border_1()
                 .border_color(cx.theme().border)
                 .text_size(onehand_ui::tokens::CHROME_TEXT)

@@ -274,7 +274,7 @@ kept while the page is left and shown again.
 
 ### Boxes
 
-A box groups one thing on a page: edged in a control's edge (`input`) at `radius`, on no fill,
+A box groups one thing on a page: edged in a control's edge (`input`) at `radius_lg`, on no fill,
 padded `p_3`, its parts `gap_2` apart (`card_box`). Every fill under a page read as a slab too
 heavy for it or swallowed the fields and lines drawn on it, and the hairline is too faint to
 group anything. Its title row (`card_title`) holds the title in semibold, a

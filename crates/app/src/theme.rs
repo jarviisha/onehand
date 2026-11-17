@@ -45,8 +45,10 @@ pub(crate) use onehand_ui::meta_ink;
 ///
 /// **The configs, not the theme.** Choosing a mode applies a whole config, so
 /// a family or a colour set only on the theme would last until the first
-/// switch. Corners are the library's: its configs leave `radius` and
-/// `radius.lg` unset, so they stay at its own 6 and 8.
+/// switch. **Corners by role**: `radius`, 4, is a control's (a button, a
+/// field, a row, a tab) and `radius_lg`, 6, a container's (a card, a box, a
+/// region, a dialog), a step rounder so what holds controls never looks
+/// sharper than they are. The library's configs leave both unset at 6 and 8.
 ///
 /// Runs at boot, before a mode is chosen, because choosing one applies whichever
 /// of these two configs the mode names.
@@ -58,6 +60,7 @@ pub(crate) fn install(cx: &mut App) {
     light.name = "onehand Light".into();
     dark.name = "onehand Dark".into();
     for config in [&mut light, &mut dark] {
+        corners(config);
         config.font_family = Some(crate::fonts::UI_FAMILY.into());
         config.mono_font_family = Some(crate::fonts::MONO_FAMILY.into());
     }
@@ -67,6 +70,12 @@ pub(crate) fn install(cx: &mut App) {
     let theme = Theme::global_mut(cx);
     theme.light_theme = Rc::new(light);
     theme.dark_theme = Rc::new(dark);
+}
+
+/// A control's corner and a container's, set on a config like a family.
+fn corners(config: &mut gpui_component::ThemeConfig) {
+    config.radius = Some(4);
+    config.radius_lg = Some(6);
 }
 
 /// The palette, the only place a colour value is written: each slot's value
@@ -328,9 +337,20 @@ mod tests {
             mode,
             ..Default::default()
         };
+        corners(&mut config);
         palette(&mut config.colors, mode == ThemeMode::Dark);
         theme.apply_config(&Rc::new(config));
         theme
+    }
+
+    /// Controls land at 4px and containers at 6px, in both modes.
+    #[test]
+    fn corners_are_four_for_controls_and_six_for_containers() {
+        for mode in [ThemeMode::Light, ThemeMode::Dark] {
+            let theme = installed(mode);
+            assert_eq!(theme.radius, gpui::px(4.));
+            assert_eq!(theme.radius_lg, gpui::px(6.));
+        }
     }
 
     /// The primary button's word reads on its own fill in both modes, at
