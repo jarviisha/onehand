@@ -67,16 +67,14 @@ impl ChatPane {
     /// mixing them into one row of seven buttons made every one of them equally
     /// easy to hit by accident.
     ///
-    /// The docks' toggles are the title bar's, which holds them for every
-    /// page; the header keeps the way back to a hidden rail, which sits on the
-    /// side the rail returns to.
+    /// The rail's and the docks' toggles are the title bar's, which holds
+    /// them for every page.
     ///
     /// **The name names the conversation and the vertical-dots mark beside it
     /// carries its menu**, and every other
-    /// control sits on the side of what it acts on: the way back to a hidden
-    /// rail at the row's left edge, the side the rail returns to, and the
-    /// right-hand end reading outward from the name — the past conversations
-    /// and closing the session, which act on the session the name names. The
+    /// control sits at the right-hand end reading outward from the name: the
+    /// past conversations and closing the session, which act on the session
+    /// the name names. The
     /// dots are the row's one menu mark, and everything behind them is
     /// something done to the conversation the name beside them is.
     fn header_row(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -129,17 +127,6 @@ impl ChatPane {
             // costs is a rule drawn permanently for a state the reader is only
             // in while scrolling -- and the fade at the other end of the list is
             // the answer that shape of problem actually takes.
-            // Hiding the rail must not be a one-way door: with it gone there is
-            // no workspace name, no project list and no session list, and the
-            // way back would be a keystroke the user would have had to already
-            // know. So the route rides in the header of the panel that took the
-            // space -- and only while the rail is actually gone, because a
-            // button that unhides what is already on screen does nothing. It
-            // sits at the row's left edge because that is the side the rail
-            // comes back on: filed among the window controls on the right it
-            // had to be found rather than reached for, a control restoring the
-            // left panel from the opposite edge of the row.
-            .when(self.rail_hidden, |header| header.child(show_rail(cx)))
             // **The name gives way before the controls do, and it stops at a
             // floor.** What held the whole row open was the library drawing a
             // button's label in a `flex_none` box with nothing to ellipsize it:
@@ -653,15 +640,6 @@ fn ran_for(elapsed: std::time::Duration) -> String {
         0 => "now".to_string(),
         m => format!("{m}m"),
     }
-}
-
-/// The way back to a hidden rail.
-pub(super) fn show_rail(cx: &mut Context<ChatPane>) -> gpui_component::button::Button {
-    strip_control("show-rail", IconName::PanelLeftOpen, false, cx)
-        .named_with_action("Show the navigation rail", &crate::shell::ToggleRail, None)
-        .on_click(cx.listener(|_: &mut ChatPane, _, _, cx| {
-            cx.emit(ChatPaneEvent::ShowRail);
-        }))
 }
 
 #[cfg(test)]

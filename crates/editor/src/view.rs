@@ -3,11 +3,11 @@
 //! rule with them; what lives here is each tab's buffer, the reads and writes
 //! carried off the UI loop, and the drawing.
 
-use crate::buffers::{Lead, StripHandlers, body, new_buffer, standing_line, tab_strip};
+use crate::buffers::{Lead, StripHandlers, body, file_bar, new_buffer, standing_line, top_fade};
 
 use gpui::{
-    AnyWindowHandle, App, AppContext as _, Context, Entity, Focusable as _, IntoElement,
-    ParentElement, Render, SharedString, Styled, Window, div,
+    AnyView, AnyWindowHandle, App, AppContext as _, Context, Entity, Focusable as _, IntoElement,
+    ParentElement, Render, Styled, Window, div,
 };
 use gpui_component::WindowExt as _;
 use gpui_component::input::{EditorState, InputEvent};
@@ -34,15 +34,10 @@ pub(crate) struct EditorView {
     /// save is asked for without one, and what it comes to is said there as
     /// soon as it comes back, whether or not the Workbench is showing this mode.
     window: Option<AnyWindowHandle>,
-    /// The width the strip leaves its tabs, in rems, as last laid out.
-    /// Infinite until measured, so the first frame draws every tab.
-    tabs_w: onehand_ui::Measured,
-    /// Each tab's width as last drawn, so the strip knows how many fit.
-    tab_widths: onehand_ui::TabWidths,
     /// Whether the file tree beside the buffers is showing.
     ///
     /// Held here rather than on the split that draws the tree, because the
-    /// control that flips it sits on this view's tab strip and has to show
+    /// control that flips it sits on this view's bar and has to show
     /// which way round it is; the split observes this view and reads it. One
     /// flag for every project, not per root, and not persisted — the same
     /// answer as the divider's position, for the same reason.
@@ -52,23 +47,29 @@ pub(crate) struct EditorView {
     /// clears it; what is open is kept either way.
     detail: bool,
     /// Whether the tree and the buffers are shown one at a time, as the split
-    /// last measured: the strip leads with the way back to the tree then,
-    /// rather than the toggle that hides it.
+    /// last measured: the bar leads with the way back to the tree then,
+    /// rather than ending with the toggle that hides it.
     alone: bool,
+    /// The project's tree the open file's name drops down: a tree of its own,
+    /// since the one beside the buffers is already drawn there.
+    tree: AnyView,
+    /// Whether that dropdown is open. Held here so that a file opened from it
+    /// closes it.
+    picking: bool,
 }
 
 impl EditorView {
-    pub(crate) fn new(cx: &mut App) -> Entity<Self> {
+    pub(crate) fn new(tree: AnyView, cx: &mut App) -> Entity<Self> {
         cx.new(|_| Self {
             root: None,
             drive: EditorDrive::default(),
             buffers: HashMap::new(),
             window: None,
-            tabs_w: onehand_ui::unmeasured(),
-            tab_widths: Default::default(),
             tree_shown: true,
             detail: false,
             alone: false,
+            tree,
+            picking: false,
         })
     }
 
@@ -134,6 +135,7 @@ impl EditorView {
         let (took, effects) = self.drive.open(&root, path);
         if took {
             self.detail = true;
+            self.picking = false;
         }
         self.perform(effects, Some(window), cx);
         took
@@ -378,10 +380,8 @@ impl EditorView {
         cx.notify();
     }
 
-    fn select_tab(&mut self, idx: usize, cx: &mut Context<Self>) {
-        if let Some(root) = &self.root {
-            self.drive.select(root, idx);
-        }
+    fn set_picking(&mut self, open: bool, cx: &mut Context<Self>) {
+        self.picking = open;
         cx.notify();
     }
 
@@ -394,51 +394,20 @@ impl EditorView {
         self.closing(closing, window, cx);
     }
 
-    /// Close every tab, asking first when any of them has unsaved edits.
-    fn close_all_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(root) = self.root.clone() else {
-            return;
-        };
-        let closing = self.drive.close_all(&root);
-        self.closing(closing, window, cx);
-    }
-
     /// Carry out a close, or ask first in a dialog rather than by arming the ✕
     /// for a second press: an armed control looks like one that did nothing.
     fn closing(&mut self, closing: Closing, window: &mut Window, cx: &mut Context<Self>) {
-        let (close, unsaved, label) = match closing {
+        let (close, label) = match closing {
             Closing::Closed(effects) => return self.perform(effects, Some(window), cx),
-            Closing::Asks {
-                close,
-                unsaved,
-                label,
-            } => (close, unsaved, label),
-        };
-        let (title, description): (SharedString, String) = match label {
-            Some(label) => (
-                format!("Close {label}?").into(),
-                "It has edits that were never saved. Closing it throws them away.".into(),
-            ),
-            None => {
-                let s = if unsaved == 1 {
-                    "file has"
-                } else {
-                    "files have"
-                };
-                (
-                    "Close all files?".into(),
-                    format!(
-                        "{unsaved} {s} edits that were never saved. Closing them throws those away."
-                    ),
-                )
-            }
+            Closing::Asks { close, label } => (close, label),
         };
         onehand_ui::confirm_on(
             cx.entity(),
             onehand_ui::Confirm {
                 id: "discard-edits",
-                title,
-                description: description.into(),
+                title: format!("Close {label}?").into(),
+                description: "It has edits that were never saved. Closing it throws them away."
+                    .into(),
                 // The verb of the control that asked.
                 act: "Close",
                 ..Default::default()
@@ -467,9 +436,9 @@ impl Render for EditorView {
                 .v_flex()
                 .child(hint("No project selected", cx));
         };
-        // The strip is drawn with no tabs as well: the tree's toggle lives on
-        // it, and a strip that went with the last tab would leave a hidden tree
-        // with no way back.
+        // The bar is drawn with no file open as well: the tree's toggle lives
+        // on it, and a bar that went with the last file would leave a hidden
+        // tree with no way back.
         let empty = RootEditors::default();
         let tabs = self.drive.tabs(root).unwrap_or(&empty);
         let locked = self.drive.locked(root).map(str::to_string);
@@ -478,11 +447,9 @@ impl Render for EditorView {
         let buffer = active
             .and_then(|uid| self.buffers.get(&uid))
             .map(|(state, _)| state.clone());
-        let strip = tab_strip(
+        let strip = file_bar(
             root,
             tabs,
-            (&self.tabs_w, &self.tab_widths),
-            cx.entity().downgrade(),
             match self.alone {
                 true => Lead::Back,
                 false => Lead::Toggle(self.tree_shown),
@@ -492,16 +459,18 @@ impl Render for EditorView {
                     cx.listener(|view: &mut Self, _, _, cx| view.toggle_tree(cx)),
                 ),
                 back: Box::new(cx.listener(|view: &mut Self, _, _, cx| view.back_to_tree(cx))),
-                select: Rc::new(
-                    cx.listener(|view: &mut Self, idx: &usize, _, cx| view.select_tab(*idx, cx)),
+                picking: self.picking,
+                pick: Box::new(
+                    cx.listener(|view: &mut Self, open: &bool, _, cx| view.set_picking(*open, cx)),
                 ),
+                // Closes the dropdown it is pressed in first, so a question
+                // about unsaved edits is not asked under it.
                 close: Rc::new(cx.listener(|view: &mut Self, idx: &usize, window, cx| {
+                    view.picking = false;
                     view.close_tab(*idx, window, cx)
                 })),
-                close_all: Box::new(
-                    cx.listener(|view: &mut Self, _, window, cx| view.close_all_tabs(window, cx)),
-                ),
             },
+            &self.tree,
             cx,
         );
         let body = match buffer {
@@ -518,15 +487,23 @@ impl Render for EditorView {
         };
 
         // `min_w_0`: the resizable panel holding this is a flex *row*, and a flex
-        // item's floor is otherwise its content's width, so the strip's measure
-        // would follow its tabs rather than the room the panel has.
+        // item's floor is otherwise its content's width, so a long file name
+        // on the bar would widen it rather than truncate.
         div()
             .flex_1()
             .min_w_0()
             .min_h_0()
             .v_flex()
             .child(strip)
-            .child(body)
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .relative()
+                    .v_flex()
+                    .child(body)
+                    .child(top_fade(cx)),
+            )
             .children(standing.map(|status| status_line(status, status_ink(cx).warning)))
             .children(locked.map(|why| status_line(why, cx.theme().muted_foreground)))
     }

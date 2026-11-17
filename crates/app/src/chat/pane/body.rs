@@ -69,7 +69,7 @@ impl ChatPane {
                 .border_1()
                 .border_color(cx.theme().input)
                 .shadow(crate::theme::composer_lift(cx))
-                .rounded(cx.theme().radius)
+                .rounded(cx.theme().radius_lg)
                 .children(lines)
                 .into_any_element()
         }));
@@ -272,7 +272,7 @@ fn peek(depth: usize, cx: &App) -> gpui::AnyElement {
         .border_1()
         .border_b_0()
         .border_color(theme.input)
-        .rounded_t(theme.radius)
+        .rounded_t(theme.radius_lg)
         .into_any_element()
 }
 
@@ -368,6 +368,7 @@ impl ChatPane {
         // Asked of the conversation, on the composer's current contents, so
         // Send can refuse out loud instead of swallowing the press. Computed
         // here because this is the last point both are borrowed at once.
+        let items = chat.history.len() + chat.items.len();
         let blocked = {
             let composer = self.composer.read(cx);
             // An offloaded project's prompt waits on its code going up.
@@ -474,6 +475,24 @@ impl ChatPane {
         let narrow_strip =
             list_w > px(0.) && stack_w < crate::chat::composer::COMPOSER_SPLIT.to_pixels(rem);
         self.composer_drawn = true;
+        let overlay = self.overlay(
+            &session,
+            measure,
+            OverlayRoom {
+                popup: popup_room,
+                well,
+                narrow_strip,
+                connected: link == Link::Connected,
+                greet_offset: super::greeting::offset(
+                    list_state.viewport_bounds().size.height + cut,
+                    overlay_h,
+                ),
+                items,
+            },
+            blocked,
+            window,
+            cx,
+        );
 
         div()
             .size_full()
@@ -597,18 +616,7 @@ impl ChatPane {
                                 ),
                         )
                     })
-                    .child(self.overlay(
-                        &session,
-                        measure,
-                        OverlayRoom {
-                            popup: popup_room,
-                            well,
-                            narrow_strip,
-                        },
-                        blocked,
-                        window,
-                        cx,
-                    )),
+                    .child(overlay),
             )
             .into_any_element()
     }

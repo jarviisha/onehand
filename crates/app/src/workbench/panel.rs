@@ -1,4 +1,4 @@
-//! The Workbench dock panel: Editor, Markdown, Issues, Plugins and Neovim, one at a time.
+//! The Workbench panel: Editor, Markdown, Issues, Plugins and Neovim, one at a time.
 //!
 //! **The panel owns no mode's state and draws no mode's body.** It keeps the
 //! list, remembers which one is showing, draws the strip that switches between
@@ -84,6 +84,9 @@ pub struct Workbench {
     /// shell, which decides it; the strip leads with the way back while it
     /// holds.
     fills_area: bool,
+    /// Whether the panel is on screen. Its slot in the centre stays in the
+    /// dock's tree either way; this is what takes it out of the frame.
+    shown: bool,
     /// The panel's width in rems as last laid out, which the strip reads to
     /// decide whether its modes fit side by side. Infinite until measured, so
     /// the first frame draws them side by side.
@@ -121,6 +124,7 @@ impl Workbench {
                 zoom,
                 maximized: false,
                 fills_area: false,
+                shown: false,
                 width: onehand_ui::unmeasured(),
             }
         })
@@ -309,6 +313,27 @@ impl Workbench {
             return;
         }
         self.fills_area = fills;
+        cx.notify();
+    }
+
+    /// The panel's width as last laid out, for a test.
+    #[cfg(test)]
+    pub(crate) fn drawn_width(&self) -> gpui::Rems {
+        self.width.get()
+    }
+
+    /// Whether the panel is on screen.
+    pub fn shown(&self) -> bool {
+        self.shown
+    }
+
+    /// Put the panel on screen or take it off. Guarded, for the reason
+    /// [`Self::set_maximized`] is.
+    pub fn set_shown(&mut self, shown: bool, cx: &mut Context<Self>) {
+        if self.shown == shown {
+            return;
+        }
+        self.shown = shown;
         cx.notify();
     }
 
@@ -501,6 +526,10 @@ impl Panel for Workbench {
     fn panel_name(&self) -> &'static str {
         "Workbench"
     }
+
+    fn visible(&self, _: &App) -> bool {
+        self.shown
+    }
 }
 
 impl EventEmitter<PanelEvent> for Workbench {}
@@ -575,9 +604,6 @@ impl Render for Workbench {
                 self.width.clone(),
                 cx.entity().downgrade(),
             ))
-            // A surface of its own, set off from the conversation by its fill
-            // alone; the dock's grip runs along that edge.
-            .bg(crate::theme::dock_surface(cx))
             // Mounted bare, so nothing else tracks this handle. A `TabPanel`
             // calls `track_focus` on the panel it holds, which is what normally
             // makes `contains_focused` answer for a dock panel at all -- and

@@ -57,9 +57,8 @@ impl IssuesView {
                             .child(
                                 div()
                                     .size_full()
-                                    // The one hairline between the halves,
-                                    // on the divider: its grip draws a line
-                                    // only while it is dragged.
+                                    // A line down the list's side facing
+                                    // the issue, as on the Files tree.
                                     .border_r_1()
                                     .border_color(cx.theme().border)
                                     .child(list),

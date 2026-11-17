@@ -20,6 +20,6 @@ pub(super) fn over_composer(id: &'static str, cx: &App) -> Stateful<Div> {
         .border_x_1()
         .border_color(cx.theme().input)
         .shadow(crate::theme::composer_lift(cx))
-        .rounded_t(cx.theme().radius)
+        .rounded_t(cx.theme().radius_lg)
         .text_size(onehand_ui::tokens::CHROME_TEXT)
 }

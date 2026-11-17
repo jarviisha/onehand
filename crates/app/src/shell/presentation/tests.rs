@@ -73,3 +73,57 @@ fn the_terminal_leaves_the_conversation_room_to_read() {
     // A short window never shrinks it to nothing.
     assert_eq!(at(15., reading), TERM_MIN_H.0);
 }
+
+/// Too narrow for both, the Workbench takes the area with the conversation
+/// out of the centre, and *← Conversation* gives it back; room again brings
+/// back the split.
+#[gpui::test]
+fn a_narrow_window_still_gives_the_workbench_the_area(cx: &mut gpui::TestAppContext) {
+    use gpui::{px, size};
+    use gpui_component::dock::BasePanel as _;
+    let (_, shell, cx) = crate::shell::rig::shell(
+        cx,
+        crate::shell::rig::folder("narrow-workbench"),
+        Vec::new(),
+    );
+    let draw = |cx: &mut gpui::VisualTestContext| {
+        cx.run_until_parked();
+        for _ in 0..3 {
+            cx.update(|window, _| window.refresh());
+            cx.update(|window, cx| window.draw(cx).clear(cx));
+        }
+    };
+    // What is on screen: the presentation, the conversation, the Workbench.
+    let seen = |cx: &mut gpui::VisualTestContext| {
+        cx.update(|_, cx| {
+            let shell = shell.read(cx);
+            (
+                shell.presentation,
+                shell.chat.read(cx).visible(cx),
+                shell.workbench_open(cx),
+            )
+        })
+    };
+    cx.simulate_resize(size(px(1600.), px(1000.)));
+    draw(cx);
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.toggle_workbench(window, cx)));
+    draw(cx);
+    assert!(matches!(seen(cx), (Presentation::Split(_), true, true)));
+
+    cx.simulate_resize(size(px(900.), px(1000.)));
+    draw(cx);
+    assert_eq!(seen(cx), (Presentation::WorkbenchFocus, false, true));
+
+    cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| {
+            shell.on_workbench_event(&crate::workbench::WorkbenchEvent::StepAside, window, cx)
+        })
+    });
+    draw(cx);
+    assert_eq!(seen(cx), (Presentation::Conversation, true, false));
+    assert!(cx.update(|_, cx| shell.read(cx).stepped_aside));
+
+    cx.simulate_resize(size(px(1600.), px(1000.)));
+    draw(cx);
+    assert!(matches!(seen(cx), (Presentation::Split(_), true, true)));
+}

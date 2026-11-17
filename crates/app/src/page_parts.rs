@@ -145,7 +145,7 @@ pub(crate) fn notice_box(
         .w_full()
         .px_3()
         .py_2()
-        .rounded(cx.theme().radius)
+        .rounded(cx.theme().radius_lg)
         .into_any_element()
 }
 

@@ -57,7 +57,7 @@ and a word.
 | Compact metadata or a tightly coupled mark and label | `gap_1` |
 | Icon and label in a row the app draws; adjacent controls; parts within a box | `gap_2` |
 | Row inset | `px_2` |
-| Strip inset; box padding | `px_3`, inside the Workbench `tokens::ROW_INSET` (a tab bar's tabs sit flush); `p_3` |
+| Strip inset; box padding | `px_3`, inside the Workbench `tokens::ROW_INSET` (a tab bar's tabs stand a step in from its ends and apart, so their fills never touch); `p_3` |
 | A box whose body scrolls inside it (a pinned card) | `p_4`, a step more so the scrollbar's thumb has room beside the text |
 | Form fields | `gap_4` |
 | Page sections; page outer padding | `gap_6`; `px_8` `py_6` |
@@ -70,7 +70,7 @@ Smaller steps are for component internals; the largest step is for a deliberate 
 not a second page-padding convention. Use the named pattern's defaults before another legal step.
 Equal relationships keep equal gaps across screens. Space between groups exceeds space within
 them; align titles, row labels and field labels to consistent text axes. Marks down one column
-(icons, state dots, the workspace tile) share one centre line, each in a slot of one width, so the
+(icons, state dots) share one centre line, each in a slot of one width, so the
 labels after them start on one edge. A number or a time in a column takes a fixed-width slot, so a
 longer value does not push its neighbours.
 
@@ -105,12 +105,12 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 | Every other button with words: a strip's, a box's, a row's, a secondary action inside dense content (a line of meta text, a transcript block, a chip), a tab, a fold toggle, a pinned card's answers | Button | `.short()`, under a row, so the controls never outweigh what they act on |
 | Every other icon-only button: a strip's, a row's, a copy control, a split action's caret beside `.short()`, the composer's send | Button | `.short_icon()`, square at `CONTROL_H`, so an icon alone is as tall as a worded peer beside it |
 | A field in a strip, the rail or the title bar (the search) | Input | `.short()`, as tall as the buttons beside it |
-| The rail's *New*, the one action the rail is opened for | Button | `.tall()`, its caret `.tall_icon()`, the whole row wide, so it reads as the rail's action rather than one of its rows' |
+| The rail's *New session*, the one action the rail is opened for | drawn by the app, a row as a page's | `ROW_H`; its chevron a row's icon-only button, so it reads as the first of the rail's rows, set apart by its weight |
 | An icon in a button | Icon | the button's own, as the library sizes it for the button's size |
 | An icon leading a label the app draws: a row, a menu item | Icon | `.small()` |
 | A state's mark leading a row's label (a session's) | Icon | `.xsmall()`, a step under the label |
 | A mark inside a line of meta text | Icon | `.xsmall()` |
-| A badge: a tag standing on its own (a state, a count, *Default*) | Tag | the library's own size, at its own height |
+| A badge: a tag standing on its own (a state, a count, *Default*) | Tag | micro words on a slim inset, edged in its own hue |
 | A label inside a line of meta text (an issue row's) | text | its kind's ink (`label_tint`), the one part of the line that truncates; the row's quieter ink on the selected fill |
 | A checkbox, a switch | Checkbox, Switch | `.small()` beside chrome text, at the library's own geometry |
 | A single-line row; a row with a second line | drawn by the app | `ROW_H`; at least `ROW_H` |
@@ -158,16 +158,19 @@ at the chrome size (`strip`): what it names at the start, in full ink, its contr
 ghost buttons at their control sizes (`strip_control` for an icon alone). An icon-only control is named through `.named(..)`: its
 tooltip, and the same words as its accessible name.
 Keep identity at the leading edge and actions at the trailing edge in every equivalent strip; a control that
-shows a region the strip's own panel hid may lead (the way back to the rail, a list's toggle).
+shows a region the strip's own panel hid may lead (the way back to a list, a list's toggle).
 Filters belong below the region header with the content they filter. Reserve the action group's
 width while labels truncate; showing hover actions must not move the text beside them.
 
-The Workbench's strip, the terminal's and the Editor's file tabs are tab panel bars (`tab_bar`),
-the Editor's at `tokens::MODE_BAR_H`, each with a line under it. Any other bar inside the
-Workbench is a `workbench_strip`, padded `tokens::ROW_INSET` so its words and the tree rows'
-names read down one edge, with a hairline (`border`) where its head ends: the reader's bar is a
-`mode_strip`, `MODE_BAR_H` tall, a step under the strip over it; an issue's trail draws its own.
-The conversation's header draws no line and keeps `px_3`.
+The Workbench's strip, the terminal's and the Editor's are tab panel bars (`tab_bar`), the
+Editor's at `tokens::MODE_BAR_H`: no fill, a line under the bar, the open tab a rounded
+`secondary` fill. The Editor's names only the file open now, as a `tab_select` dropping down the
+project's tree, and has no line: the file under it fades out beneath it instead. Any other bar
+inside the Workbench is a `workbench_strip`, padded `tokens::ROW_INSET` so its words and the tree
+rows' names read down one edge, with the line under it: the reader's bar is a `mode_strip`,
+`MODE_BAR_H` tall, a step under the strip over it, and an issue's trail is one too. Every other
+bar inside a region's box draws a line where it ends; the conversation's header draws none and
+keeps `px_3`.
 
 ### Cuts
 
@@ -258,12 +261,13 @@ they split the list, so they stand over its rows, under the bar's line.
 - where the content splits into a few states that each count (*Open*, *Closed*), those first,
   each a `choice` at the bar's size, the shown one filled, its count a `badge` after its word in
   the hue of that state (neutral at zero, which has nothing to draw the eye to);
-- the filters, kept to the row's end after the choices, wrapping under them when narrow. Each is a
+- the filters, kept to the row's end after the choices, wrapping under them when narrow (a dock's
+  bar never wraps: its search shrinks instead). Each is a
   `picker` at the bar's size with its caret, its label naming what it is set to: a ghost in the muted
   ink while it is where it starts, on the secondary fill in that fill's ink once it narrows the
   content;
 - after them, where more than one thing narrows the content and only while one is set, *Clear
-  filters*: a ghost at the bar's size that
+  filters*: a ghost at the bar's size on a page, on the secondary fill in a dock's bar, that
   puts the search and every filter back (a choice is not a filter); last in its group, so nothing
   moves as it comes and goes.
 
@@ -272,7 +276,7 @@ kept while the page is left and shown again.
 
 ### Boxes
 
-A box groups one thing on a page: edged in a control's edge (`input`) at `radius`, on no fill,
+A box groups one thing on a page: edged in a control's edge (`input`) at `radius_lg`, on no fill,
 padded `p_3`, its parts `gap_2` apart (`card_box`). Every fill under a page read as a slab too
 heavy for it or swallowed the fields and lines drawn on it, and the hairline is too faint to
 group anything. Its title row (`card_title`) holds the title in semibold, a
@@ -523,6 +527,6 @@ danger tint.
 - *Delete* takes a thing off disk; *Remove* takes it out of a list and leaves it; *Uninstall* is
   for a plugin; *Discard* throws away unsaved changes.
 - *Keep* dismisses a confirmation; *Cancel* leaves a form or a dialog; *Close* puts a panel away.
-- A command reads as a plain sentence, its article kept: *Restart the agent*, *Hide the rail*.
+- A command reads as a plain sentence, its article kept: *Restart the agent*, *Hide the Workbench*.
 - Hints, empty lines and toasts end without a period; a dialog's description is whole sentences.
 - On-screen words are the glossary's (`CONTEXT.md`), never its _Avoid_ words.

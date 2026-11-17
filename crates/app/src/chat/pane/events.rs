@@ -62,12 +62,6 @@ pub enum ChatPaneEvent {
     /// count of what the running agent has loaded; every path that starts one
     /// passes through here, which no caller of those paths can promise.
     AgentStarted,
-    /// The rail is hidden and the user asked for it back.
-    ///
-    /// Announced rather than acted on for the usual reason: the rail is the
-    /// window's chrome, and a dock panel has no business reaching outside the
-    /// dock to draw it.
-    ShowRail,
     /// A session asked for from the pane: the lead's strip pressed for its
     /// most urgent worker, or a worker's band for its lead.
     ShowSession(u64),

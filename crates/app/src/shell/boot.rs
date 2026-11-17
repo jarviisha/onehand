@@ -7,13 +7,14 @@ use crate::state::{Shared, WorkspaceWindow};
 use crate::terminal::TerminalPanel;
 use crate::workbench::Workbench;
 use gpui::{App, AppContext, BorrowAppContext, Context, Focusable as _, Window, px};
-use gpui_component::dock::{DockArea, DockEvent, DockLayout, DockPlacement};
+use gpui_component::dock::{DockArea, DockEvent};
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::{ResizableState, Root, WindowExt as _};
 use onehand_core::config::WorkspaceConfig;
 use onehand_core::config::{AppConfig, Appearance};
 use onehand_core::workspace::Workspace;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 impl Shell {
     pub fn new(workspace: Workspace, window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -123,25 +124,10 @@ impl Shell {
         // terminal open", and the live question is per root -- so it seeds the
         // root that is about to be on screen and no other.
         let seed_root = workspace.active_root().map(|root| root.path.clone());
+        workbench.update(cx, |panel, cx| panel.set_shown(saved.workbench_open, cx));
         dock.update(cx, |area, cx| {
-            // Each region is a group of one panel, and the area draws no tab
-            // bar over any of them (see `crate::shell::dock_skin`): a single
-            // tab that can never have a sibling is not a tab but a duplicate
-            // title -- the conversation's name printed again above the header
-            // that says it, the word "Workbench" over the strip naming its
-            // modes. Each panel's own chrome carries its controls instead.
-            area.set_center(DockLayout::tabs().panel(chat.clone()), window, cx);
-            area.set_dock(
-                DockPlacement::Right,
-                DockLayout::tabs().panel(workbench.clone()),
-                window,
-                cx,
-            );
-            area.set_dock_size(DockPlacement::Right, px(saved.workbench_w), window, cx);
-            // A new dock starts open.
-            if !saved.workbench_open {
-                area.toggle_dock(DockPlacement::Right, window, cx);
-            }
+            let (chat, workbench) = (Arc::new(chat.clone()), Arc::new(workbench.clone()));
+            super::workbench_slot::mount(area, chat, workbench, &saved, window, cx);
         });
         // The bottom dock is mounted only while the terminal is showing, so
         // there is nothing to set up here when it is not -- see
@@ -169,7 +155,6 @@ impl Shell {
                         shell.sync_agent_started(cx);
                     }
                     E::PageChanged => shell.prune_host_waits(cx),
-                    E::ShowRail => shell.show_rail(window, cx),
                     E::ShowSession(uid) => shell.show_session(*uid, window, cx),
                     // Every one of these acts on the selected project, because
                     // the page that offers them is what shows when the selected
@@ -423,9 +408,10 @@ impl Shell {
             })
             .detach();
 
-        cx.subscribe(&dock, |shell: &mut Self, _, event: &DockEvent, cx| {
+        cx.subscribe(&dock, |_: &mut Self, _, event: &DockEvent, cx| {
+            // Redrawn, not saved: the frame reads the sizes back, and saves
+            // only what changed the layout the person wants.
             if matches!(event, DockEvent::LayoutChanged) {
-                shell.save_workspace_soon(cx);
                 cx.notify();
             }
         })
@@ -500,7 +486,6 @@ impl Shell {
                 cx.new(|_| crate::settings::SettingsView::new(shell))
             },
             held_commands: Default::default(),
-            menu_bar: super::frame::menu_bar(cx),
             close_guard,
             workspace_name,
             renaming: None,
@@ -533,7 +518,7 @@ impl Shell {
             workspace_page,
             terminal,
             _pending_save: None,
-            docks_saved: None,
+            layout_saved: None,
             terminal_live: false,
             _pending_warm: None,
             _host_files: None,
@@ -542,6 +527,8 @@ impl Shell {
             issue_works: (Vec::new(), Vec::new()),
             #[cfg(test)]
             refused: Vec::new(),
+            #[cfg(test)]
+            saves_asked: 0,
             rail: crate::rail::RailState::new(window, cx),
             folds: HashMap::new(),
             last_panel: FocusedPanel::Chat,

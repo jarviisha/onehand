@@ -167,7 +167,7 @@ pub(super) fn prose_style(window: &Window, cx: &App) -> TextViewStyle {
                 .max_h(MAX_CODE_BLOCK_H)
                 .overflow_hidden()
                 .p(CODE_BLOCK_PAD)
-                .rounded(cx.theme().radius)
+                .rounded(cx.theme().radius_lg)
                 .bg(cx.theme().muted)
                 .border_0()
                 .text_size(crate::tokens::CODE_TEXT)

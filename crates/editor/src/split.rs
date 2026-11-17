@@ -1,5 +1,5 @@
-//! The mode's two halves side by side: the project's file tree, then the
-//! buffers open out of it.
+//! The mode's two halves side by side: the buffers, then the project's file
+//! tree they are opened out of, on the right.
 //!
 //! They were two entries on the mode strip, and the strip is where the cost
 //! showed: picking a file meant Files, reading it meant Editor, and going back
@@ -35,7 +35,7 @@ use onehand_ui::{ListWidths, Measured, list_detail, measure_width};
 /// ceiling is a preference: the half being squeezed by a wide tree is the one
 /// with the long lines in it, and a drag never takes the file under its own
 /// least useful width. In rems, so they follow the panel's zoom.
-const TREE: ListWidths = ListWidths::new(12.5, 8.75, 26.25);
+const TREE: ListWidths = ListWidths::new(12.5, 8.75, 26.25).last();
 
 /// What tells the tree which file is open.
 type SetActive = Box<dyn Fn(Option<std::path::PathBuf>, &mut App)>;
@@ -113,7 +113,7 @@ impl Render for CodeView {
         }
         // Hidden, the buffers are drawn alone rather than beside a panel marked
         // invisible: the group still draws the divider's grip on the second
-        // panel, which would leave a drag handle along the left edge moving
+        // panel, which would leave a drag handle along the right edge moving
         // nothing. The divider's state is untouched, so the tree comes back at
         // the width it was dragged to.
         if !tree_shown {
@@ -123,6 +123,11 @@ impl Render for CodeView {
             .child(
                 h_resizable("workbench-code")
                     .with_state(&self.divider)
+                    .child(
+                        resizable_panel()
+                            .size_range(layout.detail.clone())
+                            .child(self.editor.clone()),
+                    )
                     .child(
                         // `flex_none`: the panel sets `flex_grow: 1` on itself,
                         // and a tree that grows is a tree taking whatever the
@@ -135,15 +140,13 @@ impl Render for CodeView {
                                 div()
                                     .size_full()
                                     .v_flex()
-                                    // The one hairline between the halves, on
-                                    // the divider: its grip draws a line only
-                                    // while it is dragged.
-                                    .border_r_1()
+                                    // A line down the tree's side facing
+                                    // the editor; no fill.
+                                    .border_l_1()
                                     .border_color(cx.theme().border)
                                     .child(self.files.clone()),
                             ),
-                    )
-                    .child(resizable_panel().child(self.editor.clone())),
+                    ),
             )
             .into_any_element()
     }

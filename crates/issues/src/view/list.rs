@@ -20,7 +20,7 @@ use onehand_ui::Short as _;
 use onehand_ui::ShortIcon as _;
 use onehand_ui::search_input;
 use onehand_ui::{
-    ControlSize, Tint, action, faint_rule, menu_below, menu_item, middle_ink, picker,
+    ControlSize, Tint, action, end_fade, menu_below, menu_item, middle_ink, picker,
     row as row_surface, status_ink, switch,
 };
 use std::collections::BTreeSet;
@@ -29,9 +29,21 @@ use std::collections::BTreeSet;
 /// is said to have them under the last one.
 const LABELS_SHOWN: usize = 100;
 
-/// The least the search is squeezed to before the choices after it wrap under
-/// it: room for its hint to be read.
-const SEARCH_MIN: Rems = rems(10.);
+/// The least the search is squeezed to, room for its hint to be read; past
+/// it the label picker gives way instead.
+const SEARCH_MIN: Rems = rems(6.);
+
+/// The least width at which *New issue* keeps its word beside its `+`: under
+/// it the search at its floor, the label picker and *Clear filters* leave no
+/// room for the word, and the press would be cut off at the box's edge. Not
+/// tied to whether a filter is set, so the button keeps its shape as
+/// *Clear filters* comes and goes.
+const NEW_ISSUE_WORD_MIN: Rems = rems(26.);
+
+/// Whether *New issue* says its word, the bar being `width` wide.
+fn new_issue_worded(width: Rems) -> bool {
+    width.0 >= NEW_ISSUE_WORD_MIN.0
+}
 
 /// Which half of the issues the list shows. Open by default: an open issue is
 /// work, a closed one a record.
@@ -198,8 +210,9 @@ impl IssuesView {
 
     /// The dock's filter bar, over the list and the issue both, so it stays
     /// in reach while the two show one at a time: the search, the label,
-    /// *Clear filters*, and the way to start a new issue. The filters wrap
-    /// under the search where the dock is too narrow for all.
+    /// *Clear filters*, and the way to start a new issue. Where the dock is
+    /// too narrow for all, the search shrinks, then the label picker, and
+    /// *New issue* keeps only its `+`.
     pub(super) fn search_bar(
         &mut self,
         issues: &Issues,
@@ -220,43 +233,60 @@ impl IssuesView {
         let narrowed = !query.read(cx).value().is_empty() || self.label.is_some();
         // The form's *Save* holds the tab's one primary while it shows.
         let drafting = self.state_mut().is_some_and(|state| state.form.is_some());
-        // A filter bar, parted from what is under it by a line the tab's
-        // whole width, as a page's toolbar is from its list. A filter picked
+        // The bar spans the tab, so the tab's width is the bar's.
+        let worded = new_issue_worded(self.width.get());
+        // A filter bar. A filter picked
         // behind the issue changes nothing on screen, so a narrow tab shows
         // the list it narrowed.
         div()
             .h_flex()
-            .flex_wrap()
-            .items_center()
-            .gap_2()
+            .items_stretch()
             .w_full()
+            .h(onehand_ui::tokens::BAR_H)
             .flex_none()
-            .px(onehand_ui::tokens::ROW_INSET)
-            .py_2()
             .border_b_1()
-            .border_color(faint_rule(cx))
+            .border_color(cx.theme().border)
+            // The search is bare and fills the bar, framed by the line over
+            // the bar and the one under it; it shrinks, never wraps, and its
+            // end fades into the filters rather than being cut.
             .child(
                 div()
                     .flex_1()
                     .min_w(SEARCH_MIN)
-                    .child(search_input(&query, cx).short()),
+                    // With the short field's own inset (a `2` step) this sets
+                    // the search's glyph at the row inset, the filters' end
+                    // inset on the other side.
+                    .pl_2()
+                    .relative()
+                    .h_flex()
+                    .child(
+                        // No clearing cross: *Clear filters* after it clears
+                        // the search and the label both.
+                        search_input(&query, cx)
+                            .appearance(false)
+                            .cleanable(false)
+                            .short()
+                            .h_full(),
+                    )
+                    .child(end_fade(cx)),
             )
-            // Kept to the row's end, on a line of their own when the search
-            // leaves them no room; *Clear filters* last of the filters, so
-            // nothing moves as it comes and goes, and `+` at the very end.
+            // Kept to the row's end, past the search; *Clear filters* last of the filters, so
+            // nothing moves as it comes and goes, and `+` at the very end. The
+            // label picker is the part that gives way once the search is at
+            // its floor, so the presses after it are never cut off.
             .child(
                 div()
-                    .flex_none()
-                    .ml_auto()
+                    .min_w_0()
                     .h_flex()
                     .items_center()
                     .gap_2()
+                    .px(onehand_ui::tokens::ROW_INSET)
                     .children(self.label_menu(issues, cx))
                     .when(narrowed, |group| {
                         group.child(
                             action("issues-clear-filters")
                                 .short()
-                                .quiet(cx)
+                                .secondary()
                                 .label("Clear filters")
                                 .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
                                     view.clear_tab_filters(window, cx)
@@ -269,9 +299,12 @@ impl IssuesView {
                         action("issues-new")
                             .when(drafting, |button| button.secondary())
                             .when(!drafting, |button| button.primary())
-                            .short_icon()
+                            .short()
                             .icon(Icon::new(IconName::Plus))
-                            .named("New issue")
+                            .map(|button| match worded {
+                                true => button.label("New issue"),
+                                false => button.short_icon().named("New issue"),
+                            })
                             .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
                                 view.open_form(None, window, cx)
                             })),
@@ -426,7 +459,10 @@ impl IssuesView {
             ControlSize::Short,
             cx,
         )
-        .tooltip("Show only issues with a label");
+        .tooltip("Show only issues with a label")
+        // Its name truncates where the bar is too narrow for every filter.
+        .flex_shrink(1.)
+        .min_w_0();
         let root = self.root.as_ref()?.display().to_string();
         let view = cx.entity();
         let pick = move |label: Option<String>| {
@@ -467,6 +503,13 @@ impl IssuesView {
                     }
                     menu
                 },
+            )
+            // The wrapper the bar lays out gives way with the picker in it.
+            .trigger_style(
+                gpui::StyleRefinement::default()
+                    .flex()
+                    .min_w_0()
+                    .flex_shrink(1.),
             )
             .into_any_element(),
         )

@@ -389,7 +389,7 @@ and a watch need only fetch what the copy lacks (`crates/core/src/host/copy.rs`)
   `crates/app/src/shell/git_sweep.rs`), in the same pass as the local roots and kept by path, so
   opening the window never attaches to every host. A host that is not attached shows no git
   status until it is shown. Once read it shows where a local root's does: the rail's line, the
-  project page's header, the workspace overview's tile, the status bar and the tree's badges. A
+  project page's header, the workspace overview's tile and the tree's badges. A
   host root on a path a local root in the workspace also has gets none, so the path-keyed status
   never mixes the two. Having a status offers nothing more on a host project (see below).
 - **A folder that cannot be read** says *Could not read <folder> on <host>: …* under the rows

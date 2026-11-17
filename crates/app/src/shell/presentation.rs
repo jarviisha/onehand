@@ -7,7 +7,7 @@
 //! chat that nobody can read. Under it, the terminal is never drawn so tall
 //! that the conversation above it drops under a readable height.
 
-use super::{FocusedPanel, Shell};
+use super::{FocusedPanel, Shell, workbench_slot};
 use crate::tokens::BAR_H;
 use gpui::{Context, Focusable as _, Rems, Window, px, rems};
 use gpui_component::dock::DockPlacement;
@@ -91,10 +91,12 @@ impl Shell {
     /// width the dock reports that is not the one this last drew is a drag,
     /// and only a drag changes what the person wants.
     pub(super) fn apply_presentation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // A panel maximized over the window owns the dock area's zoom; once it
-        // is restored, the area is shared again from scratch.
-        if self.app_maximized.is_some() {
+        // A panel maximized over the window owns the area; once it is
+        // restored, the area is shared again from scratch. The conversation
+        // is out of the centre only while it is the Workbench that fills it.
+        if let Some(maximized) = self.app_maximized {
             self.presentation = Presentation::Conversation;
+            workbench_slot::set_chat_shown(self, maximized != FocusedPanel::Workbench, cx);
             self.workbench
                 .update(cx, |panel, cx| panel.set_fills_area(false, cx));
             return;
@@ -102,14 +104,19 @@ impl Shell {
         let rem = f32::from(window.rem_size());
         let dock = self.dock.read(cx);
         let avail = rems(f32::from(dock.bounds().size.width) / rem);
-        // Nothing measured yet: the first frame has no bounds to share.
+        // Nothing measured yet: the first frame has no bounds to share. An
+        // open Workbench asks for the next one, so its width lands once the
+        // area is laid out rather than whenever something else redraws.
         if avail.0 <= 0. {
+            if self.workbench_open(cx) {
+                window.request_animation_frame();
+            }
             return;
         }
-        let Some(size) = dock.dock_size(DockPlacement::Right) else {
+        let Some(size) = workbench_slot::width(dock, cx) else {
             return;
         };
-        let open = dock.is_dock_open(DockPlacement::Right);
+        let open = self.workbench_open(cx);
         // Opened again by any other way in, the Workbench is no longer aside.
         if open {
             self.stepped_aside = false;
@@ -139,9 +146,7 @@ impl Shell {
             && self.chat.read(cx).holds_caret(window, cx)
         {
             self.stepped_aside = true;
-            self.dock.update(cx, |dock, cx| {
-                dock.toggle_dock(DockPlacement::Right, window, cx)
-            });
+            workbench_slot::set_open(self, false, window, cx);
             open = false;
         }
         // Stepped aside, the split comes back by itself once there is room.
@@ -150,30 +155,27 @@ impl Shell {
             && let Presentation::Split(_) = presentation(avail, wanted, true, zoom, false)
         {
             self.stepped_aside = false;
-            self.dock.update(cx, |dock, cx| {
-                dock.toggle_dock(DockPlacement::Right, window, cx)
-            });
+            workbench_slot::set_open(self, true, window, cx);
             open = true;
         }
         let next = presentation(avail, wanted, open && !page, zoom, was_split);
         let focus_before = self.presentation == Presentation::WorkbenchFocus;
         if let Presentation::Split(width) = next {
             let width = px(width.0 * rem);
-            if size != width {
-                self.dock.update(cx, |dock, cx| {
-                    dock.set_dock_size(DockPlacement::Right, width, window, cx)
-                });
-            }
+            // Every frame, guarded inside: the conversation's slot is sized to
+            // what the centre leaves, and a resized window moves that.
+            self.dock.update(cx, |dock, cx| {
+                workbench_slot::set_width(dock, width, window, cx)
+            });
             self.workbench_drawn = Some(width);
         }
         let focus_now = next == Presentation::WorkbenchFocus;
         if focus_now != focus_before {
-            // The conversation and the terminal leave the frame with the
-            // Workbench taking the area, so a caret in either moves into the
-            // Workbench first; left there, it would point at nothing and no
-            // shortcut would reach the window.
-            let leaving = self.chat.focus_handle(cx).contains_focused(window, cx)
-                || self.terminal.focus_handle(cx).contains_focused(window, cx);
+            // The conversation leaves the frame with the Workbench taking the
+            // area, the terminal staying under it, so a caret in the
+            // conversation moves into the Workbench first; left there, it
+            // would point at nothing and no shortcut would reach the window.
+            let leaving = self.chat.focus_handle(cx).contains_focused(window, cx);
             if focus_now && leaving {
                 self.last_panel = FocusedPanel::Workbench;
                 let workbench = self.workbench.clone();
@@ -181,11 +183,7 @@ impl Shell {
                     workbench.update(cx, |panel, cx| panel.focus_active(window, cx));
                 });
             }
-            let workbench = self.workbench.entity_id();
-            self.dock.update(cx, |dock, cx| match focus_now {
-                true => super::docks::zoom_in(dock, DockPlacement::Right, workbench, window, cx),
-                false => dock.set_zoomed_out(window, cx),
-            });
+            workbench_slot::set_chat_shown(self, !focus_now, cx);
         }
         // Every frame, guarded inside: a flag pushed only on a change goes
         // stale across a maximize that restored straight into a split.
@@ -231,8 +229,8 @@ impl Shell {
         self.terminal_drawn = Some(height);
     }
 
-    /// The Workbench steps aside so the conversation can be read: the dock
-    /// closes without the Workbench being put away, so the header's button
+    /// The Workbench steps aside so the conversation can be read: it goes
+    /// off screen without the Workbench being put away, so the header's button
     /// brings it straight back, and a wider window brings back the split.
     pub(super) fn step_aside(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.hide_workbench(window, cx);
@@ -242,20 +240,14 @@ impl Shell {
             .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
     }
 
-    /// Whether the Workbench has the area beside the rail.
-    pub(super) fn workbench_fills_area(&self) -> bool {
-        self.presentation == Presentation::WorkbenchFocus
-    }
-
     /// Give the area back to the conversation now, rather than on the next
     /// frame, when the Workbench that had taken it is put away.
-    pub(super) fn leave_workbench_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn leave_workbench_focus(&mut self, cx: &mut Context<Self>) {
         if self.presentation != Presentation::WorkbenchFocus {
             return;
         }
         self.presentation = Presentation::Conversation;
-        self.dock
-            .update(cx, |dock, cx| dock.set_zoomed_out(window, cx));
+        workbench_slot::set_chat_shown(self, true, cx);
     }
 }
 

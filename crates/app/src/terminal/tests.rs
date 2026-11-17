@@ -1,4 +1,5 @@
-use super::{place_of, selection_after};
+use super::shells::{SHELL_LIST_CAP, drawn_row, lists_shells, shell_rows, shown_rows};
+use super::{busy_changed, place_of, selection_after};
 
 /// Closing a tab ahead of the selected one must move the selection back by
 /// one, not leave the index where it was.
@@ -244,4 +245,70 @@ fn a_listing_adds_its_folders_terminals_and_opens_one_only_when_none() {
         from_listing(&elsewhere, folder, &[HostTerm(1)], true),
         (vec![], false)
     );
+}
+
+/// A lone shell has nothing to be picked from, so the dock draws no list.
+#[test]
+fn one_shell_draws_no_list() {
+    assert!(!lists_shells(0));
+    assert!(!lists_shells(1));
+    assert!(lists_shells(2));
+}
+
+/// The dot is the shell's, not the selection's: a command running in a shell
+/// the user is not looking at is the one the dot is there to tell of.
+#[test]
+fn a_busy_shell_that_is_not_chosen_keeps_its_dot() {
+    let rows = shell_rows(
+        &[("zsh".into(), Some(false)), ("zsh".into(), Some(true))],
+        0,
+    );
+    assert_eq!(rows.len(), 2);
+    assert!(rows[0].chosen && !rows[0].live);
+    assert!(rows[1].live, "the running shell keeps its dot");
+    assert!(!rows[1].chosen);
+    assert_eq!(rows[1].name.as_ref(), "zsh 2");
+    // A lone shell is named by its program alone; one that will not say
+    // whether it is busy is not counted as running.
+    let lone = shell_rows(&[("zsh".into(), None)], 0);
+    assert_eq!(lone[0].name.as_ref(), "zsh");
+    assert!(!lone[0].live);
+}
+
+/// The watch has to see a second shell start or end a command while the first
+/// stays busy: the dock-wide answer does not flip then, and a row's dot would
+/// keep whatever it last read.
+#[test]
+fn a_second_shell_turning_busy_beside_a_busy_one_is_a_change() {
+    let before = [(0, true), (1, false)];
+    assert!(busy_changed(&before, &[(0, true), (1, true)]));
+    assert!(busy_changed(&[(0, true), (1, true)], &before));
+    assert!(!busy_changed(&before, &before));
+    assert!(
+        busy_changed(&before, &[(0, true)]),
+        "a shell gone is a change"
+    );
+}
+
+/// The list draws at most its cap and says how many it left out.
+#[test]
+fn the_list_stops_at_its_cap_and_counts_the_rest() {
+    assert_eq!(shown_rows(3), (3, 0));
+    assert_eq!(shown_rows(SHELL_LIST_CAP), (SHELL_LIST_CAP, 0));
+    assert_eq!(shown_rows(SHELL_LIST_CAP + 4), (SHELL_LIST_CAP, 4));
+}
+
+/// ↓ on the last drawn row stays there: the rows past the cap are in no frame,
+/// so a caret on one would take every key with it.
+#[test]
+fn the_keys_step_only_through_drawn_rows() {
+    let count = SHELL_LIST_CAP + 5;
+    assert_eq!(drawn_row(Some(0), count), Some(0));
+    assert_eq!(
+        drawn_row(Some(SHELL_LIST_CAP - 1), count),
+        Some(SHELL_LIST_CAP - 1)
+    );
+    assert_eq!(drawn_row(Some(SHELL_LIST_CAP), count), None);
+    assert_eq!(drawn_row(Some(3), 3), None);
+    assert_eq!(drawn_row(None, count), None);
 }

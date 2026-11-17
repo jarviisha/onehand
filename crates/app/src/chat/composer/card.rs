@@ -104,7 +104,7 @@ impl Composer {
             .border_1()
             .border_color(cx.theme().input)
             .shadow(lift.clone())
-            .rounded(cx.theme().radius)
+            .rounded(cx.theme().radius_lg)
             // Held always, so the card's keys reach the input wherever the
             // caret is in the prompt. The list context below is the one that
             // comes and goes.

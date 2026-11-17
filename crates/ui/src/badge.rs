@@ -2,6 +2,7 @@
 
 use crate::{Tint, tint};
 use gpui::{App, Hsla, ParentElement as _, SharedString, Styled as _};
+use gpui_component::StyledExt as _;
 use gpui_component::{ActiveTheme as _, Colorize as _};
 
 /// An issue's label as a badge, in its [`label_tint`]. Every badge of a label
@@ -33,10 +34,18 @@ pub fn label_tint(label: &str, cx: &App) -> Tint {
     }
 }
 
-/// A short state or label: the library's `Tag` at its own size and corner, in
-/// the `tint`'s fill and ink and an edge of its own ([`badge_edge`]).
+/// A short state or label: the library's `Tag` at its corner, in the
+/// `tint`'s fill and ink and an edge of its own ([`badge_edge`]) that parts it
+/// from whatever it stands on, lettered at the micro size a step heavier than
+/// the text around it and held to a slim inset, so it marks a row without
+/// outweighing it.
 pub fn badge(text: impl Into<SharedString>, tint: Tint) -> gpui_component::tag::Tag {
-    gpui_component::tag::Tag::custom(tint.fill, tint.ink, badge_edge(tint)).child(text.into())
+    gpui_component::tag::Tag::custom(tint.fill, tint.ink, badge_edge(tint))
+        .text_size(crate::tokens::MICRO_TEXT)
+        .font_medium()
+        .px_1p5()
+        .py_0()
+        .child(text.into())
 }
 
 /// A badge's edge: halfway from its fill to its ink, in its own hue, so the

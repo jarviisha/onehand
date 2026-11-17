@@ -29,7 +29,7 @@ const DOC_POLL: Duration = Duration::from_millis(750);
 /// file names inside a dock the user has already sized, so the floor is what a
 /// name needs to be readable at and the ceiling is the point past which the
 /// list is taking the room the document was opened for.
-const DOC_LIST: ListWidths = ListWidths::new(13.75, 8.75, 26.25);
+const DOC_LIST: ListWidths = ListWidths::new(13.75, 8.75, 26.25).last();
 
 pub(crate) struct MarkdownView {
     root: Option<PathBuf>,
@@ -401,33 +401,43 @@ impl MarkdownView {
         let layout = list_detail(self.split.read(cx), &DOC_LIST, self.width.get(), rem);
         let alone = !layout.side_by_side;
 
-        // What leads the reader's header: the way back to the list while the
-        // two are one at a time, else the toggle hiding the list beside it.
+        // The reader's header: the way back to the list at its start while the
+        // two are one at a time, else the toggle hiding the list at its end.
         // The toggle's icon says which way the press goes rather than which
         // state is in force: a panel drawn open beside a list that is open is
         // a control that looks like a reading.
         let lead = match alone {
-            true => back_link("markdown-back", "Documents", cx)
-                .on_click(cx.listener(|view: &mut Self, _, _, cx| {
-                    view.detail = false;
-                    cx.notify();
-                }))
-                .into_any_element(),
-            false => onehand_ui::strip_control(
-                "markdown-toggle-list",
-                match self.list_shown {
-                    true => IconName::PanelLeftClose,
-                    false => IconName::PanelLeftOpen,
-                },
-                false,
-                cx,
-            )
-            .named(match self.list_shown {
-                true => "Hide the document list",
-                false => "Show the document list",
-            })
-            .on_click(cx.listener(|view: &mut Self, _, _, cx| view.toggle_list(cx)))
-            .into_any_element(),
+            true => (
+                Some(
+                    back_link("markdown-back", "Documents", cx)
+                        .on_click(cx.listener(|view: &mut Self, _, _, cx| {
+                            view.detail = false;
+                            cx.notify();
+                        }))
+                        .into_any_element(),
+                ),
+                None,
+            ),
+            false => (
+                None,
+                Some(
+                    onehand_ui::strip_control(
+                        "markdown-toggle-list",
+                        match self.list_shown {
+                            true => IconName::PanelRightClose,
+                            false => IconName::PanelRightOpen,
+                        },
+                        false,
+                        cx,
+                    )
+                    .named(match self.list_shown {
+                        true => "Hide the document list",
+                        false => "Show the document list",
+                    })
+                    .on_click(cx.listener(|view: &mut Self, _, _, cx| view.toggle_list(cx)))
+                    .into_any_element(),
+                ),
+            ),
         };
         let reader = {
             let path = docs.open.as_ref().map(|doc| doc.path.clone());
@@ -483,9 +493,8 @@ impl MarkdownView {
 
         let list = div()
             .size_full()
-            // The one hairline between the halves, on the divider: its grip
-            // draws a line only while it is dragged.
-            .border_r_1()
+            // A line down the tree's side facing the document; no fill.
+            .border_l_1()
             .border_color(cx.theme().border)
             .child(self.list(&root, cx));
         div()
@@ -494,6 +503,11 @@ impl MarkdownView {
             .child(
                 h_resizable("markdown-split")
                     .with_state(&self.split)
+                    .child(
+                        resizable_panel()
+                            .size_range(layout.detail.clone())
+                            .child(reader),
+                    )
                     .child(
                         // `flex_none`, as the rail's own panel is: the group
                         // sets `flex_grow: 1` on a panel, and a list that grows
@@ -506,8 +520,7 @@ impl MarkdownView {
                             .size_range(layout.range)
                             .flex_none()
                             .child(list),
-                    )
-                    .child(resizable_panel().child(reader)),
+                    ),
             )
             .into_any_element()
     }

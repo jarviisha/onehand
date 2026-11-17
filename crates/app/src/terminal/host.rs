@@ -248,10 +248,11 @@ impl TerminalPanel {
                 });
             },
         );
-        self.shells
-            .entry(home)
-            .or_default()
-            .push(tab, Some((conn, term)));
+        self.shells.entry(home).or_default().push(
+            tab,
+            Some((conn, term)),
+            cx.focus_handle().tab_stop(true),
+        );
         self.watch_running(cx);
         cx.notify();
     }

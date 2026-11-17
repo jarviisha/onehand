@@ -9,51 +9,49 @@ never cites this file.
 
 ## Title bar
 
-The library's `TitleBar`, its whole width a handle to move the window. At its start, the app's mark
-in its own colours and its name, *onehand*. Then the app's menus, *File*, *View*, *Go* and *Session*, lettered at the chrome size, each item a command the keymap holds, under the name
-the menu gives it and with the key the keymap binds: *File* holds *New session*, *Run a workflow on
-this project…*, *Save the open file* and *Open Settings*; *View* the rail's, the Workbench's and
-the terminal's toggles, *Open Editor*, *Open Markdown*, *Open Neovim*, maximizing the focused panel
-and its zoom; *Go* the search, the composer, Tasks, Schedules and stepping through sessions;
-*Session* *Restart the agent* and *Close the session*. A menu offers nothing no
-key reaches. Centred in the room left and narrowing with it, the search over session
-titles and project names, the library's edged field at `.short()` with its key's hint (`Ctrl+K`
-outside a terminal, showing a hidden rail); what it narrows is the rail's list, so typing into it
-shows a hidden rail too, a panel filling the window giving way as it does for the key, and a press in it selects words rather than moving the window. Toward its
-end, the terminal's and the Workbench's toggles, each an icon alone, its glyph in the
+The library's `TitleBar` on the window's fill with no line under it, its whole width a handle to
+move the window. At its start, a tile holding the workspace's initial on the accent fill,
+standing apart and not pressable (none for a name with no letter), then the workspace's name in
+medium weight and the content ink with a chevron (a name cut short said whole in its tooltip), a quiet button of its own at `.short()` and a tab stop of its own, which opens
+the workspace menu (the recent workspaces, *Open workspace…*, *New workspace…*) when pressed and
+on Enter; then the rail's toggle (a panel at the left, its glyph in the foreground ink while the
+rail is shown and in the muted ink while hidden, no fill at rest, its key in its tooltip,
+dispatching the command its key does). The window draws no menus of its own: every command is
+the keymap's, and the platform's own menu bar holds them where there is one. Centred in the room
+left and narrowing with it, the search over session titles and project names, the library's
+edged field at `.short()` with no fill of its own, its edge alone parting it from the bar, with
+its key's hint (`Ctrl+K` outside a terminal, showing a hidden rail); what it narrows is the
+rail's list, so typing into it shows a hidden rail too, a panel filling the window giving way as
+it does for the key, and a press in it selects words rather than moving the window. Toward its
+end, the terminal's and the Workbench's toggles, in that order, each an icon alone
+(a panel at the bottom and the right), its glyph in the
 foreground ink while what it shows is open and in the muted ink while closed, with no fill at rest,
 its key in its tooltip, and dispatching the command its key does;
 the terminal's carries an `info` dot while its dock is closed over a shell running a command. At
 its end, the window's minimize, maximize and close, drawn by the library where the
 app decorates the window; its close asks first what the compositor's close asks (a workflow
-being written). Nothing else.
-
-## Status bar
-
-The library's `StatusBar` along the window's foot. At its start the branch of the project on
-screen. Nothing else: a
-transient state is a toast.
+being written). Nothing else. Nothing runs along the window's foot: the branch stands under the
+composer, and a transient state is a toast.
 
 ## Rail
 
-App chrome outside the dock, so a layout restore cannot lose it, a hairline down its edge. Top to bottom: the workspace bar
-(one strip, the library's sidebar header, holding the letter tile, the name and a chevron, that
-opens the workspace menu wherever it is pressed and on Enter, a tab stop ringed as a row is while
-the keys are on it, on the hover fill a row takes and on it while the menu is open; then *Hide the
-rail*); *New* (secondary at `.tall()`, the whole row wide, the rail's only filled button), which starts in the keyboard's
-project, else the one on screen, its caret picking *Start in* or *With agent*; *Overview*, *Tasks*
+App chrome outside the dock, so a layout restore cannot lose it, on the window's fill with no edge
+of its own beside the boxes. Top to bottom: *New session*, a row as a page's (its plus mark, its
+words in semibold and the full ink, the key's hint at its end), which starts in the keyboard's
+project, else the one on screen, and whose menu (*Start in*, *With agent*) opens from a chevron at
+the row's end, shown on hover and on the keyboard's row, and on a right-click; *Overview*, *Tasks*
 (a pill counting tasks that need attention, none at zero), *Issues*, *Workflows* and *Schedules*,
-each filled while its page shows; *Sessions* with a warning-ink *N need attention* chip (shown above zero or
-while on, toggling that filter and back) and the filter menu (*By project*, *All sessions*, *Needs
-attention*, *Recent activity*) over a hairline; the scrolling list, ending on *Add project…* and,
-under it with no gap, *Add a project on a host…*, which opens the form naming the host and its
-folder there; a foot with *Settings*, a page row like the five above, filled while it shows. The
-rail is drawn as the
-library's sidebar draws its items: a row's name in the sidebar's ink and its second line muted, the
-row under the pointer on the sidebar's accent fill, and the one where the person is on the chosen
-fill, a step past it, in the content ink and at medium weight. The *Sessions* label is the small muted
-heading the library gives a group. A neutral badge
-stands on the page's fill.
+each filled while its page shows; *Sessions*, in semibold and the full ink, with a warning-ink *N
+need attention* chip (shown above zero or while on, toggling that filter and back), a search button
+that puts the keys in the title bar's search, as its key does, and the filter menu (*By project*,
+*All sessions*, *Needs attention*, *Recent activity*) over a hairline; the scrolling list, ending on
+*Add project…* and, under it with no gap, *Add a project on a host…*, which opens the form naming
+the host and its folder there; a foot with *Settings*, a page row like the five above, filled while
+it shows. The rail is drawn as the library's sidebar draws its items: a row's name in the sidebar's
+ink and its second line muted, the row under the pointer on the sidebar's accent fill, and the one
+where the person is on the chosen fill, a step past it, in the content ink. A row's weight is its
+kind's, chosen or not: a page row and a project row medium, a session's title regular, its second
+line regular in the muted ink at the meta size. A neutral badge stands on the page's fill.
 
 *By project* lists pinned projects first, a gap between projects. A project row: the fold chevron,
 folder and name, its git line (branch, uncommitted changes, commits ahead and behind, each only
@@ -102,47 +100,59 @@ attention; the mark's hover says *trying again* only while that is so, and the s
 elsewhere (a page naming the session, a folded project's badge) says *Not connected to its host*
 alone. `Ctrl+Shift+R` on a waiting one asks the host's restart question, as its *Restart now* does. `↑`/`↓` move the list's row, ringed while the keys move it, `Enter` and `←`/`→`
 act on it, `Alt+↑`/`↓` step through sessions in its order. The tree's order is the user's, set by
-dragging; pinned projects stay on top and sessions never leave their project. `Ctrl+Shift+B` hides
-the rail completely, never to an icon column. It resizes between a least and a most width (`PanelLayout::RAIL_MIN`,
-`RAIL_MAX`), on the side bar's surface.
+dragging; pinned projects stay on top and sessions never leave their project. `Ctrl+Shift+B`, and
+the title bar's toggle, hide the rail completely, never to an icon column. It resizes between a
+least and a most width (`PanelLayout::RAIL_MIN`, `RAIL_MAX`), on the window's fill.
 
-A worker of a lead in the window is listed under that lead, whatever project it runs in: set in
-once more than the lead's row, tied to it by a rule down from the lead's mark, in the order the
-lead opened them, never dragged. Its line names its agent, in a flat list too. Nesting is one
-level: a worker's own workers are rows of their own. The lead's row keeps its own state and age
-(and its place in *Recent activity*), so a lead never reads as failed for a worker that did, and
-after its state its line counts *N workers need you* (a worker needing input, failed or
-disconnected) in the warning ink. A lead and its workers are listed and capped as one: every view,
-a search included, lists the lead when it or one of its workers matches, and with it its whole
-tree, which the cap never cuts. The *Needs attention* filter and a folded project's badge read the
-most urgent state of the lead and its workers (by that order: lost, failed, needs input, running,
-done unread, then waiting for its host, the calmest), the badge on the lead's project only, and
-*N need attention* counts a worker waiting on the person; a session waiting for its host is never
-counted, since it moves on by itself. A worker whose lead is in another window is a row of its own.
-A worker stands for its lead's project: folding from its row folds that project, *New* beside a
-worker on screen starts in it, and closing the worker on screen shows its lead. Its
-row's menu reads *Restart the host service…* in place of *Restart the agent*. A host session's row
-menu ends on *End on <host>…*, in the danger ink, after *Close session*. A worktree project holding
-nothing but such workers is left out, and shows no row while one of them is on screen; closing the
-last session of a project added for a worker or a run alone takes that project with it. When the
-lead closes or is lost, its workers are listed again under their project.
+A worker of a lead in the window is listed under that lead, whatever project it runs in: set in once
+more than the lead's row, tied to it by a rule down from the lead's mark, in the order the lead
+opened them, never dragged. Its line names its agent, in a flat list too. Nesting is one level: a
+worker's own workers are rows of their own. The lead's row keeps its own state and age (and its
+place in *Recent activity*), so a lead never reads as failed for a worker that did, and after its
+state its line counts *N workers need you* (a worker needing input, failed or disconnected) in the
+warning ink. A lead and its workers are listed and capped as one: every view, a search included,
+lists the lead when it or one of its workers matches, and with it its whole tree, which the cap
+never cuts. The *Needs attention* filter and a folded project's badge read the most urgent state of
+the lead and its workers (by that order: lost, failed, needs input, running, done unread, then
+waiting for its host, the calmest), the badge on the lead's project only, and *N need attention*
+counts a worker waiting on the person; a session waiting for its host is never counted, since it
+moves on by itself. A worker whose lead is in another window is a row of its own. A worker stands
+for its lead's project: folding from its row folds that project, *New session* beside a worker on
+screen starts in it, and closing the worker on screen shows its lead. Its row's menu reads *Restart
+the host service…* in place of *Restart the agent*. A host session's row menu ends on *End on
+<host>…*, in the danger ink, after *Close session*. A worktree project holding nothing but such
+workers is left out, and shows no row while one of them is on screen; closing the last session of a
+project added for a worker or a run alone takes that project with it. When the lead closes or is
+lost, its workers are listed again under their project.
 
 ## Agent pane header
 
-Left to right: the show-rail button (only while the rail is hidden); the conversation's name, medium
-weight; a dots menu (*Rename…*, *Export as Markdown…*; *Resume in this session…*, refused mid-turn,
-and *Restart the agent*; *Delete conversation* in the danger tint, refused until the first turn
-ends, and on a host's session *End on <host>…* in the danger tint after it); a spacer; *N in background* (only while the session's agent has work running in the
-background: a menu of each item's name, its kind and how long it has run, each row stopping that
-one item and never the turn, 12 listed and then *N more*; when an item ends, the transcript keeps a
-notice of how and after how long: *Background work finished after 2m 14s: npm test*, an error when it
-failed, *interrupted* when the agent went away first); past conversations (not on a host session,
-whose conversations are not kept on this machine) and *Close session* (only while a session
-shows). The docks' toggles are the title bar's. On the overview, Tasks, Issues,
-Workflows, Schedules and Settings, which name themselves in their head, it carries no name; none of these has a dots menu. As the pane narrows, the name gives way
-first, down to a minimum. Without a session it carries no name, the page naming the project, but
-keeps the project's dots menu, holding the project's actions but *New session* and *Open
-terminal*, which the page and the header already offer.
+Left to right: the conversation's name, medium weight; a dots menu (*Rename…*, *Export as
+Markdown…*; *Resume in this session…*, refused mid-turn, and *Restart the agent*; *Delete
+conversation* in the danger tint, refused until the first turn ends, and on a host's session *End on
+<host>…* in the danger tint after it); a spacer; *N in background* (only while the session's agent
+has work running in the background: a menu of each item's name, its kind and how long it has run,
+each row stopping that one item and never the turn, 12 listed and then *N more*; when an item ends,
+the transcript keeps a notice of how and after how long: *Background work finished after 2m 14s: npm
+test*, an error when it failed, *interrupted* when the agent went away first); past conversations
+(not on a host session, whose conversations are not kept on this machine) and *Close session* (only
+while a session shows). The rail's and the docks' toggles are the title bar's. On the overview,
+Tasks, Issues, Workflows, Schedules and Settings, which name themselves in their head, it carries no
+name; none of these has a dots menu. As the pane narrows, the name gives way first, down to a
+minimum. Without a session it carries no name, the page naming the project, but keeps the project's
+dots menu, holding the project's actions but *New session* and *Open terminal*, which the page and
+the header already offer.
+
+## Empty session
+
+While a connected session's transcript holds nothing and nothing stands above the composer, the
+pane under the header holds a heading, *What are we building?*, semibold at the display size and
+centred, with the composer directly under it, the two centred together from top to bottom; the
+composer is itself, as wide and holding what it always does. The first item moves the composer to
+its foot under the transcript. The header stays as it is. While the session connects or failed
+to, and while a reconnect, the queue, staged files, a waiting card, a lead's strip or a worker's
+band stands above the composer, the pane draws as it does with a transcript. The heading names no
+one.
 
 ## A prompt's controls
 
@@ -158,7 +168,7 @@ are not rolled back. A fork that cannot open is a toast saying why, and its sess
 
 ## Subagent card
 
-Where the agent hands work to a subagent, the transcript draws a fold block, boxed as every
+Where the agent hands work to a subagent, the transcript draws a fold block, bare as every
 folding block is.
 Its head is a fold line with a state mark, the subagent's name and its state word (*done*,
 *failed*, *cancelled*, *interrupted*; a spinner while it works), and under it the first line of its
@@ -220,33 +230,60 @@ form; both are drawn as `docs/workflows.md` describes.
 
 ## Docks
 
-Bare panels on the dock surface, flush with their docks, each opening on its own tab bar; a
-hairline runs down the Workbench's edge beside the conversation and along the terminal's top
-under it. The terminal is drawn no taller than leaves the conversation a readable height (its
-dragged height kept).
+Each a region's box, as the agent pane is: the Workbench beside the conversation, the right half
+of the `DockArea`'s centre, and the terminal, the bottom dock, under the two across their whole
+width. Each opens on its own bar. The terminal is drawn no taller than leaves the conversation a
+readable height (its dragged height kept). Maximizing the Workbench gives it the conversation's
+room and leaves the terminal as it is.
 
-- Strips as tall as the header, a mode's own bar under the Workbench's a step lower. The
-  Workbench's, the terminal's and the Editor's files are the library's tab panel bars (`tab_bar`):
-  on the tab bar's fill with a line under, the tabs flush and parted by lines, the open one on the
-  tab's fill under a stroke of the primary along its top, its name in the content ink, the controls at the end. The
-  Workbench's: *← Conversation* while it has the area, the modes as tabs
-  (Editor, Markdown, Issues, Plugins only where a Claude Code agent is set up when the window
-  opens, Neovim; a select where the bar is too narrow for the tabs, `MODES_MIN_W`), maximize, hide. The terminal's:
-  shell tabs (each capped in width, scrolling, so none is left out, the chosen one brought into
-  view), `+`, maximize, hide. File tabs never shrink: the newest that fit stay, the current one
-  among them, and the older ones go into an *N more* menu after them.
+- Bars as tall as the header, a mode's own bar under the Workbench's a step lower. The
+  Workbench's, the terminal's and the Editor's, the `tab_bar`s the two draw, take one look: no
+  fill of their own and a line under the bar (the Editor's alone has none: the file fades out
+  under it), the tabs parted by space, not by lines, the open one a
+  rounded fill (`secondary`) with its name in the content ink, every tab, tree row and shell row
+  at the regular weight, the controls at the end.
+- The Workbench's: *← Conversation* while it has the area, the modes as tabs (Editor, Markdown,
+  Issues, Plugins only where a Claude Code agent is set up when the window opens, Neovim; a select
+  where the bar is too narrow for the tabs, `MODES_MIN_W`), maximize, hide.
+- The Editor's, on a bar of their own under the Workbench's: the link back to the tree while one
+  shows at a time, then the file open now and no tab per file: its name (capped, the whole path on
+  hover, the unsaved dot while it holds edits) with the picker's caret, dropping down the
+  project's file tree under it (a tree of its own beside the one in the panel, its own folds, the
+  open file picked, as tall as the tree up to a cap, then its own scroll), headed by a *Close
+  file* row, the one way to close the file. A file picked there opens and closes the dropdown, as
+  *Close file*, Escape and a press outside do. With no file open, nothing there. The other open
+  files are reached through either tree; there is no list of them. The tree's toggle ends the
+  bar, beside the tree it shows and hides. Under the bar, the file's top edge fades from the
+  box's fill to nothing, over the file, in place of a line.
+- Markdown's: the open document's name, then *Edit source*, then the documents list's toggle at
+  the bar's end, beside the list it shows and hides. While the list and the reader are one at a
+  time, the *Documents* link back stands at the bar's start instead of the toggle.
+- The terminal's: the open shell's name at its start, then `+`, maximize, hide. While the dock
+  holds more than one shell, a list of them runs down the box's right side beside the grid, at a
+  fixed width, neither dragged nor saved, parted from the grid by a line down its left edge: a row per shell, its terminal mark, its name (numbered,
+  capped, whole on hover), the live dot while it runs a command, and its close on hover and on
+  the keyboard's row, the chosen one on the open tab's fill and brought into view; 30 rows, then
+  *N more*. Each row is a tab stop: `↑`/`↓` step the rows, Delete closes one, and Enter or a
+  press picks it, the caret going into its grid. With one shell there is no list.
 - A list beside its detail (files, documents, issues) only while the dock holds both; else one at a
   time, the detail under a link back naming the list. Picking shows it; going back keeps it. Files
-  and Markdown draw one tree row (`tree_row`); the file or document open beside the tree is its
-  picked row, a changed file's letter in its state's ink at the row's end.
+  and Markdown draw one tree row (`tree_row`); the tree stands on the right of the file or
+  document it opens, parted from it by a line down its left edge, with no fill, and that file or
+  document is its picked row, a changed file's letter in its state's ink at the row's end.
 - A failed open or save in the Editor or Markdown is a toast; a file changed on disk, a Neovim that
   would not start and a listing that failed stand as a status line under the mode.
 - Plugins: the search and filters a filter bar; a row's actions on hover and on keyboard focus, its
-  ⋯ menu also on a right-click (refused while another change runs), its switch always; what runs and what waits on a restart under the list, so neither moves it.
-- The Issues tab: one filter bar over the list and the issue both, a faint line under it: the
-  search, the label picker, while the search or a label narrows the list *Clear filters*, and `+`
-  (*New issue*, primary, secondary while the form holds that) at the end, the filters wrapping
-  under the search when narrow; a filter picked while the issue shows alone shows the list. Over
+  ⋯ menu also on a right-click (refused while another change runs), its switch always; what runs
+  and what waits on a restart under the list, so neither moves it.
+- The Issues tab: one filter bar over the list and the issue both, as tall as the strip over it,
+  with a line under it: the search, a bare field with no clearing cross filling the bar's height
+  and framed by the bar's lines above and below, with no line between it and the label picker
+  (text running past its end fades into the filters, always standing at the field's end), the
+  filters centred in the bar, while the search or a label narrows the list *Clear filters*
+  (secondary, the one way to clear them), and *New issue* (its `+` and its word, primary,
+  secondary while the form holds that) at the end; when narrow the search shrinks to its floor, then the label picker
+  gives way (its name truncating), *New issue* keeps only its `+` (its name in its tooltip), and
+  the filters never wrap, so nothing in the bar is ever cut off; a filter picked while the issue shows alone shows the list. Over
   the rows, *Open* and *Closed* with their counts; *Showing N of M open issues* at the list's end
   while it is narrowed, *No issues match* when nothing is left. `↑`/`↓` step the list as on the
   Issues page (where the list shows alone, the first press opens the row picked); Esc closes the
@@ -459,5 +496,6 @@ fixed keys; a group says where its commands work, and a row says so only where i
 
 ## Persistence
 
-The layout is saved as the Workbench's dragged width, the terminal and rail sizes and whether each
-dock is open, never as the library's `DockAreaState`.
+The layout is saved as `PanelLayout`'s five fields alone: the Workbench's dragged width and
+whether it is open, the terminal's height and whether it is open, and the rail's width; never as
+the library's `DockAreaState`. The terminal's shell list keeps its fixed width and saves nothing.

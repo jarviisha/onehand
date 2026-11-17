@@ -67,6 +67,25 @@ minor bump may break any of them.
 
 ### The window
 
+- The agent pane, the Workbench and the terminal are each a box with a hairline edge and 6px
+  corners on the window's fill, parted by a gap. The Workbench now stands beside the conversation
+  rather than in the right dock, so the terminal runs under both. On the light palette the boxes
+  are white on a grey window.
+- The title bar opens on the workspace (its initial in a tile, then its name, which opens the
+  workspace menu) and the rail's toggle; the search no longer has a fill. Gone: onehand's mark
+  and name, the in-window File, View, Go and Session menus (every item was a key already), the
+  line under the bar, and the status bar along the foot.
+- The rail opens on a *New session* row with its key; its workspace bar and *Hide the rail* button
+  are gone, as is the conversation header's rail button.
+- An empty session greets with *What are we building?* over the composer, centred in the pane.
+- The Editor's bar shows the open file alone; its name opens the project's tree in a dropdown,
+  with *Close file* at its head. The Files and Markdown trees stand on the right of what they
+  open, their toggles at the bar's end; lists beside their detail are parted by a line.
+- The Issues tab's filter bar is as tall as the mode tabs, its search a bare field fading into the
+  filters, *Clear filters* filled and *New issue* worded (its `+` alone when the tab is narrow).
+- The terminal lists its shells down its right side when it holds more than one, each with its own
+  live dot; its top bar names the shell open.
+- Controls take 4px corners and containers 6px; badges are slimmer, still edged in their hue.
 - The conversation now sits on the deepest surface, and the rail, the Workbench, the terminal and the
   bars a step over it, the other way round from before: on the dark palette the conversation is
   `#181818` under `#1f1f1f` chrome, on the light one a pale grey under white.

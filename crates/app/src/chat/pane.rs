@@ -26,6 +26,7 @@ mod body;
 mod bridge;
 mod events;
 mod fork;
+mod greeting;
 mod header;
 pub(crate) use header::LIVE_DOT;
 pub(crate) use history::is_open;
@@ -133,6 +134,13 @@ struct OverlayRoom {
     /// Whether the composer stack is narrower than the strip under it can hold
     /// on one line, measured on the panel rather than the window.
     narrow_strip: bool,
+    /// Whether the session is connected, and how many transcript items it
+    /// holds: what the greeting is decided on, with what stands over the
+    /// composer.
+    connected: bool,
+    items: usize,
+    /// Where the composer rests above the well's foot while greeting.
+    greet_offset: gpui::Pixels,
 }
 
 /// The space between two ordinary blocks of one turn, and the step every other
@@ -213,13 +221,6 @@ impl ProjectFacts {
     }
 }
 
-/// Which of the window's docks are open.
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
-pub struct DocksOpen {
-    pub terminal: bool,
-    pub workbench: bool,
-}
-
 pub struct ChatPane {
     focus_handle: FocusHandle,
     /// Every session the user has opened, in whatever phase it has reached.
@@ -272,19 +273,13 @@ pub struct ChatPane {
     /// The conversation each session added off screen resumes, by its id,
     /// open from the moment it is added, whether or not it connected yet.
     resuming: HashMap<u64, String>,
-    /// Whether the window's rail is hidden, so this pane can offer the way
-    /// back.
-    ///
-    /// Pushed for the same reason, and read in the panel's toolbar: the rail is
-    /// the window's chrome and a dock panel has no handle on the window.
-    rail_hidden: bool,
     /// The session whose background menu is open, so its button stays drawn
     /// while its menu holds focus even after the last item ended: a trigger
     /// that leaves the frame with its menu takes focus with it, and the keymap.
     background_menu: std::cell::Cell<Option<u64>>,
-    /// Which docks are open, so their header buttons can show it. Pushed by
-    /// the shell, which owns the docks.
-    docks_open: DocksOpen,
+    /// Whether the pane is on screen: off while the Workbench takes the whole
+    /// centre. Its slot stays in the dock's tree either way.
+    shown: bool,
     /// The active project's branch and change count, as one line.
     ///
     /// Pushed by the shell like the two flags above, and for the same reason:
@@ -409,9 +404,8 @@ impl ChatPane {
                 reading: HashMap::new(),
                 held_dirs: HashMap::new(),
                 resuming: HashMap::new(),
-                rail_hidden: false,
                 background_menu: std::cell::Cell::new(None),
-                docks_open: DocksOpen::default(),
+                shown: true,
                 git: None,
                 composer_h: Default::default(),
                 composer_drawn: false,
@@ -487,15 +481,9 @@ impl ChatPane {
         cx.notify();
     }
 
-    /// Told by the shell when the rail comes and goes.
-    pub fn set_rail_hidden(&mut self, hidden: bool, cx: &mut Context<Self>) {
-        self.rail_hidden = hidden;
-        cx.notify();
-    }
-
     /// Told by the shell when a shell starts or dies on the active project.
     ///
-    /// **Guarded**, unlike the rail's flag: a terminal notifies once per chunk
+    /// **Guarded**: a terminal notifies once per chunk
     /// of whatever is printing into it, and the shell's own guard upstream is
     /// about its own repaint. Repainting the whole conversation on every line a
     /// build prints, to redraw a dot that has not moved, is the one thing this
@@ -540,12 +528,13 @@ impl ChatPane {
         cx.notify();
     }
 
-    /// Which docks are open.
-    pub fn set_docks_open(&mut self, open: DocksOpen, cx: &mut Context<Self>) {
-        if self.docks_open == open {
+    /// Put the pane on screen or take it off. Guarded: the shell pushes it
+    /// on paths that run whether or not anything changed.
+    pub fn set_shown(&mut self, shown: bool, cx: &mut Context<Self>) {
+        if self.shown == shown {
             return;
         }
-        self.docks_open = open;
+        self.shown = shown;
         cx.notify();
     }
 
@@ -608,6 +597,10 @@ impl ChatPane {
 impl Panel for ChatPane {
     fn panel_name(&self) -> &'static str {
         "AgentPane"
+    }
+
+    fn visible(&self, _: &App) -> bool {
+        self.shown
     }
 }
 

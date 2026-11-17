@@ -47,15 +47,16 @@ pub(super) fn chosen_fill(cx: &App) -> Hsla {
 }
 
 /// A page's row, the rail's and Settings' nav alike, as the library's sidebar
-/// draws an item: while its page shows, the chosen fill in the ink paired
-/// with it and at medium weight; otherwise the sidebar's ink at rest and the
-/// hover fill under the pointer.
+/// draws an item, at the medium weight a page row takes whether chosen or
+/// not: while its page shows, the chosen fill in the ink paired with it;
+/// otherwise the sidebar's ink at rest and the hover fill under the pointer.
+/// The fill alone says which is chosen, so a row's words never shift.
 pub(crate) fn page_fill<E: Styled + InteractiveElement>(row: E, on: bool, cx: &App) -> E {
+    let row = row.font_weight(gpui::FontWeight::MEDIUM);
     match on {
         true => row
             .bg(chosen_fill(cx))
-            .text_color(onehand_ui::chosen_ink(cx))
-            .font_weight(gpui::FontWeight::MEDIUM),
+            .text_color(onehand_ui::chosen_ink(cx)),
         false => {
             let hover = hover_fill(cx);
             row.hover(move |row| row.bg(hover))

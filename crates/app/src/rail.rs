@@ -1,10 +1,11 @@
 //! The navigation rail.
 //!
-//! Top to bottom: the workspace and its menu; *New*; the pages; the sessions
-//! under a filter; and a one-row foot with Settings. Only the list scrolls. It
-//! hides completely, never to an icon column. The search over sessions and
-//! projects narrows this list but stands in the title bar, so it is in reach
-//! whether the rail is shown or not.
+//! Top to bottom: *New session*; the pages; the sessions under a filter; and
+//! a one-row foot with Settings. Only the list scrolls. It hides completely,
+//! never to an icon column, and the title bar's toggle brings it back. The
+//! search over sessions and projects narrows this list but stands in the
+//! title bar, led by the workspace and its menu, so both are in reach whether
+//! the rail is shown or not.
 //!
 //! The list is the projects with their sessions, or under a flat filter the
 //! sessions alone with the project on each row. Every group lists a capped
@@ -23,7 +24,7 @@ use crate::shell::Shell;
 use crate::tokens::ROW_H;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, AppContext as _, ClickEvent, Context, Entity, FocusHandle, Focusable as _,
+    AnyElement, App, AppContext as _, Context, Entity, FocusHandle, Focusable as _,
     InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
     Styled, Subscription, Task, Window, div,
 };
@@ -32,19 +33,21 @@ use gpui_component::input::{InputEvent, InputState};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use model::{Filter, Item, Row};
-use onehand_ui::{Tint, badge, mark_slot};
+use onehand_ui::mark_slot;
 use std::path::PathBuf;
 
 mod model;
+mod pages;
 mod project;
 mod row;
 mod search;
 mod session;
 mod workspace;
 pub(crate) use model::needs_attention;
+use pages::rail_badge;
 pub use project::{pick_item, unattended_item};
 pub(crate) use row::page_fill;
-pub(crate) use search::search_field;
+pub(crate) use search::{search_field, workspace_control};
 pub(crate) use session::{session_label, signal_mark, status_icon, word_ink};
 pub(crate) use workspace::ellipsize_front;
 
@@ -79,12 +82,9 @@ pub(crate) struct RailState {
     search: Entity<InputState>,
     /// The list's own focus, so Enter and the arrows reach it and not a field.
     focus: FocusHandle,
-    /// The workspace strip's focus: a tab stop, so the keyboard reaches the
-    /// workspace menu as it reached the switcher the strip replaced.
-    workspace_focus: FocusHandle,
-    /// Whether the workspace menu is open, so the name's fade ends on the
-    /// fill the strip holds while it is, not on the rail's.
-    workspace_open: bool,
+    /// *New session*'s focus: a tab stop, so the keyboard reaches the
+    /// chevron that opens its menu.
+    new_focus: FocusHandle,
     _search: Subscription,
     /// Says every session's age again while the rail shows.
     _tick: Task<()>,
@@ -124,8 +124,7 @@ impl RailState {
             uncapped: Vec::new(),
             search,
             focus: cx.focus_handle(),
-            workspace_focus: cx.focus_handle().tab_stop(true),
-            workspace_open: false,
+            new_focus: cx.focus_handle().tab_stop(true),
             _search,
             _tick,
         }
@@ -146,12 +145,12 @@ impl RailState {
         self.uncapped.clear();
     }
 
-    /// Whether the caret is in the rail: its list or its workspace strip.
+    /// Whether the caret is in the rail: its list or *New session*.
     /// Whoever takes the rail off screen has to move it first, or the window
     /// is left pointing at an element no frame draws and no shortcut reaches.
     /// The search is in the title bar, drawn whether the rail is or not.
     pub(crate) fn holds_focus(&self, window: &Window, cx: &App) -> bool {
-        self.focus.contains_focused(window, cx) || self.workspace_focus.is_focused(window)
+        self.focus.contains_focused(window, cx) || self.new_focus.contains_focused(window, cx)
     }
 
     fn searching(&self, cx: &App) -> bool {
@@ -326,26 +325,24 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
         .bg(cx.theme().sidebar)
         .text_size(crate::tokens::CHROME_TEXT)
         .text_color(cx.theme().sidebar_foreground)
-        .child(workspace::workspace_bar(
-            window_state.workspace.name.clone().into(),
-            window_state.workspace.storage_dir.clone(),
-            shell.recents(cx),
-            state,
-            window,
-            cx,
-        ))
+        // The first of the rail's rows, a breath under the title bar's
+        // workspace so the two do not read as one block.
         .child(
             div()
-                .h_flex()
-                .items_center()
                 .flex_none()
-                .px_3()
-                .pt_1()
-                .pb_3()
-                .gap_2()
-                .child(workspace::new_button(shell, window_state, target, cx)),
+                .px_1p5()
+                .pt_3()
+                .pb_0p5()
+                .child(workspace::new_session_row(
+                    shell,
+                    window_state,
+                    target,
+                    &state.new_focus,
+                    window,
+                    cx,
+                )),
         )
-        .child(pages(shell, cx))
+        .child(pages::pages(shell, cx))
         .child(search::sessions_header(state, list.waiting, cx))
         .child(
             div()
@@ -372,151 +369,14 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
                 .min_h_0()
                 .overflow_y_scroll()
                 // With a row's own inset, a mark's slot is centred on the
-                // workspace tile's line.
+                // line the pages' marks stand on.
                 .px_1p5()
                 .pt_2()
                 .pb_3()
                 .gap_0p5()
                 .children(rows),
         )
-        .child(foot(shell, cx))
-}
-
-/// Overview, Tasks with how many tasks need a person, Issues, Workflows and
-/// Schedules.
-fn pages(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
-    let tasks = attention_pill(crate::task::attention(&shell.page_roots(), cx));
-    div()
-        .v_flex()
-        .flex_none()
-        .px_1p5()
-        .pb_3()
-        .gap_0p5()
-        .child(page_row(
-            ("rail-overview", "Overview"),
-            Icon::new(IconName::LayoutDashboard),
-            shell.workspace_shown(cx),
-            None,
-            (
-                "What is waiting, working and open across every project",
-                None,
-            ),
-            cx,
-            |shell, window, cx| shell.show_workspace(window, cx),
-        ))
-        .child(page_row(
-            ("rail-tasks", "Tasks"),
-            Icon::new(IconName::Inbox),
-            shell.tasks_shown(cx),
-            tasks,
-            (
-                "Every task, and what each needs",
-                Some(&crate::shell::ShowTasks),
-            ),
-            cx,
-            |shell, window, cx| shell.show_tasks(None, window, cx),
-        ))
-        .child(page_row(
-            ("rail-issues", "Issues"),
-            Icon::new(crate::icons::Icon::CircleDot),
-            shell.issues_shown(cx),
-            None,
-            (
-                "Every issue of every project, and where its work stands",
-                None,
-            ),
-            cx,
-            |shell, window, cx| shell.show_issues(window, cx),
-        ))
-        .child(page_row(
-            ("rail-workflows", "Workflows"),
-            Icon::new(IconName::Play),
-            shell.workflows_shown(cx),
-            None,
-            ("Every workflow, to run one or write one", None),
-            cx,
-            |shell, window, cx| shell.show_workflows(window, cx),
-        ))
-        .child(page_row(
-            ("rail-schedules", "Schedules"),
-            Icon::new(IconName::Calendar),
-            shell.schedules_shown(cx),
-            None,
-            (
-                "Every schedule, and when each runs next",
-                Some(&crate::shell::ShowSchedules),
-            ),
-            cx,
-            |shell, window, cx| shell.show_schedules(None, window, cx),
-        ))
-}
-
-/// A page's row, on the selected fill in full ink while its page shows.
-fn page_row<F: Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static>(
-    (id, label): (&'static str, &'static str),
-    icon: Icon,
-    on: bool,
-    count: Option<String>,
-    (tip, key): (&'static str, Option<&'static dyn gpui::Action>),
-    cx: &mut Context<Shell>,
-    go: F,
-) -> impl IntoElement + use<F> {
-    let row = div()
-        .id(id)
-        .h_flex()
-        .items_center()
-        .h(ROW_H)
-        .px_2()
-        .gap_2()
-        .rounded(cx.theme().radius)
-        .cursor_pointer();
-    page_fill(row, on, cx)
-        .tooltip(onehand_ui::tip(move |window, cx| {
-            let tip = Tooltip::new(tip);
-            match key {
-                Some(key) => tip.action(key, None),
-                None => tip,
-            }
-            .build(window, cx)
-        }))
-        .on_click(
-            cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| go(shell, window, cx)),
-        )
-        .child(mark_slot(icon.small()))
-        .child(div().flex_1().child(label))
-        .children(count.map(|n| badge(n, rail_badge(cx.theme().secondary_foreground, cx))))
-}
-
-/// A badge in the rail: sunk on the ramp's inset step, which stands off the
-/// rail's fill, its hovered row and its chosen row alike, in `ink`.
-fn rail_badge(ink: gpui::Hsla, cx: &App) -> Tint {
-    Tint {
-        fill: crate::theme::inset(cx),
-        ink,
-    }
-}
-
-/// What the Tasks row's pill reads for `n` tasks needing a person: nothing
-/// at zero, so a pill is always news.
-fn attention_pill(n: usize) -> Option<String> {
-    (n > 0).then(|| n.to_string())
-}
-
-/// The foot: Settings, a page like the four above the list and drawn as one,
-/// filled while it shows. Set off from the list by its place at the bottom.
-fn foot(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
-    div().flex_none().px_1p5().py_2().child(page_row(
-        ("rail-settings", "Settings"),
-        Icon::new(IconName::Settings),
-        shell.settings_shown(cx),
-        None,
-        (
-            "Appearance, the workspace, agents and connections",
-            Some(&crate::shell::OpenSettings),
-        ),
-        cx,
-        |shell, window, cx| shell.open_settings(window, cx),
-    ))
+        .child(pages::foot(shell, cx))
 }
 
 /// A muted line in the list where rows would be, on the axis their titles
@@ -622,7 +482,7 @@ gpui::actions!(
 );
 
 impl Shell {
-    /// Where *New* starts: the keyboard's project while the list has the
+    /// Where *New session* starts: the keyboard's project while the list has the
     /// keyboard, else the one on screen; a worker's is its lead's.
     fn rail_target(&self, list: &List, focused: bool) -> Option<usize> {
         let workspace = &self.workspace_window().workspace;

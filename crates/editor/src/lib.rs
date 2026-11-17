@@ -38,8 +38,8 @@ pub struct Mode {
 
 impl Mode {
     pub fn new(ask: Asker, cx: &mut App) -> Self {
-        let view = EditorView::new(cx);
         let files = onehand_files::Mode::new(ask, cx);
+        let view = EditorView::new(files.dropdown_view(), cx);
         let split = CodeView::new(files.view(), files.active_setter(), view.clone(), cx);
         Self { view, files, split }
     }

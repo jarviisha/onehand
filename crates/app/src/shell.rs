@@ -49,6 +49,7 @@ mod sessions;
 mod settings_page;
 pub(crate) use settings_page::apply_appearance;
 mod storage;
+mod workbench_slot;
 mod workers;
 mod workflows;
 pub use crate::instance::hold_or_forward;
@@ -242,8 +243,6 @@ pub struct Shell {
     keymap_editor: Entity<crate::keymap::Editor>,
     settings_view: Entity<crate::settings::SettingsView>,
     held_commands: std::collections::HashSet<&'static str>,
-    /// The app's menus, drawn in the title bar.
-    menu_bar: Entity<gpui_component::menu::AppMenuBar>,
     /// What closing the window asks first, from the compositor's close and the
     /// title bar's alike: `true` lets it close.
     close_guard: CloseGuard,
@@ -302,9 +301,9 @@ pub struct Shell {
     /// The workspace drive's wait for a burst of changes to end, while one
     /// is armed. Replaced by the next; the drive drops a wait it superseded.
     _pending_save: Option<gpui::Task<()>>,
-    /// The docks' open state as last saved, so opening or closing one
+    /// The docks' layout as last saved, so a change to it, and nothing else,
     /// schedules a save.
-    docks_saved: Option<crate::chat::DocksOpen>,
+    layout_saved: Option<onehand_core::config::PanelLayout>,
     /// Whether a shell of the active project is running a command, for the
     /// dot on the title bar's terminal toggle.
     terminal_live: bool,
@@ -327,6 +326,10 @@ pub struct Shell {
     /// a toast's own words cannot be read back off the window.
     #[cfg(test)]
     refused: Vec<&'static str>,
+    /// How many times this window asked for the workspace to be saved, for
+    /// a test: with no storage bound, the ask itself writes nothing.
+    #[cfg(test)]
+    saves_asked: usize,
     /// The rail's filter, search and keyboard row, which no launch keeps.
     rail: crate::rail::RailState,
     /// Whether each project's sessions are showing under it in the rail.
@@ -382,8 +385,8 @@ pub struct Shell {
     /// The centre panel, kept by handle so selecting a session in the rail can
     /// reach it. The dock owns its placement; the shell owns what it shows.
     chat: Entity<ChatPane>,
-    /// The right dock, kept for the same reason: switching roots swaps its
-    /// tabs and its tree.
+    /// The centre's right slot, kept for the same reason: switching roots
+    /// swaps its tabs and its tree.
     workbench: Entity<Workbench>,
     /// The bottom dock. Per-root shells, so it follows the selection too.
     terminal: Entity<TerminalPanel>,

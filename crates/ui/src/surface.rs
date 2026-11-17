@@ -4,7 +4,7 @@ use crate::tokens;
 use gpui::{App, Div, Hsla, Styled as _, div};
 use gpui_component::{ActiveTheme as _, StyledExt as _};
 
-/// A sunk box of machine text: full width, the muted fill, the theme's corner,
+/// A sunk box of machine text: full width, the muted fill, the large corner,
 /// the mono family at [`tokens::CODE_TEXT`], clipped so a long line cannot push
 /// the column wider. The caller sets the padding, which differs by what is in it.
 ///
@@ -17,17 +17,15 @@ pub fn well(cx: &App) -> Div {
         .w_full()
         .min_w_0()
         .overflow_hidden()
-        .rounded(theme.radius)
+        .rounded(theme.radius_lg)
         .bg(theme.muted)
         .font_family(theme.mono_font_family.clone())
         .text_size(tokens::CODE_TEXT)
 }
 
-/// The surface a dock draws on: the palette's panel step, one off the reading
-/// surface the conversation sits on, so a dock reads as a surface of its own
-/// beside the conversation rather than as a card inset in it. The rail stands
-/// on the same step, so the app writes it into the sidebar slot read here,
-/// with its contrast tested beside the rest of its ramp.
+/// The surface a dock draws on: the reading surface, as every region's box
+/// is, so the Workbench and the terminal read as boxes of the same kind as
+/// the conversation's, parted from it by the window's fill around them.
 ///
 /// Here rather than in the app for the reason [`action`](crate::action) is: the Neovim mode
 /// draws a terminal grid and has to hand it the surface it is sitting on, and
@@ -36,7 +34,25 @@ pub fn well(cx: &App) -> Div {
 /// second copy of this answer is visible as a rectangle of the wrong shade
 /// behind a running program.
 pub fn dock_surface(cx: &App) -> Hsla {
-    cx.theme().sidebar
+    cx.theme().background
+}
+
+/// A region's box: the agent pane, the Workbench, the terminal. Filling what
+/// it is given, on the reading surface, at the large corner, wrapped in the
+/// theme's hairline (`border`) so its edge holds where the two fills sit
+/// close: it stands on the window's fill and is parted from its
+/// neighbours by the gap around it ([`tokens::REGION_GAP`]). Clipped, so nothing inside paints
+/// past it; the clip is square, so what touches a corner leaves its own fill
+/// off.
+pub fn region(cx: &App) -> Div {
+    let theme = cx.theme();
+    div()
+        .size_full()
+        .bg(theme.background)
+        .rounded(theme.radius_lg)
+        .border_1()
+        .border_color(theme.border)
+        .overflow_hidden()
 }
 
 /// A vertical scrollbar at the app's weight: every scrolling region draws its
@@ -66,7 +82,26 @@ pub fn card_box(cx: &App) -> Div {
         .gap_2()
         .min_w_0()
         .p_3()
-        .rounded(cx.theme().radius)
+        .rounded(cx.theme().radius_lg)
         .border_1()
         .border_color(cx.theme().input)
+}
+
+/// The band over a field's trailing edge: nothing fading to the box's fill
+/// ([`dock_surface`]), [`tokens::BAR_FADE`] wide, drawn over the field and
+/// taking no room of its own, so text running past the field melts into what
+/// follows instead of being cut. The field's parent must be `relative`.
+pub fn end_fade(cx: &App) -> gpui::Div {
+    let surface = dock_surface(cx);
+    gpui::div()
+        .absolute()
+        .top_0()
+        .bottom_0()
+        .right_0()
+        .w(tokens::BAR_FADE)
+        .bg(gpui::linear_gradient(
+            90.,
+            gpui::linear_color_stop(surface.alpha(0.), 0.),
+            gpui::linear_color_stop(surface, 1.),
+        ))
 }

@@ -9,17 +9,22 @@ use gpui::{App, BoxShadow, Pixels, Rems, px, rems};
 use gpui_component::ActiveTheme as _;
 
 /// The height every bar along the top of a region shares: the conversation's
-/// header, the Workbench's mode strip, the rail's workspace bar and foot, and
-/// a page's column heads, so bars side by side line up across the window.
+/// header, the Workbench's mode strip and a page's column heads, so bars side
+/// by side line up across the window.
 /// A small control and a little room over and under it, as an editor's
 /// title bars stand: taller and the bars read as a band of their own.
 pub const BAR_H: Rems = rems(2.25);
 
-/// The mark saying which tab of a dock's bar is open: a stroke along its
-/// top, a step heavier than a line.
-pub const TAB_MARK: Rems = rems(0.125);
+/// The gap between the regions' boxes, and between them and the window's
+/// edge: the window's fill shows through it, which is all that parts one box
+/// from the next. A dock's or a split's grip sits in it.
+pub const REGION_GAP: Rems = rems(0.375);
 
-/// A mode's own bar, under the Workbench's strip: the editor's tabs, the
+/// How far a box's fill fades into or out of the content under a bar or past
+/// a field's end, in place of a line.
+pub const BAR_FADE: Rems = rems(0.75);
+
+/// A mode's own bar, under the Workbench's strip: the Editor's open file, the
 /// reader's bar. A step under [`BAR_H`], so the second bar reads as the
 /// mode's rather than as the panel's a second time; its controls keep their
 /// size and stand on it with a little room.
@@ -134,9 +139,18 @@ pub const PAGE_PROSE: Rems = rems(48.);
 pub const PAGE_WIDE: Rems = rems(64.);
 
 /// The widest the title bar's search grows: room for a session's title
-/// and the key that reaches it, centred between the menus and the dock
+/// and the key that reaches it, centred between the workspace and the dock
 /// toggles, and narrowing with the window.
 pub const TITLE_SEARCH_W: Rems = rems(24.);
+
+/// The workspace's letter tile in the title bar: a step under the short
+/// control it stands beside, so the two sit on one line.
+pub const WORKSPACE_TILE: Rems = rems(1.25);
+
+/// How wide the terminal's list of shells stands beside the grid: a name
+/// and its number with room for the live dot and the close. Fixed, neither
+/// dragged nor saved, since the list only ever holds short names.
+pub const SHELL_LIST_W: Rems = rems(10.);
 
 /// How wide a dialog that holds a form stands, its controls at a page
 /// form's height: one that starts a run says what the workflow does, where

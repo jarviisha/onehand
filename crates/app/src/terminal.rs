@@ -19,18 +19,19 @@
 
 mod host;
 mod lock;
+mod shells;
 
-use crate::controls::Named as _;
+pub(crate) use shells::{CloseShellRow, ShellRowDown, ShellRowUp};
+
 use crate::controls::Short as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, ParentElement, Render, ScrollHandle, SharedString, StatefulInteractiveElement,
-    Styled, Window, div,
+    IntoElement, ParentElement, Render, ScrollHandle, Styled, Window, div,
 };
 use gpui_base::dock::{Panel, PanelEvent};
+use gpui_component::StyledExt;
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::{IconName, StyledExt};
 use onehand_core::host::client::HostConn;
 use onehand_core::host::wire::HostTerm;
 use onehand_core::workspace::HostName;
@@ -63,15 +64,19 @@ struct Tab {
     shell: PtyTab,
     /// The host's terminal this tab shows, and the attach it is read over.
     on_host: Option<(HostConn, HostTerm)>,
+    /// The shell's row in the dock's list, a tab stop, so the keyboard can
+    /// stand on a row and its close shows there.
+    row: FocusHandle,
 }
 
 impl RootShells {
     /// Add `shell` as the newest tab, and select it.
-    fn push(&mut self, shell: PtyTab, on_host: Option<(HostConn, HostTerm)>) {
+    fn push(&mut self, shell: PtyTab, on_host: Option<(HostConn, HostTerm)>, row: FocusHandle) {
         self.tabs.push(Tab {
             id: self.next,
             shell,
             on_host,
+            row,
         });
         self.next += 1;
         self.active = self.tabs.len() - 1;
@@ -121,6 +126,14 @@ fn selection_after(active: usize, dropped: &[usize], left: usize) -> usize {
     (active - ahead).min(left.saturating_sub(1))
 }
 
+/// Whether the shells' busy state the watch last saw differs from `now`'s:
+/// any one shell starting or ending a command, or a shell gone or added.
+/// Pure so a test can pin the case the dock-wide answer misses, a second
+/// shell turning busy while the first already is.
+fn busy_changed(seen: &[(u64, bool)], now: &[(u64, bool)]) -> bool {
+    seen != now
+}
+
 /// Where the tab `id` is now in `ids`, if it is still there.
 ///
 /// Pure for the reason [`selection_after`] is: a closing question answered
@@ -149,17 +162,19 @@ pub struct TerminalPanel {
     /// that cannot see its own state draws the same icon in both — so pressing
     /// it to restore looks like pressing it to maximize again.
     maximized: bool,
-    /// What [`Self::running`] answered when the watch last looked, so the
-    /// watch notifies only when it flips.
-    running_seen: bool,
+    /// Each shell of the active set, by id, with whether a command was in
+    /// its foreground when the watch last looked, so the watch notifies
+    /// only when one of them changed: a row's dot is per shell, and the
+    /// dock-wide answer does not flip while another shell stays busy.
+    running_seen: Vec<(u64, bool)>,
     /// Whether the watch on [`Self::running`] is going: from the first shell
     /// opened until no project has one left.
     watching: bool,
     /// The folders here nothing may be typed into now, with why.
     locked: HashMap<PathBuf, String>,
-    /// The tab strip's scroll, and the project, tab and count it was last
-    /// scrolled for: a new or chosen shell is brought into view once, so
-    /// the strip stays where the pointer scrolled it until the next.
+    /// The shell list's scroll, and the project, shell and count it was
+    /// last scrolled for: a new or chosen shell is brought into view once,
+    /// so the list stays where the pointer scrolled it until the next.
     tab_scroll: ScrollHandle,
     tab_shown: Option<(Home, usize, usize)>,
 }
@@ -183,7 +198,7 @@ impl TerminalPanel {
             zoom: crate::zoom::Zoom::default(),
             terminal_theme: TerminalThemeKey::current(cx),
             maximized: false,
-            running_seen: false,
+            running_seen: Vec::new(),
             watching: false,
             tab_scroll: ScrollHandle::new(),
             tab_shown: None,
@@ -209,12 +224,12 @@ impl TerminalPanel {
                 let go_on = panel.update(cx, |panel: &mut Self, cx| {
                     if panel.shells.values().all(|set| set.tabs.is_empty()) {
                         panel.watching = false;
-                        panel.running_seen = false;
+                        panel.running_seen.clear();
                         return false;
                     }
-                    let running = panel.running();
-                    if running != panel.running_seen {
-                        panel.running_seen = running;
+                    let busy = panel.busy_shells();
+                    if busy_changed(&panel.running_seen, &busy) {
+                        panel.running_seen = busy;
                         cx.notify();
                     }
                     true
@@ -318,7 +333,11 @@ impl TerminalPanel {
         let had_tabs = self.has_shell();
         match spawned {
             Ok(shell) => {
-                self.shells.entry(home).or_default().push(shell, None);
+                self.shells.entry(home).or_default().push(
+                    shell,
+                    None,
+                    cx.focus_handle().tab_stop(true),
+                );
                 self.apply_locks();
                 self.status = None;
                 self.watch_running(cx);
@@ -511,8 +530,18 @@ impl TerminalPanel {
     /// build, a server, an editor. A shell idle at its prompt is not running
     /// anything, and one whose system will not say is not counted either.
     pub fn running(&self) -> bool {
-        self.active_set()
-            .is_some_and(|set| set.tabs.iter().any(|tab| tab.shell.busy() == Some(true)))
+        self.busy_shells().iter().any(|&(_, busy)| busy)
+    }
+
+    /// Each shell of the active root by id, with whether a command is in its
+    /// foreground; one whose system will not say counts as not.
+    fn busy_shells(&self) -> Vec<(u64, bool)> {
+        self.active_set().map_or_else(Vec::new, |set| {
+            set.tabs
+                .iter()
+                .map(|tab| (tab.id, tab.shell.busy() == Some(true)))
+                .collect()
+        })
     }
 
     /// Focus the active shell, not the panel: the point of reaching for the
@@ -584,14 +613,11 @@ impl Render for TerminalPanel {
         self.sync_theme(cx);
         div()
             .size_full()
-            // Flush with its dock, as the Workbench is with its own: the
-            // dock's line along its top parts it from the conversation, and
-            // its tab bar runs the panel's whole width.
+            // Filling its dock's box, which paints the surface: the grid is
+            // handed the same one as its background, so a shell is the panel
+            // rather than a plate laid on it.
             .v_flex()
             .overflow_hidden()
-            // The grid is handed the same surface as its background, so a
-            // shell is the panel rather than a plate laid on it.
-            .bg(crate::theme::dock_surface(cx))
             // Tracked here because this panel is mounted bare. A `TabPanel` calls
             // `track_focus` on the panel it holds, which is what normally puts
             // that handle in the focus tree; without a tab group nothing does,
@@ -634,167 +660,42 @@ impl TerminalPanel {
         let body = set
             .and_then(|set| set.tabs.get(active))
             .map(|tab| tab.shell.view().clone());
-        // A tab is named by the PTY's program alone, which is the same word for
-        // every tab a root has open, so three shells came out three tabs
-        // reading `zsh`. **Numbered, and only where there is more than one**: a
-        // lone tab has nothing to be told apart from and `zsh 1` beside no
-        // `zsh 2` is a question about where the rest went.
-        //
-        // Not the project, which was tried and is the same word on every tab
-        // for a stronger reason than the shell is -- this panel draws one
-        // root's tabs and only ever that root's, so the part of the name
-        // carrying the project was constant by construction, repeated on every
-        // tab, and first in line to be cut by the width cap. Which project the
-        // terminal is on is the project the whole window is on.
-        //
-        // Composed here and not in `PtyTab::label`, which the Neovim mode also
-        // reads: that mode has one grid and no strip, so a name built to
-        // separate siblings would be a name with nothing to separate it from.
         let empty = body.is_none();
         let tabs = set.map_or(&[][..], |set| set.tabs.as_slice());
-        let labels: Vec<SharedString> = tabs
+        let facts: Vec<_> = tabs
             .iter()
-            .enumerate()
-            .map(|(i, tab)| match tabs.len() {
-                1 => tab.shell.label(),
-                _ => SharedString::from(format!("{} {}", tab.shell.label(), i + 1)),
-            })
+            .map(|tab| (tab.shell.label(), tab.shell.busy()))
             .collect();
+        let rows = shells::shell_rows(&facts, active);
+        let name = rows.get(active).map(|row| row.name.clone());
+        let focus: Vec<FocusHandle> = tabs.iter().map(|tab| tab.row.clone()).collect();
+        let list = shells::lists_shells(rows.len()).then(|| self.shell_list(rows, focus, cx));
 
         div()
             .size_full()
             .v_flex()
-            .child(
-                // The library's tab panel bar: the shells as its tabs, the
-                // chosen one on the tab's fill under the primary's stroke.
-                onehand_ui::tab_bar(cx)
-                    .id("terminal-tabs")
-                    // The tabs live in a box of their own that scrolls sideways,
-                    // and that box is what gives way, so `+` and the controls at
-                    // the end stay on screen at any count.
-                    .child(
-                        div()
-                            .id("terminal-tab-list")
-                            .track_scroll(&self.tab_scroll)
-                            .h_flex()
-                            .flex_1()
-                            .min_w_0()
-                            .overflow_x_scroll()
-                            .children(labels.into_iter().enumerate().map(|(i, label)| {
-                                onehand_ui::panel_tab(
-                                    ("terminal-tab", i),
-                                    label.clone(),
-                                    label,
-                                    i == active,
-                                    cx,
-                                )
-                                .max_w(onehand_ui::TAB_MAX_W)
-                                .on_click(cx.listener(move |panel: &mut Self, _, _, cx| {
-                                    panel.select_tab(i, cx);
-                                }))
-                                // Inside the tab, so `stop_propagation` is what
-                                // keeps the press that closes a shell from also
-                                // selecting the one it closed.
-                                .child(
-                                    onehand_ui::tab_close(
-                                        ("close-shell", i),
-                                        "Close this shell",
-                                        cx,
-                                    )
-                                    .on_click(cx.listener(
-                                        move |panel: &mut Self,
-                                              _,
-                                              window: &mut Window,
-                                              cx: &mut Context<Self>| {
-                                            cx.stop_propagation();
-                                            panel.close_tab(i, window, cx);
-                                        },
-                                    )),
-                                )
-                            })),
-                    )
-                    // Muted, like the conversation header's own controls: a
-                    // ghost button in full ink would be the brightest thing in
-                    // the panel. The hover fill brings it back on the one about
-                    // to be pressed.
-                    .child(
-                        div().h_flex().items_center().px_1().child(
-                            onehand_ui::strip_control("add-shell", IconName::Plus, false, cx)
-                                .named("New shell in this project")
-                                .on_click(cx.listener(|panel: &mut Self, _, window, cx| {
-                                    panel.open_shell(window, cx);
-                                })),
-                        ),
-                    )
-                    .child(
-                        div()
-                            .h_flex()
-                            .items_center()
-                            .gap_1()
-                            // The icon is the state, not the action: the one situation
-                            // where it matters is the panel filling the frame and the
-                            // user looking for the way back.
-                            .child({
-                                let full = self.maximized;
-                                onehand_ui::strip_control(
-                                    "maximize-terminal",
-                                    match full {
-                                        true => IconName::Minimize,
-                                        false => IconName::Maximize,
-                                    },
-                                    false,
-                                    cx,
-                                )
-                                .named_with_action(
-                                    match full {
-                                        true => "Back to the dock",
-                                        false => "Fill the window",
-                                    },
-                                    &crate::shell::ToggleMaximize,
-                                    None,
-                                )
-                                .on_click(cx.listener(
-                                    |_: &mut Self, _, _, cx| {
-                                        cx.emit(TerminalPanelEvent::ToggleMaximize);
-                                    },
-                                ))
-                            })
-                            // A minus, as the Workbench's: the shells are not being
-                            // ended, which the cross on every tab is for. `Minus` and
-                            // never `Dash`, whose stroke is written as literal black and
-                            // ignores `text_color`.
-                            .child(
-                                onehand_ui::strip_control(
-                                    "hide-terminal",
-                                    IconName::Minus,
-                                    false,
-                                    cx,
-                                )
-                                .named_with_action(
-                                    "Hide the terminal",
-                                    &crate::shell::ToggleTerminal,
-                                    None,
-                                )
-                                .on_click(cx.listener(
-                                    |_: &mut Self, _, _, cx| {
-                                        cx.emit(TerminalPanelEvent::Hide);
-                                    },
-                                )),
-                            ),
-                    ),
-            )
+            .child(self.top_bar(name, cx))
             .children(body.map(|view| {
                 div()
                     .flex_1()
                     .min_h_0()
-                    // The grid draws from its own top-left corner outward, so
-                    // without an inset the first column sits against the dock's
-                    // edge. The view measures its own bounds and reports the
-                    // cell count back through the PTY resize, so this costs the
-                    // shell a column and a row rather than painting over them.
-                    .px_3()
-                    .py_2()
-                    .child(view)
+                    .h_flex()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            // The grid draws from its own top-left corner
+                            // outward, so without an inset the first column
+                            // sits against the dock's edge. The view measures
+                            // its own bounds and reports the cell count back
+                            // through the PTY resize, so this costs the shell
+                            // a column and a row rather than painting over them.
+                            .px_3()
+                            .py_2()
+                            .child(view),
+                    )
+                    .children(list)
                     .into_any_element()
             }))
             .children(self.locked_line(cx))

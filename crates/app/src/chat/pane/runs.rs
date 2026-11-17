@@ -526,7 +526,7 @@ fn record_segment(
     cx: &App,
 ) -> gpui::AnyElement {
     use gpui_component::ActiveTheme as _;
-    let radius = cx.theme().radius;
+    let radius = cx.theme().radius_lg;
     div()
         .w_full()
         .min_w_0()

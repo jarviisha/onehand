@@ -1,9 +1,9 @@
 //! The app's splits and dock edges: a seam that draws nothing until it is held.
 //!
-//! Every seam a split or a dock edge sits on is already marked by the panels
-//! either side of it -- a line down the rail's or the Workbench's edge, or the
-//! terminal's edged block -- so a resting line there would be a second edge
-//! beside the first. Pointing
+//! Every seam a split or a dock edge sits on is already marked by what is
+//! either side of it -- the gap between two boxes, or the fill a tree stands
+//! on -- so a resting line there would be a second edge beside the first.
+//! Pointing
 //! at one draws nothing either: the cursor already says it can be dragged.
 //! Only while it is pressed or dragged is the seam the thing being looked at,
 //! and then it is one line in the focus colour, as a dragged panel's edge is.
@@ -12,8 +12,7 @@
 //! painted inside it.
 
 use gpui::{
-    AnyElement, Axis, ElementId, IntoElement, Pixels, Render, Styled as _, div,
-    prelude::FluentBuilder as _, px,
+    Axis, ElementId, IntoElement, Pixels, Render, Styled as _, div, prelude::FluentBuilder as _, px,
 };
 use gpui_base::{
     HandleEdge, ResizablePanelGroup, ResizeHandle, ResizeHandleContext, ResizeHandleRenderer,
@@ -47,13 +46,14 @@ pub fn edge_handle<T: 'static, E: 'static + Render>(
 }
 
 fn seam() -> ResizeHandleRenderer {
-    Rc::new(|handle, _, cx| Some(seam_line(handle, cx.theme().ring)))
+    Rc::new(|handle, _, cx| Some(seam_line(handle, cx.theme().ring).into_any_element()))
 }
 
 /// The painted part of a handle: nothing at rest or under the pointer, the
 /// line while held. Never `None`, which would put the library's own resting
-/// line back.
-fn seam_line(handle: &ResizeHandleContext, ink: gpui::Hsla) -> AnyElement {
+/// line back. Public for a skin that draws a handle's line somewhere else in
+/// its band (the dock area, down the middle of the gap between boxes).
+pub fn seam_line(handle: &ResizeHandleContext, ink: gpui::Hsla) -> gpui::Div {
     div()
         .flex_none()
         .map(|line| match handle.axis() {
@@ -61,5 +61,4 @@ fn seam_line(handle: &ResizeHandleContext, ink: gpui::Hsla) -> AnyElement {
             Axis::Vertical => line.w_full().h(SEAM_LINE),
         })
         .when(handle.is_active(), |line| line.bg(ink))
-        .into_any_element()
 }

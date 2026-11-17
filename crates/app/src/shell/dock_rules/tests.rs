@@ -40,29 +40,20 @@ fn a_forgotten_root_arrives_closed() {
 #[test]
 fn the_terminal_key_opens_an_empty_dock_rather_than_closing_it() {
     use TerminalPress::*;
-    assert_eq!(terminal_press(true, false, false, false), Nothing);
-    assert_eq!(terminal_press(false, false, true, true), Close);
-    assert_eq!(
-        terminal_press(false, false, true, false),
-        Open {
-            step_aside: false,
-            spawn: true
-        }
-    );
-    assert_eq!(
-        terminal_press(false, true, true, true),
-        Open {
-            step_aside: true,
-            spawn: false
-        }
-    );
-    assert_eq!(
-        terminal_press(false, false, false, true),
-        Open {
-            step_aside: false,
-            spawn: false
-        }
-    );
+    assert_eq!(terminal_press(true, false, false), Nothing);
+    assert_eq!(terminal_press(false, true, true), Close);
+    assert_eq!(terminal_press(false, true, false), Open { spawn: true });
+    assert_eq!(terminal_press(false, false, true), Open { spawn: false });
+}
+
+/// The terminal spans the conversation and the Workbench, so a Workbench
+/// filling the area hides no terminal: the key toggles it as in a split, and
+/// nothing in the press reads the Workbench at all.
+#[test]
+fn the_terminal_key_toggles_under_a_workbench_that_fills_the_area() {
+    use TerminalPress::*;
+    assert_eq!(terminal_press(false, true, true), Close);
+    assert_eq!(terminal_press(false, false, true), Open { spawn: false });
 }
 
 /// **A panel that is not on screen is not the one a panel command means.**

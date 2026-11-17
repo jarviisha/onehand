@@ -26,7 +26,7 @@ Slot names that mislead (the library's names, kept because its own controls read
 | `button_secondary`, `button_secondary_foreground` | the secondary button's own fill at rest (its pointed-at step under the pointer or pressed) and its ink |
 | `primary` | the primary action, the one blue; its word in `primary_foreground` |
 | `danger`, `warning`, `success` | fills with white on them; their text is `status_ink(cx)` |
-| `sidebar` | the rail's fill, the docks' too, read for a dock through `dock_surface(cx)` |
+| `sidebar` | the window's fill: the title bar, the rail, and the gaps between the boxes |
 | `sidebar_accent` | the rail's hovered row |
 | `list_active` | the library's own chosen list row, set to the selected grey |
 
@@ -36,11 +36,11 @@ Helpers:
 |---|---|---|
 | `status_ink(cx).danger`, `.warning`, `.success`, `.closed` | status text and marks; `closed` for what is over and settled (a closed issue) | `crates/ui/src/ink.rs`; the app says `crate::theme::status_ink` |
 | `tint(base, cx)` | a label's `Tint { fill, ink }` by its hue | `crates/ui/src/ink.rs` |
-| `dock_surface(cx)` | the Workbench's and the terminal's surface | `crates/ui/src/surface.rs` |
+| `dock_surface(cx)` | the Workbench's and the terminal's surface: the reading surface (`background`), as every box is | `crates/ui/src/surface.rs` |
 | `badge_edge(tint)` | a badge's edge: halfway from its `Tint`'s fill to its ink | `crates/ui/src/badge.rs` |
 | `chosen_fill(cx)`, `chosen_ink(cx)` | the item chosen among several: the selected grey (`accent`), a step past the hover step, and its name's ink, the content ink | `crates/ui/src/ink.rs` |
 | `control_fill(cx)` | a ghost control's fill hovered, pressed or chosen; between `list_hover` and `accent` | `crates/ui/src/ink.rs` |
-| `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: a list page's line over its foot, and the Issues tab's filter bar's line | `crates/ui/src/ink.rs` |
+| `faint_rule(cx)` | a hairline a step fainter, halfway to the surface: a list page's line over its foot | `crates/ui/src/ink.rs` |
 | `meta_ink(cx)` | the middle ink: a detail beside a name, between prose and muted | `crates/ui/src/ink.rs`; the app says `crate::theme::meta_ink` |
 | `middle_ink(full, meta)` | the same step under another full ink: on a fill, under that fill's paired ink | `crates/ui/src/ink.rs` |
 | `hue_ink(base, cx)` | a hue tempered for ink: code inside prose | `crates/app/src/theme.rs` |
@@ -64,7 +64,7 @@ Text on a fill takes the ink paired with it:
 | `primary`, a solid `danger` | `primary_foreground`, `danger_foreground`, set by the button's variant |
 | `button_secondary`; a `quiet` ghost | `button_secondary_foreground`; `secondary_foreground`, set by the builder |
 | a ghost's hover or selected fill, under an icon alone (`quiet_icon`) | `secondary_foreground`, as at rest |
-| none, a title bar dock toggle (`panel_toggle`) | its glyph `foreground` while its dock is open, `muted_foreground` while closed |
+| none, a title bar region toggle (`panel_toggle`: the rail's, the terminal's, the Workbench's) | its glyph `foreground` while its dock is open, `muted_foreground` while closed |
 | `chosen_fill(cx)`, the chosen row, the rail's too | `chosen_ink(cx)`; a quieter ink `middle_ink(chosen_ink(cx), muted_foreground)` |
 | `accent`, the row the keys are on in a popup | `accent_foreground` |
 | `muted` (a well, the prompt bubble) | the neutral inks, as on the surface: a neutral fill, not a paired one |
@@ -90,6 +90,12 @@ are not steps and stay allowed. A named spacing constant (`BLOCK_GAP`, `TIGHT_GA
 | `6` | 1.5 | 24 |
 | `8` | 2 | 32 |
 
+`tokens::REGION_GAP` is the `1p5` step: the gap between the regions' boxes, and between them and
+the window's edge, through which the window's fill shows.
+
+The boxes themselves take a 1px `border` hairline. Inside one, a strip has a 1px `border` line
+under it and a list beside its detail one down its side facing the detail.
+
 ## Type
 
 | Write | rem | px |
@@ -112,15 +118,24 @@ are not steps and stay allowed. A named spacing constant (`BLOCK_GAP`, `TIGHT_GA
 
 | Write | px |
 |---|---|
-| `cx.theme().radius` | 6, the library's |
-| `cx.theme().radius_lg` | 8, the library's: large surfaces |
+| `cx.theme().radius` | 4: a control (a button, a field, a menu or rail row, a tree row, a tab, a chip, a badge, a choosable item's fill, the workspace's letter tile) |
+| `cx.theme().radius_lg` | 6: a container (a card, a box, a well, the composer and a pinned card, a strip over the composer, a popup, a floating panel, a Settings group, a region's box) |
 | `.rounded_full()` | a dot, a status mark |
 
-The theme leaves both at the library's values, so its tooltips, menus, popovers, dialogs and
-toasts take them. What the library draws at half its corner (`radius_tokens().sm`: checkboxes,
-`Kbd`, its tabs) comes out at 3px and is left to it. A button
-(`action`, `ButtonRounded::Medium`) and a text field (`text_input`, `search_input`, `text_area`)
-set `radius` where they are built; a `Tag` keeps the library's corner through `badge`.
+What a person presses is `radius`; what wraps a block of information or holds several actions
+is `radius_lg`, a step rounder, so a container never looks sharper than what it holds.
+A region's box (the agent pane, the Workbench, the terminal) is `radius_lg` on `background`, in
+a `border` hairline, standing on the window's fill (`sidebar`); a dock's open tab is `radius` on
+`secondary`.
+
+The theme sets both on its configs (`theme::install`). The library's dialogs, toasts and
+command palette read `radius_lg` and land at 6px. Its tooltips, popup menus, select and
+completion lists and popovers read `radius` and land at 4px; a popover the app builds with its
+own appearance (the file tree's dropdown) sets `radius_lg` on it, and the rest are left to the
+library. What the library draws at half its corner (`radius_tokens().sm`: checkboxes, `Kbd`, a
+small menu row, its tabs) comes out at 2px and is left to it. A button (`action`,
+`ButtonRounded::Medium`) and a text field (`text_input`, `search_input`, `text_area`) set
+`radius` where they are built; a `Tag` reads `radius` itself at the size `badge` leaves it.
 
 ## Elevation
 
@@ -157,7 +172,7 @@ Components that keep geometry of their own, centred in their row rather than siz
 
 | Component | Geometry |
 |---|---|
-| `Tag` at its default size through `badge` | words 12 at 1.25, inset 10 × 4; its height follows its line |
+| `Tag` through `badge` | words 11 (`MICRO_TEXT`) at 1.25 and medium weight, inset 6 × 0, edged in `badge_edge`; its height follows its line |
 | `Checkbox` | box 12 / 14 / 16 at `.xsmall()` / `.small()` / default; its label 12 / 14 / 16 |
 | `Switch` | track 28 × 16 **px** at `.xsmall()` and `.small()`, 36 × 20 **px** at the default; thumb 12 / 16 **px** |
 | `Kbd` | words 12, inset 4 × 2 |
@@ -171,7 +186,6 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 | Token | Value | What |
 |---|---|---|
 | `BAR_H` | 2.25rem | every strip along the top of a region: 36px, so a small control stands centred on whole pixels |
-| `TAB_MARK` | 0.125rem | the stroke along the top of a dock's open tab |
 | `MODE_BAR_H` | 1.875rem | a mode's own bar under the Workbench's strip (the editor's tabs, the reader's bar) |
 | `ROW_H` | 1.75rem | a list row (the rail, the composer's popup): 28px |
 | `TREE_ROW_H` | 1.625rem | a Workbench tree's row pitch (Files, Markdown) |
@@ -181,14 +195,17 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 | `FIELD_H` | 1.75rem | the tallest control, a step over `.short()`: a page's head and form (`.tall()`); nothing stands taller |
 | `SCROLLBAR_THUMB`, `SCROLLBAR_THUMB_ACTIVE` | 4px, 6px | a scrollbar's thumb at rest, and hovered or dragged |
 | `CHROME_TEXT` | 0.8125rem | chrome text: a panel's rows, boxes, forms and strips, a `.tall()` control's words, a document's reading text |
-| `MICRO_TEXT` | 0.6875rem | a caption inside a small object: an attachment's plate |
+| `MICRO_TEXT` | 0.6875rem | a caption inside a small object (an attachment's plate), a badge's words |
 | `CODE_TEXT` | 0.75rem | machine text |
 | `LEADING` | 1.6 | reading text |
 | `LEADING_TIGHT` | 1.4 | a wrapped title |
 | `PAGE_NARROW` | 35rem | a one-column page |
 | `PAGE_PROSE` | 48rem | an editor, or one thing read in full |
 | `PAGE_WIDE` | 64rem | boxes side by side, a table |
+| `BAR_FADE` | 0.75rem | how far a box's fill fades over the content under a bar (the Editor's) or past a field's end (`end_fade`), in place of a line |
 | `TITLE_SEARCH_W` | 24rem | the widest the title bar's search grows |
+| `WORKSPACE_TILE` | 1.25rem | the workspace's letter tile in the title bar |
+| `SHELL_LIST_W` | 10rem | the terminal's list of shells beside the grid, fixed: neither dragged nor saved |
 | `DIALOG_FORM` | 40rem | a dialog that holds a form (the agent form, one that starts a run), its controls `.tall()`, never wider than the window less its margins |
 | `ROW_INSET` | 1rem | where a tree row's content starts from a dock's edge (Files, Markdown), and a Workbench bar's words |
 | `ROW_GUTTER` | 0.5rem | how far a tree row's fill stands off the dock's side edges, inside `ROW_INSET` |

@@ -11,7 +11,7 @@ use onehand_core::host::client::HostConn;
 /// The view in a window of its own.
 fn mounted(cx: &mut TestAppContext) -> (Entity<EditorView>, gpui::WindowHandle<Root>) {
     cx.update(gpui_component::init);
-    let view = cx.update(EditorView::new);
+    let view = cx.update(|cx| EditorView::new(cx.new(|_| gpui::EmptyView).into(), cx));
     let window = cx.add_window({
         let view = view.clone();
         |window, cx| Root::new(view, window, cx)
@@ -167,6 +167,26 @@ fn an_open_reads_once_and_builds_one_buffer(cx: &mut TestAppContext) {
         assert_eq!(state.read(cx).text().to_string(), "theirs");
         assert_eq!(view.drive.opening(), None);
     });
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+/// A file opened while the tree's dropdown is open, from it or from anywhere,
+/// closes the dropdown.
+#[gpui::test]
+fn a_file_opened_closes_the_trees_dropdown(cx: &mut TestAppContext) {
+    let (root, file) = folder("pick");
+    let (view, window) = mounted(cx);
+    window
+        .update(cx, |_, window, cx| {
+            view.update(cx, |view, cx| {
+                view.set_root(&root, &Disk::Local, cx);
+                view.set_picking(true, cx);
+                assert!(view.open(&file, window, cx));
+                assert!(!view.picking);
+            })
+        })
+        .unwrap();
+    cx.run_until_parked();
     std::fs::remove_dir_all(&root).unwrap();
 }
 

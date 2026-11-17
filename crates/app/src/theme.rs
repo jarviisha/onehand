@@ -45,8 +45,10 @@ pub(crate) use onehand_ui::meta_ink;
 ///
 /// **The configs, not the theme.** Choosing a mode applies a whole config, so
 /// a family or a colour set only on the theme would last until the first
-/// switch. Corners are the library's: its configs leave `radius` and
-/// `radius.lg` unset, so they stay at its own 6 and 8.
+/// switch. **Corners by role**: `radius`, 4, is a control's (a button, a
+/// field, a row, a tab) and `radius_lg`, 6, a container's (a card, a box, a
+/// region, a dialog), a step rounder so what holds controls never looks
+/// sharper than they are. The library's configs leave both unset at 6 and 8.
 ///
 /// Runs at boot, before a mode is chosen, because choosing one applies whichever
 /// of these two configs the mode names.
@@ -58,6 +60,7 @@ pub(crate) fn install(cx: &mut App) {
     light.name = "onehand Light".into();
     dark.name = "onehand Dark".into();
     for config in [&mut light, &mut dark] {
+        corners(config);
         config.font_family = Some(crate::fonts::UI_FAMILY.into());
         config.mono_font_family = Some(crate::fonts::MONO_FAMILY.into());
     }
@@ -67,6 +70,12 @@ pub(crate) fn install(cx: &mut App) {
     let theme = Theme::global_mut(cx);
     theme.light_theme = Rc::new(light);
     theme.dark_theme = Rc::new(dark);
+}
+
+/// A control's corner and a container's, set on a config like a family.
+fn corners(config: &mut gpui_component::ThemeConfig) {
+    config.radius = Some(4);
+    config.radius_lg = Some(6);
 }
 
 /// The palette, the only place a colour value is written: each slot's value
@@ -92,23 +101,26 @@ fn palette(colors: &mut gpui_component::ThemeConfigColors, dark: bool) {
     }
     set! {
         // The reading surface, and what the library draws as part of it.
-        background: "#181818", "#f8f8f8";
-        list: "#181818", "#f8f8f8";
-        table: "#181818", "#f8f8f8";
-        accordion: "#181818", "#f8f8f8";
+        background: "#181818", "#ffffff";
+        list: "#181818", "#ffffff";
+        table: "#181818", "#ffffff";
+        accordion: "#181818", "#ffffff";
         group_box: "#181818", "#ffffff";
-        tab_active: "#181818", "#f8f8f8";
-        slider_thumb: "#181818", "#f8f8f8";
-        scrollbar: "#18181800", "#f8f8f800";
-        // The rail, the docks and the bars: a step over the reading surface.
-        sidebar: "#1f1f1f", "#ffffff";
-        title_bar: "#1f1f1f", "#ffffff";
-        status_bar: "#1f1f1f", "#ffffff";
-        tab_bar: "#1f1f1f", "#ffffff";
+        tab_active: "#181818", "#ffffff";
+        slider_thumb: "#181818", "#ffffff";
+        scrollbar: "#18181800", "#ffffff00";
+        // The window's fill under the title bar, the rail and the gaps
+        // between the boxes: a step off the reading surface, over it in the
+        // dark palette and under it in the light one, so the boxes are the
+        // brighter surface by day.
+        sidebar: "#1f1f1f", "#f8f8f8";
+        title_bar: "#1f1f1f", "#f8f8f8";
+        status_bar: "#1f1f1f", "#f8f8f8";
+        tab_bar: "#1f1f1f", "#f8f8f8";
         tab_bar_segmented: "#1f1f1f", "#f3f3f3";
-        description_list_label: "#1f1f1f", "#ffffff";
-        list_even: "#1f1f1f66", "#ffffff";
-        list_head: "#1f1f1f66", "#ffffff";
+        description_list_label: "#1f1f1f", "#f8f8f8";
+        list_even: "#1f1f1f66", "#f8f8f8";
+        list_head: "#1f1f1f66", "#f8f8f8";
         // A floating surface: a step over it.
         popover: "#252526", "#ffffff";
         // The well, the step past it, and what rests under the pointer.
@@ -325,9 +337,20 @@ mod tests {
             mode,
             ..Default::default()
         };
+        corners(&mut config);
         palette(&mut config.colors, mode == ThemeMode::Dark);
         theme.apply_config(&Rc::new(config));
         theme
+    }
+
+    /// Controls land at 4px and containers at 6px, in both modes.
+    #[test]
+    fn corners_are_four_for_controls_and_six_for_containers() {
+        for mode in [ThemeMode::Light, ThemeMode::Dark] {
+            let theme = installed(mode);
+            assert_eq!(theme.radius, gpui::px(4.));
+            assert_eq!(theme.radius_lg, gpui::px(6.));
+        }
     }
 
     /// The primary button's word reads on its own fill in both modes, at
@@ -359,7 +382,7 @@ mod tests {
     fn the_regions_stand_a_step_apart() {
         for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
             let theme = installed(mode);
-            for (region, fill) in [("rail and docks", theme.sidebar), ("bars", theme.title_bar)] {
+            for (region, fill) in [("rail and gaps", theme.sidebar), ("bars", theme.title_bar)] {
                 assert!(
                     contrast(fill, theme.background) >= 1.04,
                     "{name}: the {region} are the reading surface"
@@ -376,6 +399,21 @@ mod tests {
             contrast(dark.popover, dark.background) >= 1.04,
             "dark: a floating surface is the page's own fill"
         );
+    }
+
+    /// A box (the page fill) has to stand apart from the window's fill it
+    /// sits on by at least this much in both palettes: the window showing
+    /// through the gaps between the boxes is what parts them, and a smaller
+    /// step lets two boxes and the gap between them read as one fill.
+    const BOX_ON_WINDOW: f32 = 1.06;
+
+    #[test]
+    fn a_box_stands_apart_from_the_window() {
+        for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
+            let theme = installed(mode);
+            let ratio = contrast(theme.background, theme.sidebar);
+            assert!(ratio >= BOX_ON_WINDOW, "{name}: box on window {ratio:.3}");
+        }
     }
 
     /// The three neutral inks read on every neutral surface text lies on.
@@ -523,7 +561,7 @@ mod tests {
                 let mut on = vec![
                     ("surface", theme.background),
                     ("well", theme.muted),
-                    ("dock", theme.sidebar),
+                    ("rail", theme.sidebar),
                 ];
                 // A removal on a secondary button is its word in the danger
                 // ink, on the button's own fill.

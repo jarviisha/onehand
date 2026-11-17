@@ -11,10 +11,14 @@ use onehand_core::workspace::{self, Workspace};
 use std::path::{Path, PathBuf};
 
 impl Shell {
-    /// Write the workspace once the user stops changing it: a dock's
-    /// `LayoutChanged` comes on every frame of a drag, so each change only
-    /// arms the drive's wait again, and the write comes once it runs out.
+    /// Write the workspace once the user stops changing it: a drag changes
+    /// the layout frame after frame, so each change only arms the drive's
+    /// wait again, and the write comes once it runs out.
     pub(super) fn save_workspace_soon(&mut self, cx: &mut Context<Self>) {
+        #[cfg(test)]
+        {
+            self.saves_asked += 1;
+        }
         let fx = self.window.workspace.save_soon();
         self.carry_workspace_quietly(fx, cx);
     }
