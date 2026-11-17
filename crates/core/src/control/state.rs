@@ -26,18 +26,23 @@ pub struct Held {
     pub dirs: Vec<PathBuf>,
     /// The person holds it, as it was kept across a restart.
     pub person: bool,
+    /// The lead's last turn had not been seen to end when it was last kept.
+    pub unended: bool,
 }
 
 /// The worker's state, one fact per line.
 pub fn state(chat: &Chat, held: &Held) -> String {
     let person = held.person || chat.prompted_since(held.sent);
+    // A worker that came back runs on a chat that has sent nothing yet: a
+    // turn kept unended was cut off at quit, until a new one goes.
+    let lost = held.unended && chat.prompts_sent == 0;
     let lines = [
         format!("link: {}", link(chat)),
-        format!("turn: {}", turn(chat)),
+        format!("turn: {}", turn(chat, lost)),
         format!("waiting: {}", waiting(chat)),
         format!("activity: {}", activity(chat)),
         format!("held by: {}", if person { "person" } else { "lead" }),
-        format!("turns: {}", turns(chat, held, person)),
+        format!("turns: {}", turns(chat, held, person, lost)),
         format!("mode: {}", mode_said(chat)),
         format!("model: {}", model_said(chat)),
         format!("dirs: {}", dirs_said(&held.dirs)),
@@ -55,7 +60,10 @@ fn link(chat: &Chat) -> &'static str {
     }
 }
 
-fn turn(chat: &Chat) -> String {
+fn turn(chat: &Chat, lost: bool) -> String {
+    if lost {
+        return "lost with the link".to_string();
+    }
     if chat.prompts_sent == 0 {
         return "none".to_string();
     }
@@ -139,18 +147,19 @@ fn subagents_said(n: usize) -> String {
     }
 }
 
-fn turns(chat: &Chat, held: &Held, person: bool) -> String {
+fn turns(chat: &Chat, held: &Held, person: bool, lost: bool) -> String {
     match held.turn {
         None => "none sent".to_string(),
-        // Over only as far as anyone knows: a link lost or still coming up
-        // says nothing of how the turn went.
-        Some(turn)
-            if chat.link == Link::Connected && !chat.busy && !chat.turn_cut_off() && !person =>
-        {
-            format!("sent {turn}, ended {turn}")
-        }
+        Some(turn) if turn_over(chat) && !person && !lost => format!("sent {turn}, ended {turn}"),
         Some(turn) => format!("sent {turn}, not yet ended"),
     }
+}
+
+/// Whether the turn on `chat` is over as far as anyone knows: none runs,
+/// the link is up, and the last was not cut off. A link lost or still
+/// coming up says nothing of how the turn went.
+pub fn turn_over(chat: &Chat) -> bool {
+    chat.link == Link::Connected && !chat.busy && !chat.turn_cut_off()
 }
 
 /// The mode in force, as a worker's answers say it.

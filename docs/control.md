@@ -280,8 +280,8 @@ offered `open_worker`, and `open_session` takes none of its further arguments.
 - **What a lead holds is kept beside its conversation**, in `workers.json` in the lead's
   conversation directory, so it moves and is deleted with that conversation: for each worker the
   lead still holds, in the order they opened and once its conversation is known, its handle,
-  conversation, agent, folder, `dirs`, name, the lead's last turn number and text, and whether the
-  person holds it; and the handles of the 64 workers that ended last. It is written whenever any of it
+  conversation, agent, folder, `dirs`, name, the lead's last turn number and text, whether the
+  person holds it, and whether the lead's last turn had not been seen to end; and the handles of the 64 workers that ended last. It is written whenever any of it
   changes, through the one atomic write, off the UI thread. A file that cannot be read keeps
   nothing, and the next write replaces it. The request ids and the worker's transient project
   last as long as the run of the app. A clean quit ends every worker with its agent's process

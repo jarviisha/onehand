@@ -14,15 +14,16 @@ use crate::chat::session::ChatSession;
 use gpui::{App, Entity, Global, Subscription};
 use onehand_core::control::drive::Input;
 use onehand_core::control::kept::{self, Kept};
+use onehand_core::control::state::turn_over;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
 
 #[derive(Default)]
 struct Keeping {
-    /// The watch on each session, and the conversation and prompts sent it
-    /// last said.
-    watches: HashMap<u64, (Subscription, Option<(String, usize)>)>,
+    /// The watch on each session, and the conversation, prompts sent and
+    /// whether its turn is over it last said.
+    watches: HashMap<u64, (Subscription, Option<Said>)>,
     /// Where each lead's workers were last written.
     written: HashMap<u64, PathBuf>,
     /// Where the conversation each lead closed on is kept, read before it
@@ -32,6 +33,10 @@ struct Keeping {
 
 impl Global for Keeping {}
 
+/// What a session last said: its conversation, its prompts sent, and
+/// whether its turn is over.
+type Said = (String, usize, bool);
+
 /// The newest write asked for, by lead, held across the write itself.
 static NEWEST: LazyLock<Mutex<HashMap<u64, u64>>> = LazyLock::new(Mutex::default);
 
@@ -39,8 +44,8 @@ fn newest() -> std::sync::MutexGuard<'static, HashMap<u64, u64>> {
     NEWEST.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Say session `uid`'s conversation and prompts sent to the drive whenever
-/// either changes, from `session` on: each new session of `uid` replaces
+/// Say session `uid`'s conversation, prompts sent and whether its turn is
+/// over to the drive whenever any of them changes, from `session` on: each new session of `uid` replaces
 /// the watch on the one before.
 pub(crate) fn watch(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
     let watch = cx.observe(session, move |session, cx| said(uid, &session, cx));
@@ -50,14 +55,14 @@ pub(crate) fn watch(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
 }
 
 fn said(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
-    let (session_id, prompts_sent) = {
+    let (session_id, prompts_sent, turn_over) = {
         let chat = session.read(cx).chat();
         let Some(id) = chat.session_id.clone() else {
             return;
         };
-        (id, chat.prompts_sent)
+        (id, chat.prompts_sent, turn_over(chat))
     };
-    let now = (session_id.clone(), prompts_sent);
+    let now = (session_id.clone(), prompts_sent, turn_over);
     match cx.default_global::<Keeping>().watches.get_mut(&uid) {
         Some((_, last)) if last.as_ref() != Some(&now) => *last = Some(now),
         Some(_) | None => return,
@@ -66,6 +71,7 @@ fn said(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
         uid,
         session_id,
         prompts_sent,
+        turn_over,
     });
     carry(fx, cx);
 }

@@ -210,6 +210,10 @@ pub struct Relation {
     /// Kept so the hold outlives a restart, where the count it is read
     /// from starts again.
     pub person: bool,
+    /// The lead's last turn has not been seen to end: set as it goes,
+    /// cleared once a turn this run of its chat ran is over. Kept, so a turn
+    /// running at quit reads cut off once the worker comes back.
+    pub unended: bool,
     /// Where it stands among its lead's workers, in the order they opened.
     pub seq: u64,
 }

@@ -163,6 +163,7 @@ impl ControlDrive {
             sent: relation.sent,
             dirs: relation.dirs.clone(),
             person: relation.person,
+            unended: relation.unended,
         })
     }
 
@@ -191,6 +192,7 @@ impl ControlDrive {
             relation.text = Some(text.to_string());
             relation.sent = sent;
             relation.person = false;
+            relation.unended = true;
             let lead = relation.lead;
             fx.push(self.keep(lead));
         }
@@ -199,15 +201,20 @@ impl ControlDrive {
 
     // What is kept beside a lead's conversation.
 
-    /// Session `uid`'s conversation is `session_id`, and it has sent
-    /// `prompts_sent` prompts: a worker's is kept, and a prompt of the
-    /// person's since the lead's last turn marks it held; a lead's conversation
-    /// moving takes what it keeps with it.
+    /// Session `uid`'s conversation is `session_id`, it has sent
+    /// `prompts_sent` prompts, and `turn_over` says its turn is over: a
+    /// worker's is kept, a prompt of the person's since the lead's last turn
+    /// marks it held, and a turn this run of its chat ran, over, ends the
+    /// lead's; a lead's conversation moving takes what it keeps with it.
+    ///
+    /// A chat that came back has sent nothing: idle as it is, it says
+    /// nothing of the turn kept unended, which only a new turn ends.
     pub(super) fn conversation(
         &mut self,
         uid: u64,
         session_id: String,
         prompts_sent: usize,
+        turn_over: bool,
     ) -> Vec<Effect> {
         let before = self.conversations.insert(uid, session_id.clone());
         let moved = before.as_ref() != Some(&session_id);
@@ -220,6 +227,10 @@ impl ControlDrive {
             }
             if !relation.person && prompts_sent > relation.sent {
                 relation.person = true;
+                changed = true;
+            }
+            if relation.unended && turn_over && prompts_sent > 0 {
+                relation.unended = false;
                 changed = true;
             }
             if changed {
@@ -288,6 +299,7 @@ impl ControlDrive {
                     turn: relation.turn,
                     text: relation.text.clone(),
                     person: relation.person,
+                    unended: relation.unended,
                 };
                 Some((relation.seq, worker))
             })

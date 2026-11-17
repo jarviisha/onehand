@@ -156,6 +156,7 @@ fn relation(lead: u64) -> Relation {
         name: None,
         conversation: None,
         person: false,
+        unended: false,
         seq: 1,
     }
 }
@@ -271,6 +272,7 @@ fn given_back_the_lead_holds_it() {
         sent: given.sent,
         dirs: Vec::new(),
         person: false,
+        unended: false,
     };
     let said = crate::control::state::state(&chat, &held);
     assert!(said.contains("held by: lead"), "{said}");

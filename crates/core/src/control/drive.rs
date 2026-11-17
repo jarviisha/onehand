@@ -147,12 +147,14 @@ pub enum Input<'a> {
     Begun { uid: u64, facts: Facts },
     /// The wait armed with `token` ran out.
     Elapsed { token: u64 },
-    /// Session `uid`'s conversation is `session_id`, and it has sent
-    /// `prompts_sent` prompts: said when either changes.
+    /// Session `uid`'s conversation is `session_id`, it has sent
+    /// `prompts_sent` prompts, and `turn_over` says its turn is over with the
+    /// link up (`state::turn_over`): said when any of them changes.
     Conversation {
         uid: u64,
         session_id: String,
         prompts_sent: usize,
+        turn_over: bool,
     },
 }
 
@@ -571,7 +573,8 @@ impl ControlDrive {
                 uid,
                 session_id,
                 prompts_sent,
-            } => self.conversation(uid, session_id, prompts_sent),
+                turn_over,
+            } => self.conversation(uid, session_id, prompts_sent, turn_over),
         }
     }
 }

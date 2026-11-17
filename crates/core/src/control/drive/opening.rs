@@ -312,6 +312,8 @@ impl ControlDrive {
             lines.push(format!("turn: {turn} accepted"));
         }
         let answer = lines.join("\n");
+        // Its first prompt is the lead's first turn, running now.
+        let unended = open.prompt.is_some();
         // Written last, once the prompt went, so a lead forgotten in between
         // can never have one made again after it.
         self.workers.insert(
@@ -328,6 +330,7 @@ impl ControlDrive {
                 name: open.name.clone(),
                 conversation: self.conversations.get(&uid).cloned(),
                 person: false,
+                unended,
                 seq: token,
             },
         );
@@ -472,6 +475,7 @@ impl ControlDrive {
                 name: back.name,
                 conversation: Some(back.conversation),
                 person: back.person,
+                unended: back.unended,
                 seq: pending.token,
             },
         );

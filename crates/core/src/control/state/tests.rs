@@ -26,6 +26,7 @@ fn prompted() -> (Chat, Rx, Held) {
         sent: chat.prompts_sent,
         dirs: Vec::new(),
         person: false,
+        unended: false,
     };
     (chat, rx, held)
 }
@@ -51,6 +52,7 @@ fn a_connected_idle_worker_reads_none_reported() {
         sent: 0,
         dirs: Vec::new(),
         person: false,
+        unended: false,
     };
     let state = state(&chat, &held);
     assert_eq!(line(&state, "link"), "connected");
@@ -168,6 +170,7 @@ fn dirs_are_named() {
         sent: 0,
         dirs: vec!["/run".into(), "/r/.git".into()],
         person: false,
+        unended: false,
     };
     assert_eq!(line(&state(&chat, &held), "dirs"), "/run, /r/.git");
 }
@@ -220,4 +223,43 @@ fn what_it_runs_with_reads_as_the_open_says_it() {
     assert_eq!(mode_said(&chat), "the agent's own");
     assert_eq!(model_said(&chat), "the agent's own");
     assert_eq!(dirs_said(&[]), "none");
+}
+
+/// A worker that comes back runs on a chat that has sent nothing: a turn
+/// the lead's relation kept unended was cut off at quit.
+fn came_back(unended: bool) -> (Chat, Rx, Held) {
+    let (chat, rx) = connected();
+    let held = Held {
+        turn: Some(3),
+        sent: 0,
+        dirs: Vec::new(),
+        person: false,
+        unended,
+    };
+    (chat, rx, held)
+}
+
+#[test]
+fn a_turn_running_at_quit_reads_lost_after_coming_back() {
+    let (chat, _rx, held) = came_back(true);
+    let state = state(&chat, &held);
+    assert_eq!(line(&state, "turn"), "lost with the link");
+    assert_eq!(line(&state, "turns"), "sent 3, not yet ended");
+}
+
+#[test]
+fn a_new_turn_after_coming_back_reads_as_itself() {
+    let (mut chat, _rx, held) = came_back(true);
+    assert!(chat.submit("next", &[]));
+    assert_eq!(line(&state(&chat, &held), "turn"), "running");
+    ended(&mut chat);
+    assert_eq!(line(&state(&chat, &held), "turn"), "ended");
+}
+
+#[test]
+fn a_turn_ended_before_quit_reads_ended_after_coming_back() {
+    let (chat, _rx, held) = came_back(false);
+    let state = state(&chat, &held);
+    assert_eq!(line(&state, "turns"), "sent 3, ended 3");
+    assert_eq!(line(&state, "turn"), "none");
 }

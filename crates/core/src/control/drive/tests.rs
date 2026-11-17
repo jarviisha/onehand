@@ -482,10 +482,17 @@ fn kept(fx: &[Effect], lead: u64) -> Option<&Kept> {
 }
 
 fn said_conversation(drive: &mut ControlDrive, uid: u64, id: &str, sent: usize) -> Vec<Effect> {
+    said_over(drive, uid, id, sent, false)
+}
+
+/// Session `uid` said its conversation `id`, its prompts sent, and whether
+/// its turn is over (`over`).
+fn said_over(drive: &mut ControlDrive, uid: u64, id: &str, sent: usize, over: bool) -> Vec<Effect> {
     drive.handle(Input::Conversation {
         uid,
         session_id: id.into(),
         prompts_sent: sent,
+        turn_over: over,
     })
 }
 
@@ -719,6 +726,7 @@ fn kept_one(person: bool) -> Kept {
             turn: Some(3),
             text: Some("go on".into()),
             person,
+            unended: false,
         }],
         closed: vec![KeptClosed {
             handle: "w-00000000000000000000000000000002".into(),
@@ -1153,4 +1161,45 @@ fn ended_workers_stay_with_the_conversation_they_ended_in() {
     let fx = said_conversation(&mut drive, 1, "c2", 0);
     assert!(kept(&fx, 1).is_none(), "nothing moves: {fx:?}");
     assert!(drive.find(1, closed, |_| false).is_err());
+}
+
+#[test]
+fn a_lead_turn_is_kept_unended_until_it_ends() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let fx = said_conversation(&mut drive, 7, "c7", 1);
+    assert!(
+        kept(&fx, 1).unwrap().workers[0].unended,
+        "its first turn runs"
+    );
+    let fx = said_over(&mut drive, 7, "c7", 1, true);
+    assert!(!kept(&fx, 1).unwrap().workers[0].unended, "and ended");
+    assert!(said_over(&mut drive, 7, "c7", 1, true).is_empty());
+}
+
+#[test]
+fn a_worker_coming_back_keeps_its_turn_unended_until_a_new_one() {
+    let mut drive = ControlDrive::default();
+    let mut kept_unended = kept_one(false);
+    kept_unended.workers[0].unended = true;
+    came_back(&mut drive, kept_unended);
+    assert!(drive.held(9).unwrap().unended);
+    // Idle and connected, it has run nothing in this run.
+    let fx = said_over(&mut drive, 9, "c7", 0, true);
+    assert!(
+        kept(&fx, 1).is_none_or(|kept| kept.workers[0].unended),
+        "{fx:?}"
+    );
+    assert!(drive.held(9).unwrap().unended);
+    let _ = drive.sent(9, 4, "next", &Intake::Sent, 1);
+    let fx = said_over(&mut drive, 9, "c7", 1, true);
+    assert!(!kept(&fx, 1).unwrap().workers[0].unended);
+}
+
+#[test]
+fn a_link_lost_mid_turn_keeps_it_unended() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    said_over(&mut drive, 7, "c7", 1, false);
+    assert!(drive.held(7).unwrap().unended);
 }
