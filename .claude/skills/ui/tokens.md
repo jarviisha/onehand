@@ -108,7 +108,7 @@ its detail one down its side facing the detail.
 | `.text_lg()` | 1.125 | 18 |
 | `.text_xl()` | 1.25 | 20 |
 
-- Weights: `.font_medium()` (500), `.font_semibold()` (600).
+- Weights: `.font_light()` (300, the workspace's name in the title bar alone), `.font_medium()` (500), `.font_semibold()` (600).
 - Line height: gpui's default is 1.618; `tokens::LEADING` 1.6; `tokens::LEADING_TIGHT` 1.4.
 - Families: `cx.theme().font_family` (the bundled UI family, `fonts::UI_FAMILY`) and
   `cx.theme().mono_font_family` (the bundled mono family, `fonts::MONO_FAMILY`, unless

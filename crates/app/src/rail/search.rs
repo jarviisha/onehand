@@ -52,6 +52,8 @@ pub(crate) fn workspace_control(
         .text_ellipsis()
         // A step over the bar's chrome size: the one name the bar carries.
         .text_sm()
+        // Light: the name carries the bar's size and the tile its weight.
+        .font_light()
         .text_color(theme.foreground)
         .child(name);
     let menu = super::workspace::workspace_menu(
