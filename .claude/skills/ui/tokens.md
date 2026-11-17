@@ -64,7 +64,7 @@ Text on a fill takes the ink paired with it:
 | `primary`, a solid `danger` | `primary_foreground`, `danger_foreground`, set by the button's variant |
 | `button_secondary`; a `quiet` ghost | `button_secondary_foreground`; `secondary_foreground`, set by the builder |
 | a ghost's hover or selected fill, under an icon alone (`quiet_icon`) | `secondary_foreground`, as at rest |
-| none, a title bar dock toggle (`panel_toggle`) | its glyph `foreground` while its dock is open, `muted_foreground` while closed |
+| none, a title bar region toggle (`panel_toggle`: the rail's, the terminal's, the Workbench's) | its glyph `foreground` while its dock is open, `muted_foreground` while closed |
 | `chosen_fill(cx)`, the chosen row, the rail's too | `chosen_ink(cx)`; a quieter ink `middle_ink(chosen_ink(cx), muted_foreground)` |
 | `accent`, the row the keys are on in a popup | `accent_foreground` |
 | `muted` (a well, the prompt bubble) | the neutral inks, as on the surface: a neutral fill, not a paired one |
@@ -93,8 +93,8 @@ are not steps and stay allowed. A named spacing constant (`BLOCK_GAP`, `TIGHT_GA
 `tokens::REGION_GAP` is the `1p5` step: the gap between the regions' boxes, and between them and
 the window's edge, through which the window's fill shows.
 
-The boxes themselves take a 1px `border` hairline. Inside one, a strip has a 1px `border` line under it and a list beside
-its detail one down its side facing the detail.
+The boxes themselves take a 1px `border` hairline. Inside one, a strip has a 1px `border` line
+under it and a list beside its detail one down its side facing the detail.
 
 ## Type
 
@@ -125,7 +125,8 @@ its detail one down its side facing the detail.
 What a person presses is `radius`; what wraps a block of information or holds several actions
 is `radius_lg`, a step rounder, so a container never looks sharper than what it holds.
 A region's box (the agent pane, the Workbench, the terminal) is `radius_lg` on `background`, in
-a `border` hairline, standing on the window's fill (`sidebar`); a dock's open tab is `radius` on `secondary`.
+a `border` hairline, standing on the window's fill (`sidebar`); a dock's open tab is `radius` on
+`secondary`.
 
 The theme sets both on its configs (`theme::install`). The library's dialogs, toasts and
 command palette read `radius_lg` and land at 6px. Its tooltips, popup menus, select and
@@ -134,7 +135,7 @@ own appearance (the file tree's dropdown) sets `radius_lg` on it, and the rest a
 library. What the library draws at half its corner (`radius_tokens().sm`: checkboxes, `Kbd`, a
 small menu row, its tabs) comes out at 2px and is left to it. A button (`action`,
 `ButtonRounded::Medium`) and a text field (`text_input`, `search_input`, `text_area`) set
-`radius` where they are built; a `Tag` keeps the library's corner through `badge`.
+`radius` where they are built; a `Tag` reads `radius` itself at the size `badge` leaves it.
 
 ## Elevation
 
@@ -194,13 +195,14 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 | `FIELD_H` | 1.75rem | the tallest control, a step over `.short()`: a page's head and form (`.tall()`); nothing stands taller |
 | `SCROLLBAR_THUMB`, `SCROLLBAR_THUMB_ACTIVE` | 4px, 6px | a scrollbar's thumb at rest, and hovered or dragged |
 | `CHROME_TEXT` | 0.8125rem | chrome text: a panel's rows, boxes, forms and strips, a `.tall()` control's words, a document's reading text |
-| `MICRO_TEXT` | 0.6875rem | a caption inside a small object: an attachment's plate |
+| `MICRO_TEXT` | 0.6875rem | a caption inside a small object (an attachment's plate), a badge's words |
 | `CODE_TEXT` | 0.75rem | machine text |
 | `LEADING` | 1.6 | reading text |
 | `LEADING_TIGHT` | 1.4 | a wrapped title |
 | `PAGE_NARROW` | 35rem | a one-column page |
 | `PAGE_PROSE` | 48rem | an editor, or one thing read in full |
 | `PAGE_WIDE` | 64rem | boxes side by side, a table |
+| `BAR_FADE` | 0.75rem | how far a box's fill fades over the content under a bar (the Editor's) or past a field's end (`end_fade`), in place of a line |
 | `TITLE_SEARCH_W` | 24rem | the widest the title bar's search grows |
 | `SHELL_LIST_W` | 10rem | the terminal's list of shells beside the grid, fixed: neither dragged nor saved |
 | `DIALOG_FORM` | 40rem | a dialog that holds a form (the agent form, one that starts a run), its controls `.tall()`, never wider than the window less its margins |

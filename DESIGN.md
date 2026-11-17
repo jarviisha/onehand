@@ -48,9 +48,9 @@ a hex literal is a bug even when it looks right, as no theme switch reaches it.
 
 ## Layout
 
-One window hosts one workspace. A title bar holding the workspace's name, the rail's toggle, the search
-and the docks' toggles runs along the top; nothing runs along
-the foot. The title bar and the rail stand on the window's fill, unboxed. Beside the rail, every
+One window hosts one workspace. A title bar holding the workspace's name, the rail's toggle, the
+search and the docks' toggles runs along the top; nothing runs along the foot. The title bar and
+the rail stand on the window's fill, unboxed. Beside the rail, every
 other region is a box of its own on that fill: the agent pane and the Workbench side by side, the
 Workbench the right half of a split in the `DockArea`'s centre, and under both, across their whole
 width, the terminal, the bottom dock. The boxes are parted from each other and from the window's
@@ -65,13 +65,13 @@ plain ASCII and box-drawing, so it stays aligned in any mono font.
 │ Tasks         2  │ workflow > step >     Stop │ │ open file v               tree │ │
 │ Issues           │                            │ │                                │ │
 │ Workflows        │                            │ │                                │ │
-│ Sessions  Q 2 v  │        agent pane          │ │           Workbench            │ │
-│ ──────────────── │      (centre, flexes)      │ │     (beside the agent pane)    │ │
-│ v project  main  │                            │ │                                │ │
-│   o session      │ ┌──────── composer ──────┐ │ │                                │ │
-│     Idle . agent │ │ +  Fast  model    Send │ │ │  open file              tree   │ │
-│ + Add project... │ └────────────────────────┘ │ │                                │ │
-│                  │   branch             mode  │ │                                │ │
+│ Schedules        │        agent pane          │ │           Workbench            │ │
+│ Sessions  Q 2 v  │      (centre, flexes)      │ │     (beside the agent pane)    │ │
+│ ──────────────── │                            │ │                                │ │
+│ v project  main  │ ┌──────── composer ──────┐ │ │                                │ │
+│   o session      │ │ +  Fast  model    Send │ │ │  open file              tree   │ │
+│     Idle . agent │ └────────────────────────┘ │ │                                │ │
+│ + Add project... │   branch             mode  │ │                                │ │
 │                  └────────────────────────────┘ └────────────────────────────────┘ │
 │                  ┌───────────────────────────────────────────────────────────────┐ │
 │                  │ shell 1                                          +  max hide  │ │
@@ -167,7 +167,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 | Role | Size |
 |---|---|
 | Meta, hints, counts, a small label | `.text_xs()`, in `muted_foreground` when it is meta |
-| A caption inside a small object (an attachment's plate) | `MICRO_TEXT`, a step under the meta size |
+| A caption inside a small object (an attachment's plate), a badge's words | `MICRO_TEXT`, a step under the meta size |
 | Machine text | `CODE_TEXT`, in `mono_font_family` |
 | Chrome: a panel's rows, boxes, forms and strips, a menu's rows, a `.tall()` control's words | `CHROME_TEXT`, a step under the library's control size |
 | A control's words (`.short()`) | `.text_xs()` |
@@ -181,8 +181,8 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   `font_semibold` for a page's title and any other title or heading; nothing bolder. A list page's rows,
   at the meta size, carry their name and the column read down the list in `font_medium`
   (`docs/ui-patterns.md`, *List pages*). A navigation or tab row's weight is its kind's, never
-  its being chosen, which its fill alone says (`docs/screens.md`, *Rail*, *Docks*). Line height is gpui's,
-  but `LEADING` for reading text and `LEADING_TIGHT` for a wrapped title.
+  its being chosen, which its fill alone says (`docs/screens.md`, *Rail*, *Docks*). Line height
+  is gpui's, but `LEADING` for reading text and `LEADING_TIGHT` for a wrapped title.
 - **Inks by role.** Text on a neutral surface (the reading surface, a dock, the rail, a floating
   surface, a well) takes one of three: `foreground` for content and the current
   location; `theme::meta_ink` for a detail beside a name on its line (its folder, its number, its
@@ -205,28 +205,30 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   terminal's). Fixed chrome heights stay outside the
   zoom wrapper. A size the steps lack is a named constant (shared ones in
   `onehand_ui::tokens`, others beside their use), its reason in its doc comment.
-- **Corners by role.** What a person presses takes `radius`, 4px: a control, a field, a menu
-  or rail row, a tree row, a tab and the open tab's fill in a dock's bar, a chip, and the fill a
+- **Corners by role.** What a person presses takes `radius`: a control, a field, a menu or rail
+  row, a tree row, a tab and the open tab's fill in a dock's bar, a chip, and the fill a
   choosable item shows on hover or when chosen. What wraps a block of information or an area
-  holding several actions takes `radius_lg`, 6px, a step rounder: a well, a box on a page
+  holding several actions takes `radius_lg`, a step rounder: a well, a box on a page
   (`card_box`), a card, the composer and a pinned card (so the card tucked under the composer
   meets it at one corner), a strip waiting on it, a popup, a floating panel, a dialog, a toast,
   a Settings group, and a region's box (the agent pane, the Workbench, the terminal); the
   library's own dialogs and toasts follow. A small mark (the workspace's letter tile) takes
-  `radius`. A badge (a `Tag`) takes `radius`,
-  its tint's fill edged halfway from its fill to its ink (`badge_edge`), its words at the micro size and medium weight on a slim inset; inside a line of
-  meta text a label is written in its kind's ink instead, unframed. A dot or a status mark is
-  `rounded_full`. The library's small parts keep its half
-  corner (*Components*). A part joined to its container's edge takes its corner there.
-- **Regions part by the gap.** A region's box is wrapped in a hairline (`border`): it stands on the window's
-  fill, its fill a step off it, parted from its neighbours and the window's edge by the region gap
-  (`REGION_GAP`), which shows the window's fill. Inside a box a strip has a line under it, parting
-  it from what it heads, and a list beside its detail (the Files tree beside the editor) is parted
-  by a line down its side facing the detail, on the box's own fill. An open tab in a dock's bar is a rounded fill
-  (`secondary`), its name in the content ink, the tabs parted by space and not by lines.
-- **Lines** part content inside a region and are a 1px `border`. A list page's line over its foot is a step fainter (`faint_rule`), so the edge-to-edge
-  list reads as one surface; a page's top draws no line under it. A box on a page takes a step
-  stronger edge, a control's (`input`); a folding block and a Settings group keep the hairline.
+  `radius`. A badge (a `Tag`) takes `radius`, its tint's fill edged halfway from its fill to its
+  ink (`badge_edge`), its words at the micro size and medium weight on a slim inset; inside a
+  line of meta text a label is written in its kind's ink instead, unframed. A dot or a status
+  mark is `rounded_full`. The library's small parts keep its half corner (*Components*). A part
+  joined to its container's edge takes its corner there.
+- **Regions part by the gap.** A region's box is wrapped in a hairline (`border`): it stands on
+  the window's fill, its fill a step off it, parted from its neighbours and the window's edge by
+  the region gap (`REGION_GAP`), which shows the window's fill. Inside a box a strip has a line
+  under it, parting it from what it heads, and a list beside its detail (the Files tree beside
+  the editor) is parted by a line down its side facing the detail, on the box's own fill. An open
+  tab in a dock's bar is a rounded fill (`secondary`), its name in the content ink, the tabs
+  parted by space and not by lines.
+- **Lines** part content inside a region and are a 1px `border`. A list page's line over its
+  foot is a step fainter (`faint_rule`), so the edge-to-edge list reads as one surface; a page's
+  top draws no line under it. A box on a page takes a step stronger edge, a control's (`input`);
+  a Settings group keeps the hairline, and a folding block has no edge at all (*Transcript*).
 
 ## Colour and state
 
@@ -240,11 +242,12 @@ not the palette's: they stay VS Code's (`onehand_terminal_ui::ansi`), as a progr
 its own. A chart's series and a label's kind take the library's base hues.
 
 The surfaces are neutral greys, each region a visible step from its neighbour: on the dark
-palette the reading surface is the deepest, a charcoal still clear of black, and every region's box
-stands on it, the agent pane, the Workbench and the terminal alike; the window's fill, under the
-title bar, the rail and the gaps between the boxes, a step over it; and a floating surface a step
-over the page, told apart by its fill and its edge. The light palette turns it over: the boxes white on a
-pale grey window, so the reading surface is the brightest. The focus ring is a grey. The one hue
+palette the reading surface is the deepest, a charcoal still clear of black, and every region's
+box is drawn on it, the agent pane, the Workbench and the terminal alike; the window's fill,
+under the title bar, the rail and the gaps between the boxes, a step over it; and a floating
+surface a step over the page, told apart by its fill and its edge. The light palette turns it
+over: the boxes white on a pale grey window, so the reading surface is the brightest. The focus
+ring is a grey. The one hue
 among them is the blue of the primary action. The item chosen among several stands on the
 selected grey (`chosen_fill`), a step past the hover step, its name in the content ink
 (`chosen_ink`), as VS Code marks a selection in a list that does not hold the keys.
@@ -258,7 +261,7 @@ reaches.
 | `theme::dock_surface` | the Workbench and the terminal: the reading surface, as every box is |
 | `muted` / `muted_foreground` | quiet fills (every well), meta text |
 | `theme::meta_ink` | the middle ink: a detail beside a name, between prose and meta, contrast-tested |
-| `border` | every hairline, a folding block's and a Settings group's edge; a box on a page takes `input` |
+| `border` | every hairline: a region's box's and a Settings group's edge; a box on a page takes `input` |
 | `ring` | keyboard focus, drawn only when the keyboard moved it; the composer while a file is dragged over it |
 | `chosen_fill`, `chosen_ink` | the one item chosen among several, where the person is: a row, a rail entry; the selected grey (`accent`), and the content ink on it |
 | `accent` | the selected grey: the chosen item (through `chosen_fill`), and what the keys rest on in a popup and the pointer on a ghost, as the library draws them |
@@ -271,11 +274,13 @@ reaches.
 | `theme::raised` | the composer card |
 | `secondary` | a document's code on a dock, a dock's open tab |
 
-- Reading content is the visual anchor, on the deepest surface; the title bar and the rail stand a
-  step over it on the window's fill, and a box's own chrome stays quieter by its inks. A nested container
-  inherits its surface unless it has a distinct role: well, selection or floating content.
-- A box on a page is a border; a region's box, wells and the bubbles are fills. Ordinary sections remain unboxed. Do not
-  combine a border, contrasting fill and shadow just to make a group visible.
+- Reading content is the visual anchor, on the reading surface; the title bar and the rail stand
+  a step off it on the window's fill, and a box's own chrome stays quieter by its inks. A nested
+  container inherits its surface unless it has a distinct role: well, selection or floating
+  content.
+- A box on a page is a border; a region's box is a fill in a hairline; wells and the bubbles are
+  fills. Ordinary sections remain unboxed. Do not combine a border, contrasting fill and shadow
+  just to make a group visible.
 - Hover and selection are fills, neutral steps apart: a hovered row the hover step (`list_hover`; on the rail
   `sidebar_accent`, as a fill is a step from the surface under it), the chosen row a step past it
   (`chosen_fill`, solid, as a row's fade and the controls over a row are painted in it) with its name in
@@ -297,17 +302,19 @@ reaches.
 
 Reuse gpui-component before building anything: `Root`, `DockArea`, `Sidebar`, `Dialog`, `Switch`,
 `InputState`, `Editor`, `TextView`, plus gpui's own `list` for the transcript. Controls go through
-the UI crate's builders, which set the pointer cursor and the library's corner (`radius`): buttons through
-`action`; fields through `text_input`, `search_input` and `text_area`. **A field is the
-library's**: edged in `input` on the page's fill and ringed on focus, in a form, a dialog, a
-page's top and a search alike; a search adds the search mark and the clear button, and the
-composer's field is its card's. A button names its variant by role, each drawn as the library
-draws it: `primary` the one commitment in a decision area, `secondary` (edged, on its own fill)
-an ordinary action beside it, a set picker's trigger (an unset one is a ghost, through `picker`),
-every Settings button; `outline` an action that needs a boundary with less
-weight; `choice` in a pick-one row; `danger` as below; and ghost (`.quiet(cx)`) the familiar,
-low-emphasis commands of a toolbar, a strip or a row. A control that refuses says so and why
-(`.refuses(why)`, the reason its tooltip) and goes back to the arrow.
+the UI crate's builders, which set the pointer cursor and the library's corner (`radius`): buttons
+through `action`; fields through `text_input`, `search_input` and `text_area`. **A field is the
+library's**: edged in `input` on the page's fill and ringed on focus, in a form, a dialog, a page's
+top and a search alike; a search adds the search mark and the clear button, and the composer's field
+is its card's. Two searches stand on a bar instead: the title bar's keeps its edge and drops its
+fill, standing on the bar's; one framed by its bar's own lines (the Issues tab's filter bar) is
+bare, with no edge and no clear button, *Clear filters* beside it clearing it. A button names its
+variant by role, each drawn as the library draws it: `primary` the one commitment in a decision
+area, `secondary` (edged, on its own fill) an ordinary action beside it, a set picker's trigger (an
+unset one is a ghost, through `picker`), every Settings button; `outline` an action that needs a
+boundary with less weight; `choice` in a pick-one row; `danger` as below; and ghost (`.quiet(cx)`)
+the familiar, low-emphasis commands of a toolbar, a strip or a row. A control that refuses says so
+and why (`.refuses(why)`, the reason its tooltip) and goes back to the arrow.
 
 **A ghost never starts a line alone.** Without a fill, a ghost's padding sets its words in from
 the edge the text above and below it starts on, and nothing drawn says where it begins. A ghost at
@@ -359,8 +366,9 @@ square at its row's height: `.short_icon()` beside `.short()` peers, `.tall_icon
 `.tall()` (`FIELD_H`) is the ceiling: no control stands taller.
 **What a small object holds scales with the object.** Inside a fixed object smaller than a row of
 controls (an attachment's plate, a thumbnail), an icon-only control takes `.xsmall()` and a caption
-`MICRO_TEXT`, so neither crowds what it sits on; anywhere else `.short()`, `.short_icon()` and the meta
-size are the floor, and a worded control never takes `.xsmall()`, whose words run to its edges.
+`MICRO_TEXT`, so neither crowds what it sits on, and a badge's words take `MICRO_TEXT` too;
+anywhere else `.short()`, `.short_icon()` and the meta size are the floor, and a worded control
+never takes `.xsmall()`, whose words run to its edges.
 Every control in one row of actions stands at one height. A correction a component needs lives
 in its shared wrapper (`Short`, `Tall`), never at a call site. `docs/ui-patterns.md` (*Control
 sizes*) maps each role to its component and size.

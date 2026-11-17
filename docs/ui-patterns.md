@@ -158,18 +158,19 @@ at the chrome size (`strip`): what it names at the start, in full ink, its contr
 ghost buttons at their control sizes (`strip_control` for an icon alone). An icon-only control is named through `.named(..)`: its
 tooltip, and the same words as its accessible name.
 Keep identity at the leading edge and actions at the trailing edge in every equivalent strip; a control that
-shows a region the strip's own panel hid may lead (the way back to the rail, a list's toggle).
+shows a region the strip's own panel hid may lead (the way back to a list, a list's toggle).
 Filters belong below the region header with the content they filter. Reserve the action group's
 width while labels truncate; showing hover actions must not move the text beside them.
 
-The Workbench's strip, the terminal's and the Editor's are tab panel bars (`tab_bar`),
-the Editor's at `tokens::MODE_BAR_H`: no fill, a line under the bar, the open tab a rounded
+The Workbench's strip, the terminal's and the Editor's are tab panel bars (`tab_bar`), the
+Editor's at `tokens::MODE_BAR_H`: no fill, a line under the bar, the open tab a rounded
 `secondary` fill. The Editor's names only the file open now, as a `tab_select` dropping down the
-project's tree, and has no line: the file under it fades out beneath it instead.
-Any other bar inside the Workbench is a `workbench_strip`, padded `tokens::ROW_INSET` so its words
-and the tree rows' names read down one edge: the reader's bar is a `mode_strip`, `MODE_BAR_H`
-tall, a step under the strip over it; an issue's trail draws its own. Every bar inside a region's box
-draws a line where it ends; the conversation's header draws none and keeps `px_3`.
+project's tree, and has no line: the file under it fades out beneath it instead. Any other bar
+inside the Workbench is a `workbench_strip`, padded `tokens::ROW_INSET` so its words and the tree
+rows' names read down one edge, with the line under it: the reader's bar is a `mode_strip`,
+`MODE_BAR_H` tall, a step under the strip over it, and an issue's trail is one too. Every other
+bar inside a region's box draws a line where it ends; the conversation's header draws none and
+keeps `px_3`.
 
 ### Cuts
 
@@ -260,12 +261,13 @@ they split the list, so they stand over its rows, under the bar's line.
 - where the content splits into a few states that each count (*Open*, *Closed*), those first,
   each a `choice` at the bar's size, the shown one filled, its count a `badge` after its word in
   the hue of that state (neutral at zero, which has nothing to draw the eye to);
-- the filters, kept to the row's end after the choices, wrapping under them when narrow. Each is a
+- the filters, kept to the row's end after the choices, wrapping under them when narrow (a dock's
+  bar never wraps: its search shrinks instead). Each is a
   `picker` at the bar's size with its caret, its label naming what it is set to: a ghost in the muted
   ink while it is where it starts, on the secondary fill in that fill's ink once it narrows the
   content;
 - after them, where more than one thing narrows the content and only while one is set, *Clear
-  filters*: a ghost at the bar's size that
+  filters*: a ghost at the bar's size on a page, on the secondary fill in a dock's bar, that
   puts the search and every filter back (a choice is not a filter); last in its group, so nothing
   moves as it comes and goes.
 
@@ -525,6 +527,6 @@ danger tint.
 - *Delete* takes a thing off disk; *Remove* takes it out of a list and leaves it; *Uninstall* is
   for a plugin; *Discard* throws away unsaved changes.
 - *Keep* dismisses a confirmation; *Cancel* leaves a form or a dialog; *Close* puts a panel away.
-- A command reads as a plain sentence, its article kept: *Restart the agent*, *Hide the rail*.
+- A command reads as a plain sentence, its article kept: *Restart the agent*, *Hide the Workbench*.
 - Hints, empty lines and toasts end without a period; a dialog's description is whole sentences.
 - On-screen words are the glossary's (`CONTEXT.md`), never its _Avoid_ words.
