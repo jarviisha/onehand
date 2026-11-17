@@ -238,6 +238,10 @@ impl IssuesView {
                 div()
                     .flex_1()
                     .min_w(SEARCH_MIN)
+                    // With the short field's own inset (a `2` step) this sets
+                    // the search's glyph at the row inset, the filters' end
+                    // inset on the other side.
+                    .pl_2()
                     .relative()
                     .h_flex()
                     .child(
