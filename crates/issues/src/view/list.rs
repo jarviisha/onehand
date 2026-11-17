@@ -240,7 +240,15 @@ impl IssuesView {
                     .min_w(SEARCH_MIN)
                     .relative()
                     .h_flex()
-                    .child(search_input(&query, cx).appearance(false).short().h_full())
+                    .child(
+                        // No clearing cross: *Clear filters* after it clears
+                        // the search and the label both.
+                        search_input(&query, cx)
+                            .appearance(false)
+                            .cleanable(false)
+                            .short()
+                            .h_full(),
+                    )
                     .child(end_fade(cx)),
             )
             // Kept to the row's end, past the search; *Clear filters* last of the filters, so
@@ -257,7 +265,7 @@ impl IssuesView {
                         group.child(
                             action("issues-clear-filters")
                                 .short()
-                                .quiet(cx)
+                                .secondary()
                                 .label("Clear filters")
                                 .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
                                     view.clear_tab_filters(window, cx)
