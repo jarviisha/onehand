@@ -21,9 +21,14 @@ use onehand_workbench::{BarEnds, WorkbenchModeSpec};
 pub(super) fn bar_ends(panel: &Entity<Workbench>, cx: &mut App) -> BarEnds {
     let lead = cx.new(|cx| ModePicker::new(panel, cx));
     let end = cx.new(|cx| StripEnd::new(panel, cx));
+    let weak = panel.downgrade();
     BarEnds {
         lead: lead.into(),
         end: end.into(),
+        chrome: std::rc::Rc::new(move |bar, cx| match weak.upgrade() {
+            Some(panel) => panel.read(cx).zoom.unscale(bar).into_any_element(),
+            None => bar,
+        }),
     }
 }
 

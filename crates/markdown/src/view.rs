@@ -495,7 +495,11 @@ impl MarkdownView {
             .child(
                 h_resizable("markdown-split")
                     .with_state(&self.split)
-                    .child(resizable_panel().child(reader))
+                    .child(
+                        resizable_panel()
+                            .size_range(layout.detail.clone())
+                            .child(reader),
+                    )
                     .child(
                         // `flex_none`, as the rail's own panel is: the group
                         // sets `flex_grow: 1` on a panel, and a list that grows

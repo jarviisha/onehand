@@ -57,6 +57,11 @@ pub struct ListDetail {
     /// so a drag does not flip the two into one at a time by itself.
     pub start: Pixels,
     pub range: Range<Pixels>,
+    /// The range a drag may take the detail through: the list's, mirrored
+    /// across the container. A list after its detail sits after the split's
+    /// handle, and the split clamps only the panel before it, so the detail
+    /// carries this one or a drag takes it, and the list, past either bound.
+    pub detail: Range<Pixels>,
 }
 
 /// Lay out a list beside its detail in a container `container` wide, as last
@@ -70,17 +75,33 @@ pub fn list_detail(
 ) -> ListDetail {
     // A size outside the range is the split seeding its panels before anything
     // was measured, not a width anybody dragged to.
-    let sizes = split.sizes();
-    let list = match widths.last {
-        true => sizes.last(),
-        false => sizes.first(),
-    };
-    let dragged = list.map(|w| *w / rem);
+    let dragged = list_size(split.sizes(), widths.last).map(|w| w / rem);
     let (side_by_side, max) = fit(dragged, widths, container.0);
+    let detail = detail_range(widths.min.0..max, container.0);
     ListDetail {
         side_by_side,
         start: rem * widths.start.0,
         range: rem * widths.min.0..rem * max,
+        detail: rem * detail.start..rem * detail.end,
+    }
+}
+
+/// The list's own size among the split's, which is its last panel's when it
+/// stands after its detail.
+fn list_size(sizes: &[Pixels], last: bool) -> Option<Pixels> {
+    match last {
+        true => sizes.last(),
+        false => sizes.first(),
+    }
+    .copied()
+}
+
+/// The detail's range, in rems, for a list taking `list` of a container
+/// `container` wide. Unbounded until the container is measured.
+fn detail_range(list: Range<f32>, container: f32) -> Range<f32> {
+    match container.is_finite() {
+        true => (container - list.end).max(0.)..(container - list.start).max(0.),
+        false => 0.0..f32::MAX,
     }
 }
 
@@ -170,6 +191,25 @@ mod tests {
         assert!(!fit(Some(20.), &WIDTHS, 40.).0);
         // A size outside the range is not a drag: the start width answers.
         assert!(fit(Some(2.), &WIDTHS, 40.).0);
+    }
+
+    #[test]
+    fn a_list_after_its_detail_is_read_from_the_last_panel() {
+        let sizes = [gpui::px(500.), gpui::px(200.)];
+        assert_eq!(list_size(&sizes, true), Some(gpui::px(200.)));
+        assert_eq!(list_size(&sizes, false), Some(gpui::px(500.)));
+        assert_eq!(list_size(&[], true), None);
+    }
+
+    #[test]
+    fn the_detail_mirrors_the_lists_range_across_the_container() {
+        let max = fit(None, &WIDTHS.last(), 40.).1;
+        assert_eq!(detail_range(WIDTHS.min.0..max, 40.), 24.0..31.0);
+        // Unmeasured, the detail is not bound at all.
+        assert_eq!(
+            detail_range(WIDTHS.min.0..max, f32::INFINITY),
+            0.0..f32::MAX
+        );
     }
 
     #[test]

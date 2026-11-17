@@ -106,7 +106,10 @@ impl Render for CodeView {
                 .ends_row(cx)
                 .map(IntoElement::into_any_element),
             false => self.editor.update(cx, |editor, cx| editor.strip(cx)),
-        };
+        }
+        // At chrome size: the panel scales this body by its zoom, and the row
+        // keeps the header's height, as it does over every other mode.
+        .map(|row| self.editor.read(cx).chrome(row, cx));
         let frame = div()
             .size_full()
             .relative()
@@ -140,7 +143,11 @@ impl Render for CodeView {
                 halves.child(
                     h_resizable("workbench-code")
                         .with_state(&self.divider)
-                        .child(resizable_panel().child(self.editor.clone()))
+                        .child(
+                            resizable_panel()
+                                .size_range(layout.detail.clone())
+                                .child(self.editor.clone()),
+                        )
                         .child(
                             // `flex_none`: the panel sets `flex_grow: 1` on itself,
                             // and a tree that grows is a tree taking whatever the

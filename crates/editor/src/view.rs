@@ -81,6 +81,14 @@ impl EditorView {
         self.ends = Some(ends);
     }
 
+    /// `row` at the Workbench's chrome size, inside a body its zoom scales.
+    pub(crate) fn chrome(&self, row: gpui::AnyElement, cx: &App) -> gpui::AnyElement {
+        match &self.ends {
+            Some(ends) => (ends.chrome)(row, cx),
+            None => row,
+        }
+    }
+
     /// The Workbench's row with nothing of this view's in it: over the tree
     /// shown alone, or a project not yet picked.
     pub(crate) fn ends_row(&self, cx: &App) -> Option<gpui::Div> {

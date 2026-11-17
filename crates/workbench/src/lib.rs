@@ -119,7 +119,15 @@ pub trait WorkbenchMode {
 pub struct BarEnds {
     pub lead: AnyView,
     pub end: AnyView,
+    /// Wraps a mode's bar so it lays out at chrome size inside the body the
+    /// panel scales by its zoom, as the panel's own row does: the row keeps
+    /// the header's height whichever bar draws it. The zoom is the panel's,
+    /// so the mode is handed the way to undo it rather than the number.
+    pub chrome: Chrome,
 }
+
+/// How [`BarEnds::chrome`] wraps a bar.
+pub type Chrome = Rc<dyn Fn(gpui::AnyElement, &App) -> gpui::AnyElement>;
 
 /// How a mode reaches back into the panel.
 ///

@@ -597,9 +597,9 @@ impl Render for Workbench {
         let own_row = self.refused.is_none() && self.own_row[self.showing.active()];
         let strip = (!own_row).then(|| self.strip(cx));
 
-        // The panel's row is chrome and keeps its size; only the work below
-        // it scales. A mode drawing the row in its own bar scales it with the
-        // rest of its body, as its tabs always were.
+        // The row is chrome and keeps its size; only the work below it
+        // scales. A mode drawing the row in its own bar undoes the scale on
+        // it through the ends' `chrome`.
         let body = match self.refused.clone() {
             Some(Refusal::Waiting(why)) => onehand_ui::hint(why, cx),
             Some(Refusal::Failed(why)) => failed(why, cx),

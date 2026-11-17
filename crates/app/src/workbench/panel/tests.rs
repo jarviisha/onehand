@@ -420,3 +420,54 @@ fn only_the_editor_draws_the_workbench_row_itself(cx: &mut TestAppContext) {
         ]
     );
 }
+
+/// A bar drawn through the ends' `chrome` inside the body the panel scales
+/// lays out at the size it has unzoomed, so the row keeps the header's height
+/// in a mode that draws it itself.
+#[gpui::test]
+fn a_modes_bar_keeps_chrome_size_under_the_panels_zoom(cx: &mut TestAppContext) {
+    use std::cell::Cell;
+    struct Probe {
+        panel: Entity<Workbench>,
+        height: Rc<Cell<Pixels>>,
+        rem: Rc<Cell<Pixels>>,
+    }
+    impl Render for Probe {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            self.rem.set(window.rem_size());
+            let height = self.height.clone();
+            let bar = div().h(gpui::rems(2.)).w_full().child(
+                gpui::canvas(
+                    move |bounds, _, _| height.set(bounds.size.height),
+                    |_, _, _, _| {},
+                )
+                .size_full(),
+            );
+            let panel = self.panel.read(cx);
+            let bar = (panel.ends.chrome)(bar.into_any_element(), cx);
+            div()
+                .size_full()
+                .child(panel.zoom.scale(div().size_full().child(bar)))
+        }
+    }
+    let (panel, _, _) = panel(cx);
+    panel.update(cx, |panel, cx| {
+        let mut zoom = panel.zoom();
+        zoom.zoom_in();
+        zoom.zoom_in();
+        panel.set_zoom(zoom, cx);
+    });
+    let (height, rem) = (
+        Rc::new(Cell::new(Pixels::ZERO)),
+        Rc::new(Cell::new(Pixels::ZERO)),
+    );
+    let (h, r) = (height.clone(), rem.clone());
+    let (_, cx) = cx.add_window_view(move |_, _| Probe {
+        panel,
+        height: h,
+        rem: r,
+    });
+    cx.run_until_parked();
+    assert!(rem.get() > Pixels::ZERO);
+    assert_eq!(height.get(), rem.get() * 2.);
+}
