@@ -321,7 +321,7 @@ impl TerminalPanel {
             &root,
             Program::Shell,
             crate::zoom::term_font_size(self.zoom),
-            crate::theme::dock_surface(cx),
+            crate::theme::terminal_surface(cx),
             cx,
             move |window, cx| {
                 let _ = panel.update(cx, |panel: &mut Self, cx| panel.reap(window, cx));
@@ -511,7 +511,7 @@ impl TerminalPanel {
             return;
         }
         self.terminal_theme = current;
-        let colors = terminal_palette(crate::theme::dock_surface(cx), cx);
+        let colors = terminal_palette(crate::theme::terminal_surface(cx), cx);
         for set in self.shells.values() {
             for tab in &set.tabs {
                 tab.shell.set_palette(colors.clone(), cx);

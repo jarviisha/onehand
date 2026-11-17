@@ -23,9 +23,10 @@ pub fn well(cx: &App) -> Div {
         .text_size(tokens::CODE_TEXT)
 }
 
-/// The surface a dock draws on: the reading surface, as every region's box
-/// is, so the Workbench and the terminal read as boxes of the same kind as
-/// the conversation's, parted from it by the window's fill around them.
+/// The surface the Workbench draws on: the reading surface, as the
+/// conversation's box is, so the two read as boxes of the same kind, parted
+/// by the window's fill around them. The terminal's box stands a step deeper,
+/// on a surface the app derives for it alone.
 ///
 /// Here rather than in the app for the reason [`action`](crate::action) is: the Neovim mode
 /// draws a terminal grid and has to hand it the surface it is sitting on, and
@@ -38,7 +39,7 @@ pub fn dock_surface(cx: &App) -> Hsla {
 }
 
 /// A region's box: the agent pane, the Workbench, the terminal. Filling what
-/// it is given, on the reading surface, at the large corner, wrapped in the
+/// it is given, on the reading surface (the terminal's box sets its own), at the large corner, wrapped in the
 /// theme's hairline (`border`) so its edge holds where the two fills sit
 /// close: it stands on the window's fill and is parted from its
 /// neighbours by the gap around it ([`tokens::REGION_GAP`]). Clipped, so nothing inside paints

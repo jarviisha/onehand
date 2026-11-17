@@ -240,11 +240,14 @@ not the palette's: they stay VS Code's (`onehand_terminal_ui::ansi`), as a progr
 its own. A chart's series and a label's kind take the library's base hues.
 
 The surfaces are neutral greys, each region a visible step from its neighbour: on the dark
-palette the reading surface is the deepest, a charcoal still clear of black, and every region's box
-stands on it, the agent pane, the Workbench and the terminal alike; the window's fill, under the
-title bar, the rail and the gaps between the boxes, a step over it; and a floating surface a step
-over the page, told apart by its fill and its edge. The light palette turns it over: the boxes white on a
-pale grey window, so the reading surface is the brightest. The focus ring is a grey. The one hue
+palette the reading surface is a charcoal still clear of black, and the agent pane's and the
+Workbench's boxes stand on it; the window's fill, under the title bar, the rail and the gaps
+between the boxes, a step over it; and a floating surface a step over the page, told apart by its
+fill and its edge. The terminal stands on a surface of its own, a step deeper than the reading
+surface in both palettes (`theme::terminal_surface`), so it reads apart from the boxes beside it;
+the Neovim mode, a Workbench mode, keeps the Workbench's. The light palette turns the rest over: the
+boxes white on a pale grey window, so the reading surface is the brightest, and the terminal a pale
+grey under it. The focus ring is a grey. The one hue
 among them is the blue of the primary action. The item chosen among several stands on the
 selected grey (`chosen_fill`), a step past the hover step, its name in the content ink
 (`chosen_ink`), as VS Code marks a selection in a list that does not hold the keys.
@@ -255,7 +258,8 @@ reaches.
 |---|---|
 | `background` / `foreground` | surface and text: every region's box |
 | `sidebar` | the window's fill: the title bar, the rail and the gaps between the boxes |
-| `theme::dock_surface` | the Workbench and the terminal: the reading surface, as every box is |
+| `onehand_ui::dock_surface` | the Workbench, the Neovim mode in it: the reading surface, as every box is |
+| `theme::terminal_surface` | the terminal's box, its bar, its shell list and its grids: a step deeper than the reading surface |
 | `muted` / `muted_foreground` | quiet fills (every well), meta text |
 | `theme::meta_ink` | the middle ink: a detail beside a name, between prose and meta, contrast-tested |
 | `border` | every hairline, a folding block's and a Settings group's edge; a box on a page takes `input` |

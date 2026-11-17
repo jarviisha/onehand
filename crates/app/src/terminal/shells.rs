@@ -174,6 +174,9 @@ impl TerminalPanel {
             theme.info,
             theme.muted_foreground,
         );
+        // The list stands on the terminal's grey, under which the list hover
+        // of a white box sinks by day: a row is hovered as the rail's are.
+        let hover = theme.sidebar_accent;
         let chosen_ink = onehand_ui::chosen_ink(cx);
         let mut list = div()
             .id("terminal-shell-list")
@@ -202,10 +205,12 @@ impl TerminalPanel {
                     .border_1()
                     .border_color(gpui::transparent_black())
                     .focus_visible(move |el| el.border_color(ring))
-                    .when(row.chosen, |el| {
-                        el.bg(secondary)
+                    .map(|el| match row.chosen {
+                        true => el
+                            .bg(secondary)
                             .text_color(chosen_ink)
-                            .hover(move |el| el.bg(secondary))
+                            .hover(move |el| el.bg(secondary)),
+                        false => el.hover(move |el| el.bg(hover)),
                     })
                     .tooltip(onehand_ui::tip(move |window, cx| {
                         gpui_component::tooltip::Tooltip::new(name.clone()).build(window, cx)

@@ -184,12 +184,23 @@ impl TabGroupRenderer for BareGroup {
             return Empty.into_any_element();
         }
         let live = PanelId::from(panel.entity_id()) == self.chat;
+        // The terminal's box stands on a surface of its own, a step deeper
+        // than the others, which its grids are handed as their background.
+        let terminal = panel
+            .clone()
+            .downcast::<crate::terminal::TerminalPanel>()
+            .is_ok();
         // The box is the positioned parent, inside the gap, so a cached view
         // laid out absolute fills the box and not the gap with it.
-        let boxed = onehand_ui::region(cx).relative().map(|slot| match live {
-            true => slot.child(panel),
-            false => slot.child(panel.cached(StyleRefinement::default().absolute().size_full())),
-        });
+        let boxed = onehand_ui::region(cx)
+            .when(terminal, |slot| slot.bg(crate::theme::terminal_surface(cx)))
+            .relative()
+            .map(|slot| match live {
+                true => slot.child(panel),
+                false => {
+                    slot.child(panel.cached(StyleRefinement::default().absolute().size_full()))
+                }
+            });
         div()
             .flex_1()
             .size_full()
