@@ -17,15 +17,22 @@ use onehand_ui::ShortIcon as _;
 
 /// The workspace's name and a chevron, a quiet button and a tab stop of its
 /// own, which opens the workspace menu when pressed and on Enter. It stands at
-/// the title bar's start; the name is cut at a character, as a menu row's is.
+/// the title bar's start; the name is cut at a character, as a menu row's is,
+/// and said whole on hover when it is.
 pub(crate) fn workspace_control(
     shell: &Shell,
     cx: &mut Context<Shell>,
 ) -> impl IntoElement + use<> {
     let workspace = &shell.workspace_window().workspace;
     let name = ellipsize(&workspace.name, MAX_LABEL);
+    let what = "Open another workspace, or start one";
+    let hint = match name.as_ref() == workspace.name {
+        true => what.to_string(),
+        false => format!("{}: {what}", workspace.name),
+    };
     let initial: String = workspace
         .name
+        .trim_start()
         .chars()
         .next()
         .map(|c| c.to_uppercase().collect())
@@ -33,19 +40,22 @@ pub(crate) fn workspace_control(
     let theme = cx.theme();
     // A letter tile before the name, so the workspace reads as the window's
     // owner rather than one more control in the bar. It stands outside the
-    // button: it marks the workspace, and only the name opens its menu.
-    let tile = div()
-        .size(onehand_ui::tokens::WORKSPACE_TILE)
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(theme.radius)
-        .bg(theme.accent)
-        .text_xs()
-        .font_semibold()
-        .text_color(theme.accent_foreground)
-        .child(initial);
+    // button: it marks the workspace, and only the name opens its menu. A
+    // name with no letter to show gets none, not an empty box.
+    let tile = (!initial.is_empty()).then(|| {
+        div()
+            .size(onehand_ui::tokens::WORKSPACE_TILE)
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(theme.radius)
+            .bg(theme.accent)
+            .text_xs()
+            .font_semibold()
+            .text_color(theme.accent_foreground)
+            .child(initial)
+    });
     let label = div()
         .min_w_0()
         .whitespace_nowrap()
@@ -62,7 +72,7 @@ pub(crate) fn workspace_control(
         .flex_none()
         .items_center()
         .gap_1p5()
-        .child(tile)
+        .children(tile)
         .child(onehand_ui::menu_below(
             "workspace-menu",
             crate::controls::action("workspace-segment")
@@ -70,7 +80,7 @@ pub(crate) fn workspace_control(
                 .short()
                 .child(label)
                 .dropdown_caret(true)
-                .named("Open another workspace, or start one"),
+                .named(hint),
             menu,
         ))
 }
