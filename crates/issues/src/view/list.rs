@@ -233,6 +233,8 @@ impl IssuesView {
             .flex_none()
             .px(onehand_ui::tokens::ROW_INSET)
             .py_2()
+            .border_b_1()
+            .border_color(cx.theme().border)
             .child(
                 div()
                     .flex_1()

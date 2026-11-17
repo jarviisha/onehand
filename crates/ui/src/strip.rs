@@ -15,7 +15,7 @@ use gpui_component::{ActiveTheme as _, Icon, StyledExt as _};
 /// A strip: [`crate::tokens::BAR_H`] tall, inset `px_3`, its parts `gap_2`
 /// apart, lettered at the chrome size in the muted ink. What it names is
 /// written in full ink by the caller, first. It draws no line under it; a
-/// caller that needs one adds it. A bar inside the Workbench is a
+/// caller that needs one adds it ([`workbench_strip`] does). A bar inside the Workbench is a
 /// [`workbench_strip`].
 pub fn strip(cx: &App) -> Div {
     div()
@@ -33,9 +33,13 @@ pub fn strip(cx: &App) -> Div {
 /// A bar inside the Workbench: a [`strip`] inset as the tree rows under it
 /// ([`crate::tokens::ROW_INSET`]), so the bar's words and the rows' names
 /// read down one edge. The conversation's header keeps the plain one; the
-/// docks' own bars are tab bars ([`crate::tab_bar`]).
+/// docks' own bars are tab bars ([`crate::tab_bar`]). A line runs under it,
+/// parting it from what it heads.
 pub fn workbench_strip(cx: &App) -> Div {
-    strip(cx).px(crate::tokens::ROW_INSET)
+    strip(cx)
+        .px(crate::tokens::ROW_INSET)
+        .border_b_1()
+        .border_color(cx.theme().border)
 }
 
 /// A mode's own bar under the Workbench's strip: a [`workbench_strip`]

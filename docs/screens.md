@@ -232,14 +232,14 @@ form; both are drawn as `docs/workflows.md` describes.
 
 Each a box on the reading surface, as the agent pane is, with no edge: the Workbench beside the
 conversation, the right half of the `DockArea`'s centre, and the terminal, the bottom dock, under
-the two across their whole width. Each opens on its own bar, with no line under it or anywhere
-inside the box. The terminal is drawn no taller than leaves the conversation a readable height
+the two across their whole width. Each opens on its own bar, with a line under it, and a list beside its detail inside the box is
+parted from it by a line; the box itself has no edge. The terminal is drawn no taller than leaves the conversation a readable height
 (its dragged height kept). Maximizing the Workbench gives it the conversation's room and leaves
 the terminal as it is.
 
 - Bars as tall as the header, a mode's own bar under the Workbench's a step lower. The
   Workbench's, the terminal's and every other `tab_bar` the two draw (the Editor's files, the
-  Issues tab's) take one look: no fill of their own and no lines, the tabs parted by space, the
+  Issues tab's) take one look: no fill of their own and a line under the bar, the tabs parted by space, not by lines, the
   open one a rounded fill (`secondary`) with its name in the content ink, every tab, tree row and
   shell row at the regular weight, the controls at the end.
 - The Workbench's: *← Conversation* while it has the area, the modes as tabs (Editor, Markdown,
@@ -257,13 +257,13 @@ the terminal as it is.
 - A list beside its detail (files, documents, issues) only while the dock holds both; else one at a
   time, the detail under a link back naming the list. Picking shows it; going back keeps it. Files
   and Markdown draw one tree row (`tree_row`); the tree stands on the right of the file or
-  document it opens, parted from it by space on the box's own fill, not by a line, and that file or document is its
+  document it opens, parted from it by a line down its left edge, with no fill, and that file or document is its
   picked row, a changed file's letter in its state's ink at the row's end.
 - A failed open or save in the Editor or Markdown is a toast; a file changed on disk, a Neovim that
   would not start and a listing that failed stand as a status line under the mode.
 - Plugins: the search and filters a filter bar; a row's actions on hover and on keyboard focus, its
   ⋯ menu also on a right-click (refused while another change runs), its switch always; what runs and what waits on a restart under the list, so neither moves it.
-- The Issues tab: one filter bar over the list and the issue both, with no line under it: the
+- The Issues tab: one filter bar over the list and the issue both, with a line under it: the
   search, the label picker, while the search or a label narrows the list *Clear filters*, and `+`
   (*New issue*, primary, secondary while the form holds that) at the end, the filters wrapping
   under the search when narrow; a filter picked while the issue shows alone shows the list. Over

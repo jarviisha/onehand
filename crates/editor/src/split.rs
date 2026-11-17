@@ -24,7 +24,7 @@ use gpui::{
     AnyView, App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled,
     Subscription, Window, div,
 };
-use gpui_component::{ResizableState, StyledExt, resizable_panel};
+use gpui_component::{ActiveTheme, ResizableState, StyledExt, resizable_panel};
 use onehand_ui::h_resizable;
 use onehand_ui::{ListWidths, Measured, list_detail, measure_width};
 
@@ -140,9 +140,10 @@ impl Render for CodeView {
                                 div()
                                     .size_full()
                                     .v_flex()
-                                    // The tree belongs to the box and parts
-                                    // from the editor by space alone: no fill,
-                                    // no line.
+                                    // A line down the tree's side facing
+                                    // the editor; no fill.
+                                    .border_l_1()
+                                    .border_color(cx.theme().border)
                                     .child(self.files.clone()),
                             ),
                     ),

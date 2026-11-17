@@ -93,6 +93,9 @@ are not steps and stay allowed. A named spacing constant (`BLOCK_GAP`, `TIGHT_GA
 `tokens::REGION_GAP` is the `1p5` step: the gap between the regions' boxes, and between them and
 the window's edge, through which the window's fill shows.
 
+The boxes themselves have no edge. Inside one, a strip has a 1px `border` line under it and a list beside
+its detail one down its side facing the detail.
+
 ## Type
 
 | Write | rem | px |

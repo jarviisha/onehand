@@ -222,8 +222,7 @@ pub(crate) fn tab_strip<T: 'static>(
         .children(tabs)
         .children(more.map(|more| div().h_flex().items_center().px_1().child(more)));
 
-    // A mode's bar, a step lower than the Workbench's over it, with no line
-    // between it and the code it heads.
+    // A mode's bar, a step lower than the Workbench's over it.
     onehand_ui::tab_bar(cx)
         .h(onehand_ui::tokens::MODE_BAR_H)
         .child(div().h_flex().items_center().px_1().child(lead))

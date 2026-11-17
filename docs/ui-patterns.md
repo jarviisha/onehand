@@ -163,12 +163,12 @@ Filters belong below the region header with the content they filter. Reserve the
 width while labels truncate; showing hover actions must not move the text beside them.
 
 The Workbench's strip, the terminal's and the Editor's file tabs are tab panel bars (`tab_bar`),
-the Editor's at `tokens::MODE_BAR_H`: no fill and no line of their own, the open tab a rounded
+the Editor's at `tokens::MODE_BAR_H`: no fill, a line under the bar, the open tab a rounded
 `secondary` fill.
 Any other bar inside the Workbench is a `workbench_strip`, padded `tokens::ROW_INSET` so its words
 and the tree rows' names read down one edge: the reader's bar is a `mode_strip`, `MODE_BAR_H`
-tall, a step under the strip over it; an issue's trail draws its own. No bar inside a region's box
-draws a line where it ends, and the conversation's header draws none either and keeps `px_3`.
+tall, a step under the strip over it; an issue's trail draws its own. Every bar inside a region's box
+draws a line where it ends; the conversation's header draws none and keeps `px_3`.
 
 ### Cuts
 

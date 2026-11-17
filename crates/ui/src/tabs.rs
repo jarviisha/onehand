@@ -217,12 +217,16 @@ pub fn tab_chip(
         .child(gpui::div().min_w_0().truncate().child(label))
 }
 
-/// A dock's bar of tabs: a strip with no fill and no line of its own, on
-/// the box it heads, its tabs ([`panel_tab`]) parted from each other by
+/// A dock's bar of tabs: a strip with no fill, a line under it parting it from
+/// what it heads, on the box it heads, its tabs ([`panel_tab`]) parted from each other by
 /// space, its controls at its end. The caller adds the tabs, then whatever
 /// ends the bar.
 pub fn tab_bar(cx: &App) -> gpui::Div {
-    crate::strip(cx).px_1().gap_1()
+    crate::strip(cx)
+        .px_1()
+        .gap_1()
+        .border_b_1()
+        .border_color(cx.theme().border)
 }
 
 /// One tab of a [`tab_bar`]: a step short of the bar, the chosen one a
