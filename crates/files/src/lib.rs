@@ -15,6 +15,10 @@ pub(crate) use view::*;
 pub const SPEC: WorkbenchModeSpec =
     WorkbenchModeSpec::element(ModeId::new("workbench.files"), "Files");
 
+/// The most the dropdown's tree stands before it scrolls: a folder or two
+/// unfolded. In rems, so it follows the panel's zoom.
+const DROPDOWN_MAX_H: gpui::Rems = gpui::rems(24.);
+
 /// The Files mode: a view and nothing else.
 ///
 /// Everything this mode works on lives in the view, so what is left here is the
@@ -32,7 +36,7 @@ impl Mode {
     pub fn new(ask: Asker, cx: &mut App) -> Self {
         Self {
             view: FilesView::new(ask.clone(), cx),
-            dropdown: FilesView::new(ask, cx),
+            dropdown: FilesView::capped(ask, Some(DROPDOWN_MAX_H), cx),
         }
     }
 

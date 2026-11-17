@@ -93,3 +93,12 @@ fn a_folders_failure_outlasts_its_roots_listing(cx: &mut TestAppContext) {
         assert!(view.failed.is_empty());
     });
 }
+
+#[test]
+fn a_capped_tree_stands_at_its_rows_up_to_the_cap() {
+    let cap = gpui::rems(24.);
+    let three = fit_height(3, cap);
+    assert!((three.0 - (3. * tokens::TREE_ROW_H.0 + 2. * TREE_PAD_Y.0)).abs() < 1e-4);
+    assert_eq!(fit_height(500, cap), cap);
+    assert_eq!(fit_height(0, cap), gpui::rems(2. * TREE_PAD_Y.0));
+}

@@ -7,8 +7,8 @@
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, AppContext as _, Context, Entity, InteractiveElement, IntoElement, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Window, div,
+    App, AppContext as _, Context, Entity, InteractiveElement, IntoElement, ParentElement, Rems,
+    Render, StatefulInteractiveElement, Styled, Window, div,
 };
 use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
@@ -46,10 +46,22 @@ pub(crate) struct FilesView {
     /// The offloaded roots, each with its host: a row of one offers to send
     /// itself there.
     offloaded: HashMap<PathBuf, String>,
+    /// The most the tree may stand, where it is drawn in something sized by
+    /// its content (a dropdown): it stands as tall as its rows up to this,
+    /// and scrolls past it. `None` fills the height it is given.
+    cap: Option<Rems>,
 }
 
 impl FilesView {
     pub(crate) fn new(ask: Asker, cx: &mut App) -> Entity<Self> {
+        Self::capped(ask, None, cx)
+    }
+
+    /// A tree standing at its rows' height up to `cap`, for a place that
+    /// gives it no height of its own: a scroll there fills its parent, and a
+    /// parent sized by its content has nothing to fill, so it would lay out
+    /// at no height at all.
+    pub(crate) fn capped(ask: Asker, cap: Option<Rems>, cx: &mut App) -> Entity<Self> {
         cx.new(|_| Self {
             root: None,
             trees: HashMap::new(),
@@ -59,6 +71,7 @@ impl FilesView {
             ask,
             active: None,
             offloaded: HashMap::new(),
+            cap,
         })
     }
 
@@ -269,20 +282,29 @@ impl Render for FilesView {
             .flex_1()
             .min_h_0()
             .v_flex()
-            .child(div().flex_1().min_h_0().child(rows(
-                &root,
-                tree,
-                self.git.get(&root),
-                self.active.as_deref(),
-                cx.listener(|view: &mut Self, entry: &TreeEntry, window, cx| {
-                    view.click(entry, window, cx)
-                }),
-                self.offloaded.get(&root).map(|host| Send {
-                    host: host.clone(),
-                    ask: self.ask.clone(),
-                }),
-                cx,
-            )))
+            .child(
+                div().flex_1().min_h_0().child(
+                    rows(
+                        &root,
+                        tree,
+                        self.git.get(&root),
+                        self.active.as_deref(),
+                        cx.listener(|view: &mut Self, entry: &TreeEntry, window, cx| {
+                            view.click(entry, window, cx)
+                        }),
+                        self.offloaded.get(&root).map(|host| Send {
+                            host: host.clone(),
+                            ask: self.ask.clone(),
+                        }),
+                        cx,
+                    )
+                    .when_some(self.cap, |list, cap| {
+                        // Counted again only here, where the tree sizes itself.
+                        let (rows, left_out) = tree.visible_rows(&root);
+                        list.h(fit_height(rows.len() + usize::from(left_out > 0), cap))
+                    }),
+                ),
+            )
             .children(failure)
             .into_any_element()
     }
@@ -310,6 +332,16 @@ struct Send {
 /// marks run down one column.
 const MARK_W: gpui::Rems = gpui::rems(1.);
 
+/// The space over and under the tree's rows.
+const TREE_PAD_Y: Rems = gpui::rems(0.5);
+
+/// How tall a capped tree of `lines` lines stands: its rows and the space
+/// around them, up to `cap`. The *N more* line counts as a row; it is shorter.
+fn fit_height(lines: usize, cap: Rems) -> Rems {
+    let rows = lines as f32 * tokens::TREE_ROW_H.0 + 2. * TREE_PAD_Y.0;
+    gpui::rems(rows.min(cap.0))
+}
+
 /// Draw the tree for `root`, the file open beside it, `active`, picked.
 ///
 /// `git` is the root's status, if it is a repo at all — a non-repo root simply
@@ -322,7 +354,7 @@ fn rows(
     on_click: impl Fn(&TreeEntry, &mut Window, &mut App) + 'static,
     send: Option<Send>,
     cx: &App,
-) -> gpui::AnyElement {
+) -> gpui::Stateful<gpui::Div> {
     let send = send.map(std::rc::Rc::new);
     let (rows, left_out) = tree.visible_rows(root);
     let on_click = std::rc::Rc::new(on_click);
@@ -332,7 +364,7 @@ fn rows(
         .id("file-tree")
         .v_flex()
         .size_full()
-        .py_2()
+        .py(TREE_PAD_Y)
         .overflow_y_scroll()
         .children(rows.into_iter().enumerate().map(|(i, row)| {
             let entry = row.entry;
@@ -424,7 +456,6 @@ fn rows(
                     .child(format!("{left_out} more not shown")),
             )
         })
-        .into_any_element()
 }
 
 #[cfg(test)]
