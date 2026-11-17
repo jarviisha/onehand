@@ -34,14 +34,14 @@ pub(crate) fn workspace_control(
     // A letter tile before the name, so the workspace reads as the window's
     // owner rather than one more control in the bar.
     let tile = div()
-        .size_4()
+        .size_5()
         .flex_none()
         .flex()
         .items_center()
         .justify_center()
         .rounded(theme.radius)
         .bg(theme.accent)
-        .text_size(onehand_ui::tokens::MICRO_TEXT)
+        .text_xs()
         .font_semibold()
         .text_color(theme.accent_foreground)
         .child(initial);
@@ -49,6 +49,8 @@ pub(crate) fn workspace_control(
         .min_w_0()
         .whitespace_nowrap()
         .text_ellipsis()
+        // A step over the bar's chrome size: the one name the bar carries.
+        .text_sm()
         .font_medium()
         .text_color(theme.foreground)
         .child(name);
