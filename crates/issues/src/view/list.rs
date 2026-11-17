@@ -20,8 +20,8 @@ use onehand_ui::Short as _;
 use onehand_ui::ShortIcon as _;
 use onehand_ui::search_input;
 use onehand_ui::{
-    ControlSize, Tint, action, menu_below, menu_item, middle_ink, picker, row as row_surface,
-    status_ink, switch,
+    ControlSize, Tint, action, end_fade, menu_below, menu_item, middle_ink, picker,
+    row as row_surface, status_ink, switch,
 };
 use std::collections::BTreeSet;
 
@@ -227,21 +227,23 @@ impl IssuesView {
             .h_flex()
             .items_stretch()
             .w_full()
+            .h(onehand_ui::tokens::MODE_BAR_H)
             .flex_none()
             .border_b_1()
             .border_color(cx.theme().border)
             // The search is bare and fills the bar, framed by the line over
-            // the bar and the one under it; it shrinks, never wraps, so the
-            // line parting it from the filters always stands between them.
+            // the bar and the one under it; it shrinks, never wraps, and its
+            // end fades into the filters rather than being cut.
             .child(
                 div()
                     .flex_1()
                     .min_w(SEARCH_MIN)
+                    .relative()
                     .h_flex()
-                    .child(search_input(&query, cx).appearance(false).short().h_full()),
+                    .child(search_input(&query, cx).appearance(false).short().h_full())
+                    .child(end_fade(cx)),
             )
-            // Kept to the row's end, past the line parting them from the
-            // search; *Clear filters* last of the filters, so
+            // Kept to the row's end, past the search; *Clear filters* last of the filters, so
             // nothing moves as it comes and goes, and `+` at the very end.
             .child(
                 div()
@@ -250,9 +252,6 @@ impl IssuesView {
                     .items_center()
                     .gap_2()
                     .px(onehand_ui::tokens::ROW_INSET)
-                    .py_2()
-                    .border_l_1()
-                    .border_color(cx.theme().border)
                     .children(self.label_menu(issues, cx))
                     .when(narrowed, |group| {
                         group.child(

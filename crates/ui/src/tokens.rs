@@ -19,6 +19,10 @@ pub const BAR_H: Rems = rems(2.25);
 /// from the next. A dock's or a split's grip sits in it.
 pub const REGION_GAP: Rems = rems(0.375);
 
+/// How far a box's fill fades into or out of the content under a bar or past
+/// a field's end, in place of a line.
+pub const BAR_FADE: Rems = rems(0.75);
+
 /// A mode's own bar, under the Workbench's strip: the editor's tabs, the
 /// reader's bar. A step under [`BAR_H`], so the second bar reads as the
 /// mode's rather than as the panel's a second time; its controls keep their

@@ -201,9 +201,6 @@ fn tree_dropdown(tree: AnyView, active: usize, close: OnShared<usize>, cx: &App)
         .child(tree)
 }
 
-/// How far the file fades out under the bar over it.
-const BAR_FADE: Rems = rems(0.75);
-
 /// The band over the top of the file that parts it from the bar: the box's
 /// fill fading to nothing, drawn over the content and taking no room of its
 /// own. A line would be one more edge; the fade reads as the file running on
@@ -215,7 +212,7 @@ pub(crate) fn top_fade(cx: &App) -> gpui::Div {
         .top_0()
         .left_0()
         .right_0()
-        .h(BAR_FADE)
+        .h(onehand_ui::tokens::BAR_FADE)
         .bg(gpui::linear_gradient(
             180.,
             gpui::linear_color_stop(surface, 0.),

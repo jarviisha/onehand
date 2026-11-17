@@ -83,3 +83,22 @@ pub fn card_box(cx: &App) -> Div {
         .border_1()
         .border_color(cx.theme().input)
 }
+
+/// The band over a field's trailing edge: nothing fading to the box's fill
+/// ([`dock_surface`]), [`tokens::BAR_FADE`] wide, drawn over the field and
+/// taking no room of its own, so text running past the field melts into what
+/// follows instead of being cut. The field's parent must be `relative`.
+pub fn end_fade(cx: &App) -> gpui::Div {
+    let surface = dock_surface(cx);
+    gpui::div()
+        .absolute()
+        .top_0()
+        .bottom_0()
+        .right_0()
+        .w(tokens::BAR_FADE)
+        .bg(gpui::linear_gradient(
+            90.,
+            gpui::linear_color_stop(surface.alpha(0.), 0.),
+            gpui::linear_color_stop(surface, 1.),
+        ))
+}
