@@ -37,32 +37,44 @@ impl ControlDrive {
             .or_else(|| self.requests.lead_opening(uid))
     }
 
-    /// Lead `lead`'s workers, opening or open, oldest first.
+    /// Lead `lead`'s workers, opening or open, oldest first: in the order
+    /// they opened, and those that came back in the order kept, never by
+    /// uid, which a coming back takes in whatever order its reads land.
     pub fn workers_of(&self, lead: u64) -> Vec<Worker> {
         let open = self
             .workers
             .iter()
             .filter(|(_, relation)| relation.lead == lead)
-            .map(|(&uid, relation)| Worker {
-                uid,
-                turn: relation.turn,
-                sent: Some(relation.sent),
-                person: relation.person,
+            .map(|(&uid, relation)| {
+                let worker = Worker {
+                    uid,
+                    turn: relation.turn,
+                    sent: Some(relation.sent),
+                    person: relation.person,
+                };
+                (relation.seq, worker)
             });
         let opening = self
             .requests
             .opening_of(lead)
             .into_iter()
             .filter(|uid| !self.workers.contains_key(uid))
-            .map(|uid| Worker {
-                uid,
-                turn: None,
-                sent: None,
-                person: false,
+            .map(|uid| {
+                let seq = self
+                    .key_of(uid)
+                    .and_then(|key| self.pending.get(&key))
+                    .map_or(u64::MAX, |pending| pending.token);
+                let worker = Worker {
+                    uid,
+                    turn: None,
+                    sent: None,
+                    person: false,
+                };
+                (seq, worker)
             });
-        let mut workers: Vec<Worker> = open.chain(opening).collect();
-        workers.sort_by_key(|worker| worker.uid);
-        workers
+        let mut workers: Vec<(u64, Worker)> = open.chain(opening).collect();
+        workers.sort_by_key(|(seq, _)| *seq);
+        workers.into_iter().map(|(_, worker)| worker).collect()
     }
 
     /// Whether session `uid` leads workers, open or opening: its

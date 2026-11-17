@@ -1203,3 +1203,63 @@ fn a_link_lost_mid_turn_keeps_it_unended() {
     said_over(&mut drive, 7, "c7", 1, false);
     assert!(drive.held(7).unwrap().unended);
 }
+
+#[test]
+fn workers_come_back_in_the_order_kept() {
+    let mut drive = ControlDrive::default();
+    let keys: Vec<Key> = drive
+        .back(1, kept_two(), &projects())
+        .into_iter()
+        .map(|begun| match begun {
+            Begun::Resolve { key, .. } => key,
+            Begun::Said(said) => panic!("said: {said}"),
+        })
+        .collect();
+    for (key, folder) in keys.iter().zip(["/repo", "/other"]) {
+        let at = Resolved {
+            folder: PathBuf::from(folder),
+            ..resolved()
+        };
+        drive.handle(Input::Resolved {
+            key: key.clone(),
+            resolved: Ok(at),
+            world: world(),
+        });
+    }
+    // The second kept starts first, so it has the lower uid.
+    drive.handle(Input::Started {
+        key: keys[1].clone(),
+        started: Ok(11),
+    });
+    drive.handle(Input::Started {
+        key: keys[0].clone(),
+        started: Ok(12),
+    });
+    let uids: Vec<u64> = drive.workers_of(1).iter().map(|w| w.uid).collect();
+    assert_eq!(uids, [12, 11]);
+}
+
+#[test]
+fn an_opening_worker_lists_after_the_older_ones() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let mut second = asked("more");
+    second.request = "r2".into();
+    second.project = "repo".into();
+    let (key, _) = resolves(drive.open_worker(second, &projects(), None));
+    let other = Resolved {
+        folder: PathBuf::from("/other"),
+        ..resolved()
+    };
+    drive.handle(Input::Resolved {
+        key: key.clone(),
+        resolved: Ok(other),
+        world: world(),
+    });
+    drive.handle(Input::Started {
+        key,
+        started: Ok(3),
+    });
+    let uids: Vec<u64> = drive.workers_of(1).iter().map(|w| w.uid).collect();
+    assert_eq!(uids, [7, 3]);
+}
