@@ -24,6 +24,34 @@ pub(crate) fn workspace_control(
 ) -> impl IntoElement + use<> {
     let workspace = &shell.workspace_window().workspace;
     let name = ellipsize(&workspace.name, MAX_LABEL);
+    let initial: String = workspace
+        .name
+        .chars()
+        .next()
+        .map(|c| c.to_uppercase().collect())
+        .unwrap_or_default();
+    let theme = cx.theme();
+    // A letter tile before the name, so the workspace reads as the window's
+    // owner rather than one more control in the bar.
+    let tile = div()
+        .size_4()
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(theme.radius)
+        .bg(theme.accent)
+        .text_size(onehand_ui::tokens::MICRO_TEXT)
+        .font_semibold()
+        .text_color(theme.accent_foreground)
+        .child(initial);
+    let label = div()
+        .min_w_0()
+        .whitespace_nowrap()
+        .text_ellipsis()
+        .font_medium()
+        .text_color(theme.foreground)
+        .child(name);
     let menu = super::workspace::workspace_menu(
         workspace.storage_dir.clone(),
         shell.recents(cx),
@@ -34,7 +62,8 @@ pub(crate) fn workspace_control(
         crate::controls::action("workspace-segment")
             .quiet(cx)
             .short()
-            .label(name)
+            .child(tile)
+            .child(label)
             .dropdown_caret(true)
             .named("Open another workspace, or start one"),
         menu,
