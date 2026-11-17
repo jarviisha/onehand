@@ -164,8 +164,8 @@ width while labels truncate; showing hover actions must not move the text beside
 
 The Workbench's strip, the terminal's and the Editor's are tab panel bars (`tab_bar`),
 the Editor's at `tokens::MODE_BAR_H`: no fill, a line under the bar, the open tab a rounded
-`secondary` fill. The Editor's names only the file open now, as a `tab_select` whose menu holds the
-rest.
+`secondary` fill. The Editor's names only the file open now, as a `tab_select` dropping down the
+project's tree.
 Any other bar inside the Workbench is a `workbench_strip`, padded `tokens::ROW_INSET` so its words
 and the tree rows' names read down one edge: the reader's bar is a `mode_strip`, `MODE_BAR_H`
 tall, a step under the strip over it; an issue's trail draws its own. Every bar inside a region's box

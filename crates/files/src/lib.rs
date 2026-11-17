@@ -21,22 +21,42 @@ pub const SPEC: WorkbenchModeSpec =
 /// declaration and the forwarding — which is the whole point of the shape.
 pub struct Mode {
     view: Entity<FilesView>,
+    /// A second tree over the same project, for a dropdown the mode beside
+    /// the tree opens: an entity is drawn in one place, so the tree that
+    /// stands in the panel cannot also stand in a popup. Told everything the
+    /// first is told, it keeps its own folds and reads its own listings.
+    dropdown: Entity<FilesView>,
 }
 
 impl Mode {
     pub fn new(ask: Asker, cx: &mut App) -> Self {
         Self {
-            view: FilesView::new(ask, cx),
+            view: FilesView::new(ask.clone(), cx),
+            dropdown: FilesView::new(ask, cx),
         }
     }
-}
 
-impl Mode {
-    /// How the mode beside the tree says which file it has open, so the tree
-    /// picks that file's row.
+    /// Both trees, to tell each the same thing.
+    fn each(&self, cx: &mut App, tell: impl Fn(&mut FilesView, &mut gpui::Context<FilesView>)) {
+        for view in [&self.view, &self.dropdown] {
+            view.update(cx, |view, cx| tell(view, cx));
+        }
+    }
+
+    /// How the mode beside the tree says which file it has open, so both
+    /// trees pick that file's row.
     pub fn active_setter(&self) -> impl Fn(Option<std::path::PathBuf>, &mut App) + 'static {
-        let view = self.view.clone();
-        move |path, cx| view.update(cx, |view, cx| view.set_active(path, cx))
+        let views = [self.view.clone(), self.dropdown.clone()];
+        move |path, cx| {
+            for view in &views {
+                view.update(cx, |view, cx| view.set_active(path.clone(), cx));
+            }
+        }
+    }
+
+    /// The second tree, drawn wherever the mode beside it opens it.
+    pub fn dropdown_view(&self) -> AnyView {
+        self.dropdown.clone().into()
     }
 }
 
@@ -50,27 +70,25 @@ impl WorkbenchMode for Mode {
     }
 
     fn set_root(&mut self, root: &Path, disk: &Disk, cx: &mut App) {
-        self.view
-            .update(cx, |view, cx| view.set_root(root, disk, cx));
+        self.each(cx, |view, cx| view.set_root(root, disk, cx));
     }
 
     fn forget_root(&mut self, root: &Path, cx: &mut App) {
-        self.view.update(cx, |view, cx| view.forget_root(root, cx));
+        self.each(cx, |view, cx| view.forget_root(root, cx));
     }
 
     fn handle(&mut self, request: &Request<'_>, cx: &mut App) -> bool {
         match request {
             Request::SetGit(git) => {
-                self.view.update(cx, |view, cx| view.set_git(git, cx));
+                self.each(cx, |view, cx| view.set_git(git, cx));
                 true
             }
             Request::Offloaded(roots) => {
-                self.view
-                    .update(cx, |view, cx| view.set_offloaded(roots, cx));
+                self.each(cx, |view, cx| view.set_offloaded(roots, cx));
                 true
             }
             Request::Rescan => {
-                self.view.update(cx, |view, cx| view.rescan(cx));
+                self.each(cx, |view, cx| view.rescan(cx));
                 true
             }
             // Not this mode's to answer.

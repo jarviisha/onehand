@@ -247,10 +247,12 @@ the terminal as it is.
   where the bar is too narrow for the tabs, `MODES_MIN_W`), maximize, hide.
 - The Editor's, on a bar of their own under the Workbench's: the link back to the tree while one
   shows at a time, then the file open now and no tab per file: its name (capped, the whole path on
-  hover, the unsaved dot while it holds edits) with the picker's caret, opening a menu of every
-  open file (the current one checked, 30 listed and then *N more*, *Close all* last), and its
-  cross, which closes it; with no file open, nothing there. The tree's toggle ends the bar, beside
-  the tree it shows and hides.
+  hover, the unsaved dot while it holds edits) with the picker's caret, dropping down the
+  project's file tree under it (a tree of its own beside the one in the panel, its own folds, the
+  open file picked, a fixed height and its own scroll; a file picked there opens and closes it,
+  as Escape and a press outside do), and its cross, which closes the file; with no file open,
+  nothing there. The other open files are reached through either tree; there is no list of them.
+  The tree's toggle ends the bar, beside the tree it shows and hides.
 - The terminal's: the open shell's name at its start, then `+`, maximize, hide. While the dock
   holds more than one shell, a list of them runs down the box's right side beside the grid, at a
   fixed width, neither dragged nor saved: a row per shell holding what its tab held (its name,

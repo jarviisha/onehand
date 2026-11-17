@@ -55,14 +55,10 @@ pub fn measure_width<T: 'static>(
     .size_full()
 }
 
-/// The most entries a tab select's menu lists before it says how many more
-/// there are.
-pub const TAB_MENU_CAP: usize = 30;
-
-/// A strip's select of one of several (the Workbench's modes, when narrow; the
-/// Editor's open file): a ghost button naming the current tab and the picker's caret, at a
+/// A strip's select (the Workbench's modes, when narrow; the Editor's open
+/// file): a ghost button naming the current one and the picker's caret, at a
 /// strip's size and capped like a tab, saying `hint` in full on hover. The
-/// caller hangs the menu of every tab on it.
+/// caller hangs what it opens on it: the modes' menu, the project's tree.
 pub fn tab_select(
     id: &'static str,
     label: gpui::SharedString,

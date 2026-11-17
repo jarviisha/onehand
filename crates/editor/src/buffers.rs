@@ -8,14 +8,14 @@
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, AppContext, Entity, IntoElement, ParentElement, Rems, SharedString, Styled, Window, div,
-    rems,
+    AnyView, App, AppContext, Entity, IntoElement, ParentElement, Rems, SharedString, Styled,
+    Window, div, rems,
 };
 use gpui_component::input::{Editor, EditorState};
+use gpui_component::popover::Popover;
 use gpui_component::{ActiveTheme, IconName, StyledExt};
-use onehand_core::editor::{EditorFile, RootEditors, Standing};
+use onehand_core::editor::{RootEditors, Standing};
 use onehand_ui::Named as _;
-use onehand_ui::{TAB_MENU_CAP, menu_below, menu_item, menu_row};
 use std::path::Path;
 
 /// The unsaved-edits mark on the open file.
@@ -50,20 +50,25 @@ pub(crate) fn language_for(path: &Path) -> &'static str {
     }
 }
 
-/// What a press on the bar does, each handed a file's index where it has one.
+/// What a press on the bar does.
 pub(crate) struct StripHandlers {
     pub(crate) toggle_tree: OnPress,
     pub(crate) back: OnPress,
-    pub(crate) select: OnTab,
-    pub(crate) close: OnTab,
-    pub(crate) close_all: OnShared,
+    /// Whether the tree's dropdown is open, and what hears it open or close.
+    pub(crate) picking: bool,
+    pub(crate) pick: On<bool>,
+    /// Handed the open file's index.
+    pub(crate) close: On<usize>,
 }
 
-pub(crate) type OnPress = Box<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App)>;
-/// Shared, because the menu holding it is built again each time it opens.
-pub(crate) type OnShared = std::rc::Rc<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App)>;
-/// Shared, because every menu row's closure holds one.
-pub(crate) type OnTab = std::rc::Rc<dyn Fn(&usize, &mut Window, &mut App)>;
+pub(crate) type OnPress = On<gpui::ClickEvent>;
+pub(crate) type On<T> = Box<dyn Fn(&T, &mut Window, &mut App)>;
+
+/// The tree's dropdown: wide enough for a nested name to be read and a
+/// change mark beside it, tall enough for a folder or two unfolded, and its
+/// own scroll past that. In rems, so they follow the panel's zoom.
+const TREE_DROPDOWN_W: Rems = rems(20.);
+const TREE_DROPDOWN_H: Rems = rems(24.);
 
 /// The tree's control on the bar: the toggle at its end, or the way back at its start.
 pub(crate) enum Lead {
@@ -74,51 +79,28 @@ pub(crate) enum Lead {
     Back,
 }
 
-/// One row of the open files' menu.
-#[derive(Clone, Debug, PartialEq)]
-struct FileRow {
-    index: usize,
-    label: SharedString,
-    dirty: bool,
-    chosen: bool,
-}
-
-/// The open files' menu: the first [`TAB_MENU_CAP`] in the order they were
-/// opened, the current one chosen, and how many it leaves unlisted.
-fn file_rows(files: &[EditorFile], active: usize) -> (Vec<FileRow>, usize) {
-    let rows = files
-        .iter()
-        .enumerate()
-        .take(TAB_MENU_CAP)
-        .map(|(index, file)| FileRow {
-            index,
-            label: file.label.clone().into(),
-            dirty: file.dirty,
-            chosen: index == active,
-        })
-        .collect();
-    (rows, files.len().saturating_sub(TAB_MENU_CAP))
-}
-
 /// The Editor's bar: the way back to the tree while one shows at a time, the
-/// file open now as one control whose menu lists every open file and closes
-/// them all, its cross, and the tree's toggle at the end, beside the tree.
+/// file open now as one control dropping down the project's tree, its cross,
+/// and the tree's toggle at the end, beside the tree.
 ///
 /// One file and never a tab per file: the names never compete for the width,
-/// so nothing is measured and nothing scrolls.
+/// so nothing is measured and nothing scrolls. Another file is reached
+/// through a tree, the one beside or the one this drops down, which is
+/// `tree`: a view of its own, never the one drawn beside the buffers.
 pub(crate) fn file_bar(
     root: &Path,
     tabs: &RootEditors,
     lead: Lead,
     on: StripHandlers,
+    tree: &AnyView,
     cx: &App,
 ) -> gpui::AnyElement {
     let StripHandlers {
         toggle_tree: on_toggle_tree,
         back: on_back,
-        select: on_select,
+        picking,
+        pick: on_pick,
         close: on_close,
-        close_all: on_close_all,
     } = on;
 
     let (back, toggle) = match lead {
@@ -141,7 +123,6 @@ pub(crate) fn file_bar(
         }
     };
 
-    let files = tabs.files();
     let active = tabs.active();
     let current = tabs.active_file().map(|file| {
         // The label is the file name alone, so three `mod.rs` read the same;
@@ -153,56 +134,32 @@ pub(crate) fn file_bar(
             true => format!("{} — unsaved changes", rel.display()),
             false => rel.display().to_string(),
         });
-        let (rows, unlisted) = file_rows(files, active);
-        // Keyed by the project and the count, so a menu left open over a bar
-        // that changed under it is dropped rather than kept with rows aimed
-        // at files that moved.
-        let menu_id = SharedString::from(format!(
-            "editor-file-menu-{}-{}",
-            root.display(),
-            files.len()
-        ));
-        let (select, close_all) = (on_select.clone(), on_close_all.clone());
         let trigger =
             onehand_ui::tab_select("editor-file-select", file.label.clone().into(), hint, cx)
                 .min_w_0()
                 // The dirty dot, not a modified-name convention: the label
                 // truncates, and a marker inside it would go first.
                 .when(file.dirty, |select| select.child(dirty_dot(cx)));
-        let menu = menu_below(menu_id, trigger, move |mut menu, _, _| {
-            for row in rows.iter().cloned() {
-                let (select, index) = (select.clone(), row.index);
-                menu = menu.item(
-                    menu_row(move |_, cx| {
-                        div()
-                            .h_flex()
-                            .items_center()
-                            .gap_1()
-                            .child(row.label.clone())
-                            .when(row.dirty, |line| line.child(dirty_dot(cx)))
-                    })
-                    .checked(row.chosen)
-                    .on_click(move |_, window, cx: &mut App| select(&index, window, cx)),
-                );
-            }
-            if unlisted > 0 {
-                menu = menu.item(onehand_ui::menu_label(format!(
-                    "{unlisted} more files not listed"
-                )));
-            }
-            let close_all = close_all.clone();
-            menu.separator().item(
-                menu_item("Close all")
-                    .on_click(move |event, window, cx| close_all(event, window, cx)),
-            )
-        });
+        // Keyed by the project, so a dropdown left open as the project
+        // changes is dropped rather than kept over the wrong tree. Escape and
+        // a press outside close it and hand focus back where it was; a file
+        // opened from it closes it too, through `picking`.
+        let id = SharedString::from(format!("editor-file-tree-{}", root.display()));
+        let tree = tree.clone();
+        let dropdown = Popover::new(id)
+            .trigger(trigger)
+            .open(picking)
+            .on_open_change(on_pick)
+            .p_0()
+            .w(TREE_DROPDOWN_W)
+            .content(move |_, _, _| div().h(TREE_DROPDOWN_H).v_flex().child(tree.clone()));
         div()
             .h_flex()
             .items_center()
             .min_w_0()
             .gap_1()
-            .child(menu)
-            .child(close_button(active, on_close.clone(), cx))
+            .child(dropdown)
+            .child(close_button(active, on_close, cx))
     });
 
     // A mode's bar, a step lower than the Workbench's over it.
@@ -224,7 +181,7 @@ pub(crate) fn file_bar(
 }
 
 /// The cross that closes file `i`.
-fn close_button(i: usize, close: OnTab, cx: &App) -> gpui_component::button::Button {
+fn close_button(i: usize, close: On<usize>, cx: &App) -> gpui_component::button::Button {
     onehand_ui::tab_close("editor-file-close", "Close this file", cx)
         .on_click(move |_, window, cx: &mut App| close(&i, window, cx))
 }
@@ -294,40 +251,5 @@ pub(crate) fn standing_line(standing: &Standing) -> String {
         Standing::Changed { label } => {
             format!("{label} changed on disk — nothing was written. Save again to overwrite.")
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn file(i: usize, dirty: bool) -> EditorFile {
-        EditorFile {
-            path: format!("/p/f{i}.rs").into(),
-            label: format!("f{i}.rs"),
-            dirty,
-            disk_mtime: None,
-            uid: i as u64,
-        }
-    }
-
-    #[test]
-    fn the_menu_lists_every_file_and_marks_the_current_one() {
-        let files = vec![file(0, false), file(1, true), file(2, false)];
-        let (rows, unlisted) = file_rows(&files, 1);
-        assert_eq!(unlisted, 0);
-        assert_eq!(rows.iter().map(|r| r.index).collect::<Vec<_>>(), [0, 1, 2]);
-        assert_eq!(rows.iter().filter(|r| r.chosen).count(), 1);
-        assert!(rows[1].chosen && rows[1].dirty);
-        assert_eq!(rows[2].label, "f2.rs");
-        assert!(file_rows(&[], 0).0.is_empty());
-    }
-
-    #[test]
-    fn the_menu_stops_at_its_cap_and_counts_the_rest() {
-        let files: Vec<_> = (0..TAB_MENU_CAP + 4).map(|i| file(i, false)).collect();
-        let (rows, unlisted) = file_rows(&files, 0);
-        assert_eq!(rows.len(), TAB_MENU_CAP);
-        assert_eq!(unlisted, 4);
     }
 }

@@ -6,7 +6,7 @@
 use crate::buffers::{Lead, StripHandlers, body, file_bar, new_buffer, standing_line};
 
 use gpui::{
-    AnyWindowHandle, App, AppContext as _, Context, Entity, Focusable as _, IntoElement,
+    AnyView, AnyWindowHandle, App, AppContext as _, Context, Entity, Focusable as _, IntoElement,
     ParentElement, Render, SharedString, Styled, Window, div,
 };
 use gpui_component::WindowExt as _;
@@ -19,7 +19,6 @@ use onehand_ui::{hint, status_ink, status_line};
 use onehand_workbench::Disk;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 
 pub(crate) struct EditorView {
     /// The project on screen.
@@ -50,10 +49,16 @@ pub(crate) struct EditorView {
     /// last measured: the bar leads with the way back to the tree then,
     /// rather than ending with the toggle that hides it.
     alone: bool,
+    /// The project's tree the open file's name drops down: a tree of its own,
+    /// since the one beside the buffers is already drawn there.
+    tree: AnyView,
+    /// Whether that dropdown is open. Held here so that a file opened from it
+    /// closes it.
+    picking: bool,
 }
 
 impl EditorView {
-    pub(crate) fn new(cx: &mut App) -> Entity<Self> {
+    pub(crate) fn new(tree: AnyView, cx: &mut App) -> Entity<Self> {
         cx.new(|_| Self {
             root: None,
             drive: EditorDrive::default(),
@@ -62,6 +67,8 @@ impl EditorView {
             tree_shown: true,
             detail: false,
             alone: false,
+            tree,
+            picking: false,
         })
     }
 
@@ -127,6 +134,7 @@ impl EditorView {
         let (took, effects) = self.drive.open(&root, path);
         if took {
             self.detail = true;
+            self.picking = false;
         }
         self.perform(effects, Some(window), cx);
         took
@@ -371,10 +379,8 @@ impl EditorView {
         cx.notify();
     }
 
-    fn select_tab(&mut self, idx: usize, cx: &mut Context<Self>) {
-        if let Some(root) = &self.root {
-            self.drive.select(root, idx);
-        }
+    fn set_picking(&mut self, open: bool, cx: &mut Context<Self>) {
+        self.picking = open;
         cx.notify();
     }
 
@@ -384,15 +390,6 @@ impl EditorView {
             return;
         };
         let closing = self.drive.close_tab(&root, idx);
-        self.closing(closing, window, cx);
-    }
-
-    /// Close every tab, asking first when any of them has unsaved edits.
-    fn close_all_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(root) = self.root.clone() else {
-            return;
-        };
-        let closing = self.drive.close_all(&root);
         self.closing(closing, window, cx);
     }
 
@@ -483,16 +480,15 @@ impl Render for EditorView {
                     cx.listener(|view: &mut Self, _, _, cx| view.toggle_tree(cx)),
                 ),
                 back: Box::new(cx.listener(|view: &mut Self, _, _, cx| view.back_to_tree(cx))),
-                select: Rc::new(
-                    cx.listener(|view: &mut Self, idx: &usize, _, cx| view.select_tab(*idx, cx)),
+                picking: self.picking,
+                pick: Box::new(
+                    cx.listener(|view: &mut Self, open: &bool, _, cx| view.set_picking(*open, cx)),
                 ),
-                close: Rc::new(cx.listener(|view: &mut Self, idx: &usize, window, cx| {
+                close: Box::new(cx.listener(|view: &mut Self, idx: &usize, window, cx| {
                     view.close_tab(*idx, window, cx)
                 })),
-                close_all: Rc::new(
-                    cx.listener(|view: &mut Self, _, window, cx| view.close_all_tabs(window, cx)),
-                ),
             },
+            &self.tree,
             cx,
         );
         let body = match buffer {
