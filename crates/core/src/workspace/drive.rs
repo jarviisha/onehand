@@ -273,6 +273,9 @@ pub struct WorkspaceDrive {
     starts: std::collections::HashMap<u64, StartsOn>,
     /// The host session each session on a host watches, once known.
     watches: std::collections::HashMap<u64, HostSession>,
+    /// Deleted: its file is written no more, so no late write puts back the
+    /// folder that is about to go.
+    deleted: bool,
 }
 
 /// What a new session starts on, kept from when it is added until it is
@@ -308,7 +311,15 @@ impl WorkspaceDrive {
             minted: 0,
             starts: Default::default(),
             watches: Default::default(),
+            deleted: false,
         }
+    }
+
+    /// The workspace is being deleted: from now on nothing writes its file,
+    /// not a burst still waiting nor the write its window makes on closing.
+    pub fn delete(&mut self) {
+        self.deleted = true;
+        self.soon = None;
     }
 
     /// The panels' layout, which the front end keeps in the workspace file
@@ -350,6 +361,9 @@ impl WorkspaceDrive {
     /// Write the workspace once it has been still for [`SAVE_DEBOUNCE`].
     #[must_use = "its effects are to be carried"]
     pub fn save_soon(&mut self) -> Vec<Effect> {
+        if self.deleted {
+            return Vec::new();
+        }
         self.minted += 1;
         self.soon = Some(self.minted);
         vec![Effect::Arm {
@@ -382,6 +396,9 @@ impl WorkspaceDrive {
 
     /// The whole file as it now stands, and where it goes.
     fn snapshot(&mut self) -> Option<Box<FileWrite>> {
+        if self.deleted {
+            return None;
+        }
         let dir = self.workspace.storage_dir.clone();
         Some(Box::new(FileWrite {
             pending: self.saves.write_all(),
@@ -407,7 +424,7 @@ impl WorkspaceDrive {
                 }
                 // A name is remembered once its workspace holds it, never
                 // while it could yet be put back.
-                if landed {
+                if landed && !self.deleted {
                     fx.push(Effect::Remember {
                         dir: self.workspace.storage_dir.clone(),
                         name: self.workspace.name.clone(),

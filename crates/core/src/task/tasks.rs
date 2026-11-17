@@ -387,6 +387,22 @@ impl<W: Copy> TasksDrive<W> {
         }
     }
 
+    /// Whether a task not yet over works an issue kept under `dir`: a
+    /// workspace's folder is not to be deleted from under it.
+    pub fn holds(&self, dir: &std::path::Path) -> bool {
+        use crate::unattended::TrackerRef;
+        self.tasks.iter().any(|task| {
+            !task.dismissed()
+                && task.outcome().is_none()
+                && task.issue().is_some_and(|issue| match &issue.tracker {
+                    TrackerRef::Local { file } | TrackerRef::Synced { file, .. } => {
+                        file.starts_with(dir)
+                    }
+                    TrackerRef::Forge { .. } => false,
+                })
+        })
+    }
+
     /// Whether task `id` is running or waiting for its place.
     pub fn busy(&self, id: &str) -> bool {
         self.working(id).is_some()

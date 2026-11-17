@@ -911,3 +911,19 @@ fn a_run_check_needs_a_project_here_with_a_check_command() {
     tree(&mut drive).roots.clear();
     assert_eq!(drive.check_target().0, Err(Refusal::NoProject));
 }
+
+/// From the moment a workspace is deleted, nothing writes its file again:
+/// not a burst waiting, not the write a closing window makes, not a change.
+#[test]
+fn a_deleted_workspace_writes_nothing() {
+    let mut drive = bound();
+    let token = armed(&drive.rename("one"));
+    drive.delete();
+    assert!(drive.handle(Input::Elapsed { token }).is_empty());
+    assert!(drive.flush().is_none());
+    assert!(drive.save().is_empty());
+    assert!(drive.save_soon().is_empty());
+    assert!(names(&drive.rename("two"))
+        .iter()
+        .all(|n| n != "Write" && n != "Arm"));
+}

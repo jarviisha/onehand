@@ -63,6 +63,57 @@ impl Shell {
 
     // ── Workspace settings ──────────────────────────────────────────────────
 
+    /// Why this workspace cannot be deleted now, if it cannot: a task not yet
+    /// over works an issue it keeps, and its file would go from under it.
+    pub fn delete_refused(&self, cx: &App) -> Option<&'static str> {
+        crate::task::Tasks::holds(&self.window.workspace.storage_dir, cx)
+            .then_some("A task is still working on this workspace's issues")
+    }
+
+    /// Ask, then delete this window's workspace.
+    pub fn confirm_delete_workspace(&mut self, window: &mut gpui::Window, cx: &mut Context<Self>) {
+        let name = self.window.workspace.name.clone();
+        let ask = super::confirm::Confirm {
+            id: "delete-workspace",
+            title: format!("Delete {name}?").into(),
+            description: "Its projects stay on disk. Its issues kept in onehand go with it.".into(),
+            act: "Delete",
+            ..Default::default()
+        };
+        self.confirm(ask, window, cx, |shell, window, cx| {
+            shell.delete_workspace(window, cx)
+        });
+    }
+
+    /// Delete this window's workspace: nothing writes it from now on, the
+    /// window closes, and its folder goes once every write queued before it
+    /// has landed, on the same ordered writer, so no late write puts it back.
+    fn delete_workspace(&mut self, window: &mut gpui::Window, cx: &mut Context<Self>) {
+        // Asked again: a task may have started while the question was open.
+        if let Some(why) = self.delete_refused(cx) {
+            window.push_notification(crate::toast::warning(why), cx);
+            return;
+        }
+        self.window.workspace.delete();
+        self.workbench
+            .update(cx, |panel, cx| panel.set_storage(None, cx));
+        self.tell_issues_page(&onehand_workbench::Request::SetStorage(None), cx);
+        let dir = self.window.workspace.storage_dir.clone();
+        let removed = Shared::global(cx).writer.write({
+            let dir = dir.clone();
+            move || std::fs::remove_dir_all(&dir).map_err(|why| why.to_string())
+        });
+        cx.spawn(async move |_, _| {
+            if let Err(why) = removed.await {
+                eprintln!("onehand: the deleted workspace's folder stayed: {why}");
+            }
+        })
+        .detach();
+        let fx = cx.update_global::<Shared, _>(|shared, _| shared.recents.dropped(&dir));
+        carry_recents(fx, cx);
+        window.remove_window();
+    }
+
     /// The conversation-rename field, for the dialog that edits it.
     pub fn rename_input(&self) -> &Entity<InputState> {
         &self.rename_input

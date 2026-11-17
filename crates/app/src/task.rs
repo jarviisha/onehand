@@ -106,6 +106,11 @@ impl Tasks {
         self.live.get(id).is_some_and(|d| d.stopping())
     }
 
+    /// Whether a task not yet over works an issue kept under `dir`.
+    pub(crate) fn holds(dir: &std::path::Path, cx: &App) -> bool {
+        cx.try_global::<Tasks>().is_some_and(|t| t.drive.holds(dir))
+    }
+
     /// Whether task `id` is running or waiting for its place.
     fn busy(&self, id: &str) -> bool {
         self.drive.busy(id)

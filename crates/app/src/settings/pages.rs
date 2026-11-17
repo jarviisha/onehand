@@ -1,4 +1,5 @@
 use super::{APP, about, field, list_row, list_rows, page_head, section};
+use crate::controls::Refuses as _;
 use crate::controls::Short as _;
 use crate::controls::text_input;
 use crate::shell::Shell;
@@ -142,6 +143,7 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .child(general)
         .child(others)
         .child(unattended_section(handle, cx))
+        .child(delete_section(handle, cx))
         .into_any_element()
 }
 
@@ -282,6 +284,33 @@ fn outside_section(cx: &App) -> AnyElement {
 /// every project's answer can be read at once — the menu shows one project's,
 /// and only after it is opened. The label a run looks for is named, since it is
 /// the one thing a user has to put on an issue and it lives in the config file.
+/// Deleting this window's workspace: the window closes, and its folder and
+/// the issues it keeps go with it. Refused while a task works one of them.
+fn delete_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
+    let refused = handle.read(cx).delete_refused(cx);
+    let ink = crate::theme::status_ink(cx);
+    let delete = handle.clone();
+    section(
+        Some("Delete workspace"),
+        Some("The window closes and onehand forgets this workspace".into()),
+        cx,
+    )
+    .child(
+        div().h_flex().child(
+            crate::controls::action("delete-workspace")
+                .tall()
+                .secondary()
+                .text_color(ink.danger)
+                .refuses(refused)
+                .label("Delete workspace…")
+                .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                    delete.update(cx, |shell, cx| shell.confirm_delete_workspace(window, cx));
+                }),
+        ),
+    )
+    .into_any_element()
+}
+
 fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let label = crate::unattended::label(cx);
     let choices = handle.read(cx).unattended_choices();
