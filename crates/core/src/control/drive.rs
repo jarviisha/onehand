@@ -162,15 +162,16 @@ pub enum Input<'a> {
         went: Option<(Intake, usize)>,
     },
     /// Session `uid`'s conversation is `session_id`, it has sent
-    /// `prompts_sent` prompts, and `turn_over` says its turn is over with the
-    /// link up (`state::turn_over`): said when any of them changes. `dir`
-    /// is the folder the conversation is kept in, when its chat keeps one on
-    /// disk.
+    /// `prompts_sent` prompts, `turn_over` says its turn is over with the
+    /// link up (`state::turn_over`) and `busy` that a turn runs: said when
+    /// any of them changes. `dir` is the folder the conversation is kept in,
+    /// when its chat keeps one on disk.
     Conversation {
         uid: u64,
         session_id: String,
         prompts_sent: usize,
         turn_over: bool,
+        busy: bool,
         dir: Option<PathBuf>,
     },
 }
@@ -638,8 +639,9 @@ impl ControlDrive {
                 session_id,
                 prompts_sent,
                 turn_over,
+                busy,
                 dir,
-            } => self.conversation(uid, session_id, prompts_sent, turn_over, dir),
+            } => self.conversation(uid, session_id, prompts_sent, (turn_over, busy), dir),
         }
     }
 }

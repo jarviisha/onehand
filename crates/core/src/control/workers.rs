@@ -214,6 +214,10 @@ pub struct Relation {
     /// cleared once a turn this run of its chat ran is over. Kept, so a turn
     /// running at quit reads cut off once the worker comes back.
     pub unended: bool,
+    /// Its turn was running at the last report since the lead's last turn
+    /// went: only a turn seen running, then over, ends it, never a count
+    /// alone, which a restart of its agent carries into an idle chat.
+    pub running: bool,
     /// Where it stands among its lead's workers, in the order they opened.
     pub seq: u64,
 }

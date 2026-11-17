@@ -331,6 +331,7 @@ impl ControlDrive {
                 conversation: self.conversations.get(&uid).cloned(),
                 person: false,
                 unended,
+                running: false,
                 seq: token,
             },
         );
@@ -474,6 +475,7 @@ impl ControlDrive {
                 conversation: Some(back.conversation),
                 person: back.person,
                 unended: back.unended,
+                running: false,
                 seq: pending.token,
             },
         );

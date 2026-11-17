@@ -515,11 +515,28 @@ fn said_conversation(drive: &mut ControlDrive, uid: u64, id: &str, sent: usize) 
 /// Session `uid` said its conversation `id`, its prompts sent, and whether
 /// its turn is over (`over`).
 fn said_over(drive: &mut ControlDrive, uid: u64, id: &str, sent: usize, over: bool) -> Vec<Effect> {
+    said_as(drive, uid, id, sent, over, false)
+}
+
+/// Session `uid` said its turn runs.
+fn said_busy(drive: &mut ControlDrive, uid: u64, id: &str, sent: usize) -> Vec<Effect> {
+    said_as(drive, uid, id, sent, false, true)
+}
+
+fn said_as(
+    drive: &mut ControlDrive,
+    uid: u64,
+    id: &str,
+    sent: usize,
+    over: bool,
+    busy: bool,
+) -> Vec<Effect> {
     drive.handle(Input::Conversation {
         uid,
         session_id: id.into(),
         prompts_sent: sent,
         turn_over: over,
+        busy,
         dir: Some(PathBuf::from(format!("/store/{id}"))),
     })
 }
@@ -1203,7 +1220,7 @@ fn ended_workers_stay_with_the_conversation_they_ended_in() {
 fn a_lead_turn_is_kept_unended_until_it_ends() {
     let mut drive = lead_on();
     begun(&mut drive);
-    let fx = said_conversation(&mut drive, 7, "c7", 1);
+    let fx = said_busy(&mut drive, 7, "c7", 1);
     assert!(
         kept(&fx, 1).unwrap().workers[0].unended,
         "its first turn runs"
@@ -1228,6 +1245,7 @@ fn a_worker_coming_back_keeps_its_turn_unended_until_a_new_one() {
     );
     assert!(drive.held(9).unwrap().unended);
     let _ = turn_sent(&mut drive, 9, 4, Some((Intake::Sent, 1)));
+    said_busy(&mut drive, 9, "c7", 1);
     let fx = said_over(&mut drive, 9, "c7", 1, true);
     assert!(!kept(&fx, 1).unwrap().workers[0].unended);
 }
@@ -1536,4 +1554,34 @@ fn a_dead_leads_late_failure_does_not_overwrite_a_new_lead() {
         world: world(),
     });
     assert_eq!(keep_at(&fx, 1), None, "{fx:?}");
+}
+
+#[test]
+fn a_restart_after_a_lost_turn_keeps_it_unended() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    said_busy(&mut drive, 7, "c7", 1);
+    // The link is lost mid-turn.
+    said_over(&mut drive, 7, "c7", 1, false);
+    // The agent restarted: a new chat with the count carried, idle.
+    let fx = said_over(&mut drive, 7, "c7", 1, true);
+    assert!(
+        kept(&fx, 1).is_none_or(|kept| kept.workers[0].unended),
+        "{fx:?}"
+    );
+    assert!(drive.held(7).unwrap().unended);
+}
+
+#[test]
+fn a_turn_seen_running_then_over_clears_unended() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    said_conversation(&mut drive, 7, "c7", 1);
+    // Over with no running seen since the turn went: a count alone.
+    said_over(&mut drive, 7, "c7", 1, true);
+    assert!(drive.held(7).unwrap().unended);
+    said_busy(&mut drive, 7, "c7", 1);
+    let fx = said_over(&mut drive, 7, "c7", 1, true);
+    assert!(!kept(&fx, 1).unwrap().workers[0].unended);
+    assert!(!drive.held(7).unwrap().unended);
 }

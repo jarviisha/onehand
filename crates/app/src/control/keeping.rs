@@ -21,16 +21,15 @@ use std::sync::{LazyLock, Mutex};
 
 #[derive(Default)]
 struct Keeping {
-    /// The watch on each session, and the conversation, prompts sent and
-    /// whether its turn is over it last said.
+    /// The watch on each session, and what it last said.
     watches: HashMap<u64, (Subscription, Option<Said>)>,
 }
 
 impl Global for Keeping {}
 
-/// What a session last said: its conversation, its prompts sent, and
-/// whether its turn is over.
-type Said = (String, usize, bool);
+/// What a session last said: its conversation, its prompts sent, whether
+/// its turn is over, and whether one runs.
+type Said = (String, usize, bool, bool);
 
 /// The newest write asked for, by lead, held across the write itself.
 static NEWEST: LazyLock<Mutex<HashMap<u64, u64>>> = LazyLock::new(Mutex::default);
@@ -50,7 +49,7 @@ pub(crate) fn watch(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
 }
 
 fn said(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
-    let (session_id, prompts_sent, turn_over, dir) = {
+    let (session_id, prompts_sent, turn_over, busy, dir) = {
         let chat = session.read(cx).chat();
         let Some(id) = chat.session_id.clone() else {
             return;
@@ -59,10 +58,11 @@ fn said(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
             id,
             chat.prompts_sent,
             turn_over(chat),
+            chat.busy,
             chat.conversation_dir(),
         )
     };
-    let now = (session_id.clone(), prompts_sent, turn_over);
+    let now = (session_id.clone(), prompts_sent, turn_over, busy);
     match cx.default_global::<Keeping>().watches.get_mut(&uid) {
         Some((_, last)) if last.as_ref() != Some(&now) => *last = Some(now),
         Some(_) | None => return,
@@ -72,6 +72,7 @@ fn said(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
         session_id,
         prompts_sent,
         turn_over,
+        busy,
         dir,
     });
     carry(fx, cx);

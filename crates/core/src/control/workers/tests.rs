@@ -157,6 +157,7 @@ fn relation(lead: u64) -> Relation {
         conversation: None,
         person: false,
         unended: false,
+        running: false,
         seq: 1,
     }
 }

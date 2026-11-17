@@ -228,6 +228,7 @@ impl ControlDrive {
             relation.sent = sent;
             relation.person = false;
             relation.unended = true;
+            relation.running = false;
             let lead = relation.lead;
             fx.extend(self.keep(lead));
         }
@@ -238,19 +239,21 @@ impl ControlDrive {
     // What is kept beside a lead's conversation.
 
     /// Session `uid`'s conversation is `session_id`, it has sent
-    /// `prompts_sent` prompts, and `turn_over` says its turn is over: a
-    /// worker's is kept, a prompt of the person's since the lead's last turn
-    /// marks it held, and a turn this run of its chat ran, over, ends the
-    /// lead's; a lead's conversation moving takes what it keeps with it.
+    /// `prompts_sent` prompts, and `turn` says whether its turn is over and
+    /// whether one runs: a worker's is kept, a prompt of the person's since
+    /// the lead's last turn marks it held, and a turn seen running at the
+    /// last report and over now ends the lead's; a lead's conversation
+    /// moving takes what it keeps with it.
     ///
-    /// A chat that came back has sent nothing: idle as it is, it says
+    /// Only that sequence ends it. A chat that came back, or a restart of
+    /// its agent, is idle and over with nothing seen running: it says
     /// nothing of the turn kept unended, which only a new turn ends.
     pub(super) fn conversation(
         &mut self,
         uid: u64,
         session_id: String,
         prompts_sent: usize,
-        turn_over: bool,
+        (turn_over, busy): (bool, bool),
         dir: Option<PathBuf>,
     ) -> Vec<Effect> {
         match dir {
@@ -270,10 +273,11 @@ impl ControlDrive {
                 relation.person = true;
                 changed = true;
             }
-            if relation.unended && turn_over && prompts_sent > 0 {
+            if relation.unended && turn_over && relation.running {
                 relation.unended = false;
                 changed = true;
             }
+            relation.running = busy;
             if changed {
                 let lead = relation.lead;
                 fx.extend(self.keep(lead));
