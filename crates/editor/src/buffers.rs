@@ -81,8 +81,8 @@ pub(crate) enum Lead {
 }
 
 /// The Editor's bar: the way back to the tree while one shows at a time, the
-/// file open now as one control dropping down the project's tree, its cross,
-/// and the tree's toggle at the end, beside the tree.
+/// file open now as one control dropping down the project's tree (which also
+/// closes it), and the tree's toggle at the end, beside the tree.
 ///
 /// One file and never a tab per file: the names never compete for the width,
 /// so nothing is measured and nothing scrolls. Another file is reached

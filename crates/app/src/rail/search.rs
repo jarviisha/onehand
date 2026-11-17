@@ -35,7 +35,7 @@ pub(crate) fn workspace_control(
     // owner rather than one more control in the bar. It stands outside the
     // button: it marks the workspace, and only the name opens its menu.
     let tile = div()
-        .size_5()
+        .size(onehand_ui::tokens::WORKSPACE_TILE)
         .flex_none()
         .flex()
         .items_center()

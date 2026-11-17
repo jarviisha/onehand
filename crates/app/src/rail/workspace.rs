@@ -46,7 +46,7 @@ const MAX_PARENT: usize = 30;
 /// workspace's own file here, which would put disk I/O in the middle of a frame.
 ///
 /// The builder, not the trigger: the menu is rebuilt every time it opens, so the
-/// control it hangs off, the title bar search's lead, is free to be any element.
+/// control it hangs off, the title bar's workspace control, is free to be any element.
 pub(super) fn workspace_menu(
     current: Option<std::path::PathBuf>,
     recents: Vec<(std::path::PathBuf, String)>,

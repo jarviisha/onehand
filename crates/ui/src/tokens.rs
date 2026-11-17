@@ -138,9 +138,13 @@ pub const PAGE_PROSE: Rems = rems(48.);
 pub const PAGE_WIDE: Rems = rems(64.);
 
 /// The widest the title bar's search grows: room for a session's title
-/// and the key that reaches it, centred between the menus and the dock
+/// and the key that reaches it, centred between the workspace and the dock
 /// toggles, and narrowing with the window.
 pub const TITLE_SEARCH_W: Rems = rems(24.);
+
+/// The workspace's letter tile in the title bar: a step under the short
+/// control it stands beside, so the two sit on one line.
+pub const WORKSPACE_TILE: Rems = rems(1.25);
 
 /// How wide the terminal's list of shells stands beside the grid: a name
 /// and its number with room for the live dot and the close. Fixed, neither

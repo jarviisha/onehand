@@ -3,7 +3,8 @@
 //! the docks' toggles. Nothing runs along the
 //! foot: the branch stands under the composer.
 //!
-//! **The menus hold only the keymap's commands.** Each item is a command the
+//! **The platform's menus hold only the keymap's commands**; the window draws
+//! none of its own. Each item is a command the
 //! window already answers by a key, named for the menu and dispatched as that
 //! command's action, so a menu never offers something no key reaches and the
 //! key it shows is the one the keymap binds, overrides included.

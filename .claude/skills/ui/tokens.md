@@ -204,6 +204,7 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 | `PAGE_WIDE` | 64rem | boxes side by side, a table |
 | `BAR_FADE` | 0.75rem | how far a box's fill fades over the content under a bar (the Editor's) or past a field's end (`end_fade`), in place of a line |
 | `TITLE_SEARCH_W` | 24rem | the widest the title bar's search grows |
+| `WORKSPACE_TILE` | 1.25rem | the workspace's letter tile in the title bar |
 | `SHELL_LIST_W` | 10rem | the terminal's list of shells beside the grid, fixed: neither dragged nor saved |
 | `DIALOG_FORM` | 40rem | a dialog that holds a form (the agent form, one that starts a run), its controls `.tall()`, never wider than the window less its margins |
 | `ROW_INSET` | 1rem | where a tree row's content starts from a dock's edge (Files, Markdown), and a Workbench bar's words |
