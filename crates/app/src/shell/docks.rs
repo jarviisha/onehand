@@ -407,10 +407,16 @@ impl Shell {
             // The Workbench fills the window by the conversation stepping out
             // of the centre, not by a zoom, so the terminal under both stays
             // where it was. A caret in the conversation goes with it into the
-            // Workbench, or it would point at nothing.
+            // Workbench's mode, or it would point at nothing: the panel's own
+            // handle takes no typing and lacks a grid's key context. Deferred,
+            // so the panel and its mode are reached once the shell's update
+            // is done.
             FocusedPanel::Workbench => {
                 if self.chat.focus_handle(cx).contains_focused(window, cx) {
-                    self.workbench.focus_handle(cx).focus(window, cx);
+                    let workbench = self.workbench.clone();
+                    window.defer(cx, move |window, cx| {
+                        workbench.update(cx, |panel, cx| panel.focus_active(window, cx));
+                    });
                 }
                 workbench_slot::set_chat_shown(self, false, cx);
             }
