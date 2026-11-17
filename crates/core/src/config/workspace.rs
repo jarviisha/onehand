@@ -2,44 +2,131 @@
 
 use super::write_atomic;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// A workspace's own persisted shape — name + project roots + which is active
-///. Sessions are *not* persisted (launch
-/// isn't persisted; sessions re-spawn). Stored as `onehand-workspace.toml` in a
-/// workspace's chosen storage directory.
+/// A workspace's own persisted shape: its name, its projects in the rail's
+/// order, which is active, and how the window was arranged. Sessions are *not*
+/// persisted; they re-spawn. Stored as `onehand-workspace.toml` in the
+/// workspace's folder.
+///
+/// **One record per project.** Every fact about a project sits in its own
+/// `[[projects]]` table, so a new one is a field rather than another table
+/// keyed by path that has to be matched back to the list. A file written by an
+/// earlier build, which kept `roots` beside such tables, still reads
+/// ([`Raw`]); it is written in this shape at its next save.
 // No `Eq`: `PanelLayout` carries pixel sizes, and float equality is not an
 // equivalence relation. `PartialEq` is all any caller here wants anyway.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(from = "Raw")]
 pub struct WorkspaceConfig {
     pub name: String,
-    pub roots: Vec<PathBuf>,
-    pub active_root: usize,
-    /// How the window's side panels were arranged. `#[serde(default)]` on the
-    /// struct means an older file without this section simply gets the
-    /// built-in arrangement.
+    /// The active project, by its key (`<host>:<path>` on a host, the bare
+    /// path here) rather than by index: an index slides onto another project
+    /// when one before it is removed. A key matching no project reads as the
+    /// first.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active: Option<String>,
+    pub projects: Vec<ProjectConfig>,
+    /// How the window's side panels were arranged. A file without this
+    /// section gets the built-in arrangement.
     pub layout: PanelLayout,
-    /// Roots the user has pinned to the top of the rail, by path.
-    ///
-    /// By path rather than by index into `roots`: a hand-edited file, or a root
-    /// removed by an older build, would otherwise slide every pin onto a
-    /// different project. A path that is no longer a root simply matches
-    /// nothing.
-    pub pinned: Vec<PathBuf>,
-    /// Roots whose labelled issues may be worked unattended, by path for the
-    /// reason pins are.
-    pub unattended: Vec<PathBuf>,
-    /// The command a workflow's work must pass before it goes further, by
-    /// root: onehand runs it itself rather than taking the agent's word.
-    pub checks: std::collections::BTreeMap<PathBuf, String>,
-    /// Roots offloaded to a host, by root, each valued `<host>:<mirror>`: the
-    /// host its sessions run on and the mirror they run in there.
-    pub offloaded: std::collections::BTreeMap<PathBuf, String>,
-    /// Of those, the ones on a branch, by root, each valued with the branch
-    /// its host's sessions work on; a root offloaded and not here is a
-    /// mirror, as every one kept before branches is.
-    pub offloaded_branches: std::collections::BTreeMap<PathBuf, String>,
+}
+
+/// One project in a workspace file. Everything but `path` is left out when it
+/// holds its default, so a hand-read file says only what was chosen.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectConfig {
+    pub path: PathBuf,
+    /// The host the folder lives on; none for this machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<crate::workspace::HostName>,
+    /// Held at the top of the rail.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pinned: bool,
+    /// Its labelled issues may be worked with nobody watching.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unattended: bool,
+    /// The command a workflow's work must pass before it goes further.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub check: Option<String>,
+    /// The host its sessions run on, and how; only for a folder here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offload: Option<crate::workspace::Offloaded>,
+}
+
+/// What a workspace file may hold, this build's shape and the one before it.
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct Raw {
+    name: String,
+    active: Option<String>,
+    projects: Vec<ProjectConfig>,
+    layout: PanelLayout,
+    roots: Vec<PathBuf>,
+    active_root: usize,
+    pinned: Vec<PathBuf>,
+    unattended: Vec<PathBuf>,
+    checks: BTreeMap<PathBuf, String>,
+    /// Each valued `<host>:<mirror>`.
+    offloaded: BTreeMap<PathBuf, String>,
+    offloaded_branches: BTreeMap<PathBuf, String>,
+}
+
+impl From<Raw> for WorkspaceConfig {
+    /// This build's shape when the file has any of it; else the one before,
+    /// each root's facts gathered from the tables keyed by its path.
+    fn from(raw: Raw) -> Self {
+        use crate::workspace::{parse_root_key, Offloaded};
+        if !raw.projects.is_empty() || raw.roots.is_empty() {
+            return Self {
+                name: raw.name,
+                active: raw.active,
+                projects: raw.projects,
+                layout: raw.layout,
+            };
+        }
+        let active = raw
+            .roots
+            .get(raw.active_root)
+            .map(|key| key.to_string_lossy().into_owned());
+        let mut branches = raw.offloaded_branches;
+        let projects = raw
+            .roots
+            .iter()
+            .map(|key| {
+                let (host, path) = parse_root_key(key);
+                // Only a folder here is offloaded; an entry naming a host's
+                // folder is passed over.
+                let offload = raw
+                    .offloaded
+                    .get(key)
+                    .filter(|_| host.is_none())
+                    .and_then(|on| match parse_root_key(Path::new(on)) {
+                        (Some(host), mirror) => Some(Offloaded {
+                            host,
+                            mirror,
+                            branch: branches.remove(key),
+                        }),
+                        (None, _) => None,
+                    });
+                ProjectConfig {
+                    pinned: raw.pinned.contains(key),
+                    unattended: raw.unattended.contains(key),
+                    check: raw.checks.get(key).cloned(),
+                    offload,
+                    host,
+                    path,
+                }
+            })
+            .collect();
+        Self {
+            name: raw.name,
+            active,
+            projects,
+            layout: raw.layout,
+        }
+    }
 }
 
 /// The window's panel arrangement, as far as anything outside the front end
@@ -155,14 +242,14 @@ pub enum WorkspaceLoad {
     /// The file exists but could not be read or parsed — a permission problem,
     /// an unmounted share, a truncated write, a typo in the TOML. **Never treat
     /// this as an empty folder.**
-    Unreadable,
+    Unreadable(String),
 }
 
 impl WorkspaceLoad {
     pub fn found(self) -> Option<WorkspaceConfig> {
         match self {
             WorkspaceLoad::Found(v) => Some(v),
-            WorkspaceLoad::Missing | WorkspaceLoad::Unreadable => None,
+            WorkspaceLoad::Missing | WorkspaceLoad::Unreadable(_) => None,
         }
     }
 }
@@ -186,14 +273,14 @@ impl WorkspaceConfig {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return WorkspaceLoad::Missing,
             Err(e) => {
                 eprintln!("onehand: cannot read {}: {e}", path.display());
-                return WorkspaceLoad::Unreadable;
+                return WorkspaceLoad::Unreadable(e.to_string());
             }
         };
         match toml::from_str(&text) {
             Ok(cfg) => WorkspaceLoad::Found(cfg),
             Err(e) => {
                 eprintln!("onehand: bad workspace config in {}: {e}", dir.display());
-                WorkspaceLoad::Unreadable
+                WorkspaceLoad::Unreadable(e.to_string())
             }
         }
     }
@@ -205,3 +292,6 @@ impl WorkspaceConfig {
         write_atomic(&dir.join(Self::FILE), &text)
     }
 }
+
+#[cfg(test)]
+mod tests;

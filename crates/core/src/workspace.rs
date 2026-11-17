@@ -85,7 +85,7 @@ pub struct ProjectRoot {
 }
 
 /// An offloaded folder's host, its mirror there, and how its code comes back.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Offloaded {
     pub host: HostName,
     /// Absolute, on the host.
@@ -93,6 +93,7 @@ pub struct Offloaded {
     /// The branch the host's sessions work on, in branch mode: no key, the
     /// branch fetched here for the person to merge. None for a mirror whose
     /// code comes back into the folder, one side holding it at a time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
 }
 
@@ -148,17 +149,6 @@ impl ProjectRoot {
     }
 }
 
-/// How a root is written in the workspace file: its path, or `host:path` for a
-/// folder on a host. A local root is stored absolute, so the two never read
-/// alike.
-fn root_key(host: Option<&HostName>, path: &Path) -> PathBuf {
-    match host {
-        Some(_) => PathBuf::from(host_path(host, path)),
-        // Kept as it is: a local path need not be text.
-        None => path.to_path_buf(),
-    }
-}
-
 /// A folder as a person names it: `<host>:<path>` on a host, as ssh names
 /// one, and the bare path here.
 pub fn host_path(host: Option<&HostName>, path: &Path) -> String {
@@ -168,15 +158,11 @@ pub fn host_path(host: Option<&HostName>, path: &Path) -> String {
     }
 }
 
-fn root_key_of(root: &ProjectRoot) -> PathBuf {
-    root_key(root.host.as_ref(), &root.path)
-}
-
-/// The inverse of [`root_key`]: an entry that is not absolute and has a host
+/// The inverse of [`host_path`]: an entry that is not absolute and has a host
 /// name before its first `:/` is a folder on that host. A host path always
 /// starts with `/`, and a host name may hold colons of its own (an IPv6
 /// address), so the split is there and not at the first `:`.
-fn parse_root_key(stored: &Path) -> (Option<HostName>, PathBuf) {
+pub(crate) fn parse_root_key(stored: &Path) -> (Option<HostName>, PathBuf) {
     let text = stored.to_string_lossy();
     if !stored.is_absolute() {
         if let Some(at) = text.find(":/") {
@@ -311,63 +297,29 @@ impl Workspace {
     pub fn from_config(cfg: WorkspaceConfig, storage_dir: PathBuf) -> Self {
         // A host's folder means nothing here, so it is kept as typed; a local
         // one is normalized.
-        let key = |stored: PathBuf| match parse_root_key(&stored) {
-            (Some(host), path) => (Some(host), path),
-            (None, path) => (None, normalize_root(path)),
+        let key = |host: Option<HostName>, path: PathBuf| match host {
+            Some(host) => (Some(host), path),
+            None => (None, normalize_root(path)),
         };
-        let active_key = cfg.roots.get(cfg.active_root).cloned().map(key);
+        let active_key = cfg.active.as_deref().map(|active| {
+            let (host, path) = parse_root_key(Path::new(active));
+            key(host, path)
+        });
         let mut roots: Vec<ProjectRoot> = Vec::new();
-        for path in cfg.roots {
-            let (host, path) = key(path);
-            if !roots.iter().any(|r| r.host == host && r.path == path) {
-                let mut root = ProjectRoot::new(path);
-                root.host = host;
-                roots.push(root);
+        for project in cfg.projects {
+            let (host, path) = key(project.host, project.path);
+            if roots.iter().any(|r| r.host == host && r.path == path) {
+                continue;
             }
-        }
-        // Pins are stored as paths rather than indices, so a root added or
-        // removed elsewhere in the file cannot silently move a pin onto a
-        // different project.
-        let pinned: Vec<_> = cfg.pinned.into_iter().map(key).collect();
-        let unattended: Vec<_> = cfg.unattended.into_iter().map(key).collect();
-        let checks: Vec<_> = cfg
-            .checks
-            .into_iter()
-            .map(|(path, check)| (key(path), check))
-            .collect();
-        let mut branches = cfg.offloaded_branches;
-        let offloaded: Vec<_> = cfg
-            .offloaded
-            .into_iter()
-            .filter_map(|(path, on)| match parse_root_key(Path::new(&on)) {
-                (Some(host), mirror) => {
-                    let branch = branches.remove(&path);
-                    Some((
-                        key(path),
-                        Offloaded {
-                            host,
-                            mirror,
-                            branch,
-                        },
-                    ))
-                }
-                (None, _) => None,
-            })
-            .collect();
-        for root in &mut roots {
-            let own = (root.host.clone(), root.path.clone());
+            let mut root = ProjectRoot::new(path);
             // Only a folder here is offloaded; a hand-edited entry naming a
             // host's folder is passed over.
-            root.offload = offloaded
-                .iter()
-                .find(|(k, _)| *k == own && root.host.is_none())
-                .map(|(_, on)| on.clone());
-            root.pinned = pinned.contains(&own);
-            root.unattended = unattended.contains(&own);
-            root.check = checks
-                .iter()
-                .find(|(k, _)| *k == own)
-                .map(|(_, check)| check.clone());
+            root.offload = project.offload.filter(|_| host.is_none());
+            root.host = host;
+            root.pinned = project.pinned;
+            root.unattended = project.unattended;
+            root.check = project.check;
+            roots.push(root);
         }
         let active_root = active_key
             .and_then(|(h, p)| roots.iter().position(|r| r.host == h && r.path == p))
@@ -394,48 +346,26 @@ impl Workspace {
     /// is itself one of those left out.
     pub fn to_config(&self) -> WorkspaceConfig {
         let kept: Vec<&ProjectRoot> = self.roots.iter().filter(|r| !r.transient).collect();
-        let active_root = self
+        let active = self
             .active_root()
-            .and_then(|active| {
-                kept.iter()
-                    .position(|r| r.host == active.host && r.path == active.path)
-            })
-            .unwrap_or(0);
+            .filter(|active| !active.transient)
+            .or_else(|| kept.first().copied())
+            .map(|root| host_path(root.host.as_ref(), &root.path));
         WorkspaceConfig {
             name: self.name.clone(),
-            roots: kept.iter().map(|r| root_key_of(r)).collect(),
-            active_root,
+            active,
+            projects: kept
+                .iter()
+                .map(|root| crate::config::ProjectConfig {
+                    path: root.path.clone(),
+                    host: root.host.clone(),
+                    pinned: root.pinned,
+                    unattended: root.unattended,
+                    check: root.check.clone(),
+                    offload: root.offload.clone().filter(|_| root.host.is_none()),
+                })
+                .collect(),
             layout: self.layout,
-            pinned: kept
-                .iter()
-                .filter(|root| root.pinned)
-                .map(|root| root_key_of(root))
-                .collect(),
-            unattended: kept
-                .iter()
-                .filter(|root| root.unattended)
-                .map(|root| root_key_of(root))
-                .collect(),
-            checks: kept
-                .iter()
-                .filter_map(|root| Some((root_key_of(root), root.check.clone()?)))
-                .collect(),
-            offloaded: kept
-                .iter()
-                .filter(|root| root.host.is_none())
-                .filter_map(|root| {
-                    let on = root.offload.as_ref()?;
-                    Some((root_key_of(root), host_path(Some(&on.host), &on.mirror)))
-                })
-                .collect(),
-            offloaded_branches: kept
-                .iter()
-                .filter(|root| root.host.is_none())
-                .filter_map(|root| {
-                    let branch = root.offload.as_ref()?.branch.clone()?;
-                    Some((root_key_of(root), branch))
-                })
-                .collect(),
         }
     }
 

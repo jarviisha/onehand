@@ -38,7 +38,7 @@ mod state;
 pub use state::AppState;
 
 mod workspace;
-pub use workspace::{PanelLayout, WorkspaceConfig, WorkspaceLoad};
+pub use workspace::{PanelLayout, ProjectConfig, WorkspaceConfig, WorkspaceLoad};
 
 /// `mode` as a run takes it: a blank mode is none, and leaves the agent in
 /// the mode it starts in, which asks more rather than less.

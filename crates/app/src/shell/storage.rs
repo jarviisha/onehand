@@ -361,7 +361,7 @@ impl Shell {
                 // Present but unreadable -- an unmounted share, a permission
                 // blip, a TOML typo. Every one of those is recoverable, and
                 // forgetting the recent is not: say so and keep the row.
-                WorkspaceLoad::Unreadable => {
+                WorkspaceLoad::Unreadable(_) => {
                     shell
                         .update_in(cx, |_, window, cx| {
                             window.push_notification(
@@ -416,7 +416,7 @@ async fn workspace_in(dir: &Path, cx: &mut gpui::AsyncApp) -> Result<Option<Work
     match loaded {
         WorkspaceLoad::Found(cfg) => Ok(Some(Workspace::from_config(cfg, dir.to_path_buf()))),
         WorkspaceLoad::Missing => Ok(None),
-        WorkspaceLoad::Unreadable => Err(format!(
+        WorkspaceLoad::Unreadable(_) => Err(format!(
             "{} already holds a workspace config that cannot be read — nothing was changed",
             dir.display()
         )),

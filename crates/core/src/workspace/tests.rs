@@ -1,5 +1,22 @@
 use super::*;
-use crate::config::AgentSpec;
+use crate::config::{AgentSpec, ProjectConfig};
+
+fn project(path: &str) -> ProjectConfig {
+    ProjectConfig {
+        path: path.into(),
+        ..Default::default()
+    }
+}
+
+fn paths(cfg: &WorkspaceConfig) -> Vec<PathBuf> {
+    cfg.projects.iter().map(|p| p.path.clone()).collect()
+}
+
+/// `cfg` with a project `/new` put ahead of the others.
+fn one_ahead(mut cfg: WorkspaceConfig) -> WorkspaceConfig {
+    cfg.projects.insert(0, project("/new"));
+    cfg
+}
 
 fn spec(name: &str) -> AgentSpec {
     AgentSpec {
@@ -42,19 +59,13 @@ fn unattended_runs_are_opted_into_per_project_and_kept_by_path() {
     ws.toggle_unattended(1);
     assert!(ws.roots[1].unattended);
     let cfg = ws.to_config();
-    assert_eq!(cfg.unattended, [PathBuf::from("/b")]);
-    // By path, like a pin: a root added ahead of it cannot move the opt-in.
-    let mut back = Workspace::from_config(
-        WorkspaceConfig {
-            roots: vec!["/new".into(), "/a".into(), "/b".into()],
-            ..cfg
-        },
-        PathBuf::from("/store"),
-    );
+    assert!(!cfg.projects[0].unattended && cfg.projects[1].unattended);
+    // Kept with its project: a project put ahead of it cannot move the opt-in.
+    let mut back = Workspace::from_config(one_ahead(cfg), PathBuf::from("/store"));
     assert!(!back.roots[0].unattended && !back.roots[1].unattended);
     assert!(back.roots[2].unattended);
     back.toggle_unattended(2);
-    assert!(back.to_config().unattended.is_empty());
+    assert!(back.to_config().projects.iter().all(|p| !p.unattended));
 }
 
 #[test]
@@ -63,14 +74,8 @@ fn the_check_command_is_kept_by_path() {
     ws.add_root("/b");
     ws.roots[1].check = Some("cargo test".into());
     let cfg = ws.to_config();
-    assert_eq!(cfg.checks.len(), 1);
-    let back = Workspace::from_config(
-        WorkspaceConfig {
-            roots: vec!["/new".into(), "/a".into(), "/b".into()],
-            ..cfg
-        },
-        PathBuf::from("/store"),
-    );
+    assert_eq!(cfg.projects[1].check.as_deref(), Some("cargo test"));
+    let back = Workspace::from_config(one_ahead(cfg), PathBuf::from("/store"));
     assert!(back.roots[1].check.is_none());
     assert_eq!(back.roots[2].check.as_deref(), Some("cargo test"));
 }
@@ -107,12 +112,12 @@ fn a_transient_root_is_never_written() {
     ws.roots[run].transient = true;
     ws.select_root(1);
     let cfg = ws.to_config();
-    assert_eq!(cfg.roots, [PathBuf::from("/a"), PathBuf::from("/b")]);
-    assert_eq!(cfg.active_root, 1);
+    assert_eq!(paths(&cfg), [PathBuf::from("/a"), PathBuf::from("/b")]);
+    assert_eq!(cfg.active.as_deref(), Some("/b"));
     ws.select_root(run);
-    assert_eq!(ws.to_config().active_root, 0);
+    assert_eq!(ws.to_config().active.as_deref(), Some("/a"));
     ws.roots[run].transient = false;
-    assert_eq!(ws.to_config().roots.len(), 3);
+    assert_eq!(ws.to_config().projects.len(), 3);
 }
 
 #[test]
@@ -313,15 +318,13 @@ fn moving_a_session_carries_the_active_index_with_it() {
 fn pins_are_stored_by_path() {
     let mut ws = Workspace::seeded("/a");
     ws.add_root("/b");
-    ws.storage_dir = Some(PathBuf::from("/store"));
     ws.toggle_pin(1);
 
-    let mut cfg = ws.to_config();
-    assert_eq!(cfg.pinned, vec![PathBuf::from("/b")]);
-    // A root inserted ahead of it in the file must not slide the pin onto
-    // the project that took its index.
-    cfg.roots.insert(0, PathBuf::from("/z"));
-    let back = Workspace::from_config(cfg, PathBuf::from("/store"));
+    let cfg = ws.to_config();
+    assert!(!cfg.projects[0].pinned && cfg.projects[1].pinned);
+    // A project put ahead of it in the file must not slide the pin onto the
+    // project that took its place.
+    let back = Workspace::from_config(one_ahead(cfg), PathBuf::from("/store"));
     let pinned: Vec<_> = back
         .roots
         .iter()
@@ -335,22 +338,13 @@ fn pins_are_stored_by_path() {
 fn from_config_dedupes_and_follows_active_path() {
     let cfg = WorkspaceConfig {
         name: "W".into(),
-        roots: vec![
-            PathBuf::from("/a"),
-            PathBuf::from("/b"),
-            PathBuf::from("/a"),
-        ],
-        active_root: 2, // the duplicate /a
+        active: Some("/a".into()),
+        projects: vec![project("/b"), project("/a"), project("/a")],
         layout: PanelLayout::default(),
-        pinned: Vec::new(),
-        unattended: Vec::new(),
-        checks: Default::default(),
-        offloaded: Default::default(),
-        offloaded_branches: Default::default(),
     };
     let ws = Workspace::from_config(cfg, PathBuf::from("/store"));
     assert_eq!(ws.roots.len(), 2);
-    assert_eq!(ws.active_root, 0); // follows /a to its surviving slot
+    assert_eq!(ws.active_root, 1); // follows /a to its surviving slot
 }
 
 #[test]
@@ -363,14 +357,14 @@ fn config_roundtrips_roots_and_active() {
     let cfg = ws.to_config();
     assert_eq!(cfg.name, "Mine");
     assert_eq!(
-        cfg.roots,
+        paths(&cfg),
         vec![
             PathBuf::from("/a"),
             PathBuf::from("/b"),
             PathBuf::from("/c")
         ]
     );
-    assert_eq!(cfg.active_root, 1);
+    assert_eq!(cfg.active.as_deref(), Some("/b"));
 
     let back = Workspace::from_config(cfg, PathBuf::from("/store"));
     assert_eq!(back.name, "Mine");
@@ -380,6 +374,28 @@ fn config_roundtrips_roots_and_active() {
     assert!(back.roots[0].sessions.is_empty());
 }
 
+#[test]
+fn active_names_a_project_by_key() {
+    let mut ws = Workspace::seeded("/a");
+    ws.add_root("/b");
+    ws.select_root(1);
+    let back = Workspace::from_config(one_ahead(ws.to_config()), PathBuf::from("/store"));
+    assert_eq!(back.roots[back.active_root].path, PathBuf::from("/b"));
+}
+
+#[test]
+fn an_active_naming_nothing_reads_as_the_first() {
+    let cfg = WorkspaceConfig {
+        active: Some("/gone".into()),
+        projects: vec![project("/a"), project("/b")],
+        ..Default::default()
+    };
+    assert_eq!(
+        Workspace::from_config(cfg, PathBuf::from("/store")).active_root,
+        0
+    );
+}
+
 /// A hand-edited or stale layout must not restore a panel that is open,
 /// reachable by its shortcut, and too small to see — or one that covers the
 /// window because it was last sized on a much bigger monitor.
@@ -387,8 +403,8 @@ fn config_roundtrips_roots_and_active() {
 fn a_nonsense_layout_is_clamped_but_its_flags_are_kept() {
     let cfg = WorkspaceConfig {
         name: "W".into(),
-        roots: vec![PathBuf::from("/a")],
-        active_root: 0,
+        active: None,
+        projects: vec![project("/a")],
         layout: PanelLayout {
             workbench_w: 0.0,
             workbench_open: true,
@@ -396,11 +412,6 @@ fn a_nonsense_layout_is_clamped_but_its_flags_are_kept() {
             terminal_open: false,
             rail_w: 9_999.0,
         },
-        pinned: Vec::new(),
-        unattended: Vec::new(),
-        checks: Default::default(),
-        offloaded: Default::default(),
-        offloaded_branches: Default::default(),
     };
     let ws = Workspace::from_config(cfg, PathBuf::from("/store"));
     assert!(ws.layout.workbench_w >= 120.0);
@@ -416,7 +427,6 @@ fn a_nonsense_layout_is_clamped_but_its_flags_are_kept() {
 #[test]
 fn layout_survives_a_config_round_trip() {
     let mut ws = Workspace::seeded("/a");
-    ws.storage_dir = Some(PathBuf::from("/store"));
     ws.layout = PanelLayout {
         workbench_w: 512.0,
         workbench_open: true,
@@ -432,14 +442,9 @@ fn layout_survives_a_config_round_trip() {
 fn from_config_clamps_out_of_bounds_active() {
     let cfg = WorkspaceConfig {
         name: String::new(),
-        roots: vec![PathBuf::from("/a")],
-        active_root: 9,
+        active: Some("/elsewhere".into()),
+        projects: vec![project("/a")],
         layout: PanelLayout::default(),
-        pinned: Vec::new(),
-        unattended: Vec::new(),
-        checks: Default::default(),
-        offloaded: Default::default(),
-        offloaded_branches: Default::default(),
     };
     let ws = Workspace::from_config(cfg, PathBuf::from("/store"));
     assert_eq!(ws.active_root, 0);
@@ -495,7 +500,7 @@ fn a_host_root_round_trips_through_the_workspace_file() {
     ws.roots[i].pinned = true;
     ws.roots[i].check = Some("make test".into());
     let text = toml::to_string(&ws.to_config()).unwrap();
-    assert!(text.contains("\"vps:/srv/app/\""), "{text}");
+    assert!(text.contains("host = \"vps\""), "{text}");
     let back = Workspace::from_config(toml::from_str(&text).unwrap(), PathBuf::from("/s"));
     let root = &back.roots[1];
     assert_eq!(root.on_host(), Some(&HostName("vps".into())));
@@ -574,7 +579,7 @@ fn only_a_folder_on_this_machine_has_a_local_path() {
 fn a_host_name_with_colons_round_trips_through_its_key() {
     for host in ["fe80::1", "user@[fe80::1]", "vps"] {
         let host = HostName(host.into());
-        let key = root_key(Some(&host), Path::new("/srv/app"));
+        let key = PathBuf::from(host_path(Some(&host), Path::new("/srv/app")));
         assert_eq!(
             parse_root_key(&key),
             (Some(host.clone()), PathBuf::from("/srv/app")),
@@ -602,10 +607,7 @@ fn an_offloaded_root_is_kept_with_its_host_and_mirror() {
     };
     ws.roots[1].offload = Some(on.clone());
     let cfg = ws.to_config();
-    assert_eq!(
-        cfg.offloaded.get(&PathBuf::from("/b")).map(String::as_str),
-        Some("box:/srv/mirrors/l/b-1")
-    );
+    assert_eq!(cfg.projects[1].offload.as_ref(), Some(&on));
     let back = Workspace::from_config(cfg, PathBuf::from("/store"));
     assert!(back.roots[0].offload.is_none());
     assert_eq!(back.roots[1].offload, Some(on.clone()));
@@ -635,21 +637,10 @@ fn an_offloaded_root_on_a_branch_keeps_its_branch() {
         mirror: PathBuf::from("/srv/mirrors/l/a-1"),
         ..on.clone()
     });
-    let cfg = ws.to_config();
-    assert_eq!(
-        cfg.offloaded_branches
-            .get(&PathBuf::from("/b"))
-            .map(String::as_str),
-        Some("onehand/box")
-    );
-    assert!(!cfg.offloaded_branches.contains_key(&PathBuf::from("/a")));
-    let back = Workspace::from_config(cfg.clone(), PathBuf::from("/store"));
+    let text = toml::to_string(&ws.to_config()).unwrap();
+    let back = Workspace::from_config(toml::from_str(&text).unwrap(), PathBuf::from("/store"));
     assert_eq!(back.roots[1].offload, Some(on));
     assert_eq!(back.roots[0].offload.as_ref().unwrap().branch, None);
-    let mut older = cfg;
-    older.offloaded_branches.clear();
-    let back = Workspace::from_config(older, PathBuf::from("/store"));
-    assert_eq!(back.roots[1].offload.as_ref().unwrap().branch, None);
 }
 
 #[test]
@@ -657,8 +648,11 @@ fn a_host_root_never_carries_an_offload() {
     let mut ws = Workspace::seeded("/a");
     ws.add_host_root(HostName("box".into()), PathBuf::from("/srv/p"));
     let mut cfg = ws.to_config();
-    cfg.offloaded
-        .insert(PathBuf::from("box:/srv/p"), "box:/srv/m".into());
+    cfg.projects[1].offload = Some(Offloaded {
+        host: HostName("box".into()),
+        mirror: "/srv/m".into(),
+        branch: None,
+    });
     let back = Workspace::from_config(cfg, PathBuf::from("/store"));
     assert!(back.roots[1].offload.is_none());
     assert_eq!(
