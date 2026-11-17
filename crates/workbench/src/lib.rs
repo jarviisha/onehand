@@ -98,36 +98,7 @@ pub trait WorkbenchMode {
     fn processes(&self, _cx: &App) -> Vec<onehand_core::worktree::removal::Process> {
         Vec::new()
     }
-
-    /// Take the two ends of the Workbench's row, to draw them in this mode's
-    /// own bar, and say whether it will.
-    ///
-    /// Handed once, when the panel is built. A mode with a bar of its own (the
-    /// Editor's file tabs) draws one row rather than a bar under the
-    /// Workbench's; the panel draws its own row, the two ends with nothing
-    /// between them, over every mode that answers `false`.
-    fn take_bar_ends(&mut self, _ends: BarEnds, _cx: &mut App) -> bool {
-        false
-    }
 }
-
-/// The two ends of the Workbench's one row: what leads it (the way back to
-/// the conversation while the Workbench has the area, then the mode picker)
-/// and what closes it (maximize and hide). Views, so whichever bar draws them
-/// draws the panel's own controls, which answer the panel.
-#[derive(Clone)]
-pub struct BarEnds {
-    pub lead: AnyView,
-    pub end: AnyView,
-    /// Wraps a mode's bar so it lays out at chrome size inside the body the
-    /// panel scales by its zoom, as the panel's own row does: the row keeps
-    /// the header's height whichever bar draws it. The zoom is the panel's,
-    /// so the mode is handed the way to undo it rather than the number.
-    pub chrome: Chrome,
-}
-
-/// How [`BarEnds::chrome`] wraps a bar.
-pub type Chrome = Rc<dyn Fn(gpui::AnyElement, &App) -> gpui::AnyElement>;
 
 /// How a mode reaches back into the panel.
 ///

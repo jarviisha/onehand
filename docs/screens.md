@@ -237,16 +237,18 @@ inside the box. The terminal is drawn no taller than leaves the conversation a r
 (its dragged height kept). Maximizing the Workbench gives it the conversation's room and leaves
 the terminal as it is.
 
-- Bars as tall as the header. The Workbench's, the terminal's and every other `tab_bar` the two
-  draw (the Editor's files, the Issues tab's) take one look: no fill of their own and no lines,
-  the tabs parted by space, the open one a rounded fill (`secondary`) with its name in the content
-  ink, every tab, tree row and shell row at the regular weight, the controls at the end.
-- The Workbench's is one row: *← Conversation* while it has the area, then the mode picker, the
-  open mode's name and a chevron, its menu the modes offered (Editor, Markdown, Issues, Plugins
-  only where a Claude Code agent is set up when the window opens, Neovim), one control at every
-  width; then the mode's own tabs or controls (the Editor's file tabs, which never shrink: the
-  newest that fit stay, the current one among them, and the older ones go into an *N more* menu
-  after them); then maximize and hide.
+- Bars as tall as the header, a mode's own bar under the Workbench's a step lower. The
+  Workbench's, the terminal's and every other `tab_bar` the two draw (the Editor's files, the
+  Issues tab's) take one look: no fill of their own and no lines, the tabs parted by space, the
+  open one a rounded fill (`secondary`) with its name in the content ink, every tab, tree row and
+  shell row at the regular weight, the controls at the end.
+- The Workbench's: *← Conversation* while it has the area, the modes as tabs (Editor, Markdown,
+  Issues, Plugins only where a Claude Code agent is set up when the window opens, Neovim; a select
+  where the bar is too narrow for the tabs, `MODES_MIN_W`), maximize, hide.
+- The Editor's file tabs, on a bar of their own under the Workbench's: the tree's toggle, or the
+  link back to the tree while one shows at a time, then the tabs, which never shrink: the newest
+  that fit stay, the current one among them, and the older ones go into an *N more* menu after
+  them.
 - The terminal's: the open shell's name at its start, then `+`, maximize, hide. While the dock
   holds more than one shell, a list of them runs down the box's right side beside the grid, at a
   fixed width, neither dragged nor saved: a row per shell holding what its tab held (its name,

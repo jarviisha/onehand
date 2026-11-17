@@ -115,7 +115,7 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 | A checkbox, a switch | Checkbox, Switch | `.small()` beside chrome text, at the library's own geometry |
 | A single-line row; a row with a second line | drawn by the app | `ROW_H`; at least `ROW_H` |
 | A strip along the top of a region | `strip` (`onehand_ui`) | `BAR_H` |
-| A mode's own bar under the Workbench's row | `mode_strip` | `MODE_BAR_H` |
+| A mode's own bar under the Workbench's strip | `mode_strip` | `MODE_BAR_H` |
 
 - **`.tall()` is the ceiling.** No control stands taller than `FIELD_H`; a page gives a field
   room by its size, never by a larger control.
@@ -162,11 +162,12 @@ shows a region the strip's own panel hid may lead (the way back to the rail, a l
 Filters belong below the region header with the content they filter. Reserve the action group's
 width while labels truncate; showing hover actions must not move the text beside them.
 
-The Workbench's row (its mode picker, then the Editor's file tabs) and the terminal's bar are tab
-panel bars (`tab_bar`): no fill and no line of their own, the open tab a rounded `secondary` fill.
+The Workbench's strip, the terminal's and the Editor's file tabs are tab panel bars (`tab_bar`),
+the Editor's at `tokens::MODE_BAR_H`: no fill and no line of their own, the open tab a rounded
+`secondary` fill.
 Any other bar inside the Workbench is a `workbench_strip`, padded `tokens::ROW_INSET` so its words
 and the tree rows' names read down one edge: the reader's bar is a `mode_strip`, `MODE_BAR_H`
-tall, a step under the row over it; an issue's trail draws its own. No bar inside a region's box
+tall, a step under the strip over it; an issue's trail draws its own. No bar inside a region's box
 draws a line where it ends, and the conversation's header draws none either and keeps `px_3`.
 
 ### Cuts

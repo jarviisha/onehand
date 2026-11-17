@@ -3,7 +3,7 @@
 //! rule with them; what lives here is each tab's buffer, the reads and writes
 //! carried off the UI loop, and the drawing.
 
-use crate::buffers::{Lead, StripHandlers, body, ends_row, new_buffer, standing_line, tab_strip};
+use crate::buffers::{Lead, StripHandlers, body, new_buffer, standing_line, tab_strip};
 
 use gpui::{
     AnyWindowHandle, App, AppContext as _, Context, Entity, Focusable as _, IntoElement,
@@ -16,7 +16,7 @@ use onehand_core::editor::RootEditors;
 use onehand_core::editor::SaveOutcome;
 use onehand_core::editor::drive::{Close, Closing, EditorDrive, Effect, Input, Signal};
 use onehand_ui::{hint, status_ink, status_line};
-use onehand_workbench::{BarEnds, Disk};
+use onehand_workbench::Disk;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -55,9 +55,6 @@ pub(crate) struct EditorView {
     /// last measured: the strip leads with the way back to the tree then,
     /// rather than the toggle that hides it.
     alone: bool,
-    /// The Workbench's two ends, which this view's strip draws so the
-    /// Workbench has one row while this mode shows. `None` until handed.
-    ends: Option<BarEnds>,
 }
 
 impl EditorView {
@@ -72,27 +69,7 @@ impl EditorView {
             tree_shown: true,
             detail: false,
             alone: false,
-            ends: None,
         })
-    }
-
-    /// Draw the Workbench's ends in this view's strip.
-    pub(crate) fn set_ends(&mut self, ends: BarEnds) {
-        self.ends = Some(ends);
-    }
-
-    /// `row` at the Workbench's chrome size, inside a body its zoom scales.
-    pub(crate) fn chrome(&self, row: gpui::AnyElement, cx: &App) -> gpui::AnyElement {
-        match &self.ends {
-            Some(ends) => (ends.chrome)(row, cx),
-            None => row,
-        }
-    }
-
-    /// The Workbench's row with nothing of this view's in it: over the tree
-    /// shown alone, or a project not yet picked.
-    pub(crate) fn ends_row(&self, cx: &App) -> Option<gpui::Div> {
-        ends_row(self.ends.as_ref(), cx)
     }
 
     /// Which folders may not be written now, whole.
@@ -479,31 +456,37 @@ impl EditorView {
     }
 }
 
-impl EditorView {
-    /// The strip over the buffers, which is the Workbench's one row while this
-    /// mode shows: drawn by the split, across the tree beside the buffers too,
-    /// so the Workbench's end closes the row at the panel's edge.
-    ///
-    /// Drawn with no tabs as well: the tree's toggle lives on it, and a strip
-    /// that went with the last tab would leave a hidden tree with no way back.
-    pub(crate) fn strip(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+impl Render for EditorView {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.window = Some(window.window_handle());
         let Some(root) = self.root.as_ref() else {
-            return self.ends_row(cx).map(IntoElement::into_any_element);
+            return div()
+                .flex_1()
+                .min_w_0()
+                .min_h_0()
+                .v_flex()
+                .child(hint("No project selected", cx));
         };
+        // The strip is drawn with no tabs as well: the tree's toggle lives on
+        // it, and a strip that went with the last tab would leave a hidden tree
+        // with no way back.
         let empty = RootEditors::default();
         let tabs = self.drive.tabs(root).unwrap_or(&empty);
-        Some(tab_strip(
+        let locked = self.drive.locked(root).map(str::to_string);
+        let standing = self.drive.standing(root).map(standing_line);
+        let active = tabs.active_file().map(|f| f.uid);
+        let buffer = active
+            .and_then(|uid| self.buffers.get(&uid))
+            .map(|(state, _)| state.clone());
+        let strip = tab_strip(
             root,
             tabs,
             (&self.tabs_w, &self.tab_widths),
             cx.entity().downgrade(),
-            (
-                match self.alone {
-                    true => Lead::Back,
-                    false => Lead::Toggle(self.tree_shown),
-                },
-                self.ends.as_ref(),
-            ),
+            match self.alone {
+                true => Lead::Back,
+                false => Lead::Toggle(self.tree_shown),
+            },
             StripHandlers {
                 toggle_tree: Box::new(
                     cx.listener(|view: &mut Self, _, _, cx| view.toggle_tree(cx)),
@@ -520,26 +503,7 @@ impl EditorView {
                 ),
             },
             cx,
-        ))
-    }
-}
-
-/// The buffers alone: the strip over them is the split's to draw.
-impl Render for EditorView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.window = Some(window.window_handle());
-        let frame = div().flex_1().min_w_0().min_h_0().v_flex();
-        let Some(root) = self.root.as_ref() else {
-            return frame.child(hint("No project selected", cx));
-        };
-        let empty = RootEditors::default();
-        let tabs = self.drive.tabs(root).unwrap_or(&empty);
-        let locked = self.drive.locked(root).map(str::to_string);
-        let standing = self.drive.standing(root).map(standing_line);
-        let active = tabs.active_file().map(|f| f.uid);
-        let buffer = active
-            .and_then(|uid| self.buffers.get(&uid))
-            .map(|(state, _)| state.clone());
+        );
         let body = match buffer {
             // The read's wait stands where the file will be, and only where
             // nothing is drawn yet: a buffer already open stays readable while
@@ -552,7 +516,16 @@ impl Render for EditorView {
                 .child(body(&state, locked.is_some()))
                 .into_any_element(),
         };
-        frame
+
+        // `min_w_0`: the resizable panel holding this is a flex *row*, and a flex
+        // item's floor is otherwise its content's width, so the strip's measure
+        // would follow its tabs rather than the room the panel has.
+        div()
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .v_flex()
+            .child(strip)
             .child(body)
             .children(standing.map(|status| status_line(status, status_ink(cx).warning)))
             .children(locked.map(|why| status_line(why, cx.theme().muted_foreground)))

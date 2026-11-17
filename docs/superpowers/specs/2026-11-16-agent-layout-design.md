@@ -58,18 +58,14 @@ and the composer stays exactly as it is.
    (modes, the Editor's file tabs with *N more*, Issues), so one look holds. The Files tree and
    Markdown's document tree stand on the right of what they open instead of its left.
 
-9. **One Workbench row.** The Workbench's mode bar and the Editor's file tab bar merge into one
-   row: a mode picker (*Editor ▾*) at its start, then the mode's own tabs or controls (the
-   Editor's file tabs with *N more*), then maximize and hide. The `MODES_MIN_W` select is gone,
-   the picker being one already. *← Conversation* still leads the row while the Workbench has
-   the area.
+9. **One Workbench row.** Withdrawn by the owner: the Workbench keeps its mode tabs over the
+   Editor's own file tab bar.
 
 ## Non-goals
 
 - The composer: unchanged in every part (the chips above it in early sketches were dropped).
 - A *Changes* view: the mock-up drew a *Changes* tab; onehand has no such view and this work
   does not add one.
-- Making each mode a tab of its own beside the files (the owner chose a mode picker instead, goal 9).
 - A light-mode redesign: light mode takes the same structure with its existing tokens.
 - Any change to what a page, the transcript or a dialog holds.
 
@@ -114,7 +110,8 @@ and the composer stays exactly as it is.
 - The overall look (layout v4): boxes without edges, radius, gaps; rail and title bar on the
   window's fill; the weights in goal 7.
 - Option (a) for the terminal.
-- One Workbench row with a mode picker (goal 9), over keeping two bars or tabs per mode.
+- The Workbench keeps its mode tabs (a select below `MODES_MIN_W`) over the Editor's own file
+  tab bar; one row with a mode picker (goal 9) was built and withdrawn.
 - The composer stays as it is.
 
 ## Calls made here (the owner may overturn)

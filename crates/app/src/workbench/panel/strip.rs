@@ -1,16 +1,185 @@
-//! The Workbench's row over a mode with no bar of its own to draw it in: the
-//! row's start, a filler, and its end.
+//! The Workbench's strip: the way back while it has the area, the modes, then
+//! maximize and hide fixed at the end, outside anything that gives way.
 
-use super::Workbench;
-use gpui::{Context, IntoElement, ParentElement, Styled, div};
+use super::{Workbench, WorkbenchEvent};
+use crate::controls::Named as _;
+use crate::controls::Short as _;
+use gpui::prelude::FluentBuilder as _;
+use gpui::{App, Context, IntoElement, ParentElement, Styled, Window, div};
+use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::{ActiveTheme, IconName, StyledExt};
+use onehand_workbench::{ModeId, WorkbenchModeSpec};
+
+/// The least width, in rems, at which the modes sit side by side as tabs:
+/// under it they cannot each keep their name beside the controls at the bar's
+/// end, so they fold into one control naming the showing mode and opening the
+/// others, rather than letting clipping decide which survive. The Workbench
+/// opens wider than this, so the modes start side by side.
+const MODES_MIN_W: gpui::Rems = gpui::rems(26.);
 
 impl Workbench {
-    /// The dock's tab bar, as tall as the conversation's header beside it so
-    /// the two line up across the gap.
-    pub(super) fn strip(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    pub(super) fn strip(
+        &self,
+        specs: Vec<WorkbenchModeSpec>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let showing = self.showing();
+        let full = self.maximized;
+        let compact = self.width.get().0 < MODES_MIN_W.0;
+        // While the panel refuses, there is no mode to switch to: the space
+        // stays, so the controls at the row's end do not move.
+        let offered = self.refused.is_none();
+        // The dock's tab bar, as tall as the conversation's header beside it
+        // so the two line up across the gap.
         onehand_ui::tab_bar(cx)
-            .child(self.ends.lead.clone())
-            .child(div().flex_1().min_w_0())
-            .child(self.ends.end.clone())
+            // The way back to the conversation, while this panel has taken the
+            // area because the window cannot hold the two side by side. A
+            // maximized panel has its own way back at the other end.
+            .when(self.fills_area && !full, |strip| {
+                strip.child(div().h_flex().items_center().px_1().child(
+                    onehand_ui::back_link("step-aside", "Conversation", cx).on_click(cx.listener(
+                        |_: &mut Self, _, _, cx| {
+                            cx.emit(WorkbenchEvent::StepAside);
+                        },
+                    )),
+                ))
+            })
+            // The modes are the one part of the row that gives way, so the
+            // controls at its end are on screen at any width.
+            .child(
+                div()
+                    .h_flex()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .when(offered, |modes| match compact {
+                        true => modes.items_center().px_1().child(mode_select(
+                            specs,
+                            showing.label,
+                            showing.id,
+                            cx,
+                        )),
+                        false => modes.gap_1().children(
+                            specs
+                                .into_iter()
+                                .map(|spec| mode_tab(spec.label, spec.id, showing.id, cx)),
+                        ),
+                    }),
+            )
+            .child(
+                div()
+                    .h_flex()
+                    .items_center()
+                    .gap_1()
+                    .child(maximize_control(full, cx))
+                    .child(hide_control(cx)),
+            )
     }
+}
+
+/// Fill the window, or go back to the dock while it fills it.
+fn maximize_control(full: bool, cx: &mut Context<Workbench>) -> Button {
+    onehand_ui::strip_control(
+        "maximize-workbench",
+        match full {
+            true => IconName::Minimize,
+            false => IconName::Maximize,
+        },
+        false,
+        cx,
+    )
+    .named_with_action(
+        match full {
+            true => "Back to the dock",
+            false => "Fill the window",
+        },
+        &crate::shell::ToggleMaximize,
+        None,
+    )
+    .on_click(cx.listener(|_: &mut Workbench, _, _, cx| {
+        cx.emit(WorkbenchEvent::ToggleMaximize);
+    }))
+}
+
+/// Hide the Workbench: a minus, the mark a window's own chrome uses for the
+/// thing that goes away and comes back, and the same one the terminal's strip
+/// carries: nothing here is being closed, the dock is being put down.
+///
+/// `Minus` and never `Dash`, which is the same drawing under another name
+/// with `stroke` written into it as literal black -- so it ignores
+/// `text_color` and comes out invisible on a dark panel.
+fn hide_control(cx: &mut Context<Workbench>) -> Button {
+    onehand_ui::strip_control("hide-workbench", IconName::Minus, false, cx)
+        .named_with_action(
+            "Hide the Workbench",
+            &crate::shell::ToggleWorkbenchVisibility,
+            None,
+        )
+        .on_click(cx.listener(|_: &mut Workbench, _, _, cx| {
+            cx.emit(WorkbenchEvent::Hide);
+        }))
+}
+
+/// One mode on the bar: a dock's tab, the showing one on the open tab's fill
+/// with its name in the chosen ink, at most a tab's width and truncating.
+/// Its press is a text button inside the tab, so the keyboard reaches it.
+fn mode_tab(
+    label: &'static str,
+    which: ModeId,
+    active: ModeId,
+    cx: &mut Context<Workbench>,
+) -> impl IntoElement + use<> {
+    let chosen = which == active;
+    let ink = match chosen {
+        true => onehand_ui::chosen_ink(cx),
+        false => cx.theme().tab_foreground,
+    };
+    onehand_ui::panel_tab_frame(
+        gpui::ElementId::Name(format!("workbench-mode-tab-{}", which.as_str()).into()),
+        chosen,
+        cx,
+    )
+    .max_w(onehand_ui::TAB_MAX_W)
+    .px_1()
+    .child(
+        crate::controls::action(which.as_str())
+            .text()
+            .short()
+            .min_w_0()
+            // At the chrome size, as every other tab's name is.
+            .text_size(onehand_ui::tokens::CHROME_TEXT)
+            .text_color(ink)
+            .child(div().min_w_0().truncate().child(label))
+            .on_click(cx.listener(move |panel: &mut Workbench, _, _, cx| {
+                panel.set_mode(which, cx);
+            })),
+    )
+}
+
+/// The modes as one control naming the showing one and opening the others,
+/// for a strip too narrow to hold them side by side.
+fn mode_select(
+    specs: Vec<WorkbenchModeSpec>,
+    label: &'static str,
+    showing: ModeId,
+    cx: &mut Context<Workbench>,
+) -> impl IntoElement + use<> {
+    let panel = cx.entity().downgrade();
+    crate::controls::menu_below(
+        "workbench-mode-menu",
+        onehand_ui::tab_select("workbench-mode-select", label.into(), label.into(), cx),
+        move |mut menu, _, _| {
+            for spec in &specs {
+                let (panel, which) = (panel.clone(), spec.id);
+                menu = menu.item(
+                    crate::controls::menu_item(spec.label)
+                        .checked(which == showing)
+                        .on_click(move |_, _: &mut Window, cx: &mut App| {
+                            panel.update(cx, |panel, cx| panel.set_mode(which, cx)).ok();
+                        }),
+                );
+            }
+            menu
+        },
+    )
 }

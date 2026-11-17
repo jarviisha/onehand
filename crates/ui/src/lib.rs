@@ -64,7 +64,8 @@ pub use strip::{mode_strip, strip, strip_control, workbench_strip};
 pub use surface::{card_box, dock_surface, region, scrollbar, well};
 pub use tabs::{
     Measured, TAB_MAX_W, TAB_MENU_CAP, TabStrip, TabWidths, measure_tab, measure_width, panel_tab,
-    tab_bar, tab_chip, tab_close, tab_more, tab_select, tab_strip, tab_width, unmeasured,
+    panel_tab_frame, tab_bar, tab_chip, tab_close, tab_more, tab_select, tab_strip, tab_width,
+    unmeasured,
 };
 pub use toggle::toggle;
 pub use tooltip::{put_tooltips_away, tip, tooltip_guard};

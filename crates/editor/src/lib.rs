@@ -4,7 +4,7 @@
 #![warn(unreachable_pub)]
 
 use gpui::{AnyView, App, Entity, Window};
-use onehand_workbench::{Asker, BarEnds, Disk, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
+use onehand_workbench::{Asker, Disk, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
 use std::path::Path;
 
 mod buffers;
@@ -108,12 +108,5 @@ impl WorkbenchMode for Mode {
 
     fn unsaved(&self, root: &Path, cx: &App) -> usize {
         self.view.read(cx).unsaved(root)
-    }
-
-    /// The file tabs are a bar of their own, so the Workbench's controls join
-    /// them in one row rather than standing in a second over it.
-    fn take_bar_ends(&mut self, ends: BarEnds, cx: &mut App) -> bool {
-        self.view.update(cx, |view, _| view.set_ends(ends));
-        true
     }
 }

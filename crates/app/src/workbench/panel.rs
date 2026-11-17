@@ -1,19 +1,14 @@
 //! The Workbench panel: Editor, Markdown, Issues, Plugins and Neovim, one at a time.
 //!
 //! **The panel owns no mode's state and draws no mode's body.** It keeps the
-//! list, remembers which one is showing, owns the ends of the one row that
-//! switches between them, and passes on the handful of things the shell asks of "the Workbench"
+//! list, remembers which one is showing, draws the strip that switches between
+//! them, and passes on the handful of things the shell asks of "the Workbench"
 //! without knowing which mode answers. Everything a mode works on — open
 //! buffers, the file tree, a document index, a live PTY — is inside that mode,
 //! and every mode is per project root, so switching roots swaps the whole panel
 //! rather than mixing one project's tabs with another's tree. A project on a
 //! host is offered only the modes that read and write through the disk the
 //! panel hands them.
-//!
-//! **One row.** The Workbench's controls (the way back to the conversation,
-//! the mode picker, maximize and hide) and a mode's own tabs share one bar: a
-//! mode with a bar of its own takes the panel's two ends and draws them in it,
-//! and over every other mode the panel draws the two ends alone.
 //!
 //! Two facts about the showing mode reach the frame from here, and both are
 //! read off that mode's own declaration rather than worked out from its ID. Its
@@ -35,14 +30,11 @@ use gpui_component::StyledExt;
 use gpui_component::button::ButtonVariants as _;
 use onehand_core::gitstat::GitStatus;
 use onehand_core::workbench::{Again, Showing};
-use onehand_workbench::{
-    Ask, Asker, BarEnds, Disk, ModeId, Request, WorkbenchMode, WorkbenchModeSpec,
-};
+use onehand_workbench::{Ask, Asker, Disk, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-mod picker;
 mod strip;
 #[cfg(test)]
 mod tests;
@@ -59,12 +51,6 @@ pub struct Workbench {
     /// Each is asked in this order, and a mode that has an answer to a request
     /// says so.
     modes: Vec<Box<dyn WorkbenchMode>>,
-    /// Beside each of `modes`, whether it draws the row's ends in a bar of its
-    /// own, as it answered when it was handed them.
-    own_row: Vec<bool>,
-    /// The row's two ends, which the panel draws over a mode in `own_row`
-    /// that answered `false`.
-    ends: BarEnds,
     /// Which mode is showing, as a place in `modes` rather than an ID, and
     /// which is offered: core's, told every switch, file and pick.
     ///
@@ -87,18 +73,23 @@ pub struct Workbench {
     zoom: crate::zoom::Zoom,
     /// Whether this panel is currently blown up to the whole frame.
     ///
-    /// Pushed down from the shell, which owns the fact; the row's end draws it.
+    /// Pushed down from the shell, which owns the fact. The strip draws the
+    /// state and not the action, because one glyph for both says the same thing
+    /// about two opposite situations -- and the situation that matters is the
+    /// one where the panel fills the window and the user is looking for the way
+    /// back.
     maximized: bool,
     /// Whether this panel has taken the whole area beside the rail, because
     /// the window cannot hold it beside the conversation. Pushed down from the
-    /// shell, which decides it; the row leads with the way back while it
+    /// shell, which decides it; the strip leads with the way back while it
     /// holds.
     fills_area: bool,
     /// Whether the panel is on screen. Its slot in the centre stays in the
     /// dock's tree either way; this is what takes it out of the frame.
     shown: bool,
-    /// The panel's width in rems as last laid out, which says whether the
-    /// slot landed at its width. Infinite until measured.
+    /// The panel's width in rems as last laid out, which the strip reads to
+    /// decide whether its modes fit side by side. Infinite until measured, so
+    /// the first frame draws them side by side.
     width: onehand_ui::Measured,
 }
 
@@ -111,7 +102,7 @@ impl Workbench {
         build: impl FnOnce(Asker, Pixels, &mut App) -> Vec<Box<dyn WorkbenchMode>>,
         cx: &mut App,
     ) -> Entity<Self> {
-        let panel = cx.new(|cx| {
+        cx.new(|cx| {
             // Handed to the modes as they are built rather than set afterwards,
             // so none of them is ever on screen holding nothing to ask through.
             let panel = cx.weak_entity();
@@ -123,11 +114,8 @@ impl Workbench {
             let zoom = crate::zoom::Zoom::default();
             let modes = build(ask, crate::zoom::term_font_size(zoom), cx);
             assert!(!modes.is_empty(), "the Workbench has no built-in modes");
-            let ends = picker::bar_ends(&cx.entity(), cx);
             Self {
                 showing: Showing::new(modes.iter().map(|mode| mode.spec()).collect()),
-                own_row: Vec::new(),
-                ends,
                 modes,
                 focus_handle: cx.focus_handle(),
                 root: None,
@@ -139,17 +127,7 @@ impl Workbench {
                 shown: false,
                 width: onehand_ui::unmeasured(),
             }
-        });
-        // Handed once the panel exists, since the ends are views of it.
-        panel.update(cx, |panel, cx| {
-            let ends = panel.ends.clone();
-            panel.own_row = panel
-                .modes
-                .iter_mut()
-                .map(|mode| mode.take_bar_ends(ends.clone(), cx))
-                .collect();
-        });
-        panel
+        })
     }
 
     /// Answer what a mode asked, which is the panel's half of
@@ -314,7 +292,7 @@ impl Workbench {
         self.zoom
     }
 
-    /// Tell the row which way round the maximize is.
+    /// Tell the strip which way round the maximize is.
     ///
     /// Guarded, because the shell pushes this on paths that run whether or not
     /// anything changed and a notify here redraws the window.
@@ -326,7 +304,7 @@ impl Workbench {
         cx.notify();
     }
 
-    /// Tell the row whether this panel has taken the area beside the rail.
+    /// Tell the strip whether this panel has taken the area beside the rail.
     ///
     /// Guarded for the reason [`Self::set_maximized`] is: the shell pushes it
     /// on every frame.
@@ -543,7 +521,7 @@ fn failed(why: SharedString, cx: &mut Context<Workbench>) -> gpui::AnyElement {
 }
 
 /// The behaviour half of the dock's panel trait alone, as the conversation's
-/// is: the row is this panel's chrome, and the dock draws none.
+/// is: the mode strip is this panel's chrome, and the dock draws none.
 impl Panel for Workbench {
     fn panel_name(&self) -> &'static str {
         "Workbench"
@@ -562,7 +540,7 @@ impl EventEmitter<PanelEvent> for Workbench {}
 /// frame. [`Self::Hide`] is not a toggle, because the control is drawn only
 /// where the panel already shows; [`Self::ToggleMaximize`] is, and it names
 /// *this* panel rather than the focused one -- the button sits in the
-/// Workbench's own row, so routing it through the key's focused-panel rule
+/// Workbench's own strip, so routing it through the key's focused-panel rule
 /// would blow up the conversation whenever that was where the caret happened to
 /// be.
 pub enum WorkbenchEvent {
@@ -592,14 +570,17 @@ impl Focusable for Workbench {
 impl Render for Workbench {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let showing = self.showing();
-        // Drawn here unless the mode showing draws it in its own bar, which a
-        // refusal stands in place of.
-        let own_row = self.refused.is_none() && self.own_row[self.showing.active()];
-        let strip = (!own_row).then(|| self.strip(cx));
+        let specs: Vec<WorkbenchModeSpec> = self
+            .modes
+            .iter()
+            .map(|item| item.spec())
+            .filter(|spec| self.offers(*spec))
+            .collect();
+        let strip = self.strip(specs, cx);
 
-        // The row is chrome and keeps its size; only the work below it
-        // scales. A mode drawing the row in its own bar undoes the scale on
-        // it through the ends' `chrome`.
+        // The mode strip is chrome and keeps its size; only the work below it
+        // scales. A zoomed-in editor whose own tab bar grew with it wastes the
+        // room the zoom was asking for.
         let body = match self.refused.clone() {
             Some(Refusal::Waiting(why)) => onehand_ui::hint(why, cx),
             Some(Refusal::Failed(why)) => failed(why, cx),
@@ -637,7 +618,7 @@ impl Render for Workbench {
             // Under any other mode this is the Workbench, which is what the save
             // is *for*.
             .key_context(showing.key_context)
-            .children(strip)
+            .child(strip)
             .child(body);
         crate::text_drag::region(crate::text_drag::Region::Workbench, panel, cx)
     }

@@ -142,8 +142,8 @@ pub fn measure_width<T: 'static>(
 /// more there are.
 pub const TAB_MENU_CAP: usize = 30;
 
-/// A strip's picker of one tab among several (the Workbench's modes): a
-/// ghost button naming the current tab and the picker's caret, at a
+/// A strip's select of tabs too many for it (the Workbench's modes, when
+/// narrow): a ghost button naming the current tab and the picker's caret, at a
 /// strip's size and capped like a tab, saying `hint` in full on hover. The
 /// caller hangs the menu of every tab on it.
 pub fn tab_select(
@@ -247,9 +247,14 @@ pub fn panel_tab(
         .child(gpui::div().min_w_0().truncate().child(label))
 }
 
-/// A [`panel_tab`]'s frame: a small control's height, the chosen fill and the
-/// inks. The caller insets what it holds.
-fn panel_tab_frame(id: impl Into<ElementId>, chosen: bool, cx: &App) -> gpui::Stateful<gpui::Div> {
+/// A [`panel_tab`]'s frame alone, for a tab whose press is a control of its
+/// own (a button the keyboard reaches): a small control's height, the
+/// chosen fill and the inks. The caller insets what it holds.
+pub fn panel_tab_frame(
+    id: impl Into<ElementId>,
+    chosen: bool,
+    cx: &App,
+) -> gpui::Stateful<gpui::Div> {
     let theme = cx.theme();
     let lit = theme.tab_active_foreground;
     gpui::div()

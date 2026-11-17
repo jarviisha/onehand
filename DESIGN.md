@@ -61,8 +61,8 @@ plain ASCII and box-drawing, so it stays aligned in any mono font.
 ┌────────────────────────────────────────────────────────────────────────────────────┐
 │ o onehand  File View Go Session  [ Workspace v | Search ^K ]  rail term wb  _ [] x │
 │ + New session ^N ┌────────────────────────────┐ ┌────────────────────────────────┐ │
-│ Overview         │ Title (...)     past close │ │ Editor v  file tabs   max hide │ │
-│ Tasks         2  │ workflow > step >     Stop │ │                                │ │
+│ Overview         │ Title (...)     past close │ │ Editor Markdown ...   max hide │ │
+│ Tasks         2  │ workflow > step >     Stop │ │ file tabs                      │ │
 │ Issues           │                            │ │                                │ │
 │ Workflows        │                            │ │                                │ │
 │ Sessions  Q 2 v  │        agent pane          │ │           Workbench            │ │

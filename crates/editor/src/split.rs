@@ -95,37 +95,20 @@ impl Render for CodeView {
             )
         };
         (self.set_active)(active, cx);
-        // The Workbench's one row, across the whole pair so its end closes it
-        // at the panel's edge: the buffers' strip, or, over the tree shown
-        // alone, the Workbench's two ends with nothing between.
-        let tree_alone = alone && !showing_file;
-        let row = match tree_alone {
-            true => self
-                .editor
-                .read(cx)
-                .ends_row(cx)
-                .map(IntoElement::into_any_element),
-            false => self.editor.update(cx, |editor, cx| editor.strip(cx)),
-        }
-        // At chrome size: the panel scales this body by its zoom, and the row
-        // keeps the header's height, as it does over every other mode.
-        .map(|row| self.editor.read(cx).chrome(row, cx));
         let frame = div()
             .size_full()
             .relative()
-            .v_flex()
-            .child(measure_width(self.width.clone(), cx.entity().downgrade()))
-            .children(row);
+            .child(measure_width(self.width.clone(), cx.entity().downgrade()));
         // `flex` and not `h_flex`: that one also centres its children across
         // the row, which drew a half at its content's height in the middle of
         // the panel instead of stretched down it.
-        let halves = div().flex_1().min_h_0().flex();
         if alone {
             return frame
-                .child(halves.map(|halves| match tree_alone {
-                    false => halves.child(self.editor.clone()),
-                    true => halves.child(div().size_full().v_flex().child(self.files.clone())),
-                }))
+                .flex()
+                .map(|frame| match showing_file {
+                    true => frame.child(self.editor.clone()),
+                    false => frame.child(div().size_full().v_flex().child(self.files.clone())),
+                })
                 .into_any_element();
         }
         // Hidden, the buffers are drawn alone rather than beside a panel marked
@@ -134,39 +117,35 @@ impl Render for CodeView {
         // nothing. The divider's state is untouched, so the tree comes back at
         // the width it was dragged to.
         if !tree_shown {
-            return frame
-                .child(halves.child(self.editor.clone()))
-                .into_any_element();
+            return frame.flex().child(self.editor.clone()).into_any_element();
         }
         frame
             .child(
-                halves.child(
-                    h_resizable("workbench-code")
-                        .with_state(&self.divider)
-                        .child(
-                            resizable_panel()
-                                .size_range(layout.detail.clone())
-                                .child(self.editor.clone()),
-                        )
-                        .child(
-                            // `flex_none`: the panel sets `flex_grow: 1` on itself,
-                            // and a tree that grows is a tree taking whatever the
-                            // editor is not using, which is most of the panel.
-                            resizable_panel()
-                                .size(layout.start)
-                                .size_range(layout.range)
-                                .flex_none()
-                                .child(
-                                    div()
-                                        .size_full()
-                                        .v_flex()
-                                        // The tree belongs to the box and parts
-                                        // from the editor by space alone: no fill,
-                                        // no line.
-                                        .child(self.files.clone()),
-                                ),
-                        ),
-                ),
+                h_resizable("workbench-code")
+                    .with_state(&self.divider)
+                    .child(
+                        resizable_panel()
+                            .size_range(layout.detail.clone())
+                            .child(self.editor.clone()),
+                    )
+                    .child(
+                        // `flex_none`: the panel sets `flex_grow: 1` on itself,
+                        // and a tree that grows is a tree taking whatever the
+                        // editor is not using, which is most of the panel.
+                        resizable_panel()
+                            .size(layout.start)
+                            .size_range(layout.range)
+                            .flex_none()
+                            .child(
+                                div()
+                                    .size_full()
+                                    .v_flex()
+                                    // The tree belongs to the box and parts
+                                    // from the editor by space alone: no fill,
+                                    // no line.
+                                    .child(self.files.clone()),
+                            ),
+                    ),
             )
             .into_any_element()
     }

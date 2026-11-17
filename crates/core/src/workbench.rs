@@ -52,7 +52,7 @@ pub const TERMINAL_KEY_CONTEXT: &str = "Terminal";
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WorkbenchModeSpec {
     pub id: ModeId,
-    /// The word on the mode picker.
+    /// The word on the mode strip.
     pub label: &'static str,
     /// The key context the panel takes while this mode shows.
     pub key_context: &'static str,

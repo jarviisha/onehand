@@ -9,7 +9,7 @@ use gpui::{App, BoxShadow, Pixels, Rems, px, rems};
 use gpui_component::ActiveTheme as _;
 
 /// The height every bar along the top of a region shares: the conversation's
-/// header, the Workbench's row and a page's column heads, so bars side by side line up across the window.
+/// header, the Workbench's mode strip and a page's column heads, so bars side by side line up across the window.
 /// A small control and a little room over and under it, as an editor's
 /// title bars stand: taller and the bars read as a band of their own.
 pub const BAR_H: Rems = rems(2.25);
