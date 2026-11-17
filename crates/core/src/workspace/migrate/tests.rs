@@ -236,3 +236,77 @@ fn a_folder_taken_by_another_workspace_is_copied_beside_it() {
         .join(format!("{}-3", stem_for(&old)))
         .exists());
 }
+
+/// A folder not there at this launch (a disk not mounted) is not taken for
+/// one holding no workspace: it stays named, to be brought in later.
+#[test]
+fn a_missing_old_folder_is_kept_for_a_later_launch() {
+    let (config, ext) = scratch("missing");
+    let (here, away) = (ext.join("here"), ext.join("unmounted").join("ws"));
+    old_workspace(&here, "Here");
+    old_state(&config, &[&here, &away], &[(&away, "Away")]);
+    migrate_in(&config);
+    let st = state(&config);
+    assert_eq!(st.recent_workspaces, std::slice::from_ref(&away));
+    assert_eq!(st.names.get(&away).map(String::as_str), Some("Away"));
+    assert_eq!(st.workspaces, [stem_for(&here)]);
+}
+
+/// One folder that cannot be brought in keeps only itself named: one that
+/// landed is not copied again, even once its copy was deleted.
+#[test]
+fn a_landed_folder_leaves_the_old_state_though_another_failed() {
+    let (config, ext) = scratch("partial");
+    let (good, bad) = (ext.join("good"), ext.join("bad"));
+    old_workspace(&good, "Good");
+    fs::create_dir_all(&bad).unwrap();
+    fs::write(bad.join(WorkspaceConfig::FILE), "name = ").unwrap();
+    old_state(&config, &[&good, &bad], &[]);
+    migrate_in(&config);
+    assert_eq!(state(&config).recent_workspaces, std::slice::from_ref(&bad));
+    let copy = config.join("workspaces").join(stem_for(&good));
+    fs::remove_dir_all(&copy).unwrap();
+    migrate_in(&config);
+    assert!(!copy.exists(), "a deleted copy is not brought back");
+}
+
+/// A copy that landed before its tasks were repointed (a crash between the
+/// two) has them repointed by the next run.
+#[test]
+fn tasks_left_behind_by_an_earlier_run_are_repointed() {
+    let (config, ext) = scratch("repoint-later");
+    let old = ext.join("ws02");
+    old_workspace(&old, "W");
+    old_state(&config, &[&old], &[]);
+    migrate_in(&config);
+    old_state(&config, &[&old], &[]);
+    let tasks = config.join("tasks");
+    fs::create_dir_all(&tasks).unwrap();
+    let old_file = old.join("issues").join("p-1.json").display().to_string();
+    fs::write(tasks.join("a.json"), format!("{{\"file\":{old_file:?}}}")).unwrap();
+    migrate_in(&config);
+    let a: serde_json::Value =
+        serde_json::from_slice(&fs::read(tasks.join("a.json")).unwrap()).unwrap();
+    assert!(
+        !a["file"]
+            .as_str()
+            .unwrap()
+            .starts_with(&ext.display().to_string()),
+        "{a}"
+    );
+}
+
+/// A link in a copied folder is not followed: a loop would never end.
+#[cfg(unix)]
+#[test]
+fn a_link_in_an_old_folder_is_not_followed() {
+    let (config, ext) = scratch("link");
+    let old = ext.join("ws02");
+    old_workspace(&old, "W");
+    std::os::unix::fs::symlink(&old, old.join("issues").join("loop")).unwrap();
+    old_state(&config, &[&old], &[]);
+    migrate_in(&config);
+    let new = config.join("workspaces").join(stem_for(&old));
+    assert!(new.join("issues").join("p-1.json").is_file());
+    assert!(!new.join("issues").join("loop").exists());
+}

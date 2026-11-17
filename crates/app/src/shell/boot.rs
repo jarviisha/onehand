@@ -779,8 +779,8 @@ fn use_installed_mono(configured: Option<&str>, cx: &mut App) {
 /// - **Prune.** The window list exists so that opening a workspace already on
 ///   screen focuses it instead of duplicating it. A closed window left in that
 ///   list makes `window_for` hand back a dead handle, and `open_or_focus` then
-///   "focuses" nothing and returns -- so *Open workspace…* on a folder whose
-///   window was closed silently does nothing at all.
+///   "focuses" nothing and returns -- so opening a workspace whose window was
+///   closed silently does nothing at all.
 /// - **Quit.** GPUI's Linux backend only stops its event loop when `quit()` is
 ///   called (`gpui_linux::platform::LinuxPlatform::quit`); there is no
 ///   quit-on-last-window default. Without this the process outlives its last

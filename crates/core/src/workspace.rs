@@ -227,10 +227,31 @@ pub fn storage_for(root: &Path) -> PathBuf {
 /// Where what belongs to the project at `path` itself, and to no one
 /// workspace, is kept: what an offload keeps, among others. Apart from the
 /// workspaces' folders, so a folder there is always a workspace.
-pub fn project_dir(path: &Path) -> PathBuf {
+pub(crate) fn project_dir(path: &Path) -> PathBuf {
     crate::config::config_dir()
         .join("projects")
         .join(stem_for(path))
+}
+
+/// Remove the workspace kept in `dir`: its file, its issues and its note of
+/// where it was copied from, then the folder once nothing else is in it.
+/// Blocking.
+///
+/// **Only what is its own.** An earlier build kept a project's offload in
+/// the folder of the workspace made from that project, and an offload can
+/// hold a whole checkout coming back; a folder holding anything else is left
+/// with it, and the answer says so.
+pub fn remove_workspace_blocking(dir: &Path) -> Result<(), String> {
+    let gone = |result: std::io::Result<()>| match result {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+        _ => Ok(()),
+    };
+    gone(std::fs::remove_file(
+        dir.join(crate::config::WorkspaceConfig::FILE),
+    ))?;
+    gone(std::fs::remove_file(dir.join(migrate::FROM)))?;
+    gone(std::fs::remove_dir_all(dir.join("issues")))?;
+    std::fs::remove_dir(dir).map_err(|e| format!("{} kept: {e}", dir.display()))
 }
 
 /// `root` as a name something about it can be kept under: its folder's name,

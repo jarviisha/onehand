@@ -428,7 +428,7 @@ pub fn config_dir() -> PathBuf {
 }
 
 /// Where onehand keeps its workspaces, one folder each.
-pub fn workspaces_dir() -> PathBuf {
+pub(crate) fn workspaces_dir() -> PathBuf {
     config_dir().join("workspaces")
 }
 

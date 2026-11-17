@@ -101,7 +101,7 @@ impl Shell {
         let dir = self.window.workspace.storage_dir.clone();
         let removed = Shared::global(cx).writer.write({
             let dir = dir.clone();
-            move || std::fs::remove_dir_all(&dir).map_err(|why| why.to_string())
+            move || workspace::remove_workspace_blocking(&dir)
         });
         cx.spawn(async move |_, _| {
             if let Err(why) = removed.await {

@@ -760,3 +760,27 @@ fn a_project_dir_is_named_as_its_issues_are() {
     assert_eq!(dir.parent().unwrap().file_name().unwrap(), "projects");
     assert_ne!(dir.parent(), storage_for(path).parent());
 }
+
+/// Deleting a workspace removes what is its own and nothing else: a
+/// project's offload kept in the same folder by an earlier build stays.
+#[test]
+fn deleting_a_workspace_leaves_what_is_not_its_own() {
+    let dir = std::env::temp_dir().join(format!("onehand-delete-ws-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    WorkspaceConfig::default().save_to(&dir).unwrap();
+    std::fs::create_dir_all(dir.join("issues")).unwrap();
+    std::fs::write(dir.join("issues").join("p-1.json"), "[]").unwrap();
+    std::fs::create_dir_all(dir.join("coming-back")).unwrap();
+    std::fs::write(dir.join("coming-back").join("f"), "f").unwrap();
+    assert!(
+        remove_workspace_blocking(&dir).is_err(),
+        "says what it left"
+    );
+    assert!(!dir.join(WorkspaceConfig::FILE).exists());
+    assert!(!dir.join("issues").exists());
+    assert!(dir.join("coming-back").join("f").is_file());
+    std::fs::remove_dir_all(dir.join("coming-back")).unwrap();
+    WorkspaceConfig::default().save_to(&dir).unwrap();
+    assert!(remove_workspace_blocking(&dir).is_ok());
+    assert!(!dir.exists());
+}

@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 
 /// The file a copy carries naming the folder it was copied from, so a later
 /// run knows that folder is already in.
-const FROM: &str = "migrated-from";
+pub(super) const FROM: &str = "migrated-from";
 
 /// What a project's offload keeps, in what was its workspace's folder.
 const OFFLOAD: [&str; 3] = ["offload.json", "coming-back", "backups"];
@@ -51,14 +51,23 @@ pub(crate) fn migrate_in(config: &Path) -> Vec<String> {
     // The workspace dir mirrored the first recent; the recents' order wins.
     old.sort_by_key(|dir| state.recent_workspaces.iter().position(|d| d == dir));
 
+    // Each folder leaves the old fields once it is in, on its own: one that
+    // failed keeps only itself named, so a copy deleted since is never
+    // brought back by the retry of another.
     let mut ids = Vec::new();
-    let mut landed = true;
+    let mut kept = Vec::new();
     for dir in &old {
         match bring_in(dir, &workspaces, state.names.get(dir), config) {
-            Ok(Some(id)) => ids.push(id),
-            Ok(None) => {}
-            Err(why) => {
-                landed = false;
+            Brought::In { id, left } => {
+                ids.push(id);
+                if !left.is_empty() {
+                    kept.push(dir.clone());
+                    problems.extend(left);
+                }
+            }
+            Brought::Nothing => {}
+            Brought::Later(why) => {
+                kept.push(dir.clone());
                 problems.push(format!("{}: {why}", dir.display()));
             }
         }
@@ -72,11 +81,9 @@ pub(crate) fn migrate_in(config: &Path) -> Vec<String> {
             }
         }
         state.workspaces = ids;
-        if landed {
-            state.workspace_dir = None;
-            state.recent_workspaces.clear();
-            state.names.clear();
-        }
+        state.workspace_dir = state.workspace_dir.take().filter(|dir| kept.contains(dir));
+        state.recent_workspaces.retain(|dir| kept.contains(dir));
+        state.names.retain(|dir, _| kept.contains(dir));
         if let Err(why) = state.save_to(&state_path) {
             problems.push(format!("{}: {why}", state_path.display()));
         }
@@ -99,21 +106,44 @@ fn clear_staging(workspaces: &Path, problems: &mut Vec<String>) {
     }
 }
 
+/// What became of one folder an earlier build named.
+enum Brought {
+    /// It is the workspace `id` under `workspaces`; `left` says what of its
+    /// tasks could not be repointed, to be tried again at the next launch.
+    In { id: String, left: Vec<String> },
+    /// It is there and holds no workspace: nothing to bring in, ever.
+    Nothing,
+    /// It could not be brought in now, for this: not there (a disk not
+    /// mounted), unreadable, or a copy that failed. Tried at the next launch.
+    Later(String),
+}
+
 /// The workspace an earlier build kept in `dir`, as an id under
 /// `workspaces`: copied in when it lives elsewhere, as it is when it is
-/// already there, none when `dir` holds no workspace that loads.
-fn bring_in(
-    dir: &Path,
-    workspaces: &Path,
-    name: Option<&String>,
-    config: &Path,
-) -> Result<Option<String>, String> {
+/// already there.
+fn bring_in(dir: &Path, workspaces: &Path, name: Option<&String>, config: &Path) -> Brought {
     if dir.parent() == Some(workspaces) {
         let id = dir.file_name().unwrap_or_default().to_string_lossy();
-        return Ok(dir.is_dir().then(|| id.into_owned()));
+        return match dir.is_dir() {
+            true => Brought::In {
+                id: id.into_owned(),
+                left: Vec::new(),
+            },
+            false => Brought::Nothing,
+        };
     }
+    if !dir.exists() {
+        return Brought::Later("not there at this launch".into());
+    }
+    // Copied by an earlier run: its tasks again, since that run may have
+    // stopped between the copy and them.
     if let Some(id) = copied_from(workspaces, dir) {
-        return Ok(Some(id));
+        let left = follow_tasks(
+            &dir.join("issues"),
+            &workspaces.join(&id).join("issues"),
+            config,
+        );
+        return Brought::In { id, left };
     }
     // The folder named for `dir` can be taken: a workspace once made from
     // the old storage folder itself was kept there. The copy goes beside it.
@@ -125,8 +155,8 @@ fn bring_in(
     let target = workspaces.join(&id);
     let mut cfg = match WorkspaceConfig::load_from(dir) {
         WorkspaceLoad::Found(cfg) => cfg,
-        WorkspaceLoad::Missing => return Ok(None),
-        WorkspaceLoad::Unreadable(why) => return Err(why),
+        WorkspaceLoad::Missing => return Brought::Nothing,
+        WorkspaceLoad::Unreadable(why) => return Brought::Later(why),
     };
     if cfg.name.is_empty() {
         if let Some(name) = name {
@@ -146,10 +176,10 @@ fn bring_in(
     })();
     if let Err(why) = copied {
         let _ = fs::remove_dir_all(&staging);
-        return Err(why.to_string());
+        return Brought::Later(why.to_string());
     }
-    follow_tasks(&dir.join("issues"), &target.join("issues"), config)?;
-    Ok(Some(id))
+    let left = follow_tasks(&dir.join("issues"), &target.join("issues"), config);
+    Brought::In { id, left }
 }
 
 /// The id of the copy already made of `dir`, if one was.
@@ -162,26 +192,31 @@ fn copied_from(workspaces: &Path, dir: &Path) -> Option<String> {
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
 }
 
-/// Copy the files of `from` into `to`, folders within it too.
+/// Copy the files of `from` into `to`, folders within it too. An entry that
+/// cannot be read fails the copy rather than leaving it short; a link is
+/// passed over, since following one can loop for ever.
 fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
     fs::create_dir_all(to)?;
-    for entry in fs::read_dir(from)?.flatten() {
-        let path = entry.path();
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
         let into = to.join(entry.file_name());
-        if path.is_dir() {
-            copy_dir(&path, &into)?;
-        } else {
-            fs::copy(&path, &into)?;
+        if kind.is_dir() {
+            copy_dir(&entry.path(), &into)?;
+        } else if kind.is_file() {
+            fs::copy(entry.path(), &into)?;
         }
     }
     Ok(())
 }
 
 /// Point every task that reports into an issue file under `old` at the same
-/// file under `new`, so it reports into the copy the app shows.
-fn follow_tasks(old: &Path, new: &Path, config: &Path) -> Result<(), String> {
+/// file under `new`, so it reports into the copy the app shows; what could
+/// not be written, each task file on its own, the rest still done.
+fn follow_tasks(old: &Path, new: &Path, config: &Path) -> Vec<String> {
+    let mut left = Vec::new();
     let Ok(entries) = fs::read_dir(config.join("tasks")) else {
-        return Ok(());
+        return left;
     };
     let (old, new) = (format!("{}/", old.display()), format!("{}/", new.display()));
     for path in entries.flatten().map(|entry| entry.path()) {
@@ -195,11 +230,15 @@ fn follow_tasks(old: &Path, new: &Path, config: &Path) -> Result<(), String> {
             continue;
         };
         if repoint(&mut task, &old, &new) {
-            let text = serde_json::to_string_pretty(&task).map_err(|e| e.to_string())?;
-            write_atomic(&path, &text).map_err(|e| format!("{}: {e}", path.display()))?;
+            let written = serde_json::to_string_pretty(&task)
+                .map_err(|e| e.to_string())
+                .and_then(|text| write_atomic(&path, &text).map_err(|e| e.to_string()));
+            if let Err(why) = written {
+                left.push(format!("{}: {why}", path.display()));
+            }
         }
     }
-    Ok(())
+    left
 }
 
 /// Every string in `value` that starts with `old`, made to start with `new`;

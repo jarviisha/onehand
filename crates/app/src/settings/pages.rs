@@ -278,12 +278,6 @@ fn outside_section(cx: &App) -> AnyElement {
     .into_any_element()
 }
 
-/// The per-project switch for unattended runs, as a list.
-///
-/// The same switch the project's own menu carries, gathered in one place so
-/// every project's answer can be read at once — the menu shows one project's,
-/// and only after it is opened. The label a run looks for is named, since it is
-/// the one thing a user has to put on an issue and it lives in the config file.
 /// Deleting this window's workspace: the window closes, and its folder and
 /// the issues it keeps go with it. Refused while a task works one of them.
 fn delete_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
@@ -311,6 +305,12 @@ fn delete_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     .into_any_element()
 }
 
+/// The per-project switch for unattended runs, as a list.
+///
+/// The same switch the project's own menu carries, gathered in one place so
+/// every project's answer can be read at once — the menu shows one project's,
+/// and only after it is opened. The label a run looks for is named, since it is
+/// the one thing a user has to put on an issue and it lives in the config file.
 fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let label = crate::unattended::label(cx);
     let choices = handle.read(cx).unattended_choices();
