@@ -126,6 +126,14 @@ fn selection_after(active: usize, dropped: &[usize], left: usize) -> usize {
     (active - ahead).min(left.saturating_sub(1))
 }
 
+/// Whether the shells' busy state the watch last saw differs from `now`'s:
+/// any one shell starting or ending a command, or a shell gone or added.
+/// Pure so a test can pin the case the dock-wide answer misses, a second
+/// shell turning busy while the first already is.
+fn busy_changed(seen: &[(u64, bool)], now: &[(u64, bool)]) -> bool {
+    seen != now
+}
+
 /// Where the tab `id` is now in `ids`, if it is still there.
 ///
 /// Pure for the reason [`selection_after`] is: a closing question answered
@@ -154,9 +162,11 @@ pub struct TerminalPanel {
     /// that cannot see its own state draws the same icon in both — so pressing
     /// it to restore looks like pressing it to maximize again.
     maximized: bool,
-    /// What [`Self::running`] answered when the watch last looked, so the
-    /// watch notifies only when it flips.
-    running_seen: bool,
+    /// Each shell of the active set, by id, with whether a command was in
+    /// its foreground when the watch last looked, so the watch notifies
+    /// only when one of them changed: a row's dot is per shell, and the
+    /// dock-wide answer does not flip while another shell stays busy.
+    running_seen: Vec<(u64, bool)>,
     /// Whether the watch on [`Self::running`] is going: from the first shell
     /// opened until no project has one left.
     watching: bool,
@@ -188,7 +198,7 @@ impl TerminalPanel {
             zoom: crate::zoom::Zoom::default(),
             terminal_theme: TerminalThemeKey::current(cx),
             maximized: false,
-            running_seen: false,
+            running_seen: Vec::new(),
             watching: false,
             tab_scroll: ScrollHandle::new(),
             tab_shown: None,
@@ -214,12 +224,12 @@ impl TerminalPanel {
                 let go_on = panel.update(cx, |panel: &mut Self, cx| {
                     if panel.shells.values().all(|set| set.tabs.is_empty()) {
                         panel.watching = false;
-                        panel.running_seen = false;
+                        panel.running_seen.clear();
                         return false;
                     }
-                    let running = panel.running();
-                    if running != panel.running_seen {
-                        panel.running_seen = running;
+                    let busy = panel.busy_shells();
+                    if busy_changed(&panel.running_seen, &busy) {
+                        panel.running_seen = busy;
                         cx.notify();
                     }
                     true
@@ -520,8 +530,18 @@ impl TerminalPanel {
     /// build, a server, an editor. A shell idle at its prompt is not running
     /// anything, and one whose system will not say is not counted either.
     pub fn running(&self) -> bool {
-        self.active_set()
-            .is_some_and(|set| set.tabs.iter().any(|tab| tab.shell.busy() == Some(true)))
+        self.busy_shells().iter().any(|&(_, busy)| busy)
+    }
+
+    /// Each shell of the active root by id, with whether a command is in its
+    /// foreground; one whose system will not say counts as not.
+    fn busy_shells(&self) -> Vec<(u64, bool)> {
+        self.active_set().map_or_else(Vec::new, |set| {
+            set.tabs
+                .iter()
+                .map(|tab| (tab.id, tab.shell.busy() == Some(true)))
+                .collect()
+        })
     }
 
     /// Focus the active shell, not the panel: the point of reaching for the

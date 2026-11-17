@@ -15,6 +15,15 @@ use gpui_component::{ActiveTheme as _, Icon, IconName, Sizable as _, StyledExt};
 // context only a row of the list carries.
 gpui::actions!(terminal, [ShellRowUp, ShellRowDown, CloseShellRow]);
 
+/// The most rows the list draws before it says how many more there are.
+pub(super) const SHELL_LIST_CAP: usize = 30;
+
+/// How many of `count` rows the list draws, and how many it leaves out.
+pub(super) fn shown_rows(count: usize) -> (usize, usize) {
+    let shown = count.min(SHELL_LIST_CAP);
+    (shown, count - shown)
+}
+
 /// Whether the dock draws its list of shells: a lone shell has nothing to be
 /// picked from, and its name already heads the bar.
 pub(super) fn lists_shells(count: usize) -> bool {
@@ -174,7 +183,8 @@ impl TerminalPanel {
             .h_full()
             .v_flex()
             .overflow_y_scroll();
-        for (i, (row, handle)) in rows.into_iter().zip(focus).enumerate() {
+        let (shown, left_out) = shown_rows(rows.len());
+        for (i, (row, handle)) in rows.into_iter().zip(focus).take(shown).enumerate() {
             let group = SharedString::from(format!("terminal-shell-{i}"));
             let name = row.name.clone();
             let close = onehand_ui::tab_close(("close-shell", i), "Close this shell", cx).on_click(
@@ -244,7 +254,19 @@ impl TerminalPanel {
                     .child(onehand_ui::hover_slot(group, false, close).focus(&handle)),
             );
         }
-        list
+        // A list that silently stops is one the user thinks they have seen
+        // all of. A shell past the cap that is chosen is still named in the
+        // bar above.
+        list.when(left_out > 0, |list| {
+            list.child(
+                div()
+                    .pl(onehand_ui::tokens::ROW_INSET)
+                    .py_1()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(format!("{left_out} more")),
+            )
+        })
     }
 
     /// Put the keyboard on row `to` of the list, when there is one. Closing a

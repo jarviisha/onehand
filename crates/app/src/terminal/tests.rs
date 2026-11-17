@@ -1,5 +1,5 @@
-use super::shells::{lists_shells, shell_rows};
-use super::{place_of, selection_after};
+use super::shells::{SHELL_LIST_CAP, lists_shells, shell_rows, shown_rows};
+use super::{busy_changed, place_of, selection_after};
 
 /// Closing a tab ahead of the selected one must move the selection back by
 /// one, not leave the index where it was.
@@ -273,4 +273,27 @@ fn a_busy_shell_that_is_not_chosen_keeps_its_dot() {
     let lone = shell_rows(&[("zsh".into(), None)], 0);
     assert_eq!(lone[0].name.as_ref(), "zsh");
     assert!(!lone[0].live);
+}
+
+/// The watch has to see a second shell start or end a command while the first
+/// stays busy: the dock-wide answer does not flip then, and a row's dot would
+/// keep whatever it last read.
+#[test]
+fn a_second_shell_turning_busy_beside_a_busy_one_is_a_change() {
+    let before = [(0, true), (1, false)];
+    assert!(busy_changed(&before, &[(0, true), (1, true)]));
+    assert!(busy_changed(&[(0, true), (1, true)], &before));
+    assert!(!busy_changed(&before, &before));
+    assert!(
+        busy_changed(&before, &[(0, true)]),
+        "a shell gone is a change"
+    );
+}
+
+/// The list draws at most its cap and says how many it left out.
+#[test]
+fn the_list_stops_at_its_cap_and_counts_the_rest() {
+    assert_eq!(shown_rows(3), (3, 0));
+    assert_eq!(shown_rows(SHELL_LIST_CAP), (SHELL_LIST_CAP, 0));
+    assert_eq!(shown_rows(SHELL_LIST_CAP + 4), (SHELL_LIST_CAP, 4));
 }
