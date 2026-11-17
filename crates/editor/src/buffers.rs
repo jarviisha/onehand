@@ -8,22 +8,17 @@
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, AppContext, Entity, IntoElement, ParentElement, Rems, SharedString,
-    StatefulInteractiveElement, Styled, WeakEntity, Window, div, rems,
+    App, AppContext, Entity, IntoElement, ParentElement, Rems, SharedString, Styled, Window, div,
+    rems,
 };
 use gpui_component::input::{Editor, EditorState};
 use gpui_component::{ActiveTheme, IconName, StyledExt};
-use onehand_core::editor::{RootEditors, Standing};
+use onehand_core::editor::{EditorFile, RootEditors, Standing};
 use onehand_ui::Named as _;
-use onehand_ui::{
-    Measured, TAB_MAX_W, TAB_MENU_CAP, TabStrip, TabWidths, measure_tab, menu_below, menu_row,
-    tab_strip as tab_strip_rule, tab_width,
-};
+use onehand_ui::{TAB_MENU_CAP, menu_below, menu_item, menu_row};
 use std::path::Path;
 
-/// Tabs are parted by space, never a line: the bar's own gap (`gap_1`).
-const TAB_GAP: Rems = rems(0.25);
-/// The unsaved-edits mark on a tab.
+/// The unsaved-edits mark on the open file.
 const DIRTY_DOT: Rems = rems(0.375);
 
 /// The tree-sitter language token for a path.
@@ -55,47 +50,69 @@ pub(crate) fn language_for(path: &Path) -> &'static str {
     }
 }
 
-/// What a press on the strip does, each handed a tab's index where it has one.
+/// What a press on the bar does, each handed a file's index where it has one.
 pub(crate) struct StripHandlers {
     pub(crate) toggle_tree: OnPress,
     pub(crate) back: OnPress,
     pub(crate) select: OnTab,
     pub(crate) close: OnTab,
-    pub(crate) close_all: OnPress,
+    pub(crate) close_all: OnShared,
 }
 
 pub(crate) type OnPress = Box<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App)>;
-/// Shared, because every tab's closure holds one.
+/// Shared, because the menu holding it is built again each time it opens.
+pub(crate) type OnShared = std::rc::Rc<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App)>;
+/// Shared, because every menu row's closure holds one.
 pub(crate) type OnTab = std::rc::Rc<dyn Fn(&usize, &mut Window, &mut App)>;
 
-/// What leads the strip.
+/// The tree's control on the bar: the toggle at its end, or the way back at its start.
 pub(crate) enum Lead {
     /// The toggle that hides the tree beside the buffers, or brings it back:
-    /// whether it is showing.
+    /// whether it is showing. It stands at the bar's end, by the tree.
     Toggle(bool),
     /// The way back to the tree, while the two are shown one at a time.
     Back,
 }
 
-/// The file-tab strip: the tree's toggle or the way back to it, the tabs, and a
-/// trailing close-all.
+/// One row of the open files' menu.
+#[derive(Clone, Debug, PartialEq)]
+struct FileRow {
+    index: usize,
+    label: SharedString,
+    dirty: bool,
+    chosen: bool,
+}
+
+/// The open files' menu: the first [`TAB_MENU_CAP`] in the order they were
+/// opened, the current one chosen, and how many it leaves unlisted.
+fn file_rows(files: &[EditorFile], active: usize) -> (Vec<FileRow>, usize) {
+    let rows = files
+        .iter()
+        .enumerate()
+        .take(TAB_MENU_CAP)
+        .map(|(index, file)| FileRow {
+            index,
+            label: file.label.clone().into(),
+            dirty: file.dirty,
+            chosen: index == active,
+        })
+        .collect();
+    (rows, files.len().saturating_sub(TAB_MENU_CAP))
+}
+
+/// The Editor's bar: the way back to the tree while one shows at a time, the
+/// file open now as one control whose menu lists every open file and closes
+/// them all, its cross, and the tree's toggle at the end, beside the tree.
 ///
-/// The tabs fit the width actually left to them, `measured` last frame (in
-/// rems) by the box they sit in, each at the width it was last drawn at
-/// (`widths`); either asks `view` to draw again when it changes. A tab is never
-/// squeezed: those with no room, the oldest, go into an *N more* menu after the
-/// rest. Nothing scrolls, so the active file's tab is always in reach and the
-/// controls at the ends never move.
-pub(crate) fn tab_strip<T: 'static>(
+/// One file and never a tab per file: the names never compete for the width,
+/// so nothing is measured and nothing scrolls.
+pub(crate) fn file_bar(
     root: &Path,
     tabs: &RootEditors,
-    (measured, widths): (&Measured, &TabWidths),
-    view: WeakEntity<T>,
     lead: Lead,
     on: StripHandlers,
     cx: &App,
 ) -> gpui::AnyElement {
-    let active = tabs.active();
     let StripHandlers {
         toggle_tree: on_toggle_tree,
         back: on_back,
@@ -104,166 +121,115 @@ pub(crate) fn tab_strip<T: 'static>(
         close_all: on_close_all,
     } = on;
 
-    // The toggle's icon is the panel's *state*,
-    // open or shut, and the tooltip says what a press does -- so the two never
-    // disagree about which way round it is.
-    let lead = match lead {
-        Lead::Back => onehand_ui::back_link("editor-back", "Files", cx)
-            .on_click(on_back)
-            .into_any_element(),
+    let (back, toggle) = match lead {
+        Lead::Back => (
+            Some(onehand_ui::back_link("editor-back", "Files", cx).on_click(on_back)),
+            None,
+        ),
+        // The toggle's icon is the panel's *state*, open or shut, and the
+        // tooltip says what a press does -- so the two never disagree about
+        // which way round it is.
         Lead::Toggle(shown) => {
             let (icon, hint) = match shown {
                 true => (IconName::PanelRightClose, "Hide the file tree"),
                 false => (IconName::PanelRightOpen, "Show the file tree"),
             };
-            onehand_ui::strip_control("toggle-file-tree", icon, false, cx)
+            let toggle = onehand_ui::strip_control("toggle-file-tree", icon, false, cx)
                 .named(hint)
-                .on_click(on_toggle_tree)
-                .into_any_element()
+                .on_click(on_toggle_tree);
+            (None, Some(toggle))
         }
     };
-    // The label is the file name alone, so three `mod.rs` tabs read the same;
-    // the path relative to the project tells them apart, on hover. The dirty
-    // dot is named there too, since a colour is a code somebody has to learn.
-    let hint_of = |file: &onehand_core::editor::EditorFile| {
+
+    let files = tabs.files();
+    let active = tabs.active();
+    let current = tabs.active_file().map(|file| {
+        // The label is the file name alone, so three `mod.rs` read the same;
+        // the path relative to the project tells them apart, on hover. The
+        // dirty dot is named there too, since a colour is a code somebody has
+        // to learn.
         let rel = file.path.strip_prefix(root).unwrap_or(&file.path);
-        SharedString::from(match file.dirty {
+        let hint = SharedString::from(match file.dirty {
             true => format!("{} — unsaved changes", rel.display()),
             false => rel.display().to_string(),
-        })
-    };
-    let files = tabs.files();
-
-    // A tab's width follows what it shows: its name, and the dot while it
-    // holds unsaved edits.
-    let key = |file: &onehand_core::editor::EditorFile| {
-        SharedString::from(format!(
-            "{}{}",
-            file.label,
-            if file.dirty { " *" } else { "" }
-        ))
-    };
-    let each: Vec<_> = files.iter().map(|f| tab_width(widths, &key(f))).collect();
-    let TabStrip { shown, left_out } = tab_strip_rule(&each, active, measured.get(), TAB_GAP);
-    let tabs = shown.into_iter().map(|i| {
-        let file = &files[i];
-        let (select, close) = (on_select.clone(), on_close.clone());
-        let measure = measure_tab(widths.clone(), key(file), view.clone());
-        onehand_ui::panel_tab(
-            ("editor-tab", i),
-            file.label.clone().into(),
-            hint_of(file),
-            i == active,
-            cx,
-        )
-        .max_w(TAB_MAX_W)
-        .relative()
-        .child(measure)
-        // The dirty dot, not a modified-name convention: the label
-        // truncates, and a marker inside it would go first.
-        .when(file.dirty, |tab| tab.child(dirty_dot(cx)))
-        .on_click(move |_, window, cx: &mut App| select(&i, window, cx))
-        .child(close_button(i, close, cx))
-        .into_any_element()
-    });
-    // The older files the strip had no room for, in one menu after the tabs.
-    let more = (!left_out.is_empty()).then(|| {
-        let rows: Vec<(usize, SharedString, bool)> = left_out
-            .iter()
-            .map(|&i| {
-                (
-                    i,
-                    SharedString::from(files[i].label.clone()),
-                    files[i].dirty,
-                )
-            })
-            .collect();
-        // Keyed by the project and the count, so a menu left open over a
-        // strip that changed under it is dropped rather than kept with rows
-        // aimed at tabs that moved.
+        });
+        let (rows, unlisted) = file_rows(files, active);
+        // Keyed by the project and the count, so a menu left open over a bar
+        // that changed under it is dropped rather than kept with rows aimed
+        // at files that moved.
         let menu_id = SharedString::from(format!(
-            "editor-tab-menu-{}-{}",
+            "editor-file-menu-{}-{}",
             root.display(),
             files.len()
         ));
-        let select = on_select.clone();
-        menu_below(
-            menu_id,
-            onehand_ui::tab_more("editor-tab-more", rows.len(), cx),
-            move |mut menu, _, _| {
-                for (i, label, dirty) in rows.iter().take(TAB_MENU_CAP).cloned() {
-                    let select = select.clone();
-                    menu = menu.item(
-                        menu_row(move |_, cx| {
-                            div()
-                                .h_flex()
-                                .items_center()
-                                .gap_1()
-                                .child(label.clone())
-                                .when(dirty, |row| row.child(dirty_dot(cx)))
-                        })
-                        .on_click(move |_, window, cx: &mut App| select(&i, window, cx)),
-                    );
-                }
-                let unlisted = rows.len().saturating_sub(TAB_MENU_CAP);
-                if unlisted > 0 {
-                    menu = menu.item(onehand_ui::menu_label(format!(
-                        "{unlisted} more files not listed"
-                    )));
-                }
-                menu
-            },
-        )
+        let (select, close_all) = (on_select.clone(), on_close_all.clone());
+        let trigger =
+            onehand_ui::tab_select("editor-file-select", file.label.clone().into(), hint, cx)
+                .min_w_0()
+                // The dirty dot, not a modified-name convention: the label
+                // truncates, and a marker inside it would go first.
+                .when(file.dirty, |select| select.child(dirty_dot(cx)));
+        let menu = menu_below(menu_id, trigger, move |mut menu, _, _| {
+            for row in rows.iter().cloned() {
+                let (select, index) = (select.clone(), row.index);
+                menu = menu.item(
+                    menu_row(move |_, cx| {
+                        div()
+                            .h_flex()
+                            .items_center()
+                            .gap_1()
+                            .child(row.label.clone())
+                            .when(row.dirty, |line| line.child(dirty_dot(cx)))
+                    })
+                    .checked(row.chosen)
+                    .on_click(move |_, window, cx: &mut App| select(&index, window, cx)),
+                );
+            }
+            if unlisted > 0 {
+                menu = menu.item(onehand_ui::menu_label(format!(
+                    "{unlisted} more files not listed"
+                )));
+            }
+            let close_all = close_all.clone();
+            menu.separator().item(
+                menu_item("Close all")
+                    .on_click(move |event, window, cx| close_all(event, window, cx)),
+            )
+        });
+        div()
+            .h_flex()
+            .items_center()
+            .min_w_0()
+            .gap_1()
+            .child(menu)
+            .child(close_button(active, on_close.clone(), cx))
     });
-    let tab_list = div()
-        .h_full()
-        .h_flex()
-        .gap(TAB_GAP)
-        .children(tabs)
-        .children(more.map(|more| div().h_flex().items_center().px_1().child(more)));
 
     // A mode's bar, a step lower than the Workbench's over it.
     onehand_ui::tab_bar(cx)
         .h(onehand_ui::tokens::MODE_BAR_H)
-        .child(div().h_flex().items_center().px_1().child(lead))
-        // The one part of the row that gives way, and the box the tabs are
-        // laid out to: `flex_1` + `min_w_0`, so its width is what is left
-        // after the controls, never its content.
+        .children(back.map(|back| div().h_flex().items_center().px_1().child(back)))
+        // The one part of the row that gives way: `flex_1` + `min_w_0`, so a
+        // long name truncates rather than pushing the toggle out.
         .child(
             div()
-                .relative()
                 .flex_1()
                 .min_w_0()
-                .overflow_hidden()
-                .child(onehand_ui::measure_width(measured.clone(), view))
-                .child(tab_list),
+                .h_flex()
+                .items_center()
+                .children(current),
         )
-        // Its tooltip is what tells it from a tab's own cross, which is the
-        // same glyph.
-        .when(!files.is_empty(), |strip| {
-            strip.child(
-                div().h_flex().items_center().child(
-                    onehand_ui::strip_control("close-all-files", IconName::Close, false, cx)
-                        .named("Close all files")
-                        .on_click(on_close_all),
-                ),
-            )
-        })
+        .children(toggle.map(|toggle| div().h_flex().items_center().child(toggle)))
         .into_any_element()
 }
 
-/// The cross that closes tab `i`. `stop_propagation` keeps the press that
-/// closes a tab from also selecting whatever slid into its place.
+/// The cross that closes file `i`.
 fn close_button(i: usize, close: OnTab, cx: &App) -> gpui_component::button::Button {
-    onehand_ui::tab_close(("editor-tab-close", i), "Close this file", cx).on_click(
-        move |_, window, cx: &mut App| {
-            cx.stop_propagation();
-            close(&i, window, cx);
-        },
-    )
+    onehand_ui::tab_close("editor-file-close", "Close this file", cx)
+        .on_click(move |_, window, cx: &mut App| close(&i, window, cx))
 }
 
-/// A tab's unsaved-edits mark: a status *fill*, the theme's `warning`, where
+/// A file's unsaved-edits mark: a status *fill*, the theme's `warning`, where
 /// `status_ink` is for text.
 fn dirty_dot(cx: &App) -> gpui::Div {
     div()
@@ -328,5 +294,40 @@ pub(crate) fn standing_line(standing: &Standing) -> String {
         Standing::Changed { label } => {
             format!("{label} changed on disk — nothing was written. Save again to overwrite.")
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn file(i: usize, dirty: bool) -> EditorFile {
+        EditorFile {
+            path: format!("/p/f{i}.rs").into(),
+            label: format!("f{i}.rs"),
+            dirty,
+            disk_mtime: None,
+            uid: i as u64,
+        }
+    }
+
+    #[test]
+    fn the_menu_lists_every_file_and_marks_the_current_one() {
+        let files = vec![file(0, false), file(1, true), file(2, false)];
+        let (rows, unlisted) = file_rows(&files, 1);
+        assert_eq!(unlisted, 0);
+        assert_eq!(rows.iter().map(|r| r.index).collect::<Vec<_>>(), [0, 1, 2]);
+        assert_eq!(rows.iter().filter(|r| r.chosen).count(), 1);
+        assert!(rows[1].chosen && rows[1].dirty);
+        assert_eq!(rows[2].label, "f2.rs");
+        assert!(file_rows(&[], 0).0.is_empty());
+    }
+
+    #[test]
+    fn the_menu_stops_at_its_cap_and_counts_the_rest() {
+        let files: Vec<_> = (0..TAB_MENU_CAP + 4).map(|i| file(i, false)).collect();
+        let (rows, unlisted) = file_rows(&files, 0);
+        assert_eq!(rows.len(), TAB_MENU_CAP);
+        assert_eq!(unlisted, 4);
     }
 }

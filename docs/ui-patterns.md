@@ -162,9 +162,10 @@ shows a region the strip's own panel hid may lead (the way back to the rail, a l
 Filters belong below the region header with the content they filter. Reserve the action group's
 width while labels truncate; showing hover actions must not move the text beside them.
 
-The Workbench's strip, the terminal's and the Editor's file tabs are tab panel bars (`tab_bar`),
+The Workbench's strip, the terminal's and the Editor's are tab panel bars (`tab_bar`),
 the Editor's at `tokens::MODE_BAR_H`: no fill, a line under the bar, the open tab a rounded
-`secondary` fill.
+`secondary` fill. The Editor's names only the file open now, as a `tab_select` whose menu holds the
+rest.
 Any other bar inside the Workbench is a `workbench_strip`, padded `tokens::ROW_INSET` so its words
 and the tree rows' names read down one edge: the reader's bar is a `mode_strip`, `MODE_BAR_H`
 tall, a step under the strip over it; an issue's trail draws its own. Every bar inside a region's box

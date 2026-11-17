@@ -238,17 +238,19 @@ parted from it by a line; the box itself has no edge. The terminal is drawn no t
 the terminal as it is.
 
 - Bars as tall as the header, a mode's own bar under the Workbench's a step lower. The
-  Workbench's, the terminal's and every other `tab_bar` the two draw (the Editor's files, the
+  Workbench's, the terminal's and every other `tab_bar` the two draw (the Editor's, the
   Issues tab's) take one look: no fill of their own and a line under the bar, the tabs parted by space, not by lines, the
   open one a rounded fill (`secondary`) with its name in the content ink, every tab, tree row and
   shell row at the regular weight, the controls at the end.
 - The Workbench's: *← Conversation* while it has the area, the modes as tabs (Editor, Markdown,
   Issues, Plugins only where a Claude Code agent is set up when the window opens, Neovim; a select
   where the bar is too narrow for the tabs, `MODES_MIN_W`), maximize, hide.
-- The Editor's file tabs, on a bar of their own under the Workbench's: the tree's toggle, or the
-  link back to the tree while one shows at a time, then the tabs, which never shrink: the newest
-  that fit stay, the current one among them, and the older ones go into an *N more* menu after
-  them.
+- The Editor's, on a bar of their own under the Workbench's: the link back to the tree while one
+  shows at a time, then the file open now and no tab per file: its name (capped, the whole path on
+  hover, the unsaved dot while it holds edits) with the picker's caret, opening a menu of every
+  open file (the current one checked, 30 listed and then *N more*, *Close all* last), and its
+  cross, which closes it; with no file open, nothing there. The tree's toggle ends the bar, beside
+  the tree it shows and hides.
 - The terminal's: the open shell's name at its start, then `+`, maximize, hide. While the dock
   holds more than one shell, a list of them runs down the box's right side beside the grid, at a
   fixed width, neither dragged nor saved: a row per shell holding what its tab held (its name,

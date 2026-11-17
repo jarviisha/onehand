@@ -3,7 +3,7 @@
 //! rule with them; what lives here is each tab's buffer, the reads and writes
 //! carried off the UI loop, and the drawing.
 
-use crate::buffers::{Lead, StripHandlers, body, new_buffer, standing_line, tab_strip};
+use crate::buffers::{Lead, StripHandlers, body, file_bar, new_buffer, standing_line};
 
 use gpui::{
     AnyWindowHandle, App, AppContext as _, Context, Entity, Focusable as _, IntoElement,
@@ -34,15 +34,10 @@ pub(crate) struct EditorView {
     /// save is asked for without one, and what it comes to is said there as
     /// soon as it comes back, whether or not the Workbench is showing this mode.
     window: Option<AnyWindowHandle>,
-    /// The width the strip leaves its tabs, in rems, as last laid out.
-    /// Infinite until measured, so the first frame draws every tab.
-    tabs_w: onehand_ui::Measured,
-    /// Each tab's width as last drawn, so the strip knows how many fit.
-    tab_widths: onehand_ui::TabWidths,
     /// Whether the file tree beside the buffers is showing.
     ///
     /// Held here rather than on the split that draws the tree, because the
-    /// control that flips it sits on this view's tab strip and has to show
+    /// control that flips it sits on this view's bar and has to show
     /// which way round it is; the split observes this view and reads it. One
     /// flag for every project, not per root, and not persisted — the same
     /// answer as the divider's position, for the same reason.
@@ -52,8 +47,8 @@ pub(crate) struct EditorView {
     /// clears it; what is open is kept either way.
     detail: bool,
     /// Whether the tree and the buffers are shown one at a time, as the split
-    /// last measured: the strip leads with the way back to the tree then,
-    /// rather than the toggle that hides it.
+    /// last measured: the bar leads with the way back to the tree then,
+    /// rather than ending with the toggle that hides it.
     alone: bool,
 }
 
@@ -64,8 +59,6 @@ impl EditorView {
             drive: EditorDrive::default(),
             buffers: HashMap::new(),
             window: None,
-            tabs_w: onehand_ui::unmeasured(),
-            tab_widths: Default::default(),
             tree_shown: true,
             detail: false,
             alone: false,
@@ -467,9 +460,9 @@ impl Render for EditorView {
                 .v_flex()
                 .child(hint("No project selected", cx));
         };
-        // The strip is drawn with no tabs as well: the tree's toggle lives on
-        // it, and a strip that went with the last tab would leave a hidden tree
-        // with no way back.
+        // The bar is drawn with no file open as well: the tree's toggle lives
+        // on it, and a bar that went with the last file would leave a hidden
+        // tree with no way back.
         let empty = RootEditors::default();
         let tabs = self.drive.tabs(root).unwrap_or(&empty);
         let locked = self.drive.locked(root).map(str::to_string);
@@ -478,11 +471,9 @@ impl Render for EditorView {
         let buffer = active
             .and_then(|uid| self.buffers.get(&uid))
             .map(|(state, _)| state.clone());
-        let strip = tab_strip(
+        let strip = file_bar(
             root,
             tabs,
-            (&self.tabs_w, &self.tab_widths),
-            cx.entity().downgrade(),
             match self.alone {
                 true => Lead::Back,
                 false => Lead::Toggle(self.tree_shown),
@@ -498,7 +489,7 @@ impl Render for EditorView {
                 close: Rc::new(cx.listener(|view: &mut Self, idx: &usize, window, cx| {
                     view.close_tab(*idx, window, cx)
                 })),
-                close_all: Box::new(
+                close_all: Rc::new(
                     cx.listener(|view: &mut Self, _, window, cx| view.close_all_tabs(window, cx)),
                 ),
             },
@@ -518,8 +509,8 @@ impl Render for EditorView {
         };
 
         // `min_w_0`: the resizable panel holding this is a flex *row*, and a flex
-        // item's floor is otherwise its content's width, so the strip's measure
-        // would follow its tabs rather than the room the panel has.
+        // item's floor is otherwise its content's width, so a long file name
+        // on the bar would widen it rather than truncate.
         div()
             .flex_1()
             .min_w_0()
