@@ -561,6 +561,13 @@ pub(crate) fn migrate_dir_blocking(
     problems
 }
 
+/// Put the file or folder `from` at `to`, whole, in one step: the rename a
+/// folder made aside is promoted by, or one moved within onehand's root.
+/// Beside [`write_atomic`] so the one step both rest on is written once.
+pub(crate) fn move_into(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::rename(from, to)
+}
+
 /// Write `text` to `path` so a reader never sees half of it.
 ///
 /// Write-then-rename, with the temp waited for before it is promoted: the

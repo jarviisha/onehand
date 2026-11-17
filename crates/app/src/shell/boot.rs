@@ -673,6 +673,8 @@ pub fn boot(cx: &mut App) {
     for problem in onehand_core::workflow::store::migrate_old_dir_blocking()
         .into_iter()
         .chain(onehand_core::task::files::migrate_old_dir_blocking())
+        // After the tasks are where they are kept, since it repoints them.
+        .chain(onehand_core::workspace::migrate_storage_blocking())
     {
         eprintln!("onehand: {problem}");
     }

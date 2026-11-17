@@ -13,8 +13,10 @@
 use crate::agent::Session;
 
 pub mod drive;
+mod migrate;
 use crate::config::{AgentSpec, PanelLayout, WorkspaceConfig};
 pub use drive::WorkspaceDrive;
+pub use migrate::migrate_storage_blocking;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
