@@ -230,12 +230,12 @@ impl TerminalThemeKey {
         Self {
             dark: theme.mode.is_dark(),
             colors: [
-                // The dock's surface, which the panels hand in as the grid's
-                // surface, and the well and the reading surface, the answers
-                // that held before and would if it moved again. None is read
-                // in this file; they are watched because a key blind to one
-                // would let every live grid keep painting the old surface
-                // after a change that moved only that one.
+                // The fills a dock's surface has been or could be (the
+                // window's, the well's, the reading surface the panels now
+                // hand in as the grid's surface). None is read in this file;
+                // they are watched because a key blind to one would let every
+                // live grid keep painting the old surface after a change that
+                // moved only that one.
                 theme.sidebar,
                 theme.muted,
                 theme.background,

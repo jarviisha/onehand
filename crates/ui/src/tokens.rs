@@ -9,7 +9,8 @@ use gpui::{App, BoxShadow, Pixels, Rems, px, rems};
 use gpui_component::ActiveTheme as _;
 
 /// The height every bar along the top of a region shares: the conversation's
-/// header, the Workbench's mode strip and a page's column heads, so bars side by side line up across the window.
+/// header, the Workbench's mode strip and a page's column heads, so bars side
+/// by side line up across the window.
 /// A small control and a little room over and under it, as an editor's
 /// title bars stand: taller and the bars read as a band of their own.
 pub const BAR_H: Rems = rems(2.25);
@@ -23,7 +24,7 @@ pub const REGION_GAP: Rems = rems(0.375);
 /// a field's end, in place of a line.
 pub const BAR_FADE: Rems = rems(0.75);
 
-/// A mode's own bar, under the Workbench's strip: the editor's tabs, the
+/// A mode's own bar, under the Workbench's strip: the Editor's open file, the
 /// reader's bar. A step under [`BAR_H`], so the second bar reads as the
 /// mode's rather than as the panel's a second time; its controls keep their
 /// size and stand on it with a little room.

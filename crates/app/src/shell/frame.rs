@@ -115,10 +115,11 @@ pub(super) fn install_menus(cx: &mut App) {
 }
 
 impl Shell {
-    /// The title bar: the workspace and the rail's toggle at the start; the search over the rail's sessions and projects, centred in
-    /// the room left; the terminal's and the Workbench's toggles at the end. The
-    /// window's own controls are the library's, drawn where the window is
-    /// decorated by the app.
+    /// The title bar: the workspace and the rail's toggle at the start; the
+    /// search over the rail's sessions and projects, centred in the room left;
+    /// the terminal's and the Workbench's toggles at the end. The window's own
+    /// controls are the library's, drawn where the window is decorated by the
+    /// app.
     pub(super) fn title_bar(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement + use<> {
         let guard = self.close_guard.clone();
         TitleBar::new()

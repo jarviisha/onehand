@@ -401,8 +401,10 @@ mod tests {
         );
     }
 
-    /// A box (the page fill) stands apart from the window's fill it sits on
-    /// by at least the gap the owner approved in the dark palette's mock-up.
+    /// A box (the page fill) has to stand apart from the window's fill it
+    /// sits on by at least this much in both palettes: the window showing
+    /// through the gaps between the boxes is what parts them, and a smaller
+    /// step lets two boxes and the gap between them read as one fill.
     const BOX_ON_WINDOW: f32 = 1.06;
 
     #[test]
