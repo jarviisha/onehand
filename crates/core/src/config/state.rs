@@ -5,45 +5,45 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// Global, cross-launch app state at `<config_dir>/onehand/state.toml`.
-/// Remembers which workspace storage directories were used, most-recent-first;
-/// the next launch reopens `recent_workspaces[0]` (taking precedence over the
-/// CLI root).
+/// Global, cross-launch app state at `<config_dir>/onehand/state.toml`:
+/// which workspaces were opened, most recent first, by the name of the folder
+/// each is kept in under `<config_dir>/workspaces/`. The next launch opens the
+/// first of them that loads.
+///
+/// Only the order is kept here. Which workspaces there are is whatever folders
+/// that directory holds, and what each is called is in its own file, so
+/// nothing here can disagree with them.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppState {
-    /// Legacy single remembered dir (pre-recents). Folded into
-    /// `recent_workspaces` on load; mirrors `recent_workspaces[0]` on save so
-    /// an older binary reading this file still reopens the right workspace.
+    /// Workspace ids, most recently opened first, each once.
+    pub(crate) workspaces: Vec<String>,
+    /// What an earlier build kept: the folders its workspaces were in, and
+    /// their names. Read once, to bring those workspaces in; kept as read
+    /// until that has landed, so a copy that failed is tried again at the
+    /// next launch, and written no more once it is cleared.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) workspace_dir: Option<PathBuf>,
-    /// Bound workspace storage dirs, most-recent-first, deduped, capped.
-    pub recent_workspaces: Vec<PathBuf>,
-    /// Each remembered workspace's name, as last opened or renamed, so a list
-    /// of them reads as the rail does without opening every one's own file.
-    /// A dir with none, remembered before names were, reads as its folder.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) recent_workspaces: Vec<PathBuf>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    names: BTreeMap<PathBuf, String>,
+    pub(crate) names: BTreeMap<PathBuf, String>,
 }
 
 impl AppState {
-    /// Cap on `recent_workspaces`.
-    pub const MAX_RECENTS: usize = 8;
-
     pub(crate) fn path() -> PathBuf {
         config_dir().join("state.toml")
     }
 
     /// Load state, falling back to the default (nothing remembered) on any error.
     pub(crate) fn load() -> Self {
-        let mut state = Self::load_from(&Self::path());
-        state.migrate();
-        state
+        Self::load_from(&Self::path())
     }
 
     /// The state at `path`. One that will not parse is copied to
     /// `state.toml.bad` first: the next save writes the file whole, and
-    /// without the copy the recents it held would be gone for good.
-    fn load_from(path: &Path) -> Self {
+    /// without the copy what it held would be gone for good.
+    pub(crate) fn load_from(path: &Path) -> Self {
         let Ok(text) = std::fs::read_to_string(path) else {
             return Self::default();
         };
@@ -59,75 +59,15 @@ impl AppState {
         })
     }
 
-    /// Fold the legacy `workspace_dir` into `recent_workspaces`, dedup, cap.
-    fn migrate(&mut self) {
-        if let Some(dir) = self.workspace_dir.clone() {
-            if !self.recent_workspaces.contains(&dir) {
-                self.recent_workspaces.insert(0, dir);
-            }
-        }
-        let mut seen = Vec::new();
-        self.recent_workspaces.retain(|d| {
-            let fresh = !seen.contains(d);
-            if fresh {
-                seen.push(d.clone());
-            }
-            fresh
-        });
-        self.recent_workspaces.truncate(Self::MAX_RECENTS);
-        self.prune_names();
+    /// Move `id` to the front, adding it if absent.
+    pub(crate) fn touch(&mut self, id: &str) {
+        self.workspaces.retain(|d| d != id);
+        self.workspaces.insert(0, id.to_string());
     }
 
-    /// Drop the names of workspaces no longer remembered.
-    fn prune_names(&mut self) {
-        let recents = &self.recent_workspaces;
-        self.names.retain(|dir, _| recents.contains(dir));
-    }
-
-    /// Remember `dir`'s name, if `dir` is remembered at all; whether that
-    /// changed anything, so a caller writes only what is new.
-    pub(crate) fn set_name(&mut self, dir: &Path, name: &str) -> bool {
-        if !self.recent_workspaces.iter().any(|d| d == dir) || self.name_of(dir) == Some(name) {
-            return false;
-        }
-        self.names.insert(dir.to_path_buf(), name.to_string());
-        true
-    }
-
-    /// What a list of workspaces calls `dir`: its remembered name, else its
-    /// folder's, else the whole path.
-    pub fn label_of(&self, dir: &Path) -> String {
-        self.name_of(dir).map_or_else(
-            || {
-                dir.file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| dir.display().to_string())
-            },
-            str::to_string,
-        )
-    }
-
-    /// The name `dir` was last opened or renamed under, if one was remembered.
-    pub fn name_of(&self, dir: &Path) -> Option<&str> {
-        self.names.get(dir).map(String::as_str)
-    }
-
-    /// Move `dir` to the front of the recents (inserting if absent), keep the
-    /// list capped, and mirror the legacy field. Pure — callers canonicalize.
-    pub(crate) fn touch(&mut self, dir: PathBuf) {
-        self.recent_workspaces.retain(|d| *d != dir);
-        self.recent_workspaces.insert(0, dir);
-        self.recent_workspaces.truncate(Self::MAX_RECENTS);
-        self.workspace_dir = self.recent_workspaces.first().cloned();
-        self.prune_names();
-    }
-
-    /// Drop `dir` from the recents and re-mirror the legacy field (used by
-    /// Unbind: an unbound workspace must not be reopened at boot).
-    pub(crate) fn forget(&mut self, dir: &Path) {
-        self.recent_workspaces.retain(|d| d != dir);
-        self.workspace_dir = self.recent_workspaces.first().cloned();
-        self.prune_names();
+    /// Drop `id`.
+    pub(crate) fn forget(&mut self, id: &str) {
+        self.workspaces.retain(|d| d != id);
     }
 
     /// Write the state to `path`, blocking: the front end runs it off its

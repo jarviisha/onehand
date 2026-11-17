@@ -10,7 +10,6 @@ use gpui::{App, AppContext, BorrowAppContext, Context, Focusable as _, Window, p
 use gpui_component::dock::{DockArea, DockEvent};
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::{ResizableState, Root, WindowExt as _};
-use onehand_core::config::WorkspaceConfig;
 use onehand_core::config::{AppConfig, Appearance};
 use onehand_core::workspace::Workspace;
 use std::collections::HashMap;
@@ -563,6 +562,12 @@ pub fn seed_workspace() -> Workspace {
 /// storage directory, in which case focus it. Storage dirs are canonicalized on
 /// the way in, so symlink and `..` aliases deduplicate.
 pub fn open_or_focus(workspace: Workspace, cx: &mut App) {
+    open(workspace, false, cx);
+}
+
+/// [`open_or_focus`], writing the workspace first when `write` says to: a
+/// launch's seed, which nothing on disk holds yet.
+fn open(workspace: Workspace, write: bool, cx: &mut App) {
     let dir = workspace.storage_dir.clone();
     if let Some(handle) = crate::windows::window_for(&dir, cx) {
         handle
@@ -570,9 +575,10 @@ pub fn open_or_focus(workspace: Workspace, cx: &mut App) {
             .ok();
         return;
     }
-    let fx = cx.update_global::<Shared, _>(|shared, _| shared.recents.opened(dir));
-    super::storage::carry_recents(fx, None, cx);
-    open_window(workspace, cx);
+    let name = workspace.name.clone();
+    let fx = cx.update_global::<Shared, _>(|shared, _| shared.recents.opened(dir, &name));
+    super::storage::carry_recents(fx, cx);
+    open_window(workspace, write, cx);
 }
 
 /// The smallest the window may be dragged to: the rail's minimum beside the
@@ -580,8 +586,9 @@ pub fn open_or_focus(workspace: Workspace, cx: &mut App) {
 /// is a bound measured against the screen, not something drawn inside a zoom.
 const WINDOW_MIN: gpui::Size<gpui::Pixels> = gpui::size(gpui::px(720.), gpui::px(480.));
 
-/// Open a window for `workspace` and register it.
-fn open_window(workspace: Workspace, cx: &mut App) {
+/// Open a window for `workspace` and register it, writing the workspace once
+/// its window exists when `write` says to, so a write that fails is said there.
+fn open_window(workspace: Workspace, write: bool, cx: &mut App) {
     let storage_dir = workspace.storage_dir.clone();
     let name = workspace.name.clone();
     cx.spawn(async move |cx| {
@@ -620,6 +627,10 @@ fn open_window(workspace: Workspace, cx: &mut App) {
                     // Workbench, the terminal and the empty chat are about,
                     // which was nothing at all until the first rail click.
                     shell.show_active_session(window, cx);
+                    if write {
+                        let fx = shell.window.workspace.save();
+                        shell.carry_workspace(fx, window, cx);
+                    }
                     // The empty project also needs a live focus path, or no
                     // app shortcut (including Settings) can reach the shell.
                     shell.chat.focus_handle(cx).focus(window, cx);
@@ -646,7 +657,7 @@ fn open_window(workspace: Workspace, cx: &mut App) {
             crate::instance::window_up(cx);
             let fx = cx
                 .update_global::<Shared, _>(|shared, _| shared.recents.named(&storage_dir, &name));
-            super::storage::carry_recents(fx, None, cx);
+            super::storage::carry_recents(fx, cx);
         });
     })
     .detach();
@@ -710,22 +721,13 @@ pub fn boot(cx: &mut App) {
     use_installed_mono(mono.as_deref(), cx);
     watch_window_close(cx);
 
-    // The most recent storage dir wins over the CLI seed -- reopening where the
-    // user left off beats reopening where the shortcut points; a broken or
-    // missing recent falls straight through.
-    let recent = Shared::global(cx)
-        .recents
-        .recent_workspaces
-        .first()
-        .cloned()
-        .and_then(|dir| {
-            WorkspaceConfig::load_from(&dir)
-                .found()
-                .map(|cfg| Workspace::from_config(cfg, dir))
-        });
+    // The most recent workspace that loads wins over the CLI seed --
+    // reopening where the user left off beats reopening where the shortcut
+    // points; with none, the seed is made and written.
+    let (workspace, write) = Shared::global(cx).recents.launch_blocking(seed_workspace());
 
     super::render::KeyRelease::register(cx);
-    open_or_focus(recent.unwrap_or_else(seed_workspace), cx);
+    open(workspace, write, cx);
 }
 
 /// Point the theme's monospace family at one this machine actually has.

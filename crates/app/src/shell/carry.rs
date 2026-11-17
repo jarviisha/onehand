@@ -78,7 +78,7 @@ impl Shell {
                 Effect::Remember { dir, name } => {
                     let fx = cx
                         .update_global::<Shared, _>(|shared, _| shared.recents.named(&dir, &name));
-                    super::storage::carry_recents(fx, None, cx);
+                    super::storage::carry_recents(fx, cx);
                 }
                 Effect::EndOnHost {
                     host,

@@ -73,24 +73,23 @@ pub(super) fn appearance_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
 }
 
 /// The workspace page: this workspace's name and the folder onehand keeps it
-/// in, shown so it can be found for a backup and never chosen, then the ways
-/// to reach another one, then the unattended runs it may start.
+/// in, shown so it can be found for a backup and never chosen, then a way to
+/// make another one, then the unattended runs it may start.
 ///
 /// No workspace is ever *replaced* in place -- one window hosts exactly one
-/// workspace, so both of those buttons open another window, or focus the one
-/// already showing that folder.
+/// workspace, so *New workspace…* opens another window, or focuses the one
+/// already showing that workspace.
 ///
 /// **The list of known workspaces is deliberately not here.** The rail's
-/// identity row is the switcher, and it draws the same directories better: a
-/// row named by its folder with the parent beside it, the one on screen checked
-/// and unpickable. A second copy here printed each absolute path whole into a
+/// identity row is the switcher, and it draws the same workspaces better: a
+/// row named by its workspace, the one on screen checked and unpickable. A second copy here printed each absolute path whole into a
 /// button, uncapped, so the longer the app was used the further it pushed
 /// everything else off the bottom.
 pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let shell = handle.read(cx);
     let name = shell.workspace_name_input().clone();
     let storage = SharedString::from(shell.storage_dir().display().to_string());
-    let (new, open) = (handle.clone(), handle.clone());
+    let new = handle.clone();
 
     let general = section(None, None, cx)
         .child(field(
@@ -119,27 +118,15 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         cx,
     )
     .child(
-        div()
-            .h_flex()
-            .gap_2()
-            .child(
-                crate::controls::action("new-workspace")
-                    .tall()
-                    .secondary()
-                    .label("New workspace…")
-                    .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                        new.update(cx, |shell, cx| shell.new_workspace(cx));
-                    }),
-            )
-            .child(
-                crate::controls::action("open-workspace")
-                    .tall()
-                    .secondary()
-                    .label("Open workspace…")
-                    .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                        open.update(cx, |shell, cx| shell.open_workspace(cx));
-                    }),
-            ),
+        div().h_flex().gap_2().child(
+            crate::controls::action("new-workspace")
+                .tall()
+                .secondary()
+                .label("New workspace…")
+                .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                    new.update(cx, |shell, cx| shell.new_workspace(cx));
+                }),
+        ),
     );
 
     div()

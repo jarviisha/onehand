@@ -1,14 +1,14 @@
 use super::Shell;
 use super::boot::open_or_focus;
 use crate::state::Shared;
-use gpui::{AnyWindowHandle, App, BorrowAppContext, Context, Entity};
+use gpui::{App, BorrowAppContext, Context, Entity};
 use gpui_component::WindowExt as _;
 use gpui_component::input::InputState;
 use gpui_component::notification::Notification;
-use onehand_core::config::recents::{Effect as RecentsEffect, Forgot, Input, Signal};
+use onehand_core::config::recents::{Effect as RecentsEffect, Input, Listed, Signal};
 use onehand_core::config::{WorkspaceConfig, WorkspaceLoad};
 use onehand_core::workspace::{self, Workspace};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 impl Shell {
     /// Write the workspace once the user stops changing it: a drag changes
@@ -156,66 +156,9 @@ impl Shell {
         .detach();
     }
 
-    /// Pick a folder and open the workspace it belongs to.
-    ///
-    /// **Two folders answer, in order**: the one picked, for a workspace bound
-    /// to a folder by hand, and then the storage a workspace created *from* that
-    /// folder would have been written to. The second is what makes the obvious
-    /// gesture work -- a workspace made by *New workspace…* keeps its config in
-    /// the per-user data root, so the folder a user thinks of as "the
-    /// workspace", and the only one they can find in a picker, is the project
-    /// itself.
-    pub fn open_workspace(&mut self, cx: &mut Context<Self>) {
-        cx.spawn(async move |shell, cx| {
-            let Some(dir) = pick_folder(cx).await else {
-                return;
-            };
-            let picked = workspace_in(&dir, cx).await;
-            let found = match picked {
-                Ok(Some(workspace)) => Some(workspace),
-                Ok(None) => workspace_in(&workspace::storage_for(&dir), cx)
-                    .await
-                    .ok()
-                    .flatten(),
-                // "I could not read what is here" sends the user to fix the file
-                // they meant to open, where "there is nothing here" below sends
-                // them to a different folder. Reading on to the derived storage
-                // would answer the second question when the first one was asked.
-                Err(_) => {
-                    say(
-                        &shell,
-                        crate::toast::error("Reading that folder's onehand-workspace.toml failed"),
-                        cx,
-                    );
-                    return;
-                }
-            };
-
-            match found {
-                Some(workspace) => {
-                    cx.update(|cx| open_or_focus(workspace, cx));
-                }
-                None => say(
-                    &shell,
-                    crate::toast::warning(
-                        "No workspace for that folder — New workspace… makes one",
-                    ),
-                    cx,
-                ),
-            }
-        })
-        .detach();
-    }
-
-    /// Every remembered workspace, most recent first, with what a list of them
-    /// calls it.
-    pub fn recents(&self, cx: &App) -> Vec<(PathBuf, String)> {
-        let recents = &Shared::global(cx).recents;
-        recents
-            .recent_workspaces
-            .iter()
-            .map(|dir| (dir.clone(), recents.label_of(dir)))
-            .collect()
+    /// Every workspace onehand keeps, most recently opened first.
+    pub fn recents(&self, cx: &App) -> Vec<Listed> {
+        Shared::global(cx).recents.listed().to_vec()
     }
 
     /// Open a recents row: read its config off the UI loop, then funnel into
@@ -248,9 +191,9 @@ impl Shell {
                     shell
                         .update(cx, |_shell, cx| {
                             let fx = cx.update_global::<Shared, _>(|shared, _| {
-                                shared.recents.forgot(&dir, Forgot::Gone)
+                                shared.recents.dropped(&dir)
                             });
-                            carry_recents(fx, None, cx);
+                            carry_recents(fx, cx);
                             cx.notify();
                         })
                         .ok();
@@ -330,10 +273,10 @@ fn say(shell: &gpui::WeakEntity<Shell>, note: Notification, cx: &mut gpui::Async
         .ok();
 }
 
-/// Carry out the recents' effects, in order, each once: a write on the
-/// ordered writer every settings file goes through, its answer reported back,
-/// and what the drive says, in window `at` when one asked.
-pub(super) fn carry_recents(fx: Vec<RecentsEffect>, at: Option<AnyWindowHandle>, cx: &mut App) {
+/// Carry out the workspace list's effects, in order, each once: a write on
+/// the ordered writer every settings file goes through, its answer reported
+/// back, and what the drive says.
+pub(super) fn carry_recents(fx: Vec<RecentsEffect>, cx: &mut App) {
     for effect in fx {
         match effect {
             RecentsEffect::Write {
@@ -350,22 +293,11 @@ pub(super) fn carry_recents(fx: Vec<RecentsEffect>, at: Option<AnyWindowHandle>,
                         let fx = cx.update_global::<Shared, _>(|shared, _| {
                             shared.recents.handle(Input::Written { pending, result })
                         });
-                        carry_recents(fx, at, cx);
+                        carry_recents(fx, cx);
                     });
                 })
                 .detach();
             }
-            RecentsEffect::Signal(Signal::ForgetFailed(why)) => match at {
-                Some(at) => {
-                    let _ = at.update(cx, |_, window, cx| {
-                        window.push_notification(
-                            crate::toast::failed("Forgetting the unbound workspace", why),
-                            cx,
-                        )
-                    });
-                }
-                None => eprintln!("onehand: failed to forget a workspace: {why}"),
-            },
             RecentsEffect::Signal(Signal::WriteFailed(why)) => {
                 eprintln!("onehand: failed to save recents: {why}");
             }

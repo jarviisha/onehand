@@ -1,45 +1,44 @@
-//! What happens next for the recents list: a workspace opened, bound,
-//! named or forgotten, and the list written after.
+//! What happens next for the list of workspaces: every workspace onehand
+//! keeps, most recently opened first, and the order written after a change.
 //!
-//! **Written whole, in order.** Every change answers one write of the list
-//! as it stands ([`Effect::Write`]), and the front end runs its writes one
-//! after another, so an older copy never lands over a newer one. Nothing is
-//! put back when a write fails: the list is a convenience, and the next
-//! change writes it again.
+//! **Every folder is a workspace.** The list is read once, at launch, from
+//! the folders under `<config_dir>/workspaces/` ([`list_blocking`]), and kept
+//! in step as workspaces are opened, renamed, made and dropped. Only the
+//! order is written (`state.toml`); each workspace's name is its own file's.
 //!
-//! **Only an unbind's failure is said.** A workspace unbound and then still
-//! remembered comes back at the next launch, so a forget that did not land
-//! is told to the person ([`Signal::ForgetFailed`]); any other write that
-//! fails is only logged ([`Signal::WriteFailed`]).
+//! **Written whole, in order.** Every change of the order answers one write
+//! of it as it stands ([`Effect::Write`]), and the front end runs its writes
+//! one after another, so an older copy never lands over a newer one. Nothing
+//! is put back when a write fails: the order is a convenience, and the next
+//! change writes it again. A failure is only logged ([`Signal::WriteFailed`]).
 
-use super::AppState;
+use super::{AppState, WorkspaceConfig, WorkspaceLoad};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
-/// Why a workspace is forgotten.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Forgot {
-    /// Its storage was unbound: it must not be reopened at the next launch.
-    Unbound,
-    /// Its file is gone.
-    Gone,
+/// One workspace in the list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Listed {
+    /// The folder it is kept in.
+    pub dir: PathBuf,
+    /// What it is called; its folder's name when its file cannot be read.
+    pub name: String,
+    /// Why its file cannot be read, when it cannot. It is listed rather than
+    /// dropped, and never written over.
+    pub unreadable: Option<String>,
 }
 
 /// What a person is told, or the log.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Signal {
-    /// The write that forgot an unbound workspace failed: why. Said, every
-    /// time: the workspace would come back at the next launch.
-    ForgetFailed(String),
-    /// Another write of the list failed: why. Only logged.
+    /// A write of the order failed: why. Only logged.
     WriteFailed(String),
 }
 
 /// What the front end carries out.
 pub enum Effect {
     /// Write `state` to `path` after every write before it, and report
-    /// [`Input::Written`] with `pending`. A late answer is **recorded**: the
-    /// file holds that copy or not, whatever changed since.
+    /// [`Input::Written`] with `pending`.
     Write {
         pending: u64,
         state: AppState,
@@ -57,13 +56,12 @@ pub enum Input {
     },
 }
 
-/// The recents' drive. See the module header.
+/// The list's drive. See the module header.
 pub struct RecentsDrive {
     state: AppState,
     path: PathBuf,
+    listed: Vec<Listed>,
     minted: u64,
-    /// The writes in flight whose failure is said.
-    said: Vec<u64>,
 }
 
 impl Deref for RecentsDrive {
@@ -74,81 +72,163 @@ impl Deref for RecentsDrive {
     }
 }
 
+/// A workspace's id: the name of the folder it is kept in.
+fn id_of(dir: &Path) -> String {
+    dir.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+/// Every workspace kept under `root`, in no order. Blocking. A folder whose
+/// name starts with `.` is one being brought in, and is passed over.
+pub(crate) fn list_blocking(root: &Path) -> Vec<Listed> {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|dir| dir.is_dir() && !id_of(dir).starts_with('.'))
+        .filter_map(|dir| match WorkspaceConfig::load_from(&dir) {
+            WorkspaceLoad::Found(cfg) => Some(Listed {
+                name: cfg.name,
+                unreadable: None,
+                dir,
+            }),
+            WorkspaceLoad::Missing => None,
+            WorkspaceLoad::Unreadable(why) => Some(Listed {
+                name: id_of(&dir),
+                unreadable: Some(why),
+                dir,
+            }),
+        })
+        .collect()
+}
+
 impl RecentsDrive {
-    /// The recents remembered between launches, written back where they
-    /// were read.
+    /// Every workspace onehand keeps, in the order last written.
     pub fn load() -> Self {
-        Self::new(AppState::load(), AppState::path())
+        Self::new(
+            AppState::load(),
+            AppState::path(),
+            list_blocking(&super::workspaces_dir()),
+        )
     }
 
-    /// `state`, written to `path`.
-    pub fn new(state: AppState, path: PathBuf) -> Self {
+    /// `listed`, ordered by `state` (written to `path`) first and then by
+    /// name. An id in `state` with no folder listed is dropped from it.
+    pub fn new(mut state: AppState, path: PathBuf, mut listed: Vec<Listed>) -> Self {
+        state
+            .workspaces
+            .retain(|id| listed.iter().any(|l| id_of(&l.dir) == *id));
+        let rank = |l: &Listed| {
+            let id = id_of(&l.dir);
+            state.workspaces.iter().position(|d| *d == id)
+        };
+        listed.sort_by(|a, b| match (rank(a), rank(b)) {
+            (Some(a), Some(b)) => a.cmp(&b),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a.name.cmp(&b.name).then_with(|| a.dir.cmp(&b.dir)),
+        });
         Self {
             state,
             path,
+            listed,
             minted: 0,
-            said: Vec::new(),
         }
     }
 
-    /// The workspace in `dir` was opened in a window: it is the most recent.
-    #[must_use = "its effects are to be carried"]
-    pub fn opened(&mut self, dir: PathBuf) -> Vec<Effect> {
-        self.state.touch(dir);
-        vec![self.write(false)]
+    /// Every workspace, most recently opened first.
+    pub fn listed(&self) -> &[Listed] {
+        &self.listed
     }
 
-    /// The workspace now stored in `dir` is called `name`: the most recent,
-    /// and named so, in one write.
-    #[must_use = "its effects are to be carried"]
-    pub fn bound(&mut self, dir: PathBuf, name: &str) -> Vec<Effect> {
-        self.state.touch(dir.clone());
-        self.state.set_name(&dir, name);
-        vec![self.write(false)]
+    /// What a launch opens: the first workspace listed whose file loads, or
+    /// else `seed`, and whether `seed` is to be written before its window
+    /// opens. Blocking: it reads each file it tries.
+    ///
+    /// **A folder whose file cannot be read is never written over**, as
+    /// anywhere else: a seed whose own folder holds one is kept in the first
+    /// free folder beside it (`<id>-2`, `<id>-3`, …) instead, and the one that
+    /// cannot be read stays listed with its reason.
+    pub fn launch_blocking(
+        &self,
+        mut seed: crate::workspace::Workspace,
+    ) -> (crate::workspace::Workspace, bool) {
+        for listed in self.listed.iter().filter(|l| l.unreadable.is_none()) {
+            if let WorkspaceLoad::Found(cfg) = WorkspaceConfig::load_from(&listed.dir) {
+                return (
+                    crate::workspace::Workspace::from_config(cfg, listed.dir.clone()),
+                    false,
+                );
+            }
+        }
+        let base = seed.storage_dir.clone();
+        let mut n = 1;
+        loop {
+            match WorkspaceConfig::load_from(&seed.storage_dir) {
+                WorkspaceLoad::Found(cfg) => {
+                    let dir = seed.storage_dir.clone();
+                    return (crate::workspace::Workspace::from_config(cfg, dir), false);
+                }
+                WorkspaceLoad::Missing => return (seed, true),
+                WorkspaceLoad::Unreadable(_) => {
+                    n += 1;
+                    seed.storage_dir = base.with_file_name(format!("{}-{n}", id_of(&base)));
+                }
+            }
+        }
     }
 
-    /// The workspace in `dir` is known by `name`; written only when that is
-    /// new of a workspace remembered.
+    /// The workspace in `dir`, called `name`, was opened in a window: it is
+    /// the most recent, and listed if it was not yet.
+    #[must_use = "its effects are to be carried"]
+    pub fn opened(&mut self, dir: PathBuf, name: &str) -> Vec<Effect> {
+        self.listed.retain(|l| l.dir != dir);
+        self.state.touch(&id_of(&dir));
+        self.listed.insert(
+            0,
+            Listed {
+                dir,
+                name: name.to_string(),
+                unreadable: None,
+            },
+        );
+        vec![self.write()]
+    }
+
+    /// The workspace in `dir` is now called `name`. Its own file holds the
+    /// name, so nothing is written.
     #[must_use = "its effects are to be carried"]
     pub fn named(&mut self, dir: &Path, name: &str) -> Vec<Effect> {
-        if !self.state.set_name(dir, name) {
-            return Vec::new();
+        if let Some(listed) = self.listed.iter_mut().find(|l| l.dir == dir) {
+            listed.name = name.to_string();
         }
-        vec![self.write(false)]
+        Vec::new()
     }
 
-    /// Forget the workspace in `dir`, for `why`.
+    /// The workspace in `dir` is gone: its folder was deleted, or is no more.
     #[must_use = "its effects are to be carried"]
-    pub fn forgot(&mut self, dir: &Path, why: Forgot) -> Vec<Effect> {
-        self.state.forget(dir);
-        let said = match why {
-            Forgot::Unbound => true,
-            Forgot::Gone => false,
-        };
-        vec![self.write(said)]
+    pub fn dropped(&mut self, dir: &Path) -> Vec<Effect> {
+        self.listed.retain(|l| l.dir != dir);
+        self.state.forget(&id_of(dir));
+        vec![self.write()]
     }
 
     /// What the front end reports back.
     #[must_use = "its effects are to be carried"]
     pub fn handle(&mut self, input: Input) -> Vec<Effect> {
         match input {
-            Input::Written { pending, result } => {
-                let said = self.said.contains(&pending);
-                self.said.retain(|p| *p != pending);
-                match result {
-                    Ok(()) => Vec::new(),
-                    Err(why) if said => vec![Effect::Signal(Signal::ForgetFailed(why))],
-                    Err(why) => vec![Effect::Signal(Signal::WriteFailed(why))],
-                }
-            }
+            Input::Written { result, .. } => match result {
+                Ok(()) => Vec::new(),
+                Err(why) => vec![Effect::Signal(Signal::WriteFailed(why))],
+            },
         }
     }
 
-    fn write(&mut self, said: bool) -> Effect {
+    fn write(&mut self) -> Effect {
         self.minted += 1;
-        if said {
-            self.said.push(self.minted);
-        }
         Effect::Write {
             pending: self.minted,
             state: self.state.clone(),

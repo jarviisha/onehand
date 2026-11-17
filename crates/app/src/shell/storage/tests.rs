@@ -12,7 +12,7 @@ use std::time::Duration;
 fn recents_at(path: PathBuf, cx: &mut VisualTestContext) {
     cx.update(|_, cx| {
         cx.update_global::<Shared, _>(|shared, _| {
-            shared.recents = RecentsDrive::new(Default::default(), path)
+            shared.recents = RecentsDrive::new(Default::default(), path, Vec::new())
         })
     });
 }

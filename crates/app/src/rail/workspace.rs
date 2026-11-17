@@ -28,10 +28,11 @@ pub(crate) fn ellipsize_front(s: &str, max: usize) -> SharedString {
     SharedString::from(format!("…{kept}"))
 }
 
-/// How much of a workspace's parent path a switcher row carries.
-const MAX_PARENT: usize = 30;
+/// How many workspaces the menu lists; past it, a line says how many it left
+/// out.
+const MENU_CAP: usize = 20;
 
-/// Every workspace this launch knows about.
+/// Every workspace onehand keeps, most recently opened first.
 ///
 /// **Switching still means another window** -- one window hosts exactly one
 /// workspace, so a row here opens the workspace it names, or focuses the window
@@ -40,37 +41,27 @@ const MAX_PARENT: usize = 30;
 /// is drawing is marked and cannot be picked, because "switch to where you
 /// already are" is a click that does nothing and reads as a failure.
 ///
-/// A row is named as the title bar names its workspace, from the name the recents
-/// remember, with the parent path beside it; a workspace remembered before
-/// names were reads as its folder until it is next opened. Never read from the
-/// workspace's own file here, which would put disk I/O in the middle of a frame.
+/// A row is named as the title bar names its workspace, from the list's copy of
+/// its name. One whose file cannot be read says so beside its folder's name, and
+/// pressing it says why. Never read from the workspace's own file here, which
+/// would put disk I/O in the middle of a frame.
 ///
 /// The builder, not the trigger: the menu is rebuilt every time it opens, so the
 /// control it hangs off, the title bar's workspace control, is free to be any element.
 pub(super) fn workspace_menu(
     current: Option<std::path::PathBuf>,
-    recents: Vec<(std::path::PathBuf, String)>,
+    recents: Vec<onehand_core::config::recents::Listed>,
     shell: WeakEntity<Shell>,
 ) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
     move |menu, _, cx| {
-        let (detail, mono) = (
-            crate::theme::meta_ink(cx),
-            cx.theme().mono_font_family.clone(),
-        );
-        let mut menu = menu;
-        // No heading over nothing: a workspace that has never been bound
-        // has no recents, and the two actions below stand on their own.
-        if !recents.is_empty() {
-            menu = menu.item(crate::controls::menu_label("Workspaces"));
-        }
-        for (dir, name) in &recents {
-            let is_current = current.as_deref() == Some(dir.as_path());
-            let label = ellipsize(name, MAX_LABEL);
-            let parent = dir
-                .parent()
-                .map(|parent| ellipsize_front(&parent.display().to_string(), MAX_PARENT));
-            let (target, mono) = (shell.clone(), mono.clone());
-            let dir = dir.clone();
+        let detail = crate::theme::meta_ink(cx);
+        let mut menu = menu.item(crate::controls::menu_label("Workspaces"));
+        for listed in recents.iter().take(MENU_CAP) {
+            let is_current = current.as_deref() == Some(listed.dir.as_path());
+            let label = ellipsize(&listed.name, MAX_LABEL);
+            let unreadable = listed.unreadable.is_some();
+            let target = shell.clone();
+            let dir = listed.dir.clone();
             // The workspace already on screen keeps the library's own row, and so
             // its cursor: it is checked and unpickable, and a pointer over it
             // would promise a press that is refused.
@@ -81,14 +72,15 @@ pub(super) fn workspace_menu(
                     .gap_2()
                     .min_w_0()
                     .child(div().flex_none().child(label.clone()))
-                    .children(parent.clone().map(|parent| {
-                        div()
-                            .flex_none()
-                            .text_xs()
-                            .font_family(mono.clone())
-                            .text_color(detail)
-                            .child(parent)
-                    }))
+                    .when(unreadable, |row| {
+                        row.child(
+                            div()
+                                .flex_none()
+                                .text_xs()
+                                .text_color(detail)
+                                .child("Cannot be read"),
+                        )
+                    })
             };
             menu = menu.item(
                 match is_current {
@@ -105,14 +97,17 @@ pub(super) fn workspace_menu(
                 }),
             );
         }
-        let (open, new) = (shell.clone(), shell.clone());
+        let left_out = recents.len().saturating_sub(MENU_CAP);
+        if left_out > 0 {
+            menu = menu.item(crate::controls::menu_still(move |_, _| {
+                div()
+                    .text_xs()
+                    .text_color(detail)
+                    .child(format!("{left_out} more not shown"))
+            }));
+        }
+        let new = shell.clone();
         menu.separator()
-            .item(crate::controls::menu_item("Open workspace…").on_click(
-                move |_, _, cx: &mut App| {
-                    open.update(cx, |shell: &mut Shell, cx| shell.open_workspace(cx))
-                        .ok();
-                },
-            ))
             .item(crate::controls::menu_item("New workspace…").on_click(
                 move |_, _, cx: &mut App| {
                     new.update(cx, |shell: &mut Shell, cx| shell.new_workspace(cx))
