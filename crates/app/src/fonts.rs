@@ -13,7 +13,7 @@
 //! License, whose text sits beside the files in `assets/fonts/`.
 //!
 //! Static faces rather than the variable ones: one file per weight the app
-//! asks for (light, regular, medium, semibold, bold, and italic for prose), so no
+//! asks for (regular, medium, semibold, bold, and italic for prose), so no
 //! weight depends on how a platform's text stack handles variation axes.
 
 use gpui::App;
@@ -26,7 +26,6 @@ pub(crate) const UI_FAMILY: &str = "Be Vietnam Pro";
 pub(crate) const MONO_FAMILY: &str = "JetBrains Mono";
 
 const FACES: &[&[u8]] = &[
-    include_bytes!("../../../assets/fonts/BeVietnamPro-Light.ttf"),
     include_bytes!("../../../assets/fonts/BeVietnamPro-Regular.ttf"),
     include_bytes!("../../../assets/fonts/BeVietnamPro-Italic.ttf"),
     include_bytes!("../../../assets/fonts/BeVietnamPro-Medium.ttf"),
