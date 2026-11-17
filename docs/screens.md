@@ -9,7 +9,7 @@ never cites this file.
 
 ## Title bar
 
-The library's `TitleBar`, its whole width a handle to move the window. At its start, the app's mark
+The library's `TitleBar` on the window's fill with no line under it, its whole width a handle to move the window. At its start, the app's mark
 in its own colours and its name, *onehand*. Then the app's menus, *File*, *View*, *Go* and *Session*, lettered at the chrome size, each item a command the keymap holds, under the name
 the menu gives it and with the key the keymap binds: *File* holds *New session*, *Run a workflow on
 this project…*, *Save the open file* and *Open Settings*; *View* the rail's, the Workbench's and

@@ -138,6 +138,9 @@ impl Shell {
     pub(super) fn title_bar(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement + use<> {
         let guard = self.close_guard.clone();
         TitleBar::new()
+            // No line under it: the bar stands on the window's fill, as the
+            // rail does, and the regions under it part from it by the gap.
+            .border_b_0()
             .child(
                 h_flex()
                     .flex_none()
