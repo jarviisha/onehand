@@ -36,8 +36,7 @@ Helpers:
 |---|---|---|
 | `status_ink(cx).danger`, `.warning`, `.success`, `.closed` | status text and marks; `closed` for what is over and settled (a closed issue) | `crates/ui/src/ink.rs`; the app says `crate::theme::status_ink` |
 | `tint(base, cx)` | a label's `Tint { fill, ink }` by its hue | `crates/ui/src/ink.rs` |
-| `dock_surface(cx)` | the Workbench's surface, the Neovim mode's grid included: the reading surface (`background`), as every box is | `crates/ui/src/surface.rs` |
-| `terminal_surface(cx)` | the terminal's: a step deeper than the reading surface, the well's grey (`muted`) by day, `background` taken toward black by night; read by the terminal's box (`shell/dock_skin.rs`), its local and host grids (`terminal.rs`, `terminal/host.rs`); its shell rows hover in `sidebar_accent` | `crates/app/src/theme.rs` |
+| `dock_surface(cx)` | the Workbench's and the terminal's surface: the reading surface (`background`), as every box is | `crates/ui/src/surface.rs` |
 | `badge_edge(tint)` | halfway from a `Tint`'s fill to its ink: an edge in that hue where one is still drawn (a transcript part), no longer a badge's | `crates/ui/src/badge.rs` |
 | `chosen_fill(cx)`, `chosen_ink(cx)` | the item chosen among several: the selected grey (`accent`), a step past the hover step, and its name's ink, the content ink | `crates/ui/src/ink.rs` |
 | `control_fill(cx)` | a ghost control's fill hovered, pressed or chosen; between `list_hover` and `accent` | `crates/ui/src/ink.rs` |

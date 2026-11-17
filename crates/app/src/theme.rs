@@ -8,10 +8,10 @@
 //! parts read one palette, and a slot it leaves alone (a status hue, the
 //! ring, a chart's series) stays the library's. The steps no slot holds (the
 //! composer's lift, a well on a floating card, a hue tempered for ink, the
-//! chosen row's fill, the terminal's deeper surface) are derived from the
-//! slots, here or in `onehand_ui`, never written as values of their own. The
-//! terminal's sixteen colours are not the palette's: they stay
-//! `onehand_terminal_ui::ansi`, as a program's colours are its own.
+//! chosen row's fill) are derived from the slots, here or in `onehand_ui`,
+//! never written as values of their own. The terminal's sixteen colours are
+//! not the palette's: they stay `onehand_terminal_ui::ansi`, as a program's
+//! colours are its own.
 //!
 //! ## Status colour is still not a surface
 //!
@@ -30,8 +30,14 @@ use std::rc::Rc;
 /// site in the app already says `crate::theme::status_ink`.
 pub(crate) use onehand_ui::status_ink;
 
+/// The surface a dock draws on is the UI crate's for the same reason, and
+/// named through this module for the same one: the Neovim mode hands it to a
+/// terminal grid as that grid's background, and a second copy of the answer is
+/// a panel and the shell inside it disagreeing about what colour the panel is.
+pub(crate) use onehand_ui::dock_surface;
+
 /// The middle ink is the UI crate's too, since a feature crate sets a detail beside
-/// a name as well, and named through this module like status ink.
+/// a name as well, and named through this module like the two above.
 pub(crate) use onehand_ui::meta_ink;
 
 /// Take the library's two configs, named for the app, set in its fonts and
@@ -197,28 +203,6 @@ fn waiting_card_of(theme: &Theme) -> Hsla {
     // is the hairline's own grey, so a card in it swallowed every edge drawn
     // on it. Halfway keeps the card off the page and the lines on it.
     theme.background.mix_oklab(theme.secondary, 0.5)
-}
-
-/// The terminal's surface: a step deeper than the reading surface every
-/// other box stands on, so the terminal is told from the boxes beside it by its
-/// fill. By day the well's grey, a step under the white boxes; by night the
-/// reading surface taken toward black until it sits under the box about as far
-/// as the window's fill sits over it. The whole terminal box takes it, its bar,
-/// its shell list and its grids' default background; the Neovim mode, a
-/// Workbench mode, keeps the dock's surface.
-pub(crate) fn terminal_surface(cx: &App) -> Hsla {
-    terminal_surface_of(cx.theme())
-}
-
-/// How much of the reading surface is kept on the dark palette when it is
-/// taken toward black for the terminal.
-const TERMINAL_DEPTH: f32 = 0.83;
-
-fn terminal_surface_of(theme: &Theme) -> Hsla {
-    match theme.mode.is_dark() {
-        true => theme.background.mix_oklab(gpui::black(), TERMINAL_DEPTH),
-        false => theme.muted,
-    }
 }
 
 /// The composer card's fill: the page's own, as the card is told apart by its
@@ -427,38 +411,6 @@ mod tests {
             let theme = installed(mode);
             let ratio = contrast(theme.background, theme.sidebar);
             assert!(ratio >= BOX_ON_WINDOW, "{name}: box on window {ratio:.3}");
-        }
-    }
-
-    /// The terminal stands a step deeper than the boxes beside it, by at least
-    /// what parts a box from the window, and the terminal's ink (the content
-    /// ink, its grid's default foreground) reads on it, in both modes.
-    #[test]
-    fn the_terminal_stands_deeper_than_the_boxes_and_reads() {
-        for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
-            let theme = installed(mode);
-            let surface = terminal_surface_of(&theme);
-            assert!(
-                luminance(surface) < luminance(theme.background),
-                "{name}: the terminal is not deeper than the box"
-            );
-            let apart = contrast(surface, theme.background);
-            assert!(apart >= BOX_ON_WINDOW, "{name}: terminal on box {apart:.3}");
-            for (ink, colour) in [
-                ("content", theme.foreground),
-                ("muted", theme.muted_foreground),
-            ] {
-                let ratio = contrast(colour, surface);
-                assert!(
-                    ratio >= AA,
-                    "{name}: {ink} ink on the terminal is {ratio:.2}"
-                );
-            }
-            // A shell row is hovered in the rail's hover step.
-            assert!(
-                contrast(theme.sidebar_accent, surface) >= 1.04,
-                "{name}: a hovered shell row sinks into the terminal"
-            );
         }
     }
 

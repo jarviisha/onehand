@@ -240,7 +240,7 @@ impl TerminalPanel {
             conn.term_writer(term),
             move |cols, rows| resize.term_resize(term, cols as u16, rows as u16),
             crate::zoom::term_font_size(self.zoom),
-            crate::theme::terminal_surface(cx),
+            crate::theme::dock_surface(cx),
             cx,
             move |window, cx| {
                 let _ = panel.update(cx, |panel: &mut Self, cx| {
