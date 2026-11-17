@@ -325,12 +325,13 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
         .bg(cx.theme().sidebar)
         .text_size(crate::tokens::CHROME_TEXT)
         .text_color(cx.theme().sidebar_foreground)
-        // The first of the rail's rows, on the line the boxes beside it start.
+        // The first of the rail's rows, a breath under the title bar's
+        // workspace so the two do not read as one block.
         .child(
             div()
                 .flex_none()
                 .px_1p5()
-                .pt(crate::tokens::REGION_GAP)
+                .pt_3()
                 .pb_0p5()
                 .child(workspace::new_session_row(
                     shell,
