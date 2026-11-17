@@ -13,10 +13,11 @@ struct Probe {
 }
 
 impl Render for Probe {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let height = self.height.clone();
+        let close = Rc::new(|_: &usize, _: &mut Window, _: &mut App| {});
         div().size_full().child(
-            tree_dropdown(self.tree.clone())
+            tree_dropdown(self.tree.clone(), 0, close, cx)
                 .on_prepaint(move |bounds, _, _| height.set(bounds.size.height)),
         )
     }
@@ -60,7 +61,8 @@ fn drawn(cx: &mut TestAppContext, name: &str, files: usize) -> (gpui::Pixels, gp
 fn a_short_tree_stands_at_its_rows_height(cx: &mut TestAppContext) {
     let (height, rem) = drawn(cx, "short", 3);
     let row = onehand_ui::tokens::TREE_ROW_H.to_pixels(rem);
-    assert!(height >= row * 3., "three rows laid out in {height:?}");
+    // The head's row and the three files'.
+    assert!(height >= row * 4., "three rows laid out in {height:?}");
     assert!(height < gpui::rems(24.).to_pixels(rem), "{height:?}");
 }
 
@@ -68,8 +70,10 @@ fn a_short_tree_stands_at_its_rows_height(cx: &mut TestAppContext) {
 fn a_long_tree_stops_at_the_cap(cx: &mut TestAppContext) {
     let (height, rem) = drawn(cx, "long", 40);
     let cap = gpui::rems(24.).to_pixels(rem);
+    // The cap is the tree's; the head stands over it.
+    let head = gpui::rems(3.).to_pixels(rem);
     assert!(
-        height > cap - px(1.) && height < cap + px(1.),
+        height > cap && height < cap + head,
         "{height:?} under {cap:?}"
     );
 }

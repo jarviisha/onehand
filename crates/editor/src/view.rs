@@ -3,7 +3,7 @@
 //! rule with them; what lives here is each tab's buffer, the reads and writes
 //! carried off the UI loop, and the drawing.
 
-use crate::buffers::{Lead, StripHandlers, body, file_bar, new_buffer, standing_line};
+use crate::buffers::{Lead, StripHandlers, body, file_bar, new_buffer, standing_line, top_fade};
 
 use gpui::{
     AnyView, AnyWindowHandle, App, AppContext as _, Context, Entity, Focusable as _, IntoElement,
@@ -19,6 +19,7 @@ use onehand_ui::{hint, status_ink, status_line};
 use onehand_workbench::Disk;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 pub(crate) struct EditorView {
     /// The project on screen.
@@ -484,7 +485,10 @@ impl Render for EditorView {
                 pick: Box::new(
                     cx.listener(|view: &mut Self, open: &bool, _, cx| view.set_picking(*open, cx)),
                 ),
-                close: Box::new(cx.listener(|view: &mut Self, idx: &usize, window, cx| {
+                // Closes the dropdown it is pressed in first, so a question
+                // about unsaved edits is not asked under it.
+                close: Rc::new(cx.listener(|view: &mut Self, idx: &usize, window, cx| {
+                    view.picking = false;
                     view.close_tab(*idx, window, cx)
                 })),
             },
@@ -513,7 +517,15 @@ impl Render for EditorView {
             .min_h_0()
             .v_flex()
             .child(strip)
-            .child(body)
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .relative()
+                    .v_flex()
+                    .child(body)
+                    .child(top_fade(cx)),
+            )
             .children(standing.map(|status| status_line(status, status_ink(cx).warning)))
             .children(locked.map(|why| status_line(why, cx.theme().muted_foreground)))
     }

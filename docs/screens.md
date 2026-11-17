@@ -239,9 +239,10 @@ the terminal as it is.
 
 - Bars as tall as the header, a mode's own bar under the Workbench's a step lower. The
   Workbench's, the terminal's and every other `tab_bar` the two draw (the Editor's, the
-  Issues tab's) take one look: no fill of their own and a line under the bar, the tabs parted by space, not by lines, the
-  open one a rounded fill (`secondary`) with its name in the content ink, every tab, tree row and
-  shell row at the regular weight, the controls at the end.
+  Issues tab's) take one look: no fill of their own and a line under the bar (the Editor's alone
+  has none: the file fades out under it), the tabs parted by space, not by lines, the open one a
+  rounded fill (`secondary`) with its name in the content ink, every tab, tree row and shell row
+  at the regular weight, the controls at the end.
 - The Workbench's: *← Conversation* while it has the area, the modes as tabs (Editor, Markdown,
   Issues, Plugins only where a Claude Code agent is set up when the window opens, Neovim; a select
   where the bar is too narrow for the tabs, `MODES_MIN_W`), maximize, hide.
@@ -249,10 +250,12 @@ the terminal as it is.
   shows at a time, then the file open now and no tab per file: its name (capped, the whole path on
   hover, the unsaved dot while it holds edits) with the picker's caret, dropping down the
   project's file tree under it (a tree of its own beside the one in the panel, its own folds, the
-  open file picked, as tall as the tree up to a cap, then its own scroll; a file picked there opens and closes it,
-  as Escape and a press outside do), and its cross, which closes the file; with no file open,
-  nothing there. The other open files are reached through either tree; there is no list of them.
-  The tree's toggle ends the bar, beside the tree it shows and hides.
+  open file picked, as tall as the tree up to a cap, then its own scroll), headed by a *Close
+  file* row, the one way to close the file. A file picked there opens and closes the dropdown, as
+  *Close file*, Escape and a press outside do. With no file open, nothing there. The other open
+  files are reached through either tree; there is no list of them. The tree's toggle ends the
+  bar, beside the tree it shows and hides. Under the bar, the file's top edge fades from the
+  box's fill to nothing, over the file, in place of a line.
 - The terminal's: the open shell's name at its start, then `+`, maximize, hide. While the dock
   holds more than one shell, a list of them runs down the box's right side beside the grid, at a
   fixed width, neither dragged nor saved: a row per shell holding what its tab held (its name,

@@ -8,12 +8,12 @@
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyView, App, AppContext, Entity, IntoElement, ParentElement, Rems, SharedString, Styled,
-    Window, div, rems,
+    AnyView, App, AppContext, Entity, IntoElement, ParentElement, Rems, SharedString,
+    StatefulInteractiveElement as _, Styled, Window, div, rems,
 };
 use gpui_component::input::{Editor, EditorState};
 use gpui_component::popover::Popover;
-use gpui_component::{ActiveTheme, IconName, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::editor::{RootEditors, Standing};
 use onehand_ui::Named as _;
 use std::path::Path;
@@ -57,12 +57,14 @@ pub(crate) struct StripHandlers {
     /// Whether the tree's dropdown is open, and what hears it open or close.
     pub(crate) picking: bool,
     pub(crate) pick: On<bool>,
-    /// Handed the open file's index.
-    pub(crate) close: On<usize>,
+    /// Handed the open file's index. Shared, because the dropdown's
+    /// content is built again on every frame it is open.
+    pub(crate) close: OnShared<usize>,
 }
 
 pub(crate) type OnPress = On<gpui::ClickEvent>;
 pub(crate) type On<T> = Box<dyn Fn(&T, &mut Window, &mut App)>;
+pub(crate) type OnShared<T> = std::rc::Rc<dyn Fn(&T, &mut Window, &mut App)>;
 
 /// The tree's dropdown: wide enough for a nested name to be read and a
 /// change mark beside it. In rems, so it follows the panel's zoom. Its
@@ -145,24 +147,19 @@ pub(crate) fn file_bar(
         // opened from it closes it too, through `picking`.
         let id = SharedString::from(format!("editor-file-tree-{}", root.display()));
         let tree = tree.clone();
-        let dropdown = Popover::new(id)
+        Popover::new(id)
             .trigger(trigger)
             .open(picking)
             .on_open_change(on_pick)
             .p_0()
             .w(TREE_DROPDOWN_W)
-            .content(move |_, _, _| tree_dropdown(tree.clone()));
-        div()
-            .h_flex()
-            .items_center()
-            .min_w_0()
-            .gap_1()
-            .child(dropdown)
-            .child(close_button(active, on_close, cx))
+            .content(move |_, _, cx| tree_dropdown(tree.clone(), active, on_close.clone(), cx))
     });
 
-    // A mode's bar, a step lower than the Workbench's over it.
+    // A mode's bar, a step lower than the Workbench's over it. No line under
+    // it: the file fades out under the bar instead (`top_fade`).
     onehand_ui::tab_bar(cx)
+        .border_b_0()
         .h(onehand_ui::tokens::MODE_BAR_H)
         .children(back.map(|back| div().h_flex().items_center().px_1().child(back)))
         // The one part of the row that gives way: `flex_1` + `min_w_0`, so a
@@ -179,15 +176,51 @@ pub(crate) fn file_bar(
         .into_any_element()
 }
 
-/// What the tree's dropdown holds: the tree, which sizes and scrolls itself.
-fn tree_dropdown(tree: AnyView) -> gpui::Div {
-    div().v_flex().child(tree)
+/// What the tree's dropdown holds: a head row closing file `active`, the
+/// one way to close it now the bar has no cross, then the tree, which sizes
+/// and scrolls itself. The head is a row like the tree's, so its words stand
+/// on the names' edge.
+fn tree_dropdown(tree: AnyView, active: usize, close: OnShared<usize>, cx: &App) -> gpui::Div {
+    let head = onehand_ui::tree_row("editor-close-file", 0, false, cx)
+        .child(onehand_ui::mark_slot(
+            Icon::new(IconName::Close)
+                .small()
+                .text_color(cx.theme().muted_foreground),
+        ))
+        .child(div().flex_1().min_w_0().truncate().child("Close file"))
+        .on_click(move |_, window, cx: &mut App| close(&active, window, cx));
+    div()
+        .v_flex()
+        .child(
+            div()
+                .py_1()
+                .border_b_1()
+                .border_color(cx.theme().border)
+                .child(head),
+        )
+        .child(tree)
 }
 
-/// The cross that closes file `i`.
-fn close_button(i: usize, close: On<usize>, cx: &App) -> gpui_component::button::Button {
-    onehand_ui::tab_close("editor-file-close", "Close this file", cx)
-        .on_click(move |_, window, cx: &mut App| close(&i, window, cx))
+/// How far the file fades out under the bar over it.
+const BAR_FADE: Rems = rems(0.75);
+
+/// The band over the top of the file that parts it from the bar: the box's
+/// fill fading to nothing, drawn over the content and taking no room of its
+/// own. A line would be one more edge; the fade reads as the file running on
+/// under the bar.
+pub(crate) fn top_fade(cx: &App) -> gpui::Div {
+    let surface = onehand_ui::dock_surface(cx);
+    div()
+        .absolute()
+        .top_0()
+        .left_0()
+        .right_0()
+        .h(BAR_FADE)
+        .bg(gpui::linear_gradient(
+            180.,
+            gpui::linear_color_stop(surface, 0.),
+            gpui::linear_color_stop(surface.alpha(0.), 1.),
+        ))
 }
 
 /// A file's unsaved-edits mark: a status *fill*, the theme's `warning`, where
