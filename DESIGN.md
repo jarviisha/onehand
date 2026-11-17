@@ -226,10 +226,11 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   the editor) is parted by a line down its side facing the detail, on the box's own fill. An open
   tab in a dock's bar is a rounded fill (`secondary`), its name in the content ink, the tabs
   parted by space and not by lines.
-- **Lines** part content inside a region and are a 1px `border`. A list page's line over its
-  foot is a step fainter (`faint_rule`), so the edge-to-edge list reads as one surface; a page's
-  top draws no line under it. A box on a page takes a step stronger edge, a control's (`input`);
-  a Settings group keeps the hairline, and a folding block has no edge at all (*Transcript*).
+- **Lines** part content inside a region and are a 1px `border`. A list page's line over its foot is
+  a step fainter (`faint_rule`), so the edge-to-edge list reads as one surface; a page's head draws
+  a hairline under it, where the page's own content starts. A box on a page takes a step stronger
+  edge, a control's (`input`); a Settings group keeps the hairline, and a folding block has no edge
+  at all (*Transcript*).
 
 ## Colour and state
 
@@ -358,10 +359,10 @@ draws on (a radio's or a checkbox's ring on the selected step), `choice_mark` dr
 
 **A size names a role, and the role follows the room the control stands in.** A control takes
 one of the library's two sizes. On a page, where there is room and the person reads and types
-what a control holds, it takes `.tall()` (a button is the library's small held at `FIELD_H`, its words at `CHROME_TEXT`): a page's
-form, its fields, pickers and buttons alike, so a field's words stand at its title's size; a
-dialog holding a form at `DIALOG_FORM` is that room too. In dense chrome (a page's head and the search and filters under it, the rail, a dock, a
-strip, a dock's filter bar, a dialog that asks one thing, a row, a box's title row, the composer) it takes
+what a control holds, it takes `.tall()` (a button is the library's small held at `FIELD_H`, its words at `CHROME_TEXT`):
+a page's form, its fields, pickers and buttons alike, so a field's words stand at its title's
+size; a dialog holding a form at `DIALOG_FORM` is that room too. In dense chrome (a page's head
+and the search and filters under it, the rail, a dock, a strip, a dock's filter bar, a dialog that asks one thing, a row, a box's title row, the composer) it takes
 `.short()` (a button is the library's extra small, a field its small, held at `CONTROL_H`), so it never outweighs what it acts on. An icon alone is
 square at its row's height: `.short_icon()` beside `.short()` peers, `.tall_icon()` beside tall ones.
 `.tall()` (`FIELD_H`) is the ceiling: no control stands taller.

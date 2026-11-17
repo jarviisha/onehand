@@ -38,7 +38,7 @@ The neutral inks of `DESIGN.md` (*Type, space and shape*), applied on a neutral 
 | A row in content: a page, a Workbench list, a menu | its name | the detail on its line: a folder, a number, a kind | its meta, trailing or on a line under it; the label over a run of rows |
 | Navigation: the rail, a section nav | the current location, in its fill's paired ink; every other row at rest in the sidebar's ink | none | a row's second line |
 | A box, a detail | its title, its content | none | its count, its line of facts |
-| A page's head | its name, semibold at the chrome size | none | its line under it, at the meta size: what the page is for, or its facts |
+| A page's head | its name, semibold at the chrome size | none | its line under it, at the meta size: what the page is for, then its facts |
 | A strip | what it names | none | a count beside the name |
 
 Text on a fill, and text that carries meaning, takes the ink `DESIGN.md` names for it (*Type,
@@ -100,7 +100,7 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 | A page's head and the row under it: its actions, its search, its filters' choices and pickers, a split action's both halves | Button, Input | `.short()`, so the head's controls never outweigh its name |
 | An icon-only button in a page's head | Button | `.short_icon()`, square at `CONTROL_H` |
 | An icon-only button in a page's form | Button | `.tall_icon()`, square at `FIELD_H` |
-| A page's form: its fields, its pickers, its switch and its buttons | Button, Input | `.tall()` |
+| A page's form: its fields, its pickers, its switch and its buttons; a form's *Save* and *Cancel* standing in its head take the head's size | Button, Input | `.tall()` |
 | A form in a dialog at `DIALOG_FORM` (the agent form, the workflow launcher, the issue picker): its fields, its pickers and its footer | Button, Input | `.tall()` |
 | A dialog that asks one thing (a rename, a worktree): its fields and footer; a dock's filter bar, its search, choices and pickers | Button, Input | `.short()` |
 | Every other button with words: a strip's, a box's, a row's, a secondary action inside dense content (a line of meta text, a transcript block, a chip), a tab, a fold toggle, a pinned card's answers | Button | `.short()`, under a row, so the controls never outweigh what they act on |
@@ -184,12 +184,12 @@ Nothing else is drawn see-through.
 ### Pages
 
 A page takes the agent pane. Every page names itself in its head, in the body (`page_head`): its
-name semibold at the chrome size, one line under it at the meta size in the muted ink (its facts
-where it has them, else what the page is for), its actions at the end, and a hairline under the
-whole that says where the page's own content starts; the pane's header above it carries chrome
-alone. Weight, not size, sets the name apart, so every page's head letters as the chrome around it. A box's heading identifies its
-own content. A page is one of two kinds, chosen by what it holds, and the kind decides its width
-and its density, never its head:
+name semibold at the chrome size, one line under it at the meta size in the muted ink (what the page
+is for, then its facts where it has them), its actions at the end, and a hairline under the whole
+that says where the page's own content starts; the pane's header above it carries chrome alone.
+Weight, not size, sets the name apart, so every page's head letters as the chrome around it. A box's
+heading identifies its own content. A page is one of two kinds, chosen by what it holds, and the
+kind decides its width and its density, never its head:
 
 - a **column page** holds fields, boxes or one thing read in full (a project's page, the
   overview, Tasks, Schedules, a task, Settings, Workflows' grid of cards); a workflow opened from

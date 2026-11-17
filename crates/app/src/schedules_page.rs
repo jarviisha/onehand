@@ -338,12 +338,11 @@ impl Render for SchedulesPage {
             .cloned()
             .collect();
         let on = mine.iter().filter(|s| s.on).count();
-        // With none yet, the head says what a schedule is for instead.
-        let facts = if mine.is_empty() {
-            "Start tasks on a cadence you choose.".to_string()
-        } else {
-            format!("{on} on · {} off", mine.len() - on)
-        };
+        // What a schedule is for, then how many are on and off once any are.
+        let mut facts = SCHEDULES_ARE_FOR.to_string();
+        if !mine.is_empty() {
+            facts.push_str(&format!(" · {on} on · {} off", mine.len() - on));
+        }
         let left_out = mine.len().saturating_sub(SCHEDULES_SHOWN);
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -556,6 +555,10 @@ fn schedule_row(
 }
 
 /// What the list says with nothing in it: where schedules are kept.
+/// What a schedule is for: the Schedules page's line under its name, and a
+/// new schedule's while it has nothing of its own to say.
+const SCHEDULES_ARE_FOR: &str = "Start tasks on a cadence you choose";
+
 fn nothing_yet(cx: &App) -> impl IntoElement + use<> {
     div()
         .h_flex()

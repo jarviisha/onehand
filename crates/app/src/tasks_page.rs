@@ -247,8 +247,7 @@ impl TasksPage {
             page_head(
                 "Tasks",
                 Some(
-                    "Agent work started by hand, by a schedule or from an issue."
-                        .into_any_element(),
+                    "Agent work started by hand, by a schedule or from an issue".into_any_element(),
                 ),
                 Vec::new(),
                 cx,

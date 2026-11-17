@@ -197,6 +197,10 @@ pub(in crate::workflows_page) fn editor_head(
         );
     }
     crate::page_parts::page_head(title, Some(facts.into_any_element()), actions, cx)
+        // No hairline of its own: the edge over the editor's columns, which
+        // their own edges meet, already parts the head from them.
+        .border_b_0()
+        .pb_0()
         .into_any_element()
 }
 

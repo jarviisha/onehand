@@ -536,7 +536,7 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             None,
             [crate::page_parts::page_head(
                 "Settings",
-                Some("How onehand looks and works, kept in onehand.toml.".into_any_element()),
+                Some("How onehand looks and works, kept in onehand.toml".into_any_element()),
                 Vec::new(),
                 cx,
             )

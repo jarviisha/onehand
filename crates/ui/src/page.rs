@@ -15,13 +15,13 @@ use gpui_component::{ActiveTheme as _, StyledExt as _};
 
 /// A page's head, in its body: the page's name in the chrome size's
 /// semibold, a line under it in the muted ink at the meta size (what the page
-/// is for, or its facts), and its actions at the end, each `.short()`; a
+/// is for, then its facts), and its actions at the end, each `.short()`; a
 /// hairline under the whole, which says where the page's own content starts.
 /// Weight, not size, sets the name apart, so a page's head letters as the
 /// chrome around it does. The pane's header above it carries only chrome.
 pub fn page_head(
     title: impl Into<SharedString>,
-    facts: Option<AnyElement>,
+    line: Option<AnyElement>,
     actions: Vec<AnyElement>,
     cx: &App,
 ) -> Div {
@@ -46,11 +46,11 @@ pub fn page_head(
                         .font_semibold()
                         .child(title.into()),
                 )
-                .children(facts.map(|facts| {
+                .children(line.map(|line| {
                     div()
                         .text_xs()
                         .text_color(cx.theme().muted_foreground)
-                        .child(facts)
+                        .child(line)
                 })),
         )
         .child(

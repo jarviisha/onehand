@@ -74,7 +74,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A dialog's title row | `title_row` | `crates/app/src/dialogs.rs` |
 | A form field | `field` (its line about the setting in meta text) | `crates/ui/src/field.rs`, re-exported by `crates/app/src/settings.rs` |
 | A Settings group, a box at `radius_lg` with its heading inside (`lead_section` the same, for the first), a Settings row (its controls wrap under its words when narrow), a group's rows parted by hairlines | `section`, `lead_section`, `list_row`, `list_rows` | `crates/app/src/settings.rs` |
-| A page's head, and the top it stays in over what scrolls | `page_head(title, facts, actions, cx)`, `page_top(width, parts, cx)` | `crates/ui/src/page.rs`, re-exported by `crates/app/src/page_parts.rs` |
+| A page's head, and the top it stays in over what scrolls | `page_head(title, line, actions, cx)`, `page_top(width, parts)` | `crates/ui/src/page.rs`, re-exported by `crates/app/src/page_parts.rs` |
 | A page's box and title row, a list section (a box too), rows parted by hairlines, two boxes to a row | `page_card`, `card_title`, `ruled(rows, cx)`, `pair` | `crates/app/src/page_parts.rs` |
 | A page's project filter: *All projects*, then each project, the one in force checked | `project_filter(id, name, projects, current, size, pick, cx)` (a `picker` over `menu_below`), `ALL_PROJECTS` | `crates/app/src/page_parts.rs` |
 | A page form's problems, or that it is only read, along the page's foot | `foot_bar(icon, base, lines, cx)` (the tint of `base`, the mark slotted on the first line) | `crates/app/src/page_parts.rs` |

@@ -131,7 +131,12 @@ pub(super) fn head(
     });
     crate::page_parts::page_head(
         title,
-        (!facts.is_empty()).then(|| facts.join(" · ").into_any_element()),
+        // A new schedule, with nothing yet to say of itself, says what it is for.
+        Some(if facts.is_empty() {
+            super::SCHEDULES_ARE_FOR.into_any_element()
+        } else {
+            facts.join(" · ").into_any_element()
+        }),
         actions,
         cx,
     )

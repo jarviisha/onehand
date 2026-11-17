@@ -562,7 +562,7 @@ impl WorkspacePage {
                 Some(PAGE_WIDE),
                 [page_head(
                     "Overview",
-                    Some("What runs in this workspace, and what waits on you.".into_any_element()),
+                    Some("What runs in this workspace, and what waits on you".into_any_element()),
                     Vec::new(),
                     cx,
                 )

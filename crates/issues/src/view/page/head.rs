@@ -299,7 +299,7 @@ impl IssuesView {
             onehand_ui::page_head(
                 "Issues",
                 Some(
-                    "The issues of every project in this workspace, and the work on them."
+                    "The issues of every project in this workspace, and the work on them"
                         .into_any_element(),
                 ),
                 vec![actions.into_any_element()],

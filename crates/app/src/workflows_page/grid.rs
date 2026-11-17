@@ -18,7 +18,6 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::InputState;
 use gpui_component::{ActiveTheme, IconName, StyledExt};
 use onehand_core::workflow::{self as core, StepKind};
-
 use onehand_ui::ShortIcon as _;
 use std::path::PathBuf;
 
@@ -84,8 +83,8 @@ pub(super) fn head(
 ) -> [AnyElement; 2] {
     let count = crate::workflow::templates(cx).len();
     let facts = match count {
-        1 => "1 workflow".to_string(),
-        n => format!("{n} workflows"),
+        1 => "The steps a task runs through · 1 workflow".to_string(),
+        n => format!("The steps a task runs through · {n} workflows"),
     };
     let more = {
         let handle = handle.clone();
