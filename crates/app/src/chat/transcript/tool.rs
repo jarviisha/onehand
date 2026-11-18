@@ -95,8 +95,17 @@ pub(super) fn tool(
         }
     };
 
-    let row = step_row(t, &presented, &root, ("tool", fold_key(target)).into(), cx)
-        .fold(detail.is_some().then_some(open));
+    // Its turn over, a failure in it is a record rather than an alarm.
+    let past = !session.read(cx).chat().in_running_turn(target);
+    let row = step_row(
+        t,
+        &presented,
+        &root,
+        ("tool", fold_key(target)).into(),
+        past,
+        cx,
+    )
+    .fold(detail.is_some().then_some(open));
 
     div()
         .v_flex()
@@ -110,6 +119,38 @@ pub(super) fn tool(
         )
 }
 
+/// The ink a step's end words take.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum StepInk {
+    Danger,
+    Muted,
+}
+
+/// What a settled step says at its row's end, and in what ink: a failure's
+/// code, or the word where there is none, in the danger ink while its turn
+/// runs (`past` false) and the muted ink after; *stopped* always muted, since
+/// nothing went wrong; nothing for a step that ended well or still runs.
+pub(super) fn step_end(
+    status: ToolStatus,
+    exit_code: Option<i32>,
+    past: bool,
+) -> Option<(String, StepInk)> {
+    match status {
+        ToolStatus::Failed => Some((
+            match exit_code {
+                Some(code) => format!("exit {code}"),
+                None => "failed".to_string(),
+            },
+            match past {
+                true => StepInk::Muted,
+                false => StepInk::Danger,
+            },
+        )),
+        ToolStatus::Stopped => Some(("stopped".to_string(), StepInk::Muted)),
+        ToolStatus::Pending | ToolStatus::InProgress | ToolStatus::Completed => None,
+    }
+}
+
 /// How long a step runs before its row shows its own clock.
 const LONG_STEP_SECS: u64 = 10;
 
@@ -120,6 +161,8 @@ pub(super) fn step_row(
     presented: &activity::Presentation,
     root: &Path,
     id: gpui::ElementId,
+    // Whether the turn it ran in is over.
+    past: bool,
     cx: &App,
 ) -> ActivityRow {
     let (added, removed) = t
@@ -144,13 +187,13 @@ pub(super) fn step_row(
     // failure arriving as a plain tool call has nothing but the word -- and
     // printing `failed` over a step that told us it exited 101 throws away the
     // one thing that says *what* went wrong.
-    let failure = (t.call.status == ToolStatus::Failed).then(|| {
+    let failure = step_end(t.call.status, t.exit_code, past).map(|(words, ink)| {
         row_note(
-            match t.exit_code {
-                Some(code) => format!("exit {code}"),
-                None => "failed".to_string(),
+            words,
+            match ink {
+                StepInk::Danger => crate::theme::status_ink(cx).danger,
+                StepInk::Muted => cx.theme().muted_foreground,
             },
-            crate::theme::status_ink(cx).danger,
         )
     });
     // A step that has been going a while says for how long, so a long one
