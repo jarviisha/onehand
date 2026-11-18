@@ -5,12 +5,25 @@
 use super::super::{carry, drive};
 use super::session_here_of_lead;
 use gpui::App;
+use onehand_core::chat::drive::Closing;
+use onehand_core::control::drive::CloseAsks;
 
 pub(crate) use onehand_core::control::workers::Worker;
 
 /// The lead of session `uid`, while that is a worker.
 pub(crate) fn lead_of(uid: u64) -> Option<u64> {
     drive().lead_of(uid)
+}
+
+/// What closing session `uid` asks first, `chat` being what its own chat
+/// asks.
+pub(crate) fn close_asks(uid: u64, chat: Closing) -> CloseAsks {
+    drive().close_asks(uid, chat)
+}
+
+/// What closing lead `lead` with its workers closes, in order.
+pub(crate) fn close_all(lead: u64) -> Vec<u64> {
+    drive().close_all(lead)
 }
 
 /// Lead `lead`'s workers, opening or open, oldest first.

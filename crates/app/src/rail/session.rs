@@ -17,6 +17,8 @@ use gpui::{
 use gpui_component::menu::{ContextMenuExt as _, PopupMenu};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use onehand_core::chat::drive::Closing;
+use onehand_core::control::drive::CloseAsks;
 use onehand_ui::mark_slot;
 
 /// What a state says on hover: what it means, and what to do about it.
@@ -212,16 +214,21 @@ fn session_menu(
         )
         .separator()
         // A plain word: the conversation is kept and can be resumed, so
-        // closing takes nothing that cannot come back.
-        .item(crate::controls::menu_item("Close session").on_click(
-            move |_, window, cx: &mut App| {
+        // closing takes nothing that cannot come back. A lead's always asks
+        // whether its workers close with it, and says so.
+        .item(
+            crate::controls::menu_item(match crate::control::close_asks(uid, Closing::Now) {
+                CloseAsks::Workers(_) => "Close session…",
+                CloseAsks::Now | CloseAsks::Turn => "Close session",
+            })
+            .on_click(move |_, window, cx: &mut App| {
                 close
                     .update(cx, |shell: &mut Shell, cx| {
                         shell.close_session(root_idx, session_idx, window, cx);
                     })
                     .ok();
-            },
-        ))
+            }),
+        )
         // On a host, closing only stops watching; this stops its agent there.
         .when_some(host.clone(), |menu, host| {
             let words = SharedString::from(format!("End on {host}…"));

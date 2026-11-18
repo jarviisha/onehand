@@ -22,10 +22,10 @@ use super::super::turns::Last;
 use super::super::workers::Target;
 use super::super::workers::{offered, whose, Whose};
 use super::{
-    this_run, Begun, Closed, ControlDrive, Effect, Found, Open, Pending, Phase, ResumeRefused,
-    Worker, KEPT_CLOSED,
+    this_run, Begun, CloseAsks, Closed, ControlDrive, Effect, Found, Open, Pending, Phase,
+    ResumeRefused, Worker, KEPT_CLOSED,
 };
-use crate::chat::drive::Intake;
+use crate::chat::drive::{Closing, Intake};
 use std::path::PathBuf;
 
 impl ControlDrive {
@@ -76,6 +76,26 @@ impl ControlDrive {
         let mut workers: Vec<(u64, Worker)> = open.chain(opening).collect();
         workers.sort_by_key(|(seq, _)| *seq);
         workers.into_iter().map(|(_, worker)| worker).collect()
+    }
+
+    /// What closing session `uid` asks first, `chat` being what its own
+    /// chat asks.
+    pub fn close_asks(&self, uid: u64, chat: Closing) -> CloseAsks {
+        let workers: Vec<u64> = self.workers_of(uid).iter().map(|w| w.uid).collect();
+        match (workers.is_empty(), chat) {
+            (false, _) => CloseAsks::Workers(workers),
+            (true, Closing::Ask) => CloseAsks::Turn,
+            (true, Closing::Now) => CloseAsks::Now,
+        }
+    }
+
+    /// What closing lead `lead` with its workers closes, in order: its
+    /// workers first, while it is still there to be shown in place of one on
+    /// screen, then itself.
+    pub fn close_all(&self, lead: u64) -> Vec<u64> {
+        let mut uids: Vec<u64> = self.workers_of(lead).iter().map(|w| w.uid).collect();
+        uids.push(lead);
+        uids
     }
 
     /// Whether session `uid` may leave its conversation to choose another:

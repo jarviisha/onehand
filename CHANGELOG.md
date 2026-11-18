@@ -203,8 +203,9 @@ minor bump may break any of them.
   you*. A worker opens in the agent pane as any session, a band over its composer naming the lead
   that coordinates it, with *Back to lead*. One line above the lead's composer counts its
   workers, how they stand and who needs you; pressed, it shows the most urgent one. Writing to a
-  worker takes it from the lead; *Give back to the lead* on its band returns it. A lead closing
-  puts its workers back under their own project.
+  worker takes it from the lead; *Give back to the lead* on its band returns it. Closing a lead
+  asks first whether its workers close with it; closed alone, it puts them back under their own
+  project.
 - A permission card shows its command whole up to about ten lines, then *Show all N lines*,
   rather than in a box that scrolls.
 - A worker is named for what it works on when its lead gives a name, else for its folder, never

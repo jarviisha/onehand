@@ -272,6 +272,11 @@ offered `open_worker`, and `open_session` takes none of its further arguments.
   at once. A lead that went while its worker was opening abandons the open: it fails as above,
   its prompt never sent. A person watching a worker whose open failed is put back on what is
   active.
+- **The person closing a lead asks first** while it leads workers, opening or open, whatever runs:
+  the question names each worker, with *waiting on you* or *a turn is running* beside one whose
+  close would stop that, and its row's menu reads *Close session…*. *Close all*, which Enter
+  answers, closes every worker as the person's *Close session* does,
+  then the lead; *Close the lead only* closes the lead alone.
 - **The lead closing or lost** drops its relations: its workers stay open, owned by nobody, and
   are the person's to close. Switched off, a lead abandons its opens in progress, though not its
   workers coming back; its open workers keep their relation, unusable until it is switched on
