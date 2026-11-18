@@ -332,12 +332,12 @@ pub(super) fn carry_one(effect: Effect, cx: &mut App) {
         Effect::Changed => cx.refresh_windows(),
         Effect::ToolsChanged(uid) => super::tell_changed(uid),
         Effect::Keep {
-            lead,
+            lead: _,
             kept,
             dir,
             moved_from,
             last,
-        } => super::keeping::keep(lead, kept, dir, moved_from, last, cx),
+        } => super::keeping::keep(kept, dir, moved_from, last, cx),
         Effect::Send { uid, turn, text } => turns::send_now(uid, turn, text, cx),
         Effect::TurnAnswer { uid, outcome } => turns::answered(uid, outcome, cx),
     }

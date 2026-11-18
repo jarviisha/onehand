@@ -306,8 +306,10 @@ offered `open_worker`, and `open_session` takes none of its further arguments.
   session…*) leaves the ended ones with the conversation they ended in.
 - **Coming back.** When a session opens a lead's conversation, from the history, the project
   page or *Resume in this session…*, each worker its closing released and still open is that
-  session's worker again at once, as it stands rather than as the file has it: listed under it,
-  its relation, its hold and its ended workers' handles the new session's, counted under its cap.
+  session's worker again at once, in whatever window it is open, as it stands rather than as the
+  file has it: listed under it in that window (a row of its own in another), its relation, its
+  hold and its ended workers' handles the new session's, counted under its cap. A released worker
+  whose window closed since is not open, and comes back as below.
   Every other worker kept there comes back as a worker of that
   session, in the order kept, through the checks an open runs: its folder resolved again off the
   UI thread, refused when a session of any window or a process works in it or another worker
