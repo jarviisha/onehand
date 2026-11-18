@@ -528,6 +528,16 @@ impl Thought {
     pub fn is_running(&self) -> bool {
         self.elapsed_secs.is_none() && self.started.is_some()
     }
+
+    /// What its line says: that it is thinking, or that it thought and for
+    /// how long. One that took under a second has no duration worth a word.
+    pub fn label(&self) -> String {
+        match self.elapsed_secs {
+            _ if self.is_running() => "Thinking…".to_string(),
+            None | Some(0) => "Thought".to_string(),
+            Some(secs) => format!("Thought for {}", crate::duration(secs)),
+        }
+    }
 }
 
 /// Where one agent block sits in its turn: whether it is the last (which
@@ -681,6 +691,15 @@ pub struct ToolItem {
 }
 
 impl ToolItem {
+    /// How long the step has been going, while it is: `None` before it
+    /// starts, once it has settled, and for one with no start to count from.
+    pub fn running_secs(&self) -> Option<u64> {
+        (self.call.status == ToolStatus::InProgress)
+            .then_some(self.started)
+            .flatten()
+            .map(|started| started.elapsed().as_secs())
+    }
+
     /// Stop the step's clock, once: a later update to a settled step must not
     /// restart it.
     pub(crate) fn settle_clock(&mut self, now: Option<Now>) {

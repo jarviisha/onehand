@@ -5,9 +5,10 @@
 //! collapsed transcript; the exact command remains available in the expanded
 //! detail surface.
 
-use crate::acp::{ToolContent, ToolKind};
+use crate::acp::{ToolContent, ToolKind, ToolStatus};
 use crate::chat::model::{ChatItem, ToolItem};
 use crate::chat::redact;
+use std::path::Path;
 
 /// The first line of `s`, trimmed and clipped to `max` characters.
 ///
@@ -119,6 +120,66 @@ pub struct Presentation {
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) metadata: Option<String>,
     pub kind: ActivityKind,
+}
+
+impl Presentation {
+    /// The verb for a step in `status`: *Waiting* before it starts, the
+    /// present form while it runs, what it did once it has settled.
+    ///
+    /// **One rule for every place a step is named**, so its own row, the line
+    /// standing for its cluster and anything else that names it cannot
+    /// disagree about whether it is over.
+    pub fn verb(&self, status: ToolStatus) -> &'static str {
+        match status {
+            ToolStatus::Pending => "Waiting",
+            ToolStatus::InProgress => doing(self.action),
+            ToolStatus::Completed | ToolStatus::Failed => self.action,
+        }
+    }
+}
+
+/// The present form of a verb a step is classified as.
+fn doing(action: &str) -> &'static str {
+    match action {
+        "Inspected" => "Reading",
+        "Searched" => "Searching",
+        "Fetched" => "Fetching",
+        "Created" => "Creating",
+        "Edited" => "Editing",
+        "Deleted" => "Deleting",
+        "Moved" => "Moving",
+        "Changed files" => "Changing files",
+        "Reasoned" => "Thinking",
+        "Used tool" => "Using tool",
+        "Ran" => "Running",
+        "Ran tests" => "Running tests",
+        "Checked" => "Checking",
+        "Built" => "Building",
+        _ => "Working",
+    }
+}
+
+/// A path as a line shows it: from the project's root where it lies under
+/// it, from the home directory (`~`) where it lies under that, and whole
+/// otherwise.
+///
+/// **One rule for every line that names a file.** Anything that is not a
+/// path comes back unchanged: a command holds spaces, and cutting one would
+/// leave the line quoting something nobody ran.
+pub fn display_path(root: &Path, value: &str) -> String {
+    if value.contains(char::is_whitespace) {
+        return value.to_string();
+    }
+    let path = Path::new(value);
+    if let Ok(inside) = path.strip_prefix(root) {
+        if !inside.as_os_str().is_empty() {
+            return inside.to_string_lossy().into_owned();
+        }
+    }
+    match dirs::home_dir().and_then(|home| path.strip_prefix(home).ok().map(Path::to_path_buf)) {
+        Some(under) if !under.as_os_str().is_empty() => format!("~/{}", under.to_string_lossy()),
+        _ => value.to_string(),
+    }
 }
 
 /// How a tool call reads on a line: its verb, its subject and its kind.
@@ -511,8 +572,85 @@ fn quoted_argument_span(line: &str) -> Option<(String, usize)> {
 #[cfg(test)]
 mod tests {
     use super::{
-        execute_presentation, presentation, short_path, strip_redundant_prefix, ActivityKind,
+        display_path, execute_presentation, presentation, short_path, strip_redundant_prefix,
+        ActivityKind,
     };
+    use std::path::Path;
+
+    fn tool(kind: ToolKind, title: &str) -> ToolItem {
+        ToolItem::new(ToolCall {
+            id: "1".into(),
+            title: title.into(),
+            description: None,
+            kind,
+            status: ToolStatus::Completed,
+            content: Vec::new(),
+        })
+    }
+
+    #[test]
+    fn a_step_reads_in_the_tense_its_status_is() {
+        let shown = presentation(&tool(ToolKind::Execute, "cargo run"));
+        assert_eq!(shown.verb(ToolStatus::Pending), "Waiting");
+        assert_eq!(shown.verb(ToolStatus::InProgress), "Running");
+        assert_eq!(shown.verb(ToolStatus::Completed), "Ran");
+        assert_eq!(shown.verb(ToolStatus::Failed), "Ran");
+        let read = presentation(&tool(ToolKind::Read, "Read src/a.rs"));
+        assert_eq!(read.verb(ToolStatus::InProgress), "Reading");
+    }
+
+    /// Every verb a step can be classified as has a present form of its own;
+    /// a new one added without it would read *Working*.
+    #[test]
+    fn every_verb_has_a_present_form() {
+        for action in [
+            "Inspected",
+            "Searched",
+            "Fetched",
+            "Created",
+            "Edited",
+            "Deleted",
+            "Moved",
+            "Changed files",
+            "Reasoned",
+            "Used tool",
+            "Ran",
+            "Ran tests",
+            "Checked",
+            "Built",
+        ] {
+            assert_ne!(super::doing(action), "Working", "{action}");
+        }
+        for command in [
+            "cargo test",
+            "cargo clippy",
+            "cargo build",
+            "rg x",
+            "cat a",
+            "curl u",
+            "rm a",
+            "mkdir a",
+            "ls",
+        ] {
+            let action = execute_presentation(command).action;
+            assert_ne!(super::doing(action), "Working", "{command}: {action}");
+        }
+    }
+
+    #[test]
+    fn a_path_is_shortened_one_way() {
+        let root = Path::new("/work/app");
+        assert_eq!(display_path(root, "/work/app/src/a.rs"), "src/a.rs");
+        assert_eq!(display_path(root, "/work/app"), "/work/app");
+        assert_eq!(display_path(root, "cargo test -p a/b"), "cargo test -p a/b");
+        assert_eq!(display_path(root, "/etc/hosts"), "/etc/hosts");
+        let home = dirs::home_dir().expect("a home directory");
+        let outside = home.join("notes/x.md");
+        assert_eq!(
+            display_path(root, outside.to_str().unwrap()),
+            "~/notes/x.md"
+        );
+    }
     use crate::acp::{ToolCall, ToolKind, ToolStatus};
     use crate::chat::model::ToolItem;
 
