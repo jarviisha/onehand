@@ -106,7 +106,8 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 - **The app's chrome without an API key:** add this agent in Settings ▸ Agents or `onehand.toml`.
   One prompt plays a whole transcript over about 12s: every block kind, a parked permission and
   question cards. Every other turn ends on a JSON-RPC error on purpose. `fast` in the prompt
-  lands it at once.
+  lands it at once. `work` in the prompt plays a turn at work instead, held for about
+  45s: a live thought, a plan with an item in hand, a command left running, then the answer.
 
   ```toml
   [[agents]]
