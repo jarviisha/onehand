@@ -50,27 +50,23 @@ impl RowMark {
         }
     }
 
-    /// The glyph at the head of a row: the kind of work it was, or a spinner
-    /// in the accent while it runs. How a settled step ended is said in words
-    /// at the row's end, so the glyph only ever says what the work was.
-    fn draw(self, kind: SharedString, cx: &App) -> gpui::AnyElement {
-        match self {
-            Self::Running => Spinner::new().xsmall().color(accent(cx)).into_any_element(),
-            Self::Waiting | Self::Done | Self::Recovered | Self::Failed | Self::Refused => {
-                Icon::empty()
-                    .path(kind)
-                    .xsmall()
-                    .text_color(cx.theme().muted_foreground)
-                    .into_any_element()
-            }
-        }
+    /// The glyph at the head of a row: the kind of work, in every state.
+    /// That a step is running is told by its words, and how a settled one
+    /// ended in words at the row's end, so the glyph only ever says what the
+    /// work is and never changes under the reader.
+    fn draw(kind: SharedString, cx: &App) -> gpui::AnyElement {
+        Icon::empty()
+            .path(kind)
+            .xsmall()
+            .text_color(cx.theme().muted_foreground)
+            .into_any_element()
     }
 }
 
 /// One row of an activity block, and the one shape every step takes.
 ///
 /// **One anatomy on every row.** Left to right: the arrow's column, the kind
-/// of work (a spinner while it runs), what was done, what it was done to, and
+/// of work, what was done (shimmering while it still is), what it was done to, and
 /// whatever is worth saying at the end. Adding a kind of activity must not add
 /// a column; only what the row opens into differs.
 pub(in crate::chat::transcript) struct ActivityRow {
@@ -193,7 +189,8 @@ pub(in crate::chat::transcript) fn activity_row(
         E: Styled + ParentElement,
     {
         let muted = cx.theme().muted_foreground;
-        row_div
+        let waiting = row.mark == RowMark::Waiting;
+        let line = row_div
             .h_flex()
             .items_center()
             .gap_2()
@@ -202,33 +199,54 @@ pub(in crate::chat::transcript) fn activity_row(
             .text_size(TEXT_SM)
             .text_color(muted)
             .child(chevron_slot(row.fold))
-            .child(row.mark.draw(row.kind, cx))
-            .child(div().flex_none().whitespace_nowrap().child(row.verb))
-            .children(row.object.map(|object| {
-                div()
-                    .min_w_0()
-                    .h_flex()
-                    .items_center()
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .when(!object.words, |o| {
-                        o.font_family(cx.theme().mono_font_family.clone())
-                    })
-                    .text_color(match (row.struck, object.words) {
-                        (true, _) => muted,
-                        (false, true) => crate::theme::meta_ink(cx),
-                        (false, false) => cx.theme().foreground,
-                    })
-                    .when(row.struck, |o| o.line_through())
-                    .children(object.dir.map(|dir| {
-                        div()
-                            .flex_none()
-                            .text_color(crate::theme::meta_ink(cx))
-                            .child(dir)
-                    }))
-                    .child(div().min_w_0().truncate().child(object.name))
-            }))
-            .children(row.meta)
+            .child(RowMark::draw(row.kind, cx));
+        let line = match row.mark {
+            // What runs: its verb and what it is done to as one line, a
+            // band of brighter ink crossing both.
+            RowMark::Running => {
+                let mut runs = vec![WorkingRun::words(row.verb)];
+                runs.extend(row.object.map(|object| {
+                    let whole = format!("{}{}", object.dir.unwrap_or_default(), object.name);
+                    match object.words {
+                        true => WorkingRun::words(whole),
+                        false => WorkingRun::mono(whole),
+                    }
+                }));
+                let id = gpui::ElementId::NamedChild(
+                    std::sync::Arc::new(row.id.clone()),
+                    "working".into(),
+                );
+                line.child(working_text(id, runs, cx))
+            }
+            _ => line
+                .child(div().flex_none().whitespace_nowrap().child(row.verb))
+                .children(row.object.map(|object| {
+                    div()
+                        .min_w_0()
+                        .h_flex()
+                        .items_center()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .when(!object.words, |o| {
+                            o.font_family(cx.theme().mono_font_family.clone())
+                        })
+                        // One waiting its turn stays quiet end to end.
+                        .text_color(match (row.struck || waiting, object.words) {
+                            (true, _) => muted,
+                            (false, true) => crate::theme::meta_ink(cx),
+                            (false, false) => cx.theme().foreground,
+                        })
+                        .when(row.struck, |o| o.line_through())
+                        .children(object.dir.map(|dir| {
+                            div()
+                                .flex_none()
+                                .text_color(crate::theme::meta_ink(cx))
+                                .child(dir)
+                        }))
+                        .child(div().min_w_0().truncate().child(object.name))
+                })),
+        };
+        line.children(row.meta)
     }
 
     match interactive {

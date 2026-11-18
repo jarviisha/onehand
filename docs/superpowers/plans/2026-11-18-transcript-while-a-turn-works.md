@@ -183,7 +183,7 @@ fn the_band_crosses_the_text_then_rests() {
 
 #[test]
 fn the_band_is_cut_on_characters() {
-    let text = "Đang chạy 日本語 🙂 xong";
+    let text = /* a line mixing accented Latin, CJK and an emoji */;
     for step in 0..100 {
         if let Some(lit) = band(text.chars().count(), step as f32 / 100.) {
             let _ = byte_range(text, lit); // must not panic

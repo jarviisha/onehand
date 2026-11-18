@@ -1,8 +1,8 @@
 use super::fold_key;
 use super::metrics::{FOLD_INDENT, TEXT_SM};
 use super::parts::{
-    ActivityRow, Object, RowMark, activity_row, chevron, detail_well, fold_box, fold_line,
-    line_counts, plain_box, show_more, sideways,
+    ActivityRow, Object, RowMark, WorkingRun, activity_row, chevron, detail_well, fold_box,
+    fold_line, line_counts, plain_box, show_more, sideways, working_text,
 };
 use super::tool::diff_rows;
 use crate::chat::session::ChatSession;
@@ -81,7 +81,7 @@ pub fn cluster(
 }
 
 /// The collapsed line, which is also the control that opens the rows: the
-/// arrow, a spinner while anything runs, the sentence, what failed in the
+/// arrow, the sentence, what failed in the
 /// danger ink, the lines changed and the time taken.
 fn cluster_line(
     plan: &crate::chat::viewport::ActivityPlan,
@@ -92,9 +92,25 @@ fn cluster_line(
 ) -> gpui::AnyElement {
     let summary = &plan.summary;
     let running = summary.running.is_some();
-    fold_line(id, open, running, cx)
+    let words = cluster_words(summary, open);
+    let doing = gpui::ElementId::NamedChild(std::sync::Arc::new(id.clone()), "doing".into());
+    let both = words.shimmer.is_some() && !words.plain.is_empty();
+    fold_line(id, open, cx)
         .on_click(move |event, window, cx| on_click(event, window, cx))
-        .child(div().min_w_0().truncate().child(summary.plain()))
+        .children(
+            words
+                .shimmer
+                .map(|doing_now| working_text(doing, vec![WorkingRun::words(doing_now)], cx)),
+        )
+        .when(both, |line| line.child(div().flex_none().child("·")))
+        .when(!words.plain.is_empty(), |line| {
+            line.child(match both {
+                // Beside what runs, what settled keeps its place and the
+                // running words give way.
+                true => div().flex_none().whitespace_nowrap().child(words.plain),
+                false => div().min_w_0().truncate().child(words.plain),
+            })
+        })
         // In the danger ink while the cluster runs; once it has settled the
         // count is the record, in the line's own ink.
         .when(summary.errors > 0, |line| {
@@ -119,6 +135,47 @@ fn cluster_line(
                 .child(onehand_core::duration(summary.seconds))
         }))
         .into_any_element()
+}
+
+/// What a cluster's line says: the step in hand, drawn as what runs, and the
+/// rest in the line's own ink.
+pub(super) struct ClusterWords {
+    pub(super) shimmer: Option<String>,
+    pub(super) plain: String,
+}
+
+/// **The step in hand is named once.** Opened, its own row is on screen, so
+/// the line says only what has settled; folded, nothing else would say it, so
+/// the line leads with it and what settled follows.
+pub(super) fn cluster_words(
+    summary: &onehand_core::chat::ClusterSummary,
+    open: bool,
+) -> ClusterWords {
+    match (summary.doing(), open) {
+        (None, _) => ClusterWords {
+            shimmer: None,
+            plain: summary.plain(),
+        },
+        (Some(_), true) => ClusterWords {
+            shimmer: None,
+            plain: summary.settled(),
+        },
+        (Some(doing), false) => ClusterWords {
+            shimmer: Some(doing),
+            plain: match summary.done.is_empty() {
+                true => String::new(),
+                // Mid-line, so without the capital the sentence alone opens on.
+                false => {
+                    let settled = summary.settled();
+                    let mut chars = settled.chars();
+                    chars
+                        .next()
+                        .map(|first| first.to_lowercase().collect::<String>() + chars.as_str())
+                        .unwrap_or_default()
+                }
+            },
+        },
+    }
 }
 
 /// How many file rows a turn's summary lists before the rest fold into one.
@@ -162,7 +219,7 @@ pub(in crate::chat) fn turn_summary(
     // how two elements come to share one piece of retained state.
     let key = fold_key(anchor);
 
-    let head = fold_line(("turn-summary", key), open, false, cx)
+    let head = fold_line(("turn-summary", key), open, cx)
         .on_click(move |event, window, cx| on_toggle(event, window, cx))
         .child(
             div()

@@ -1,13 +1,12 @@
 use super::fold_key;
 use super::metrics::{FOLD_INDENT, TEXT_SM};
-use super::parts::{accent, fold_box, fold_line};
+use super::parts::{WorkingRun, fold_box, fold_line, working_text};
 use crate::chat::session::ChatSession;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Entity, HighlightStyle, IntoElement, ParentElement, StatefulInteractiveElement, Styled,
     StyledText, div,
 };
-use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::acp::PlanStatus;
 use onehand_core::chat::{PlanItem, TranscriptItemId};
@@ -39,7 +38,7 @@ pub(super) fn plan(
     // Only the running turn's plan is worked through now.
     let busy = session.read(cx).chat().in_running_turn(target);
 
-    let line = fold_line(("plan", fold_key(target)), open, false, cx)
+    let line = fold_line(("plan", fold_key(target)), open, cx)
         .on_click({
             let session = session.clone();
             move |_, _, cx: &mut App| {
@@ -63,44 +62,55 @@ pub(super) fn plan(
                 .gap_1()
                 .pl(FOLD_INDENT)
                 .text_size(TEXT_SM)
-                .children(p.entries.iter().take(MAX_TODO_ITEMS).map(|entry| {
-                    // **The glyph changes, never the row**: a plan is
-                    // worked through while it is on screen.
-                    // A finished step is calm, a muted check; the one in
-                    // hand turns while the turn runs and rests after.
-                    let (icon, struck) = match entry.status {
-                        PlanStatus::Completed => (Some(IconName::Check), true),
-                        PlanStatus::InProgress if busy => (None, false),
-                        PlanStatus::InProgress => (Some(IconName::LoaderCircle), false),
-                        PlanStatus::Pending => (Some(IconName::Minus), false),
-                    };
-                    let mark = match icon {
-                        Some(icon) => Icon::new(icon)
-                            .xsmall()
-                            .text_color(muted)
-                            .into_any_element(),
-                        None => Spinner::new().xsmall().color(accent(cx)).into_any_element(),
-                    };
-                    div()
-                        .h_flex()
-                        .items_center()
-                        .gap_2()
-                        .min_w_0()
-                        .child(mark)
-                        .child(
+                .children(
+                    p.entries
+                        .iter()
+                        .take(MAX_TODO_ITEMS)
+                        .enumerate()
+                        .map(|(ix, entry)| {
+                            // **The glyph changes, never the row**: a plan is
+                            // worked through while it is on screen.
+                            // A finished step is calm, a muted check; the one in
+                            // hand keeps a waiting step's mark and its words shimmer
+                            // while the turn runs, resting after.
+                            let (icon, struck) = match entry.status {
+                                PlanStatus::Completed => (IconName::Check, true),
+                                PlanStatus::InProgress if busy => (IconName::Minus, false),
+                                PlanStatus::InProgress => (IconName::LoaderCircle, false),
+                                PlanStatus::Pending => (IconName::Minus, false),
+                            };
+                            let in_hand = busy && entry.status == PlanStatus::InProgress;
+                            let mark = Icon::new(icon).xsmall().text_color(muted);
                             div()
+                                .h_flex()
+                                .items_center()
+                                .gap_2()
                                 .min_w_0()
-                                .truncate()
-                                .text_color(match struck {
-                                    true => muted,
-                                    false => cx.theme().foreground,
+                                .child(mark)
+                                .when(in_hand, |row| {
+                                    row.child(working_text(
+                                        ("plan-in-hand", ix),
+                                        vec![WorkingRun::words(code_spans(&entry.content).0)],
+                                        cx,
+                                    ))
                                 })
-                                // Finished work is struck: the eye skips
-                                // it and lands on what is left.
-                                .when(struck, |row| row.line_through())
-                                .child(label(&entry.content, cx)),
-                        )
-                }))
+                                .when(!in_hand, |row| {
+                                    row.child(
+                                        div()
+                                            .min_w_0()
+                                            .truncate()
+                                            .text_color(match struck {
+                                                true => muted,
+                                                false => cx.theme().foreground,
+                                            })
+                                            // Finished work is struck: the eye skips
+                                            // it and lands on what is left.
+                                            .when(struck, |row| row.line_through())
+                                            .child(label(&entry.content, cx)),
+                                    )
+                                })
+                        }),
+                )
                 .when(hidden > 0, |list| {
                     list.child(
                         div()

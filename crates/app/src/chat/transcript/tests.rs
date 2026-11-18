@@ -192,3 +192,43 @@ fn a_notice_is_a_divider_only_when_it_is_a_remark() {
         }
     );
 }
+
+/// A cluster's line names the step in hand only while it is folded: opened,
+/// that step's own row is on screen saying so.
+#[test]
+fn a_cluster_line_says_what_runs_only_while_folded() {
+    use onehand_core::chat::{ClusterSummary, SummaryPart};
+    let part = |verb: &str, rest: &str| SummaryPart {
+        verb: verb.into(),
+        rest: rest.into(),
+    };
+    let summary = ClusterSummary {
+        running: Some(part("Running", " cargo test")),
+        done: vec![part("edited", " 1 file")],
+        ..Default::default()
+    };
+    let open = super::strip::cluster_words(&summary, true);
+    assert_eq!(open.shimmer, None);
+    assert_eq!(open.plain, "Edited 1 file");
+    let folded = super::strip::cluster_words(&summary, false);
+    assert_eq!(folded.shimmer.as_deref(), Some("Running cargo test"));
+    assert_eq!(folded.plain, "edited 1 file");
+
+    let alone = ClusterSummary {
+        running: Some(part("Running", " cargo test")),
+        ..Default::default()
+    };
+    assert_eq!(super::strip::cluster_words(&alone, true).plain, "Working");
+    assert_eq!(
+        super::strip::cluster_words(&alone, false).plain,
+        "",
+        "nothing settled to add"
+    );
+
+    let settled = ClusterSummary {
+        done: vec![part("Edited", " 1 file")],
+        ..Default::default()
+    };
+    let line = super::strip::cluster_words(&settled, false);
+    assert_eq!((line.shimmer, line.plain.as_str()), (None, "Edited 1 file"));
+}

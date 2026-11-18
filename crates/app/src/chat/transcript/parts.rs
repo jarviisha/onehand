@@ -15,7 +15,6 @@ use gpui::{
 };
 use gpui_component::button::Button;
 use gpui_component::scroll::{ScrollableMask, ScrollbarMode};
-use gpui_component::spinner::Spinner;
 use gpui_component::tag::Tag;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::acp::{ToolKind, ToolStatus};
@@ -289,7 +288,6 @@ pub(super) fn fold_box() -> gpui::Div {
 pub(super) fn fold_line(
     id: impl Into<gpui::ElementId>,
     open: bool,
-    running: bool,
     cx: &App,
 ) -> gpui::Stateful<gpui::Div> {
     let lit = cx.theme().foreground;
@@ -303,10 +301,9 @@ pub(super) fn fold_line(
         .text_size(TEXT_SM)
         .text_color(cx.theme().muted_foreground)
         .hover(move |line| line.text_color(lit))
-        .child(div().w_3().flex_none().map(|slot| match running {
-            true => slot.child(Spinner::new().xsmall().color(accent(cx))),
-            false => slot.child(chevron(open)),
-        }))
+        // The arrow whatever the block is doing: what runs is told by its
+        // words, so nothing in this slot changes as it settles.
+        .child(div().w_3().flex_none().child(chevron(open)))
 }
 
 /// A detail that has outgrown its box, scrolling inside it and nowhere else.
@@ -629,6 +626,8 @@ pub(super) fn card_foot() -> gpui::Div {
 
 mod activity;
 pub(super) use activity::{ActivityRow, Object, RowMark, activity_row};
+mod working;
+pub(in crate::chat) use working::{WorkingRun, working_text};
 
 /// The lines a change added and removed, mono and each side in the ink it
 /// means.
