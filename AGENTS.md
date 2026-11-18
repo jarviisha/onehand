@@ -108,6 +108,7 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   question cards. Every other turn ends on a JSON-RPC error on purpose. `fast` in the prompt
   lands it at once. `work` in the prompt plays a turn at work instead, held for about
   45s: a live thought, a plan with an item in hand, a command left running, then the answer.
+  `limit` plays a short turn the agent ends at its output limit, and its *Continue* plays the rest.
 
   ```toml
   [[agents]]

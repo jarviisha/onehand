@@ -39,7 +39,12 @@
 // enough to look at: a thought still being had, a plan with an item in hand, a
 // command left running for half a minute beside one still pending, then the
 // answer arriving. Fold the cluster while the command runs to see its line
-// name the step. It needs no answer and ends by itself.
+// name the step. It needs no answer and ends by itself; press Stop while the
+// command runs to see a stopped turn.
+//
+// Put a `limit` in the prompt for a short turn the agent ends at its output
+// limit, which is the one ending a person cannot cause; *Continue* on its card
+// plays the rest.
 //
 // It answers `session/set_config_option` and `session/set_mode` by echoing the
 // new state back, so the chips move when they are used, except Max effort,
@@ -626,7 +631,36 @@ function backgroundStart() {
 const THINK = 7000;
 const LONG_RUN = 30000;
 
+// What the app sends when a person continues a turn stopped at a limit.
+const CONTINUED = 'continue from where you stopped';
+
 const step = {
+  // A short turn cut off at the output limit, half way through a sentence.
+  limited() {
+    turn += 1;
+    prose('Going through the release profile one setting at a time.');
+    step_('read', 'Read Cargo.toml');
+    step_('search', 'Search "codegen-units"', { content: text('Cargo.toml:42:codegen-units = 1') });
+    prose('One codegen unit is what makes the link slow, because every crate is');
+    const id = promptId;
+    beat(BEAT, () => send({ jsonrpc: '2.0', id, result: { stopReason: 'max_tokens' } }));
+    promptId = null;
+    play();
+  },
+
+  // The rest of the limited turn, once a person asks for it.
+  continued() {
+    turn += 1;
+    prose(
+      'optimised as one piece. Raising it to 16 trades a little speed for a much ' +
+        'shorter link, which is the trade wanted for a release built this often.',
+    );
+    const id = promptId;
+    beat(BEAT, () => send({ jsonrpc: '2.0', id, result: { stopReason: 'end_turn' } }));
+    promptId = null;
+    play();
+  },
+
   // A turn at work, slowly, and nothing else: the states the full tour passes
   // through in a tenth of a second each.
   working() {
@@ -1030,6 +1064,8 @@ rl.on('line', (line) => {
       // A whole word, so a prompt that only mentions work in passing still
       // gets the tour.
       if (/\bwork\b/.test(said)) return step.working();
+      if (/\blimit\b/.test(said)) return step.limited();
+      if (said.includes(CONTINUED)) return step.continued();
       return step.tools();
     }
   }
