@@ -417,3 +417,53 @@ fn steps_that_ran_side_by_side_are_timed_once() {
     let old = timed("cargo test", 50, None);
     assert_eq!(cluster_summary(&[&build, &old]).seconds, 100);
 }
+
+/// What runs and what has settled are two sentences, so a line can say
+/// either without the other.
+#[test]
+fn a_cluster_says_what_runs_and_what_settled_apart() {
+    let members = [
+        read("a.rs"),
+        run("cargo fmt", ToolStatus::Completed),
+        run("cargo run", ToolStatus::InProgress),
+    ];
+    let summary = cluster_summary(&members.iter().collect::<Vec<_>>());
+    assert_eq!(summary.doing().as_deref(), Some("Running cargo run"));
+    assert_eq!(summary.settled(), "Read 1 file, ran 1 command");
+    assert_eq!(summary.waiting, 0);
+}
+
+/// A cluster with a step in flight and nothing done yet still has a word.
+#[test]
+fn a_cluster_with_nothing_settled_is_working() {
+    let alone = [run("cargo run", ToolStatus::InProgress)];
+    let summary = cluster_summary(&alone.iter().collect::<Vec<_>>());
+    assert_eq!(summary.settled(), "Working");
+    let done = [run("cargo fmt", ToolStatus::Completed)];
+    let summary = cluster_summary(&done.iter().collect::<Vec<_>>());
+    assert_eq!(summary.doing(), None);
+    assert_eq!(summary.settled(), "Ran 1 command");
+    assert_eq!(cluster_summary(&[]).settled(), "");
+}
+
+#[test]
+fn a_step_with_no_subject_leaves_no_gap() {
+    let members = [run("", ToolStatus::InProgress)];
+    let summary = cluster_summary(&members.iter().collect::<Vec<_>>());
+    assert_eq!(summary.doing().as_deref(), Some("Running"));
+}
+
+/// The step in hand leads over one still waiting its turn, which is counted.
+#[test]
+fn a_waiting_step_is_counted_and_does_not_lead() {
+    let members = [
+        run("cargo run", ToolStatus::InProgress),
+        run("cargo doc", ToolStatus::Pending),
+    ];
+    let summary = cluster_summary(&members.iter().collect::<Vec<_>>());
+    assert_eq!(summary.doing().as_deref(), Some("Running cargo run"));
+    assert_eq!(summary.waiting, 1);
+    let queued = [run("cargo doc", ToolStatus::Pending)];
+    let summary = cluster_summary(&queued.iter().collect::<Vec<_>>());
+    assert_eq!(summary.doing().as_deref(), Some("Waiting cargo doc"));
+}

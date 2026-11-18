@@ -262,6 +262,8 @@ pub struct ClusterSummary {
     /// Present tense and first, because a line that opens with what is finished
     /// buries the one part of it that is still changing.
     pub running: Option<SummaryPart>,
+    /// How many steps wait their turn behind the one in hand.
+    pub waiting: usize,
     /// What has been done, in the order the kinds of work first appeared.
     pub done: Vec<SummaryPart>,
     pub errors: usize,
@@ -281,6 +283,38 @@ pub struct ClusterSummary {
 }
 
 impl ClusterSummary {
+    /// What is happening right now, as a sentence of its own: `Running cargo
+    /// test`. `None` once nothing is.
+    pub fn doing(&self) -> Option<String> {
+        self.running
+            .as_ref()
+            .map(|part| format!("{}{}", part.verb, part.rest))
+    }
+
+    /// What has been done, as a sentence of its own, opening on a capital:
+    /// `Read 2 files, ran 1 command`. *Working* while something runs and
+    /// nothing has settled yet, so a line that says only this is never empty
+    /// over work in flight.
+    pub fn settled(&self) -> String {
+        if self.done.is_empty() {
+            return match self.running {
+                Some(_) => "Working".to_string(),
+                None => String::new(),
+            };
+        }
+        let sentence = self
+            .done
+            .iter()
+            .map(|part| format!("{}{}", part.verb, part.rest))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut chars = sentence.chars();
+        match chars.next() {
+            Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            None => sentence,
+        }
+    }
+
     /// The whole sentence as one string, for the places that cannot draw runs
     /// of it separately — a test, a notification, an export.
     pub fn plain(&self) -> String {
@@ -367,7 +401,10 @@ impl Bucket {
 
 /// The present-tense opening for a step still in flight.
 fn running_part(item: &ChatItem) -> SummaryPart {
+    let waiting =
+        matches!(item, ChatItem::Tool(tool) if tool.call.status == crate::acp::ToolStatus::Pending);
     let verb = match Bucket::of(item) {
+        _ if waiting => "Waiting",
         Some(Bucket::Read) => "Reading",
         Some(Bucket::Search) => "Searching",
         Some(Bucket::Fetch) => "Fetching",
@@ -421,6 +458,7 @@ pub fn cluster_summary(members: &[&ChatItem]) -> ClusterSummary {
     // The earliest start and latest end, while every settled step has an end.
     let mut span: Option<Option<(u64, u64)>> = Some(None);
     let mut running = None;
+    let mut waiting = 0;
 
     for item in members {
         if let ChatItem::Tool(tool) = item {
@@ -428,7 +466,18 @@ pub fn cluster_summary(members: &[&ChatItem]) -> ClusterSummary {
                 ToolStatus::Failed => errors += 1,
                 // The last one still going is what the line leads with: an
                 // agent that has moved on from the first is not still on it.
-                ToolStatus::Pending | ToolStatus::InProgress => running = Some(*item),
+                ToolStatus::InProgress => running = Some(*item),
+                // One waiting its turn leads only where nothing is in hand.
+                ToolStatus::Pending => {
+                    waiting += 1;
+                    let in_hand = matches!(
+                        running,
+                        Some(ChatItem::Tool(tool)) if tool.call.status == ToolStatus::InProgress
+                    );
+                    if !in_hand {
+                        running = Some(*item);
+                    }
+                }
                 ToolStatus::Completed => {}
             }
             for (_, plus, minus) in &tool.diff_summary {
@@ -514,6 +563,7 @@ pub fn cluster_summary(members: &[&ChatItem]) -> ClusterSummary {
 
     ClusterSummary {
         running,
+        waiting,
         done,
         errors,
         added,
