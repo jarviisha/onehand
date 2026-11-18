@@ -679,6 +679,19 @@ impl Chat {
         self.failure().is_some()
     }
 
+    /// Whether the last turn stopped at a limit, with no prompt after it: the
+    /// one failure asking the agent to go on can mend.
+    pub fn stopped_at_limit(&self) -> bool {
+        let item = match &self.replay {
+            Replay::Partial(stash) => standing_failure(stash.iter().rev()),
+            Replay::Settled | Replay::Armed => standing_failure(self.transcript_back()),
+        };
+        matches!(
+            item,
+            Some(ChatItem::Notice { level: NoticeLevel::CutShort(cut), .. }) if cut.continues()
+        )
+    }
+
     /// What the failure [`Self::failed`] reads says, in its own words.
     pub fn failure(&self) -> Option<&str> {
         // Mid-replay the whole transcript is the stash; what is in `items` is a

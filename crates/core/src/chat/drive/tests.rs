@@ -105,6 +105,12 @@ impl Front {
         out
     }
 
+    fn continue_after_limit(&mut self) -> (Intake, Vec<Effect>) {
+        let out = self.drive.continue_after_limit(now());
+        self.take(&out.1);
+        out
+    }
+
     fn stop(&mut self) -> Vec<Effect> {
         let out = self.drive.stop();
         self.take(&out);
@@ -886,6 +892,64 @@ fn nothing_failed_nothing_goes_again() {
     let (mut drive, mut rx) = connected();
     assert_eq!(drive.resend().0, Intake::Refused(Refusal::NotTaken));
     assert!(sent(&mut rx).is_none());
+}
+
+// Carrying on after a limit.
+
+/// A turn stopped at a limit is carried on by asking the agent to go on; one
+/// it refused is not, since the same ask would be refused again.
+#[test]
+fn a_turn_stopped_at_a_limit_can_be_continued() {
+    for (reason, offered) in [
+        ("max_tokens", true),
+        ("max_turn_requests", true),
+        ("refusal", false),
+        ("end_turn", false),
+    ] {
+        let (mut drive, mut rx) = connected();
+        drive.prompt("go", &[], Origin::Person, Code::Here);
+        sent(&mut rx);
+        feed(
+            &mut drive,
+            AcpEvent::TurnEnded {
+                stop_reason: reason.into(),
+            },
+        );
+        assert_eq!(drive.stopped_at_limit(), offered, "{reason}");
+        let (intake, _) = drive.continue_after_limit();
+        match offered {
+            true => {
+                assert_eq!(intake, Intake::Sent, "{reason}");
+                assert_eq!(sent(&mut rx).as_deref(), Some(CONTINUE_PROMPT));
+                // Sent, it is a turn like any other, and the limit is past.
+                assert!(!drive.stopped_at_limit());
+            }
+            false => {
+                assert_eq!(intake, Intake::Refused(Refusal::NotTaken), "{reason}");
+                assert!(sent(&mut rx).is_none());
+            }
+        }
+    }
+}
+
+#[test]
+fn a_continue_while_a_turn_runs_is_refused() {
+    let (mut drive, mut rx) = connected();
+    drive.prompt("go", &[], Origin::Person, Code::Here);
+    sent(&mut rx);
+    feed(
+        &mut drive,
+        AcpEvent::TurnEnded {
+            stop_reason: "max_tokens".into(),
+        },
+    );
+    drive.prompt("something else", &[], Origin::Person, Code::Here);
+    sent(&mut rx);
+    assert!(!drive.stopped_at_limit(), "a prompt went out after it");
+    assert_eq!(
+        drive.continue_after_limit().0,
+        Intake::Refused(Refusal::NotTaken)
+    );
 }
 
 // Answering cards.
