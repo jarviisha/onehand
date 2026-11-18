@@ -48,9 +48,12 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   path) take Tab, but only while drawn: the transcript is a `gpui::list` that draws the rows on
   screen, so a tab order through it skips what is scrolled away. The pinned cards and the
   composer take the keyboard whole.
-- **The transcript's motion has no switch of its own.** The words of what runs shimmer, and
-  stand still where the platform asks for reduced motion, which the animation honours by itself;
-  onehand has no setting for it, as it has none for any motion yet.
+- **Nothing turns the transcript's motion off.** The words of what runs shimmer for everybody:
+  onehand has no motion setting and does not read the platform's. The animation would stand
+  still under the window toolkit's reduced-motion flag, which nothing sets yet.
+- **A step waiting its turn cannot be told from one in hand.** The default agent reports every
+  step as pending until it ends, so pending reads as running, and a step that is truly queued
+  shimmers with the rest.
 - **There is no search in the transcript**, and the removal was deliberate rather than pending. It
   matched whole *items* and never occurrences, so a word said ten times in one answer was one hit
   with no mark on the word itself, and a hit in text a block had truncated was counted, scrolled to

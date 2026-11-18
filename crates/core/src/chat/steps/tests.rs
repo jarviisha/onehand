@@ -430,7 +430,6 @@ fn a_cluster_says_what_runs_and_what_settled_apart() {
     let summary = cluster_summary(&members.iter().collect::<Vec<_>>());
     assert_eq!(summary.doing().as_deref(), Some("Running cargo run"));
     assert_eq!(summary.settled(), "Read 1 file, ran 1 command");
-    assert_eq!(summary.waiting, 0);
 }
 
 /// A cluster with a step in flight and nothing done yet still has a word.
@@ -453,17 +452,11 @@ fn a_step_with_no_subject_leaves_no_gap() {
     assert_eq!(summary.doing().as_deref(), Some("Running"));
 }
 
-/// The step in hand leads over one still waiting its turn, which is counted.
+/// A step reported as pending is a step in hand: one adapter reports every
+/// step that way until it settles.
 #[test]
-fn a_waiting_step_is_counted_and_does_not_lead() {
-    let members = [
-        run("cargo run", ToolStatus::InProgress),
-        run("cargo doc", ToolStatus::Pending),
-    ];
+fn a_pending_step_reads_as_running() {
+    let members = [run("cargo doc", ToolStatus::Pending)];
     let summary = cluster_summary(&members.iter().collect::<Vec<_>>());
-    assert_eq!(summary.doing().as_deref(), Some("Running cargo run"));
-    assert_eq!(summary.waiting, 1);
-    let queued = [run("cargo doc", ToolStatus::Pending)];
-    let summary = cluster_summary(&queued.iter().collect::<Vec<_>>());
-    assert_eq!(summary.doing().as_deref(), Some("Waiting cargo doc"));
+    assert_eq!(summary.doing().as_deref(), Some("Running cargo doc"));
 }

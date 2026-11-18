@@ -3324,7 +3324,7 @@ fn a_thought_under_a_second_has_no_duration() {
 }
 
 #[test]
-fn only_a_step_in_progress_has_a_clock() {
+fn only_a_step_still_going_has_a_clock() {
     let step = |status, started: bool| {
         let mut item = ToolItem::new(ToolCall {
             id: "1".into(),
@@ -3337,7 +3337,7 @@ fn only_a_step_in_progress_has_a_clock() {
         item.started = started.then(std::time::Instant::now);
         item
     };
-    assert_eq!(step(ToolStatus::Pending, true).running_secs(), None);
+    assert_eq!(step(ToolStatus::Pending, true).running_secs(), Some(0));
     assert_eq!(step(ToolStatus::Completed, true).running_secs(), None);
     assert_eq!(step(ToolStatus::InProgress, false).running_secs(), None);
     assert_eq!(step(ToolStatus::InProgress, true).running_secs(), Some(0));

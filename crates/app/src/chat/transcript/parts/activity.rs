@@ -11,7 +11,6 @@ use super::*;
 /// marks changing in place rather than ten lines of text nudging sideways.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RowMark {
-    Waiting,
     Running,
     Done,
     /// Something in the run failed and the run went on to succeed anyway.
@@ -43,8 +42,9 @@ impl RowMark {
 
     pub(in crate::chat::transcript) fn of(status: ToolStatus) -> Self {
         match status {
-            ToolStatus::Pending => Self::Waiting,
-            ToolStatus::InProgress => Self::Running,
+            // Pending is running: an adapter may hold a step there until it
+            // ends.
+            ToolStatus::Pending | ToolStatus::InProgress => Self::Running,
             ToolStatus::Completed => Self::Done,
             ToolStatus::Failed => Self::Failed,
         }
@@ -189,7 +189,6 @@ pub(in crate::chat::transcript) fn activity_row(
         E: Styled + ParentElement,
     {
         let muted = cx.theme().muted_foreground;
-        let waiting = row.mark == RowMark::Waiting;
         let line = row_div
             .h_flex()
             .items_center()
@@ -230,8 +229,7 @@ pub(in crate::chat::transcript) fn activity_row(
                         .when(!object.words, |o| {
                             o.font_family(cx.theme().mono_font_family.clone())
                         })
-                        // One waiting its turn stays quiet end to end.
-                        .text_color(match (row.struck || waiting, object.words) {
+                        .text_color(match (row.struck, object.words) {
                             (true, _) => muted,
                             (false, true) => crate::theme::meta_ink(cx),
                             (false, false) => cx.theme().foreground,

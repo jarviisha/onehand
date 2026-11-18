@@ -80,6 +80,12 @@ between passes. No accent. Mono text keeps its family; a truncated line sweeps w
 | A plan's item in progress | its ring as a pending item draws it; its words shimmer |
 | The running line | no mark; the clock, then *N running* (and *, M waiting*) in the middle ink; a running step's command is not repeated; *Responding…*, *Working…* and the waiting-for-you lines stay, and shimmer |
 
+**As built, where it departs from the table above.** A step reported as `pending` reads as
+running, not *Waiting*: the default agent holds every step at pending until it ends, so the
+two cannot be told apart and *Waiting* named most running steps. The running line counts
+*N running* only. The shimmer's base is the muted ink with the middle ink at the band's
+edges, since middle to foreground is too small a step to see. Nothing turns the motion off.
+
 **Tense.** Core gives a step in flight its present verb (*Running*, *Reading*, *Editing*,
 *Searching*, *Fetching*) wherever it is named, and the past verb once it settles. Today the
 verb is chosen from the tool's kind alone.

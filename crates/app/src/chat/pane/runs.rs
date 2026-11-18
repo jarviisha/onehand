@@ -18,23 +18,28 @@ impl ChatPane {
     /// and what follows the clock begins at the same place whatever it says.
     const CLOCK_W: Rems = rems(3.25);
 
-    /// The line under a live turn: its clock, how many steps run and how many
-    /// wait their turn, and what the agent says it is doing where it says so.
+    /// The line under a live turn: its clock, how many steps run, and what
+    /// the agent says it is doing where it says so.
     ///
     /// **No mark, and no step named.** What runs is told by its own row a few
     /// lines up, shimmering; said again here it was the same command twice
     /// under two turning marks. The quiet ink is enough for a clock.
     fn working_strip(&self, session: &Entity<ChatSession>, cx: &App) -> gpui::AnyElement {
-        use gpui_component::ActiveTheme as _;
         use onehand_core::acp::ToolStatus;
         let chat = &session.read(cx).chat();
-        let count = |status: ToolStatus| {
-            chat.items
-                .iter()
-                .filter(|item| matches!(item, ChatItem::Tool(tool) if tool.call.status == status))
-                .count()
-        };
-        let counted = running_words(count(ToolStatus::InProgress), count(ToolStatus::Pending));
+        // Pending counts as running: an adapter may hold a step there until
+        // it ends.
+        let running = chat
+            .items
+            .iter()
+            .filter(|item| {
+                matches!(
+                    item,
+                    ChatItem::Tool(tool)
+                        if matches!(tool.call.status, ToolStatus::InProgress | ToolStatus::Pending)
+                )
+            })
+            .count();
         let status = chat.activity_status();
         // The clock is kept for the session on screen; a worker's turn shows
         // its words without one.
@@ -54,12 +59,12 @@ impl ChatPane {
                     .into_any_element(),
             );
         }
-        if let Some(counted) = counted {
+        if running > 0 {
             parts.push(
                 div()
                     .flex_none()
                     .whitespace_nowrap()
-                    .child(counted)
+                    .child(format!("{running} running"))
                     .into_any_element(),
             );
         }
@@ -73,12 +78,23 @@ impl ChatPane {
             ));
         }
 
+        // A turn of a session that is not the one on screen has no clock, and
+        // while it thinks nothing else to say: a word, so the line is never
+        // an empty one.
+        if parts.is_empty() {
+            parts.push(transcript::working_text(
+                ("turn-working", chat.uid),
+                vec![transcript::WorkingRun::words("Working…")],
+                cx,
+            ));
+        }
+
         let mut row = div()
             .h_flex()
             .items_center()
             .gap_2()
             .text_size(transcript::TEXT_SM)
-            .text_color(cx.theme().muted_foreground)
+            .text_color(crate::theme::meta_ink(cx))
             // The slot a row's arrow stands in, kept empty, so the clock
             // begins on the axis the rows above it read on.
             .child(div().w_3().flex_none());
@@ -442,17 +458,6 @@ impl ChatPane {
 /// How many sections an opened cluster draws before the earlier ones are
 /// counted instead.
 const CLUSTER_SECTIONS: usize = 40;
-
-/// How many steps run and how many wait their turn, as the running line
-/// says it; `None` where neither does.
-pub(super) fn running_words(running: usize, waiting: usize) -> Option<String> {
-    match (running, waiting) {
-        (0, 0) => None,
-        (running, 0) => Some(format!("{running} running")),
-        (0, waiting) => Some(format!("{waiting} waiting")),
-        (running, waiting) => Some(format!("{running} running, {waiting} waiting")),
-    }
-}
 
 /// The space between the run above and the run below it.
 ///

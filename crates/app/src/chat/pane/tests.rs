@@ -1,21 +1,9 @@
 use super::body::away_from_tail;
 use super::runs::lead_gap;
-use super::runs::running_words;
 use super::{BLOCK_GAP, COMPACT_GAP, caret_to_composer, switching_away, waits_alone};
 use crate::chat::viewport::{self, RunKind};
 use gpui::rems;
 use onehand_core::chat::{Link, TranscriptItemId};
-
-/// The running line counts what runs apart from what waits its turn, and
-/// says nothing where neither does: the steps themselves are named by their
-/// own rows, once.
-#[test]
-fn the_line_counts_what_runs_and_what_waits() {
-    assert_eq!(running_words(0, 0), None);
-    assert_eq!(running_words(1, 0).as_deref(), Some("1 running"));
-    assert_eq!(running_words(2, 1).as_deref(), Some("2 running, 1 waiting"));
-    assert_eq!(running_words(0, 1).as_deref(), Some("1 waiting"));
-}
 
 /// The two sides of a prompt are one space, so they are one number —
 /// whatever sits above the prompt and whatever follows it.

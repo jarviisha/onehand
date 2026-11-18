@@ -123,16 +123,20 @@ pub struct Presentation {
 }
 
 impl Presentation {
-    /// The verb for a step in `status`: *Waiting* before it starts, the
-    /// present form while it runs, what it did once it has settled.
+    /// The verb for a step in `status`: the present form until it settles,
+    /// what it did after.
+    ///
+    /// **Pending is running.** An adapter may hold a step at pending from the
+    /// moment it starts it until it ends, so nothing separates one that waits
+    /// from one in hand, and reading it as waiting would call most running
+    /// steps idle.
     ///
     /// **One rule for every place a step is named**, so its own row, the line
     /// standing for its cluster and anything else that names it cannot
     /// disagree about whether it is over.
     pub fn verb(&self, status: ToolStatus) -> &'static str {
         match status {
-            ToolStatus::Pending => "Waiting",
-            ToolStatus::InProgress => doing(self.action),
+            ToolStatus::Pending | ToolStatus::InProgress => doing(self.action),
             ToolStatus::Completed | ToolStatus::Failed => self.action,
         }
     }
@@ -163,13 +167,9 @@ fn doing(action: &str) -> &'static str {
 /// it, from the home directory (`~`) where it lies under that, and whole
 /// otherwise.
 ///
-/// **One rule for every line that names a file.** Anything that is not a
-/// path comes back unchanged: a command holds spaces, and cutting one would
-/// leave the line quoting something nobody ran.
+/// **One rule for every line that names a file.** What lies under neither
+/// comes back unchanged, a command included.
 pub fn display_path(root: &Path, value: &str) -> String {
-    if value.contains(char::is_whitespace) {
-        return value.to_string();
-    }
     let path = Path::new(value);
     if let Ok(inside) = path.strip_prefix(root) {
         if !inside.as_os_str().is_empty() {
@@ -591,7 +591,9 @@ mod tests {
     #[test]
     fn a_step_reads_in_the_tense_its_status_is() {
         let shown = presentation(&tool(ToolKind::Execute, "cargo run"));
-        assert_eq!(shown.verb(ToolStatus::Pending), "Waiting");
+        // An adapter may report a step it is running as pending from start
+        // to end, so pending reads as running too.
+        assert_eq!(shown.verb(ToolStatus::Pending), "Running");
         assert_eq!(shown.verb(ToolStatus::InProgress), "Running");
         assert_eq!(shown.verb(ToolStatus::Completed), "Ran");
         assert_eq!(shown.verb(ToolStatus::Failed), "Ran");
@@ -643,6 +645,7 @@ mod tests {
         assert_eq!(display_path(root, "/work/app/src/a.rs"), "src/a.rs");
         assert_eq!(display_path(root, "/work/app"), "/work/app");
         assert_eq!(display_path(root, "cargo test -p a/b"), "cargo test -p a/b");
+        assert_eq!(display_path(root, "/work/app/My File.rs"), "My File.rs");
         assert_eq!(display_path(root, "/etc/hosts"), "/etc/hosts");
         let home = dirs::home_dir().expect("a home directory");
         let outside = home.join("notes/x.md");

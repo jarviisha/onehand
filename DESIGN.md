@@ -43,7 +43,8 @@ a hex literal is a bug even when it looks right, as no theme switch reaches it.
 6. **Bounded, and say so.** Every list has a named cap, and when the cap cuts something off, the
    screen says how many were left out.
 7. **Calm and immediate.** What a person changes shows at once, and the work behind it follows.
-   Nothing moves for show: the one motion is a `Spinner` on work still running, beside what the
+   Nothing moves for show: the motions are a `Spinner` on work still running and, in the
+   transcript, the band crossing the words of what runs, beside what the
    library's own overlays and controls do (*Components*). `docs/ui-patterns.md` (*Immediate feedback*, *Motion*) holds how.
 
 ## Layout
@@ -113,7 +114,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   notices (a remark is a divider: the words centred between two hairlines across the column, in
   the muted ink) and errors (the neutral card, flat: the alert mark in the danger ink beside the
   words, *Turn failed* over them when a turn ended on it, the restart key for a lost agent), the files the turn changed,
-  and, while it runs, the running line (no mark: its clock, *N running* and *M waiting*, what the
+  and, while it runs, the running line (no mark: its clock, *N running*, what the
   agent says it is doing; a step that runs is named by its own row and not again here). A workflow's steps and an interrupted turn are notices, never prompts.
 - **Folding blocks open from one line**, the chevron first, with no box: no edge, no fill and no
   rule beside what they hold, which sits indented under the line's words (a cluster, a thought, a plan, a subagent, a turn's changes). What runs is open until done, the
@@ -127,10 +128,10 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   **What runs is told by its words**, never by a turning mark: a running row's verb, in the present
   tense, and what it is done to, a live thought's *Thinking…*, a folded cluster's step in hand, a
   plan's item in hand and a working subagent's name read in the quiet ink while a narrow band of
-  the foreground ink crosses them, with no accent, and stand still where motion is reduced. An
+  the foreground ink crosses them, with no accent. An
   opened cluster's line says only what has settled (*Working* while nothing has), since the step
-  in hand has its own row; a step waiting its turn reads *Waiting* in the muted ink, and one that
-  has run ten seconds shows its own clock at the row's end. A path reads from the project's root,
+  in hand has its own row; a step reported as pending reads as running, since an agent may hold
+  one there until it ends, and one that has run ten seconds shows its own clock at the row's end. A path reads from the project's root,
   and from `~` outside it. A
   path or a command is mono; the agent's own wording, a folder and what the agent did (a
   thought, a command's output, a read or search list) read in the middle ink. One copy control
