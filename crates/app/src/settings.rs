@@ -534,7 +534,13 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         // starts on the nav's edge.
         .child(crate::page_parts::page_top(
             None,
-            [crate::page_parts::page_head("Settings", None, Vec::new(), cx).into_any_element()],
+            [crate::page_parts::page_head(
+                "Settings",
+                Some("How onehand looks and works, kept in onehand.toml".into_any_element()),
+                Vec::new(),
+                cx,
+            )
+            .into_any_element()],
         ))
         .child(
             div()

@@ -6,7 +6,7 @@ use gpui_component::Sizable as _;
 use gpui_component::button::Button;
 use gpui_component::input::Input;
 
-/// A page's control, [`tokens::FIELD_H`] high: a page's head and form, a
+/// A page form's control, [`tokens::FIELD_H`] high: a page's form, a
 /// dialog's footer. Built on the library's small size, its words at the
 /// chrome size so a button and the row beside it letter alike.
 pub trait Tall {
@@ -69,8 +69,8 @@ impl Tall for Input {
     }
 }
 
-/// A control in dense chrome: a strip, a row, a toolbar, the composer, a
-/// page's filter bar. [`tokens::CONTROL_H`] high, on the library's
+/// A control in dense chrome: a page's head and filter bar, a strip, a row,
+/// a toolbar, the composer. [`tokens::CONTROL_H`] high, on the library's
 /// extra-small words, icon and padding.
 pub trait Short {
     /// The small size.
@@ -96,7 +96,7 @@ impl Short for Input {
 }
 
 /// The sizes a builder's controls take, each the role it serves:
-/// `.short()` the default, `.tall()` in a list page's head.
+/// `.short()` the default, `.tall()` in a page's form.
 ///
 /// For a builder that sizes the controls it makes, so a caller names one of
 /// these rather than a library size.

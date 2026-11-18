@@ -87,8 +87,7 @@ impl ChatPane {
         let title = chat
             .and_then(Chat::conversation_title)
             .or(agent)
-            // A page, and a project's page, names itself in its own head at
-            // its title size.
+            // A page, and a project's page, names itself in its own head.
             .unwrap_or_default();
         let busy = chat.is_some_and(|chat| chat.busy);
         // A conversation the agent has not named yet has no directory to remove:

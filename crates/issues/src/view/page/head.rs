@@ -16,8 +16,7 @@ use onehand_core::task::work::list::{Filters, Incomplete, Listed, Progress};
 use onehand_ui::Named as _;
 use onehand_ui::Quiet as _;
 use onehand_ui::Short as _;
-use onehand_ui::Tall as _;
-use onehand_ui::TallIcon as _;
+use onehand_ui::ShortIcon as _;
 use onehand_ui::page_search;
 use onehand_ui::{
     AppIcon, ControlSize, action, badge, choice, menu_below, menu_item, neutral_tint, picker,
@@ -56,7 +55,7 @@ impl IssuesView {
                         picked => picked.label(),
                     },
                     picked != Progress::All,
-                    ControlSize::Tall,
+                    ControlSize::Short,
                     cx,
                 ),
                 move |mut menu, _, _| {
@@ -93,7 +92,7 @@ impl IssuesView {
                     "issues-page-project-trigger",
                     name,
                     picked.is_some(),
-                    ControlSize::Tall,
+                    ControlSize::Short,
                     cx,
                 ),
                 move |menu, _, _| {
@@ -130,7 +129,7 @@ impl IssuesView {
                     "issues-page-label-trigger",
                     picked.clone().unwrap_or_else(|| "Label".to_string()),
                     picked.is_some(),
-                    ControlSize::Tall,
+                    ControlSize::Short,
                     cx,
                 ),
                 move |menu, window, _| {
@@ -190,7 +189,7 @@ impl IssuesView {
                     ("issues-page-showing", usize::from(pick)),
                     name,
                     pick == filters.closed,
-                    ControlSize::Tall,
+                    ControlSize::Short,
                     cx,
                 )
                 .when(!reading, |button| {
@@ -224,7 +223,7 @@ impl IssuesView {
                     .aria_label("Refresh")
                     .child(
                         action("issues-page-refresh")
-                            .tall_icon()
+                            .short_icon()
                             .quiet_icon(false, cx)
                             .icon(Icon::new(AppIcon::Refresh))
                             .loading(pr_reading)
@@ -237,7 +236,7 @@ impl IssuesView {
             )
             .child(
                 action("issues-page-new")
-                    .tall()
+                    .short()
                     .when(covered, |button| button.secondary())
                     .when(!covered, |button| button.primary())
                     .icon(Icon::new(IconName::Plus))
@@ -259,7 +258,7 @@ impl IssuesView {
         let clear =
             narrowed.then(|| {
                 action("issues-page-clear-filters")
-                    .tall()
+                    .short()
                     .quiet(cx)
                     .label("Clear filters")
                     .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
@@ -297,8 +296,16 @@ impl IssuesView {
                     .children(clear),
             );
         (
-            onehand_ui::page_head("Issues", None, vec![actions.into_any_element()], cx)
-                .into_any_element(),
+            onehand_ui::page_head(
+                "Issues",
+                Some(
+                    "The issues of every project in this workspace, and the work on them"
+                        .into_any_element(),
+                ),
+                vec![actions.into_any_element()],
+                cx,
+            )
+            .into_any_element(),
             filters.into_any_element(),
         )
     }
