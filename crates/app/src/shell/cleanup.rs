@@ -51,6 +51,7 @@ impl Shell {
             act: "Remove",
             lines,
             refused,
+            ..Default::default()
         };
         let handle = window.window_handle();
         super::confirm_on(cx.entity(), ask, window, cx, move |_, _, cx| {

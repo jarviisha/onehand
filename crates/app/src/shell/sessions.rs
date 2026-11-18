@@ -204,7 +204,8 @@ impl Shell {
     /// Until this existed the only way to end a session was to remove the whole
     /// project it belonged to, so a root accumulated agents nothing could stop.
     ///
-    /// **Asked about in a modal only while a turn is in flight.** The
+    /// **Asked about in a modal while it leads workers, or while a turn is in
+    /// flight.** A lead's workers are asked about first ([`Self::ask_close_lead`]). The
     /// transcript is written at the end of every turn, so closing an idle
     /// session costs nothing that is not already on disk and does not deserve a
     /// question; closing one mid-turn throws away the turn that is running,
@@ -226,6 +227,10 @@ impl Shell {
             return;
         };
         let uid = session.uid;
+        if !crate::control::workers_of(uid).is_empty() {
+            self.ask_close_lead(uid, window, cx);
+            return;
+        }
         if self.chat.read(cx).closing(uid, cx) == Closing::Now {
             self.end_session(uid, window, cx);
             return;

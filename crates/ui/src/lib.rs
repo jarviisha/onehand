@@ -40,7 +40,7 @@ pub use badge::{badge, badge_edge, label_badge, label_tint};
 pub use button::{Named, Quiet, Refuses, action, fold_toggle};
 pub use choice::{choice, choice_track, picker, switch};
 pub use choice_mark::choice_mark;
-pub use confirm::{Confirm, confirm_on};
+pub use confirm::{Answer, Confirm, confirm_either_on, confirm_on};
 pub use control_size::{ControlSize, Short, ShortIcon, Tall, TallIcon};
 pub use field::{field, search_input, text_area, text_input};
 pub use icon::AppIcon;
