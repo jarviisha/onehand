@@ -1,5 +1,5 @@
 use super::items::{
-    AskItem, ChatItem, Md, NoticeLevel, PermItem, PlanItem, Thought, ToolItem, UserMsg,
+    AskItem, ChatItem, CutShort, Md, NoticeLevel, PermItem, PlanItem, Thought, ToolItem, UserMsg,
     MAX_TERM_BYTES,
 };
 use super::{Chat, Link, Replay};
@@ -284,7 +284,7 @@ impl Chat {
                 self.consume_replay();
                 self.finalize_thought();
                 self.user_chunk_open = false;
-                self.items.push(ChatItem::notice("Interrupted"));
+                self.items.push(stopped_notice());
             }
             AcpEvent::UserChunk(s) => {
                 self.consume_replay();
@@ -430,12 +430,17 @@ impl Chat {
                 self.cancelled |= stop_reason == "cancelled";
                 // Ended by the agent without the work: a failed turn, said so,
                 // or whatever drives the session reads it as a normal end.
-                if let Some(text) = cut_short(&stop_reason) {
+                if let Some(cut) = cut_short(&stop_reason) {
                     self.items.push(ChatItem::failure(
-                        text.to_string(),
-                        NoticeLevel::Failed,
+                        cut.sentence(),
+                        NoticeLevel::CutShort(cut),
                         None,
                     ));
+                }
+                // Stopped, said once: an adapter may already have said it
+                // was interrupted.
+                if self.cancelled && !self.turn_says_stopped() {
+                    self.items.push(stopped_notice());
                 }
                 self.finish_active_turn(event_at.unwrap_or_else(|| self.event_time()));
                 self.busy = false;
@@ -445,7 +450,10 @@ impl Chat {
                 // as cancelled — protocol-correct, and the buttons disable.
                 // A background subagent's request outlives the turn.
                 self.cancel_pending_permissions(true);
-                self.settle_running_steps();
+                self.settle_running_steps(match self.cancelled {
+                    true => ToolStatus::Stopped,
+                    false => ToolStatus::Failed,
+                });
                 // Fold finished terminals into their cards so the `terminals` map
                 // only ever holds live ones (the turn is over → no more updates).
                 self.flatten_exited_terminals();
@@ -549,7 +557,7 @@ impl Chat {
         for view in self.terminals.values_mut() {
             view.exited = true;
         }
-        self.settle_running_steps();
+        self.settle_running_steps(ToolStatus::Failed);
         self.flatten_exited_terminals();
     }
 
@@ -742,8 +750,9 @@ pub(super) fn plan(items: &mut Vec<ChatItem>, entries: Vec<PlanEntry>) {
     items.push(ChatItem::Plan(PlanItem::new(entries)));
 }
 
-/// Fail every step still running in `items`: nothing will settle it now.
-pub(super) fn settle_steps(items: &mut [ChatItem], now: Option<Now>) {
+/// Settle every step still running in `items` as `to`: nothing will settle it
+/// now. `Stopped` where a cancel ended it, `Failed` where anything else did.
+pub(super) fn settle_steps(items: &mut [ChatItem], now: Option<Now>, to: ToolStatus) {
     for item in items {
         if let ChatItem::Tool(tool) = item {
             if !matches!(
@@ -752,14 +761,15 @@ pub(super) fn settle_steps(items: &mut [ChatItem], now: Option<Now>) {
             ) {
                 continue;
             }
-            tool.call.status = ToolStatus::Failed;
+            tool.call.status = to;
             // Timed here for the same reason a settling update is: this is
             // the moment the step stopped, and a step that never settles
             // has no duration at all.
             tool.settle_clock(now);
             // The same seed a failure arriving as an update leaves, so a
-            // reader can see what the step had said before it stopped.
-            tool.failed_open = true;
+            // reader can see what the step had said before it failed. One a
+            // person stopped stays shut: they know why it ended.
+            tool.failed_open = to == ToolStatus::Failed;
         }
     }
 }
@@ -799,15 +809,17 @@ fn flatten_terminal(items: &mut [ChatItem], id: &str, flat: &str, exit_code: Opt
     }
 }
 
-/// What a turn the agent ended for `stop_reason` failed on, when it ended
-/// without finishing the work.
-fn cut_short(stop_reason: &str) -> Option<&'static str> {
+/// Why the agent ended a turn for `stop_reason` without the work, when it did.
+fn cut_short(stop_reason: &str) -> Option<CutShort> {
     match stop_reason {
-        "refusal" => Some("The agent refused to go on with this turn."),
-        "max_tokens" => Some("The turn stopped: the agent reached its output limit."),
-        "max_turn_requests" => {
-            Some("The turn stopped: the agent reached its limit of requests for one turn.")
-        }
+        "refusal" => Some(CutShort::Refused),
+        "max_tokens" => Some(CutShort::OutputLimit),
+        "max_turn_requests" => Some(CutShort::RequestLimit),
         _ => None,
     }
+}
+
+/// The line a stopped turn leaves.
+fn stopped_notice() -> ChatItem {
+    ChatItem::failure("Stopped", NoticeLevel::Stopped, None)
 }

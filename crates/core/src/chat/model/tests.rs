@@ -387,6 +387,25 @@ fn a_failed_turn_closes_on_its_failure_not_on_processed() {
         Some("Processed in 17s")
     );
 
+    // Stopped, by a cancel or at a limit, is not a failure to say.
+    chat.items
+        .push(ChatItem::failure("Stopped", NoticeLevel::Stopped, None));
+    assert_eq!(
+        answer(&chat).closing_line().as_deref(),
+        Some("Stopped after 17s")
+    );
+    chat.items.pop();
+    chat.items.push(ChatItem::failure(
+        CutShort::OutputLimit.sentence(),
+        NoticeLevel::CutShort(CutShort::OutputLimit),
+        None,
+    ));
+    assert_eq!(
+        answer(&chat).closing_line().as_deref(),
+        Some("Stopped after 17s")
+    );
+    chat.items.pop();
+
     chat.items.push(ChatItem::failure(
         "needs a login",
         NoticeLevel::Failed,
@@ -1923,21 +1942,23 @@ fn streaming_into_one_block_still_counts_as_a_change() {
 /// downstream reads it as live.
 #[test]
 fn a_turn_ending_settles_what_it_left_running() {
-    let mut chat = Chat::new(1, std::path::PathBuf::from("/tmp/p"), "a".into(), None);
-    chat.busy = true;
-    chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
-        id: "slow".into(),
-        title: "cargo build".into(),
-        description: None,
-        kind: crate::acp::ToolKind::Execute,
-        status: ToolStatus::InProgress,
-        content: Vec::new(),
-    })));
-
+    let running = || {
+        let mut chat = Chat::new(1, std::path::PathBuf::from("/tmp/p"), "a".into(), None);
+        chat.busy = true;
+        chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
+            id: "slow".into(),
+            title: "cargo build".into(),
+            description: None,
+            kind: crate::acp::ToolKind::Execute,
+            status: ToolStatus::InProgress,
+            content: Vec::new(),
+        })));
+        chat
+    };
+    let mut chat = running();
     chat.apply(AcpEvent::TurnEnded {
-        stop_reason: "cancelled".into(),
+        stop_reason: "end_turn".into(),
     });
-
     let ChatItem::Tool(tool) = &chat.items[0] else {
         panic!("the step is still there");
     };
@@ -1949,6 +1970,33 @@ fn a_turn_ending_settles_what_it_left_running() {
         tool.elapsed_secs.is_some(),
         "it stopped, so it has a length"
     );
+
+    // Cancelled, it was stopped: nothing went wrong, somebody decided, and
+    // the turn says so once.
+    let mut chat = running();
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "cancelled".into(),
+    });
+    let ChatItem::Tool(tool) = &chat.items[0] else {
+        panic!("the step is still there");
+    };
+    assert_eq!(tool.call.status, ToolStatus::Stopped);
+    assert!(tool.elapsed_secs.is_some());
+    let stopped = chat
+        .items
+        .iter()
+        .filter(|item| {
+            matches!(
+                item,
+                ChatItem::Notice {
+                    level: NoticeLevel::Stopped,
+                    ..
+                }
+            )
+        })
+        .count();
+    assert_eq!(stopped, 1);
+    assert!(!chat.failed(), "a stop is not a failure");
 }
 
 /// **A lost adapter settles what it left running**, as a turn's end does:
@@ -2207,6 +2255,18 @@ fn a_turn_cut_short_by_the_agent_is_failed() {
             chat.failure().is_some_and(|text| !text.contains(stop)),
             "{stop}"
         );
+        let cut = match stop {
+            "refusal" => CutShort::Refused,
+            "max_tokens" => CutShort::OutputLimit,
+            _ => CutShort::RequestLimit,
+        };
+        assert!(
+            matches!(
+                chat.items.last(),
+                Some(ChatItem::Notice { level: NoticeLevel::CutShort(said), .. }) if *said == cut
+            ),
+            "{stop}"
+        );
     }
     let (mut chat, _rx) = chat_with_tx();
     assert!(chat.submit("go", &[]));
@@ -2354,9 +2414,81 @@ fn an_interruption_marker_is_a_notice_and_not_a_prompt() {
     chat.apply(AcpEvent::UserChunk("read the whole project".into()));
     assert!(matches!(
         chat.items.as_slice(),
-        [ChatItem::Notice { text, .. }, ChatItem::User(u)]
-            if text == "Interrupted" && u.text == "read the whole project"
+        [ChatItem::Notice { text, level: NoticeLevel::Stopped, .. }, ChatItem::User(u)]
+            if text == "Stopped" && u.text == "read the whole project"
     ));
+}
+
+/// An adapter that says it was interrupted, and then ends the turn as
+/// cancelled, leaves one *Stopped* in the turn, not two.
+#[test]
+fn a_stop_is_said_once() {
+    let (mut chat, _rx) = chat_with_tx();
+    assert!(chat.submit("go", &[]));
+    chat.apply(AcpEvent::Interrupted);
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "cancelled".into(),
+    });
+    let said = chat
+        .items
+        .iter()
+        .filter(|item| {
+            matches!(
+                item,
+                ChatItem::Notice {
+                    level: NoticeLevel::Stopped,
+                    ..
+                }
+            )
+        })
+        .count();
+    assert_eq!(said, 1);
+}
+
+/// A cancelled subagent's running steps were stopped, as the turn's are; one
+/// that failed fails them.
+#[test]
+fn a_cancelled_subagent_stops_its_steps() {
+    use crate::acp::SubagentEnd;
+    for (end, status) in [
+        (SubagentEnd::Cancelled, ToolStatus::Stopped),
+        (SubagentEnd::Failed, ToolStatus::Failed),
+    ] {
+        let (mut chat, _rx) = chat_with_tx();
+        assert!(chat.submit("go", &[]));
+        chat.apply(AcpEvent::SubagentSpawned {
+            id: "c1".into(),
+            name: "Explore".into(),
+            task: "look around".into(),
+        });
+        chat.apply(AcpEvent::InChild {
+            child: "c1".into(),
+            event: Box::new(AcpEvent::ToolCall(ToolCall {
+                id: "c1-1".into(),
+                title: "cargo test".into(),
+                description: None,
+                kind: crate::acp::ToolKind::Execute,
+                status: ToolStatus::InProgress,
+                content: Vec::new(),
+            })),
+        });
+        chat.apply(AcpEvent::SubagentEnded {
+            id: "c1".into(),
+            end,
+        });
+        let card = chat
+            .items
+            .iter()
+            .find_map(|item| match item {
+                ChatItem::Subagent(card) => Some(card),
+                _ => None,
+            })
+            .expect("the card");
+        assert!(
+            matches!(&card.items[..], [ChatItem::Tool(t)] if t.call.status == status),
+            "{status:?}"
+        );
+    }
 }
 
 /// A fence of the other kind inside a code block is code, not the block's end,

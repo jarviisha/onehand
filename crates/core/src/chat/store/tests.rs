@@ -667,6 +667,53 @@ fn a_step_saved_running_comes_back_stopped() {
     let _ = std::fs::remove_dir_all(&store);
 }
 
+/// Every new way a turn or a step ends is written and read back as it was,
+/// and what a build before them wrote reads as it did.
+#[test]
+fn every_ending_comes_back_as_it_was_saved() {
+    use crate::chat::model::{CutShort, NoticeLevel};
+    let store = scratch("endings");
+    let mut chat = chat_in(&store, "s1");
+    chat.push_user("go".into(), Vec::new(), crate::chat::store::now_secs());
+    let levels = [
+        NoticeLevel::Info,
+        NoticeLevel::Error,
+        NoticeLevel::Failed,
+        NoticeLevel::Stopped,
+        NoticeLevel::CutShort(CutShort::OutputLimit),
+        NoticeLevel::CutShort(CutShort::RequestLimit),
+        NoticeLevel::CutShort(CutShort::Refused),
+    ];
+    for level in levels {
+        chat.items.push(ChatItem::failure("said", level, None));
+    }
+    chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
+        id: "t1".into(),
+        title: "cargo build".into(),
+        description: None,
+        kind: ToolKind::Execute,
+        status: ToolStatus::Stopped,
+        content: Vec::new(),
+    })));
+    save(&mut chat);
+
+    let back = load(&conv_dir(&store, "s1")).unwrap();
+    let read: Vec<NoticeLevel> = back
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            ChatItem::Notice { level, .. } => Some(*level),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(read, levels);
+    assert!(matches!(
+        back.items.last(),
+        Some(ChatItem::Tool(t)) if t.call.status == ToolStatus::Stopped
+    ));
+    let _ = std::fs::remove_dir_all(&store);
+}
+
 fn subagent(id: &str, state: SubagentState, items: Vec<ChatItem>) -> ChatItem {
     ChatItem::Subagent(SubagentItem {
         id: id.into(),

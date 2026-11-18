@@ -23,7 +23,11 @@ fn legacy_failed(text: &str, level: NoticeLevel) -> NoticeLevel {
         {
             NoticeLevel::Failed
         }
-        NoticeLevel::Info | NoticeLevel::Error | NoticeLevel::Failed => level,
+        NoticeLevel::Info
+        | NoticeLevel::Error
+        | NoticeLevel::Failed
+        | NoticeLevel::Stopped
+        | NoticeLevel::CutShort(_) => level,
     }
 }
 

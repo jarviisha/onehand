@@ -266,8 +266,25 @@ impl Chat {
     /// cannot recover from, since a card claiming a write went through is worse
     /// than one saying it is unclear. This is the same answer
     /// `cancel_pending_permissions` gives a dangling card one line above.
-    pub(super) fn settle_running_steps(&mut self) {
-        super::apply::settle_steps(&mut self.items, self.told);
+    pub(super) fn settle_running_steps(&mut self, to: ToolStatus) {
+        super::apply::settle_steps(&mut self.items, self.told, to);
+    }
+
+    /// Whether the turn running now already says it was stopped.
+    pub(super) fn turn_says_stopped(&self) -> bool {
+        self.items
+            .iter()
+            .rev()
+            .take_while(|item| !matches!(item, ChatItem::User(_)))
+            .any(|item| {
+                matches!(
+                    item,
+                    ChatItem::Notice {
+                        level: NoticeLevel::Stopped,
+                        ..
+                    }
+                )
+            })
     }
 
     ///
@@ -556,15 +573,7 @@ impl Chat {
                 && end == self.items.len()
                 && self.busy,
             elapsed_secs,
-            failed: items[start..end].iter().any(|it| {
-                matches!(
-                    it,
-                    ChatItem::Notice {
-                        level: NoticeLevel::Failed,
-                        ..
-                    }
-                )
-            }),
+            ending: ending(&items[start..end]),
         })
     }
 
@@ -926,11 +935,25 @@ pub(super) fn standing_failure<'a>(
 ) -> Option<&'a ChatItem> {
     back.find_map(|item| match item {
         ChatItem::User(prompt) if prompt.sent_at.is_some() => Some(None),
-        ChatItem::Notice {
-            level: NoticeLevel::Failed,
-            ..
-        } => Some(Some(item)),
+        ChatItem::Notice { level, .. } if level.fails_turn() => Some(Some(item)),
         _ => None,
     })
     .flatten()
+}
+
+/// How the turn made of `items` ended: failed where a failure it ended on is
+/// in it, stopped where a stop or a cut short is, finished otherwise.
+fn ending(items: &[ChatItem]) -> super::TurnEnding {
+    use super::TurnEnding;
+    let mut ending = TurnEnding::Finished;
+    for item in items {
+        if let ChatItem::Notice { level, .. } = item {
+            match level {
+                NoticeLevel::Failed => return TurnEnding::Failed,
+                NoticeLevel::Stopped | NoticeLevel::CutShort(_) => ending = TurnEnding::Stopped,
+                NoticeLevel::Info | NoticeLevel::Error => {}
+            }
+        }
+    }
+    ending
 }

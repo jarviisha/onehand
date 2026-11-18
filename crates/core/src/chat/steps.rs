@@ -266,6 +266,9 @@ pub struct ClusterSummary {
     /// What has been done, in the order the kinds of work first appeared.
     pub done: Vec<SummaryPart>,
     pub errors: usize,
+    /// Steps a cancel stopped before they ended: counted apart from the
+    /// failures, since nothing went wrong.
+    pub stopped: usize,
     /// Lines added and removed across every edit in the cluster.
     pub added: usize,
     pub removed: usize,
@@ -463,6 +466,7 @@ pub fn cluster_summary(members: &[&ChatItem], root: &Path) -> ClusterSummary {
     let mut order: Vec<Bucket> = Vec::new();
     let mut counts: Vec<usize> = Vec::new();
     let mut errors = 0;
+    let mut stopped = 0;
     let mut added = 0;
     let mut removed = 0;
     let mut summed = 0;
@@ -474,6 +478,7 @@ pub fn cluster_summary(members: &[&ChatItem], root: &Path) -> ClusterSummary {
         if let ChatItem::Tool(tool) = item {
             match tool.call.status {
                 ToolStatus::Failed => errors += 1,
+                ToolStatus::Stopped => stopped += 1,
                 // The last one still going is what the line leads with: an
                 // agent that has moved on from the first is not still on it.
                 ToolStatus::Pending | ToolStatus::InProgress => running = Some(*item),
@@ -561,6 +566,7 @@ pub fn cluster_summary(members: &[&ChatItem], root: &Path) -> ClusterSummary {
         running,
         done,
         errors,
+        stopped,
         added,
         removed,
         seconds: match span {
@@ -613,6 +619,9 @@ pub fn run_outcome(members: &[&ChatItem]) -> RunOutcome {
                     last = Some(false);
                 }
                 ToolStatus::Completed => last = Some(true),
+                // Stopped by somebody: neither how the run went wrong nor how
+                // it ended well.
+                ToolStatus::Stopped => {}
                 ToolStatus::Pending | ToolStatus::InProgress => running = true,
             },
             ChatItem::Thought(thought) => running |= thought.elapsed_secs.is_none(),
@@ -704,12 +713,15 @@ pub fn turn_changes(items: &[&ChatItem]) -> Option<TurnChanges> {
 
     let mut files: Vec<FileChange> = Vec::new();
     for tool in tools_within(items) {
-        // **An edit that failed did not happen.** The diff on a failed call is
+        // **An edit that failed or was stopped did not happen.** The diff on a failed call is
         // what the agent proposed, not what is on disk, and counting it puts a
         // file in a list headed "what this turn wrote" that the turn did not
         // write. The step is still in the transcript above, in the cluster it
         // failed in, saying so.
-        if tool.call.status == crate::acp::ToolStatus::Failed {
+        if matches!(
+            tool.call.status,
+            crate::acp::ToolStatus::Failed | crate::acp::ToolStatus::Stopped
+        ) {
             continue;
         }
         for section in &tool.call.content {
@@ -810,7 +822,10 @@ pub fn turn_file_diff(items: &[&ChatItem], path: &str) -> Vec<crate::diff::Row> 
     for tool in tools_within(items) {
         // Same rule as the counts: a failed edit is not part of what the turn
         // did to this file.
-        if tool.call.status == crate::acp::ToolStatus::Failed {
+        if matches!(
+            tool.call.status,
+            crate::acp::ToolStatus::Failed | crate::acp::ToolStatus::Stopped
+        ) {
             continue;
         }
         for section in &tool.call.content {
