@@ -49,7 +49,7 @@ const MENU_CAP: usize = 20;
 /// The builder, not the trigger: the menu is rebuilt every time it opens, so the
 /// control it hangs off, the title bar's workspace control, is free to be any element.
 pub(super) fn workspace_menu(
-    current: Option<std::path::PathBuf>,
+    current: std::path::PathBuf,
     recents: Vec<onehand_core::config::recents::Listed>,
     shell: WeakEntity<Shell>,
 ) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
@@ -57,7 +57,7 @@ pub(super) fn workspace_menu(
         let detail = crate::theme::meta_ink(cx);
         let mut menu = menu.item(crate::controls::menu_label("Workspaces"));
         for listed in recents.iter().take(MENU_CAP) {
-            let is_current = current.as_deref() == Some(listed.dir.as_path());
+            let is_current = current == listed.dir;
             let label = ellipsize(&listed.name, MAX_LABEL);
             let unreadable = listed.unreadable.is_some();
             let target = shell.clone();

@@ -27,7 +27,7 @@ pub struct WorkspaceConfig {
     /// first.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active: Option<String>,
-    pub projects: Vec<ProjectConfig>,
+    pub(crate) projects: Vec<ProjectConfig>,
     /// How the window's side panels were arranged. A file without this
     /// section gets the built-in arrangement.
     pub layout: PanelLayout,
@@ -36,7 +36,7 @@ pub struct WorkspaceConfig {
 /// One project in a workspace file. Everything but `path` is left out when it
 /// holds its default, so a hand-read file says only what was chosen.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProjectConfig {
+pub(crate) struct ProjectConfig {
     pub path: PathBuf,
     /// The host the folder lives on; none for this machine.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -243,15 +243,6 @@ pub enum WorkspaceLoad {
     /// an unmounted share, a truncated write, a typo in the TOML. **Never treat
     /// this as an empty folder.**
     Unreadable(String),
-}
-
-impl WorkspaceLoad {
-    pub fn found(self) -> Option<WorkspaceConfig> {
-        match self {
-            WorkspaceLoad::Found(v) => Some(v),
-            WorkspaceLoad::Missing | WorkspaceLoad::Unreadable(_) => None,
-        }
-    }
 }
 
 impl WorkspaceConfig {

@@ -45,6 +45,9 @@ pub(crate) fn shell(
     // A folder of this test's own: every rig's workspace is of `/tmp`, and
     // tests running side by side must not share one.
     let storage = store.with_extension("workspace");
+    // Made, as a workspace's folder is by its first write, so its issues
+    // have a workspace to be kept in.
+    std::fs::create_dir_all(&storage).unwrap();
     cx.update(|cx| {
         let mut shared = Shared::for_test();
         shared.settings = SettingsDrive::new(agents, Default::default());

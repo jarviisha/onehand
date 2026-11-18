@@ -73,7 +73,7 @@ impl Deref for RecentsDrive {
 }
 
 /// A workspace's id: the name of the folder it is kept in.
-fn id_of(dir: &Path) -> String {
+pub(crate) fn id_of(dir: &Path) -> String {
     dir.file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default()
@@ -142,43 +142,6 @@ impl RecentsDrive {
     /// Every workspace, most recently opened first.
     pub fn listed(&self) -> &[Listed] {
         &self.listed
-    }
-
-    /// What a launch opens: the first workspace listed whose file loads, or
-    /// else `seed`, and whether `seed` is to be written before its window
-    /// opens. Blocking: it reads each file it tries.
-    ///
-    /// **A folder whose file cannot be read is never written over**, as
-    /// anywhere else: a seed whose own folder holds one is kept in the first
-    /// free folder beside it (`<id>-2`, `<id>-3`, …) instead, and the one that
-    /// cannot be read stays listed with its reason.
-    pub fn launch_blocking(
-        &self,
-        mut seed: crate::workspace::Workspace,
-    ) -> (crate::workspace::Workspace, bool) {
-        for listed in self.listed.iter().filter(|l| l.unreadable.is_none()) {
-            if let WorkspaceLoad::Found(cfg) = WorkspaceConfig::load_from(&listed.dir) {
-                return (
-                    crate::workspace::Workspace::from_config(cfg, listed.dir.clone()),
-                    false,
-                );
-            }
-        }
-        let base = seed.storage_dir.clone();
-        let mut n = 1;
-        loop {
-            match WorkspaceConfig::load_from(&seed.storage_dir) {
-                WorkspaceLoad::Found(cfg) => {
-                    let dir = seed.storage_dir.clone();
-                    return (crate::workspace::Workspace::from_config(cfg, dir), false);
-                }
-                WorkspaceLoad::Missing => return (seed, true),
-                WorkspaceLoad::Unreadable(_) => {
-                    n += 1;
-                    seed.storage_dir = base.with_file_name(format!("{}-{n}", id_of(&base)));
-                }
-            }
-        }
     }
 
     /// The workspace in `dir`, called `name`, was opened in a window: it is

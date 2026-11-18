@@ -64,7 +64,7 @@ pub(crate) fn workspace_control(
         .text_color(theme.foreground)
         .child(name);
     let menu = super::workspace::workspace_menu(
-        Some(workspace.storage_dir.clone()),
+        workspace.storage_dir.clone(),
         shell.recents(cx),
         cx.entity().downgrade(),
     );

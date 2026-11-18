@@ -220,7 +220,7 @@ Every attach opens by exchanging builds (`client::attach`):
 - **Kept in `onehand-workspace.toml` as a `[[projects]]` record with `host`** beside its `path`
   (`ProjectConfig`, `crates/core/src/config/workspace.rs`); the workspace's `active` names it as
   `<host>:<path>` (`host_path`, `parse_root_key`, `crates/core/src/workspace.rs`). A file written by
-  an earlier build, one string per root in `roots`, still reads: an entry that is not absolute and
+  an earlier build, one string per project in `roots`, still reads: an entry that is not absolute and
   has a host before its first `:/` is a host root, so a host named by an IPv6 address (`fe80::1`,
   `user@[fe80::1]`) keeps its colons. A local and a host folder on one path are two projects that
   both survive a reload. Restarting onehand shows the project again;

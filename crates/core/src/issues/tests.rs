@@ -222,6 +222,8 @@ fn the_file_is_per_project_under_the_workspace_storage() {
 fn issues_survive_a_round_trip_and_a_missing_file_is_empty() {
     let dir = std::env::temp_dir().join(format!("onehand-issues-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
+    // The workspace's folder is there; its issues folder is not yet.
+    std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("issues").join("p.json");
     assert_eq!(load_blocking(&file), Ok(Issues::default()));
 
@@ -327,4 +329,16 @@ fn a_blank_title_is_refused_and_nothing_is_written() {
     assert!(drive::write_blocking(&file, blank, 1).is_err());
     assert!(!file.exists());
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A write that lands after its workspace was deleted does not put the
+/// workspace's folder back: it fails instead.
+#[test]
+fn a_write_into_a_deleted_workspace_puts_nothing_back() {
+    let storage =
+        std::env::temp_dir().join(format!("onehand-issues-deleted-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&storage);
+    let file = file_for(&storage, Path::new("/p"));
+    assert!(update_blocking(&file, |_| Ok(())).is_err());
+    assert!(!storage.exists());
 }

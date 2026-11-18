@@ -228,9 +228,49 @@ pub fn storage_for(root: &Path) -> PathBuf {
 /// workspace, is kept: what an offload keeps, among others. Apart from the
 /// workspaces' folders, so a folder there is always a workspace.
 pub(crate) fn project_dir(path: &Path) -> PathBuf {
-    crate::config::config_dir()
-        .join("projects")
-        .join(stem_for(path))
+    crate::config::projects_in(&crate::config::config_dir()).join(stem_for(path))
+}
+
+/// What a launch opens.
+#[derive(Debug)]
+pub enum Launch {
+    /// A workspace already kept, as its file holds it.
+    Found(Workspace),
+    /// The seed, which nothing on disk holds yet: written once its window
+    /// is up.
+    Seeded(Workspace),
+}
+
+/// What a launch opens: the first of `listed` whose file loads, or else
+/// `seed`. Blocking: it reads each file it tries.
+///
+/// **A folder whose file cannot be read is never written over**, as
+/// anywhere else: a seed whose own folder holds one is kept in the first free
+/// folder beside it (`<id>-2`, `<id>-3`, …) instead, and the one that cannot
+/// be read stays listed with its reason.
+pub fn launch_blocking(listed: &[crate::config::recents::Listed], mut seed: Workspace) -> Launch {
+    use crate::config::{WorkspaceConfig, WorkspaceLoad};
+    for listed in listed.iter().filter(|l| l.unreadable.is_none()) {
+        if let WorkspaceLoad::Found(cfg) = WorkspaceConfig::load_from(&listed.dir) {
+            return Launch::Found(Workspace::from_config(cfg, listed.dir.clone()));
+        }
+    }
+    let base = seed.storage_dir.clone();
+    let id = crate::config::recents::id_of(&base);
+    let mut n = 1;
+    loop {
+        match WorkspaceConfig::load_from(&seed.storage_dir) {
+            WorkspaceLoad::Found(cfg) => {
+                let dir = seed.storage_dir.clone();
+                return Launch::Found(Workspace::from_config(cfg, dir));
+            }
+            WorkspaceLoad::Missing => return Launch::Seeded(seed),
+            WorkspaceLoad::Unreadable(_) => {
+                n += 1;
+                seed.storage_dir = base.with_file_name(format!("{id}-{n}"));
+            }
+        }
+    }
 }
 
 /// Remove the workspace kept in `dir`: its file, its issues and its note of
@@ -250,7 +290,7 @@ pub fn remove_workspace_blocking(dir: &Path) -> Result<(), String> {
         dir.join(crate::config::WorkspaceConfig::FILE),
     ))?;
     gone(std::fs::remove_file(dir.join(migrate::FROM)))?;
-    gone(std::fs::remove_dir_all(dir.join("issues")))?;
+    gone(std::fs::remove_dir_all(crate::issues::issues_dir(dir)))?;
     std::fs::remove_dir(dir).map_err(|e| format!("{} kept: {e}", dir.display()))
 }
 

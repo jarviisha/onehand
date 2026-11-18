@@ -38,7 +38,8 @@ mod state;
 pub use state::AppState;
 
 mod workspace;
-pub use workspace::{PanelLayout, ProjectConfig, WorkspaceConfig, WorkspaceLoad};
+pub(crate) use workspace::ProjectConfig;
+pub use workspace::{PanelLayout, WorkspaceConfig, WorkspaceLoad};
 
 /// `mode` as a run takes it: a blank mode is none, and leaves the agent in
 /// the mode it starts in, which asks more rather than less.
@@ -429,7 +430,18 @@ pub fn config_dir() -> PathBuf {
 
 /// Where onehand keeps its workspaces, one folder each.
 pub(crate) fn workspaces_dir() -> PathBuf {
-    config_dir().join("workspaces")
+    workspaces_in(&config_dir())
+}
+
+/// Where the root `root` keeps its workspaces.
+pub(crate) fn workspaces_in(root: &Path) -> PathBuf {
+    root.join("workspaces")
+}
+
+/// Where the root `root` keeps what belongs to a project itself, one folder
+/// each.
+pub(crate) fn projects_in(root: &Path) -> PathBuf {
+    root.join("projects")
 }
 
 /// `$ONEHAND_CONFIG_DIR`, when it names a root.

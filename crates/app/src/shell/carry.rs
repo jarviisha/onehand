@@ -21,6 +21,7 @@ pub(super) fn refused(why: Refusal) -> &'static str {
         Refusal::ProjectGone => PROJECT_GONE,
         Refusal::NotHere => "That runs on a project on this machine",
         Refusal::NoCheck => "This project has no check command to run",
+        Refusal::IssuesInUse => "A task is still working on this workspace's issues",
     }
 }
 
@@ -89,6 +90,7 @@ impl Shell {
                     self.chat.update(cx, |pane, cx| pane.list_host_sessions(cx))
                 }
                 Effect::ReadConversation(id) => self.read_conversation(id, window, cx),
+                Effect::Deleted(dir) => self.carry_deleted(dir, window, cx),
                 Effect::Signal(signal) => {
                     let toast = match signal {
                         Signal::SaveFailed(why) => {
@@ -149,6 +151,7 @@ impl Shell {
                 | Effect::EndOnHost { .. }
                 | Effect::ListHostSessions
                 | Effect::ReadConversation(_)
+                | Effect::Deleted(_)
                 | Effect::Signal(_)) => {
                     let rest: Vec<Effect> = std::iter::once(effect).chain(fx).collect();
                     let (at, shell) = (self.chat.read(cx).window_handle(), cx.entity().downgrade());

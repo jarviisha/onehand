@@ -19,8 +19,13 @@
 
 use super::stem_for;
 use crate::config::{move_into, write_atomic, AppState, WorkspaceConfig, WorkspaceLoad};
+use crate::issues::issues_dir;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+/// How many launches in a row a folder an earlier build named may be missing
+/// before it is given up on: enough for a disk left unplugged for a while.
+pub(crate) const MISSING_LAUNCHES: u32 = 20;
 
 /// The file a copy carries naming the folder it was copied from, so a later
 /// run knows that folder is already in.
@@ -38,7 +43,7 @@ pub fn migrate_storage_blocking() -> Vec<String> {
 /// [`migrate_storage_blocking`] for the root `config`.
 pub(crate) fn migrate_in(config: &Path) -> Vec<String> {
     let mut problems = Vec::new();
-    let workspaces = config.join("workspaces");
+    let workspaces = crate::config::workspaces_in(config);
     clear_staging(&workspaces, &mut problems);
     let state_path = config.join("state.toml");
     let mut state = AppState::load_from(&state_path);
@@ -66,21 +71,47 @@ pub(crate) fn migrate_in(config: &Path) -> Vec<String> {
                 }
             }
             Brought::Nothing => {}
+            Brought::Missing => {
+                let launches = state.missing.entry(dir.clone()).or_default();
+                *launches += 1;
+                match *launches >= MISSING_LAUNCHES {
+                    true => problems.push(format!(
+                        "given up on {}: not there for {MISSING_LAUNCHES} launches",
+                        dir.display()
+                    )),
+                    false => {
+                        kept.push(dir.clone());
+                        problems.push(format!("{}: not there at this launch", dir.display()));
+                    }
+                }
+            }
             Brought::Later(why) => {
                 kept.push(dir.clone());
                 problems.push(format!("{}: {why}", dir.display()));
             }
         }
     }
-    move_offloads(&workspaces, &config.join("projects"), &mut problems);
+    move_offloads(
+        &workspaces,
+        &crate::config::projects_in(config),
+        &mut problems,
+    );
 
     if !old.is_empty() {
-        for id in std::mem::take(&mut state.workspaces) {
-            if !ids.contains(&id) {
-                ids.push(id);
-            }
+        // The first time, the old order is the order. A folder brought in
+        // on a later launch goes after the workspaces opened since: it is
+        // not the one the person was last in.
+        let mut order = std::mem::take(&mut state.workspaces);
+        match order.is_empty() {
+            true => order = ids,
+            false => order.extend(
+                ids.into_iter()
+                    .filter(|id| !order.contains(id))
+                    .collect::<Vec<_>>(),
+            ),
         }
-        state.workspaces = ids;
+        state.workspaces = order;
+        state.missing.retain(|dir, _| kept.contains(dir));
         state.workspace_dir = state.workspace_dir.take().filter(|dir| kept.contains(dir));
         state.recent_workspaces.retain(|dir| kept.contains(dir));
         state.names.retain(|dir, _| kept.contains(dir));
@@ -113,8 +144,10 @@ enum Brought {
     In { id: String, left: Vec<String> },
     /// It is there and holds no workspace: nothing to bring in, ever.
     Nothing,
-    /// It could not be brought in now, for this: not there (a disk not
-    /// mounted), unreadable, or a copy that failed. Tried at the next launch.
+    /// It is not there at this launch: a disk not mounted, or deleted.
+    Missing,
+    /// It could not be brought in now, for this: unreadable, or a copy that
+    /// failed. Tried at the next launch.
     Later(String),
 }
 
@@ -133,16 +166,12 @@ fn bring_in(dir: &Path, workspaces: &Path, name: Option<&String>, config: &Path)
         };
     }
     if !dir.exists() {
-        return Brought::Later("not there at this launch".into());
+        return Brought::Missing;
     }
     // Copied by an earlier run: its tasks again, since that run may have
     // stopped between the copy and them.
     if let Some(id) = copied_from(workspaces, dir) {
-        let left = follow_tasks(
-            &dir.join("issues"),
-            &workspaces.join(&id).join("issues"),
-            config,
-        );
+        let left = follow_tasks(&issues_dir(dir), &issues_dir(&workspaces.join(&id)), config);
         return Brought::In { id, left };
     }
     // The folder named for `dir` can be taken: a workspace once made from
@@ -168,9 +197,9 @@ fn bring_in(dir: &Path, workspaces: &Path, name: Option<&String>, config: &Path)
         fs::create_dir_all(&staging)?;
         cfg.save_to(&staging)?;
         fs::write(staging.join(FROM), dir.as_os_str().as_encoded_bytes())?;
-        let issues = dir.join("issues");
+        let issues = issues_dir(dir);
         if issues.is_dir() {
-            copy_dir(&issues, &staging.join("issues"))?;
+            copy_dir(&issues, &issues_dir(&staging))?;
         }
         move_into(&staging, &target)
     })();
@@ -178,7 +207,7 @@ fn bring_in(dir: &Path, workspaces: &Path, name: Option<&String>, config: &Path)
         let _ = fs::remove_dir_all(&staging);
         return Brought::Later(why.to_string());
     }
-    let left = follow_tasks(&dir.join("issues"), &target.join("issues"), config);
+    let left = follow_tasks(&issues_dir(dir), &issues_dir(&target), config);
     Brought::In { id, left }
 }
 

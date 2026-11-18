@@ -48,6 +48,7 @@ fn names(fx: &[Effect]) -> Vec<String> {
             Effect::EndOnHost { session, .. } => format!("EndOnHost({})", session.0),
             Effect::ListHostSessions => "ListHostSessions".into(),
             Effect::ReadConversation(id) => format!("ReadConversation({id})"),
+            Effect::Deleted(dir) => format!("Deleted({})", dir.display()),
             Effect::Signal(signal) => format!("{signal:?}"),
         })
         .collect()
@@ -67,6 +68,7 @@ fn armed(fx: &[Effect]) -> u64 {
             | Effect::Write(_)
             | Effect::WriteOnClose(_)
             | Effect::Remember { .. }
+            | Effect::Deleted(_)
             | Effect::Sweep { .. }
             | Effect::Resweep
             | Effect::GitRead
@@ -100,6 +102,7 @@ fn written(fx: Vec<Effect>) -> Pending<Thing, Value> {
             | Effect::EndOnHost { .. }
             | Effect::ListHostSessions
             | Effect::ReadConversation(_)
+            | Effect::Deleted(_)
             | Effect::Signal(_) => None,
         })
         .expect("a write")
@@ -126,6 +129,7 @@ fn swept(effect: Effect) -> (u64, Vec<SweepProject>) {
         | Effect::EndOnHost { .. }
         | Effect::ListHostSessions
         | Effect::ReadConversation(_)
+        | Effect::Deleted(_)
         | Effect::Signal(_)) => {
             panic!("not a sweep: {:?}", names(&[e]))
         }
@@ -918,7 +922,7 @@ fn a_run_check_needs_a_project_here_with_a_check_command() {
 fn a_deleted_workspace_writes_nothing() {
     let mut drive = bound();
     let token = armed(&drive.rename("one"));
-    drive.delete();
+    assert_eq!(names(&drive.delete(false)), ["Deleted(/store)"]);
     assert!(drive.handle(Input::Elapsed { token }).is_empty());
     assert!(drive.flush().is_none());
     assert!(drive.save().is_empty());
@@ -926,4 +930,21 @@ fn a_deleted_workspace_writes_nothing() {
     assert!(names(&drive.rename("two"))
         .iter()
         .all(|n| n != "Write" && n != "Arm"));
+}
+
+/// While a task works an issue the workspace keeps, deleting it is refused,
+/// and the workspace goes on being written.
+#[test]
+fn a_held_workspace_is_not_deleted() {
+    let mut drive = bound();
+    assert_eq!(
+        WorkspaceDrive::delete_refusal(true),
+        Some(Refusal::IssuesInUse)
+    );
+    assert_eq!(WorkspaceDrive::delete_refusal(false), None);
+    assert_eq!(
+        names(&drive.delete(true)),
+        [format!("{:?}", Signal::Refused(Refusal::IssuesInUse))]
+    );
+    assert_eq!(names(&drive.save()), ["Write"]);
 }

@@ -28,6 +28,11 @@ pub struct AppState {
     pub(crate) recent_workspaces: Vec<PathBuf>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) names: BTreeMap<PathBuf, String>,
+    /// Of those folders, the ones not there at launch, with how many
+    /// launches in a row they have not been: a disk not mounted comes back,
+    /// a folder deleted does not, and the count is how the two are told apart.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) missing: BTreeMap<PathBuf, u32>,
 }
 
 impl AppState {

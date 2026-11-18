@@ -489,7 +489,12 @@ then *Add agent…*; the first row carries the *Default* badge. *Add agent…* a
 open the agent form as a dialog (*Kind*, *Name*, *Command* and *Arguments* for another agent,
 *Environment*; *Cancel*, then *Add* or *Save*), which a close drops. An entry naming a preset
 this build does not know shows its `preset` line, *Not supported by this build of onehand* under it,
-and only *Delete…*. The Connections page lists each connector and who it acts as, then an *Outside
+and only *Delete…*. The Workspace page holds, in its first group, the workspace's *Name* and its
+*Storage folder*: the folder onehand keeps it in, in mono, shown so it can be found for a backup
+and never chosen; then *Other workspaces* with *New workspace…*; then *Unattended runs*; and last
+*Delete workspace*, its button in the danger ink, refused while a task works one of the
+workspace's issues, asking before it closes the window and removes the workspace with the issues
+it keeps. The Connections page lists each connector and who it acts as, then an *Outside
 control* group: what a program may and may never do, the socket's path in mono, and one switch.
 The Shortcuts page lists the window's commands first, then a group for each place the rest work
 in (the rail's list, a page, a card, the composer), in the keymap's order, and last the terminal's

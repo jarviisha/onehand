@@ -1,5 +1,6 @@
 use super::*;
 use crate::config::WorkspaceConfig;
+use crate::workspace::{launch_blocking, Launch, Workspace};
 
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("onehand-list-{name}-{}", std::process::id()));
@@ -142,39 +143,43 @@ fn a_launch_opens_the_first_workspace_that_loads() {
         root.join("state.toml"),
         list_blocking(&root),
     );
-    let (ws, write) = drive.launch_blocking(crate::workspace::Workspace::seeded("/x"));
-    assert_eq!(
-        (ws.storage_dir, ws.name.as_str(), write),
-        (good, "Good", false)
-    );
+    match launch_blocking(drive.listed(), Workspace::seeded("/x")) {
+        Launch::Found(ws) => assert_eq!((ws.storage_dir, ws.name.as_str()), (good, "Good")),
+        other => panic!("{other:?}"),
+    }
     let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
 fn with_none_a_launch_writes_the_seed() {
     let drive = RecentsDrive::new(state(&[]), PathBuf::from("/nowhere/state.toml"), Vec::new());
-    let seed = crate::workspace::Workspace::seeded("/x/never-made");
+    let seed = Workspace::seeded("/x/never-made");
     let at = seed.storage_dir.clone();
-    let (ws, write) = drive.launch_blocking(seed);
-    assert_eq!((ws.storage_dir, write), (at, true));
+    match launch_blocking(drive.listed(), seed) {
+        Launch::Seeded(ws) => assert_eq!(ws.storage_dir, at),
+        other => panic!("{other:?}"),
+    }
 }
 
 #[test]
 fn seed_over_an_unreadable_file_never_writes_it() {
     let root = scratch("seed-unreadable");
-    let mut seed = crate::workspace::Workspace::seeded("/x/proj");
+    let mut seed = Workspace::seeded("/x/proj");
     seed.storage_dir = root.join("proj-1");
     std::fs::create_dir_all(&seed.storage_dir).unwrap();
     let file = seed.storage_dir.join(WorkspaceConfig::FILE);
     std::fs::write(&file, "name = ").unwrap();
     let drive = RecentsDrive::new(state(&[]), root.join("state.toml"), Vec::new());
-    let (ws, write) = drive.launch_blocking(seed);
-    assert!(write);
-    assert_eq!(
-        ws.storage_dir,
-        root.join("proj-1-2"),
-        "kept beside it instead"
-    );
+    match launch_blocking(drive.listed(), seed) {
+        Launch::Seeded(ws) => {
+            assert_eq!(
+                ws.storage_dir,
+                root.join("proj-1-2"),
+                "kept beside it instead"
+            )
+        }
+        other => panic!("{other:?}"),
+    }
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "name = ");
     let _ = std::fs::remove_dir_all(root);
 }

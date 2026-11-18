@@ -7,7 +7,7 @@ use gpui_component::input::InputState;
 use gpui_component::notification::Notification;
 use onehand_core::config::recents::{Effect as RecentsEffect, Input, Listed, Signal};
 use onehand_core::config::{WorkspaceConfig, WorkspaceLoad};
-use onehand_core::workspace::{self, Workspace};
+use onehand_core::workspace::{self, Workspace, WorkspaceDrive};
 use std::path::Path;
 
 impl Shell {
@@ -63,11 +63,14 @@ impl Shell {
 
     // ── Workspace settings ──────────────────────────────────────────────────
 
-    /// Why this workspace cannot be deleted now, if it cannot: a task not yet
-    /// over works an issue it keeps, and its file would go from under it.
-    pub fn delete_refused(&self, cx: &App) -> Option<&'static str> {
+    /// Whether a task not yet over works an issue this workspace keeps.
+    fn held(&self, cx: &App) -> bool {
         crate::task::Tasks::holds(&self.window.workspace.storage_dir, cx)
-            .then_some("A task is still working on this workspace's issues")
+    }
+
+    /// Why this workspace cannot be deleted now, in words, if it cannot.
+    pub fn delete_refused(&self, cx: &App) -> Option<&'static str> {
+        WorkspaceDrive::delete_refusal(self.held(cx)).map(super::carry::refused)
     }
 
     /// Ask, then delete this window's workspace.
@@ -85,20 +88,25 @@ impl Shell {
         });
     }
 
-    /// Delete this window's workspace: nothing writes it from now on, the
-    /// window closes, and its folder goes once every write queued before it
-    /// has landed, on the same ordered writer, so no late write puts it back.
+    /// Delete this window's workspace, as its drive answers: held again now,
+    /// since a task may have started while the question was open.
     fn delete_workspace(&mut self, window: &mut gpui::Window, cx: &mut Context<Self>) {
-        // Asked again: a task may have started while the question was open.
-        if let Some(why) = self.delete_refused(cx) {
-            window.push_notification(crate::toast::warning(why), cx);
-            return;
-        }
-        self.window.workspace.delete();
+        let fx = self.window.workspace.delete(self.held(cx));
+        self.carry_workspace(fx, window, cx);
+    }
+
+    /// Carry a deleted workspace out: its views write into `dir` no more,
+    /// what is its own there goes once every write queued before has landed,
+    /// on the same ordered writer, it leaves the list, and its window closes.
+    pub(super) fn carry_deleted(
+        &mut self,
+        dir: std::path::PathBuf,
+        window: &mut gpui::Window,
+        cx: &mut Context<Self>,
+    ) {
         self.workbench
             .update(cx, |panel, cx| panel.set_storage(None, cx));
         self.tell_issues_page(&onehand_workbench::Request::SetStorage(None), cx);
-        let dir = self.window.workspace.storage_dir.clone();
         let removed = Shared::global(cx).writer.write({
             let dir = dir.clone();
             move || workspace::remove_workspace_blocking(&dir)
@@ -250,14 +258,17 @@ impl Shell {
                 // Present but unreadable -- an unmounted share, a permission
                 // blip, a TOML typo. Every one of those is recoverable, and
                 // forgetting the recent is not: say so and keep the row.
-                WorkspaceLoad::Unreadable(_) => {
+                WorkspaceLoad::Unreadable(why) => {
                     shell
                         .update_in(cx, |_, window, cx| {
                             window.push_notification(
-                                crate::toast::error(format!(
-                                    "Reading the workspace in {} failed, and its entry was kept",
-                                    dir.display()
-                                )),
+                                crate::toast::failed(
+                                    "Reading the workspace",
+                                    format!(
+                                        "{} cannot be read, and is kept as it is: {why}",
+                                        dir.display()
+                                    ),
+                                ),
                                 cx,
                             );
                             cx.notify();

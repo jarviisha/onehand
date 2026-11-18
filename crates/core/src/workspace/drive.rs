@@ -123,6 +123,9 @@ pub enum Refusal {
     NotHere,
     /// The project has no check command to run.
     NoCheck,
+    /// A task not yet over works an issue the workspace keeps, so the
+    /// workspace is not deleted from under it.
+    IssuesInUse,
 }
 
 /// A project that has left the window, on this machine or on `host`.
@@ -214,6 +217,10 @@ pub enum Effect {
     /// leaves nothing behind, and what it found is acted on as the workspace
     /// stands when it lands.
     ReadConversation(String),
+    /// The workspace kept in `dir` is deleted: stop its views writing into
+    /// it, take it off the list, remove what is its own in `dir` after every
+    /// write queued before, and close its window.
+    Deleted(PathBuf),
     /// The workspace in `dir` is known by `name`: remember it so.
     Remember {
         dir: PathBuf,
@@ -315,11 +322,23 @@ impl WorkspaceDrive {
         }
     }
 
-    /// The workspace is being deleted: from now on nothing writes its file,
-    /// not a burst still waiting nor the write its window makes on closing.
-    pub fn delete(&mut self) {
+    /// Why the workspace may not be deleted, if it may not: `held` says a
+    /// task not yet over works an issue it keeps.
+    pub fn delete_refusal(held: bool) -> Option<Refusal> {
+        held.then_some(Refusal::IssuesInUse)
+    }
+
+    /// Delete the workspace, unless `held` (see [`Self::delete_refusal`]).
+    /// From then on nothing writes its file, not a burst still waiting nor
+    /// the write its window makes on closing.
+    #[must_use = "its effects are to be carried"]
+    pub fn delete(&mut self, held: bool) -> Vec<Effect> {
+        if let Some(why) = Self::delete_refusal(held) {
+            return vec![Effect::Signal(Signal::Refused(why))];
+        }
         self.deleted = true;
         self.soon = None;
+        vec![Effect::Deleted(self.workspace.storage_dir.clone())]
     }
 
     /// The panels' layout, which the front end keeps in the workspace file

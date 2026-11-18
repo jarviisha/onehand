@@ -408,7 +408,6 @@ fn an_unreadable_workspace_config_is_not_an_empty_folder() {
         WorkspaceConfig::load_from(&dir),
         WorkspaceLoad::Unreadable(_)
     ));
-    assert!(WorkspaceConfig::load_from(&dir).found().is_none());
 
     let _ = std::fs::remove_dir_all(&dir);
 }

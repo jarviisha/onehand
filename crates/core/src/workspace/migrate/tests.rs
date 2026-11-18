@@ -1,5 +1,5 @@
 use super::*;
-use crate::config::{AppState, WorkspaceConfig};
+use crate::config::{AppState, WorkspaceConfig, WorkspaceLoad};
 use std::fs;
 
 /// A config root and a folder beside it for what an earlier build kept
@@ -36,6 +36,14 @@ fn old_state(config: &Path, recents: &[&Path], names: &[(&Path, &str)]) {
         ..Default::default()
     };
     state.save_to(&config.join("state.toml")).unwrap();
+}
+
+/// The workspace file in `dir`, which must load.
+fn loaded(dir: &Path) -> WorkspaceConfig {
+    match WorkspaceConfig::load_from(dir) {
+        WorkspaceLoad::Found(cfg) => cfg,
+        other => panic!("{dir:?}: {other:?}"),
+    }
 }
 
 fn state(config: &Path) -> AppState {
@@ -82,7 +90,7 @@ fn the_old_name_fills_an_empty_one() {
     old_state(&config, &[&old], &[(&old, "Kept name")]);
     migrate_in(&config);
     let new = config.join("workspaces").join(stem_for(&old));
-    let cfg = WorkspaceConfig::load_from(&new).found().unwrap();
+    let cfg = loaded(&new);
     assert_eq!(cfg.name, "Kept name");
 }
 
@@ -217,13 +225,9 @@ fn a_folder_taken_by_another_workspace_is_copied_beside_it() {
     let beside = config
         .join("workspaces")
         .join(format!("{}-2", stem_for(&old)));
-    let cfg = WorkspaceConfig::load_from(&beside).found().unwrap();
+    let cfg = loaded(&beside);
     assert_eq!(cfg.name, "Foxaiwork");
-    assert_eq!(
-        WorkspaceConfig::load_from(&taken).found().unwrap().name,
-        "ws02",
-        "the one there is left alone"
-    );
+    assert_eq!(loaded(&taken).name, "ws02", "the one there is left alone");
     assert_eq!(
         state(&config).workspaces[0],
         format!("{}-2", stem_for(&old))
@@ -309,4 +313,46 @@ fn a_link_in_an_old_folder_is_not_followed() {
     let new = config.join("workspaces").join(stem_for(&old));
     assert!(new.join("issues").join("p-1.json").is_file());
     assert!(!new.join("issues").join("loop").exists());
+}
+
+/// A folder brought in on a later launch (its disk mounted since) joins the
+/// order after the workspaces already opened: it is not the most recent.
+#[test]
+fn a_folder_brought_in_later_goes_after_the_opened_ones() {
+    let (config, ext) = scratch("later-order");
+    let (here, away) = (ext.join("here"), ext.join("away"));
+    old_workspace(&here, "Here");
+    old_state(&config, &[&here, &away], &[]);
+    migrate_in(&config);
+    let mut st = state(&config);
+    st.workspaces.insert(0, "opened-since".into());
+    st.save_to(&config.join("state.toml")).unwrap();
+    old_workspace(&away, "Away");
+    migrate_in(&config);
+    assert_eq!(
+        state(&config).workspaces,
+        ["opened-since".to_string(), stem_for(&here), stem_for(&away)]
+    );
+}
+
+/// A folder missing launch after launch is given up on in the end, and said
+/// so once, rather than looked for at every start for ever.
+#[test]
+fn a_folder_missing_at_every_launch_is_given_up_on() {
+    let (config, ext) = scratch("give-up");
+    let away = ext.join("gone");
+    old_state(&config, &[&away], &[]);
+    for _ in 1..MISSING_LAUNCHES {
+        migrate_in(&config);
+        assert_eq!(
+            state(&config).recent_workspaces,
+            std::slice::from_ref(&away)
+        );
+    }
+    let said = migrate_in(&config);
+    assert!(
+        said.iter().any(|line| line.contains("given up")),
+        "{said:?}"
+    );
+    assert!(state(&config).recent_workspaces.is_empty());
 }
