@@ -1585,3 +1585,24 @@ fn a_turn_seen_running_then_over_clears_unended() {
     assert!(!kept(&fx, 1).unwrap().workers[0].unended);
     assert!(!drive.held(7).unwrap().unended);
 }
+
+#[test]
+fn closing_a_lead_asks_about_its_workers_whatever_runs() {
+    use crate::chat::drive::Closing;
+    let mut drive = lead_on();
+    assert_eq!(drive.close_asks(1, Closing::Now), CloseAsks::Now);
+    assert_eq!(drive.close_asks(1, Closing::Ask), CloseAsks::Turn);
+    begun(&mut drive);
+    assert_eq!(
+        drive.close_asks(1, Closing::Now),
+        CloseAsks::Workers(vec![7])
+    );
+    assert_eq!(
+        drive.close_asks(1, Closing::Ask),
+        CloseAsks::Workers(vec![7])
+    );
+    // A worker leading none asks only about its own turn.
+    assert_eq!(drive.close_asks(7, Closing::Now), CloseAsks::Now);
+    // Its workers close first, then the lead.
+    assert_eq!(drive.close_all(1), [7, 1]);
+}

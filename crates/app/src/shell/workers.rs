@@ -1,6 +1,6 @@
 //! Where a session is in the workspace, and where a worker stands: under its
 //! lead's project, whose row in the rail it is drawn in, while that lead is a
-//! session of this window.
+//! session of this window. And the question closing a lead asks.
 
 use super::Shell;
 use super::confirm::{Answer, Confirm};
@@ -14,26 +14,17 @@ impl Shell {
             .workspace
             .home_of(uid, crate::control::lead_of(uid))
     }
-}
 
-impl Shell {
-    /// Ask before closing lead `uid`, which leads workers: close them with it,
-    /// or the lead alone, leaving them open under their own projects. Each
-    /// worker is named, with what closing it would stop.
-    ///
-    /// Asked whether or not anything is running: a lead closed by accident
-    /// loses its hold on every worker, and a worker left behind holds its
-    /// agent and a place under the cap with nobody to give it work.
+    /// Ask before closing lead `uid`, which leads `workers`: close them with
+    /// it, or the lead alone, leaving them open under their own projects.
+    /// Each worker is named, with what closing it would stop.
     pub(super) fn ask_close_lead(
         &mut self,
         uid: u64,
+        workers: &[u64],
         window: &mut gpui::Window,
         cx: &mut gpui::Context<Self>,
     ) {
-        let workers: Vec<u64> = crate::control::workers_of(uid)
-            .into_iter()
-            .map(|worker| worker.uid)
-            .collect();
         let lines = workers
             .iter()
             .map(|&worker| {
@@ -69,14 +60,13 @@ impl Shell {
         };
         // By uid, not by place: the list can shift while the question is open.
         self.confirm_either(ask, window, cx, move |shell, answer, window, cx| {
-            if answer == Answer::Act {
-                // The workers first, while their lead is still there to be
-                // shown in place of one on screen.
-                for worker in crate::control::workers_of(uid) {
-                    shell.end_session(worker.uid, window, cx);
-                }
+            let closing = match answer {
+                Answer::Act => crate::control::close_all(uid),
+                Answer::Alt => vec![uid],
+            };
+            for uid in closing {
+                shell.end_session(uid, window, cx);
             }
-            shell.end_session(uid, window, cx)
         });
     }
 

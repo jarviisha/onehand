@@ -28,7 +28,9 @@ pub(crate) use start::start_task;
 use start::{start, template};
 pub(crate) use workers::bring_back;
 
-pub(crate) use workers::whose::{Worker, give_back, give_back_offered, lead_of, workers_of};
+pub(crate) use workers::whose::{
+    Worker, close_all, close_asks, give_back, give_back_offered, lead_of, workers_of,
+};
 
 /// The tools' drive, held for the whole process: an agent's token is minted
 /// and let go where no window is at hand, and the socket's runtime reads each

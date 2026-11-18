@@ -484,7 +484,8 @@ in the app and in a feature crate:
 - the description says what goes and what stays;
 - the buttons read *Keep*, then the danger word, the same verb as the control that asked.
 - a removal with a lesser way ahead puts that one, secondary, between them: closing a lead reads
-  *Keep*, *Close the lead only*, *Close all*.
+  *Keep*, *Close the lead only*, *Close all*. Enter answers the danger word there, the one it is
+  asked for; a question with only that word keeps Enter closing it.
 
 What can be undone or resumed goes ahead without asking: stopping a task that offers *Resume*,
 taking an item off the queue, unbinding a key, closing an issue. Closing an issue a run is working

@@ -37,7 +37,8 @@ pub struct Confirm {
     /// What was found refuses it: the danger-tinted word is spent.
     pub refused: bool,
     /// A second, lesser way to go ahead, between *Keep* and `act`: asked
-    /// through [`confirm_either_on`], which says which was pressed.
+    /// through [`confirm_either_on`], which says which was pressed. Enter
+    /// then answers `act`.
     pub alt: Option<&'static str>,
 }
 
@@ -98,6 +99,10 @@ pub fn confirm_either_on<T: 'static>(
             .short()
             .danger()
             .label(ask.act);
+        // A question with a lesser way ahead takes Enter as its danger word,
+        // the one it is asked for; one with only that word keeps Enter
+        // closing it, so a key held too long removes nothing.
+        let enter = (ask.alt.is_some() && !ask.refused).then(|| (on.clone(), then.clone()));
         let go = match ask.refused {
             true => go.refuses(Some("What was found above stops it")),
             false => go.on_click(move |_, window: &mut Window, cx: &mut App| {
@@ -107,6 +112,13 @@ pub fn confirm_either_on<T: 'static>(
             }),
         };
         alert
+            .when_some(enter, |alert, (on, then)| {
+                alert.on_ok(move |_, window: &mut Window, cx: &mut App| {
+                    let then = then.clone();
+                    on.update(cx, |on: &mut T, cx| then(on, Answer::Act, window, cx));
+                    true
+                })
+            })
             .title(ask.title.clone())
             .description(ask.description.clone())
             .when(!ask.lines.is_empty(), |alert| {

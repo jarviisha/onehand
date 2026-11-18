@@ -304,6 +304,19 @@ pub enum Found {
     Closed,
 }
 
+/// What closing a session asks first.
+#[derive(Debug, PartialEq, Eq)]
+pub enum CloseAsks {
+    /// Nothing would be lost: close it.
+    Now,
+    /// Its turn is running, and closing loses it.
+    Turn,
+    /// It leads these workers, opening or open, oldest first: whether they
+    /// close with it, whatever runs, since a worker left behind holds its
+    /// agent and a place under the cap with nobody to give it work.
+    Workers(Vec<u64>),
+}
+
 /// Why a session is not put on another conversation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResumeRefused {
