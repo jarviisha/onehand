@@ -25,34 +25,6 @@ pub fn first_line_trunc(s: &str, max: usize) -> String {
     }
 }
 
-/// A path cut down to what tells it apart on one line of a transcript.
-///
-/// **The name, and the directory holding it.** A row is a fixed height with
-/// four other columns on it, so a path is the one thing on it that can be
-/// arbitrarily long — and an absolute path spends every character it has on
-/// the part that is identical for every file in the project. The tail is what
-/// identifies a file; the directory above it is what tells two files with the
-/// same name apart, which in a source tree is most of the interesting cases.
-/// The whole path is still one disclosure away, and still in the tooltip.
-///
-/// Anything that is not a path comes back unchanged: an execute step's subject
-/// is a command, and cutting a command at its last slash would leave it saying
-/// something the agent never ran.
-pub fn short_path(value: &str) -> String {
-    let trimmed = value.trim().trim_end_matches('/');
-    if trimmed.is_empty() || trimmed.contains(char::is_whitespace) {
-        return value.trim().to_string();
-    }
-    let mut parts = trimmed.rsplit('/');
-    let Some(name) = parts.next().filter(|name| !name.is_empty()) else {
-        return value.trim().to_string();
-    };
-    match parts.next().filter(|dir| !dir.is_empty()) {
-        Some(dir) => format!("{dir}/{name}"),
-        None => name.to_string(),
-    }
-}
-
 /// Coarse transcript sections. Tool rows keep their precise semantic action,
 /// while adjacent rows with the same section read as one scan-friendly block.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -114,6 +86,9 @@ pub struct Presentation {
     /// reasoning that the rule was worth keeping until something wanted to
     /// print it. Something does.
     pub action: &'static str,
+    /// The same verb while the step is still going: "Searching", "Running
+    /// tests", "Building".
+    doing: &'static str,
     pub subject: String,
     /// Always `None`. Set by nothing, read by nothing but the tests, and kept
     /// for the same reason as `action`.
@@ -131,35 +106,59 @@ impl Presentation {
     /// from one in hand, and reading it as waiting would call most running
     /// steps idle.
     ///
-    /// **One rule for every place a step is named**, so its own row, the line
-    /// standing for its cluster and anything else that names it cannot
-    /// disagree about whether it is over.
+    /// **One rule for every place a step is named**: its own row and the line
+    /// standing for its cluster both ask here, so they cannot disagree about
+    /// what it is doing or whether it is over.
     pub fn verb(&self, status: ToolStatus) -> &'static str {
-        match status {
-            ToolStatus::Pending | ToolStatus::InProgress => doing(self.action),
-            ToolStatus::Completed | ToolStatus::Failed => self.action,
+        match status.is_running() {
+            true => self.doing,
+            false => self.action,
         }
     }
 }
 
-/// The present form of a verb a step is classified as.
-fn doing(action: &str) -> &'static str {
-    match action {
-        "Inspected" => "Reading",
-        "Searched" => "Searching",
-        "Fetched" => "Fetching",
-        "Created" => "Creating",
-        "Edited" => "Editing",
-        "Deleted" => "Deleting",
-        "Moved" => "Moving",
-        "Changed files" => "Changing files",
-        "Reasoned" => "Thinking",
-        "Used tool" => "Using tool",
-        "Ran" => "Running",
-        "Ran tests" => "Running tests",
-        "Checked" => "Checking",
-        "Built" => "Building",
-        _ => "Working",
+/// What a step is classified as doing, with the word for it done and the
+/// word for it still going.
+///
+/// **An enum and not the two strings**, so a verb cannot be added in one
+/// tense and forgotten in the other.
+#[derive(Clone, Copy)]
+enum Verb {
+    Inspected,
+    Searched,
+    Fetched,
+    Created,
+    Edited,
+    Deleted,
+    Moved,
+    ChangedFiles,
+    Reasoned,
+    UsedTool,
+    Ran,
+    RanTests,
+    Checked,
+    Built,
+}
+
+impl Verb {
+    /// The verb once the step has settled, and while it is still going.
+    fn tenses(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Inspected => ("Inspected", "Reading"),
+            Self::Searched => ("Searched", "Searching"),
+            Self::Fetched => ("Fetched", "Fetching"),
+            Self::Created => ("Created", "Creating"),
+            Self::Edited => ("Edited", "Editing"),
+            Self::Deleted => ("Deleted", "Deleting"),
+            Self::Moved => ("Moved", "Moving"),
+            Self::ChangedFiles => ("Changed files", "Changing files"),
+            Self::Reasoned => ("Reasoned", "Thinking"),
+            Self::UsedTool => ("Used tool", "Using tool"),
+            Self::Ran => ("Ran", "Running"),
+            Self::RanTests => ("Ran tests", "Running tests"),
+            Self::Checked => ("Checked", "Checking"),
+            Self::Built => ("Built", "Building"),
+        }
     }
 }
 
@@ -170,15 +169,32 @@ fn doing(action: &str) -> &'static str {
 /// **One rule for every line that names a file.** What lies under neither
 /// comes back unchanged, a command included.
 pub fn display_path(root: &Path, value: &str) -> String {
+    shown_from(root, dirs::home_dir().as_deref(), value)
+}
+
+/// [`display_path`] with the home directory handed in.
+fn shown_from(root: &Path, home: Option<&Path>, value: &str) -> String {
     let path = Path::new(value);
-    if let Ok(inside) = path.strip_prefix(root) {
-        if !inside.as_os_str().is_empty() {
-            return inside.to_string_lossy().into_owned();
-        }
+    let under = |base: &Path| {
+        path.strip_prefix(base)
+            .ok()
+            .filter(|rest| !rest.as_os_str().is_empty())
+            .map(|rest| rest.to_string_lossy().into_owned())
+    };
+    match (under(root), home.and_then(under)) {
+        (Some(inside), _) => inside,
+        (None, Some(rest)) => format!("~/{rest}"),
+        (None, None) => value.to_string(),
     }
-    match dirs::home_dir().and_then(|home| path.strip_prefix(home).ok().map(Path::to_path_buf)) {
-        Some(under) if !under.as_os_str().is_empty() => format!("~/{}", under.to_string_lossy()),
-        _ => value.to_string(),
+}
+
+/// A path cut to `max` characters at its start, so the name at its end
+/// stays: `…transcript/parts/activity.rs`.
+pub(crate) fn tail_trunc(path: &str, max: usize) -> String {
+    let count = path.chars().count();
+    match count > max {
+        true => format!("…{}", path.chars().skip(count - max).collect::<String>()),
+        false => path.to_string(),
     }
 }
 
@@ -197,7 +213,7 @@ fn classify(tool: &ToolItem) -> Presentation {
     let call = &tool.call;
     match call.kind {
         ToolKind::Read => present(
-            "Inspected",
+            Verb::Inspected,
             strip_redundant_prefix(&call.title, &["Read", "Inspect", "Inspected"]),
             ActivityKind::Inspect,
         ),
@@ -208,32 +224,34 @@ fn classify(tool: &ToolItem) -> Presentation {
                 .any(|content| matches!(content, ToolContent::Diff { old: None, .. }));
             let path = first_diff_path(tool).unwrap_or(call.title.as_str());
             present(
-                if created { "Created" } else { "Edited" },
+                if created { Verb::Created } else { Verb::Edited },
                 path,
                 ActivityKind::Change,
             )
         }
-        ToolKind::Delete => present("Deleted", &call.title, ActivityKind::Change),
-        ToolKind::Move => present("Moved", &call.title, ActivityKind::Change),
+        ToolKind::Delete => present(Verb::Deleted, &call.title, ActivityKind::Change),
+        ToolKind::Move => present(Verb::Moved, &call.title, ActivityKind::Change),
         ToolKind::Search => present(
-            "Searched",
+            Verb::Searched,
             strip_redundant_prefix(&call.title, &["Search", "Searched", "Grep"]),
             ActivityKind::Search,
         ),
         ToolKind::Fetch => present(
-            "Fetched",
+            Verb::Fetched,
             strip_redundant_prefix(&call.title, &["Fetch", "Fetched"]),
             ActivityKind::Fetch,
         ),
-        ToolKind::Think => present("Reasoned", &call.title, ActivityKind::Reason),
-        ToolKind::Other => present("Used tool", &call.title, ActivityKind::Other),
+        ToolKind::Think => present(Verb::Reasoned, &call.title, ActivityKind::Reason),
+        ToolKind::Other => present(Verb::UsedTool, &call.title, ActivityKind::Other),
         ToolKind::Execute => execute_presentation(&call.title),
     }
 }
 
-fn present(action: &'static str, subject: &str, kind: ActivityKind) -> Presentation {
+fn present(verb: Verb, subject: &str, kind: ActivityKind) -> Presentation {
+    let (action, doing) = verb.tenses();
     Presentation {
         action,
+        doing,
         subject: first_line_trunc(subject, 240),
         metadata: None,
         kind,
@@ -266,7 +284,7 @@ fn execute_presentation(command: &str) -> Presentation {
     let line = semantic_line.trim();
     let tokens: Vec<&str> = line.split_whitespace().collect();
     let Some((program_idx, program)) = primary_program(&tokens) else {
-        return present("Ran", line, ActivityKind::Run);
+        return present(Verb::Ran, line, ActivityKind::Run);
     };
     let args = &tokens[program_idx + 1..];
 
@@ -288,49 +306,47 @@ fn execute_presentation(command: &str) -> Presentation {
 
     if is_test_command(program, args) {
         let label = command_label(program, args, &["nextest", "test"]);
-        return present("Ran tests", &label, ActivityKind::Test);
+        return present(Verb::RanTests, &label, ActivityKind::Test);
     }
     if is_check_command(program, args) {
         let label = command_label(program, args, &["clippy", "check", "lint", "fmt"]);
-        return present("Checked", &label, ActivityKind::Check);
+        return present(Verb::Checked, &label, ActivityKind::Check);
     }
     if is_build_command(program, args) {
         let label = command_label(program, args, &["build", "compile"]);
-        return present("Built", &label, ActivityKind::Build);
+        return present(Verb::Built, &label, ActivityKind::Build);
     }
     if matches!(program, "grep" | "rg" | "ripgrep" | "ag" | "ack") {
         let (subject, metadata) = search_parts(line, args);
         return Presentation {
-            action: "Searched",
-            subject,
             metadata,
-            kind: ActivityKind::Search,
+            ..present(Verb::Searched, &subject, ActivityKind::Search)
         };
     }
     if is_inspect_command(program, args) {
         let subject = inspect_target(program, args);
-        return present("Inspected", &subject, ActivityKind::Inspect);
+        return present(Verb::Inspected, &subject, ActivityKind::Inspect);
     }
     if matches!(program, "curl" | "wget" | "http" | "xh") {
         let subject = url_argument(args)
             .or_else(|| last_argument(args))
             .unwrap_or_else(|| program.to_string());
-        return present("Fetched", &subject, ActivityKind::Fetch);
+        return present(Verb::Fetched, &subject, ActivityKind::Fetch);
     }
     if matches!(program, "rm" | "rmdir") {
         let subject = last_argument(args).unwrap_or_else(|| "files".to_string());
-        return present("Deleted", &subject, ActivityKind::Change);
+        return present(Verb::Deleted, &subject, ActivityKind::Change);
     }
     if matches!(
         program,
         "mkdir" | "touch" | "cp" | "mv" | "install" | "apply_patch"
     ) {
         let subject = last_argument(args).unwrap_or_else(|| program.to_string());
-        return present("Changed files", &subject, ActivityKind::Change);
+        return present(Verb::ChangedFiles, &subject, ActivityKind::Change);
     }
 
     present(
-        "Ran",
+        Verb::Ran,
         strip_redundant_prefix(line, &["Run", "Ran", "Execute", "Executed"]),
         ActivityKind::Run,
     )
@@ -572,9 +588,11 @@ fn quoted_argument_span(line: &str) -> Option<(String, usize)> {
 #[cfg(test)]
 mod tests {
     use super::{
-        display_path, execute_presentation, presentation, short_path, strip_redundant_prefix,
+        display_path, execute_presentation, presentation, strip_redundant_prefix, tail_trunc,
         ActivityKind,
     };
+    use crate::acp::{ToolCall, ToolKind, ToolStatus};
+    use crate::chat::model::ToolItem;
     use std::path::Path;
 
     fn tool(kind: ToolKind, title: &str) -> ToolItem {
@@ -601,42 +619,13 @@ mod tests {
         assert_eq!(read.verb(ToolStatus::InProgress), "Reading");
     }
 
-    /// Every verb a step can be classified as has a present form of its own;
-    /// a new one added without it would read *Working*.
     #[test]
-    fn every_verb_has_a_present_form() {
-        for action in [
-            "Inspected",
-            "Searched",
-            "Fetched",
-            "Created",
-            "Edited",
-            "Deleted",
-            "Moved",
-            "Changed files",
-            "Reasoned",
-            "Used tool",
-            "Ran",
-            "Ran tests",
-            "Checked",
-            "Built",
-        ] {
-            assert_ne!(super::doing(action), "Working", "{action}");
-        }
-        for command in [
-            "cargo test",
-            "cargo clippy",
-            "cargo build",
-            "rg x",
-            "cat a",
-            "curl u",
-            "rm a",
-            "mkdir a",
-            "ls",
-        ] {
-            let action = execute_presentation(command).action;
-            assert_ne!(super::doing(action), "Working", "{command}: {action}");
-        }
+    fn a_long_path_gives_way_at_its_start() {
+        assert_eq!(tail_trunc("src/a.rs", 20), "src/a.rs");
+        assert_eq!(
+            tail_trunc("crates/app/src/chat/pane.rs", 12),
+            "…chat/pane.rs"
+        );
     }
 
     #[test]
@@ -647,15 +636,16 @@ mod tests {
         assert_eq!(display_path(root, "cargo test -p a/b"), "cargo test -p a/b");
         assert_eq!(display_path(root, "/work/app/My File.rs"), "My File.rs");
         assert_eq!(display_path(root, "/etc/hosts"), "/etc/hosts");
-        let home = dirs::home_dir().expect("a home directory");
-        let outside = home.join("notes/x.md");
+        let home = Path::new("/home/me");
+        let from = |value| super::shown_from(root, Some(home), value);
+        assert_eq!(from("/home/me/notes/x.md"), "~/notes/x.md");
+        assert_eq!(from("/home/me"), "/home/me");
+        assert_eq!(from("/work/app/src/a.rs"), "src/a.rs");
         assert_eq!(
-            display_path(root, outside.to_str().unwrap()),
-            "~/notes/x.md"
+            super::shown_from(root, None, "/home/me/notes/x.md"),
+            "/home/me/notes/x.md"
         );
     }
-    use crate::acp::{ToolCall, ToolKind, ToolStatus};
-    use crate::chat::model::ToolItem;
 
     #[test]
     fn a_running_command_never_shows_its_password() {
@@ -670,24 +660,6 @@ mod tests {
         let subject = presentation(&tool).subject;
         assert!(!subject.contains("Hunter2"), "{subject}");
         assert!(subject.contains("10.0.0.5"), "{subject}");
-    }
-
-    #[test]
-    fn a_path_keeps_the_end_that_identifies_it() {
-        assert_eq!(
-            short_path("/home/me/project/crates/app/src/chat/pane.rs"),
-            "chat/pane.rs"
-        );
-        assert_eq!(short_path("README.md"), "README.md");
-        assert_eq!(short_path("src/lib.rs"), "src/lib.rs");
-        assert_eq!(short_path("crates/core/"), "crates/core");
-        // A command is not a path, and cutting one at its last slash would
-        // leave the row quoting something nobody ran.
-        assert_eq!(
-            short_path("cargo test -p onehand-core"),
-            "cargo test -p onehand-core"
-        );
-        assert_eq!(short_path(""), "");
     }
 
     #[test]

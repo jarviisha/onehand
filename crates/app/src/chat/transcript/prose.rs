@@ -4,7 +4,7 @@ use super::metrics::{
     TEXT_SM, TIGHT_GAP,
 };
 use super::parts::{
-    WorkingRun, copy_button, copy_turn_button, fold_box, fold_line, show_more, working_text,
+    WorkingLine, copy_button, copy_turn_button, fold_box, fold_line, show_more, working_text,
 };
 use crate::chat::session::ChatSession;
 use crate::tokens::LEADING;
@@ -220,7 +220,7 @@ pub(super) fn thought(
     let line = match running {
         true => line.child(working_text(
             ("thinking", fold_key(target)),
-            vec![WorkingRun::words(th.label())],
+            WorkingLine::words(th.label()),
             cx,
         )),
         false => line.child(th.label()),

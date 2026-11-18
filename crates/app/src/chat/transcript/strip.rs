@@ -1,7 +1,7 @@
 use super::fold_key;
 use super::metrics::{FOLD_INDENT, TEXT_SM};
 use super::parts::{
-    ActivityRow, Object, RowMark, WorkingRun, activity_row, chevron, detail_well, fold_box,
+    ActivityRow, Object, RowMark, WorkingLine, activity_row, chevron, detail_well, fold_box,
     fold_line, line_counts, plain_box, show_more, sideways, working_text,
 };
 use super::tool::diff_rows;
@@ -92,23 +92,23 @@ fn cluster_line(
 ) -> gpui::AnyElement {
     let summary = &plan.summary;
     let running = summary.running.is_some();
-    let words = cluster_words(summary, open);
-    let doing = gpui::ElementId::NamedChild(std::sync::Arc::new(id.clone()), "doing".into());
-    let both = words.shimmer.is_some() && !words.plain.is_empty();
+    let words = summary.line(open);
+    let in_hand = gpui::ElementId::NamedChild(std::sync::Arc::new(id.clone()), "in-hand".into());
+    // Beside the step in hand, what settled keeps its place and the running
+    // words give way.
+    let beside = words.in_hand.is_some() && !words.settled.is_empty();
     fold_line(id, open, cx)
         .on_click(move |event, window, cx| on_click(event, window, cx))
         .children(
-            words
-                .shimmer
-                .map(|doing_now| working_text(doing, vec![WorkingRun::words(doing_now)], cx)),
+            words.in_hand.map(|step| {
+                working_text(in_hand, WorkingLine::words(step.verb).mono(step.rest), cx)
+            }),
         )
-        .when(both, |line| line.child(div().flex_none().child("·")))
-        .when(!words.plain.is_empty(), |line| {
-            line.child(match both {
-                // Beside what runs, what settled keeps its place and the
-                // running words give way.
-                true => div().flex_none().whitespace_nowrap().child(words.plain),
-                false => div().min_w_0().truncate().child(words.plain),
+        .when(beside, |line| line.child(div().flex_none().child("·")))
+        .when(!words.settled.is_empty(), |line| {
+            line.child(match beside {
+                true => div().flex_none().whitespace_nowrap().child(words.settled),
+                false => div().min_w_0().truncate().child(words.settled),
             })
         })
         // In the danger ink while the cluster runs; once it has settled the
@@ -135,47 +135,6 @@ fn cluster_line(
                 .child(onehand_core::duration(summary.seconds))
         }))
         .into_any_element()
-}
-
-/// What a cluster's line says: the step in hand, drawn as what runs, and the
-/// rest in the line's own ink.
-pub(super) struct ClusterWords {
-    pub(super) shimmer: Option<String>,
-    pub(super) plain: String,
-}
-
-/// **The step in hand is named once.** Opened, its own row is on screen, so
-/// the line says only what has settled; folded, nothing else would say it, so
-/// the line leads with it and what settled follows.
-pub(super) fn cluster_words(
-    summary: &onehand_core::chat::ClusterSummary,
-    open: bool,
-) -> ClusterWords {
-    match (summary.doing(), open) {
-        (None, _) => ClusterWords {
-            shimmer: None,
-            plain: summary.plain(),
-        },
-        (Some(_), true) => ClusterWords {
-            shimmer: None,
-            plain: summary.settled(),
-        },
-        (Some(doing), false) => ClusterWords {
-            shimmer: Some(doing),
-            plain: match summary.done.is_empty() {
-                true => String::new(),
-                // Mid-line, so without the capital the sentence alone opens on.
-                false => {
-                    let settled = summary.settled();
-                    let mut chars = settled.chars();
-                    chars
-                        .next()
-                        .map(|first| first.to_lowercase().collect::<String>() + chars.as_str())
-                        .unwrap_or_default()
-                }
-            },
-        },
-    }
 }
 
 /// How many file rows a turn's summary lists before the rest fold into one.

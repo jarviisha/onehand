@@ -10,7 +10,7 @@
 
 use super::metrics::{FOLD_INDENT, TEXT_SM};
 use super::parts::{
-    ActivityRow, Object, RowMark, WorkingRun, activity_row, fold_box, fold_line, show_more,
+    ActivityRow, Object, RowMark, WorkingLine, activity_row, fold_box, fold_line, show_more,
     working_text,
 };
 use super::prose::md_view;
@@ -172,7 +172,7 @@ fn head(
     .child(match card.state == SubagentState::Working {
         true => working_text(
             ElementId::Name(format!("subagent-working-{}", card.id).into()),
-            vec![WorkingRun::words(card.name.clone())],
+            WorkingLine::words(&card.name),
             cx,
         ),
         false => div()

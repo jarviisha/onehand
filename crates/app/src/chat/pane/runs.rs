@@ -23,22 +23,15 @@ impl ChatPane {
     ///
     /// **No mark, and no step named.** What runs is told by its own row a few
     /// lines up, shimmering; said again here it was the same command twice
-    /// under two turning marks. The quiet ink is enough for a clock.
+    /// under two turning marks. In the ink of the fold lines above it, which
+    /// is enough for a clock.
     fn working_strip(&self, session: &Entity<ChatSession>, cx: &App) -> gpui::AnyElement {
-        use onehand_core::acp::ToolStatus;
+        use gpui_component::ActiveTheme as _;
         let chat = &session.read(cx).chat();
-        // Pending counts as running: an adapter may hold a step there until
-        // it ends.
         let running = chat
             .items
             .iter()
-            .filter(|item| {
-                matches!(
-                    item,
-                    ChatItem::Tool(tool)
-                        if matches!(tool.call.status, ToolStatus::InProgress | ToolStatus::Pending)
-                )
-            })
+            .filter(|item| matches!(item, ChatItem::Tool(tool) if tool.call.status.is_running()))
             .count();
         let status = chat.activity_status();
         // The clock is kept for the session on screen; a worker's turn shows
@@ -73,7 +66,7 @@ impl ChatPane {
             // agent's own words about what it is doing.
             parts.push(transcript::working_text(
                 ("turn-status", chat.uid),
-                vec![transcript::WorkingRun::words(status)],
+                transcript::WorkingLine::words(status),
                 cx,
             ));
         }
@@ -84,7 +77,7 @@ impl ChatPane {
         if parts.is_empty() {
             parts.push(transcript::working_text(
                 ("turn-working", chat.uid),
-                vec![transcript::WorkingRun::words("Working…")],
+                transcript::WorkingLine::words("Working…"),
                 cx,
             ));
         }
@@ -94,7 +87,7 @@ impl ChatPane {
             .items_center()
             .gap_2()
             .text_size(transcript::TEXT_SM)
-            .text_color(crate::theme::meta_ink(cx))
+            .text_color(cx.theme().muted_foreground)
             // The slot a row's arrow stands in, kept empty, so the clock
             // begins on the axis the rows above it read on.
             .child(div().w_3().flex_none());

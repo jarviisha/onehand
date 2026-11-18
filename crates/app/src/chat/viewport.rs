@@ -333,7 +333,7 @@ impl Viewport {
                         .filter_map(|t| item(chat, t))
                         .collect();
 
-                    let summary = cluster_summary(&bodies);
+                    let summary = cluster_summary(&bodies, &chat.root);
                     // **Open while anything in it runs, closed once it is
                     // done**, until the reader opens or closes it themselves.
                     let open = is_open(anchor, summary.running.is_some());

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Rust, GPUI (`gpui-pre`, pinned by the workspace), gpui-component. No new dependency.
 
-**Spec:** `docs/superpowers/specs/2026-11-18-transcript-working-state-design.md`, section 1 only. Sections 2 to 4 are later PRs and are out of scope here. The mock-up `localDocs/2026-11-18-transcript-prototype/index.html` (states 0 to 3) shows the target; where they disagree the spec is right.
+**Spec:** `docs/superpowers/specs/2026-11-18-transcript-working-state-design.md`, section 1 only. Sections 2 to 4 are later PRs and are out of scope here.
 
 ## Global Constraints
 

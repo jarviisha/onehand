@@ -627,7 +627,7 @@ pub(super) fn card_foot() -> gpui::Div {
 mod activity;
 pub(super) use activity::{ActivityRow, Object, RowMark, activity_row};
 mod working;
-pub(in crate::chat) use working::{WorkingRun, working_text};
+pub(in crate::chat) use working::{WorkingLine, working_text};
 
 /// The lines a change added and removed, mono and each side in the ink it
 /// means.

@@ -42,8 +42,6 @@ impl RowMark {
 
     pub(in crate::chat::transcript) fn of(status: ToolStatus) -> Self {
         match status {
-            // Pending is running: an adapter may hold a step there until it
-            // ends.
             ToolStatus::Pending | ToolStatus::InProgress => Self::Running,
             ToolStatus::Completed => Self::Done,
             ToolStatus::Failed => Self::Failed,
@@ -203,21 +201,24 @@ pub(in crate::chat::transcript) fn activity_row(
             // What runs: its verb and what it is done to as one line, a
             // band of brighter ink crossing both.
             RowMark::Running => {
-                let mut runs = vec![WorkingRun::words(row.verb)];
-                runs.extend(row.object.map(|object| {
-                    let whole = format!("{}{}", object.dir.unwrap_or_default(), object.name);
-                    match object.words {
-                        true => WorkingRun::words(whole),
-                        false => WorkingRun::mono(whole),
+                let words = WorkingLine::words(&row.verb);
+                let words = match row.object {
+                    Some(object) => {
+                        let whole = format!("{}{}", object.dir.unwrap_or_default(), object.name);
+                        match object.words {
+                            true => words.and(whole),
+                            false => words.mono(whole),
+                        }
                     }
-                }));
+                    None => words,
+                };
                 let id = gpui::ElementId::NamedChild(
                     std::sync::Arc::new(row.id.clone()),
                     "working".into(),
                 );
-                line.child(working_text(id, runs, cx))
+                line.child(working_text(id, words, cx))
             }
-            _ => line
+            RowMark::Done | RowMark::Recovered | RowMark::Failed | RowMark::Refused => line
                 .child(div().flex_none().whitespace_nowrap().child(row.verb))
                 .children(row.object.map(|object| {
                     div()

@@ -251,6 +251,16 @@ pub enum ToolStatus {
 }
 
 impl ToolStatus {
+    /// Whether a step in this status is still going.
+    ///
+    /// **Pending counts.** An adapter may hold a step at pending from the
+    /// moment it starts it until it ends, so nothing separates one that waits
+    /// its turn from one in hand, and reading pending as idle would call most
+    /// running steps idle.
+    pub fn is_running(self) -> bool {
+        matches!(self, ToolStatus::Pending | ToolStatus::InProgress)
+    }
+
     pub fn parse(s: &str) -> Self {
         match s {
             "in_progress" => ToolStatus::InProgress,

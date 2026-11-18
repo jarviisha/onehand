@@ -84,7 +84,13 @@ between passes. No accent. Mono text keeps its family; a truncated line sweeps w
 running, not *Waiting*: the default agent holds every step at pending until it ends, so the
 two cannot be told apart and *Waiting* named most running steps. The running line counts
 *N running* only. The shimmer's base is the muted ink with the middle ink at the band's
-edges, since middle to foreground is too small a step to see. Nothing turns the motion off.
+edges, since middle to foreground is too small a step to see, and the running line stands in
+the muted ink with it. The band sweeps a line's first 48 characters rather than all that is
+drawn: the pass takes the same time on every line, so over a whole long command it was too fast
+to follow and mostly out of sight. An opened cluster with nothing settled yet reads *Working*,
+never an empty line. A working subagent's name shimmers too, since its line lost its spinner
+with the rest. A plan's item in hand keeps a ring that does not turn, in a running turn and
+after it. Nothing turns the motion off.
 
 **Tense.** Core gives a step in flight its present verb (*Running*, *Reading*, *Editing*,
 *Searching*, *Fetching*) wherever it is named, and the past verb once it settles. Today the

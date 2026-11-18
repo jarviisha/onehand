@@ -694,13 +694,12 @@ impl ToolItem {
     /// How long the step has been going, while it is: `None` once it has
     /// settled, and for one with no start to count from.
     pub fn running_secs(&self) -> Option<u64> {
-        matches!(
-            self.call.status,
-            ToolStatus::Pending | ToolStatus::InProgress
-        )
-        .then_some(self.started)
-        .flatten()
-        .map(|started| started.elapsed().as_secs())
+        self.call
+            .status
+            .is_running()
+            .then_some(self.started)
+            .flatten()
+            .map(|started| started.elapsed().as_secs())
     }
 
     /// Stop the step's clock, once: a later update to a settled step must not

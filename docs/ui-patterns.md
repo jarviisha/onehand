@@ -437,9 +437,10 @@ uses a word or recognizable mark as well as colour. A quieter state must still b
   transcript the band of brighter ink that crosses the words of what runs, in its place. The library's own
   overlays (dialogs, popovers, toasts) and controls (a switch's thumb) keep what they do
   themselves.
-- A size or a position never animates, and nothing pulses or slides to draw the eye (a field's
-  caret blinks on its own); a state that needs the person says so in ink and a word, never in
-  motion.
+- A size or a position never animates, and nothing pulses or slides to call for the person (a
+  field's caret blinks on its own): a state that needs them says so in ink and a word, never in
+  motion. The band over the words of what runs marks work going on by itself, and asks for
+  nothing.
 
 ### Nothing to show
 
