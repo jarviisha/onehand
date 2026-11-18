@@ -2419,30 +2419,55 @@ fn an_interruption_marker_is_a_notice_and_not_a_prompt() {
     ));
 }
 
-/// An adapter that says it was interrupted, and then ends the turn as
-/// cancelled, leaves one *Stopped* in the turn, not two.
+/// An adapter that says it was interrupted, before or after it ends the turn
+/// as cancelled, leaves one *Stopped* in the turn, not two.
 #[test]
 fn a_stop_is_said_once() {
-    let (mut chat, _rx) = chat_with_tx();
-    assert!(chat.submit("go", &[]));
-    chat.apply(AcpEvent::Interrupted);
-    chat.apply(AcpEvent::TurnEnded {
-        stop_reason: "cancelled".into(),
-    });
-    let said = chat
-        .items
-        .iter()
-        .filter(|item| {
-            matches!(
-                item,
-                ChatItem::Notice {
-                    level: NoticeLevel::Stopped,
-                    ..
-                }
-            )
-        })
-        .count();
-    assert_eq!(said, 1);
+    for marker_first in [true, false] {
+        let (mut chat, _rx) = chat_with_tx();
+        assert!(chat.submit("go", &[]));
+        if marker_first {
+            chat.apply(AcpEvent::Interrupted);
+        }
+        chat.apply(AcpEvent::TurnEnded {
+            stop_reason: "cancelled".into(),
+        });
+        if !marker_first {
+            chat.apply(AcpEvent::Interrupted);
+        }
+        let said = chat
+            .items
+            .iter()
+            .filter(|item| {
+                matches!(
+                    item,
+                    ChatItem::Notice {
+                        level: NoticeLevel::Stopped,
+                        ..
+                    }
+                )
+            })
+            .count();
+        assert_eq!(said, 1, "marker first: {marker_first}");
+    }
+}
+
+/// What a lead and a run are told a cut-short turn failed on names what
+/// stopped it, not only what that means.
+#[test]
+fn a_cut_short_turn_is_told_by_what_stopped_it() {
+    for (stop, cut) in [
+        ("refusal", CutShort::Refused),
+        ("max_tokens", CutShort::OutputLimit),
+        ("max_turn_requests", CutShort::RequestLimit),
+    ] {
+        let (mut chat, _rx) = chat_with_tx();
+        assert!(chat.submit("go", &[]));
+        chat.apply(AcpEvent::TurnEnded {
+            stop_reason: stop.into(),
+        });
+        assert_eq!(chat.failure(), Some(cut.title()), "{stop}");
+    }
 }
 
 /// A cancelled subagent's running steps were stopped, as the turn's are; one

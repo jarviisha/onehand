@@ -701,6 +701,12 @@ impl Chat {
             Replay::Settled | Replay::Armed => standing_failure(self.transcript_back()),
         };
         match item? {
+            // What stopped it, which is what a lead or a run needs to read; the
+            // text under it only says what that means.
+            ChatItem::Notice {
+                level: NoticeLevel::CutShort(cut),
+                ..
+            } => Some(cut.title()),
             ChatItem::Notice { text, .. } => Some(text),
             _ => None,
         }

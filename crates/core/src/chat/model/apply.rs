@@ -284,7 +284,11 @@ impl Chat {
                 self.consume_replay();
                 self.finalize_thought();
                 self.user_chunk_open = false;
-                self.items.push(stopped_notice());
+                // Said once a turn: the adapter's marker can come after the
+                // turn's own end has said it.
+                if !self.turn_says_stopped() {
+                    self.items.push(stopped_notice());
+                }
             }
             AcpEvent::UserChunk(s) => {
                 self.consume_replay();
