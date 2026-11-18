@@ -111,7 +111,8 @@ pub(super) fn open(
 }
 
 /// Lead `lead`'s conversation, kept in `archive`, was opened again: the
-/// workers it still held come back, read off the UI thread first.
+/// workers it still held, or released by its closing, come back, read off
+/// the UI thread first.
 pub(crate) fn bring_back(lead: u64, archive: PathBuf, cx: &mut App) {
     cx.spawn(async move |cx| {
         let kept = cx
@@ -136,6 +137,10 @@ pub(crate) fn bring_back(lead: u64, archive: PathBuf, cx: &mut App) {
                 .iter()
                 .map(|worker| (worker.handle.clone(), worker.agent.clone()))
                 .collect();
+            // Those released by its closing and still open are its own
+            // again; the rest come back as they were kept.
+            let fx = drive().take_back(lead, &kept);
+            carry(fx, cx);
             let begun = drive().back(lead, kept, &projects);
             for begun in begun {
                 let (key, target, fx) = match begun {
@@ -327,12 +332,12 @@ pub(super) fn carry_one(effect: Effect, cx: &mut App) {
         Effect::Changed => cx.refresh_windows(),
         Effect::ToolsChanged(uid) => super::tell_changed(uid),
         Effect::Keep {
-            lead,
+            lead: _,
             kept,
             dir,
             moved_from,
             last,
-        } => super::keeping::keep(lead, kept, dir, moved_from, last, cx),
+        } => super::keeping::keep(kept, dir, moved_from, last, cx),
         Effect::Send { uid, turn, text } => turns::send_now(uid, turn, text, cx),
         Effect::TurnAnswer { uid, outcome } => turns::answered(uid, outcome, cx),
     }

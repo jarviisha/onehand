@@ -619,40 +619,99 @@ fn closing_a_worker_keeps_a_closed_record() {
 }
 
 #[test]
-fn closing_the_lead_closes_its_workers_for_good() {
+fn closing_the_lead_releases_its_workers() {
     let mut drive = lead_on();
     begun(&mut drive);
     said_conversation(&mut drive, 7, "c7", 1);
     let handle = drive.handle_of(7).unwrap();
     let fx = drive.forget(1);
+    assert!(shown(&fx).contains(&"Changed".to_string()), "{fx:?}");
+    assert_eq!(keep_at(&fx, 1), Some((store("c1"), None, false)));
     let kept = kept(&fx, 1).expect("kept");
+    assert_eq!(handles_kept(kept), [handle.as_str()]);
+    assert!(kept.closed.is_empty());
+    // Listed under its own project, the person's, until its lead is back.
+    assert_eq!(drive.lead_of(7), None);
+}
+
+#[test]
+fn a_released_worker_still_open_is_taken_back_by_its_lead() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    said_conversation(&mut drive, 7, "c7", 1);
+    let handle = drive.handle_of(7).unwrap();
+    let kept = kept(&drive.forget(1), 1).unwrap().clone();
+    // Its conversation opened again, in session 3.
+    said_conversation(&mut drive, 3, "c1", 0);
+    let fx = drive.take_back(3, &kept);
+    assert!(shown(&fx).contains(&"Changed".to_string()), "{fx:?}");
+    assert_eq!(self::kept(&fx, 3), None, "the file holds it already");
+    assert_eq!(drive.lead_of(7), Some(3));
+    assert!(matches!(
+        drive.find(3, &handle, |_| true),
+        Ok(Found::Open { uid: 7 })
+    ));
+    assert_eq!(drive.opened_by(3), [7]);
+    // Open already: nothing comes back a second time.
+    assert!(drive.back(3, kept, &projects()).is_empty());
+}
+
+#[test]
+fn a_released_worker_comes_back_with_its_lead_in_a_later_run() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    said_conversation(&mut drive, 7, "c7", 1);
+    let kept = kept(&drive.forget(1), 1).unwrap().clone();
+    let mut later = ControlDrive::default();
+    later.switch(3, true);
+    assert!(later.take_back(3, &kept).is_empty());
+    assert_eq!(later.back(3, kept, &projects()).len(), 1);
+}
+
+#[test]
+fn a_released_worker_the_person_closes_ends_for_good() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    said_conversation(&mut drive, 7, "c7", 1);
+    let handle = drive.handle_of(7).unwrap();
+    let _ = drive.forget(1);
+    let fx = drive.forget(7);
+    // The released lead's last write: nothing held, the worker ended.
+    assert_eq!(keep_at(&fx, 1), Some((store("c1"), None, true)));
+    let kept = kept(&fx, 1).unwrap().clone();
     assert!(kept.workers.is_empty());
     assert_eq!(
         kept.closed,
         [KeptClosed {
-            handle,
-            why: Some("its lead was closed".into())
+            handle: handle.clone(),
+            why: None
         }]
     );
-}
-
-#[test]
-fn an_old_handle_of_a_closed_lead_reads_closed() {
-    let mut drive = lead_on();
-    begun(&mut drive);
-    said_conversation(&mut drive, 7, "c7", 1);
-    let handle = drive.handle_of(7).unwrap();
-    let fx = drive.forget(1);
-    let kept = kept(&fx, 1).unwrap().clone();
-    // A later run: the lead's conversation opened again in session 3.
+    // Its lead back finds it closed.
     let mut later = ControlDrive::default();
     later.switch(3, true);
-    let _ = later.back(3, kept, &projects());
+    assert!(later.back(3, kept, &projects()).is_empty());
     assert!(matches!(
         later.find(3, &handle, |_| false),
         Ok(Found::Closed)
     ));
     assert!(later.find(4, &handle, |_| false).is_err(), "not another's");
+}
+
+#[test]
+fn a_lead_with_no_conversation_kept_ends_its_workers() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let handle = drive.handle_of(7).unwrap();
+    drive.handle(Input::WindowClosed { uids: vec![1] });
+    let fx = drive.forget(1);
+    assert_eq!(kept(&fx, 1), None, "nowhere to write: {fx:?}");
+    assert_eq!(drive.lead_of(7), None);
+    assert_eq!(drive.handle_of(7), None);
+    assert!(matches!(
+        drive.find(1, &handle, |_| true),
+        Ok(Found::Closed)
+    ));
 }
 
 /// A connected chat whose model option offers `weak` and `strong`, with
@@ -1065,9 +1124,24 @@ fn closing_the_lead_mid_coming_back_writes_one_final_keep() {
         })
         .collect();
     assert_eq!(keeps.len(), 1, "{fx:?}");
-    assert!(keeps[0].workers.is_empty());
-    let closed: Vec<&str> = keeps[0].closed.iter().map(|c| c.handle.as_str()).collect();
-    assert!(closed.contains(&a) && closed.contains(&b), "{closed:?}");
+    // Both wait for the lead: the one back is released, the other parked.
+    assert_eq!(handles_kept(keeps[0]), [a, b]);
+    // The one kept closed stays so, and nothing else ended.
+    assert_eq!(keeps[0].closed, kept_two().closed);
+    assert_eq!(drive.lead_of(9), None);
+    // Opened again: the one open is taken back, the parked one comes back.
+    let kept = keeps[0].clone();
+    let _ = drive.take_back(3, &kept);
+    assert_eq!(drive.lead_of(9), Some(3));
+    let begun = drive.back(3, kept, &projects());
+    let coming: Vec<String> = begun
+        .into_iter()
+        .map(|begun| match begun {
+            Begun::Resolve { key, .. } => key.1,
+            Begun::Said(said) => panic!("said: {said}"),
+        })
+        .collect();
+    assert_eq!(coming, [b]);
 }
 
 #[test]
@@ -1509,6 +1583,7 @@ fn a_lead_whose_conversation_moved_removes_its_old_file() {
 fn a_closed_lead_writes_its_last_keep_where_its_conversation_was() {
     let mut drive = lead_on();
     begun(&mut drive);
+    let _ = drive.forget(7);
     let fx = drive.forget(1);
     let keeps: Vec<_> = fx
         .iter()
@@ -1605,4 +1680,29 @@ fn closing_a_lead_asks_about_its_workers_whatever_runs() {
     assert_eq!(drive.close_asks(7, Closing::Now), CloseAsks::Now);
     // Its workers close first, then the lead.
     assert_eq!(drive.close_all(1), [7, 1]);
+}
+
+#[test]
+fn a_worker_whose_window_closed_comes_back_with_its_lead() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    let fx = said_conversation(&mut drive, 7, "c7", 1);
+    let kept = kept(&fx, 1).unwrap().clone();
+    drive.handle(Input::WindowClosed { uids: vec![1, 7] });
+    // Its lead's conversation opened again in this run, in session 3.
+    assert!(drive.take_back(3, &kept).is_empty());
+    assert_eq!(drive.back(3, kept, &projects()).len(), 1);
+}
+
+#[test]
+fn a_released_worker_whose_window_closed_comes_back_rather_than_taken() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    said_conversation(&mut drive, 7, "c7", 1);
+    let kept = kept(&drive.forget(1), 1).unwrap().clone();
+    let fx = drive.handle(Input::WindowClosed { uids: vec![7] });
+    assert!(fx.is_empty(), "the file holds it already: {fx:?}");
+    let _ = drive.take_back(3, &kept);
+    assert_eq!(drive.lead_of(7), None, "a session that is gone");
+    assert_eq!(drive.back(3, kept, &projects()).len(), 1);
 }

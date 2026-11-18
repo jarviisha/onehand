@@ -267,7 +267,7 @@ offered `open_worker`, and `open_session` takes none of its further arguments.
 - **What the person sees**: a worker, from the moment its session starts opening, is listed in the
   rail under its lead and shown in the pane as any session, a band over its composer naming the
   lead (`docs/screens.md`); a lead closed or lost lets its workers go back under their own
-  project, the person's to close.
+  project, the person's to work with or close until a closed lead's conversation takes them back.
 - **The lead is asked about at every step**, and its closing or being switched off wakes the open
   at once. A lead that went while its worker was opening abandons the open: it fails as above,
   its prompt never sent. A person watching a worker whose open failed is put back on what is
@@ -276,8 +276,14 @@ offered `open_worker`, and `open_session` takes none of its further arguments.
   the question names each worker, with *waiting on you* or *a turn is running* beside one whose
   close would stop that, and its row's menu reads *Close session…*. *Close all*, which Enter
   answers, closes every worker as the person's *Close session* does,
-  then the lead; *Close the lead only* closes the lead alone.
-- **The lead closing or lost** drops its relations: its workers stay open, owned by nobody, and
+  then the lead; *Close the lead only* closes the lead alone, releasing its workers.
+- **A lead closed alone releases its workers**: they stay open, listed under their own project,
+  the person's to prompt or close, and their relation stays the lead's, unusable and still kept
+  beside its conversation, so the conversation opened again takes them back (*Coming back*). A lead
+  whose conversation was never written yet has nothing to take them back from: its workers end
+  with it, their handles answering `link: closed` with `why: its lead was closed`. A worker
+  still coming back as its lead closes is not opened, and stays kept for the next time.
+- **A lead lost** drops its relations: its workers stay open, owned by nobody, and
   are the person's to close. Switched off, a lead abandons its opens in progress, though not its
   workers coming back; its open workers keep their relation, unusable until it is switched on
   again. The cap of four counts workers still
@@ -292,14 +298,19 @@ offered `open_worker`, and `open_session` takes none of its further arguments.
   last as long as the run of the app. A clean quit ends every worker with its agent's process
   group; a crash may leave one working, which the coming back finds through the process reading
   above.
-- **What ends a kept worker.** Quitting the app or closing the window keeps every worker. The
-  person closing the lead lets its workers go for good: they go back under their own project as
-  the person's, and their entries become ended ones. A worker closed by the person or by the lead
-  ends its entry. An ended worker's handle keeps answering `link: closed` to its lead in later
+- **What ends a kept worker.** Quitting the app or closing the window keeps every worker, and so
+  does the person closing the lead alone, which releases them. A worker closed by the person, a
+  released one included, or by the lead ends its entry; a released lead left with no worker writes
+  its file a last time. An ended worker's handle keeps answering `link: closed` to its lead in later
   runs. A session that leads no worker and goes on another conversation (*Resume in this
   session…*) leaves the ended ones with the conversation they ended in.
 - **Coming back.** When a session opens a lead's conversation, from the history, the project
-  page or *Resume in this session…*, each worker kept there comes back as a worker of that
+  page or *Resume in this session…*, each worker its closing released and still open is that
+  session's worker again at once, in whatever window it is open, as it stands rather than as the
+  file has it: listed under it in that window (a row of its own in another), its relation, its
+  hold and its ended workers' handles the new session's, counted under its cap. A released worker
+  whose window closed since is not open, and comes back as below.
+  Every other worker kept there comes back as a worker of that
   session, in the order kept, through the checks an open runs: its folder resolved again off the
   UI thread, refused when a session of any window or a process works in it or another worker
   holds it, reserved again, and counted under the cap. A folder that is no project of the window

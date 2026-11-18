@@ -375,6 +375,11 @@ pub struct ControlDrive {
     abandoned: HashMap<Key, (PathBuf, bool)>,
     /// Each worker's turn waiting on its model's pick.
     turning: HashMap<u64, turning::Turning>,
+    /// The leads the person closed alone, whose workers wait for their
+    /// conversation to open again: each with the ones parked, which come
+    /// back with it rather than being taken back (still coming back as it
+    /// closed, or their window closed since), by when they opened.
+    released: HashMap<u64, Vec<(u64, KeptWorker)>>,
     minted: u64,
 }
 
@@ -493,8 +498,14 @@ impl ControlDrive {
     }
 
     /// Session `uid` closed: its switch and what its tools opened go with it,
-    /// its opens are abandoned, and an open whose session it was fails.
+    /// its opens are abandoned, and an open whose session it was fails. A
+    /// lead whose conversation is kept releases its workers rather than
+    /// ending them (`released`).
     pub fn forget(&mut self, uid: u64) -> Vec<Effect> {
+        let releasing = self.would_release(uid);
+        if releasing {
+            self.release_workers(uid);
+        }
         let mut fx = self.abandon_of(uid, true);
         fx.extend(self.turn_forgotten(uid));
         fx.extend(self.turns_of_lead_ended(uid, "the lead was closed"));
@@ -510,11 +521,21 @@ impl ControlDrive {
         self.conversations.remove(&uid);
         if let Some(relation) = self.workers.remove(&uid) {
             self.close_record(relation.handle, relation.lead, None);
-            fx.extend(self.keep(relation.lead));
+            fx.extend(self.keep_after_worker_ended(relation.lead));
         }
-        // Its own handle goes, and its workers' with their relations: the
-        // person closing a lead lets its workers go for good, so none of
-        // them comes back with its conversation.
+        if releasing {
+            // Its workers keep their relation, and their handles, for its
+            // conversation to take back; it writes them as they stand.
+            // Its opens still coming back are parked, not failed, so nothing
+            // on the way wrote for it: this is its one write.
+            self.handles.retain(|_, worker| *worker != uid);
+            fx.extend(self.keep(uid));
+            fx.push(Effect::Changed);
+            return fx;
+        }
+        // Its own handle goes, and its workers' with their relations: a lead
+        // with no conversation kept has nothing to take them back from, so
+        // none of them comes back with it.
         let mut gone = vec![uid];
         let mut ended = Vec::new();
         self.workers.retain(|&worker, relation| {
@@ -635,6 +656,7 @@ impl ControlDrive {
             Input::Begun { uid, facts } => self.begun(uid, facts),
             Input::Elapsed { token } => self.elapsed(token),
             Input::WindowClosed { uids } => {
+                self.released_window_closed(&uids);
                 for uid in uids {
                     self.kept_in.remove(&uid);
                     self.written.remove(&uid);
@@ -670,6 +692,7 @@ pub(crate) fn this_run() -> String {
 
 mod opening;
 mod relations;
+mod released;
 mod turning;
 
 #[cfg(test)]

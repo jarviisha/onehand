@@ -7,7 +7,7 @@
 //!
 //! **The last write asked for is the one that stays.** Writes run on the
 //! background executor in any order, so each is numbered as it is asked
-//! for, and one overtaken by a later one for the same lead writes nothing.
+//! for, and one overtaken by a later one for the same folder writes nothing.
 
 use super::{carry, drive};
 use crate::chat::session::ChatSession;
@@ -31,10 +31,14 @@ impl Global for Keeping {}
 /// its turn is over, and whether one runs.
 type Said = (String, usize, bool, bool);
 
-/// The newest write asked for, by lead, held across the write itself.
-static NEWEST: LazyLock<Mutex<HashMap<u64, u64>>> = LazyLock::new(Mutex::default);
+/// The newest write asked for, by the folder it goes to, held across the
+/// write itself: by folder rather than by lead, since a lead closed alone
+/// and its conversation opened again are two leads writing the same file.
+/// Numbered from one count for every folder, so a number is never asked for
+/// twice.
+static NEWEST: LazyLock<Mutex<(u64, HashMap<PathBuf, u64>)>> = LazyLock::new(Mutex::default);
 
-fn newest() -> std::sync::MutexGuard<'static, HashMap<u64, u64>> {
+fn newest() -> std::sync::MutexGuard<'static, (u64, HashMap<PathBuf, u64>)> {
     NEWEST.lock().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -84,10 +88,10 @@ pub(super) fn closed(uid: u64, cx: &mut App) {
     cx.default_global::<Keeping>().watches.remove(&uid);
 }
 
-/// Write `kept` in `dir`, beside lead `lead`'s conversation, emptying
-/// `moved_from` first; `last` says nothing is numbered for the lead again.
+/// Write `kept` in `dir`, beside a lead's conversation, emptying
+/// `moved_from` first; `last` says nothing is numbered for that folder again
+/// unless asked anew.
 pub(super) fn keep(
-    lead: u64,
     kept: Kept,
     dir: PathBuf,
     moved_from: Option<PathBuf>,
@@ -96,8 +100,9 @@ pub(super) fn keep(
 ) {
     let asked = {
         let mut newest = newest();
-        let asked = newest.get(&lead).map_or(1, |n| n + 1);
-        newest.insert(lead, asked);
+        newest.0 += 1;
+        let asked = newest.0;
+        newest.1.insert(dir.clone(), asked);
         asked
     };
     cx.background_executor()
@@ -106,14 +111,14 @@ pub(super) fn keep(
             if let Some(before) = moved_from {
                 let _ = kept::write_blocking(&before, &Kept::default());
             }
-            if newest.get(&lead) != Some(&asked) {
+            if newest.1.get(&dir) != Some(&asked) {
                 return;
             }
             if let Err(why) = kept::write_blocking(&dir, &kept) {
                 eprintln!("onehand: cannot keep workers in {}: {why}", dir.display());
             }
             if last {
-                newest.remove(&lead);
+                newest.1.remove(&dir);
             }
         })
         .detach();

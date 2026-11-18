@@ -50,7 +50,8 @@ impl Shell {
             description: format!(
                 "It leads {count}. Closing all stops their agents; their conversations and \
                  worktrees stay. Closing the lead only leaves them open, each under its own \
-                 project.{running}"
+                 project, until its conversation is opened again and takes them \
+                 back.{running}"
             )
             .into(),
             act: "Close all",

@@ -19,8 +19,8 @@ use super::super::kept::{Kept, KeptClosed, KeptWorker};
 use super::super::open::{parse_handle, Handle};
 use super::super::state::Held;
 use super::super::turns::Last;
-use super::super::workers::Target;
 use super::super::workers::{offered, whose, Whose};
+use super::super::workers::{Relation, Target};
 use super::{
     this_run, Begun, CloseAsks, Closed, ControlDrive, Effect, Found, Open, Pending, Phase,
     ResumeRefused, Worker, KEPT_CLOSED,
@@ -35,6 +35,7 @@ impl ControlDrive {
         self.workers
             .get(&uid)
             .map(|relation| relation.lead)
+            .filter(|lead| !self.is_released(*lead))
             .or_else(|| self.requests.lead_opening(uid))
     }
 
@@ -372,30 +373,15 @@ impl ControlDrive {
             .workers
             .values()
             .filter(|relation| relation.lead == lead)
-            .filter_map(|relation| {
-                let worker = KeptWorker {
-                    handle: relation.handle.clone(),
-                    conversation: relation.conversation.clone()?,
-                    agent: relation.agent.clone(),
-                    folder: relation.folder.clone(),
-                    dirs: relation.dirs.clone(),
-                    name: relation.name.clone(),
-                    turn: relation.turn,
-                    text: relation.text.clone(),
-                    person: relation.person,
-                    unended: relation.unended,
-                };
-                Some((relation.seq, worker))
-            })
+            .filter_map(|relation| Some((relation.seq, kept_worker(relation)?)))
             .collect();
         // Not yet back, but not let go either: a write meanwhile must not
         // drop them.
-        held.extend(
-            self.pending
-                .iter()
-                .filter(|((of, _), _)| *of == lead)
-                .filter_map(|(_, pending)| Some((pending.token, pending.open.back.clone()?))),
-        );
+        held.extend(self.coming_back_of(lead).iter().filter_map(|key| {
+            let pending = &self.pending[key];
+            Some((pending.token, pending.open.back.clone()?))
+        }));
+        held.extend(self.parked_of(lead));
         held.sort_by_key(|(seq, _)| *seq);
         let mut closed: Vec<(u64, KeptClosed)> = self
             .closed_workers
@@ -433,9 +419,17 @@ impl ControlDrive {
         for closed in kept.closed {
             self.close_record(closed.handle, lead, closed.why);
         }
+        // Taken back already, open as it is.
+        let open: Vec<bool> = kept
+            .workers
+            .iter()
+            .map(|back| self.taken_back(lead, &back.handle))
+            .collect();
         kept.workers
             .into_iter()
-            .map(|back| {
+            .zip(open)
+            .filter(|(_, open)| !open)
+            .map(|(back, _)| {
                 let named = back.folder.display().to_string();
                 let target = match super::super::pick_project(projects, &named) {
                     Ok(dir) => Target::Project(dir.to_path_buf()),
@@ -473,4 +467,20 @@ impl ControlDrive {
             })
             .collect()
     }
+}
+
+/// What is kept of `relation`, once its conversation is known.
+pub(super) fn kept_worker(relation: &Relation) -> Option<KeptWorker> {
+    Some(KeptWorker {
+        handle: relation.handle.clone(),
+        conversation: relation.conversation.clone()?,
+        agent: relation.agent.clone(),
+        folder: relation.folder.clone(),
+        dirs: relation.dirs.clone(),
+        name: relation.name.clone(),
+        turn: relation.turn,
+        text: relation.text.clone(),
+        person: relation.person,
+        unended: relation.unended,
+    })
 }
