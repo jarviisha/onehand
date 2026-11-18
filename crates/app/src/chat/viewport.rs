@@ -238,14 +238,17 @@ pub struct Viewport {
     /// late on a transcript that also loses rows -- a blocking card leaves the
     /// list while it waits for an answer and comes back once it has one.
     newest_prompt: Option<TranscriptItemId>,
-    /// The runs holding a working subagent card at the last replan.
+    /// The runs holding a working subagent card or a running step at the last
+    /// replan.
     working_cards: Vec<usize>,
-    /// Runs holding a subagent card to measure again on the next frame.
+    /// Runs holding a subagent card or a running step, to measure again on
+    /// the next frame.
     ///
-    /// **A card changes height in place, anywhere in the transcript**: its
-    /// steps arrive while the parent's own blocks follow it, it folds when it
-    /// ends, and it opens on a press. Its run draws the same to the plan all
-    /// the while, so nothing else would tell the list.
+    /// **Both change height in place, anywhere in the transcript**: a card's
+    /// steps and a step's output arrive while the parent's own blocks follow
+    /// them, and a card folds when it ends and opens on a press. Their run
+    /// draws the same to the plan all the while, so nothing else would tell
+    /// the list.
     card_remeasure: Vec<usize>,
 }
 
