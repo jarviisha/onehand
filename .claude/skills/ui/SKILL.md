@@ -10,7 +10,7 @@ touches, not the whole set:
 
 | Changing | Read |
 |---|---|
-| What a region holds, or its order | [screens.md](../../../docs/screens.md), or the feature's own document (`docs/tasks.md`, `docs/workflows.md`, `docs/unattended.md`) |
+| What a region holds, or its order | [screens.md](../../../docs/screens.md), or the feature's own document (`docs/tasks.md`, `docs/workflows.md`) |
 | A principle, the window's frame, the transcript | [DESIGN.md](../../../DESIGN.md) *Principles*, *Layout*, *Transcript* |
 | A colour, an ink, type, space, a corner, a line | DESIGN.md *Type, space and shape*, *Colour and state*; the token in [tokens.md](tokens.md) |
 | A control, its variant, its size, an icon | DESIGN.md *Components*, *Icons*; [UI patterns](../../../docs/ui-patterns.md) *Control sizes*; the builder in [catalog.md](catalog.md) |

@@ -1,12 +1,9 @@
-//! The tasks as the pages and the rail read them: the Tasks page's rows,
-//! each issue's work, what needs a person, and the unattended runs under way.
+//! The tasks as the pages and the rail read them: the Tasks page's rows and
+//! what needs a person.
 
 use super::Tasks;
 use gpui::{AnyWindowHandle, App};
-use onehand_core::issues::IssueKey;
-use onehand_core::task::work::{IssueWork, issue_work, waiting_said};
 use onehand_core::task::{Group, Origin, Source, Task, sort_listed};
-use onehand_core::unattended::TrackerRef;
 use onehand_core::workflow::Run;
 use std::path::PathBuf;
 
@@ -14,7 +11,7 @@ use std::path::PathBuf;
 pub(crate) struct Row {
     pub(crate) id: String,
     pub(crate) title: String,
-    /// Its workflow's name, after the issue it works if it has one.
+    /// Its workflow's name, after what started it if that was not a person.
     pub(crate) name: String,
     /// The step it is at while it works, or how it ended.
     pub(crate) at: String,
@@ -77,11 +74,10 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
             title: task.brief().title.clone(),
             name: {
                 let workflow = run.map_or_else(String::new, |run| run.template.name.clone());
-                match (task.issue(), &task.origin()) {
-                    (Some(issue), _) => format!("{} · {workflow}", issue.shown()),
-                    (None, Some(Origin::Schedule { name, .. })) => format!("{name} · {workflow}"),
-                    (None, Some(Origin::Tool)) => format!("by a tool · {workflow}"),
-                    (None, None) => workflow,
+                match &task.origin() {
+                    Some(Origin::Schedule { name, .. }) => format!("{name} · {workflow}"),
+                    Some(Origin::Tool) => format!("by a tool · {workflow}"),
+                    None => workflow,
                 }
             },
             at,
@@ -96,78 +92,6 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
     }
     sort_listed(&mut rows, |(task, row)| (row.group, *task));
     rows.into_iter().map(|(_, row)| row).collect()
-}
-
-/// The work on every issue kept in one of `kept`'s files that a task works,
-/// one summary per issue: its newest task and what came before.
-///
-/// **Matched by the file, not only the project and the number.** A forge's
-/// issue numbers are its own, and two workspaces holding one repository keep
-/// their issues apart, each numbered from one: either way the number alone
-/// would show a run on somebody else's issue.
-pub(crate) fn issue_works(kept: &[(PathBuf, PathBuf)], cx: &App) -> Vec<IssueWork> {
-    let Some(t) = cx.try_global::<Tasks>() else {
-        return Vec::new();
-    };
-    let mut by_issue: Vec<(IssueKey, Vec<&Task>)> = Vec::new();
-    for task in t.tasks() {
-        let Some(issue) = task.issue() else {
-            continue;
-        };
-        let file = match &issue.tracker {
-            TrackerRef::Local { file } | TrackerRef::Synced { file, .. } => file,
-            TrackerRef::Forge { .. } => continue,
-        };
-        if !kept.contains(&(task.setup().repo.clone(), file.clone())) {
-            continue;
-        }
-        let key = IssueKey {
-            file: file.clone(),
-            number: issue.number,
-        };
-        match by_issue.iter_mut().find(|(at, _)| *at == key) {
-            Some((_, tasks)) => tasks.push(task),
-            None => by_issue.push((key, vec![task])),
-        }
-    }
-    by_issue
-        .into_iter()
-        .filter_map(|(key, tasks)| {
-            let tasks = tasks.into_iter().map(|task| {
-                let behind = t
-                    .drive
-                    .queue()
-                    .holder_of(task.id())
-                    .and_then(|holder| t.task(holder))
-                    .map(|holder| holder.brief().title.clone());
-                (task, t.working(task.id()), behind)
-            });
-            issue_work(key, tasks)
-        })
-        .collect()
-}
-
-/// Every issue task whose issue `of` takes, each with what it is doing,
-/// oldest first: what a start on an issue reads its earlier tasks from.
-pub(crate) fn issue_tasks(
-    cx: &App,
-    of: impl Fn(&onehand_core::unattended::IssueSource) -> bool,
-) -> Vec<(Task, Option<onehand_core::task::Working>)> {
-    let Some(t) = cx.try_global::<Tasks>() else {
-        return Vec::new();
-    };
-    t.tasks()
-        .iter()
-        .filter(|task| task.issue().is_some_and(&of))
-        .map(|task| (task.clone(), t.working(task.id())))
-        .collect()
-}
-
-/// The session task `id`'s run is driven in, and the window holding it.
-pub(crate) fn session_of(id: &str, cx: &App) -> Option<(u64, AnyWindowHandle)> {
-    let t = cx.try_global::<Tasks>()?;
-    let d = t.live.get(id)?;
-    Some((d.uid()?, d.window))
 }
 
 /// How many tasks of the projects at `roots` need a person: waiting on one,
@@ -190,59 +114,4 @@ pub(crate) fn removed(roots: &[PathBuf], cx: &App) -> usize {
 /// Whether task `id` is queued, running or waiting on a person.
 pub(crate) fn is_working(id: &str, cx: &App) -> bool {
     cx.try_global::<Tasks>().is_some_and(|t| t.busy(id))
-}
-
-/// An unattended run with a session under way, as the rail and the workspace
-/// page read it.
-pub(crate) struct LiveRun {
-    /// The project the issue was found in.
-    pub(crate) repo: PathBuf,
-    /// How its issue is shown: the forge's number, or *Draft*.
-    pub(crate) name: String,
-    /// Its number in the issues file its project keeps, for one kept there:
-    /// what opens it on the Issues page.
-    pub(crate) kept: Option<u64>,
-    pub(crate) title: String,
-    /// The run's own session.
-    pub(crate) uid: u64,
-    /// The window the session is in.
-    pub(crate) window: AnyWindowHandle,
-    /// What it waits on a person for, while it does.
-    pub(crate) waiting: Option<String>,
-}
-
-/// Every issue task with a session under way, oldest first. The rail says on
-/// a project's row that a run works one of its issues, since the run's own
-/// session is on a worktree's row of its own; the workspace page lists them.
-pub(crate) fn live_issues(cx: &App) -> Vec<LiveRun> {
-    let Some(t) = cx.try_global::<Tasks>() else {
-        return Vec::new();
-    };
-    let mut live: Vec<_> = t
-        .live
-        .values()
-        .filter_map(|d| {
-            let uid = d.uid()?;
-            let task = t.task(d.task())?;
-            let issue = task.issue()?;
-            let waiting = d
-                .waits_on_person()
-                .then(|| waiting_said(d.run().awaiting_approval()).to_string());
-            let run = LiveRun {
-                repo: task.setup().repo.clone(),
-                name: issue.shown(),
-                kept: match issue.tracker {
-                    TrackerRef::Local { .. } | TrackerRef::Synced { .. } => Some(issue.number),
-                    TrackerRef::Forge { .. } => None,
-                },
-                title: task.brief().title.clone(),
-                uid,
-                window: d.window,
-                waiting,
-            };
-            Some((task.id().to_string(), run))
-        })
-        .collect();
-    live.sort_by(|(a, _), (b, _)| a.cmp(b));
-    live.into_iter().map(|(_, run)| run).collect()
 }

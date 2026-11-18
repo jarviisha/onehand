@@ -349,7 +349,7 @@ fn agent_section(handle: &Entity<SchedulesPage>, draft: &ScheduleDraft, cx: &App
         let pick: Press = Rc::new(edit(handle, move |d| d.agent = Some(name.clone())));
         (SharedString::from(spec.name.clone()), checked, pick)
     }));
-    let offer = spec.and_then(|spec| crate::unattended::offered(spec, cx));
+    let offer = spec.and_then(|spec| crate::task::facts::offered(spec, cx));
     let said: SharedString = match (spec, &offer) {
         (Some(spec), Some(_)) => format!("Choices {} offers", spec.name).into(),
         (Some(spec), None) => format!("What {} offers is not known yet", spec.name).into(),

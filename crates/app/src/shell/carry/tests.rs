@@ -135,7 +135,7 @@ fn an_ended_run_session_leaves_nothing_running(cx: &mut TestAppContext) {
     let (uid, session) = cx
         .update(|_, cx| {
             shell.update(cx, |shell, cx| {
-                shell.run_unattended(PathBuf::from("/tmp/onehand-run"), spec, Vec::new(), cx)
+                shell.open_off_screen(PathBuf::from("/tmp/onehand-run"), spec, Vec::new(), cx)
             })
         })
         .expect("a run's session");

@@ -1,32 +1,18 @@
-//! What an issue's work stands at, and what to do about it next.
+//! What a task's work stands at, and what to do about it next.
 //!
-//! An issue's view reads one summary per issue, [`IssueWork`]: its newest
-//! task as a [`Work`], and how many runs and tasks came before. What it
-//! waits on, and the one thing to press, is [`next_action`], decided here so
-//! the Issues tab and anything else showing an issue cannot decide it twice.
-//! Nothing is stored: every line is worked out from the task, its runs and
-//! the issue.
+//! A task is read as a [`Work`]; what it waits on, and the one thing to
+//! press, is [`next_action`], decided here so the Tasks page and an issue's
+//! view cannot decide it twice. Nothing is stored: every line is worked out
+//! from the task and its runs.
 
 use super::{Group, Task, Working};
 use crate::connector::{PrState, PullRequest};
-use crate::issues::IssueKey;
 use crate::workflow::{Failure, Outcome, Run, StepKind, Stop};
 
-pub mod drive;
-pub mod left;
 pub mod list;
 mod review;
 
 pub use review::{last_lines, Checked, UnderReview, Waits, ANSWER_CHANGED, ANSWER_LINES};
-
-/// What a task waiting on a person waits for, in the words every view of
-/// it uses: an approval, or an answer to a card.
-pub fn waiting_said(approval: bool) -> &'static str {
-    match approval {
-        true => "Waiting for approval",
-        false => "Waiting for an answer",
-    }
-}
 
 /// A step, as where it stands in its run's workflow: *Verify · step 3 of 6*.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,22 +69,15 @@ pub(crate) enum PrStep {
     Reached,
 }
 
-/// An issue's newest task, as its view draws it.
+/// A task, as what to do about it is decided from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Work {
-    pub task: String,
-    /// The latest run's id; `None` for a task with no run.
-    pub run: Option<String>,
     pub group: Group,
-    /// Its group or how it ended, in the Tasks page's words.
-    pub said: String,
     /// The step it is at, or where it stopped; `None` once done.
     pub step: Option<StepAt>,
     /// When its open step visit started, in seconds past the epoch.
     since: Option<u64>,
     pub branch: Option<String>,
-    /// Where its work stands: the worktree, or the project itself.
-    pub dir: std::path::PathBuf,
     /// Its latest run works on a worktree of its own, still on disk, which a
     /// person may remove once the work is merged.
     pub worktree: bool,
@@ -107,45 +86,18 @@ pub struct Work {
     pub forge: Option<String>,
     pull_request: PrStep,
     stand: Stand,
-    /// The steps after the one it is at, by label; empty once it is over.
-    pub rest: Vec<String>,
-    /// What the command that last passed in this run vouches for.
-    pub vouched: Option<left::Vouched>,
-    /// The work as this run found it and as it last left it, as two marks;
-    /// `None` until both are pinned.
-    pub span: Option<(String, String)>,
-    /// The work as the task's first run found it, as a mark: what the branch
-    /// is measured from.
-    pub base: Option<String>,
-    /// What it waits for approval on, while it does.
-    pub review: Option<UnderReview>,
     /// The timeout a retry with current settings would run with differs
     /// from the one its last run ran with. Told by the app, which knows
     /// Settings; `false` until it does.
     pub timeout_moved: bool,
-    /// Why Resume cannot start it now, by the preflight of its own setup.
-    /// Told by the app, which holds the facts; `None` until it does.
-    pub resume_refused: Option<String>,
-    /// What a person pressed on it that is still being done, so its button
-    /// waits. Told by the app; `None` until it does.
-    pub pressed: Option<Act>,
 }
 
 impl Work {
-    /// `task` as its issue's view draws it, given what the app says it is
-    /// doing and, when it is queued, the title of the task holding its place.
+    /// `task`, given what the app says it is doing and, when it is queued,
+    /// the title of the task holding its place.
     pub fn of(task: &Task, working: Option<Working>, behind: Option<String>) -> Self {
         let run = task.runs.last();
         let stand = stand(task, run, working, behind);
-        let said = match (&stand, working) {
-            (Stand::Approval { .. }, _) => waiting_said(true).to_string(),
-            (Stand::Card, _) => waiting_said(false).to_string(),
-            (_, Some(Working::Running)) => "Running".to_string(),
-            (_, Some(Working::Queued)) => "Queued".to_string(),
-            (_, Some(Working::Waiting) | None) => {
-                task.ended_said().unwrap_or_else(|| "Cut off".to_string())
-            }
-        };
         let step = run.filter(|_| stand != Stand::Done).and_then(|run| {
             let spec = run.current()?;
             Some(StepAt {
@@ -159,43 +111,12 @@ impl Work {
             .and_then(|run| run.visits().last())
             .filter(|visit| visit.ended_at.is_none())
             .map(|visit| visit.started_at);
-        let rest = run
-            .filter(|run| !run.over())
-            .map(|run| {
-                run.template
-                    .steps
-                    .iter()
-                    .skip(run.step + 1)
-                    .map(|step| step.label.clone())
-                    .collect()
-            })
-            .unwrap_or_default();
-        let first = |run: &Run| run.visits().first().and_then(|visit| visit.start.clone());
-        let last = |run: &Run| {
-            run.visits()
-                .iter()
-                .rev()
-                .find_map(|visit| visit.end.clone().or_else(|| visit.start.clone()))
-        };
         Self {
-            rest,
-            vouched: run.and_then(left::vouched),
-            review: run
-                .filter(|_| matches!(stand, Stand::Approval { .. }))
-                .and_then(UnderReview::of),
             timeout_moved: false,
-            resume_refused: None,
-            pressed: None,
-            span: run.and_then(|run| first(run).zip(last(run))),
-            base: task.runs.first().and_then(first),
-            task: task.id.clone(),
-            run: run.map(|run| run.id.clone()),
             group: task.group(working),
-            said,
             step,
             since,
             branch: task.setup.branch.clone(),
-            dir: task.setup.dir.clone(),
             worktree: !task.worktree_removed
                 && run.is_some_and(|run| run.template.place == crate::workflow::Place::Worktree),
             forge: task.setup.forge.clone(),
@@ -217,7 +138,7 @@ impl Work {
     /// Whether it should have a pull request to read: a forge serves its
     /// project and the run has reached its pull request step, or waits on
     /// its status checks.
-    pub fn has_pull_request(&self) -> bool {
+    pub(crate) fn has_pull_request(&self) -> bool {
         self.forge.is_some()
             && self.branch.is_some()
             && (self.pull_request == PrStep::Reached || self.stand == Stand::StatusChecks)
@@ -347,66 +268,9 @@ fn pr_step(run: &Run) -> PrStep {
     }
 }
 
-/// An earlier task of an issue, as one line under it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Earlier {
-    pub task: String,
-    /// Its workflow and how it stands.
-    pub line: String,
-    pub attention: bool,
-    /// Running, queued or waiting: a retry put it back to work.
-    pub active: bool,
-}
-
-/// One issue's work: its newest task, and what came before it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IssueWork {
-    pub key: IssueKey,
-    pub work: Work,
-    /// Runs of the newest task before its latest one.
-    pub earlier_runs: usize,
-    /// Every older task, newest first.
-    pub earlier: Vec<Earlier>,
-}
-
-/// `key`'s work from the tasks working it, each with what the app says it is
-/// doing and who holds its place: the newest by when it last moved is the
-/// issue's work, the rest are earlier. `None` with no task.
-pub fn issue_work<'a>(
-    key: IssueKey,
-    tasks: impl IntoIterator<Item = (&'a Task, Option<Working>, Option<String>)>,
-) -> Option<IssueWork> {
-    let mut tasks: Vec<_> = tasks.into_iter().collect();
-    tasks.sort_by_key(|(task, _, _)| std::cmp::Reverse(task.recency()));
-    let mut tasks = tasks.into_iter();
-    let (newest, working, behind) = tasks.next()?;
-    let earlier = tasks
-        .map(|(task, working, _)| {
-            let workflow = task
-                .runs
-                .last()
-                .map_or_else(String::new, |run| run.template.name.clone());
-            let said = Work::of(task, working, None).said;
-            Earlier {
-                task: task.id.clone(),
-                line: format!("{workflow} · {said}"),
-                attention: task.group(working).needs_attention(),
-                active: Work::of(task, working, None).active(),
-            }
-        })
-        .collect();
-    Some(IssueWork {
-        key,
-        work: Work::of(newest, working, behind),
-        earlier_runs: newest.runs.len().saturating_sub(1),
-        earlier,
-    })
-}
-
 /// Something a person can do from an issue's view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Act {
-    RunWorkflow,
     WorkHere,
     /// Show the session *Work here* started, still working the issue: a
     /// second one there would be two agents editing one checkout.
@@ -422,9 +286,6 @@ pub enum Act {
     /// Retry with what Settings say now, rather than what the last run ran
     /// with.
     RetryCurrent,
-    /// Answer the review on its open pull request, as putting the trigger
-    /// label back does.
-    AnswerReview,
     /// Remove the worktree and its branch, once its pull request merged:
     /// judged first, and asked in a modal.
     RemoveWorktree,
@@ -438,7 +299,6 @@ impl Act {
     /// What its button says.
     pub fn label(self) -> &'static str {
         match self {
-            Self::RunWorkflow => "Run workflow…",
             Self::WorkHere => "Work here",
             Self::OpenWorkingSession => "Open session",
             Self::Edit => "Edit",
@@ -450,7 +310,6 @@ impl Act {
             Self::Resume => "Resume",
             Self::Retry => "Retry…",
             Self::RetryCurrent => "Retry with current settings…",
-            Self::AnswerReview => "Answer the pull request review…",
             Self::RemoveWorktree => "Remove worktree…",
             Self::OpenPullRequest => "Open pull request",
             Self::OpenBranch => "Open branch",
@@ -459,10 +318,6 @@ impl Act {
         }
     }
 }
-
-/// What *Remove worktree…* does, as its tooltip says wherever it is drawn.
-pub const REMOVE_WORKTREE_ABOUT: &str =
-    "Remove the worktree and its branch, once nothing in them is past the merge";
 
 /// The pull request of an issue's work, as last read.
 #[derive(Debug, Clone, Copy)]
@@ -480,8 +335,6 @@ pub enum PrSeen<'a> {
 pub struct Around<'a> {
     /// The issue is open.
     pub open: bool,
-    /// A run may be started on its project.
-    pub can_start: bool,
     /// A session *Work here* started still works the issue.
     pub session: bool,
     pub pr: PrSeen<'a>,
@@ -505,24 +358,17 @@ pub struct Next {
 
 /// What `work` waits on, given what is around it: the sentence, the one
 /// primary action and the others, in their fixed order. `None` for an
-/// issue no run was recorded for.
+/// issue, which no task works: a session on it, and what is done to the
+/// issue itself.
 ///
-/// **The issue's state only gates a new start.** A closed issue offers no
-/// *Run workflow…*, and never hides what an active run needs.
-///
-/// A task that needs attention still offers a new start last, after the ways
-/// to carry the old one on: the start's preflight points back at it.
+/// **The issue's state never hides what an active run needs.**
 pub fn next_action(work: Option<&Work>, around: Around<'_>) -> Next {
     let Some(work) = work else {
         let here = match around.session {
             true => Act::OpenWorkingSession,
             false => Act::WorkHere,
         };
-        // The facts line already says no run is recorded.
         let mut next = row(None, None, &[here]);
-        if around.open && around.can_start {
-            next.primary = Some(Act::RunWorkflow);
-        }
         if !around.open {
             next.secondary = vec![Act::ReopenIssue];
         }
@@ -531,7 +377,6 @@ pub fn next_action(work: Option<&Work>, around: Around<'_>) -> Next {
     };
     let mut next = by_stand(work, around);
     if !around.open {
-        next.secondary.retain(|act| *act != Act::RunWorkflow);
         if work.active() {
             next.still_active = true;
             next.secondary.push(Act::ReopenIssue);
@@ -544,9 +389,6 @@ pub fn next_action(work: Option<&Work>, around: Around<'_>) -> Next {
                 next.said = Some("Look at the branch".into());
             }
         }
-    }
-    if !around.can_start {
-        next.secondary.retain(|act| *act != Act::RunWorkflow);
     }
     next.secondary.push(Act::Edit);
     next
@@ -605,7 +447,7 @@ fn by_stand(work: &Work, around: Around<'_>) -> Next {
         Stand::Resumable(why) => row(
             Some(format!("It can go on where it was, with its marks: {why}")),
             Some(Act::Resume),
-            &[Act::Retry, Act::RunWorkflow],
+            &[Act::Retry],
         ),
         Stand::Exhausted { said, last } => row(
             Some(match last {
@@ -613,13 +455,13 @@ fn by_stand(work: &Work, around: Around<'_>) -> Next {
                 None => said.clone(),
             }),
             Some(Act::Retry),
-            &[Act::ShowTask, Act::RunWorkflow],
+            &[Act::ShowTask],
         ),
         Stand::TimedOut(said) => {
             // Retry keeps the timeout; a changed one is the other way out.
             let others: &[Act] = match work.timeout_moved {
-                true => &[Act::RetryCurrent, Act::ShowTask, Act::RunWorkflow],
-                false => &[Act::ShowTask, Act::RunWorkflow],
+                true => &[Act::RetryCurrent, Act::ShowTask],
+                false => &[Act::ShowTask],
             };
             row(Some(said.clone()), Some(Act::Retry), others)
         }
@@ -629,17 +471,13 @@ fn by_stand(work: &Work, around: Around<'_>) -> Next {
         } => row(
             Some(why.clone()),
             Some(Act::RetryCurrent),
-            &[Act::Retry, Act::ShowTask, Act::RunWorkflow],
+            &[Act::Retry, Act::ShowTask],
         ),
         Stand::Failed {
             why,
             kind: Failure::Forge | Failure::Other,
-        } => row(
-            Some(why.clone()),
-            Some(Act::Retry),
-            &[Act::ShowTask, Act::RunWorkflow],
-        ),
-        Stand::ByPerson => row(None, None, &[Act::RunWorkflow]),
+        } => row(Some(why.clone()), Some(Act::Retry), &[Act::ShowTask]),
+        Stand::ByPerson => row(None, None, &[]),
         Stand::Done => done(work, around.pr),
     }
 }
@@ -683,122 +521,21 @@ fn done(work: &Work, pr: PrSeen<'_>) -> Next {
             PrState::Open => row(
                 Some(format!("Review it on {forge}")),
                 Some(Act::OpenPullRequest),
-                // Whether it can be answered is the preflight's to say when it
-                // is pressed, as putting the label back would.
-                &[Act::AnswerReview],
+                &[],
             ),
             PrState::Merged if work.removal_offered(Some(pr)) => {
-                row(None, None, &[Act::RunWorkflow, Act::RemoveWorktree])
+                row(None, None, &[Act::RemoveWorktree])
             }
-            PrState::Merged => row(None, None, &[Act::RunWorkflow]),
+            PrState::Merged => row(None, None, &[]),
             PrState::Closed => row(
                 Some(
-                    "The pull request was closed unmerged: reopen the pull request, not the \
-                     issue, and put the label back to have it answered"
+                    "The pull request was closed unmerged: reopen the pull request, not the issue"
                         .into(),
                 ),
                 Some(Act::OpenPullRequest),
                 &[Act::ShowTask],
             ),
         },
-    }
-}
-
-impl IssueWork {
-    /// Whether this issue's work, or any earlier work on it, is running,
-    /// queued or waiting: closing the issue stops none of it, so closing
-    /// asks first.
-    pub fn closing_asks(&self) -> bool {
-        self.work.active() || self.earlier.iter().any(|earlier| earlier.active)
-    }
-}
-
-/// A pull request as one line names it: *#7 · open, draft*.
-pub fn pr_named(pr: &PullRequest) -> String {
-    format!("#{} · {}", pr.number, pr_said(pr))
-}
-
-/// A pull request's state in a word or two: *open, draft*, *open*,
-/// *merged*, *closed unmerged*.
-pub(crate) fn pr_said(pr: &PullRequest) -> &'static str {
-    match (pr.state, pr.draft) {
-        (PrState::Open, true) => "open, draft",
-        (PrState::Open, false) => "open",
-        (PrState::Merged, _) => "merged",
-        (PrState::Closed, _) => "closed unmerged",
-    }
-}
-
-/// A read of something slow about an issue's work, kept to what asked for
-/// it and to when.
-///
-/// Every request bumps the generation and names what it is `about`; only an
-/// answer carrying the current generation is taken. A switch to another
-/// issue, two refreshes answering out of order and a retry that started a
-/// new run are all dropped the same way. A failed read keeps the last value,
-/// marked with the failure.
-#[derive(Debug)]
-pub struct Reading<K, T> {
-    generation: u64,
-    /// The newest generation whose answer was taken.
-    landed: u64,
-    about: Option<K>,
-    /// The last answer taken, and when it was read.
-    pub value: Option<(T, u64)>,
-    /// Why the last read failed, when it did.
-    pub failed: Option<String>,
-}
-
-impl<K, T> Default for Reading<K, T> {
-    fn default() -> Self {
-        Self {
-            generation: 0,
-            landed: 0,
-            about: None,
-            value: None,
-            failed: None,
-        }
-    }
-}
-
-impl<K: PartialEq, T> Reading<K, T> {
-    /// A read about `about` is sent: its generation. What was read about
-    /// something else is dropped, so it is never shown for this.
-    pub fn ask(&mut self, about: K) -> u64 {
-        if self.about.as_ref() != Some(&about) {
-            self.value = None;
-            self.failed = None;
-            self.about = Some(about);
-        }
-        self.generation += 1;
-        self.generation
-    }
-
-    /// Whether the newest read sent is still on its way.
-    pub fn reading(&self) -> bool {
-        self.landed != self.generation
-    }
-
-    /// What the reads are about now.
-    pub fn about(&self) -> Option<&K> {
-        self.about.as_ref()
-    }
-
-    /// The answer to the read of `generation`, read at `at`: whether it was
-    /// taken.
-    pub fn land(&mut self, generation: u64, answer: Result<T, String>, at: u64) -> bool {
-        if generation != self.generation {
-            return false;
-        }
-        self.landed = generation;
-        match answer {
-            Ok(value) => {
-                self.value = Some((value, at));
-                self.failed = None;
-            }
-            Err(why) => self.failed = Some(why),
-        }
-        true
     }
 }
 

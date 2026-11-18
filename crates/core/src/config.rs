@@ -13,7 +13,6 @@
 //! setting left over from an older build into a refusal to load at all.
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -47,37 +46,15 @@ pub fn mode_set(mode: &str) -> Option<String> {
     (!mode.trim().is_empty()).then(|| mode.to_string())
 }
 
-/// The mode an unattended run starts in, as a run reads it when it starts:
-/// the one configured, else the one the agent runs use (`agent`, else the
-/// first) is known to need, else none (`""`), which leaves the agent in the
-/// mode it starts in.
-///
-/// Read at each start rather than once, because the agent is: making another
-/// agent the default must not leave runs in the mode the old one needed.
-pub fn run_mode(mode: Option<&str>, agents: &[AgentSpec], agent: Option<&str>) -> String {
-    match mode {
-        Some(mode) => mode.to_string(),
-        None => agent_or_first(agents, agent)
-            .and_then(AgentSpec::claude_or_preset)
-            .and_then(|preset| preset.info().unattended_mode)
-            .unwrap_or_default()
-            .to_string(),
-    }
-}
-
-/// The mode a lead's worker starts in: the one configured for unattended
-/// runs, but only for the agent those runs use, since a mode is the adapter's
-/// own id; else what the worker's own agent is known to need; else none,
-/// which leaves the agent in the mode it starts in. The lead names no mode.
-pub fn worker_mode(
-    configured: Option<&str>,
-    runs_agent: Option<&str>,
-    agents: &[AgentSpec],
-    worker_agent: &str,
-) -> Option<String> {
-    let runs = agent_or_first(agents, runs_agent).map(|spec| spec.name.as_str());
-    let configured = configured.filter(|_| runs == Some(worker_agent));
-    mode_set(&run_mode(configured, agents, Some(worker_agent)))
+/// The mode a lead's worker on agent `worker_agent` starts in: the one that
+/// agent is known to need to work without a person granting each edit, else
+/// none, which leaves the agent in the mode it starts in. The lead names no
+/// mode.
+pub fn worker_mode(agents: &[AgentSpec], worker_agent: &str) -> Option<String> {
+    agent_or_first(agents, Some(worker_agent))
+        .and_then(AgentSpec::claude_or_preset)
+        .and_then(|preset| preset.info().worker_mode)
+        .map(str::to_string)
 }
 
 /// Which of the theme's two modes the window is drawn in.
@@ -184,63 +161,6 @@ pub struct ControlConfig {
     pub outside: bool,
 }
 
-/// `[unattended]` — picking up small issues and working them with nobody
-/// watching.
-///
-/// **There is no switch here.** Whether runs happen is decided per project, in
-/// the app, and no project is opted in until the user says so — so this table
-/// only shapes runs once one has been allowed. A file still carrying the old
-/// global `enabled` key keeps loading, since serde ignores a key it does not
-/// know. An empty label still picks nothing at all.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct UnattendedConfig {
-    /// The label whose presence on an issue asks for a run.
-    pub label: String,
-    /// How often to look for one, as `"30m"`, `"2h"` or `"90s"`.
-    pub every: String,
-    /// How long a run may go before it is cancelled, in the same form.
-    pub timeout: String,
-    /// The ACP session mode a run starts in — the adapter's own id for it.
-    /// Empty leaves the agent in the mode it starts in; absent takes the mode
-    /// its preset runs in unattended, if it has one (see [`run_mode`]).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mode: Option<String>,
-    /// Which configured agent runs it; the default agent when unset.
-    pub agent: Option<String>,
-    /// The id of the workflow an issue is worked with, unless one of its
-    /// labels names another in `workflows`.
-    pub workflow: String,
-    /// Label → workflow id: an issue carrying one of these labels, beside the
-    /// trigger label, is worked with that workflow. The first label in the
-    /// table's order wins.
-    pub workflows: BTreeMap<String, String>,
-    /// How many issues may be worked at once across every window. One
-    /// waiting on a person does not count.
-    pub at_once: u32,
-    /// How many issue runs may wait on a person at once, each keeping its
-    /// adapter alive; past it no other issue is taken up until one is
-    /// answered. Unset for no cap.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub waiting: Option<u32>,
-}
-
-impl Default for UnattendedConfig {
-    fn default() -> Self {
-        Self {
-            label: "auto".to_string(),
-            every: "30m".to_string(),
-            timeout: "45m".to_string(),
-            mode: None,
-            agent: None,
-            workflow: "builtin:issue".to_string(),
-            workflows: BTreeMap::new(),
-            at_once: 1,
-            waiting: None,
-        }
-    }
-}
-
 /// The whole `onehand.toml`. (A legacy `[profile]`
 /// section in an existing file is an unknown key now — serde ignores it.)
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -257,7 +177,6 @@ pub struct AppConfig {
     pub agents: Vec<AgentSpec>,
     pub font: FontConfig,
     pub remote: RemoteConfig,
-    pub unattended: UnattendedConfig,
     pub control: ControlConfig,
     /// App command IDs mapped to replacement shortcuts. An empty list unbinds
     /// a command; an omitted ID uses its built-in defaults.
@@ -271,7 +190,6 @@ impl Default for AppConfig {
             agents: default_agents(),
             font: FontConfig::default(),
             remote: RemoteConfig::default(),
-            unattended: UnattendedConfig::default(),
             control: ControlConfig::default(),
             keymap: Default::default(),
         }
@@ -294,20 +212,11 @@ impl AppConfig {
     ///   the preset runs the machine's, so without one it would stop working.
     /// - A preset with no name takes its own; a name already taken gets a
     ///   number, so every entry stays and a name finds one agent.
-    /// - The old default run mode, `acceptEdits`, written into every file, is
-    ///   dropped where runs use a preset, which knows its own; a declared
-    ///   agent keeps it.
     pub(crate) fn settle(&mut self, path: Option<&std::ffi::OsStr>) {
         if find_command(Preset::ClaudeCode.info().binary, path, None).is_some() {
             agent::migrate(&mut self.agents);
         }
         agent::name_uniquely(&mut self.agents);
-        let runs_on = agent_or_first(&self.agents, self.unattended.agent.as_deref());
-        if self.unattended.mode.as_deref() == Some("acceptEdits")
-            && runs_on.is_some_and(|agent| agent.preset().is_some())
-        {
-            self.unattended.mode = None;
-        }
     }
 
     /// Serialize back to TOML (round-trips all sections for `persist_agents`).

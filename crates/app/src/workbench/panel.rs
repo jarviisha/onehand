@@ -441,17 +441,6 @@ impl Workbench {
         self.broadcast(&Request::LiveConversations(ids), cx);
     }
 
-    /// Tell the modes where the work on the issues this window's projects
-    /// keep stands, and on which projects a run may be started.
-    pub fn issue_works(
-        &mut self,
-        works: &[onehand_core::task::work::IssueWork],
-        offered: &[PathBuf],
-        cx: &mut Context<Self>,
-    ) {
-        self.broadcast(&Request::IssueWork { works, offered }, cx);
-    }
-
     /// Tell the modes when the agent on screen started, or that none is.
     pub fn agent_started(&mut self, since: Option<std::time::Instant>, cx: &mut Context<Self>) {
         self.broadcast(&Request::AgentStarted(since), cx);

@@ -3,12 +3,10 @@
 //! put in force one pick at a time, each answered by the agent before the
 //! next is planned, since an answer can change what the agent offers. The
 //! prompt waits until they all are; a setting the step names not offered,
-//! or any pick refused, fails the run at that step (and, for an issue's run,
-//! pauses unattended runs, since every later one would fail the same way).
-//! One the step only takes from the start and the agent no longer offers is
+//! or any pick refused, fails the run at that step. One the step only takes from the start and the agent no longer offers is
 //! left as the agent has it.
 
-use super::{Asked, Effect, RunDrive, Said};
+use super::{Asked, Effect, RunDrive};
 use crate::chat::{Chat, MODE_SELECTOR};
 use crate::preflight::{found_late, About};
 use crate::workflow::{next, Next, Pick, Settings};
@@ -48,20 +46,8 @@ fn wanted(d: &RunDrive) -> (Settings, Vec<String>) {
         .unwrap_or_default()
 }
 
-/// Fail the run on a setting, `why`. A run of an issue pauses unattended
-/// runs too: every later one would fail the same way, each on a fresh issue.
-/// A person's run from the launcher does not.
+/// Fail the run on a setting, `why`.
 fn fail(d: &mut RunDrive, why: String, chat: &Chat, now: Now, fx: &mut Vec<Effect>) {
-    if d.issue {
-        let fix = format!(
-            "the step settings of workflow `{}` are fixed",
-            d.run.template.id
-        );
-        fx.push(Effect::Unattended(Said::Pause {
-            why: why.clone(),
-            fix,
-        }));
-    }
     d.advance(Some(chat), now, fx, move |run| {
         run.failed(why, found_late(About::Settings), now.secs)
     });
@@ -135,10 +121,6 @@ pub(super) fn refused(d: &mut RunDrive, chat: &Chat, why: &str, now: Now, fx: &m
         d.mode_out = None;
         d.picking = None;
         let why = format!("the agent refused mode `{mode}`: {why}");
-        fx.push(Effect::Unattended(Said::Pause {
-            why: why.clone(),
-            fix: "unattended.mode is fixed".to_string(),
-        }));
         d.advance(Some(chat), now, fx, move |run| {
             run.failed(why, found_late(About::Mode), now.secs)
         });

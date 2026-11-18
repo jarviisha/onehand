@@ -1,7 +1,7 @@
 //! Pull requests as `gh pr list --json` prints them: one opened from a
 //! branch, with its checks, or a repository's many, without.
 
-use onehand_core::connector::{Check, CheckState, PrState, PullRequest, PullRequests};
+use onehand_core::connector::{Check, CheckState, PrState, PullRequest};
 use serde::Deserialize;
 
 /// `gh pr list --json url,number,state,isDraft,headRefOid,mergeable,statusCheckRollup`
@@ -84,51 +84,6 @@ pub(super) fn pull_request(json: &str) -> Result<Option<PullRequest>, String> {
         conflicting: row.mergeable == "CONFLICTING",
         checks,
     }))
-}
-
-/// What [`pull_requests`] asks `gh pr list` for: no checks, which are read
-/// per branch when a run needs them.
-pub(super) const LIST_FIELDS: &str =
-    "url,number,state,isDraft,headRefOid,headRefName,mergeable,isCrossRepository";
-
-/// `gh pr list --json` with [`LIST_FIELDS`] as a repository's pull requests,
-/// at most `limit` asked for: a list that long reached its cap.
-pub(super) fn pull_requests(json: &str, limit: usize) -> Result<PullRequests, String> {
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct Row {
-        url: String,
-        number: u64,
-        state: String,
-        is_draft: bool,
-        head_ref_oid: String,
-        head_ref_name: String,
-        #[serde(default)]
-        mergeable: String,
-        #[serde(default)]
-        is_cross_repository: bool,
-    }
-    let rows: Vec<Row> = serde_json::from_str(json)
-        .map_err(|err| format!("gh printed something unreadable: {err}"))?;
-    let capped = rows.len() >= limit;
-    let by_branch = rows
-        .into_iter()
-        // Read by branch name, and a fork's branch can share one with ours.
-        .filter(|row| !row.is_cross_repository)
-        .map(|row| {
-            let pr = PullRequest {
-                url: row.url,
-                number: row.number,
-                state: state(&row.state),
-                draft: row.is_draft,
-                head: row.head_ref_oid,
-                conflicting: row.mergeable == "CONFLICTING",
-                checks: Vec::new(),
-            };
-            (row.head_ref_name, pr)
-        })
-        .collect();
-    Ok(PullRequests { by_branch, capped })
 }
 
 fn state(said: &str) -> PrState {

@@ -17,7 +17,7 @@ fn no_dialog_names_itself_through_the_library_slot() {
     let slot = format!(".{}(", "title");
     for (file, text) in [
         ("dialogs.rs", include_str!("../dialogs.rs")),
-        ("dialogs/issue.rs", include_str!("issue.rs")),
+        ("dialogs/rows.rs", include_str!("rows.rs")),
     ] {
         for (n, line) in text.lines().enumerate() {
             assert!(

@@ -44,7 +44,7 @@ pub(super) fn agent_settings(
 ) -> AnyElement {
     let agent = run_agent_offer(cx);
     let offer = agent.as_ref().and_then(|(_, offer)| offer.as_ref());
-    let said: SharedString = match (&agent, crate::unattended::run_agent(cx)) {
+    let said: SharedString = match (&agent, crate::task::facts::first_agent(cx)) {
         (Some((spec, Some(_))), _) => format!("Choices {} offers", spec.name).into(),
         (Some((spec, None)), _) => format!("What {} offers is not known yet", spec.name).into(),
         (None, Some(name)) => {

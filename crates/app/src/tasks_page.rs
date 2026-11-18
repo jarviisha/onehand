@@ -61,8 +61,6 @@ pub(crate) enum TasksPageEvent {
     RetryTask(String),
     /// Run task `id` again with what Settings say now, asking first.
     RetryTaskCurrent(String),
-    /// Answer the review on issue task `id`'s open pull request.
-    AnswerReview(String),
     /// Remove task `id`'s worktree and branch after its pull request merged,
     /// asking first.
     RemoveWorktree(String),

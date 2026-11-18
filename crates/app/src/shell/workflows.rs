@@ -131,7 +131,7 @@ impl Shell {
                     async move {
                         Ground {
                             in_git: worktree::repo_top_blocking(&root).is_some(),
-                            forge: crate::unattended::connector_for(&root).ok(),
+                            forge: crate::task::facts::connector_for(&root).ok(),
                             place: onehand_core::task::queue::place_blocking(&root),
                         }
                     }
@@ -198,7 +198,6 @@ impl Shell {
         cx: &gpui::App,
     ) -> Vec<preflight::Finding> {
         let shared = Shared::global(cx);
-        let git = self.window.workspace.git().get(root);
         // Not known yet blocks nothing: the cut says so itself if it fails.
         let (in_git, forge) = ground.map_or((true, None), |g| (g.in_git, g.forge));
         // Who holds the place, said only for a workflow that works there.
@@ -219,15 +218,11 @@ impl Shell {
                 .or(named.map(str::to_string)),
             agent_configured: agent.is_some(),
             mode: mode.map(str::to_string),
-            offered: agent.and_then(|spec| crate::unattended::offered(spec, cx)),
+            offered: agent.and_then(|spec| crate::task::facts::offered(spec, cx)),
             has_check: self.check_of(root).is_some(),
             in_git,
-            checked_out: git.map(|git| git.branch.clone()),
-            forge: forge.map(|forge| crate::unattended::forge_facts(forge, cx)),
-            issue: None,
-            slots: None,
+            forge: forge.map(|forge| crate::task::facts::forge(forge, cx)),
             queued_behind,
-            review: None,
             shared_checkout: self.own_session_in(root, cx),
             forge_read: ground.is_some(),
         };
@@ -369,7 +364,7 @@ impl Shell {
                 Err(why)
             };
         let there = crate::task::resumable_run(&id, cx).is_some_and(|run| run.setup.dir.is_dir());
-        let (start, off_screen, grant, opening) = match crate::task::begin(&id, there, cx) {
+        let (start, off_screen, grant) = match crate::task::begin(&id, there, cx) {
             Begin::Refused { why, kind } => {
                 return refused(why.clone(), Unstarted::Refused(why, kind), window, cx);
             }
@@ -384,20 +379,18 @@ impl Shell {
                 start,
                 off_screen,
                 grant,
-                opening,
-            } => (start, off_screen, grant, opening),
+            } => (start, off_screen, grant),
         };
         let dir = start.run.setup.dir.clone();
         let mut agent_gone = false;
         let session = match off_screen {
-            // Nothing the person is looking at moves: an issue's run stays
-            // where the person is, the issue saying the run is starting and
-            // leading to its session; a tool's task is on the Tasks page and
-            // its session in the rail, and the caret stays where it was.
+            // Nothing the person is looking at moves: a tool's task is on the
+            // Tasks page and its session in the rail, and the caret stays
+            // where it was.
             true => {
-                let spec = crate::unattended::spec_for(start.run.setup.agent.as_deref(), cx);
+                let spec = crate::task::facts::spec_for(start.run.setup.agent.as_deref(), cx);
                 agent_gone = spec.is_none();
-                spec.and_then(|spec| self.run_unattended(dir, spec, Vec::new(), cx))
+                spec.and_then(|spec| self.open_off_screen(dir, spec, Vec::new(), cx))
             }
             false => {
                 let (idx, fx) = self.window.workspace.keep_project(dir);
@@ -412,9 +405,6 @@ impl Shell {
             let why = SESSION_NOT_STARTED.to_string();
             return refused(why, Unstarted::NoSession { agent_gone }, window, cx);
         };
-        for line in opening {
-            crate::chat::session::note(&session, line, cx);
-        }
         crate::control::grant(uid, &grant, cx);
         // Deferred: the run's carrier reaches into the session and the global
         // the shell is reading from while this runs.
@@ -488,6 +478,3 @@ pub(crate) fn brief(
         instructions: (!instructions.is_empty()).then_some(instructions),
     }
 }
-
-#[cfg(test)]
-mod tests;

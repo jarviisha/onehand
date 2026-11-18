@@ -31,10 +31,10 @@
 use crate::chat::{Chat, Link};
 use crate::Now;
 
-use crate::unattended::Budget;
 use crate::workflow::{Action, ApprovalAt, Failure, Pick, Run, Stop};
 use std::time::{Duration, Instant};
 
+mod budget;
 mod forge;
 pub mod link;
 mod pin;
@@ -42,17 +42,16 @@ mod settings;
 mod signals;
 mod steps;
 
+use budget::Budget;
 use pin::{Answer, Held};
 pub(crate) use signals::Asked;
-pub use signals::{Effect, Input, Said, Signal, Timer};
+pub use signals::{Effect, Input, Signal, Timer};
 
 /// A run under way on one session.
 pub struct RunDrive {
     /// The task the run is of.
     task: String,
     run: Run,
-    /// The run is of an issue: a setting it fails on pauses unattended runs.
-    issue: bool,
     /// How many of the run's boundaries have had their mark pinned, or tried.
     pinned: usize,
     /// `Some` while a mark is being pinned and the action the engine asked
@@ -123,13 +122,12 @@ pub struct RunDrive {
 impl RunDrive {
     /// Drive `run`, the last run of `task`, starting with `first`: what
     /// [`Run::resume`] said to do. `pinned` boundaries of it had their mark
-    /// pinned before; `issue` says it is an issue's run.
+    /// pinned before.
     pub(crate) fn start(
         task: String,
         run: Run,
         first: Action,
         pinned: usize,
-        issue: bool,
         now: Now,
         chat: Option<&Chat>,
     ) -> (Self, Vec<Effect>) {
@@ -141,7 +139,6 @@ impl RunDrive {
             task,
             spent_before: run.spent_secs,
             run,
-            issue,
             pinned,
             held: None,
             waiting: None,
@@ -256,7 +253,6 @@ impl RunDrive {
     pub(crate) fn approve(&mut self, at: ApprovalAt, chat: Option<&Chat>, now: Now) -> Vec<Effect> {
         self.command_with(chat, now, |d, chat, now, fx| {
             d.answer(Answer::Approved(at), chat, now, fx);
-            fx.push(Effect::Unattended(Said::Answered));
         })
     }
 
@@ -271,7 +267,6 @@ impl RunDrive {
     ) -> Vec<Effect> {
         self.command_with(chat, now, |d, chat, now, fx| {
             d.answer(Answer::Revised(at, note), chat, now, fx);
-            fx.push(Effect::Unattended(Said::Answered));
         })
     }
 
@@ -314,7 +309,6 @@ impl RunDrive {
                 if self.card && chat.is_some_and(|chat| !chat.awaiting_permission()) {
                     self.card = false;
                     self.budget.resume(now.at);
-                    fx.push(Effect::Unattended(Said::Answered));
                 }
                 if let Some(chat) = chat.filter(|chat| self.after_work && !self.step_at_work(chat))
                 {
@@ -458,7 +452,6 @@ impl RunDrive {
             Input::AwaitingUser => {
                 self.card = true;
                 self.budget.pause(now.at);
-                fx.push(Effect::Unattended(Said::Waiting));
             }
             Input::Disconnected => self.end(Stop::LinkLost, Some(chat), now, fx),
             Input::PickRefused(why) if self.picking.is_some() => {

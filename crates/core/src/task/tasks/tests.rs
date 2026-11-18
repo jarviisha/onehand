@@ -1,8 +1,7 @@
 use super::*;
 use crate::task::work::Act;
 use crate::task::Launch;
-use crate::task::{queue, Group, Origin, Source};
-use crate::unattended::IssueSource;
+use crate::task::{queue, Group, Origin};
 use crate::workflow::{Brief, Failure, Outcome, Setup, Stop};
 use std::path::Path;
 
@@ -62,15 +61,12 @@ fn name<W>(e: &Effect<W>) -> &'static str {
         Effect::Defer(_) => "Defer",
         Effect::Told { .. } => "Told",
         Effect::JudgeRemoval(_) => "JudgeRemoval",
-        Effect::ReadReview { .. } => "ReadReview",
-        Effect::ConfirmAnswer { .. } => "ConfirmAnswer",
         Effect::ConfirmRemoval { .. } => "ConfirmRemoval",
         Effect::RemoveWorktree { .. } => "RemoveWorktree",
         Effect::CloseSession { .. } => "CloseSession",
         Effect::Refresh => "Refresh",
         Effect::Signal(signal) => match signal {
             Signal::Queued { .. } => "Signal::Queued",
-            Signal::Refused { .. } => "Signal::Refused",
             Signal::NotResumed { .. } => "Signal::NotResumed",
             Signal::CheckEnded { .. } => "Signal::CheckEnded",
             Signal::ScheduleEnded { .. } => "Signal::ScheduleEnded",
@@ -78,19 +74,15 @@ fn name<W>(e: &Effect<W>) -> &'static str {
             Signal::NotRemoved { .. } => "Signal::NotRemoved",
             Signal::Removed { .. } => "Signal::Removed",
             Signal::RemoveFailed { .. } => "Signal::RemoveFailed",
-            Signal::ReviewNotRead { .. } => "Signal::ReviewNotRead",
             Signal::SaveFailed(_) => "Signal::SaveFailed",
             Signal::PinFailed(_) => "Signal::PinFailed",
         },
     }
 }
 
-/// Whether the tasks asked their link for task `id`'s place.
-fn asks(tasks: &mut TasksDrive<Win>, id: &str) -> bool {
-    tasks.take_linked().iter().any(|linked| match linked {
-        Linked::Ask { task, .. } => task == id,
-        Linked::Asked(_) | Linked::IssueEnded(_) | Linked::Deliver(_) | Linked::DeliverAll => false,
-    })
+/// Whether `fx` asks for task `id`'s place.
+fn asks<W>(fx: &[Effect<W>], id: &str) -> bool {
+    has(fx, |e| name(e) == "FindPlace" && task_of(e) == Some(id))
 }
 
 fn named<W>(fx: &[Effect<W>], wanted: &str) -> bool {
@@ -107,8 +99,6 @@ fn task_of<W>(e: &Effect<W>) -> Option<&str> {
         | Effect::WatchDrain { task, .. }
         | Effect::Pin { task, .. }
         | Effect::Told { task, .. }
-        | Effect::ReadReview { task, .. }
-        | Effect::ConfirmAnswer { task, .. }
         | Effect::ConfirmRemoval { task, .. }
         | Effect::RemoveWorktree { task, .. } => Some(task),
         Effect::Cut(start) | Effect::Keep(start) => Some(&start.task),
@@ -134,8 +124,6 @@ fn written<W>(e: &Effect<W>) -> Option<&Task> {
         | Effect::Defer(_)
         | Effect::Told { .. }
         | Effect::JudgeRemoval(_)
-        | Effect::ReadReview { .. }
-        | Effect::ConfirmAnswer { .. }
         | Effect::ConfirmRemoval { .. }
         | Effect::RemoveWorktree { .. }
         | Effect::CloseSession { .. }
@@ -159,8 +147,6 @@ fn start_of<W>(e: Effect<W>) -> Option<OffScreen<W>> {
         | Effect::Defer(_)
         | Effect::Told { .. }
         | Effect::JudgeRemoval(_)
-        | Effect::ReadReview { .. }
-        | Effect::ConfirmAnswer { .. }
         | Effect::ConfirmRemoval { .. }
         | Effect::RemoveWorktree { .. }
         | Effect::CloseSession { .. }
@@ -183,7 +169,7 @@ fn saves<W>(fx: &[Effect<W>]) -> usize {
 
 /// Ask for task `id`'s place, and find it at `place`, from an open window.
 fn ask(tasks: &mut TasksDrive<Win>, id: &str, place: &str) -> Vec<Effect<Win>> {
-    let fx = tasks.request(id, WINDOW, None);
+    let fx = tasks.request(id, WINDOW);
     assert!(
         has(&fx, |e| name(e) == "FindPlace" && task_of(e) == Some(id)),
         "{fx:?}"
@@ -204,7 +190,7 @@ fn drives<W>(fx: &[Effect<W>], id: &str) -> bool {
 fn ended_done(tasks: &mut TasksDrive<Win>, id: &str) -> Vec<Effect<Win>> {
     let mut run = tasks.task(id).unwrap().runs[0].clone();
     run.outcome = Some(Outcome::Done);
-    let fx = tasks.run_ended(id, run, usize::MAX, false, None, None, WINDOW);
+    let fx = tasks.run_ended(id, run, usize::MAX, false, None, WINDOW);
     assert!(
         has(&fx, |e| *e
             == Effect::Defer(Input::Free {
@@ -225,7 +211,6 @@ fn a_free_place_starts_the_task_at_once() {
     tasks.add(check("1", "/a"));
     let fx = ask(&mut tasks, "1", "/a");
     assert!(drives(&fx, "1"), "{fx:?}");
-    assert!(tasks.take_linked().contains(&Linked::Asked("1".into())));
     assert_eq!(tasks.working("1"), Some(Working::Running));
 }
 
@@ -277,7 +262,7 @@ fn a_task_already_at_work_is_refused_a_second_start() {
 fn a_place_found_after_its_window_closed_asks_for_nothing() {
     let mut tasks = TasksDrive::default();
     tasks.add(check("1", "/a"));
-    tasks.request("1", WINDOW, None);
+    tasks.request("1", WINDOW);
     let fx = tasks.handle(Input::PlaceFound {
         task: "1".into(),
         place: PathBuf::from("/a"),
@@ -286,26 +271,6 @@ fn a_place_found_after_its_window_closed_asks_for_nothing() {
     });
     assert!(!drives(&fx, "1"));
     assert_eq!(tasks.working("1"), None);
-}
-
-/// A retry the cap refuses never began: its new run is dropped, and the
-/// task is as it was.
-#[test]
-fn a_start_over_the_cap_is_refused_and_an_unbegun_retry_dropped() {
-    let mut tasks = TasksDrive::default();
-    tasks.add(check("1", "/a"));
-    let template = tasks.task("1").unwrap().runs[0].template.clone();
-    let (made, _) = tasks.retry("1", "2".into(), template, None, None, WINDOW);
-    assert!(made);
-    assert_eq!(tasks.task("1").unwrap().runs.len(), 2);
-    let fx = tasks.request("1", WINDOW, Some("two runs already work".into()));
-    assert!(!named(&fx, "FindPlace"));
-    assert!(has(&fx, |e| *e
-        == Effect::Signal(Signal::Refused {
-            window: WINDOW,
-            why: "two runs already work".into()
-        })));
-    assert_eq!(tasks.task("1").unwrap().runs.len(), 1);
 }
 
 /// A queued task whose window has gone is passed over, reads cut off, and
@@ -332,7 +297,7 @@ fn stop_on_a_queued_task_that_never_ran_keeps_no_empty_run() {
     tasks.add(check("2", "/a"));
     ask(&mut tasks, "1", "/a");
     ask(&mut tasks, "2", "/a");
-    let (queued, fx) = tasks.stop_queued("2", crate::Now::read());
+    let (queued, fx) = tasks.stop_queued("2");
     assert!(queued);
     assert_eq!(saves(&fx), 1);
     let task = tasks.task("2").unwrap();
@@ -340,7 +305,7 @@ fn stop_on_a_queued_task_that_never_ran_keeps_no_empty_run() {
     assert_eq!(task.outcome(), Some(Outcome::Stopped(Stop::ByPerson)));
     assert_eq!(tasks.working("1"), Some(Working::Running));
     // Not queued: nothing to call off.
-    assert!(!tasks.stop_queued("1", crate::Now::read()).0);
+    assert!(!tasks.stop_queued("1").0);
 }
 
 #[test]
@@ -365,7 +330,7 @@ fn an_ended_run_holds_its_place_until_its_turn_is_over() {
     let mut run = tasks.task("1").unwrap().runs[0].clone();
     run.resume(0);
     run.stopped(Stop::ByPerson, 0);
-    let fx = tasks.run_ended("1", run, 0, true, None, Some(7), WINDOW);
+    let fx = tasks.run_ended("1", run, 0, true, Some(7), WINDOW);
     assert!(
         has(&fx, |e| *e
             == Effect::WatchDrain {
@@ -391,8 +356,6 @@ fn an_ended_run_holds_its_place_until_its_turn_is_over() {
         | Effect::Defer(_)
         | Effect::Told { .. }
         | Effect::JudgeRemoval(_)
-        | Effect::ReadReview { .. }
-        | Effect::ConfirmAnswer { .. }
         | Effect::ConfirmRemoval { .. }
         | Effect::RemoveWorktree { .. }
         | Effect::CloseSession { .. }
@@ -433,7 +396,7 @@ fn a_check_says_how_it_came_out_and_a_stopped_one_says_nothing() {
     tasks.add(check("1", "/work/app"));
     let mut run = tasks.task("1").unwrap().runs[0].clone();
     run.outcome = Some(Outcome::Done);
-    let fx = tasks.run_ended("1", run.clone(), 0, false, None, None, WINDOW);
+    let fx = tasks.run_ended("1", run.clone(), 0, false, None, WINDOW);
     assert!(has(&fx, |e| *e
         == Effect::Signal(Signal::CheckEnded {
             window: WINDOW,
@@ -441,7 +404,7 @@ fn a_check_says_how_it_came_out_and_a_stopped_one_says_nothing() {
             passed: true
         })));
     run.outcome = Some(Outcome::Stopped(Stop::ByPerson));
-    let fx = tasks.run_ended("1", run, 0, false, None, None, WINDOW);
+    let fx = tasks.run_ended("1", run, 0, false, None, WINDOW);
     assert!(!named(&fx, "Signal::CheckEnded"));
 }
 
@@ -464,7 +427,7 @@ fn a_schedules_finished_task_closes_its_session_and_says_so() {
     ask(&mut tasks, "1", "/a");
     let mut run = tasks.task("1").unwrap().runs[0].clone();
     run.outcome = Some(Outcome::Done);
-    let fx = tasks.run_ended("1", run, usize::MAX, false, None, Some(7), WINDOW);
+    let fx = tasks.run_ended("1", run, usize::MAX, false, Some(7), WINDOW);
     assert!(has(&fx, |e| *e
         == Effect::CloseSession {
             uid: 7,
@@ -485,87 +448,20 @@ fn a_schedules_finished_task_closes_its_session_and_says_so() {
     );
 }
 
-fn of_issue(id: &str) -> Task {
-    Task {
-        source: Source::Issue(IssueSource {
-            tracker: crate::unattended::TrackerRef::Local {
-                file: PathBuf::from("/a/issues.md"),
-            },
-            number: 3,
-            forge_ref: None,
-            forge: None,
-            base: String::new(),
-            picked: false,
-            unsent: Vec::new(),
-            notes: Vec::new(),
-        }),
-        ..titled(id, "Fix", "/a")
-    }
-}
-
-/// An issue's run that ends keeps its report, the start's notes and a
-/// waiting card's question in it, in the very write that keeps the run, so
-/// no later write of the task can lose it before it is sent.
-#[test]
-fn an_issue_runs_end_is_kept_in_the_write_that_keeps_the_run() {
-    let mut tasks = TasksDrive::default();
-    let mut task = of_issue("1");
-    match &mut task.source {
-        Source::Issue(issue) => issue.notes = vec!["No acceptance written".into()],
-        source @ (Source::Workflow | Source::Check) => panic!("{source:?}"),
-    }
-    tasks.add(task);
-    ask(&mut tasks, "1", "/a");
-    let mut run = tasks.task("1").unwrap().runs[0].clone();
-    run.outcome = Some(Outcome::Done);
-    let fx = tasks.run_ended(
-        "1",
-        run,
-        usize::MAX,
-        false,
-        Some("Which?".into()),
-        None,
-        WINDOW,
-    );
-    let saves: Vec<_> = fx
-        .iter()
-        .filter(|e| name(e) == "Save")
-        .filter_map(|e| written(e).and_then(|task| task.issue().cloned()))
-        .collect();
-    let [issue] = saves.as_slice() else {
-        panic!("one write: {fx:?}");
-    };
-    let [report] = issue.unsent.as_slice() else {
-        panic!("one report: {issue:?}");
-    };
-    assert_eq!(report.outcome, Some(Outcome::Done));
-    assert_eq!(report.asked.as_deref(), Some("Which?"));
-    assert_eq!(report.notes, vec!["No acceptance written".to_string()]);
-    assert!(issue.notes.is_empty(), "handed to the first report only");
-}
-
-/// A run that cannot start ends failed when nobody is watching it, an
-/// issue's or a schedule's, and is told; a person's only gives its place on.
+/// A run that cannot start ends failed when nobody is watching it, a
+/// schedule's; a person's only gives its place on.
 #[test]
 fn a_task_that_cannot_start_fails_only_when_nobody_watches_it() {
     let mut tasks = TasksDrive::default();
-    tasks.add(of_issue("1"));
+    tasks.add(scheduled("1"));
     tasks.add(titled("2", "Mine", "/b"));
     ask(&mut tasks, "1", "/a");
     ask(&mut tasks, "2", "/b");
     let fx = tasks.not_started("1", "no agent".into(), Failure::Other, crate::Now::read());
-    // Its report is in the task that is written, before the issue is told.
-    let saved = fx.iter().position(|e| {
-        name(e) == "Save"
-            && written(e).is_some_and(|task| {
-                task.id == "1" && task.issue().is_some_and(|issue| issue.unsent.len() == 1)
-            })
-    });
-    assert!(saved.is_some(), "{fx:?}");
-    // Told through the link, which acts once what was said to do is taken.
-    assert!(tasks
-        .take_linked()
-        .contains(&Linked::IssueEnded("1".into())));
+    let saved = fx
+        .iter()
+        .any(|e| written(e).is_some_and(|task| task.id == "1"));
+    assert!(saved, "{fx:?}");
     match tasks.task("1").unwrap().outcome() {
         Some(Outcome::Failed(_)) => {}
         outcome
@@ -638,7 +534,6 @@ fn a_finished_task_past_the_history_is_let_go() {
     assert_eq!(fx.iter().filter(|e| name(e) == "Remove").count(), 1);
     assert!(has(&fx, |e| name(e) == "DropMarks"
         && task_of(e) == Some("1000")));
-    assert!(tasks.take_linked().contains(&Linked::DeliverAll));
     assert_eq!(tasks.tasks().len(), history::KEPT);
     assert_eq!(tasks.removed(Path::new("/a")), 1);
 }
@@ -666,7 +561,6 @@ fn a_task_begins_as_its_kind_and_a_tools_first_drive_is_off_screen() {
     tasks.add(check("1", "/a"));
     tasks.add(titled("2", "Mine", "/b"));
     tasks.add(titled("3", "A tool's", "/c"));
-    tasks.add(of_issue("4"));
     tasks.drive_off_screen("3");
     assert_eq!(begun(&tasks.begin("1", true, crate::Now::read())), "Check");
     let off = |begun| match begun {
@@ -677,7 +571,6 @@ fn a_task_begins_as_its_kind_and_a_tools_first_drive_is_off_screen() {
     assert!(off(tasks.begin("3", true, crate::Now::read())));
     // Only its first drive: a Resume a person presses later shows.
     assert!(!off(tasks.begin("3", true, crate::Now::read())));
-    assert!(off(tasks.begin("4", true, crate::Now::read())));
 }
 
 #[test]
@@ -704,7 +597,7 @@ fn a_task_whose_folder_is_gone_or_with_nothing_to_run_is_refused() {
 #[test]
 fn a_session_not_started_for_a_gone_agent_fails_as_found_late() {
     let mut tasks = TasksDrive::<Win>::default();
-    tasks.add(of_issue("1"));
+    tasks.add(scheduled("1"));
     ask(&mut tasks, "1", "/a");
     tasks.session_not_started("1", true, crate::Now::read());
     let run = tasks.task("1").unwrap().runs.last().unwrap().clone();
@@ -724,7 +617,7 @@ fn a_check_is_retried_at_once_from_its_one_step_and_others_are_not() {
     let (retry, fx) = tasks.retry_asked("1", "1b".into(), WINDOW);
     assert_eq!(retry, Retry::AtOnce);
     assert_eq!(saves(&fx), 1);
-    assert!(asks(&mut tasks, "1"));
+    assert!(asks(&fx, "1"));
     assert_eq!(tasks.task("1").unwrap().runs.len(), 2);
     let (retry, fx) = tasks.retry_asked("2", "2b".into(), WINDOW);
     assert_eq!(retry, Retry::Confirm);
@@ -744,15 +637,9 @@ fn a_resume_refused_is_said_and_one_let_through_asks() {
             why: "no agent".into()
         })]
     );
+    tasks.add(check("1", "/a"));
     let fx = tasks.resume("1", None, WINDOW);
-    assert!(fx.is_empty(), "{fx:?}");
-    assert_eq!(
-        tasks.take_linked(),
-        [Linked::Ask {
-            task: "1".into(),
-            window: WINDOW
-        }]
-    );
+    assert!(asks(&fx, "1"), "{fx:?}");
 }
 
 fn starting(place: crate::workflow::Place) -> crate::task::Starting {
@@ -794,8 +681,6 @@ fn told<W>(fx: &[Effect<W>]) -> Option<&Placed> {
         | Effect::Keep(_)
         | Effect::Defer(_)
         | Effect::JudgeRemoval(_)
-        | Effect::ReadReview { .. }
-        | Effect::ConfirmAnswer { .. }
         | Effect::ConfirmRemoval { .. }
         | Effect::RemoveWorktree { .. }
         | Effect::CloseSession { .. }
@@ -841,7 +726,7 @@ fn a_start_off_screen_keeps_its_project_then_its_task_and_asks() {
     );
     assert_eq!(workspace.active_root, 0, "and not put on screen");
     assert_eq!(saves(&fx), 1);
-    assert!(asks(&mut tasks, "t"));
+    assert!(asks(&fx, "t"));
     assert_eq!(tasks.task("t").unwrap().origin, Some(Origin::Tool));
     let fx = ask(&mut tasks, "t", "/p");
     assert!(drives(&fx, "t"));
@@ -898,27 +783,17 @@ fn a_start_off_screen_on_a_worktree_is_cut_first() {
     assert_eq!(start.launch.dir(), Path::new("/w"));
 }
 
-/// A session's run begins with what its task was given and, an issue's,
-/// with the lines its transcript opens with.
+/// A session's run begins with what its task was given.
 #[test]
-fn a_sessions_run_begins_with_its_grant_and_an_issues_opening() {
+fn a_sessions_run_begins_with_its_grant() {
     let mut tasks = TasksDrive::<Win>::default();
     let mut mine = titled("1", "Mine", "/b");
     mine.grant.tools = vec!["start_task".into()];
     tasks.add(mine);
-    tasks.add(of_issue("2"));
-    let begun = |tasks: &mut TasksDrive<Win>, id| match tasks.begin(id, true, crate::Now::read()) {
-        Begin::Session { grant, opening, .. } => (grant, opening),
+    match tasks.begin("1", true, crate::Now::read()) {
+        Begin::Session { grant, .. } => assert_eq!(grant.tools, ["start_task"]),
         Begin::Check(_) | Begin::Refused { .. } => panic!("a session's run"),
-    };
-    let (grant, opening) = begun(&mut tasks, "1");
-    assert_eq!(grant.tools, ["start_task"]);
-    assert!(opening.is_empty());
-    let (_, opening) = begun(&mut tasks, "2");
-    assert!(
-        opening[0].starts_with("Unattended run on issue"),
-        "{opening:?}"
-    );
+    }
 }
 
 /// Where a driven task landed is told to whoever asked: begun, refused
@@ -1032,45 +907,4 @@ fn a_worktree_is_judged_asked_judged_again_then_removed() {
     assert!(tasks.task("1").unwrap().worktree_removed);
     assert!(named(&fx, "Signal::Removed"));
     assert_eq!(tasks.acting("1"), None);
-}
-
-/// *Answer the pull request review* reads first, its button waiting; what
-/// was read is asked of the person, and a read that failed is said.
-#[test]
-fn a_review_is_read_before_it_is_asked() {
-    let mut tasks = TasksDrive::<Win>::default();
-    tasks.add(titled("1", "Mine", "/w"));
-    let fx = tasks.answer_review("1", WINDOW);
-    assert!(named(&fx, "ReadReview"));
-    assert_eq!(tasks.acting("1"), Some(Act::AnswerReview));
-    let read = |tasks: &mut TasksDrive<Win>, read| {
-        tasks.handle(Input::ReviewRead {
-            task: "1".into(),
-            window: WINDOW,
-            read,
-        })
-    };
-    let fx = read(&mut tasks, Ok(()));
-    assert!(named(&fx, "ConfirmAnswer"));
-    assert_eq!(tasks.acting("1"), None);
-    let fx = read(&mut tasks, Err("gone".into()));
-    assert!(named(&fx, "Signal::ReviewNotRead"));
-}
-
-/// Only a task not yet over, working an issue kept in `dir`, holds it.
-#[test]
-fn holds_only_unfinished_tasks_on_the_dir() {
-    let mut tasks = TasksDrive::<u8>::default();
-    let dir = Path::new("/a");
-    let mut dismissed = of_issue("1");
-    dismissed.dismissed = true;
-    let mut finished = of_issue("2");
-    finished.runs[0].outcome = Some(Outcome::Stopped(Stop::ByPerson));
-    let _ = tasks.add(dismissed);
-    let _ = tasks.add(finished);
-    let _ = tasks.add(titled("3", "Not an issue", "/a"));
-    assert!(!tasks.holds(dir));
-    let _ = tasks.add(of_issue("4"));
-    assert!(tasks.holds(dir));
-    assert!(!tasks.holds(Path::new("/elsewhere")));
 }

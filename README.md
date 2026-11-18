@@ -38,9 +38,6 @@ Beside the conversation:
   judged by what git and the transcript show rather than by what the agent says.
 - **Tasks**: one page for what is running, what needs you and what finished,
   with each run's steps, output and diffs, and Resume and Retry.
-- **Unattended runs**: an issue carrying a label, on GitHub or kept in onehand,
-  worked in a worktree and session of its own while nobody watches, and told how
-  it went.
 - **Schedules**: work started by the clock while onehand is open, each start a
   task like any other.
 - **Lead and workers**: a session's agent that has been given onehand's tools
@@ -156,7 +153,7 @@ Code's plugins, not onehand's.
 - [DESIGN.md](DESIGN.md): the UI's binding overview, with
   [docs/screens.md](docs/screens.md) and [docs/ui-patterns.md](docs/ui-patterns.md)
   under it.
-- [docs/](docs/): each feature as built (workflows, tasks, unattended runs,
+- [docs/](docs/): each feature as built (workflows, tasks,
   agents, control, schedules, hosts), where behaviour lives
   ([drives.md](docs/drives.md)), the known gaps, and the reasons behind the
   repository's rules.

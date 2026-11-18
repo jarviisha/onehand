@@ -342,3 +342,28 @@ fn a_write_into_a_deleted_workspace_puts_nothing_back() {
     assert!(update_blocking(&file, |_| Ok(())).is_err());
     assert!(!storage.exists());
 }
+
+/// A lead's `start_issue` brief: an open issue kept here is named as one,
+/// and a closed, missing or unkept one is refused.
+#[test]
+fn a_supervised_brief_names_an_open_issue_kept_here() {
+    assert!(supervised_brief_blocking(None, None, 1).is_err());
+    let dir = std::env::temp_dir().join(format!("onehand-brief-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let file = dir.join("issues.json");
+    let mut body = draft("Fix it");
+    body.body = " Do the thing. ".into();
+    update_blocking(&file, |issues| issues.create(body, 1)).unwrap();
+    update_blocking(&file, |issues| issues.create(draft("Old"), 1)).unwrap();
+    update_blocking(&file, |issues| issues.set_open(2, false, 2)).unwrap();
+    let brief = supervised_brief_blocking(Some(file.clone()), None, 1).unwrap();
+    assert_eq!(brief.title, "Fix it");
+    assert_eq!(brief.body, "Do the thing.");
+    assert_eq!(
+        brief.instructions.as_deref(),
+        Some("This is issue #1, which is kept in onehand rather than on a forge.")
+    );
+    assert!(supervised_brief_blocking(Some(file.clone()), None, 2).is_err());
+    assert!(supervised_brief_blocking(Some(file), None, 9).is_err());
+    let _ = std::fs::remove_dir_all(dir);
+}

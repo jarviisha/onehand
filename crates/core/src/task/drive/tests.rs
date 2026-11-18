@@ -81,7 +81,7 @@ impl Rig {
 
     fn start_run(run: Run, first: Action, (chat, rx): (Chat, RxOf)) -> (Self, Vec<Effect>) {
         let now = crate::Now::read();
-        let (drive, fx) = RunDrive::start("t1".into(), run, first, 0, false, now, Some(&chat));
+        let (drive, fx) = RunDrive::start("t1".into(), run, first, 0, now, Some(&chat));
         let mut rig = Self {
             drive,
             chat,
@@ -169,7 +169,7 @@ fn has(fx: &[Effect], wanted: impl Fn(&Effect) -> bool) -> bool {
 }
 
 /// An effect's name, every variant listed so a new one must be named here;
-/// a clock, a signal and a word to unattended runs carry their own kind.
+/// a clock and a signal carry their own kind.
 fn name(e: &Effect) -> &'static str {
     match e {
         Effect::Pin { .. } => "Pin",
@@ -188,12 +188,6 @@ fn name(e: &Effect) -> &'static str {
         },
         Effect::Defer(_) => "Defer",
         Effect::Save => "Save",
-        Effect::Unattended(said) => match said {
-            Said::Waiting => "Unattended(Waiting)",
-            Said::Answered => "Unattended(Answered)",
-            Said::CameUp { .. } => "Unattended(CameUp)",
-            Said::Pause { .. } => "Unattended(Pause)",
-        },
         Effect::Refresh => "Refresh",
         Effect::SessionChanged => "SessionChanged",
         Effect::Signal(signal) => match signal {
@@ -224,7 +218,6 @@ fn finished(fx: &[Effect]) -> Option<&Outcome> {
         | Effect::Arm { .. }
         | Effect::Defer(_)
         | Effect::Save
-        | Effect::Unattended(_)
         | Effect::Refresh
         | Effect::SessionChanged
         | Effect::Signal(_) => None,
@@ -237,33 +230,6 @@ fn failed(fx: &[Effect]) -> Option<&str> {
         Some(Outcome::Failed(why)) => Some(why),
         Some(Outcome::Done | Outcome::Stopped(_) | Outcome::Exhausted { .. }) | None => None,
     }
-}
-
-/// The fix of every pause said to unattended runs.
-fn pause_fixes(fx: &[Effect]) -> Vec<&str> {
-    fx.iter()
-        .filter_map(|e| match e {
-            Effect::Unattended(Said::Pause { fix, .. }) => Some(fix.as_str()),
-            Effect::Unattended(Said::Waiting | Said::Answered | Said::CameUp { .. })
-            | Effect::Pin { .. }
-            | Effect::Measure { .. }
-            | Effect::ReadFacts { .. }
-            | Effect::RunCommand { .. }
-            | Effect::CallOffCommand
-            | Effect::Push { .. }
-            | Effect::FindPullRequest
-            | Effect::OpenPullRequest
-            | Effect::ReadLogs { .. }
-            | Effect::MarkReady { .. }
-            | Effect::Arm { .. }
-            | Effect::Defer(_)
-            | Effect::Save
-            | Effect::Refresh
-            | Effect::SessionChanged
-            | Effect::Signal(_)
-            | Effect::Finish { .. } => None,
-        })
-        .collect()
 }
 
 /// A checkout run through its plan, at its approval: started, pinned,
@@ -328,11 +294,10 @@ fn an_approval_waits_on_a_person_until_answered() {
 }
 
 #[test]
-fn an_approval_answers_and_says_so() {
+fn an_approval_answers() {
     let mut rig = at_approval();
     let at = approval_at(&rig);
-    let fx = rig.approve(at.clone());
-    assert!(names(&fx).contains(&"Unattended(Answered)"));
+    rig.approve(at.clone());
     // A second press of the same approval is judged stale and moves nothing.
     rig.on(Input::Pinned(Ok("c2".into())));
     let fx = rig.approve(at);
@@ -485,7 +450,6 @@ fn a_prompt_waits_for_the_agent_to_come_up() {
     });
     let fx = rig.on(Input::Appended);
     assert!(rig.submitted(), "{fx:?}");
-    assert!(names(&fx).contains(&"Unattended(CameUp)"));
 }
 
 #[test]
@@ -516,7 +480,6 @@ fn a_mode_the_agent_does_not_offer_fails_the_run_on_its_mode() {
     let (mut rig, _) = Rig::start(checkout(), Some("acceptEdits"), with_modes(&["default"]));
     rig.on(Input::Pinned(Ok("c0".into())));
     let fx = rig.on(Input::Measured(Ok(mark("a", "d0"))));
-    assert!(names(&fx).contains(&"Unattended(Pause)"), "{fx:?}");
     assert!(failed(&fx).is_some(), "{fx:?}");
     assert!(!rig.submitted());
 }
@@ -601,10 +564,6 @@ fn a_refused_pick_fails_the_run_at_the_step() {
         failed(&fx).is_some_and(|why| why.contains("strong")),
         "{fx:?}"
     );
-    assert!(
-        !names(&fx).contains(&"Unattended(Pause)"),
-        "a launcher run pauses nothing"
-    );
 }
 
 #[test]
@@ -617,7 +576,6 @@ fn a_refusal_of_the_runs_mode_is_not_a_steps() {
         why: "not now".into(),
     });
     let fx = rig.on(Input::PickRefused("not now".into()));
-    assert!(pause_fixes(&fx).contains(&"unattended.mode is fixed"));
     assert!(failed(&fx).is_some_and(|why| why.contains("mode `plan`")));
 }
 
@@ -742,10 +700,9 @@ fn a_failed_turn_fails_the_run_in_its_words() {
 }
 
 #[test]
-fn a_card_pauses_the_budget_and_says_it_waits() {
+fn a_card_pauses_the_budget() {
     let mut rig = in_turn();
-    let fx = rig.on(Input::AwaitingUser);
-    assert!(names(&fx).contains(&"Unattended(Waiting)"));
+    rig.on(Input::AwaitingUser);
     assert!(rig.drive.card() && rig.drive.waits_on_person());
     rig.now += rig.drive.run().template.timeout_limit() * 2;
     let fx = rig.on(Input::Elapsed(Timer::Timeout));
@@ -753,16 +710,12 @@ fn a_card_pauses_the_budget_and_says_it_waits() {
 }
 
 #[test]
-fn an_answered_card_resumes_and_says_so() {
+fn an_answered_card_resumes() {
     let mut rig = in_turn();
     rig.on(Input::AwaitingUser);
-    let fx = rig.on(Input::Notified);
-    assert_eq!(fx, vec![Effect::Unattended(Said::Answered)]);
+    assert!(rig.on(Input::Notified).is_empty());
     assert!(!rig.drive.card());
-    assert!(
-        rig.on(Input::Notified).is_empty() && rig.asked.is_empty(),
-        "said once"
-    );
+    assert!(rig.on(Input::Notified).is_empty() && rig.asked.is_empty());
 }
 
 #[test]
@@ -836,7 +789,7 @@ fn check_drive() -> (RunDrive, Vec<Effect>) {
     let task = Task::check("t1".into(), "make check".into(), setup(None));
     let mut run = task.runs[0].clone();
     let first = run.resume(0);
-    RunDrive::start("t1".into(), run, first, 0, false, crate::Now::read(), None)
+    RunDrive::start("t1".into(), run, first, 0, crate::Now::read(), None)
 }
 
 #[test]
@@ -956,7 +909,6 @@ fn forging() -> Rig {
             | Effect::Arm { .. }
             | Effect::Defer(_)
             | Effect::Save
-            | Effect::Unattended(_)
             | Effect::Refresh
             | Effect::SessionChanged
             | Effect::Signal(_)
@@ -1128,7 +1080,6 @@ fn failing_checks_carry_at_most_three_logs_to_the_repair() {
         | Effect::Arm { .. }
         | Effect::Defer(_)
         | Effect::Save
-        | Effect::Unattended(_)
         | Effect::Refresh
         | Effect::SessionChanged
         | Effect::Signal(_)

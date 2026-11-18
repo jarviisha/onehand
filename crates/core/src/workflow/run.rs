@@ -708,8 +708,8 @@ impl Run {
             Some(StepKind::StatusChecks { wait, .. }) => {
                 self.awaiting = Await::StatusChecks;
                 Action::AwaitStatusChecks {
-                    wait: crate::unattended::parse_every(&wait)
-                        .or_else(|| crate::unattended::parse_every(super::template::DEFAULT_WAIT))
+                    wait: crate::workflow::parse_every(&wait)
+                        .or_else(|| crate::workflow::parse_every(super::template::DEFAULT_WAIT))
                         .unwrap_or_default(),
                     pushed: self.marks.verified_at.clone(),
                 }

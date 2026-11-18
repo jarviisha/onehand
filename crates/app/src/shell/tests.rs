@@ -54,14 +54,13 @@ fn a_host_root_is_never_given_local_work() {
     assert_eq!(drive.roots[0].local_path(), Some(local.as_path()));
     assert_eq!(drive.roots[1].local_path(), None);
     assert_eq!(pages::page_roots_in(&drive), vec![local]);
-    // Its menus offer no worktree, check or switch, even where a folder of
+    // Its menus offer no worktree or check, even where a folder of
     // the same path here is a repository.
     let mut host = ProjectRoot::new("/srv/app");
     host.host = Some(HostName("vps".into()));
     host.check = Some("make test".into());
     let facts = crate::chat::pane::ProjectFacts::of(&host, true);
     assert!(!facts.is_repo && !facts.check);
-    assert_eq!(facts.unattended, None);
     assert!(crate::chat::pane::ProjectFacts::of(&drive.roots[0], true).is_repo);
 }
 

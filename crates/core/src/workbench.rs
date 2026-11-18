@@ -5,7 +5,6 @@
 
 use crate::disk::Disk;
 use crate::gitstat::GitStatus;
-use crate::task::work::IssueWork;
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -296,16 +295,6 @@ pub enum Request<'a> {
     /// record of which conversation took something up can tell whether that
     /// one is still going.
     LiveConversations(&'a [String]),
-    /// The work on every issue a project in this window keeps itself that a
-    /// task works, one summary per issue, and the projects a run may be
-    /// started on (git repositories that are not a run's own worktree).
-    /// Broadcast whenever a task starts, moves on a step or ends, or the
-    /// projects change, so a mode listing issues can say where each one's
-    /// work stands and offer a run only where one can start.
-    IssueWork {
-        works: &'a [IssueWork],
-        offered: &'a [PathBuf],
-    },
     /// The project folders nothing here may write now, each with the line
     /// that says why: an offloaded project while its host holds the code.
     /// Broadcast whenever the set changes, whole, so a folder left out is

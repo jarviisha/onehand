@@ -44,9 +44,6 @@ pub(crate) struct ProjectConfig {
     /// Held at the top of the rail.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub pinned: bool,
-    /// Its labelled issues may be worked with nobody watching.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub unattended: bool,
     /// The command a workflow's work must pass before it goes further.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub check: Option<String>,
@@ -66,7 +63,6 @@ struct Raw {
     roots: Vec<PathBuf>,
     active_root: usize,
     pinned: Vec<PathBuf>,
-    unattended: Vec<PathBuf>,
     checks: BTreeMap<PathBuf, String>,
     /// Each valued `<host>:<mirror>`.
     offloaded: BTreeMap<PathBuf, String>,
@@ -112,7 +108,6 @@ impl From<Raw> for WorkspaceConfig {
                     });
                 ProjectConfig {
                     pinned: raw.pinned.contains(key),
-                    unattended: raw.unattended.contains(key),
                     check: raw.checks.get(key).cloned(),
                     offload,
                     host,

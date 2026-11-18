@@ -79,7 +79,6 @@ impl WorkbenchMode for Mode {
             | Request::SetFontSize(_)
             | Request::ShowIssue(_)
             | Request::LiveConversations(_)
-            | Request::IssueWork { .. }
             | Request::Locked(_)
             | Request::Offloaded(_) => false,
         }

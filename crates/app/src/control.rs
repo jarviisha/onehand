@@ -106,14 +106,6 @@ impl Drop for Token {
     }
 }
 
-/// Whether session `uid` can be switched on at all: not when it is an
-/// unattended run's, whose agent works with nobody watching.
-pub(crate) fn offered(uid: u64, cx: &App) -> bool {
-    crate::task::shown(uid, cx)
-        .and_then(|shown| crate::task::task(&shown.task, cx))
-        .is_none_or(|task| task.issue().is_none())
-}
-
 /// Whether session `uid`'s agent may use the tools.
 pub(crate) fn switched_on(uid: u64) -> bool {
     drive().switched_on(uid)
@@ -272,30 +264,23 @@ fn perform_now(
             workflow,
         } => {
             let root = control::pick_project(&projects, &project)?.to_path_buf();
-            let workflow =
-                control::calls::workflow_of(workflow, &crate::unattended::workflows(cx).0)?;
+            let workflow = control::calls::workflow_of(workflow);
             let template = template(&workflow, cx)?;
             let issues = shell.read(cx).issues_file(&root);
             let answer = answer.take();
             cx.spawn(async move |cx| {
                 let outcome = async {
                     let at = root.clone();
-                    let (rows, ..) = cx
+                    let brief = cx
                         .background_executor()
                         .spawn(async move {
-                            onehand_core::unattended::pickable_one_blocking(
-                                crate::features::connectors(),
-                                &at,
-                                issues,
-                                issue,
-                            )
+                            let all = crate::features::connectors();
+                            let forge = onehand_core::connector::serving(all, &at)
+                                .ok()
+                                .map(|i| all[i]);
+                            onehand_core::issues::supervised_brief_blocking(issues, forge, issue)
                         })
                         .await?;
-                    let (tracker, row) = rows
-                        .into_iter()
-                        .next()
-                        .ok_or_else(|| format!("no issue {issue} in this project"))?;
-                    let brief = onehand_core::unattended::brief_supervised(&tracker, &row.issue);
                     start(handle, shell, root, template, brief, cx).await
                 }
                 .await;

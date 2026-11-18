@@ -4,7 +4,6 @@
 
 use crate::shell::rig::{folder, shell};
 use gpui::{TestAppContext, VisualTestContext};
-use onehand_issues::IssuesEvent;
 use std::path::PathBuf;
 
 /// How many notifications the shell's window has put up.
@@ -16,44 +15,6 @@ fn notes(cx: &mut VisualTestContext) -> usize {
 /// What the window was told of each refusal, in the words it was told.
 fn refusals(shell: &gpui::Entity<super::Shell>, cx: &mut VisualTestContext) -> Vec<&'static str> {
     cx.update(|_, cx| shell.read(cx).refused.clone())
-}
-
-/// Tell the shell `event`, as an Issues view does.
-fn tell(shell: &gpui::Entity<super::Shell>, event: IssuesEvent, cx: &mut VisualTestContext) {
-    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.on_issues_event(event, window, cx)));
-    cx.run_until_parked();
-}
-
-/// *Run workflow…* on a project no longer in the workspace opens no picker,
-/// and says so, once.
-#[gpui::test]
-fn a_run_on_a_project_gone_is_said(cx: &mut TestAppContext) {
-    let dir = folder("issues-gone");
-    let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
-    let root = dir.join("gone");
-    tell(
-        &shell,
-        IssuesEvent::RunIssueWorkflow { root, number: 1 },
-        cx,
-    );
-    assert!(cx.update(|_, cx| shell.read(cx).issue_picker.is_none()));
-    assert_eq!(notes(cx), 1);
-    assert_eq!(
-        refusals(&shell, cx),
-        ["That project is no longer in this workspace"]
-    );
-    let _ = std::fs::remove_dir_all(dir);
-}
-
-/// *Open session* of a task with no session open says so, once.
-#[gpui::test]
-fn a_tasks_session_not_open_is_said(cx: &mut TestAppContext) {
-    let dir = folder("issues-no-session");
-    let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
-    tell(&shell, IssuesEvent::OpenTaskSession("t1".into()), cx);
-    assert_eq!(notes(cx), 1);
-    assert_eq!(refusals(&shell, cx), ["That task has no session open"]);
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 /// *Run check* on the project selected, which has no check command, says so,

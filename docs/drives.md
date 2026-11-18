@@ -27,7 +27,6 @@ The drives so far:
 | `onehand_core::chat::drive::SessionDrive` | one session | `ChatSession` (`crates/app/src/chat/session.rs`) |
 | `onehand_core::task::drive::RunDrive` | one run | `crates/app/src/task/carrier.rs` |
 | `onehand_core::task::tasks::TasksDrive` | every task and the place each works in | the `Tasks` global (`crates/app/src/task.rs`, `task/place.rs`) |
-| `onehand_core::unattended::drive::UnattendedDrive` | unattended runs: the tick, the claim, the cap, a run's reports | `crates/app/src/unattended.rs`, its drive held in the `Tasks` global |
 | `onehand_core::schedule::drive::ScheduleDrive` | the clock schedules run by | the clock in `crates/app/src/schedules.rs` |
 | `onehand_core::host::drive::HostDrive` | one attach per host, what is known of each, the waits on a busy or lost host | `crates/app/src/hosts.rs`, its drive held on `Shared`, the attach run by `onehand_io::host` |
 | `onehand_core::host::offload::drive::OffloadDrive` | every offloaded folder: who holds its code, its moves, the poll, a branch's updates | `crates/app/src/offload.rs`, its drive held in the `Offloads` global |
@@ -39,7 +38,7 @@ The drives so far:
 | `onehand_core::host::waits::WindowWaits` | one window's share of its hosts' waits: what waits there on each host, and what a wait's end comes to there; a model whose commands answer what lands, with no effects of its own | `crates/app/src/shell/host_project.rs`, held per window on the `Shell`, which keeps the listening |
 | `onehand_core::editor::drive::EditorDrive` | one Workbench's open files: a read landing as a tab, a save and the one asked while it runs, a conflict, a locked folder, a close that would lose edits | `EditorView` (`crates/editor/src/view.rs`), one per mode |
 | `onehand_core::claude_plugins::drive::PluginsDrive` | one Plugins mode: when its list is read, one change at a time, a refusal said in its project, what the agent on screen has not loaded | `PluginsView` (`crates/claude-plugins/src/view.rs`), one per mode |
-| `onehand_core::task::work::drive::WorkDrive` | what one Issues view reads of the work on its issues and when (a pull request, every project's on the page, what the work left), and whether a review press goes to the run | `IssuesView` (`crates/issues/src/view/reads.rs`), one per view |
+| `onehand_core::connector::accounts::AccountsDrive` | who each connector acts as, as last asked, and whether a check is under way | `crates/app/src/accounts.rs`, its drive held in the `Accounts` global |
 | `onehand_core::config::recents::RecentsDrive` | the list of every workspace onehand keeps: read from their folders at launch, a workspace opened, renamed, made or deleted, and the order's write (which one a launch opens is `workspace::launch_blocking`'s, a blocking read beside it) | `crates/app/src/shell/storage.rs`, its drive held on `Shared` |
 | `onehand_core::instance::Arrivals` | what reaches the socket before the first window, held until it registers; a model whose commands answer what is carried, as `WindowWaits` is | `crates/app/src/instance.rs`, held in a global beside the socket |
 | `onehand_core::workbench::Showing` | which Workbench mode shows: after a switch of project, for a file opened, for a mode picked, and none other while the panel refuses; a model whose commands answer the place that came to show, with no effects of its own | `Workbench` (`crates/app/src/workbench/panel.rs`), one per panel, which holds the modes and tells the one that came to show |
@@ -183,18 +182,17 @@ call them, and core exports drives and the model's read side. A call from the ap
 Built for `Chat`, `Task`, the task queue and the workflow engine's `Run`: every method that
 changes them is `pub(crate)`, and `Task`'s fields are `pub(crate)` behind read accessors: every
 task is built in core, and a test that sets one up reaches its fields through the
-`test-support` feature. Unattended runs, the clock, hosts
-and offloaded projects keep their state in their drives' private fields; an offloaded folder's
+`test-support` feature. The clock, hosts and offloaded projects keep their state in their drives' private fields; an offloaded folder's
 entry is read through its drive, never handed out to change. The remote bridge's chats, the tools'
 state and the settings are kept in their drives too, and so is each window's workspace tree, whose
 mutators are `pub(crate)` and which `WorkspaceDrive` derefs to without `DerefMut`, and what is
 shown of an issues file, which `FileDrive` derefs to; `Issues`' mutators and `LocalIssue`'s
 fields are `pub(crate)`, the fields behind read accessors, and every change to the file is a
-`Change`, written by its drive or, for an unattended run's claim and reports, by core's blocking
-body (`issues::drive::write_blocking`). `Chats`' mutators are `pub(crate)`, the tools'
+`Change`, written by its drive. `Chats`' mutators are `pub(crate)`, the tools'
 state is private to `ControlDrive`, and `SettingsDrive` derefs to its settings without `DerefMut`, as `RecentsDrive` does to the recents, whose mutators are `pub(crate)`. A Workbench's open files are
 `EditorDrive`'s, which derefs to them, and `RootEditors`' fields are `pub(crate)`; the Plugins
-mode's state is private to `PluginsDrive`.
+mode's state is private to `PluginsDrive`, and what each connector said of its account to
+`AccountsDrive`.
 A schedule is the file's data, and
 what the clock or a switch writes onto it is decided by core's functions the carrier runs in its
 writer (`schedule::merge_looked`, `schedule::switch`). A model a drive takes over later makes its
@@ -206,14 +204,13 @@ places, as every guard in `crates/app/src/guards.rs` was.
 ### 9. A drive sits beside its model
 
 `SessionDrive` is `core/src/chat/drive.rs`; a run's drive is `core/src/task/drive.rs`, the
-tasks' `core/src/task/tasks.rs`, unattended runs' `core/src/unattended/drive.rs`, the clock's
+tasks' `core/src/task/tasks.rs`, the clock's
 `core/src/schedule/drive.rs`, hosts' `core/src/host/drive.rs` and offloaded projects'
 `core/src/host/offload/drive.rs`, the remote bridge's `core/src/remote/drive.rs`, the tools'
 `core/src/control/drive.rs`, the settings' `core/src/config/drive.rs`, the recents'
 `core/src/config/recents.rs`, a window's workspace
 `core/src/workspace/drive.rs`, an issues file's `core/src/issues/drive.rs`, the Editor's
-`core/src/editor/drive.rs`, the Plugins mode's `core/src/claude_plugins/drive.rs` and an Issues
-view's reads of the work `core/src/task/work/drive.rs`; which Workbench mode shows is
+`core/src/editor/drive.rs`, and the Plugins mode's `core/src/claude_plugins/drive.rs`; which Workbench mode shows is
 `core/src/workbench.rs`, beside the modes' contract. The
 repository is cut by feature, and there is no `application/` folder to split each feature in
 two.
@@ -225,18 +222,12 @@ signals another's inputs, is behaviour too. So it is a GUI-free module of core t
 real drives on both sides, as `task::drive::link` joins a run and its session (`Joined`, the only
 way a front end gives a run a command: it makes what the run asks of its session there, its picks,
 its notes, its prompt and its cancel, and tells the run of a prompt not taken, in the same call),
-`task::tasks::link` a run and its task, and `unattended::link` unattended runs and the tasks (every
-start held to the cap, a task started off screen among them, a claim kept as a task, what a run
-tells unattended runs, a run's end telling its issue, and the workflows a setting puts in force,
-`unattended::link::shown`). What one of these two drives asks of the other is no effect of its
-own: each keeps it in a queue (`Linked`), which only their link takes, so no carrier matches it.
-A call that goes round the link is a mistake a debug build stops at; a release build settles what
-it left at the next call that goes through the link, rather than lose it. A start off screen's project is kept in its window's workspace by
+and `task::tasks::link` a run and its task. A start off screen's project is kept in its window's workspace by
 `task::tasks::link::keep`, which the window lends its `WorkspaceDrive` for. The note a session
 working an issue by hand owes it once its conversation is named is `issues::link::TakenUp`'s,
 which reads the session's `Chat` and answers the `Change` its file's drive writes. A drive that reads
 the tasks reads them with the runs under way through `task::tasks::link::Seen`, which says what
-each task is doing and who holds a slot. Which of a session's signals checks an offloaded
+each task is doing. Which of a session's signals checks an offloaded
 project's code is `OffloadDrive::session_said`'s, and how a host stands, the offload poll is
 told as it comes round (`HostSeen`). Outside control's value is the tools' drive's and its save
 the settings', joined in `control::link`. A GPUI subscriber
@@ -244,9 +235,8 @@ that routes between drives is a rule in the wrong place.
 
 Whole flows are tested across their links in `task::flows`, with every drive real and a harness
 playing the front end, each effect carried once by core's own blocking bodies on a scratch
-repository: a schedule's task from its look through its run and session to its end, and an
-unattended claim from the tick through its run to its issue's report and the slot it frees. An
-effect the flows are not built to reach (a pick by hand, a command, the forge) fails the
+repository: a schedule's task from its look through its run and session to its end. An effect the flows are
+not built to reach (a command, the forge) fails the
 harness, so a flow that starts reaching one is noticed; one with nothing to carry out in a flow (a
 write of no consequence there, a clock, a redraw) is passed over.
 
@@ -283,18 +273,13 @@ records what it is asked) a run's push, pull request look, open and read back re
 once and in order, a refused push reaching its drive and opening nothing, a forge not built in
 said, its status checks looked at each time the clock comes round and not a second before, a draft taken
 out of draft once they pass, and a failing one's log read once and sent back to the agent; on a real shell (`crates/app/src/shell/rig.rs`), a
-check's retry running it again at once and an issue's run coming up off screen. Hosts' carrier
+check's retry running it again at once and a tool's task coming up off screen. Hosts' carrier
 (`crates/app/src/hosts/tests.rs`) holds a wait's end reaching every listener once and the last
 listener going ending the wait and its clock; offloaded projects'
 (`crates/app/src/offload/tests.rs`) an errand's answer landing once, the poll's clock coming round
 and armed again, an answer reaching its asker once, a late answer for a folder let go landing on
 nothing, and keeping a kept folder again telling nobody, so the window's observer settles.
-Unattended runs' carrier (`crates/app/src/unattended/tests.rs`) holds its clock coming round and
-armed again, a start over the cap refused where it was asked, a pause, a config that cannot work,
-a report sent once and dropped once it lands, and, on a real shell, a run's own project dropped
-from every window holding it at its end, one taken over kept as the person's, a project the
-person had open left alone, and one dropped though
-its teardown was asked for inside its window's update; the clock's (`crates/app/src/schedules/tests.rs`)
+The clock's (`crates/app/src/schedules/tests.rs`)
 its first look after its wait, a file it cannot read said, a look that moves nothing writing
 nothing, and a failed switch put back. The remote bridge's carrier (`crates/app/src/remote/tests.rs`) holds a line answered once, a
 session no window holds said gone, a scan landing once off the UI thread and nothing told after the
@@ -337,8 +322,7 @@ listener ends by itself as soon as the conversation's read is let run, and a tes
 whether the waits are let go of or not. The issue work's note is
 not tested on a real shell, as the rig's agents cannot name a conversation; its rule is
 tested in core. The flows' harness drives a task in the shell's order (`Flow::drive`)
-rather than through the shell, which needs a window; and the flows do not reach a pick by hand,
-a review answered, a check, a command step, the forge steps, a session's own saves or its
+rather than through the shell, which needs a window; and the flows do not reach a check, a command step, the forge steps, a session's own saves or its
 telling, each held by its drive's tests.
 
 ### 12. A model does no I/O and reads no clock

@@ -124,28 +124,6 @@ fn a_task_reads_as_its_last_run() {
     assert!(!t.resumable());
 }
 
-/// A retry refused before it began is dropped, but a task's only run is
-/// kept: dropping it would leave a task that was never anything.
-#[test]
-fn a_refused_retry_is_dropped_but_a_tasks_only_run_stays() {
-    let mut t = task("1");
-    assert!(!t.drop_unbegun_retry(), "the only run stays");
-    assert_eq!(t.runs.len(), 1);
-    t.runs[0].resume(0);
-    t.runs[0].stopped(Stop::LinkLost, 0);
-    let again = t.runs[0].clone();
-    t.runs.push(again);
-    assert!(
-        !t.drop_unbegun_retry(),
-        "a retry that began is not a retry to drop"
-    );
-    let mut fresh = t.runs[0].clone();
-    fresh.history.clear();
-    t.runs.push(fresh);
-    assert!(t.drop_unbegun_retry());
-    assert_eq!(t.runs.len(), 2);
-}
-
 /// Stop on a task that never ran gives its empty run up, whatever its
 /// place; one that ran a step keeps it.
 #[test]
@@ -419,53 +397,16 @@ fn each_project_keeps_its_newest_finished_tasks() {
     );
 }
 
-/// An issue task of `/a` whose issue still waits for `unsent` reports.
-fn issue_task(id: &str, at: u64, unsent: &[&str]) -> Task {
-    use crate::unattended::{IssueSource, TrackerRef};
-    let mut t = finished(id, "/a", at);
-    t.source = Source::Issue(IssueSource {
-        tracker: TrackerRef::Forge {
-            connector: "Forge".into(),
-        },
-        number: 3,
-        forge_ref: None,
-        forge: Some("Forge".into()),
-        base: "origin/main".into(),
-        picked: false,
-        unsent: unsent
-            .iter()
-            .map(|run| crate::unattended::PendingReport {
-                run: run.to_string(),
-                outcome: Some(Outcome::Done),
-                started: true,
-                ended_on: None,
-                asked: None,
-                notes: Vec::new(),
-            })
-            .collect(),
-        notes: Vec::new(),
-    });
-    t
-}
-
+/// A task file a build that ran issues unattended wrote, its source the
+/// issue it worked, reads back as the workflow it ran.
 #[test]
-fn a_task_whose_issue_was_not_told_is_never_let_go() {
-    let mut all: Vec<Task> = (0..history::KEPT)
-        .map(|i| finished(&(i + 10).to_string(), "/a", 100 + i as u64))
-        .collect();
-    all.push(issue_task("waits", 0, &["1"]));
-    all.push(issue_task("told", 1, &[]));
-    let listed: Vec<(&Task, Group)> = all.iter().map(|t| (t, t.group(None))).collect();
-    assert_eq!(history::over_cap(&listed), ["told"]);
-}
-
-#[test]
-fn an_issue_task_survives_its_file() {
-    let t = issue_task("1", 5, &["1"]);
-    let json = serde_json::to_string(&t).unwrap();
-    let back: Task = serde_json::from_str(&json).unwrap();
+fn an_old_issue_task_reads_as_a_workflow_task() {
+    let t = finished("1", "/a", 5);
+    let mut old = serde_json::to_value(&t).unwrap();
+    old["source"] = serde_json::json!({"Issue": {"number": 3, "picked": false, "unsent": []}});
+    let back: Task = serde_json::from_value(old).unwrap();
+    assert_eq!(back.source, Source::Workflow);
     assert_eq!(back, t);
-    assert_eq!(back.issue().map(|i| i.shown()), Some("#3".to_string()));
 }
 
 #[test]
@@ -713,13 +654,10 @@ fn a_retry_with_a_note_tells_its_first_step_what_to_change() {
 
 /// A task file written before runs kept their failure's kind, their pull
 /// request and their commands' results reads, saves and reads again
-/// unchanged, its unsent report with it; what it lacks reads as not kept.
+/// unchanged; what it lacks reads as not kept.
 #[test]
 fn a_task_file_from_before_part_b_reads_and_saves_unchanged() {
-    let mut t = issue_task("1", 5, &["1"]);
-    if let Source::Issue(issue) = &mut t.source {
-        issue.unsent[0].outcome = Some(Outcome::Failed("boom".into()));
-    }
+    let mut t = finished("1", "/a", 5);
     let run = &mut t.runs[0];
     run.outcome = Some(Outcome::Failed("boom".into()));
     run.failure = Some(crate::workflow::Failure::Configuration);
@@ -739,7 +677,7 @@ fn a_task_file_from_before_part_b_reads_and_saves_unchanged() {
     assert_eq!(again, read);
 
     // Every new field round-trips.
-    let mut t = issue_task("2", 5, &[]);
+    let mut t = finished("2", "/a", 5);
     let run = &mut t.runs[0];
     run.failure = Some(crate::workflow::Failure::Forge);
     run.pull_request = Some(crate::workflow::PrOpened {

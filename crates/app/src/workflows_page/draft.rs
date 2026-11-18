@@ -491,19 +491,19 @@ fn option_row(
     )
 }
 
-/// The agent runs take by default (`[unattended] agent`, else the first
-/// configured) and what it was seen to offer, if anything yet; `None` when
+/// The agent runs take by default (the first configured) and what it was
+/// seen to offer, if anything yet; `None` when
 /// no such agent is configured.
 pub(super) fn run_agent_offer(
     cx: &App,
 ) -> Option<(onehand_core::config::AgentSpec, Option<core::Offer>)> {
-    let name = crate::unattended::run_agent(cx)?;
+    let name = crate::task::facts::first_agent(cx)?;
     let spec = onehand_core::config::agent_or_first(
         &crate::state::Shared::global(cx).settings.agents,
         Some(&name),
     )?
     .clone();
-    let offer = crate::unattended::offered(&spec, cx);
+    let offer = crate::task::facts::offered(&spec, cx);
     Some((spec, offer))
 }
 

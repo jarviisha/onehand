@@ -17,11 +17,9 @@ pub(super) fn refused(why: Refusal) -> &'static str {
     match why {
         Refusal::NoProject => "Add a project before starting a session",
         Refusal::NoAgent => "Add an agent in Settings before starting a session",
-        Refusal::NoSession => "That task has no session open",
         Refusal::ProjectGone => PROJECT_GONE,
         Refusal::NotHere => "That runs on a project on this machine",
         Refusal::NoCheck => "This project has no check command to run",
-        Refusal::IssuesInUse => "A task is still working on this workspace's issues",
     }
 }
 
@@ -44,9 +42,6 @@ impl Shell {
                     // The project page's menu says what the tree holds too.
                     self.sync_project_facts(cx);
                     cx.notify();
-                }
-                Effect::LookForRuns(path) => {
-                    crate::unattended::check_now(self.project_for_runs(&path), cx)
                 }
                 Effect::Put(value) => self.put_back(value, window, cx),
                 Effect::Write(write) => {
@@ -145,7 +140,6 @@ impl Shell {
                 | Effect::Changed
                 | Effect::Put(_)
                 | Effect::Write(_)
-                | Effect::LookForRuns(_)
                 | Effect::Resweep
                 | Effect::Remember { .. }
                 | Effect::EndOnHost { .. }
@@ -266,7 +260,7 @@ impl Shell {
                 }
             }
             // Drawn from the tree, which the drive has put back.
-            Value::Order(_) | Value::Pin { .. } | Value::Unattended { .. } => {}
+            Value::Order(_) | Value::Pin { .. } => {}
         }
     }
 }

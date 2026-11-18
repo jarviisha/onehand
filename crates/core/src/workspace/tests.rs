@@ -49,26 +49,6 @@ fn label_uses_last_component() {
 }
 
 #[test]
-fn unattended_runs_are_opted_into_per_project_and_kept_by_path() {
-    let mut ws = Workspace::seeded("/a");
-    ws.add_root("/b");
-    assert!(
-        ws.roots.iter().all(|r| !r.unattended),
-        "nothing is opted in by default"
-    );
-    ws.toggle_unattended(1);
-    assert!(ws.roots[1].unattended);
-    let cfg = ws.to_config();
-    assert!(!cfg.projects[0].unattended && cfg.projects[1].unattended);
-    // Kept with its project: a project put ahead of it cannot move the opt-in.
-    let mut back = Workspace::from_config(one_ahead(cfg), PathBuf::from("/store"));
-    assert!(!back.roots[0].unattended && !back.roots[1].unattended);
-    assert!(back.roots[2].unattended);
-    back.toggle_unattended(2);
-    assert!(back.to_config().projects.iter().all(|p| !p.unattended));
-}
-
-#[test]
 fn the_check_command_is_kept_by_path() {
     let mut ws = Workspace::seeded("/a");
     ws.add_root("/b");

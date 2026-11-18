@@ -1,9 +1,8 @@
 # Known gaps in this build
 
 What this build does not do yet, and why: a missing feature nobody wrote down reads as a bug in
-the ones that exist. What workflows, tasks and unattended runs do not do is listed at the end of
-[workflows.md](workflows.md#not-built), [tasks.md](tasks.md#not-built) and
-[unattended.md](unattended.md#not-built-on-purpose).
+the ones that exist. What workflows and tasks do not do is listed at the end of
+[workflows.md](workflows.md#not-built) and [tasks.md](tasks.md#not-built).
 
 - **Some status words and the focus ring fall under WCAG AA.** The status hues and the ring are
   the library's, which the app's palette leaves alone. For text: status ink, a tint's words and a
@@ -193,16 +192,11 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   a row, and a submenu's row is the library's own.
 - **Settings has no interface size**, and no editor or terminal font size of its own; no
   Comfortable / Compact density; no recorder that takes a pressed key combination (a shortcut is
-  typed as text); no page of its own for what unattended runs need (a section of Workspace holds
-  their switches); and no export or import of the whole configuration. Connections lists
-  connectors, their sign-in and outside control only; managing MCP servers
-  would be a group of its own. There is no search across Settings, and none is planned.
-- **A forge's own issue says nothing of its work in the Issues tab or on the Issues page.** Only
-  issues a project keeps
-  (local, or kept in step with a forge) get the work summary, the next action and the pull request
-  line: an issue's work is matched by the issues file it is kept in and its number, and a forge's
-  issue has no such file. Its task is on the Tasks page. The tab leaves the files changed, the
-  commits past the base and the review block to the page.
+  typed as text); and no export or import of the whole configuration. Managing MCP servers
+  would be a group of its own on Connections. There is no search across Settings, and none is planned.
+- **The Issues views say nothing of the work on an issue.** A task started on an issue (a
+  lead's `start_issue`) is a task like any other, on the Tasks page; the issue it was briefed from shows no progress, pull request or review. *Work here* is
+  the one way an issue leads to a session.
 - **The task detail's review leaves the files to the timeline.** Its *Awaiting approval* draws the
   answer and the two answers, not what the step under review changed or the check: those are the
   visits just below it, each opening onto its files.
@@ -266,8 +260,7 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   be taken for the old one's. The ids are `<seconds>-<n>`, so a collision is unlikely.
 - **A local and a host project on one path share the rail's state for that path.** Their fold, their
   place in the order the rail keeps, the keyboard's row and the terminal dock's open state are kept
-  by path alone, so folding one folds the other. Pins, unattended runs and check commands are kept
-  per host and path. The Workbench's per-path state is shared too: removing either project
+  by path alone, so folding one folds the other. Pins and check commands are kept per host and path. The Workbench's per-path state is shared too: removing either project
   forgets, and counts in its unsaved warning, the other's Editor buffers and Files tree, and a
   file reopened from the other side's tab shows that machine's text (a save still goes only to the
   machine the buffer was read from). The window's git status is keyed by path as well, so the host
@@ -281,7 +274,7 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   rather than from when they arrive.
 - **onehand's own work does not reach a host project or an offloaded one**
   (`ProjectRoot::runs_here`). No tool lists or reaches it, and no
-  workflow, task, issue, schedule, unattended run, worktree or check command runs on it; the
+  workflow, task, issue, schedule, worktree or check command runs on it; the
   Telegram bridge does not offer it either. Each reads files, runs git or starts a process on this
   machine, and needs the host to do that work instead.
 - **Attachments are not sent to a host.** A prompt goes without them, and the transcript says so:
@@ -382,12 +375,6 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **Some view state is kept in core's models**: the panels' layout in the workspace file
   (`WorkspaceDrive::layout_mut`), and which Editor tab is on screen (`RootEditors::active`). No
   drive decides anything by either.
-- **A diff in an issue's full form is read when it is opened**, as the Files tree reads a folder:
-  what is open is the viewer's, so no drive asks for it.
-- **An unattended run's claim and reports are written by core's blocking bodies**, between forge
-  calls, not through the issues file's shared drive: a view sees them on its next read, unless
-  the file is kept in step, whose syncs the run tells the drive. A label taken off whose sync then
-  fails is seen on the next read too.
 - **The app's views read the clock themselves** for the ages they draw (`chat::now_secs()`); no
   drive reads those ages.
 - **Smaller things the refactor into drives left:** the workflow engine's tests assert one

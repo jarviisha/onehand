@@ -77,8 +77,7 @@ pub(crate) enum WorkspacePageEvent {
     /// Open issue `number` of the project at `root`. Selecting a project and
     /// opening the Workbench are both the shell's.
     OpenIssue { root: PathBuf, number: u64 },
-    /// Show session `uid`, in whichever window holds it: an unattended run's
-    /// session or one of this window's.
+    /// Show session `uid`, in the window holding it.
     ShowSession {
         uid: u64,
         window: gpui::AnyWindowHandle,
@@ -233,13 +232,12 @@ impl WorkspacePage {
         cx.notify();
     }
 
-    /// The workspace page: what waits on the user and what is working, across
-    /// sessions and unattended runs alike, then every project in a row, the
+    /// The workspace page: what waits on the user and what is working among
+    /// the sessions, then every project in a row, the
     /// newest past conversations, and every project's open issues.
     ///
-    /// Sessions and runs are read here, per frame, rather than held: a run
-    /// starting, parking or ending already refreshes every window, and a
-    /// session's signal is the same query the rail draws its dots from.
+    /// Sessions are read here, per frame, rather than held: a session's
+    /// signal is the same query the rail draws its dots from.
     fn page(&self, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
         let page = self;
         // What the pane alone knows, read once for the frame: each session's
@@ -263,31 +261,9 @@ impl WorkspacePage {
         let here = window.window_handle();
         let now = onehand_core::chat::now_secs();
 
-        // The two activity cards gather runs and sessions alike. A run's row is
-        // an issue's row: its number, what it is about, and the project at the
-        // end. For a waiting run what it is about is the question, since
-        // answering that is what the row is pressed for.
+        // The two activity cards gather the sessions that are doing something
+        // or wait on the person.
         let (mut waiting, mut working) = (Vec::new(), Vec::new());
-        for run in crate::task::live_issues(cx) {
-            let (uid, window) = (run.uid, run.window);
-            let waits = run.waiting.is_some();
-            let row = crate::dialogs::issue_row(
-                ("workspace-run", uid as usize),
-                run.name,
-                run.waiting.unwrap_or(run.title),
-                &[],
-                page.label_of(&run.repo),
-                cx,
-            )
-            .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
-                cx.emit(WorkspacePageEvent::ShowSession { uid, window });
-            }))
-            .into_any_element();
-            match waits {
-                true => waiting.push(row),
-                false => working.push(row),
-            }
-        }
         // A session's row leads with the rail's mark, so the same dot means the
         // same thing in both places, and names the state in words at the end.
         // An idle session that has been read carries no signal and no row.

@@ -5,19 +5,17 @@ use super::row::{
 use super::session::{signal_hint, status_mark};
 use crate::chat::pane::{ProjectFacts, SessionSignal};
 use crate::controls::Named as _;
-use crate::controls::Quiet as _;
-use crate::controls::Short as _;
 use crate::shell::Shell;
 use crate::state::WorkspaceWindow;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, InteractiveElement, IntoElement,
-    ParentElement, SharedString, StatefulInteractiveElement, Styled, Window, div, rems,
+    ParentElement, SharedString, StatefulInteractiveElement, Styled, div, rems,
 };
-use gpui_component::menu::{ContextMenuExt as _, PopupMenuItem};
+use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
-use onehand_ui::{badge, mark_slot};
+use onehand_ui::mark_slot;
 
 mod menu;
 use menu::project_menu;
@@ -30,7 +28,6 @@ use menu::project_menu;
 pub(super) fn project_hint(
     label: &str,
     git: Option<&GitLine>,
-    auto: Option<&SharedString>,
     path: &SharedString,
 ) -> Vec<SharedString> {
     let mut hint = vec![SharedString::from(label.to_string())];
@@ -38,113 +35,8 @@ pub(super) fn project_hint(
         hint.push(SharedString::from(format!("Branch: {}", git.branch)));
         hint.extend(git.parts().into_iter().map(|(_, _, words)| words));
     }
-    if let Some(auto) = auto {
-        hint.push(auto.clone());
-    }
     hint.push(path.clone());
     hint
-}
-
-/// The entry that opens a project's open issues, to pick one and start on it
-/// now — in both menus that carry it, built here once for the reason
-/// [`unattended_item`] is.
-///
-/// Offered where the switch is — on a repository that is not a run's own
-/// worktree — because it starts the same kind of run by a different road.
-pub fn pick_item(click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> PopupMenuItem {
-    crate::controls::menu_item("Work an issue…").on_click(click)
-}
-
-/// The entry that turns unattended runs on and off for a project, in both menus
-/// that carry it — the rail's and the project page's — built here once so the
-/// two cannot come to say it differently.
-///
-/// A check rather than an on/off pair of labels: the same switch is a switch in
-/// Settings, and the check is what makes it read as one here.
-pub fn unattended_item(
-    on: bool,
-    click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-) -> PopupMenuItem {
-    crate::controls::menu_item("Work labelled issues")
-        .checked(on)
-        .on_click(click)
-}
-
-/// What a project row says about unattended runs.
-#[derive(Debug, PartialEq)]
-pub(super) struct AutoStatus {
-    /// The word in its pill.
-    pub(super) badge: SharedString,
-    /// The line its hover carries.
-    pub(super) line: SharedString,
-    /// The switch is on and nothing can come of it — the pill takes the
-    /// warning ink, and the line says why.
-    pub(super) stuck: bool,
-}
-
-/// The run a project's row names: one on that project's issues, as how its
-/// issue is shown and whether it is waiting on a card, the working one ahead
-/// of a waiting one. `runs` is each run's project, issue and whether it waits.
-pub(super) fn run_on<'a>(
-    runs: impl IntoIterator<Item = (&'a std::path::Path, &'a str, bool)>,
-    root: &std::path::Path,
-) -> Option<(&'a str, bool)> {
-    runs.into_iter()
-        .filter(|&(repo, _, _)| repo == root)
-        .map(|(_, number, waiting)| (number, waiting))
-        .min_by_key(|&(_, waiting)| waiting)
-}
-
-/// What a project row says about unattended runs, or `None` while the project
-/// is not switched on.
-///
-/// A run can only be working on a project that is switched on, but it is read
-/// independently so a project switched off mid-run still says the run is
-/// there — switching off stops the next run, not the one already going.
-///
-/// **A switch that is on while nothing can happen is the one state that looks
-/// exactly like working**, so every way it can be stuck is said on the row, as
-/// `stuck`: a config that stops every run (no label, an interval that does not
-/// parse, a mode the agent does not offer), or the last look at this project
-/// failing — a remote that is not on GitHub, a `gh` that is missing or signed
-/// out.
-pub(super) fn auto_status(
-    unattended: bool,
-    run: Option<(&str, bool)>,
-    label: &str,
-    stuck: Option<String>,
-) -> Option<AutoStatus> {
-    let status = |badge: String, line: String, stuck: bool| AutoStatus {
-        badge: badge.into(),
-        line: line.into(),
-        stuck,
-    };
-    match (unattended, run, stuck) {
-        (_, Some((n, false)), _) => Some(status(
-            format!("auto · {n}"),
-            format!("Unattended run working on issue {n}"),
-            false,
-        )),
-        // Said apart from working: a run standing still on a card is waiting
-        // for the person reading this, and "working" would tell them there is
-        // nothing to do.
-        (_, Some((n, true)), _) => Some(status(
-            format!("auto · {n} waiting"),
-            format!("Unattended run on issue {n} is waiting for an answer"),
-            false,
-        )),
-        (false, None, _) => None,
-        (true, None, Some(why)) => Some(status(
-            "auto".into(),
-            format!("Unattended runs on, but nothing can be picked up here: {why}"),
-            true,
-        )),
-        (true, None, None) => Some(status(
-            "auto".into(),
-            format!("Unattended runs on: issues you opened labelled `{label}` are picked up"),
-            false,
-        )),
-    }
 }
 
 /// A project's git state as its row says it.
@@ -257,9 +149,9 @@ pub(super) struct Place {
 }
 
 /// A project: the fold chevron, its folder, its name fading where its room
-/// ends, its git line, the pin and the unattended pill, and while folded the
-/// most urgent state of its sessions. Under the pointer, over the row's end:
-/// a new session here, and `⋯`.
+/// ends, its git line and the pin, and while folded the most urgent state of
+/// its sessions. Under the pointer, over the row's end: a new session here,
+/// and `⋯`.
 ///
 /// A click goes to the project: its last session shows, or its page when it
 /// has none, and the keyboard's row moves there. Only the chevron, a button
@@ -280,34 +172,8 @@ pub(super) fn project_row(
         asks,
     } = place;
     let pinned = root.pinned;
-    // The issue a run is working on in this project right now, if one is; the
-    // working one ahead of a waiting one, since a project can hold both.
-    let runs = crate::task::live_issues(cx);
-    // A folder on a host has no runs or problems here; what is filed under
-    // its path is a local twin's. Its `git status` is read over its attach.
-    let local = root.local_path();
-    let run = local.and_then(|path| {
-        run_on(
-            runs.iter()
-                .map(|run| (run.repo.as_path(), run.name.as_str(), run.waiting.is_some())),
-            path,
-        )
-    });
-    // The kept issue of the run the pill names, which pressing it opens on the
-    // Issues page; a forge's own issue has no page to open on.
-    let pill_issue = run.and_then(|(name, waiting)| {
-        runs.iter()
-            .find(|r| r.repo == root.path && r.name == name && r.waiting.is_some() == waiting)?
-            .kept
-    });
-    let auto = auto_status(
-        root.unattended && local.is_some(),
-        run,
-        &crate::unattended::label(cx),
-        // What stops every run outranks what stops this project's.
-        crate::unattended::blocked(cx)
-            .or_else(|| local.and_then(|path| crate::unattended::problem(path, cx))),
-    );
+    // A folder on a host has no problems here; what is filed under its path
+    // is a local twin's. Its `git status` is read over its attach.
     let status = window_state.git_of(root);
     let mut facts = ProjectFacts::of(root, status.is_some());
     // *Run here again* only while this machine holds the code.
@@ -375,12 +241,7 @@ pub(super) fn project_row(
                 ahead,
             )))
         });
-    let mut hint = project_hint(
-        &root.label,
-        git.as_ref(),
-        auto.as_ref().map(|auto| &auto.line),
-        &path,
-    );
+    let mut hint = project_hint(&root.label, git.as_ref(), &path);
     if pinned {
         hint.insert(1, "Pinned to the top".into());
     }
@@ -389,11 +250,8 @@ pub(super) fn project_row(
     let (name_ink, meta_ink) = row_inks(chosen, cx);
     let (shell, hover) = (cx.entity().downgrade(), hover_fill(cx));
     let radius = cx.theme().radius;
-    let (badge_ink, warning) = (
-        cx.theme().secondary_foreground,
-        crate::theme::status_ink(cx).warning,
-    );
-    let (fold_path, pill_root, ghost) = (root.path.clone(), root.path.clone(), root.label.clone());
+    let warning = crate::theme::status_ink(cx).warning;
+    let (fold_path, ghost) = (root.path.clone(), root.label.clone());
     let label = root.label.clone();
 
     div()
@@ -572,44 +430,7 @@ pub(super) fn project_row(
                 })
                 // Position alone does not say a project is pinned: first in
                 // the list is where a project can also be by accident.
-                .when(pinned, |row| row.child(Icon::new(IconName::Star).xsmall()))
-                // Whether its labelled issues are worked unattended, and the
-                // issue a run is on. Stuck takes the warning ink; the hover
-                // says why. A run's pill is a control opening its issue on
-                // the Issues page.
-                .when_some(auto, |row, auto| {
-                    let target = shell.clone();
-                    let ink = if auto.stuck { warning } else { badge_ink };
-                    let pill = badge(auto.badge, super::rail_badge(ink, cx));
-                    row.child(match pill_issue {
-                        Some(number) => labelled(
-                            ("project-auto-name", root_idx),
-                            "Open the run's issue",
-                            // A worded control's size, but as tall as the
-                            // badge it holds rather than its own height: a
-                            // badge keeps its geometry, which stands over
-                            // `CONTROL_H`, and a fixed height either clipped
-                            // it or set the pressable pill apart from the one
-                            // drawn bare.
-                            crate::controls::action(("project-auto", root_idx))
-                                .quiet(cx)
-                                .short()
-                                .h_auto()
-                                .child(pill)
-                                .tooltip(format!("Open issue {number} on the Issues page"))
-                                .on_click(move |_, window, cx: &mut App| {
-                                    let root = pill_root.clone();
-                                    target
-                                        .update(cx, |shell: &mut Shell, cx| {
-                                            shell.open_issue_on_page(&root, number, window, cx)
-                                        })
-                                        .ok();
-                                }),
-                        )
-                        .into_any_element(),
-                        None => div().flex_none().child(pill).into_any_element(),
-                    })
-                }),
+                .when(pinned, |row| row.child(Icon::new(IconName::Star).xsmall())),
         )
         .children(folded.filter(|_| !open).map(|signal| {
             let label = format!("{}: {}", root.label, signal_hint(Some(signal)));

@@ -4,7 +4,7 @@ The whole-app UI contract for `onehand`: the principles every view follows, the 
 the transcript and the visual system, as structure and behaviour, not values (the palette is onehand's
 own, written once: *Colour and state*). It binds at the level written here; below
 it, the code and its tests decide. `docs/screens.md` says what each region holds and in what
-order, a feature's own document (`docs/tasks.md`, `docs/workflows.md`, `docs/unattended.md`) its
+order, a feature's own document (`docs/tasks.md`, `docs/workflows.md`) its
 screens' detail, and `docs/ui-patterns.md` the patterns every screen repeats and how they behave.
 Code never cites this file.
 

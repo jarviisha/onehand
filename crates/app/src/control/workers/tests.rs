@@ -51,7 +51,7 @@ fn lead(
     let uid = cx.update(|_, cx| {
         shell
             .update(cx, |shell, cx| {
-                shell.run_unattended("/tmp".into(), agent(), Vec::new(), cx)
+                shell.open_off_screen("/tmp".into(), agent(), Vec::new(), cx)
             })
             .expect("the lead")
             .0

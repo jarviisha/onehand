@@ -381,11 +381,10 @@ pub enum SettingsPage {
     Appearance,
     Workspace,
     Agents,
-    /// The services outside the checkout. A page of its own rather than a
-    /// line under unattended runs, because more of them are coming and each
-    /// is used by more than the one feature that happened to need it first.
-    /// Named for what it holds -- connectors and who each is signed in as --
-    /// and not for a protocol none of them speaks yet.
+    /// The services outside the checkout, and what reaches onehand from
+    /// outside it: a page of its own, since more of them are coming and each
+    /// is used by more than one feature. Named for what it holds --
+    /// connectors and who each is signed in as -- and not for a protocol.
     Connections,
     Shortcuts,
 }

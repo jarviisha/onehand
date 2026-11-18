@@ -14,6 +14,16 @@ pub struct Brief {
     pub instructions: Option<String>,
 }
 
+impl Brief {
+    /// The title and body of the pull request a run of this brief opens.
+    pub fn pull_request_text(&self) -> (String, String) {
+        (
+            self.title.clone(),
+            "Opened by onehand. What was pushed passed the project's check first.".to_string(),
+        )
+    }
+}
+
 /// Where a run works and with what, as chosen when it started.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Setup {

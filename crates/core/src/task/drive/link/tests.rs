@@ -72,7 +72,7 @@ impl Pair {
         (task, run, first): (String, Run, Action),
     ) -> (Self, Vec<Effect>) {
         let now = now();
-        let (drive, out) = Joined::start(task, run, first, 0, false, now, Some(&mut session));
+        let (drive, out) = Joined::start(task, run, first, 0, now, Some(&mut session));
         let pair = Self {
             drive,
             session,
@@ -179,7 +179,6 @@ fn name(e: &Effect) -> &'static str {
         Effect::Arm { .. } => "Arm",
         Effect::Defer(_) => "Defer",
         Effect::Save => "Save",
-        Effect::Unattended(_) => "Unattended",
         Effect::Refresh => "Refresh",
         Effect::SessionChanged => "SessionChanged",
         Effect::Signal(_) => "Signal",
@@ -332,7 +331,7 @@ fn a_prompt_its_session_does_not_take_fails_the_run_at_once() {
 #[test]
 fn a_run_with_no_session_asks_nothing_of_one() {
     let (task, run, first) = run();
-    let (mut drive, out) = Joined::start(task, run, first, 0, false, now(), None);
+    let (mut drive, out) = Joined::start(task, run, first, 0, now(), None);
     assert!(out.session.is_empty() && !out.told);
     let out = Joined::new(&mut drive, None).stop(now());
     assert!(out.session.is_empty() && !out.told);

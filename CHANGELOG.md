@@ -28,8 +28,8 @@ minor bump may break any of them.
   earlier build kept in a folder of its own is copied in, its issues with it, and the folder is
   left as it was; tasks reporting into those issues follow the copy. A project's offload data moves
   to `projects/`. An older build reads none of this.
-- The workspace file keeps one `[[projects]]` record per project, holding its pin, its check, its
-  unattended switch and its offload. A file in the old shape still reads, and is rewritten in the
+- The workspace file keeps one `[[projects]]` record per project, holding its pin, its check and
+  its offload. A file in the old shape still reads, and is rewritten in the
   new one at its next save.
 
 ### Workflows and tasks
@@ -48,15 +48,14 @@ minor bump may break any of them.
   each visit's first prompt and recorded on the visit. A value the agent does not offer blocks the
   start, or fails the run at that step; it never runs on something else.
 
-### Unattended runs
+### Issues
 
-- A project switched on works issues carrying a trigger label, or one picked by hand, as a task in
-  a worktree and session of its own, off screen. Only issues the user opened are taken.
 - Issues come from the forge (GitHub, through `gh`) or are kept in onehand, in a new Issues mode of
   the Workbench, optionally in step with the forge both ways.
-- A parked question waits for a person and gives up its slot meanwhile; a prompt from a person
-  takes the run over. The report on the issue is kept until it is delivered, and putting the label
-  back answers a review on the pull request.
+- Unattended runs are gone: no trigger label is looked for, no issue is claimed or told how a run
+  went, and the Issues views no longer show the work, pull request or review of an issue. A
+  `[unattended]` table or a project's `unattended` key left by an earlier build is ignored and
+  dropped at the next save, and a task an earlier build kept for an issue reads as a workflow task.
 
 ### Hosts
 

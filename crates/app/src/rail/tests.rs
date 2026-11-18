@@ -3,7 +3,7 @@ use super::model::{
     rows, toggle_attention, visible,
 };
 use super::model::{emptied, nest_workers};
-use super::project::{GitLine, auto_status, project_hint, run_on};
+use super::project::{GitLine, project_hint};
 use super::row::project_key;
 use super::session::{LABEL_SHAPE_CAP, session_label, signal_hint};
 use super::workspace::new_session_hint;
@@ -477,7 +477,7 @@ fn a_projects_hover_carries_every_part_the_row_cut() {
         ahead: 2,
         behind: 0,
     };
-    let hint = project_hint("onehand", Some(&git), None, &path);
+    let hint = project_hint("onehand", Some(&git), &path);
     assert_eq!(
         hint,
         vec![
@@ -497,60 +497,10 @@ fn a_projects_hover_carries_every_part_the_row_cut() {
         behind: 1,
         ..git
     };
-    let hint = project_hint("onehand", Some(&one), None, &path);
+    let hint = project_hint("onehand", Some(&one), &path);
     assert!(hint.contains(&SharedString::from("1 uncommitted change")));
     assert!(hint.contains(&SharedString::from("1 commit behind the remote")));
     assert!(!hint.iter().any(|line| line.contains("ahead")));
-}
-
-/// A switched-on project's row says so, says which issue a run is on, and
-/// says in words why when nothing can come of the switch.
-#[test]
-fn a_project_says_whether_its_issues_are_worked_and_which_one_is() {
-    assert_eq!(auto_status(false, None, "auto", None), None);
-    let on = auto_status(true, None, "auto", None).unwrap();
-    assert_eq!(on.badge.as_ref(), "auto");
-    assert!(on.line.contains("`auto`") && !on.stuck);
-    let working = auto_status(true, Some(("#46", false)), "auto", None).unwrap();
-    assert_eq!(working.badge.as_ref(), "auto · #46");
-    assert!(working.line.contains("#46") && working.line.contains("working"));
-    // A run waiting on a card is not said to be working.
-    let waiting = auto_status(true, Some(("#46", true)), "auto", None).unwrap();
-    assert_eq!(waiting.badge.as_ref(), "auto · #46 waiting");
-    assert!(waiting.line.contains("waiting") && !waiting.line.contains("working"));
-    // Switched off mid-run: the run already going is still said.
-    assert!(auto_status(false, Some(("#46", false)), "auto", None).is_some());
-    // On with nothing possible is stuck, and says why in its own words.
-    let elsewhere = auto_status(
-        true,
-        None,
-        "auto",
-        Some("its remote is on gitlab.com".into()),
-    )
-    .unwrap();
-    assert!(elsewhere.stuck && elsewhere.line.contains("gitlab.com"));
-    // The hover carries the line, ahead of the path.
-    let path = SharedString::from("/p");
-    let hint = project_hint("p", None, Some(&on.line), &path);
-    assert_eq!(hint.last(), Some(&path));
-    assert!(hint.contains(&on.line));
-}
-
-/// A project's row names a run on its own issues, and the working one
-/// ahead of a waiting one: the older run is usually the waiting one, and
-/// it would otherwise hide the run that is actually going.
-#[test]
-fn a_project_row_names_its_own_run_and_prefers_the_working_one() {
-    let (here, there) = (std::path::Path::new("/p"), std::path::Path::new("/q"));
-    assert_eq!(run_on([(there, "#9", false)], here), None);
-    assert_eq!(
-        run_on([(here, "#3", true), (there, "#9", false)], here),
-        Some(("#3", true))
-    );
-    assert_eq!(
-        run_on([(here, "#3", true), (here, "#5", false)], here),
-        Some(("#5", false))
-    );
 }
 
 /// A project that is neither a repository nor changed is the row the old
@@ -560,7 +510,7 @@ fn a_project_row_names_its_own_run_and_prefers_the_working_one() {
 #[test]
 fn a_plain_folder_still_answers_on_hover() {
     let path = SharedString::from("/work/notes");
-    let hint = project_hint("notes", None, None, &path);
+    let hint = project_hint("notes", None, &path);
     assert_eq!(hint, vec![SharedString::from("notes"), path]);
 }
 

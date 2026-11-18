@@ -22,23 +22,6 @@ impl Shell {
         self.carry_reach(reach, window, cx);
     }
 
-    /// Put task `id`'s session on screen wherever it is, or say it has none.
-    pub(super) fn open_task_session(
-        &mut self,
-        id: &str,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let here = window.window_handle();
-        let live = match crate::task::session_of(id, cx) {
-            Some((uid, at)) if at == here => Live::Here(uid),
-            Some((uid, at)) => Live::There(uid, at),
-            None => Live::Nowhere,
-        };
-        let reach = self.window.workspace.show_task_session(live);
-        self.carry_reach(reach, window, cx);
-    }
-
     fn carry_reach(
         &mut self,
         reach: Reach<AnyWindowHandle>,

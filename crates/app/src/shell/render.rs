@@ -267,12 +267,6 @@ impl Render for Shell {
                     .is_some()
                     .then(|| crate::dialogs::rename_branch(self, cx)),
             )
-            // And the issue picker, opened from a project's menu the same way.
-            .children(
-                self.issue_picker
-                    .is_some()
-                    .then(|| crate::dialogs::pick_issue(self, window, cx)),
-            )
             // And the workflow launcher, opened from a menu entry or a key.
             .children(
                 self.workflow_launcher
@@ -361,7 +355,6 @@ impl Shell {
             || self.branch_draft.is_some()
             || self.host_project.is_some()
             || self.offload_draft.is_some()
-            || self.issue_picker.is_some()
             || self.workflow_launcher.is_some()
             || self.agent_form
     }

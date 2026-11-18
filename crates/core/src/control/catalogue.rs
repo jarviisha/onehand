@@ -189,7 +189,7 @@ fn catalogue() -> Vec<Tool> {
                     "issue": {"type": "integer", "minimum": 1,
                               "description": "The issue's number in the project's Issues tab"},
                     "workflow": text(
-                        "A workflow's id; the one unattended runs use when left out"
+                        "A workflow's id; builtin:issue when left out"
                     ),
                 }),
                 &["project", "issue"],

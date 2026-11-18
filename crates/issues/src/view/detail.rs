@@ -1,6 +1,6 @@
+use super::actions;
 use super::list::{chip, plain_tag};
 use super::mentions::FILE_LINK;
-use super::work;
 use super::{FILES_SHOWN, HISTORY_SHOWN, IssuesView};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -14,8 +14,6 @@ use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::template::{IssueTemplate, lacking};
 use onehand_core::issues::{LocalIssue, sync};
-use onehand_core::task::Group;
-use onehand_core::task::work::{IssueWork, PrSeen};
 use onehand_ui::Quiet as _;
 use onehand_ui::Short as _;
 use onehand_ui::tokens::{CODE_TEXT, LEADING, LEADING_TIGHT, PAGE_PROSE};
@@ -39,26 +37,14 @@ const AGE_W: Rems = rems(2.5);
 /// set in its well rather than on its edge.
 const CODE_INSET: Rems = rems(0.75);
 
-/// What is being done with an issue: the live session its history names,
-/// whether a run may be started on its project, and its work as the app told
-/// it, with the pull request as last read.
-pub(super) struct Doing<'a> {
+/// What is being done with an issue, and where it is drawn: the live session
+/// its history names, and whether this is the Issues page.
+pub(super) struct Doing {
     pub(super) session: Option<String>,
-    pub(super) offered: bool,
-    pub(super) work: Option<IssueWork>,
-    pub(super) pr: PrSeen<'a>,
-    /// The pull request as last read for this work, kept beside a failed
-    /// read, and when it was read.
-    pub(super) last: Option<&'a (Option<onehand_core::connector::PullRequest>, u64)>,
-    /// On the Issues page, what the full form adds: the steps to come, and
-    /// what the work left as read off git.
-    pub(super) full: Option<super::full::Full<'a>>,
-    /// On the Issues page, the review block, while a person has it open.
-    pub(super) review: Option<AnyElement>,
+    /// Drawn on the Issues page rather than in the Workbench's tab.
+    pub(super) page: bool,
     /// The issue is being sent to its forge.
     pub(super) publishing: bool,
-    /// Its pull request, or what its work left, is being read.
-    pub(super) reading: bool,
     /// The templates the issue's project offers, which its body is read
     /// against.
     pub(super) templates: Vec<IssueTemplate>,
@@ -71,8 +57,8 @@ pub(super) struct Doing<'a> {
     pub(super) nav: Option<AnyElement>,
 }
 
-/// The sections an issue's head switches between: what it says and what its
-/// work left behind, and everything that happened to it.
+/// The sections an issue's head switches between: what it says, and
+/// everything that happened to it.
 #[derive(Clone, Copy, Default, PartialEq)]
 pub(super) enum IssueTab {
     #[default]
@@ -82,24 +68,22 @@ pub(super) enum IssueTab {
 
 /// One issue, read: a trail naming it with its actions at the end; its state,
 /// project and labels; the title; one line of facts; then, before any of
-/// what it says, what it waits on (a conflict, where its work stands, the
-/// review); and under two tabs its description with what its work left, and
-/// its activity.
+/// what it says, a conflict it waits on; and under two tabs its description
+/// and its activity.
 pub(super) fn issue_view(
     root: &Path,
     issue: &LocalIssue,
     body: Option<(Entity<TextViewState>, Vec<String>)>,
     publish_to: Option<&'static str>,
-    mut doing: Doing<'_>,
+    mut doing: Doing,
     window: &mut Window,
     cx: &mut Context<IssuesView>,
 ) -> AnyElement {
     let nav = doing.nav.take();
-    let review = doing.review.take();
     let number = issue.number();
     let theme = cx.theme();
     let muted = theme.muted_foreground;
-    let next = work::next_for(issue, &doing);
+    let next = actions::next_for(issue, &doing);
     // A local issue has no number anyone else knows it by: it is a draft.
     let named = issue.reference().unwrap_or("Draft").to_string();
 
@@ -120,7 +104,7 @@ pub(super) fn issue_view(
                 .child(Icon::new(IconName::ChevronRight).xsmall())
                 .child(reference_link(issue, named, cx)),
         )
-        .child(work::actions(root, issue, &doing, &next, publish_to, cx))
+        .child(actions::actions(root, issue, &doing, &next, publish_to, cx))
         .children(nav);
 
     // What it is at a glance: open or closed, and what it is filed under.
@@ -141,8 +125,8 @@ pub(super) fn issue_view(
         .line_height(gpui::relative(LEADING_TIGHT))
         .child(issue.title().to_string());
 
-    // Its facts on one line: when it changed, how its work stands, how
-    // urgent the body says it is, and what a template-written body left out.
+    // Its facts on one line: when it changed, how urgent the body says it is,
+    // and what a template-written body left out.
     // The reference and the project are not among them: the trail names both.
     let fact = |text: String| div().flex_none().child(text).into_any_element();
     let mut said: Vec<AnyElement> = Vec::new();
@@ -153,23 +137,6 @@ pub(super) fn issue_view(
             onehand_core::rel_time(onehand_core::issues::now(), changed)
         )));
     }
-    said.push(match doing.work.as_ref().map(|work| &work.work) {
-        Some(work) => {
-            let ink = if work.group.needs_attention() {
-                status_ink(cx).warning
-            } else if work.group == Group::Running {
-                cx.theme().info
-            } else {
-                muted
-            };
-            div()
-                .flex_none()
-                .text_color(ink)
-                .child(work.said.clone())
-                .into_any_element()
-        }
-        None => fact("No runs yet".to_string()),
-    });
     // Its mark and its word, in the line's own muted ink: the arrow says
     // which way it presses without a hue shouting it.
     said.extend(priority(issue.body()).map(|priority| {
@@ -276,24 +243,17 @@ pub(super) fn issue_view(
                     .child("No description")
                     .into_any_element(),
             })
-            .children(body.and_then(|(_, files)| referenced(files, cx)))
-            // What the work left follows what the issue asked for.
-            .children(work::left_view(&doing, cx))
-            .children(doing.work.as_ref().and_then(|w| work::before_view(w, cx))),
+            .children(body.and_then(|(_, files)| referenced(files, cx))),
         IssueTab::Activity => div().v_flex().child(activity(issue, cx)),
     };
 
-    // Under the trail everything scrolls as one, so a long title or a tall
-    // review never pins the description out of reach. What the issue waits
-    // on comes before its tabs, whichever of them is showing.
+    // Under the trail everything scrolls as one, so a long title never pins
+    // the description out of reach. What the issue waits on comes before its
+    // tabs, whichever of them is showing.
     let content = div()
         .v_flex()
         .child(head)
         .children(conflict_view(issue, cx))
-        .children(work::progress_view(&doing, &next, cx))
-        // Below where the work stands, pushing the rest down: a person opened
-        // it, so it is not content moving under them.
-        .children(review)
         .child(picker)
         .child(section);
 

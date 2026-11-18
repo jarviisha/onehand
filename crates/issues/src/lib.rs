@@ -8,14 +8,12 @@
 
 use gpui::{AnyView, App, Entity, SharedString, Window};
 use onehand_core::connector::Connector;
-use onehand_core::task::Approval;
 use onehand_workbench::{Asker, ModeId, Request, WorkbenchMode, WorkbenchModeSpec};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 mod view;
 use view::IssuesView;
-pub use view::synced;
 #[cfg(feature = "test-support")]
 pub use view::testing;
 
@@ -30,8 +28,8 @@ pub const SPEC: WorkbenchModeSpec =
     WorkbenchModeSpec::element(ModeId::new("workbench.issues"), "Issues");
 
 /// What an Issues view asks of the shell, the Workbench's Issues mode and
-/// the Issues page alike: a session, a run, a task or a conversation put on
-/// screen, or a task moved on. Issues are the app's own, so these go to the
+/// the Issues page alike: a session or a conversation put on screen, or the
+/// Issues page. Issues are the app's own, so these go to the
 /// shell directly rather than through what every Workbench mode may answer.
 pub enum IssuesEvent {
     /// Work issue `number` of project `root` in the checkout it is open on,
@@ -43,36 +41,8 @@ pub enum IssuesEvent {
     },
     /// Show the conversation the agent named `session`, live or saved.
     OpenConversation(String),
-    /// Choose a workflow to work issue `number` of project `root` with.
-    RunIssueWorkflow { root: PathBuf, number: u64 },
     /// Show issue `number` of project `root` on the Issues page.
     OpenInIssues { root: PathBuf, number: u64 },
-    /// Show issue `number` of project `root` on the Issues page, its review
-    /// open.
-    ReviewInIssues { root: PathBuf, number: u64 },
-    /// Approve what a run waits on, as read: refused by the run unless it
-    /// still waits where it was read.
-    ApproveTask(Approval),
-    /// Send it back with `note`, refused the same way.
-    ReviseTask { approval: Approval, note: String },
-    /// Show task `id` on the Tasks page.
-    OpenTask(String),
-    /// Show the session task `id` runs in.
-    OpenTaskSession(String),
-    /// Carry task `id` on where it was.
-    ResumeTask(String),
-    /// Choose how to run task `id` again.
-    RetryTask(String),
-    /// Run task `id` again with what Settings say now, asking first.
-    RetryTaskCurrent(String),
-    /// Answer the review on issue task `id`'s open pull request, as putting
-    /// the trigger label back does.
-    AnswerReview(String),
-    /// Remove issue task `id`'s worktree and branch after its pull request
-    /// merged, asking first.
-    RemoveWorktree(String),
-    /// Stop task `id`.
-    StopTask(String),
 }
 
 /// How an Issues view reaches the shell. Handed to the view when it is
@@ -159,20 +129,13 @@ impl Page {
             .update(cx, |view, cx| view.open_on_page(root, number, cx));
     }
 
-    /// Open the review of issue `number` of `root`, on screen: what its work
-    /// waits for approval on.
-    pub fn review(&self, root: &Path, number: u64, cx: &mut App) {
-        self.view
-            .update(cx, |view, cx| view.review_on_page(root, number, cx));
-    }
-
     pub fn forget_root(&self, root: &Path, cx: &mut App) {
         self.view.update(cx, |view, cx| view.forget_root(root, cx));
     }
 }
 
 /// Write `change` into the issues file `file` of the project at `root`, made
-/// outside every view of it (a tool, a session's note, a run's): through the
+/// outside every view of it (a tool, a session's note): through the
 /// one drive every view of the file shares, so each shows it as it lands, in
 /// order with the views' own changes. `answer` hears what it came to, once,
 /// after the update that landed it, whether or not a view holds the file.
@@ -205,18 +168,13 @@ fn handle(view: &Entity<IssuesView>, request: &Request<'_>, cx: &mut App) -> boo
             view.update(cx, |view, cx| view.mark_stale(cx));
             true
         }
-        // Being put on screen reads what the view draws again, and on the
-        // page its pull requests too.
+        // Being put on screen reads what the view draws again.
         Request::Shown => {
             view.update(cx, |view, cx| view.page_shown(cx));
             true
         }
         Request::LiveConversations(ids) => {
             view.update(cx, |view, cx| view.set_live(ids, cx));
-            true
-        }
-        Request::IssueWork { works, offered } => {
-            view.update(cx, |view, cx| view.set_works(works, offered, cx));
             true
         }
         Request::ShowIssue(number) => {

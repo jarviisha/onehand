@@ -311,10 +311,10 @@ pub(super) fn fast_toggle(session: &Entity<ChatSession>, cx: &App) -> Option<Fas
 /// thing put into the prompt but standing state of the session, so it closes
 /// the menu under a heading of its own rather than standing under the menu's.
 /// Its words are short enough to keep whole beside the check, and read as the
-/// state the check says. Not offered in an unattended run's session.
+/// state the check says.
 pub(super) fn add_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
     let uid = session.read(cx).chat().uid;
-    let control = crate::control::offered(uid, cx).then(|| Row {
+    let control = Some(Row {
         label: "Agent controls onehand".into(),
         group: Some("This session".into()),
         checked: crate::control::switched_on(uid),

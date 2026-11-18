@@ -10,8 +10,6 @@ use onehand_core::task::tasks::link::Seen;
 use onehand_core::task::tasks::{Begin, Effect, Retry, Start, TasksDrive};
 use onehand_core::task::work::UnderReview;
 use onehand_core::task::{Task, Working, files};
-use onehand_core::unattended::drive::UnattendedDrive;
-use onehand_core::unattended::link::{Joined, Out};
 use onehand_core::workflow::{Run, Template};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -20,13 +18,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub(crate) mod approval;
 mod carrier;
+pub(crate) mod facts;
 mod listing;
 mod place;
 pub(crate) use carrier::{approve, revise, start, stop};
 pub(crate) use listing::*;
 pub(crate) use onehand_core::task::tasks::Placed;
-#[cfg(test)]
-pub(crate) use place::submit_told;
 pub(crate) use place::{not_started, start_off_screen, submit};
 
 /// Every task in this process and what each is doing.
@@ -34,18 +31,12 @@ pub(crate) struct Tasks {
     /// Every task kept, the queue, and what ended runs still hold. Empty
     /// until the boot read lands.
     drive: TasksDrive<AnyWindowHandle>,
-    /// Unattended runs, once they are set up: one per process, beside the
-    /// tasks they start, since two would be two agents on one issue.
-    unattended: Option<UnattendedDrive<AnyWindowHandle>>,
     /// Runs under way, by their task's id; a check's has no session.
     live: HashMap<String, carrier::Driven>,
     /// What watches each run that ended while its session's turn still goes.
     draining: HashMap<String, place::Drain>,
     /// Whoever asked to be told where a task's request landed.
     told: HashMap<String, futures::channel::oneshot::Sender<Placed>>,
-    /// What each task's review was read as, kept for the question its
-    /// answer asks.
-    reviews: HashMap<String, onehand_core::unattended::review::ReviewRead>,
     /// How many commands, a check's or a step's, have not exited yet.
     commands: Arc<AtomicUsize>,
     writer: files::Writer,
@@ -72,11 +63,9 @@ impl Tasks {
     pub(crate) fn in_dir(dir: PathBuf) -> Self {
         Self {
             drive: TasksDrive::default(),
-            unattended: None,
             live: HashMap::new(),
             draining: HashMap::new(),
             told: HashMap::new(),
-            reviews: HashMap::new(),
             commands: Arc::default(),
             writer: files::Writer::spawn(dir),
         }
@@ -104,11 +93,6 @@ impl Tasks {
     /// yet: its step's command, or its check, is still being stopped.
     fn stopping(&self, id: &str) -> bool {
         self.live.get(id).is_some_and(|d| d.stopping())
-    }
-
-    /// Whether a task not yet over works an issue kept under `dir`.
-    pub(crate) fn holds(dir: &std::path::Path, cx: &App) -> bool {
-        cx.try_global::<Tasks>().is_some_and(|t| t.drive.holds(dir))
     }
 
     /// Whether task `id` is running or waiting for its place.
@@ -139,69 +123,6 @@ impl Tasks {
     fn seen(&self) -> Seen<'_, AnyWindowHandle> {
         Seen::new(&self.drive, self.live.values().map(carrier::Driven::drive))
     }
-
-    /// The drives joined for one call.
-    fn joined(&mut self) -> Joined<'_, AnyWindowHandle> {
-        Joined::new(
-            &mut self.drive,
-            self.live.values().map(carrier::Driven::drive),
-            self.unattended.as_mut(),
-        )
-    }
-}
-
-/// Carry out what the joined drives said: the tasks', with `session` the
-/// session of the run that just ended if that is what this answers, then
-/// unattended runs'.
-fn carry(
-    out: Out<AnyWindowHandle>,
-    session: Option<&gpui::Entity<crate::chat::session::ChatSession>>,
-    cx: &mut App,
-) {
-    place::perform(out.tasks, session, cx);
-    crate::unattended::perform(out.unattended, cx);
-}
-
-/// Join the drives for `command`, and carry out what they say.
-pub(crate) fn with_joined<R>(
-    cx: &mut App,
-    command: impl FnOnce(&mut Joined<'_, AnyWindowHandle>) -> (R, Out<AnyWindowHandle>),
-) -> Option<R> {
-    if !cx.has_global::<Tasks>() {
-        return None;
-    }
-    let (answer, out) = cx.update_global::<Tasks, _>(|t, _| command(&mut t.joined()));
-    carry(out, None, cx);
-    Some(answer)
-}
-
-/// Give unattended runs `command`, reading the tasks, and carry out what it
-/// says. `R::default()` before they are set up.
-pub(crate) fn with_unattended<R: Default>(
-    cx: &mut App,
-    command: impl FnOnce(
-        &mut UnattendedDrive<AnyWindowHandle>,
-        &Seen<'_, AnyWindowHandle>,
-    ) -> (
-        R,
-        Vec<onehand_core::unattended::drive::Effect<AnyWindowHandle>>,
-    ),
-) -> R {
-    with_joined(cx, |j| j.unattended(command)).unwrap_or_default()
-}
-
-/// Set unattended runs up with `drive`.
-pub(crate) fn set_unattended(drive: UnattendedDrive<AnyWindowHandle>, cx: &mut App) {
-    cx.default_global::<Tasks>().unattended = Some(drive);
-}
-
-/// What `read` makes of unattended runs and the tasks, once they are set up.
-pub(crate) fn unattended<R>(
-    cx: &App,
-    read: impl FnOnce(&UnattendedDrive<AnyWindowHandle>, &Seen<'_, AnyWindowHandle>) -> R,
-) -> Option<R> {
-    let t = cx.try_global::<Tasks>()?;
-    Some(read(t.unattended.as_ref()?, &t.seen()))
 }
 
 /// Give the tasks' drive `command`, and carry out what it says.
@@ -212,7 +133,9 @@ fn with_drive<R>(
     if !cx.has_global::<Tasks>() {
         return None;
     }
-    with_joined(cx, |j| j.tasks(command))
+    let (answer, fx) = cx.update_global::<Tasks, _>(|t, _| command(&mut t.drive));
+    place::perform(fx, None, cx);
+    Some(answer)
 }
 
 /// How long quitting waits for the task files still being written.
@@ -367,21 +290,6 @@ pub(crate) fn pressed(id: &str, cx: &App) -> Option<onehand_core::task::work::Ac
     })
 }
 
-/// *Answer the pull request review* pressed on task `id` in `window`.
-pub(crate) fn answer_review(id: &str, window: AnyWindowHandle, cx: &mut App) {
-    with_drive(cx, |d| ((), d.answer_review(id, window)));
-}
-
-/// What task `id`'s review was read as, taken for the question its answer
-/// asks.
-pub(crate) fn take_review(
-    id: &str,
-    cx: &mut App,
-) -> Option<onehand_core::unattended::review::ReviewRead> {
-    cx.try_global::<Tasks>()?;
-    cx.update_global::<Tasks, _>(|t, _| t.reviews.remove(id))
-}
-
 /// *Remove worktree…* pressed on task `id` in `window`, or, `confirmed`, the
 /// person's yes to it.
 pub(crate) fn remove_worktree(id: &str, confirmed: bool, window: AnyWindowHandle, cx: &mut App) {
@@ -396,13 +304,9 @@ pub(crate) fn task(id: &str, cx: &App) -> Option<Task> {
 /// Why Resume cannot carry `task` on now: the first thing the preflight of
 /// its last run's own setup finds in the way. Pure, so the buttons that offer
 /// Resume ask it as they are drawn and refuse with it.
-// ponytail: asked per drawn Resume per frame, and an issue task's facts walk
-// every task for its slots, so the cost is drawn Resumes times tasks, held
-// down by the cap on rows drawn; keep the answers beside the issue works if a
-// long Tasks page ever stutters.
 pub(crate) fn resume_refused(task: &Task, cx: &App) -> Option<String> {
     let template = task.runs().last()?.template.clone();
-    let facts = crate::unattended::task_facts(task, template, cx);
+    let facts = facts::of_task(task, template, cx);
     onehand_core::preflight::refusal(onehand_core::preflight::Kind::Resume, &facts)
 }
 
@@ -421,7 +325,7 @@ pub(crate) fn holder_at(place: &std::path::Path, except: Option<&str>, cx: &App)
 /// A person pressed Stop on task `id`, whatever it is doing: a queued one is
 /// called off, and a run under way is stopped.
 pub(crate) fn stop_task(id: &str, cx: &mut App) {
-    if with_drive(cx, |d| d.stop_queued(id, onehand_core::Now::read())) == Some(false) {
+    if with_drive(cx, |d| d.stop_queued(id)) == Some(false) {
         carrier::stop_task(id, cx);
     }
 }

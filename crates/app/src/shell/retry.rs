@@ -18,7 +18,6 @@ use onehand_core::task::Task;
 use onehand_core::task::marks::{self, Against};
 use onehand_core::task::tasks::Retry;
 use onehand_core::task::work::Act;
-use onehand_core::unattended::review::ReviewRead;
 use onehand_core::workflow::{Changed, Field, Run, Template, WithCurrent};
 use std::cell::Cell;
 use std::path::PathBuf;
@@ -113,7 +112,7 @@ impl Shell {
         cx: &App,
     ) -> Option<Result<WithCurrent, String>> {
         let last = task.runs().last()?;
-        let now = crate::unattended::now_for(task, self.check_of(&last.setup.repo), cx);
+        let now = crate::task::facts::now_for(self.check_of(&last.setup.repo), cx);
         Some(Run::with_current(
             last,
             crate::workflow::newest(&last.template, cx),
@@ -161,7 +160,7 @@ impl Shell {
         };
         // Judged by the run's own setup, which is what a retry runs: what
         // Settings says now neither blocks it nor clears a block.
-        let mut facts = crate::unattended::task_facts(&task, same.clone(), cx);
+        let mut facts = crate::task::facts::of_task(&task, same.clone(), cx);
         // A retry asks for the place its task works in, whatever its
         // workflow says now: the run's own folder is kept.
         facts.queued_behind = crate::task::holder_at(&place, Some(task.id()), cx);
@@ -181,9 +180,7 @@ impl Shell {
             let lines: Vec<_> = found
                 .iter()
                 .enumerate()
-                .map(|(at, finding)| {
-                    crate::dialogs::finding_line(at, finding, &shell, ask.as_ref(), cx)
-                })
+                .map(|(at, finding)| crate::dialogs::finding_line(at, finding, ask.as_ref(), cx))
                 .collect();
             let from = steps.get(picked.get()).map(|step| step.id.clone());
             let (step, carried) = starts(&same, from.as_deref());
@@ -314,7 +311,7 @@ impl Shell {
             .as_ref()
             .map(|plan| plan.template.clone())
             .map_err(Clone::clone);
-        let mut facts = crate::unattended::setup_facts(&task, &setup, workflow, cx);
+        let mut facts = crate::task::facts::with_setup(&setup, workflow, cx);
         facts.queued_behind = crate::task::holder_at(&place, Some(task.id()), cx);
         let found = preflight::preflight(preflight::Kind::RetryCurrent, &facts);
         let ask = crate::agent_check::Ask::of(&facts, &setup.dir, cx);
@@ -345,9 +342,7 @@ impl Shell {
             let lines: Vec<_> = found
                 .iter()
                 .enumerate()
-                .map(|(at, finding)| {
-                    crate::dialogs::finding_line(at, finding, &shell, ask.as_ref(), cx)
-                })
+                .map(|(at, finding)| crate::dialogs::finding_line(at, finding, ask.as_ref(), cx))
                 .collect();
             let retry = {
                 let (shell, id, plan) = (shell.clone(), id.clone(), plan.clone());
@@ -486,88 +481,6 @@ fn footer(
 }
 
 impl Shell {
-    /// Ask whether to answer the review on issue task `id`'s open pull
-    /// request, as putting the trigger label back does: what would refuse it
-    /// is read first, off the UI loop, and listed as its preflight found it,
-    /// before anything is claimed.
-    pub(crate) fn answer_review(
-        &mut self,
-        id: String,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        crate::task::answer_review(&id, window.window_handle(), cx);
-    }
-
-    /// Ask whether to answer task `id`'s review, on what was `read` of it.
-    pub(crate) fn confirm_answer(
-        &mut self,
-        id: String,
-        read: ReviewRead,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(task) = crate::task::task(&id, cx) else {
-            return;
-        };
-        let has_check = self.check_of(&task.setup().repo).is_some();
-        let found = preflight::preflight(preflight::Kind::AnswerReview, &read.facts);
-        let ask = crate::agent_check::Ask::of(&read.facts, &task.setup().dir, cx);
-        let blocked = found.iter().any(|f| f.blocks);
-        let said = match &read.from {
-            Some(step) => format!(
-                "A new run starts at the {step} step, told how to read the review, on the \
-                 task's own setup, as putting the label back does."
-            ),
-            None => "Its workflow has no step to answer a review from.".to_string(),
-        };
-        let shell = cx.entity();
-        let read = Rc::new(Cell::new(Some(read)));
-        let handle = window.window_handle();
-        window.open_alert_dialog(cx, move |alert, _, cx| {
-            let lines: Vec<_> = found
-                .iter()
-                .enumerate()
-                .map(|(at, finding)| {
-                    crate::dialogs::finding_line(at, finding, &shell, ask.as_ref(), cx)
-                })
-                .collect();
-            let answer = {
-                let read = read.clone();
-                move |window: &mut Window, cx: &mut App| {
-                    let Some(read) = read.take() else {
-                        return;
-                    };
-                    if let Err(why) = crate::unattended::start_answer(read, has_check, handle, cx) {
-                        window.push_notification(crate::toast::warning(why), cx);
-                    }
-                }
-            };
-            alert
-                .title(format!("Answer the review on {}?", task.brief().title))
-                .description(said.clone())
-                .child(gpui::div().v_flex().gap_1().w_full().children(lines))
-                .on_ok({
-                    let answer = answer.clone();
-                    move |_, window, cx| {
-                        if blocked {
-                            return false;
-                        }
-                        answer(window, cx);
-                        true
-                    }
-                })
-                .footer(footer(
-                    "answer-review",
-                    None,
-                    "Answer the review",
-                    blocked,
-                    move |window, cx| answer(window, cx),
-                    cx,
-                ))
-        });
-    }
-
     /// Carry task `id` on where it stopped, once the preflight finds nothing
     /// in the way of its own setup. Its buttons refuse while something does;
     /// a press that beat a refusal to the screen is told in the window.
@@ -606,7 +519,6 @@ impl Shell {
             E::DismissTask(id) => crate::task::dismiss(id, window, cx),
             E::RetryTask(id) => self.begin_retry(id.clone(), window, cx),
             E::RetryTaskCurrent(id) => self.begin_retry_current(id.clone(), window, cx),
-            E::AnswerReview(id) => self.answer_review(id.clone(), window, cx),
             E::RemoveWorktree(id) => self.remove_worktree(id.clone(), window, cx),
             E::StopTask(id) => {
                 let id = id.clone();

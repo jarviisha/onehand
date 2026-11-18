@@ -63,7 +63,6 @@ impl WorkbenchMode for Stub {
             | Request::ShowIssue(_)
             | Request::AgentStarted(_)
             | Request::LiveConversations(_)
-            | Request::IssueWork { .. }
             | Request::Locked(_)
             | Request::Offloaded(_) => {}
         }

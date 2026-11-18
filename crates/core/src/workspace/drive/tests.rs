@@ -44,7 +44,6 @@ fn names(fx: &[Effect]) -> Vec<String> {
             Effect::Sweep { roots, .. } => format!("Sweep({})", roots.len()),
             Effect::Resweep => "Resweep".into(),
             Effect::GitRead => "GitRead".into(),
-            Effect::LookForRuns(path) => format!("LookForRuns({})", path.display()),
             Effect::EndOnHost { session, .. } => format!("EndOnHost({})", session.0),
             Effect::ListHostSessions => "ListHostSessions".into(),
             Effect::ReadConversation(id) => format!("ReadConversation({id})"),
@@ -72,7 +71,6 @@ fn armed(fx: &[Effect]) -> u64 {
             | Effect::Sweep { .. }
             | Effect::Resweep
             | Effect::GitRead
-            | Effect::LookForRuns(_)
             | Effect::EndOnHost { .. }
             | Effect::ListHostSessions
             | Effect::ReadConversation(_)
@@ -98,7 +96,6 @@ fn written(fx: Vec<Effect>) -> Pending<Thing, Value> {
             | Effect::Sweep { .. }
             | Effect::Resweep
             | Effect::GitRead
-            | Effect::LookForRuns(_)
             | Effect::EndOnHost { .. }
             | Effect::ListHostSessions
             | Effect::ReadConversation(_)
@@ -125,7 +122,6 @@ fn swept(effect: Effect) -> (u64, Vec<SweepProject>) {
         | Effect::Remember { .. }
         | Effect::Resweep
         | Effect::GitRead
-        | Effect::LookForRuns(_)
         | Effect::EndOnHost { .. }
         | Effect::ListHostSessions
         | Effect::ReadConversation(_)
@@ -244,35 +240,6 @@ fn a_run_session_goes_on_an_open_project_and_selects_nothing() {
         !drive.roots[1].transient,
         "a project a person has stays theirs"
     );
-}
-
-#[test]
-fn a_run_project_ends_quietly_unless_it_was_selected() {
-    let mut drive = bound();
-    drive.add_run_session(Path::new("/run"), spec(), 3);
-    assert_eq!(
-        names(&drive.end_run(Path::new("/run"))),
-        ["Close(3)", "ForgotHere(/run)", "Forgot(/run)", "Changed"]
-    );
-    let idx = drive.add_run_session(Path::new("/run"), spec(), 4).unwrap();
-    drive.select_project(idx);
-    assert_eq!(
-        names(&drive.end_run(Path::new("/run"))).last().unwrap(),
-        "Show"
-    );
-    assert!(
-        drive.end_run(Path::new("/a")).is_empty(),
-        "a person's project stays"
-    );
-}
-
-#[test]
-fn a_run_project_taken_over_is_written() {
-    let mut drive = bound();
-    drive.add_run_session(Path::new("/run"), spec(), 3);
-    let fx = drive.take_over_run(Path::new("/run"));
-    assert_eq!(names(&fx), ["Write"]);
-    assert!(!drive.roots[1].transient);
 }
 
 #[test]
@@ -428,20 +395,6 @@ fn an_order_whose_write_fails_goes_back_to_the_one_saved() {
         drive.move_root(0, 0).is_empty(),
         "nothing moved, nothing written"
     );
-}
-
-/// Unattended runs are switched only on a project a person chose that runs
-/// here, and a project switched on is looked at at once.
-#[test]
-fn unattended_runs_are_switched_only_where_they_can_run() {
-    let mut drive = bound();
-    let fx = drive.toggle_unattended(0);
-    assert_eq!(names(&fx), ["LookForRuns(/a)", "Write", "Changed"]);
-    assert_eq!(names(&drive.toggle_unattended(0)), ["Write", "Changed"]);
-    let run = drive.add_run_session(Path::new("/run"), spec(), 1).unwrap();
-    assert!(drive.toggle_unattended(run).is_empty());
-    let host = tree(&mut drive).add_host_root(HostName("box".into()), PathBuf::from("/p"));
-    assert!(drive.toggle_unattended(host).is_empty());
 }
 
 #[test]
@@ -616,29 +569,6 @@ fn a_late_sweep_does_not_give_a_host_folder_the_local_one_s_status() {
         found: vec![("/a".into(), status)],
     });
     assert!(drive.git().is_empty());
-}
-
-/// A run is offered on a repository here that runs here and a person chose,
-/// once unattended runs are set up.
-#[test]
-fn runs_are_offered_on_a_chosen_repository_here_once_set_up() {
-    let mut drive = bound();
-    drive.open_project("/b".into());
-    drive.add_run_session(Path::new("/run"), spec(), 1);
-    let (token, _) = swept(drive.sweep(|_| true));
-    let status = crate::gitstat::GitStatus {
-        branch: "main".into(),
-        changed: 0,
-        ahead: 0,
-        behind: 0,
-        entries: Default::default(),
-    };
-    drive.handle(Input::Swept {
-        token,
-        found: vec![("/a".into(), status.clone()), ("/run".into(), status)],
-    });
-    assert_eq!(drive.offered_for_runs(true), [PathBuf::from("/a")]);
-    assert!(drive.offered_for_runs(false).is_empty());
 }
 
 /// What goes with a project depends on where it is: a host's folder leaves
@@ -868,15 +798,6 @@ fn a_conversation_nothing_can_resume_is_said_and_keeps_nothing() {
     assert_eq!(drive.locate(9), None);
 }
 
-#[test]
-fn a_task_with_no_session_open_is_said() {
-    let mut drive = bound();
-    match drive.show_task_session::<u8>(Live::Nowhere) {
-        Reach::Here(fx) => assert_eq!(names(&fx), ["Refused(NoSession)"]),
-        Reach::There(..) => panic!("said here"),
-    }
-}
-
 // What a start finds to start on.
 
 #[test]
@@ -922,7 +843,7 @@ fn a_run_check_needs_a_project_here_with_a_check_command() {
 fn a_deleted_workspace_writes_nothing() {
     let mut drive = bound();
     let token = armed(&drive.rename("one"));
-    assert_eq!(names(&drive.delete(false)), ["Deleted(/store)"]);
+    assert_eq!(names(&drive.delete()), ["Deleted(/store)"]);
     assert!(drive.handle(Input::Elapsed { token }).is_empty());
     assert!(drive.flush().is_none());
     assert!(drive.save().is_empty());
@@ -930,21 +851,4 @@ fn a_deleted_workspace_writes_nothing() {
     assert!(names(&drive.rename("two"))
         .iter()
         .all(|n| n != "Write" && n != "Arm"));
-}
-
-/// While a task works an issue the workspace keeps, deleting it is refused,
-/// and the workspace goes on being written.
-#[test]
-fn a_held_workspace_is_not_deleted() {
-    let mut drive = bound();
-    assert_eq!(
-        WorkspaceDrive::delete_refusal(true),
-        Some(Refusal::IssuesInUse)
-    );
-    assert_eq!(WorkspaceDrive::delete_refusal(false), None);
-    assert_eq!(
-        names(&drive.delete(true)),
-        [format!("{:?}", Signal::Refused(Refusal::IssuesInUse))]
-    );
-    assert_eq!(names(&drive.save()), ["Write"]);
 }

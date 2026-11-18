@@ -71,36 +71,7 @@ impl Shell {
                 prompt,
             } => self.work_issue_here(&root, number, &prompt, window, cx),
             E::OpenConversation(session) => self.open_conversation(&session, window, cx),
-            E::RunIssueWorkflow { root, number } => {
-                let (found, fx) = self.window.workspace.find_project(&root);
-                self.carry_workspace(fx, window, cx);
-                if let Ok(idx) = found {
-                    self.begin_pick(idx, Some(number), window, cx);
-                }
-            }
             E::OpenInIssues { root, number } => self.open_issue_on_page(&root, number, window, cx),
-            E::ReviewInIssues { root, number } => {
-                self.open_issue_on_page(&root, number, window, cx);
-                self.issues_page.review(&root, number, cx);
-            }
-            // Deferred: the run reaches into its session, and the answer
-            // reaches back into this page.
-            E::ApproveTask(approval) => {
-                cx.defer(move |cx| crate::task::approve(approval, cx));
-            }
-            E::ReviseTask { approval, note } => {
-                cx.defer(move |cx| crate::task::revise(approval, note, cx));
-            }
-            E::OpenTask(id) => self.show_task(&id, window, cx),
-            E::OpenTaskSession(id) => self.open_task_session(&id, window, cx),
-            E::ResumeTask(id) => self.resume_task(id, window, cx),
-            E::RetryTask(id) => self.begin_retry(id, window, cx),
-            E::RetryTaskCurrent(id) => self.begin_retry_current(id, window, cx),
-            E::AnswerReview(id) => self.answer_review(id, window, cx),
-            E::RemoveWorktree(id) => self.remove_worktree(id, window, cx),
-            E::StopTask(id) => {
-                cx.defer(move |cx| crate::task::stop_task(&id, cx));
-            }
         }
     }
 

@@ -25,10 +25,6 @@ pub enum Restart {
 pub enum ProjectAction {
     /// Pin to the top of the rail, or take the pin off.
     TogglePin,
-    /// Let its labelled issues be worked unattended, or stop that.
-    ToggleUnattended,
-    /// Open its open issues, to pick one to work now.
-    PickIssue,
     /// Split it into a second checkout. Offered on repositories only.
     Worktree,
     /// Rename the branch checked out in it. Offered on repositories only, for

@@ -79,17 +79,10 @@ pub(super) fn find(id: &str, cx: &mut App) {
     });
 }
 
-/// Open the run's pull request as a draft, with the text its brief and the
-/// issue it works give it, then read it back.
+/// Open the run's pull request as a draft, with the text its brief gives it,
+/// then read it back.
 pub(super) fn open(id: &str, cx: &mut App) {
-    let text = read(id, cx, |d| {
-        let task = crate::task::task(d.task(), cx);
-        onehand_core::unattended::pull_request_text(
-            &d.run().brief,
-            task.as_ref().and_then(|task| task.issue()),
-        )
-    })
-    .unwrap_or_default();
+    let text = read(id, cx, |d| d.run().brief.pull_request_text()).unwrap_or_default();
     call(id, cx, move |f| {
         let (title, body) = text;
         let opened = f

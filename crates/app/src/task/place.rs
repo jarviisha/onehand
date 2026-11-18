@@ -12,7 +12,6 @@ use onehand_core::task::tasks::{
     Effect, Input, Judging, OffScreen, Placed, Signal, link as tasks_link,
 };
 use onehand_core::task::{Launch, Task, marks, queue};
-use onehand_core::unattended::review::ReviewAsk;
 use onehand_core::workflow::Failure;
 use onehand_core::workspace::WorkspaceDrive;
 use onehand_core::worktree::removal;
@@ -30,21 +29,6 @@ pub(crate) fn submit(task: Task, window: AnyWindowHandle, cx: &mut App) {
     let id = task.id().to_string();
     super::add(task, cx);
     request(id, window, cx);
-}
-
-/// [`submit`], answering where the task landed once that is known: for a
-/// caller that has to say so somewhere other than the window's toasts.
-#[cfg(test)]
-pub(crate) fn submit_told(
-    task: Task,
-    window: AnyWindowHandle,
-    cx: &mut App,
-) -> oneshot::Receiver<Placed> {
-    let id = task.id().to_string();
-    let told = told(&id, cx);
-    super::add(task, cx);
-    request(id, window, cx);
-    told
 }
 
 /// Start `launch` off screen as task `id`, from `window`, answering where it
@@ -73,7 +57,7 @@ fn told(id: &str, cx: &mut App) -> oneshot::Receiver<Placed> {
 /// It starts in `window`, or, when it waited, in the window it was asked
 /// from, if that is still open.
 fn request(id: String, window: AnyWindowHandle, cx: &mut App) {
-    super::with_joined(cx, |j| ((), j.request(&id, window)));
+    with_drive(cx, |d| ((), d.request(&id, window)));
 }
 
 /// Task `id`, holding its place, could not start for `why`, of `kind`: the
@@ -166,15 +150,6 @@ pub(super) fn perform(
                 .detach();
             }
             Effect::Keep(start) => keep(start, cx),
-            Effect::ReadReview { task, window } => read_review(task, window, cx),
-            Effect::ConfirmAnswer { task, window } => cx.defer(move |cx| {
-                let Some(read) = super::take_review(&task, cx) else {
-                    return;
-                };
-                crate::windows::with_shell(window, cx, |shell, window, cx| {
-                    shell.confirm_answer(task, read, window, cx)
-                });
-            }),
             Effect::JudgeRemoval(asked) => judge_removal(asked, cx),
             Effect::ConfirmRemoval {
                 task,
@@ -251,10 +226,8 @@ pub(super) fn perform(
 fn keep(start: OffScreen<AnyWindowHandle>, cx: &mut App) {
     let link = |workspace: Option<&mut WorkspaceDrive>, start, cx: &mut App| {
         cx.update_global::<Tasks, _>(|t, _| {
-            t.joined().tasks(|d| {
-                let (fx, kept) = tasks_link::keep(d, workspace, start);
-                (kept, fx)
-            })
+            let (fx, kept) = tasks_link::keep(&mut t.drive, workspace, start);
+            (kept, fx)
         })
     };
     let window = start.window;
@@ -269,44 +242,11 @@ fn keep(start: OffScreen<AnyWindowHandle>, cx: &mut App) {
             cx,
         )
     });
-    let out = match in_window {
-        Some(out) => out,
+    let fx = match in_window {
+        Some(fx) => fx,
         None => link(None, start, cx).1,
     };
-    super::carry(out, None, cx);
-}
-
-/// Read what answering task `task`'s review is judged on, its facts as the
-/// app knows them now, off the UI thread; kept for the question, and what
-/// it came to told to the drive.
-fn read_review(task: String, window: AnyWindowHandle, cx: &mut App) {
-    let kept = super::task(&task, cx);
-    let ask = ReviewAsk::of(
-        kept.as_ref(),
-        |kept, template| crate::unattended::task_facts(kept, template, cx),
-        crate::features::connectors(),
-    );
-    let ask = match ask {
-        Ok(ask) => ask,
-        Err(why) => {
-            let read = Err(why);
-            return feed(Input::ReviewRead { task, window, read }, cx);
-        }
-    };
-    cx.spawn(async move |cx| {
-        let read = cx
-            .background_executor()
-            .spawn(async move { ask.read_blocking() })
-            .await;
-        cx.update(|cx| {
-            cx.default_global::<Tasks>()
-                .reviews
-                .insert(task.clone(), read);
-            let read = Ok(());
-            feed(Input::ReviewRead { task, window, read }, cx);
-        });
-    })
-    .detach();
+    perform(fx, None, cx);
 }
 
 /// Judge the removal `asked`: its worktree's top found off the UI thread,
@@ -442,11 +382,7 @@ fn say(signal: Signal<AnyWindowHandle>, cx: &mut App) {
     };
     match signal {
         Signal::Queued { window, said } => toast(window, crate::toast::info(said), cx),
-        // Deferred: a request is often made from inside that window's shell.
-        Signal::Refused { window, why } => {
-            cx.defer(move |cx| toast(window, crate::toast::warning(why), cx))
-        }
-        // Deferred, as a refusal is: a Resume is pressed inside that window.
+        // Deferred: a Resume is pressed inside that window.
         Signal::NotResumed { window, why } => cx.defer(move |cx| {
             toast(
                 window,
@@ -475,11 +411,6 @@ fn say(signal: Signal<AnyWindowHandle>, cx: &mut App) {
                 (None, _) => crate::toast::success(format!("Removed {folder}")),
             };
             toast(window, note, cx)
-        }
-        // Deferred: a read refused at once is said inside the update of the
-        // window it was pressed in.
-        Signal::ReviewNotRead { window, why } => {
-            cx.defer(move |cx| toast(window, crate::toast::failed("Reading the review", why), cx))
         }
         Signal::RemoveFailed { window, why } => toast(
             window,

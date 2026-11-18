@@ -7,7 +7,7 @@ use gpui_component::input::InputState;
 use gpui_component::notification::Notification;
 use onehand_core::config::recents::{Effect as RecentsEffect, Input, Listed, Signal};
 use onehand_core::config::{WorkspaceConfig, WorkspaceLoad};
-use onehand_core::workspace::{self, Workspace, WorkspaceDrive};
+use onehand_core::workspace::{self, Workspace};
 use std::path::Path;
 
 impl Shell {
@@ -63,16 +63,6 @@ impl Shell {
 
     // ── Workspace settings ──────────────────────────────────────────────────
 
-    /// Whether a task not yet over works an issue this workspace keeps.
-    fn held(&self, cx: &App) -> bool {
-        crate::task::Tasks::holds(&self.window.workspace.storage_dir, cx)
-    }
-
-    /// Why this workspace cannot be deleted now, in words, if it cannot.
-    pub fn delete_refused(&self, cx: &App) -> Option<&'static str> {
-        WorkspaceDrive::delete_refusal(self.held(cx)).map(super::carry::refused)
-    }
-
     /// Ask, then delete this window's workspace.
     pub fn confirm_delete_workspace(&mut self, window: &mut gpui::Window, cx: &mut Context<Self>) {
         let name = self.window.workspace.name.clone();
@@ -88,10 +78,9 @@ impl Shell {
         });
     }
 
-    /// Delete this window's workspace, as its drive answers: held again now,
-    /// since a task may have started while the question was open.
+    /// Delete this window's workspace, as its drive answers.
     fn delete_workspace(&mut self, window: &mut gpui::Window, cx: &mut Context<Self>) {
-        let fx = self.window.workspace.delete(self.held(cx));
+        let fx = self.window.workspace.delete();
         self.carry_workspace(fx, window, cx);
     }
 

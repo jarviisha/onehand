@@ -54,8 +54,7 @@ fn act_rows(query: &str, session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
         Act::Effort => effort_action(session, cx).is_some(),
         Act::Mode => mode_action(session, cx).is_some(),
         Act::Fast => fast_action(session, cx).is_some(),
-        Act::Attach | Act::Mention | Act::Command | Act::Workflow => true,
-        Act::Control => crate::control::offered(session.read(cx).chat().uid, cx),
+        Act::Attach | Act::Mention | Act::Command | Act::Workflow | Act::Control => true,
     };
     // Hoisted, for the reason the folder run hoists its own: inside the filter
     // it is an allocation per row, on a list rebuilt at every keystroke.

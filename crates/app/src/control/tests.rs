@@ -180,9 +180,10 @@ fn an_outside_call_lands_in_the_window_in_front(cx: &mut TestAppContext) {
         issue: 1,
         workflow: None,
     };
+    // Named none, it takes *Work an issue*, which this rig's library lacks.
     assert_eq!(
         ask(Peer::Outside, start, cx),
-        Err("name a workflow; list_workflows gives them".to_string())
+        Err("no workflow with id builtin:issue; list_workflows gives them".to_string())
     );
     let worker = Call::OpenWorker {
         project: "tmp".into(),
@@ -218,7 +219,7 @@ fn a_sessions_call_lands_in_its_own_window(cx: &mut TestAppContext) {
     cx.update(|_, cx| {
         let (uid, _) = shell
             .update(cx, |shell, cx| {
-                shell.run_unattended("/tmp".into(), agent, Vec::new(), cx)
+                shell.open_off_screen("/tmp".into(), agent, Vec::new(), cx)
             })
             .expect("a session");
         token.claim(uid);
@@ -260,7 +261,7 @@ fn a_sessions_call_lands_in_its_window_not_the_one_in_front(cx: &mut TestAppCont
     cx.update(|_, cx| {
         let (uid, _) = other
             .update(cx, |shell, cx| {
-                shell.run_unattended(at, agent, Vec::new(), cx)
+                shell.open_off_screen(at, agent, Vec::new(), cx)
             })
             .expect("a session");
         token.claim(uid);

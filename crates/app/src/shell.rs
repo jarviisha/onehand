@@ -36,10 +36,10 @@ pub(crate) use host_project::{Browse, Way};
 pub(crate) use offload::offload_refusal;
 mod issue_work;
 mod issues_page;
+mod off_screen;
 mod offload;
 mod pages;
 mod presentation;
-mod remote_runs;
 mod render;
 mod retry;
 #[cfg(test)]
@@ -276,10 +276,6 @@ pub struct Shell {
     /// The folders of this window's offloaded projects whose writers are
     /// off, with the line said under them, as last told to the docks.
     offload_locks: HashMap<PathBuf, String>,
-    /// The open-issue picker, while it is on screen. Opened from a project's
-    /// menu, which is gone by the time the list arrives, so this being `Some`
-    /// is what puts the dialog up — like the rename and the worktree forms.
-    issue_picker: Option<IssuePicker>,
     /// The workflow launcher, while it is on screen. Opened from a menu entry
     /// or a key, so this being `Some` is what puts it up.
     workflow_launcher: Option<WorkflowLauncher>,
@@ -288,11 +284,6 @@ pub struct Shell {
     /// mounted by the shell rather than by the library, which would do this
     /// itself. `None` when nothing held it, and the conversation takes it.
     dialog_return: Option<gpui::WeakFocusHandle>,
-    /// Settings' new workflow label: the label typed, the workflow picked for
-    /// it, and why the last *Add* was refused.
-    label_input: Entity<InputState>,
-    label_workflow: Option<String>,
-    label_refused: Option<String>,
     /// The field the new branch name is typed into.
     branch_input: Entity<InputState>,
     /// The new branch's name field.
@@ -319,9 +310,6 @@ pub struct Shell {
     /// The conversations with a live session here, as the Workbench was last
     /// told them.
     live_conversations: Vec<String>,
-    /// What the Workbench was last told of the tasks working issues.
-    /// And of the projects a run may be started on.
-    issue_works: (Vec<onehand_core::task::work::IssueWork>, Vec<PathBuf>),
     /// The words of each refusal this window put up, in order, for a test:
     /// a toast's own words cannot be read back off the window.
     #[cfg(test)]
@@ -402,77 +390,6 @@ pub struct Shell {
     tasks_page: Entity<crate::tasks_page::TasksPage>,
     /// The workspace page, made once likewise.
     workspace_page: Entity<crate::workspace_page::WorkspacePage>,
-}
-
-/// What reading a project's open issues came to: the issues and whether the
-/// list was cut at its bound, or why they could not be read.
-pub type PickerAnswer = Result<crate::unattended::Pickable, String>;
-
-/// The open issues of one project, being read or read.
-pub struct IssuePicker {
-    root: PathBuf,
-    /// The project's name, for the dialog's heading.
-    pub project: SharedString,
-    /// `None` while `gh` is being asked; then the issues and whether the list
-    /// was cut at its bound, or why they could not be read. Shared rather than
-    /// owned, because the dialog is rebuilt every frame and a hundred issues
-    /// with their bodies is not a thing to copy sixty times a second.
-    pub found: Option<std::rc::Rc<PickerAnswer>>,
-    /// The id of the workflow picked for it, or `None` to let each issue's
-    /// workflow labels choose, as the tick does.
-    pub workflow: Option<String>,
-    /// The one issue the list is narrowed to, when it was asked for from that
-    /// issue in the Issues tab.
-    pub only: Option<u64>,
-    /// The issue the form below the list starts, by its place in the list:
-    /// chosen by a press, or at once when the list is narrowed to one.
-    pub chosen: Option<usize>,
-    /// What the person adds to this run's brief.
-    pub instructions: gpui::Entity<gpui_component::input::TextareaState>,
-    /// The preview of what the run starts with is open.
-    pub preview: bool,
-    /// The forge the project's work goes to, `Some(None)` for none; `None`
-    /// while it is being found out.
-    pub forge: Option<Option<&'static dyn onehand_core::connector::Connector>>,
-    /// The issue templates the project offers, its own or the shipped ones,
-    /// read with the issues: what an issue's body is read against. Empty
-    /// until read, when nothing is said to be lacking.
-    pub templates: Vec<onehand_core::issues::template::IssueTemplate>,
-    /// The branch a cut for the issue chosen would take, by its place in the
-    /// list, as the repository answered off the UI loop: the name with the
-    /// suffix a branch already there adds.
-    pub branch: Option<(usize, String)>,
-    /// The picker's body, which holds the keyboard until an issue is chosen:
-    /// there is no field to hold it before then, and outside the dialog Esc
-    /// would not reach it.
-    pub focus: gpui::FocusHandle,
-}
-
-impl IssuePicker {
-    /// The issue chosen, and where it lives.
-    pub fn chosen(
-        &self,
-    ) -> Option<(
-        onehand_core::unattended::Tracker,
-        onehand_core::unattended::IssueRow,
-    )> {
-        let (rows, _, _) = self.found.as_deref()?.as_ref().ok()?;
-        rows.get(self.chosen?).cloned()
-    }
-
-    /// The branch the chosen issue's cut takes, once the repository answered.
-    pub fn chosen_branch(&self) -> Option<&str> {
-        let (at, branch) = self.branch.as_ref()?;
-        (Some(*at) == self.chosen).then_some(branch.as_str())
-    }
-
-    /// The workflow a run on `row` takes: the one picked, else the one its
-    /// labels choose.
-    pub fn workflow_for(&self, row: &onehand_core::unattended::IssueRow, cx: &gpui::App) -> String {
-        self.workflow
-            .clone()
-            .unwrap_or_else(|| crate::unattended::workflow_for(&row.labels, cx))
-    }
 }
 
 /// A `Ctrl+Tab` walk in progress.

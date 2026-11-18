@@ -13,6 +13,7 @@
 //! code across four phases. Tests live inside the crate, so
 //! they are unaffected. Keep new modules private.
 
+mod accounts;
 mod agent_check;
 pub mod assets;
 mod chat;
@@ -42,7 +43,6 @@ mod tasks_page;
 mod terminal;
 mod text_drag;
 mod theme;
-mod unattended;
 mod windows;
 mod workbench;
 mod workflow;

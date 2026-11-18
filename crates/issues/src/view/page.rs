@@ -11,11 +11,11 @@
 //!
 //! What the list shows, in what order and what each row says is core's
 //! (`onehand_core::task::work::list`); what is here holds the page's state —
-//! the filters, the list as it is on screen, the pull requests read — and
-//! draws what core decides. Everything lives on the view's entity, so
+//! the filters and the list as it is on screen — and draws what core
+//! decides. Everything lives on the view's entity, so
 //! leaving the page for a session and picking it again finds it as it was.
 
-use super::{IssuesView, full, review};
+use super::IssuesView;
 use crate::{IssuesClose, IssuesDown, IssuesUp};
 use gpui::{
     AnyElement, Context, FocusHandle, InteractiveElement as _, IntoElement, ParentElement,
@@ -23,15 +23,13 @@ use gpui::{
 };
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::issues::{self, IssueKey, LocalIssue};
-use onehand_core::task::work::drive::WorkDrive;
 use onehand_core::task::work::list::{Filters, Held, Item, list};
 use onehand_ui::{faint_rule, hint};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 mod head;
 mod panel;
-mod prs;
 mod row;
 
 use row::{head_row, issue_row};
@@ -66,10 +64,6 @@ pub(super) struct PageState {
     /// An issue was opened from outside the page: the page takes the
     /// keyboard on its next draw, so Esc and the arrow keys answer at once.
     claim_focus: bool,
-    /// Which of the issue on screen's file lists and diffs are open.
-    pub(super) full: full::FullState,
-    /// The review block, while one is open.
-    pub(super) review: review::ReviewState,
 }
 impl PageState {
     /// The filters changed: the list is drawn afresh, the pin let go.
@@ -83,12 +77,6 @@ impl PageState {
             .iter()
             .find(|(r, _)| r == root)
             .map(|(_, label)| label.clone())
-    }
-
-    /// What the full form draws from this page's state and the view's
-    /// drive.
-    pub(super) fn full<'a>(&'a self, drive: &'a WorkDrive) -> full::Full<'a> {
-        self.full.view(drive)
     }
 }
 
@@ -108,10 +96,8 @@ impl IssuesView {
         }
     }
 
-    /// The page was put on screen: every file it draws is read again, and so
-    /// are the pull requests.
+    /// The page was put on screen: every file it draws is read again.
     pub(crate) fn page_shown(&mut self, cx: &mut Context<Self>) {
-        self.work.page_shown();
         self.mark_stale(cx);
     }
 
@@ -122,9 +108,6 @@ impl IssuesView {
         let Some(page) = self.page.as_mut() else {
             return;
         };
-        if self.work.pick(key.as_ref()) {
-            page.review = review::ReviewState::default();
-        }
         page.held.pinned = key;
         page.open = true;
         page.reveal = true;
@@ -165,10 +148,6 @@ impl IssuesView {
                 if let Some(key) = &key {
                     let stopped = std::mem::take(&mut page.stopped);
                     page.held.pick(key, &stopped);
-                }
-                // Picking another issue closes the review; the same keeps it.
-                if view.work.pick(key.as_ref()) {
-                    page.review = review::ReviewState::default();
                 }
                 page.open = true;
             }
@@ -240,15 +219,10 @@ impl IssuesView {
         let Some(page) = self.page.as_ref() else {
             return;
         };
-        match innermost(
-            page.open,
-            form,
-            self.work.review().is_some_and(|r| r.is_open()),
-        ) {
+        match innermost(page.open, form) {
             Some(Layer::Form) => {
                 self.unless_drafting(window, cx, |view, _, cx| view.cancel_form(cx));
             }
-            Some(Layer::Review) => self.close_review(cx),
             Some(Layer::Issue) => {
                 if let Some(page) = self.page.as_mut() {
                     page.open = false;
@@ -289,7 +263,6 @@ impl IssuesView {
                 state.file.update(cx, |file, cx| file.load_if_stale(cx));
             }
         }
-        self.read_prs_if_due(cx);
 
         let selected = self.selected_key();
         let (focus, claim) = match self.page.as_mut() {
@@ -349,6 +322,14 @@ impl IssuesView {
         self.drafting() || self.selected_key().is_some()
     }
 
+    /// The issue `number` of `root`, named by the file it is kept in.
+    fn key(&self, root: &Path, number: u64) -> Option<IssueKey> {
+        Some(IssueKey {
+            file: issues::file_for(self.storage.as_deref()?, root),
+            number,
+        })
+    }
+
     /// The issue the page has picked, by its file and number.
     pub(super) fn selected_key(&self) -> Option<IssueKey> {
         let root = self.root.as_deref()?;
@@ -377,7 +358,6 @@ impl IssuesView {
                     .map(|issue| (root.clone(), issue))
             })
             .collect();
-        let works = self.work.works().to_vec();
         let storage = self.storage.clone().unwrap_or_default();
         let items: Vec<Item<'_>> = owned
             .iter()
@@ -386,13 +366,7 @@ impl IssuesView {
                     file: issues::file_for(&storage, root),
                     number: issue.number(),
                 };
-                let work = works.iter().find(|work| work.key == key);
-                Item {
-                    root,
-                    key,
-                    issue,
-                    work,
-                }
+                Item { root, key, issue }
             })
             .collect();
         let query = self.query(window, cx);
@@ -411,9 +385,7 @@ impl IssuesView {
             page.filters.project = None;
             filters.project = None;
         }
-        let none = HashMap::new();
-        let prs = self.work.prs().unwrap_or(&none);
-        let listed = list(&items, &filters, prs, &page.held, issues::now());
+        let listed = list(&items, &filters, &page.held);
         page.held.order = listed.order();
         page.stopped = listed.stopped_matching();
         page.shown = listed
@@ -441,7 +413,6 @@ impl IssuesView {
 
         let reading = items.is_empty() && self.reading_issues(projects, cx);
         let (head, filter_row) = self.page_head(&listed, &filters, projects, labels, &query, cx);
-        let notices = self.page_notices(&listed, projects, cx);
         let muted = cx.theme().muted_foreground;
         let empty = if reading {
             Some("Reading the issues…")
@@ -505,13 +476,7 @@ impl IssuesView {
         // The head and the filters stay put over a line the pane's whole
         // width, as every page with filters keeps them; the list scrolls
         // under it.
-        let filters_and_notices = div()
-            .v_flex()
-            .gap_2()
-            .child(filter_row)
-            .children(notices)
-            .into_any_element();
-        let top = onehand_ui::page_top(None, [head, filters_and_notices]).into_any_element();
+        let top = onehand_ui::page_top(None, [head, filter_row]).into_any_element();
         let rows = div()
             .id("issues-page-list")
             .size_full()
@@ -544,7 +509,7 @@ impl IssuesView {
     }
 
     /// Every filter but the tab back to where it starts: the search, the
-    /// progress, the project and the label.
+    /// project and the label.
     fn clear_narrowing(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(query) = self.query.clone() {
             query.update(cx, |input, cx| input.set_value("", window, cx));
@@ -579,20 +544,17 @@ fn column(inner: gpui::Div) -> gpui::Div {
 enum Layer {
     /// The issue form, inside the floating issue.
     Form,
-    /// The review block, inside the floating issue.
-    Review,
     /// The floating issue itself.
     Issue,
 }
 
-/// The layer Esc closes: the form or the review block inside the floating
-/// issue before the issue itself, and nothing while the issue is closed.
-fn innermost(open: bool, form: bool, review: bool) -> Option<Layer> {
-    match (open, form, review) {
-        (false, _, _) => None,
-        (true, true, _) => Some(Layer::Form),
-        (true, false, true) => Some(Layer::Review),
-        (true, false, false) => Some(Layer::Issue),
+/// The layer Esc closes: the form inside the floating issue before the
+/// issue itself, and nothing while the issue is closed.
+fn innermost(open: bool, form: bool) -> Option<Layer> {
+    match (open, form) {
+        (false, _) => None,
+        (true, true) => Some(Layer::Form),
+        (true, false) => Some(Layer::Issue),
     }
 }
 
@@ -602,9 +564,8 @@ mod tests {
 
     #[test]
     fn esc_closes_the_innermost_layer_only() {
-        assert_eq!(innermost(false, true, true), None);
-        assert_eq!(innermost(true, true, true), Some(Layer::Form));
-        assert_eq!(innermost(true, false, true), Some(Layer::Review));
-        assert_eq!(innermost(true, false, false), Some(Layer::Issue));
+        assert_eq!(innermost(false, true), None);
+        assert_eq!(innermost(true, true), Some(Layer::Form));
+        assert_eq!(innermost(true, false), Some(Layer::Issue));
     }
 }
