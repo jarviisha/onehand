@@ -357,20 +357,13 @@ fn trail(
         .map(|act| act.button("task-detail", row, cx).secondary());
     let rest: Vec<(&'static str, Press)> =
         acts.map(|act| (act.label(), act.press(row, cx))).collect();
-    let answer = answers_review(task).then(|| {
-        (
-            "Answer the pull request review…",
-            Rc::new(super::emit(task.id(), cx, TasksPageEvent::AnswerReview)) as Press,
-        )
-    });
     let remove = removable(task, detail)
         .then(|| Rc::new(super::emit(task.id(), cx, TasksPageEvent::RemoveWorktree)) as Press);
-    let rest: Vec<_> = rest.into_iter().chain(answer).collect();
     let empty = rest.is_empty() && remove.is_none();
     // What ⋯ holds and is still being read or done waits on ⋯ itself.
     let waits = matches!(
         crate::task::pressed(task.id(), cx),
-        Some(Act::AnswerReview | Act::RemoveWorktree)
+        Some(Act::RemoveWorktree)
     );
     let danger = crate::theme::status_ink(cx).danger;
     let more = crate::controls::menu_below(
@@ -442,19 +435,6 @@ fn slot(text: String, cx: &App) -> gpui::Div {
         .child(text)
 }
 
-/// Whether `task` offers to answer a review on its pull request: one it can
-/// have (`Task::reviewable`) that opened one, its last run done. Whether it
-/// is still open, and whether the review can be answered, is the
-/// preflight's to say when pressed.
-fn answers_review(task: &onehand_core::task::Task) -> bool {
-    task.reviewable()
-        && task.opened_pull_request()
-        && task
-            .runs()
-            .last()
-            .is_some_and(|run| run.outcome == Some(onehand_core::workflow::Outcome::Done))
-}
-
 /// Whether its issue's view would offer removing `task`'s worktree, by
 /// core's rule, given the pull request `detail` read: never before it is
 /// read and merged.
@@ -465,7 +445,7 @@ fn removable(task: &onehand_core::task::Task, detail: &TaskDetail) -> bool {
     Work::of(task, None, None).removal_offered(pr.as_ref())
 }
 
-/// An ended task's way out, as its issue says it (`next_action`): why it
+/// An ended task's way out, as `next_action` says it: why it
 /// ended, and the ways out the head's actions do not already offer, the one
 /// that fits first. Answers whether it drew a primary, which the trail then
 /// steps down beside.
@@ -474,10 +454,9 @@ fn way_out(
     cx: &mut Context<TasksPage>,
 ) -> Option<(gpui::AnyElement, bool)> {
     let mut work = Work::of(task, None, None);
-    work.timeout_moved = crate::unattended::timeout_moved(task, cx);
+    work.timeout_moved = crate::task::facts::timeout_moved(task, cx);
     let around = Around {
         open: true,
-        can_start: false,
         session: false,
         pr: PrSeen::Unread,
         now: now_secs(),

@@ -1,6 +1,6 @@
 //! What the view asks of the app: a file put on screen goes to the Workbench,
-//! which knows the mode that edits files; a session on an issue, a workflow
-//! run, a task or a conversation goes to the shell, whose they are. Each is
+//! which knows the mode that edits files; a session on an issue or a
+//! conversation goes to the shell, whose they are. Each is
 //! put once the view is no longer being updated.
 
 use super::*;
@@ -58,20 +58,6 @@ impl IssuesView {
         });
     }
 
-    /// Choose a workflow and work issue `number` of the project on screen
-    /// with it, on a worktree of its own.
-    pub(super) fn run_workflow(
-        &mut self,
-        number: u64,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.tell_later(window, cx, move |root| IssuesEvent::RunIssueWorkflow {
-            root: root.to_path_buf(),
-            number,
-        });
-    }
-
     /// Put issue `number` of the project on screen on the Issues page.
     pub(super) fn open_in_issues(
         &mut self,
@@ -83,22 +69,6 @@ impl IssuesView {
             root: root.to_path_buf(),
             number,
         });
-    }
-
-    /// Tell the shell about task `id`, by `event`.
-    pub(super) fn ask_task(
-        &mut self,
-        id: String,
-        event: fn(String) -> IssuesEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.tell_later(window, cx, move |_| event(id));
-    }
-
-    /// Put task `id` on screen, on the Tasks page.
-    pub(super) fn open_task(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        self.tell_later(window, cx, move |_| IssuesEvent::OpenTask(id));
     }
 
     /// Put the conversation the agent named `session` on screen.

@@ -113,11 +113,6 @@ fn open_window(workspace: Workspace, write: bool, cx: &mut App) {
             // way rather than the whole window being dropped from it.
             let shell = built.expect("the window was built without a shell");
             crate::windows::register(storage_dir.clone(), handle.into(), shell, cx);
-            // The projects it has switched on for unattended runs are looked at
-            // now, so a row that cannot work says so from the first frame and
-            // not from the first tick, half an hour in. After the push, because
-            // the look finds projects through this registry.
-            crate::unattended::recheck(cx);
             // What reached the socket before any window waited for this one.
             crate::instance::window_up(cx);
             let fx = cx

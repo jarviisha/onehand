@@ -10,13 +10,11 @@ pub(crate) const KEPT: usize = 200;
 
 /// The ids of the finished tasks past the newest [`KEPT`] of the project
 /// each was started from. A task a person should still look at is never
-/// one of them, and neither is one whose issue has not been told how it
-/// ended: its file is where that report waits.
+/// one of them.
 pub fn over_cap(tasks: &[(&Task, Group)]) -> Vec<String> {
     let mut by_repo: HashMap<&Path, Vec<&Task>> = HashMap::new();
     for (task, group) in tasks {
-        let unsent = task.issue().is_some_and(|issue| !issue.unsent.is_empty());
-        if *group == Group::Finished && !unsent {
+        if *group == Group::Finished {
             by_repo.entry(&task.setup.repo).or_default().push(task);
         }
     }

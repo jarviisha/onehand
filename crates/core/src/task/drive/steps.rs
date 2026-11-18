@@ -2,7 +2,7 @@
 //! the transcript, the prompt sent once the agent is up, the command run,
 //! the forge called, the wait begun, the run finished.
 
-use super::{settings, Asked, Effect, RunDrive, Said};
+use super::{settings, Asked, Effect, RunDrive};
 use crate::chat::{Chat, Link};
 use crate::preflight::{found_late, mode_refused, About};
 use crate::workflow::{Action, Outcome, Pick, Stop};
@@ -41,7 +41,6 @@ impl RunDrive {
                 self.asked.push(Asked::Note(
                     "Waiting for approval: Continue or Revise… under the header".to_string(),
                 ));
-                fx.push(Effect::Unattended(Said::Waiting));
             }
             Action::Push(commit) => {
                 self.asked.push(Asked::Note(format!(
@@ -61,8 +60,6 @@ impl RunDrive {
                     "Waiting for the pull request's status checks".to_string(),
                 ));
                 self.watch_checks(pushed, wait, now, fx);
-                // Its slot is free now, for another issue to take up.
-                fx.push(Effect::Unattended(Said::Waiting));
             }
             Action::Finish(outcome) => return self.finish(Some(chat), outcome, now, fx),
             Action::Idle => return,
@@ -138,7 +135,7 @@ impl RunDrive {
     }
 
     /// The agent is up, the first time in this session: put it in the run's
-    /// mode before its first prompt, and say so to an issue the run works.
+    /// mode before its first prompt.
     /// Whether the prompt may go: an agent that does not offer the mode fails
     /// the run, since one left in the mode that asks before every edit would
     /// park at the first.
@@ -146,19 +143,12 @@ impl RunDrive {
         if std::mem::replace(&mut self.up, true) {
             return true;
         }
-        fx.push(Effect::Unattended(Said::CameUp {
-            session: chat.session_id.clone(),
-        }));
         let Some(mode) = self.run.setup.mode.clone() else {
             self.start_settings(chat, None);
             return true;
         };
         let offered: Vec<String> = chat.modes.iter().map(|m| m.id.clone()).collect();
         if let Some(why) = mode_refused(&mode, &offered) {
-            fx.push(Effect::Unattended(Said::Pause {
-                why: why.clone(),
-                fix: "unattended.mode is fixed".to_string(),
-            }));
             self.advance(Some(chat), now, fx, move |run| {
                 run.failed(why, found_late(About::Mode), now.secs)
             });

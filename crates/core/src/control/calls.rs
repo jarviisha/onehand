@@ -55,12 +55,13 @@ pub fn issues_project(
 }
 
 /// The workflow `start_issue` works an issue with: the one `named`, else
-/// the one issues are worked with (`setting`), else none.
-pub fn workflow_of(named: Option<String>, setting: &str) -> Result<String, String> {
-    named
-        .or_else(|| Some(setting.to_string()).filter(|id| !id.is_empty()))
-        .ok_or_else(|| "name a workflow; list_workflows gives them".to_string())
+/// the built-in *Work an issue*.
+pub fn workflow_of(named: Option<String>) -> String {
+    named.unwrap_or_else(|| ISSUE_WORKFLOW.to_string())
 }
+
+/// The workflow an issue is worked with when none is named.
+const ISSUE_WORKFLOW: &str = "builtin:issue";
 
 /// Refuse `named` by name when it is no project here but one on a host or
 /// offloaded to one, rather than say it does not exist.
@@ -238,9 +239,8 @@ mod tests {
 
     #[test]
     fn a_workflow_is_the_named_else_the_settings() {
-        assert_eq!(workflow_of(Some("w".into()), "s"), Ok("w".into()));
-        assert_eq!(workflow_of(None, "s"), Ok("s".into()));
-        assert!(workflow_of(None, "").is_err());
+        assert_eq!(workflow_of(Some("w".into())), "w");
+        assert_eq!(workflow_of(None), ISSUE_WORKFLOW);
     }
 
     #[test]

@@ -28,9 +28,8 @@ A permission or a question an agent parked in its session, waiting for a person 
 _Avoid_: prompt, dialog, popup
 
 **Take over**:
-A person putting a prompt of their own into the session of a run or an unattended run; the
-run stops and the session becomes an ordinary one. Answering a card the run's agent parked is not
-taking over.
+A person putting a prompt of their own into the session of a run; the run stops and the session
+becomes an ordinary one. Answering a card the run's agent parked is not taking over.
 _Avoid_: hijack, adopt
 
 **Lead**:
@@ -88,8 +87,8 @@ _Avoid_: workflow run, pipeline run, job, execution, instance
 The work onehand does on a person's behalf: a brief on a place, and every run of it. Kept as one
 file each, unfinished or as history; it reads as its last run's outcome. Dismissing an ended task
 keeps it as history and never offers it again. The project's check command run on its own is a
-task too, with one command step and no session, and so is an issue worked unattended. Each project keeps its newest 200 finished tasks;
-older ones are removed, with their marks.
+task too, with one command step and no session. Each project keeps its newest 200 finished
+tasks; older ones are removed, with their marks.
 _Avoid_: job, ticket, workflow run
 
 **Retry**:
@@ -108,9 +107,8 @@ or its agent or session gone). Done, stopped by a person and dismissed tasks are
 _Avoid_: failed (one kind only), errors, inbox
 
 **Next action**:
-What an issue's work waits on, in one sentence, and the one thing to press about it, if any: worked
-out each time from the task, its runs and the issue, never stored. The issue's state only gates a
-new start.
+What a task waits on, in one sentence, and the one thing to press about it, if any: worked out
+each time from the task and its runs, never stored.
 _Avoid_: todo, call to action, status
 
 **Step visit**:
@@ -204,9 +202,9 @@ run by itself.
 _Avoid_: restart, retry
 
 **Preflight**:
-What onehand checks before a start claims an issue, cuts a worktree or starts an agent, and what it
-found: each finding blocks the start or only says something, and says where it is changed. It
-judges the configuration that will actually run, which for a Resume or a Retry is the run's own.
+What onehand checks before a start cuts a worktree or starts an agent, and what it found: each
+finding blocks the start or only says something, and says where it is changed. It judges the
+configuration that will actually run, which for a Resume or a Retry is the run's own.
 _Avoid_: precheck, validation (that is the workflow's own)
 
 **Schedule**:
@@ -215,56 +213,15 @@ how it runs, the tools its agent may use, and when, as a cron expression; it sta
 due time while onehand is open, and once for the times it missed while it was not.
 _Avoid_: cron job, timer, job
 
-## Unattended runs
-
-**Unattended run**:
-One issue worked as a task of the configured workflow, in a worktree and on a branch of its own,
-in a session nobody is watching, found by its trigger label or picked by hand. It ends on its
-branch, and its issue is told how.
-_Avoid_: job, batch, auto run
+## Issues
 
 **Tracker**:
 Where an issue lives: on a forge, kept by onehand, or kept by onehand in step with a forge.
 _Avoid_: backend, provider
 
 **Connector**:
-What onehand reaches a forge through: its account, its issues, labels, comments and pull requests.
+What onehand reaches a forge through: its account, its issues, labels and pull requests.
 _Avoid_: integration, adapter (that is an agent's)
-
-**Tick**:
-One look for work, made every configured interval; it starts nothing while every slot is taken.
-It also sends the reports not yet delivered.
-_Avoid_: poll, schedule
-
-**Trigger label**:
-The label whose presence on an issue asks for an unattended run.
-_Avoid_: tag, auto label
-
-**Workflow label**:
-A label on an issue, beside the trigger label, that chooses the workflow its run works with.
-_Avoid_: tag, workflow tag
-
-**Claim**:
-Removing the trigger label from an issue and commenting that a run started on it. Adding the label
-back is how a person asks for the issue to be tried again.
-_Avoid_: lock, lease
-
-**Slot**:
-One of the places, `at_once` across every window, a working unattended run holds. A run waiting on
-a card, an approval or its pull request's status checks gives it up, so the next tick can start
-another.
-_Avoid_: lock, worker
-
-**Verdict**:
-What an unattended run left behind, judged by onehand rather than the agent: the pull request on
-its branch if one was opened, or how many commits its branch has past where it was cut.
-_Avoid_: result, review
-
-**Report**:
-What an issue is told when an unattended run ends: the verdict, the run's outcome, and what its
-last step ended on. Kept in the task's file until the issue has it, and sent again at every tick
-until it lands.
-_Avoid_: notification, status update
 
 ## Hosts
 

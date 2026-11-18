@@ -1,6 +1,5 @@
-//! The page's head — its name, *Refresh* and *New issue* — the
-//! row of search, open or closed and filters under it, and what the list
-//! cannot vouch for.
+//! The page's head — its name, *Refresh* and *New issue* — and the row of
+//! search, open or closed and filters under it.
 
 use super::IssuesView;
 use gpui::prelude::FluentBuilder as _;
@@ -11,16 +10,14 @@ use gpui::{
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::InputState;
 use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
-use onehand_core::issues;
-use onehand_core::task::work::list::{Filters, Incomplete, Listed, Progress};
+use onehand_core::task::work::list::{Filters, Listed};
 use onehand_ui::Named as _;
 use onehand_ui::Quiet as _;
 use onehand_ui::Short as _;
 use onehand_ui::ShortIcon as _;
 use onehand_ui::page_search;
 use onehand_ui::{
-    AppIcon, ControlSize, action, badge, choice, menu_below, menu_item, neutral_tint, picker,
-    status_ink, tint,
+    AppIcon, ControlSize, action, badge, choice, menu_below, menu_item, neutral_tint, picker, tint,
 };
 use std::path::PathBuf;
 
@@ -31,8 +28,7 @@ impl IssuesView {
     /// The page's head over the list, its name with *Refresh* and *New
     /// issue* at its end; and the row under it:
     /// the search, open or closed, each with its count after its word, and at
-    /// the row's end the progress, project and label filters, wrapping when
-    /// narrow.
+    /// the row's end the project and label filters, wrapping when narrow.
     pub(super) fn page_head(
         &self,
         listed: &Listed<'_>,
@@ -42,39 +38,6 @@ impl IssuesView {
         query: &Entity<InputState>,
         cx: &mut Context<Self>,
     ) -> (AnyElement, AnyElement) {
-        let progress = {
-            let picked = filters.progress;
-            let view = cx.entity();
-            menu_below(
-                "issues-page-progress",
-                // Unset, the trigger names what it filters by.
-                picker(
-                    "issues-page-progress-trigger",
-                    match picked {
-                        Progress::All => "Progress",
-                        picked => picked.label(),
-                    },
-                    picked != Progress::All,
-                    ControlSize::Short,
-                    cx,
-                ),
-                move |mut menu, _, _| {
-                    for choice in Progress::ALL {
-                        let view = view.clone();
-                        menu = menu.item(
-                            menu_item(choice.label())
-                                .checked(choice == picked)
-                                .on_click(move |_, _, cx: &mut App| {
-                                    view.update(cx, |view, cx| {
-                                        view.filter(|f| f.progress = choice, cx)
-                                    })
-                                }),
-                        );
-                    }
-                    menu
-                },
-            )
-        };
         let project = {
             let picked = filters.project.clone();
             let name = picked
@@ -162,18 +125,6 @@ impl IssuesView {
                 },
             )
         });
-        // The age of the pull request reading rides in the tooltip, so the
-        // button says what it does and when it last did it.
-        let read = self.work.prs_read_at().map_or_else(
-            || "Refresh".to_string(),
-            |at| {
-                format!(
-                    "Refresh (pull requests read {})",
-                    onehand_core::rel_time(issues::now(), at)
-                )
-            },
-        );
-        let pr_reading = self.work.prs_reading();
         let reading = listed.open + listed.closed == 0 && self.reading_issues(projects, cx);
         // The page's one primary at rest; what floats over the list (an issue,
         // a form) holds it while it shows, and this steps down under it.
@@ -226,12 +177,10 @@ impl IssuesView {
                             .short_icon()
                             .quiet_icon(false, cx)
                             .icon(Icon::new(AppIcon::Refresh))
-                            .loading(pr_reading)
-                            .named(read)
-                            .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
-                                view.read_prs(cx);
-                                cx.notify();
-                            })),
+                            .named("Read the issues again")
+                            .on_click(
+                                cx.listener(|view, _: &ClickEvent, _, cx| view.mark_stale(cx)),
+                            ),
                     ),
             )
             .child(
@@ -248,10 +197,8 @@ impl IssuesView {
             );
         // Anything narrowing the list but the tab, which is what is listed
         // rather than a filter on it.
-        let narrowed = !filters.query.is_empty()
-            || filters.progress != Progress::All
-            || filters.project.is_some()
-            || filters.label.is_some();
+        let narrowed =
+            !filters.query.is_empty() || filters.project.is_some() || filters.label.is_some();
         // Only while a filter is set, after the pickers, so nothing moves as
         // it comes and goes. A plain ghost: undoing a narrowing destroys
         // nothing, so it takes no danger ink.
@@ -290,7 +237,6 @@ impl IssuesView {
                     .flex_wrap()
                     .items_center()
                     .gap_2()
-                    .child(progress)
                     .child(project)
                     .children(label)
                     .children(clear),
@@ -298,81 +244,12 @@ impl IssuesView {
         (
             onehand_ui::page_head(
                 "Issues",
-                Some(
-                    "The issues of every project in this workspace, and the work on them"
-                        .into_any_element(),
-                ),
+                Some("The issues of every project in this workspace".into_any_element()),
                 vec![actions.into_any_element()],
                 cx,
             )
             .into_any_element(),
             filters.into_any_element(),
-        )
-    }
-
-    /// What the list cannot vouch for: the projects whose pull requests
-    /// could not be read, and under *Pull request open* the issues not read.
-    pub(super) fn page_notices(
-        &self,
-        listed: &Listed<'_>,
-        projects: &[(PathBuf, SharedString)],
-        cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        let warning = status_ink(cx).warning;
-        let reading = self.work.prs_reading();
-        let failed: Vec<String> = listed
-            .failed
-            .iter()
-            .filter_map(|root| projects.iter().find(|(r, _)| r == root))
-            .map(|(_, label)| label.to_string())
-            .collect();
-        if failed.is_empty() && listed.incomplete.is_none() {
-            return None;
-        }
-        // A stale reading or a project whose read failed is read again
-        // whole; otherwise the branches a capped read missed are looked up.
-        let again = !listed.failed.is_empty();
-        let incomplete = listed.incomplete.map(|Incomplete { not_read, stale }| {
-            let said = match not_read {
-                0 => "The reading is old; the list may be incomplete".to_string(),
-                1 => "1 issue not read; the list may be incomplete".to_string(),
-                n => format!("{n} issues not read; the list may be incomplete"),
-            };
-            div()
-                .h_flex()
-                .items_center()
-                .gap_1()
-                .child(div().flex_1().min_w_0().text_color(warning).child(said))
-                .child(
-                    action("issues-page-read-them")
-                        .short()
-                        .quiet(cx)
-                        .label("Read them")
-                        .loading(reading)
-                        .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
-                            if stale || again {
-                                view.read_prs(cx);
-                            } else {
-                                view.read_missing(cx);
-                            }
-                            cx.notify();
-                        })),
-                )
-        });
-        Some(
-            div()
-                .flex_none()
-                .v_flex()
-                .gap_0p5()
-                .text_xs()
-                .when(!failed.is_empty(), |notes| {
-                    notes.child(div().text_color(warning).child(format!(
-                        "Pull requests could not be read for {}",
-                        failed.join(", ")
-                    )))
-                })
-                .children(incomplete)
-                .into_any_element(),
         )
     }
 }

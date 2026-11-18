@@ -212,18 +212,13 @@ pub fn add_blocking(root: &Path, branch: &str, dir: &Path) -> Result<PathBuf, St
 /// directory such a branch gets, branched off `start`. The branch made and the
 /// directory git made. Blocking.
 ///
-/// The one way every run gets its worktree, whether an issue's claim found it
-/// or a person launched it: a branch left by an earlier run is never reused,
-/// and the directory is always where the rest of onehand looks for it.
-pub fn cut_blocking(
-    top: &Path,
-    wanted: &str,
-    start: &str,
-    taken: impl Fn(&str) -> Result<bool, String>,
-) -> Result<(String, PathBuf), String> {
-    let branch = crate::unattended::free_branch_blocking(top, wanted, taken)?;
+/// The one way every run gets its worktree, cut off `HEAD`: a branch left by
+/// an earlier run is never reused, and the directory is always where the
+/// rest of onehand looks for it.
+pub(crate) fn cut_blocking(top: &Path, wanted: &str) -> Result<(String, PathBuf), String> {
+    let branch = free_branch_blocking(top, wanted)?;
     let dir = worktree_dir(top, &branch);
-    let made = branch_off_blocking(top, &branch, &dir, start)?;
+    let made = branch_off_blocking(top, &branch, &dir, "HEAD")?;
     Ok((branch, made))
 }
 
@@ -260,9 +255,9 @@ fn worktree_add(root: &Path, dir: &Path, args: &[&std::ffi::OsStr]) -> Result<Pa
 /// Create a worktree of `root` at `dir` on a **new** branch cut from `start`.
 ///
 /// The other half of [`add_blocking`], for a caller that knows what the branch
-/// must start from rather than inheriting whatever the checkout has at HEAD —
-/// an unattended run, whose pull request would otherwise carry every commit of
-/// the branch the user happened to be on. Always `-b`: a name that already
+/// must start from rather than inheriting whatever the checkout has at HEAD,
+/// whose pull request would otherwise carry every commit of the branch the
+/// user happened to be on. Always `-b`: a name that already
 /// exists is git's refusal, since reusing it would start from someone else's
 /// work.
 pub(crate) fn branch_off_blocking(
@@ -283,19 +278,13 @@ pub(crate) fn branch_off_blocking(
     )
 }
 
-/// Bring `origin/<branch>` up to date in the repository at `root`.
+/// Put `commit` on `origin` as `branch`, and never by force: a branch that
+/// moved on the forge is refused rather than written over.
 ///
 /// The remote is `origin` by assumption, which is what a forge's own tools
-/// assume of a clone they did not make. It never waits on a person: a fetch that needs a
-/// password, a passphrase or a host key nobody is there to accept fails rather
-/// than asks.
-pub fn fetch_blocking(root: &Path, branch: &str) -> Result<(), String> {
-    with_origin_blocking(root, &["fetch", "--quiet", "origin", branch], "fetch")
-}
-
-/// Put `commit` on `origin` as `branch`, the way [`fetch_blocking`] reaches
-/// it, and never by force: a branch that moved on the forge is refused rather
-/// than written over.
+/// assume of a clone they did not make. It never waits on a person: a push
+/// that needs a password, a passphrase or a host key nobody is there to
+/// accept fails rather than asks.
 pub fn push_blocking(root: &Path, commit: &str, branch: &str) -> Result<(), String> {
     let refspec = format!("{commit}:refs/heads/{branch}");
     with_origin_blocking(root, &["push", "--quiet", "origin", &refspec], "push")
@@ -316,42 +305,6 @@ fn with_origin_blocking(root: &Path, args: &[&str], verb: &str) -> Result<(), St
         Ok(())
     } else {
         Err(git_message(&out.stderr))
-    }
-}
-
-/// Bring the branch checked out at `dir` up to `to` without a merge commit:
-/// refused when the two went their own ways, as git says.
-pub fn fast_forward_blocking(dir: &Path, to: &str) -> Result<(), String> {
-    let out = output_within(
-        git(dir).args(["merge", "--ff-only", "--quiet", to]),
-        LOCAL_LIMIT,
-    )
-    .map_err(|err| format!("git merge {err}"))?;
-    if out.status.success() {
-        Ok(())
-    } else {
-        Err(git_message(&out.stderr))
-    }
-}
-
-/// Whether the branch checked out at `dir` and `to` went their own ways:
-/// neither holds the other. One behind is brought up by a fast-forward, and
-/// one ahead, with commits not pushed yet, is up to date already.
-pub fn went_its_own_way_blocking(dir: &Path, to: &str) -> Result<bool, String> {
-    Ok(!ancestor_blocking(dir, "HEAD", to)? && !ancestor_blocking(dir, to, "HEAD")?)
-}
-
-/// Whether commit `old` is `new` or one of its ancestors.
-fn ancestor_blocking(dir: &Path, old: &str, new: &str) -> Result<bool, String> {
-    let out = output_within(
-        git(dir).args(["merge-base", "--is-ancestor", old, new]),
-        LOCAL_LIMIT,
-    )
-    .map_err(|err| format!("git merge-base {err}"))?;
-    match out.status.code() {
-        Some(0) => Ok(true),
-        Some(1) => Ok(false),
-        _ => Err(git_message(&out.stderr)),
     }
 }
 
@@ -529,9 +482,40 @@ pub fn git_message(stderr: &[u8]) -> String {
     }
 }
 
+/// `branch`, or the first of `branch-2` … `branch-99` the repository at
+/// `root` does not have yet and whose worktree folder is not on disk.
+///
+/// The folder is asked as well as the branch: a branch deleted by hand leaves
+/// its worktree folder behind, and `git worktree add` refuses a folder that is
+/// there. Past the last name it is an error, never a name nobody looked at.
+fn free_branch_blocking(root: &Path, branch: &str) -> Result<String, String> {
+    for name in std::iter::once(branch.to_string()).chain((2..=99).map(|n| format!("{branch}-{n}")))
+    {
+        if !branch_exists_blocking(root, &name) && !worktree_dir(root, &name).exists() {
+            return Ok(name);
+        }
+    }
+    Err(format!(
+        "every branch from `{branch}` to `{branch}-99` is taken"
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_branch_whose_worktree_folder_is_left_is_passed_over() {
+        let parent =
+            std::env::temp_dir().join(format!("onehand-left-folder-{}", std::process::id()));
+        let root = parent.join("proj");
+        std::fs::create_dir_all(worktree_dir(&root, "onehand/x")).unwrap();
+        assert_eq!(
+            free_branch_blocking(&root, "onehand/x"),
+            Ok("onehand/x-2".to_string())
+        );
+        std::fs::remove_dir_all(parent).unwrap();
+    }
 
     #[test]
     fn a_plain_name_is_accepted() {
@@ -756,61 +740,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_fast_forward_catches_up_and_refuses_a_branch_that_went_its_own_way() {
-        let git = |dir: &Path, args: &[&str]| {
-            std::process::Command::new("git")
-                .arg("-C")
-                .arg(dir)
-                .args(args)
-                .output()
-                .expect("git must be installed to run this test")
-        };
-        let commit = |dir: &Path, file: &str| {
-            std::fs::write(dir.join(file), file).unwrap();
-            git(dir, &["add", file]);
-            git(dir, &["commit", "-qm", file]);
-        };
-        let repo =
-            std::env::temp_dir().join(format!("onehand-fast-forwards-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&repo);
-        std::fs::create_dir_all(&repo).unwrap();
-        git(&repo, &["init", "-q", "-b", "main"]);
-        git(&repo, &["config", "user.email", "t@example.com"]);
-        git(&repo, &["config", "user.name", "T"]);
-        commit(&repo, "a");
-        git(&repo, &["branch", "theirs"]);
-        git(&repo, &["checkout", "-q", "theirs"]);
-        commit(&repo, "b");
-        git(&repo, &["checkout", "-q", "main"]);
-
-        assert_eq!(
-            went_its_own_way_blocking(&repo, "theirs"),
-            Ok(false),
-            "behind"
-        );
-        fast_forward_blocking(&repo, "theirs").unwrap();
-        assert!(repo.join("b").exists(), "main caught up with theirs");
-
-        // Ahead of it, with a commit never pushed: up to date, not apart.
-        commit(&repo, "c");
-        assert_eq!(
-            went_its_own_way_blocking(&repo, "theirs"),
-            Ok(false),
-            "ahead"
-        );
-        fast_forward_blocking(&repo, "theirs").unwrap();
-
-        git(&repo, &["checkout", "-q", "theirs"]);
-        commit(&repo, "d");
-        assert_eq!(went_its_own_way_blocking(&repo, "main"), Ok(true));
-        assert!(
-            fast_forward_blocking(&repo, "main").is_err(),
-            "two branches that went their own ways are never merged"
-        );
-        let _ = std::fs::remove_dir_all(&repo);
-    }
-
     /// The rename, against a real repository for the same reason: what it does
     /// is one argument order, and the two failures worth having are both git's
     /// rather than ours.
@@ -936,23 +865,14 @@ mod tests {
         git(&repo, &["add", "a.txt"]);
         git(&repo, &["commit", "-qm", "one"]);
 
-        let (first, made) = cut_blocking(&repo, "onehand/x", "HEAD", |_| Ok(false)).unwrap();
+        let (first, made) = cut_blocking(&repo, "onehand/x").unwrap();
         assert_eq!(first, "onehand/x");
         assert!(made.is_dir());
         // The name is now a branch here, so the next cut steps past it.
-        let (second, again) = cut_blocking(&repo, "onehand/x", "HEAD", |_| Ok(false)).unwrap();
+        let (second, again) = cut_blocking(&repo, "onehand/x").unwrap();
         assert_eq!(second, "onehand/x-2");
         assert_ne!(made, again);
-        // A name taken elsewhere is stepped past too, and a forge that cannot
-        // be asked is the error.
-        let (taken, third) =
-            cut_blocking(&repo, "onehand/y", "HEAD", |name| Ok(name == "onehand/y")).unwrap();
-        assert_eq!(taken, "onehand/y-2");
-        assert_eq!(
-            cut_blocking(&repo, "onehand/z", "HEAD", |_| Err("offline".into())).map(|c| c.0),
-            Err("offline".to_string())
-        );
-        for dir in [made, again, third] {
+        for dir in [made, again] {
             let _ = std::fs::remove_dir_all(dir);
         }
         let _ = std::fs::remove_dir_all(repo);

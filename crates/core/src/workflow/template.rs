@@ -3,6 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 /// The newest template layout this build reads and writes. A file carrying a
 /// higher number was written by a newer onehand, and is refused rather than
@@ -105,8 +106,8 @@ impl Template {
     /// validation refuses, so only a file edited by hand carries one, gives
     /// what a new workflow is given.
     pub fn timeout_limit(&self) -> std::time::Duration {
-        crate::unattended::parse_every(&self.timeout)
-            .or_else(|| crate::unattended::parse_every(&default_timeout()))
+        parse_every(&self.timeout)
+            .or_else(|| parse_every(&default_timeout()))
             .expect("the default timeout reads")
     }
 
@@ -364,5 +365,39 @@ impl GateKind {
             | (Self::Committed, Place::Worktree)
             | (Self::Uncommitted, Place::Checkout) => true,
         }
+    }
+}
+
+/// `"30m"`, `"2h"`, `"90s"` as a duration.
+///
+/// One number and one unit, nothing else. A zero is refused rather than read
+/// as "continuously": an interval of nothing is a tick loop, and a timeout of
+/// nothing cancels every run before its prompt goes in.
+pub fn parse_every(text: &str) -> Option<Duration> {
+    let text = text.trim();
+    let unit = text.chars().last()?;
+    let count: u64 = text[..text.len() - unit.len_utf8()].parse().ok()?;
+    let secs = match unit {
+        's' => count,
+        'm' => count.checked_mul(60)?,
+        'h' => count.checked_mul(3600)?,
+        _ => return None,
+    };
+    (secs > 0).then(|| Duration::from_secs(secs))
+}
+
+#[cfg(test)]
+mod every_tests {
+    use super::*;
+
+    #[test]
+    fn an_interval_is_a_number_and_a_unit() {
+        assert_eq!(parse_every("30m"), Some(Duration::from_secs(1800)));
+        assert_eq!(parse_every("2h"), Some(Duration::from_secs(7200)));
+        assert_eq!(parse_every(" 90s "), Some(Duration::from_secs(90)));
+        assert_eq!(parse_every("soon"), None);
+        assert_eq!(parse_every("0m"), None);
+        assert_eq!(parse_every("m"), None);
+        assert_eq!(parse_every(""), None);
     }
 }

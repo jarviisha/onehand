@@ -1,5 +1,4 @@
-//! An issue worked by hand in the checkout its project is open on, and what
-//! the Issues views are told of the work on every issue.
+//! An issue worked by hand in the checkout its project is open on.
 
 use super::Shell;
 use crate::chat::session::ChatEvent;
@@ -14,9 +13,8 @@ impl Shell {
     /// and say on issue `number` which session took it up.
     ///
     /// **No worktree, no branch, no run.** This is the checkout the person is
-    /// working in, so nothing here claims the issue, times the session out or
-    /// takes the project away afterwards: it is an ordinary session that was
-    /// handed its first message. The prompt goes once the agent is up, since
+    /// working in: it is an ordinary session that was handed its first
+    /// message. The prompt goes once the agent is up, since
     /// a session refuses one before; it is not sent at all if somebody typed
     /// into the session first, which makes it theirs. The issue hears about it
     /// once the agent has named the conversation, which is what lets the issue
@@ -85,53 +83,10 @@ impl Shell {
         .detach();
     }
 
-    /// Tell the Workbench where the work on the issues this window's projects
-    /// keep stands, and which projects a run may be started on, when either
-    /// changed since it was last told. Asked when the tasks move and when the git
-    /// sweep lands, which is also when the projects have changed.
-    pub(super) fn tell_issue_works(&mut self, cx: &mut Context<Self>) {
-        let kept: Vec<_> = self
-            .window
-            .workspace
-            .roots
-            .iter()
-            .filter_map(|root| {
-                let path = root.local_path()?;
-                Some((path.to_path_buf(), self.issues_file(path)?))
-            })
-            .collect();
-        let offered = self
-            .window
-            .workspace
-            .offered_for_runs(crate::unattended::set_up(cx));
-        let mut works = crate::task::issue_works(&kept, cx);
-        // Whether a retry with current settings would run an ended task with
-        // another timeout, which only the app can tell: it knows Settings.
-        for work in &mut works {
-            work.work.pressed = crate::task::pressed(&work.work.task, cx);
-        }
-        for work in works.iter_mut().filter(|work| !work.work.active()) {
-            let task = crate::task::task(&work.work.task, cx);
-            work.work.timeout_moved = task
-                .as_ref()
-                .is_some_and(|task| crate::unattended::timeout_moved(task, cx));
-            work.work.resume_refused = task
-                .filter(onehand_core::task::Task::resumable)
-                .and_then(|task| crate::task::resume_refused(&task, cx));
-        }
-        let told = (works, offered);
-        if told != self.issue_works {
-            self.workbench
-                .update(cx, |panel, cx| panel.issue_works(&told.0, &told.1, cx));
-            self.tell_issues_page(
-                &onehand_workbench::Request::IssueWork {
-                    works: &told.0,
-                    offered: &told.1,
-                },
-                cx,
-            );
-            self.issue_works = told;
-        }
+    /// Tell the pages that list projects which projects this window has:
+    /// asked when the git sweep lands, which is also when the projects have
+    /// changed.
+    pub(super) fn tell_pages_projects(&mut self, cx: &mut Context<Self>) {
         self.tell_issues_page_projects(cx);
         self.tell_workflows_page_projects(cx);
     }

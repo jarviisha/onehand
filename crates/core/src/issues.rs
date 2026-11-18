@@ -734,5 +734,43 @@ impl LabelKind {
     }
 }
 
+/// The brief for working issue `number` of the ones `root` keeps in `file`,
+/// with a person watching: its title and body, and which issue it is, named
+/// on the forge `forge` when the file is kept in step with it. Nothing is
+/// asked of the agent about working alone, since somebody is there to answer
+/// it. Blocking: it reads the file.
+///
+/// Only the project's own issues are read, never its forge's: an issue
+/// brought in from a forge the file is no longer kept in step with may have
+/// been written by anybody, and its text would go into the prompt word for
+/// word.
+pub fn supervised_brief_blocking(
+    file: Option<PathBuf>,
+    forge: Option<&'static dyn crate::connector::Connector>,
+    number: u64,
+) -> Result<crate::workflow::Brief, String> {
+    let file = file.ok_or("this workspace keeps no issues of its own")?;
+    let kept = load_blocking(&file)?;
+    let synced = forge.filter(|forge| kept.in_step_with(forge.name()));
+    let issue = kept
+        .get(number)
+        .filter(|issue| issue.open && (synced.is_some() || issue.written_here()))
+        .ok_or_else(|| {
+            format!(
+                "issue {number} cannot be worked: there is none open, or it was brought in \
+                 from a forge the project is no longer kept in step with"
+            )
+        })?;
+    let names = match synced.and_then(|forge| Some((forge, issue.link_on(forge.name())?))) {
+        Some((forge, link)) => format!("{} issue {}", forge.name(), link.reference),
+        None => format!("issue #{number}, which is kept in onehand rather than on a forge"),
+    };
+    Ok(crate::workflow::Brief {
+        title: issue.title.clone(),
+        body: issue.body.trim().to_string(),
+        instructions: Some(format!("This is {names}.")),
+    })
+}
+
 #[cfg(test)]
 mod tests;

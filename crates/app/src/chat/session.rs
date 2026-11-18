@@ -413,16 +413,6 @@ impl ChatSession {
     }
 }
 
-/// Add a line to session's transcript in onehand's own voice: what a run
-/// driving the session did, for the person reading it.
-pub(crate) fn note(session: &Entity<ChatSession>, text: String, cx: &mut App) {
-    session.update(cx, |session, cx| {
-        let fx = session.chat.note(text);
-        session.carry(fx, cx);
-        cx.notify();
-    });
-}
-
 impl ChatSession {
     /// Spawn `spec` against `root` and start folding its events into a fresh
     /// transcript.

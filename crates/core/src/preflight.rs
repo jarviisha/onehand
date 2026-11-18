@@ -1,16 +1,13 @@
-//! What a start checks before it claims an issue, cuts a worktree or starts
-//! an agent, and what it found.
+//! What a start checks before it cuts a worktree or starts an agent, and
+//! what it found.
 //!
 //! **It judges the configuration that will actually run.** A new start runs
 //! what Settings says now; a Resume or a Retry runs the run's own setup, so a
 //! setting changed since does not clear what blocks it. The app gathers the
 //! facts (nothing here reads the disk or the network), and draws what comes
-//! back where the start is asked for; the callers that claim and cut still do
-//! that themselves, after this.
+//! back where the start is asked for; the callers that cut still do that
+//! themselves, after this.
 
-use crate::connector::PrState;
-use crate::task::{Task, Tracked, Working};
-use crate::unattended::{Issue, Slots, Tracker};
 use crate::workflow::{Failure, Offer, Place, StepKind, Template};
 
 /// What kind of start is checked: each has its own configuration and place.
@@ -19,8 +16,6 @@ pub enum Kind {
     /// From the launcher: the workflow picked, cut off `HEAD` when it works
     /// on a worktree.
     NewRun,
-    /// An issue picked by hand or found by its label, on a new worktree.
-    NewIssueRun,
     /// A run cut off, carried on where it stopped, on its own snapshot.
     Resume,
     /// A task's next run, on its last run's own snapshot and setup.
@@ -29,10 +24,6 @@ pub enum Kind {
     /// its newest version, judged as a new one is, on the configuration a
     /// new task of its kind would take.
     RetryCurrent,
-    /// An issue task's next run answering the review on its open pull
-    /// request, from its workflow's repair step, on its own snapshot and
-    /// setup, in its own worktree brought up to the forge's branch.
-    AnswerReview,
 }
 
 impl Kind {
@@ -40,8 +31,8 @@ impl Kind {
     /// neither blocks it nor clears a block.
     fn keeps_own(self) -> bool {
         match self {
-            Self::Resume | Self::Retry | Self::AnswerReview => true,
-            Self::NewRun | Self::NewIssueRun | Self::RetryCurrent => false,
+            Self::Resume | Self::Retry => true,
+            Self::NewRun | Self::RetryCurrent => false,
         }
     }
 
@@ -49,8 +40,8 @@ impl Kind {
     /// run has already started on.
     fn judges_workflow(self) -> bool {
         match self {
-            Self::NewRun | Self::NewIssueRun | Self::RetryCurrent => true,
-            Self::Resume | Self::Retry | Self::AnswerReview => false,
+            Self::NewRun | Self::RetryCurrent => true,
+            Self::Resume | Self::Retry => false,
         }
     }
 
@@ -61,10 +52,10 @@ impl Kind {
                 " The run keeps its own setup; Retry with current settings runs with what \
                  Settings say now."
             }
-            Self::Resume | Self::AnswerReview => {
+            Self::Resume => {
                 " The run keeps its own setup, so changing Settings does not change it."
             }
-            Self::NewRun | Self::NewIssueRun | Self::RetryCurrent => "",
+            Self::NewRun | Self::RetryCurrent => "",
         }
     }
 
@@ -73,11 +64,7 @@ impl Kind {
     fn own_change(self) -> Option<Change> {
         match self {
             Self::Retry => Some(Change::RetryCurrent),
-            Self::NewRun
-            | Self::NewIssueRun
-            | Self::Resume
-            | Self::RetryCurrent
-            | Self::AnswerReview => None,
+            Self::NewRun | Self::Resume | Self::RetryCurrent => None,
         }
     }
 }
@@ -126,9 +113,6 @@ pub enum About {
     Place,
     Base,
     Forge,
-    Issue,
-    EarlierTask,
-    Slot,
     PlaceTaken,
     Limits,
 }
@@ -142,8 +126,6 @@ pub struct Finding {
     pub text: String,
     /// Where it is changed, when that is somewhere else.
     pub change: Option<Change>,
-    /// The task it offers instead, for an earlier task worth retrying.
-    pub task: Option<String>,
     /// *Check the agent* now might clear it: it says what is not known only
     /// because the agent itself has not come up, never what a particular
     /// step would still need its own check for.
@@ -157,36 +139,6 @@ pub struct Forge {
     pub name: String,
     pub account: Option<Result<String, String>>,
 }
-
-/// The issue a start works, as a sentence names it, and its tasks with what
-/// each is doing.
-#[derive(Debug, Clone)]
-pub struct IssueFacts {
-    pub named: String,
-    pub tasks: Vec<Tracked>,
-}
-
-/// What answering a pull request review knows of it, read off the UI thread
-/// before anything is claimed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReviewFacts {
-    /// The pull request on the task's branch as the forge says now, by its
-    /// state and address; `None` when there is none, `Err` when it could not
-    /// be read.
-    pub pr: Result<Option<(PrState, String)>, String>,
-    /// The workflow its task ran answers a review: its status checks send
-    /// back to a step that repairs.
-    pub answers: bool,
-    /// The branch on the forge went its own way from the task's worktree, so
-    /// bringing the worktree up to it is no fast-forward.
-    pub diverged: bool,
-    /// The issue is among the open ones a pick reads, which is what a review
-    /// is answered through; `Err` when they could not be read.
-    pub issue_open: Result<bool, String>,
-}
-
-/// The branch a detached `HEAD` reads as.
-pub const DETACHED: &str = "(detached)";
 
 /// What the app knows when a start is asked for.
 #[derive(Debug, Clone)]
@@ -206,21 +158,13 @@ pub struct Facts {
     pub has_check: bool,
     /// The project is in git.
     pub in_git: bool,
-    /// The branch checked out, [`DETACHED`] when there is none.
-    pub checked_out: Option<String>,
     /// The forge the work goes to, `None` on a project no forge serves.
     pub forge: Option<Forge>,
     /// Which forge serves the project has been read: until it has, `None`
     /// above says nothing.
     pub forge_read: bool,
-    /// The issue it works, for an issue's start.
-    pub issue: Option<IssueFacts>,
-    /// The slots, for an issue's start.
-    pub slots: Option<Slots>,
     /// The task whose place this start would queue behind.
     pub queued_behind: Option<String>,
-    /// The pull request a review is answered on, for that start.
-    pub review: Option<ReviewFacts>,
     /// A person's own session working in the checkout the start works in,
     /// by its name.
     pub shared_checkout: Option<String>,
@@ -240,7 +184,6 @@ pub fn refusal(kind: Kind, facts: &Facts) -> Option<String> {
 pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
     let mut found = Vec::new();
     let (own, keeps, own_change) = (kind.keeps_own(), kind.keeps(), kind.own_change());
-    let issue_kind = kind == Kind::NewIssueRun;
 
     // The workflow.
     let template = match &facts.workflow {
@@ -251,9 +194,6 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
         }
     };
     if let Some(template) = template.filter(|_| kind.judges_workflow()) {
-        if let Some(why) = unfit_for_issue(template).filter(|_| issue_kind) {
-            found.push(finding(About::Workflow, true, capital(&why), None));
-        }
         for problem in crate::workflow::validate(template) {
             found.push(finding(
                 About::Workflow,
@@ -284,10 +224,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
     // has not come up: the step settings below then say nothing more of it.
     let mut mode_unknown = false;
     if let Some(mode) = facts.mode.as_deref().filter(|m| !m.trim().is_empty()) {
-        let change = match own {
-            true => own_change,
-            false => Some(Change::At("unattended.mode, in the config file")),
-        };
+        let change = own_change;
         match &facts.offered {
             Some(offered) => {
                 if let Some(why) = mode_refused(mode, &offered.modes) {
@@ -352,7 +289,6 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
     }
 
     // Where it works, and what the branch is cut off.
-    let detached = facts.checked_out.as_deref() == Some(DETACHED);
     let worktree = template.is_some_and(|t| t.place == Place::Worktree);
     match kind {
         Kind::NewRun if worktree && !facts.in_git => found.push(finding(
@@ -381,34 +317,10 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
                 ));
             }
         }
-        Kind::NewIssueRun => match (&facts.forge, detached, &facts.checked_out) {
-            (Some(_), _, _) => found.push(finding(
-                About::Base,
-                false,
-                "The branch is cut off the default branch on `origin`, fetched first.".to_string(),
-                None,
-            )),
-            (None, true, _) => found.push(finding(
-                About::Place,
-                true,
-                "HEAD is detached and no forge serves the project, so there is no branch to \
-                 cut the worktree from."
-                    .to_string(),
-                None,
-            )),
-            (None, false, Some(branch)) => found.push(finding(
-                About::Base,
-                false,
-                format!("The branch is cut off `{branch}`, the branch checked out."),
-                None,
-            )),
-            (None, false, None) => {}
-        },
-        Kind::NewRun | Kind::Resume | Kind::Retry | Kind::RetryCurrent | Kind::AnswerReview => {}
+        Kind::NewRun | Kind::Resume | Kind::Retry | Kind::RetryCurrent => {}
     }
 
-    // The forge: an issue's run asks it for the default branch whatever its
-    // steps; any other run needs it only for forge steps.
+    // The forge, which only forge steps need.
     let forge_steps = template.is_some_and(|t| {
         t.steps.iter().any(|step| match step.kind {
             StepKind::Push | StepKind::PullRequest | StepKind::StatusChecks { .. } => true,
@@ -419,7 +331,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
         Some(Forge {
             name,
             account: Some(Err(why)),
-        }) if issue_kind || forge_steps => Some((name, why)),
+        }) if forge_steps => Some((name, why)),
         _ => None,
     };
     if let Some((name, why)) = refused {
@@ -430,8 +342,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             Some(Change::At(CONNECTIONS)),
         ));
     }
-    // Answering a review on no forge is refused below, and never told twice.
-    if forge_steps && facts.forge_read && facts.forge.is_none() && kind != Kind::AnswerReview {
+    if forge_steps && facts.forge_read && facts.forge.is_none() {
         found.push(finding(
             About::Forge,
             false,
@@ -462,42 +373,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
         ));
     }
 
-    // The pull request a review is answered on.
-    if let Some(review) = facts.review.as_ref().filter(|_| kind == Kind::AnswerReview) {
-        if let Some(why) = review_refused(review, facts.forge.is_some()) {
-            found.push(finding(About::Issue, true, capital(&why), None));
-        }
-    }
-
-    // The issue and its earlier tasks.
-    if let Some(issue) = facts.issue.as_ref().filter(|_| issue_kind) {
-        if issue.tasks.iter().any(|(_, working)| working.is_some()) {
-            found.push(finding(
-                About::Issue,
-                true,
-                already_working(&issue.named),
-                None,
-            ));
-        } else if let Some((task, said)) = earlier_ended(&issue.tasks) {
-            found.push(Finding {
-                task: Some(task),
-                ..finding(
-                    About::EarlierTask,
-                    false,
-                    format!(
-                        "The issue's last task ended: {said}. Starting makes a second task \
-                         beside it; retry that one to carry its work on."
-                    ),
-                    None,
-                )
-            });
-        }
-    }
-
-    // The slots and the place.
-    if let Some(why) = facts.slots.as_ref().and_then(Slots::full) {
-        found.push(finding(About::Slot, true, why, None));
-    }
+    // The place.
     if let Some(ahead) = &facts.queued_behind {
         found.push(finding(
             About::PlaceTaken,
@@ -519,7 +395,6 @@ fn finding(about: About, blocks: bool, text: String, change: Option<Change>) -> 
         blocks,
         text,
         change,
-        task: None,
         checkable: false,
     }
 }
@@ -543,54 +418,6 @@ pub fn queued_behind_for(place: Place, holder: Option<String>) -> Option<String>
     }
 }
 
-/// Why a review is not answered, in the words the label path uses where it
-/// has them; `None` when it can be.
-fn review_refused(review: &ReviewFacts, forge: bool) -> Option<String> {
-    if !forge {
-        return Some(
-            "no forge serves the project, so there is no pull request review to answer".to_string(),
-        );
-    }
-    let (state, url) = match &review.pr {
-        Err(why) => return Some(format!("the pull request could not be read: {why}")),
-        Ok(None) => return Some("there is no pull request on the task's branch".to_string()),
-        Ok(Some(pr)) => pr,
-    };
-    match state {
-        PrState::Closed => Some(crate::unattended::review_closed(url)),
-        PrState::Merged => Some(format!(
-            "its pull request {url} was merged: there is no review left to answer"
-        )),
-        PrState::Open if !review.answers => Some(crate::unattended::review_unanswerable(url)),
-        PrState::Open if review.diverged => Some(crate::unattended::review_diverged()),
-        PrState::Open => match &review.issue_open {
-            Ok(true) => None,
-            Ok(false) => {
-                Some("the issue is closed, or not among the open issues a pick reads".to_string())
-            }
-            Err(why) => Some(format!("the issue could not be read: {why}")),
-        },
-    }
-}
-
-/// Why `template` cannot work an issue: it works in the checkout, and an
-/// issue's run is cut a worktree of its own, where a checkout workflow leaves
-/// its work uncommitted where nobody looks.
-pub fn unfit_for_issue(template: &Template) -> Option<String> {
-    (template.place != Place::Worktree).then(|| {
-        format!(
-            "the workflow `{}` works in the checkout, and an issue is worked on a worktree \
-             of its own",
-            template.name
-        )
-    })
-}
-
-/// Why the issue `named` is not started again: a run already works on it.
-pub fn already_working(named: &str) -> String {
-    format!("A run is already working on issue {named}.")
-}
-
 /// What a run fails on when what `about` would have blocked is found only
 /// once it runs: a configuration failure is a preflight block found late,
 /// so the way out offered is the one that changes the configuration.
@@ -600,13 +427,7 @@ pub fn found_late(about: About) -> Failure {
             Failure::Configuration
         }
         About::Forge => Failure::Forge,
-        About::Place
-        | About::Base
-        | About::Issue
-        | About::EarlierTask
-        | About::Slot
-        | About::PlaceTaken
-        | About::Limits => Failure::Other,
+        About::Place | About::Base | About::PlaceTaken | About::Limits => Failure::Other,
     }
 }
 
@@ -621,89 +442,10 @@ pub fn mode_refused(mode: &str, offered: &[String]) -> Option<String> {
     })
 }
 
-/// The issue's newest task, when it ended on something nobody chose and
-/// nothing works on it now: its id, and how it ended.
-fn earlier_ended(tasks: &[(Task, Option<Working>)]) -> Option<(String, String)> {
-    let (task, working) = tasks.iter().max_by_key(|(task, _)| task.recency())?;
-    if working.is_some() || !task.group(*working).needs_attention() {
-        return None;
-    }
-    let said = crate::task::work::Work::of(task, None, None).said;
-    Some((task.id.clone(), lower(&said)))
-}
-
-/// What a new issue run knows of the project it works in.
-pub struct ProjectFacts {
-    pub has_check: bool,
-    /// The branch checked out, `None` outside git.
-    pub checked_out: Option<String>,
-    pub forge: Option<Forge>,
-}
-
-/// A new issue run of `workflow` on `issue` in `tracker`, in `project`, over
-/// what every run shares, with those of `tasks` that worked the issue: the
-/// one assembly a window and the search both use.
-pub fn new_issue_run(
-    common: Facts,
-    workflow: Result<Template, String>,
-    tracker: &Tracker,
-    issue: &Issue,
-    project: ProjectFacts,
-    tasks: Vec<Tracked>,
-) -> Facts {
-    Facts {
-        workflow,
-        has_check: project.has_check,
-        in_git: project.checked_out.is_some(),
-        checked_out: project.checked_out,
-        forge: project.forge,
-        issue: Some(on_issue(tracker, issue, tasks)),
-        ..common
-    }
-}
-
-/// `issue` in `tracker`, named, with those of `tasks` that worked it.
-fn on_issue(tracker: &Tracker, issue: &Issue, tasks: Vec<Tracked>) -> IssueFacts {
-    let at = tracker.to_ref();
-    IssueFacts {
-        named: tracker.named(issue),
-        tasks: tasks
-            .into_iter()
-            .filter(|(task, _)| {
-                task.issue()
-                    .is_some_and(|i| i.tracker == at && i.number == issue.number)
-            })
-            .collect(),
-    }
-}
-
-/// The branch checked out at `root`, [`DETACHED`] when none is, or `None`
-/// outside git. Blocking: it asks git.
-pub(crate) fn checked_out_blocking(root: &std::path::Path) -> Option<String> {
-    crate::worktree::repo_top_blocking(root)?;
-    Some(crate::worktree::current_branch_blocking(root).unwrap_or_else(|_| DETACHED.to_string()))
-}
-
-/// What a new task's report says of the issue's last one, when it ended on
-/// something nobody chose: the run started anyway, beside it.
-pub fn earlier_note(tasks: &[(Task, Option<Working>)]) -> Option<String> {
-    let (_, said) = earlier_ended(tasks)?;
-    Some(format!(
-        "An earlier task on this issue ended: {said}. Its worktree is kept."
-    ))
-}
-
 fn capital(text: &str) -> String {
     let mut chars = text.chars();
     chars.next().map_or_else(String::new, |first| {
         first.to_uppercase().chain(chars).collect()
-    })
-}
-
-fn lower(text: &str) -> String {
-    let mut chars = text.chars();
-    chars.next().map_or_else(String::new, |first| {
-        first.to_lowercase().chain(chars).collect()
     })
 }
 

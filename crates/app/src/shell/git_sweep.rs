@@ -123,7 +123,7 @@ impl Shell {
         // repository", which decides whether its page offers to split it
         // into a worktree.
         self.sync_project_facts(cx);
-        self.tell_issue_works(cx);
+        self.tell_pages_projects(cx);
         cx.notify();
     }
 

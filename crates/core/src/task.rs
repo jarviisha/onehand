@@ -18,22 +18,42 @@ pub mod queue;
 pub mod tasks;
 pub mod work;
 
-pub use launch::{cut_blocking, on_agent, Launch, Starting, Worktree};
+pub use launch::{
+    cut_blocking, now_for, offered, on_agent, run_spec, target_dir, Launch, Starting, Worktree,
+};
 
-use crate::unattended::IssueSource;
 use crate::workflow::{
     ApprovalAt, Brief, Outcome, Run, Setup, StepKind, StepSpec, Stop, Template, WithCurrent,
 };
 use serde::{Deserialize, Serialize};
 
-/// What a task runs: a workflow a person picked, the project's check command
-/// on its own, which needs no session, or an issue worked unattended.
+/// What a task runs: a workflow a person picked, or the project's check
+/// command on its own, which needs no session.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "Kept")]
 pub enum Source {
     #[default]
     Workflow,
     Check,
-    Issue(IssueSource),
+}
+
+/// [`Source`] as a task file may hold it. Builds that ran issues unattended
+/// wrote `Issue` with what they kept of it; such a task reads back as the
+/// workflow it ran, so its history stays listed.
+#[derive(Deserialize)]
+enum Kept {
+    Workflow,
+    Check,
+    Issue(serde::de::IgnoredAny),
+}
+
+impl From<Kept> for Source {
+    fn from(kept: Kept) -> Self {
+        match kept {
+            Kept::Workflow | Kept::Issue(_) => Self::Workflow,
+            Kept::Check => Self::Check,
+        }
+    }
 }
 
 /// A person's answer to the approval task `task`'s run waits on, drawn from
@@ -205,18 +225,6 @@ impl Task {
         self.origin.as_ref()
     }
 
-    /// Its runs, to change, for a test that sets a run where it needs it.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn runs_mut(&mut self) -> &mut Vec<Run> {
-        &mut self.runs
-    }
-
-    /// The task as working `source`, for a test.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn with_source(self, source: Source) -> Self {
-        Self { source, ..self }
-    }
-
     /// A task of `template` on `brief`, its one run not started.
     pub fn new(id: String, template: Template, brief: Brief, setup: Setup) -> Self {
         Self {
@@ -229,21 +237,6 @@ impl Task {
             source: Source::Workflow,
             origin: None,
             grant: Grant::default(),
-        }
-    }
-
-    /// A task of `template` on `brief` that works `issue`, its one run not
-    /// started.
-    pub fn of_issue(
-        id: String,
-        template: Template,
-        brief: Brief,
-        setup: Setup,
-        issue: IssueSource,
-    ) -> Self {
-        Self {
-            source: Source::Issue(issue),
-            ..Self::new(id, template, brief, setup)
         }
     }
 
@@ -271,31 +264,12 @@ impl Task {
         }
     }
 
-    /// A retry refused before it began: its run is dropped and the task is as
-    /// it was. The task's first run is never dropped this way, since without
-    /// it the task was never anything. Whether a run was dropped.
-    pub(crate) fn drop_unbegun_retry(&mut self) -> bool {
-        let unbegun = self.runs.len() > 1 && self.runs.last().is_some_and(|run| !run.begun());
-        if unbegun {
-            self.runs.pop();
-        }
-        unbegun
-    }
-
     /// The last run, taken off the task, when it never began: a task stopped
     /// before it ran a step keeps no empty run, and is over.
     pub(crate) fn take_unbegun(&mut self) -> Option<Run> {
         match self.runs.last().is_some_and(|run| !run.begun()) {
             true => self.runs.pop(),
             false => None,
-        }
-    }
-
-    /// The issue it works, if it was started from one.
-    pub fn issue(&self) -> Option<&IssueSource> {
-        match &self.source {
-            Source::Issue(issue) => Some(issue),
-            Source::Workflow | Source::Check => None,
         }
     }
 
@@ -369,12 +343,6 @@ impl Task {
         self.runs.last()
     }
 
-    /// Whether it can have a pull request review at all: an issue's task on a
-    /// branch a forge serves.
-    pub fn reviewable(&self) -> bool {
-        self.issue().is_some() && self.setup.forge.is_some() && self.setup.branch.is_some()
-    }
-
     /// Whether one of its runs opened, or took up, a pull request: one kept
     /// it, or, from before runs kept it, a pull request step's visit ended
     /// with the forge having done it.
@@ -390,17 +358,6 @@ impl Task {
                             .any(|step| step.id == visit.step && step.kind == StepKind::PullRequest)
                 })
         })
-    }
-
-    /// Whether a review on its pull request can be answered: one it can have
-    /// ([`Task::reviewable`]), its last run's workflow repairing what the
-    /// status checks find, which is where a review is answered from.
-    pub fn answers_reviews(&self) -> bool {
-        self.reviewable()
-            && self
-                .runs
-                .last()
-                .is_some_and(|run| run.template.repair_step().is_some())
     }
 
     /// How it stands: its last run's outcome, `None` while that run has not
@@ -441,7 +398,7 @@ impl Task {
                     None => "Stopped".to_string(),
                 },
             },
-            Source::Workflow | Source::Issue(_) => match self.runs.last() {
+            Source::Workflow => match self.runs.last() {
                 Some(run) => outcome.said_in(&run.template),
                 None => outcome.said(),
             },

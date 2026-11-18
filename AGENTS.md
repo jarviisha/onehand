@@ -35,7 +35,6 @@ The features that span core and app, each as built:
 
 - [docs/workflows.md](docs/workflows.md): workflows, the run engine, and the run's drive and carrier.
 - [docs/tasks.md](docs/tasks.md): the Tasks page and the task model behind it.
-- [docs/unattended.md](docs/unattended.md): unattended runs end to end.
 - [docs/agents.md](docs/agents.md): built-in and declared agents, presets and their migration.
 - [docs/control.md](docs/control.md): the socket beside the instance lock, a second launch, and
   onehand's tools for an outside program or a session's agent.
@@ -76,7 +75,7 @@ Availability or installation does not authorize a skill's side effects.
 |---|---|
 | `ui` | Any visible change (tokens, controls, layout, states, keys and words) and, before it is finished, the checklist and the checks. |
 | `drive` | Only when the owner asks to test in the app: it runs onehand in a headless sway session and drives it end to end. Unrelated to a *drive*, the glossary's term. |
-| Matt Pocock review, debugging, domain modeling | Use for the requested concern; keep the existing glossary and document ownership. Tracker/triage workflows publish to this repository's GitHub issues: a spec gets `ready-for-agent`, never `auto` (the trigger label: an unattended run would claim it). A proposal under `docs/proposals/` keeps its own table of which step has a spec. |
+| Matt Pocock review, debugging, domain modeling | Use for the requested concern; keep the existing glossary and document ownership. Tracker/triage workflows publish to this repository's GitHub issues: a spec gets `ready-for-agent`. A proposal under `docs/proposals/` keeps its own table of which step has a spec. |
 | Matt Pocock `setup-pre-commit`, TypeScript setup | Do not apply npm/Husky/Prettier or TypeScript defaults to this Rust workspace. Use the Makefile and Cargo checks. |
 | `ponytail` | Simplify within the requested behaviour. Preserve the module seams, guards, rendering bounds and deliberate exceptions; fewer files is not a reason to bypass them. |
 | `ui-ux-pro-max` | General UX guidance only; it has no GPUI stack. Adapt recommendations to `DESIGN.md`, not a generated palette or a second design-system document. |
@@ -127,7 +126,7 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 | Path | Crate | What |
 |---|---|---|
 | `crates/app` | `onehand` | GPUI front end + binary (`main.rs` is ~25 lines; logic lives in the lib) |
-| `crates/core` | `onehand-core` | GUI-free logic: config, workspace tree, ACP client, chat model, remote bridge, connectors, issues, the Editor's files, Claude Code's plugin command line, git status, worktrees, the workflow engine, tasks, unattended runs, the Workbench mode contract's GUI-free half (`workbench`) |
+| `crates/core` | `onehand-core` | GUI-free logic: config, workspace tree, ACP client, chat model, remote bridge, connectors, issues, the Editor's files, Claude Code's plugin command line, git status, worktrees, the workflow engine, tasks, the Workbench mode contract's GUI-free half (`workbench`) |
 | `crates/ui` | `onehand-ui` | what every crate draws with, as the app does: the button wrapper and its `Quiet`/`Short`/`Tall` traits, `text_input`, `search_input` and `text_area`, menu rows and `menu_below`, `choice` and `switch`, status ink, dock surface, the shared sizes |
 | `crates/workbench` | `onehand-workbench` | how a Workbench mode is mounted in GPUI: `WorkbenchMode`, `Asker`, re-exporting core's `WorkbenchModeSpec`, `ModeId`, `Request` (what the panel tells its modes) and `Ask` (what a mode asks of the panel) |
 | `crates/terminal-ui` | `onehand-terminal-ui` | PTY/grid ownership shared by the terminal dock and Neovim |
@@ -182,7 +181,7 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   `entity.update`. Native dialogs, directory scans and file reads never run inline in a render or
   action handler.
 - Data model: `Shared` (the process-wide global: agent menu, recents, keymap, ACP runtime,
-  remote bridge, unattended runs, among others) → `Shell` per window →
+  remote bridge, among others) → `Shell` per window →
   `Workspace { roots }` → `ProjectRoot { sessions }` → `Session { spec, uid }`. Sessions connect
   lazily, on first show. The open windows are `crate::windows`'s alone: reach another window's
   shell, a session by uid or a project's windows through it.
@@ -233,8 +232,6 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 - **Overlay layers:** `gpui_component::init` registers the sheet, dialog and toast layers as a
   `Root` plugin, and a root copies the plugins registered when it is built: `init`, and the app's
   own plugin (`KeyRelease`), run before the first window. The layers sit beside the shell, not in it.
-- **Unattended teardown:** a run's project is dropped with `WorkspaceDrive::end_run` (over
-  `forget`), never `remove`, which re-shows the active session and steals the caret.
 - **Transcripts:** `items.jsonl` is append-only and written at every turn end. A rename writes
   metadata only (`Chat::flush_meta`).
 - **Telegram token:** never in `onehand.toml`, which settings write into and people paste into reports. It comes from

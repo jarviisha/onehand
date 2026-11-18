@@ -26,7 +26,7 @@ Every session is an ACP agent, started from an entry in the agent list (`[[agent
   install it again, or remove Codex in Settings ▸ Agents ``. Without the check one adapter hangs at
   the first prompt and another dies with its reason on stderr only.
 - **The transcript, diffs, permission and question cards, modes, the model/effort/fast chips,
-  resume, workflow steps and unattended runs work alike for both**, with the known differences
+  resume, workflow steps and lead workers work alike for both**, with the known differences
   below.
 
 ## Presets
@@ -38,7 +38,7 @@ Every session is an ACP agent, started from an entry in the agent list (`[[agent
 | Adapter | `@agentclientprotocol/claude-agent-acp`, pinned at 0.81.2 | `@agentclientprotocol/codex-acp`, pinned at 2.2.2 | none; tried with Copilot 1.0.102, which updates itself |
 | Binary | `claude` | `codex` | `copilot` |
 | Variable pointing the adapter at it | `CLAUDE_CODE_EXECUTABLE` | `CODEX_PATH` | none |
-| Unattended mode when the config names none | `acceptEdits` | its own default (*Auto review*) | its own default (*Agent*), which asks before every step; see unattended runs |
+| A lead's worker's mode (`worker_mode`) | `acceptEdits` | its own default (*Auto review*) | its own default (*Agent*), which asks before every step |
 | Effort and fast groups | `effort`, `fast` | `reasoning_effort`, `fast-mode` | none |
 
 The presets live in code (`crates/core/src/config/agent.rs`). The config names one by id and never
@@ -101,7 +101,7 @@ with the first save. A list the person wrote, even `agents = []`, is never looke
   process's, shown in every window's Settings, and filed under the command line, so a rename keeps
   it and an edit of the line drops it. A second press while one runs starts nothing.
 - **The default:** the first row, marked *Default*, is what *New session*, a new project's first
-  session, an unattended run with no `unattended.agent` and a workflow step naming no agent use.
+  session, and a task or workflow step naming no agent use.
 
 ## Migration
 
@@ -115,10 +115,7 @@ A config is settled every time it is read, and a save writes the settled list
   written and keeps working. Any other entry stays as written.
 - A preset with no name takes its shown name; a name already taken earlier in the list gets ` (2)`,
   ` (3)`…, so no entry is dropped.
-- `unattended.mode = "acceptEdits"`, the old default written into every file, is dropped when runs
-  use a built-in agent, which knows its own mode; for a declared agent it is kept. The old default
-  left declared still counts as Claude Code for that mode, and the mode is read when each run starts,
-  so making another agent the default changes it.
+- An `[unattended]` table left by an earlier build is ignored, and dropped at the next save.
 
 ## Not logged in
 
@@ -170,7 +167,7 @@ declared agent sending either gets the same card.
   Codex's plugins and skills (`codex plugin`, `~/.codex/skills`) are loaded by Codex itself and not
   managed in onehand.
 - **Copilot's mode ids are URLs** (`https://agentclientprotocol.com/protocol/session-modes#agent`,
-  `#plan`, `#autopilot`). The chip and its menu show each mode's name; a workflow step or
-  `unattended.mode` naming one writes the whole id.
+  `#plan`, `#autopilot`). The chip and its menu show each mode's name; a workflow step naming
+  one writes the whole id.
 - **Copilot offers an *Allow All* switch** (`allow_all`) among its options, and no effort or fast
   group.

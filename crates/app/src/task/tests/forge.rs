@@ -15,7 +15,6 @@ use onehand_core::connector::{
 };
 use onehand_core::issues::Snapshot;
 use onehand_core::task::Task;
-use onehand_core::unattended::IssueRow;
 use onehand_core::workflow::{GateKind, Outcome, Place, Setup, StepKind, StepSpec, Template};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -80,18 +79,6 @@ impl Connector for Recording {
         unreachable!()
     }
     fn serves_blocking(&self, _: &Path) -> Result<(), String> {
-        unreachable!()
-    }
-    fn open_issues_blocking(&self, _: &Path, _: usize) -> Result<Vec<IssueRow>, String> {
-        unreachable!()
-    }
-    fn my_labelled_issues_blocking(&self, _: &Path, _: &str) -> Result<Vec<IssueRow>, String> {
-        unreachable!()
-    }
-    fn remove_label_blocking(&self, _: &Path, _: u64, _: &str) -> Result<(), String> {
-        unreachable!()
-    }
-    fn comment_blocking(&self, _: &Path, _: u64, _: &str) -> Result<(), String> {
         unreachable!()
     }
     fn default_branch_blocking(&self, _: &Path) -> Result<String, String> {
@@ -187,9 +174,6 @@ impl Connector for Recording {
         _: &Snapshot,
         _: &Snapshot,
     ) -> Result<(), String> {
-        unreachable!()
-    }
-    fn read_review_with(&self, _: u64) -> String {
         unreachable!()
     }
 }

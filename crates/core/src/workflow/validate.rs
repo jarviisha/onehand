@@ -39,7 +39,7 @@ pub fn validate(template: &Template) -> Vec<Problem> {
     if template.name.trim().is_empty() {
         whole("it has no name".to_string());
     }
-    if crate::unattended::parse_every(&template.timeout).is_none() {
+    if crate::workflow::parse_every(&template.timeout).is_none() {
         whole(format!(
             "the timeout `{}` is not a duration such as 45m, 2h or 90s",
             template.timeout
@@ -239,7 +239,7 @@ pub fn validate(template: &Template) -> Vec<Problem> {
                         "on failure it goes back to `{on_fail}`, which is no earlier agent step"
                     ));
                 }
-                if crate::unattended::parse_every(wait).is_none() {
+                if crate::workflow::parse_every(wait).is_none() {
                     here(format!(
                         "its wait `{wait}` is not a duration such as 45m, 2h or 90s"
                     ));

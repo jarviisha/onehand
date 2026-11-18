@@ -21,14 +21,12 @@ pub enum Retry {
 pub const SESSION_NOT_STARTED: &str = "The task's session did not start";
 
 /// The run a task begins with: its last run, carried on from `first`, with
-/// `pinned` of its boundaries' marks landed before, and whether the task
-/// works an issue.
+/// `pinned` of its boundaries' marks landed before.
 #[derive(Debug)]
 pub struct Start {
     pub run: Run,
     pub first: Action,
     pub pinned: usize,
-    pub issue: bool,
 }
 
 /// How a task that holds its place is driven.
@@ -38,18 +36,14 @@ pub enum Begin {
     /// to watch.
     Check(Start),
     /// A run on a session of its own, on the agent its setup names. One
-    /// `off_screen` comes up where nothing the person is looking at moves: an
-    /// issue's run, on a project the workspace file never holds unless it
-    /// was kept, and one a tool started, the first time it is driven.
+    /// `off_screen` comes up where nothing the person is looking at moves:
+    /// one a tool started, the first time it is driven.
     Session {
         start: Start,
         off_screen: bool,
         /// What its session may use, given to every session it is driven
         /// on, a Resume's new one included.
         grant: Grant,
-        /// The lines its session opens with, before its first prompt: an
-        /// issue's run says which issue and where it works.
-        opening: Vec<String>,
     },
     /// It cannot start, for `why`, of `kind`: said where it was to start,
     /// then handed to [`TasksDrive::not_started`].
@@ -79,8 +73,7 @@ impl<W: Copy> TasksDrive<W> {
             );
         }
         let check = task.source == super::super::Source::Check;
-        let issue = task.issue().is_some();
-        let (grant, opening) = (task.grant.clone(), crate::unattended::drive::opening(task));
+        let grant = task.grant.clone();
         // A snapshot that no longer validates (a later build's rules) is what
         // the preflight would have blocked, found late.
         let problems = validate(&run.template);
@@ -99,19 +92,13 @@ impl<W: Copy> TasksDrive<W> {
         // pinned now rather than taken as made.
         let pinned = run.pinned_count();
         let first = run.resume(now.secs);
-        let start = Start {
-            run,
-            first,
-            pinned,
-            issue,
-        };
+        let start = Start { run, first, pinned };
         match check {
             true => Begin::Check(start),
             false => Begin::Session {
                 start,
-                off_screen: issue || off_screen,
+                off_screen,
                 grant,
-                opening,
             },
         }
     }

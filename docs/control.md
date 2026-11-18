@@ -81,18 +81,18 @@ answer, and exits.
 | `read_workflow` | `workflow` id | the workflow's file as TOML, a shipped one's too | the TOML, or why not |
 | `save_workflow` | `toml` | `workflow::store::save_text_blocking`: read as a file is (a key onehand does not read refuses), checked as the editor's *Save* is, and refused when another workflow has its name. It goes over the person's own file with its `id`, else into a new file: a shipped workflow is copied, never changed. The library is read again | `Saved <name> as <id>, version <n>`, or every problem, in the editor's words |
 | `start_workflow` | `project`, `workflow` id, `title`, optional `brief` | a new task through `task::submit`, as the launcher makes it: on the checkout or on a worktree cut first, as the workflow's place says; what blocks the launcher's *Run* blocks it, in the same words | `Task <id> started: <title>`, or `Task <id> queued: …`, or why not |
-| `start_issue` | `project`, `issue` number, optional `workflow` id | the same, the brief being the issue: one of the project's own issues, as its Issues tab numbers them. A supervised task, not the unattended pick: nothing is claimed or said on the forge, unattended runs need not be set up, and the brief does not tell the agent it is alone. Without `workflow`, the one unattended runs use | as above |
+| `start_issue` | `project`, `issue` number, optional `workflow` id | the same, the brief being the issue: one of the project's own issues, as its Issues tab numbers them. A supervised task: nothing is said on the forge, and the brief names the issue (by its forge reference when the issue file is kept in step with a forge) without telling the agent it is alone. Without `workflow`, `builtin:issue`, *Work an issue* | as above |
 | `list_tasks` | optional `project` | the tasks of the window's projects, or of one | `id — title — state — step — next: …`, the next actions as the Tasks page offers them |
 | `stop_task` | `task` id | as the Tasks page's Stop, for a task of the window's projects | `Stopping <title>`, or why not |
 | `open_file` | `path` | opens the file in the Workbench and shows the Workbench, without taking focus | what it opened, or why not |
 | `list_issues` | optional `project` | the project's own open issues, as its Issues tab keeps them (a synced project's imported ones too); the calling session's project when none is named | `#<n> — <title>`, one per line |
-| `create_issue` | optional `project`, `title`, optional `body` | writes one issue into the project's own issue file, through the copy every view of it shares, so it shows in every window's views of the file as it lands; an open issue with the same title (case and spaces aside) is not written again. It takes no labels: the issue gets those of the calling session's schedule, so no agent labels its own issue for an unattended run | `Wrote issue #<n>: …`, or `Issue #<n> is already open with that title` |
+| `create_issue` | optional `project`, `title`, optional `body` | writes one issue into the project's own issue file, through the copy every view of it shares, so it shows in every window's views of the file as it lands; an open issue with the same title (case and spaces aside) is not written again. It takes no labels: the issue gets those of the calling session's schedule | `Wrote issue #<n>: …`, or `Issue #<n> is already open with that title` |
 | `session_state` | `session`, a worker's handle | for a session's agent, about a worker it opened; never listed to an outside program | the worker's state, one fact per line; `link: closed` once it is gone; or why not |
 | `send_prompt` | `session`, `text`, `turn`, optional `model` | for a session's agent, gives a worker it opened its next turn, on `model` when named; never listed to an outside program | `turn <n> accepted`, `turn <n> already sent`, or why not |
 | `cancel_turn` | `session` | for a session's agent, cancels the turn a worker it opened runs, as the person's Stop does | `cancelling turn <n>`, or why not |
 | `close_worker` | `session` | for a session's agent, closes a worker it opened, as the person's *Close session* does; never listed to an outside program | `closed`, or why not |
 
-- **A task a tool starts is driven off screen**, the way an issue's run is: its session is in the
+- **A task a tool starts is driven off screen**: its session is in the
   rail (a schedule's that ends done leaves it, `docs/schedules.md`) and the task on the Tasks page,
   and nothing the person is looking at moves. Only its first
   drive: a Resume or Retry a person presses later shows, as theirs does. A person still sees the
@@ -131,7 +131,7 @@ it back and says so.
   a heading of its own, *This session*. Off by default, kept by the session through a restart of
   its agent and not saved, so a session reopened later starts off. While it is on, *Controls onehand* stands in the composer's status
   row; pressing it switches it off. A session the tools opened, or a run they started, starts
-  off; an unattended run's session is never offered it.
+  off.
 - **A set of tools.** Beside all and none, a session may stand with a set of tools by name: a
   schedule's task's sessions stand with the schedule's, copied onto the task, and an issue they
   write gets the schedule's labels. Only those tools are listed, and a call to any other is
@@ -190,9 +190,9 @@ offered `open_worker`, and `open_session` takes none of its further arguments.
 - The checks read git, the file system and the process table off the UI thread.
 - **The answer comes once the worker is up**, within 120 seconds of the call: its agent connected,
   put in its mode and on its model one pick at a time, each answered, then its prompt accepted.
-  - **The mode** is not the lead's to name: it is `[unattended] mode` when the worker's agent is
-    the one unattended runs use (a mode is the adapter's own id), else what that agent is known
-    to need, else the agent's own.
+  - **The mode** is not the lead's to name: it is what the worker's agent is known to need to
+    edit without a person granting each change (its preset's `worker_mode`), else the agent's
+    own.
   - **The model**, when named, is a value of the agent's model option. An agent that offers no
     model option, or not that value, refuses the open, naming what it offers; one that refuses
     the pick does too. A worker never runs on another model.

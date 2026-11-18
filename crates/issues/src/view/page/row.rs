@@ -12,7 +12,6 @@ use gpui::{
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::LabelKind;
-use onehand_core::task::Group;
 use onehand_core::task::work::list::Row;
 use onehand_ui::Quiet as _;
 use onehand_ui::Short as _;
@@ -36,8 +35,8 @@ const UPDATED_W: Rems = rems(2.5);
 /// with room above and below them.
 const ISSUE_ROW_H: Rems = rems(2.5);
 
-/// The widest what an issue's work needs gets beside its title, so a long
-/// sentence leaves the title room to be read.
+/// The widest the note beside a title gets, so a long one leaves the title
+/// room to be read.
 const NOTE_MAX: Rems = rems(14.);
 
 /// The labels' column: as wide on every row, so the head names it, and no
@@ -59,8 +58,8 @@ pub(super) struct Place {
 }
 
 /// One issue on one line: whether it is open, the reference, the title, the
-/// priority's mark and what its work needs; at the end its labels, its
-/// project and how long ago it changed.
+/// priority's mark and where it went if it stopped matching; at the end its
+/// labels, its project and how long ago it changed.
 pub(super) fn issue_row(
     i: usize,
     place: Place,
@@ -78,10 +77,6 @@ pub(super) fn issue_row(
     let ink = status_ink(cx);
     let issue = row.item.issue;
     let (root, number) = (row.item.root.to_path_buf(), issue.number());
-    let running = row
-        .item
-        .work
-        .is_some_and(|work| work.work.group == Group::Running);
 
     // The reference leads the title in machine type and the middle ink:
     // context for the title, not a name of its own. On the picked row the step
@@ -137,23 +132,11 @@ pub(super) fn issue_row(
             }))
             .child(Icon::new(priority_icon(&said)).xsmall().text_color(muted))
     });
-    // What is most worth reading after the title: where a row that stopped
-    // matching went, then what needs the person, then a run going.
-    let note = if let Some(left) = row.left.clone() {
-        Some(div().text_color(muted).child(left))
-    } else if let Some(line) = row.line.clone().filter(|_| row.attention) {
-        Some(div().text_color(ink.warning).child(line))
-    } else if running {
-        Some(div().text_color(theme.info).child("running"))
-    } else if row.earlier_attention {
-        Some(
-            div()
-                .text_color(ink.warning)
-                .child("earlier task needs attention"),
-        )
-    } else {
-        None
-    };
+    // Where a row that stopped matching went, after the title.
+    let note = row
+        .left
+        .clone()
+        .map(|left| div().text_color(muted).child(left));
     let changed = issue.changed();
     let age_ink = match place.picked {
         true => onehand_ui::chosen_ink(cx),

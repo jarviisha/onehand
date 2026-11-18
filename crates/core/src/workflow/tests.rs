@@ -1648,7 +1648,7 @@ fn a_retry_keeps_the_commit_that_was_checked() {
 fn a_review_is_answered_at_the_step_status_checks_send_back_to() {
     assert_eq!(builtin::all().remove(2).repair_step(), Some("implement"));
     assert!(
-        crate::unattended::parse_every(DEFAULT_WAIT).is_some(),
+        crate::workflow::parse_every(DEFAULT_WAIT).is_some(),
         "the default wait reads, or a step leaving it out waits on nothing"
     );
     assert_eq!(checkout().repair_step(), None);

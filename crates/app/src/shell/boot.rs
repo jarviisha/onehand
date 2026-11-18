@@ -167,8 +167,6 @@ impl Shell {
                         let root_idx = shell.window.workspace.active_root;
                         match action {
                             P::TogglePin => shell.toggle_pin(root_idx, window, cx),
-                            P::ToggleUnattended => shell.toggle_unattended(root_idx, window, cx),
-                            P::PickIssue => shell.begin_pick(root_idx, None, window, cx),
                             P::Worktree => shell.begin_worktree(root_idx, window, cx),
                             P::RenameBranch => shell.begin_branch_rename(window, cx),
                             P::CopyPath => shell.copy_root_path(root_idx, window, cx),
@@ -305,12 +303,6 @@ impl Shell {
             }
         })
         .detach();
-        // What the Issues tab says of the runs on each issue moves with the
-        // tasks, which change on every step; told only when it changed.
-        cx.observe_global::<crate::task::Tasks>(|shell: &mut Self, cx| {
-            shell.tell_issue_works(cx);
-        })
-        .detach();
         // Who holds each offloaded project's code: the lock on the docks,
         // the rail's mark and the project page's box follow it.
         cx.default_global::<crate::offload::Offloads>();
@@ -320,12 +312,6 @@ impl Shell {
         .detach();
         // The workspace's own offloaded projects, read once the shell is up.
         cx.defer_in(window, |shell: &mut Self, _, cx| shell.sync_offload(cx));
-        // And with Settings: whether Resume refuses is judged on the agents
-        // and modes they hold, so a refusal answered there clears at once.
-        cx.observe_global::<crate::state::Shared>(|shell: &mut Self, cx| {
-            shell.tell_issue_works(cx);
-        })
-        .detach();
 
         // The title bar's terminal dot is a fact the docks have no
         // idea anyone outside them wants. Guarded the same way and for the same
@@ -502,11 +488,7 @@ impl Shell {
             host_listening: Default::default(),
             offload_draft: None,
             offload_locks: HashMap::new(),
-            issue_picker: None,
             dialog_return: None,
-            label_input: cx.new(|cx| InputState::new(window, cx).placeholder("bug")),
-            label_workflow: None,
-            label_refused: None,
             check_inputs: HashMap::new(),
             workflow_launcher: None,
             branch_input,
@@ -527,7 +509,6 @@ impl Shell {
             _host_files: None,
             rail_sessions: Vec::new(),
             live_conversations: Vec::new(),
-            issue_works: (Vec::new(), Vec::new()),
             #[cfg(test)]
             refused: Vec::new(),
             #[cfg(test)]
@@ -570,7 +551,6 @@ pub fn boot(cx: &mut App) {
     let mono = cfg.font.monospace.clone();
     let appearance = cfg.appearance;
     let remote = cfg.remote.clone();
-    let unattended = cfg.unattended.clone();
     crate::control::boot(&cfg.control);
     cx.set_global(Shared::from_config(cfg, config_path));
     // The settings, workspace and conversation-name writes still queued at
@@ -595,8 +575,8 @@ pub fn boot(cx: &mut App) {
     crate::remote::boot(&remote, cx);
     crate::workflow::boot(cx);
     crate::task::boot(cx);
-    // Beside the tasks it starts, so after them.
-    crate::unattended::boot(&unattended, cx);
+    // Who each forge acts as, which a start with forge steps is judged on.
+    crate::accounts::check(cx);
     crate::schedules::boot(cx);
     // Before the theme names the bundled families, and before the monospace
     // scan looks for them among what is installed.

@@ -8,7 +8,6 @@
 use crate::acp::{AcpEvent, AcpRequest, ReqTx};
 use crate::chat::drive::{Effect as SessionEffect, SessionDrive};
 use crate::chat::Chat;
-use crate::config::AgentSpec;
 use crate::schedule::drive::{Effect as ScheduleEffect, Input as ScheduleInput, ScheduleDrive};
 use crate::schedule::Schedule;
 use crate::task::drive::{link, Effect as RunEffect, Input as RunInput, RunDrive};
@@ -17,11 +16,6 @@ use crate::task::tasks::{
     Begin, Effect as TasksEffect, Input as TasksInput, Placed, Start, TasksDrive,
 };
 use crate::task::{marks, queue, Launch};
-use crate::unattended::drive::{
-    blocking, Effect as UEffect, Input as UInput, On, UnattendedDrive, World,
-};
-use crate::unattended::link::{Joined, Out};
-use crate::unattended::Project;
 use crate::workflow::{Facts, Mark, Template};
 use crate::workspace::WorkspaceDrive;
 use crate::Now;
@@ -46,7 +40,6 @@ pub(super) struct Driven {
 /// Something one drive said, still to be carried out.
 enum Work {
     Tasks(TasksEffect<Win>),
-    Unattended(UEffect<Win>),
     Run(String, RunEffect),
     Session(String, SessionEffect),
     Schedule(ScheduleEffect<Win>),
@@ -55,25 +48,19 @@ enum Work {
 /// Every drive a front end holds, and what reached a person or a file.
 pub(super) struct Flow {
     pub(super) tasks: TasksDrive<Win>,
-    pub(super) unattended: Option<UnattendedDrive<Win>>,
-    pub(super) world: World,
+    /// The workflows on offer.
+    pub(super) library: Vec<Template>,
     pub(super) schedule: ScheduleDrive<Win>,
     /// The workspace of the one window, [`WINDOW`].
     pub(super) workspace: WorkspaceDrive,
     /// What the clock reads at its next look.
     pub(super) schedules: Vec<Schedule>,
-    /// The projects unattended runs look at, each switched on.
-    pub(super) roots: Vec<Project>,
     /// The runs under way, by task.
     pub(super) runs: BTreeMap<String, Driven>,
     /// Where each task asked for landed, as its asker heard it.
     pub(super) told: Vec<(String, Placed)>,
-    /// The lines a run's session opened with, by task.
-    pub(super) opened: BTreeMap<String, Vec<String>>,
     /// What a person or the log was told, as the drives said it.
     pub(super) said: Vec<String>,
-    /// The project each ended unattended run kept or dropped.
-    pub(super) torn_down: Vec<(PathBuf, bool)>,
     /// The task the clock's start under way is.
     starting: Option<String>,
     queue: VecDeque<Work>,
@@ -84,37 +71,21 @@ pub(super) struct Flow {
 }
 
 impl Flow {
-    /// Every drive, unattended runs set up when given, one agent `a`, and
-    /// `library` on offer.
-    pub(super) fn new(
-        unattended: Option<UnattendedDrive<Win>>,
-        library: Vec<Template>,
-        now: u64,
-    ) -> Self {
+    /// Every drive, and `library` on offer.
+    pub(super) fn new(library: Vec<Template>, now: u64) -> Self {
         let (schedule, _) = ScheduleDrive::new(Now {
             secs: now - 600,
             ..self::now()
         });
         Self {
             tasks: TasksDrive::default(),
-            unattended,
-            world: World {
-                library,
-                agents: vec![AgentSpec {
-                    name: "a".into(),
-                    ..Default::default()
-                }],
-                offers: Vec::new(),
-            },
+            library,
             schedule,
             workspace: WorkspaceDrive::new(crate::workspace::Workspace::seeded("/")),
             schedules: Vec::new(),
-            roots: Vec::new(),
             runs: BTreeMap::new(),
             told: Vec::new(),
-            opened: BTreeMap::new(),
             said: Vec::new(),
-            torn_down: Vec::new(),
             starting: None,
             queue: VecDeque::new(),
             next_id: 0,
@@ -123,51 +94,19 @@ impl Flow {
         }
     }
 
-    fn on(&self) -> Vec<On> {
-        self.roots.iter().map(|p| (p.clone(), false)).collect()
-    }
-
     fn new_id(&mut self) -> String {
         self.next_id += 1;
         format!("t{}", self.next_id)
     }
 
-    /// Join the tasks, the runs and unattended runs for one call, and keep
-    /// what they say to carry out.
-    fn joined(&mut self, call: impl FnOnce(&mut Joined<'_, Win>, &[On], &World) -> Out<Win>) {
-        let roots = self.on();
-        let Flow {
-            tasks,
-            unattended,
-            runs,
-            world,
-            ..
-        } = self;
-        let mut joined = Joined::new(tasks, runs.values().map(|d| &d.run), unattended.as_mut());
-        let out = call(&mut joined, &roots, world);
-        self.keep(out);
-    }
-
-    fn keep(&mut self, out: Out<Win>) {
-        self.queue.extend(out.tasks.into_iter().map(Work::Tasks));
-        self.queue
-            .extend(out.unattended.into_iter().map(Work::Unattended));
+    /// Give the tasks' drive `command`, and keep what it says to carry out.
+    fn tasks(&mut self, command: impl FnOnce(&mut TasksDrive<Win>) -> Vec<TasksEffect<Win>>) {
+        let fx = command(&mut self.tasks);
+        self.queue.extend(fx.into_iter().map(Work::Tasks));
     }
 
     fn tasks_input(&mut self, input: TasksInput<Win>) {
-        self.joined(|j, _, _| j.tasks(|t| ((), t.handle(input))).1);
-    }
-
-    fn unattended_input(&mut self, input: UInput<Win>) {
-        self.joined(|j, roots, world| {
-            j.unattended(|u, seen| {
-                (
-                    (),
-                    u.handle(input, seen, roots.to_vec(), world, Now { secs: 0, ..now() }),
-                )
-            })
-            .1
-        });
+        self.tasks(|t| t.handle(input));
     }
 
     fn schedule_input(&mut self, input: ScheduleInput<Win>) {
@@ -185,15 +124,6 @@ impl Flow {
     /// The clock comes round.
     pub(super) fn clock(&mut self) {
         self.schedule_input(ScheduleInput::Elapsed);
-        self.settle();
-    }
-
-    /// Unattended runs' clock comes round.
-    pub(super) fn tick(&mut self) {
-        self.joined(|j, roots, world| {
-            j.unattended(|u, seen| ((), u.tick(None, seen, roots.to_vec(), world)))
-                .1
-        });
         self.settle();
     }
 
@@ -219,7 +149,6 @@ impl Flow {
         while let Some(work) = self.queue.pop_front() {
             match work {
                 Work::Tasks(effect) => self.carry_tasks(effect),
-                Work::Unattended(effect) => self.carry_unattended(effect),
                 Work::Run(id, effect) => self.carry_run(&id, effect),
                 Work::Session(id, effect) => self.carry_session(&id, effect),
                 Work::Schedule(effect) => self.carry_schedule(effect),
@@ -269,25 +198,13 @@ impl Flow {
                 self.tasks_input(TasksInput::Cut { start, made });
             }
             TasksEffect::Keep(start) => {
-                let Flow {
-                    tasks,
-                    unattended,
-                    runs,
-                    workspace,
-                    ..
-                } = self;
-                let mut joined =
-                    Joined::new(tasks, runs.values().map(|d| &d.run), unattended.as_mut());
                 // The workspace's own effects (its write, a git sweep) are its
                 // carrier's, not a flow's.
-                let (_, out) = joined.tasks(|t| {
-                    let (fx, kept) = tasks_link::keep(t, Some(workspace), start);
-                    (kept, fx)
-                });
-                self.keep(out);
-            }
-            TasksEffect::ReadReview { .. } | TasksEffect::ConfirmAnswer { .. } => {
-                panic!("these flows answer no review")
+                let Flow {
+                    tasks, workspace, ..
+                } = self;
+                let (fx, _) = tasks_link::keep(tasks, Some(workspace), start);
+                self.queue.extend(fx.into_iter().map(Work::Tasks));
             }
             TasksEffect::JudgeRemoval(_)
             | TasksEffect::ConfirmRemoval { .. }
@@ -299,14 +216,14 @@ impl Flow {
     }
 
     /// Drive task `id`, which holds its place, as the shell does: a session
-    /// of its own, its opening lines, and the run started on it.
+    /// of its own, and the run started on it.
     fn drive(&mut self, id: String) {
         let there = self
             .tasks
             .resumable_run(&id)
             .is_some_and(|run| run.setup.dir.is_dir());
-        let (start, opening) = match self.tasks.begin(&id, there, crate::Now::read()) {
-            Begin::Session { start, opening, .. } => (start, opening),
+        let start = match self.tasks.begin(&id, there, crate::Now::read()) {
+            Begin::Session { start, .. } => start,
             Begin::Check(_) => panic!("these flows run no check"),
             // As the shell does: the drive is answered at once, and the
             // refusal handed on once that call is over.
@@ -315,29 +232,13 @@ impl Flow {
                     task: id.clone(),
                     started: Err(why.clone()),
                 });
-                return self.joined(|j, _, _| {
-                    j.tasks(|t| ((), t.not_started(&id, why, kind, crate::Now::read())))
-                        .1
-                });
+                return self.tasks(|t| t.not_started(&id, why, kind, crate::Now::read()));
             }
         };
         let (mut session, rx) = session();
-        self.opened.insert(id.clone(), opening);
-        let Start {
-            run,
-            first,
-            pinned,
-            issue,
-        } = start;
-        let (run, out) = link::Joined::start(
-            id.clone(),
-            run,
-            first,
-            pinned,
-            issue,
-            now(),
-            Some(&mut session),
-        );
+        let Start { run, first, pinned } = start;
+        let (run, out) =
+            link::Joined::start(id.clone(), run, first, pinned, now(), Some(&mut session));
         self.next_uid += 1;
         self.runs.insert(
             id.clone(),
@@ -397,34 +298,13 @@ impl Flow {
                 assert!(saved.is_some(), "a run's write is its task's");
                 self.run_input(id, RunInput::Saved(Ok(())));
             }
-            RunEffect::Unattended(said) => {
-                let id = id.to_string();
-                let looks = said.looks();
-                self.joined(|j, roots, world| {
-                    j.run_said(&id, said, looks.then_some((roots.to_vec(), world)))
-                });
-            }
             RunEffect::Signal(signal) => self.said.push(format!("{signal:?}")),
             RunEffect::Finish { .. } => {
                 let driven = self.runs.remove(id).expect("a run under way");
-                let Flow {
-                    tasks,
-                    unattended,
-                    runs,
-                    ..
-                } = self;
-                let mut joined =
-                    Joined::new(tasks, runs.values().map(|d| &d.run), unattended.as_mut());
                 let chat: &Chat = &driven.session;
-                let out = joined
-                    .tasks(|t| {
-                        (
-                            (),
-                            tasks_link::finished(t, &driven.run, Some((chat, driven.uid)), WINDOW),
-                        )
-                    })
-                    .1;
-                self.keep(out);
+                self.tasks(|t| {
+                    tasks_link::finished(t, &driven.run, Some((chat, driven.uid)), WINDOW)
+                });
             }
             RunEffect::RunCommand { .. }
             | RunEffect::CallOffCommand
@@ -471,79 +351,6 @@ impl Flow {
         }
     }
 
-    fn carry_unattended(&mut self, effect: UEffect<Win>) {
-        match effect {
-            // No view holds a file in these flows, so there is no file's
-            // drive to tell of a sync.
-            UEffect::Arm(_) | UEffect::Refresh | UEffect::Synced(_) => {}
-            UEffect::Check {
-                connectors,
-                roots,
-                prune,
-            } => {
-                let (accounts, checked) = crate::unattended::look_blocking(connectors, roots);
-                self.unattended_input(UInput::Checked {
-                    accounts,
-                    checked,
-                    prune,
-                });
-            }
-            UEffect::Look(look) => {
-                self.unattended_input(UInput::Looked(Box::new(look.run_blocking())))
-            }
-            UEffect::Claim {
-                found,
-                label,
-                asked_from,
-                held,
-            } => {
-                let (begun, synced) = blocking::claim_found(*found, &label);
-                let new_task = self.new_id();
-                self.unattended_input(UInput::Claimed {
-                    begun,
-                    synced,
-                    asked_from,
-                    held,
-                    holding: vec![(WINDOW, None)],
-                    new_task,
-                });
-            }
-            UEffect::Tell {
-                tracker,
-                repo,
-                number,
-                body,
-            } => blocking::tell_blocking(&tracker, &repo, number, &body),
-            UEffect::Send(sending) => {
-                let landed = sending.send_blocking();
-                self.unattended_input(UInput::Sent {
-                    task: sending.task.clone(),
-                    landed,
-                });
-            }
-            UEffect::Teardown { dir, keep } => self.torn_down.push((dir, keep)),
-            UEffect::NoteTakenUp {
-                root: _,
-                file,
-                number,
-                said,
-                session,
-            } => {
-                let change = crate::issues::drive::Change::TakenUp {
-                    number,
-                    text: said,
-                    session,
-                };
-                crate::issues::drive::write_blocking(&file, change, 1).unwrap();
-            }
-            UEffect::Tick => self.tick(),
-            UEffect::Signal(signal) => self.said.push(format!("{signal:?}")),
-            UEffect::Take { .. } | UEffect::ClaimPicked { .. } => {
-                panic!("these flows pick nothing by hand")
-            }
-        }
-    }
-
     fn carry_schedule(&mut self, effect: ScheduleEffect<Win>) {
         match effect {
             ScheduleEffect::Arm(_) | ScheduleEffect::Refresh => {}
@@ -569,7 +376,7 @@ impl Flow {
                     all: Ok(self.schedules.clone()),
                     holders,
                     working,
-                    library: self.world.library.clone(),
+                    library: self.library.clone(),
                 };
                 self.schedule_input(input);
             }
@@ -577,7 +384,7 @@ impl Flow {
                 let id = self.new_id();
                 self.starting = Some(id.clone());
                 let launch = Launch::off_screen(&[], *starting, None, Some("a".into()));
-                self.joined(|j, _, _| j.tasks(|t| ((), t.start_off_screen(id, launch, window))).1);
+                self.tasks(|t| t.start_off_screen(id, launch, window));
             }
             ScheduleEffect::Write { looked } => {
                 self.schedules = looked.clone();
@@ -609,9 +416,8 @@ pub(super) fn now() -> Now {
     Now::read()
 }
 
-/// A scratch git repository on `main` with one commit, keeping its own
-/// issues in `issues.json`, holding `issues` (a title and its labels).
-pub(crate) fn repo(name: &str, issues: &[(&str, &[&str])]) -> Project {
+/// A scratch git repository on `main` with one commit.
+pub(crate) fn repo(name: &str) -> PathBuf {
     let root = std::env::temp_dir().join(format!("onehand-drive-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
@@ -621,24 +427,7 @@ pub(crate) fn repo(name: &str, issues: &[(&str, &[&str])]) -> Project {
     std::fs::write(root.join("a.txt"), "x").unwrap();
     git(&root, &["add", "a.txt"]);
     git(&root, &["commit", "-qm", "one"]);
-    let file = root.join("issues.json");
-    for (title, labels) in issues {
-        crate::issues::update_blocking(&file, |kept| {
-            kept.create(
-                crate::issues::Draft {
-                    title: title.to_string(),
-                    labels: labels.iter().map(|l| l.to_string()).collect(),
-                    ..Default::default()
-                },
-                1,
-            )
-        })
-        .unwrap();
-    }
-    Project {
-        root,
-        issues: Some(file),
-    }
+    root
 }
 
 /// Run git in `dir`, which must succeed.

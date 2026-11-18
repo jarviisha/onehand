@@ -86,7 +86,6 @@ impl WorkbenchMode for Mode {
             | Request::ShowIssue(_)
             | Request::AgentStarted(_)
             | Request::LiveConversations(_)
-            | Request::IssueWork { .. }
             | Request::Offloaded(_) => false,
         }
     }

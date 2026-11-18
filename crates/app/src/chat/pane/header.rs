@@ -546,7 +546,6 @@ fn project_menu(
     ProjectFacts {
         pinned,
         is_repo,
-        unattended,
         check: _,
         asks,
         offload,
@@ -574,18 +573,6 @@ fn project_menu(
             crate::controls::menu_item(if pinned { "Unpin" } else { "Pin to top" })
                 .on_click(act(ProjectAction::TogglePin, pane.clone())),
         )
-        .when_some(unattended, |menu, on| {
-            menu.item(crate::rail::unattended_item(
-                on,
-                act(ProjectAction::ToggleUnattended, pane.clone()),
-            ))
-        })
-        .when(is_repo && unattended.is_some(), |menu| {
-            menu.item(crate::rail::pick_item(act(
-                ProjectAction::PickIssue,
-                pane.clone(),
-            )))
-        })
         // Only where there is a repository to split. On a plain folder this
         // could do nothing but report that git said no, and an entry whose whole
         // job is to fail is one the eye has to learn to skip.

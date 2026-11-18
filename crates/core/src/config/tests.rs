@@ -134,33 +134,12 @@ fn legacy_kind_field_is_ignored() {
     assert_eq!(cfg.agents[0].command, "claude");
 }
 
-/// Whether a run happens is decided per project, so the config carries no
-/// switch; one left in an older file is an unknown key and ignored.
+/// A file written by a build that ran issues unattended still loads: its
+/// `[unattended]` table is an unknown key and ignored.
 #[test]
-fn unattended_runs_have_no_switch_of_their_own_and_read_an_old_one_as_nothing() {
-    let cfg = AppConfig::parse("").unwrap();
-    assert_eq!(cfg.unattended.label, "auto");
-    assert_eq!(cfg.unattended.every, "30m");
-    // The switch moved onto each project; a file still carrying the old
-    // global one keeps loading.
+fn an_old_unattended_table_is_ignored() {
     let cfg = AppConfig::parse("[unattended]\nenabled = true\nlabel = \"x\"\n").unwrap();
-    assert_eq!(cfg.unattended.label, "x");
-}
-
-/// Waiting runs are uncapped unless the file says so, and a cap set survives
-/// a settings rewrite beside a label table.
-#[test]
-fn the_waiting_cap_is_unset_by_default_and_round_trips() {
-    assert_eq!(AppConfig::parse("").unwrap().unattended.waiting, None);
-    let mut cfg = AppConfig::default();
-    cfg.unattended.waiting = Some(3);
-    cfg.unattended
-        .workflows
-        .insert("bug".into(), "builtin:issue".into());
-    let text = cfg.to_toml().unwrap();
-    let back = AppConfig::parse(&text).unwrap();
-    assert_eq!(back.unattended.waiting, Some(3));
-    assert!(!AppConfig::default().to_toml().unwrap().contains("waiting"));
+    assert_eq!(cfg, AppConfig::parse("").unwrap());
 }
 
 /// The bridge is off unless the file asks for it, and its list starts

@@ -182,10 +182,6 @@ pub struct ProjectFacts {
     pub pinned: bool,
     /// A git repository, so there is a branch to rename and a worktree to split.
     pub is_repo: bool,
-    /// Whether its labelled issues may be worked unattended — `None` where the
-    /// switch is not offered at all, which is a run's own worktree: not a
-    /// project anybody chose, and one no run ever searches.
-    pub unattended: Option<bool>,
     /// It has a check command, so its page offers to run it.
     pub check: bool,
     /// Removing it asks first, which its menu's ellipsis says.
@@ -208,7 +204,6 @@ impl ProjectFacts {
         Self {
             pinned: root.pinned,
             is_repo: local && is_repo,
-            unattended: (local && !root.transient).then_some(root.unattended),
             check: local && root.check.is_some(),
             asks: false,
             offload: match (&root.host, &root.offload) {

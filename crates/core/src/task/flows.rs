@@ -5,4 +5,3 @@
 
 pub(crate) mod harness;
 mod schedule;
-mod unattended;

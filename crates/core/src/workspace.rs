@@ -63,20 +63,11 @@ pub struct ProjectRoot {
     pub pinned: bool,
     /// Whether this root is left out of the workspace file.
     ///
-    /// Set on the worktree an unattended run adds for itself: that root is
-    /// dropped when the run ends, and a crash between the add and the drop
-    /// would otherwise leave a checkout of one issue in the workspace for good.
-    /// Cleared when a person takes the run over, since from then on it is their
-    /// project and losing it at the next launch would lose their work's place.
+    /// Set on the folder a lead's worker is opened on when the workspace did
+    /// not hold it: that root is dropped when the worker closes, and a crash
+    /// between the add and the drop would otherwise leave it in the
+    /// workspace for good.
     pub transient: bool,
-    /// Whether issues in this project's repository may be picked up and worked
-    /// with nobody watching.
-    ///
-    /// Per project and off until the user turns it on. Being open in the rail
-    /// says what somebody is working on, not what an agent may push to and open
-    /// pull requests against, and the second is a permission worth giving one
-    /// project at a time.
-    pub unattended: bool,
     /// The command a workflow's work here must pass before it goes further:
     /// the app runs it itself rather than taking the agent's word for it.
     pub check: Option<String>,
@@ -110,7 +101,6 @@ impl ProjectRoot {
             active_session: 0,
             pinned: false,
             transient: false,
-            unattended: false,
             check: None,
             offload: None,
         }
@@ -138,9 +128,8 @@ impl ProjectRoot {
     }
 
     /// Whether the features that act on this machine's folder by themselves
-    /// (workflows, tasks, schedules, unattended runs, worktrees, the check
-    /// command, the remote bridge) reach it: a folder here whose sessions run
-    /// here too.
+    /// (workflows, tasks, schedules, worktrees, the check command, the remote
+    /// bridge) reach it: a folder here whose sessions run here too.
     pub fn runs_here(&self) -> bool {
         self.host.is_none() && self.offload.is_none()
     }
@@ -387,7 +376,6 @@ impl Workspace {
             root.offload = project.offload.filter(|_| host.is_none());
             root.host = host;
             root.pinned = project.pinned;
-            root.unattended = project.unattended;
             root.check = project.check;
             roots.push(root);
         }
@@ -430,7 +418,6 @@ impl Workspace {
                     path: root.path.clone(),
                     host: root.host.clone(),
                     pinned: root.pinned,
-                    unattended: root.unattended,
                     check: root.check.clone(),
                     offload: root.offload.clone().filter(|_| root.host.is_none()),
                 })
@@ -448,13 +435,6 @@ impl Workspace {
     pub(crate) fn toggle_pin(&mut self, idx: usize) {
         if let Some(root) = self.roots.get_mut(idx) {
             root.pinned = !root.pinned;
-        }
-    }
-
-    /// Turn unattended runs on or off for a root.
-    pub(crate) fn toggle_unattended(&mut self, idx: usize) {
-        if let Some(root) = self.roots.get_mut(idx) {
-            root.unattended = !root.unattended;
         }
     }
 
@@ -647,7 +627,7 @@ impl Workspace {
     }
 
     /// Add `path` as a transient root holding one session, **without selecting
-    /// it** — the root an unattended run works in, which must not move what the
+    /// it** — the root a lead's worker works in, which must not move what the
     /// user is looking at. Returns its index.
     ///
     /// `None` when `path` is already a project: marking a root the user added as

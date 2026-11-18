@@ -51,8 +51,6 @@ pub enum Thing {
     /// A project's pin, by its host (none for this machine) and path: a
     /// local project and a host's may share a path.
     Pin(Option<HostName>, PathBuf),
-    /// A project's unattended runs switch, by its folder here.
-    Unattended(PathBuf),
     /// A project's check command, by its folder here.
     Check(PathBuf),
 }
@@ -67,10 +65,6 @@ pub enum Value {
         host: Option<HostName>,
         path: PathBuf,
         pinned: bool,
-    },
-    Unattended {
-        path: PathBuf,
-        on: bool,
     },
     Check {
         path: PathBuf,
@@ -113,8 +107,6 @@ pub enum Refusal {
     NoProject,
     /// A session needs an agent to run.
     NoAgent,
-    /// The task has no session open to show.
-    NoSession,
     /// The project asked about is no longer a project of the workspace on
     /// this machine.
     ProjectGone,
@@ -123,9 +115,6 @@ pub enum Refusal {
     NotHere,
     /// The project has no check command to run.
     NoCheck,
-    /// A task not yet over works an issue the workspace keeps, so the
-    /// workspace is not deleted from under it.
-    IssuesInUse,
 }
 
 /// A project that has left the window, on this machine or on `host`.
@@ -181,10 +170,6 @@ pub enum Effect {
         token: u64,
         after: Duration,
     },
-    /// Unattended runs were switched on for the project at `path`: look at it
-    /// now, so a project that can never be worked says so now and not at the
-    /// next tick.
-    LookForRuns(PathBuf),
     /// Read the `git status` of each of `roots`, off the UI loop, and report
     /// [`Input::Swept`] with `token`. A late answer is **dropped** by its
     /// token when a later sweep supersedes it; what it read of a project that
@@ -322,20 +307,10 @@ impl WorkspaceDrive {
         }
     }
 
-    /// Why the workspace may not be deleted, if it may not: `held` says a
-    /// task not yet over works an issue it keeps.
-    pub fn delete_refusal(held: bool) -> Option<Refusal> {
-        held.then_some(Refusal::IssuesInUse)
-    }
-
-    /// Delete the workspace, unless `held` (see [`Self::delete_refusal`]).
-    /// From then on nothing writes its file, not a burst still waiting nor
-    /// the write its window makes on closing.
+    /// Delete the workspace. From then on nothing writes its file, not a
+    /// burst still waiting nor the write its window makes on closing.
     #[must_use = "its effects are to be carried"]
-    pub fn delete(&mut self, held: bool) -> Vec<Effect> {
-        if let Some(why) = Self::delete_refusal(held) {
-            return vec![Effect::Signal(Signal::Refused(why))];
-        }
+    pub fn delete(&mut self) -> Vec<Effect> {
         self.deleted = true;
         self.soon = None;
         vec![Effect::Deleted(self.workspace.storage_dir.clone())]
@@ -489,11 +464,6 @@ impl WorkspaceDrive {
                     root.pinned = *pinned;
                 }
             }
-            Value::Unattended { path, on } => {
-                if let Some(root) = local_mut(ws, path) {
-                    root.unattended = *on;
-                }
-            }
             Value::Check { path, check } => {
                 if let Some(root) = local_mut(ws, path) {
                     root.check = check.clone();
@@ -540,39 +510,6 @@ impl WorkspaceDrive {
             Value::Order(after),
             false,
         );
-        fx.push(Effect::Changed);
-        fx
-    }
-
-    /// Switch unattended runs on or off for project `idx`; written now, and
-    /// put back alone if its write fails. A run's own project is not one
-    /// anybody chose, and no run reaches a folder on a host or offloaded, so
-    /// neither has the switch.
-    pub fn toggle_unattended(&mut self, idx: usize) -> Vec<Effect> {
-        if !self
-            .workspace
-            .roots
-            .get(idx)
-            .is_some_and(|root| !root.transient && root.runs_here())
-        {
-            return Vec::new();
-        }
-        self.workspace.toggle_unattended(idx);
-        let root = &self.workspace.roots[idx];
-        let (path, on) = (root.path.clone(), root.unattended);
-        let mut fx = Vec::new();
-        if on {
-            fx.push(Effect::LookForRuns(path.clone()));
-        }
-        fx.extend(self.change(
-            Thing::Unattended(path.clone()),
-            Value::Unattended {
-                path: path.clone(),
-                on: !on,
-            },
-            Value::Unattended { path, on },
-            false,
-        ));
         fx.push(Effect::Changed);
         fx
     }

@@ -15,10 +15,9 @@
 //! code) is when the two halves split into capabilities of their own.
 
 use crate::issues::Snapshot;
-#[cfg(any(test, feature = "test-support"))]
-use crate::unattended::Issue;
-use crate::unattended::IssueRow;
 use std::path::Path;
+
+pub mod accounts;
 
 /// An issue as a forge holds it, for keeping a local one in step with it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,15 +71,6 @@ pub enum CheckState {
     Failed,
 }
 
-/// A repository's pull requests as one read found them, and whether the read
-/// reached its cap: then a branch missing from it proves nothing.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct PullRequests {
-    /// Each with the branch it was opened from. Their checks are not read.
-    pub by_branch: Vec<(String, PullRequest)>,
-    pub capped: bool,
-}
-
 /// What a forge lists for a sync. Two lists because they answer different
 /// questions: a cut in `open` only means fewer imports, while a cut in
 /// `changed` means a change may be missing, and the sync has to ask about
@@ -108,32 +98,8 @@ pub trait Connector: Send + Sync + 'static {
     /// project switched on.
     fn serves_blocking(&self, root: &Path) -> Result<(), String>;
 
-    /// Open issues, newest first, at most `limit` of them.
-    fn open_issues_blocking(&self, root: &Path, limit: usize) -> Result<Vec<IssueRow>, String>;
-
-    /// Open issues carrying `label` that the signed-in account opened itself,
-    /// with every label each carries: another one may choose its workflow.
-    fn my_labelled_issues_blocking(
-        &self,
-        root: &Path,
-        label: &str,
-    ) -> Result<Vec<IssueRow>, String>;
-
-    /// Take `label` off issue `number`.
-    fn remove_label_blocking(&self, root: &Path, number: u64, label: &str) -> Result<(), String>;
-
-    /// Leave `body` as a comment on issue `number`.
-    fn comment_blocking(&self, root: &Path, number: u64, body: &str) -> Result<(), String>;
-
     /// The repository's default branch, as the system has it.
     fn default_branch_blocking(&self, root: &Path) -> Result<String, String>;
-
-    /// Bring `origin/<branch>` up to date at `root`. Plain `git fetch` unless a
-    /// connector knows another way in — its own sign-in, for a remote whose
-    /// credentials the app cannot reach.
-    fn fetch_blocking(&self, root: &Path, branch: &str) -> Result<(), String> {
-        crate::worktree::fetch_blocking(root, branch)
-    }
 
     /// The pull request opened from `branch`, open or not, if there is one.
     fn pull_request_for_blocking(
@@ -142,14 +108,8 @@ pub trait Connector: Send + Sync + 'static {
         branch: &str,
     ) -> Result<Option<PullRequest>, String>;
 
-    /// The repository's pull requests, open or not, at most `limit` of them,
-    /// the newest first: one read for a list of many branches.
-    fn pull_requests_blocking(&self, _root: &Path, _limit: usize) -> Result<PullRequests, String> {
-        Err(format!("{} gives no list of pull requests.", self.name()))
-    }
-
     /// Put `commit` on the forge as `branch`. Plain `git push` to `origin`
-    /// unless a connector knows another way in, as with [`Self::fetch_blocking`].
+    /// unless a connector knows another way in.
     fn push_blocking(&self, root: &Path, commit: &str, branch: &str) -> Result<(), String> {
         crate::worktree::push_blocking(root, commit, branch)
     }
@@ -197,10 +157,6 @@ pub trait Connector: Send + Sync + 'static {
         to: &Snapshot,
     ) -> Result<(), String>;
 
-    /// How an agent reads the review left on pull request `number`, as the
-    /// words it is told to use.
-    fn read_review_with(&self, number: u64) -> String;
-
     /// The web address of issue `key`, for a person to open or share.
     fn issue_url_blocking(&self, _root: &Path, _key: &str) -> Result<String, String> {
         Err(format!("{} gives no address for an issue.", self.name()))
@@ -241,22 +197,18 @@ pub fn serving(connectors: &[&'static dyn Connector], root: &Path) -> Result<usi
 pub mod fake {
     use super::*;
 
-    /// It serves or refuses as told, answers for its `account`, lists `limit`
-    /// issues, finds the issues numbered in `labelled` under any label, has
-    /// the pull requests in `pulls` by branch and lists those of `listed`,
-    /// fetches nothing, finds nothing to sync, and fails the test if asked
-    /// anything else.
+    /// It serves or refuses as told, answers for its `account`, has the pull
+    /// requests in `pulls` by
+    /// branch and lists those of `listed`, fetches nothing, finds nothing to
+    /// sync, and fails the test if asked anything else.
     pub struct Fake {
         pub name: &'static str,
         pub serves: Result<(), &'static str>,
         pub account: Result<&'static str, &'static str>,
-        pub labelled: &'static [u64],
         /// Branch, state and address of each pull request it knows of.
         pub pulls: &'static [(&'static str, PrState, &'static str)],
         /// Its default branch; `None` is a question it was not told to answer.
         pub default_branch: Option<&'static str>,
-        /// Why its open issues cannot be listed, when they cannot.
-        pub lists: Result<(), &'static str>,
         /// The branches its list of pull requests holds, of those in
         /// `pulls`, and whether the list was cut; `None` gives no list.
         pub listed: Option<(&'static [&'static str], bool)>,
@@ -267,10 +219,8 @@ pub mod fake {
             name: "Forge",
             serves: Ok(()),
             account: Ok("Signed in as t"),
-            labelled: &[9, 4],
             pulls: &[],
             default_branch: Some("main"),
-            lists: Ok(()),
             listed: None,
         };
     }
@@ -285,49 +235,11 @@ pub mod fake {
         fn serves_blocking(&self, _: &Path) -> Result<(), String> {
             self.serves.map_err(str::to_string)
         }
-        fn open_issues_blocking(&self, _: &Path, limit: usize) -> Result<Vec<IssueRow>, String> {
-            self.lists.map_err(str::to_string)?;
-            Ok((1..=limit as u64)
-                .map(|n| IssueRow {
-                    issue: Issue::new(n, "t".into(), String::new()),
-                    author: "a".into(),
-                    labels: Vec::new(),
-                })
-                .collect())
-        }
-        fn my_labelled_issues_blocking(
-            &self,
-            _: &Path,
-            label: &str,
-        ) -> Result<Vec<IssueRow>, String> {
-            assert!(
-                !label.trim().is_empty(),
-                "an empty label reached the connector"
-            );
-            Ok(self
-                .labelled
-                .iter()
-                .map(|&n| IssueRow {
-                    issue: Issue::new(n, format!("#{n}"), String::new()),
-                    author: "a".into(),
-                    labels: vec![label.to_string()],
-                })
-                .collect())
-        }
-        fn remove_label_blocking(&self, _: &Path, _: u64, _: &str) -> Result<(), String> {
-            unreachable!()
-        }
-        fn comment_blocking(&self, _: &Path, _: u64, _: &str) -> Result<(), String> {
-            unreachable!()
-        }
         fn default_branch_blocking(&self, _: &Path) -> Result<String, String> {
             Ok(self
                 .default_branch
                 .unwrap_or_else(|| unreachable!())
                 .to_string())
-        }
-        fn fetch_blocking(&self, _: &Path, _: &str) -> Result<(), String> {
-            Ok(())
         }
         fn pull_request_for_blocking(
             &self,
@@ -348,18 +260,6 @@ pub mod fake {
                     checks: Vec::new(),
                 }))
         }
-        fn pull_requests_blocking(&self, root: &Path, _: usize) -> Result<PullRequests, String> {
-            let Some((branches, capped)) = self.listed else {
-                return Err(format!("{} gives no list of pull requests.", self.name));
-            };
-            let mut by_branch = Vec::new();
-            for branch in branches {
-                if let Some(pr) = self.pull_request_for_blocking(root, branch)? {
-                    by_branch.push((branch.to_string(), pr));
-                }
-            }
-            Ok(PullRequests { by_branch, capped })
-        }
         fn open_pull_request_blocking(
             &self,
             _: &Path,
@@ -371,9 +271,6 @@ pub mod fake {
         }
         fn mark_ready_blocking(&self, _: &Path, _: u64) -> Result<(), String> {
             unreachable!()
-        }
-        fn read_review_with(&self, number: u64) -> String {
-            format!("`forge review {number}`")
         }
         /// Nothing on the far side: a sync moves nothing, and lands.
         fn issues_for_sync_blocking(
@@ -415,12 +312,6 @@ pub(crate) mod memory {
         pub(crate) issues: Mutex<Vec<RemoteIssue>>,
         pub(crate) updates: Mutex<usize>,
         pub(crate) refuse_updates: bool,
-        /// Whether a comment fails, as one does when the forge is unreachable.
-        pub(crate) refuse_comments: bool,
-        /// The keys of the issues the signed-in account wrote.
-        pub(crate) mine: Vec<String>,
-        /// Every comment left, as (key, body).
-        pub(crate) comments: Mutex<Vec<(String, String)>>,
         /// Keys left out of the changed list, as a real forge leaves out an
         /// issue nothing touched since the sync point.
         pub(crate) unchanged: Mutex<Vec<String>>,
@@ -469,47 +360,6 @@ pub(crate) mod memory {
         fn serves_blocking(&self, _: &Path) -> Result<(), String> {
             unreachable!()
         }
-        fn open_issues_blocking(&self, _: &Path, _: usize) -> Result<Vec<IssueRow>, String> {
-            unreachable!()
-        }
-        fn my_labelled_issues_blocking(
-            &self,
-            _: &Path,
-            label: &str,
-        ) -> Result<Vec<IssueRow>, String> {
-            let issues = self.issues.lock().unwrap();
-            Ok(issues
-                .iter()
-                .filter(|r| r.snapshot.open && r.snapshot.labels.iter().any(|l| l == label))
-                .filter(|r| self.mine.contains(&r.key))
-                .map(|r| IssueRow {
-                    issue: Issue::new(
-                        r.key.parse().unwrap(),
-                        r.snapshot.title.clone(),
-                        String::new(),
-                    ),
-                    author: "a".into(),
-                    labels: r.snapshot.labels.clone(),
-                })
-                .collect())
-        }
-        fn remove_label_blocking(&self, _: &Path, number: u64, label: &str) -> Result<(), String> {
-            let mut issues = self.issues.lock().unwrap();
-            if let Some(r) = issues.iter_mut().find(|r| r.key == number.to_string()) {
-                r.snapshot.labels.retain(|l| l != label);
-            }
-            Ok(())
-        }
-        fn comment_blocking(&self, _: &Path, number: u64, body: &str) -> Result<(), String> {
-            if self.refuse_comments {
-                return Err("the forge did not answer".into());
-            }
-            self.comments
-                .lock()
-                .unwrap()
-                .push((number.to_string(), body.to_string()));
-            Ok(())
-        }
         fn default_branch_blocking(&self, _: &Path) -> Result<String, String> {
             unreachable!()
         }
@@ -531,9 +381,6 @@ pub(crate) mod memory {
         }
         fn mark_ready_blocking(&self, _: &Path, _: u64) -> Result<(), String> {
             unreachable!()
-        }
-        fn read_review_with(&self, number: u64) -> String {
-            format!("`forge review {number}`")
         }
         /// Everything it holds as changed once `since` is given — more than a
         /// real forge would list, which is allowed: what it has to list is at
@@ -597,13 +444,11 @@ mod tests {
     static REFUSES: Fake = Fake {
         name: "Elsewhere",
         serves: Err("its remote is on elsewhere.org"),
-        labelled: &[],
         ..Fake::SERVING
     };
     static ALSO_REFUSES: Fake = Fake {
         name: "Tracker",
         serves: Err("no board is set"),
-        labelled: &[],
         ..Fake::SERVING
     };
     static SERVES: Fake = Fake::SERVING;

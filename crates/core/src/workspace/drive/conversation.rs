@@ -2,14 +2,14 @@
 //! that holds it, wherever it is, else the saved one resumed on the project
 //! it ran in.
 //!
-//! **That project may have left the workspace**: an unattended run's worktree
-//! is dropped from it when the run ends, while the folder stays on disk.
+//! **That project may have left the workspace**: a worker's worktree is
+//! dropped from it when the worker closes, while the folder stays on disk.
 //! Asked to open what was said there, the folder is added back, since a
 //! person pressing for that conversation is asking for its project too. Only
 //! a conversation never saved, its agent no longer set up, or its folder gone
 //! is refused, and each is said.
 
-use super::{Effect, Refusal, Signal, StartsOn, WorkspaceDrive};
+use super::{Effect, Signal, StartsOn, WorkspaceDrive};
 use crate::config::AgentSpec;
 use std::path::PathBuf;
 
@@ -49,16 +49,6 @@ impl WorkspaceDrive {
             Live::Here(uid) => Reach::Here(self.select(uid)),
             Live::There(uid, window) => Reach::There(uid, window),
             Live::Nowhere => Reach::Here(vec![Effect::ReadConversation(id.to_string())]),
-        }
-    }
-
-    /// Put a task's session on screen where it is live, or say it has none.
-    #[must_use = "what it comes to is to be carried"]
-    pub fn show_task_session<W>(&mut self, live: Live<W>) -> Reach<W> {
-        match live {
-            Live::Here(uid) => Reach::Here(self.select(uid)),
-            Live::There(uid, window) => Reach::There(uid, window),
-            Live::Nowhere => Reach::Here(vec![Effect::Signal(Signal::Refused(Refusal::NoSession))]),
         }
     }
 

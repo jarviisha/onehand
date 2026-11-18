@@ -27,7 +27,6 @@ fn the_old_shape_reads_as_one_record_per_project() {
             path: "/a".into(),
             host: None,
             pinned: true,
-            unattended: false,
             check: Some("cargo test".into()),
             offload: Some(Offloaded {
                 host: HostName("build01".into()),

@@ -2,9 +2,8 @@
 //! and its end become for the task it is of.
 //!
 //! **Routing is behaviour, so it lives here.** That a run's save writes its
-//! whole task, that its place is held while its session's turn still goes,
-//! and that the question a parked card asked goes into an issue's report are
-//! each a rule a front end would otherwise restate, untested. A front end
+//! whole task, and that its place is held while its session's turn still
+//! goes, are each a rule a front end would otherwise restate, untested. A front end
 //! calls these with the drives it holds and carries out what comes back.
 
 use super::{Effect, OffScreen, TasksDrive};
@@ -28,13 +27,11 @@ pub fn finished<W: Copy>(
     window: W,
 ) -> Vec<Effect<W>> {
     let chat = session.map(|(chat, _)| chat);
-    let asked = chat.filter(|_| run.card()).and_then(card_question);
     tasks.run_ended(
         run.task(),
         run.run().clone(),
         run.pinned(),
         chat.is_some_and(|chat| chat.busy),
-        asked,
         session.map(|(_, uid)| uid),
         window,
     )
@@ -58,22 +55,9 @@ pub fn keep<W: Copy>(
     (fx, kept.unwrap_or_default())
 }
 
-/// What the card `chat` parked last asks a person: a question's message, or
-/// a permission's title.
-pub fn card_question(chat: &Chat) -> Option<String> {
-    chat.pending_asks()
-        .last()
-        .map(|(_, ask)| ask.req.message.clone())
-        .or_else(|| {
-            chat.pending_permissions()
-                .last()
-                .map(|(_, permission)| permission.req.title.clone())
-        })
-}
-
 /// Every task and the runs under way, as another drive reads them: what each
-/// task is doing, its run's word included, and who holds a slot of the cap
-/// on unattended runs. Reads only; nothing here changes a task.
+/// task is doing, its run's word included. Reads only; nothing here changes
+/// a task.
 pub struct Seen<'a, W> {
     tasks: &'a TasksDrive<W>,
     runs: Vec<&'a RunDrive>,
@@ -107,19 +91,6 @@ impl<'a, W: Copy> Seen<'a, W> {
     /// Whether task `id` is queued, running or waiting on a person.
     pub fn busy(&self, id: &str) -> bool {
         self.tasks.busy(id)
-    }
-
-    /// Whether task `id` holds a slot of the cap on unattended runs: queued,
-    /// or running and not waiting on its pull request's status checks. One
-    /// waiting on a person holds none.
-    pub fn holds_slot(&self, id: &str) -> bool {
-        match self.working(id) {
-            Some(Working::Running) => self
-                .run(id)
-                .is_none_or(|run| !run.run().awaiting_status_checks()),
-            Some(Working::Queued) => true,
-            Some(Working::Waiting) | None => false,
-        }
     }
 
     /// Every task kept, oldest first.

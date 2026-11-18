@@ -129,7 +129,7 @@ fn a_declared_agent_launches_as_written() {
     assert!(!spec.outside_pin());
 }
 
-use crate::config::{default_adapter_args, default_agents, run_mode};
+use crate::config::{default_adapter_args, default_agents, worker_mode};
 
 #[test]
 fn the_old_default_becomes_the_preset_where_claude_is_installed() {
@@ -214,85 +214,25 @@ fn a_nameless_preset_takes_its_shown_name() {
     assert_eq!(cfg.agents[0].name, "Codex");
 }
 
-#[test]
-fn the_stored_mode_is_cleared_for_a_preset_and_kept_for_a_declared_agent() {
-    let dir = bin_dir("settle-mode-preset", Some("claude"));
-    let mut cfg = AppConfig::default();
-    cfg.unattended.mode = Some("acceptEdits".into());
-    cfg.settle(Some(dir.as_os_str()));
-    assert_eq!(cfg.unattended.mode, None);
-
-    let empty = bin_dir("settle-mode-declared", None);
-    let mut cfg = AppConfig::default();
-    cfg.unattended.mode = Some("acceptEdits".into());
-    cfg.settle(Some(empty.as_os_str()));
-    assert_eq!(cfg.unattended.mode.as_deref(), Some("acceptEdits"));
-}
-
-#[test]
-fn a_run_mode_comes_from_the_preset_when_none_is_set() {
-    let claude = AgentSpec {
-        name: "Claude Code".into(),
-        preset: Some(Preset::ClaudeCode.into()),
-        ..Default::default()
-    };
-    let codex = AgentSpec {
-        name: "Codex".into(),
-        preset: Some(Preset::Codex.into()),
-        ..Default::default()
-    };
-    let both = [claude.clone(), codex.clone()];
-    assert_eq!(run_mode(None, &both, None), "acceptEdits");
-    assert_eq!(run_mode(None, &both, Some("Codex")), "");
-    assert_eq!(run_mode(Some(""), &both, None), "");
-    assert_eq!(run_mode(Some("plan"), &both, Some("Codex")), "plan");
-    assert_eq!(run_mode(None, &[], None), "");
-}
-
-/// The agent runs use is read when a run starts: making another agent the
-/// default changes the mode with it.
-#[test]
-fn a_run_mode_follows_the_agent_first_now() {
-    let claude = AgentSpec {
-        name: "Claude Code".into(),
-        preset: Some(Preset::ClaudeCode.into()),
-        ..Default::default()
-    };
-    let codex = AgentSpec {
-        name: "Codex".into(),
-        preset: Some(Preset::Codex.into()),
-        ..Default::default()
-    };
-    assert_eq!(run_mode(None, &[codex.clone(), claude.clone()], None), "");
-    assert_eq!(run_mode(None, &[claude, codex], None), "acceptEdits");
-}
-
 /// The old Claude default left declared, for want of `claude` on `PATH`, is
 /// still Claude, and still needs the mode it always ran in.
 #[test]
 fn the_old_default_left_declared_runs_in_accept_edits() {
-    assert_eq!(run_mode(None, &default_agents(), None), "acceptEdits");
+    let agents = default_agents();
+    assert_eq!(
+        worker_mode(&agents, &agents[0].name).as_deref(),
+        Some("acceptEdits")
+    );
 }
 
 #[test]
 fn settling_twice_changes_nothing_more() {
     let dir = bin_dir("settle-twice", Some("claude"));
     let mut cfg = AppConfig::default();
-    cfg.unattended.mode = Some("acceptEdits".into());
     cfg.settle(Some(dir.as_os_str()));
     let once = cfg.clone();
     cfg.settle(Some(dir.as_os_str()));
     assert_eq!(cfg, once);
-}
-
-#[test]
-fn an_absent_mode_is_not_written_and_an_empty_one_is() {
-    let mut cfg = AppConfig::default();
-    cfg.unattended.mode = None;
-    assert!(!cfg.to_toml().unwrap().contains("mode ="));
-    cfg.unattended.mode = Some(String::new());
-    let again = AppConfig::parse(&cfg.to_toml().unwrap()).unwrap();
-    assert_eq!(again.unattended.mode.as_deref(), Some(""));
 }
 
 /// No shell stands between onehand and the adapter, so a value typed as
@@ -485,7 +425,7 @@ fn a_native_preset_runs_its_own_binary_with_its_args() {
         install: "",
         login: "",
         account_var: "",
-        unattended_mode: None,
+        worker_mode: None,
         runs: Runs::Native {
             args: &["--acp"],
             tried: "1",
@@ -556,14 +496,6 @@ fn an_unknown_preset_with_no_name_is_called_by_its_id() {
 }
 
 #[test]
-fn an_unknown_preset_does_not_drop_the_old_run_mode() {
-    let text =
-        "[[agents]]\npreset = \"kimi\"\nname = \"K\"\n\n[unattended]\nmode = \"acceptEdits\"\n";
-    let cfg = AppConfig::from_disk(Some(text), None).unwrap();
-    assert_eq!(cfg.unattended.mode.as_deref(), Some("acceptEdits"));
-}
-
-#[test]
 fn copilot_runs_its_own_binary_in_acp_mode() {
     let dir = bin_dir("copilot-launch", Some("copilot"));
     let mut spec = AgentSpec::of(Preset::Copilot, &[]);
@@ -624,12 +556,12 @@ fn copilot_logs_in_under_its_account() {
     );
 }
 
-/// Copilot's only mode that runs without asking allows every tool, so a run
-/// is never put in it unless the config says so.
+/// Copilot's only mode that runs without asking allows every tool, so a
+/// worker is never put in it.
 #[test]
-fn copilot_runs_unattended_in_its_own_default_mode() {
+fn copilot_works_in_its_own_default_mode() {
     let agents = [AgentSpec::of(Preset::Copilot, &[])];
-    assert_eq!(crate::config::run_mode(None, &agents, None), "");
+    assert_eq!(worker_mode(&agents, &agents[0].name), None);
 }
 
 fn claude_and_codex() -> [AgentSpec; 2] {
@@ -647,38 +579,11 @@ fn claude_and_codex() -> [AgentSpec; 2] {
 }
 
 #[test]
-fn worker_mode_takes_the_configured_mode_for_the_runs_agent() {
-    let both = claude_and_codex();
-    let mode = crate::config::worker_mode(Some("plan"), Some("Claude Code"), &both, "Claude Code");
-    assert_eq!(mode.as_deref(), Some("plan"));
-}
-
-/// A mode is the adapter's own id: one set for Claude's runs means nothing to
-/// a worker on Codex.
-#[test]
-fn worker_mode_ignores_it_for_another_agent() {
-    let both = claude_and_codex();
-    assert_eq!(
-        crate::config::worker_mode(Some("plan"), Some("Claude Code"), &both, "Codex"),
-        None
-    );
-}
-
-#[test]
 fn worker_mode_falls_back_to_the_preset() {
     let both = claude_and_codex();
     assert_eq!(
-        crate::config::worker_mode(None, None, &both, "Claude Code").as_deref(),
+        worker_mode(&both, "Claude Code").as_deref(),
         Some("acceptEdits")
     );
-    assert_eq!(crate::config::worker_mode(None, None, &both, "Codex"), None);
-}
-
-#[test]
-fn a_blank_configured_mode_is_none() {
-    let both = claude_and_codex();
-    assert_eq!(
-        crate::config::worker_mode(Some(" "), None, &both, "Claude Code"),
-        None
-    );
+    assert_eq!(worker_mode(&both, "Codex"), None);
 }

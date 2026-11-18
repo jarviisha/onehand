@@ -1,6 +1,5 @@
 //! What a project row offers behind its `⋯`, and on a right-click.
 
-use super::{pick_item, unattended_item};
 use crate::chat::pane::ProjectFacts;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
@@ -37,7 +36,6 @@ pub(super) fn project_menu(
     ProjectFacts {
         pinned,
         is_repo,
-        unattended,
         check: _,
         asks: _,
         offload,
@@ -48,9 +46,7 @@ pub(super) fn project_menu(
     move |menu, _, cx: &mut App| {
         let danger = crate::theme::status_ink(cx).danger;
         let away = shell.clone();
-        let (pin, auto, pick, start, split, terminal, copy, refresh, remove) = (
-            shell.clone(),
-            shell.clone(),
+        let (pin, start, split, terminal, copy, refresh, remove) = (
             shell.clone(),
             shell.clone(),
             shell.clone(),
@@ -72,22 +68,6 @@ pub(super) fn project_menu(
                 },
             ),
         )
-        .when_some(unattended, |menu, on| {
-            menu.item(unattended_item(on, move |_, window, cx: &mut App| {
-                auto.update(cx, |shell: &mut Shell, cx| {
-                    shell.toggle_unattended(root_idx, window, cx);
-                })
-                .ok();
-            }))
-        })
-        .when(is_repo && unattended.is_some(), |menu| {
-            menu.item(pick_item(move |_, window, cx: &mut App| {
-                pick.update(cx, |shell: &mut Shell, cx| {
-                    shell.begin_pick(root_idx, None, window, cx)
-                })
-                .ok();
-            }))
-        })
         .item(
             crate::controls::menu_item("New session").on_click(move |_, window, cx: &mut App| {
                 start

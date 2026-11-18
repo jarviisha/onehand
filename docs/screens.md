@@ -4,7 +4,7 @@ What each region of the window holds and the order it holds it in, in the app an
 crates. It binds at the level written here, as `DESIGN.md` does; below it, the code and its tests
 decide. `DESIGN.md` owns the principles, the window's frame, the transcript and the visual rules
 these screens are drawn with; `docs/ui-patterns.md` the patterns they repeat; and a feature's own
-document (`docs/tasks.md`, `docs/workflows.md`, `docs/unattended.md`) its screens' detail. Code
+document (`docs/tasks.md`, `docs/workflows.md`) its screens' detail. Code
 never cites this file.
 
 ## Title bar
@@ -56,16 +56,14 @@ line regular in the muted ink at the meta size. A neutral badge stands on the pa
 
 *By project* lists pinned projects first, a gap between projects. A project row: the fold chevron,
 folder and name, its git line (branch, uncommitted changes, commits ahead and behind, each only
-above zero and named in full on hover), the pin, the unattended pill (*auto*, *auto · N*, *auto · N
-waiting*; a run's pill opens its issue on the Issues page), and while folded its sessions' most
-urgent state. A project on a host has no unattended pill: the host's name stands first in the
-row's meta, in the meta ink, and its hover's last line reads `<host>:<path>`. Its git line follows
+above zero and named in full on hover), the pin, and while folded its sessions' most urgent
+state. On a project on a host the host's name stands first in the row's meta, in the meta ink, and its hover's last line reads `<host>:<path>`. Its git line follows
 once read over a live attach, and is absent while a local project on the same path is in the
 workspace. After the host's name a muted plug mark stands while the host is not connected, its hover
 *Not connected to <host>; trying again* while it is being tried again, else *Not connected to
 <host>*, or *<host> was attached from another machine* when another machine took it; nothing is
 drawn while it is attached, being attached, never tried, or refused. An offloaded project's row is
-a local one's, its unattended pill gone; while its host holds the code a lock mark stands in its
+a local one's; while its host holds the code a lock mark stands in its
 meta, in the muted ink, its hover *<host> has the code until its sessions finish*, or in the
 warning ink, *Bringing the code back from <host> stopped: something changed here meanwhile*. Nothing
 marks it while this machine holds the code. One on a branch is never locked; while the host's
@@ -205,8 +203,7 @@ agent that reports neither (the limit's also while it is reported with no figure
 wrong); while the
 session's agent may use onehand's tools, *Controls onehand* stands before the mode, its bot mark
 in the warning ink, and pressing it switches that off. The `+` menu ends on *Agent controls
-onehand* under a heading of its own, *This session*, checked while on, and not offered in an
-unattended run's session. Each chip's
+onehand* under a heading of its own, *This session*, checked while on. Each chip's
 menu opens just above it, without its tooltip. Above the card, top down: one surface on the card's
 fill, edge and lift holding a reconnect and the queue as lines, then the staged files as one row
 of plates (below); then the slivers of the cards waiting behind, at most two; then one pinned
@@ -226,8 +223,7 @@ is coordinating this worker* and *Back to lead*, which shows the lead (*Its lead
 while the lead is a session of another window); once the person has sent the worker a prompt, *You hold this
 worker* and *Give back to the lead*, the button only while giving back is offered.
 *Run a workflow…* (the `+` menu, the
-keymap, the Workflows page's *Run…*) opens the launcher, and an issue's *Run workflow…* its start
-form; both are drawn as `docs/workflows.md` describes.
+keymap, the Workflows page's *Run…*) opens the launcher, drawn as `docs/workflows.md` describes.
 
 ## Docks
 
@@ -292,11 +288,10 @@ room and leaves the terminal as it is.
 - The Issues tab's issue: a trail (project › reference, linked to its forge, or *Draft*) with its
   actions (the next one secondary, one other a ghost, ⋯; here and on the Issues page, *New
   issue* holds the view's primary);
-  its tags (a neutral state badge, labels); the title, large; one line of facts; what it waits on
-  (a conflict, where its work stands, the review); then two chips: *Description* (the body as a
-  document, the files it names, what the work left, *Before*)
-  and *Activity N* (the history). Sections are parted by space, not rules. ⋯ ▸ *Open in Issues* and
-  *Review…* open it on the Issues page, the latter with its review open.
+  its tags (a neutral state badge, labels); the title, large; one line of facts; a conflict, when
+  there is one; then two chips: *Description* (the body as a document, the files it names) and
+  *Activity N* (the history). Sections are parted by space, not rules. ⋯ ▸ *Open in Issues* opens it
+  on the Issues page.
 - Hiding a dock keeps its buffers and processes; the terminal's open state follows the project.
 - On a project on a host, the Workbench offers the Editor (with Files) only, and says *Attaching to
   <host>…* or a standing failure with *Try again* until the host answers; the terminal dock shows
@@ -387,8 +382,7 @@ room and leaves the terminal as it is.
   refuses with the same words, and the prompt goes once the host holds the code. A failure is a
   toast, *Sending the code to the host failed*, the prompt left in the composer.
 - *Workspace overview* shows, under its head (*Overview*), across all projects, the boxes *Waiting
-  on you* (runs waiting for an answer or an approval, and sessions waiting, failed, finished or
-  lost) and *Working*, then *Projects* as a grid of tiles (not drawn without projects), then the
+  on you* (sessions waiting, failed, finished or lost) and *Working*, then *Projects* as a grid of tiles (not drawn without projects), then the
   boxes *Recent conversations* and *Open issues* (its project picker kept while the page is left).
   The head stays in place; the boxes scroll under it as one.
 - *Schedules*: a head (*Schedules*, with how many are on and off), the project picker at the end
@@ -424,16 +418,14 @@ room and leaves the terminal as it is.
   *Way out*, and the runs on a vertical stepper.
 - *Issues*, a list page (`docs/ui-patterns.md`, *List pages*): a head (*Issues*, then *Refresh*
   and *New issue*, its primary, at the end); the row under it (the search, then *Open* and
-  *Closed* as choices, each its count in a badge after its word, then pickers for progress, project
-  and label and *Clear filters* at the row's end), the two kept in place;
+  *Closed* as choices, each its count in a badge after its word, then pickers for project and
+  label and *Clear filters* at the row's end), the two kept in place;
   the rows a table under a head naming each column (*Issue*, *Title*, *Labels*, *Project*,
   *Updated*) in the meta ink, drawn only while there are rows;
   a row is its state mark (open in the success ink, closed in the closed ink), reference, title,
   priority and note, then its labels, project and age in slots at the end, the labels and project
   dropped first; *Showing N of M open issues* at the foot. *Reading the issues…* until the first
   read lands; *Refresh* spins while it reads. *No issues yet* or *No issues match* when empty.
-- The **review block** opens below where the work stands only on *Review…*, as `docs/unattended.md`
-  draws it.
 - *Workflows*: a column page as wide as boxes side by side, holding the workflows as cards. Its
   head reads *Workflows*, how many under it, *New*, its one primary, and a ⋯ holding *Import…*;
   under it a search, matching a workflow's name and description, kept while the page is left; the
@@ -491,11 +483,11 @@ open the agent form as a dialog (*Kind*, *Name*, *Command* and *Arguments* for a
 this build does not know shows its `preset` line, *Not supported by this build of onehand* under it,
 and only *Delete…*. The Workspace page holds, in its first group, the workspace's *Name* and its
 *Storage folder*: the folder onehand keeps it in, in mono, shown so it can be found for a backup
-and never chosen; then *Other workspaces* with *New workspace…*; then *Unattended runs*; and last
-*Delete workspace*, its button in the danger ink, refused while a task works one of the
-workspace's issues, asking before it closes the window and removes the workspace with the issues
-it keeps. The Connections page lists each connector and who it acts as, then an *Outside
-control* group: what a program may and may never do, the socket's path in mono, and one switch.
+and never chosen; then *Other workspaces* with *New workspace…*; and last *Delete workspace*, its button in the
+danger ink, asking before it closes the window and removes the workspace with the issues it keeps.
+The Connections page lists each connector and who it acts as, with *Check again*, then an
+*Outside control* group: what a program may and may never do, the socket's path in mono, and one
+switch.
 The Shortcuts page lists the window's commands first, then a group for each place the rest work
 in (the rail's list, a page, a card, the composer), in the keymap's order, and last the terminal's
 fixed keys; a group says where its commands work, and a row says so only where it differs.

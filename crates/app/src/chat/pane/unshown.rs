@@ -1,4 +1,4 @@
-//! Sessions started off screen: an unattended run's, a tool's worker, and a
+//! Sessions started off screen: a tool's task, a lead's worker, and a
 //! lead's worker coming back, which waits unconnected until it is shown or
 //! its lead calls on it.
 
@@ -16,8 +16,8 @@ impl ChatPane {
     ///
     /// The other half of the lazy rule [`Self::show`] keeps. A session normally
     /// connects the first time it is shown, so that a workspace of a dozen roots
-    /// does not launch a dozen agents at boot; an unattended run is one agent
-    /// that was asked for, and showing it would swap the conversation somebody
+    /// does not launch a dozen agents at boot; a worker or a tool's task is
+    /// one agent that was asked for, and showing it would swap the conversation somebody
     /// is reading for one they did not start. Nothing here needs a window — it
     /// is showing, not connecting, that does.
     pub fn open_unshown(

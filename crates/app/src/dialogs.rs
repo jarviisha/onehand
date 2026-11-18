@@ -1,6 +1,6 @@
 //! The modal windows: the conversation rename, the worktree split, the branch
-//! rename, the issue picker, the workflow launcher, the agent form and the
-//! form that adds a project on a host.
+//! rename, the workflow launcher, the agent form and the form that adds a
+//! project on a host.
 //!
 //! The component library owns overlays, focus traps and Escape handling.
 
@@ -25,8 +25,8 @@ use onehand_ui::Tall as _;
 mod agent;
 mod branch;
 mod host_project;
-mod issue;
 mod offload;
+mod rows;
 
 pub use agent::agent_form;
 
@@ -37,9 +37,8 @@ pub(crate) use host_project::{
     add_refusal, browse_refusal, browse_rows, busy_body, clone_refusal, clone_target,
 };
 
-pub use issue::pick_issue;
-pub(crate) use issue::{PickJudged, issue_row, issue_workflow_menu, page_row};
 pub(crate) use offload::offload;
+pub(crate) use rows::{issue_row, page_row};
 
 /// How tall a form's details field stands: a paragraph in view.
 const DETAILS_H: gpui::Rems = gpui::rems(8.);
@@ -267,7 +266,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
             let lines: Vec<_> = found
                 .iter()
                 .enumerate()
-                .map(|(at, finding)| finding_line(at, finding, &handle, None, cx))
+                .map(|(at, finding)| finding_line(at, finding, None, cx))
                 .collect();
             let handle = handle.clone();
             let names = names.clone();
@@ -480,12 +479,10 @@ fn sections(groups: impl IntoIterator<Item = AnyElement>, cx: &App) -> gpui::Div
 }
 
 /// One thing the preflight found: in the danger ink when it blocks, muted
-/// when it only says, with where it is changed, and *Retry…* for an earlier
-/// task worth retrying instead, which opens its Retry dialog.
+/// when it only says, with where it is changed.
 pub(crate) fn finding_line(
     at: usize,
     finding: &onehand_core::preflight::Finding,
-    handle: &Entity<Shell>,
     ask: Option<&crate::agent_check::Ask>,
     cx: &App,
 ) -> impl IntoElement {
@@ -496,7 +493,6 @@ pub(crate) fn finding_line(
         Some(change) => format!("{}{change}", finding.text),
         None => finding.text.clone(),
     };
-    let shell = handle.clone();
     let (danger, muted) = (
         crate::theme::status_ink(cx).danger,
         cx.theme().muted_foreground,
@@ -524,52 +520,6 @@ pub(crate) fn finding_line(
                 // centred on the first line's height when the text wraps.
                 .child(onehand_ui::mark_slot(Icon::new(mark).xsmall()).h(FINDING_LINE))
                 .child(div().flex_1().min_w_0().child(text)),
-        )
-        .children(finding.task.clone().map(|task| {
-            // Filled, as every action beside a finding's sentence is: a ghost
-            // there reads as more of the text.
-            crate::controls::action(("pick-retry-task", at))
-                .secondary()
-                .short()
-                .label("Retry…")
-                .on_click(move |_, window: &mut Window, cx: &mut App| {
-                    shell.update(cx, |shell, cx| {
-                        // Only an issue start yields a finding with a task,
-                        // and without a picker open this does nothing.
-                        shell.cancel_pick(cx);
-                        shell.begin_retry(task.clone(), window, cx);
-                    });
-                })
-        }))
-        // Who holds each slot, as the slots stand now, each opening its
-        // task in place of the start.
-        .children(
-            (finding.about == onehand_core::preflight::About::Slot)
-                .then(|| crate::unattended::slots(cx))
-                .flatten()
-                // Only a full slot is refused for its holders; at the cap on
-                // waiting runs they are not what stands in the way.
-                .filter(|slots| slots.taken())
-                .into_iter()
-                .flat_map(|slots| slots.holders)
-                .take(onehand_core::unattended::HOLDERS_SAID)
-                .enumerate()
-                .map(|(i, holder)| {
-                    let (shell, task) = (handle.clone(), holder.task);
-                    // The line above names each holder; the button opens it.
-                    crate::controls::action(SharedString::from(format!("slot-holder-{at}-{i}")))
-                        .secondary()
-                        .short()
-                        .label(format!("Open {}", holder.named))
-                        .tooltip("Open the task holding this slot")
-                        .on_click(move |_, window: &mut Window, cx: &mut App| {
-                            gpui_component::WindowExt::close_dialog(window, cx);
-                            shell.update(cx, |shell, cx| {
-                                shell.cancel_pick(cx);
-                                shell.show_task(&task, window, cx);
-                            });
-                        })
-                }),
         )
         // What is not known only because the agent itself has not come up
         // can be learned now, at the cost of an agent start, and only on a

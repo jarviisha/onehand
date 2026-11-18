@@ -305,36 +305,6 @@ impl WorkspaceDrive {
         }
     }
 
-    /// End a run's project at `dir`, when the run added it itself: its
-    /// session closed and its row gone, quietly, showing what is left only
-    /// when it was the project selected. A project a person has open stays.
-    #[must_use = "its effects are to be carried"]
-    pub fn end_run(&mut self, dir: &Path) -> Vec<Effect> {
-        let Some(idx) = self
-            .local_index(dir)
-            .filter(|&idx| self.workspace.roots[idx].transient)
-        else {
-            return Vec::new();
-        };
-        let was_active = self.workspace.active_root == idx;
-        let mut fx = self.forget(idx);
-        if was_active {
-            fx.push(Effect::Show);
-        }
-        fx
-    }
-
-    /// Keep a run's project at `dir` for good, written into the workspace: a
-    /// person has taken the run over, so it is their project now.
-    #[must_use = "its effects are to be carried"]
-    pub fn take_over_run(&mut self, dir: &Path) -> Vec<Effect> {
-        let Some(idx) = self.local_index(dir) else {
-            return Vec::new();
-        };
-        self.workspace.roots[idx].transient = false;
-        self.save()
-    }
-
     /// Select project `root`, and show the session it was last on.
     #[must_use = "its effects are to be carried"]
     pub fn select_project(&mut self, root: usize) -> Vec<Effect> {

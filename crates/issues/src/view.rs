@@ -16,27 +16,22 @@ use gpui_component::input::InputState;
 use gpui_component::text::TextViewState;
 use onehand_core::connector::Connector;
 use onehand_core::issues::{self, Issues, LocalIssue};
-use onehand_core::task::work::IssueWork;
-use onehand_core::task::work::drive::WorkDrive;
 use onehand_ui::{Confirm, confirm_on, hint, measure_width, status_ink, status_line};
 use onehand_workbench::Asker;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+mod actions;
 mod detail;
 mod file;
 mod form;
-mod full;
 mod list;
 mod mentions;
 mod page;
-mod reads;
 mod requests;
-mod review;
 mod store;
 mod tab;
-mod work;
 use detail::{Doing, issue_view};
 use form::{Form, form_view};
 use list::Showing;
@@ -55,17 +50,6 @@ pub(crate) fn write_outside(
 ) {
     let shared = IssuesFile::get(root, file, connectors, cx);
     shared.update(cx, |shared, cx| shared.write_outside(change, answer, cx));
-}
-
-/// The issues file `outside` names was kept in step with its forge outside
-/// every view of it (an unattended run's search or claim): the one drive every
-/// view shares, if a view holds the file, hears it, so the views show what
-/// the sync left and the file does not sync again right after.
-pub fn synced(outside: onehand_core::issues::sync::OutsideSync, cx: &mut App) {
-    let onehand_core::issues::sync::OutsideSync { file, kept, report } = outside;
-    if let Some(shared) = IssuesFile::held(&file, cx) {
-        shared.update(cx, |shared, cx| shared.synced_outside(kept, report, cx));
-    }
 }
 
 /// An Issues view open on one project, for the tests of what writes an
@@ -129,10 +113,6 @@ const FILES_SHOWN: usize = 20;
 /// since the last thing that happened to it is the one read first.
 const HISTORY_SHOWN: usize = 50;
 
-/// How many of an issue's earlier tasks are drawn under it, newest first;
-/// the rest are on the Tasks page, and the list says so.
-const EARLIER_SHOWN: usize = 5;
-
 pub(crate) struct IssuesView {
     root: Option<PathBuf>,
     /// The workspace's storage directory. `None` is a workspace bound to
@@ -182,15 +162,6 @@ pub(crate) struct IssuesView {
     /// The conversations with a live session in this window, by the agent's
     /// session id: an issue whose history names one of them is being worked.
     live: Vec<String>,
-    /// The work on every issue this window's projects keep, and what this
-    /// view reads of it and when: the issue on screen's pull request, on the
-    /// page every project's and what the work left, and the review it
-    /// answers.
-    work: WorkDrive,
-    /// Watches the window coming back to the front, made on the first draw.
-    _activation: Option<Subscription>,
-    /// The projects a run may be started on.
-    offered: Vec<PathBuf>,
     /// What the Issues page holds beside what the tab does: `None` for the
     /// Workbench's Issues mode, which draws one project at the dock's width.
     page: Option<page::PageState>,
@@ -287,9 +258,6 @@ impl IssuesView {
             ask,
             tell,
             live: Vec::new(),
-            work: WorkDrive::new(connectors, page),
-            _activation: None,
-            offered: Vec::new(),
             viewer: cx.entity_id().as_u64(),
             watching: None,
             _tick: cx.spawn(async move |view, cx| {
@@ -335,7 +303,7 @@ impl IssuesView {
         }
         self.look_at(Some(root.to_path_buf()), cx);
         self.label = None;
-        // Arriving reads the project's file again: a run may have written it
+        // Arriving reads the project's file again: a session may have written it
         // while another project was on screen.
         if let Some(state) = self.roots.get(root) {
             state.file.update(cx, |file, _| file.mark_stale());
@@ -361,18 +329,6 @@ impl IssuesView {
         self.storage = storage;
         self.roots.clear();
         self.watch_active(cx);
-        cx.notify();
-    }
-
-    pub(crate) fn set_works(
-        &mut self,
-        works: &[IssueWork],
-        offered: &[PathBuf],
-        cx: &mut Context<Self>,
-    ) {
-        let shown = self.selected_key();
-        self.work.set_works(works, shown.as_ref());
-        self.offered = offered.to_vec();
         cx.notify();
     }
 
@@ -505,59 +461,6 @@ impl IssuesView {
         cx.notify();
     }
 
-    /// Close issue `number`. It can be reopened, so it goes ahead without
-    /// asking, unless a run is still working on it, which closing does not
-    /// stop: that is asked about first.
-    fn confirm_close(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.closing_asks(number) {
-            self.set_open(number, false, cx);
-            return;
-        }
-        let Some(root) = self.root.clone() else {
-            return;
-        };
-        let Some(issue) = self.issues_of(&root, cx).and_then(|kept| kept.get(number)) else {
-            return;
-        };
-        let description = match &issue.link() {
-            Some(link) => format!(
-                "\u{201c}{}\u{201d} moves to the closed list here and closes on {} at the next sync. A run is still working on it; closing does not stop it.",
-                issue.title(),
-                link.connector
-            ),
-            None => format!(
-                "\u{201c}{}\u{201d} moves to the closed list. A run is still working on it; closing does not stop it.",
-                issue.title()
-            ),
-        };
-        // The question names the issue by its title, its number only where it
-        // has none.
-        let title = match issue.title().trim() {
-            "" => format!("Close issue {number}?"),
-            named => format!("Close \u{201c}{named}\u{201d}?"),
-        };
-        // The project is held so a dialog left open across a switch closes the
-        // issue it was opened for, never the same number in another project.
-        let root = self.root.clone();
-        confirm_on(
-            cx.entity(),
-            Confirm {
-                id: "close-issue",
-                title: title.into(),
-                description: description.into(),
-                act: "Close issue",
-                ..Default::default()
-            },
-            window,
-            cx,
-            move |view, _, cx| {
-                if view.root == root {
-                    view.set_open(number, false, cx);
-                }
-            },
-        );
-    }
-
     /// Find issue `number`'s address on its forge, then hand it to `then` —
     /// opening it, copying it. Asked of the forge each time rather than built
     /// here, since the forge is the one that knows where a moved repository
@@ -623,14 +526,6 @@ impl Render for IssuesView {
         {
             state.file.update(cx, |file, cx| file.load_if_stale(cx));
         }
-        if self._activation.is_none() {
-            self._activation = Some(cx.observe_window_activation(window, |view, window, cx| {
-                if window.is_window_active() {
-                    view.work.returned();
-                    cx.notify();
-                }
-            }));
-        }
         // Deferred: the toast layer is drawn by the window's root, which is
         // not to be updated from inside one of its children's renders.
         if let Some((what, why)) = self.failed.take() {
@@ -640,7 +535,6 @@ impl Render for IssuesView {
             });
         }
         let body = self.body(window, cx);
-        self.work.drawn();
         div()
             .flex_1()
             .min_h_0()
@@ -715,23 +609,10 @@ impl IssuesView {
         let templates = state.file.read(cx).templates.clone();
         let publishing = state.file.read(cx).publishing == Some(issue.number());
         let body = self.parsed_body(root, &issue, cx);
-        let key = self.key(root, issue.number());
-        let work = key.as_ref().and_then(|key| self.work.work_of(key)).cloned();
-        let effects = self
-            .work
-            .show(root, key.as_ref(), onehand_core::Now::read());
-        self.carry(effects, cx);
-        let review = self.review_block(&issue, key.as_ref(), work.as_ref(), cx);
-        let reading = self.work.reading();
         let doing = Doing {
             publishing,
-            reading,
-            review,
-            full: self.page.as_ref().map(|page| page.full(&self.work)),
+            page: self.page.is_some(),
             session: issue.working_in(&self.live).map(str::to_string),
-            offered: self.offered.iter().any(|offered| offered == root),
-            pr: self.work.pr_seen(work.as_ref()),
-            last: self.work.pr_value(work.as_ref()),
             templates,
             project: self
                 .page
@@ -740,7 +621,6 @@ impl IssuesView {
                 .unwrap_or_else(|| project_name(root)),
             tab: self.issue_tab,
             nav,
-            work,
         };
         issue_view(root, &issue, body, publish_to, doing, window, cx)
     }

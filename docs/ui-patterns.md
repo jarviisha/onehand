@@ -368,7 +368,7 @@ its fields' size. The size follows the dialog: one that asks one thing (a rename
 stands at its own width with `.short()` controls; one that holds a form (the agent form, the
 workflow launcher, the issue picker) stands at `DIALOG_FORM` with `.tall()` ones. A third action (*Use the automatic title*, *Put it somewhere else…*) stands at the
 footer's start, apart from the two that close it, on the secondary fill, as it starts its line. It opens with focus on its first field and
-closes on Esc. A question without fields (a retry, *Answer the review*, a removal) is an alert
+closes on Esc. A question without fields (a retry, a removal) is an alert
 dialog, as the confirmation below is, never a dialog of its own; a start that fails is said once,
 in an error toast.
 

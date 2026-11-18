@@ -57,7 +57,7 @@ pub(super) fn open_plain(
     drive().admit_plain(lead, &open)?;
     let (uid, session) = shell
         .update(cx, |shell, cx| {
-            shell.run_unattended(dir, spec, Vec::new(), cx)
+            shell.open_off_screen(dir, spec, Vec::new(), cx)
         })
         .ok_or("the session did not start")?;
     drive().opened_plain(lead, uid);
@@ -93,7 +93,7 @@ pub(super) fn open(
     cx: &mut App,
 ) -> Result<String, String> {
     let spec = agent_named(&open.agent, cx)?;
-    let mode = crate::unattended::worker_mode(&spec.name, cx);
+    let mode = crate::task::facts::worker_mode(&spec.name, cx);
     let dirs = open.dirs.clone();
     let begun = drive().open_worker(open, projects, mode)?;
     let (key, target, fx) = match begun {
@@ -239,7 +239,7 @@ pub(super) fn carry_one(effect: Effect, cx: &mut App) {
                 .and_then(|(shell, spec)| Ok((shell, spec?)))
                 .and_then(|(shell, spec)| {
                     shell
-                        .update(cx, |shell, cx| shell.run_unattended(root, spec, dirs, cx))
+                        .update(cx, |shell, cx| shell.open_off_screen(root, spec, dirs, cx))
                         .ok_or_else(|| "the session did not start".to_string())
                 })
                 .map(|(uid, session)| {

@@ -73,7 +73,7 @@ fn checking(spec: &AgentSpec, cx: &App) -> Option<Checking> {
 pub(crate) fn button(id: usize, ask: &Ask, cx: &App) -> AnyElement {
     let muted = cx.theme().muted_foreground;
     let state = checking(&ask.spec, cx);
-    let learned = crate::unattended::offered(&ask.spec, cx);
+    let learned = crate::task::facts::offered(&ask.spec, cx);
     let said = match &state {
         Some(Checking::Failed(why)) => {
             Some(format!("{} could not be checked: {why}", ask.spec.name))

@@ -59,8 +59,9 @@ pub struct PresetInfo {
     /// The variable that points this agent at one account's directory, which
     /// a login must be run under to log that account in.
     pub account_var: &'static str,
-    /// The mode an unattended run starts in when the config names none.
-    pub(crate) unattended_mode: Option<&'static str>,
+    /// The mode a lead's worker starts in, to edit without a person granting
+    /// each change.
+    pub(crate) worker_mode: Option<&'static str>,
     pub runs: Runs,
 }
 
@@ -91,7 +92,7 @@ static CLAUDE_CODE: PresetInfo = PresetInfo {
     account_var: "CLAUDE_CONFIG_DIR",
     // Claude's default mode asks before every edit, so a run left in it parks
     // on the first card nobody answers.
-    unattended_mode: Some("acceptEdits"),
+    worker_mode: Some("acceptEdits"),
     runs: Runs::Adapter {
         package: "@agentclientprotocol/claude-agent-acp",
         pin: "0.81.2",
@@ -107,7 +108,7 @@ static CODEX: PresetInfo = PresetInfo {
     account_var: "CODEX_HOME",
     // Codex's default reviews its own escalations and finished a run that
     // edited, fetched and pushed without asking once, so it needs none.
-    unattended_mode: None,
+    worker_mode: None,
     runs: Runs::Adapter {
         package: "@agentclientprotocol/codex-acp",
         pin: "2.2.2",
@@ -143,7 +144,7 @@ static COPILOT: PresetInfo = PresetInfo {
     // None, on purpose. Its default mode asks before every step, and the one
     // that does not, autopilot, allows every tool: a run never answers a card
     // for a person, so a grant that wide is the config's to write, not ours.
-    unattended_mode: None,
+    worker_mode: None,
     runs: Runs::Native {
         args: &["--acp"],
         tried: "1.0.102",

@@ -23,7 +23,6 @@ use super::{AgentEdit, AgentSpec, AppConfig, Appearance};
 use crate::acp::AcpEvent;
 use crate::saving::{Pending, Saves};
 use crate::workflow::Offer;
-use std::collections::BTreeMap;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -38,8 +37,6 @@ pub enum Setting {
     Agents,
     /// Whether a program outside onehand may use the tools.
     Outside,
-    /// The workflow issues are worked with and the workflow labels.
-    Workflows,
 }
 
 /// A setting's value, as it is put in force.
@@ -49,11 +46,6 @@ pub enum Value {
     Outside(bool),
     /// The agent list, which is never put back.
     Agents,
-    /// The workflow issues are worked with, and each workflow label's.
-    Workflows {
-        default: String,
-        by_label: BTreeMap<String, String>,
-    },
 }
 
 /// What one write edits in the file, in place.
@@ -62,10 +54,6 @@ pub enum Edit {
     Appearance(Appearance),
     Agents(Box<AgentEdit>),
     Outside(bool),
-    Workflows {
-        default: String,
-        by_label: BTreeMap<String, String>,
-    },
 }
 
 impl Edit {
@@ -75,10 +63,6 @@ impl Edit {
             Self::Appearance(choice) => cfg.appearance = *choice,
             Self::Agents(edit) => edit.apply(&mut cfg.agents),
             Self::Outside(on) => cfg.control.outside = *on,
-            Self::Workflows { default, by_label } => {
-                cfg.unattended.workflow = default.clone();
-                cfg.unattended.workflows = by_label.clone();
-            }
         }
     }
 
@@ -88,7 +72,6 @@ impl Edit {
             Self::Appearance(_) => "Saving the appearance",
             Self::Agents(_) => "Saving the agents",
             Self::Outside(_) => "Saving outside control",
-            Self::Workflows { .. } => "Saving the unattended runs",
         }
     }
 }
@@ -277,40 +260,6 @@ impl SettingsDrive {
         ]
     }
 
-    /// Put `default` and `by_label` in force as the workflows issues are
-    /// worked with, from `before`, then write them. A run already working
-    /// keeps the workflow it started with. What is in force is unattended
-    /// runs' drive's; this keeps its save.
-    #[must_use]
-    pub fn set_workflows(
-        &mut self,
-        before: (String, BTreeMap<String, String>),
-        default: String,
-        by_label: BTreeMap<String, String>,
-    ) -> Vec<Effect> {
-        let after = Value::Workflows {
-            default: default.clone(),
-            by_label: by_label.clone(),
-        };
-        let (old_default, old_labels) = before;
-        let before = Value::Workflows {
-            default: old_default,
-            by_label: old_labels,
-        };
-        if before == after {
-            return Vec::new();
-        }
-        vec![
-            Effect::Show(after.clone()),
-            self.write(
-                Setting::Workflows,
-                before,
-                after,
-                Edit::Workflows { default, by_label },
-            ),
-        ]
-    }
-
     /// Make `edit` to the agent list on screen, then to the file's.
     pub fn edit_agents(&mut self, edit: AgentEdit) -> Vec<Effect> {
         edit.apply(&mut self.settings.agents);
@@ -373,7 +322,7 @@ impl SettingsDrive {
                 for value in back {
                     match &value {
                         Value::Appearance(choice) => self.settings.appearance = *choice,
-                        Value::Outside(_) | Value::Workflows { .. } => {}
+                        Value::Outside(_) => {}
                         Value::Agents => continue,
                     }
                     fx.push(Effect::Show(value));

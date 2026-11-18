@@ -31,7 +31,7 @@ when = "0 9 * * *"          # minute hour day-of-month month day-of-week
 agent = "Claude Code"       # left out: the first agent
 mode = "acceptEdits"        # left out: the agent's own
 tools = ["list_issues", "create_issue"]
-labels = []                 # "auto" hands every issue it writes to unattended runs
+labels = []                 # the labels every issue it writes is given
 missed = "run_once"         # or "skip"
 overlap = "skip"            # or "queue"
 
@@ -94,7 +94,7 @@ writing the file, the window holding each project, and each start.
   editing or deleting the schedule never widens what an earlier task may do.
 - **A start that cannot go** says why in `said`, and on the desktop once per reason; it tries again
   at its next time. The schedule is never switched off by itself. A task that waited for its place
-  and cannot start when its turn comes ends failed, as an issue's run does, so its row and the
+  and cannot start when its turn comes ends failed, so its row and the
   desktop say why.
 - **Its task says where it came from**: *<schedule> · <workflow>* on the Tasks page.
 - **When it ends**, a desktop notification names the schedule and how it ended.

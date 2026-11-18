@@ -1,7 +1,7 @@
 //! A run that ended, kept in its task: what its end tells, and the place it
 //! holds given up once its work has stopped and its last mark is pinned.
 
-use super::{Effect, Input, Linked, Signal, TasksDrive, DRAIN_LIMIT};
+use super::{Effect, Input, Signal, TasksDrive, DRAIN_LIMIT};
 use crate::task::{marks, Origin, Source, Task};
 use crate::workflow::{Failure, Outcome, Run};
 use crate::Now;
@@ -10,16 +10,13 @@ impl<W: Copy> TasksDrive<W> {
     /// Task `id`'s run ended as `run`, which kept the marks of `from` of its
     /// boundaries, on session `uid` in `window`, if it had one: keep it, and
     /// let its place go once the work has stopped, which is at once unless
-    /// its session's turn still goes (`turn_going`). `asked` is what a card
-    /// the run waited on asked.
-    #[allow(clippy::too_many_arguments)]
+    /// its session's turn still goes (`turn_going`).
     pub fn run_ended(
         &mut self,
         id: &str,
         run: Run,
         from: usize,
         turn_going: bool,
-        asked: Option<String>,
         uid: Option<u64>,
         window: W,
     ) -> Vec<Effect<W>> {
@@ -36,7 +33,6 @@ impl<W: Copy> TasksDrive<W> {
                 }));
             }
         }
-        self.keep_report(id, &run, asked);
         self.store_run(id, run, &mut fx);
         // A finished schedule's session leaves the rail once the run is let
         // go, so nothing of the run is left listening to it.
@@ -71,16 +67,6 @@ impl<W: Copy> TasksDrive<W> {
         Some(task.clone())
     }
 
-    /// Keep how `run` of task `id` ended for its issue, if it works one, in
-    /// the task itself, so the task's next write holds it before anything is
-    /// sent: `asked` is what a card the run waited on asked.
-    pub(super) fn keep_report(&mut self, id: &str, run: &Run, asked: Option<String>) {
-        match self.task_mut(id).map(|task| &mut task.source) {
-            Some(Source::Issue(issue)) => issue.keep_report(run, asked),
-            Some(Source::Workflow | Source::Check) | None => {}
-        }
-    }
-
     fn store_run(&mut self, id: &str, run: Run, fx: &mut Vec<Effect<W>>) {
         if let Some(task) = self.keep_run(id, run) {
             fx.push(Effect::Save(Box::new(task)));
@@ -88,10 +74,8 @@ impl<W: Copy> TasksDrive<W> {
     }
 
     /// Task `id`, holding its place, could not start for `why`, of `kind`.
-    /// An issue's run ends failed, so its issue is told rather than left
-    /// claimed with nothing after the claim; a schedule's too, since nobody
-    /// is watching it either and failing is what says so. Any other's place
-    /// only passes on, the task as it was.
+    /// A schedule's run ends failed, since nobody is watching it and failing
+    /// is what says so. Any other's place only passes on, the task as it was.
     pub fn not_started(
         &mut self,
         id: &str,
@@ -100,12 +84,9 @@ impl<W: Copy> TasksDrive<W> {
         now: Now,
     ) -> Vec<Effect<W>> {
         let mut fx = Vec::new();
-        let unwatched = self.task(id).is_some_and(|task| {
-            task.issue().is_some()
-                || match task.origin {
-                    Some(Origin::Schedule { .. }) => true,
-                    Some(Origin::Tool) | None => false,
-                }
+        let unwatched = self.task(id).is_some_and(|task| match task.origin {
+            Some(Origin::Schedule { .. }) => true,
+            Some(Origin::Tool) | None => false,
         });
         match unwatched {
             true => self.fail(id, why, kind, now, &mut fx),
@@ -115,7 +96,7 @@ impl<W: Copy> TasksDrive<W> {
     }
 
     /// Task `id`, holding its place, could not start: its run ends failed,
-    /// its issue is told, and its place passes on.
+    /// and its place passes on.
     pub(super) fn fail(
         &mut self,
         id: &str,
@@ -128,7 +109,6 @@ impl<W: Copy> TasksDrive<W> {
             return self.release(id, fx);
         };
         run.failed(why, kind, now.secs);
-        self.keep_report(id, &run, None);
         self.store_run(id, run, fx);
         self.let_go(id, fx);
     }
@@ -165,9 +145,6 @@ impl<W: Copy> TasksDrive<W> {
                     }));
                 }
                 Some(Origin::Tool) | None => {}
-            }
-            if task.issue().is_some() {
-                self.linked.push(Linked::IssueEnded(id.to_string()));
             }
         }
         self.release(id, fx);

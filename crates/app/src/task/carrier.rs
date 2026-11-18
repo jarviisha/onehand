@@ -86,12 +86,7 @@ pub(crate) fn start(
     start: Start,
     cx: &mut App,
 ) {
-    let Start {
-        run,
-        first,
-        pinned,
-        issue,
-    } = start;
+    let Start { run, first, pinned } = start;
     let id = task.clone();
     let watch = cx.subscribe(session, move |session, event: &ChatEvent, cx| {
         let input = match event {
@@ -134,8 +129,7 @@ pub(crate) fn start(
     });
     let ((drive, effects, told), owed) = session.update(cx, |session, _| {
         session.lend(|chat, now| {
-            let (drive, out) =
-                Joined::start(task.clone(), run, first, pinned, issue, now, Some(chat));
+            let (drive, out) = Joined::start(task.clone(), run, first, pinned, now, Some(chat));
             ((drive, out.run, out.told), out.session)
         })
     });
@@ -173,7 +167,7 @@ pub(crate) fn start_check(task: String, start: Start, window: AnyWindowHandle, c
     let Start {
         run, first, pinned, ..
     } = start;
-    let (drive, out) = Joined::start(task.clone(), run, first, pinned, false, Now::read(), None);
+    let (drive, out) = Joined::start(task.clone(), run, first, pinned, Now::read(), None);
     let effects = out.run;
     let driven = Driven {
         drive,
@@ -325,7 +319,6 @@ fn perform(id: &str, effects: Vec<Effect>, cx: &mut App) {
             Effect::Signal(Signal::PinFailed(why)) => {
                 eprintln!("onehand: a step's mark was not pinned: {why}")
             }
-            Effect::Unattended(said) => crate::unattended::run_said(id, said, cx),
             Effect::Refresh => cx.refresh_windows(),
             Effect::SessionChanged => {
                 if let Some(session) = session {
@@ -408,21 +401,14 @@ fn finish(id: &str, session: Option<&Entity<ChatSession>>, cx: &mut App) {
     let Some(driven) = driven else {
         return;
     };
-    let out = cx.update_global::<Tasks, _>(|t, cx| {
+    let fx = cx.update_global::<Tasks, _>(|t, cx| {
         let on = session.zip(driven.uid());
         let chat = on.map(|(session, uid)| (session.read(cx).chat() as &Chat, uid));
-        t.joined()
-            .tasks(|d| {
-                (
-                    (),
-                    tasks_link::finished(d, &driven.drive, chat, driven.window),
-                )
-            })
-            .1
+        tasks_link::finished(&mut t.drive, &driven.drive, chat, driven.window)
     });
     cx.defer(move |cx| {
         drop(driven);
         cx.refresh_windows();
     });
-    super::carry(out, session, cx);
+    super::place::perform(fx, session, cx);
 }

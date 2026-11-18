@@ -7,8 +7,8 @@ shows a local one.
 
 **A host project is sessions, files, git status and terminals, for now.** Its folder lives on the
 host and the laptop holds no copy of it: the file tree, the editor and git status read it there and
-its terminals run there, but nothing of onehand's own work (tools, workflows, tasks, issues, unattended runs, worktrees, the check command) runs on
-it. What is refused, and how, is under *What a host project does not do*.
+its terminals run there, but nothing of onehand's own work (tools, workflows, tasks, issues,
+worktrees, the check command) runs on it. What is refused, and how, is under *What a host project does not do*.
 
 ## A host
 
@@ -298,7 +298,7 @@ host service answers every card its sessions park, so the work goes on while nob
   the switch back with a toast, *Changing the switch on <host> failed: …*.
 - **What it costs is said under it, always:** an agent can then do anything the host's user can
   on that host, `git push` and deleting files included. This is deliberate for hosts, a machine
-  apart from the laptop, and changes nothing for unattended runs.
+  apart from the laptop.
 - **A permission is allowed** with its narrowest grant, *allow once* before *allow always*
   (`PermissionRequest::bypass_answer`, `crates/core/src/acp/types.rs`). One with no grant to give
   waits for a person.
@@ -439,9 +439,8 @@ and a watch need only fetch what the copy lacks (`crates/core/src/host/copy.rs`)
 Refused or left out, each in one place:
 
 - **Markdown, Neovim, Issues and Plugins** are not offered in the Workbench on a host project.
-- **Worktrees, the check command and unattended runs** are not offered: *New worktree…*, *Work an
-  issue…*, the unattended switch, *Run check* and the *Check command* field are absent, and the
-  Settings list of unattended projects leaves it out.
+- **Worktrees and the check command** are not offered: *New worktree…*, *Run check* and the
+  *Check command* field are absent.
 - **The Tasks, Issues, Workflows and Schedules pages** leave it out, and starting a workflow on it
   is a warning toast, *<project> runs its sessions on a host; workflows do not run there yet*. The workspace
   overview keeps it: its tile reads *On <host>*, then its git status when it has one, counts its
@@ -576,8 +575,8 @@ In the window (decided by `OffloadDrive`, `crates/core/src/host/offload/drive.rs
   holding the folder. An `offload.json` that cannot be read is taken for the host holding the
   code, so the next check asks the host and a copy back stops rather than writes.
 - **What an offloaded project does not do** is what a host project does not (*What a host project
-  does not do*), its Workbench aside: workflows, tasks, schedules, unattended runs, worktrees, the
-  check command, onehand's tools and the remote bridge reach only a project whose sessions run here
+  does not do*), its Workbench aside: workflows, tasks, schedules, worktrees, the check
+  command, onehand's tools and the remote bridge reach only a project whose sessions run here
   (`ProjectRoot::runs_here`).
 - **Settling a copy back that stopped.** The project page's box *Bringing the code back stopped*
   lists what changed here. *Check again* attaches if need be and checks as a turn end does; a

@@ -46,13 +46,11 @@ impl<'a> Joined<'a> {
     /// rail tells runs apart rather than calling each by the opening line of
     /// its first prompt. Before that prompt the name is only held, and the
     /// first turn's save writes it.
-    #[allow(clippy::too_many_arguments)]
     pub fn start(
         task: String,
         run: Run,
         first: Action,
         pinned: usize,
-        issue: bool,
         now: Now,
         mut session: Option<&mut SessionDrive>,
     ) -> (RunDrive, Out) {
@@ -65,7 +63,7 @@ impl<'a> Joined<'a> {
             }
         }
         let chat = session.as_deref().map(|session| &**session);
-        let (mut drive, fx) = RunDrive::start(task, run, first, pinned, issue, now, chat);
+        let (mut drive, fx) = RunDrive::start(task, run, first, pinned, now, chat);
         Joined::new(&mut drive, session).settle(fx, now, &mut out);
         (drive, out)
     }

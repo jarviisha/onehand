@@ -13,12 +13,9 @@
 mod pulls;
 mod remote;
 
-use onehand_core::connector::{
-    Check, Connector, PullRequest, PullRequests, RemoteIssue, SyncListing,
-};
+use onehand_core::connector::{Check, Connector, PullRequest, RemoteIssue, SyncListing};
 use onehand_core::issues::Snapshot;
-use onehand_core::unattended::{Issue, IssueRow};
-use pulls::{LIST_FIELDS, pull_request, pull_requests};
+use pulls::pull_request;
 use remote::{github_remote, https_url, origin_url, ssh_resolve_blocking};
 use serde::Deserialize;
 use std::path::Path;
@@ -34,6 +31,9 @@ impl Connector for GitHub {
         "GitHub"
     }
 
+    /// A repository whose `origin` is on GitHub. Read locally, before anything
+    /// asks GitHub, so a project that can never be worked costs nothing per
+    /// tick but this.
     fn account_blocking(&self) -> Result<String, String> {
         match account_blocking() {
             Account::SignedIn(login) => Ok(format!("Signed in as {login}, through gh")),
@@ -41,72 +41,8 @@ impl Connector for GitHub {
         }
     }
 
-    /// A repository whose `origin` is on GitHub. Read locally, before anything
-    /// asks GitHub, so a project that can never be worked costs nothing per
-    /// tick but this.
     fn serves_blocking(&self, root: &Path) -> Result<(), String> {
         github_remote(&origin_url(root)?, ssh_resolve_blocking)
-    }
-
-    fn open_issues_blocking(&self, root: &Path, limit: usize) -> Result<Vec<IssueRow>, String> {
-        let limit = limit.to_string();
-        let json = gh(
-            root,
-            &[
-                "issue",
-                "list",
-                "--state",
-                "open",
-                "--limit",
-                &limit,
-                "--json",
-                "number,title,body,author,labels",
-            ],
-        )?;
-        issue_rows(&json)
-    }
-
-    fn my_labelled_issues_blocking(
-        &self,
-        root: &Path,
-        label: &str,
-    ) -> Result<Vec<IssueRow>, String> {
-        let json = gh(
-            root,
-            &[
-                "issue",
-                "list",
-                "--state",
-                "open",
-                "--author",
-                "@me",
-                "--label",
-                &label_list(&[label]),
-                // Oldest first, as they are taken: the list is cut at its
-                // limit, and newest first left the oldest past it, never seen.
-                "--search",
-                "sort:created-asc",
-                "--limit",
-                "50",
-                "--json",
-                "number,title,body,author,labels",
-            ],
-        )?;
-        issue_rows(&json)
-    }
-
-    fn remove_label_blocking(&self, root: &Path, number: u64, label: &str) -> Result<(), String> {
-        let n = number.to_string();
-        let label = label_list(&[label]);
-        gh(root, &["issue", "edit", &n, "--remove-label", &label]).map(drop)
-    }
-
-    fn comment_blocking(&self, root: &Path, number: u64, body: &str) -> Result<(), String> {
-        gh(
-            root,
-            &["issue", "comment", &number.to_string(), "--body", body],
-        )
-        .map(drop)
     }
 
     fn default_branch_blocking(&self, root: &Path) -> Result<String, String> {
@@ -156,23 +92,6 @@ impl Connector for GitHub {
         pull_request(&json)
     }
 
-    fn pull_requests_blocking(&self, root: &Path, limit: usize) -> Result<PullRequests, String> {
-        let json = gh(
-            root,
-            &[
-                "pr",
-                "list",
-                "--state",
-                "all",
-                "--limit",
-                &limit.to_string(),
-                "--json",
-                LIST_FIELDS,
-            ],
-        )?;
-        pull_requests(&json, limit)
-    }
-
     fn mark_ready_blocking(&self, root: &Path, number: u64) -> Result<(), String> {
         gh(root, &["pr", "ready", &number.to_string()]).map(drop)
     }
@@ -210,12 +129,6 @@ impl Connector for GitHub {
         Ok(last_lines(&without_escapes(&log), LOG_LINES))
     }
 
-    fn read_review_with(&self, number: u64) -> String {
-        format!(
-            "`gh pr view {number} --comments` and `gh api repos/{{owner}}/{{repo}}/pulls/{number}/comments`"
-        )
-    }
-
     fn open_pull_request_blocking(
         &self,
         root: &Path,
@@ -233,7 +146,11 @@ impl Connector for GitHub {
     }
 
     /// `git push` as ever, and, when that fails on an ssh `origin`, over HTTPS
-    /// with `gh`'s own sign-in, for the reason [`Self::fetch_blocking`] gives.
+    /// with `gh`'s own sign-in. An ssh remote fails for an app opened from the
+    /// desktop far more often than for a terminal — no agent reachable, a key
+    /// behind a passphrase nobody is there to type — while the person running
+    /// it has already signed `gh` in, which is all HTTPS needs. An https
+    /// `origin` is not tried twice: there is nothing different to try.
     /// A push the forge turned down, as one behind the branch it would
     /// replace, is its answer whichever way it went, and is not tried again.
     fn push_blocking(&self, root: &Path, commit: &str, branch: &str) -> Result<(), String> {
@@ -254,21 +171,6 @@ impl Connector for GitHub {
         } else {
             Ok(url)
         }
-    }
-
-    /// `git fetch` as ever, and, when that fails on an ssh `origin`, the same
-    /// repository again over HTTPS with `gh`'s own sign-in. An ssh remote fails
-    /// for an app opened from the desktop far more often than for a terminal —
-    /// no agent reachable, a key behind a passphrase nobody is there to type —
-    /// while the person running it has already signed `gh` in, which is all
-    /// HTTPS needs. An https `origin` is not tried twice: there is nothing
-    /// different to try.
-    fn fetch_blocking(&self, root: &Path, branch: &str) -> Result<(), String> {
-        onehand_core::worktree::fetch_blocking(root, branch).or_else(|over_origin| {
-            over_https_blocking(root, over_origin, "fetch", |url| {
-                https_fetch_args(url, branch)
-            })
-        })
     }
 
     /// The open issues, then every issue changed since `since` — asked
@@ -382,22 +284,6 @@ impl Connector for GitHub {
             )?;
         }
         Ok(())
-    }
-}
-
-/// One issue as `gh --json number,title,body` prints it. The wire shape is
-/// this crate's to know; what leaves it is core's [`Issue`].
-#[derive(Deserialize)]
-struct GhIssue {
-    number: u64,
-    title: String,
-    #[serde(default)]
-    body: String,
-}
-
-impl From<GhIssue> for Issue {
-    fn from(gh: GhIssue) -> Self {
-        Issue::new(gh.number, gh.title, gh.body)
     }
 }
 
@@ -548,50 +434,9 @@ fn label_list(labels: &[&str]) -> String {
         .join(",")
 }
 
-/// `gh issue list --json number,title,body,author,labels` as rows.
-fn issue_rows(json: &str) -> Result<Vec<IssueRow>, String> {
-    #[derive(Deserialize)]
-    struct Author {
-        login: String,
-    }
-    #[derive(Deserialize)]
-    struct Label {
-        name: String,
-    }
-    #[derive(Deserialize)]
-    struct Row {
-        #[serde(flatten)]
-        issue: GhIssue,
-        author: Author,
-        #[serde(default)]
-        labels: Vec<Label>,
-    }
-    let rows: Vec<Row> = serde_json::from_str(json)
-        .map_err(|err| format!("gh printed something unreadable: {err}"))?;
-    Ok(rows
-        .into_iter()
-        .map(|row| IssueRow {
-            issue: row.issue.into(),
-            author: row.author.login,
-            labels: row.labels.into_iter().map(|label| label.name).collect(),
-        })
-        .collect())
-}
-
 /// How long one `gh` call may take. Each is one API request; one that has not
 /// answered in this long is stuck, not slow.
 const GH_LIMIT: Duration = Duration::from_secs(60);
-
-/// The `git` arguments that fetch `branch` from `url` into `origin/<branch>`,
-/// signed in by `gh` alone: the empty helper first clears any the user set,
-/// so nothing else is asked and nothing waits on a prompt.
-fn https_fetch_args(url: &str, branch: &str) -> Vec<String> {
-    https_args(
-        "fetch",
-        url,
-        format!("+refs/heads/{branch}:refs/remotes/origin/{branch}"),
-    )
-}
 
 /// Whether git's complaint about a push is the remote refusing the commit,
 /// rather than never being reached.
@@ -701,13 +546,13 @@ enum Account {
 }
 
 impl Account {
-    /// Why no run can happen, in words that say what to do about it; `None`
-    /// when one can.
+    /// Why onehand cannot act on GitHub, in words that say what to do about
+    /// it; `None` when it can.
     fn problem(&self) -> Option<String> {
         match self {
             Self::SignedIn(_) => None,
             Self::Missing => Some(
-                "the GitHub CLI (`gh`) is not installed, and unattended runs reach GitHub \
+                "the GitHub CLI (`gh`) is not installed, and onehand reaches GitHub \
                  through it"
                     .to_string(),
             ),
@@ -757,24 +602,6 @@ mod tests {
     use onehand_core::connector::{CheckState, PrState};
 
     #[test]
-    fn a_repositorys_pull_requests_read_by_branch_and_say_when_capped() {
-        let json = r#"[
-            {"url":"u1","number":8,"state":"OPEN","isDraft":true,"headRefOid":"a","headRefName":"onehand/x","mergeable":"MERGEABLE"},
-            {"url":"u2","number":7,"state":"MERGED","isDraft":false,"headRefOid":"b","headRefName":"onehand/y","mergeable":""}
-        ]"#;
-        let read = pull_requests(json, 2).unwrap();
-        assert!(read.capped);
-        let (branch, pr) = &read.by_branch[0];
-        assert_eq!(
-            (branch.as_str(), pr.number, pr.state, pr.draft),
-            ("onehand/x", 8, PrState::Open, true)
-        );
-        assert_eq!(read.by_branch[1].1.state, PrState::Merged);
-        assert!(!pull_requests(json, 3).unwrap().capped);
-        assert!(pull_requests("not json", 3).is_err());
-    }
-
-    #[test]
     fn a_job_log_loses_its_colours() {
         assert_eq!(
             without_escapes("\u{1b}[36;1mok\u{1b}[0m\r\nerror: \u{1b}[31mboom\u{1b}[0m\n"),
@@ -822,9 +649,6 @@ mod tests {
         assert_eq!(pull_request("[]").unwrap(), None);
     }
 
-    /// **A pull request from a fork is never the run's own.** Its branch name
-    /// is predictable from the issue, so anyone could open one on it: taken as
-    /// the run's, it was reported on the issue and its checks read to the agent.
     /// A create stopped at its limit may have happened; the failure says so,
     /// and a refusal is left in its own words.
     #[test]
@@ -833,23 +657,6 @@ mod tests {
         assert!(cut.contains("may have been created"), "{cut}");
         let refused = create_unsure("GraphQL: title can't be blank".into());
         assert_eq!(refused, "GraphQL: title can't be blank");
-    }
-
-    #[test]
-    fn a_pull_request_from_a_fork_is_not_the_branchs_own() {
-        let json = r#"[
-            {"url":"fork","number":9,"state":"OPEN","isDraft":false,"headRefOid":"x",
-             "headRefName":"onehand/github-3-fix","isCrossRepository":true,"statusCheckRollup":[]},
-            {"url":"ours","number":8,"state":"OPEN","isDraft":false,"headRefOid":"y",
-             "headRefName":"onehand/github-3-fix","isCrossRepository":false,"statusCheckRollup":[]}
-        ]"#;
-        assert_eq!(pull_request(json).unwrap().unwrap().url, "ours");
-        let read = pull_requests(json, 10).unwrap();
-        assert_eq!(read.by_branch.len(), 1);
-        assert_eq!(read.by_branch[0].1.url, "ours");
-        let only_fork = r#"[{"url":"fork","number":9,"state":"OPEN","isDraft":false,
-            "headRefOid":"x","isCrossRepository":true,"statusCheckRollup":[]}]"#;
-        assert_eq!(pull_request(only_fork).unwrap(), None);
     }
 
     #[test]
@@ -865,24 +672,6 @@ mod tests {
         );
         // Already https: there is nothing different to try.
         assert_eq!(https_url("https://github.com/me/repo", |_| None), None);
-    }
-
-    #[test]
-    fn a_fetch_over_https_uses_only_ghs_sign_in_and_lands_where_origin_would() {
-        let args = https_fetch_args("https://github.com/a/b", "main");
-        assert_eq!(
-            args,
-            [
-                "-c",
-                "credential.helper=",
-                "-c",
-                "credential.helper=!gh auth git-credential",
-                "fetch",
-                "--quiet",
-                "https://github.com/a/b",
-                "+refs/heads/main:refs/remotes/origin/main",
-            ]
-        );
     }
 
     #[test]
@@ -954,20 +743,6 @@ mod tests {
             edit_args("7", &from, &only_body).unwrap(),
             ["issue", "edit", "7", "--body", "y"]
         );
-    }
-
-    #[test]
-    fn labelled_issues_are_read_with_their_labels_and_nothing_unreadable_passes() {
-        let json = r#"[{"number":9,"title":"b","body":"","author":{"login":"me"},
-            "labels":[{"name":"auto"},{"name":"bug"}]},
-            {"number":4,"title":"a","author":{"login":"me"}}]"#;
-        let found = issue_rows(json).unwrap();
-        let numbers: Vec<_> = found.iter().map(|row| row.issue.number).collect();
-        assert_eq!(numbers, [9, 4]);
-        assert_eq!(found[0].labels, ["auto", "bug"]);
-        assert_eq!(found[1].issue.title_text(), "a");
-        assert_eq!(issue_rows("[]"), Ok(Vec::new()));
-        assert!(issue_rows("not json").is_err());
     }
 
     #[test]
@@ -1045,22 +820,5 @@ mod tests {
                 .unwrap()
                 .contains("timeout")
         );
-    }
-
-    #[test]
-    fn the_open_issues_are_read_with_who_wrote_them_and_what_they_carry() {
-        let json = r#"[
-            {"number":7,"title":"Crash","body":"x","author":{"login":"stranger"},
-             "labels":[{"name":"bug"},{"name":"auto"}]},
-            {"number":3,"title":"Typo","body":"","author":{"login":"me"},"labels":[]}
-        ]"#;
-        let rows = issue_rows(json).unwrap();
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].issue.number, 7);
-        assert_eq!(rows[0].issue.title_text(), "Crash");
-        assert_eq!(rows[0].author, "stranger");
-        assert_eq!(rows[0].labels, ["bug", "auto"]);
-        assert!(rows[0].carries("auto") && !rows[1].carries("auto"));
-        assert!(issue_rows("nope").is_err());
     }
 }

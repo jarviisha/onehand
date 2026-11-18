@@ -46,7 +46,6 @@ pub mod saving;
 pub mod schedule;
 pub mod task;
 pub mod tree;
-pub mod unattended;
 pub mod workbench;
 pub mod workflow;
 pub mod workspace;

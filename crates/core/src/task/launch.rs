@@ -3,8 +3,9 @@
 //! where it works, the agent it runs and where it came from.
 
 use super::{Grant, Origin, Task};
+use crate::config::AgentSpec;
 use crate::preflight::Finding;
-use crate::workflow::{Brief, Place, Setup, Template};
+use crate::workflow::{Brief, Current, Offer, Place, Setup, Template};
 use std::path::{Path, PathBuf};
 
 /// What a start off screen is asked for, by a schedule or one of onehand's
@@ -172,11 +173,8 @@ pub fn cut_blocking(
         .ok_or_else(|| format!("{} is not in a git repository", root.display()))?;
     // ponytail: only local branches count here; a `workflow/` branch whose
     // worktree is gone but whose pull request is on the forge is reused. Ask
-    // the forge as an issue's claim does if that is seen.
-    let (branch, made) =
-        crate::worktree::cut_blocking(&top, &crate::workflow::branch_for(title), "HEAD", |_| {
-            Ok(false)
-        })?;
+    // the forge whether the branch has a pull request if that is seen.
+    let (branch, made) = crate::worktree::cut_blocking(&top, &crate::workflow::branch_for(title))?;
     let dir = crate::worktree::subtree_or(made, &top, root);
     let forge = crate::connector::serving(connectors, &top)
         .ok()
@@ -189,6 +187,51 @@ pub fn cut_blocking(
 pub fn on_agent(mut setup: Setup, first: Option<String>) -> Setup {
     setup.agent = setup.agent.or(first);
     setup
+}
+
+/// Where every task's agent builds, shared across tasks.
+///
+/// A worktree is kept on disk after its task, so a build directory inside
+/// each would be gigabytes per task with nothing that ever cleans it; one
+/// shared directory also turns the second task's build from cold into
+/// incremental. Under the cache directory, because a build is something that
+/// can always be made again. Its name is the one earlier builds used, so
+/// what they built stays warm.
+pub fn target_dir() -> Option<PathBuf> {
+    dirs::cache_dir().map(|dir| dir.join("onehand").join("unattended-target"))
+}
+
+/// `base` as a task starts it: with every build it makes pointed at one
+/// shared directory, through the one process a task gets to set anything on.
+pub fn run_spec(mut base: AgentSpec) -> AgentSpec {
+    if let Some(target) = target_dir() {
+        base.env
+            .insert("CARGO_TARGET_DIR".into(), target.display().to_string());
+    }
+    base
+}
+
+/// What agent `spec` offered when it last came up, by `offers`, started as
+/// it is configured now; a task's agent is started through [`run_spec`], so
+/// what it offered counts as the configured spec's too.
+pub fn offered(spec: &AgentSpec, offers: &[(AgentSpec, Offer)]) -> Option<Offer> {
+    let wrapped = run_spec(spec.clone());
+    offers
+        .iter()
+        .find(|(seen, _)| seen == spec || *seen == wrapped)
+        .map(|(_, offer)| offer.clone())
+}
+
+/// What a new task would be given now, for a retry with current settings:
+/// the first agent configured, the workflow's own timeout and mode, and the
+/// project's `check`.
+pub fn now_for(first_agent: Option<String>, check: Option<String>) -> Current {
+    Current {
+        agent: first_agent,
+        mode: None,
+        check,
+        timeout: None,
+    }
 }
 
 #[cfg(test)]
@@ -212,7 +255,6 @@ mod tests {
             blocks: true,
             text: text.into(),
             change: None,
-            task: None,
             checkable: false,
         };
         let template = || Ok(builtin::all().remove(0));
@@ -230,7 +272,6 @@ mod tests {
             blocks: true,
             text: text.into(),
             change: None,
-            task: None,
             checkable: false,
         }
     }
@@ -298,5 +339,25 @@ mod tests {
         assert_eq!(task.setup.repo, PathBuf::from("/a"));
         assert_eq!(task.setup.branch.as_deref(), Some("workflow/go"));
         assert_eq!(task.setup.agent.as_deref(), Some("claude"));
+    }
+
+    /// A task's build directory reaches the agent through its environment,
+    /// so a preset keeps launching as a preset.
+    #[test]
+    fn a_task_puts_the_build_directory_in_the_agents_environment() {
+        let base = AgentSpec {
+            name: "Codex".into(),
+            preset: Some(crate::config::Preset::Codex.into()),
+            ..Default::default()
+        };
+        let run = run_spec(base.clone());
+        assert_eq!(run.preset, base.preset);
+        assert!(run.command.is_empty(), "{:?}", run.command);
+        if let Some(dir) = target_dir() {
+            assert_eq!(
+                run.env.get("CARGO_TARGET_DIR"),
+                Some(&dir.display().to_string())
+            );
+        }
     }
 }

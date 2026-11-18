@@ -1,7 +1,7 @@
 # Tasks
 
 The Tasks page and the task model behind it, as built. [workflows.md](workflows.md) holds the
-engine and the run's drive and carrier, and [unattended.md](unattended.md) the issue a task can work.
+engine and the run's drive and carrier.
 
 ## What a person gets
 
@@ -32,11 +32,8 @@ running, what needs me, and what has finished.
   says so (`WorkspaceDrive::check_target`).
 - **A row says where its task came from** when a person did not start it: a schedule's task reads
   with the schedule's name before its workflow's (*Nightly code review · Prompt*), one a tool
-  started with *by a tool*, as an unattended run's reads with its issue. Kept on the task, so it
+  started with *by a tool*. Kept on the task, so it
   holds after the schedule is renamed or deleted. See [schedules.md](schedules.md).
-- **An unattended run is a task like any other**: an issue worked by the configured workflow,
-  listed with the issue it works before its workflow's name (*#57 · Work an issue*), and stopped,
-  resumed, retried and dismissed from its row. See [unattended.md](unattended.md).
 - **History is bounded:** the most recent 200 finished tasks per project. The page says how many
   older ones were removed since onehand started.
 - **Every box is capped at 50 rows** and says how many more it left out.
@@ -50,13 +47,11 @@ the prose width. It shows:
 
 - **a trail**: *Tasks* to go back (Esc too) › the project › the workflow, as a breadcrumb, then what can be done with the task: the most
   fitting a primary (a secondary while *Awaiting approval* or the way out holds the view's one
-  primary), the next a secondary, the rest in ⋯ (*Retry…* on a finished task, *Answer the
-  pull request review…* on an issue's task that can answer one, done with a pull request it
-  opened, and *Remove worktree…* in the danger ink once its pull request reads merged); ⋯ is
+  primary), the next a secondary, the rest in ⋯ (*Retry…* on a finished task, and *Remove worktree…* in the danger ink once its pull request reads merged); ⋯ is
   always drawn, so that late arrival shifts nothing;
 - **a head**: the title, large, and the row's muted line;
-- **Way out**, on an ended task: why it ended and the way out that fits, in the issue's words
-  (`next_action`), with *Retry with current settings…* when that is a way out (first for a
+- **Way out**, on an ended task: why it ended and the way out that fits, in the words of
+  `next_action`, with *Retry with current settings…* when that is a way out (first for a
   configuration failure);
 - **Awaiting approval**, while the last run waits on one, in a page's box with its mark and title in the warning ink: its answer (its last 60 lines, said
   when cut, *Review…* opening all of it), *Revise…* and *Continue* each beside what it starts, and
@@ -100,9 +95,7 @@ Task ──< Run ──< Step visit
   the same run with its marks kept.
 - **A task is anything with a lifecycle and an outcome:**
   - a run (`workflow::Run`);
-  - the project's check command run on its own;
-  - an issue worked unattended (`Source::Issue`), which also keeps where the issue lives and the
-    reports it has not been given yet.
+  - the project's check command run on its own.
 
   A plain agent session is not a task and never appears on the page.
 - **A task uses a workflow; it does not own one.** There is no "workflow run": each of the task's
@@ -189,8 +182,8 @@ A run cut off before its last visit ended is compared with that visit's start ma
 check. **A check task is retried at once**, with no dialog: it is a fresh run of its one step.
 
 **A Retry and a Resume are preflighted by the run's own setup** (`onehand_core::preflight`, kinds
-*Retry* and *Resume*), since that is what runs: its agent, its mode, its check command, its forge,
-and, for an issue's task not already counted, the slot. Settings changed since neither blocks it
+*Retry* and *Resume*), since that is what runs: its agent, its mode, its check command and its
+forge. Settings changed since neither blocks it
 nor clears a block, and a block says so: *the run keeps its own setup*. The Retry dialog lists what
 the preflight found under its description, blocks in the danger ink, and *Retry* is spent while one
 remains (Enter does nothing then). A block of the run's own agent, mode or check command says
@@ -204,11 +197,8 @@ current settings* runs it.
 
 **Retry with current settings** is a second action beside *Retry*, never a change to what *Retry*
 does; *Retry* means only "as the last run was". It runs **the task's own workflow, by id, at the
-version on offer now** (an issue's labels and `[unattended] workflow` are not asked again: they
-choose the workflow of a new task, and a retry is the same task), with the rest of the
-configuration from where a new task of its kind takes it: an issue's task from `[unattended]`
-(agent, mode, the timeout put over the workflow's) and the project's check command; a launcher's
-the first agent configured, the workflow's own timeout and the project's check command. Its dialog
+version on offer now**, with the rest of the configuration from where a new task takes it: the
+first agent configured, the workflow's own timeout and mode, and the project's check command. Its dialog
 says, before anything starts, what changes (*Mode: plan → auto*, one line each, or that nothing
 does), where it starts and why (`StartWhy`), and what its preflight (kind *Retry with current settings*, judged
 as a new start is, validation included) found. A workflow whose id is no longer on offer, or that
@@ -248,10 +238,10 @@ start is held at or before the last command step up to it (`Run::recheck`): a re
 the commit the last check passed on. Enter in the dialog retries as *Retry* does.
 `Run::with_current` works out a retry with current settings from the last run, the workflow on
 offer by its id (`crate::workflow::newest`) and what a new task of its kind takes now
-(`workflow::Current`, from `unattended::now_for`): what changes, the setup, and the start.
-`Task::retry_with` pushes that run, and `Shell::begin_retry_current` asks first. The Issues views
-and the task detail are told, per ended task, whether the timeout it would run with now differs
-from its last run's (`Work::timeout_moved`, from `unattended::timeout_moved`), which is when a
+(`workflow::Current`, from `task::now_for`): what changes, the setup, and the start.
+`Task::retry_with` pushes that run, and `Shell::begin_retry_current` asks first. The task
+detail is told, per ended task, whether the timeout it would run with now differs from its last
+run's (`Work::timeout_moved`, from the app's `task::facts::timeout_moved`), which is when a
 timed out run is offered the second way out.
 
 ## The architecture
@@ -267,16 +257,12 @@ workflow::run   (the engine;              task::carrier     ── the run's car
                  workflow::Run)                 │  session events → the run's drive
 task::drive     (RunDrive: one run)             ▼
 task::tasks     (TasksDrive: every task,  Tasks global ── one per process: carries
-                 the queue, a run's end)        │  the tasks' drive and unattended
-task            (Task, Run list,                │  runs', holds the runs'
+                 the queue, a run's end)        │  the tasks' drive, holds the runs'
+task            (Task, Run list,                │
                  outcome, group rule)           ▼
 task::queue     (who may run where)       Tasks page in the agent pane, rail row
 task::files     (Writer, one thread)
 task::marks     (commit objects + refs)
-unattended      (the issue a task works,
-                 its branch and report;
-                 UnattendedDrive and its
-                 link to the tasks)
 ```
 
 ### Core
@@ -289,22 +275,19 @@ unattended      (the issue a task works,
   on the task as well as on each run, so a task called off before its run started still says what
   it was. `Task::outcome` is the last run's, or stopped by a person with no run; `Task::resumable`
   is not dismissed and that outcome unset or resumable. Both are written once in core, as
-  `GitStatus::label` is, never per call site. `Task::source` is `Workflow`, `Check` or `Issue`, and a
-  file from before it reads as `Workflow`. A task whose issue still waits for a report is never
-  past the history cap.
+  `GitStatus::label` is, never per call site. `Task::source` is `Workflow` or `Check`; a file from
+  before it, or one an earlier build wrote for an issue it worked unattended (`Issue`), reads as
+  `Workflow`.
 - **The group rule is pure** (`Task::group`). The app passes what only it knows, `Working::Queued`,
   `Running` or `Waiting`, which maps straight to its group. Otherwise a task not dismissed whose
   outcome is unset (cut off) or `Outcome::needs_attention` (exhausted, failed, timed out, agent or
   session gone) is *Ended*, and everything else is *Finished*.
-- **The next action is pure** (`task::work::next_action`), beside the group rule. From an issue's
-  newest task as `Work::of` reads it (the group, with *waiting* told apart into an approval, an
+- **The next action is pure** (`task::work::next_action`), beside the group rule. From a task as
+  `Work::of` reads it (the group, with *waiting* told apart into an approval, an
   approval step's open visit, and a card, anything else waiting on a person), whether a forge serves
-  the project, the pull request as last read, and the issue's state, it returns one sentence, at most
+  the project and the pull request as last read, it returns one sentence, at most
   one primary action and the secondary ones in their order, so no caller picks its own. It matches
-  the groups, `Outcome` and `Stop` exhaustively. The issue's state only gates a new start: a closed
-  issue offers no *Run workflow…*, keeps every control of a run still active on it, says so and
-  offers *Reopen issue*, and
-  mutes a run that is over to *Reopen issue* and *Show task*. *Edit* is always last.
+  the groups, `Outcome` and `Stop` exhaustively.
 - **The history cap is pure** (`task::history::over_cap`): the ids of the *Finished* tasks past the
   newest `KEPT` (200) of each project a task was started from (`setup.repo`, never a worktree).
   Recency is the latest move across a task's runs, then its id, which is the nanos it was made at.
@@ -320,7 +303,7 @@ unattended      (the issue a task works,
   one, its project kept in the window without being put on screen, then the task kept with where it
   came from and asking for its place. Where a task asked for lands (`Effect::Told`) is the drive's:
   queued, refused, its window gone, or driven (`Input::Driven`). What a task's session is given
-  when it is driven (its grant, and an issue's opening lines) comes with `Begin::Session`.
+  when it is driven (its grant) comes with `Begin::Session`.
 - **The queue rule is pure** (`task::queue::Queue`). Given a place, it answers whether a start runs
   now or queues, and which queued task goes next when a place frees up (first in, first out). Every task
   holds its place's lock, a single command included, so a check waits behind a workflow that is
@@ -401,18 +384,14 @@ migration it protects.
 ### The app
 
 - **One `Tasks` global** (`crates/app/src/task.rs`) carries the tasks' drive, which holds every
-  task, the queue and the window each queued task was asked from, holds unattended runs' drive
-  beside it, joined to it for each call (`unattended::link`), and holds the runs under way by
+  task, the queue and the window each queued task was asked from, and holds the runs under way by
   task id (each with its session's uid, if it has a session) and what watches the tasks still
   draining. `Workflows` keeps only the workflows on offer.
-- **Every start goes through `task::request`** (`TasksDrive::request`, through
-  `unattended::link::Joined::request`, which holds an issue's task to the cap on unattended runs),
-  given the window to speak in (a handle, so nothing that starts a task needs to be inside a
+- **Every start goes through `task::request`** (`TasksDrive::request`), given the window to speak in (a handle, so nothing that starts a task needs to be inside a
   window): a new task through `task::submit`, which keeps it and then asks (the launcher, *Run
   check*); a schedule's or a tool's through `task::start_off_screen`, whose drive asks once the
-  task is kept; an unattended claim's task is kept and asks through the same link; Retry, Resume and a
-  review's answer ask for an existing one, the drive asking itself once a retry's run is made
-  (`Linked::Ask`, which only the link takes). A free place starts the task at once
+  task is kept; Retry and Resume ask for an existing one, the drive asking itself once a retry's
+  run is made. A free place starts the task at once
   (`Shell::drive_task`, as `TasksDrive::begin` says); a taken one queues it and says so in a
   notification. A task already running or waiting is left alone.
 - **The run's drive and carrier stay the only code that turns session events into reports.** They
@@ -447,24 +426,37 @@ migration it protects.
   lets go of its place, is dismissed or is called off. Each task past the cap has its file removed,
   leaves the drive, and has its marks dropped off the UI thread; a failure is logged. How many went is counted
   per project since boot only.
-- **An unattended run is a task of its own source** (`Source::Issue`). Its session is started off
-  screen, its run is driven by the same drive and carrier, and its end is kept as a report in the
-  write that keeps the run (`IssueSource::keep_report`). When its place is freed the issue is told
-  how it ended through the reports the task keeps (`UnattendedDrive::ended`, reached through
-  `unattended::link`).
 - **After a restart nothing starts by itself.** A task that was running or queued comes back
   interrupted, under *Needs attention*, and waits for Resume.
 - **Worktrees are never removed unasked.** A task's worktree may hold unpushed commits. Once its
-  pull request is merged a person may press *Remove worktree…* (in the issue's ⋯, and on the task
-  detail once it has read the pull request), which is judged and asked in a modal
-  ([unattended.md](unattended.md#the-report)); the task's marks stay until the history cap drops
-  them. What happens when is the tasks' drive's, which also holds what a person pressed and is
-  still being done (`TasksDrive::acting`), so a button waits wherever it is drawn.
+  pull request is merged a person may press *Remove worktree…* in the task detail's ⋯, in the
+  danger ink, once it has read the pull request merged (`Act::RemoveWorktree`); the task's marks
+  stay until the history cap drops them. What happens when is the tasks' drive's, which also holds
+  what a person pressed and is still being done (`TasksDrive::acting`), so a button waits wherever
+  it is drawn.
+- **What a removal is judged on.** Its modal names the folder and the branch, in the danger tint.
+  The judgement is core's (`worktree::removal::judge`), on facts read off the UI thread when the
+  modal opens and again when *Remove* is pressed: it refuses while the forge cannot be read or says
+  the pull request is not merged, while the branch holds commits past the head the forge merged (or
+  that head is not in this clone), while anything is uncommitted or untracked, and while anything
+  of onehand's uses the folder in any window: a project open inside it, with its sessions and
+  terminals, a task still working there, or any shell or Neovim whose directory is inside it now,
+  as the system says (`/proc/<pid>/cwd`, so on Linux; elsewhere the projects open on it are what
+  tells). Every reason is listed; onehand closes nothing for the person. The branch is judged by
+  the forge's merged head, not by `git branch -d`, which refuses the usual squash merge and cannot
+  see a remote branch deleted after the merge: a branch holding nothing past that head goes with
+  `git branch -D`. It is the task's own branch, and only that: a worktree with another branch
+  checked out is refused. What is removed is the worktree's top, found off the UI thread, since a
+  project in a folder of its repository works in that folder of the worktree. If `-D` fails, the
+  worktree stays removed, the branch is kept, and the failure is said. A removal is kept with the
+  task (`Task::worktree_removed`), so nothing offers it again, even when the window it was pressed
+  in closed while it ran. Each step (the judgement, the question, the judgement again and the
+  removal) is the tasks' drive's (`Effect::JudgeRemoval`, `ConfirmRemoval`, `RemoveWorktree`); the
+  shell reads what uses the folder in each window and asks.
 
 ## Not built
 
-- **A cap on concurrency across every task.** Only unattended runs are capped (`[unattended]
-  at_once`); a task a person starts waits only for its place.
+- **A cap on concurrency across every task.** A task waits only for its place.
 - **Arbitrary commands as tasks.** Only the project's check command, until a real need shows.
 - **Plain sessions on the page.** A card a plain session parks is signalled on the rail.
 - **Warning when a task starts beside a person's own session** in the same checkout.
