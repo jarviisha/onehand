@@ -113,8 +113,8 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   notices (a remark is a divider: the words centred between two hairlines across the column, in
   the muted ink) and errors (the neutral card, flat: the alert mark in the danger ink beside the
   words, *Turn failed* over them when a turn ended on it, the restart key for a lost agent), the files the turn changed,
-  and, while it runs, the running line (a spinner, its clock, *N running*, what the agent says it
-  is doing). A workflow's steps and an interrupted turn are notices, never prompts.
+  and, while it runs, the running line (no mark: its clock, *N running* and *M waiting*, what the
+  agent says it is doing; a step that runs is named by its own row and not again here). A workflow's steps and an interrupted turn are notices, never prompts.
 - **Folding blocks open from one line**, the chevron first, with no box: no edge, no fill and no
   rule beside what they hold, which sits indented under the line's words (a cluster, a thought, a plan, a subagent, a turn's changes). What runs is open until done, the
   plan stays open, and a reader's fold wins. Long output folds and is capped, an opened cluster
@@ -123,7 +123,15 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   *Failed after …* where the turn ended on a failure.
 - **Its rows are lines, not list rows**: a fold line or an activity row is as tall as its text,
   answers the pointer by raising its ink rather than with a fill, leads with an `.xsmall()` mark
-  in one slot (a spinner while it runs, so nothing moves as it settles), and takes no focus. A
+  in one slot (the kind of work in every state, so nothing moves as it settles), and takes no focus.
+  **What runs is told by its words**, never by a turning mark: a running row's verb, in the present
+  tense, and what it is done to, a live thought's *Thinking…*, a folded cluster's step in hand, a
+  plan's item in hand and a working subagent's name read in the quiet ink while a narrow band of
+  the foreground ink crosses them, with no accent, and stand still where motion is reduced. An
+  opened cluster's line says only what has settled (*Working* while nothing has), since the step
+  in hand has its own row; a step waiting its turn reads *Waiting* in the muted ink, and one that
+  has run ten seconds shows its own clock at the row's end. A path reads from the project's root,
+  and from `~` outside it. A
   path or a command is mono; the agent's own wording, a folder and what the agent did (a
   thought, a command's output, a read or search list) read in the middle ink. One copy control
   (`.short_icon()`, quiet, named in its tooltip, in a column of its own; a permission's on the line

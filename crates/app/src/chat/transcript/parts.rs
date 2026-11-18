@@ -272,9 +272,9 @@ pub(super) fn chevron_slot(fold: Option<bool>) -> gpui::Div {
 /// block says about itself, in the quiet ink and lit to full ink under the
 /// pointer. The caller adds the words and what a press does.
 ///
-/// While the block runs a spinner stands in the arrow's column, the same
-/// width, so the words neither sit further out than a settled line's nor move
-/// when the work settles.
+/// The arrow stands in its column whatever the block is doing, so the words
+/// neither sit further out than a settled line's nor move when the work
+/// settles; what runs is told by the words themselves.
 /// What a block that folds is drawn in: its fold line first and what it holds
 /// under it, with no edge, no fill and no rule beside it. Every block that
 /// opens (a cluster, a thought, a plan, a subagent, a turn's changes) takes

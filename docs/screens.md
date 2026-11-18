@@ -170,7 +170,7 @@ are not rolled back. A fork that cannot open is a toast saying why, and its sess
 Where the agent hands work to a subagent, the transcript draws a fold block, bare as every
 folding block is.
 Its head is a fold line with a state mark, the subagent's name and its state word (*done*,
-*failed*, *cancelled*, *interrupted*; a spinner while it works), and under it the first line of its
+*failed*, *cancelled*, *interrupted*; its name shimmering while it works), and under it the first line of its
 task in the meta ink, the body inset. While it works the card shows its latest 3 steps behind
 *N earlier steps*; once it ends it folds to `<state> · N steps`, opened by a press, capped at 200
 steps with *N more*. Steps inside are compact rows that do not open. A subagent of a subagent nests
