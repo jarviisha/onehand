@@ -1,18 +1,21 @@
 use super::drafts::answered;
 use super::settings_page::apply_appearance;
-use super::{APP_ID, CloseGuard, FocusedPanel, Shell, init_keymap};
+use super::{CloseGuard, FocusedPanel, Shell, init_keymap};
 use crate::chat::ChatPane;
 use crate::settings::{AgentDraft, SettingsPage};
 use crate::state::{Shared, WorkspaceWindow};
 use crate::terminal::TerminalPanel;
 use crate::workbench::Workbench;
-use gpui::{App, AppContext, BorrowAppContext, Context, Focusable as _, Window, px};
+use gpui::{App, AppContext, BorrowAppContext, Context, Window, px};
 use gpui_component::dock::{DockArea, DockEvent};
 use gpui_component::input::{InputEvent, InputState};
-use gpui_component::{ResizableState, Root, WindowExt as _};
-use onehand_core::config::WorkspaceConfig;
+use gpui_component::{ResizableState, WindowExt as _};
 use onehand_core::config::{AppConfig, Appearance};
 use onehand_core::workspace::Workspace;
+
+mod open;
+use open::open;
+pub use open::{open_or_focus, seed_workspace};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -34,7 +37,7 @@ impl Shell {
             cx,
         );
         workbench.update(cx, |panel, cx| {
-            panel.set_storage(workspace.storage_dir.as_deref(), cx)
+            panel.set_storage(Some(&workspace.storage_dir), cx)
         });
         let terminal = TerminalPanel::new(cx);
         let issues_page = Self::new_issues_page(tell, cx);
@@ -111,7 +114,7 @@ impl Shell {
             window.on_window_should_close(cx, move |window, cx| guard(window, cx));
         }
         issues_page.handle(
-            &onehand_workbench::Request::SetStorage(workspace.storage_dir.as_deref()),
+            &onehand_workbench::Request::SetStorage(Some(&workspace.storage_dir)),
             cx,
         );
 
@@ -548,113 +551,6 @@ impl Shell {
     }
 }
 
-/// Seed the first workspace: the positional CLI argument is the project root,
-/// else the current directory.
-pub fn seed_workspace() -> Workspace {
-    let root = std::env::args()
-        .nth(1)
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::current_dir().ok())
-        .unwrap_or_default();
-    Workspace::seeded(root)
-}
-
-/// Open `workspace` in a new window -- unless a window already shows that
-/// storage directory, in which case focus it. Storage dirs are canonicalized on
-/// the way in, so symlink and `..` aliases deduplicate.
-pub fn open_or_focus(workspace: Workspace, cx: &mut App) {
-    if let Some(dir) = workspace.storage_dir.clone() {
-        if let Some(handle) = crate::windows::window_for(&dir, cx) {
-            handle
-                .update(cx, |_, window, _| window.activate_window())
-                .ok();
-            return;
-        }
-        let fx = cx.update_global::<Shared, _>(|shared, _| shared.recents.opened(dir));
-        super::storage::carry_recents(fx, None, cx);
-    }
-    open_window(workspace, cx);
-}
-
-/// The smallest the window may be dragged to: the rail's minimum beside the
-/// conversation's, and a transcript still a few turns tall. Pixels, because it
-/// is a bound measured against the screen, not something drawn inside a zoom.
-const WINDOW_MIN: gpui::Size<gpui::Pixels> = gpui::size(gpui::px(720.), gpui::px(480.));
-
-/// Open a window for `workspace` and register it.
-fn open_window(workspace: Workspace, cx: &mut App) {
-    let storage_dir = workspace.storage_dir.clone();
-    let name = workspace.name.clone();
-    cx.spawn(async move |cx| {
-        let options = gpui::WindowOptions {
-            // The window's identity to the desktop, and the only reason the app
-            // has an icon at all.
-            //
-            // Nothing about a window carries a picture on Linux. The compositor
-            // gets one by matching what the window calls itself against an
-            // installed desktop entry -- Wayland compares this string to the
-            // entry's file name, X11 compares the `WM_CLASS` it becomes to
-            // `StartupWMClass`. Left unset, the window answers with nothing to
-            // match, so every entry on disk is unreachable and the result is
-            // the generic placeholder no matter how many icons are installed.
-            app_id: Some(APP_ID.into()),
-            window_min_size: Some(WINDOW_MIN),
-            // The title bar is the app's, holding its menus, so the window asks
-            // the compositor to leave its decoration to the app; one that will
-            // not keeps its own, and the library's title bar draws no window
-            // controls of its own beside it.
-            #[cfg(target_os = "linux")]
-            window_decorations: Some(gpui::WindowDecorations::Client),
-            ..gpui_component::TitleBar::window_options()
-        };
-        // Filled in by the window builder below and read out after it, because
-        // the shell does not exist until then and the registry entry needs it.
-        let mut built: Option<gpui::WeakEntity<Shell>> = None;
-        let handle = cx
-            .open_window(options, |window, cx| {
-                let shell = cx.new(|cx| {
-                    let mut shell = Shell::new(workspace, window, cx);
-                    shell.refresh_git(cx);
-                    // Point every panel at the seeded root before the first
-                    // frame. Sessions are not persisted, so there is never one
-                    // to connect here -- what this settles is which project the
-                    // Workbench, the terminal and the empty chat are about,
-                    // which was nothing at all until the first rail click.
-                    shell.show_active_session(window, cx);
-                    // The empty project also needs a live focus path, or no
-                    // app shortcut (including Settings) can reach the shell.
-                    shell.chat.focus_handle(cx).focus(window, cx);
-                    shell
-                });
-                built = Some(shell.downgrade());
-                cx.new(|cx| Root::new(shell, window, cx))
-            })
-            .expect("failed to open window");
-
-        cx.update(|cx| {
-            // A window with no shell is not a thing this can build, so there is
-            // nothing to degrade to and nothing worth reporting -- but the
-            // registry is what deduplicates windows, so an entry is filed either
-            // way rather than the whole window being dropped from it.
-            let shell = built.expect("the window was built without a shell");
-            crate::windows::register(storage_dir.clone(), handle.into(), shell, cx);
-            // The projects it has switched on for unattended runs are looked at
-            // now, so a row that cannot work says so from the first frame and
-            // not from the first tick, half an hour in. After the push, because
-            // the look finds projects through this registry.
-            crate::unattended::recheck(cx);
-            // What reached the socket before any window waited for this one.
-            crate::instance::window_up(cx);
-            if let Some(dir) = &storage_dir {
-                let fx =
-                    cx.update_global::<Shared, _>(|shared, _| shared.recents.named(dir, &name));
-                super::storage::carry_recents(fx, None, cx);
-            }
-        });
-    })
-    .detach();
-}
-
 /// Install global state and open the first window.
 pub fn boot(cx: &mut App) {
     // First, so a launch waiting on the socket `main` bound is answered soon.
@@ -665,6 +561,8 @@ pub fn boot(cx: &mut App) {
     for problem in onehand_core::workflow::store::migrate_old_dir_blocking()
         .into_iter()
         .chain(onehand_core::task::files::migrate_old_dir_blocking())
+        // After the tasks are where they are kept, since it repoints them.
+        .chain(onehand_core::workspace::migrate_storage_blocking())
     {
         eprintln!("onehand: {problem}");
     }
@@ -713,22 +611,16 @@ pub fn boot(cx: &mut App) {
     use_installed_mono(mono.as_deref(), cx);
     watch_window_close(cx);
 
-    // The most recent storage dir wins over the CLI seed -- reopening where the
-    // user left off beats reopening where the shortcut points; a broken or
-    // missing recent falls straight through.
-    let recent = Shared::global(cx)
-        .recents
-        .recent_workspaces
-        .first()
-        .cloned()
-        .and_then(|dir| {
-            WorkspaceConfig::load_from(&dir)
-                .found()
-                .map(|cfg| Workspace::from_config(cfg, dir))
-        });
+    // The most recent workspace that loads wins over the CLI seed --
+    // reopening where the user left off beats reopening where the shortcut
+    // points; with none, the seed is made and written.
+    let launch = onehand_core::workspace::launch_blocking(
+        Shared::global(cx).recents.listed(),
+        seed_workspace(),
+    );
 
     super::render::KeyRelease::register(cx);
-    open_or_focus(recent.unwrap_or_else(seed_workspace), cx);
+    open(launch, cx);
 }
 
 /// Point the theme's monospace family at one this machine actually has.
@@ -778,8 +670,8 @@ fn use_installed_mono(configured: Option<&str>, cx: &mut App) {
 /// - **Prune.** The window list exists so that opening a workspace already on
 ///   screen focuses it instead of duplicating it. A closed window left in that
 ///   list makes `window_for` hand back a dead handle, and `open_or_focus` then
-///   "focuses" nothing and returns -- so *Open workspace…* on a folder whose
-///   window was closed silently does nothing at all.
+///   "focuses" nothing and returns -- so opening a workspace whose window was
+///   closed silently does nothing at all.
 /// - **Quit.** GPUI's Linux backend only stops its event loop when `quit()` is
 ///   called (`gpui_linux::platform::LinuxPlatform::quit`); there is no
 ///   quit-on-last-window default. Without this the process outlives its last

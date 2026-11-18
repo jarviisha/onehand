@@ -22,6 +22,15 @@ minor bump may break any of them.
 - A schedule whose tools let its agent open workers with *Open session* has to switch on *Open
   worker* instead: `open_session` now opens a session of the person's own, and a schedule's saved
   tools are not rewritten.
+- onehand keeps every workspace itself, each in a folder of its own under `workspaces/` in the
+  config directory: *Choose folder…*, *Unbind* and *Open workspace…* are gone, and the rail's
+  workspace menu lists every workspace kept. At the first start of this build a workspace an
+  earlier build kept in a folder of its own is copied in, its issues with it, and the folder is
+  left as it was; tasks reporting into those issues follow the copy. A project's offload data moves
+  to `projects/`. An older build reads none of this.
+- The workspace file keeps one `[[projects]]` record per project, holding its pin, its check, its
+  unattended switch and its offload. A file in the old shape still reads, and is rewritten in the
+  new one at its next save.
 
 ### Workflows and tasks
 
@@ -67,6 +76,9 @@ minor bump may break any of them.
 
 ### The window
 
+- *Delete workspace…*, in Settings ▸ Workspace, closes the window and removes the workspace and
+  the issues it keeps, after asking; its projects stay on disk. Refused while a task works one of
+  its issues.
 - The agent pane, the Workbench and the terminal are each a box with a hairline edge and 6px
   corners on the window's fill, parted by a gap. The Workbench now stands beside the conversation
   rather than in the right dock, so the terminal runs under both. On the light palette the boxes

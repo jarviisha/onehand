@@ -152,8 +152,8 @@ bug = "my-fix"
 **The switch is per project, and there is none in this table.** Every project
 starts switched off, and a run looks only in the projects somebody switched on —
 from the project's ••• menu (on the rail and on the project page), or from the
-list of switches in Settings ▸ Workspace. Kept in the workspace file by path,
-like a pin. A feature that starts an agent writing to a repository on the
+list of switches in Settings ▸ Workspace. Kept in the project's record in the
+workspace file, like a pin. A feature that starts an agent writing to a repository on the
 strength of a file nobody edited is not a default anybody chose, and neither is
 one that reaches every repository the user happens to have open. A file still
 carrying the old global `enabled` key keeps loading; the key is ignored. An
@@ -902,7 +902,7 @@ Core, pure, no fixtures:
 - `brief_for` — the body is whole, not cut into the middle of a code fence, and
   the instructions name the issue.
 - an empty `label` yields no candidate issue; no project is switched on by
-  default, and the switch survives the workspace file by path.
+  default, and the switch survives the workspace file with its project.
 - `report`, one case per `Outcome`, matched exhaustively so an outcome cannot be
   added without a sentence being checked for it; the work leads whatever the
   outcome; the last step's output is quoted unless the run was done.

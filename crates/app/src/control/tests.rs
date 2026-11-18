@@ -100,8 +100,7 @@ fn a_tools_issue_is_written_once_and_not_again_while_open(cx: &mut TestAppContex
     use crate::shell::rig;
     let dir = rig::folder("tool-issue");
     let (_, shell, cx) = rig::shell(cx, dir.join("tasks"), Vec::new());
-    let storage = dir.join("storage");
-    rig::keep_in(&shell, storage.clone(), cx);
+    let storage = cx.update(|_, cx| shell.read(cx).storage_dir().clone());
     rig::show_workspace(&shell, cx);
     // An Issues view open on the project, which no rescan will reach.
     let view =

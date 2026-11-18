@@ -19,8 +19,7 @@
 //! write that fails puts back each thing no later write carries, to its last
 //! value known saved, and is said once ([`Signal::SaveFailed`]). That rule is
 //! [`crate::saving::Saves`]'. A change made in a burst (a name typed, a size
-//! dragged) is written once things have been still for [`SAVE_DEBOUNCE`]. An
-//! unbound workspace writes nothing.
+//! dragged) is written once things have been still for [`SAVE_DEBOUNCE`].
 
 use super::{HostName, ProjectRoot, Workspace};
 use crate::config::{AgentSpec, PanelLayout, WorkspaceConfig};
@@ -124,6 +123,9 @@ pub enum Refusal {
     NotHere,
     /// The project has no check command to run.
     NoCheck,
+    /// A task not yet over works an issue the workspace keeps, so the
+    /// workspace is not deleted from under it.
+    IssuesInUse,
 }
 
 /// A project that has left the window, on this machine or on `host`.
@@ -215,6 +217,10 @@ pub enum Effect {
     /// leaves nothing behind, and what it found is acted on as the workspace
     /// stands when it lands.
     ReadConversation(String),
+    /// The workspace kept in `dir` is deleted: stop its views writing into
+    /// it, take it off the list, remove what is its own in `dir` after every
+    /// write queued before, and close its window.
+    Deleted(PathBuf),
     /// The workspace in `dir` is known by `name`: remember it so.
     Remember {
         dir: PathBuf,
@@ -274,6 +280,9 @@ pub struct WorkspaceDrive {
     starts: std::collections::HashMap<u64, StartsOn>,
     /// The host session each session on a host watches, once known.
     watches: std::collections::HashMap<u64, HostSession>,
+    /// Deleted: its file is written no more, so no late write puts back the
+    /// folder that is about to go.
+    deleted: bool,
 }
 
 /// What a new session starts on, kept from when it is added until it is
@@ -309,7 +318,27 @@ impl WorkspaceDrive {
             minted: 0,
             starts: Default::default(),
             watches: Default::default(),
+            deleted: false,
         }
+    }
+
+    /// Why the workspace may not be deleted, if it may not: `held` says a
+    /// task not yet over works an issue it keeps.
+    pub fn delete_refusal(held: bool) -> Option<Refusal> {
+        held.then_some(Refusal::IssuesInUse)
+    }
+
+    /// Delete the workspace, unless `held` (see [`Self::delete_refusal`]).
+    /// From then on nothing writes its file, not a burst still waiting nor
+    /// the write its window makes on closing.
+    #[must_use = "its effects are to be carried"]
+    pub fn delete(&mut self, held: bool) -> Vec<Effect> {
+        if let Some(why) = Self::delete_refusal(held) {
+            return vec![Effect::Signal(Signal::Refused(why))];
+        }
+        self.deleted = true;
+        self.soon = None;
+        vec![Effect::Deleted(self.workspace.storage_dir.clone())]
     }
 
     /// The panels' layout, which the front end keeps in the workspace file
@@ -341,7 +370,7 @@ impl WorkspaceDrive {
     }
 
     /// Write the workspace now: a change nothing puts back, such as a project
-    /// added or a size dragged. Nothing when it is bound to no folder.
+    /// added or a size dragged.
     #[must_use = "its effects are to be carried"]
     pub fn save(&mut self) -> Vec<Effect> {
         self.soon = None;
@@ -351,7 +380,7 @@ impl WorkspaceDrive {
     /// Write the workspace once it has been still for [`SAVE_DEBOUNCE`].
     #[must_use = "its effects are to be carried"]
     pub fn save_soon(&mut self) -> Vec<Effect> {
-        if self.workspace.storage_dir.is_none() {
+        if self.deleted {
             return Vec::new();
         }
         self.minted += 1;
@@ -370,20 +399,6 @@ impl WorkspaceDrive {
         self.snapshot().map(Effect::WriteOnClose)
     }
 
-    /// Bind the workspace to the folder `dir`, and write it there.
-    #[must_use = "its effects are to be carried"]
-    pub fn bind(&mut self, dir: PathBuf) -> Vec<Effect> {
-        self.workspace.storage_dir = Some(dir);
-        self.save()
-    }
-
-    /// Bind the workspace to no folder: it writes nothing from now on, and a
-    /// burst's write still waiting is dropped. Answers the folder it had.
-    pub fn unbind(&mut self) -> Option<PathBuf> {
-        self.soon = None;
-        self.workspace.storage_dir.take()
-    }
-
     /// Change `thing` from `before` to `after`, as already done to the tree,
     /// and write it now (`soon` false) or after the burst.
     fn change(&mut self, thing: Thing, before: Value, after: Value, soon: bool) -> Vec<Effect> {
@@ -398,9 +413,12 @@ impl WorkspaceDrive {
         self.snapshot().map(Effect::Write)
     }
 
-    /// The whole file as it now stands, and where it goes; none unbound.
+    /// The whole file as it now stands, and where it goes.
     fn snapshot(&mut self) -> Option<Box<FileWrite>> {
-        let dir = self.workspace.storage_dir.clone()?;
+        if self.deleted {
+            return None;
+        }
+        let dir = self.workspace.storage_dir.clone();
         Some(Box::new(FileWrite {
             pending: self.saves.write_all(),
             config: self.workspace.to_config(),
@@ -425,9 +443,9 @@ impl WorkspaceDrive {
                 }
                 // A name is remembered once its workspace holds it, never
                 // while it could yet be put back.
-                if let Some(dir) = self.workspace.storage_dir.clone().filter(|_| landed) {
+                if landed && !self.deleted {
                     fx.push(Effect::Remember {
-                        dir,
+                        dir: self.workspace.storage_dir.clone(),
                         name: self.workspace.name.clone(),
                     });
                 }

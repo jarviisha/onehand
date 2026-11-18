@@ -73,7 +73,7 @@ fn the_overview_keeps_a_host_project_and_the_other_pages_do_not() {
     use onehand_core::workspace::{HostName, Workspace};
     use std::path::PathBuf;
     let mut ws = Workspace::seeded("/srv/app");
-    ws.storage_dir = Some(PathBuf::from("/s"));
+    ws.storage_dir = PathBuf::from("/s");
     // A status for the local folder, which the host's of the same path must
     // never show.
     let mut drive = onehand_core::workspace::WorkspaceDrive::new(ws);

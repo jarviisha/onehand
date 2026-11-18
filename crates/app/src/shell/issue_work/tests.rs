@@ -53,20 +53,3 @@ fn a_project_gone_starts_nothing(cx: &mut TestAppContext) {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
-
-/// A workspace keeping no issues starts nothing on its project, and says
-/// so once.
-#[gpui::test]
-fn a_workspace_keeping_no_issues_starts_nothing(cx: &mut TestAppContext) {
-    let dir = folder("work-here-unkept");
-    let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
-    let before = standing(&shell, cx);
-    said(&shell, cx);
-    work_here(Path::new("/tmp"), &shell, cx);
-    assert_eq!(standing(&shell, cx), (before.0, before.1 + 1));
-    assert_eq!(
-        said(&shell, cx),
-        ["This workspace keeps no issues, so that issue cannot be noted"]
-    );
-    let _ = std::fs::remove_dir_all(dir);
-}

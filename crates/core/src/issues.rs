@@ -568,9 +568,12 @@ pub fn matches_query(issue: &LocalIssue, query: &str) -> bool {
 /// workspace's own storage folder is: two checkouts of one repository are two
 /// projects with one folder name.
 pub fn file_for(storage: &Path, root: &Path) -> PathBuf {
-    storage
-        .join("issues")
-        .join(format!("{}.json", crate::workspace::stem_for(root)))
+    issues_dir(storage).join(format!("{}.json", crate::workspace::stem_for(root)))
+}
+
+/// The folder a workspace kept in `storage` keeps its issues in.
+pub(crate) fn issues_dir(storage: &Path) -> PathBuf {
+    storage.join("issues")
 }
 
 /// An issue onehand keeps, named by the file it is kept in ([`file_for`]) and
@@ -642,7 +645,17 @@ fn update_unless<R>(
 }
 
 /// Write `issues` to `file` so a reader never sees half of it.
+///
+/// **Never into a workspace that is gone.** The file's folder is made when
+/// it is missing, but the workspace's own folder above it is not: a write
+/// that lands after its workspace was deleted would otherwise put that
+/// folder back.
 fn save_blocking(file: &Path, issues: &Issues) -> Result<(), String> {
+    if let Some(storage) = file.parent().and_then(Path::parent) {
+        if !storage.as_os_str().is_empty() && !storage.is_dir() {
+            return Err(format!("{} is gone", storage.display()));
+        }
+    }
     let text = serde_json::to_string_pretty(issues)
         .map_err(|err| format!("the issues could not be written out: {err}"))?;
     crate::config::write_atomic(file, &text)

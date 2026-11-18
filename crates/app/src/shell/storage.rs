@@ -1,14 +1,14 @@
 use super::Shell;
 use super::boot::open_or_focus;
 use crate::state::Shared;
-use gpui::{AnyWindowHandle, App, BorrowAppContext, Context, Entity, Window};
+use gpui::{App, BorrowAppContext, Context, Entity};
 use gpui_component::WindowExt as _;
 use gpui_component::input::InputState;
 use gpui_component::notification::Notification;
-use onehand_core::config::recents::{Effect as RecentsEffect, Forgot, Input, Signal};
+use onehand_core::config::recents::{Effect as RecentsEffect, Input, Listed, Signal};
 use onehand_core::config::{WorkspaceConfig, WorkspaceLoad};
-use onehand_core::workspace::{self, Workspace};
-use std::path::{Path, PathBuf};
+use onehand_core::workspace::{self, Workspace, WorkspaceDrive};
+use std::path::Path;
 
 impl Shell {
     /// Write the workspace once the user stops changing it: a drag changes
@@ -63,6 +63,65 @@ impl Shell {
 
     // ── Workspace settings ──────────────────────────────────────────────────
 
+    /// Whether a task not yet over works an issue this workspace keeps.
+    fn held(&self, cx: &App) -> bool {
+        crate::task::Tasks::holds(&self.window.workspace.storage_dir, cx)
+    }
+
+    /// Why this workspace cannot be deleted now, in words, if it cannot.
+    pub fn delete_refused(&self, cx: &App) -> Option<&'static str> {
+        WorkspaceDrive::delete_refusal(self.held(cx)).map(super::carry::refused)
+    }
+
+    /// Ask, then delete this window's workspace.
+    pub fn confirm_delete_workspace(&mut self, window: &mut gpui::Window, cx: &mut Context<Self>) {
+        let name = self.window.workspace.name.clone();
+        let ask = super::confirm::Confirm {
+            id: "delete-workspace",
+            title: format!("Delete {name}?").into(),
+            description: "Its projects stay on disk. Its issues kept in onehand go with it.".into(),
+            act: "Delete",
+            ..Default::default()
+        };
+        self.confirm(ask, window, cx, |shell, window, cx| {
+            shell.delete_workspace(window, cx)
+        });
+    }
+
+    /// Delete this window's workspace, as its drive answers: held again now,
+    /// since a task may have started while the question was open.
+    fn delete_workspace(&mut self, window: &mut gpui::Window, cx: &mut Context<Self>) {
+        let fx = self.window.workspace.delete(self.held(cx));
+        self.carry_workspace(fx, window, cx);
+    }
+
+    /// Carry a deleted workspace out: its views write into `dir` no more,
+    /// what is its own there goes once every write queued before has landed,
+    /// on the same ordered writer, it leaves the list, and its window closes.
+    pub(super) fn carry_deleted(
+        &mut self,
+        dir: std::path::PathBuf,
+        window: &mut gpui::Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.workbench
+            .update(cx, |panel, cx| panel.set_storage(None, cx));
+        self.tell_issues_page(&onehand_workbench::Request::SetStorage(None), cx);
+        let removed = Shared::global(cx).writer.write({
+            let dir = dir.clone();
+            move || workspace::remove_workspace_blocking(&dir)
+        });
+        cx.spawn(async move |_, _| {
+            if let Err(why) = removed.await {
+                eprintln!("onehand: the deleted workspace's folder stayed: {why}");
+            }
+        })
+        .detach();
+        let fx = cx.update_global::<Shared, _>(|shared, _| shared.recents.dropped(&dir));
+        carry_recents(fx, cx);
+        window.remove_window();
+    }
+
     /// The conversation-rename field, for the dialog that edits it.
     pub fn rename_input(&self) -> &Entity<InputState> {
         &self.rename_input
@@ -80,119 +139,15 @@ impl Shell {
         &self.workspace_name
     }
 
-    pub fn storage_dir(&self) -> Option<&std::path::PathBuf> {
-        self.window.workspace.storage_dir.as_ref()
-    }
-
-    /// Drop the storage binding. An unbound workspace persists nothing.
-    pub fn unbind_storage(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let was = self.window.workspace.unbind();
-        self.workbench
-            .update(cx, |panel, cx| panel.set_storage(None, cx));
-        self.tell_issues_page(&onehand_workbench::Request::SetStorage(None), cx);
-        self.set_window_identity(None, window, cx);
-        // Forget the recent too, or the next launch reopens the workspace that
-        // was just unbound -- `recent_workspaces[0]` takes precedence over
-        // everything, including the CLI root.
-        if let Some(dir) = was {
-            let fx = cx.update_global::<Shared, _>(|shared, _| {
-                shared.recents.forgot(&dir, Forgot::Unbound)
-            });
-            carry_recents(fx, Some(window.window_handle()), cx);
-        }
-        cx.notify();
-    }
-
-    /// Point this workspace at a storage folder and write it there.
-    ///
-    /// One function for all four writes because they are one fact arriving, and
-    /// splitting them is what let them drift: binding used to set
-    /// `workspace.storage_dir` and nothing else, leaving this window's registry
-    /// entry saying `None` forever -- so opening the very same workspace from
-    /// recents made a *second* window for it, which is the one thing the
-    /// registry exists to prevent.
-    fn bind_storage(&mut self, dir: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        let fx = self.window.workspace.bind(dir.clone());
-        self.workbench
-            .update(cx, |panel, cx| panel.set_storage(Some(&dir), cx));
-        self.tell_issues_page(&onehand_workbench::Request::SetStorage(Some(&dir)), cx);
-        self.carry_workspace(fx, window, cx);
-        self.set_window_identity(Some(dir.clone()), window, cx);
-        let name = self.window.workspace.name.clone();
-        let fx = cx.update_global::<Shared, _>(|shared, _| shared.recents.bound(dir, &name));
-        carry_recents(fx, Some(window.window_handle()), cx);
-        cx.notify();
-    }
-
-    /// Update what the process-wide registry thinks this window is showing.
-    ///
-    /// Canonicalized on the way in, exactly as `open_or_focus` does, so a
-    /// symlinked or `..`-laden path binds to the same identity it would be
-    /// looked up by.
-    fn set_window_identity(
-        &mut self,
-        dir: Option<PathBuf>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let dir = dir.map(workspace::canon_dir);
-        let handle = window.window_handle();
-        crate::windows::bind_storage(handle, dir, cx);
-    }
-
-    /// Bind this workspace to a storage folder, chosen with the native picker.
-    ///
-    /// **Overwrite guard:** a folder that already holds another workspace's
-    /// `onehand-workspace.toml` is never overwritten -- that workspace is opened
-    /// (or its window focused) and this one is left as it was. Binding a folder
-    /// is a choice about *this* workspace; it must not be a way to lose another
-    /// one.
-    pub fn pick_storage_dir(&mut self, cx: &mut Context<Self>) {
-        cx.spawn(async move |shell, cx| {
-            let Some(dir) = pick_folder(cx).await else {
-                return;
-            };
-
-            match workspace_in(&dir, cx).await {
-                // Opening it is the guard doing its job, but from the picker it
-                // is also the one outcome with nothing on screen to show for it
-                // -- a folder already open in a window just re-focuses that
-                // window, which reads exactly like a control that did nothing.
-                Ok(Some(workspace)) => {
-                    cx.update(|cx| open_or_focus(workspace, cx));
-                    say(
-                        &shell,
-                        crate::toast::info(format!(
-                            "{} already holds a workspace — opened it, and this one is unchanged",
-                            dir.display()
-                        )),
-                        cx,
-                    );
-                }
-                Ok(None) => {
-                    shell
-                        .update_in(cx, |shell, window, cx| {
-                            shell.bind_storage(dir.clone(), window, cx);
-                        })
-                        .ok();
-                }
-                Err(message) => say(
-                    &shell,
-                    crate::toast::failed("Using that folder", message),
-                    cx,
-                ),
-            }
-        })
-        .detach();
+    pub fn storage_dir(&self) -> &std::path::PathBuf {
+        &self.window.workspace.storage_dir
     }
 
     /// Pick a project folder and open it as a *new* workspace in its own window.
     ///
-    /// The workspace is bound and written before the window opens. An unbound
-    /// workspace persists nothing, so one made this way was remembered nowhere:
-    /// the next launch could not reopen it, and the folder it was created in did
-    /// not open it either -- picking that folder answered "no workspace here",
-    /// which is what a folder with nothing written into it truthfully is.
+    /// The workspace is written before the window opens, and a write that fails
+    /// opens nothing: a workspace on screen that nothing on disk remembers would
+    /// be gone at the next launch.
     ///
     /// It is written to `workspace::storage_for` and never into the project
     /// itself, and where that lands is stable for a given folder -- which is
@@ -224,7 +179,6 @@ impl Shell {
                     // this makes and every one of them being called "Workspace"
                     // leaves the rail's identity row naming nothing.
                     workspace.name = workspace::label_for(&root);
-                    workspace.storage_dir = Some(dir.clone());
                     let written = cx
                         .background_executor()
                         .spawn({
@@ -259,66 +213,9 @@ impl Shell {
         .detach();
     }
 
-    /// Pick a folder and open the workspace it belongs to.
-    ///
-    /// **Two folders answer, in order**: the one picked, for a workspace bound
-    /// to a folder by hand, and then the storage a workspace created *from* that
-    /// folder would have been written to. The second is what makes the obvious
-    /// gesture work -- a workspace made by *New workspace…* keeps its config in
-    /// the per-user data root, so the folder a user thinks of as "the
-    /// workspace", and the only one they can find in a picker, is the project
-    /// itself.
-    pub fn open_workspace(&mut self, cx: &mut Context<Self>) {
-        cx.spawn(async move |shell, cx| {
-            let Some(dir) = pick_folder(cx).await else {
-                return;
-            };
-            let picked = workspace_in(&dir, cx).await;
-            let found = match picked {
-                Ok(Some(workspace)) => Some(workspace),
-                Ok(None) => workspace_in(&workspace::storage_for(&dir), cx)
-                    .await
-                    .ok()
-                    .flatten(),
-                // "I could not read what is here" sends the user to fix the file
-                // they meant to open, where "there is nothing here" below sends
-                // them to a different folder. Reading on to the derived storage
-                // would answer the second question when the first one was asked.
-                Err(_) => {
-                    say(
-                        &shell,
-                        crate::toast::error("Reading that folder's onehand-workspace.toml failed"),
-                        cx,
-                    );
-                    return;
-                }
-            };
-
-            match found {
-                Some(workspace) => {
-                    cx.update(|cx| open_or_focus(workspace, cx));
-                }
-                None => say(
-                    &shell,
-                    crate::toast::warning(
-                        "No workspace for that folder — New workspace… makes one",
-                    ),
-                    cx,
-                ),
-            }
-        })
-        .detach();
-    }
-
-    /// Every remembered workspace, most recent first, with what a list of them
-    /// calls it.
-    pub fn recents(&self, cx: &App) -> Vec<(PathBuf, String)> {
-        let recents = &Shared::global(cx).recents;
-        recents
-            .recent_workspaces
-            .iter()
-            .map(|dir| (dir.clone(), recents.label_of(dir)))
-            .collect()
+    /// Every workspace onehand keeps, most recently opened first.
+    pub fn recents(&self, cx: &App) -> Vec<Listed> {
+        Shared::global(cx).recents.listed().to_vec()
     }
 
     /// Open a recents row: read its config off the UI loop, then funnel into
@@ -351,9 +248,9 @@ impl Shell {
                     shell
                         .update(cx, |_shell, cx| {
                             let fx = cx.update_global::<Shared, _>(|shared, _| {
-                                shared.recents.forgot(&dir, Forgot::Gone)
+                                shared.recents.dropped(&dir)
                             });
-                            carry_recents(fx, None, cx);
+                            carry_recents(fx, cx);
                             cx.notify();
                         })
                         .ok();
@@ -361,14 +258,17 @@ impl Shell {
                 // Present but unreadable -- an unmounted share, a permission
                 // blip, a TOML typo. Every one of those is recoverable, and
                 // forgetting the recent is not: say so and keep the row.
-                WorkspaceLoad::Unreadable => {
+                WorkspaceLoad::Unreadable(why) => {
                     shell
                         .update_in(cx, |_, window, cx| {
                             window.push_notification(
-                                crate::toast::error(format!(
-                                    "Reading the workspace in {} failed, and its entry was kept",
-                                    dir.display()
-                                )),
+                                crate::toast::failed(
+                                    "Reading the workspace",
+                                    format!(
+                                        "{} cannot be read, and is kept as it is: {why}",
+                                        dir.display()
+                                    ),
+                                ),
                                 cx,
                             );
                             cx.notify();
@@ -416,7 +316,7 @@ async fn workspace_in(dir: &Path, cx: &mut gpui::AsyncApp) -> Result<Option<Work
     match loaded {
         WorkspaceLoad::Found(cfg) => Ok(Some(Workspace::from_config(cfg, dir.to_path_buf()))),
         WorkspaceLoad::Missing => Ok(None),
-        WorkspaceLoad::Unreadable => Err(format!(
+        WorkspaceLoad::Unreadable(_) => Err(format!(
             "{} already holds a workspace config that cannot be read — nothing was changed",
             dir.display()
         )),
@@ -433,10 +333,10 @@ fn say(shell: &gpui::WeakEntity<Shell>, note: Notification, cx: &mut gpui::Async
         .ok();
 }
 
-/// Carry out the recents' effects, in order, each once: a write on the
-/// ordered writer every settings file goes through, its answer reported back,
-/// and what the drive says, in window `at` when one asked.
-pub(super) fn carry_recents(fx: Vec<RecentsEffect>, at: Option<AnyWindowHandle>, cx: &mut App) {
+/// Carry out the workspace list's effects, in order, each once: a write on
+/// the ordered writer every settings file goes through, its answer reported
+/// back, and what the drive says.
+pub(super) fn carry_recents(fx: Vec<RecentsEffect>, cx: &mut App) {
     for effect in fx {
         match effect {
             RecentsEffect::Write {
@@ -453,22 +353,11 @@ pub(super) fn carry_recents(fx: Vec<RecentsEffect>, at: Option<AnyWindowHandle>,
                         let fx = cx.update_global::<Shared, _>(|shared, _| {
                             shared.recents.handle(Input::Written { pending, result })
                         });
-                        carry_recents(fx, at, cx);
+                        carry_recents(fx, cx);
                     });
                 })
                 .detach();
             }
-            RecentsEffect::Signal(Signal::ForgetFailed(why)) => match at {
-                Some(at) => {
-                    let _ = at.update(cx, |_, window, cx| {
-                        window.push_notification(
-                            crate::toast::failed("Forgetting the unbound workspace", why),
-                            cx,
-                        )
-                    });
-                }
-                None => eprintln!("onehand: failed to forget a workspace: {why}"),
-            },
             RecentsEffect::Signal(Signal::WriteFailed(why)) => {
                 eprintln!("onehand: failed to save recents: {why}");
             }

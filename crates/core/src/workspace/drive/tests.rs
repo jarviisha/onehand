@@ -19,10 +19,10 @@ fn tree(drive: &mut WorkspaceDrive) -> &mut Workspace {
     &mut drive.workspace
 }
 
-/// A drive on a workspace of `/a`, bound to a folder of its own.
+/// A drive on a workspace of `/a`, kept in a folder of its own.
 fn bound() -> WorkspaceDrive {
     let mut ws = Workspace::seeded("/a");
-    ws.storage_dir = Some(PathBuf::from("/store"));
+    ws.storage_dir = PathBuf::from("/store");
     WorkspaceDrive::new(ws)
 }
 
@@ -48,6 +48,7 @@ fn names(fx: &[Effect]) -> Vec<String> {
             Effect::EndOnHost { session, .. } => format!("EndOnHost({})", session.0),
             Effect::ListHostSessions => "ListHostSessions".into(),
             Effect::ReadConversation(id) => format!("ReadConversation({id})"),
+            Effect::Deleted(dir) => format!("Deleted({})", dir.display()),
             Effect::Signal(signal) => format!("{signal:?}"),
         })
         .collect()
@@ -67,6 +68,7 @@ fn armed(fx: &[Effect]) -> u64 {
             | Effect::Write(_)
             | Effect::WriteOnClose(_)
             | Effect::Remember { .. }
+            | Effect::Deleted(_)
             | Effect::Sweep { .. }
             | Effect::Resweep
             | Effect::GitRead
@@ -100,6 +102,7 @@ fn written(fx: Vec<Effect>) -> Pending<Thing, Value> {
             | Effect::EndOnHost { .. }
             | Effect::ListHostSessions
             | Effect::ReadConversation(_)
+            | Effect::Deleted(_)
             | Effect::Signal(_) => None,
         })
         .expect("a write")
@@ -126,6 +129,7 @@ fn swept(effect: Effect) -> (u64, Vec<SweepProject>) {
         | Effect::EndOnHost { .. }
         | Effect::ListHostSessions
         | Effect::ReadConversation(_)
+        | Effect::Deleted(_)
         | Effect::Signal(_)) => {
             panic!("not a sweep: {:?}", names(&[e]))
         }
@@ -329,14 +333,6 @@ fn a_worker_stands_under_its_lead_s_project_when_the_lead_is_here() {
 }
 
 // The workspace file.
-
-#[test]
-fn an_unbound_workspace_writes_nothing() {
-    let mut drive = WorkspaceDrive::new(Workspace::seeded("/a"));
-    assert!(drive.save().is_empty());
-    assert!(drive.save_soon().is_empty());
-    assert!(drive.flush().is_none());
-}
 
 /// A burst is one write, once the last change's wait runs out; an earlier
 /// wait running out writes nothing.
@@ -918,4 +914,37 @@ fn a_run_check_needs_a_project_here_with_a_check_command() {
     assert_eq!(drive.check_target().0, Err(Refusal::NotHere));
     tree(&mut drive).roots.clear();
     assert_eq!(drive.check_target().0, Err(Refusal::NoProject));
+}
+
+/// From the moment a workspace is deleted, nothing writes its file again:
+/// not a burst waiting, not the write a closing window makes, not a change.
+#[test]
+fn a_deleted_workspace_writes_nothing() {
+    let mut drive = bound();
+    let token = armed(&drive.rename("one"));
+    assert_eq!(names(&drive.delete(false)), ["Deleted(/store)"]);
+    assert!(drive.handle(Input::Elapsed { token }).is_empty());
+    assert!(drive.flush().is_none());
+    assert!(drive.save().is_empty());
+    assert!(drive.save_soon().is_empty());
+    assert!(names(&drive.rename("two"))
+        .iter()
+        .all(|n| n != "Write" && n != "Arm"));
+}
+
+/// While a task works an issue the workspace keeps, deleting it is refused,
+/// and the workspace goes on being written.
+#[test]
+fn a_held_workspace_is_not_deleted() {
+    let mut drive = bound();
+    assert_eq!(
+        WorkspaceDrive::delete_refusal(true),
+        Some(Refusal::IssuesInUse)
+    );
+    assert_eq!(WorkspaceDrive::delete_refusal(false), None);
+    assert_eq!(
+        names(&drive.delete(true)),
+        [format!("{:?}", Signal::Refused(Refusal::IssuesInUse))]
+    );
+    assert_eq!(names(&drive.save()), ["Write"]);
 }

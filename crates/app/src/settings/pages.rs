@@ -73,43 +73,24 @@ pub(super) fn appearance_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .into_any_element()
 }
 
-/// The workspace page: this workspace's name and storage binding, then the two
-/// ways to reach another one, then the unattended runs it may start.
+/// The workspace page: this workspace's name and the folder onehand keeps it
+/// in, shown so it can be found for a backup and never chosen, then a way to
+/// make another one, then the unattended runs it may start.
 ///
 /// No workspace is ever *replaced* in place -- one window hosts exactly one
-/// workspace, so both of those buttons open another window, or focus the one
-/// already showing that folder.
+/// workspace, so *New workspace…* opens another window, or focuses the one
+/// already showing that workspace.
 ///
 /// **The list of known workspaces is deliberately not here.** The rail's
-/// identity row is the switcher, and it draws the same directories better: a
-/// row named by its folder with the parent beside it, the one on screen checked
-/// and unpickable. A second copy here printed each absolute path whole into a
+/// identity row is the switcher, and it draws the same workspaces better: a
+/// row named by its workspace, the one on screen checked and unpickable. A second copy here printed each absolute path whole into a
 /// button, uncapped, so the longer the app was used the further it pushed
-/// everything else off the bottom. What stays is the binding, which has nowhere
-/// else to live.
+/// everything else off the bottom.
 pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let shell = handle.read(cx);
     let name = shell.workspace_name_input().clone();
-    let storage = shell
-        .storage_dir()
-        .map(|dir| SharedString::from(dir.display().to_string()));
-    let bound = storage.is_some();
-    let (bind, unbind, new, open) = (
-        handle.clone(),
-        handle.clone(),
-        handle.clone(),
-        handle.clone(),
-    );
-    // An unbound workspace persists nothing; say so rather than showing a
-    // blank where the folder would be.
-    let storage = match storage {
-        Some(dir) => div()
-            .font_family(cx.theme().mono_font_family.clone())
-            .text_xs()
-            .child(dir)
-            .into_any_element(),
-        None => "Not bound — nothing about this workspace is saved".into_any_element(),
-    };
+    let storage = SharedString::from(shell.storage_dir().display().to_string());
+    let new = handle.clone();
 
     let general = section(None, None, cx)
         .child(field(
@@ -120,29 +101,12 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         ))
         .child(field(
             "Storage folder",
-            Some(storage),
+            about("Where onehand keeps this workspace"),
             div()
-                .h_flex()
-                .gap_2()
-                .child(
-                    crate::controls::action("bind-storage")
-                        .tall()
-                        .secondary()
-                        .label("Choose folder…")
-                        .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                            bind.update(cx, |shell, cx| shell.pick_storage_dir(cx));
-                        }),
-                )
-                .child(
-                    crate::controls::action("unbind-storage")
-                        .tall()
-                        .secondary()
-                        .refuses((!bound).then_some("No storage folder is bound"))
-                        .label("Unbind")
-                        .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-                            unbind.update(cx, |shell, cx| shell.unbind_storage(window, cx));
-                        }),
-                ),
+                .min_w_0()
+                .font_family(cx.theme().mono_font_family.clone())
+                .text_xs()
+                .child(storage),
             cx,
         ));
     let others = section(
@@ -155,27 +119,15 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         cx,
     )
     .child(
-        div()
-            .h_flex()
-            .gap_2()
-            .child(
-                crate::controls::action("new-workspace")
-                    .tall()
-                    .secondary()
-                    .label("New workspace…")
-                    .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                        new.update(cx, |shell, cx| shell.new_workspace(cx));
-                    }),
-            )
-            .child(
-                crate::controls::action("open-workspace")
-                    .tall()
-                    .secondary()
-                    .label("Open workspace…")
-                    .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                        open.update(cx, |shell, cx| shell.open_workspace(cx));
-                    }),
-            ),
+        div().h_flex().gap_2().child(
+            crate::controls::action("new-workspace")
+                .tall()
+                .secondary()
+                .label("New workspace…")
+                .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                    new.update(cx, |shell, cx| shell.new_workspace(cx));
+                }),
+        ),
     );
 
     div()
@@ -191,6 +143,7 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .child(general)
         .child(others)
         .child(unattended_section(handle, cx))
+        .child(delete_section(handle, cx))
         .into_any_element()
 }
 
@@ -320,6 +273,33 @@ fn outside_section(cx: &App) -> AnyElement {
                         crate::control::set_outside(*on, window, cx);
                     }),
             ),
+        ),
+    )
+    .into_any_element()
+}
+
+/// Deleting this window's workspace: the window closes, and its folder and
+/// the issues it keeps go with it. Refused while a task works one of them.
+fn delete_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
+    let refused = handle.read(cx).delete_refused(cx);
+    let ink = crate::theme::status_ink(cx);
+    let delete = handle.clone();
+    section(
+        Some("Delete workspace"),
+        Some("The window closes and onehand forgets this workspace".into()),
+        cx,
+    )
+    .child(
+        div().h_flex().child(
+            crate::controls::action("delete-workspace")
+                .tall()
+                .secondary()
+                .text_color(ink.danger)
+                .refuses(refused)
+                .label("Delete workspace…")
+                .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                    delete.update(cx, |shell, cx| shell.confirm_delete_workspace(window, cx));
+                }),
         ),
     )
     .into_any_element()

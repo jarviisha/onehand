@@ -86,7 +86,7 @@ impl Shared {
         Self::with_recents(
             AppConfig::default(),
             dir,
-            RecentsDrive::new(Default::default(), recents),
+            RecentsDrive::new(Default::default(), recents, Vec::new()),
         )
     }
 

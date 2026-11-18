@@ -1056,3 +1056,21 @@ fn a_review_is_read_before_it_is_asked() {
     let fx = read(&mut tasks, Err("gone".into()));
     assert!(named(&fx, "Signal::ReviewNotRead"));
 }
+
+/// Only a task not yet over, working an issue kept in `dir`, holds it.
+#[test]
+fn holds_only_unfinished_tasks_on_the_dir() {
+    let mut tasks = TasksDrive::<u8>::default();
+    let dir = Path::new("/a");
+    let mut dismissed = of_issue("1");
+    dismissed.dismissed = true;
+    let mut finished = of_issue("2");
+    finished.runs[0].outcome = Some(Outcome::Stopped(Stop::ByPerson));
+    let _ = tasks.add(dismissed);
+    let _ = tasks.add(finished);
+    let _ = tasks.add(titled("3", "Not an issue", "/a"));
+    assert!(!tasks.holds(dir));
+    let _ = tasks.add(of_issue("4"));
+    assert!(tasks.holds(dir));
+    assert!(!tasks.holds(Path::new("/elsewhere")));
+}

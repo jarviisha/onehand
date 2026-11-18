@@ -217,12 +217,13 @@ Every attach opens by exchanging builds (`client::attach`):
   *Restart now* in place of a failure; the wait's end carries the *Add* on.
 - **Adding one that is already there selects it.** A root is told apart by host and path together
   (`WorkspaceDrive::open_host_project`); a host's path is kept as typed, never resolved on this machine.
-- **Kept in `onehand-workspace.toml` as `<host>:<path>`**, one string in `roots` and, keyed the
-  same way, in `pinned`, `unattended` and `checks` (`root_key`, `parse_root_key`,
-  `crates/core/src/workspace.rs`). An entry that is not absolute and has a host before its first
-  `:/` is a host root, so a file written before hosts still reads, a host named by an IPv6 address
-  (`fe80::1`, `user@[fe80::1]`) keeps its colons, and a local and a host folder on one path are two
-  projects that both survive a reload. Restarting onehand shows the project again;
+- **Kept in `onehand-workspace.toml` as a `[[projects]]` record with `host`** beside its `path`
+  (`ProjectConfig`, `crates/core/src/config/workspace.rs`); the workspace's `active` names it as
+  `<host>:<path>` (`host_path`, `parse_root_key`, `crates/core/src/workspace.rs`). A file written by
+  an earlier build, one string per project in `roots`, still reads: an entry that is not absolute and
+  has a host before its first `:/` is a host root, so a host named by an IPv6 address (`fe80::1`,
+  `user@[fe80::1]`) keeps its colons. A local and a host folder on one path are two projects that
+  both survive a reload. Restarting onehand shows the project again;
   it attaches when it is shown, as a session connects lazily.
 
 ## Sessions
@@ -508,7 +509,8 @@ the folder here).
   copy refuses, naming it, until the person has looked through it and removed it. A backup (`backup_blocking`) copies the changed files as they are, `refs.txt`
   of `HEAD` and every ref when refs moved (the objects stay, since `.git` comes back without
   deleting), and `.git/index` or `.git/config` when what is staged or the settings changed. The laptop keeps it with who holds the key, when the code last moved and what stopped a
-  copy back in `offload.json` in the project's storage (`OffloadState`).
+  copy back in `offload.json` in the project's own folder, `<config_dir>/projects/<stem>/`
+  (`OffloadState`, `workspace::project_dir`), beside `coming-back/` and `backups/`.
 
 **Branch mirrors** (`crates/host/src/hub/branch.rs`, `crates/core/src/host/offload/branch.rs`)
 are what an offloaded project in branch mode runs in. They have no key and no lock: the host's
@@ -551,8 +553,8 @@ In the window (decided by `OffloadDrive`, `crates/core/src/host/offload/drive.rs
   the rail and on its page, opens a form naming the host (its menu as *Add a project on a host*'s).
   *Offload* checks `rsync` on both ends, attaches, asks the host for the mirror and sends the code
   up, then closes the project's sessions here (refused while one is mid-turn; their conversations
-  stay among its past ones) and keeps `offloaded` in the workspace file, the root valued
-  `<host>:<mirror>`. The key stays here until the first prompt. A mirror whose code the host
+  stay among its past ones) and keeps the project's `offload` (its host, its mirror and, in branch
+  mode, its branch) in its record in the workspace file. The key stays here until the first prompt. A mirror whose code the host
   holds already is not sent over. New sessions open on the host, in the mirror.
 - **The key on send.** A prompt to a session of an offloaded project while this machine holds the
   code waits: the code goes up, the key goes to the host with the generation it had, and then the

@@ -30,7 +30,7 @@ fn shell(cx: &mut TestAppContext, ws: Workspace) -> (Entity<Shell>, &mut VisualT
 /// A workspace of `/tmp`, bound to `dir`.
 fn bound(dir: PathBuf) -> Workspace {
     let mut ws = Workspace::seeded("/tmp");
-    ws.storage_dir = Some(dir);
+    ws.storage_dir = dir;
     ws
 }
 

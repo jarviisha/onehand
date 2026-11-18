@@ -10,7 +10,7 @@ use super::{Came, Input, Kept, Moving, Then, Went};
 use crate::host::client::HostConn;
 use crate::host::wire::{Holder, MirrorState};
 use crate::host::HostFailure;
-use crate::workspace::{stem_for, storage_for, HostName};
+use crate::workspace::{project_dir, stem_for, HostName};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use tokio::runtime::Handle;
@@ -213,7 +213,7 @@ impl Errand {
         } = self;
         match work {
             Work::Load => Input::Loaded {
-                read: OffloadState::load(&storage_for(&path)),
+                read: OffloadState::load(&project_dir(&path)),
                 path,
             },
             Work::Attach(then) => Input::Attached {
@@ -358,7 +358,7 @@ fn offload_mirror(
 ) -> Result<(PathBuf, Kept), String> {
     let conn = attached(conn, host)?;
     let mirror = mirror_of(rt, &conn, &stem_for(path), None, host)?;
-    let dir = storage_for(path);
+    let dir = project_dir(path);
     let kept = OffloadState::load(&dir)?;
     if mirror.key == Holder::Host {
         let state = OffloadState {
@@ -384,7 +384,7 @@ fn offload_mirror(
 /// to the host. `Ok` once the host holds it, which it may have already;
 /// `Err` why not, the key left here, with what to keep then.
 fn send_up(conn: Reached, rt: &Handle, path: &Path, host: &HostName, sent: Manifest) -> Went {
-    let dir = storage_for(path);
+    let dir = project_dir(path);
     let conn = attached(conn, host).map_err(|why| (why, None))?;
     let mirror = mirror_of(rt, &conn, &stem_for(path), None, host).map_err(|why| (why, None))?;
     if mirror.key == Holder::Host {
@@ -436,7 +436,7 @@ fn bring_back(
     sent: Manifest,
     backup: Option<&Path>,
 ) -> Came {
-    let dir = storage_for(path);
+    let dir = project_dir(path);
     let keep = |state: OffloadState| match state.save(&dir) {
         Ok(()) => Ok(state),
         Err(why) => Err((why, Some(Box::new(state)))),

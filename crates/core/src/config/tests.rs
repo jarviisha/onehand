@@ -224,14 +224,14 @@ fn roundtrips_through_toml() {
 fn workspace_config_roundtrips() {
     let cfg = WorkspaceConfig {
         name: "Mine".into(),
-        roots: vec![PathBuf::from("/a"), PathBuf::from("/b")],
-        active_root: 1,
+        active: Some("/b".into()),
+        projects: ["/a", "/b"]
+            .map(|path| ProjectConfig {
+                path: path.into(),
+                ..Default::default()
+            })
+            .into(),
         layout: PanelLayout::default(),
-        pinned: Vec::new(),
-        unattended: Vec::new(),
-        checks: Default::default(),
-        offloaded: Default::default(),
-        offloaded_branches: Default::default(),
     };
     let text = toml::to_string_pretty(&cfg).unwrap();
     let back: WorkspaceConfig = toml::from_str(&text).unwrap();
@@ -243,14 +243,12 @@ fn workspace_config_save_load_to_dir() {
     let dir = std::env::temp_dir().join(format!("onehand-ws-test-{}", std::process::id()));
     let cfg = WorkspaceConfig {
         name: "Persisted".into(),
-        roots: vec![PathBuf::from("/x")],
-        active_root: 0,
+        active: Some("/x".into()),
+        projects: vec![ProjectConfig {
+            path: "/x".into(),
+            ..Default::default()
+        }],
         layout: PanelLayout::default(),
-        pinned: Vec::new(),
-        unattended: Vec::new(),
-        checks: Default::default(),
-        offloaded: Default::default(),
-        offloaded_branches: Default::default(),
     };
     cfg.save_to(&dir).unwrap();
     assert_eq!(WorkspaceConfig::load_from(&dir), WorkspaceLoad::Found(cfg));
@@ -406,8 +404,10 @@ fn an_unreadable_workspace_config_is_not_an_empty_folder() {
     assert_eq!(WorkspaceConfig::load_from(&dir), WorkspaceLoad::Missing);
 
     std::fs::write(dir.join(WorkspaceConfig::FILE), "name = \"unclosed").unwrap();
-    assert_eq!(WorkspaceConfig::load_from(&dir), WorkspaceLoad::Unreadable);
-    assert!(WorkspaceConfig::load_from(&dir).found().is_none());
+    assert!(matches!(
+        WorkspaceConfig::load_from(&dir),
+        WorkspaceLoad::Unreadable(_)
+    ));
 
     let _ = std::fs::remove_dir_all(&dir);
 }
