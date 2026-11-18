@@ -1,58 +1,20 @@
 use super::body::away_from_tail;
 use super::runs::lead_gap;
-use super::runs::working_word;
+use super::runs::running_words;
 use super::{BLOCK_GAP, COMPACT_GAP, caret_to_composer, switching_away, waits_alone};
 use crate::chat::viewport::{self, RunKind};
 use gpui::rems;
 use onehand_core::chat::{Link, TranscriptItemId};
 
-/// The running line always has a word, including where the model is quiet.
-///
-/// `Chat::activity_status` says nothing while a thought or a tool is live,
-/// because the transcript's own block a few lines up is already saying it.
-/// The running line sits *below* those blocks and says nothing else, so
-/// without a word of its own the two states a reader most wants named came
-/// out as a mark and a clock.
+/// The running line counts what runs apart from what waits its turn, and
+/// says nothing where neither does: the steps themselves are named by their
+/// own rows, once.
 #[test]
-fn a_running_line_is_never_wordless() {
-    use onehand_core::acp::{ToolCall, ToolKind, ToolStatus};
-    use onehand_core::chat::{Chat, ChatItem, Md, Thought, ToolItem};
-
-    let mut chat = Chat::new(
-        1,
-        std::path::PathBuf::from("/tmp/project"),
-        "claude".to_string(),
-        None,
-    );
-    chat.busy = true;
-    // Past the handshake: while it is still connecting the model has a
-    // sentence of its own and this never runs.
-    chat.link = Link::Connected;
-
-    chat.items.push(ChatItem::Thought(Thought {
-        md: Md::parse("weighing it up"),
-        started: None,
-        elapsed_secs: None,
-    }));
-    assert_eq!(chat.activity_status(), None, "the model stays quiet");
-    assert_eq!(working_word(&chat).as_deref(), Some("Thinking…"));
-
-    chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
-        id: "w".into(),
-        title: "Write src/lib.rs".into(),
-        description: None,
-        kind: ToolKind::Edit,
-        status: ToolStatus::InProgress,
-        content: Vec::new(),
-    })));
-    assert_eq!(chat.activity_status(), None);
-    let word = working_word(&chat).expect("a step in flight names itself");
-    assert!(word.contains("src/lib.rs"), "{word}");
-
-    // A settled transcript has nothing to say, and says nothing.
-    chat.busy = false;
-    chat.items.clear();
-    assert_eq!(working_word(&chat), None);
+fn the_line_counts_what_runs_and_what_waits() {
+    assert_eq!(running_words(0, 0), None);
+    assert_eq!(running_words(1, 0).as_deref(), Some("1 running"));
+    assert_eq!(running_words(2, 1).as_deref(), Some("2 running, 1 waiting"));
+    assert_eq!(running_words(0, 1).as_deref(), Some("1 waiting"));
 }
 
 /// The two sides of a prompt are one space, so they are one number —

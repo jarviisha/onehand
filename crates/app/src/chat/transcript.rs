@@ -110,8 +110,8 @@ use metrics::LINE_H;
 pub(in crate::chat) use metrics::{
     BLOCK_GAP, CONTENT_COLUMN, PART_GAP, TEXT, TEXT_SM, TIGHT_GAP, TUCK, TURN_GAP,
 };
-pub(in crate::chat) use parts::accent;
 pub(crate) use parts::line_counts;
+pub(in crate::chat) use parts::{WorkingRun, working_text};
 pub(in crate::chat) use permission::permission;
 use plan::plan;
 use prose::{agent, thought};
