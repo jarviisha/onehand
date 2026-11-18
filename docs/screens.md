@@ -123,7 +123,7 @@ the host service…* in place of *Restart the agent*. A host session's row menu 
 workers is left out, and shows no row while one of them is on screen; closing the last session of a
 project added for a worker or a run alone takes that project with it. Closing a lead asks whether its
 workers close with it; when the lead closes alone or is lost, its workers are listed again under
-their project.
+their project, and under the lead again once its conversation is opened.
 
 ## Agent pane header
 

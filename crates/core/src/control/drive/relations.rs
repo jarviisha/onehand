@@ -35,6 +35,7 @@ impl ControlDrive {
         self.workers
             .get(&uid)
             .map(|relation| relation.lead)
+            .filter(|lead| !self.released(*lead))
             .or_else(|| self.requests.lead_opening(uid))
     }
 
@@ -396,6 +397,7 @@ impl ControlDrive {
                 .filter(|((of, _), _)| *of == lead)
                 .filter_map(|(_, pending)| Some((pending.token, pending.open.back.clone()?))),
         );
+        held.extend(self.parked_of(lead));
         held.sort_by_key(|(seq, _)| *seq);
         let mut closed: Vec<(u64, KeptClosed)> = self
             .closed_workers
@@ -433,9 +435,17 @@ impl ControlDrive {
         for closed in kept.closed {
             self.close_record(closed.handle, lead, closed.why);
         }
+        // Taken back already, open as it is.
+        let open: Vec<bool> = kept
+            .workers
+            .iter()
+            .map(|back| self.is_open(&back.handle))
+            .collect();
         kept.workers
             .into_iter()
-            .map(|back| {
+            .zip(open)
+            .filter(|(_, open)| !open)
+            .map(|(back, _)| {
                 let named = back.folder.display().to_string();
                 let target = match super::super::pick_project(projects, &named) {
                     Ok(dir) => Target::Project(dir.to_path_buf()),
