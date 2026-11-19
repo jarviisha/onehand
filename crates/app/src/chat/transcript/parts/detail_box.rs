@@ -31,6 +31,8 @@ pub(in crate::chat::transcript) struct DetailBox {
     pub lines: Vec<gpui::AnyElement>,
     /// How many lines there are in all, the ones not drawn included.
     pub total: usize,
+    /// How many of them are drawn, in the same count as `total`.
+    pub drawn: usize,
     /// Opened at its end rather than its start: an output's result is its
     /// last lines.
     pub from_end: bool,
@@ -44,13 +46,13 @@ pub(in crate::chat::transcript) struct DetailBox {
 pub(in crate::chat::transcript) fn detail_box(detail: DetailBox, cx: &App) -> gpui::Div {
     let key = detail.key;
     let total = detail.total;
+    let drawn = detail.drawn;
     let from_end = detail.from_end;
     let whole = detail.whole;
     let lines = detail.lines;
     let head = detail.head;
     let copy = detail.copy;
     let has_lines = !lines.is_empty();
-    let drawn = lines.len();
     let frame = plain_box(cx)
         .relative()
         .v_flex()

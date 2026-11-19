@@ -372,6 +372,9 @@ impl RenderOnce for ScrollBody {
                     // a sibling of it in the frame, stays on the frame's
                     // right edge however far the lines are pushed sideways.
                     .overflow_scroll()
+                    // Not stretched to the box: a stretched column is exactly
+                    // the box's width, so a long line had nowhere to scroll to.
+                    .items_start()
                     .track_scroll(&scroll)
                     .children(self.children),
             )
@@ -430,26 +433,38 @@ fn contain_wheel(scroll: ScrollHandle) -> impl IntoElement {
                     // here. The first frame after a detail opens has no travel
                     // recorded yet and lets one event past, which is a frame
                     // nobody can see.
-                    let travel = scroll.max_offset().y.max(gpui::px(0.));
-                    if travel <= gpui::px(0.) {
+                    let zero = gpui::px(0.);
+                    let travel = scroll.max_offset();
+                    let (down, across) = (travel.y.max(zero), travel.x.max(zero));
+                    let delta = event.delta.pixel_delta(line_height);
+                    // Sideways only where the box has somewhere to go sideways
+                    // and the wheel went that way; a vertical wheel over a box
+                    // that only scrolls sideways is the conversation's.
+                    let sideways = across > zero && delta.x != zero;
+                    if down <= zero && !sideways {
                         return;
                     }
-                    let delta = event.delta.pixel_delta(line_height).y;
                     // The current offset is clamped too: a bubbled event can
                     // push the shared offset past the edge unclamped, and that
                     // transient overscroll reads as room that is not there.
                     let mut offset = scroll.offset();
-                    let current = offset.y.clamp(-travel, gpui::px(0.));
-                    let next = (current + delta).clamp(-travel, gpui::px(0.));
-                    if next != current {
-                        offset.y = next;
+                    let was = offset;
+                    if down > zero {
+                        offset.y = (offset.y.clamp(-down, zero) + delta.y).clamp(-down, zero);
+                    }
+                    if sideways {
+                        offset.x = (offset.x.clamp(-across, zero) + delta.x).clamp(-across, zero);
+                    }
+                    if offset != was {
                         scroll.set_offset(offset);
                         cx.notify(view);
                     }
                     // **And where there *is* travel, at the edge most of all.**
                     // Reaching the end of a box a few lines tall is not a
                     // request to leave it, and handing the delta on there is
-                    // the whole of what this exists to stop.
+                    // the whole of what this exists to stop. Taken here, the
+                    // box's own listener never sees it, so both axes are
+                    // moved above.
                     cx.stop_propagation();
                 },
             );

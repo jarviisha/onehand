@@ -408,6 +408,7 @@ fn detail_frame(
                                 .into_any_element()
                         })
                         .collect(),
+                    drawn: total - hidden,
                     total,
                     from_end: false,
                     whole: (total > 0).then(|| (all.clone().into(), None)),
@@ -473,6 +474,7 @@ fn command_detail(
                 })
                 .collect(),
             total: lines.len(),
+            drawn: lines.len() - skipped,
             from_end: true,
             whole: (!output.is_empty()).then(|| (output.to_string().into(), None)),
             copy,

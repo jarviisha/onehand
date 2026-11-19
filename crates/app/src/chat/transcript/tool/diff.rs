@@ -93,14 +93,22 @@ pub(super) fn diff_detail(
         let hunks = t.diff_rows.get(&key).map(Vec::as_slice).unwrap_or_default();
         rows.extend(diff_rows(hunks, &mut budget, old.is_none(), cx));
     }
-    // What the budget left out is said under the box, by its count.
-    let total = text.len().max(rows.len());
+    // What the budget left out is said under the box, counted in the diff's
+    // own lines, the file headers not among them.
+    let drawn = MAX_DIFF_LINES - budget;
+    // A diff loaded past the large-diff bound can be put away again.
+    let head = (changed > LARGE_DIFF).then(|| {
+        super::fold_link(session, target, "Put the large diff away", cx)
+            .font_family(cx.theme().font_family.clone())
+            .into_any_element()
+    });
     detail_box(
         DetailBox {
             key,
-            head: None,
+            head,
             lines: rows,
-            total,
+            total: text.len(),
+            drawn,
             from_end: false,
             whole: (!text.is_empty()).then(|| (text.join("\n").into(), Some("diff".into()))),
             copy,

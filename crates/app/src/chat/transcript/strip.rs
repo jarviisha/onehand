@@ -390,6 +390,7 @@ fn file_row(
     let text = rows_text(&hunks);
     let mut budget = SUMMARY_DIFF;
     let lines = diff_rows(&hunks, &mut budget, file.verdict == FileVerdict::Added, cx);
+    let whole = (!text.is_empty()).then(|| text.join("\n"));
     div()
         .v_flex()
         .w_full()
@@ -400,11 +401,12 @@ fn file_row(
             DetailBox {
                 key: row_key,
                 head: None,
-                total: text.len().max(lines.len()),
+                total: text.len(),
+                drawn: SUMMARY_DIFF - budget,
                 lines,
                 from_end: false,
-                copy: Some(text.join("\n")),
-                whole: Some((text.join("\n").into(), Some("diff".into()))),
+                copy: whole.clone(),
+                whole: whole.map(|text| (text.into(), Some("diff".into()))),
             },
             cx,
         )))
