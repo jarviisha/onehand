@@ -260,3 +260,120 @@ fn offload_data_moves_to_its_folder_stem() {
     );
     assert!(!old.exists(), "projects/ then holds projects only");
 }
+
+// Issues.
+
+/// A legacy issues file of `folder` in workspace `ws`, holding one issue of
+/// onehand's own, #1, called `title`.
+fn legacy_issue(root: &Path, ws: &str, folder: &Path, title: &str) -> PathBuf {
+    let dir = root.join("workspaces").join(ws).join("issues");
+    fs::create_dir_all(&dir).unwrap();
+    let file = dir.join(format!("{}.json", crate::workspace::stem_for(folder)));
+    fs::write(
+        &file,
+        format!(r#"{{"next":2,"issues":[{{"number":1,"title":"{title}"}}]}}"#),
+    )
+    .unwrap();
+    file
+}
+
+/// The numbers and titles of the issues in `project`'s file.
+fn issues_of(root: &Path, project: &Project) -> Vec<(u64, String)> {
+    let file = root
+        .join("projects")
+        .join(project.id.as_str())
+        .join("issues.json");
+    let read: serde_json::Value = serde_json::from_slice(&fs::read(file).unwrap()).unwrap();
+    read["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| {
+            (
+                i["number"].as_u64().unwrap(),
+                i["title"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect()
+}
+
+fn merged(file: &Path) -> PathBuf {
+    file.with_extension("json.merged")
+}
+
+#[test]
+fn a_projects_issues_from_every_folder_and_workspace_land_in_its_file() {
+    let (root, (main, linked)) = (root("issues-all"), repo_with_worktree("migrate-issues-all"));
+    workspace(&root, "w1", vec![entry(&main), entry(&linked)]);
+    workspace(&root, "w2", vec![entry(&main)]);
+    let sources = [
+        legacy_issue(&root, "w1", &main, "main in w1"),
+        legacy_issue(&root, "w1", &linked, "worktree in w1"),
+        legacy_issue(&root, "w2", &main, "main in w2"),
+    ];
+    let problems = migrate_projects_in(&root, 1);
+    assert!(problems.is_empty(), "{problems:?}");
+    let p = &projects(&root)[0];
+    let mut got = issues_of(&root, p);
+    got.sort();
+    assert_eq!(
+        got.iter().map(|(n, _)| *n).collect::<Vec<_>>(),
+        vec![1, 2, 3]
+    );
+    assert_eq!(got.len(), 3);
+    for source in &sources {
+        assert!(!source.exists(), "{} taken in", source.display());
+        assert!(merged(source).exists(), "{} kept beside", source.display());
+    }
+}
+
+#[test]
+fn a_second_merge_takes_nothing_twice() {
+    let (root, (main, _)) = (
+        root("issues-twice"),
+        repo_with_worktree("migrate-issues-twice"),
+    );
+    workspace(&root, "w1", vec![entry(&main)]);
+    let source = legacy_issue(&root, "w1", &main, "only");
+    migrate_projects_in(&root, 1);
+    // A run cut short after the project's file landed, before its renames.
+    fs::rename(merged(&source), &source).unwrap();
+    migrate_projects_in(&root, 2);
+    let p = &projects(&root)[0];
+    assert_eq!(issues_of(&root, p), vec![(1, "only".to_string())]);
+}
+
+#[test]
+fn an_unreadable_legacy_file_is_left_and_said() {
+    let (root, (main, linked)) = (root("issues-bad"), repo_with_worktree("migrate-issues-bad"));
+    workspace(&root, "w1", vec![entry(&main), entry(&linked)]);
+    let good = legacy_issue(&root, "w1", &main, "good");
+    let bad = legacy_issue(&root, "w1", &linked, "bad");
+    fs::write(&bad, "{").unwrap();
+    let problems = migrate_projects_in(&root, 1);
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert_eq!(fs::read_to_string(&bad).unwrap(), "{");
+    assert!(merged(&good).exists());
+    let p = &projects(&root)[0];
+    assert_eq!(issues_of(&root, p), vec![(1, "good".to_string())]);
+}
+
+#[test]
+fn a_host_project_keeps_no_issues_file() {
+    let root = root("issues-host");
+    workspace(
+        &root,
+        "w1",
+        vec![ProjectConfig {
+            host: Some(HostName("vps".into())),
+            ..entry(Path::new("/srv/app"))
+        }],
+    );
+    migrate_projects_in(&root, 1);
+    let p = &projects(&root)[0];
+    assert!(!root
+        .join("projects")
+        .join(p.id.as_str())
+        .join("issues.json")
+        .exists());
+}

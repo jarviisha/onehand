@@ -26,7 +26,7 @@ use crate::config::{
     move_into, offload_in, projects_in, workspaces_in, ProjectConfig, WorkspaceConfig,
     WorkspaceLoad,
 };
-use crate::workspace::{HostName, OFFLOAD};
+use crate::workspace::{stem_for, HostName, OFFLOAD};
 use crate::worktree::current_branch_blocking;
 use std::collections::BTreeSet;
 use std::fs;
@@ -164,13 +164,68 @@ pub(crate) fn migrate_projects_in(config: &Path, seed: u64) -> Vec<String> {
             problems.push(format!("{}: {why}", dir.display()));
         }
     }
+    merge_issues(config, &projects, &mut problems);
     problems
 }
 
-/// Every workspace file under `config` that reads, sorted by its folder so a
-/// run is the same every time; one that does not read is a problem, left as
-/// it is.
-fn workspace_files(config: &Path, problems: &mut Vec<String>) -> Vec<(PathBuf, WorkspaceConfig)> {
+/// Take into each project's issues file what an earlier build kept of them
+/// per workspace and per folder: every workspace's file for each folder of
+/// the project, its own first. The project's file records each one taken, so
+/// a run cut short before the renames that follow never takes one twice;
+/// each one taken is renamed `.json.merged` beside where it was, once the
+/// project's file has landed. A project on a host keeps no issues here.
+fn merge_issues(config: &Path, projects: &Projects, problems: &mut Vec<String>) {
+    let workspaces = workspace_dirs(config);
+    for project in projects.iter().filter(|project| project.host.is_none()) {
+        let folders = std::iter::once(&project.path)
+            .chain(project.worktrees.iter().map(|worktree| &worktree.path));
+        let sources: Vec<PathBuf> = folders
+            .flat_map(|folder| {
+                let name = format!("{}.json", stem_for(folder));
+                workspaces
+                    .iter()
+                    .map(move |ws| crate::issues::issues_dir(ws).join(&name))
+            })
+            .filter(|source| source.is_file())
+            .collect();
+        if sources.is_empty() {
+            continue;
+        }
+        let file = projects_in(config)
+            .join(project.id.as_str())
+            .join("issues.json");
+        let mut kept = match crate::issues::load_blocking(&file) {
+            Ok(kept) => kept,
+            Err(why) => {
+                problems.push(why);
+                continue;
+            }
+        };
+        let mut taken = Vec::new();
+        for source in sources {
+            match crate::issues::load_blocking(&source) {
+                Ok(read) => {
+                    crate::issues::merge(&mut kept, read, &source);
+                    taken.push(source);
+                }
+                Err(why) => problems.push(why),
+            }
+        }
+        if let Err(why) = crate::issues::save_blocking(&file, &kept) {
+            problems.push(why);
+            continue;
+        }
+        for source in taken {
+            let aside = source.with_extension("json.merged");
+            if let Err(why) = move_into(&source, &aside) {
+                problems.push(format!("{}: {why}", source.display()));
+            }
+        }
+    }
+}
+
+/// Every workspace folder under `config`, sorted, a staging copy left out.
+fn workspace_dirs(config: &Path) -> Vec<PathBuf> {
     let Ok(entries) = fs::read_dir(workspaces_in(config)) else {
         return Vec::new();
     };
@@ -185,6 +240,14 @@ fn workspace_files(config: &Path, problems: &mut Vec<String>) -> Vec<(PathBuf, W
         })
         .collect();
     dirs.sort();
+    dirs
+}
+
+/// Every workspace file under `config` that reads, sorted by its folder so a
+/// run is the same every time; one that does not read is a problem, left as
+/// it is.
+fn workspace_files(config: &Path, problems: &mut Vec<String>) -> Vec<(PathBuf, WorkspaceConfig)> {
+    let dirs = workspace_dirs(config);
     dirs.into_iter()
         .filter_map(|dir| match WorkspaceConfig::load_from(&dir) {
             WorkspaceLoad::Found(cfg) => Some((dir, cfg)),

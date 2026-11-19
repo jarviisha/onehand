@@ -694,7 +694,7 @@ fn update_unless<R>(
 /// it is missing, but the workspace's own folder above it is not: a write
 /// that lands after its workspace was deleted would otherwise put that
 /// folder back.
-fn save_blocking(file: &Path, issues: &Issues) -> Result<(), String> {
+pub(crate) fn save_blocking(file: &Path, issues: &Issues) -> Result<(), String> {
     if let Some(storage) = file.parent().and_then(Path::parent) {
         if !storage.as_os_str().is_empty() && !storage.is_dir() {
             return Err(format!("{} is gone", storage.display()));

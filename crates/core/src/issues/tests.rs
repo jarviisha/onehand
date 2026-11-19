@@ -463,7 +463,10 @@ fn a_merge_keeps_the_forge_it_syncs_with() {
     from.synced_with = Some("gh".into());
     from.last_synced = 9;
     merge(&mut into, from, Path::new("/ws/issues/a.json"));
-    assert_eq!((into.synced_with.as_deref(), into.last_synced), (Some("gh"), 9));
+    assert_eq!(
+        (into.synced_with.as_deref(), into.last_synced),
+        (Some("gh"), 9)
+    );
 }
 
 #[test]
