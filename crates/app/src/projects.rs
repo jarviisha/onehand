@@ -272,6 +272,26 @@ pub(crate) fn record_cut(of: &Path, dir: &Path, branch: &str, cx: &mut App) -> O
     record(of, worktree, cx)
 }
 
+/// Which conversations the row of `folder` here lists: its own, and, on its
+/// project's own row, those of its project that ran in a folder the project
+/// no longer records. A folder of no project lists its own alone.
+pub(crate) fn scope_of(folder: &Path, cx: &App) -> onehand_core::chat::Scope {
+    let Some((project, at)) = Shared::global(cx).projects.find(None, folder) else {
+        return onehand_core::chat::Scope::folder(folder);
+    };
+    let recorded = std::iter::once(&project.path)
+        .chain(project.worktrees.iter().map(|worktree| &worktree.path))
+        .filter(|recorded| *recorded != folder)
+        .cloned()
+        .collect();
+    onehand_core::chat::Scope {
+        folder: folder.to_path_buf(),
+        project: Some(project.id.clone()),
+        home: at == onehand_core::project::Folder::Home,
+        recorded,
+    }
+}
+
 /// The project holding `folder` here, as it now is.
 pub(crate) fn of(folder: &Path, cx: &App) -> Option<Project> {
     Shared::global(cx)

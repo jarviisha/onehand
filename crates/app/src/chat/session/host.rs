@@ -37,9 +37,15 @@ pub(super) enum Source {
 
 /// The transcript model a session starts from. A host session's transcript is
 /// the host's to keep, so it is never written to this machine's store.
-pub(super) fn new_chat(uid: u64, root: PathBuf, spec: &AgentSpec, on_host: bool) -> Chat {
+pub(super) fn new_chat(
+    uid: u64,
+    root: PathBuf,
+    spec: &AgentSpec,
+    on_host: bool,
+    project: Option<onehand_core::project::ProjectId>,
+) -> Chat {
     let store = (!on_host).then(onehand_core::chat::conversations_dir);
-    let mut chat = Chat::new(uid, root, spec.name.clone(), store, None);
+    let mut chat = Chat::new(uid, root, spec.name.clone(), store, project);
     chat.login_hint = spec.login_hint();
     chat
 }

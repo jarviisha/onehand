@@ -139,14 +139,14 @@ impl ChatPane {
         let Some(path) = self.archives.as_ref().map(|held| held.root.clone()) else {
             return;
         };
-        let scan = path.clone();
+        let scope = crate::projects::scope_of(&path, cx);
         cx.spawn(async move |pane, cx| {
             let past = cx
                 .background_executor()
                 .spawn(async move {
                     onehand_core::chat::list_conversations(
                         &onehand_core::chat::conversations_dir(),
-                        &scan,
+                        &scope,
                         None,
                     )
                 })
@@ -182,14 +182,14 @@ impl ChatPane {
         else {
             return;
         };
-        let scan = path.clone();
+        let scope = crate::projects::scope_of(&path, cx);
         cx.spawn(async move |pane, cx| {
             let past = cx
                 .background_executor()
                 .spawn(async move {
                     onehand_core::chat::list_conversations(
                         &onehand_core::chat::conversations_dir(),
-                        &scan,
+                        &scope,
                         None,
                     )
                 })

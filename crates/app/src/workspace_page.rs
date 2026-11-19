@@ -139,6 +139,16 @@ impl WorkspacePage {
         self.shown = onehand_core::issues::open_across(kept, PAGE_ISSUES);
     }
 
+    /// The recent conversations listed, by row and session id, for a test.
+    #[cfg(test)]
+    pub(crate) fn recent_keys(&self) -> Vec<(PathBuf, String)> {
+        self.recent
+            .iter()
+            .flatten()
+            .map(|(root, conv)| (root.clone(), conv.session_id.clone()))
+            .collect()
+    }
+
     /// Each row that keeps issues, with the file its project keeps them in,
     /// in rail order.
     fn issue_folders(&self) -> Vec<(PathBuf, PathBuf)> {
@@ -197,11 +207,12 @@ impl WorkspacePage {
             .collect();
         // A host's conversations are not kept here; what is filed under its
         // path is a folder of the same path here.
-        let roots: Vec<PathBuf> = self
+        // Each row's conversations, each conversation on one row.
+        let roots: Vec<onehand_core::chat::Scope> = self
             .projects
             .iter()
             .filter(|p| p.host.is_none())
-            .map(|p| p.root.clone())
+            .map(|p| crate::projects::scope_of(&p.root, cx))
             .collect();
         self._load = Some(cx.spawn(async move |page, cx| {
             let (read, failed, recent) = cx

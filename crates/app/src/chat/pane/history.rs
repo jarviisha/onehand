@@ -39,14 +39,17 @@ impl ChatPane {
             session.update(cx, |session, cx| session.save_meta(cx));
         }
         let live = live.map(|session| session.entity_id());
-        let (root, agent) = (conv.root.clone(), conv.spec.name.clone());
+        let (scope, agent) = (
+            crate::projects::scope_of(&conv.root, cx),
+            conv.spec.name.clone(),
+        );
         cx.spawn(async move |pane, cx| {
             let past = cx
                 .background_executor()
                 .spawn(async move {
                     onehand_core::chat::list_conversations(
                         &onehand_core::chat::conversations_dir(),
-                        &root,
+                        &scope,
                         Some(&agent),
                     )
                 })
