@@ -27,6 +27,9 @@ pub use agent::{
 pub(crate) use agent::{default_agents, found_agents, look_key};
 
 mod document;
+mod host;
+pub use host::{listed, removal_refusal, HostEdit, HostOs, HostSpec};
+
 mod font;
 pub use font::{resolve_monospace, FontConfig};
 
@@ -175,6 +178,10 @@ pub struct AppConfig {
     /// would start failing rather than moving the key.
     pub appearance: Appearance,
     pub agents: Vec<AgentSpec>,
+    /// The hosts a person declared, to run projects on or to build on. A file
+    /// that declares none names none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub hosts: Vec<HostSpec>,
     pub font: FontConfig,
     pub remote: RemoteConfig,
     pub control: ControlConfig,
@@ -188,6 +195,7 @@ impl Default for AppConfig {
         Self {
             appearance: Appearance::default(),
             agents: default_agents(),
+            hosts: Vec::new(),
             font: FontConfig::default(),
             remote: RemoteConfig::default(),
             control: ControlConfig::default(),
