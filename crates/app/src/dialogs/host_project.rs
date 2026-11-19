@@ -9,6 +9,7 @@ use crate::controls::Refuses as _;
 use crate::controls::Short as _;
 use crate::controls::text_input;
 use crate::shell::{Browse, Shell, Way};
+use gpui::SharedString;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, ClickEvent, Context, InteractiveElement as _, IntoElement, ParentElement,
@@ -17,6 +18,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants;
 use gpui_component::dialog::Dialog;
 use gpui_component::{ActiveTheme as _, IconName, StyledExt as _};
+use onehand_core::config::HostSpec;
 use onehand_core::host::wire::{HostSession, clone_name};
 use onehand_core::tree::TreeEntry;
 use onehand_core::workspace::HostName;
@@ -86,15 +88,24 @@ pub(crate) const BROWSE_CAP: usize = 200;
 /// reach under it.
 const BROWSE_H: gpui::Rems = gpui::rems(12.);
 
-/// The hosts offered beside *Host*: those `used` by the workspace first, in
-/// its order, then the SSH config's `aliases`, each once; at most
-/// [`HOST_CHOICES_CAP`], and how many more there were.
-pub(crate) fn host_choices(aliases: Vec<String>, used: Vec<HostName>) -> (Vec<String>, usize) {
+/// The hosts offered beside *Host*: the `declared` ones that run sessions
+/// first, then those `used` by the workspace, in its order, then the SSH
+/// config's `aliases`, each once; at most [`HOST_CHOICES_CAP`], and how many
+/// more there were. A host declared as one that only builds is never offered,
+/// by whichever of the three it would have come.
+pub(crate) fn host_choices(
+    aliases: Vec<String>,
+    used: Vec<HostName>,
+    declared: &[HostSpec],
+) -> (Vec<String>, usize) {
     let mut seen = std::collections::HashSet::new();
-    let all: Vec<String> = used
-        .into_iter()
-        .map(|host| host.0)
+    let all: Vec<String> = declared
+        .iter()
+        .filter(|host| host.runs_sessions())
+        .map(|host| host.name.0.clone())
+        .chain(used.into_iter().map(|host| host.0))
         .chain(aliases)
+        .filter(|host| builds_only(host, declared).is_none())
         .filter(|host| seen.insert(host.clone()))
         .collect();
     let more = all.len().saturating_sub(HOST_CHOICES_CAP);
@@ -194,6 +205,9 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
             &folder.read(cx).value(),
         ),
     };
+    let declared = crate::state::Shared::global(cx).settings.hosts.clone();
+    let only_builds = builds_only(&host.read(cx).value(), &declared).map(SharedString::from);
+    let refusal = refusal.map(SharedString::from).or(only_builds.clone());
     let (folder_label, folder_about) = match way {
         Way::Folder => ("Folder", "The project's folder on that host, from /"),
         Way::Clone => ("Into", "The folder on that host to clone into, from /"),
@@ -214,10 +228,12 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
         let n = busy.len();
         (n > 0 || terms > 0).then(|| (crate::hosts::waiting_line(&on, n, terms), on))
     });
-    let (choices, more_hosts) = host_choices(draft.aliases.clone(), shell.used_hosts());
+    let (choices, more_hosts) = host_choices(draft.aliases.clone(), shell.used_hosts(), &declared);
     let shell = cx.entity().downgrade();
     let waits = waiting.is_some();
-    let browse_refusal = browse_refusal(&host.read(cx).value(), busy, draft.waiting.is_some());
+    let browse_refusal = browse_refusal(&host.read(cx).value(), busy, draft.waiting.is_some())
+        .map(SharedString::from)
+        .or(only_builds);
     let browsing = draft.browse.as_ref().is_some_and(|browse| browse.loading);
     let browse = draft.browse.clone();
 
@@ -291,7 +307,7 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
                                 .secondary()
                                 .label("Browse")
                                 .loading(browsing && !waits)
-                                .refuses(browse_refusal)
+                                .refuses(browse_refusal.clone())
                                 .on_click({
                                     let shell = shell.clone();
                                     move |_: &ClickEvent, _, cx| {
@@ -358,7 +374,7 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
                         .primary()
                         .label(act)
                         .loading(busy && !waits)
-                        .refuses(refusal)
+                        .refuses(refusal.clone())
                         .on_click(
                             cx.listener(|shell: &mut Shell, _: &ClickEvent, window, cx| {
                                 shell.commit_host_project(window, cx);
@@ -373,12 +389,23 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
         }))
 }
 
+/// Why no session can open on `host`: it is declared, and as a host that
+/// only builds. One nobody declared is not refused here; its attach says
+/// what it is.
+pub(crate) fn builds_only(host: &str, declared: &[HostSpec]) -> Option<String> {
+    let host = host.trim();
+    declared
+        .iter()
+        .any(|spec| spec.name.0 == host && !spec.runs_sessions())
+        .then(|| format!("{host} only builds; it runs no sessions"))
+}
+
 /// What a host picked from the menu beside a *Host* field is handed to.
-pub(super) type PickHost = Rc<dyn Fn(String, &mut Window, &mut App)>;
+pub(crate) type PickHost = Rc<dyn Fn(String, &mut Window, &mut App)>;
 
 /// The menu beside a *Host* field: the hosts to pick from, and how many it
 /// leaves out; `pick` is handed the one picked.
-pub(super) fn host_menu(
+pub(crate) fn host_menu(
     choices: Vec<String>,
     more: usize,
     pick: PickHost,

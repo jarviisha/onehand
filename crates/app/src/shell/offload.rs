@@ -6,6 +6,7 @@ use crate::offload;
 use gpui::{AppContext as _, Context, Entity, Focusable as _, Subscription, Task, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputEvent, InputState};
+use onehand_core::config::HostSpec;
 use onehand_core::host::offload::drive::Kept;
 use onehand_core::host::sshconf;
 use onehand_core::workspace::{HostName, Offloaded};
@@ -34,9 +35,13 @@ pub(crate) struct OffloadDraft {
     _sending: Option<Task<()>>,
 }
 
-/// Why *Offload* cannot go yet: the host is unnamed, or `busy` sessions here
-/// are mid-turn, which offloading would close.
-pub(crate) fn offload_refusal(host: &str, busy: usize) -> Option<String> {
+/// Why *Offload* cannot go yet: the host is unnamed or `declared` as one
+/// that only builds, or `busy` sessions here are mid-turn, which offloading
+/// would close.
+pub(crate) fn offload_refusal(host: &str, busy: usize, declared: &[HostSpec]) -> Option<String> {
+    if let Some(why) = crate::dialogs::builds_only(host, declared) {
+        return Some(why);
+    }
     match busy {
         _ if host.trim().is_empty() => Some("Name the host".into()),
         0 => None,
@@ -175,7 +180,13 @@ impl Shell {
         let host = draft.host.read(cx).value().trim().to_string();
         let path = draft.root.clone();
         let on_branch = draft.on_branch;
-        if offload_refusal(&host, self.busy_here(&path, cx)).is_some() {
+        if offload_refusal(
+            &host,
+            self.busy_here(&path, cx),
+            &crate::state::Shared::global(cx).settings.hosts,
+        )
+        .is_some()
+        {
             return;
         }
         let host = HostName(host);
@@ -218,7 +229,11 @@ impl Shell {
             }
         };
         // A turn started while the code went would be cut off by the close.
-        if let Some(why) = offload_refusal(&host.0, self.busy_here(&path, cx)) {
+        if let Some(why) = offload_refusal(
+            &host.0,
+            self.busy_here(&path, cx),
+            &crate::state::Shared::global(cx).settings.hosts,
+        ) {
             if let Some(draft) = self.offload_draft.as_mut() {
                 draft.error = Some(why);
             }
@@ -464,15 +479,31 @@ mod tests {
 
     #[test]
     fn offloading_waits_on_a_host_and_on_turns_here() {
-        assert_eq!(offload_refusal(" ", 0).as_deref(), Some("Name the host"));
-        assert_eq!(offload_refusal("box", 0), None);
         assert_eq!(
-            offload_refusal("box", 1).as_deref(),
+            offload_refusal(" ", 0, &[]).as_deref(),
+            Some("Name the host")
+        );
+        assert_eq!(offload_refusal("box", 0, &[]), None);
+        assert_eq!(
+            offload_refusal("box", 1, &[]).as_deref(),
             Some("Wait for the session here to finish")
         );
         assert_eq!(
-            offload_refusal("box", 3).as_deref(),
+            offload_refusal("box", 3, &[]).as_deref(),
             Some("Wait for 3 sessions here to finish")
+        );
+    }
+
+    #[test]
+    fn offloading_to_a_host_that_only_builds_is_refused() {
+        let win = onehand_core::config::HostSpec {
+            name: onehand_core::workspace::HostName("win".into()),
+            os: onehand_core::config::HostOs::Windows,
+            arch: "AMD64".into(),
+        };
+        assert_eq!(
+            offload_refusal("win", 0, &[win]).as_deref(),
+            Some("win only builds; it runs no sessions")
         );
     }
 }

@@ -12,7 +12,7 @@ pub fn shown(control: &mut ControlDrive, value: &Value) {
         Value::Outside(on) => {
             control.set_outside(*on);
         }
-        Value::Appearance(_) | Value::Agents => {}
+        Value::Appearance(_) | Value::Agents | Value::Hosts => {}
     }
 }
 
@@ -26,7 +26,7 @@ mod tests {
     /// puts it back off for the socket too.
     #[test]
     fn outside_control_follows_its_save() {
-        let mut settings = SettingsDrive::new(Vec::new(), Default::default());
+        let mut settings = SettingsDrive::new(Vec::new(), Default::default(), Vec::new());
         let mut control = ControlDrive::default();
         let mut write = None;
         for effect in settings.set_outside(control.outside(), true) {
@@ -36,6 +36,7 @@ mod tests {
                 }
                 Effect::Write { pending, edit } => write = Some((pending, edit)),
                 Effect::Probe { .. }
+                | Effect::ProbeHost { .. }
                 | Effect::Look { .. }
                 | Effect::CallOff { .. }
                 | Effect::Changed
@@ -54,6 +55,7 @@ mod tests {
                 Effect::Show(value) => shown(&mut control, &value),
                 Effect::Write { .. }
                 | Effect::Probe { .. }
+                | Effect::ProbeHost { .. }
                 | Effect::Look { .. }
                 | Effect::CallOff { .. }
                 | Effect::Changed

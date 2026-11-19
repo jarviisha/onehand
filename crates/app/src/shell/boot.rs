@@ -2,7 +2,7 @@ use super::drafts::answered;
 use super::settings_page::apply_appearance;
 use super::{CloseGuard, FocusedPanel, Shell, init_keymap};
 use crate::chat::ChatPane;
-use crate::settings::{AgentDraft, SettingsPage};
+use crate::settings::{AgentDraft, HostDraft, SettingsPage};
 use crate::state::{Shared, WorkspaceWindow};
 use crate::terminal::TerminalPanel;
 use crate::workbench::Workbench;
@@ -467,6 +467,7 @@ impl Shell {
             rail_split: cx.new(|_| ResizableState::default()),
             agent_draft: AgentDraft::new(window, cx),
             agent_form: false,
+            host_draft: HostDraft::new(window, cx),
             settings_page: SettingsPage::default(),
             settings_focus: cx.focus_handle(),
             keymap_editor: cx.new(|cx| crate::keymap::Editor::new(window, cx)),

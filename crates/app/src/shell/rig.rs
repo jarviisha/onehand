@@ -50,7 +50,7 @@ pub(crate) fn shell(
     std::fs::create_dir_all(&storage).unwrap();
     cx.update(|cx| {
         let mut shared = Shared::for_test();
-        shared.settings = SettingsDrive::new(agents, Default::default());
+        shared.settings = SettingsDrive::new(agents, Default::default(), Vec::new());
         cx.set_global(shared);
         cx.set_global(Tasks::in_dir(store));
     });

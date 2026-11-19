@@ -87,7 +87,7 @@ pub(crate) fn carry_settings(fx: Vec<Effect>, window: &mut Window, cx: &mut App)
                 onehand_core::control::link::shown(&mut crate::control::drive(), &value);
                 cx.refresh_windows();
             }
-            Effect::Show(Value::Agents) => {}
+            Effect::Show(Value::Agents | Value::Hosts) => {}
             Effect::Write { pending, edit } => {
                 let path = Shared::global(cx).config_path.clone();
                 let write = edit.clone();
@@ -112,6 +112,7 @@ pub(crate) fn carry_settings(fx: Vec<Effect>, window: &mut Window, cx: &mut App)
             }
             Effect::Probe { spec, cwd, token } => probe(spec, cwd, token, cx),
             Effect::Look { spec, root } => look(spec, root, cx),
+            Effect::ProbeHost { host } => probe_host(host, cx),
             Effect::CallOff { token } => {
                 cx.default_global::<Checks>().0.remove(&token);
             }
@@ -178,6 +179,71 @@ fn look(spec: onehand_core::config::AgentSpec, root: Option<std::path::PathBuf>,
     .detach();
 }
 
+/// Ask `host` what it is and what it has, off the UI loop, and report it. What
+/// it finds may be a host to declare, which is written from the window in
+/// front, where a failure can be said; with none open it is written all the
+/// same, and a failure then has nobody to be said to.
+fn probe_host(host: onehand_core::workspace::HostName, cx: &mut App) {
+    cx.spawn(async move |cx| {
+        let addr = host.addr();
+        let found = cx
+            .background_executor()
+            .spawn(async move { onehand_core::host::probe::probe_blocking(&addr) })
+            .await;
+        cx.update(|cx| {
+            let fx = cx.update_global::<Shared, _>(|shared, _| {
+                shared.settings.handle(Input::HostProbed { host, found })
+            });
+            match crate::windows::front(cx) {
+                Some((window, _)) => {
+                    let _ = window.update(cx, |_, window, cx| carry_settings(fx, window, cx));
+                }
+                None => write_unseen(fx, cx),
+            }
+        });
+    })
+    .detach();
+}
+
+/// Carry out the writes among `fx` with no window at hand, so a host probed
+/// from a window that closed meanwhile is still declared in the file.
+fn write_unseen(fx: Vec<Effect>, cx: &mut App) {
+    for effect in fx {
+        let (pending, edit) = match effect {
+            Effect::Write { pending, edit } => (pending, edit),
+            // Nothing else has anywhere to go without a window: the redraw
+            // below stands for `Changed`, and a host's probe shows nothing.
+            Effect::Show(_)
+            | Effect::Probe { .. }
+            | Effect::ProbeHost { .. }
+            | Effect::Look { .. }
+            | Effect::CallOff { .. }
+            | Effect::Changed
+            | Effect::Signal(_) => continue,
+        };
+        let path = Shared::global(cx).config_path.clone();
+        let write = edit.clone();
+        let written = Shared::global(cx)
+            .writer
+            .write(move || AppConfig::update_in_place(&path, |cfg| write.apply(cfg)));
+        cx.spawn(async move |cx| {
+            let result = written.await;
+            cx.update(|cx| {
+                // The drive is told, so later writes are ordered after this one.
+                let _ = cx.update_global::<Shared, _>(|shared, _| {
+                    shared.settings.handle(Input::Written {
+                        pending,
+                        edit,
+                        result,
+                    })
+                });
+            });
+        })
+        .detach();
+    }
+    cx.refresh_windows();
+}
+
 /// A check's or a look's answer, with no window at hand: what it says needs
 /// none.
 fn land(input: Input, cx: &mut App) {
@@ -194,7 +260,11 @@ pub(crate) fn carry_quietly(fx: Vec<Effect>, cx: &mut App) {
                 cx.default_global::<Checks>().0.remove(&token);
             }
             Effect::Changed => cx.refresh_windows(),
-            Effect::Show(_) | Effect::Write { .. } | Effect::Probe { .. } | Effect::Signal(_) => {
+            Effect::Show(_)
+            | Effect::Write { .. }
+            | Effect::Probe { .. }
+            | Effect::ProbeHost { .. }
+            | Effect::Signal(_) => {
                 unreachable!(
                     "a Test, a look's answer and a check's answer ask only for a look, a call-off \
                      or a redraw; a setting's change and a check's start go through carry_settings"

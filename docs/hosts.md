@@ -22,6 +22,48 @@ worktrees, the check command) runs on it. What is refused, and how, is under *Wh
 - **Only Linux x86_64.** The install asks `uname -sm` first and refuses anything else, naming what
   the host said: *<host> is not a machine this build runs on: …*.
 
+## Declared hosts
+
+A person declares a host once, for every workspace; a project then names it.
+
+- **Kept in `onehand.toml`** as `[[hosts]]`, each with its `name`, the `os` a probe found (`linux`
+  or `windows`) and its `arch`, as the host names it (`HostSpec`, `crates/core/src/config/host.rs`).
+  A file that declares none names none. An entry written by hand with its name alone is read as
+  Linux on `x86_64`, and `os` is read whatever its case. An `os` this build does not know is kept
+  as it was written.
+- **Which hosts run sessions:** Linux on `x86_64` only, the one machine the host service is built
+  for (`HostSpec::runs_sessions`). Every other declared host, a Windows one or a Linux one on
+  another architecture, is a build-only host: no session, file or terminal is opened on it.
+- **A host is added, and checked, by a probe** (`probe_blocking`, `crates/core/src/host/probe.rs`):
+  two calls over the person's own ssh, with the attach's options, ten seconds to connect and
+  thirty for each call to answer (`ANSWER_WAIT`). The
+  first is one line a POSIX shell and `cmd.exe` both run, which says what the host is: `uname -sm`,
+  or `ver` where there is none. The second asks which of `git`, `tar`, `cargo`, `rustc` and
+  `dotnet` it finds, of the login shell on Linux, so a toolchain a profile puts on `PATH` counts,
+  and of `cmd.exe` on Windows, with its architecture; a Windows host whose ssh shell answered
+  `uname` is asked in POSIX words. Only what follows the probe's own mark is read, so what a
+  startup file prints is never taken for the answer, and a second call with no mark in it is a
+  failed probe, *<host> did not say what it has: …*, never a host with nothing installed.
+- **What the probe finds is declared**, in place of what was (`SettingsDrive::probe_host`,
+  `crates/core/src/config/drive.rs`). One that fails declares nothing and says why; one that lands
+  is written even when it found what was declared, so a write that failed before is mended by the
+  next check; one that lands for a host removed meanwhile is dropped.
+  A second ask while one runs for that host starts nothing. No host is probed unasked.
+- **A host a project names that nobody declared is listed too**, as Linux `x86_64`, the only kind
+  there was before hosts were declared, and marked *Not declared* (`config::host::listed`). Its
+  *Check* declares it. Nothing it does as a host project changes.
+- **Only `git` and `tar` are required of a host;** the toolchains are told, never required.
+- **Removing** takes the host out of the list and touches nothing on the host. It is refused
+  while a project of an open window names the host, *<host> is used by <projects>*
+  (`removal_refusal`).
+- **A build-only host is never offered where a session opens.** The host-project and offload
+  forms leave it out of their menus, by whichever way it would have come, the SSH config's alias
+  included, and refuse one typed by hand, *<host> only builds; it runs no sessions*, before
+  anything attaches (`builds_only`, `crates/app/src/dialogs/host_project.rs`). Their menus lead
+  with the declared hosts that run sessions.
+
+What the page draws is in [screens.md](screens.md#settings).
+
 ## The host service
 
 - **The binary is the one built beside this one:** `onehand-host` in `current_exe()`'s directory

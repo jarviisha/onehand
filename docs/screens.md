@@ -483,7 +483,7 @@ room and leaves the terminal as it is.
 ## Settings
 
 Settings is a page named in its own head, as the workspace pages are, over a nav column with
-Appearance, Workspace, Agents, Connections and Shortcuts (rows as the rail's page rows, a
+Appearance, Workspace, Agents, Hosts, Connections and Shortcuts (rows as the rail's page rows, a
 step under a list row), and beside
 it the sub-page, untitled (its nav row names it), opening on its scope as a badge and a hint, its
 groups in the library's setting-page shape: each a box with an edge, its semibold heading and the
@@ -498,6 +498,20 @@ and only *Delete…*. The Workspace page holds, in its first group, the workspac
 *Storage folder*: the folder onehand keeps it in, in mono, shown so it can be found for a backup
 and never chosen; then *Other workspaces* with *New workspace…*; and last *Delete workspace*, its button in the
 danger ink, asking before it closes the window and removes the workspace with the issues it keeps.
+The Hosts page lists each declared host, at most 50 and then *N more not shown*: its name; under
+it its system (*Linux x86_64*) and, once checked, what the check found, the two programs a build
+needs by name and each toolchain with its version (*git, tar, cargo 1.99.1*), or *Checking…* while
+one runs; then, in the muted ink, *Builds only; nothing builds on it yet* on a host that runs no
+sessions; then, in the warning ink, what is wrong: why its check failed, *git is not installed*,
+or for a host sessions run on the rail's own *Not connected to <host>* or *<host> was attached
+from another machine*; and last *Used by <projects>*. Each row ends with *Check*, and a declared
+one with *Remove…* in the danger ink, which asks *Remove <host>?* and refuses, saying which, while
+a project uses the host. A host a project names that nobody declared carries the *Not declared*
+badge and only *Check*. With none, *No hosts yet*. Under the list a group, *Add a host*: one field
+(*An alias from your SSH config, or user@machine*), the menu of SSH aliases not yet declared, and
+*Add*, which refuses with *Name the host* or *<host> is already declared*; the field empties at
+the press and the line under it says *Checking <host>…*, then, should the check fail, *<host> was
+not added: …* in the danger ink.
 The Connections page lists each connector and who it acts as, with *Check again*, then an
 *Outside control* group: what a program may and may never do, the socket's path in mono, and one
 switch.
