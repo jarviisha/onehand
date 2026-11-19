@@ -124,6 +124,11 @@ struct Meta {
     format: u32,
     session_id: String,
     root: String,
+    /// The project `root` is a folder of, by id: what lists the conversation
+    /// under its project once that folder is no row of it any more. Absent
+    /// in what an older build wrote, and in a conversation of no project.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    project: Option<crate::project::ProjectId>,
     agent: String,
     /// When the conversation was first written. `updated` moves; this does not,
     /// so "how old is this" stays answerable after a rename or a reopen.
@@ -235,6 +240,8 @@ pub struct PendingWrite {
 pub(crate) struct MetaWrite {
     pub session_id: String,
     pub root: String,
+    /// The project, when the chat knows it; none leaves what is on disk.
+    pub project: Option<crate::project::ProjectId>,
     pub agent: String,
     pub title: Option<String>,
     pub(crate) preview: String,
@@ -317,32 +324,72 @@ fn describe(dir: &Path, meta: Meta) -> ConvMeta {
     }
 }
 
-/// Conversations under `store` belonging to `project`, and to `agent` when one
+/// Which conversations one row lists: those that ran in its folder, and, on
+/// its project's own row, those of its project that ran in a folder the
+/// project no longer records (a worktree since removed, a worker's folder).
+/// A recorded worktree lists its own, so nothing is listed on two rows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Scope {
+    pub folder: PathBuf,
+    pub project: Option<crate::project::ProjectId>,
+    /// The row is its project's own folder.
+    pub home: bool,
+    /// The project's other folders, which list their own.
+    pub recorded: Vec<PathBuf>,
+}
+
+impl Scope {
+    /// The row of `folder` alone, of no project.
+    pub fn folder(folder: impl Into<PathBuf>) -> Self {
+        Self {
+            folder: folder.into(),
+            project: None,
+            home: false,
+            recorded: Vec::new(),
+        }
+    }
+
+    /// Whether a conversation that ran in `root`, of `project`, is listed on
+    /// this row.
+    pub fn holds(&self, root: &Path, project: Option<&crate::project::ProjectId>) -> bool {
+        if root == self.folder {
+            return true;
+        }
+        self.home
+            && project.is_some()
+            && project == self.project.as_ref()
+            && !self.recorded.iter().any(|folder| folder == root)
+    }
+}
+
+/// Conversations under `store` the row `scope` lists, and of `agent` when one
 /// is named, newest first.
 ///
 /// Reads one small file per conversation and opens no transcript at all.
 /// Blocking — call it off the UI loop.
-pub fn list_conversations(store: &Path, project: &Path, agent: Option<&str>) -> Vec<ConvMeta> {
-    let project = project.display().to_string();
-    list_where(store, |root, conv_agent| {
-        root == project && agent.is_none_or(|a| conv_agent == a)
-    })
-    .into_iter()
-    .map(|(_, conv)| conv)
-    .collect()
+pub fn list_conversations(store: &Path, scope: &Scope, agent: Option<&str>) -> Vec<ConvMeta> {
+    list_all(store)
+        .into_iter()
+        .filter(|(root, project, conv)| {
+            scope.holds(Path::new(root), project.as_ref()) && agent.is_none_or(|a| conv.agent == a)
+        })
+        .map(|(_, _, conv)| conv)
+        .collect()
 }
 
-/// Conversations under `store` belonging to any of `projects`, each with the
-/// project it belongs to, newest first. One read of the store however many
-/// projects are asked about. Blocking — call it off the UI loop.
-pub fn list_across(store: &Path, projects: &[PathBuf]) -> Vec<(PathBuf, ConvMeta)> {
-    let wanted: std::collections::HashMap<String, &PathBuf> = projects
-        .iter()
-        .map(|p| (p.display().to_string(), p))
-        .collect();
-    list_where(store, |root, _| wanted.contains_key(root))
+/// Conversations under `store` any of `scopes` lists, each keyed by the
+/// folder of the first scope that lists it, newest first. One read of the
+/// store however many rows are asked about. Blocking — call it off the UI
+/// loop.
+pub fn list_across(store: &Path, scopes: &[Scope]) -> Vec<(PathBuf, ConvMeta)> {
+    list_all(store)
         .into_iter()
-        .filter_map(|(root, conv)| Some(((*wanted.get(&root)?).clone(), conv)))
+        .filter_map(|(root, project, conv)| {
+            let scope = scopes
+                .iter()
+                .find(|scope| scope.holds(Path::new(&root), project.as_ref()))?;
+            Some((scope.folder.clone(), conv))
+        })
         .collect()
 }
 
@@ -355,9 +402,9 @@ pub fn find_conversation(store: &Path, session_id: &str) -> Option<(PathBuf, Con
     Some((PathBuf::from(&meta.root), describe(&dir, meta)))
 }
 
-/// Every conversation `keep` accepts by its project root and agent, with that
-/// root, newest first.
-fn list_where(store: &Path, keep: impl Fn(&str, &str) -> bool) -> Vec<(String, ConvMeta)> {
+/// Every conversation under `store`, with the folder it ran in and its
+/// project, newest first.
+fn list_all(store: &Path) -> Vec<(String, Option<crate::project::ProjectId>, ConvMeta)> {
     let mut out = Vec::new();
     let Ok(entries) = std::fs::read_dir(store) else {
         return out;
@@ -373,13 +420,10 @@ fn list_where(store: &Path, keep: impl Fn(&str, &str) -> bool) -> Vec<(String, C
         let Some(meta) = meta_at(&dir) else {
             continue;
         };
-        if !keep(&meta.root, &meta.agent) {
-            continue;
-        }
-        let root = meta.root.clone();
-        out.push((root, describe(&dir, meta)));
+        let (root, project) = (meta.root.clone(), meta.project.clone());
+        out.push((root, project, describe(&dir, meta)));
     }
-    out.sort_by_key(|(_, conv)| std::cmp::Reverse(conv.updated));
+    out.sort_by_key(|(_, _, conv)| std::cmp::Reverse(conv.updated));
     out
 }
 

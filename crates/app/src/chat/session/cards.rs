@@ -342,7 +342,7 @@ mod tests {
         use onehand_core::acp::{AcpEvent, Elicitation};
         use onehand_core::chat::Chat;
 
-        let chat = Chat::new(1, "/repo".into(), "agent".into(), None);
+        let chat = Chat::new(1, "/repo".into(), "agent".into(), None, None);
         let (session, mut tx, _) = driven(cx, chat);
         let _requests = up(&mut tx);
         let field = |key: &str| {

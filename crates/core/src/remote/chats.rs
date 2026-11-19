@@ -569,30 +569,34 @@ impl Chats {
 /// silently dropped.
 const MAX_ARCHIVES: usize = 10;
 
-/// Read what is on disk for `roots`, newest first.
+/// Read what is on disk for the rows `scopes`, each with what its project is
+/// called, newest first; each conversation once, on the first row listing it.
 ///
 /// **Blocking, and called from the background executor only.** It opens the
 /// conversation store and reads a small file per conversation in it, which is
 /// hundreds of reads on a machine that has been used for a while — on the UI
 /// thread that is a visible stall, in the middle of a frame, for a message
 /// nobody is watching the screen for.
-pub fn scan_archives(roots: Vec<(PathBuf, String)>) -> (Vec<ArchiveRow>, usize) {
+pub fn scan_archives(scopes: Vec<(crate::chat::Scope, String)>) -> (Vec<ArchiveRow>, usize) {
     let store = crate::chat::conversations_dir();
-    let mut found: Vec<ArchiveRow> = Vec::new();
-    for (root, project) in roots {
-        // Every agent, not one: the listing is about what was said, and which
-        // adapter said it is a detail below that.
-        for meta in crate::chat::list_conversations(&store, &root, None) {
-            found.push(ArchiveRow {
-                root: root.clone(),
-                project: project.clone(),
-                dir: meta.dir,
-                agent: meta.agent,
-                title: meta.title,
-                updated: meta.updated,
-            });
-        }
-    }
+    let rows: Vec<crate::chat::Scope> = scopes.iter().map(|(scope, _)| scope.clone()).collect();
+    // Every agent, not one: the listing is about what was said, and which
+    // adapter said it is a detail below that.
+    let mut found: Vec<ArchiveRow> = crate::chat::list_across(&store, &rows)
+        .into_iter()
+        .map(|(root, meta)| ArchiveRow {
+            project: scopes
+                .iter()
+                .find(|(scope, _)| scope.folder == root)
+                .map(|(_, name)| name.clone())
+                .unwrap_or_default(),
+            root,
+            dir: meta.dir,
+            agent: meta.agent,
+            title: meta.title,
+            updated: meta.updated,
+        })
+        .collect();
     // Newest first, which is what makes a cap of ten worth having.
     found.sort_by_key(|pick| std::cmp::Reverse(pick.updated));
     // The total travels with the page, because a listing that quietly stops at

@@ -119,6 +119,7 @@ impl Chat {
             meta: MetaWrite {
                 session_id,
                 root: self.root.display().to_string(),
+                project: self.project.clone(),
                 agent: self.agent.clone(),
                 title: self.custom_title.clone(),
                 preview: self.first_prompt(),

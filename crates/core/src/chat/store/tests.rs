@@ -1,6 +1,7 @@
 use super::*;
 use crate::acp::{ToolCall, ToolContent, ToolKind, ToolStatus};
 use crate::chat::model::{Chat, Md, SubagentItem, SubagentState, ToolItem};
+use crate::project::ProjectId;
 use std::sync::Arc;
 
 /// One conversation's metadata, read back off disk.
@@ -26,6 +27,7 @@ fn chat_in(store: &Path, sid: &str) -> Chat {
         PathBuf::from("/r"),
         "Claude".into(),
         Some(store.to_path_buf()),
+        None,
     );
     chat.session_id = Some(sid.to_string());
     chat
@@ -153,7 +155,13 @@ fn an_empty_chat_creates_no_directory() {
     assert!(chat.flush().is_none());
 
     // …and neither does one that has never been given a session id.
-    let mut nameless = Chat::new(1, PathBuf::from("/r"), "Claude".into(), Some(store.clone()));
+    let mut nameless = Chat::new(
+        1,
+        PathBuf::from("/r"),
+        "Claude".into(),
+        Some(store.clone()),
+        None,
+    );
     nameless.push_user(
         "typed but never sent anywhere".into(),
         Vec::new(),
@@ -179,14 +187,14 @@ fn listing_never_opens_the_transcript() {
     save(&mut chat);
 
     std::fs::write(conv_dir(&store, "s1").join("items.jsonl"), "not json").unwrap();
-    let found = list_conversations(&store, Path::new("/r"), Some("Claude"));
+    let found = list_conversations(&store, &Scope::folder("/r"), Some("Claude"));
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].title, "Fix the login flow");
     assert_eq!(found[0].session_id, "s1");
     // Another project's conversations are not this project's.
-    assert!(list_conversations(&store, Path::new("/other"), None).is_empty());
+    assert!(list_conversations(&store, &Scope::folder("/other"), None).is_empty());
     // Nor another agent's.
-    assert!(list_conversations(&store, Path::new("/r"), Some("Other")).is_empty());
+    assert!(list_conversations(&store, &Scope::folder("/r"), Some("Other")).is_empty());
     // Found by its id alone, with the project it ran in, whatever is open.
     let (root, conv) = find_conversation(&store, "s1").unwrap();
     assert_eq!(
@@ -208,7 +216,7 @@ fn listing_across_projects_names_each_ones_project() {
     );
     save(&mut chat);
 
-    let projects = [PathBuf::from("/other"), PathBuf::from("/r")];
+    let projects = [Scope::folder("/other"), Scope::folder("/r")];
     let found = list_across(&store, &projects);
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].0, PathBuf::from("/r"));
@@ -235,7 +243,7 @@ fn an_unknown_format_is_neither_listed_nor_loaded() {
 
     assert!(read_meta(&dir).is_none());
     assert!(load(&dir).is_none());
-    assert!(list_conversations(&store, Path::new("/r"), None).is_empty());
+    assert!(list_conversations(&store, &Scope::folder("/r"), None).is_empty());
     assert!(dir.exists(), "and it is refused, not removed");
     let _ = std::fs::remove_dir_all(&store);
 }
@@ -465,7 +473,7 @@ fn deleting_a_conversation_takes_its_images_with_it() {
 
     assert!(!dir.exists());
     assert!(read_meta(&dir).is_none());
-    assert!(list_conversations(&store, Path::new("/r"), None).is_empty());
+    assert!(list_conversations(&store, &Scope::folder("/r"), None).is_empty());
     // Deleting what is already gone is the outcome asked for.
     assert!(delete(&dir).is_ok());
     // And it took only its own: the store is still there for the rest.
@@ -1044,5 +1052,139 @@ fn a_cards_length_comes_back_as_it_was_saved() {
         })
         .collect();
     assert_eq!(secs, [Some(42), None]);
+    let _ = std::fs::remove_dir_all(&store);
+}
+
+// Which conversations a row lists.
+
+/// A conversation of `sid`, ran in `root`, of `project` when one is named.
+fn saved_in(store: &Path, sid: &str, root: &str, project: Option<ProjectId>) {
+    let mut chat = Chat::new(
+        1,
+        PathBuf::from(root),
+        "Claude".into(),
+        Some(store.to_path_buf()),
+        project,
+    );
+    chat.session_id = Some(sid.to_string());
+    chat.push_user("hello".into(), Vec::new(), crate::chat::store::now_secs());
+    save(&mut chat);
+}
+
+#[test]
+fn a_scope_takes_its_folder_and_its_projects_strays() {
+    let p = ProjectId::mint(1);
+    let home = Scope {
+        folder: "/a".into(),
+        project: Some(p.clone()),
+        home: true,
+        recorded: vec!["/a-x".into()],
+    };
+    assert!(
+        home.holds(Path::new("/a"), None),
+        "its own folder, project or not"
+    );
+    assert!(
+        home.holds(Path::new("/a-gone"), Some(&p)),
+        "a folder its project no longer records"
+    );
+    assert!(
+        !home.holds(Path::new("/a-x"), Some(&p)),
+        "a recorded worktree lists its own"
+    );
+    assert!(!home.holds(Path::new("/b"), Some(&ProjectId::mint(2))));
+    assert!(!home.holds(Path::new("/b"), None));
+    let worktree = Scope {
+        folder: "/a-x".into(),
+        project: Some(p.clone()),
+        home: false,
+        recorded: vec![],
+    };
+    assert!(
+        !worktree.holds(Path::new("/a-gone"), Some(&p)),
+        "only the project's own row takes strays"
+    );
+}
+
+#[test]
+fn a_meta_without_a_project_reads_and_one_with_it_reads_in_an_older_shape() {
+    let store = scratch("meta-shapes");
+    saved_in(&store, "old", "/a", None);
+    let text = std::fs::read_to_string(conv_dir(&store, "old").join("meta.json")).unwrap();
+    assert!(!text.contains("\"project\""), "{text}");
+    assert_eq!(
+        list_conversations(&store, &Scope::folder("/a"), None).len(),
+        1
+    );
+    let p = ProjectId::mint(1);
+    saved_in(&store, "new", "/b", Some(p.clone()));
+    let text = std::fs::read_to_string(conv_dir(&store, "new").join("meta.json")).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value["project"], p.as_str());
+    for field in [
+        "format",
+        "session_id",
+        "root",
+        "agent",
+        "created",
+        "updated",
+        "items",
+        "preview",
+        "prefs",
+    ] {
+        assert!(
+            value.get(field).is_some(),
+            "an older build still finds {field}"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&store);
+}
+
+#[test]
+fn a_write_keeps_the_project_on_disk_when_it_carries_none() {
+    let store = scratch("meta-keeps-project");
+    let p = ProjectId::mint(1);
+    saved_in(&store, "s", "/a", Some(p.clone()));
+    // The same conversation, written again by a chat that does not know its
+    // project.
+    saved_in(&store, "s", "/a", None);
+    let text = std::fs::read_to_string(conv_dir(&store, "s").join("meta.json")).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value["project"], p.as_str());
+    let _ = std::fs::remove_dir_all(&store);
+}
+
+#[test]
+fn listing_across_lists_each_conversation_once() {
+    let store = scratch("across-once");
+    let p = ProjectId::mint(1);
+    saved_in(&store, "w", "/a-x", Some(p.clone()));
+    saved_in(&store, "g", "/a-gone", Some(p.clone()));
+    let scopes = [
+        Scope {
+            folder: "/a".into(),
+            project: Some(p.clone()),
+            home: true,
+            recorded: vec!["/a-x".into()],
+        },
+        Scope {
+            folder: "/a-x".into(),
+            project: Some(p.clone()),
+            home: false,
+            recorded: vec!["/a".into()],
+        },
+    ];
+    let mut found: Vec<(PathBuf, String)> = list_across(&store, &scopes)
+        .into_iter()
+        .map(|(folder, conv)| (folder, conv.session_id))
+        .collect();
+    found.sort();
+    assert_eq!(
+        found,
+        vec![
+            (PathBuf::from("/a"), "g".to_string()),
+            (PathBuf::from("/a-x"), "w".to_string())
+        ]
+    );
     let _ = std::fs::remove_dir_all(&store);
 }

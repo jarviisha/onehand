@@ -39,7 +39,7 @@ pub(super) enum Source {
 /// the host's to keep, so it is never written to this machine's store.
 pub(super) fn new_chat(uid: u64, root: PathBuf, spec: &AgentSpec, on_host: bool) -> Chat {
     let store = (!on_host).then(onehand_core::chat::conversations_dir);
-    let mut chat = Chat::new(uid, root, spec.name.clone(), store);
+    let mut chat = Chat::new(uid, root, spec.name.clone(), store, None);
     chat.login_hint = spec.login_hint();
     chat
 }

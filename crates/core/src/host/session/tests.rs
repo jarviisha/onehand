@@ -23,7 +23,7 @@ fn listed(ended: bool) -> SessionInfo {
 /// What was carried from the session being restarted: a snapshot of a
 /// conversation the agent knows as `acp-1`, and two prompts sent.
 fn carried() -> Carried {
-    let mut chat = Chat::new(1, PathBuf::from("/srv/app"), "claude".into(), None);
+    let mut chat = Chat::new(1, PathBuf::from("/srv/app"), "claude".into(), None, None);
     chat.session_id = Some("acp-1".into());
     Carried {
         stored: SessionDrive::new(chat).take_snapshot(Now {
@@ -240,7 +240,13 @@ fn only_a_host_out_of_reach_refused_or_taken_reads_its_copy() {
 fn only_a_restart_rewatches_a_host_session() {
     type Start = super::Start<()>;
     let snapshot = || {
-        let mut chat = Chat::new(1, std::path::PathBuf::from("/srv/app"), "c".into(), None);
+        let mut chat = Chat::new(
+            1,
+            std::path::PathBuf::from("/srv/app"),
+            "c".into(),
+            None,
+            None,
+        );
         chat.session_id = Some("acp-1".into());
         SessionDrive::new(chat).take_snapshot(now())
     };
@@ -288,7 +294,7 @@ fn a_start_opens_as_it_says() {
         Opening::Fresh
     ));
     let stored = SessionDrive::new({
-        let mut chat = Chat::new(1, PathBuf::from("/p"), "c".into(), None);
+        let mut chat = Chat::new(1, PathBuf::from("/p"), "c".into(), None, None);
         chat.session_id = Some("acp-1".into());
         chat
     })

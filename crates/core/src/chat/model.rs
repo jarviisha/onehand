@@ -247,6 +247,9 @@ pub struct Chat {
     /// makes a chat built in a test provably inert, and what lets the store's
     /// own tests point one at a directory of their own.
     pub(crate) store: Option<PathBuf>,
+    /// The project the conversation's folder is of, when one is known as the
+    /// chat is made: written into its metadata, which lists it by project.
+    pub(crate) project: Option<crate::project::ProjectId>,
     /// How many transcript positions (history then items) are already written.
     ///
     /// Positions rather than lines: the two differ only by the cards that are a
@@ -284,12 +287,19 @@ impl Chat {
     /// The store is a parameter rather than something reached for inside,
     /// because a chat that persists and a chat that does not are the same type
     /// and the difference has to be made where one is built.
-    pub fn new(uid: u64, root: PathBuf, agent: String, store: Option<PathBuf>) -> Self {
+    pub fn new(
+        uid: u64,
+        root: PathBuf,
+        agent: String,
+        store: Option<PathBuf>,
+        project: Option<crate::project::ProjectId>,
+    ) -> Self {
         let mut chat = Self::default();
         chat.uid = uid;
         chat.root = root;
         chat.agent = agent;
         chat.store = store;
+        chat.project = project;
         chat
     }
 
