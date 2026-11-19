@@ -38,10 +38,10 @@ mod install;
 mod terms;
 
 use attach::command;
-pub(crate) use attach::SSH_OPTS;
 pub use attach::{attach, restart, HostAddr};
 #[cfg(test)]
 use attach::{hello, restart_over, settle, settle_again, Settled};
+pub(crate) use attach::{laptop, SSH_OPTS};
 pub use install::install;
 pub use terms::{Recorded, TermReader, TermWriter};
 
