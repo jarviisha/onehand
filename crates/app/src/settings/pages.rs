@@ -264,8 +264,8 @@ fn outside_section(cx: &App) -> AnyElement {
     .into_any_element()
 }
 
-/// Deleting this window's workspace: the window closes, and its folder and
-/// the issues it keeps go with it.
+/// Deleting this window's workspace: the window closes and its folder goes;
+/// its projects, and their issues, stay kept.
 fn delete_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let ink = crate::theme::status_ink(cx);
     let delete = handle.clone();

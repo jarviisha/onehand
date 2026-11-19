@@ -2,7 +2,7 @@ use super::*;
 use crate::config::{ProjectConfig, WorkspaceConfig, WorkspaceLoad};
 use crate::project::file::load_all_blocking;
 use crate::project::testing::{repo_with_worktree, scratch};
-use crate::project::{MadeBy, Project};
+use crate::project::{MadeBy, Project, ProjectId, Projects};
 use crate::workspace::{HostName, Offloaded};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -375,6 +375,29 @@ fn a_host_project_keeps_no_issues_file() {
     assert!(!root
         .join("projects")
         .join(p.id.as_str())
+        .join("issues.json")
+        .exists());
+}
+
+#[test]
+fn a_project_whose_file_is_not_written_takes_no_issues() {
+    // A project the run could not write: its folder holds no project file.
+    let root = root("issues-unwritten");
+    let folder = scratch("migrate-issues-unwritten-folder");
+    let source = legacy_issue(&root, "w1", &folder, "stays");
+    let project = Project::new(ProjectId::mint(77), None, folder.clone());
+    // Other projects of the run were written, so the store is there.
+    fs::create_dir_all(root.join("projects")).unwrap();
+    let mut problems = Vec::new();
+    super::merge_issues(
+        &root,
+        &Projects::from_iter([project.clone()]),
+        &mut problems,
+    );
+    assert!(source.exists(), "the legacy file is left where it was");
+    assert!(!root
+        .join("projects")
+        .join(project.id.as_str())
         .join("issues.json")
         .exists());
 }

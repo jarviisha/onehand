@@ -69,7 +69,7 @@ impl Shell {
         let ask = super::confirm::Confirm {
             id: "delete-workspace",
             title: format!("Delete {name}?").into(),
-            description: "Its projects stay on disk. Its issues kept in onehand go with it.".into(),
+            description: "Its projects stay on disk, and onehand keeps their issues.".into(),
             act: "Delete",
             ..Default::default()
         };

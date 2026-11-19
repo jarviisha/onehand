@@ -534,7 +534,7 @@ impl Shell {
             stepped_aside: false,
         };
         // Each folder's issues file, before anything asks for one.
-        shell.tell_issue_files_whole(shell.issue_files(), cx);
+        shell.tell_issue_files_whole(shell.issue_files(cx), cx);
         shell
     }
 }

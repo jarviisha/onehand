@@ -176,7 +176,20 @@ pub(crate) fn migrate_projects_in(config: &Path, seed: u64) -> Vec<String> {
 /// project's file has landed. A project on a host keeps no issues here.
 fn merge_issues(config: &Path, projects: &Projects, problems: &mut Vec<String>) {
     let workspaces = workspace_dirs(config);
-    for project in projects.iter().filter(|project| project.host.is_none()) {
+    // A project this run could not write has no file of its own yet: its
+    // issues wait for the run that writes it, rather than landing under an
+    // id the next run will not find again.
+    let written = |project: &&Project| {
+        projects_in(config)
+            .join(project.id.as_str())
+            .join(FILE)
+            .is_file()
+    };
+    for project in projects
+        .iter()
+        .filter(|project| project.host.is_none())
+        .filter(written)
+    {
         let folders = std::iter::once(&project.path)
             .chain(project.worktrees.iter().map(|worktree| &worktree.path));
         let sources: Vec<PathBuf> = folders

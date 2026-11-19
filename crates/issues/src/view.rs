@@ -16,6 +16,7 @@ use gpui_component::input::InputState;
 use gpui_component::text::TextViewState;
 use onehand_core::connector::Connector;
 use onehand_core::issues::{self, Issues, LocalIssue};
+use onehand_core::workbench::KeptIssues;
 use onehand_ui::{Confirm, confirm_on, hint, measure_width, status_ink, status_line};
 use onehand_workbench::Asker;
 use std::collections::HashMap;
@@ -74,7 +75,11 @@ pub mod testing {
             let view =
                 IssuesView::new(&[], Rc::new(|_, _, _| {}), Rc::new(|_, _, _| {}), false, cx);
             view.update(cx, |view, cx| {
-                view.set_files([(root.to_path_buf(), file.to_path_buf())].into(), cx);
+                let kept = onehand_core::workbench::KeptIssues {
+                    file: file.to_path_buf(),
+                    home: root.to_path_buf(),
+                };
+                view.set_files([(root.to_path_buf(), kept)].into(), cx);
                 view.set_root(root, cx);
                 if let Some(state) = view.state_for(root, cx) {
                     let file = state.file.clone();
@@ -120,7 +125,7 @@ pub(crate) struct IssuesView {
     /// here (a host's, one whose project is still being found), which is
     /// said on screen rather than offering a form whose work would be thrown
     /// away.
-    files: HashMap<PathBuf, PathBuf>,
+    files: HashMap<PathBuf, KeptIssues>,
     /// Each project's issues file, and what is open in it.
     roots: HashMap<PathBuf, RootIssues>,
     split: Entity<gpui_component::ResizableState>,
@@ -325,7 +330,11 @@ impl IssuesView {
     /// Take each folder's issues file as the window now tells it. What was
     /// read for a folder whose file changed or left is dropped: it was
     /// another file, or none; the rest is kept.
-    pub(crate) fn set_files(&mut self, files: HashMap<PathBuf, PathBuf>, cx: &mut Context<Self>) {
+    pub(crate) fn set_files(
+        &mut self,
+        files: HashMap<PathBuf, KeptIssues>,
+        cx: &mut Context<Self>,
+    ) {
         if self.files == files {
             return;
         }
@@ -355,8 +364,10 @@ impl IssuesView {
     /// shares. `None` for a folder that keeps no issues here.
     fn state_for(&mut self, root: &Path, cx: &mut Context<Self>) -> Option<&mut RootIssues> {
         if !self.roots.contains_key(root) {
-            let path = self.files.get(root)?.clone();
-            let file = IssuesFile::get(root, path, self.connectors, cx);
+            // Read from the project's own folder whichever folder asked: a
+            // worktree can go, and the file stays the project's.
+            let kept = self.files.get(root)?.clone();
+            let file = IssuesFile::get(&kept.home, kept.file, self.connectors, cx);
             let watch = cx.observe(&file, |_, _, cx| cx.notify());
             let at = root.to_path_buf();
             let said = cx.subscribe(&file, move |view: &mut Self, _, signal, cx| {
@@ -393,7 +404,7 @@ impl IssuesView {
     /// The active project's file, if it keeps one here.
     fn file(&self) -> Option<(PathBuf, PathBuf)> {
         let root = self.root.clone()?;
-        let file = self.files.get(&root)?.clone();
+        let file = self.files.get(&root)?.file.clone();
         Some((root, file))
     }
 

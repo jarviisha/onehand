@@ -469,3 +469,45 @@ fn a_projects_issues_file_is_in_its_folder() {
         store_dir().join(id.as_str()).join("issues.json")
     );
 }
+
+#[test]
+fn a_forge_issue_kept_twice_keeps_the_notes_of_both() {
+    let note = |at: u64, text: &str| Note {
+        at,
+        text: text.into(),
+        session: Some(format!("s{at}")),
+    };
+    let mut old = linked(1, "gh", "42", 100, "old");
+    old.notes = vec![note(1, "taken up in the worktree")];
+    let mut new = linked(4, "gh", "42", 200, "new");
+    new.notes = vec![
+        note(2, "taken up here"),
+        note(1, "taken up in the worktree"),
+    ];
+    let mut into = issues_with(vec![old]);
+    merge(
+        &mut into,
+        issues_with(vec![new]),
+        Path::new("/ws/issues/a.json"),
+    );
+    let notes: Vec<_> = into.issues[0].notes.iter().map(|n| n.at).collect();
+    assert_eq!(notes, vec![1, 2], "each note once, in order");
+    assert_eq!(into.issues[0].title, "new");
+}
+
+#[test]
+fn a_file_is_listed_under_the_first_folder_of_it() {
+    let folders = vec![
+        (PathBuf::from("/a"), PathBuf::from("/p/1.json")),
+        (PathBuf::from("/b"), PathBuf::from("/p/2.json")),
+        (PathBuf::from("/a-x"), PathBuf::from("/p/1.json")),
+    ];
+    let under = listed_under(&folders);
+    assert_eq!(under[Path::new("/a")], Path::new("/a"));
+    assert_eq!(
+        under[Path::new("/a-x")],
+        Path::new("/a"),
+        "a worktree stands for its project's row"
+    );
+    assert_eq!(under[Path::new("/b")], Path::new("/b"));
+}

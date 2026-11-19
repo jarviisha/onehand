@@ -268,7 +268,7 @@ fn perform_now(
             let root = control::pick_project(&projects, &project)?.to_path_buf();
             let workflow = control::calls::workflow_of(workflow);
             let template = template(&workflow, cx)?;
-            let issues = shell.read(cx).issues_file(&root);
+            let issues = shell.read(cx).issues_file(&root, cx).map(|kept| kept.file);
             let answer = answer.take();
             cx.spawn(async move |cx| {
                 let outcome = async {
@@ -626,11 +626,12 @@ fn issue_place(
         named.as_deref(),
         caller.as_ref().map(|(_, project)| project.as_path()),
     )?;
-    let file = shell
+    // Written as from the project's own folder, whichever folder named it.
+    let kept = shell
         .read(cx)
-        .issues_file(&root)
+        .issues_file(&root, cx)
         .ok_or_else(|| "that folder's project keeps no issues here".to_string())?;
-    Ok((root, file))
+    Ok((kept.home, kept.file))
 }
 
 #[cfg(test)]

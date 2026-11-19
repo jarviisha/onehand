@@ -226,6 +226,16 @@ impl Showing {
     }
 }
 
+/// Where a project folder's issues are kept: the file its project keeps
+/// them in, and the project's own folder, which a file is read and synced
+/// from (its forge, its issue templates) whichever of the project's folders
+/// asked first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeptIssues {
+    pub file: PathBuf,
+    pub home: PathBuf,
+}
+
 /// Something the panel asks of its modes without naming which one answers.
 ///
 /// It only travels **down**: the panel puts these to its modes, and the shell
@@ -270,7 +280,7 @@ pub enum Request<'a> {
     /// file its project keeps: one file for every folder of a project.
     /// Broadcast whole whenever it changes, so a folder left out keeps no
     /// issues here; only a mode that lists issues answers it.
-    IssueFiles(&'a HashMap<PathBuf, PathBuf>),
+    IssueFiles(&'a HashMap<PathBuf, KeptIssues>),
     /// The reading size for a mode that is measured rather than laid out, in
     /// pixels.
     ///

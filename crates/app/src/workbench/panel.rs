@@ -417,7 +417,7 @@ impl Workbench {
     /// Tell every mode the issues file of each project folder of the window.
     pub fn set_issue_files(
         &mut self,
-        files: &std::collections::HashMap<std::path::PathBuf, std::path::PathBuf>,
+        files: &std::collections::HashMap<std::path::PathBuf, onehand_core::workbench::KeptIssues>,
         cx: &mut Context<Self>,
     ) {
         self.broadcast(&Request::IssueFiles(files), cx);

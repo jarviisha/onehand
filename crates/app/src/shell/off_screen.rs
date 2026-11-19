@@ -2,6 +2,7 @@ use super::Shell;
 use crate::state::Shared;
 use gpui::{App, BorrowAppContext, Context, Entity, SharedString, Window};
 use onehand_core::config::AgentSpec;
+use onehand_core::workbench::KeptIssues;
 use onehand_core::workspace::drive::StartsOn;
 use std::path::{Path, PathBuf};
 
@@ -99,26 +100,35 @@ impl Shell {
         self.start_session(agent, Some(archive), window, cx)
     }
 
-    /// Where the issues of `root`'s project are kept; none for a folder of no
-    /// project, or one on a host.
-    pub fn issues_file(&self, root: &Path) -> Option<PathBuf> {
-        self.issue_files().remove(root)
+    /// Where the issues of `root`'s project are kept: a row's, else, for a
+    /// folder no row holds (a worker's, a run's), the project recording it.
+    /// None for a folder of no project, or one on a host.
+    pub fn issues_file(&self, root: &Path, cx: &App) -> Option<KeptIssues> {
+        self.issue_files(cx).remove(root).or_else(|| {
+            let project = crate::projects::of(root, cx).filter(|p| p.host.is_none())?;
+            Some(KeptIssues {
+                file: onehand_core::project::file::issues_file(&project.id),
+                home: project.path,
+            })
+        })
     }
 
-    /// Each project folder of the window on this machine, with the issues
-    /// file its project keeps: one for every folder of a project.
-    pub(crate) fn issue_files(&self) -> std::collections::HashMap<PathBuf, PathBuf> {
+    /// Each project folder of the window on this machine, with where its
+    /// project keeps its issues: one file for every folder of a project.
+    pub(crate) fn issue_files(&self, cx: &App) -> std::collections::HashMap<PathBuf, KeptIssues> {
+        let projects = &crate::state::Shared::global(cx).projects;
         self.window
             .workspace
             .roots
             .iter()
             .filter_map(|root| {
-                let id = root.project.as_ref()?;
+                let project = projects.get(root.project.as_ref()?)?;
                 let path = root.local_path()?;
-                Some((
-                    path.to_path_buf(),
-                    onehand_core::project::file::issues_file(id),
-                ))
+                let kept = KeptIssues {
+                    file: onehand_core::project::file::issues_file(&project.id),
+                    home: project.path.clone(),
+                };
+                Some((path.to_path_buf(), kept))
             })
             .collect()
     }
@@ -126,7 +136,7 @@ impl Shell {
     /// Tell the Workbench and the Issues page each folder's issues file, when
     /// it is not what they were last told.
     pub(crate) fn tell_issue_files(&mut self, cx: &mut Context<Self>) {
-        let files = self.issue_files();
+        let files = self.issue_files(cx);
         if files != self.told_issue_files {
             self.tell_issue_files_whole(files, cx);
         }
@@ -135,7 +145,7 @@ impl Shell {
     /// Tell them `files`, whatever they were last told.
     pub(crate) fn tell_issue_files_whole(
         &mut self,
-        files: std::collections::HashMap<PathBuf, PathBuf>,
+        files: std::collections::HashMap<PathBuf, KeptIssues>,
         cx: &mut Context<Self>,
     ) {
         self.workbench

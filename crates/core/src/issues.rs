@@ -575,6 +575,24 @@ pub(crate) fn issues_dir(storage: &Path) -> PathBuf {
     storage.join("issues")
 }
 
+/// For each of `folders`, each with the issues file its project keeps, in
+/// the order they are listed: the folder its issues are listed under, the
+/// first with the same file. The folders of one project share their file, so
+/// a list across folders lists it once, and a filter on any of them stands
+/// for the folder it is listed under.
+pub fn listed_under(folders: &[(PathBuf, PathBuf)]) -> std::collections::HashMap<PathBuf, PathBuf> {
+    folders
+        .iter()
+        .map(|(folder, file)| {
+            let first = folders
+                .iter()
+                .find(|(_, held)| held == file)
+                .map_or(folder, |(first, _)| first);
+            (folder.clone(), first.clone())
+        })
+        .collect()
+}
+
 /// Take `from`, the issues file at `source` an earlier build kept, into
 /// `into`: `false`, changing nothing, when `source` was taken in already.
 ///
@@ -593,10 +611,20 @@ pub(crate) fn merge(into: &mut Issues, from: Issues, source: &Path) -> bool {
     };
     for mut issue in from.issues {
         if let Some(held) = into.issues.iter_mut().find(|held| same_link(held, &issue)) {
+            // The notes of both: who took it up, and where, is kept on
+            // whichever copy it happened to be written on.
+            let mut notes = std::mem::take(&mut held.notes);
+            for note in std::mem::take(&mut issue.notes) {
+                if !notes.contains(&note) {
+                    notes.push(note);
+                }
+            }
+            notes.sort_by_key(|note| note.at);
             if issue.updated > held.updated {
                 issue.number = held.number;
                 *held = issue;
             }
+            held.notes = notes;
             continue;
         }
         if into.issues.iter().any(|held| held.number == issue.number) {
@@ -786,7 +814,7 @@ pub fn supervised_brief_blocking(
     forge: Option<&'static dyn crate::connector::Connector>,
     number: u64,
 ) -> Result<crate::workflow::Brief, String> {
-    let file = file.ok_or("this workspace keeps no issues of its own")?;
+    let file = file.ok_or("that folder's project keeps no issues here")?;
     let kept = load_blocking(&file)?;
     let synced = forge.filter(|forge| kept.in_step_with(forge.name()));
     let issue = kept

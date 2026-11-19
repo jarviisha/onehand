@@ -268,7 +268,7 @@ pub struct Shell {
     project_rename: Option<(onehand_core::project::ProjectId, Entity<InputState>)>,
     /// Each project folder's issues file, as the Workbench and the Issues
     /// page were last told it.
-    told_issue_files: HashMap<PathBuf, PathBuf>,
+    told_issue_files: HashMap<PathBuf, onehand_core::workbench::KeptIssues>,
     /// The project being split onto a branch of its own, if that dialog is
     /// open. `Some` is what puts it on screen, the same as the rename above.
     worktree_draft: Option<WorktreeDraft>,

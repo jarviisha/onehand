@@ -517,7 +517,8 @@ this build does not know shows its `preset` line, *Not supported by this build o
 and only *Delete…*. The Workspace page holds, in its first group, the workspace's *Name* and its
 *Storage folder*: the folder onehand keeps it in, in mono, shown so it can be found for a backup
 and never chosen; then *Other workspaces* with *New workspace…*; and last *Delete workspace*, its button in the
-danger ink, asking before it closes the window and removes the workspace with the issues it keeps.
+danger ink, asking before it closes the window and removes the workspace; its projects, and their
+issues, stay kept.
 The Hosts page lists each declared host, at most 50 and then *N more not shown*: its name; under
 it its system (*Linux x86_64*) and, once checked, what the check found, the two programs a build
 needs by name and each toolchain with its version (*git, tar, cargo 1.99.1*), or *Checking…* while

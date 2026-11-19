@@ -5,6 +5,7 @@ use super::super::IssuesView;
 use gpui::{Entity, TestAppContext};
 use onehand_core::issues::drive::Change;
 use onehand_core::issues::{self, Draft};
+use onehand_core::workbench::KeptIssues;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
@@ -35,10 +36,18 @@ fn file_of(dir: &Path) -> PathBuf {
 }
 
 /// What a view is told: `project`, and the file its issues are kept in.
-fn told(dir: &Path, project: &Path) -> std::collections::HashMap<PathBuf, PathBuf> {
-    [(project.to_path_buf(), file_of(dir))]
+fn told(dir: &Path, project: &Path) -> std::collections::HashMap<PathBuf, KeptIssues> {
+    [(project.to_path_buf(), kept_in(dir, project))]
         .into_iter()
         .collect()
+}
+
+/// The issues of the project at `project`, kept in the test's file.
+fn kept_in(dir: &Path, project: &Path) -> KeptIssues {
+    KeptIssues {
+        file: file_of(dir),
+        home: project.to_path_buf(),
+    }
 }
 
 fn settle(cx: &mut TestAppContext) {
@@ -113,7 +122,7 @@ fn two_folders_of_one_file_show_one_list(cx: &mut TestAppContext) {
         .update(|cx| IssuesView::new(&[], Rc::new(|_, _, _| {}), Rc::new(|_, _, _| {}), false, cx));
     let (a, b) = view.update(cx, |view, cx| {
         let mut files = told(&dir, &project);
-        files.insert(worktree.clone(), file_of(&dir));
+        files.insert(worktree.clone(), kept_in(&dir, &project));
         view.set_files(files, cx);
         view.set_root(&project, cx);
         let a = view.state_for(&project, cx).unwrap().file.clone();
@@ -122,6 +131,28 @@ fn two_folders_of_one_file_show_one_list(cx: &mut TestAppContext) {
         (a, b)
     });
     assert_eq!(a.entity_id(), b.entity_id(), "one file, one entity");
+}
+
+/// A file first asked for from a worktree's folder keeps the project's own
+/// folder as its project: the worktree can be removed, the project stays.
+#[gpui::test]
+fn a_file_asked_for_from_a_worktree_belongs_to_its_project(cx: &mut TestAppContext) {
+    let (dir, project) = kept("from-a-worktree");
+    let worktree = dir.join("worktree");
+    std::fs::create_dir_all(&worktree).unwrap();
+    cx.executor().allow_parking();
+    let view = cx
+        .update(|cx| IssuesView::new(&[], Rc::new(|_, _, _| {}), Rc::new(|_, _, _| {}), false, cx));
+    let file = view.update(cx, |view, cx| {
+        let files = [(worktree.clone(), kept_in(&dir, &project))]
+            .into_iter()
+            .collect();
+        view.set_files(files, cx);
+        view.set_root(&worktree, cx);
+        view.state_for(&worktree, cx).unwrap().file.clone()
+    });
+    let (root, _) = cx.update(|cx| file.read(cx).place());
+    assert_eq!(root, project);
 }
 
 /// A folder the view is told no file for keeps no issues.

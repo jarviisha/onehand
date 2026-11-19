@@ -326,7 +326,7 @@ impl IssuesView {
     /// The issue `number` of `root`, named by the file it is kept in.
     fn key(&self, root: &Path, number: u64) -> Option<IssueKey> {
         Some(IssueKey {
-            file: self.files.get(root)?.clone(),
+            file: self.files.get(root)?.file.clone(),
             number,
         })
     }
@@ -348,9 +348,18 @@ impl IssuesView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> (AnyElement, AnyElement, Option<AnyElement>) {
+        // Each file once, under the first folder of it: the folders of one
+        // project share their issues, and a filter on any of them stands for
+        // that folder.
+        let folders: Vec<(PathBuf, PathBuf)> = projects
+            .iter()
+            .filter_map(|(root, _)| Some((root.clone(), self.files.get(root)?.file.clone())))
+            .collect();
+        let under = onehand_core::issues::listed_under(&folders);
         // What the rows borrow, held for the length of this draw.
         let owned: Vec<(PathBuf, LocalIssue)> = projects
             .iter()
+            .filter(|(root, _)| under.get(root) == Some(root))
             .flat_map(|(root, _)| {
                 self.issues_of(root, cx)
                     .map(|kept| kept.listed().into_iter().cloned().collect::<Vec<_>>())
@@ -363,7 +372,7 @@ impl IssuesView {
             .iter()
             .filter_map(|(root, issue)| {
                 let key = IssueKey {
-                    file: self.files.get(root)?.clone(),
+                    file: self.files.get(root)?.file.clone(),
                     number: issue.number(),
                 };
                 Some(Item { root, key, issue })
@@ -377,6 +386,9 @@ impl IssuesView {
         };
         let mut filters = page.filters.clone();
         filters.query = text;
+        if let Some(listed) = filters.project.as_ref().and_then(|only| under.get(only)) {
+            filters.project = Some(listed.clone());
+        }
         // A project or label filter nothing carries any more is dropped: a
         // filter nothing on screen can clear hides every issue.
         if let Some(only) = &page.filters.project

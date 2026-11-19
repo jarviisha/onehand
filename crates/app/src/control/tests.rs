@@ -319,11 +319,15 @@ fn a_projects_folders_share_one_issues_file(cx: &mut TestAppContext) {
     }
     cx.run_until_parked();
     let file = onehand_core::project::file::issues_file(&project.id);
-    let told = cx.update(|_, cx| shell.read(cx).issue_files());
-    assert_eq!(told.get(&home), Some(&file));
+    let told = cx.update(|_, cx| shell.read(cx).issue_files(cx));
+    let kept = onehand_core::workbench::KeptIssues {
+        file: file.clone(),
+        home: home.clone(),
+    };
+    assert_eq!(told.get(&home), Some(&kept));
     assert_eq!(
         told.get(&worktree),
-        Some(&file),
+        Some(&kept),
         "one file for both folders"
     );
     rig::show_workspace(&shell, cx);
@@ -355,7 +359,7 @@ fn a_row_of_no_project_keeps_no_issues(cx: &mut TestAppContext) {
     use crate::shell::rig;
     let dir = rig::folder("no-project-issues");
     let (_, shell, cx) = rig::shell(cx, dir.join("tasks"), Vec::new());
-    let told = cx.update(|_, cx| shell.read(cx).issue_files());
+    let told = cx.update(|_, cx| shell.read(cx).issue_files(cx));
     assert!(!told.contains_key(Path::new("/tmp")));
     let call = Call::CreateIssue {
         project: Some("tmp".into()),
@@ -366,5 +370,33 @@ fn a_row_of_no_project_keeps_no_issues(cx: &mut TestAppContext) {
         ask(Peer::Outside, call, cx),
         Err("that folder's project keeps no issues here".to_string())
     );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A folder no row of the window holds, a worktree its project records,
+/// keeps its project's issues: what a worker's session there writes into.
+#[gpui::test]
+fn a_recorded_worktree_with_no_row_keeps_its_projects_issues(cx: &mut TestAppContext) {
+    use crate::shell::rig;
+    use onehand_core::project::{MadeBy, Project, ProjectId, Worktree};
+    let dir = rig::folder("worktree-no-row");
+    let (handle, shell, cx) = rig::shell(cx, dir.join("tasks"), Vec::new());
+    let (home, worktree) = (dir.join("p"), dir.join("p-run"));
+    let mut project = Project::new(ProjectId::mint(910_003), None, home.clone());
+    project.worktrees.push(Worktree {
+        path: worktree.clone(),
+        branch: "run".into(),
+        from: None,
+        made_by: MadeBy::Run,
+        offload: None,
+    });
+    rig::keep_projects(handle, &shell, vec![project.clone()], cx);
+    let kept = cx.update(|_, cx| shell.read(cx).issues_file(&worktree, cx));
+    let kept = kept.expect("the project's file");
+    assert_eq!(
+        kept.file,
+        onehand_core::project::file::issues_file(&project.id)
+    );
+    assert_eq!(kept.home, home);
     let _ = std::fs::remove_dir_all(dir);
 }

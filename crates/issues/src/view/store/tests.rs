@@ -126,9 +126,13 @@ fn a_file_syncs_on_its_own_clock_while_a_view_is_on_it(cx: &mut TestAppContext) 
         .into_iter()
         .map(|name| storage.join(name))
         .collect();
+    let kept = |file: &PathBuf, home: &PathBuf| onehand_core::workbench::KeptIssues {
+        file: file.clone(),
+        home: home.clone(),
+    };
     let told: std::collections::HashMap<_, _> = [
-        (off.clone(), paths[0].clone()),
-        (on.clone(), paths[1].clone()),
+        (off.clone(), kept(&paths[0], &off)),
+        (on.clone(), kept(&paths[1], &on)),
     ]
     .into_iter()
     .collect();
