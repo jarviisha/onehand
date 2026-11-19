@@ -48,6 +48,9 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   path) take Tab, but only while drawn: the transcript is a `gpui::list` that draws the rows on
   screen, so a tab order through it skips what is scrolled away. The pinned cards and the
   composer take the keyboard whole.
+- **A subagent's words read as the agent's do in its float.** The float draws them with the
+  transcript's own renderer, at its size and ink, rather than a step smaller with only its last
+  answer in the foreground.
 - ***Continue* is offered in a run's session too.** A session does not know that a run drives it,
   so a turn a run's agent ended at a limit shows *Continue* as any other does, the same reach as
   *Send the last prompt again* in the rail. The run has already read the turn as failed; pressing
