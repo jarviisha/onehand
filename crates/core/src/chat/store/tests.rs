@@ -1188,3 +1188,44 @@ fn listing_across_lists_each_conversation_once() {
     );
     let _ = std::fs::remove_dir_all(&store);
 }
+
+#[test]
+fn a_listed_conversation_says_the_folder_it_ran_in() {
+    let store = scratch("listed-root");
+    let p = ProjectId::mint(1);
+    saved_in(&store, "g", "/a-gone", Some(p.clone()));
+    let home = Scope {
+        folder: "/a".into(),
+        project: Some(p),
+        home: true,
+        recorded: vec![],
+    };
+    let found = list_conversations(&store, &home, None);
+    assert_eq!(found[0].root, PathBuf::from("/a-gone"));
+    let _ = std::fs::remove_dir_all(&store);
+}
+
+#[test]
+fn listing_across_keys_a_conversation_by_its_own_folders_row_first() {
+    let store = scratch("across-own-first");
+    let p = ProjectId::mint(1);
+    // A worker's folder, which its project does not record, stamped with it.
+    saved_in(&store, "w", "/a-worker", Some(p.clone()));
+    let scopes = [
+        Scope {
+            folder: "/a".into(),
+            project: Some(p.clone()),
+            home: true,
+            recorded: vec![],
+        },
+        Scope::folder("/a-worker"),
+    ];
+    let found = list_across(&store, &scopes);
+    assert_eq!(found.len(), 1);
+    assert_eq!(
+        found[0].0,
+        PathBuf::from("/a-worker"),
+        "its own folder's row, not the project's"
+    );
+    let _ = std::fs::remove_dir_all(&store);
+}

@@ -177,9 +177,10 @@ pub(crate) fn migrate_projects_in(config: &Path, seed: u64) -> Vec<String> {
 /// started from. Only the id is written: history records no worktree. One
 /// nothing resolves is left as it is.
 ///
-/// ponytail: every `meta.json` is read at every launch and git asked for the
-/// unstamped ones; if that ever shows at start, keep a mark of the last run
-/// and pass over what it saw.
+/// ponytail: every `meta.json` is read at every launch, and one nothing
+/// resolves costs the same each time (git for its folder, and for each local
+/// project once per launch; every task file when its folder is gone); if that
+/// ever shows at start, keep a mark of the roots tried and pass over them.
 fn stamp_conversations(config: &Path, projects: &Projects, problems: &mut Vec<String>) {
     let Ok(entries) = fs::read_dir(config.join("conversations")) else {
         return;
@@ -226,7 +227,11 @@ fn stamp_conversations(config: &Path, projects: &Projects, problems: &mut Vec<St
                     .find(None, repo)
                     .map(|(project, _)| project.id.clone())
             });
-        let Some(id) = found else {
+        // Only a project written: one this run could not write gets a new
+        // id at the next, and a conversation named for this one would then
+        // never be found again.
+        let written = |id: &ProjectId| projects_in(config).join(id.as_str()).join(FILE).is_file();
+        let Some(id) = found.filter(written) else {
             continue;
         };
         meta["project"] = serde_json::Value::String(id.as_str().to_string());

@@ -179,6 +179,10 @@ pub struct ConfigPick {
 pub struct ConvMeta {
     pub dir: PathBuf,
     pub session_id: String,
+    /// The folder it ran in: what a resume runs in, which is not the row's
+    /// own folder for one a project's row lists from a folder it no longer
+    /// holds.
+    pub root: PathBuf,
     /// The agent this conversation ran under (its `AgentSpec.name`).
     pub agent: String,
     pub updated: u64,
@@ -317,6 +321,7 @@ fn describe(dir: &Path, meta: Meta) -> ConvMeta {
     ConvMeta {
         dir: dir.to_path_buf(),
         session_id: meta.session_id,
+        root: PathBuf::from(&meta.root),
         agent: meta.agent,
         updated: meta.updated,
         title,
@@ -385,9 +390,16 @@ pub fn list_across(store: &Path, scopes: &[Scope]) -> Vec<(PathBuf, ConvMeta)> {
     list_all(store)
         .into_iter()
         .filter_map(|(root, project, conv)| {
+            // Its own folder's row first: a project's row takes it only when
+            // no row is of the folder it ran in.
             let scope = scopes
                 .iter()
-                .find(|scope| scope.holds(Path::new(&root), project.as_ref()))?;
+                .find(|scope| scope.folder == Path::new(&root))
+                .or_else(|| {
+                    scopes
+                        .iter()
+                        .find(|scope| scope.holds(Path::new(&root), project.as_ref()))
+                })?;
             Some((scope.folder.clone(), conv))
         })
         .collect()

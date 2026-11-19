@@ -482,3 +482,19 @@ fn a_conversation_nothing_resolves_is_left_as_it_is() {
     migrate_projects_in(&root, 1);
     assert_eq!(fs::read(&meta).unwrap(), before);
 }
+
+#[test]
+fn a_conversation_is_never_stamped_with_a_project_not_written() {
+    let root = root("conv-unwritten");
+    let folder = scratch("migrate-conv-unwritten-folder");
+    let meta = conversation(&root, "s1", &folder);
+    let before = fs::read(&meta).unwrap();
+    let project = Project::new(ProjectId::mint(78), None, folder.clone());
+    let mut problems = Vec::new();
+    super::stamp_conversations(&root, &Projects::from_iter([project]), &mut problems);
+    assert_eq!(
+        fs::read(&meta).unwrap(),
+        before,
+        "left for the run that writes the project"
+    );
+}

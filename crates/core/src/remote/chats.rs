@@ -584,13 +584,15 @@ pub fn scan_archives(scopes: Vec<(crate::chat::Scope, String)>) -> (Vec<ArchiveR
     // adapter said it is a detail below that.
     let mut found: Vec<ArchiveRow> = crate::chat::list_across(&store, &rows)
         .into_iter()
-        .map(|(root, meta)| ArchiveRow {
+        .map(|(row, meta)| ArchiveRow {
             project: scopes
                 .iter()
-                .find(|(scope, _)| scope.folder == root)
+                .find(|(scope, _)| scope.folder == row)
                 .map(|(_, name)| name.clone())
                 .unwrap_or_default(),
-            root,
+            // Where it ran, which a reopen runs in: one a project's row lists
+            // from a folder it no longer holds reopens nowhere else.
+            root: meta.root,
             dir: meta.dir,
             agent: meta.agent,
             title: meta.title,

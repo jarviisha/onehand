@@ -8,7 +8,7 @@ use gpui::{App, Context, IntoElement, ParentElement, SharedString, Styled, Windo
 use gpui_component::menu::DropdownMenu as _;
 use gpui_component::{ActiveTheme, IconName, StyledExt};
 use onehand_core::control::drive::ResumeRefused;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 impl ChatPane {
     /// Go back to choosing which past conversation this session should run.
@@ -39,8 +39,10 @@ impl ChatPane {
             session.update(cx, |session, cx| session.save_meta(cx));
         }
         let live = live.map(|session| session.entity_id());
+        // Its own folder's alone: a conversation resumed in this session
+        // runs in this session's folder.
         let (scope, agent) = (
-            crate::projects::scope_of(&conv.root, cx),
+            onehand_core::chat::Scope::folder(conv.root.clone()),
             conv.spec.name.clone(),
         );
         cx.spawn(async move |pane, cx| {
@@ -128,6 +130,11 @@ impl ChatPane {
         // later, from a closure that outlives this borrow of the pane.
         let open = self.open_everywhere(cx);
         let now = onehand_core::chat::now_secs();
+        let folder = self
+            .archives
+            .as_ref()
+            .map(|held| held.root.clone())
+            .unwrap_or_default();
         let held = self.archives.as_ref().and_then(|held| held.found.as_ref());
         let rows: Vec<HistoryRow> = held
             .into_iter()
@@ -144,8 +151,7 @@ impl ChatPane {
                     meta.agent
                 )),
                 open: open.iter().any(|id| id == &meta.session_id),
-                agent: SharedString::from(meta.agent.clone()),
-                dir: meta.dir.clone(),
+                resume: super::project_page::resume_of(&folder, meta),
             })
             .collect();
         let hidden = held.map_or(0, |all| all.len().saturating_sub(HISTORY_ROWS));
@@ -205,14 +211,10 @@ impl ChatPane {
                         true => menu.item(crate::controls::menu_still(draw)),
                         false => {
                             let item = crate::controls::menu_row(draw);
-                            let (start, agent, dir) =
-                                (this.clone(), row.agent.clone(), row.dir.clone());
+                            let (start, resume) = (this.clone(), row.resume.clone());
                             menu.item(item.on_click(move |_, _, cx: &mut App| {
                                 start.update(cx, |_: &mut Self, cx| {
-                                    cx.emit(ChatPaneEvent::StartSession {
-                                        agent: Some(agent.clone()),
-                                        resume: Some(dir.clone()),
-                                    });
+                                    cx.emit(resume.event());
                                 });
                             }))
                         }
@@ -258,8 +260,9 @@ struct HistoryRow {
     aside: SharedString,
     /// Whether a session in this window is already on this conversation.
     open: bool,
-    agent: SharedString,
-    dir: PathBuf,
+    /// What pressing it asks: a session here, or the conversation where it
+    /// ran.
+    resume: super::project_page::Resume,
 }
 
 impl ChatPane {

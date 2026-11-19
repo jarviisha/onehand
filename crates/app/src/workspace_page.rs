@@ -84,11 +84,14 @@ pub(crate) enum WorkspacePageEvent {
     },
     /// Select the project at this root, on this host or here.
     ShowProject(Option<onehand_core::workspace::HostName>, PathBuf),
-    /// Resume `archive` on `agent` in the project at `root`.
+    /// Resume `archive` on `agent` in the project at `root`: the
+    /// conversation `session`, which ran in `ran_in`.
     ResumeIn {
         root: PathBuf,
         agent: SharedString,
         archive: PathBuf,
+        ran_in: PathBuf,
+        session: String,
     },
 }
 
@@ -456,6 +459,7 @@ impl WorkspacePage {
                     SharedString::from(meta.agent.clone()),
                     meta.dir.clone(),
                 );
+                let (ran_in, session) = (meta.root.clone(), meta.session_id.clone());
                 crate::dialogs::page_row(
                     ("workspace-recent", i),
                     rel_time(now, meta.updated),
@@ -468,6 +472,8 @@ impl WorkspacePage {
                         root: root.clone(),
                         agent: agent.clone(),
                         archive: archive.clone(),
+                        ran_in: ran_in.clone(),
+                        session: session.clone(),
                     });
                 }))
                 .into_any_element()

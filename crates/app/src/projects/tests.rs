@@ -354,3 +354,59 @@ fn a_conversation_is_listed_once_across_a_projects_rows(cx: &mut TestAppContext)
     }
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A conversation listed on a project's own row that ran in another folder
+/// resumes where it ran, never in the project's folder: one whose folder is
+/// gone is refused, and nothing starts.
+#[gpui::test]
+fn a_stray_conversation_never_resumes_in_its_projects_folder(cx: &mut TestAppContext) {
+    let dir = folder("conv-stray-resume");
+    let (handle, shell, cx) = shell(cx, dir.join("tasks"), vec![crate::shell::rig::nowhere()]);
+    let (project, home, _) = project_with_worktree(&dir, 911_003);
+    crate::shell::rig::keep_projects(handle, &shell, vec![project.clone()], cx);
+    let at = home.clone();
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
+    let gone = dir.join("p-gone");
+    let sid = format!("conv-stray-resume-{}", std::process::id());
+    kept_conversation(&sid, &gone, &project.id);
+    let archive = onehand_core::chat::conversations_dir().join(&sid);
+    let sessions = |shell: &gpui::Entity<crate::shell::Shell>, cx: &mut gpui::VisualTestContext| {
+        cx.update(|_, cx| {
+            shell
+                .read(cx)
+                .workspace_window()
+                .workspace
+                .roots
+                .iter()
+                .map(|root| root.sessions.len())
+                .sum::<usize>()
+        })
+    };
+    let before = sessions(&shell, cx);
+    cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| {
+            shell.on_workspace_page(
+                &crate::workspace_page::WorkspacePageEvent::ResumeIn {
+                    root: home.clone(),
+                    agent: "nowhere".into(),
+                    archive: archive.clone(),
+                    ran_in: gone.clone(),
+                    session: sid.clone(),
+                },
+                window,
+                cx,
+            )
+        })
+    });
+    for _ in 0..50 {
+        cx.run_until_parked();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(
+        sessions(&shell, cx),
+        before,
+        "nothing started in the project's folder"
+    );
+    let _ = std::fs::remove_dir_all(archive);
+    let _ = std::fs::remove_dir_all(dir);
+}
