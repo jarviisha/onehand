@@ -217,3 +217,51 @@ fn build_hosts_keep_their_refusals() {
     let _ = d.remove_build_host(&p.id, &win());
     assert!(d.get(&p.id).unwrap().builds.is_empty());
 }
+
+fn builds_on(host: &str) -> BuildHost {
+    BuildHost {
+        host: HostName(host.into()),
+        artifacts: vec!["target/app".into()],
+        into: None,
+    }
+}
+
+#[test]
+fn a_build_host_is_changed_in_its_place_and_an_unchanged_one_writes_nothing() {
+    let (mut d, p) = drive();
+    let _ = d.put_build_host(&p.id, builds_on("build01"), None);
+    let _ = d.put_build_host(&p.id, builds_on("win"), None);
+    let mut changed = builds_on("other");
+    changed.into = Some("out".into());
+    let _ = d.put_build_host(&p.id, changed.clone(), Some(0)).unwrap();
+    assert_eq!(
+        d.get(&p.id).unwrap().builds,
+        vec![changed.clone(), builds_on("win")]
+    );
+    assert!(d.put_build_host(&p.id, changed, Some(0)).unwrap().is_empty());
+}
+
+#[test]
+fn the_entry_being_changed_may_keep_its_host_and_no_other_may_take_it() {
+    let (mut d, p) = drive();
+    let _ = d.put_build_host(&p.id, builds_on("build01"), None);
+    let _ = d.put_build_host(&p.id, builds_on("win"), None);
+    assert_eq!(
+        d.put_build_host(&p.id, builds_on("win"), Some(0)).err(),
+        Some("a already builds on win".to_string())
+    );
+    assert!(d.put_build_host(&p.id, builds_on("win"), Some(1)).is_ok());
+    assert_eq!(d.get(&p.id).unwrap().builds.len(), 2);
+}
+
+#[test]
+fn a_failed_write_puts_the_build_hosts_back() {
+    let (mut d, p) = drive();
+    let w = write_of(d.put_build_host(&p.id, builds_on("build01"), None).unwrap());
+    let _ = d.handle(Input::Written {
+        id: p.id.clone(),
+        pending: w.pending,
+        result: Err("read-only".into()),
+    });
+    assert!(d.get(&p.id).unwrap().builds.is_empty());
+}

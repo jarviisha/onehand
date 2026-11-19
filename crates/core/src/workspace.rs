@@ -279,11 +279,12 @@ pub fn storage_for(root: &Path) -> PathBuf {
     crate::config::workspaces_dir().join(stem_for(root))
 }
 
-/// Where what belongs to the project at `path` itself, and to no one
-/// workspace, is kept: what an offload keeps, among others. Apart from the
-/// workspaces' folders, so a folder there is always a workspace.
-pub(crate) fn project_dir(path: &Path) -> PathBuf {
-    crate::config::projects_in(&crate::config::config_dir()).join(stem_for(path))
+/// Where what an offload of the folder at `path` keeps goes: its manifest,
+/// what comes back, the backups taken. Kept by folder, as offload is: each
+/// folder of a project is offloaded on its own, and the offload code finds
+/// its data from the folder alone.
+pub(crate) fn offload_dir(path: &Path) -> PathBuf {
+    crate::config::offload_in(&crate::config::config_dir()).join(stem_for(path))
 }
 
 /// What a launch opens.

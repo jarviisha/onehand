@@ -732,15 +732,6 @@ fn seeded_is_kept_beside_the_other_workspaces() {
     );
 }
 
-#[test]
-fn a_project_dir_is_named_as_its_issues_are() {
-    let path = Path::new("/home/me/code/app");
-    let dir = project_dir(path);
-    assert_eq!(dir.file_name().unwrap().to_string_lossy(), stem_for(path));
-    assert_eq!(dir.parent().unwrap().file_name().unwrap(), "projects");
-    assert_ne!(dir.parent(), storage_for(path).parent());
-}
-
 /// Deleting a workspace removes what is its own and nothing else: a
 /// project's offload kept in the same folder by an earlier build stays.
 #[test]
@@ -978,4 +969,15 @@ fn a_placed_row_writes_its_id_and_leaves_its_facts_to_its_project() {
     assert_eq!(cfg.projects[0].id, Some(p.id.clone()));
     assert_eq!(cfg.projects[0].check, None);
     assert_eq!(ProjectRoot::of(&p, Folder::Home).check.as_deref(), Some("make"));
+}
+
+#[test]
+fn offload_data_is_kept_by_folder() {
+    let dir = offload_dir(Path::new("/code/onehand"));
+    assert_eq!(
+        dir,
+        crate::config::config_dir()
+            .join("offload")
+            .join(stem_for(Path::new("/code/onehand")))
+    );
 }
