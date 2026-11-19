@@ -181,9 +181,22 @@ fn folder_name(top: &Path) -> String {
         .unwrap_or_else(|| top.display().to_string())
 }
 
+/// A folder's build on a host, held: let go when dropped.
+struct Held(std::fs::File);
+
+impl Drop for Held {
+    /// Unlocked in so many words, not left to the file closing: a process
+    /// another thread forked while this was held carries a copy of the file
+    /// until it execs, and a lock let go only by closing would outlive this
+    /// for that moment, refusing the build that follows at once.
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
+}
+
 /// The lock that keeps a folder to one build on a host at a time; `None`
-/// while another holds it. Let go when dropped.
-fn lock(top: &Path, host: &str) -> Option<std::fs::File> {
+/// while another holds it.
+fn lock(top: &Path, host: &str) -> Option<Held> {
     let dir = crate::config::config_dir().join("builds");
     std::fs::create_dir_all(&dir).ok()?;
     let key = format!("{}\0{host}", top.display());
@@ -193,7 +206,7 @@ fn lock(top: &Path, host: &str) -> Option<std::fs::File> {
     ));
     let file = std::fs::File::create(path).ok()?;
     file.try_lock().ok()?;
-    Some(file)
+    Some(Held(file))
 }
 
 /// Refuse a folder a snapshot cannot carry whole: one that is not a working
