@@ -515,6 +515,21 @@ impl ChatPane {
         }
     }
 
+    /// Told by the shell which hosts the project on screen builds on.
+    pub fn set_build_hosts(
+        &mut self,
+        builds: Vec<onehand_core::workspace::BuildHost>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(project) = self.empty.as_mut() else {
+            return;
+        };
+        if project.builds != builds {
+            project.builds = builds;
+            cx.notify();
+        }
+    }
+
     pub fn set_git(&mut self, line: Option<SharedString>, cx: &mut Context<Self>) {
         if self.git == line {
             return;

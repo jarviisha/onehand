@@ -259,8 +259,11 @@ impl Shell {
                     input.update(cx, |input, cx| input.set_value(text, window, cx));
                 }
             }
+            // The page draws what it was last handed, so it is handed the
+            // hosts the drive has put back.
+            Value::Builds { path, .. } => self.show_build_hosts(Some(&path), cx),
             // Drawn from the tree, which the drive has put back.
-            Value::Order(_) | Value::Pin { .. } | Value::Builds { .. } => {}
+            Value::Order(_) | Value::Pin { .. } => {}
         }
     }
 }

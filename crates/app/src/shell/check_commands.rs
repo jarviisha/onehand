@@ -20,6 +20,7 @@ impl Shell {
         let input = root.and_then(|root| self.check_inputs.get(root).cloned());
         self.chat
             .update(cx, |pane, cx| pane.set_check_input(input, cx));
+        self.show_build_hosts(root, cx);
     }
 
     /// A check command field for every project that has none yet. Each edit

@@ -20,6 +20,7 @@ use onehand_ui::Tall as _;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+mod build_hosts;
 mod host;
 mod offload_box;
 mod schedules_box;
@@ -74,6 +75,9 @@ pub(super) struct EmptyProject {
     /// Its check command field, the shell's: `None` for a run's own
     /// worktree, which keeps none.
     pub(super) check_input: Option<gpui::Entity<gpui_component::input::InputState>>,
+    /// The hosts it builds on, the workspace's: pushed by the shell with the
+    /// field above, and again whenever they change.
+    pub(super) builds: Vec<onehand_core::workspace::BuildHost>,
     /// One focus handle per past conversation the page lists, by place: each
     /// row is a tab stop, so the keyboard reaches its *Delete…* as the pointer
     /// does.
@@ -529,13 +533,18 @@ impl ChatPane {
         let tasks = local.then(|| tasks_box(&project.path, cx));
         let schedules = local.then(|| schedules_box(&project.path, cx));
         // What the project is set to: its check command, the shell's field.
-        let settings = project.check_input.as_ref().map(|input| {
-            page_card("Settings", None, None, cx).child(onehand_ui::field(
-                "Check command",
-                Some("What Run check and a command step naming none run here".into_any_element()),
-                text_input(input, cx).tall(),
-                cx,
-            ))
+        let settings = project.check_input.clone().map(|input| {
+            let builds = build_hosts::build_hosts_group(&project.builds, cx);
+            page_card("Settings", None, None, cx)
+                .child(onehand_ui::field(
+                    "Check command",
+                    Some(
+                        "What Run check and a command step naming none run here".into_any_element(),
+                    ),
+                    text_input(&input, cx).tall(),
+                    cx,
+                ))
+                .child(builds)
         });
 
         // One column at every width: the history leads, and what the project

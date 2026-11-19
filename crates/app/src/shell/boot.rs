@@ -267,6 +267,9 @@ impl Shell {
                     E::TakeHostCode(path) => shell.ask_take_host_code(path.clone(), window, cx),
                     E::UpdateHost(path) => shell.update_host_from_laptop(path.clone(), cx),
                     E::RunCheck => shell.run_check(window, cx),
+                    E::AddBuildHost => shell.open_build_host_form(None, window, cx),
+                    E::EditBuildHost(at) => shell.open_build_host_form(Some(*at), window, cx),
+                    E::RemoveBuildHost(at) => shell.confirm_remove_build_host(*at, window, cx),
                 }
                 // A finished turn also changes what the rail's session dots
                 // say, and the rail is drawn from a query rather than from
@@ -488,6 +491,7 @@ impl Shell {
             host_waits: Default::default(),
             host_listening: Default::default(),
             offload_draft: None,
+            build_host_draft: None,
             offload_locks: HashMap::new(),
             dialog_return: None,
             check_inputs: HashMap::new(),

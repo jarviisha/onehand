@@ -191,6 +191,12 @@ pub enum ChatPaneEvent {
     ShowSchedules(Option<PathBuf>),
     /// Run the check command of the project on screen, as a task.
     RunCheck,
+    /// Open the form that adds a build host to the project on screen.
+    AddBuildHost,
+    /// Open the form on the project's build host at this place.
+    EditBuildHost(usize),
+    /// Ask before the project's build host at this place is removed.
+    RemoveBuildHost(usize),
     /// `host` runs another build of the host service, with sessions
     /// mid-turn, so session `uid` there was not attached, or, with no `uid`,
     /// the project page could not list its sessions: either waits for them,
