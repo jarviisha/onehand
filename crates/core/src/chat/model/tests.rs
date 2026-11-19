@@ -3624,3 +3624,55 @@ fn the_turns_subagents_say_how_they_stand() {
         "an older turn's are its own"
     );
 }
+
+/// A card says how it stands in one word set, the strip's counts come from
+/// core, and a card holding a nested one is asked of the model.
+#[test]
+fn a_card_is_worded_and_counted_by_core() {
+    use crate::chat::model::Standing;
+    let mut chat = with_subagent("c1", "one");
+    chat.apply(AcpEvent::SubagentSpawned {
+        id: "c2".into(),
+        name: "Explore c2".into(),
+        task: "two".into(),
+    });
+    chat.apply(AcpEvent::InChild {
+        child: "c2".into(),
+        event: Box::new(AcpEvent::SubagentSpawned {
+            id: "c3".into(),
+            name: "Nested".into(),
+            task: "three".into(),
+        }),
+    });
+    chat.apply(AcpEvent::SubagentEnded {
+        id: "c1".into(),
+        end: crate::acp::SubagentEnd::Cancelled,
+    });
+    let key = |id: &str| {
+        chat.items
+            .iter()
+            .find_map(|item| match item {
+                ChatItem::Subagent(card) if card.id == id => Some(card.key()),
+                _ => None,
+            })
+            .expect("a card")
+    };
+    let (c1, c2) = (key("c1"), key("c2"));
+    let card = chat.card(c1).expect("c1");
+    assert_eq!(card.state_word(chat.standing(card)), "cancelled");
+    let nested = chat
+        .card(c2)
+        .and_then(|card| {
+            card.items.iter().find_map(|item| match item {
+                ChatItem::Subagent(inner) => Some(inner.key()),
+                _ => None,
+            })
+        })
+        .expect("c3");
+    assert!(chat.card_holds(c2, nested));
+    assert!(!chat.card_holds(c1, nested));
+    assert_eq!(
+        chat.turn_subagent_counts(),
+        [(Standing::Running, 1), (Standing::Stopped, 1)]
+    );
+}

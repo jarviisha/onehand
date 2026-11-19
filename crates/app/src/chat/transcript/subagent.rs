@@ -13,7 +13,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, div,
 };
 use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
-use onehand_core::chat::{ChatItem, SubagentItem, SubagentState};
+use onehand_core::chat::{ChatItem, Standing, SubagentItem, SubagentState};
 
 /// The line for one subagent: its mark, its name, what it is doing or how it
 /// ended, and its steps and time at the end.
@@ -26,10 +26,11 @@ pub(super) fn subagent(
     let key = card.key();
     let muted = cx.theme().muted_foreground;
     let lit = cx.theme().foreground;
-    // Waiting on the person is said, not shimmered: nothing moves until they
-    // answer, and the strip over the composer and the float say the same.
-    let waiting = chat.standing(card) == onehand_core::chat::Standing::Waiting;
-    let working = card.state == SubagentState::Working && !waiting;
+    // Only a subagent at work shimmers what it is doing. Waiting on the
+    // person is said, not shimmered: nothing moves until they answer, and the
+    // strip over the composer and the float say the same.
+    let standing = chat.standing(card);
+    let working = standing == Standing::Running;
     // What it is doing now, as its own steps say it.
     let doing = working.then(|| {
         let items: Vec<&ChatItem> = card.items.iter().collect();
@@ -41,18 +42,7 @@ pub(super) fn subagent(
                 |step| format!("{}{}", step.verb, step.rest),
             )
     });
-    let ended = match card.state {
-        SubagentState::Working if waiting => {
-            Some(("waiting on you", crate::theme::status_ink(cx).warning))
-        }
-        SubagentState::Working => None,
-        SubagentState::Failed => Some(("failed", crate::theme::status_ink(cx).danger)),
-        // Neither cancelled nor interrupted failed: one was stopped, the
-        // other's end was never seen.
-        SubagentState::Completed => Some(("done", muted)),
-        SubagentState::Cancelled => Some(("cancelled", muted)),
-        SubagentState::Interrupted => Some(("interrupted", muted)),
-    };
+    let ended = (!working).then(|| (card.state_word(standing), standing_ink(standing, cx)));
     let session = session.clone();
     div()
         .id(ElementId::Name(format!("subagent-{}", card.id).into()))
@@ -100,6 +90,19 @@ pub(super) fn subagent(
         .child(div().flex_1())
         .child(div().flex_none().whitespace_nowrap().child(facts(card)))
         .into_any_element()
+}
+
+/// The ink a subagent's standing is said in, wherever it is said: the warning
+/// ink while it waits on the person, the danger ink once it failed, the muted
+/// ink otherwise. Neither a cancel nor an interruption failed: one was
+/// stopped, the other's end was never seen.
+pub(in crate::chat) fn standing_ink(standing: Standing, cx: &App) -> gpui::Hsla {
+    let status = crate::theme::status_ink(cx);
+    match standing {
+        Standing::Waiting => status.warning,
+        Standing::Failed => status.danger,
+        Standing::Running | Standing::Done | Standing::Stopped => cx.theme().muted_foreground,
+    }
 }
 
 /// A card's steps and its time: how long it ran once it has ended, how long

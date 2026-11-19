@@ -478,3 +478,15 @@ fn a_terminal_inside_a_card_keeps_its_output() {
     let (text, _) = card_tool_output(&chat);
     assert!(text.starts_with("hello"), "{text}");
 }
+
+/// A card waits on the person while a subagent nested in it asks, as much as
+/// while it asks itself.
+#[test]
+fn a_card_waits_while_a_nested_subagent_asks() {
+    let mut chat = chat();
+    chat.apply(spawn("c1", "Outer", "look"));
+    chat.apply(inside("c1", spawn("c2", "Inner", "deeper")));
+    chat.apply(AcpEvent::Permission(permission(Some("c2"))));
+    let outer = card(&chat.items, "c1");
+    assert_eq!(chat.standing(outer), Standing::Waiting);
+}

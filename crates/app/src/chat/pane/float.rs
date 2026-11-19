@@ -6,18 +6,18 @@
 //! reads the pane it stands in, not the window, for how much of it to take.
 
 use super::over_composer::over_composer;
-use super::{ChatPane, SIDE_MARGIN_NARROW};
+use super::{ChatPane, FLOAT_BESIDE, FLOAT_W, SIDE_MARGIN_NARROW};
 use crate::chat::session::ChatSession;
 use crate::chat::transcript;
 use crate::chat::viewport;
 use crate::controls::{Named as _, Quiet as _, Refuses as _, Short as _};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    Context, Entity, InteractiveElement, IntoElement, ParentElement, Pixels, Rems,
-    StatefulInteractiveElement as _, Styled, Window, div, relative, rems,
+    Context, Entity, InteractiveElement, IntoElement, ParentElement, Pixels,
+    StatefulInteractiveElement as _, Styled, Window, div, relative,
 };
 use gpui_component::{ActiveTheme as _, IconName, StyledExt as _};
-use onehand_core::chat::{Standing, SubagentState};
+use onehand_core::chat::Standing;
 use onehand_ui::ShortIcon as _;
 
 gpui::actions!(subagent_float, [CloseSubagent]);
@@ -32,11 +32,6 @@ pub(super) struct Float {
     pub(super) task_open: bool,
 }
 
-/// How wide the float stands beside the conversation.
-const FLOAT_W: Rems = rems(27.5);
-/// The pane's width from which the float stands at its top right; under it,
-/// it runs the pane's width.
-const FLOAT_BESIDE: Rems = rems(37.5);
 /// How much of the pane's height the float takes at most, so the
 /// conversation's tail and the composer stay in sight. Under that it is as
 /// tall as what it holds.
@@ -55,14 +50,8 @@ impl ChatPane {
             .as_ref()
             .filter(|float| float.uid == uid)
             .and_then(|float| float.stack.last().copied())
-            .and_then(|top| {
-                let session = self.conversations.get(&uid)?.session()?.read(cx);
-                let card = session.chat().card(top)?;
-                Some(card.items.iter().any(|item| {
-                    matches!(item, onehand_core::chat::ChatItem::Subagent(inner) if inner.key() == key)
-                }))
-            })
-            .unwrap_or(false);
+            .zip(self.conversations.get(&uid).and_then(|conv| conv.session()))
+            .is_some_and(|(top, session)| session.read(cx).chat().card_holds(top, key));
         match (inside, self.float.as_mut()) {
             (true, Some(float)) => float.stack.push(key),
             _ => {
@@ -145,16 +134,11 @@ impl ChatPane {
         let next = beside.get(at + 1).copied();
         let theme = cx.theme();
         let muted = theme.muted_foreground;
-        let (word, ink) = match chat.standing(card) {
-            Standing::Waiting => ("waiting on you", crate::theme::status_ink(cx).warning),
-            Standing::Running => ("running", muted),
-            Standing::Failed => ("failed", crate::theme::status_ink(cx).danger),
-            Standing::Done => ("done", muted),
-            Standing::Stopped => match card.state {
-                SubagentState::Cancelled => ("cancelled", muted),
-                _ => ("interrupted", muted),
-            },
-        };
+        let standing = chat.standing(card);
+        let (word, ink) = (
+            card.state_word(standing),
+            transcript::standing_ink(standing, cx),
+        );
         let facts = transcript::subagent_facts(card);
         let task = card.task.clone();
         let name = card.name.clone();
@@ -195,6 +179,8 @@ impl ChatPane {
                 .icon(icon)
                 .named(name)
         };
+        // The name on a line of its own; under it how it stands, its steps
+        // and time, and at that line's end the ways to the others and out.
         let head = div()
             .v_flex()
             .gap_1()
@@ -204,27 +190,32 @@ impl ChatPane {
             .border_color(theme.border)
             .child(
                 div()
+                    .min_w_0()
+                    .truncate()
+                    .font_semibold()
+                    .text_color(theme.foreground)
+                    .child(name),
+            )
+            .child(
+                div()
                     .h_flex()
                     .items_center()
                     .gap_1()
                     .min_w_0()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(div().flex_none().text_color(ink).child(word))
+                    .child(div().flex_none().child("·"))
+                    .child(div().min_w_0().truncate().child(facts))
+                    .child(div().flex_1())
                     .when(nested, |row| {
                         row.child(
                             icon("subagent-back", IconName::ArrowLeft, "Back")
                                 .on_click(cx.listener(|this, _, _, cx| this.back_subagent(cx))),
                         )
                     })
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .font_semibold()
-                            .text_color(theme.foreground)
-                            .child(name),
-                    )
                     .when(beside.len() > 1, |row| {
-                        row.child(div().flex_none().text_xs().text_color(muted).child(format!(
+                        row.child(div().flex_none().child(format!(
                             "{} of {}",
                             at + 1,
                             beside.len()
@@ -257,16 +248,6 @@ impl ChatPane {
                     .child(icon("subagent-close", IconName::Close, "Close").on_click(
                         cx.listener(|this, _, window, cx| this.close_subagent(window, cx)),
                     )),
-            )
-            .child(
-                div()
-                    .h_flex()
-                    .gap_1()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(div().text_color(ink).child(word))
-                    .child("·")
-                    .child(facts),
             );
 
         let task = task.map(|task| {
@@ -377,16 +358,8 @@ impl ChatPane {
             return None;
         }
         let (urgent, _) = *stood.iter().min_by_key(|(_, standing)| *standing)?;
-        let mut counts: Vec<(Standing, usize)> = Vec::new();
-        for (_, standing) in &stood {
-            match counts.iter_mut().find(|(seen, _)| seen == standing) {
-                Some((_, n)) => *n += 1,
-                None => counts.push((*standing, 1)),
-            }
-        }
-        counts.sort_by_key(|(standing, _)| *standing);
+        let counts = chat.turn_subagent_counts();
         let muted = cx.theme().muted_foreground;
-        let status = crate::theme::status_ink(cx);
         let line =
             over_composer("subagent-strip", cx)
                 .text_color(muted)
@@ -402,11 +375,7 @@ impl ChatPane {
                 .children(counts.into_iter().map(|(standing, n)| {
                     div()
                         .flex_none()
-                        .text_color(match standing {
-                            Standing::Waiting => status.warning,
-                            Standing::Failed => status.danger,
-                            Standing::Running | Standing::Done | Standing::Stopped => muted,
-                        })
+                        .text_color(transcript::standing_ink(standing, cx))
                         .child(format!("{n} {}", standing.word()))
                 }));
         Some(div().w_full().px_3().child(line).into_any_element())

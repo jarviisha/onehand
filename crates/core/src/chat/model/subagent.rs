@@ -129,6 +129,24 @@ impl SubagentItem {
         hasher.finish()
     }
 
+    /// The word its line and its float say for how it stands, `standing` as
+    /// [`Chat::standing`] reads it: a stop says which kind it was.
+    pub fn state_word(&self, standing: Standing) -> &'static str {
+        match standing {
+            Standing::Waiting => "waiting on you",
+            Standing::Failed => "failed",
+            Standing::Running => "running",
+            Standing::Done => "done",
+            Standing::Stopped => match self.state {
+                SubagentState::Cancelled => "cancelled",
+                SubagentState::Interrupted => "interrupted",
+                SubagentState::Working | SubagentState::Completed | SubagentState::Failed => {
+                    "stopped"
+                }
+            },
+        }
+    }
+
     /// How many steps it took: its tool calls, not its words or thoughts.
     pub fn steps(&self) -> usize {
         self.items
@@ -154,7 +172,7 @@ impl Chat {
     /// or has ended, and how.
     pub fn standing(&self, card: &SubagentItem) -> Standing {
         match card.state {
-            SubagentState::Working if self.asks_for(&card.id) => Standing::Waiting,
+            SubagentState::Working if self.asks_for(card) => Standing::Waiting,
             SubagentState::Working => Standing::Running,
             SubagentState::Failed => Standing::Failed,
             SubagentState::Completed => Standing::Done,
@@ -187,11 +205,41 @@ impl Chat {
         beside(&all, key).unwrap_or_default()
     }
 
-    /// Whether a permission or a question from subagent `id` waits.
-    fn asks_for(&self, id: &str) -> bool {
+    /// Whether card `outer` holds card `inner` among its own items.
+    pub fn card_holds(&self, outer: u64, inner: u64) -> bool {
+        self.card(outer).is_some_and(|card| {
+            card.items
+                .iter()
+                .any(|item| matches!(item, ChatItem::Subagent(held) if held.key() == inner))
+        })
+    }
+
+    /// One count per standing among the turn's subagents, the most urgent
+    /// first: what the strip over the composer says.
+    pub fn turn_subagent_counts(&self) -> Vec<(Standing, usize)> {
+        let mut counts: Vec<(Standing, usize)> = Vec::new();
+        for (_, standing) in self.turn_subagents() {
+            match counts.iter_mut().find(|(seen, _)| *seen == standing) {
+                Some((_, n)) => *n += 1,
+                None => counts.push((standing, 1)),
+            }
+        }
+        counts.sort_by_key(|(standing, _)| *standing);
+        counts
+    }
+
+    /// Whether a permission or a question waits from `card` or from any
+    /// subagent nested in it: the person is what it waits on either way.
+    fn asks_for(&self, card: &SubagentItem) -> bool {
+        let mut ids = Vec::new();
+        ids_within(card, &mut ids);
         self.items.iter().any(|item| match item {
-            ChatItem::Permission(p) => p.resolved.is_none() && p.req.child.as_deref() == Some(id),
-            ChatItem::Ask(a) => a.resolved.is_none() && a.req.child.as_deref() == Some(id),
+            ChatItem::Permission(p) => {
+                p.resolved.is_none() && p.req.child.as_deref().is_some_and(|id| ids.contains(&id))
+            }
+            ChatItem::Ask(a) => {
+                a.resolved.is_none() && a.req.child.as_deref().is_some_and(|id| ids.contains(&id))
+            }
             _ => false,
         })
     }
@@ -313,6 +361,16 @@ fn working(items: &[ChatItem]) -> usize {
             _ => 0,
         })
         .sum()
+}
+
+/// `card`'s id and every nested card's.
+fn ids_within<'a>(card: &'a SubagentItem, ids: &mut Vec<&'a str>) {
+    ids.push(&card.id);
+    for item in &card.items {
+        if let ChatItem::Subagent(inner) = item {
+            ids_within(inner, ids);
+        }
+    }
 }
 
 fn by_key(items: &[ChatItem], key: u64) -> Option<&SubagentItem> {

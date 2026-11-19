@@ -29,7 +29,7 @@ mod plan;
 mod prose;
 mod strip;
 mod subagent;
-pub(in crate::chat) use subagent::facts as subagent_facts;
+pub(in crate::chat) use subagent::{facts as subagent_facts, standing_ink};
 mod table_view;
 mod tool;
 mod user;

@@ -218,6 +218,12 @@ impl ProjectFacts {
     }
 }
 
+/// How wide the float stands beside the conversation.
+pub(super) const FLOAT_W: Rems = rems(27.5);
+/// The pane's width from which the float stands at its top right; under it,
+/// it runs the pane's width.
+pub(super) const FLOAT_BESIDE: Rems = rems(37.5);
+
 pub struct ChatPane {
     focus_handle: FocusHandle,
     /// The subagent shown in the float over the conversation, if any.

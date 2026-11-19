@@ -169,7 +169,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   in one slot (the kind of work in every state, so nothing moves as it settles), and takes no focus.
   **What runs is told by its words**, never by a turning mark: a running row's verb, in the present
   tense, and what it is done to, a live thought's *Thinking…*, a folded cluster's step in hand, a
-  plan's item in hand and a working subagent's name read in the ink of the line they stand on
+  plan's item in hand and what a working subagent is doing read in the ink of the line they stand on
   while a narrow band of the foreground ink crosses their opening, with no accent, and lift with
   that line under the pointer. A step is named by one verb and one path wherever it is named: its
   row and its folded cluster's line say the same. An opened cluster's line says only what has

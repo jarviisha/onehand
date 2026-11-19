@@ -3,22 +3,41 @@
 use super::*;
 use crate::controls::Short as _;
 
-/// A diff's rows as the lines they would be in a file.
+/// A diff's rows as the lines they would be in a file: a new file's as its
+/// own content.
 pub(super) fn diff_text(t: &ToolItem) -> Vec<String> {
-    (0..t.call.content.len())
-        .filter_map(|key| t.diff_rows.get(&key))
-        .flat_map(|rows| rows_text(rows))
+    t.call
+        .content
+        .iter()
+        .enumerate()
+        .filter_map(|(key, content)| {
+            let fresh = matches!(content, ToolContent::Diff { old: None, .. });
+            t.diff_rows.get(&key).map(|rows| rows_text(rows, fresh))
+        })
+        .flatten()
         .collect()
 }
 
-/// `rows` as the lines of a unified diff: what Copy and *Open* hand over.
-pub(crate) fn rows_text(rows: &[DiffRow]) -> Vec<String> {
+/// Whether every edit of `t` brought its file into being, so what it hands
+/// over is content rather than a diff.
+pub(super) fn all_fresh(t: &ToolItem) -> bool {
+    t.call
+        .content
+        .iter()
+        .filter(|content| matches!(content, ToolContent::Diff { .. }))
+        .all(|content| matches!(content, ToolContent::Diff { old: None, .. }))
+}
+
+/// `rows` as what Copy and *Open* hand over: the lines of a unified diff, or
+/// a new file's own lines where `fresh`, with no sign before them.
+pub(crate) fn rows_text(rows: &[DiffRow], fresh: bool) -> Vec<String> {
     rows.iter()
-        .map(|row| match row {
-            DiffRow::Context(l) => format!(" {l}"),
-            DiffRow::Added(l) => format!("+{l}"),
-            DiffRow::Removed(l) => format!("-{l}"),
-            DiffRow::Skipped(n) => format!("@@ {n} unchanged lines @@"),
+        .map(|row| match (row, fresh) {
+            (DiffRow::Added(l) | DiffRow::Context(l), true) => l.clone(),
+            (DiffRow::Context(l), false) => format!(" {l}"),
+            (DiffRow::Added(l), false) => format!("+{l}"),
+            (DiffRow::Removed(l), _) => format!("-{l}"),
+            (DiffRow::Skipped(n), _) => format!("@@ {n} unchanged lines @@"),
         })
         .collect()
 }
@@ -110,7 +129,12 @@ pub(super) fn diff_detail(
             total: text.len(),
             drawn,
             from_end: false,
-            whole: (!text.is_empty()).then(|| (text.join("\n").into(), Some("diff".into()))),
+            whole: (!text.is_empty()).then(|| {
+                (
+                    text.join("\n").into(),
+                    (!all_fresh(t)).then(|| "diff".into()),
+                )
+            }),
             copy,
         },
         cx,
