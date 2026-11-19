@@ -134,6 +134,7 @@ pub(super) fn perform(
             Effect::Cut(start) => {
                 let launch = &start.launch;
                 let (repo, title) = (launch.repo().to_path_buf(), launch.title().to_string());
+                let repo_of_cut = repo.clone();
                 cx.spawn(async move |cx| {
                     let made = cx
                         .background_executor()
@@ -145,7 +146,14 @@ pub(super) fn perform(
                             )
                         })
                         .await;
-                    cx.update(|cx| feed(Input::Cut { start, made }, cx));
+                    cx.update(|cx| {
+                        // The worktree is its project's from the moment it is
+                        // cut, whatever becomes of the task.
+                        if let Ok(cut) = &made {
+                            crate::projects::record_cut(&repo_of_cut, &cut.dir, &cut.branch, cx);
+                        }
+                        feed(Input::Cut { start, made }, cx)
+                    });
                 })
                 .detach();
             }
@@ -224,9 +232,10 @@ pub(super) fn perform(
 /// Keep task `task`'s project in `window`'s workspace and the task with it,
 /// through their link; the window gone, with no workspace.
 fn keep(start: OffScreen<AnyWindowHandle>, cx: &mut App) {
-    let link = |workspace: Option<&mut WorkspaceDrive>, start, cx: &mut App| {
+    let project = crate::projects::of(start.launch.dir(), cx);
+    let link = move |workspace: Option<&mut WorkspaceDrive>, start, cx: &mut App| {
         cx.update_global::<Tasks, _>(|t, _| {
-            let (fx, kept) = tasks_link::keep(&mut t.drive, workspace, start);
+            let (fx, kept) = tasks_link::keep(&mut t.drive, workspace, project.as_ref(), start);
             (kept, fx)
         })
     };

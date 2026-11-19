@@ -32,16 +32,18 @@ pub(crate) const MISSING_LAUNCHES: u32 = 20;
 pub(super) const FROM: &str = "migrated-from";
 
 /// What a project's offload keeps, in what was its workspace's folder.
-const OFFLOAD: [&str; 3] = ["offload.json", "coming-back", "backups"];
+pub(crate) const OFFLOAD: [&str; 3] = ["offload.json", "coming-back", "backups"];
 
-/// Bring in what earlier builds kept, under onehand's own root. Blocking;
-/// answers the problems met, for the log.
-pub fn migrate_storage_blocking() -> Vec<String> {
-    migrate_in(&crate::config::config_dir())
+/// Bring in what earlier builds kept, under onehand's own root, minting the
+/// ids of the projects it makes from `seed`, which the caller takes from a
+/// clock: nothing here reads one. Blocking; answers the problems met, for
+/// the log.
+pub fn migrate_storage_blocking(seed: u64) -> Vec<String> {
+    migrate_in(&crate::config::config_dir(), seed)
 }
 
 /// [`migrate_storage_blocking`] for the root `config`.
-pub(crate) fn migrate_in(config: &Path) -> Vec<String> {
+pub(crate) fn migrate_in(config: &Path, seed: u64) -> Vec<String> {
     let mut problems = Vec::new();
     let workspaces = crate::config::workspaces_in(config);
     clear_staging(&workspaces, &mut problems);
@@ -93,7 +95,7 @@ pub(crate) fn migrate_in(config: &Path) -> Vec<String> {
     }
     move_offloads(
         &workspaces,
-        &crate::config::projects_in(config),
+        &crate::config::offload_in(config),
         &mut problems,
     );
 
@@ -119,6 +121,8 @@ pub(crate) fn migrate_in(config: &Path) -> Vec<String> {
             problems.push(format!("{}: {why}", state_path.display()));
         }
     }
+    // Last, once every workspace is where it is kept.
+    problems.extend(crate::project::migrate::migrate_projects_in(config, seed));
     problems
 }
 
@@ -292,9 +296,9 @@ fn repoint(value: &mut serde_json::Value, old: &str, new: &str) -> bool {
 }
 
 /// Rename what a project's offload kept in a workspace folder into the
-/// project's own folder of the same name, and drop a workspace folder left
+/// offload's own folder of the same name, and drop a workspace folder left
 /// with nothing in it.
-fn move_offloads(workspaces: &Path, projects: &Path, problems: &mut Vec<String>) {
+fn move_offloads(workspaces: &Path, offloads: &Path, problems: &mut Vec<String>) {
     let Ok(entries) = fs::read_dir(workspaces) else {
         return;
     };
@@ -302,7 +306,7 @@ fn move_offloads(workspaces: &Path, projects: &Path, problems: &mut Vec<String>)
         if !dir.is_dir() || !OFFLOAD.iter().any(|name| dir.join(name).exists()) {
             continue;
         }
-        let project = projects.join(dir.file_name().unwrap_or_default());
+        let project = offloads.join(dir.file_name().unwrap_or_default());
         for name in OFFLOAD {
             let (from, to) = (dir.join(name), project.join(name));
             if !from.exists() || to.exists() {

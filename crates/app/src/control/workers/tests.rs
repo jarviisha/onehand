@@ -381,3 +381,29 @@ fn a_lead_gives_its_idle_worker_its_next_turn(cx: &mut TestAppContext) {
     drop(token);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A turn under way on a folder in one window counts against offloading it
+/// from another: the offload moves the sessions of every window holding it.
+#[gpui::test]
+fn a_turn_in_another_window_counts_as_busy_on_its_folder(cx: &mut TestAppContext) {
+    let dir = folder("busy-elsewhere");
+    let (_, shell, cx) = shell(cx, dir.join("tasks"), vec![agent()]);
+    let _lead_events = canned(cx);
+    let (lead, token) = lead(&shell, 910_900, cx);
+    let project = dir.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let at = project.clone();
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
+    let mut worker_events = canned(cx);
+    let (peer, call) = open("project", &token);
+    let (tx, mut answer) = oneshot::channel();
+    cx.update(|_, cx| cx.defer(move |cx| perform(peer, call, tx, cx)));
+    until(cx, |_| !super::super::workers_of(lead).is_empty());
+    let _requests = up(&mut worker_events);
+    until(cx, |_| answer.try_recv().unwrap().is_some());
+    // The worker's first turn goes on; another window holds the folder too.
+    let (_, other) = crate::shell::rig::another(cx, &project);
+    let busy = cx.update(|_, cx| other.update(cx, |other, cx| other.busy_here(&project, cx)));
+    assert_eq!(busy, 1, "the turn in the first window counts");
+    let _ = std::fs::remove_dir_all(dir);
+}

@@ -462,14 +462,13 @@ mod cli {
     use super::super::cli::*;
     use super::*;
     use crate::config::{HostOs, HostSpec};
-    use crate::workspace::Workspace;
+    use crate::project::{Project, ProjectId};
 
-    /// A config root whose one workspace, `name`, holds `top` as a project
-    /// building on `hosts`.
-    fn keep(root: &Path, name: &str, top: &Path, hosts: &[&str]) {
-        let mut ws = Workspace::seeded(top);
-        ws.name = name.to_string();
-        ws.roots[0].builds = hosts
+    /// A config root keeping `top` as a project building on `hosts`.
+    fn keep(root: &Path, top: &Path, hosts: &[&str]) {
+        let seed = u64::from(crate::workspace::fnv1a(top.as_os_str().as_encoded_bytes()));
+        let mut project = Project::new(ProjectId::mint(seed), None, top.to_path_buf());
+        project.builds = hosts
             .iter()
             .map(|host| BuildHost {
                 host: HostName((*host).into()),
@@ -477,9 +476,8 @@ mod cli {
                 into: None,
             })
             .collect();
-        let dir = crate::config::workspaces_in(root).join(name);
-        std::fs::create_dir_all(&dir).expect("the workspace's folder");
-        ws.to_config().save_to(&dir).expect("saved");
+        let dir = crate::config::projects_in(root).join(project.id.as_str());
+        crate::project::file::save_to(&project, &dir).expect("saved");
     }
 
     #[test]
@@ -487,7 +485,7 @@ mod cli {
         let (root, scratch) = (Scratch::new("root"), Scratch::new("work"));
         let top = repo(&scratch, "proj");
         write(&top, "crates/app/x.rs", "");
-        keep(&root.0, "ws", &top, &["build01"]);
+        keep(&root.0, &top, &["build01"]);
         let asked =
             asked_blocking(&root.0, &[], &top.join("crates/app"), "build01").expect("found");
         assert_eq!(asked.top, top);
@@ -511,7 +509,7 @@ mod cli {
                 tree.to_str().unwrap(),
             ],
         );
-        keep(&root.0, "ws", &top, &["build01"]);
+        keep(&root.0, &top, &["build01"]);
         let asked = asked_blocking(&root.0, &[], &tree, "build01").expect("found");
         assert_eq!(asked.top, tree);
         assert_eq!(asked.within, PathBuf::new());
@@ -530,16 +528,16 @@ mod cli {
         let stray = repo(&scratch, "stray");
         assert_eq!(
             refused(&[], &stray, "h"),
-            format!("{} is not a project of any workspace", stray.display())
+            format!("{} is not a project onehand keeps", stray.display())
         );
         let bare = repo(&scratch, "bare");
-        keep(&root.0, "a", &bare, &[]);
+        keep(&root.0, &bare, &[]);
         assert_eq!(
             refused(&[], &bare, "h"),
             "bare builds on no host; add one on its page"
         );
         let top = repo(&scratch, "proj");
-        keep(&root.0, "b", &top, &["build01", "win"]);
+        keep(&root.0, &top, &["build01", "win"]);
         assert_eq!(
             refused(&[], &top, "other"),
             "proj does not build on other; it builds on build01, win"
@@ -563,12 +561,16 @@ mod cli {
     }
 
     #[test]
-    fn the_first_workspace_by_name_that_names_the_host_is_read() {
+    fn a_worktree_anywhere_is_found_through_its_main_checkout() {
         let (root, scratch) = (Scratch::new("root"), Scratch::new("work"));
         let top = repo(&scratch, "proj");
-        keep(&root.0, "zeta", &top, &["build01"]);
-        keep(&root.0, "alpha", &top, &["other"]);
-        let asked = asked_blocking(&root.0, &[], &top, "build01").expect("found");
+        let tree = scratch.0.join("elsewhere-feature");
+        git(
+            &top,
+            &["worktree", "add", "-q", "-b", "f", tree.to_str().unwrap()],
+        );
+        keep(&root.0, &top, &["build01"]);
+        let asked = asked_blocking(&root.0, &[], &tree, "build01").expect("found");
         assert_eq!(asked.entry.host, HostName("build01".into()));
     }
 
@@ -602,7 +604,7 @@ mod cli {
             Scratch::new("home"),
         );
         let top = repo(&scratch, "proj");
-        keep(&root.0, "ws", &top, &["local"]);
+        keep(&root.0, &top, &["local"]);
         let ran = |command: &str| {
             let (mut out, mut err) = (Vec::new(), Vec::new());
             let asked = asked_blocking(&root.0, &[], &top, "local");

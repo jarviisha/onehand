@@ -3,7 +3,7 @@
 //! typed, and drawn on the project's page beside *Run check*.
 
 use super::Shell;
-use gpui::{AppContext as _, Context, Window};
+use gpui::{AppContext as _, BorrowAppContext as _, Context, Window};
 use gpui_component::input::{InputEvent, InputState};
 
 impl Shell {
@@ -47,15 +47,20 @@ impl Shell {
             cx.subscribe_in(
                 &input,
                 window,
-                move |shell: &mut Self, state, event: &InputEvent, window, cx| {
+                move |shell: &mut Self, state, event: &InputEvent, _, cx| {
                     if !matches!(event, InputEvent::Change) {
                         return;
                     }
                     // Put back, field and all, if its write fails; *Run check*
                     // comes and goes with the command.
                     let typed = state.read(cx).value().to_string();
-                    let fx = shell.window.workspace.set_check(&at, &typed);
-                    shell.carry_workspace(fx, window, cx);
+                    let Some(id) = shell.project_of_row(&at) else {
+                        return;
+                    };
+                    let fx = cx.update_global::<crate::state::Shared, _>(|shared, _| {
+                        shared.projects.set_check(&id, &typed)
+                    });
+                    crate::projects::carry(fx, cx);
                 },
             )
             .detach();

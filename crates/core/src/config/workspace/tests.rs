@@ -24,6 +24,7 @@ fn the_old_shape_reads_as_one_record_per_project() {
     assert_eq!(
         cfg.projects[0],
         ProjectConfig {
+            id: None,
             path: "/a".into(),
             host: None,
             pinned: true,
@@ -77,4 +78,28 @@ fn an_unreadable_file_says_why() {
         WorkspaceLoad::Unreadable(why) => assert!(!why.is_empty()),
         other => panic!("{other:?}"),
     }
+}
+
+#[test]
+fn an_entry_writes_its_id_and_no_facts_of_its_project() {
+    let id = crate::project::ProjectId::mint(3);
+    let cfg = WorkspaceConfig {
+        projects: vec![ProjectConfig {
+            id: Some(id.clone()),
+            path: "/a".into(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let text = toml::to_string_pretty(&cfg).unwrap();
+    assert!(text.contains(&format!("id = \"{id}\"")), "{text}");
+    assert!(text.contains("path = \"/a\""), "{text}");
+    assert_eq!(read(&text).projects[0].id, Some(id));
+}
+
+#[test]
+fn an_older_entry_still_reads_its_facts() {
+    let cfg = read("name = \"w\"\n[[projects]]\npath = \"/a\"\ncheck = \"make\"\n");
+    assert_eq!(cfg.projects[0].id, None);
+    assert_eq!(cfg.projects[0].check.as_deref(), Some("make"));
 }
