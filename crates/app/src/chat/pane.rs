@@ -25,6 +25,8 @@ use std::collections::HashMap;
 mod body;
 mod bridge;
 mod events;
+mod float;
+pub(crate) use float::CloseSubagent;
 mod fork;
 mod greeting;
 mod header;
@@ -216,8 +218,22 @@ impl ProjectFacts {
     }
 }
 
+/// How wide the float stands beside the conversation.
+pub(super) const FLOAT_W: Rems = rems(27.5);
+/// The pane's width from which the float stands at its top right; under it,
+/// it runs the pane's width.
+pub(super) const FLOAT_BESIDE: Rems = rems(37.5);
+
 pub struct ChatPane {
     focus_handle: FocusHandle,
+    /// The subagent shown in the float over the conversation, if any.
+    float: Option<float::Float>,
+    /// What the float takes the keys with, so Escape reaches it.
+    float_focus: FocusHandle,
+    /// The float's own scroll, kept as its subagent grows.
+    float_scroll: gpui::ScrollHandle,
+    /// The float was just opened and takes the keys on its next frame.
+    focus_float: bool,
     /// Every session the user has opened, in whatever phase it has reached.
     ///
     /// One map, not six. What each session's phase means, and why the parallel
@@ -388,6 +404,10 @@ impl ChatPane {
 
             Self {
                 focus_handle: cx.focus_handle(),
+                float: None,
+                float_focus: cx.focus_handle(),
+                float_scroll: gpui::ScrollHandle::default(),
+                focus_float: false,
                 conversations: HashMap::new(),
                 host_asks: 0,
                 active: None,

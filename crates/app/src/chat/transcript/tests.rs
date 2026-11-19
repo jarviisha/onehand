@@ -227,3 +227,13 @@ fn a_failed_step_quiets_once_its_turn_is_over() {
     assert_eq!(step_end(ToolStatus::Completed, None, false), None);
     assert_eq!(step_end(ToolStatus::InProgress, None, false), None);
 }
+
+/// What Copy and *Open* hand over for a new file is its own lines; for a
+/// changed one, the diff's.
+#[test]
+fn a_new_file_is_handed_over_as_its_content() {
+    use onehand_core::diff::Row;
+    let rows = [Row::Added("fn main() {}".into()), Row::Added("".into())];
+    assert_eq!(super::tool::rows_text(&rows, true), ["fn main() {}", ""]);
+    assert_eq!(super::tool::rows_text(&rows, false), ["+fn main() {}", "+"]);
+}

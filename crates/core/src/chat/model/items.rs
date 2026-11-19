@@ -18,12 +18,18 @@ pub const MAX_TERM_BYTES: usize = 64 * 1024;
 pub enum TranscriptItemId {
     History(usize),
     Live(usize),
+    /// An item inside a subagent's card, wherever the card is: the card by
+    /// its key, the item by its place among the card's own.
+    InCard {
+        card: u64,
+        index: usize,
+    },
 }
 
 impl TranscriptItemId {
     pub const fn index(self) -> usize {
         match self {
-            Self::History(index) | Self::Live(index) => index,
+            Self::History(index) | Self::Live(index) | Self::InCard { index, .. } => index,
         }
     }
 }

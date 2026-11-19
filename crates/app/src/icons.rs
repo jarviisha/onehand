@@ -162,6 +162,18 @@ icons! {
         // use for ending a session, and unlike a power mark it does not read as
         // quitting the whole app.
         LogOut,
+        // The running line's mark while the agent works: a pulse, which says
+        // something is alive without turning. The bundled set's nearest marks
+        // are its loaders, which are spinners.
+        Activity,
+        // The running line's mark while the agent writes its answer. The
+        // bundled set draws no pen of any kind; `square-pen` already marks a
+        // turn's changed files.
+        PenLine,
+        // A subagent's line in the transcript: work handed down a level. The
+        // bundled set's only mark for it is `bot`, a robot face, which gives
+        // the line a character the rest of the transcript does not have.
+        CornerDownRight,
         // The Shortcuts entry in Settings' nav. The bundled set draws no
         // keyboard or key of any kind; its nearest shapes are `square-terminal`,
         // the terminal the app already has a dock for, and `asterisk`.

@@ -109,15 +109,17 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 - **A centred reading column**, narrowed on small panels, read at the reading size; what is
   wider scrolls inside its well. A scrollbar runs on the panel's edge down to the composer.
 - **One turn, many blocks**: prose, thoughts, plans, activity clusters (tools only), commands,
-  diffs, a subagent's card (a fold block where the agent handed work off), answered
+  diffs, a subagent's line (where the agent handed work off; it never opens in place), answered
   permissions and questions (a line each, those in a row sharing one hairline edge with no fill),
   notices (a remark is a divider: the words centred between two hairlines across the column, in
   the muted ink) and errors (the neutral card, flat: the alert mark in the danger ink beside the
   words, *Turn failed* over them when a turn ended on it, the restart key for a lost agent), the files the turn changed,
-  and, while it runs, the running line (no mark: its clock, *N running*, what the
-  agent says it is doing; a step that runs is named by its own row and not again here). A workflow's steps and a stopped turn are notices, never prompts.
+  and, while it runs, the running line (a mark for what the turn is doing, which never turns: a pulse while the agent
+  works, a bell in the warning ink while it waits on the person, a pen while it writes; its clock,
+  *N running*, what the agent says it is doing, still and in the warning ink while it waits on the
+  person; a step that runs is named by its own row and not again here). A workflow's steps and a stopped turn are notices, never prompts.
 - **Folding blocks open from one line**, the chevron first, with no box: no edge, no fill and no
-  rule beside what they hold, which sits indented under the line's words (a cluster, a thought, a plan, a subagent, a turn's changes). What runs is open until done, the
+  rule beside what they hold, which sits indented under the line's words (a cluster, a thought, a plan, a turn's changes). What runs is open until done, the
   plan stays open, and a reader's fold wins. An opened cluster is capped, saying what it holds
   back. Wells are filled with no edge, their text at `CODE_TEXT`.
 - **What a row opens into is one box, never taller than sixteen lines** (`DETAIL_OPEN_H`): a
@@ -130,6 +132,19 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   *Open*, which shows them whole in a dialog as a table's does. A new file is its content,
   numbered, with no fill and no sign; a changed file's fills run the box's width. Copy floats in
   the box's top corner, on its fill and clear of the bar. Nothing inside a box grows it.
+- **A subagent is one line, read apart in a float.** Its line: a mark of its own in the
+  arrow's slot, its name, what it is doing (shimmering), *waiting on you* in the warning ink
+  while its own permission or question waits, or how it ended (*done*, *failed* in the
+  danger ink, *cancelled*, *interrupted*), and its steps and time at the end. Pressed, its own
+  transcript opens in a float over the pane, drawn by the transcript's own renderer: a head (the
+  name; its state, steps and time; *n of N* with the previous and next subagent of the turn; a
+  way back from a nested one; Close), the task it was given cut at two lines with *Show all*, and
+  its runs, capped. The float reads the pane, never the window: as tall as what it holds and at
+  most three fifths of the pane, at the pane's top right while the pane is wide enough and
+  across its width when it is not. It is not modal, and Escape closes it while it holds the
+  keys. While any of the turn's subagents works, a strip stands over the composer where the
+  lead's does: *N subagents* and a count per standing, most urgent first (waiting on the person,
+  failed, running, done, stopped); pressed, the float opens on the most urgent.
 - **A turn's changes say each file once.** One file is one line: what happened to it, its path,
   its counts, and the chevron opens its diff. Several are a head (*N files changed*, the counts)
   and a row a file: the path giving way at its start (the folder in the meta ink, the name in the
@@ -154,7 +169,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   in one slot (the kind of work in every state, so nothing moves as it settles), and takes no focus.
   **What runs is told by its words**, never by a turning mark: a running row's verb, in the present
   tense, and what it is done to, a live thought's *Thinking…*, a folded cluster's step in hand, a
-  plan's item in hand and a working subagent's name read in the ink of the line they stand on
+  plan's item in hand and what a working subagent is doing read in the ink of the line they stand on
   while a narrow band of the foreground ink crosses their opening, with no accent, and lift with
   that line under the pointer. A step is named by one verb and one path wherever it is named: its
   row and its folded cluster's line say the same. An opened cluster's line says only what has

@@ -96,6 +96,9 @@ pub(super) enum Line {
         task: Option<String>,
         state: String,
         items: Vec<Line>,
+        /// How long it ran; absent on a card saved before lengths were kept.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        secs: Option<u64>,
     },
 }
 
@@ -188,10 +191,13 @@ pub(super) fn restore_line(dir: &Path, line: &Line) -> ChatItem {
             task,
             state,
             items,
+            secs,
         } => ChatItem::Subagent(SubagentItem {
             id: id.clone(),
             name: name.clone(),
             task: task.clone(),
+            started: None,
+            secs: *secs,
             // Saved working means the session closed under it: nothing will
             // ever end it now.
             state: match state.as_str() {
@@ -378,6 +384,7 @@ fn to_line(chat: &Chat, item: &ChatItem, blobs: &mut Vec<Blob>) -> Option<Line> 
             name: card.name.clone(),
             task: card.task.clone(),
             state: card.state.as_str().to_string(),
+            secs: card.secs,
             items: card
                 .items
                 .iter()

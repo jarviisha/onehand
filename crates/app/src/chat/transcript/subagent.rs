@@ -1,257 +1,124 @@
-//! A subagent's card: a fold block, bare like the transcript's others, where
-//! the agent handed work off; its line the subagent's name and how it ended,
-//! what it holds the steps it took, inset under it.
+//! A subagent, where the agent handed work off: one line in the conversation.
 //!
-//! **Its steps are drawn as rows that open into nothing.** A step's own fold
-//! lives on the item in core and is addressed by its place in the transcript,
-//! which a step inside a card does not have; so a tool is its row as the
-//! transcript draws it, a thought and a plan a row of their own, and the
-//! subagent's words its prose, parsed by the same cache as the agent's.
+//! **It never opens in place.** What the subagent did is a transcript of its
+//! own, and drawn inside the parent's it read as two stories told at once;
+//! pressed, the line asks the pane to show that transcript in a float beside
+//! the conversation instead.
 
-use super::metrics::{FOLD_INDENT, TEXT_SM};
-use super::parts::{
-    ActivityRow, Object, RowMark, WorkingLine, activity_row, fold_box, fold_line, show_more,
-    working_text,
-};
-use super::prose::md_view;
-use super::tool::step_row;
-use crate::chat::session::ChatSession;
-use gpui::prelude::FluentBuilder as _;
+use super::metrics::TEXT_SM;
+use super::parts::{WorkingLine, working_text};
+use crate::chat::session::{ChatEvent, ChatSession};
 use gpui::{
-    App, ClickEvent, ElementId, Entity, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Window, div,
+    App, ElementId, Entity, InteractiveElement, IntoElement, ParentElement,
+    StatefulInteractiveElement, Styled, div,
 };
-use gpui_component::{ActiveTheme, IconName, IconNamed as _, StyledExt};
-use onehand_core::acp::PlanStatus;
-use onehand_core::chat::{ChatItem, SubagentItem, SubagentState, activity};
+use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
+use onehand_core::chat::{ChatItem, Standing, SubagentItem, SubagentState};
 
-/// How many of a working card's newest steps show while it is folded: enough
-/// to see what it is doing, few enough that several working at once do not
-/// push the conversation off screen.
-const SUBAGENT_LIVE_STEPS: usize = 3;
-
-/// Steps an opened card draws before it says how many more it holds.
-const SUBAGENT_STEP_CAP: usize = 200;
-
-/// The card for one subagent, nested cards drawn inside it the same way.
+/// The line for one subagent: its mark, its name, what it is doing or how it
+/// ended, and its steps and time at the end.
 pub(super) fn subagent(
     session: &Entity<ChatSession>,
     card: &SubagentItem,
-    window: &Window,
     cx: &App,
 ) -> gpui::AnyElement {
-    let open = session.read(cx).subagent_is_open(&card.id);
-    let working = card.state == SubagentState::Working;
-    let steps = card.items.len();
-    let toggle = {
-        let session = session.clone();
-        let id = card.id.clone();
-        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-            session.update(cx, |session, cx| {
-                session.toggle_subagent(&id);
-                cx.notify();
-            });
-        }
-    };
-
-    let shown = shown(steps, open, working);
-    // Before the shown steps: the way into the rest while folded, a count
-    // once opened (a working card's oldest past the cap). After: an ended
-    // card's newest past the cap.
-    // An empty selection (a folded ended card) has nothing before or after:
-    // its head already says the count.
-    let (before, after) = if shown.is_empty() {
-        (0, 0)
-    } else {
-        (shown.start, steps - shown.end)
-    };
-    let root = session.read(cx).chat().root.clone();
-    let rows: Vec<gpui::AnyElement> = shown
-        .clone()
-        .filter_map(|ix| {
-            let id = ElementId::NamedInteger(
-                SharedString::from(format!("subagent-step-{}", card.id)),
-                ix as u64,
-            );
-            step(session, &card.items[ix], id, &root, working, window, cx)
-        })
-        .collect();
-    let more = |n: usize| {
-        div()
-            .text_xs()
-            .text_color(cx.theme().muted_foreground)
-            .child(format!("{n} more"))
-    };
-
-    // A fold block like the transcript's others: the line, then what it
-    // holds inset under it.
-    fold_box()
-        .child(head(card, open, steps, toggle.clone(), cx))
-        // The task says what the name cannot; a folded card that has ended is
-        // the one line its head is.
-        .children(card.task.as_ref().filter(|_| open || working).map(|task| {
-            div()
-                .w_full()
-                .min_w_0()
-                .pl(FOLD_INDENT)
-                .truncate()
-                .text_size(TEXT_SM)
-                .text_color(crate::theme::meta_ink(cx))
-                .child(task.clone())
-        }))
-        .when(!rows.is_empty() || before > 0 || after > 0, |block| {
-            block.child(
-                div()
-                    .v_flex()
-                    .w_full()
-                    .min_w_0()
-                    .pl(FOLD_INDENT)
-                    .gap_2()
-                    .when(before > 0 && !open, |body| {
-                        body.child(
-                            div().h_flex().child(
-                                show_more(
-                                    ElementId::Name(format!("subagent-earlier-{}", card.id).into()),
-                                    counted(before, "earlier step", "earlier steps"),
-                                    cx,
-                                )
-                                .on_click(toggle),
-                            ),
-                        )
-                    })
-                    .when(before > 0 && open, |body| body.child(more(before)))
-                    .children(rows)
-                    .when(after > 0, |body| body.child(more(after))),
+    let chat = session.read(cx).chat();
+    let key = card.key();
+    let muted = cx.theme().muted_foreground;
+    let lit = cx.theme().foreground;
+    // Only a subagent at work shimmers what it is doing. Waiting on the
+    // person is said, not shimmered: nothing moves until they answer, and the
+    // strip over the composer and the float say the same.
+    let standing = chat.standing(card);
+    let working = standing == Standing::Running;
+    // What it is doing now, as its own steps say it.
+    let doing = working.then(|| {
+        let items: Vec<&ChatItem> = card.items.iter().collect();
+        onehand_core::chat::cluster_summary(&items, &chat.root)
+            .line(false)
+            .in_hand
+            .map_or_else(
+                || "Working".to_string(),
+                |step| format!("{}{}", step.verb, step.rest),
             )
+    });
+    let ended = (!working).then(|| (card.state_word(standing), standing_ink(standing, cx)));
+    let session = session.clone();
+    div()
+        .id(ElementId::Name(format!("subagent-{}", card.id).into()))
+        .h_flex()
+        .items_center()
+        .gap_2()
+        .w_full()
+        .min_w_0()
+        .cursor_pointer()
+        .text_size(TEXT_SM)
+        .text_color(muted)
+        // **Ink, not a plate**, as every line in the transcript answers.
+        .hover(move |line| line.text_color(lit))
+        .on_click(move |_, _, cx: &mut App| {
+            session.update(cx, |_, cx| cx.emit(ChatEvent::OpenSubagent(key)));
         })
+        // In the arrow's slot, a mark of its own: nothing opens here.
+        .child(
+            div()
+                .w_3()
+                .flex_none()
+                .child(Icon::new(crate::icons::Icon::CornerDownRight).xsmall()),
+        )
+        .child(
+            div()
+                .flex_none()
+                .max_w_1_2()
+                .truncate()
+                .child(card.name.clone()),
+        )
+        .children(doing.map(|doing| {
+            working_text(
+                ElementId::Name(format!("subagent-doing-{}", card.id).into()),
+                WorkingLine::words(doing),
+                cx,
+            )
+        }))
+        .children(ended.map(|(word, ink)| {
+            div()
+                .flex_none()
+                .whitespace_nowrap()
+                .text_color(ink)
+                .child(word)
+        }))
+        .child(div().flex_1())
+        .child(div().flex_none().whitespace_nowrap().child(facts(card)))
         .into_any_element()
 }
 
-/// Which of a card's `steps` show. Folded and working: the newest few.
-/// Folded and ended: none, the head says how many. Opened: up to the cap,
-/// the newest while it works (that is where it is) and the first once it has
-/// ended (read from the start).
-fn shown(steps: usize, open: bool, working: bool) -> std::ops::Range<usize> {
-    match (open, working) {
-        (true, true) => steps.saturating_sub(SUBAGENT_STEP_CAP)..steps,
-        (true, false) => 0..steps.min(SUBAGENT_STEP_CAP),
-        (false, true) => steps.saturating_sub(SUBAGENT_LIVE_STEPS)..steps,
-        (false, false) => 0..0,
+/// The ink a subagent's standing is said in, wherever it is said: the warning
+/// ink while it waits on the person, the danger ink once it failed, the muted
+/// ink otherwise. Neither a cancel nor an interruption failed: one was
+/// stopped, the other's end was never seen.
+pub(in crate::chat) fn standing_ink(standing: Standing, cx: &App) -> gpui::Hsla {
+    let status = crate::theme::status_ink(cx);
+    match standing {
+        Standing::Waiting => status.warning,
+        Standing::Failed => status.danger,
+        Standing::Running | Standing::Done | Standing::Stopped => cx.theme().muted_foreground,
     }
 }
 
-/// The card's head, a fold line that opens and folds it: the arrow, the
-/// name (shimmering while it works), and once it has ended the word
-/// for how, with the count of its steps while it is folded.
-fn head(
-    card: &SubagentItem,
-    open: bool,
-    steps: usize,
-    toggle: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-    cx: &App,
-) -> impl IntoElement {
-    let muted = cx.theme().muted_foreground;
-    let word = match card.state {
-        SubagentState::Working => None,
-        SubagentState::Failed => Some(("failed", crate::theme::status_ink(cx).danger)),
-        // Neither cancelled nor interrupted failed: one was stopped, the
-        // other's end was never seen.
-        SubagentState::Completed => Some(("done", muted)),
-        SubagentState::Cancelled => Some(("cancelled", muted)),
-        SubagentState::Interrupted => Some(("interrupted", muted)),
-    };
-    fold_line(
-        ElementId::Name(format!("subagent-{}", card.id).into()),
-        open,
-        cx,
-    )
-    .w_full()
-    .on_click(toggle)
-    // In the line's own ink, lit with it under the pointer, as every fold
-    // line's words are; shimmering while the subagent works.
-    .child(match card.state == SubagentState::Working {
-        true => working_text(
-            ElementId::Name(format!("subagent-working-{}", card.id).into()),
-            WorkingLine::words(&card.name),
-            cx,
-        ),
-        false => div()
-            .min_w_0()
-            .truncate()
-            .child(card.name.clone())
-            .into_any_element(),
-    })
-    .children(word.map(|(word, ink)| {
-        div()
-            .flex_none()
-            .h_flex()
-            .gap_2()
-            .whitespace_nowrap()
-            .child(div().text_color(ink).child(word))
-            .when(!open, |line| {
-                line.child("·").child(counted(steps, "step", "steps"))
-            })
-    }))
-}
-
-/// One of a card's steps, as the transcript draws it; `None` for what a
-/// subagent never sends.
-fn step(
-    session: &Entity<ChatSession>,
-    item: &ChatItem,
-    id: ElementId,
-    root: &std::path::Path,
-    // Whether the card still works; once it has ended, its failures are a
-    // record, as a finished turn's are.
-    working: bool,
-    window: &Window,
-    cx: &App,
-) -> Option<gpui::AnyElement> {
-    // A row with nothing to open takes no press.
-    let row = |row: ActivityRow| activity_row(row, |_, _, _| {}, cx);
-    Some(match item {
-        ChatItem::Agent(md) => div()
-            .w_full()
-            .min_w_0()
-            .child(md_view(session, md, window, cx))
-            .into_any_element(),
-        // An ended card's failures are a record, as a finished turn's are.
-        ChatItem::Tool(t) => row(step_row(
-            t,
-            &activity::presentation(t),
-            root,
-            id,
-            !working,
-            cx,
-        )),
-        ChatItem::Thought(th) => row(ActivityRow::new(
-            id,
-            match th.is_running() {
-                true => RowMark::Running,
-                false => RowMark::Done,
-            },
-            IconName::Info.path(),
-            th.label(),
-        )),
-        ChatItem::Plan(p) => {
-            let done = p
-                .entries
-                .iter()
-                .filter(|e| e.status == PlanStatus::Completed)
-                .count();
-            row(
-                ActivityRow::new(id, RowMark::Done, IconName::Check.path(), "Plan")
-                    .object(Some(Object::words(format!("{done}/{}", p.entries.len())))),
-            )
-        }
-        ChatItem::Subagent(card) => subagent(session, card, window, cx),
-        // A card's reducer takes none of these: the parent holds a subagent's
-        // requests, and its prompts and notices are the parent's own.
-        ChatItem::User(_)
-        | ChatItem::Permission(_)
-        | ChatItem::Ask(_)
-        | ChatItem::Notice { .. } => return None,
-    })
+/// A card's steps and its time: how long it ran once it has ended, how long
+/// it has been going while it works.
+pub(in crate::chat) fn facts(card: &SubagentItem) -> String {
+    let steps = counted(card.steps(), "step", "steps");
+    let secs = card.secs.or_else(|| {
+        (card.state == SubagentState::Working)
+            .then_some(card.started)
+            .flatten()
+            .map(|started| onehand_core::chat::now_secs().saturating_sub(started))
+    });
+    match secs {
+        Some(secs) => format!("{steps} · {}", onehand_core::duration(secs)),
+        None => steps,
+    }
 }
 
 /// `n` and the word for it, singular for one.
@@ -264,20 +131,11 @@ fn counted(n: usize, one: &str, many: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{SUBAGENT_LIVE_STEPS as LIVE, SUBAGENT_STEP_CAP as CAP, shown};
+    use super::counted;
 
     #[test]
-    fn a_card_shows_the_steps_its_state_and_fold_call_for() {
-        // Folded and working: the newest few, all of them under that.
-        assert_eq!(shown(2, false, true), 0..2);
-        assert_eq!(shown(10, false, true), 10 - LIVE..10);
-        // Folded and ended: none.
-        assert!(shown(10, false, false).is_empty());
-        // Opened, under the cap: everything either way.
-        assert_eq!(shown(10, true, true), 0..10);
-        assert_eq!(shown(10, true, false), 0..10);
-        // Opened, over the cap: the newest while working, the first once ended.
-        assert_eq!(shown(CAP + 5, true, true), 5..CAP + 5);
-        assert_eq!(shown(CAP + 5, true, false), 0..CAP);
+    fn a_count_takes_its_number() {
+        assert_eq!(counted(1, "step", "steps"), "1 step");
+        assert_eq!(counted(3, "step", "steps"), "3 steps");
     }
 }

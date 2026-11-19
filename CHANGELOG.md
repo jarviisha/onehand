@@ -75,6 +75,10 @@ minor bump may break any of them.
 
 ### The window
 
+- A subagent is one line in the conversation: its name, what it is doing or how it ended, its
+  steps and its time. Pressed, its own conversation opens in a panel floating over the pane, with
+  the previous and next subagent a press away and Escape to close it. While subagents work, a strip
+  over the composer counts them.
 - What a step opens into is one box that never grows past sixteen lines: the rest scrolls inside
   it, with its scrollbar on the box's edge, and a line under it says how many lines there are and
   opens them whole. A command reads whole above its output, which opens at its end. A new file is

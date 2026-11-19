@@ -105,19 +105,6 @@ impl ChatSession {
         self.fold_changed();
     }
 
-    /// Whether the subagent card `id` shows every step it took.
-    pub fn subagent_is_open(&self, id: &str) -> bool {
-        self.subagent_open.contains(id)
-    }
-
-    /// Open or close the subagent card `id`.
-    pub fn toggle_subagent(&mut self, id: &str) {
-        if !self.subagent_open.remove(id) {
-            self.subagent_open.insert(id.to_string());
-        }
-        self.fold_changed();
-    }
-
     /// Whether `path`'s diff is showing under the turn anchored at `anchor`.
     pub fn file_is_open(&self, anchor: TranscriptItemId, path: &str) -> bool {
         // **Built and asked, not scanned.** This is answered once per file row
@@ -168,10 +155,7 @@ impl ChatSession {
     ) -> T {
         let items: Vec<&onehand_core::chat::ChatItem> = body
             .iter()
-            .filter_map(|target| match target {
-                TranscriptItemId::History(i) => self.chat.history.get(*i),
-                TranscriptItemId::Live(i) => self.chat.items.get(*i),
-            })
+            .filter_map(|target| self.chat.item_at(*target))
             .collect();
         f(&items)
     }

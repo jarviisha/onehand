@@ -1,5 +1,5 @@
 use super::fold_key;
-use super::metrics::{FOLD_INDENT, TEXT_SM};
+use super::metrics::{COUNTS_W, FOLD_INDENT, TEXT_SM};
 use super::parts::{
     ActivityRow, DetailBox, Object, RowMark, WorkingLine, activity_row, chevron, detail_box,
     detail_well, fold_box, fold_line, line_counts, show_more, working_text,
@@ -268,10 +268,6 @@ pub(in crate::chat) fn turn_summary(
         .into_any_element()
 }
 
-/// How wide the column of line counts is, so the counts of every file in a
-/// turn's list stand one under another at the right edge.
-const COUNTS_W: Rems = rems(5.);
-
 /// One file of a turn's summary, and its diff when it is open.
 ///
 /// `alone` is the turn's only file: the line then says what happened to it,
@@ -387,9 +383,10 @@ fn file_row(
         .file_diff(anchor, &file.path)
         .unwrap_or_default()
         .to_vec();
-    let text = rows_text(&hunks);
+    let fresh = file.verdict == FileVerdict::Added;
+    let text = rows_text(&hunks, fresh);
     let mut budget = SUMMARY_DIFF;
-    let lines = diff_rows(&hunks, &mut budget, file.verdict == FileVerdict::Added, cx);
+    let lines = diff_rows(&hunks, &mut budget, fresh, cx);
     let whole = (!text.is_empty()).then(|| text.join("\n"));
     div()
         .v_flex()
@@ -406,7 +403,7 @@ fn file_row(
                 lines,
                 from_end: false,
                 copy: whole.clone(),
-                whole: whole.map(|text| (text.into(), Some("diff".into()))),
+                whole: whole.map(|text| (text.into(), (!fresh).then(|| "diff".into()))),
             },
             cx,
         )))

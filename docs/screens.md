@@ -166,18 +166,30 @@ on screen at once, named *Fork: <title>*, its transcript the original's up to ju
 prompt and the prompt's text and attachments in its composer. The original stays as it was; files
 are not rolled back. A fork that cannot open is a toast saying why, and its session goes.
 
-## Subagent card
+## Subagent
 
-Where the agent hands work to a subagent, the transcript draws a fold block, bare as every
-folding block is.
-Its head is a fold line with a state mark, the subagent's name and its state word (*done*,
-*failed*, *cancelled*, *interrupted*; its name shimmering while it works), and under it the first line of its
-task in the meta ink, the body inset. While it works the card shows its latest 3 steps behind
-*N earlier steps*; once it ends it folds to `<state> · N steps`, opened by a press, capped at 200
-steps with *N more*. Steps inside are compact rows that do not open. A subagent of a subagent nests
-one inset deeper. *interrupted* (an end never seen, or the adapter lost) and *cancelled* read in the
-muted ink, *failed* in the danger ink. A card reaches the saved transcript whole, once it has ended;
-one left working when the session closes is kept as *interrupted*.
+Where the agent hands work to a subagent, the transcript draws one line, which never opens in
+place: a mark in the arrow's slot, the subagent's name, what it is doing (its step in hand,
+shimmering), *waiting on you* in the warning ink while a permission or a question of its own waits,
+or its state word (*done*, *failed* in the danger ink, *cancelled* and *interrupted* in the muted
+ink), and at the end its tool steps and its time.
+
+Pressed, the line opens the subagent's float over the pane. Its head holds the name, then the
+state, steps and time; at its end *n of N* with the previous and next subagent of the same turn
+(of the same card, for a nested one), a way back while a nested one shows, and Close. Under the
+head comes the task it was given, two lines and *Show all*; then its own runs, as the
+conversation draws them, capped at 200 with a line saying how many it left out. A nested
+subagent is a line inside the float, and pressed it shows in the float in place of the one it is
+in. The float is as tall as what it holds, at most three fifths of the pane; it stands at the pane's
+top right, 440px wide, while the pane is at least 600px wide, and runs the pane's width under
+that. Escape closes it while it holds the keys.
+
+While any subagent handed work since the last prompt is running or waiting, a strip stands over
+the composer where a lead's does: *N subagents*, then a count per standing, most urgent first.
+Pressed, the float opens on the most urgent. It leaves when the last of them ends.
+
+A card reaches the saved transcript whole once it has ended, its length with it; one left
+working when the session closes is kept as *interrupted*.
 
 ## Step strip
 

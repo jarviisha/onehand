@@ -149,3 +149,7 @@ pub(in crate::chat) const TUCK: Rems = rems(0.625);
 pub(super) const FRAME_PAD: Rems = rems(0.75);
 /// Width a question's tab label is elided at. Only a *tab* is ever elided.
 pub(super) const ASK_TAB_W: Rems = rems(8.75);
+
+/// How wide the column of line counts is, so the counts of every file in a
+/// turn's list stand one under another at the right edge.
+pub(super) const COUNTS_W: Rems = rems(5.);

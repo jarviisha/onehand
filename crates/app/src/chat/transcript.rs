@@ -29,6 +29,7 @@ mod plan;
 mod prose;
 mod strip;
 mod subagent;
+pub(in crate::chat) use subagent::{facts as subagent_facts, standing_ink};
 mod table_view;
 mod tool;
 mod user;
@@ -177,7 +178,7 @@ pub fn item(
             permission(session, p, target, room.well, 0, cx).into_any_element()
         }
         ChatItem::Ask(a) => ask(session, a, target, 0, cx).into_any_element(),
-        ChatItem::Subagent(card) => subagent::subagent(session, card, window, cx),
+        ChatItem::Subagent(card) => subagent::subagent(session, card, cx),
         ChatItem::Notice {
             text,
             level,
@@ -520,6 +521,9 @@ fn prompted_after(chat: &onehand_core::chat::Chat, target: TranscriptItemId) -> 
             chat.history.iter().skip(i + 1).any(prompt) || chat.items.iter().any(prompt)
         }
         TranscriptItemId::Live(i) => chat.items.iter().skip(i + 1).any(prompt),
+        // A card holds no prompts, and what follows it in the conversation
+        // is not reached from inside it.
+        TranscriptItemId::InCard { .. } => false,
     }
 }
 
@@ -529,6 +533,14 @@ pub(super) fn fold_key(target: TranscriptItemId) -> usize {
     match target {
         TranscriptItemId::History(i) => i * 2,
         TranscriptItemId::Live(i) => i * 2 + 1,
+        // Hashed with its card, the top bit set so no conversation index
+        // could reach it.
+        TranscriptItemId::InCard { card, index } => {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            (card, index).hash(&mut hasher);
+            hasher.finish() as usize | (1 << (usize::BITS - 1))
+        }
     }
 }
 
@@ -539,7 +551,7 @@ pub(super) fn fold_key(target: TranscriptItemId) -> usize {
 fn live_index(target: TranscriptItemId) -> Option<usize> {
     match target {
         TranscriptItemId::Live(i) => Some(i),
-        TranscriptItemId::History(_) => None,
+        TranscriptItemId::History(_) | TranscriptItemId::InCard { .. } => None,
     }
 }
 

@@ -1501,6 +1501,19 @@ fn connecting_outranks_everything_the_status_could_say() {
 
     chat.link = Link::Connected;
     assert_eq!(chat.activity_status().as_deref(), Some("Working…"));
+    assert_eq!(chat.turn_activity(), Some(TurnActivity::Working));
+    // A step in hand is named by its own row: a kind to mark, no words.
+    chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
+        id: "t".into(),
+        title: "cargo build".into(),
+        description: None,
+        kind: crate::acp::ToolKind::Execute,
+        status: ToolStatus::Pending,
+        content: Vec::new(),
+    })));
+    assert_eq!(chat.turn_activity(), Some(TurnActivity::InStep));
+    assert_eq!(chat.activity_status(), None);
+    chat.items.clear();
     chat.busy = false;
     assert_eq!(
         chat.activity_status(),
@@ -3498,4 +3511,168 @@ fn only_a_step_still_going_has_a_clock() {
     assert_eq!(step(ToolStatus::Completed, true).running_secs(), None);
     assert_eq!(step(ToolStatus::InProgress, false).running_secs(), None);
     assert_eq!(step(ToolStatus::InProgress, true).running_secs(), Some(0));
+}
+
+/// A chat with one prompt sent and a subagent `id` spawned in its turn, with
+/// one step of its own.
+fn with_subagent(id: &str, task: &str) -> Chat {
+    let (mut chat, rx) = chat_with_tx();
+    std::mem::forget(rx);
+    told(&mut chat);
+    assert!(chat.submit("go", &[]));
+    chat.apply(AcpEvent::SubagentSpawned {
+        id: id.into(),
+        name: format!("Explore {id}"),
+        task: task.into(),
+    });
+    chat.apply(AcpEvent::InChild {
+        child: id.into(),
+        event: Box::new(AcpEvent::ToolCall(ToolCall {
+            id: format!("{id}-1"),
+            title: "cargo test".into(),
+            description: None,
+            kind: crate::acp::ToolKind::Execute,
+            status: ToolStatus::Completed,
+            content: Vec::new(),
+        })),
+    });
+    chat
+}
+
+/// A card's items have an address of their own, which reaches them wherever
+/// the card is, and reaches nothing once the card is gone.
+#[test]
+fn a_cards_items_are_addressed_inside_it() {
+    let chat = with_subagent("c1", "look around");
+    let card = chat
+        .items
+        .iter()
+        .find_map(|item| match item {
+            ChatItem::Subagent(card) => Some(card),
+            _ => None,
+        })
+        .expect("the card");
+    let at = TranscriptItemId::InCard {
+        card: card.key(),
+        index: 0,
+    };
+    assert!(matches!(chat.item_at(at), Some(ChatItem::Tool(t)) if t.call.title == "cargo test"));
+    assert!(chat.card(card.key()).is_some());
+    let gone = TranscriptItemId::InCard { card: 7, index: 0 };
+    assert!(chat.item_at(gone).is_none());
+}
+
+/// A card keeps the whole of what it was asked, its clock, and counts only
+/// its tool steps.
+#[test]
+fn a_card_keeps_its_task_its_clock_and_its_steps() {
+    let mut chat = with_subagent("c1", "Find the config loader.\nThen read how it is called.");
+    let card = |chat: &Chat| {
+        chat.items
+            .iter()
+            .find_map(|item| match item {
+                ChatItem::Subagent(card) => {
+                    Some((card.task.clone(), card.started, card.secs, card.steps()))
+                }
+                _ => None,
+            })
+            .expect("the card")
+    };
+    let (task, started, secs, steps) = card(&chat);
+    assert_eq!(
+        task.as_deref(),
+        Some("Find the config loader.\nThen read how it is called.")
+    );
+    assert!(started.is_some());
+    assert_eq!(secs, None, "still working");
+    assert_eq!(steps, 1);
+    told(&mut chat);
+    chat.apply(AcpEvent::SubagentEnded {
+        id: "c1".into(),
+        end: crate::acp::SubagentEnd::Completed,
+    });
+    assert!(card(&chat).2.is_some(), "timed once it ends");
+}
+
+/// The turn's subagents stand by what they are doing, a waiting one first.
+#[test]
+fn the_turns_subagents_say_how_they_stand() {
+    use crate::chat::model::Standing;
+    let mut chat = with_subagent("c1", "one");
+    chat.apply(AcpEvent::SubagentSpawned {
+        id: "c2".into(),
+        name: "Explore c2".into(),
+        task: "two".into(),
+    });
+    chat.apply(AcpEvent::SubagentEnded {
+        id: "c1".into(),
+        end: crate::acp::SubagentEnd::Failed,
+    });
+    let stood: Vec<Standing> = chat.turn_subagents().iter().map(|(_, s)| *s).collect();
+    assert_eq!(stood, [Standing::Failed, Standing::Running]);
+    let keys: Vec<u64> = chat.turn_subagents().iter().map(|(k, _)| *k).collect();
+    assert_eq!(chat.subagents_beside(keys[1]), keys);
+    // A new prompt starts a turn of its own: its strip counts none yet.
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    assert!(chat.submit("again", &[]));
+    assert!(chat.turn_subagents().is_empty());
+    assert_eq!(
+        chat.subagents_beside(keys[0]),
+        keys,
+        "an older turn's are its own"
+    );
+}
+
+/// A card says how it stands in one word set, the strip's counts come from
+/// core, and a card holding a nested one is asked of the model.
+#[test]
+fn a_card_is_worded_and_counted_by_core() {
+    use crate::chat::model::Standing;
+    let mut chat = with_subagent("c1", "one");
+    chat.apply(AcpEvent::SubagentSpawned {
+        id: "c2".into(),
+        name: "Explore c2".into(),
+        task: "two".into(),
+    });
+    chat.apply(AcpEvent::InChild {
+        child: "c2".into(),
+        event: Box::new(AcpEvent::SubagentSpawned {
+            id: "c3".into(),
+            name: "Nested".into(),
+            task: "three".into(),
+        }),
+    });
+    chat.apply(AcpEvent::SubagentEnded {
+        id: "c1".into(),
+        end: crate::acp::SubagentEnd::Cancelled,
+    });
+    let key = |id: &str| {
+        chat.items
+            .iter()
+            .find_map(|item| match item {
+                ChatItem::Subagent(card) if card.id == id => Some(card.key()),
+                _ => None,
+            })
+            .expect("a card")
+    };
+    let (c1, c2) = (key("c1"), key("c2"));
+    let card = chat.card(c1).expect("c1");
+    assert_eq!(card.state_word(chat.standing(card)), "cancelled");
+    let nested = chat
+        .card(c2)
+        .and_then(|card| {
+            card.items.iter().find_map(|item| match item {
+                ChatItem::Subagent(inner) => Some(inner.key()),
+                _ => None,
+            })
+        })
+        .expect("c3");
+    assert!(chat.card_holds(c2, nested));
+    assert!(!chat.card_holds(c1, nested));
+    assert_eq!(
+        chat.turn_subagent_counts(),
+        [(Standing::Running, 1), (Standing::Stopped, 1)]
+    );
 }
