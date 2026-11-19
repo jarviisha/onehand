@@ -372,7 +372,7 @@ through `action`; fields through `text_input`, `search_input` and `text_area`. *
 library's**: edged in `input` on the page's fill and ringed on focus, in a form, a dialog, a page's
 top and a search alike; a search adds the search mark and the clear button, and the composer's field
 is its card's. Two searches stand on a bar instead: the title bar's palette keeps its edge and drops its
-fill, standing on the bar's; one framed by its bar's own lines (the Issues tab's filter bar) is
+fill, standing on the bar's, and has no search mark; one framed by its bar's own lines (the Issues tab's filter bar) is
 bare, with no edge and no clear button, *Clear filters* beside it clearing it. A button names its
 variant by role, each drawn as the library draws it: `primary` the one commitment in a decision
 area, `secondary` (edged, on its own fill) an ordinary action beside it, a set picker's trigger (an

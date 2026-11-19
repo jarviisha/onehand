@@ -252,8 +252,13 @@ pub(crate) fn palette_field(
 ) -> impl IntoElement + use<> {
     let palette = shell.palette();
     let open = palette.focus.contains_focused(window, cx);
-    let field = crate::controls::search_input(&palette.input, cx)
+    // No search mark, and its words a step under the bar's controls, at the
+    // regular weight: the bar's quietest thing, until it is used.
+    let field = onehand_ui::text_input(&palette.input, cx)
+        .cleanable(true)
         .short()
+        .text_xs()
+        .font_weight(gpui::FontWeight::NORMAL)
         // Its edge alone parts it from the bar: no fill of its own, so it
         // stands on the window's fill as the bar does.
         .bg(gpui::transparent_black())

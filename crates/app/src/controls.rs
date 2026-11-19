@@ -54,7 +54,7 @@ pub(crate) use onehand_ui::text_input;
 /// A search field and a field of several lines, on a field's corner and
 /// surface. The rules and their reasoning live with the definitions in
 /// [`onehand_ui`], where a feature crate's fields reach them too.
-pub(crate) use onehand_ui::{search_input, text_area};
+pub(crate) use onehand_ui::text_area;
 
 /// A ghost button hovering on the selected step. The rule and its reasoning
 /// live with the definition in [`onehand_ui`], where a feature crate's

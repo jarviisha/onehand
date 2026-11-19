@@ -23,7 +23,8 @@ on Enter. The window draws no menus of its own: every command is
 the keymap's, and the platform's own menu bar holds them where there is one. Centred on the bar at a
 fixed width, narrowing only when the window leaves the ends no room, the palette: the library's
 edged field at `.short()` with no fill of its own, its edge alone parting it from the bar, with
-its key's hint (`Ctrl+K` outside a terminal), and a press in it selects words rather than moving
+its key's hint (`Ctrl+K` outside a terminal), with no search mark and its words at the meta size in
+the regular weight, and a press in it selects words rather than moving
 the window. While it holds the keyboard a list floats under it at its width, on the composer's
 popup surface and rows: the sessions whose title or project holds every word typed (each with a
 bot mark and its project on the right), then the projects whose name does (a folder mark),
