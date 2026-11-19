@@ -135,3 +135,106 @@ fn a_row_carrying_its_own_facts_hands_them_to_its_project(cx: &mut TestAppContex
     assert_eq!(row, (true, Some("make".to_string())));
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[gpui::test]
+fn renaming_a_project_saves_its_name_and_retitles_its_page(cx: &mut TestAppContext) {
+    let dir = folder("rename-from-menu");
+    let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
+    let root = dir.join("project");
+    std::fs::create_dir_all(&root).unwrap();
+    let root = std::fs::canonicalize(root).unwrap();
+    let project = Project::new(ProjectId::mint(78), None, root.clone());
+    cx.update(|_, cx| {
+        cx.update_global::<Shared, _>(|shared, _| {
+            shared.projects =
+                ProjectsDrive::new(Projects::from_iter([project.clone()]), dir.join("projects"));
+        })
+    });
+    let at = root.clone();
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
+    cx.run_until_parked();
+    let idx = cx.update(|_, cx| shell.read(cx).workspace_window().workspace.active_root);
+    let offered = cx.update(|_, cx| {
+        let shell = shell.read(cx);
+        crate::chat::pane::ProjectFacts::of(&shell.workspace_window().workspace.roots[idx], false)
+            .renames
+    });
+    assert!(offered, "a project's own row offers the rename");
+    cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| {
+            shell.begin_project_rename(idx, window, cx);
+            let input = shell.project_rename_input().expect("the dialog's field");
+            assert_eq!(
+                input.read(cx).value().as_ref(),
+                "project",
+                "it starts on the name"
+            );
+            input.update(cx, |input, cx| input.set_value("  Onehand  ", window, cx));
+            shell.commit_project_rename(cx);
+        })
+    });
+    cx.run_until_parked();
+    let name = cx.update(|_, cx| {
+        Shared::global(cx)
+            .projects
+            .get(&project.id)
+            .map(|p| p.name.clone())
+    });
+    assert_eq!(name.as_deref(), Some("Onehand"));
+    assert_eq!(label_in(&shell, &root, cx).as_deref(), Some("Onehand"));
+    let page = cx.update(|_, cx| {
+        let pane = shell.read(cx).chat_pane().clone();
+        pane.read(cx).project_page_label()
+    });
+    assert_eq!(
+        page.as_deref(),
+        Some("Onehand"),
+        "the page on screen says it too"
+    );
+    assert!(
+        cx.update(|_, cx| shell.read(cx).project_rename_input().is_none()),
+        "the dialog closed"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[gpui::test]
+fn enter_in_the_name_field_renames_the_project(cx: &mut TestAppContext) {
+    let dir = folder("rename-enter");
+    let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
+    let root = dir.join("project");
+    std::fs::create_dir_all(&root).unwrap();
+    let root = std::fs::canonicalize(root).unwrap();
+    let project = Project::new(ProjectId::mint(79), None, root.clone());
+    cx.update(|_, cx| {
+        cx.update_global::<Shared, _>(|shared, _| {
+            shared.projects =
+                ProjectsDrive::new(Projects::from_iter([project.clone()]), dir.join("projects"));
+        })
+    });
+    let at = root.clone();
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| {
+            let idx = shell.workspace_window().workspace.active_root;
+            shell.begin_project_rename(idx, window, cx);
+            let input = shell
+                .project_rename_input()
+                .expect("the dialog's field")
+                .clone();
+            input.update(cx, |input, cx| input.set_value("Typed", window, cx));
+        })
+    });
+    cx.run_until_parked();
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    let name = cx.update(|_, cx| {
+        Shared::global(cx)
+            .projects
+            .get(&project.id)
+            .map(|p| p.name.clone())
+    });
+    assert_eq!(name.as_deref(), Some("Typed"), "Enter saves what was typed");
+    let _ = std::fs::remove_dir_all(dir);
+}

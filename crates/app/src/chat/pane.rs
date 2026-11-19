@@ -191,6 +191,9 @@ pub struct ProjectFacts {
     /// folder here to a host, `Some(true)` runs an offloaded one here again,
     /// offered only while this machine holds its code.
     pub offload: Option<bool>,
+    /// It is its project's own folder, which has the project's name: a
+    /// worktree's row is named for its folder, and renames nothing.
+    pub renames: bool,
 }
 
 impl ProjectFacts {
@@ -207,6 +210,7 @@ impl ProjectFacts {
             is_repo: local && is_repo,
             check: local && root.check.is_some(),
             asks: false,
+            renames: root.home,
             offload: match (&root.host, &root.offload) {
                 _ if root.transient => None,
                 (Some(_), _) => None,
@@ -515,6 +519,22 @@ impl ChatPane {
     ///
     /// Guarded for the same reason the flag below is: this is pushed from the
     /// same places a git sweep lands, and a sweep lands on every finished turn.
+    /// The title of the project page on screen, for a test.
+    #[cfg(test)]
+    pub(crate) fn project_page_label(&self) -> Option<SharedString> {
+        self.empty.as_ref().map(|project| project.label.clone())
+    }
+
+    /// Told by the shell what the project on its page is called now: a
+    /// rename lands while the page is up.
+    pub fn set_project_label(&mut self, label: SharedString, cx: &mut Context<Self>) {
+        let Some(project) = self.empty.as_mut().filter(|project| project.label != label) else {
+            return;
+        };
+        project.label = label;
+        cx.notify();
+    }
+
     pub fn set_project_facts(&mut self, facts: ProjectFacts, cx: &mut Context<Self>) {
         let Some(project) = self.empty.as_mut() else {
             return;

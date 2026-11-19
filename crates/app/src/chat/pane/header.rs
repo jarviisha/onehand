@@ -553,6 +553,7 @@ fn project_menu(
         check: _,
         asks,
         offload,
+        renames,
     }: ProjectFacts,
     pane: Entity<ChatPane>,
 ) -> impl Fn(
@@ -577,6 +578,12 @@ fn project_menu(
             crate::controls::menu_item(if pinned { "Unpin" } else { "Pin to top" })
                 .on_click(act(ProjectAction::TogglePin, pane.clone())),
         )
+        .when(renames, |menu| {
+            menu.item(
+                crate::controls::menu_item("Rename project…")
+                    .on_click(act(ProjectAction::Rename, pane.clone())),
+            )
+        })
         // Only where there is a repository to split. On a plain folder this
         // could do nothing but report that git said no, and an entry whose whole
         // job is to fail is one the eye has to learn to skip.

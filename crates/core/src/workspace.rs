@@ -64,6 +64,9 @@ pub struct ProjectRoot {
     /// fact of the project's as it was last told ([`Self::told`]), kept here
     /// so the window draws it without asking.
     pub label: String,
+    /// Whether this row is its project's own folder, not a worktree of it:
+    /// what has the project's name, and so what renames it.
+    pub home: bool,
     pub sessions: Vec<Session>,
     pub active_session: usize,
     /// Whether this root is held at the top of the list.
@@ -131,6 +134,7 @@ impl ProjectRoot {
             path,
             host: None,
             project: None,
+            home: false,
             sessions: Vec::new(),
             active_session: 0,
             pinned: false,
@@ -164,6 +168,7 @@ impl ProjectRoot {
             return;
         };
         self.label = project.label_of(folder);
+        self.home = folder == Folder::Home;
         self.check = project.check.clone();
         self.builds = project.builds.clone();
         // Only a folder here is offloaded.

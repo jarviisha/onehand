@@ -25,6 +25,8 @@ pub enum Restart {
 pub enum ProjectAction {
     /// Pin to the top of the rail, or take the pin off.
     TogglePin,
+    /// Give the project a name of its own. Offered on its own folder only.
+    Rename,
     /// Split it into a second checkout. Offered on repositories only.
     Worktree,
     /// Rename the branch checked out in it. Offered on repositories only, for

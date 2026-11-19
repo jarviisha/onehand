@@ -263,6 +263,9 @@ pub struct Shell {
     renaming: Option<u64>,
     /// The conversation-rename field.
     rename_input: Entity<InputState>,
+    /// The project being renamed, and the field its new name is typed in,
+    /// while that dialog is up.
+    project_rename: Option<(onehand_core::project::ProjectId, Entity<InputState>)>,
     /// The project being split onto a branch of its own, if that dialog is
     /// open. `Some` is what puts it on screen, the same as the rename above.
     worktree_draft: Option<WorktreeDraft>,

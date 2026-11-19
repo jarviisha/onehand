@@ -24,6 +24,12 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   stays away until the pointer leaves the control, not as soon as it moves from where it was
   pressed: gpui's own tooltip, which these use, counts the one kept away as shown and offers no
   way to ask again from outside. The library's controls follow the rule as written.
+- **A project onehand keeps is never deleted.** Removing it from a workspace leaves its file in
+  `projects/` in the config directory, so adding its folder again finds its name and the rest
+  back; nothing yet deletes a project, and its file stays when no workspace holds it.
+- **A project folder moved or renamed on disk is not followed.** The project is kept by an id, not
+  by its folder, but nothing yet points it at the folder's new place: the moved folder comes back
+  as a project of its own.
 - **A fork splits the conversation, not the files.** What the agent changed after the point stays
   on disk. Only a prompt forks: not an answer, a tool step or a subagent card, and there is no
   switching between branches inside one conversation. A prompt of attachments only has no

@@ -10,8 +10,18 @@ What one window holds: the projects it groups, and their sessions.
 _Avoid_: solution, folder set
 
 **Project**:
-A folder in a workspace, usually a repository or a worktree of one, with the sessions started on it.
+A repository, or a folder, that onehand keeps under a name of its own, with the worktrees cut from
+it and the sessions started on it. One project in several workspaces is the same project.
 _Avoid_: repo (a project can be a folder inside one), root
+
+**Project folder**:
+The folder a project was added from. Renaming the project leaves it as it is.
+_Avoid_: root, home
+
+**Worktree**:
+A further checkout of a project folder's repository, recorded in the project with its branch and
+what cut it: a split, a run, a worker, or git listing one onehand did not cut.
+_Avoid_: clone, copy
 
 **Session**:
 One conversation with one agent on one project, carried over the Agent Client Protocol.
