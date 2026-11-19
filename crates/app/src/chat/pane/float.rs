@@ -75,6 +75,7 @@ impl ChatPane {
         if let Some(float) = self.float.as_mut() {
             float.task_open = false;
         }
+        self.float_scroll.set_offset(gpui::Point::default());
         self.focus_float = true;
         cx.notify();
     }
@@ -95,6 +96,7 @@ impl ChatPane {
             }
             float.task_open = false;
         }
+        self.float_scroll.set_offset(gpui::Point::default());
         cx.notify();
     }
 
@@ -106,6 +108,7 @@ impl ChatPane {
             }
             float.task_open = false;
         }
+        self.float_scroll.set_offset(gpui::Point::default());
         cx.notify();
     }
 
@@ -128,7 +131,9 @@ impl ChatPane {
         let key = *float.stack.last()?;
         let nested = float.stack.len() > 1;
         let task_open = float.task_open;
-        if std::mem::take(&mut self.focus_float) {
+        // Only once the card is found: focus given to a float that is not
+        // drawn would take the keymap with it.
+        if session.read(cx).chat().card(key).is_some() && std::mem::take(&mut self.focus_float) {
             self.float_focus.clone().focus(window, cx);
         }
         let read = session.read(cx);
@@ -161,10 +166,12 @@ impl ChatPane {
             |anchor, default| read.activity_is_open(anchor, default),
             |target, default| read.item_is_open(target, default),
         );
+        // The latest runs, where a working subagent's work is, and the count of
+        // the earlier ones above them.
         let over = runs.len().saturating_sub(FLOAT_RUNS);
         let body: Vec<gpui::AnyElement> = runs
             .iter()
-            .take(FLOAT_RUNS)
+            .skip(over)
             .map(|run| match &run.strip {
                 Some(strip) => self.cluster_element(run, strip, session, &room, window, cx),
                 None => div()
@@ -336,15 +343,15 @@ impl ChatPane {
                         .v_flex()
                         .gap_2()
                         .p_3()
-                        .children(body)
                         .when(over > 0, |body| {
                             body.child(
                                 div()
                                     .text_xs()
                                     .text_color(muted)
-                                    .child(format!("{over} later rows not shown")),
+                                    .child(format!("{over} earlier rows not shown")),
                             )
-                        }),
+                        })
+                        .children(body),
                 )
                 .into_any_element(),
         )

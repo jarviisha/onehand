@@ -339,11 +339,6 @@ pub struct ChatSession {
     /// shows -- taken once when the row opens rather than on every frame it is
     /// drawn. See `toggle_file`.
     file_open: HashMap<(TranscriptItemId, String), Vec<onehand_core::diff::Row>>,
-    /// Subagent cards the reader opened, by the subagent's id.
-    ///
-    /// **Kept across a renumbering**, unlike the folds above: an id names one
-    /// subagent wherever its card sits, so it cannot land on another.
-    subagent_open: HashSet<String>,
     /// Which steps, thoughts, plans, and answered permissions and questions
     /// the reader opened or closed, and how; absent follows what the item
     /// does by itself.
@@ -525,7 +520,6 @@ impl ChatSession {
             prompt_open: HashSet::new(),
             turn_open: HashMap::new(),
             file_open: HashMap::new(),
-            subagent_open: HashSet::new(),
             item_open: HashMap::new(),
             out_open: HashSet::new(),
             folds: 0,
