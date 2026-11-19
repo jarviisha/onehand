@@ -14,6 +14,8 @@
 //!
 //! Blocking throughout; a front end runs it off its UI.
 
+pub mod cli;
+
 use std::io::{BufRead as _, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};

@@ -417,3 +417,206 @@ fn a_stopped_build_ends_and_says_no_exit() {
         })
     );
 }
+
+mod cli {
+    use super::super::cli::*;
+    use super::*;
+    use crate::config::{HostOs, HostSpec};
+    use crate::workspace::Workspace;
+
+    /// A config root whose one workspace, `name`, holds `top` as a project
+    /// building on `hosts`.
+    fn keep(root: &Path, name: &str, top: &Path, hosts: &[&str]) {
+        let mut ws = Workspace::seeded(top);
+        ws.name = name.to_string();
+        ws.roots[0].builds = hosts
+            .iter()
+            .map(|host| BuildHost {
+                host: HostName((*host).into()),
+                artifacts: vec!["made.txt".into()],
+                into: None,
+            })
+            .collect();
+        let dir = crate::config::workspaces_in(root).join(name);
+        std::fs::create_dir_all(&dir).expect("the workspace's folder");
+        ws.to_config().save_to(&dir).expect("saved");
+    }
+
+    #[test]
+    fn a_project_is_found_from_a_folder_inside_it() {
+        let (root, scratch) = (Scratch::new("root"), Scratch::new("work"));
+        let top = repo(&scratch, "proj");
+        write(&top, "crates/app/x.rs", "");
+        keep(&root.0, "ws", &top, &["build01"]);
+        let asked =
+            asked_blocking(&root.0, &[], &top.join("crates/app"), "build01").expect("found");
+        assert_eq!(asked.top, top);
+        assert_eq!(asked.within, PathBuf::from("crates/app"));
+        assert_eq!(asked.project, "proj");
+        assert_eq!(asked.entry.host, HostName("build01".into()));
+    }
+
+    #[test]
+    fn a_worktree_is_found_as_its_project() {
+        let (root, scratch) = (Scratch::new("root"), Scratch::new("work"));
+        let top = repo(&scratch, "proj");
+        let tree = scratch.0.join("proj-feature");
+        git(
+            &top,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "feature",
+                tree.to_str().unwrap(),
+            ],
+        );
+        keep(&root.0, "ws", &top, &["build01"]);
+        let asked = asked_blocking(&root.0, &[], &tree, "build01").expect("found");
+        assert_eq!(asked.top, tree);
+        assert_eq!(asked.within, PathBuf::new());
+        assert_eq!(asked.project, "proj");
+    }
+
+    #[test]
+    fn what_cannot_be_built_is_refused_in_words() {
+        let (root, scratch) = (Scratch::new("root"), Scratch::new("work"));
+        let refused = |declared: &[HostSpec], cwd: &Path, host: &str| {
+            asked_blocking(&root.0, declared, cwd, host).expect_err("refused")
+        };
+        assert_eq!(
+            refused(&[], &scratch.0, "h"),
+            format!("{} is not inside a git working tree", scratch.0.display())
+        );
+        let stray = repo(&scratch, "stray");
+        assert_eq!(
+            refused(&[], &stray, "h"),
+            format!("{} is not a project of any workspace", stray.display())
+        );
+        let bare = repo(&scratch, "bare");
+        keep(&root.0, "a", &bare, &[]);
+        assert_eq!(
+            refused(&[], &bare, "h"),
+            "bare builds on no host; add one on its page"
+        );
+        let top = repo(&scratch, "proj");
+        keep(&root.0, "b", &top, &["build01", "win"]);
+        assert_eq!(
+            refused(&[], &top, "other"),
+            "proj does not build on other; it builds on build01, win"
+        );
+        let windows = [HostSpec {
+            name: HostName("win".into()),
+            os: HostOs::Windows,
+            arch: "AMD64".into(),
+        }];
+        assert_eq!(
+            refused(&windows, &top, "win"),
+            "win runs Windows; nothing builds on a Windows host yet"
+        );
+    }
+
+    #[test]
+    fn the_first_workspace_by_name_that_names_the_host_is_read() {
+        let (root, scratch) = (Scratch::new("root"), Scratch::new("work"));
+        let top = repo(&scratch, "proj");
+        keep(&root.0, "zeta", &top, &["build01"]);
+        keep(&root.0, "alpha", &top, &["other"]);
+        let asked = asked_blocking(&root.0, &[], &top, "build01").expect("found");
+        assert_eq!(asked.entry.host, HostName("build01".into()));
+    }
+
+    #[test]
+    fn command_line_keeps_one_word_and_quotes_several() {
+        let words =
+            |words: &[&str]| -> Vec<String> { words.iter().map(|w| w.to_string()).collect() };
+        assert_eq!(
+            command_line(&words(&["cargo test && ls"])).as_deref(),
+            Ok("cargo test && ls")
+        );
+        assert_eq!(
+            command_line(&words(&["echo", "a b", "it's"])).as_deref(),
+            Ok(r"'echo' 'a b' 'it'\''s'")
+        );
+        assert_eq!(
+            command_line(&[]),
+            Err("Give the command after --".to_string())
+        );
+        assert_eq!(
+            command_line(&words(&["  "])),
+            Err("Give the command after --".to_string())
+        );
+    }
+
+    #[test]
+    fn a_run_prints_the_lines_and_answers_the_exit_code() {
+        let (root, scratch, home) = (
+            Scratch::new("root"),
+            Scratch::new("work"),
+            Scratch::new("home"),
+        );
+        let top = repo(&scratch, "proj");
+        keep(&root.0, "ws", &top, &["local"]);
+        let ran = |command: &str| {
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            let asked = asked_blocking(&root.0, &[], &top, "local");
+            let code = run_with(
+                asked,
+                &[command.to_string()],
+                &mut out,
+                &mut err,
+                |job, line, cancel| build_in(job, &home.0, "laptop", line, cancel),
+            );
+            (
+                code,
+                String::from_utf8(out).unwrap(),
+                String::from_utf8(err).unwrap(),
+            )
+        };
+        assert_eq!(
+            ran("echo hello; echo x > made.txt"),
+            (
+                0,
+                "hello\n".to_string(),
+                "onehand: brought back made.txt\n".to_string()
+            )
+        );
+        assert_eq!(ran("exit 3"), (3, String::new(), String::new()));
+        assert_eq!(
+            ran("nosuchtool"),
+            (
+                127,
+                ran("nosuchtool").1,
+                "onehand: nosuchtool is not on local's PATH for ssh\n".to_string()
+            )
+        );
+        // What came back is a file here now, and would go up with the next
+        // snapshot: gone here, it is gone there, and so not built.
+        std::fs::remove_file(top.join("made.txt")).expect("removed");
+        assert_eq!(
+            ran("true"),
+            (
+                1,
+                String::new(),
+                "onehand: made.txt was not built on local\n".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn a_refusal_is_said_and_exits_one() {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let code = run_with(
+            Err("nope".into()),
+            &["true".to_string()],
+            &mut out,
+            &mut err,
+            |_, _, _| panic!("never built"),
+        );
+        assert_eq!(
+            (code, String::from_utf8(err).unwrap()),
+            (1, "onehand: nope\n".to_string())
+        );
+    }
+}
