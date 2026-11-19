@@ -179,22 +179,39 @@ impl ChatPane {
                             })
                             .child(div().w_full().max_w(COMPOSER_COLUMN).mx_auto().child(popup))
                     });
-                // **Outside the measured box, for the reason the popup is.** A
-                // parked card is a surface over the conversation, not a floor
-                // under it: measured, every card that arrives grows the
-                // transcript's bottom padding, and a list anchored at its tail
-                // answers that by shifting everything the user was reading
-                // upward -- at the exact moment their attention is being asked
-                // for, by a card that appeared because the agent chose to park
-                // and not because anybody pressed anything. What it costs is
-                // the last row or two of the conversation sitting behind the
-                // card while it is up, which the reader can scroll to and which
-                // comes back the moment the card is answered. The composer
-                // stays measured: it is there the whole time, and a transcript
-                // that ended behind the box being typed in would hide its own
-                // last line permanently.
+                // **Outside the composer's measured box, and measured on its
+                // own.** The transcript's end is given room past the cards as
+                // well as past the composer, so the rows they stand over can
+                // be scrolled clear of them: without it the last of the
+                // conversation sat behind a card with nowhere to scroll it to.
+                // A reader at the end sees those rows rise over the card; one
+                // scrolled back keeps the place they were reading.
+                let cards_h = self.cards_h.clone();
+                if pinned.is_empty() && cards_h.replace(gpui::px(0.)) != gpui::px(0.) {
+                    let pane = pane.clone();
+                    cx.defer(move |cx| pane.update(cx, |_: &mut Self, cx| cx.notify()));
+                }
                 let cards = (!pinned.is_empty()).then(|| {
                     div()
+                        .relative()
+                        .child({
+                            let pane = pane.clone();
+                            gpui::canvas(
+                                move |bounds, _, cx| {
+                                    let height = bounds.size.height;
+                                    if cards_h.replace(height) != height {
+                                        // Measured in prepaint: told on the
+                                        // next turn, never from inside it.
+                                        cx.defer(move |cx| {
+                                            pane.update(cx, |_: &mut Self, cx| cx.notify())
+                                        });
+                                    }
+                                },
+                                |_, _: (), _, _| {},
+                            )
+                            .absolute()
+                            .size_full()
+                        })
                         .w_full()
                         .px(super::body::STACK_GUTTER)
                         // **A card covering the conversation must not move it.**

@@ -146,7 +146,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   they wait they stand a step off the page (`theme::waiting_card`), lifted, as wide as the
   composer, their foot tucked under it (`TUCK`, under the lead's strip while it shows) so the
   composer reads as laid over them, without motion; the ones waiting behind peek over the shown one's top edge as slivers, at most two,
-  and its head says *1 of N waiting*. Back in the history the shell is on the page's fill and
+  and its head says *1 of N waiting*. The transcript's end clears the pinned cards as it clears the composer, so the rows they stand over can be scrolled clear of them. Back in the history the shell is on the page's fill and
   flat. It holds a head, the body, the answers at the end at `.short()` (a hairline under the head,
   padded as a box whose body scrolls, its cut end fading out while more lies below), the
   dismissing one a quiet ghost. A choice is a bare row at rest, on the pointer's fill under the
