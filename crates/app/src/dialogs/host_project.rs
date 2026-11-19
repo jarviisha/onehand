@@ -374,11 +374,11 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
 }
 
 /// What a host picked from the menu beside a *Host* field is handed to.
-pub(super) type PickHost = Rc<dyn Fn(String, &mut Window, &mut App)>;
+pub(crate) type PickHost = Rc<dyn Fn(String, &mut Window, &mut App)>;
 
 /// The menu beside a *Host* field: the hosts to pick from, and how many it
 /// leaves out; `pick` is handed the one picked.
-pub(super) fn host_menu(
+pub(crate) fn host_menu(
     choices: Vec<String>,
     more: usize,
     pick: PickHost,

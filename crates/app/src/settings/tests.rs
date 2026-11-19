@@ -150,3 +150,143 @@ fn a_native_built_in_agent_says_what_runs() {
         "Built in · copilot --acp · COPILOT_HOME=/x"
     );
 }
+
+mod hosts {
+    use super::super::hosts::{add_refusal, host_lines};
+    use onehand_core::config::drive::HostProbe;
+    use onehand_core::config::{HostOs, HostSpec};
+    use onehand_core::host::drive::HostState;
+    use onehand_core::host::probe::Probed;
+    use onehand_core::workspace::HostName;
+
+    fn linux() -> HostSpec {
+        HostSpec::undeclared(HostName("build01".into()))
+    }
+
+    fn windows() -> HostSpec {
+        HostSpec {
+            name: HostName("win".into()),
+            os: HostOs::Windows,
+            arch: "AMD64".into(),
+        }
+    }
+
+    fn found(tools: &[(&str, &str)]) -> HostProbe {
+        HostProbe::Found(Probed {
+            os: HostOs::Linux,
+            arch: "x86_64".into(),
+            tools: tools
+                .iter()
+                .map(|(name, said)| (name.to_string(), said.to_string()))
+                .collect(),
+        })
+    }
+
+    #[test]
+    fn a_row_says_the_system_alone_before_any_probe() {
+        let lines = host_lines(&linux(), None, &HostState::Unknown, false, &[]);
+        assert_eq!(lines.about, "Linux x86_64");
+        assert_eq!((lines.note, lines.warning, lines.users), (None, None, None));
+    }
+
+    #[test]
+    fn a_row_lists_what_the_probe_found_with_each_toolchain_version() {
+        let probe = found(&[
+            ("git", "git version 2.56.0"),
+            ("tar", "tar (GNU tar) 1.35"),
+            ("cargo", "cargo 1.99.1 (5f94df478 2026-08-27)"),
+            ("dotnet", "10.0.113"),
+        ]);
+        let lines = host_lines(&linux(), Some(&probe), &HostState::Live, false, &[]);
+        assert_eq!(
+            lines.about,
+            "Linux x86_64 · git, tar, cargo 1.99.1, dotnet 10.0.113"
+        );
+        assert_eq!(lines.warning, None);
+    }
+
+    #[test]
+    fn a_running_probe_says_so() {
+        let lines = host_lines(
+            &linux(),
+            Some(&HostProbe::Running),
+            &HostState::Unknown,
+            false,
+            &[],
+        );
+        assert_eq!(lines.about, "Linux x86_64 · Checking…");
+    }
+
+    #[test]
+    fn a_failed_probe_says_why() {
+        let probe = HostProbe::Failed("ssh: connect to host build01: timed out".into());
+        let lines = host_lines(&linux(), Some(&probe), &HostState::Unknown, false, &[]);
+        assert_eq!(
+            lines.warning.as_deref(),
+            Some("ssh: connect to host build01: timed out")
+        );
+    }
+
+    #[test]
+    fn what_a_build_needs_and_is_missing_is_named() {
+        let lines = host_lines(
+            &linux(),
+            Some(&found(&[("tar", "tar 1.35")])),
+            &HostState::Unknown,
+            false,
+            &[],
+        );
+        assert_eq!(lines.warning.as_deref(), Some("git is not installed"));
+        let lines = host_lines(&linux(), Some(&found(&[])), &HostState::Unknown, false, &[]);
+        assert_eq!(
+            lines.warning.as_deref(),
+            Some("git and tar are not installed")
+        );
+    }
+
+    #[test]
+    fn a_host_that_runs_no_sessions_says_it_only_builds() {
+        let lines = host_lines(&windows(), None, &HostState::Unknown, false, &[]);
+        assert_eq!(lines.about, "Windows AMD64");
+        assert_eq!(
+            lines.note.as_deref(),
+            Some("Builds only; nothing builds on it yet")
+        );
+    }
+
+    #[test]
+    fn a_lost_or_taken_session_host_says_so() {
+        let lost = HostState::Lost("timed out".into());
+        let lines = host_lines(&linux(), None, &lost, true, &[]);
+        assert_eq!(
+            lines.warning.as_deref(),
+            Some("Not connected to build01; trying again")
+        );
+        let lines = host_lines(&linux(), None, &HostState::Taken, false, &[]);
+        assert_eq!(
+            lines.warning.as_deref(),
+            Some("build01 was attached from another machine")
+        );
+    }
+
+    #[test]
+    fn a_row_names_the_projects_that_use_it() {
+        let users = ["api".to_string(), "web".to_string()];
+        let lines = host_lines(&linux(), None, &HostState::Unknown, false, &users);
+        assert_eq!(lines.users.as_deref(), Some("Used by api, web"));
+    }
+
+    #[test]
+    fn add_refuses_no_name_and_a_declared_one() {
+        let declared = [linux()];
+        assert_eq!(
+            add_refusal("  ", &declared).as_deref(),
+            Some("Name the host")
+        );
+        assert_eq!(
+            add_refusal(" build01 ", &declared).as_deref(),
+            Some("build01 is already declared")
+        );
+        assert_eq!(add_refusal("other", &declared), None);
+    }
+}

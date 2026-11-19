@@ -4,7 +4,7 @@
 //! is about the window rather than about one panel.
 
 use crate::chat::ChatPane;
-use crate::settings::{AgentDraft, SettingsPage};
+use crate::settings::{AgentDraft, HostDraft, SettingsPage};
 use crate::state::WorkspaceWindow;
 use crate::terminal::TerminalPanel;
 use crate::workbench::Workbench;
@@ -228,6 +228,8 @@ pub struct Shell {
     agent_draft: AgentDraft,
     /// Whether the agent form is open over the page.
     agent_form: bool,
+    /// The field Settings adds a host by.
+    host_draft: HostDraft,
     /// Each project's check command field, by root, made as its project
     /// page comes up.
     check_inputs: HashMap<PathBuf, Entity<InputState>>,

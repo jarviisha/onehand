@@ -1,10 +1,11 @@
 use super::Shell;
 use super::confirm::Confirm;
-use crate::settings::{AgentDraft, DraftShift, SettingsPage};
+use crate::settings::{AgentDraft, DraftShift, HostDraft, SettingsPage};
 use crate::state::Shared;
 use gpui::{App, BorrowAppContext, Context, Entity, Focusable as _, Window, WindowAppearance};
 use gpui_component::{Theme, ThemeMode};
 use onehand_core::config::{AgentEdit, AgentSpec, Appearance};
+use onehand_core::workspace::HostName;
 
 impl Shell {
     // ── Agents ──────────────────────────────────────────────────────────────
@@ -231,6 +232,89 @@ impl Shell {
         let fx = cx.update_global::<Shared, _>(|shared, _| shared.settings.set_appearance(choice));
         crate::saves::carry_settings(fx, window, cx);
         cx.notify();
+    }
+
+    // ── Hosts ───────────────────────────────────────────────────────────────
+
+    pub fn host_draft(&self) -> &HostDraft {
+        &self.host_draft
+    }
+
+    pub(crate) fn host_draft_mut(&mut self) -> &mut HostDraft {
+        &mut self.host_draft
+    }
+
+    /// Each host this window's projects run their sessions on, with the
+    /// project's name: a project on the host, or one offloaded to it.
+    pub(crate) fn host_users(&self) -> Vec<(HostName, String)> {
+        self.window
+            .workspace
+            .roots
+            .iter()
+            .filter_map(|root| Some((root.session_host()?.0.clone(), root.label.clone())))
+            .collect()
+    }
+
+    /// Put a host picked from the menu into the field.
+    pub(crate) fn pick_declared_host(
+        &mut self,
+        host: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.host_draft
+            .name
+            .update(cx, |input, cx| input.set_value(host, window, cx));
+        cx.notify();
+    }
+
+    /// *Add* the host the field names: probe it, and declare what the probe
+    /// finds. The field is emptied at once, and the probe said under it.
+    pub(crate) fn add_host(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let typed = self.host_draft.name.read(cx).value().to_string();
+        let declared = &Shared::global(cx).settings.hosts;
+        if crate::settings::hosts::add_refusal(&typed, declared).is_some() {
+            return;
+        }
+        let host = HostName(typed.trim().to_string());
+        self.host_draft.adding = Some(host.clone());
+        self.host_draft
+            .name
+            .update(cx, |input, cx| input.set_value("", window, cx));
+        self.check_host(host, window, cx);
+    }
+
+    /// *Check* a host: ask it what it is and what it has, off the UI loop.
+    pub(crate) fn check_host(
+        &mut self,
+        host: HostName,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let fx = cx.update_global::<Shared, _>(|shared, _| shared.settings.probe_host(host));
+        crate::saves::carry_settings(fx, window, cx);
+    }
+
+    /// Ask before a declared host leaves the list. One a project still names
+    /// is not asked about: its *Remove* refuses, saying which.
+    pub(crate) fn confirm_remove_host(
+        &mut self,
+        host: HostName,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let ask = Confirm {
+            id: "remove-host",
+            title: format!("Remove {host}?").into(),
+            description: "It leaves the host list. Nothing on the host itself is touched.".into(),
+            act: "Remove",
+            ..Default::default()
+        };
+        self.confirm(ask, window, cx, move |_, window, cx| {
+            let host = host.clone();
+            let fx = cx.update_global::<Shared, _>(|shared, _| shared.settings.remove_host(host));
+            crate::saves::carry_settings(fx, window, cx);
+        });
     }
 
     /// Make `edit` to the agent list on screen, then to the one in the file

@@ -174,6 +174,11 @@ icons! {
         // its nearest shapes are `redo`, which reads as stepping an edit
         // forward, and `loader-circle`, which already means running.
         RefreshCw,
+        // The Hosts entry in Settings' nav: a machine that is not this one.
+        // The bundled set draws no machine of any kind; its nearest shapes are
+        // `network`, which the Connections row beside it wears, and
+        // `square-terminal`, the dock this window already has.
+        Server,
         // The rail's status marks and row actions. The bundled set draws no
         // hand, no bare circle, no archive box, no stop square and no filter:
         // its nearest shapes are `circle-check` and `circle-x`, which already

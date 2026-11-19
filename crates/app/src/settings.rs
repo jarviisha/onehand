@@ -15,10 +15,13 @@ use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::config::{AgentSpec, Preset};
 
 mod agents;
+pub(crate) mod hosts;
 mod pages;
 use agents::agents_page;
 pub use agents::draft_after_promote;
 pub(crate) use agents::kind_about;
+pub use hosts::HostDraft;
+use hosts::hosts_page;
 use pages::{appearance_page, connections_page, workspace_page};
 
 /// The add/edit form's fields. `editing` is `Some(i)` when an existing agent is
@@ -381,6 +384,9 @@ pub enum SettingsPage {
     Appearance,
     Workspace,
     Agents,
+    /// The machines projects run on and build on, declared once for every
+    /// workspace, beside the agents that run on them.
+    Hosts,
     /// The services outside the checkout, and what reaches onehand from
     /// outside it: a page of its own, since more of them are coming and each
     /// is used by more than one feature. Named for what it holds --
@@ -390,10 +396,11 @@ pub enum SettingsPage {
 }
 
 impl SettingsPage {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Appearance,
         Self::Workspace,
         Self::Agents,
+        Self::Hosts,
         Self::Connections,
         Self::Shortcuts,
     ];
@@ -406,6 +413,7 @@ impl SettingsPage {
             Self::Appearance => "Appearance",
             Self::Workspace => "Workspace",
             Self::Agents => "Agents",
+            Self::Hosts => "Hosts",
             Self::Connections => "Connections",
             Self::Shortcuts => "Shortcuts",
         }
@@ -417,6 +425,7 @@ impl SettingsPage {
             Self::Appearance => Icon::new(IconName::Palette),
             Self::Workspace => Icon::new(IconName::FolderClosed),
             Self::Agents => Icon::new(IconName::Bot),
+            Self::Hosts => Icon::new(crate::icons::Icon::Server),
             Self::Connections => Icon::new(IconName::Network),
             Self::Shortcuts => Icon::new(crate::icons::Icon::Keyboard),
         }
@@ -517,6 +526,7 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         SettingsPage::Appearance => appearance_page(&handle, cx),
         SettingsPage::Workspace => workspace_page(&handle, cx),
         SettingsPage::Agents => agents_page(&handle, cx),
+        SettingsPage::Hosts => hosts_page(&handle, cx),
         SettingsPage::Connections => connections_page(cx),
         SettingsPage::Shortcuts => handle.read(cx).keymap_editor().into_any_element(),
     };
