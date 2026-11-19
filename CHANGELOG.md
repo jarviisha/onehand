@@ -75,6 +75,12 @@ minor bump may break any of them.
 
 ### The window
 
+- While a turn works, the conversation says each thing once. What runs is told by its own words,
+  in the present tense (*Running*, *Reading*, *Editing*), with a band of brighter ink crossing
+  them; the turning marks are gone, and every row keeps the mark of its kind of work. A step
+  that runs past ten seconds shows its own clock. The line under a live turn keeps the clock and
+  the count (*2 running*) and no longer repeats the running command. A thought that took under a second reads *Thought*, and a file
+  outside the project is named from `~`.
 - *Delete workspace…*, in Settings ▸ Workspace, closes the window and removes the workspace and
   the issues it keeps, after asking; its projects stay on disk. Refused while a task works one of
   its issues.

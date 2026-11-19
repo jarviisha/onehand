@@ -1,8 +1,8 @@
 use super::fold_key;
 use super::metrics::{FOLD_INDENT, TEXT_SM};
 use super::parts::{
-    ActivityRow, Object, RowMark, activity_row, chevron, detail_well, fold_box, fold_line,
-    line_counts, plain_box, show_more, sideways,
+    ActivityRow, Object, RowMark, WorkingLine, activity_row, chevron, detail_well, fold_box,
+    fold_line, line_counts, plain_box, show_more, sideways, working_text,
 };
 use super::tool::diff_rows;
 use crate::chat::session::ChatSession;
@@ -81,7 +81,7 @@ pub fn cluster(
 }
 
 /// The collapsed line, which is also the control that opens the rows: the
-/// arrow, a spinner while anything runs, the sentence, what failed in the
+/// arrow, the sentence, what failed in the
 /// danger ink, the lines changed and the time taken.
 fn cluster_line(
     plan: &crate::chat::viewport::ActivityPlan,
@@ -92,9 +92,25 @@ fn cluster_line(
 ) -> gpui::AnyElement {
     let summary = &plan.summary;
     let running = summary.running.is_some();
-    fold_line(id, open, running, cx)
+    let words = summary.line(open);
+    let in_hand = gpui::ElementId::NamedChild(std::sync::Arc::new(id.clone()), "in-hand".into());
+    // Beside the step in hand, what settled keeps its place and the running
+    // words give way.
+    let beside = words.in_hand.is_some() && !words.settled.is_empty();
+    fold_line(id, open, cx)
         .on_click(move |event, window, cx| on_click(event, window, cx))
-        .child(div().min_w_0().truncate().child(summary.plain()))
+        .children(
+            words.in_hand.map(|step| {
+                working_text(in_hand, WorkingLine::words(step.verb).mono(step.rest), cx)
+            }),
+        )
+        .when(beside, |line| line.child(div().flex_none().child("·")))
+        .when(!words.settled.is_empty(), |line| {
+            line.child(match beside {
+                true => div().flex_none().whitespace_nowrap().child(words.settled),
+                false => div().min_w_0().truncate().child(words.settled),
+            })
+        })
         // In the danger ink while the cluster runs; once it has settled the
         // count is the record, in the line's own ink.
         .when(summary.errors > 0, |line| {
@@ -162,7 +178,7 @@ pub(in crate::chat) fn turn_summary(
     // how two elements come to share one piece of retained state.
     let key = fold_key(anchor);
 
-    let head = fold_line(("turn-summary", key), open, false, cx)
+    let head = fold_line(("turn-summary", key), open, cx)
         .on_click(move |event, window, cx| on_toggle(event, window, cx))
         .child(
             div()

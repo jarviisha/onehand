@@ -110,6 +110,9 @@ pub(super) fn tool(
         )
 }
 
+/// How long a step runs before its row shows its own clock.
+const LONG_STEP_SECS: u64 = 10;
+
 /// A tool step's row as it stands, with nothing to open: what was done, to
 /// what, and what came of it. A subagent's card draws its steps with it too.
 pub(super) fn step_row(
@@ -130,7 +133,10 @@ pub(super) fn step_row(
             160,
         ))),
         _ if presented.subject.trim().is_empty() => None,
-        _ => Some(Object::path(path_for_display(root, &presented.subject))),
+        _ => Some(Object::path(activity::display_path(
+            root,
+            &presented.subject,
+        ))),
     };
 
     // **The code where there is one, the word where there is not.** Only a
@@ -147,11 +153,18 @@ pub(super) fn step_row(
             crate::theme::status_ink(cx).danger,
         )
     });
+    // A step that has been going a while says for how long, so a long one
+    // does not read as stuck.
+    let clock = t
+        .running_secs()
+        .filter(|secs| *secs >= LONG_STEP_SECS)
+        .map(|secs| row_note(onehand_core::duration(secs), cx.theme().muted_foreground));
     let meta = div()
         .flex_none()
         .h_flex()
         .items_center()
         .gap_2()
+        .children(clock)
         .children(line_counts(added, removed, cx))
         .children(failure)
         .into_any_element();
@@ -160,7 +173,7 @@ pub(super) fn step_row(
         id,
         RowMark::of(t.call.status),
         kind_icon(t.call.kind),
-        presented.action,
+        presented.verb(t.call.status),
     )
     .object(object)
     .meta(Some(meta));
@@ -280,7 +293,7 @@ fn tool_detail(
         .flat_map(|text| text.lines())
         .collect();
     if raw.is_empty() {
-        let subject = path_for_display(root, &presented.subject);
+        let subject = activity::display_path(root, &presented.subject);
         return (!subject.trim().is_empty()).then(|| Detail::Lines {
             all: subject.clone(),
             lines: vec![subject.into()],
@@ -483,14 +496,4 @@ fn fold_link(
             },
         ),
     )
-}
-
-fn path_for_display(root: &Path, value: &str) -> String {
-    let path = Path::new(value);
-    path.strip_prefix(root)
-        .ok()
-        .filter(|relative| !relative.as_os_str().is_empty())
-        .unwrap_or(path)
-        .to_string_lossy()
-        .into_owned()
 }

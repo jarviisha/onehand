@@ -7,9 +7,8 @@ use gpui::{
     App, Context, Entity, IntoElement, ListState, ParentElement, Rems, Styled, Window, div,
     relative, rems,
 };
-use gpui_component::spinner::Spinner;
-use gpui_component::{Sizable as _, StyledExt};
-use onehand_core::chat::{Chat, ChatItem, Link, TranscriptItemId};
+use gpui_component::StyledExt;
+use onehand_core::chat::{ChatItem, Link, TranscriptItemId};
 
 impl ChatPane {
     /// The widest the elapsed column ever has to be.
@@ -19,36 +18,40 @@ impl ChatPane {
     /// and what follows the clock begins at the same place whatever it says.
     const CLOCK_W: Rems = rems(3.25);
 
-    /// The line under a live turn: a spinner and the turn's clock in the
-    /// accent, then how many steps run (*N running*) and what the agent says
-    /// it is doing.
+    /// The line under a live turn: its clock, how many steps run, and what
+    /// the agent says it is doing where it says so.
+    ///
+    /// **No mark, and no step named.** What runs is told by its own row a few
+    /// lines up, shimmering; said again here it was the same command twice
+    /// under two turning marks. In the ink of the fold lines above it, which
+    /// is enough for a clock.
     fn working_strip(&self, session: &Entity<ChatSession>, cx: &App) -> gpui::AnyElement {
+        use gpui_component::ActiveTheme as _;
         let chat = &session.read(cx).chat();
         let running = chat
             .items
             .iter()
-            .filter(|item| {
-                matches!(
-                    item,
-                    onehand_core::chat::ChatItem::Tool(tool)
-                        if matches!(
-                            tool.call.status,
-                            onehand_core::acp::ToolStatus::InProgress
-                                | onehand_core::acp::ToolStatus::Pending
-                        )
-                )
-            })
+            .filter(|item| matches!(item, ChatItem::Tool(tool) if tool.call.status.is_running()))
             .count();
-        let status = chat.activity_status().or_else(|| working_word(chat));
+        let status = chat.activity_status();
         // The clock is kept for the session on screen; a worker's turn shows
-        // its spinner and its words without one.
+        // its words without one.
         let elapsed = (self.active == Some(chat.uid))
             .then(|| self.turn_began.map_or(0, |began| began.elapsed().as_secs()));
-        let accent = transcript::accent(cx);
 
         // **Only what is actually there.** A separator standing between a thing
         // and nothing is punctuation for a clause that was never written.
         let mut parts: Vec<gpui::AnyElement> = Vec::new();
+        if let Some(elapsed) = elapsed {
+            parts.push(
+                div()
+                    .flex_none()
+                    .w(Self::CLOCK_W)
+                    .whitespace_nowrap()
+                    .child(onehand_core::duration(elapsed))
+                    .into_any_element(),
+            );
+        }
         if running > 0 {
             parts.push(
                 div()
@@ -59,16 +62,24 @@ impl ChatPane {
             );
         }
         if let Some(status) = status {
-            // The one part that gives way: the agent's own words about what it
-            // is doing, and the only thing here whose length nothing bounds.
-            parts.push(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .child(status)
-                    .into_any_element(),
-            );
+            // The one part that gives way, and the one that is alive: the
+            // agent's own words about what it is doing.
+            parts.push(transcript::working_text(
+                ("turn-status", chat.uid),
+                transcript::WorkingLine::words(status),
+                cx,
+            ));
+        }
+
+        // A turn of a session that is not the one on screen has no clock, and
+        // while it thinks nothing else to say: a word, so the line is never
+        // an empty one.
+        if parts.is_empty() {
+            parts.push(transcript::working_text(
+                ("turn-working", chat.uid),
+                transcript::WorkingLine::words("Working…"),
+                cx,
+            ));
         }
 
         let mut row = div()
@@ -76,16 +87,10 @@ impl ChatPane {
             .items_center()
             .gap_2()
             .text_size(transcript::TEXT_SM)
-            .text_color(accent)
-            // At the transcript's mark size, as every spinner above it is.
-            .child(Spinner::new().xsmall().color(accent))
-            .children(elapsed.map(|elapsed| {
-                div()
-                    .flex_none()
-                    .w(Self::CLOCK_W)
-                    .whitespace_nowrap()
-                    .child(onehand_core::duration(elapsed))
-            }));
+            .text_color(cx.theme().muted_foreground)
+            // The slot a row's arrow stands in, kept empty, so the clock
+            // begins on the axis the rows above it read on.
+            .child(div().w_3().flex_none());
         for (n, part) in parts.into_iter().enumerate() {
             if n > 0 {
                 row = row.child(div().flex_none().child("·"));
@@ -446,42 +451,6 @@ impl ChatPane {
 /// How many sections an opened cluster draws before the earlier ones are
 /// counted instead.
 const CLUSTER_SECTIONS: usize = 40;
-
-/// What the running line says when the model has nothing to add.
-///
-/// **The model goes quiet on purpose, and this is the one place that is
-/// wrong.** `Chat::activity_status` says nothing while a thought or a tool is
-/// live, because the transcript's own block is already saying it a few lines
-/// up -- which was right while the only other reader was a notification. The
-/// running line is *below* those blocks and says nothing else, so the two
-/// states a reader most wants a word for came out as a mark and a clock.
-///
-/// Read off the live items rather than asked for, so the layer below keeps
-/// reporting exactly what it reported before.
-pub(super) fn working_word(chat: &Chat) -> Option<String> {
-    match chat.items.last()? {
-        ChatItem::Thought(thought) if thought.elapsed_secs.is_none() => {
-            Some("Thinking…".to_string())
-        }
-        ChatItem::Tool(tool)
-            if matches!(
-                tool.call.status,
-                onehand_core::acp::ToolStatus::InProgress | onehand_core::acp::ToolStatus::Pending
-            ) =>
-        {
-            // The step's own verb and object, which is the sentence the
-            // cluster line would say about it -- not the raw tool title, which
-            // is where a path or a whole command would come from.
-            let shown = onehand_core::chat::activity::presentation(tool);
-            Some(
-                format!("{} {}", shown.action, shown.subject)
-                    .trim()
-                    .to_string(),
-            )
-        }
-        _ => None,
-    }
-}
 
 /// The space between the run above and the run below it.
 ///

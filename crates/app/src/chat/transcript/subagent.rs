@@ -9,7 +9,10 @@
 //! subagent's words its prose, parsed by the same cache as the agent's.
 
 use super::metrics::{FOLD_INDENT, TEXT_SM};
-use super::parts::{ActivityRow, Object, RowMark, activity_row, fold_box, fold_line, show_more};
+use super::parts::{
+    ActivityRow, Object, RowMark, WorkingLine, activity_row, fold_box, fold_line, show_more,
+    working_text,
+};
 use super::prose::md_view;
 use super::tool::step_row;
 use crate::chat::session::ChatSession;
@@ -137,8 +140,8 @@ fn shown(steps: usize, open: bool, working: bool) -> std::ops::Range<usize> {
     }
 }
 
-/// The card's head, a fold line that opens and folds it: the arrow (a
-/// spinner while it works), the name, and once it has ended the word
+/// The card's head, a fold line that opens and folds it: the arrow, the
+/// name (shimmering while it works), and once it has ended the word
 /// for how, with the count of its steps while it is folded.
 fn head(
     card: &SubagentItem,
@@ -160,14 +163,24 @@ fn head(
     fold_line(
         ElementId::Name(format!("subagent-{}", card.id).into()),
         open,
-        card.state == SubagentState::Working,
         cx,
     )
     .w_full()
     .on_click(toggle)
     // In the line's own ink, lit with it under the pointer, as every fold
-    // line's words are.
-    .child(div().min_w_0().truncate().child(card.name.clone()))
+    // line's words are; shimmering while the subagent works.
+    .child(match card.state == SubagentState::Working {
+        true => working_text(
+            ElementId::Name(format!("subagent-working-{}", card.id).into()),
+            WorkingLine::words(&card.name),
+            cx,
+        ),
+        false => div()
+            .min_w_0()
+            .truncate()
+            .child(card.name.clone())
+            .into_any_element(),
+    })
     .children(word.map(|(word, ink)| {
         div()
             .flex_none()
@@ -207,11 +220,7 @@ fn step(
                 false => RowMark::Done,
             },
             IconName::Info.path(),
-            match (th.is_running(), th.elapsed_secs) {
-                (true, _) => "Thinking…".to_string(),
-                (false, Some(secs)) => format!("Thought for {}", onehand_core::duration(secs)),
-                (false, None) => "Thought".to_string(),
-            },
+            th.label(),
         )),
         ChatItem::Plan(p) => {
             let done = p

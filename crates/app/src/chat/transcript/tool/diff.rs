@@ -157,7 +157,7 @@ pub(super) fn diff_path(
     path: &str,
     cx: &App,
 ) -> gpui::AnyElement {
-    let shown = path_for_display(root, path);
+    let shown = onehand_core::chat::activity::display_path(root, path);
     // Resolved here, where the project root is known: the Workbench opens
     // whatever path it is handed, and a relative one there resolves against the
     // process working directory.

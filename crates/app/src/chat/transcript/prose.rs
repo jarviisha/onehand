@@ -3,7 +3,9 @@ use super::metrics::{
     CODE_BLOCK_PAD, FOLD_INDENT, HEADING_1, HEADING_2, MAX_CODE_BLOCK_H, PARAGRAPH_GAP, TEXT,
     TEXT_SM, TIGHT_GAP,
 };
-use super::parts::{accent, copy_button, copy_turn_button, fold_box, fold_line, show_more};
+use super::parts::{
+    WorkingLine, copy_button, copy_turn_button, fold_box, fold_line, show_more, working_text,
+};
 use crate::chat::session::ChatSession;
 use crate::tokens::LEADING;
 use gpui::prelude::FluentBuilder as _;
@@ -193,8 +195,8 @@ fn sideways() -> StyleRefinement {
 
 // ── thought — the agent's reasoning, a block of its own ─────────────────────
 
-/// *Thought for Ns* once done, or a spinner and *Thinking…* in the accent
-/// while it runs; opened, the reasoning in the quiet ink.
+/// *Thought for Ns* once done, *Thinking…* shimmering while it runs;
+/// opened, the reasoning in the quiet ink.
 pub(super) fn thought(
     session: &Entity<ChatSession>,
     th: &Thought,
@@ -214,11 +216,14 @@ pub(super) fn thought(
             });
         }
     };
-    let line = fold_line(("thought", fold_key(target)), open, th.is_running(), cx).on_click(toggle);
-    let line = match (th.is_running(), th.elapsed_secs) {
-        (true, _) => line.text_color(accent(cx)).child("Thinking…"),
-        (false, Some(secs)) => line.child(format!("Thought for {}", onehand_core::duration(secs))),
-        (false, None) => line.child("Thought"),
+    let line = fold_line(("thought", fold_key(target)), open, cx).on_click(toggle);
+    let line = match running {
+        true => line.child(working_text(
+            ("thinking", fold_key(target)),
+            WorkingLine::words(th.label()),
+            cx,
+        )),
+        false => line.child(th.label()),
     };
 
     fold_box().child(line).when(open, |block| {

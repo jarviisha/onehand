@@ -19,6 +19,7 @@
 use crate::acp::ToolKind;
 use crate::chat::activity::{self, ActivityKind};
 use crate::chat::model::ChatItem;
+use std::path::Path;
 
 pub mod cluster;
 
@@ -280,25 +281,76 @@ pub struct ClusterSummary {
     pub seconds: u64,
 }
 
+impl SummaryPart {
+    /// The part as it reads: its verb and what follows it.
+    fn words(&self) -> String {
+        format!("{}{}", self.verb, self.rest)
+    }
+}
+
+/// `text` opening on a capital.
+fn capitalised(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+/// What a cluster's line says, in the two stretches it is drawn in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClusterLine {
+    /// The step in hand, drawn as what runs: its verb, and what it is done to.
+    pub in_hand: Option<SummaryPart>,
+    /// What has settled, in the line's own ink.
+    pub settled: String,
+}
+
 impl ClusterSummary {
+    /// What has been done, the parts in a row: `read 2 files, ran 1 command`.
+    fn done_words(&self) -> String {
+        self.done
+            .iter()
+            .map(SummaryPart::words)
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// What the cluster's line says, open or folded.
+    ///
+    /// **The step in hand is named once.** Opened, its own row is on screen,
+    /// so the line says only what has settled, and *Working* while nothing
+    /// has, so it is never an empty line over work in flight. Folded, nothing
+    /// else would name the step, so the line leads with it and what settled
+    /// follows mid-sentence.
+    pub fn line(&self, open: bool) -> ClusterLine {
+        match (&self.running, open) {
+            (None, _) => ClusterLine {
+                in_hand: None,
+                settled: self.done_words(),
+            },
+            (Some(_), true) => ClusterLine {
+                in_hand: None,
+                settled: match self.done.is_empty() {
+                    true => "Working".to_string(),
+                    false => capitalised(&self.done_words()),
+                },
+            },
+            (Some(running), false) => ClusterLine {
+                in_hand: Some(running.clone()),
+                settled: self.done_words(),
+            },
+        }
+    }
+
     /// The whole sentence as one string, for the places that cannot draw runs
     /// of it separately — a test, a notification, an export.
     pub fn plain(&self) -> String {
-        let mut out = String::new();
-        if let Some(running) = &self.running {
-            out.push_str(&running.verb);
-            out.push_str(&running.rest);
+        match (&self.running, self.done.is_empty()) {
+            (Some(running), true) => running.words(),
+            (Some(running), false) => format!("{} · {}", running.words(), self.done_words()),
+            (None, _) => self.done_words(),
         }
-        for (n, part) in self.done.iter().enumerate() {
-            out.push_str(match (n, self.running.is_some()) {
-                (0, false) => "",
-                (0, true) => " · ",
-                _ => ", ",
-            });
-            out.push_str(&part.verb);
-            out.push_str(&part.rest);
-        }
-        out
     }
 }
 
@@ -365,39 +417,35 @@ impl Bucket {
     }
 }
 
-/// The present-tense opening for a step still in flight.
-fn running_part(item: &ChatItem) -> SummaryPart {
-    let verb = match Bucket::of(item) {
-        Some(Bucket::Read) => "Reading",
-        Some(Bucket::Search) => "Searching",
-        Some(Bucket::Fetch) => "Fetching",
-        Some(Bucket::Edit) => "Editing",
-        Some(Bucket::Command) => "Running",
-        Some(Bucket::Reason) => "Thinking",
-        _ => "Working",
+/// How many characters of what a step is done to its cluster's line gives.
+const IN_HAND_CHARS: usize = 40;
+
+/// The present-tense opening for a step still in flight: the verb its own
+/// row leads with, and what it is done to as that row names it.
+fn running_part(item: &ChatItem, root: &Path) -> SummaryPart {
+    let ChatItem::Tool(tool) = item else {
+        return SummaryPart {
+            verb: "Thinking".to_string(),
+            rest: String::new(),
+        };
     };
-    // **The whole short label, not the cut-down one a child row draws.** A row
-    // inside a cluster has its siblings to be told apart from, so its line
-    // drops the program they all share; this line has no siblings and no
-    // context, so dropping it leaves `Running test` where `Running dotnet
-    // test` was wanted.
-    let subject = match item {
-        ChatItem::Tool(tool) => activity::presentation(tool).subject,
-        _ => String::new(),
-    };
-    let subject = match item {
-        ChatItem::Tool(tool) if tool.call.kind != ToolKind::Execute => {
-            activity::short_path(&subject)
-        }
-        _ => subject,
+    let shown = activity::presentation(tool);
+    let verb = shown.verb(tool.call.status);
+    // **Cut hard**: this sits at the head of a line that has to stay one
+    // line, and what follows it is the count of everything already done. A
+    // command gives way at its end, a path at its start, where the name is.
+    let subject = match tool.call.kind {
+        ToolKind::Execute => activity::first_line_trunc(shown.subject.trim(), IN_HAND_CHARS),
+        _ => activity::tail_trunc(
+            &activity::display_path(root, shown.subject.trim()),
+            IN_HAND_CHARS,
+        ),
     };
     SummaryPart {
         verb: verb.to_string(),
-        // Cut hard: this sits at the head of a line that has to stay one line,
-        // and what follows it is the count of everything already done.
-        rest: match subject.trim().is_empty() {
+        rest: match subject.is_empty() {
             true => String::new(),
-            false => format!(" {}", activity::first_line_trunc(subject.trim(), 40)),
+            false => format!(" {subject}"),
         },
     }
 }
@@ -409,7 +457,7 @@ fn running_part(item: &ChatItem) -> SummaryPart {
 /// unfolded one; and not a bare total, which says how much happened without
 /// saying what. A reader skimming a conversation is asking one question — what
 /// did it do, and did anything break — and both answers are here.
-pub fn cluster_summary(members: &[&ChatItem]) -> ClusterSummary {
+pub fn cluster_summary(members: &[&ChatItem], root: &Path) -> ClusterSummary {
     use crate::acp::ToolStatus;
 
     let mut order: Vec<Bucket> = Vec::new();
@@ -500,16 +548,13 @@ pub fn cluster_summary(members: &[&ChatItem]) -> ClusterSummary {
     // **Only the first word of the sentence is capitalised**, and only where
     // the sentence starts with it: a running cluster opens with its own verb,
     // and a second capital mid-line reads as two sentences run together.
-    let running = running.map(running_part);
+    let running = running.map(|item| running_part(item, root));
     if let (None, Some(first)) = (&running, done.first_mut()) {
         let head = match first.verb.is_empty() {
             true => &mut first.rest,
             false => &mut first.verb,
         };
-        let mut chars = head.chars();
-        if let Some(c) = chars.next() {
-            *head = c.to_uppercase().collect::<String>() + chars.as_str();
-        }
+        *head = capitalised(head);
     }
 
     ClusterSummary {

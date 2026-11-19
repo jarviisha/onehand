@@ -206,7 +206,7 @@ fn a_cluster_says_what_it_did_and_in_what_order() {
         read("c.rs"),
         run("cargo test", ToolStatus::Failed),
     ];
-    let summary = cluster_summary(&members.iter().collect::<Vec<_>>());
+    let summary = summary(&members);
     // Three reads are one phrase, wherever the third one happened; the
     // order is where each *kind* first appeared.
     assert_eq!(summary.plain(), "Read 3 files, ran 2 commands");
@@ -306,7 +306,7 @@ fn an_exit_status_survives_the_terminal_it_came_from() {
 /// A cluster of one is a cluster, and says so the same way.
 #[test]
 fn one_step_still_gets_a_sentence() {
-    let summary = cluster_summary(&[&read("src/lib.rs")]);
+    let summary = summary(&[read("src/lib.rs")]);
     assert_eq!(summary.plain(), "Read 1 file");
 }
 
@@ -319,13 +319,13 @@ fn a_running_cluster_leads_with_what_it_is_doing() {
         read("b.rs"),
         run("dotnet test ./src/Api.Tests", ToolStatus::InProgress),
     ];
-    let summary = cluster_summary(&members.iter().collect::<Vec<_>>());
+    let summary = summary(&members);
     let running = summary.running.as_ref().expect("something is running");
-    assert_eq!(running.verb, "Running");
+    assert_eq!(running.verb, "Running tests");
     assert!(running.rest.contains("dotnet"), "{running:?}");
     // The step in flight has not been done yet, so it is not counted among
     // the things that have.
-    assert_eq!(summary.plain(), "Running dotnet test · read 2 files");
+    assert_eq!(summary.plain(), "Running tests dotnet test · read 2 files");
 }
 
 /// Internal steps go to the end wherever they happened, and take no verb.
@@ -342,7 +342,7 @@ fn the_agents_own_housekeeping_goes_last() {
         }))
     };
     let members = [other("ToolSearch"), read("a.rs"), other("TaskStop")];
-    let summary = cluster_summary(&members.iter().collect::<Vec<_>>());
+    let summary = summary(&members);
     assert_eq!(summary.plain(), "Read 1 file, 2 other steps");
 }
 
@@ -406,14 +406,117 @@ fn steps_that_ran_side_by_side_are_timed_once() {
     // Two commands held through the same 50-second wait, a second apart.
     let build = timed("cargo build", 50, Some(1_050));
     let test = timed("cargo test", 50, Some(1_051));
-    assert_eq!(cluster_summary(&[&build, &test]).seconds, 51);
+    assert_eq!(
+        cluster_summary(&[&build, &test], std::path::Path::new(ROOT)).seconds,
+        51
+    );
 
     // One after the other, the span is still the whole stretch.
     let first = timed("cargo build", 10, Some(1_010));
     let second = timed("cargo test", 5, Some(1_015));
-    assert_eq!(cluster_summary(&[&first, &second]).seconds, 15);
+    assert_eq!(
+        cluster_summary(&[&first, &second], std::path::Path::new(ROOT)).seconds,
+        15
+    );
 
     // A step from before ends were kept: the sum is all that can be said.
     let old = timed("cargo test", 50, None);
-    assert_eq!(cluster_summary(&[&build, &old]).seconds, 100);
+    assert_eq!(
+        cluster_summary(&[&build, &old], std::path::Path::new(ROOT)).seconds,
+        100
+    );
+}
+
+const ROOT: &str = "/work/app";
+
+fn summary(members: &[ChatItem]) -> ClusterSummary {
+    cluster_summary(
+        &members.iter().collect::<Vec<_>>(),
+        std::path::Path::new(ROOT),
+    )
+}
+
+/// A cluster's line names the step in hand only while it is folded: opened,
+/// that step's own row is on screen saying so.
+#[test]
+fn a_cluster_line_says_what_runs_only_while_folded() {
+    let members = [
+        read("a.rs"),
+        run("cargo fmt", ToolStatus::Completed),
+        run("cargo run", ToolStatus::InProgress),
+    ];
+    let summary = summary(&members);
+    let open = summary.line(true);
+    assert_eq!(open.in_hand, None);
+    assert_eq!(open.settled, "Read 1 file, ran 1 command");
+    let folded = summary.line(false);
+    let in_hand = folded.in_hand.expect("the step in hand leads");
+    assert_eq!(
+        (in_hand.verb.as_str(), in_hand.rest.as_str()),
+        ("Running", " cargo run")
+    );
+    assert_eq!(folded.settled, "read 1 file, ran 1 command");
+}
+
+/// A cluster with a step in flight and nothing done yet still has a word
+/// while it is open, and adds nothing to the step in hand while folded.
+#[test]
+fn a_cluster_with_nothing_settled_is_working() {
+    let alone = summary(&[run("cargo run", ToolStatus::InProgress)]);
+    assert_eq!(alone.line(true).settled, "Working");
+    assert_eq!(alone.line(false).settled, "");
+    let done = summary(&[run("cargo fmt", ToolStatus::Completed)]);
+    assert_eq!(done.line(false).in_hand, None);
+    assert_eq!(done.line(false).settled, "Ran 1 command");
+    assert_eq!(done.line(true).settled, "Ran 1 command");
+    assert_eq!(summary(&[]).line(true).settled, "");
+}
+
+#[test]
+fn a_step_with_no_subject_leaves_no_gap() {
+    let line = summary(&[run("", ToolStatus::InProgress)]).line(false);
+    assert_eq!(line.in_hand.map(|part| part.rest), Some(String::new()));
+}
+
+/// A step reported as pending is a step in hand: one adapter reports every
+/// step that way until it settles.
+#[test]
+fn a_pending_step_reads_as_running() {
+    let line = summary(&[run("cargo doc", ToolStatus::Pending)]).line(false);
+    assert_eq!(
+        line.in_hand.map(|part| part.verb).as_deref(),
+        Some("Running")
+    );
+}
+
+/// The line and the step's own row name it with one verb and one path.
+#[test]
+fn a_cluster_line_names_a_step_as_its_row_does() {
+    let building = summary(&[run("cargo build", ToolStatus::InProgress)]);
+    let row = activity::presentation(match &run("cargo build", ToolStatus::InProgress) {
+        ChatItem::Tool(tool) => tool,
+        _ => unreachable!(),
+    });
+    let in_hand = building.line(false).in_hand.expect("a step in hand");
+    assert_eq!(in_hand.verb, row.verb(ToolStatus::InProgress));
+
+    // A path reads from the project's root, as on its row, and gives way at
+    // its start so the name stays.
+    let deep = format!("{ROOT}/crates/app/src/chat/transcript/parts/activity.rs");
+    let reading = ChatItem::Tool(ToolItem::new(ToolCall {
+        id: "r".into(),
+        title: format!("Read {deep}"),
+        description: None,
+        kind: ToolKind::Read,
+        status: ToolStatus::InProgress,
+        content: Vec::new(),
+    }));
+    let rest = summary(&[reading])
+        .line(false)
+        .in_hand
+        .expect("a step in hand")
+        .rest;
+    assert!(rest.ends_with("parts/activity.rs"), "{rest}");
+    assert!(!rest.contains("/work/app"), "{rest}");
+    assert!(rest.chars().count() <= 42, "{rest}");
 }

@@ -3309,3 +3309,36 @@ fn told(chat: &mut Chat) {
         at: std::time::Instant::now(),
     });
 }
+
+#[test]
+fn a_thought_under_a_second_has_no_duration() {
+    let thought = |elapsed_secs, running: bool| Thought {
+        md: Md::parse(""),
+        started: running.then(std::time::Instant::now),
+        elapsed_secs,
+    };
+    assert_eq!(thought(None, true).label(), "Thinking…");
+    assert_eq!(thought(Some(0), false).label(), "Thought");
+    assert_eq!(thought(Some(42), false).label(), "Thought for 42s");
+    assert_eq!(thought(None, false).label(), "Thought");
+}
+
+#[test]
+fn only_a_step_still_going_has_a_clock() {
+    let step = |status, started: bool| {
+        let mut item = ToolItem::new(ToolCall {
+            id: "1".into(),
+            title: "cargo test".into(),
+            description: None,
+            kind: crate::acp::ToolKind::Execute,
+            status,
+            content: Vec::new(),
+        });
+        item.started = started.then(std::time::Instant::now);
+        item
+    };
+    assert_eq!(step(ToolStatus::Pending, true).running_secs(), Some(0));
+    assert_eq!(step(ToolStatus::Completed, true).running_secs(), None);
+    assert_eq!(step(ToolStatus::InProgress, false).running_secs(), None);
+    assert_eq!(step(ToolStatus::InProgress, true).running_secs(), Some(0));
+}
