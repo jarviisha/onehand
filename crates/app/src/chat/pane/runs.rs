@@ -7,48 +7,48 @@ use gpui::{
     App, Context, Entity, IntoElement, ListState, ParentElement, Rems, Styled, Window, div,
     relative, rems,
 };
-use gpui_component::spinner::Spinner;
-use gpui_component::{Sizable as _, StyledExt};
-use onehand_core::chat::{Chat, ChatItem, Link, TranscriptItemId};
+use gpui_component::StyledExt;
+use onehand_core::chat::{ChatItem, Link, TranscriptItemId, TurnActivity};
 
 impl ChatPane {
-    /// The widest the elapsed column ever has to be.
+    /// The line under a live turn: its clock, how many steps run, and what
+    /// the agent says it is doing where it says so.
     ///
-    /// **Reserved**, so nothing after it moves when `9s` becomes `10s` or
-    /// `59s` becomes `1m 0s`: the digits grow into room already spoken for,
-    /// and what follows the clock begins at the same place whatever it says.
-    const CLOCK_W: Rems = rems(3.25);
-
-    /// The line under a live turn: a spinner and the turn's clock in the
-    /// accent, then how many steps run (*N running*) and what the agent says
-    /// it is doing.
+    /// **No mark, and no step named.** What runs is told by its own row a few
+    /// lines up, shimmering; said again here it was the same command twice
+    /// under two turning marks. In the ink of the fold lines above it, which
+    /// is enough for a clock.
     fn working_strip(&self, session: &Entity<ChatSession>, cx: &App) -> gpui::AnyElement {
+        use gpui_component::ActiveTheme as _;
         let chat = &session.read(cx).chat();
         let running = chat
             .items
             .iter()
-            .filter(|item| {
-                matches!(
-                    item,
-                    onehand_core::chat::ChatItem::Tool(tool)
-                        if matches!(
-                            tool.call.status,
-                            onehand_core::acp::ToolStatus::InProgress
-                                | onehand_core::acp::ToolStatus::Pending
-                        )
-                )
-            })
+            .filter(|item| matches!(item, ChatItem::Tool(tool) if tool.call.status.is_running()))
             .count();
-        let status = chat.activity_status().or_else(|| working_word(chat));
+        let activity = chat.turn_activity();
+        let status = activity.and_then(|activity| activity.words(&chat.agent));
+        let waiting = activity.is_some_and(TurnActivity::waits_on_person);
         // The clock is kept for the session on screen; a worker's turn shows
-        // its spinner and its words without one.
+        // its words without one.
         let elapsed = (self.active == Some(chat.uid))
             .then(|| self.turn_began.map_or(0, |began| began.elapsed().as_secs()));
-        let accent = transcript::accent(cx);
 
         // **Only what is actually there.** A separator standing between a thing
         // and nothing is punctuation for a clause that was never written.
         let mut parts: Vec<gpui::AnyElement> = Vec::new();
+        if let Some(elapsed) = elapsed {
+            parts.push(
+                // In the machine face, so its digits keep their width as it
+                // counts and nothing after it moves.
+                div()
+                    .flex_none()
+                    .whitespace_nowrap()
+                    .font_family(cx.theme().mono_font_family.clone())
+                    .child(onehand_core::duration(elapsed))
+                    .into_any_element(),
+            );
+        }
         if running > 0 {
             parts.push(
                 div()
@@ -59,16 +59,33 @@ impl ChatPane {
             );
         }
         if let Some(status) = status {
-            // The one part that gives way: the agent's own words about what it
-            // is doing, and the only thing here whose length nothing bounds.
-            parts.push(
-                div()
-                    .flex_1()
+            // The one part that gives way. Alive while the agent works;
+            // waiting on the person, said in the ink that asks for them and
+            // still, since nothing moves until they answer.
+            parts.push(match waiting {
+                true => div()
                     .min_w_0()
                     .truncate()
+                    .text_color(crate::theme::status_ink(cx).warning)
                     .child(status)
                     .into_any_element(),
-            );
+                false => transcript::working_text(
+                    ("turn-status", chat.uid),
+                    transcript::WorkingLine::words(status),
+                    cx,
+                ),
+            });
+        }
+
+        // A turn of a session that is not the one on screen has no clock, and
+        // while it thinks nothing else to say: a word, so the line is never
+        // an empty one.
+        if parts.is_empty() {
+            parts.push(transcript::working_text(
+                ("turn-working", chat.uid),
+                transcript::WorkingLine::words("Working…"),
+                cx,
+            ));
         }
 
         let mut row = div()
@@ -76,16 +93,16 @@ impl ChatPane {
             .items_center()
             .gap_2()
             .text_size(transcript::TEXT_SM)
-            .text_color(accent)
-            // At the transcript's mark size, as every spinner above it is.
-            .child(Spinner::new().xsmall().color(accent))
-            .children(elapsed.map(|elapsed| {
+            .text_color(cx.theme().muted_foreground)
+            // In the slot a row's arrow stands in, so the clock begins on the
+            // axis the rows above it read on: a mark for what the turn is
+            // doing, which never turns.
+            .child(
                 div()
+                    .w_3()
                     .flex_none()
-                    .w(Self::CLOCK_W)
-                    .whitespace_nowrap()
-                    .child(onehand_core::duration(elapsed))
-            }));
+                    .children(activity.map(|activity| activity_mark(activity, cx))),
+            );
         for (n, part) in parts.into_iter().enumerate() {
             if n > 0 {
                 row = row.child(div().flex_none().child("·"));
@@ -318,7 +335,28 @@ impl ChatPane {
             return column(lead, margin, body(&plan.members, &room)).into_any_element();
         };
 
-        let anchor = plan.members[0];
+        column(
+            lead,
+            margin,
+            vec![self.cluster_element(plan, &strip, session, &room, window, cx)],
+        )
+        .into_any_element()
+    }
+
+    /// A cluster's line, and its sections under it while open: what a run
+    /// standing for several steps draws, in the conversation or in a
+    /// subagent's float.
+    pub(super) fn cluster_element(
+        &self,
+        run: &viewport::RunPlan,
+        strip: &viewport::ActivityPlan,
+        session: &Entity<ChatSession>,
+        room: &transcript::Room,
+        window: &Window,
+        cx: &App,
+    ) -> gpui::AnyElement {
+        let open = run.open;
+        let anchor = run.members[0];
         let this = self.handle.clone();
         let folded = session.clone();
 
@@ -330,7 +368,7 @@ impl ChatPane {
         // **Opened, it is bounded too**: the latest sections, since the end
         // is where work is in flight, and the count of the rest above them.
         let inside =
-            match plan.open {
+            match open {
                 false => Vec::new(),
                 true => {
                     let over = strip.sections.len().saturating_sub(CLUSTER_SECTIONS);
@@ -347,33 +385,28 @@ impl ChatPane {
                         })
                         .into_iter()
                         .chain(strip.sections[over..].iter().map(|section| {
-                            self.section_element(section, session, &room, window, cx)
+                            self.section_element(section, session, room, window, cx)
                         }))
                         .collect()
                 }
             };
 
-        let open = plan.open;
-        column(
-            lead,
-            margin,
-            vec![transcript::cluster(
-                &strip,
-                open,
-                move |_, _, cx: &mut App| {
-                    folded.update(cx, |session, cx| {
-                        session.set_activity_open(anchor, !open);
-                        cx.notify();
-                    });
-                    // The pane owns the run layout the list reads back, so it
-                    // is the half that has to be told to draw again -- the
-                    // session's own notify redraws the session, not the plan.
-                    let _ = this.update(cx, |_: &mut Self, cx| cx.notify());
-                },
-                ("activity", transcript::fold_key(anchor)).into(),
-                inside,
-                cx,
-            )],
+        transcript::cluster(
+            strip,
+            open,
+            move |_, _, cx: &mut App| {
+                folded.update(cx, |session, cx| {
+                    session.set_activity_open(anchor, !open);
+                    cx.notify();
+                });
+                // The pane owns the run layout the list reads back, so it
+                // is the half that has to be told to draw again -- the
+                // session's own notify redraws the session, not the plan.
+                let _ = this.update(cx, |_: &mut Self, cx| cx.notify());
+            },
+            ("activity", transcript::fold_key(anchor)).into(),
+            inside,
+            cx,
         )
         .into_any_element()
     }
@@ -443,45 +476,30 @@ impl ChatPane {
     }
 }
 
+/// The mark at the head of the running line, by what the turn is doing: the
+/// pulse while the agent works, a bell in the ink that asks for the person
+/// while it waits on them, a pen while it writes, the network while it
+/// connects.
+fn activity_mark(activity: TurnActivity, cx: &App) -> gpui::AnyElement {
+    use gpui_component::{ActiveTheme as _, Icon, IconName, Sizable as _};
+    let muted = cx.theme().muted_foreground;
+    let (icon, ink) = match activity {
+        TurnActivity::Connecting => (Icon::new(IconName::Network), muted),
+        TurnActivity::Approval | TurnActivity::Answer => (
+            Icon::new(IconName::Bell),
+            crate::theme::status_ink(cx).warning,
+        ),
+        TurnActivity::Responding => (Icon::new(crate::icons::Icon::PenLine), muted),
+        TurnActivity::InStep | TurnActivity::Working => {
+            (Icon::new(crate::icons::Icon::Activity), muted)
+        }
+    };
+    icon.xsmall().text_color(ink).into_any_element()
+}
+
 /// How many sections an opened cluster draws before the earlier ones are
 /// counted instead.
 const CLUSTER_SECTIONS: usize = 40;
-
-/// What the running line says when the model has nothing to add.
-///
-/// **The model goes quiet on purpose, and this is the one place that is
-/// wrong.** `Chat::activity_status` says nothing while a thought or a tool is
-/// live, because the transcript's own block is already saying it a few lines
-/// up -- which was right while the only other reader was a notification. The
-/// running line is *below* those blocks and says nothing else, so the two
-/// states a reader most wants a word for came out as a mark and a clock.
-///
-/// Read off the live items rather than asked for, so the layer below keeps
-/// reporting exactly what it reported before.
-pub(super) fn working_word(chat: &Chat) -> Option<String> {
-    match chat.items.last()? {
-        ChatItem::Thought(thought) if thought.elapsed_secs.is_none() => {
-            Some("Thinking…".to_string())
-        }
-        ChatItem::Tool(tool)
-            if matches!(
-                tool.call.status,
-                onehand_core::acp::ToolStatus::InProgress | onehand_core::acp::ToolStatus::Pending
-            ) =>
-        {
-            // The step's own verb and object, which is the sentence the
-            // cluster line would say about it -- not the raw tool title, which
-            // is where a path or a whole command would come from.
-            let shown = onehand_core::chat::activity::presentation(tool);
-            Some(
-                format!("{} {}", shown.action, shown.subject)
-                    .trim()
-                    .to_string(),
-            )
-        }
-        _ => None,
-    }
-}
 
 /// The space between the run above and the run below it.
 ///

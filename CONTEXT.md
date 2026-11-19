@@ -42,6 +42,13 @@ lead holds it until the person sends it a prompt; *Give back to the lead* return
 may close it.
 _Avoid_: child, subagent, job
 
+**Subagent**:
+A helper an agent starts inside its own turn, which its adapter reports with steps of its own.
+It runs in the agent, not as a session of onehand: nothing in the rail, no composer, no prompt
+of the person's. The transcript draws it as one line, and its own steps are read in a float.
+Not a worker, which is a session a lead opened.
+_Avoid_: child, worker, sub-session
+
 ## Agents
 
 **Built-in agent**:

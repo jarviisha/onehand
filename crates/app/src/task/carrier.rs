@@ -106,7 +106,8 @@ pub(crate) fn start(
             | ChatEvent::HostSession(_)
             | ChatEvent::HostBusy
             | ChatEvent::RestartHost(_)
-            | ChatEvent::Look(_) => return,
+            | ChatEvent::Look(_)
+            | ChatEvent::OpenSubagent(_) => return,
         };
         feed(&id, input, cx);
     });

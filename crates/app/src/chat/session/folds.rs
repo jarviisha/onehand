@@ -105,19 +105,6 @@ impl ChatSession {
         self.fold_changed();
     }
 
-    /// Whether the subagent card `id` shows every step it took.
-    pub fn subagent_is_open(&self, id: &str) -> bool {
-        self.subagent_open.contains(id)
-    }
-
-    /// Open or close the subagent card `id`.
-    pub fn toggle_subagent(&mut self, id: &str) {
-        if !self.subagent_open.remove(id) {
-            self.subagent_open.insert(id.to_string());
-        }
-        self.fold_changed();
-    }
-
     /// Whether `path`'s diff is showing under the turn anchored at `anchor`.
     pub fn file_is_open(&self, anchor: TranscriptItemId, path: &str) -> bool {
         // **Built and asked, not scanned.** This is answered once per file row
@@ -155,40 +142,6 @@ impl ChatSession {
             .get(&(anchor, path.to_string()))
             .map(Vec::as_slice)
     }
-
-    /// Show every file of the turn anchored at `anchor`, or hide them all if
-    /// they are already showing.
-    ///
-    /// One control for the whole block, since opening eight rows one at a time
-    /// to read a turn's diff is the block asking to be scrolled rather than
-    /// read.
-    pub fn toggle_every_file(
-        &mut self,
-        anchor: TranscriptItemId,
-        paths: &[String],
-        body: &[TranscriptItemId],
-    ) {
-        let all_open = paths.iter().all(|path| self.file_is_open(anchor, path));
-        self.file_open.retain(|(at, _), _| *at != anchor);
-        if !all_open {
-            let rows: Vec<(String, Vec<onehand_core::diff::Row>)> =
-                self.with_turn_items(body, |items| {
-                    paths
-                        .iter()
-                        .map(|path| {
-                            (
-                                path.clone(),
-                                onehand_core::chat::turn_file_diff(items, path),
-                            )
-                        })
-                        .collect()
-                });
-            self.file_open
-                .extend(rows.into_iter().map(|(path, diff)| ((anchor, path), diff)));
-        }
-        self.fold_changed();
-    }
-
     /// Run `f` over the transcript items `body` names.
     ///
     /// The summary block holds a turn's items by id rather than by value, so
@@ -202,10 +155,7 @@ impl ChatSession {
     ) -> T {
         let items: Vec<&onehand_core::chat::ChatItem> = body
             .iter()
-            .filter_map(|target| match target {
-                TranscriptItemId::History(i) => self.chat.history.get(*i),
-                TranscriptItemId::Live(i) => self.chat.items.get(*i),
-            })
+            .filter_map(|target| self.chat.item_at(*target))
             .collect();
         f(&items)
     }

@@ -42,6 +42,9 @@ use std::time::Duration;
 /// enough that closing the window soon after loses nothing.
 pub const QUIET_SAVE: Duration = Duration::from_secs(3);
 
+/// What *Continue* sends after a turn stopped at a limit.
+pub(crate) const CONTINUE_PROMPT: &str = "Continue from where you stopped.";
+
 /// Who sent a prompt, which decides what a busy session or an offloaded
 /// project does with it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -481,6 +484,22 @@ impl SessionDrive {
             );
         }
         self.prompt(&text, &[], Origin::Person, Code::Here, now)
+    }
+
+    /// Ask the agent to carry on, after a turn it stopped at a limit; refused
+    /// for any other ending, and while a turn runs.
+    pub fn continue_after_limit(&mut self, now: Now) -> (Intake, Vec<Effect>) {
+        self.chat.tell_time(now);
+        if !self.chat.stopped_at_limit() {
+            return (Intake::Refused(Refusal::NotTaken), Vec::new());
+        }
+        if self.chat.busy {
+            return (
+                Intake::Refused(Refusal::Blocked(SubmitBlock::Busy)),
+                Vec::new(),
+            );
+        }
+        self.prompt(CONTINUE_PROMPT, &[], Origin::Person, Code::Here, now)
     }
 
     /// Take the queued prompt back, for a front end putting it back where it

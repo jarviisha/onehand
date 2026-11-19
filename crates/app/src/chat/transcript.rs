@@ -29,6 +29,7 @@ mod plan;
 mod prose;
 mod strip;
 mod subagent;
+pub(in crate::chat) use subagent::{facts as subagent_facts, standing_ink};
 mod table_view;
 mod tool;
 mod user;
@@ -110,8 +111,8 @@ use metrics::LINE_H;
 pub(in crate::chat) use metrics::{
     BLOCK_GAP, CONTENT_COLUMN, PART_GAP, TEXT, TEXT_SM, TIGHT_GAP, TUCK, TURN_GAP,
 };
-pub(in crate::chat) use parts::accent;
 pub(crate) use parts::line_counts;
+pub(in crate::chat) use parts::{WorkingLine, working_text};
 pub(in crate::chat) use permission::permission;
 use plan::plan;
 use prose::{agent, thought};
@@ -177,7 +178,7 @@ pub fn item(
             permission(session, p, target, room.well, 0, cx).into_any_element()
         }
         ChatItem::Ask(a) => ask(session, a, target, 0, cx).into_any_element(),
-        ChatItem::Subagent(card) => subagent::subagent(session, card, window, cx),
+        ChatItem::Subagent(card) => subagent::subagent(session, card, cx),
         ChatItem::Notice {
             text,
             level,
@@ -200,10 +201,15 @@ pub fn item(
             // follows it, a lost agent while it is lost. Any other failure (an
             // error answering a Stop, a resume that fell back) is past at once.
             let past = match level {
-                NoticeLevel::Failed => prompted_after(chat, target),
+                NoticeLevel::Failed | NoticeLevel::CutShort(_) => prompted_after(chat, target),
                 NoticeLevel::Error => !lost,
-                NoticeLevel::Info => false,
+                NoticeLevel::Info | NoticeLevel::Stopped => false,
             };
+            // The way to carry on a turn stopped at a limit, while it is the
+            // ending standing.
+            let carry_on =
+                (matches!(level, NoticeLevel::CutShort(_)) && !past && chat.stopped_at_limit())
+                    .then_some(session);
             let detail = detail.as_deref().map(|detail| (session, target, detail));
             // A session kept waiting by its host's busy sessions offers to
             // restart that host's service now, in place of the key that
@@ -213,7 +219,9 @@ pub fn item(
                 .flatten()
             {
                 Some(host) => host_waiting(text, session, host, cx),
-                None => notice(text, *level, past, restart, detail, cx).into_any_element(),
+                None => {
+                    notice(text, *level, past, restart, detail, carry_on, cx).into_any_element()
+                }
             }
         }
     };
@@ -244,6 +252,7 @@ fn notice(
     past: bool,
     restart: Option<gpui_component::kbd::Kbd>,
     detail: Option<(&Entity<ChatSession>, TranscriptItemId, &str)>,
+    carry_on: Option<&Entity<ChatSession>>,
     cx: &App,
 ) -> impl IntoElement + use<> {
     // What the agent attached, folded, in the ink of the line it sits in.
@@ -253,6 +262,9 @@ fn notice(
     let (failed, past) = match notice_shape(level, past) {
         NoticeShape::Divider => return notice_divider(text, restart, detail, cx),
         NoticeShape::Card { failed, past } => (failed, past),
+        NoticeShape::CutShort { cut, past } => {
+            return cut_short(cut, text, past, carry_on, cx);
+        }
     };
     let (tone, words) = match past {
         true => (cx.theme().muted_foreground, cx.theme().muted_foreground),
@@ -295,6 +307,59 @@ fn notice(
         .into_any_element()
 }
 
+/// A turn the agent cut short: the neutral card, flat, with no alarm in it,
+/// since nothing broke. What stopped it heads it and what that means follows,
+/// in core's words, and after a limit the way to carry on.
+fn cut_short(
+    cut: onehand_core::chat::CutShort,
+    text: &str,
+    past: bool,
+    carry_on: Option<&Entity<ChatSession>>,
+    cx: &App,
+) -> gpui::AnyElement {
+    let (head, words) = match past {
+        true => (cx.theme().muted_foreground, cx.theme().muted_foreground),
+        false => (cx.theme().foreground, cx.theme().foreground),
+    };
+    let button = carry_on.map(|session| {
+        let session = session.clone();
+        crate::controls::action("continue-after-limit")
+            .secondary()
+            .short()
+            .label("Continue")
+            .on_click(move |_, _, cx: &mut App| {
+                session.update(cx, |session, cx| session.continue_after_limit(cx));
+            })
+    });
+    parts::floating_card(false, cx)
+        .h_flex()
+        .items_start()
+        .gap_2()
+        .px_3()
+        .py_2()
+        .text_size(TEXT_SM)
+        .child(
+            div()
+                .h(metrics::LINE_SM)
+                .flex_none()
+                .h_flex()
+                .items_center()
+                .text_color(cx.theme().muted_foreground)
+                .child(Icon::new(IconName::Info).xsmall()),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .v_flex()
+                .gap_1()
+                .child(div().text_color(head).font_semibold().child(cut.title()))
+                .child(div().min_w_0().text_color(words).child(text.to_string()))
+                .children(button.map(|button| div().h_flex().pt_1().child(button))),
+        )
+        .into_any_element()
+}
+
 /// How a notice draws.
 #[derive(Debug, PartialEq)]
 enum NoticeShape {
@@ -303,6 +368,11 @@ enum NoticeShape {
     /// The neutral card: `failed` for the failure a turn ended on, which
     /// takes a title; `past` once a prompt followed.
     Card { failed: bool, past: bool },
+    /// The same card for a turn the agent cut short, with no alarm in it.
+    CutShort {
+        cut: onehand_core::chat::CutShort,
+        past: bool,
+    },
 }
 
 /// A remark is the session speaking about itself in passing, a line across
@@ -310,7 +380,8 @@ enum NoticeShape {
 /// can run long, and between two rules it read as a caption.
 fn notice_shape(level: NoticeLevel, past: bool) -> NoticeShape {
     match level {
-        NoticeLevel::Info => NoticeShape::Divider,
+        NoticeLevel::Info | NoticeLevel::Stopped => NoticeShape::Divider,
+        NoticeLevel::CutShort(cut) => NoticeShape::CutShort { cut, past },
         NoticeLevel::Error => NoticeShape::Card {
             failed: false,
             past,
@@ -450,6 +521,9 @@ fn prompted_after(chat: &onehand_core::chat::Chat, target: TranscriptItemId) -> 
             chat.history.iter().skip(i + 1).any(prompt) || chat.items.iter().any(prompt)
         }
         TranscriptItemId::Live(i) => chat.items.iter().skip(i + 1).any(prompt),
+        // A card holds no prompts, and what follows it in the conversation
+        // is not reached from inside it.
+        TranscriptItemId::InCard { .. } => false,
     }
 }
 
@@ -459,6 +533,14 @@ pub(super) fn fold_key(target: TranscriptItemId) -> usize {
     match target {
         TranscriptItemId::History(i) => i * 2,
         TranscriptItemId::Live(i) => i * 2 + 1,
+        // Hashed with its card, the top bit set so no conversation index
+        // could reach it.
+        TranscriptItemId::InCard { card, index } => {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            (card, index).hash(&mut hasher);
+            hasher.finish() as usize | (1 << (usize::BITS - 1))
+        }
     }
 }
 
@@ -469,7 +551,7 @@ pub(super) fn fold_key(target: TranscriptItemId) -> usize {
 fn live_index(target: TranscriptItemId) -> Option<usize> {
     match target {
         TranscriptItemId::Live(i) => Some(i),
-        TranscriptItemId::History(_) => None,
+        TranscriptItemId::History(_) | TranscriptItemId::InCard { .. } => None,
     }
 }
 

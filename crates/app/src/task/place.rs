@@ -360,7 +360,8 @@ fn watch_drain(
             | ChatEvent::HostSession(_)
             | ChatEvent::HostBusy
             | ChatEvent::RestartHost(_)
-            | ChatEvent::Look(_) => {}
+            | ChatEvent::Look(_)
+            | ChatEvent::OpenSubagent(_) => {}
         }
     });
     let gone = cx.observe_release(session, move |_, cx| drained(cx));

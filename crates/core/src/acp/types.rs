@@ -248,14 +248,32 @@ pub enum ToolStatus {
     InProgress,
     Completed,
     Failed,
+    /// Ended under a cancel before it reported an end of its own.
+    ///
+    /// **Never sent by an agent.** The protocol leaves a step a turn was
+    /// cancelled under to the client to name; this is that name, and it is
+    /// saved, so a conversation read back still says a person stopped it
+    /// rather than that it failed.
+    Stopped,
 }
 
 impl ToolStatus {
+    /// Whether a step in this status is still going.
+    ///
+    /// **Pending counts.** An adapter may hold a step at pending from the
+    /// moment it starts it until it ends, so nothing separates one that waits
+    /// its turn from one in hand, and reading pending as idle would call most
+    /// running steps idle.
+    pub fn is_running(self) -> bool {
+        matches!(self, ToolStatus::Pending | ToolStatus::InProgress)
+    }
+
     pub fn parse(s: &str) -> Self {
         match s {
             "in_progress" => ToolStatus::InProgress,
             "completed" => ToolStatus::Completed,
             "failed" => ToolStatus::Failed,
+            "stopped" => ToolStatus::Stopped,
             _ => ToolStatus::Pending,
         }
     }
@@ -265,6 +283,7 @@ impl ToolStatus {
             ToolStatus::InProgress => "in_progress",
             ToolStatus::Completed => "completed",
             ToolStatus::Failed => "failed",
+            ToolStatus::Stopped => "stopped",
         }
     }
 }
