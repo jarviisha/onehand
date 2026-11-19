@@ -332,9 +332,14 @@ fn permission_footer(
                 ),
                 (PermissionWeight::Deny, false) => b.quiet(cx),
             })
-            .when(!keyed && name != label.as_ref(), |b| {
-                b.tooltip(name.clone())
-            })
+            // The agent's wording, where it says more than the kind's word, on
+            // every button whose key's tooltip above does not carry it: the
+            // widest grant's reach is read there.
+            .when(
+                name != label.as_ref()
+                    && !(keyed && option.weight() != PermissionWeight::AllowAlways),
+                |b| b.tooltip(name.clone()),
+            )
             // Its key beside its words, always in sight.
             .child(super::ask::labelled_owned(
                 label,

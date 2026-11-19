@@ -371,12 +371,13 @@ impl Composer {
 /// lead's workers): their mark, then a count per state that has any, most
 /// urgent first, each in the mark and ink the rail gives a session in that
 /// state. No words, so it stays small beside the model; `name` says them, as
-/// its tooltip and its accessible name.
+/// its accessible name and, while no menu of its own is `open`, its tooltip.
 pub(in crate::chat) fn status_chip(
     id: &'static str,
     mark: Icon,
     counts: Vec<(Option<crate::chat::pane::SessionSignal>, usize)>,
     name: String,
+    open: bool,
     cx: &App,
 ) -> Button {
     let muted = cx.theme().muted_foreground;
@@ -392,7 +393,8 @@ pub(in crate::chat) fn status_chip(
                 .child(crate::rail::status_icon(signal, cx))
                 .child(n.to_string())
         }))
-        .named(name)
+        .accessibility_label(name.clone())
+        .when(!open, |chip| chip.tooltip(name))
 }
 
 /// A chip's words, in the chip's own ink and size, giving way with an ellipsis

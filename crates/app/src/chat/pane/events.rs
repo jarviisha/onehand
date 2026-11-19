@@ -59,7 +59,7 @@ pub enum ChatPaneEvent {
     /// passes through here, which no caller of those paths can promise.
     AgentStarted,
     /// A session asked for from the pane: a worker picked from the lead's
-    /// chip, or a worker's band pressed for its lead.
+    /// chip, or a worker's lead from *Back to lead* in its header.
     ShowSession(u64),
     /// Restart the agent on the conversation showing.
     ///

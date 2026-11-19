@@ -661,6 +661,9 @@ function mcp(server) {
     waiting.clear();
   };
   child.on('error', (e) => fail(String(e.message ?? e)));
+  // A server that went away leaves its pipe broken: a write to it is refused
+  // rather than taking the agent down with it.
+  child.stdin.on('error', () => {});
   child.on('exit', () => fail('the tool server went away'));
   readline.createInterface({ input: child.stdout }).on('line', (line) => {
     let m;
@@ -750,8 +753,12 @@ const step = {
     play();
     const tools = mcp(onehandServer);
     try {
+      // A cancel answers the prompt; nothing more is opened after it.
+      const cancelled = () => promptId !== id;
       await tools.start();
+      if (cancelled()) return;
       const projects = await tools.tool('list_projects');
+      if (cancelled()) return;
       if (projects.refused) {
         return finish([
           `onehand refused: ${projects.text}`,
@@ -759,6 +766,7 @@ const step = {
         ]);
       }
       const names = (await tools.tool('list_agents')).text.split('\n').filter(Boolean);
+      if (cancelled()) return;
       const agent = names.find((name) => /mock/i.test(name)) ?? names[0];
       // `name — path — check: yes/no`, one a line.
       const paths = projects.text
@@ -781,6 +789,7 @@ const step = {
           prompt,
           turn: 1,
         });
+        if (cancelled()) return;
         if (opened.refused) {
           said.push(`Not on \`${path}\`: ${opened.text}`);
           continue;

@@ -56,7 +56,9 @@ fi
 # run: the root keeps the path it was seeded with, so a worktree would play
 # another checkout's mock.
 mock=$repo/crates/core/examples/mock_ui_agent.js
-sed "s|\"[^\"]*/crates/core/examples/mock_ui_agent\.js\"|\"$mock\"|" "$home/config.toml" >"$home/config.toml.new"
+# Taken literally in the replacement, whatever the checkout's path holds.
+literal=$(printf '%s' "$mock" | sed 's/[\\&|]/\\&/g')
+sed "s|\"[^\"]*/crates/core/examples/mock_ui_agent\.js\"|\"$literal\"|" "$home/config.toml" >"$home/config.toml.new"
 mv "$home/config.toml.new" "$home/config.toml"
 
 cd "$repo"

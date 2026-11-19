@@ -118,7 +118,7 @@ under it and a list beside its detail one down its side facing the detail.
 | Write | px |
 |---|---|
 | `cx.theme().radius` | 4: a control (a button, a field, a menu or rail row, a tree row, a tab, a chip, a badge, a choosable item's fill, the workspace's letter tile) |
-| `cx.theme().radius_lg` | 6: a container (a card, a box, a well, the composer and a pinned card, a strip over the composer, a popup, a floating panel, a Settings group, a region's box) |
+| `cx.theme().radius_lg` | 6: a container (a card, a box, a well, the composer and a pinned card, the strip of queued and staged things over the composer, a popup, a floating panel, a Settings group, a region's box) |
 | `.rounded_full()` | a dot, a status mark |
 
 What a person presses is `radius`; what wraps a block of information or holds several actions

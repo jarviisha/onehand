@@ -379,6 +379,7 @@ impl ChatPane {
                     .map(|(standing, n)| (standing_signal(standing), n))
                     .collect(),
                 name,
+                false,
                 cx,
             )
             .on_click(cx.listener(move |this, _, _, cx| this.open_subagent(uid, urgent, cx)))

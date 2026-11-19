@@ -136,7 +136,7 @@ each row stopping that one item and never the turn, 12 listed and then *N more*;
 the transcript keeps a notice of how and after how long: *Background work finished after 2m 14s: npm
 test*, an error when it failed, *interrupted* when the agent went away first); past conversations
 (not on a host session, whose conversations are not kept on this machine) and *Close session* (only
-while a session shows). On a worker leading none, its standing comes first in that cluster, in the
+while a session shows). On a worker, its standing comes first in that cluster, in the
 header's ink and giving way before the name does: *<lead> is coordinating this worker* and *Back to
 lead*, which shows the lead (*Its lead* and no button while the lead is a session of another
 window); once the person has sent the worker a prompt, *You hold this worker* and *Give back to the

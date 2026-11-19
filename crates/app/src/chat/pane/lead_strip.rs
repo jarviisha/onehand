@@ -74,12 +74,19 @@ impl ChatPane {
     /// so it needs no cap of its own.
     pub(super) fn lead_chip(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let lead = self.active?;
+        // A menu open on another lead went with that lead's frame.
+        if self.workers_menu.get().is_some_and(|open| open != lead) {
+            self.workers_menu.set(None);
+        }
+        let open = self.workers_menu.get() == Some(lead);
         let workers: Vec<(u64, Option<SessionSignal>)> = self
             .lead_workers()
             .iter()
             .map(|worker| (worker.uid, self.signal(worker.uid, cx)))
             .collect();
-        if workers.is_empty() {
+        // Kept while its menu is open: the menu holds focus, and dropping its
+        // trigger mid-open would leave focus on nothing.
+        if workers.is_empty() && !open {
             return None;
         }
         let signals: Vec<Option<SessionSignal>> =
@@ -101,9 +108,11 @@ impl ChatPane {
             Icon::new(crate::icons::Icon::Users),
             summary(&signals),
             name,
+            open,
             cx,
         );
         let pane = cx.entity().downgrade();
+        let opened = pane.clone();
         Some(
             crate::controls::menu_below(("lead-workers", lead), trigger, move |menu, _, _| {
                 rows.iter().fold(menu, |menu, (uid, signal, name)| {
@@ -129,6 +138,12 @@ impl ChatPane {
             // Above the chip, its right edge on the chip's: the row is the
             // composer's foot, with no room under it.
             .anchor(gpui::Anchor::BottomRight)
+            .on_open_change(move |open, _, cx| {
+                _ = opened.update(cx, |pane: &mut Self, cx| {
+                    pane.workers_menu.set(open.then_some(lead));
+                    cx.notify();
+                });
+            })
             .into_any_element(),
         )
     }
