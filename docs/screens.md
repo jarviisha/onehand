@@ -136,7 +136,11 @@ each row stopping that one item and never the turn, 12 listed and then *N more*;
 the transcript keeps a notice of how and after how long: *Background work finished after 2m 14s: npm
 test*, an error when it failed, *interrupted* when the agent went away first); past conversations
 (not on a host session, whose conversations are not kept on this machine) and *Close session* (only
-while a session shows). The rail's and the docks' toggles are the title bar's. On the overview,
+while a session shows). On a worker, its standing comes first in that cluster, in the
+header's ink and giving way before the name does: *<lead> is coordinating this worker* and *Back to
+lead*, which shows the lead (*Its lead* and no button while the lead is a session of another
+window); once the person has sent the worker a prompt, *You hold this worker* and *Give back to the
+lead*, the button only while giving back is offered. The rail's and the docks' toggles are the title bar's. On the overview,
 Tasks, Issues, Workflows, Schedules and Settings, which name themselves in their head, it carries no
 name; none of these has a dots menu. As the pane narrows, the name gives way first, down to a
 minimum. Without a session it carries no name, the page naming the project, but keeps the project's
@@ -150,8 +154,8 @@ pane under the header holds a heading, *What are we building?*, semibold at the 
 centred, with the composer directly under it, the two centred together from top to bottom; the
 composer is itself, as wide and holding what it always does. The first item moves the composer to
 its foot under the transcript. The header stays as it is. While the session connects or failed
-to, and while a reconnect, the queue, staged files, a waiting card, a lead's strip or a worker's
-band stands above the composer, the pane draws as it does with a transcript. The heading names no
+to, and while a reconnect, the queue, staged files or a waiting card stands above the composer,
+the pane draws as it does with a transcript. The heading names no
 one.
 
 ## A prompt's controls
@@ -184,9 +188,10 @@ in. The float is as tall as what it holds, at most three fifths of the pane; it 
 top right, 440px wide, while the pane is at least 600px wide, and runs the pane's width under
 that. Escape closes it while it holds the keys.
 
-While any subagent handed work since the last prompt is running or waiting, a strip stands over
-the composer where a lead's does: *N subagents*, then a count per standing, most urgent first.
-Pressed, the float opens on the most urgent. It leaves when the last of them ends.
+While any subagent handed work since the last prompt is running or waiting, a chip stands in the
+composer's row: the subagent mark, then a count per standing in the rail's mark for it, most
+urgent first, with no words (its tooltip says *N subagents: 1 waiting, 2 running*). Pressed, the
+float opens on the most urgent. It leaves when the last of them ends.
 
 A card reaches the saved transcript whole once it has ended, its length with it; one left
 working when the session closes is kept as *interrupted*.
@@ -207,7 +212,7 @@ A card edged in the field's edge, set off by its raised fill and lift; the caret
 focus, and no line is ever added to it (a refusal is Send's tooltip, a failure a toast). The field, then the `+` menu,
 *Fast* (its bolt alone, in the warning ink while fast: a toggle with no caret when its choices
 read as on and off; else a picker with a caret, the value in force on its tooltip), the model and
-effort chips, then *Send*, or *Stop* (solid danger,
+effort chips, then the chips of the turn's helpers (below), then *Send*, or *Stop* (solid danger,
 worded) and *Queue* over a draft. Under it the branch and the mode, stacked when narrow; just
 left of the mode the context and limit meters, each a ring filled to its percent and the percent,
 with no name (the tip says `Context: 84k of 200k tokens`, or each limit and when it resets; warning
@@ -226,15 +231,12 @@ subagent's is titled `<name> asks permission` or `<name> asks: <question>`, its 
 past them ends on *Show all N lines*, which opens it in place. The staged files' plates (a picture's preview,
 pressed to open it whole in a dialog; a text file opening in the Workbench) fade where cut beside
 *Show all N*. A picture attached to a sent prompt opens the same way. While the session on screen
-leads workers, the lead's strip stands on the card, narrower than it, one line above the card's
-(a waiting card's foot then runs under the strip rather than the card): *N
-workers*, a count per state that has any, most urgent first, in its mark and ink, and at the end,
-in the warning ink, *<name> needs you* for the most urgent worker waiting on the person, when one
-does. Pressed, the most urgent worker shows in the pane.
-While the session on screen is a worker leading none, a band stands there on the same surface instead: *<lead>
-is coordinating this worker* and *Back to lead*, which shows the lead (*Its lead* and no button
-while the lead is a session of another window); once the person has sent the worker a prompt, *You hold this
-worker* and *Give back to the lead*, the button only while giving back is offered.
+leads workers, a chip stands in the card's row: the workers' mark, then a count per state that has
+any, most urgent first, in the rail's mark and ink for it, with no words (its tooltip says *N
+workers*, and *<name> needs you* for the most urgent worker waiting on the person). Pressed, it
+lists the workers above it, each in its state's mark and named as the rail names it, in the order
+the lead opened them; a worker picked there shows in the pane. Beside it stands the subagents'
+chip, when the lead's own turn has any working. A worker's standing is in the header.
 *Run a workflow…* (the `+` menu, the
 keymap, the Workflows page's *Run…*) opens the launcher, drawn as `docs/workflows.md` describes.
 

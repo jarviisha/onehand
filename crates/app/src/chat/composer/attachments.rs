@@ -487,7 +487,7 @@ fn openable(attachment: &StagedAttachment) -> Option<std::path::PathBuf> {
 ///
 /// Quiet rather than the filled trigger a picker takes elsewhere: a filled
 /// chip for each setting would crowd the field they sit under.
-pub(super) fn chip(id: impl Into<gpui::ElementId>, open: bool, cx: &App) -> Button {
+pub(in crate::chat) fn chip(id: impl Into<gpui::ElementId>, open: bool, cx: &App) -> Button {
     crate::controls::action(id)
         .quiet(cx)
         .short()

@@ -261,13 +261,13 @@ offered `open_worker`, and `open_session` takes none of its further arguments.
   person, and while a turn runs (`cancel_turn` first, then close once `session_state` says the
   turn is over). It answers `closed`, and so does a worker already closed, so a retry is
   harmless; its handle reads `link: closed` from then on.
-- ***Give back to the lead***, on the band over the worker's composer, is offered while the person holds
+- ***Give back to the lead***, in the worker's header, is offered while the person holds
   the worker and its lead is open and switched on: it counts every prompt the person sent as the
   lead's, so the lead holds it again. Nothing is sent, nothing said in the transcript; the lead
   learns of it through `session_state`. With no such lead the worker stays the person's.
 - **What the person sees**: a worker, from the moment its session starts opening, is listed in the
-  rail under its lead and shown in the pane as any session, a band over its composer naming the
-  lead (`docs/screens.md`); a lead closed or lost lets its workers go back under their own
+  rail under its lead and shown in the pane as any session, its header naming the lead
+  (`docs/screens.md`); a lead closed or lost lets its workers go back under their own
   project, the person's to work with or close until a closed lead's conversation takes them back.
 - **The lead is asked about at every step**, and its closing or being switched off wakes the open
   at once. A lead that went while its worker was opening abandons the open: it fails as above,

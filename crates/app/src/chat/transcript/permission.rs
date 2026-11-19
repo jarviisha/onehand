@@ -300,6 +300,9 @@ fn permission_footer(
 
     card_foot().children(options.into_iter().map(|(i, option)| {
         let (id, session) = (option.id.clone(), session.clone());
+        // The kind's word on the button; the agent's own wording of the
+        // answer, where it says more, is the tooltip.
+        let label = SharedString::from(p.req.label(option).to_string());
         let name = option.name.clone();
         // **A key on the one button it answers with**: two refusals share a
         // weight, and only the narrower carries the refusing keys.
@@ -329,9 +332,17 @@ fn permission_footer(
                 ),
                 (PermissionWeight::Deny, false) => b.quiet(cx),
             })
+            // The agent's wording, where it says more than the kind's word, on
+            // every button whose key's tooltip above does not carry it: the
+            // widest grant's reach is read there.
+            .when(
+                name != label.as_ref()
+                    && !(keyed && option.weight() != PermissionWeight::AllowAlways),
+                |b| b.tooltip(name.clone()),
+            )
             // Its key beside its words, always in sight.
             .child(super::ask::labelled_owned(
-                name.into(),
+                label,
                 keyed.then_some(match option.weight() {
                     PermissionWeight::AllowOnce => &super::PinnedAllow as &dyn gpui::Action,
                     PermissionWeight::AllowAlways => &super::PinnedAlways,

@@ -51,8 +51,8 @@ pub struct SubagentItem {
     pub secs: Option<u64>,
 }
 
-/// How a subagent stands, as the strip over the composer counts it, the most
-/// urgent first.
+/// How a subagent stands, as the composer's chip counts it, the most urgent
+/// first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Standing {
     /// Working, with a permission or a question of its own waiting on the
@@ -181,7 +181,7 @@ impl Chat {
     }
 
     /// The subagents handed work since the last prompt, in the order they
-    /// were, each with how it stands: what the strip over the composer counts.
+    /// were, each with how it stands: what the composer's chip counts.
     pub fn turn_subagents(&self) -> Vec<(u64, Standing)> {
         let start = self
             .items
@@ -215,7 +215,7 @@ impl Chat {
     }
 
     /// One count per standing among the turn's subagents, the most urgent
-    /// first: what the strip over the composer says.
+    /// first: what the composer's chip says.
     pub fn turn_subagent_counts(&self) -> Vec<(Standing, usize)> {
         let mut counts: Vec<(Standing, usize)> = Vec::new();
         for (_, standing) in self.turn_subagents() {

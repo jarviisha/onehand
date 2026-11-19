@@ -94,6 +94,9 @@ const ASK_KEY_ROWS: usize = 9;
 /// past the ninth row, which is a row with no key rather than a row with an
 /// unusable one.
 ///
+/// **Bare, as a menu row's key**: a plate on every row stood a column of
+/// chips down the list, louder than the words they answer.
+///
 /// **The number with Alt, always**, since that is the key that works wherever
 /// the caret is, the card itself included; the bare number is the card's own
 /// shortcut on top of it. One label that never changes with the focus, rather
@@ -103,7 +106,8 @@ fn ask_key_hint(n: usize, cx: &App) -> Option<Kbd> {
     if n > ASK_KEY_ROWS {
         return None;
     }
-    super::bound_key(&super::QuestionPick { index: n - 1 }, cx).map(Kbd::new)
+    super::bound_key(&super::QuestionPick { index: n - 1 }, cx)
+        .map(|key| onehand_ui::key_hint(Kbd::new(key)))
 }
 
 /// The live form.
@@ -287,12 +291,11 @@ impl AskForm<'_> {
                     .min_h(CONTROL_H)
                     // The keyboard's own position, which has to show without
                     // being an answer: an arrow press moves it and settles
-                    // nothing, so it is a control's fill rather than the
-                    // taken row's, and no frame. Not the list's hover, which
-                    // on the light page is the card's own grey.
+                    // nothing, so it is the hover step, a step short of the
+                    // taken row's, and no frame.
                     .when(
                         !on && cursor == Some(onehand_core::chat::AskRow::Choice(o)),
-                        |row| row.bg(cx.theme().secondary),
+                        |row| row.bg(cx.theme().list_hover),
                     )
                     // **One child, holding the row's own layout.** A `Button`
                     // wraps what it is given in a content box of its own, so a

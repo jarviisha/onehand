@@ -153,6 +153,10 @@ impl ChatPane {
                     .child(self.title_control(title, busy, archive, cx)),
             )
             .child(div().flex_1())
+            // On a worker: who holds it, and the way back to its lead or to
+            // give it back, about the session the name names, so in the
+            // cluster reading outward from it, first.
+            .children(self.worker_standing(cx))
             // Absent while the agent runs nothing on its own, so a quiet
             // session carries no extra chrome; it reads outward with history,
             // both being about this session.

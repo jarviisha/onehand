@@ -1,16 +1,14 @@
-//! The band over a worker's composer: which lead coordinates it and the way
-//! back to that lead, or, once the person has written to it, that they hold
-//! it and the way to give it back. It stands where a lead's strip stands, on
-//! the same surface, and gives way to it on a worker that leads workers.
+//! A worker's standing, in the pane's header: which lead coordinates it and
+//! the way back to that lead, or, once the person has written to it, that
+//! they hold it and the way to give it back.
 
-use super::over_composer::over_composer;
 use super::{ChatPane, ChatPaneEvent};
 use crate::controls::Short as _;
 use gpui::{App, Context, IntoElement, ParentElement, Styled, div};
-use gpui_component::ActiveTheme as _;
+use gpui_component::StyledExt as _;
 use gpui_component::button::ButtonVariants as _;
 
-/// What the band's one button does.
+/// What the standing's one button does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum BandAct {
     BackToLead,
@@ -36,7 +34,7 @@ pub(super) enum Standing<'a> {
     Held { offered: bool },
 }
 
-/// The band's words and its button.
+/// The standing's words and its button.
 pub(super) fn band(standing: Standing) -> (String, Option<BandAct>) {
     match standing {
         Standing::Held { offered } => (
@@ -51,8 +49,10 @@ pub(super) fn band(standing: Standing) -> (String, Option<BandAct>) {
 }
 
 impl ChatPane {
-    /// The band over the composer, while the session on screen is a worker.
-    pub(super) fn worker_band(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+    /// The worker's standing in the header, while the session on screen is
+    /// a worker: its words in the header's ink, giving way before the name
+    /// does, then its button.
+    pub(super) fn worker_standing(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let uid = self.active?;
         let lead = crate::control::lead_of(uid)?;
         let prompts = move |pane: &Self, cx: &App| {
@@ -79,7 +79,7 @@ impl ChatPane {
         };
         let (words, act) = band(standing);
         let button = act.map(|act| {
-            crate::controls::action(("worker-band", uid))
+            crate::controls::action(("worker-standing", uid))
                 // Beside a sentence, so never a ghost.
                 .secondary()
                 .short()
@@ -88,17 +88,22 @@ impl ChatPane {
                     BandAct::BackToLead => cx.emit(ChatPaneEvent::ShowSession(lead)),
                     BandAct::GiveBack => {
                         // Read at the press: a prompt may have gone since the
-                        // band was drawn.
+                        // header was drawn.
                         crate::control::give_back(uid, prompts(pane, cx), cx);
                         cx.notify();
                     }
                 }))
         });
-        let line = over_composer("worker-band", cx)
-            .text_color(cx.theme().muted_foreground)
-            .child(div().flex_1().min_w_0().truncate().child(words))
-            .children(button);
-        Some(div().w_full().px_3().child(line).into_any_element())
+        Some(
+            div()
+                .h_flex()
+                .items_center()
+                .gap_2()
+                .min_w_0()
+                .child(div().min_w_0().truncate().child(words))
+                .children(button.map(|button| button.flex_none()))
+                .into_any_element(),
+        )
     }
 }
 

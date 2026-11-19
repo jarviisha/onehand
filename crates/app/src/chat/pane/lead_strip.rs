@@ -1,17 +1,12 @@
-//! The lead's strip: one line on a surface of its own above the lead's
-//! composer, narrower than it, while the lead on screen has workers. It
-//! counts them, a count per state, and names the most urgent one waiting on
-//! the person. Pressed, the most urgent worker shows in the pane, as its row
-//! under the lead in the rail would show it.
+//! The lead's chip: in the lead's composer row, while the lead on screen has
+//! workers. It counts them a count per state, in marks, and names the worker
+//! waiting in its tooltip. Pressed, it lists them, and a worker picked there
+//! shows in the pane, as its row under the lead in the rail would show it.
 
-use super::over_composer::over_composer;
 use super::{ChatPane, ChatPaneEvent, SessionSignal};
 use crate::control::Worker;
-use gpui::{
-    App, Context, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement as _,
-    Styled, div,
-};
-use gpui_component::{ActiveTheme as _, StyledExt as _};
+use gpui::{App, Context, IntoElement, ParentElement as _, SharedString, Styled as _, div};
+use gpui_component::{Icon, StyledExt as _};
 use std::cmp::Ordering;
 
 /// Which of two states is the more urgent, by the signal's own order; no
@@ -71,60 +66,86 @@ impl ChatPane {
         crate::rail::session_label(title.as_deref(), &agent).to_string()
     }
 
-    /// The strip over the lead's composer, while the lead on screen has
-    /// workers.
-    pub(super) fn lead_strip(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+    /// The lead's chip in the composer's row, while the lead on screen has
+    /// workers: a count per state, most urgent first, in marks. Pressed, it
+    /// lists them above it, each in its state's mark and named as the rail
+    /// names it, in the order the lead opened them; a row pressed shows that
+    /// worker in the pane. The list is held to the cap on what one lead opens,
+    /// so it needs no cap of its own.
+    pub(super) fn lead_chip(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let lead = self.active?;
+        // A menu open on another lead went with that lead's frame.
+        if self.workers_menu.get().is_some_and(|open| open != lead) {
+            self.workers_menu.set(None);
+        }
+        let open = self.workers_menu.get() == Some(lead);
         let workers: Vec<(u64, Option<SessionSignal>)> = self
             .lead_workers()
             .iter()
             .map(|worker| (worker.uid, self.signal(worker.uid, cx)))
             .collect();
-        let most_urgent = workers
-            .iter()
-            .min_by(|(_, a), (_, b)| urgency(*a, *b))
-            .map(|(uid, _)| *uid)?;
+        // Kept while its menu is open: the menu holds focus, and dropping its
+        // trigger mid-open would leave focus on nothing.
+        if workers.is_empty() && !open {
+            return None;
+        }
         let signals: Vec<Option<SessionSignal>> =
             workers.iter().map(|(_, signal)| *signal).collect();
-        let waiting = waiting_first(&workers).map(|uid| self.worker_name(uid, cx));
-        let muted = cx.theme().muted_foreground;
-        let line =
-            over_composer("lead-strip", cx)
-                .text_color(muted)
-                .cursor_pointer()
-                // A press answers the pointer as a line row does: its ink lifts.
-                .hover(|line| line.text_color(cx.theme().foreground))
-                .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
-                    cx.emit(ChatPaneEvent::ShowSession(most_urgent));
-                }))
-                .child(div().flex_none().text_color(cx.theme().foreground).child(
-                    match workers.len() {
-                        1 => "1 worker".to_string(),
-                        n => format!("{n} workers"),
-                    },
-                ))
-                .children(summary(&signals).into_iter().map(|(signal, n)| {
-                    div()
-                        .h_flex()
-                        .flex_none()
-                        .items_center()
-                        .gap_1()
-                        .text_color(crate::rail::word_ink(signal, cx).unwrap_or(muted))
-                        .child(crate::rail::status_icon(signal, cx))
-                        .child(n.to_string())
-                }))
-                .child(div().flex_1())
-                .children(waiting.map(|name| {
-                    // The name gives way before the words that say what the ink
-                    // means.
-                    div()
-                        .h_flex()
-                        .min_w_0()
-                        .text_color(crate::theme::status_ink(cx).warning)
-                        .child(div().min_w_0().truncate().child(name))
-                        .child(div().flex_none().child("\u{a0}needs you"))
-                }));
-        // Narrower than the composer it stands on.
-        Some(div().w_full().px_3().child(line).into_any_element())
+        let workers_said = match workers.len() {
+            1 => "1 worker".to_string(),
+            n => format!("{n} workers"),
+        };
+        let name = match waiting_first(&workers).map(|uid| self.worker_name(uid, cx)) {
+            Some(who) => format!("{workers_said}; {who} needs you"),
+            None => workers_said,
+        };
+        let rows: Vec<(u64, Option<SessionSignal>, SharedString)> = workers
+            .iter()
+            .map(|&(uid, signal)| (uid, signal, self.worker_name(uid, cx).into()))
+            .collect();
+        let trigger = crate::chat::composer::status_chip(
+            "lead-chip",
+            Icon::new(crate::icons::Icon::Users),
+            summary(&signals),
+            name,
+            open,
+            cx,
+        );
+        let pane = cx.entity().downgrade();
+        let opened = pane.clone();
+        Some(
+            crate::controls::menu_below(("lead-workers", lead), trigger, move |menu, _, _| {
+                rows.iter().fold(menu, |menu, (uid, signal, name)| {
+                    let (uid, signal, name, pane) = (*uid, *signal, name.clone(), pane.clone());
+                    menu.item(
+                        crate::controls::menu_row(move |_, cx| {
+                            div()
+                                .h_flex()
+                                .items_center()
+                                .gap_2()
+                                .w_full()
+                                .child(onehand_ui::mark_slot(crate::rail::status_icon(signal, cx)))
+                                .child(div().flex_1().min_w_0().truncate().child(name.clone()))
+                        })
+                        .on_click(move |_, _, cx: &mut App| {
+                            _ = pane.update(cx, |_: &mut Self, cx| {
+                                cx.emit(ChatPaneEvent::ShowSession(uid));
+                            });
+                        }),
+                    )
+                })
+            })
+            // Above the chip, its right edge on the chip's: the row is the
+            // composer's foot, with no room under it.
+            .anchor(gpui::Anchor::BottomRight)
+            .on_open_change(move |open, _, cx| {
+                _ = opened.update(cx, |pane: &mut Self, cx| {
+                    pane.workers_menu.set(open.then_some(lead));
+                    cx.notify();
+                });
+            })
+            .into_any_element(),
+        )
     }
 }
 

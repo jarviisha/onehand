@@ -35,7 +35,6 @@ pub(crate) use history::is_open;
 mod history;
 mod lead_strip;
 mod offload_send;
-mod over_composer;
 mod overlay;
 mod pages;
 mod project_page;
@@ -288,6 +287,10 @@ pub struct ChatPane {
     /// while its menu holds focus even after the last item ended: a trigger
     /// that leaves the frame with its menu takes focus with it, and the keymap.
     background_menu: std::cell::Cell<Option<u64>>,
+    /// The lead whose workers' menu is open, so its chip stays drawn while
+    /// the menu holds focus even after its last worker went, for the reason
+    /// `background_menu` is held.
+    workers_menu: std::cell::Cell<Option<u64>>,
     /// Whether the pane is on screen: off while the Workbench takes the whole
     /// centre. Its slot stays in the dock's tree either way.
     shown: bool,
@@ -423,6 +426,7 @@ impl ChatPane {
                 held_dirs: HashMap::new(),
                 resuming: HashMap::new(),
                 background_menu: std::cell::Cell::new(None),
+                workers_menu: std::cell::Cell::new(None),
                 shown: true,
                 git: None,
                 composer_h: Default::default(),

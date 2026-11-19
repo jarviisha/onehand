@@ -88,8 +88,8 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   over the rail's sessions, the terminal's and the Workbench's toggles, and the window's own
   controls where the app decorates it.
 - **Rail**: app chrome outside the dock, on the window's fill, from *New session* down to *Settings*.
-- **Agent pane header**: the conversation's name, its menu and the session's controls; chrome alone over
-  a page that names itself in its head.
+- **Agent pane header**: the conversation's name, its menu and the session's controls, a worker's
+  standing among them; chrome alone over a page that names itself in its head.
 - **Step strip**: a run's steps under the header, while it drives the session on screen.
 - **Empty session**: a heading over the composer, both centred, while a session holds nothing.
 - **Composer**: the input surface under the transcript, and what waits pinned above it.
@@ -142,9 +142,10 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   its runs, capped. The float reads the pane, never the window: as tall as what it holds and at
   most three fifths of the pane, at the pane's top right while the pane is wide enough and
   across its width when it is not. It is not modal, and Escape closes it while it holds the
-  keys. While any of the turn's subagents works, a strip stands over the composer where the
-  lead's does: *N subagents* and a count per standing, most urgent first (waiting on the person,
-  failed, running, done, stopped); pressed, the float opens on the most urgent.
+  keys. While any of the turn's subagents works, a chip stands in the composer's row: their mark,
+  then a count per standing, each in the rail's mark and ink for it, most urgent first (waiting on
+  the person, failed, running, done, stopped), its words only in its tooltip; pressed, the float
+  opens on the most urgent.
 - **A turn's changes say each file once.** One file is one line: what happened to it, its path,
   its counts, and the chevron opens its diff. Several are a head (*N files changed*, the counts)
   and a row a file: the path giving way at its start (the folder in the meta ink, the name in the
@@ -196,23 +197,30 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   ended on it, then the words in the body ink, what it attached folded under *Show details* in mono; a lost agent's names the
   key that restarts it. A failed turn holds until a prompt goes out; a restart does not answer it. An
   error that failed no turn (one answering a *Stop*, a resume that fell back) is past at once.
-- **The pinned cards** (a permission, a question) share one neutral shell: an edge in `input` at
-  `radius_lg`, no wash, the tone only in the mark and the title (a permission's warning ink). While
-  they wait they stand a step off the page (`theme::waiting_card`), lifted, as wide as the
-  composer, their foot tucked under it (`TUCK`, under the lead's strip while it shows) so the
-  composer reads as laid over them, without motion; the ones waiting behind peek over the shown one's top edge as slivers, at most two,
-  and its head says *1 of N waiting*. The transcript's end clears the pinned cards as it clears the composer, so the rows they stand over can be scrolled clear of them. Back in the history the shell is on the page's fill and
+- **The pinned cards** (a permission, a question) share one neutral shell: a hairline edge
+  (`border`) at `radius_lg`, no wash, the tone only in the mark and the title (a permission's
+  warning ink). While they wait they stand on the composer's fill (`theme::raised`) with its lift
+  (`composer_lift`), as wide as the composer, their foot tucked under it (`TUCK`) so the composer
+  reads as laid over them, without motion: every fill inside a card is a step tuned against the
+  page, so the card takes no grey of its own. The ones waiting behind peek over the shown one's
+  top edge as slivers, at most two, and its head says *1 of N waiting*. The transcript's end clears
+  the pinned cards as it clears the composer, so the rows they stand over can be scrolled clear of
+  them. Back in the history the shell is on the page's fill and
   flat. It holds a head, the body, the answers at the end at `.short()` (a hairline under the head,
   padded as a box whose body scrolls, its cut end fading out while more lies below), the
   dismissing one a quiet ghost. A choice is a bare row at rest, on the pointer's fill under the
-  pointer and a control's fill (`secondary`) under the keys, and on the selected step when taken, a radio or checkbox drawn in ink at
-  its head (the library's rings vanish on the selected step) and its number with Alt as a `Kbd`, at least
-  a field's height, the scrolling list of them between two hairlines, one over it and one under it;
+  pointer and the hover step (`list_hover`) under the keys, and on the selected step when taken, a radio or checkbox drawn in ink at
+  its head (the library's rings vanish on the selected step) and its number with Alt as a bare `Kbd`, a menu row's key, at least
+  a field's height, the scrolling list of them between two hairlines, one over it and one under it,
+  the last row clear of the lower one once scrolled to its end;
   a typed answer sits under the list, with the answers and no line between them,
   as a field with its `Kbd`: edged in `input` on the card's own fill, two
   lines tall at rest and growing as it is written (Shift+Enter a newline), ringed while the keys
-  are on it. A permission's command sits in a well on the page's own fill, a step off the card, which
-  is halfway from the page to the `secondary` grey in either mode. Each answer in a pinned card's footer shows its key beside its words, always in
+  are on it; what the field shows is the answer, a word an input method is still composing
+  included. A permission's command sits in a well (`muted`). A permission's answers say their
+  kind, *Allow once*, *Always allow*, *Deny*, *Always deny*, the agent's own words for each in its
+  tooltip; the agent's words stand on the button only for a kind the protocol does not name, or
+  where two answers are of one kind. Each answer in a pinned card's footer shows its key beside its words, always in
   sight, as that key reaches the card from anywhere in the conversation.
   The card holds the one primary while it shows. A question card always ends on *Skip*; one
   asking a single pick-one question answers on the pick, its primary only for a typed answer.
@@ -396,8 +404,9 @@ danger ink.
 
 **The composer is the input surface**, a role of its own rather than a box or a field: a card
 edged in `input` at `radius_lg`, standing off the page on its own fill (`theme::raised`) and a light
-lift (`composer_lift`), showing focus by the caret alone; what waits on it (a lead's strip or a worker's band, the
-strip of queued and staged things, over any waiting card) takes the same edge. Its pickers (the model, the effort, the mode, *Fast*, the
+lift (`composer_lift`), showing focus by the caret alone; what waits on it (the strip of queued and
+staged things, over any waiting card) takes the same edge, and the turn's helpers (a lead's
+workers, the turn's subagents) are chips in its row before Send. Its pickers (the model, the effort, the mode, *Fast*, the
 branch) are `.short()` ghosts with a caret whatever they hold (*Fast* is its bolt alone, lit in
 the warning ink while fast, as a mode switched on is, and as a toggle opens no menu and carries none), where a picker elsewhere takes
 the secondary fill once set: each always holds a choice, and a fill on every chip would crowd

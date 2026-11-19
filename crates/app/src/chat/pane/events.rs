@@ -58,8 +58,8 @@ pub enum ChatPaneEvent {
     /// count of what the running agent has loaded; every path that starts one
     /// passes through here, which no caller of those paths can promise.
     AgentStarted,
-    /// A session asked for from the pane: the lead's strip pressed for its
-    /// most urgent worker, or a worker's band for its lead.
+    /// A session asked for from the pane: a worker picked from the lead's
+    /// chip, or a worker's lead from *Back to lead* in its header.
     ShowSession(u64),
     /// Restart the agent on the conversation showing.
     ///

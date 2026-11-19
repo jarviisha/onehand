@@ -391,6 +391,32 @@ impl PermissionOption {
 }
 
 impl PermissionRequest {
+    /// What `option`'s button says: the protocol's own word for its kind,
+    /// which is all an answer has to say, the agent's wording of it (*Yes, and
+    /// auto-accept edits*) left to be read beside it rather than on it.
+    ///
+    /// The agent's name instead where the kind is not one of the protocol's
+    /// four, or where another option of this request is of the same kind:
+    /// two buttons saying one word are two answers nobody can tell apart.
+    pub fn label<'a>(&self, option: &'a PermissionOption) -> &'a str {
+        let word = match option.kind.as_str() {
+            "allow_once" => "Allow once",
+            "allow_always" => "Always allow",
+            "reject_once" => "Deny",
+            "reject_always" => "Always deny",
+            _ => return &option.name,
+        };
+        let alike = self
+            .options
+            .iter()
+            .filter(|o| o.kind == option.kind)
+            .count();
+        match alike {
+            1 => word,
+            _ => &option.name,
+        }
+    }
+
     /// The one option a key of `weight` answers with.
     ///
     /// **A refusal key refuses as narrowly as it can**: `reject_once` where

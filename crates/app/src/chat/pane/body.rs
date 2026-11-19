@@ -16,7 +16,7 @@ use gpui::{
     list, px,
 };
 use gpui_component::spinner::Spinner;
-use gpui_component::{ActiveTheme, Colorize as _, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::{Link, TranscriptItemId};
 use onehand_ui::ShortIcon as _;
 
@@ -255,23 +255,18 @@ pub(super) struct Pinned {
 /// stack's gutter per place.
 const PEEK_INSET: f32 = 0.75;
 
-/// How much of the card's own fill each place back keeps, the rest the page's.
-const PEEK_FADE: f32 = 0.5;
-
 /// The sliver of a card waiting `depth` places behind the one shown: its top
-/// edge only, inset a share of the gutter per place and a step nearer the
-/// page's fill per place, so the stack reads as cards behind cards.
+/// edge only, on the cards' own fill and inset a share of the gutter per
+/// place, so the stack reads as cards behind cards.
 fn peek(depth: usize, cx: &App) -> gpui::AnyElement {
     let theme = cx.theme();
-    let fill =
-        crate::theme::waiting_card(cx).mix_oklab(theme.background, PEEK_FADE.powi(depth as i32));
     div()
         .h(PEEK_H)
         .mx(gpui::rems(STACK_GUTTER.0 * PEEK_INSET * depth as f32))
-        .bg(fill)
+        .bg(crate::theme::raised(cx))
         .border_1()
         .border_b_0()
-        .border_color(theme.input)
+        .border_color(theme.border)
         .rounded_t(theme.radius_lg)
         .into_any_element()
 }

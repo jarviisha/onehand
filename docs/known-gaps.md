@@ -235,7 +235,7 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
 - **Only a session's agent leads.** An outside program may open sessions but never workers, since
   it has no session to own them by; owning what it opened for as long as its connection lasts is
   not built.
-- **A worker is seen in the rail under its lead, in the lead's strip and in the pane as any
+- **A worker is seen in the rail under its lead, in the lead's chip and in the pane as any
   session**, never inside the lead's conversation.
 - **No tool answers a card, a permission or an approval, and none cuts a worktree.** Both are on
   purpose: only a person answers what an agent parked, and the lead cuts its worktrees with git.

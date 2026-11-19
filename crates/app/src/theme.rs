@@ -190,23 +190,14 @@ fn temper(base: Hsla, neutral: Hsla) -> Hsla {
     base.mix_oklab(neutral, 0.70)
 }
 
-/// The fill of a card that waits on the person, tucked under the composer: a
-/// step off the page, so it reads as a second layer under the composer rather
-/// than as the same surface carried on.
-pub(crate) fn waiting_card(cx: &App) -> Hsla {
-    waiting_card_of(cx.theme())
-}
-
-fn waiting_card_of(theme: &Theme) -> Hsla {
-    // Halfway to the secondary grey in either mode: the whole step stood as
-    // a heavy slab beside the composer, and on the light page the secondary
-    // is the hairline's own grey, so a card in it swallowed every edge drawn
-    // on it. Halfway keeps the card off the page and the lines on it.
-    theme.background.mix_oklab(theme.secondary, 0.5)
-}
-
-/// The composer card's fill: the page's own, as the card is told apart by its
-/// edge and its lift.
+/// The composer card's fill, and the waiting cards' tucked under it: the
+/// page's own, as each is told apart by its edge and its lift.
+///
+/// **One surface for the stack, never a grey of its own.** Every fill drawn
+/// inside a card (a well, the row under the pointer or the keys, the taken
+/// choice, a secondary button) is a step tuned against the page. A card a step
+/// off the page sat among those steps and ran them together: on the light page
+/// the pointer's row, the keys' row and the taken one came out one grey.
 pub(crate) fn raised(cx: &App) -> Hsla {
     raised_of(cx.theme())
 }
@@ -219,17 +210,6 @@ fn raised_of(theme: &Theme) -> Hsla {
 /// stand off the rail, a hovered row and a chosen one at once: the page's.
 pub(crate) fn inset(cx: &App) -> Hsla {
     cx.theme().background
-}
-
-/// A well on a waiting card: the command a pinned permission asks to run.
-/// The page's own fill in either mode, a step off the card on the other side
-/// from the hairlines and the keyboard row's fill drawn on it.
-pub(crate) fn floating_well(cx: &App) -> Hsla {
-    floating_well_of(cx.theme())
-}
-
-fn floating_well_of(theme: &Theme) -> Hsla {
-    theme.background
 }
 
 /// The composer's lift, in pixels as a hairline is: the tight shadow's blur,
@@ -489,54 +469,30 @@ mod tests {
         }
     }
 
-    /// The hairline under a waiting card's head and the edge of the field in
-    /// it show on the card's fill, in both modes: on the light page the kit's
-    /// secondary grey is its hairline's own, and a card in it lost both.
+    /// What a waiting card draws on its fill shows on it, in both modes: its
+    /// hairline, a field's edge, the command's well, and the rows under the
+    /// keys and the taken one, each its own step.
     #[test]
-    fn a_waiting_card_keeps_its_hairlines() {
+    fn a_waiting_card_keeps_every_fill_and_line_drawn_on_it() {
         for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
             let theme = installed(mode);
-            let card = waiting_card_of(&theme);
-            for (line, ink) in [
+            let card = raised_of(&theme);
+            for (what, fill) in [
                 ("hairline", theme.border),
                 ("field edge", theme.input),
-                ("keyboard row's fill", theme.secondary),
+                ("well", theme.muted),
+                ("keyboard row", theme.list_hover),
+                ("taken row", theme.accent),
             ] {
                 assert!(
-                    (card.l - ink.l).abs() >= 0.03,
-                    "{name}: the {line} {ink:?} is lost on the card {card:?}"
-                );
-            }
-        }
-    }
-
-    /// The command well stands a step off the waiting card it sits in, in
-    /// both modes, or the command reads as loose text on the card.
-    #[test]
-    fn the_command_well_stands_off_the_waiting_card() {
-        for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
-            let theme = installed(mode);
-            let (card, well) = (waiting_card_of(&theme), floating_well_of(&theme));
-            assert!(
-                (card.l - well.l).abs() >= 0.02,
-                "{name}: well {well:?} on card {card:?}"
-            );
-        }
-    }
-
-    /// A waiting card stands a step off the page behind it and the composer it
-    /// tucks under, in both modes.
-    #[test]
-    fn a_waiting_card_stands_off_the_composer_and_the_page() {
-        for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
-            let theme = installed(mode);
-            let card = waiting_card_of(&theme);
-            for (under, fill) in [("page", theme.background), ("composer", raised_of(&theme))] {
-                assert!(
                     (card.l - fill.l).abs() >= 0.03,
-                    "{name}: card {card:?} against the {under} {fill:?}"
+                    "{name}: the {what} {fill:?} is lost on the card {card:?}"
                 );
             }
+            assert!(
+                (theme.accent.l - theme.list_hover.l).abs() >= 0.02,
+                "{name}: the keyboard's row reads as the taken one"
+            );
         }
     }
 
