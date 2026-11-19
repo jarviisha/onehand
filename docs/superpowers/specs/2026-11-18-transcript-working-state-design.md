@@ -123,6 +123,12 @@ line and does not join a cluster (the owner was shown both and did not ask for t
   has settled, as the cluster's *N failed* already does.
 - A failed command's row reads *exit N* where the code is known, *failed* otherwise.
 
+**As built** (PR stacked on #357). *Continue* shows in any session whose last turn stopped at a
+limit, a run's included: a session does not know a run drives it (recorded in
+`docs/known-gaps.md`). A cut-short card's mark is the info mark in the muted ink. A subagent's
+failed steps go quiet once its card has ended, as a turn's do once it is over. *Continue* sends
+"Continue from where you stopped." as a person's prompt.
+
 ### 3. What a row opens into, and a turn's changes
 
 **One box for every detail** (a command's output, a search's results, a file's content, a

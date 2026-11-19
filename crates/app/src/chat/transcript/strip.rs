@@ -124,6 +124,15 @@ fn cluster_line(
                     .child(format!("{} failed", summary.errors)),
             )
         })
+        // Stopped by somebody: said, in the line's own ink.
+        .when(summary.stopped > 0, |line| {
+            line.child(div().flex_none().child("·")).child(
+                div()
+                    .flex_none()
+                    .whitespace_nowrap()
+                    .child(format!("{} stopped", summary.stopped)),
+            )
+        })
         .children(line_counts(summary.added, summary.removed, cx))
         // **Only once the cluster has stopped.** While a step is still going
         // the number is the total of what has already settled, which is not

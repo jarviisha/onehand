@@ -73,7 +73,7 @@ pub(super) fn subagent(
                 SharedString::from(format!("subagent-step-{}", card.id)),
                 ix as u64,
             );
-            step(session, &card.items[ix], id, &root, window, cx)
+            step(session, &card.items[ix], id, &root, working, window, cx)
         })
         .collect();
     let more = |n: usize| {
@@ -201,6 +201,9 @@ fn step(
     item: &ChatItem,
     id: ElementId,
     root: &std::path::Path,
+    // Whether the card still works; once it has ended, its failures are a
+    // record, as a finished turn's are.
+    working: bool,
     window: &Window,
     cx: &App,
 ) -> Option<gpui::AnyElement> {
@@ -212,7 +215,15 @@ fn step(
             .min_w_0()
             .child(md_view(session, md, window, cx))
             .into_any_element(),
-        ChatItem::Tool(t) => row(step_row(t, &activity::presentation(t), root, id, cx)),
+        // An ended card's failures are a record, as a finished turn's are.
+        ChatItem::Tool(t) => row(step_row(
+            t,
+            &activity::presentation(t),
+            root,
+            id,
+            !working,
+            cx,
+        )),
         ChatItem::Thought(th) => row(ActivityRow::new(
             id,
             match th.is_running() {

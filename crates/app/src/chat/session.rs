@@ -867,6 +867,14 @@ impl ChatSession {
         cx.notify();
     }
 
+    /// Ask the agent to carry on after a turn it stopped at a limit; see
+    /// [`SessionDrive::continue_after_limit`].
+    pub(crate) fn continue_after_limit(&mut self, cx: &mut Context<Self>) {
+        let (_, fx) = self.chat.continue_after_limit(onehand_core::Now::read());
+        self.carry(fx, cx);
+        cx.notify();
+    }
+
     /// Stop the running turn.
     pub(crate) fn stop(&mut self, cx: &mut Context<Self>) {
         let fx = self.chat.stop();

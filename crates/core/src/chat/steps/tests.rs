@@ -520,3 +520,17 @@ fn a_cluster_line_names_a_step_as_its_row_does() {
     assert!(!rest.contains("/work/app"), "{rest}");
     assert!(rest.chars().count() <= 42, "{rest}");
 }
+
+/// A step a cancel stopped is counted apart from the failures: nothing went
+/// wrong, and a run that ended on it did not end badly.
+#[test]
+fn a_stopped_step_is_counted_apart_from_failures() {
+    let members = [
+        run("cargo fmt", ToolStatus::Completed),
+        run("cargo test", ToolStatus::Stopped),
+    ];
+    let summary = summary(&members);
+    assert_eq!((summary.errors, summary.stopped), (0, 1));
+    let bodies: Vec<&ChatItem> = members.iter().collect();
+    assert_eq!(run_outcome(&bodies).outcome, Outcome::Clean);
+}

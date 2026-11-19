@@ -248,6 +248,13 @@ pub enum ToolStatus {
     InProgress,
     Completed,
     Failed,
+    /// Ended under a cancel before it reported an end of its own.
+    ///
+    /// **Never sent by an agent.** The protocol leaves a step a turn was
+    /// cancelled under to the client to name; this is that name, and it is
+    /// saved, so a conversation read back still says a person stopped it
+    /// rather than that it failed.
+    Stopped,
 }
 
 impl ToolStatus {
@@ -266,6 +273,7 @@ impl ToolStatus {
             "in_progress" => ToolStatus::InProgress,
             "completed" => ToolStatus::Completed,
             "failed" => ToolStatus::Failed,
+            "stopped" => ToolStatus::Stopped,
             _ => ToolStatus::Pending,
         }
     }
@@ -275,6 +283,7 @@ impl ToolStatus {
             ToolStatus::InProgress => "in_progress",
             ToolStatus::Completed => "completed",
             ToolStatus::Failed => "failed",
+            ToolStatus::Stopped => "stopped",
         }
     }
 }

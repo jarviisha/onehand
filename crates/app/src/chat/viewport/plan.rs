@@ -210,10 +210,7 @@ pub(super) fn single_kind(
     match item {
         ChatItem::User(_) => RunKind::Prompt,
         ChatItem::Tool(tool) => {
-            let settled = matches!(
-                tool.call.status,
-                onehand_core::acp::ToolStatus::Completed | onehand_core::acp::ToolStatus::Failed
-            );
+            let settled = !tool.call.status.is_running();
             if settled && !open(target, tool.opens_by_itself()) {
                 RunKind::Compact
             } else {

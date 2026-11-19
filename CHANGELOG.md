@@ -75,6 +75,11 @@ minor bump may break any of them.
 
 ### The window
 
+- A turn that was stopped says so: one *Stopped* line, its running steps marked *stopped* in quiet
+  ink rather than *failed* in red, and *Stopped after …* under the answer. A turn the agent ended
+  at its output or request limit, or by refusing, is a calm card saying which, with *Continue*
+  after a limit to have the agent carry on; it still counts as a failed turn in the rail. A failed
+  step's exit code stops being red once its turn is over.
 - While a turn works, the conversation says each thing once. What runs is told by its own words,
   in the present tense (*Running*, *Reading*, *Editing*), with a band of brighter ink crossing
   them; the turning marks are gone, and every row keeps the mark of its kind of work. A step

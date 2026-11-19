@@ -115,13 +115,25 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   the muted ink) and errors (the neutral card, flat: the alert mark in the danger ink beside the
   words, *Turn failed* over them when a turn ended on it, the restart key for a lost agent), the files the turn changed,
   and, while it runs, the running line (no mark: its clock, *N running*, what the
-  agent says it is doing; a step that runs is named by its own row and not again here). A workflow's steps and an interrupted turn are notices, never prompts.
+  agent says it is doing; a step that runs is named by its own row and not again here). A workflow's steps and a stopped turn are notices, never prompts.
 - **Folding blocks open from one line**, the chevron first, with no box: no edge, no fill and no
   rule beside what they hold, which sits indented under the line's words (a cluster, a thought, a plan, a subagent, a turn's changes). What runs is open until done, the
   plan stays open, and a reader's fold wins. Long output folds and is capped, an opened cluster
   too, each saying what it holds back. Wells are filled with no edge, their text at
   `CODE_TEXT`. A finished turn ends on Copy (its closing paragraph) and how long it took, said as
-  *Failed after …* where the turn ended on a failure.
+  *Failed after …* where the turn ended on a failure and *Stopped after …* where it was stopped
+  or cut short.
+- **How a turn ended is said, not alarmed.** A cancel, whoever asked for it, leaves one *Stopped*
+  divider, and a step it caught running reads *stopped* at its row's end in the muted ink, its
+  cluster counting *N stopped* in the line's own ink; only a cancel stops a step, and anything
+  else that ends one unsettled (a lost agent, a turn that moved on) still fails it. A turn the
+  agent cut short (its output limit, its request limit, a refusal) is the neutral card with no
+  alarm in it: the info mark in the muted ink, what stopped it as the title and what that means
+  under it, both in the body ink, and after a limit *Continue* (`secondary`, `.short()`), which
+  asks the agent to carry on as a person's prompt would, while no prompt has followed. It is
+  still a failed turn to the rail and to whatever drives the session. A failed step's *exit N*,
+  or *failed* where no code came, is in the danger ink while its turn runs and the muted ink once
+  the turn is over.
 - **Its rows are lines, not list rows**: a fold line or an activity row is as tall as its text,
   answers the pointer by raising its ink rather than with a fill, leads with an `.xsmall()` mark
   in one slot (the kind of work in every state, so nothing moves as it settles), and takes no focus.

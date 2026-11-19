@@ -266,8 +266,25 @@ impl Chat {
     /// cannot recover from, since a card claiming a write went through is worse
     /// than one saying it is unclear. This is the same answer
     /// `cancel_pending_permissions` gives a dangling card one line above.
-    pub(super) fn settle_running_steps(&mut self) {
-        super::apply::settle_steps(&mut self.items, self.told);
+    pub(super) fn settle_running_steps(&mut self, to: ToolStatus) {
+        super::apply::settle_steps(&mut self.items, self.told, to);
+    }
+
+    /// Whether the turn running now already says it was stopped.
+    pub(super) fn turn_says_stopped(&self) -> bool {
+        self.items
+            .iter()
+            .rev()
+            .take_while(|item| !matches!(item, ChatItem::User(_)))
+            .any(|item| {
+                matches!(
+                    item,
+                    ChatItem::Notice {
+                        level: NoticeLevel::Stopped,
+                        ..
+                    }
+                )
+            })
     }
 
     ///
@@ -556,15 +573,7 @@ impl Chat {
                 && end == self.items.len()
                 && self.busy,
             elapsed_secs,
-            failed: items[start..end].iter().any(|it| {
-                matches!(
-                    it,
-                    ChatItem::Notice {
-                        level: NoticeLevel::Failed,
-                        ..
-                    }
-                )
-            }),
+            ending: ending(&items[start..end]),
         })
     }
 
@@ -670,6 +679,19 @@ impl Chat {
         self.failure().is_some()
     }
 
+    /// Whether the last turn stopped at a limit, with no prompt after it: the
+    /// one failure asking the agent to go on can mend.
+    pub fn stopped_at_limit(&self) -> bool {
+        let item = match &self.replay {
+            Replay::Partial(stash) => standing_failure(stash.iter().rev()),
+            Replay::Settled | Replay::Armed => standing_failure(self.transcript_back()),
+        };
+        matches!(
+            item,
+            Some(ChatItem::Notice { level: NoticeLevel::CutShort(cut), .. }) if cut.continues()
+        )
+    }
+
     /// What the failure [`Self::failed`] reads says, in its own words.
     pub fn failure(&self) -> Option<&str> {
         // Mid-replay the whole transcript is the stash; what is in `items` is a
@@ -679,6 +701,12 @@ impl Chat {
             Replay::Settled | Replay::Armed => standing_failure(self.transcript_back()),
         };
         match item? {
+            // What stopped it, which is what a lead or a run needs to read; the
+            // text under it only says what that means.
+            ChatItem::Notice {
+                level: NoticeLevel::CutShort(cut),
+                ..
+            } => Some(cut.title()),
             ChatItem::Notice { text, .. } => Some(text),
             _ => None,
         }
@@ -926,11 +954,25 @@ pub(super) fn standing_failure<'a>(
 ) -> Option<&'a ChatItem> {
     back.find_map(|item| match item {
         ChatItem::User(prompt) if prompt.sent_at.is_some() => Some(None),
-        ChatItem::Notice {
-            level: NoticeLevel::Failed,
-            ..
-        } => Some(Some(item)),
+        ChatItem::Notice { level, .. } if level.fails_turn() => Some(Some(item)),
         _ => None,
     })
     .flatten()
+}
+
+/// How the turn made of `items` ended: failed where a failure it ended on is
+/// in it, stopped where a stop or a cut short is, finished otherwise.
+fn ending(items: &[ChatItem]) -> super::TurnEnding {
+    use super::TurnEnding;
+    let mut ending = TurnEnding::Finished;
+    for item in items {
+        if let ChatItem::Notice { level, .. } = item {
+            match level {
+                NoticeLevel::Failed => return TurnEnding::Failed,
+                NoticeLevel::Stopped | NoticeLevel::CutShort(_) => ending = TurnEnding::Stopped,
+                NoticeLevel::Info | NoticeLevel::Error => {}
+            }
+        }
+    }
+    ending
 }

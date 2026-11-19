@@ -26,6 +26,8 @@ pub enum RowMark {
     /// was taken — so it reads like any settled step and says the rest in
     /// words.
     Refused,
+    /// A step a cancel stopped: settled, and saying so in a word at its end.
+    Stopped,
 }
 
 impl RowMark {
@@ -45,6 +47,7 @@ impl RowMark {
             ToolStatus::Pending | ToolStatus::InProgress => Self::Running,
             ToolStatus::Completed => Self::Done,
             ToolStatus::Failed => Self::Failed,
+            ToolStatus::Stopped => Self::Stopped,
         }
     }
 
@@ -218,7 +221,11 @@ pub(in crate::chat::transcript) fn activity_row(
                 );
                 line.child(working_text(id, words, cx))
             }
-            RowMark::Done | RowMark::Recovered | RowMark::Failed | RowMark::Refused => line
+            RowMark::Done
+            | RowMark::Recovered
+            | RowMark::Failed
+            | RowMark::Refused
+            | RowMark::Stopped => line
                 .child(div().flex_none().whitespace_nowrap().child(row.verb))
                 .children(row.object.map(|object| {
                     div()

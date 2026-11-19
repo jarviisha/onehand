@@ -8,7 +8,7 @@
 use super::apply::{plan, seal_thought, settle_steps, tool_call, tool_update};
 use super::items::{ChatItem, Md, Thought};
 use super::{Chat, Replay};
-use crate::acp::{AcpEvent, SubagentEnd};
+use crate::acp::{AcpEvent, SubagentEnd, ToolStatus};
 use crate::Now;
 
 /// Where a subagent is in its life.
@@ -67,7 +67,16 @@ impl SubagentItem {
         self.state = state;
         interrupt(&mut self.items, now);
         seal_thought(&mut self.items, now);
-        settle_steps(&mut self.items, now);
+        // A cancelled subagent was stopped; any other end left its steps
+        // failed.
+        let to = match state {
+            SubagentState::Cancelled => ToolStatus::Stopped,
+            SubagentState::Working
+            | SubagentState::Completed
+            | SubagentState::Failed
+            | SubagentState::Interrupted => ToolStatus::Failed,
+        };
+        settle_steps(&mut self.items, now, to);
     }
 }
 

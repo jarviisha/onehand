@@ -555,8 +555,8 @@ pub struct TurnAnswer {
     /// Wall-clock duration from prompt submission to `TurnEnded`. Legacy and
     /// replayed turns without timestamps leave this absent.
     pub elapsed_secs: Option<u64>,
-    /// Whether the turn ended on a failure, its `Failed` notice inside it.
-    pub failed: bool,
+    /// How the turn ended, read from the notices inside it.
+    pub ending: TurnEnding,
 }
 
 impl TurnAnswer {
@@ -564,9 +564,10 @@ impl TurnAnswer {
     /// where it ended on one, so a failed turn never reads as done.
     pub fn closing_line(&self) -> Option<String> {
         let took = crate::duration(self.elapsed_secs?);
-        Some(match self.failed {
-            true => format!("Failed after {took}"),
-            false => format!("Processed in {took}"),
+        Some(match self.ending {
+            TurnEnding::Finished => format!("Processed in {took}"),
+            TurnEnding::Failed => format!("Failed after {took}"),
+            TurnEnding::Stopped => format!("Stopped after {took}"),
         })
     }
 }
@@ -894,6 +895,66 @@ pub enum NoticeLevel {
     /// chat rebuilt from what was written still knows, where an error a Stop
     /// drew, or a lost connection, does not make a turn failed.
     Failed,
+    /// The turn was stopped by a cancel: a remark, and what makes its closing
+    /// line say it stopped rather than that it finished.
+    Stopped,
+    /// The agent ended the turn without the work, at a limit or by refusing.
+    /// **Still a failed turn** to everything that asks whether the session
+    /// failed, since the work was never done; only how it reads differs.
+    CutShort(CutShort),
+}
+
+/// Why an agent ended a turn without the work.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CutShort {
+    /// It ran out of room for its reply.
+    OutputLimit,
+    /// It reached its limit of requests for one turn.
+    RequestLimit,
+    /// It declined to go on.
+    Refused,
+}
+
+impl CutShort {
+    /// What stopped the turn, as the card's head says it.
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::OutputLimit => "Stopped at the output limit",
+            Self::RequestLimit => "Stopped at the request limit",
+            Self::Refused => "The agent declined to go on",
+        }
+    }
+
+    /// What it means, under the head.
+    pub fn sentence(self) -> &'static str {
+        match self {
+            Self::OutputLimit => {
+                "The agent ran out of room for this reply. What it did so far is kept."
+            }
+            Self::RequestLimit => {
+                "The agent reached its limit of requests for one turn. What it did so far is kept."
+            }
+            Self::Refused => "It ended the turn without doing the work.",
+        }
+    }
+
+    /// Whether asking the agent to carry on can get the rest: after a limit,
+    /// yes; after a refusal, the same prompt would only be refused again.
+    pub fn continues(self) -> bool {
+        match self {
+            Self::OutputLimit | Self::RequestLimit => true,
+            Self::Refused => false,
+        }
+    }
+}
+
+/// How a turn ended, as its closing line says it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnEnding {
+    Finished,
+    Failed,
+    /// Stopped by a cancel, at a limit, or by a refusal.
+    Stopped,
 }
 
 impl NoticeLevel {
@@ -901,6 +962,10 @@ impl NoticeLevel {
         match s {
             "error" => Self::Error,
             "failed" => Self::Failed,
+            "stopped" => Self::Stopped,
+            "output-limit" => Self::CutShort(CutShort::OutputLimit),
+            "request-limit" => Self::CutShort(CutShort::RequestLimit),
+            "refused" => Self::CutShort(CutShort::Refused),
             _ => Self::Info,
         }
     }
@@ -912,14 +977,26 @@ impl NoticeLevel {
             Self::Info => "",
             Self::Error => "error",
             Self::Failed => "failed",
+            Self::Stopped => "stopped",
+            Self::CutShort(CutShort::OutputLimit) => "output-limit",
+            Self::CutShort(CutShort::RequestLimit) => "request-limit",
+            Self::CutShort(CutShort::Refused) => "refused",
+        }
+    }
+
+    /// Whether a turn ending on this notice failed, to everything that asks.
+    pub fn fails_turn(self) -> bool {
+        match self {
+            Self::Failed | Self::CutShort(_) => true,
+            Self::Info | Self::Error | Self::Stopped => false,
         }
     }
 
     /// Whether the notice is a failure rather than a remark.
     pub fn is_failure(self) -> bool {
         match self {
-            Self::Info => false,
-            Self::Error | Self::Failed => true,
+            Self::Info | Self::Stopped => false,
+            Self::Error | Self::Failed | Self::CutShort(_) => true,
         }
     }
 }
