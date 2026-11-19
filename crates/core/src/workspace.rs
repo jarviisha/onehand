@@ -338,7 +338,7 @@ fn slug(name: &str) -> String {
 
 /// FNV-1a, 32-bit. Not a security property — this only has to spread folder
 /// paths apart and give the same answer every launch.
-fn fnv1a(bytes: &[u8]) -> u32 {
+pub(crate) fn fnv1a(bytes: &[u8]) -> u32 {
     bytes.iter().fold(0x811c_9dc5, |hash, byte| {
         (hash ^ u32::from(*byte)).wrapping_mul(0x0100_0193)
     })
