@@ -432,8 +432,9 @@ sizes*) maps each role to its component and size.
 
 The app owns only its own: the transcript renderers, the icon registry, the terminal panel,
 per-panel zoom, and the composer popup (one shell for `@`, `/`, the pickers, the `+` and branch
-menus and the attachment tray, with a pinned title and no key hints, at most ten rows, grouped, then
-how many more; a menu opens just above the control that opened it).
+menus and the attachment tray, on the library's popup surface as the window's other menus; a pinned
+title on the `@` and `/` lists and the tray alone, no key hints, a row's detail at its end, at most
+ten rows, grouped, then how many more; a menu opens just above the control that opened it).
 
 Scope: the Workbench editor is a quick editor (tree-sitter, no LSP). Neovim is a mode with a PTY of
 its own per project. Files lives inside Editor, not as a mode. Every mode is built in.

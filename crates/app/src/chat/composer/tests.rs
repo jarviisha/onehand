@@ -34,41 +34,16 @@ fn a_selection_past_the_end_falls_back_to_the_last_row() {
 }
 
 #[test]
-fn the_pinned_header_names_what_the_popup_is() {
-    use super::Overlay;
+fn the_pinned_header_names_what_the_completion_is() {
     use super::popup::popup_title;
-    use super::presentation::Row;
     use onehand_core::completion::TriggerKind;
-
-    let headed = |name: &str| Row {
-        group: Some(gpui::SharedString::from(name.to_string())),
-        ..Row::default()
-    };
 
     // The trigger is the only thing that knows what a completion is for,
     // and a lone `@` does not say it.
+    assert_eq!(popup_title(Some(TriggerKind::File)), "Mention a file");
     assert_eq!(
-        popup_title(&Overlay::Completion, Some(TriggerKind::File), &[]),
-        "Mention a file"
-    );
-    assert_eq!(
-        popup_title(&Overlay::Completion, Some(TriggerKind::Command), &[]),
+        popup_title(Some(TriggerKind::Command)),
         "Run a slash command"
-    );
-    // One group: the list takes its name, and the heading that repeated it
-    // is dropped by the caller.
-    assert_eq!(
-        popup_title(&Overlay::Mode, None, &[headed("Mode"), Row::default()]),
-        "Mode"
-    );
-    // Several: naming it after the first would be naming a third of it.
-    assert_eq!(
-        popup_title(
-            &Overlay::Options,
-            None,
-            &[headed("Model"), Row::default(), headed("Effort")]
-        ),
-        "Settings"
     );
 }
 

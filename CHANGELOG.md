@@ -204,6 +204,9 @@ minor bump may break any of them.
 - Every text field and search sits on a fill of its own with no edge until it takes focus; the
   composer is unchanged.
 - Menus are lettered at the size of the chrome around them, a step smaller than before.
+- The composer's menus (`+`, model, effort, mode, branch) look like the window's other menus: the
+  same surface and edge, no title over them, and a row's detail at its end. The `@` and `/` lists
+  keep their title.
 - Claude Code and Codex sessions show the work their agent left running in the background: an
   *N in background* button in the agent pane's header lists each item with how long it has run, and
   pressing one stops it without stopping the turn. Under the composer, a meter says how full the
