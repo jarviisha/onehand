@@ -227,15 +227,28 @@ pub(super) fn single_kind(
     }
 }
 
-/// The runs holding a subagent card: every one when `all`, else only those
-/// with the card still working.
+/// The runs that change height where they stand: those holding a subagent
+/// card (every one when `all`, else only a card still working), and those
+/// holding a step still running.
+///
+/// **A running step is one of them, wherever it sits.** It is open while it
+/// runs and its output arrives into it, and an agent that hands work off
+/// writes on below it meanwhile, so it is not the tail and nothing about its
+/// run's plan moves as it grows.
 pub(super) fn card_runs(chat: &Chat, plan: &[RunPlan], all: bool) -> Vec<usize> {
+    use onehand_core::acp::ToolStatus;
     plan.iter()
         .enumerate()
         .filter(|(_, run)| {
-            run.members.iter().any(|t| {
-                matches!(item(chat, *t), Some(ChatItem::Subagent(card))
-                    if all || card.state == onehand_core::chat::SubagentState::Working)
+            run.members.iter().any(|t| match item(chat, *t) {
+                Some(ChatItem::Subagent(card)) => {
+                    all || card.state == onehand_core::chat::SubagentState::Working
+                }
+                Some(ChatItem::Tool(step)) => matches!(
+                    step.call.status,
+                    ToolStatus::Pending | ToolStatus::InProgress
+                ),
+                _ => false,
             })
         })
         .map(|(ix, _)| ix)

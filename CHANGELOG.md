@@ -217,6 +217,8 @@ minor bump may break any of them.
 
 ### Fixed
 
+- A step still running while its agent writes on below it (work handed to a subagent, a command
+  left running) no longer has the blocks after it drawn over its growing output.
 - A run waiting on its pull request's status checks keeps waiting when a forge answer it did not
   ask for lands; before, the run could stop looking at its checks for good.
 - A worktree removed while the window it was asked from closed is kept with its task, and its
