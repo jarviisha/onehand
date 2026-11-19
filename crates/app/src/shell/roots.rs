@@ -37,7 +37,9 @@ impl Shell {
         // The same line the rail prints beside the project's name, from core's
         // own rule rather than composed again here.
         let line = status.map(|status| gpui::SharedString::from(status.label()));
+        let label = gpui::SharedString::from(root.label.clone());
         self.chat.update(cx, |pane, cx| {
+            pane.set_project_label(label, cx);
             pane.set_project_facts(facts, cx);
             pane.set_git(line, cx);
         });

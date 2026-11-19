@@ -95,6 +95,8 @@ minor bump may break any of them.
 
 ### The window
 
+- A project has a name of its own: *Rename project…* on its row's menu and its page's dots menu
+  renames it in every window holding it, and its folder keeps its own name.
 - A subagent is one line in the conversation: its name, what it is doing or how it ended, its
   steps and its time. Pressed, its own conversation opens in a panel floating over the pane, with
   the previous and next subagent a press away and Escape to close it. While subagents work, a chip

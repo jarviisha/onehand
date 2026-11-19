@@ -200,8 +200,19 @@ pub fn rename_project(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         return Dialog::new(cx);
     };
     let empty = input.read(cx).value().trim().is_empty();
+    let me = cx.entity().downgrade();
     Dialog::new(cx)
         .close_button(false)
+        // Enter is the dialog's confirm: it renames as *Rename* does, rather
+        // than closing with what was typed thrown away; with nothing typed,
+        // the dialog stays.
+        .on_ok(move |_, _, cx| {
+            if empty {
+                return false;
+            }
+            me.update(cx, |shell, cx| shell.commit_project_rename(cx))
+                .is_ok()
+        })
         .content(move |content, _, cx: &mut App| {
             content.child(title_row("Rename project", cx)).child(field(
                 "Name",

@@ -519,6 +519,22 @@ impl ChatPane {
     ///
     /// Guarded for the same reason the flag below is: this is pushed from the
     /// same places a git sweep lands, and a sweep lands on every finished turn.
+    /// The title of the project page on screen, for a test.
+    #[cfg(test)]
+    pub(crate) fn project_page_label(&self) -> Option<SharedString> {
+        self.empty.as_ref().map(|project| project.label.clone())
+    }
+
+    /// Told by the shell what the project on its page is called now: a
+    /// rename lands while the page is up.
+    pub fn set_project_label(&mut self, label: SharedString, cx: &mut Context<Self>) {
+        let Some(project) = self.empty.as_mut().filter(|project| project.label != label) else {
+            return;
+        };
+        project.label = label;
+        cx.notify();
+    }
+
     pub fn set_project_facts(&mut self, facts: ProjectFacts, cx: &mut Context<Self>) {
         let Some(project) = self.empty.as_mut() else {
             return;
