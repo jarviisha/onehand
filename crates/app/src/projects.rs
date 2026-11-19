@@ -110,37 +110,61 @@ pub(crate) fn place_rows(
     shell: gpui::Entity<crate::shell::Shell>,
     cx: &mut App,
 ) {
-    for (host, path) in shell.read(cx).unplaced_rows() {
-        place_one(handle, shell.downgrade(), host, path, cx);
+    for row in shell.read(cx).unplaced_rows() {
+        place_row(handle, shell.downgrade(), row, cx);
     }
 }
 
-/// Place the row of `path` here in `shell`'s workspace, which came in of no
-/// project.
-pub(crate) fn place_row(
-    handle: gpui::AnyWindowHandle,
-    shell: gpui::Entity<crate::shell::Shell>,
-    path: PathBuf,
-    cx: &mut App,
-) {
-    place_one(handle, shell.downgrade(), None, path, cx);
+/// A row of no project, as its window had it: its folder, and the facts it
+/// carried itself, which its project takes where it has none.
+pub(crate) struct Unplaced {
+    pub host: Option<HostName>,
+    pub path: PathBuf,
+    pub check: Option<String>,
+    pub builds: Vec<onehand_core::workspace::BuildHost>,
+    pub offload: Option<onehand_core::workspace::Offloaded>,
 }
 
-fn place_one(
+/// Place `row` of `shell`'s workspace in its project, and the project take
+/// what the row carried where it has nothing of its own.
+pub(crate) fn place_row(
     handle: gpui::AnyWindowHandle,
     shell: gpui::WeakEntity<crate::shell::Shell>,
-    host: Option<HostName>,
-    path: PathBuf,
+    row: Unplaced,
     cx: &mut App,
 ) {
+    let Unplaced {
+        host,
+        path,
+        check,
+        builds,
+        offload,
+    } = row;
     let (row_host, row_path) = (host.clone(), path.clone());
     place(host, path, MadeBy::Added, cx, move |project, cx| {
+        let fx = cx.update_global::<Shared, _>(|shared, _| {
+            shared
+                .projects
+                .take_facts(&project.id, &row_path, check, builds, offload)
+        });
+        carry(fx, cx);
+        let project = Shared::global(cx)
+            .projects
+            .get(&project.id)
+            .cloned()
+            .unwrap_or(project);
         let _ = handle.update(cx, |_, window, cx| {
             shell.update(cx, |shell, cx| {
                 shell.placed_row(row_host.as_ref(), &row_path, &project, window, cx)
             })
         });
     });
+}
+
+/// Write every project change still waiting on its burst, now.
+pub(crate) fn flush(cx: &mut App) {
+    let fx = cx.update_global::<Shared, _>(|shared, _| shared.projects.flush());
+    carry(fx, cx);
 }
 
 /// The project of `path` on `host`, made when none holds it: a host's folder

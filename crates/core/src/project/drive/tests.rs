@@ -288,3 +288,58 @@ fn a_failed_write_puts_the_build_hosts_back() {
     });
     assert!(d.get(&p.id).unwrap().builds.is_empty());
 }
+
+// What a row carried before it was placed.
+
+#[test]
+fn a_placed_rows_own_facts_fill_what_the_project_lacks() {
+    let (mut d, p) = drive();
+    let _ = d.record_worktree(&p.id, split("/code/a-x"));
+    let on = Offloaded {
+        host: HostName("vps".into()),
+        mirror: "/m".into(),
+        branch: None,
+    };
+    let fx = d.take_facts(
+        &p.id,
+        Path::new("/code/a-x"),
+        Some("make".into()),
+        vec![builds_on("win")],
+        Some(on.clone()),
+    );
+    assert!(fx.iter().any(|e| matches!(e, Effect::Write(_))));
+    assert!(matches!(fx.last(), Some(Effect::Changed(id)) if *id == p.id));
+    let now = d.get(&p.id).unwrap();
+    assert_eq!(now.check.as_deref(), Some("make"));
+    assert_eq!(now.builds, vec![builds_on("win")]);
+    assert_eq!(now.worktrees[0].offload, Some(on));
+    assert_eq!(
+        now.offload, None,
+        "the folder's own offload, not the project's"
+    );
+}
+
+#[test]
+fn a_projects_own_facts_are_kept_over_a_rows() {
+    let (mut d, p) = drive();
+    let _ = d.set_check(&p.id, "cargo test");
+    let fx = d.take_facts(
+        &p.id,
+        Path::new("/code/a"),
+        Some("make".into()),
+        Vec::new(),
+        None,
+    );
+    assert!(fx.is_empty(), "nothing the project lacks");
+    assert_eq!(d.get(&p.id).unwrap().check.as_deref(), Some("cargo test"));
+}
+
+#[test]
+fn a_flush_writes_what_waits_on_a_burst_at_once() {
+    let (mut d, p) = drive();
+    let _ = d.set_check(&p.id, "make");
+    let fx = d.flush();
+    let w = write_of(fx);
+    assert_eq!(w.project.check.as_deref(), Some("make"));
+    assert!(d.flush().is_empty(), "nothing waits any more");
+}

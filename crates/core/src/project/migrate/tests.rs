@@ -165,10 +165,16 @@ fn entries_an_older_build_wrote_find_their_projects() {
         }],
     );
     migrate_projects_in(&root, 2);
-    assert_eq!(projects(&root).len(), 1);
+    let now = projects(&root);
+    assert_eq!(now.len(), 1);
     assert_eq!(
         load_ws(&root, "w1").projects[0].id,
         Some(first[0].id.clone())
+    );
+    assert_eq!(
+        now[0].check.as_deref(),
+        Some("make"),
+        "what the older build set is taken in, the project having none"
     );
 }
 

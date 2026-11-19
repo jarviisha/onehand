@@ -21,7 +21,7 @@
 
 use super::file::{load_all_blocking, save_to, FILE};
 use super::place::repo_key_blocking;
-use super::{MadeBy, Project, ProjectId, Projects, Worktree};
+use super::{Folder, MadeBy, Project, ProjectId, Projects, Worktree};
 use crate::config::{
     move_into, offload_in, projects_in, workspaces_in, ProjectConfig, WorkspaceConfig,
     WorkspaceLoad,
@@ -61,6 +61,9 @@ pub(crate) fn migrate_projects_in(config: &Path, seed: u64) -> Vec<String> {
     // Each entry no project names, grouped by what it is a folder of; or
     // the project already holding its folder.
     let mut named: Vec<(At, ProjectId)> = Vec::new();
+    // Of those, the entries a project already held: an older build may have
+    // written facts on them the project does not have.
+    let mut found: Vec<(At, ProjectId)> = Vec::new();
     let mut groups: Vec<(Key, Vec<At>)> = Vec::new();
     for (f, (_, cfg)) in files.iter().enumerate() {
         for (e, entry) in cfg.projects.iter().enumerate() {
@@ -74,6 +77,7 @@ pub(crate) fn migrate_projects_in(config: &Path, seed: u64) -> Vec<String> {
             let path = canon(entry);
             if let Some((project, _)) = projects.find(entry.host.as_ref(), &path) {
                 named.push(((f, e), project.id.clone()));
+                found.push(((f, e), project.id.clone()));
                 continue;
             }
             let key = key_of(entry, &path);
@@ -85,6 +89,16 @@ pub(crate) fn migrate_projects_in(config: &Path, seed: u64) -> Vec<String> {
     }
 
     let mut changed: BTreeSet<ProjectId> = BTreeSet::new();
+    for ((f, e), id) in found {
+        let Some(project) = projects.get_mut(&id) else {
+            continue;
+        };
+        let before = project.clone();
+        take_in(project, &files[f].1.projects[e]);
+        if *project != before {
+            changed.insert(id);
+        }
+    }
     let mut n = 0;
     for (key, members) in groups {
         let id = match owner_of(&projects, &key) {
@@ -251,6 +265,14 @@ fn take_in(project: &mut Project, entry: &ProjectConfig) {
     if path == project.path {
         if project.offload.is_none() && local {
             project.offload = entry.offload.clone();
+        }
+    } else if let Some(Folder::Worktree(at)) = project.folder(entry.host.as_ref(), &path) {
+        if let Some(worktree) = project
+            .worktrees
+            .get_mut(at)
+            .filter(|w| w.offload.is_none())
+        {
+            worktree.offload = entry.offload.clone().filter(|_| local);
         }
     } else if project.folder(entry.host.as_ref(), &path).is_none() {
         project.worktrees.push(Worktree {

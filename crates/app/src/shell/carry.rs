@@ -86,8 +86,14 @@ impl Shell {
                 }
                 Effect::ReadConversation(id) => self.read_conversation(id, window, cx),
                 Effect::Unplaced(path) => {
-                    let (at, shell) = (window.window_handle(), cx.entity());
-                    crate::projects::place_row(at, shell, path, cx);
+                    let row = self
+                        .unplaced_rows()
+                        .into_iter()
+                        .find(|row| row.path == path);
+                    let (at, shell) = (window.window_handle(), cx.entity().downgrade());
+                    if let Some(row) = row {
+                        crate::projects::place_row(at, shell, row, cx);
+                    }
                 }
                 Effect::Deleted(dir) => self.carry_deleted(dir, window, cx),
                 Effect::Signal(signal) => {
@@ -131,8 +137,25 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let offloads = |shell: &Self| -> Vec<Option<onehand_core::workspace::Offloaded>> {
+            shell
+                .window
+                .workspace
+                .roots
+                .iter()
+                .map(|root| root.offload.clone())
+                .collect()
+        };
+        let before = offloads(self);
         let fx = self.window.workspace.told(project);
         self.carry_workspace(fx, window, cx);
+        // A folder of it moved to or from a host in another window: its
+        // panels here lock or unlock as the offloading window's did, and
+        // what is on screen is shown again, its sessions there closed.
+        if offloads(self) != before {
+            self.sync_offload(cx);
+            self.show_active_session(window, cx);
+        }
         // What is drawn from the project outside the tree: a check field of
         // another of its folders, or one a failed write put back, and the
         // page's build hosts, which it draws from what it was last handed.
@@ -170,15 +193,19 @@ impl Shell {
 
     /// The rows of no project, but a worker's: what this window places as
     /// it opens.
-    pub(crate) fn unplaced_rows(
-        &self,
-    ) -> Vec<(Option<onehand_core::workspace::HostName>, PathBuf)> {
+    pub(crate) fn unplaced_rows(&self) -> Vec<crate::projects::Unplaced> {
         self.window
             .workspace
             .roots
             .iter()
             .filter(|root| root.project.is_none() && !root.transient)
-            .map(|root| (root.host.clone(), root.path.clone()))
+            .map(|root| crate::projects::Unplaced {
+                host: root.host.clone(),
+                path: root.path.clone(),
+                check: root.check.clone(),
+                builds: root.builds.clone(),
+                offload: root.offload.clone(),
+            })
             .collect()
     }
 

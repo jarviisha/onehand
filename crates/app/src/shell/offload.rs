@@ -59,7 +59,19 @@ impl Shell {
     }
 
     /// How many of `root`'s sessions here are mid-turn.
-    pub(crate) fn busy_here(&self, root: &std::path::Path, cx: &gpui::App) -> usize {
+    /// How many sessions on the folder at `root` have a turn under way, in
+    /// every window holding it: offloading the folder moves the sessions of
+    /// each of them.
+    pub(crate) fn busy_here(&self, root: &std::path::Path, cx: &Context<Self>) -> usize {
+        let elsewhere: usize = crate::windows::others(cx.entity_id(), cx)
+            .iter()
+            .map(|(_, other)| other.read(cx).busy_in_window(root, cx))
+            .sum();
+        self.busy_in_window(root, cx) + elsewhere
+    }
+
+    /// [`Self::busy_here`] in this window alone.
+    fn busy_in_window(&self, root: &std::path::Path, cx: &gpui::App) -> usize {
         let Some(root) = self
             .window
             .workspace
@@ -265,9 +277,6 @@ impl Shell {
         cx.notify();
     }
 
-    /// Run root `idx`'s new sessions here again, while this machine holds its
-    /// code. Its sessions on the host are let go here, and run on there until
-    /// they end; the mirror stays, so a later offload sends only what changed.
     /// Say where the sessions of the folder at `path` run: on `on`, or here
     /// with none. The folder's project keeps it; this window takes it at once,
     /// closing the sessions that ran where it no longer does, and every other
@@ -292,6 +301,9 @@ impl Shell {
         true
     }
 
+    /// Run root `idx`'s new sessions here again, while this machine holds its
+    /// code. Its sessions on the host are let go here, and run on there until
+    /// they end; the mirror stays, so a later offload sends only what changed.
     pub(crate) fn run_here_again(
         &mut self,
         idx: usize,

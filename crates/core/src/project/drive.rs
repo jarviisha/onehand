@@ -355,6 +355,79 @@ impl ProjectsDrive {
         }
     }
 
+    /// Take into project `id` the facts the row of `folder` carried before
+    /// it was placed (a check command, build hosts, the folder's offload),
+    /// each only where the project has none: a row an older build wrote, or
+    /// one a migration that could not write left with its own. Written now.
+    #[must_use = "its effects are to be carried"]
+    pub fn take_facts(
+        &mut self,
+        id: &ProjectId,
+        folder: &Path,
+        check: Option<String>,
+        builds: Vec<BuildHost>,
+        offload: Option<Offloaded>,
+    ) -> Vec<Effect> {
+        let Some(project) = self.projects.get(id) else {
+            return Vec::new();
+        };
+        let Some(at) = project.folder(project.host.as_ref(), folder) else {
+            return Vec::new();
+        };
+        let local = project.host.is_none();
+        let check = check.filter(|_| project.check.is_none());
+        let builds = (!builds.is_empty() && project.builds.is_empty()).then_some(builds);
+        let offload = offload.filter(|_| local && project.offload_of(at).is_none());
+        let mut changes = Vec::new();
+        if let Some(check) = check {
+            changes.push((Thing::Check, Value::Check(None), Value::Check(Some(check))));
+        }
+        if let Some(builds) = builds {
+            changes.push((
+                Thing::Builds,
+                Value::Builds(Vec::new()),
+                Value::Builds(builds),
+            ));
+        }
+        if let Some(on) = offload {
+            let folder = folder.to_path_buf();
+            changes.push((
+                Thing::Offload(folder.clone()),
+                Value::Offload {
+                    folder: folder.clone(),
+                    on: None,
+                },
+                Value::Offload {
+                    folder,
+                    on: Some(on),
+                },
+            ));
+        }
+        if changes.is_empty() {
+            return Vec::new();
+        }
+        let saves = self.saves.entry(id.clone()).or_default();
+        for (thing, before, after) in &changes {
+            saves.change(thing.clone(), before.clone(), after.clone());
+        }
+        for (_, _, after) in changes {
+            self.put(id, after);
+        }
+        let mut fx: Vec<Effect> = self.write(id).into_iter().collect();
+        fx.push(Effect::Changed(id.clone()));
+        fx
+    }
+
+    /// Write every project whose change still waits on a burst, now: what a
+    /// window closing or the app quitting asks, so the change made just
+    /// before it is not lost with it.
+    #[must_use = "its effects are to be carried"]
+    pub fn flush(&mut self) -> Vec<Effect> {
+        self.soon = None;
+        let waiting = std::mem::take(&mut self.waiting);
+        waiting.iter().filter_map(|id| self.write(id)).collect()
+    }
+
     /// What the front end reports back.
     #[must_use = "its effects are to be carried"]
     pub fn handle(&mut self, input: Input) -> Vec<Effect> {

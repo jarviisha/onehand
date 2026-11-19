@@ -85,6 +85,7 @@ impl Shell {
                 if let Some(shell) = shell.upgrade() {
                     shell.update(cx, |shell, cx| shell.flush_workspace(cx));
                 }
+                crate::projects::flush(cx);
                 let Some(page) = page.upgrade().filter(|page| page.read(cx).dirty(cx)) else {
                     return true;
                 };
@@ -571,7 +572,10 @@ pub fn boot(cx: &mut App) {
     // quit would die with the process: waited for, as the task files are,
     // once the windows are gone and their last writes are queued.
     let writer = Shared::global(cx).writer.clone();
-    cx.on_app_quit(move |_| {
+    cx.on_app_quit(move |cx| {
+        // A project change still waiting on its burst, queued now so the wait
+        // below covers it.
+        crate::projects::flush(cx);
         let writer = writer.clone();
         async move {
             if !writer.flush(crate::task::QUIT_WAIT) {
