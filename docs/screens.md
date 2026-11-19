@@ -180,9 +180,9 @@ state, steps and time; at its end *n of N* with the previous and next subagent o
 head comes the task it was given, two lines and *Show all*; then its own runs, as the
 conversation draws them, capped at 200 with a line saying how many it left out. A nested
 subagent is a line inside the float, and pressed it shows in the float in place of the one it is
-in. The float stands beside the conversation at the pane's top right while the pane is at least
-900px wide, and covers the pane above the composer under that; Escape closes it while it holds
-the keys.
+in. The float is as tall as what it holds, at most three fifths of the pane; it stands at the pane's
+top right, 440px wide, while the pane is at least 600px wide, and runs the pane's width under
+that. Escape closes it while it holds the keys.
 
 While any subagent handed work since the last prompt is running or waiting, a strip stands over
 the composer where a lead's does: *N subagents*, then a count per standing, most urgent first.

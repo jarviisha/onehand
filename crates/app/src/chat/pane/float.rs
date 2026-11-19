@@ -34,11 +34,12 @@ pub(super) struct Float {
 
 /// How wide the float stands beside the conversation.
 const FLOAT_W: Rems = rems(27.5);
-/// The pane's width from which the float stands beside the conversation; under
-/// it, it covers the pane above the composer.
-const FLOAT_BESIDE: Rems = rems(56.25);
-/// How much of the pane's height the float takes at most beside it, so the
-/// conversation's tail and the composer stay in sight.
+/// The pane's width from which the float stands at its top right; under it,
+/// it runs the pane's width.
+const FLOAT_BESIDE: Rems = rems(37.5);
+/// How much of the pane's height the float takes at most, so the
+/// conversation's tail and the composer stay in sight. Under that it is as
+/// tall as what it holds.
 const FLOAT_TALL: f32 = 0.6;
 /// How many of a subagent's runs the float draws, saying so past it.
 const FLOAT_RUNS: usize = 200;
@@ -112,14 +113,12 @@ impl ChatPane {
         cx.notify();
     }
 
-    /// The float, over the pane whose list is `list_w` wide, kept clear of
-    /// the composer standing `floor` from its foot; `None` while it is put
-    /// away or shows another session's subagent.
+    /// The float, over the pane whose list is `list_w` wide; `None` while it
+    /// is put away or shows another session's subagent.
     pub(super) fn subagent_float(
         &mut self,
         session: &Entity<ChatSession>,
         list_w: Pixels,
-        floor: Pixels,
         room: transcript::Room,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -320,8 +319,9 @@ impl ChatPane {
                 .absolute()
                 .top(inset)
                 .right(inset)
-                .when(wide, |float| float.w(FLOAT_W).max_h(relative(FLOAT_TALL)))
-                .when(!wide, |float| float.left(inset).bottom(floor))
+                .max_h(relative(FLOAT_TALL))
+                .when(wide, |float| float.w(FLOAT_W))
+                .when(!wide, |float| float.left(inset))
                 .v_flex()
                 .overflow_hidden()
                 .occlude()
@@ -334,9 +334,11 @@ impl ChatPane {
                 .child(head)
                 .children(task)
                 .child(
+                    // As tall as what it holds, and giving way to the cap: a
+                    // body stretched to fill the float stood a column of
+                    // empty surface under a subagent of three lines.
                     div()
                         .id("subagent-float-body")
-                        .flex_1()
                         .min_h_0()
                         .overflow_y_scroll()
                         .track_scroll(&self.float_scroll)

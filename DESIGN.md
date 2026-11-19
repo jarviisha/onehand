@@ -137,9 +137,9 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   transcript opens in a float over the pane, drawn by the transcript's own renderer: a head (the
   name; its state, steps and time; *n of N* with the previous and next subagent of the turn; a
   way back from a nested one; Close), the task it was given cut at two lines with *Show all*, and
-  its runs, capped. The float reads the pane, never the window: beside the conversation at its
-  top right, at most three fifths of its height, while the pane is wide enough; over the pane
-  above the composer when it is not. It is not modal, and Escape closes it while it holds the
+  its runs, capped. The float reads the pane, never the window: as tall as what it holds and at
+  most three fifths of the pane, at the pane's top right while the pane is wide enough and
+  across its width when it is not. It is not modal, and Escape closes it while it holds the
   keys. While any of the turn's subagents works, a strip stands over the composer where the
   lead's does: *N subagents* and a count per standing, most urgent first (waiting on the person,
   failed, running, done, stopped); pressed, the float opens on the most urgent.
