@@ -323,7 +323,28 @@ impl ChatPane {
             return column(lead, margin, body(&plan.members, &room)).into_any_element();
         };
 
-        let anchor = plan.members[0];
+        column(
+            lead,
+            margin,
+            vec![self.cluster_element(plan, &strip, session, &room, window, cx)],
+        )
+        .into_any_element()
+    }
+
+    /// A cluster's line, and its sections under it while open: what a run
+    /// standing for several steps draws, in the conversation or in a
+    /// subagent's float.
+    pub(super) fn cluster_element(
+        &self,
+        run: &viewport::RunPlan,
+        strip: &viewport::ActivityPlan,
+        session: &Entity<ChatSession>,
+        room: &transcript::Room,
+        window: &Window,
+        cx: &App,
+    ) -> gpui::AnyElement {
+        let open = run.open;
+        let anchor = run.members[0];
         let this = self.handle.clone();
         let folded = session.clone();
 
@@ -335,7 +356,7 @@ impl ChatPane {
         // **Opened, it is bounded too**: the latest sections, since the end
         // is where work is in flight, and the count of the rest above them.
         let inside =
-            match plan.open {
+            match open {
                 false => Vec::new(),
                 true => {
                     let over = strip.sections.len().saturating_sub(CLUSTER_SECTIONS);
@@ -352,33 +373,28 @@ impl ChatPane {
                         })
                         .into_iter()
                         .chain(strip.sections[over..].iter().map(|section| {
-                            self.section_element(section, session, &room, window, cx)
+                            self.section_element(section, session, room, window, cx)
                         }))
                         .collect()
                 }
             };
 
-        let open = plan.open;
-        column(
-            lead,
-            margin,
-            vec![transcript::cluster(
-                &strip,
-                open,
-                move |_, _, cx: &mut App| {
-                    folded.update(cx, |session, cx| {
-                        session.set_activity_open(anchor, !open);
-                        cx.notify();
-                    });
-                    // The pane owns the run layout the list reads back, so it
-                    // is the half that has to be told to draw again -- the
-                    // session's own notify redraws the session, not the plan.
-                    let _ = this.update(cx, |_: &mut Self, cx| cx.notify());
-                },
-                ("activity", transcript::fold_key(anchor)).into(),
-                inside,
-                cx,
-            )],
+        transcript::cluster(
+            strip,
+            open,
+            move |_, _, cx: &mut App| {
+                folded.update(cx, |session, cx| {
+                    session.set_activity_open(anchor, !open);
+                    cx.notify();
+                });
+                // The pane owns the run layout the list reads back, so it
+                // is the half that has to be told to draw again -- the
+                // session's own notify redraws the session, not the plan.
+                let _ = this.update(cx, |_: &mut Self, cx| cx.notify());
+            },
+            ("activity", transcript::fold_key(anchor)).into(),
+            inside,
+            cx,
         )
         .into_any_element()
     }

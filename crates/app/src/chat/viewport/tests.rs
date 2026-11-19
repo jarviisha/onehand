@@ -673,6 +673,8 @@ fn a_subagent_card_is_measured_again_where_it_is() {
             task: None,
             state: SubagentState::Working,
             items: Vec::new(),
+            started: None,
+            secs: None,
         }),
     );
     let mut viewport = Viewport::default();

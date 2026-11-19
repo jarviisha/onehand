@@ -151,6 +151,9 @@ pub enum ChatEvent {
     /// The session has news a person may want told: whoever knows where they
     /// are answers with `Input::Seen` (`ChatPane::look`).
     Look(onehand_core::chat::Away),
+    /// Show the subagent whose card this key names, in the float beside the
+    /// conversation. Where it goes is the pane's to decide.
+    OpenSubagent(u64),
 }
 
 /// The widget behind one question field's free-text box, and the subscription

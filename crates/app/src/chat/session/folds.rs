@@ -168,10 +168,7 @@ impl ChatSession {
     ) -> T {
         let items: Vec<&onehand_core::chat::ChatItem> = body
             .iter()
-            .filter_map(|target| match target {
-                TranscriptItemId::History(i) => self.chat.history.get(*i),
-                TranscriptItemId::Live(i) => self.chat.items.get(*i),
-            })
+            .filter_map(|target| self.chat.item_at(*target))
             .collect();
         f(&items)
     }

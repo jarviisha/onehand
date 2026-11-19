@@ -262,5 +262,6 @@ pub fn item(chat: &Chat, target: TranscriptItemId) -> Option<&ChatItem> {
     match target {
         TranscriptItemId::History(i) => chat.history.get(i),
         TranscriptItemId::Live(i) => chat.items.get(i),
+        TranscriptItemId::InCard { .. } => chat.item_at(target),
     }
 }

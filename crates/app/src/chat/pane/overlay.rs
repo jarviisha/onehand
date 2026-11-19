@@ -38,7 +38,10 @@ impl ChatPane {
         } = self.pinned(session, room.well, window, cx);
         // A lead's strip, else a worker's band: a worker switched on to lead
         // workers of its own is read as their lead.
-        let lead = self.lead_strip(cx).or_else(|| self.worker_band(cx));
+        let lead = self
+            .lead_strip(cx)
+            .or_else(|| self.worker_band(cx))
+            .or_else(|| self.subagent_strip(session, cx));
         // **A waiting card's foot runs under the composer**, which is drawn
         // after it and opaque, so the composer reads as laid over the card.
         // The column's gap goes too, or the two would stand apart. While

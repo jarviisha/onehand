@@ -496,6 +496,10 @@ impl ChatPane {
             cx,
         );
 
+        // After the overlay is built, which borrows the pane, and drawn under
+        // it, so a popup from the composer is never covered.
+        let float = self.subagent_float(&session, list_w, floor, room.clone(), window, cx);
+
         div()
             .size_full()
             .v_flex()
@@ -618,6 +622,7 @@ impl ChatPane {
                                 ),
                         )
                     })
+                    .children(float)
                     .child(overlay),
             )
             .into_any_element()
