@@ -306,8 +306,7 @@ x86_64.
 
 **Build-only host**:
 A declared host no session runs on: any that is not Linux on x86_64. A project's code can be
-compiled there, and nothing else of onehand reaches it. Compiling a project is a different thing
-from the host service's **Build**, below.
+compiled there, and nothing else of onehand reaches it.
 _Avoid_: build server, build machine, VPS
 
 **Build host**:
@@ -323,11 +322,11 @@ _Avoid_: mirror (that is an offloaded project's copy), stash
 A path a build brings back from a host into the project: a file or a folder.
 _Avoid_: output, build product
 
-**Build**:
+**Service build**:
 Which copy of the host service a host runs, named by a hash of the binary itself. The laptop puts
-its own build on a host beside any other, and restarts the service onto it only when no session
-there is mid-turn.
-_Avoid_: version
+its own service build on a host beside any other, and restarts the service onto it only when no
+session there is mid-turn. A *build*, alone, is a project built on a build host.
+_Avoid_: version, build (alone, for this)
 
 ## How onehand is built
 

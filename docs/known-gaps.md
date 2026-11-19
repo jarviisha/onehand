@@ -229,10 +229,10 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   The cap of four sessions a session's agent may open is not raised for leads either.
 - **A host terminal's tab gone with a lost connection comes back only when the project is shown
   or the dock opened again.**
-- **An open host terminal holds a restart onto a new build, an idle shell too, and only *Restart
+- **An open host terminal holds a restart onto a new service build, an idle shell too, and only *Restart
   now* ends that wait here.** The host counts its terminals, not what runs in them, and a laptop
   waiting on a host has no attach to list or close them by: they close from a laptop on the
-  host's build, or by exiting on their own. A shell whose background job keeps its terminal open
+  host's service build, or by exiting on their own. A shell whose background job keeps its terminal open
   counts after the shell has exited.
 - **Two windows on one host project take the terminal from each other:** a newer watch wins and
   the other window's tab ends.

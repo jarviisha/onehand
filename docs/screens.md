@@ -339,7 +339,7 @@ room and leaves the terminal as it is.
   *Attach*, then, unless it ended, *End on <host>…* in the danger ink; capped at 50 with *N more on this host*.
   *Attaching to <host>…* with a spinner while it waits; *No sessions on <host> for this folder
   yet* at none; a failure says why as a status line in the danger ink with *Try again*
-  (secondary) beside it; a host on another build with sessions mid-turn says *Waiting for N
+  (secondary) beside it; a host on another service build with sessions mid-turn says *Waiting for N
   sessions on <host> to finish before restarting its host service onto this build* as a status
   line in the muted ink with *Restart now* (secondary) beside it, and lists again once it is
   done (*Attaching to <host>…* meanwhile); a host found out of reach while it waits ends the wait

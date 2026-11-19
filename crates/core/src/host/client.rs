@@ -75,7 +75,7 @@ impl std::fmt::Display for HostError {
             Self::Unreachable(why) | Self::Protocol(why) | Self::Unsupported(why) => {
                 f.write_str(why)
             }
-            Self::Busy { build, .. } => write!(f, "the host runs another build ({build})"),
+            Self::Busy { build, .. } => write!(f, "the host runs another service build ({build})"),
             Self::Held => f.write_str("another machine is attached to the host"),
         }
     }

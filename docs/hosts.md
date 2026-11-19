@@ -127,8 +127,8 @@ bring back what it built. Nothing of this needs the host service: it is the pers
   (`bundled_binary`, `crates/io/src/host.rs`). The release tarball ships the two together;
   `make dev` and `make showcase` build `-p onehand-host` before the app. Missing, an attach fails
   with *onehand-host is not beside onehand; build it with `cargo build -p onehand-host`*.
-- **Installed by build:** the attach copies it to `~/.onehand-host/<build>/onehand-host` unless
-  that build is already there, `<build>` a hash of the binary itself
+- **Installed by service build:** the attach copies it to `~/.onehand-host/<build>/onehand-host`
+  unless that service build is already there, `<build>` a hash of the binary itself
   (`crates/core/src/host/client/install.rs`), so a rebuilt binary is never taken for the old one.
 - **One per user on a host**, behind a lock in its data directory, `~/.onehand-host/data`
   (`ONEHAND_HOST_DIR` moves it), listening on a Unix socket there only its user can open, and
@@ -212,22 +212,24 @@ bring back what it built. Nothing of this needs the host service: it is the pers
   to attach to. A session the host has not named yet has nothing there to end, and says so. A
   turn ended halfway in a branch mirror is not committed then; the next update commits it.
 
-## Builds and the restart offer
+## Service builds and the restart offer
 
-Every attach opens by exchanging builds (`client::attach`):
+A service build is which copy of the host service a host runs; building a project on a host is
+another thing, under *Builds on a host*. Every attach opens by exchanging service builds
+(`client::attach`):
 
-- **The same build:** attached.
-- **Another build, nothing mid-turn and no terminal open:** the old service is shut down and the
-  attach made again, onto this build.
-- **Another build with sessions mid-turn or terminals open:** the host is left alone and the
+- **The same service build:** attached.
+- **Another, nothing mid-turn and no terminal open:** the old service is shut down and the
+  attach made again, onto this laptop's.
+- **Another, with sessions mid-turn or terminals open:** the host is left alone and the
   attach fails as busy, since a service that exits closes every terminal, hanging up each shell,
   an idle one included, and the command it runs (the hello's `terms`). **The laptop waits for
   those sessions to go idle and those terminals to close** (which, since it has no attach to the
-  host meanwhile, it cannot do itself: a terminal closes from a laptop on the host's build, or by
+  host meanwhile, it cannot do itself: a terminal closes from a laptop on the host's service build, or by
   its shell exiting), once per host however many sessions, pages
   and forms wait on it (`HostDrive`'s waits, `crates/core/src/host/drive/waits.rs`): it attaches again every 15 s
   (`HOST_IDLE_POLL`), and the first attach that lands, which restarts the idle service onto this
-  build by itself, ends the wait. An attach that cannot reach the host ends it too, on that
+  laptop's service build by itself, ends the wait. An attach that cannot reach the host ends it too, on that
   failure (from the poll only after two misses in a row, `HOST_UNREACHABLE_POLLS`, so a blip
   does not; from anything else at once): a waiting session ends as a lost one does (*Disconnected: …*, which Restart tries
   again), the page shows its failed line with *Try again*, and the form its inline error. The
@@ -311,7 +313,7 @@ Every attach opens by exchanging builds (`client::attach`):
 - **Add** trims both fields, attaches (installing the service if needed), asks the host whether
   the folder is a directory there (`hosts::is_dir`, the wire's `Probe`), then adds the project and
   selects it. A failure stands once, inline under the fields: the attach's own words, *Could not
-  ask <host> about the folder: …*, or *There is no folder <path> on <host>*. A host on another
+  ask <host> about the folder: …*, or *There is no folder <path> on <host>*. A host on another service
   build with sessions mid-turn keeps the form waiting, *Add* refused, with the waiting line and
   *Restart now* in place of a failure; the wait's end carries the *Add* on.
 - **Adding one that is already there selects it.** A root is told apart by host and path together
@@ -476,7 +478,7 @@ and a watch need only fetch what the copy lacks (`crates/core/src/host/copy.rs`)
   `crates/workbench/src/lib.rs`; `offered` in `crates/app/src/workbench/panel.rs`); an active mode
   that is not offered gives way to the first that is.
 - **The Workbench attaches when a host root is shown** (`show_host_files`,
-  `crates/app/src/shell/roots.rs`). Meanwhile it says *Attaching to <host>…*; on a host on another
+  `crates/app/src/shell/roots.rs`). Meanwhile it says *Attaching to <host>…*; on a host on another service
   build with sessions mid-turn it says the waiting line and carries on when the wait ends; a
   failure stands as a line with *Try again*, which attaches again. With an attach already live the
   files show at once, with no waiting line.

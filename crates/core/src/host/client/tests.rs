@@ -894,7 +894,7 @@ fn every_open_error_but_busy_names_the_host() {
         busy: Vec::new(),
         terms: 0,
     };
-    assert_eq!(named(busy), "the host runs another build (old)");
+    assert_eq!(named(busy), "the host runs another service build (old)");
 }
 
 #[tokio::test]
