@@ -572,6 +572,13 @@ impl Shell {
     }
 
     /// The check command of the project at `root`, if it has one.
+    /// The hosts the project at `root` builds on.
+    pub(crate) fn builds_of(&self, root: &Path) -> Vec<onehand_core::workspace::BuildHost> {
+        self.root_index(root)
+            .map(|at| self.window.workspace.roots[at].builds.clone())
+            .unwrap_or_default()
+    }
+
     pub fn check_of(&self, root: &Path) -> Option<String> {
         self.window.workspace.roots[self.root_index(root)?]
             .check

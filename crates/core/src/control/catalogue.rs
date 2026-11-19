@@ -241,6 +241,26 @@ fn catalogue() -> Vec<Tool> {
             ),
         ),
         (
+            "build_on_host",
+            false,
+            "Run a command in a project's folder on one of the hosts it builds on, instead of on \
+             this machine: the folder goes up as it stands, uncommitted work included, the \
+             command runs there, and when it exits 0 the paths the project names come back. \
+             Answers once the command ends, with its exit code, what came back and the last \
+             lines it printed; nothing else can be asked of onehand meanwhile. list_projects \
+             says which hosts a project builds on. Working in a worktree of your own, run \
+             `onehand --build <host> -- <command>` from your shell there instead: this builds \
+             the project's own folder",
+            schema(
+                json!({
+                    "project": text("A project of the window; this session's when left out"),
+                    "host": text("One of the hosts the project builds on"),
+                    "command": text("The shell line to run there, such as `cargo test`"),
+                }),
+                &["host", "command"],
+            ),
+        ),
+        (
             "session_state",
             true,
             "What a worker you opened is doing, one fact per line: its link, its turn and how \

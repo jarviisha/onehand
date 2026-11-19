@@ -154,6 +154,51 @@ fn build_in(
     })
 }
 
+/// How many of the last lines a command printed a tool's answer carries.
+pub const TOOL_LINES: usize = 200;
+
+/// The last [`TOOL_LINES`] lines a command printed, and how many came before
+/// them: what a build of any length leaves for an answer.
+#[derive(Default)]
+pub struct Tail {
+    lines: std::collections::VecDeque<String>,
+    earlier: usize,
+}
+
+impl Tail {
+    pub fn push(&mut self, line: &str) {
+        if self.lines.len() == TOOL_LINES {
+            self.lines.pop_front();
+            self.earlier += 1;
+        }
+        self.lines.push_back(line.to_string());
+    }
+}
+
+/// What a tool answers of a build: how the command ended, whose `PATH`
+/// lacked it, what came back, then the last lines it printed, saying how
+/// many came before them.
+pub fn answer(built: &Built, tail: &Tail) -> String {
+    let mut said = vec![match built.exit {
+        Some(code) => format!("exit {code}"),
+        None => "did not finish".to_string(),
+    }];
+    said.extend(built.hint.clone());
+    if !built.brought.is_empty() {
+        let brought: Vec<String> = built
+            .brought
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect();
+        said.push(format!("brought back: {}", brought.join(", ")));
+    }
+    if tail.earlier > 0 {
+        said.push(format!("… {} earlier lines not shown", tail.earlier));
+    }
+    said.extend(tail.lines.iter().cloned());
+    said.join("\n")
+}
+
 /// `text` as one word of a POSIX shell line.
 pub(crate) fn quoted(text: &str) -> String {
     format!("'{}'", text.replace('\'', r"'\''"))

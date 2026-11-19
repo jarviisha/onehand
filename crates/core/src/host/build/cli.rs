@@ -36,6 +36,36 @@ pub fn os_refusal(host: &str, declared: &[HostSpec]) -> Option<String> {
     }
 }
 
+/// The entry among `builds`, a project's build hosts, for `host`, or why
+/// `project` cannot build there: it names no such host, or the host is one
+/// nothing builds on yet.
+pub fn entry_for(
+    project: &str,
+    builds: &[BuildHost],
+    host: &str,
+    declared: &[HostSpec],
+) -> Result<BuildHost, String> {
+    let Some(entry) = builds.iter().find(|entry| entry.host.0 == host) else {
+        let mut names: Vec<&str> = Vec::new();
+        for entry in builds {
+            if !names.contains(&entry.host.0.as_str()) {
+                names.push(&entry.host.0);
+            }
+        }
+        return Err(match names.is_empty() {
+            true => format!("{project} builds on no host; add one on its page"),
+            false => format!(
+                "{project} does not build on {host}; it builds on {}",
+                names.join(", ")
+            ),
+        });
+    };
+    match os_refusal(host, declared) {
+        Some(why) => Err(why),
+        None => Ok(entry.clone()),
+    }
+}
+
 /// Find the project `cwd` belongs to, as its own folder or a worktree of it,
 /// among the workspaces kept under the config root `root`, and its entry for
 /// `host`. A folder that is a project of several workspaces is read from the
@@ -80,28 +110,8 @@ pub fn asked_blocking(
             repo.top.display()
         ));
     };
-    let entry = found
-        .iter()
-        .flat_map(|(_, builds)| builds)
-        .find(|entry| entry.host.0 == host);
-    let Some(entry) = entry.cloned() else {
-        let mut names: Vec<&str> = Vec::new();
-        for entry in found.iter().flat_map(|(_, builds)| builds) {
-            if !names.contains(&entry.host.0.as_str()) {
-                names.push(&entry.host.0);
-            }
-        }
-        return Err(match names.is_empty() {
-            true => format!("{project} builds on no host; add one on its page"),
-            false => format!(
-                "{project} does not build on {host}; it builds on {}",
-                names.join(", ")
-            ),
-        });
-    };
-    if let Some(why) = os_refusal(host, declared) {
-        return Err(why);
-    }
+    let builds: Vec<BuildHost> = found.into_iter().flat_map(|(_, builds)| builds).collect();
+    let entry = entry_for(&project, &builds, host, declared)?;
     let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
     let within = cwd
         .strip_prefix(&repo.top)

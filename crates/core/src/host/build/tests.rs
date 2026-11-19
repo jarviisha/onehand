@@ -620,3 +620,74 @@ mod cli {
         );
     }
 }
+
+/// The last lines `n` lines leave in a tail.
+fn tail_of(n: usize) -> Tail {
+    let mut tail = Tail::default();
+    for i in 1..=n {
+        tail.push(&format!("line {i}"));
+    }
+    tail
+}
+
+#[test]
+fn a_tools_answer_says_the_exit_what_came_back_and_the_last_lines() {
+    let built = Built {
+        exit: Some(0),
+        brought: vec!["target/app".into(), "dist".into()],
+        hint: None,
+    };
+    assert_eq!(
+        answer(&built, &tail_of(2)),
+        "exit 0\nbrought back: target/app, dist\nline 1\nline 2"
+    );
+    let missing = Built {
+        exit: Some(127),
+        brought: Vec::new(),
+        hint: Some("cargo is not on h's PATH for ssh".into()),
+    };
+    assert_eq!(
+        answer(&missing, &tail_of(0)),
+        "exit 127\ncargo is not on h's PATH for ssh"
+    );
+    let stopped = Built {
+        exit: None,
+        brought: Vec::new(),
+        hint: None,
+    };
+    assert_eq!(answer(&stopped, &tail_of(0)), "did not finish");
+    // Only the last lines are kept, and the answer says how many came before.
+    let long = answer(&stopped, &tail_of(TOOL_LINES + 3));
+    assert!(
+        long.starts_with("did not finish\n… 3 earlier lines not shown\nline 4\n"),
+        "{long}"
+    );
+    assert!(long.ends_with(&format!("line {}", TOOL_LINES + 3)));
+}
+
+#[test]
+fn a_projects_entry_for_a_host_is_found_or_refused_in_words() {
+    use crate::config::{HostOs, HostSpec};
+    let builds = [on_local(&["a"], None)];
+    assert_eq!(
+        super::cli::entry_for("proj", &builds, "local", &[]),
+        Ok(builds[0].clone())
+    );
+    assert_eq!(
+        super::cli::entry_for("proj", &[], "local", &[]),
+        Err("proj builds on no host; add one on its page".to_string())
+    );
+    assert_eq!(
+        super::cli::entry_for("proj", &builds, "other", &[]),
+        Err("proj does not build on other; it builds on local".to_string())
+    );
+    let windows = [HostSpec {
+        name: HostName("local".into()),
+        os: HostOs::Windows,
+        arch: "AMD64".into(),
+    }];
+    assert_eq!(
+        super::cli::entry_for("proj", &builds, "local", &windows),
+        Err("local runs Windows; nothing builds on a Windows host yet".to_string())
+    );
+}

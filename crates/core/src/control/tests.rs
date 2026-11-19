@@ -273,6 +273,7 @@ fn the_catalogue_lists_every_tool_with_a_schema() {
             "open_file",
             "list_issues",
             "create_issue",
+            "build_on_host",
             "session_state",
             "send_prompt",
             "cancel_turn",
@@ -983,4 +984,21 @@ fn every_listed_tool_parses_and_holds_to_its_schema() {
         assert!(why.contains("nonsense"), "{}: {why}", tool.name);
     }
     assert!(parse("no_such_tool", &json!({})).is_err());
+}
+
+#[test]
+fn build_on_host_reads_its_host_and_command_and_an_optional_project() {
+    assert_eq!(
+        performs("build_on_host", json!({"host": "h", "command": "make"})),
+        Call::BuildOnHost {
+            project: None,
+            host: "h".into(),
+            command: "make".into(),
+        }
+    );
+    let named = performs(
+        "build_on_host",
+        json!({"project": "api", "host": "h", "command": "make"}),
+    );
+    assert_eq!(named.project(), Some("api"));
 }
