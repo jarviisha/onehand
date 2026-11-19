@@ -70,6 +70,11 @@ minor bump may break any of them.
   this build; *Restart now* asks before stopping them. Files, the editor, git and the
   terminal on a host, and onehand's tools, workflows, tasks, issues and unattended runs for a
   host project, are not built yet.
+- Hosts are declared: Settings gains a *Hosts* page that adds a host by name, asks it over ssh
+  what it is and what it has (`git`, `tar`, `cargo`, `rustc`, `dotnet`), and keeps it in
+  `onehand.toml` as `[[hosts]]`. A host that is not Linux on x86_64, a Windows one included, can
+  be declared but runs no sessions: the host-project and offload forms never offer it. Nothing
+  builds on a host yet.
 - Putting the offload form away no longer stops a send of the code under way: it runs to its end,
   and what went is kept for the next offload.
 

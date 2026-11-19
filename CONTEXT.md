@@ -299,6 +299,17 @@ sessions park: a permission is allowed, and a question is told to decide on its 
 it chose. Kept on the host, so it holds while the laptop is away.
 _Avoid_: auto-approve, YOLO mode
 
+**Declared host**:
+A host a person added in Settings, kept for every workspace with the system a probe found. A host
+a project names without anyone having declared it is _not declared_, and is taken for Linux on
+x86_64.
+
+**Build-only host**:
+A declared host no session runs on: any that is not Linux on x86_64. A project's code can be
+compiled there, and nothing else of onehand reaches it. Compiling a project is a different thing
+from the host service's **Build**, below.
+_Avoid_: build server, build machine, VPS
+
 **Build**:
 Which copy of the host service a host runs, named by a hash of the binary itself. The laptop puts
 its own build on a host beside any other, and restarts the service onto it only when no session
