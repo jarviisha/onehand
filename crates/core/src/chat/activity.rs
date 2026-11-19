@@ -198,6 +198,16 @@ pub(crate) fn tail_trunc(path: &str, max: usize) -> String {
     }
 }
 
+/// Whether an edit brought a file into being: a diff with nothing before it.
+pub(crate) fn creates(tool: &ToolItem) -> bool {
+    tool.call.kind == ToolKind::Edit
+        && tool
+            .call
+            .content
+            .iter()
+            .any(|content| matches!(content, ToolContent::Diff { old: None, .. }))
+}
+
 /// How a tool call reads on a line: its verb, its subject and its kind.
 ///
 /// **The subject comes back with its secrets masked**, so no caller can put a
@@ -218,10 +228,7 @@ fn classify(tool: &ToolItem) -> Presentation {
             ActivityKind::Inspect,
         ),
         ToolKind::Edit => {
-            let created = call
-                .content
-                .iter()
-                .any(|content| matches!(content, ToolContent::Diff { old: None, .. }));
+            let created = creates(tool);
             let path = first_diff_path(tool).unwrap_or(call.title.as_str());
             present(
                 if created { Verb::Created } else { Verb::Edited },
