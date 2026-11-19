@@ -352,8 +352,8 @@ reaches.
   `chosen_ink`; the library's own hover on a ghost button. The row the keys are on inside a popup takes
   the same selected step (`accent`). A secondary button rests on a fill of its own and takes
   its pointed-at step under the pointer; the selected step is a chosen row's. Keyboard
-  focus on a control is the ring. A field is edged at rest and ringed on focus, as the library
-  draws it; the composer, the input surface, shows focus by its caret (*Components*).
+  focus on a control is the ring. A field is edged and shows focus by its caret alone, its edge
+  unchanged; the composer, the input surface, likewise (*Components*).
 - At most one primary in a view; a view needs none (the Settings page has none). Where layers
   stack, what waits on the person holds it while it shows (a floating issue, an open form, a
   pinned card, a run's approval), and what it covers steps down to `secondary`.
@@ -369,7 +369,7 @@ Reuse gpui-component before building anything: `Root`, `DockArea`, `Sidebar`, `D
 `InputState`, `Editor`, `TextView`, plus gpui's own `list` for the transcript. Controls go through
 the UI crate's builders, which set the pointer cursor and the library's corner (`radius`): buttons
 through `action`; fields through `text_input`, `search_input` and `text_area`. **A field is the
-library's**: edged in `input` on the page's fill and ringed on focus, in a form, a dialog, a page's
+library's**: edged in `input` on the page's fill, unchanged by focus, in a form, a dialog, a page's
 top and a search alike; a search adds the search mark and the clear button, and the composer's field
 is its card's. Two searches stand on a bar instead: the title bar's palette keeps its edge and drops its
 fill, standing on the bar's, and has no search mark; one framed by its bar's own lines (the Issues tab's filter bar) is

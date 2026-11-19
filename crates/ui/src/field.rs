@@ -7,14 +7,18 @@ use gpui::{
 use gpui_component::input::{Input, InputState, Textarea, TextareaState};
 use gpui_component::{ActiveTheme as _, Icon, IconName, Sizable as _, StyledExt as _};
 
-/// A text field as the library draws it, edged in `input` and ringed on focus,
-/// at the theme's corner: the corner [`action`](crate::action) gives a button,
-/// so a field and the button beside it are one shape.
+/// A text field as the library draws it, edged in `input`, at the theme's
+/// corner: the corner [`action`](crate::action) gives a button, so a field and
+/// the button beside it are one shape. Focus changes nothing on it: the caret
+/// says where the typing goes, and a ring around every field the keyboard
+/// lands in was noise.
 ///
 /// Here rather than in the app for the reason [`action`](crate::action) is: a feature crate draws
 /// fields too, and one wrapper is one place for the corner to hold.
 pub fn text_input(state: &Entity<InputState>, cx: &App) -> Input {
-    Input::new(state).rounded(cx.theme().radius)
+    Input::new(state)
+        .rounded(cx.theme().radius)
+        .focus_bordered(false)
 }
 
 /// One setting, stacked: its name, a line about it in meta text, and the
@@ -69,7 +73,18 @@ pub fn search_input(state: &Entity<InputState>, cx: &App) -> Input {
 }
 
 /// A field of several lines, at the corner [`text_input`] gives a field of
-/// one, so the two read as one control in a form.
+/// one, so the two read as one control in a form, and like it unchanged by
+/// focus.
+///
+/// **Its fill and edge are drawn here, not by the library**, which offers no
+/// way to keep them while dropping its focus ring; a caller whose card or well
+/// is the field takes them off with `.bg(transparent)` and `.border_0()`.
 pub fn text_area(state: &Entity<TextareaState>, cx: &App) -> Textarea {
-    Textarea::new(state).rounded(cx.theme().radius)
+    let theme = cx.theme();
+    Textarea::new(state)
+        .appearance(false)
+        .bg(theme.input_background())
+        .border_1()
+        .border_color(theme.input)
+        .rounded(theme.radius)
 }

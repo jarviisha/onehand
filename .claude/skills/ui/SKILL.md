@@ -55,7 +55,7 @@ changing navigation.
 | Rest | always | its tokens; its text and icons in the inks their roles take (UI patterns, *Hierarchy*; `DESIGN.md`, *Icons*) |
 | Hover | it can be pressed or picked | the pointer cursor (`action` sets it) and the hover step its surface takes (`DESIGN.md`, *Colour and state*); the library's own on its other controls |
 | Selected or open | one of several is chosen, or its menu is open | the selected step (`DESIGN.md`, *Colour and state*) |
-| Focus | the keyboard reaches it | the ring, for the keyboard only (`DESIGN.md`, *Colour and state*); row actions become available without moving content; custom elements use `.focus_visible(\|s\| s.border_color(cx.theme().ring))`, library controls draw theirs |
+| Focus | the keyboard reaches it | the ring, for the keyboard only (`DESIGN.md`, *Colour and state*); row actions become available without moving content; custom elements use `.focus_visible(\|s\| s.border_color(cx.theme().ring))`, library controls draw theirs, and a field draws none (its caret shows it) |
 | Refusing | it cannot act now | `.refuses(Some(why))`: no press, the arrow cursor, and `why` as its tooltip |
 | Loading | it started work still running | `.loading(true)` on the button that started it, its label kept |
 | Waiting, empty, failed | it shows content | UI patterns, *Waiting*, *Nothing to show*, *Failing and refusing* |

@@ -505,8 +505,8 @@ danger tint.
   or sheet opening or closing puts it away; the control just pressed shows none again until the
   pointer moves from where it was pressed, so none stands over the menu it opened. What a row's
   hover actions lie over shows no tooltip while the pointer is on them.
-- **Keyboard focus shows the ring**, only when the keyboard moved it there. A field is edged at
-  rest, and its edge turns the `ring` ink while focused.
+- **Keyboard focus shows the ring**, only when the keyboard moved it there. A field is the
+  exception: edged in `input` and unchanged by focus, its caret saying where the typing goes.
 - A dialog, a popup or a floating panel opens with focus on its first field, or on its primary
   action when it has none. A panel floating beside the list it was picked from (the Issues
   page's issue) leaves focus on the list, so ↑ and ↓ keep stepping it. Each closes on Esc, asking first when a form in it holds unsaved
