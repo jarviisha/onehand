@@ -565,7 +565,10 @@ mod cli {
         let (root, scratch) = (Scratch::new("root"), Scratch::new("work"));
         let top = repo(&scratch, "proj");
         let tree = scratch.0.join("elsewhere-feature");
-        git(&top, &["worktree", "add", "-q", "-b", "f", tree.to_str().unwrap()]);
+        git(
+            &top,
+            &["worktree", "add", "-q", "-b", "f", tree.to_str().unwrap()],
+        );
         keep(&root.0, &top, &["build01"]);
         let asked = asked_blocking(&root.0, &[], &tree, "build01").expect("found");
         assert_eq!(asked.entry.host, HostName("build01".into()));

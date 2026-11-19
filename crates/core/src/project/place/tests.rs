@@ -55,7 +55,10 @@ fn a_linked_checkout_at_another_sub_path_is_new() {
 fn a_main_checkout_is_never_a_worktree() {
     let (main, linked) = repo_with_worktree("place-main-new");
     let p = Project::new(ProjectId::mint(1), None, linked);
-    assert_eq!(place_blocking(&projects_of(&p), None, &main), Placement::New);
+    assert_eq!(
+        place_blocking(&projects_of(&p), None, &main),
+        Placement::New
+    );
 }
 
 #[test]

@@ -10,7 +10,7 @@ pub const FILE: &str = "project.toml";
 /// What reading a project's folder found.
 #[derive(Debug)]
 pub enum ProjectLoad {
-    Found(Project),
+    Found(Box<Project>),
     /// No file there: a folder holding something else, or none at all.
     Missing,
     /// A file there that cannot be read, for this. It is never written over:
@@ -27,7 +27,7 @@ pub fn load_from(dir: &Path) -> ProjectLoad {
         Err(e) => return ProjectLoad::Unreadable(format!("{}: {e}", path.display())),
     };
     match toml::from_str(&text) {
-        Ok(project) => ProjectLoad::Found(project),
+        Ok(project) => ProjectLoad::Found(Box::new(project)),
         Err(e) => ProjectLoad::Unreadable(format!("{}: {e}", path.display())),
     }
 }
@@ -52,7 +52,7 @@ pub fn load_all_blocking(projects_dir: &Path) -> (Projects, Vec<String>) {
             continue;
         }
         match load_from(&dir) {
-            ProjectLoad::Found(project) => projects.put(project),
+            ProjectLoad::Found(project) => projects.put(*project),
             ProjectLoad::Missing => {}
             ProjectLoad::Unreadable(why) => problems.push(why),
         }

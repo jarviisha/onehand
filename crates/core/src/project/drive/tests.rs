@@ -68,8 +68,20 @@ fn placing_a_known_folder_changes_nothing() {
 #[test]
 fn a_new_folder_placed_twice_is_one_project() {
     let mut d = ProjectsDrive::new(Projects::default(), "/data/projects".into());
-    let (first, _) = d.place(None, "/b".into(), Placement::New, MadeBy::Added, ProjectId::mint(2));
-    let (second, fx) = d.place(None, "/b".into(), Placement::New, MadeBy::Added, ProjectId::mint(3));
+    let (first, _) = d.place(
+        None,
+        "/b".into(),
+        Placement::New,
+        MadeBy::Added,
+        ProjectId::mint(2),
+    );
+    let (second, fx) = d.place(
+        None,
+        "/b".into(),
+        Placement::New,
+        MadeBy::Added,
+        ProjectId::mint(3),
+    );
     assert_eq!(first, second);
     assert!(fx.is_empty());
     assert_eq!(d.iter().count(), 1);
@@ -90,7 +102,10 @@ fn placing_a_worktree_records_it_with_who_made_it() {
     );
     assert_eq!(id, p.id);
     let wt = &d.get(&p.id).unwrap().worktrees[0];
-    assert_eq!((wt.path.as_path(), wt.branch.as_str(), wt.made_by), (Path::new("/code/a-w"), "w", MadeBy::Added));
+    assert_eq!(
+        (wt.path.as_path(), wt.branch.as_str(), wt.made_by),
+        (Path::new("/code/a-w"), "w", MadeBy::Added)
+    );
     assert!(matches!(fx.last(), Some(Effect::Changed(c)) if *c == p.id));
 }
 
@@ -130,7 +145,9 @@ fn a_failed_write_puts_the_name_back_and_says_so_once() {
         })
         .collect();
     assert_eq!(said, vec![("a", "disk full")]);
-    assert!(fx.iter().any(|e| matches!(e, Effect::Changed(id) if *id == p.id)));
+    assert!(fx
+        .iter()
+        .any(|e| matches!(e, Effect::Changed(id) if *id == p.id)));
 }
 
 #[test]
@@ -211,7 +228,8 @@ fn build_hosts_keep_their_refusals() {
     );
     assert_eq!(
         d.put_build_host(&p.id, BuildHost::parse("mac", "", "").unwrap(), None)
-            .err().unwrap(),
+            .err()
+            .unwrap(),
         "a runs its sessions on a host; it builds there already"
     );
     let _ = d.remove_build_host(&p.id, &win());
@@ -238,7 +256,10 @@ fn a_build_host_is_changed_in_its_place_and_an_unchanged_one_writes_nothing() {
         d.get(&p.id).unwrap().builds,
         vec![changed.clone(), builds_on("win")]
     );
-    assert!(d.put_build_host(&p.id, changed, Some(0)).unwrap().is_empty());
+    assert!(d
+        .put_build_host(&p.id, changed, Some(0))
+        .unwrap()
+        .is_empty());
 }
 
 #[test]

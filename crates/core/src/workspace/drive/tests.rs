@@ -771,7 +771,12 @@ fn a_saved_conversation_resumes_on_its_folder_kept_again() {
     let mut drive = bound();
     let fx = read(&mut drive, saved("/run", true, "agent"));
     assert_eq!(names(&fx), ["Place(/run)"], "its folder is placed first");
-    let Some(Effect::Place { saved: placed, spec, uid }) = fx.into_iter().next() else {
+    let Some(Effect::Place {
+        saved: placed,
+        spec,
+        uid,
+    }) = fx.into_iter().next()
+    else {
         panic!("placed");
     };
     let fx = drive.resume_placed(placed, spec, uid, &at("/run"));
@@ -885,7 +890,10 @@ fn told_a_new_name_relabels_the_projects_own_row_only() {
     assert_eq!(drive.roots[1].label, "Alpha");
     assert_eq!(drive.roots[2].label, "a-x");
     assert_eq!(drive.roots[2].check.as_deref(), Some("make"));
-    assert_eq!(drive.roots[0].label, "a", "a row of no project is untouched");
+    assert_eq!(
+        drive.roots[0].label, "a",
+        "a row of no project is untouched"
+    );
     assert!(drive.told(&p).is_empty(), "told again, nothing changed");
 }
 
@@ -910,7 +918,11 @@ fn told_an_offload_drops_the_sessions_of_that_folder_only() {
         branch: None,
     });
     let fx = drive.told(&p);
-    assert!(names(&fx).contains(&"Close(2)".to_string()), "{:?}", names(&fx));
+    assert!(
+        names(&fx).contains(&"Close(2)".to_string()),
+        "{:?}",
+        names(&fx)
+    );
     assert!(!names(&fx).contains(&"Close(1)".to_string()));
     assert!(drive.roots[2].offload.is_some());
 }

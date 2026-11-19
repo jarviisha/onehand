@@ -359,7 +359,11 @@ fn active_names_a_project_by_key() {
     let mut ws = Workspace::seeded("/a");
     ws.add_root("/b");
     ws.select_root(1);
-    let back = Workspace::from_config(one_ahead(ws.to_config()), PathBuf::from("/store"), &Default::default());
+    let back = Workspace::from_config(
+        one_ahead(ws.to_config()),
+        PathBuf::from("/store"),
+        &Default::default(),
+    );
     assert_eq!(back.roots[back.active_root].path, PathBuf::from("/b"));
 }
 
@@ -481,7 +485,11 @@ fn a_host_root_round_trips_through_the_workspace_file() {
     ws.roots[i].check = Some("make test".into());
     let text = toml::to_string(&ws.to_config()).unwrap();
     assert!(text.contains("host = \"vps\""), "{text}");
-    let back = Workspace::from_config(toml::from_str(&text).unwrap(), PathBuf::from("/s"), &Default::default());
+    let back = Workspace::from_config(
+        toml::from_str(&text).unwrap(),
+        PathBuf::from("/s"),
+        &Default::default(),
+    );
     let root = &back.roots[1];
     assert_eq!(root.on_host(), Some(&HostName("vps".into())));
     assert_eq!(root.path, PathBuf::from("/srv/app/"));
@@ -497,7 +505,11 @@ fn a_local_and_a_host_root_on_one_path_both_survive_a_reload() {
     let i = ws.add_host_root(HostName("vps".into()), PathBuf::from("/srv/app"));
     ws.roots[i].pinned = true;
     let text = toml::to_string(&ws.to_config()).unwrap();
-    let back = Workspace::from_config(toml::from_str(&text).unwrap(), PathBuf::from("/s"), &Default::default());
+    let back = Workspace::from_config(
+        toml::from_str(&text).unwrap(),
+        PathBuf::from("/s"),
+        &Default::default(),
+    );
     assert_eq!(back.roots.len(), 2);
     assert!(back.roots[0].on_host().is_none() && !back.roots[0].pinned);
     assert!(back.roots[1].on_host().is_some() && back.roots[1].pinned);
@@ -618,7 +630,11 @@ fn an_offloaded_root_on_a_branch_keeps_its_branch() {
         ..on.clone()
     });
     let text = toml::to_string(&ws.to_config()).unwrap();
-    let back = Workspace::from_config(toml::from_str(&text).unwrap(), PathBuf::from("/store"), &Default::default());
+    let back = Workspace::from_config(
+        toml::from_str(&text).unwrap(),
+        PathBuf::from("/store"),
+        &Default::default(),
+    );
     assert_eq!(back.roots[1].offload, Some(on));
     assert_eq!(back.roots[0].offload.as_ref().unwrap().branch, None);
 }
@@ -918,7 +934,10 @@ fn rows_take_their_facts_from_their_project() {
     p.worktrees.push(worktree("/code/a-x"));
     let projects = Projects::from_iter([p.clone()]);
     let cfg = WorkspaceConfig {
-        projects: vec![entry(Some(&p.id), "/code/a"), entry(Some(&p.id), "/code/a-x")],
+        projects: vec![
+            entry(Some(&p.id), "/code/a"),
+            entry(Some(&p.id), "/code/a-x"),
+        ],
         ..Default::default()
     };
     let ws = Workspace::from_config(cfg, "/ws".into(), &projects);
@@ -968,7 +987,10 @@ fn a_placed_row_writes_its_id_and_leaves_its_facts_to_its_project() {
     assert_eq!(cfg.projects.len(), 1, "a transient row is left out");
     assert_eq!(cfg.projects[0].id, Some(p.id.clone()));
     assert_eq!(cfg.projects[0].check, None);
-    assert_eq!(ProjectRoot::of(&p, Folder::Home).check.as_deref(), Some("make"));
+    assert_eq!(
+        ProjectRoot::of(&p, Folder::Home).check.as_deref(),
+        Some("make")
+    );
 }
 
 #[test]

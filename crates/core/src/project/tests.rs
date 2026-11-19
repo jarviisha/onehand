@@ -27,7 +27,7 @@ fn a_project_round_trips_through_its_file() {
         offload: None,
     });
     save_to(&p, &dir).unwrap();
-    assert!(matches!(load_from(&dir), ProjectLoad::Found(back) if back == p));
+    assert!(matches!(load_from(&dir), ProjectLoad::Found(back) if *back == p));
 }
 
 #[test]

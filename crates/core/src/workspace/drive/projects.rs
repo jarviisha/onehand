@@ -118,8 +118,7 @@ impl WorkspaceDrive {
         if self.local_index(&dir).is_some() {
             return Vec::new();
         }
-        self.workspace
-            .add_placed_quietly(row(None, dir, project));
+        self.workspace.add_placed_quietly(row(None, dir, project));
         self.kept()
     }
 

@@ -21,6 +21,7 @@ mod migrate;
 use crate::config::{AgentSpec, PanelLayout, WorkspaceConfig};
 pub use drive::WorkspaceDrive;
 pub use migrate::migrate_storage_blocking;
+pub(crate) use migrate::OFFLOAD;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -520,10 +521,7 @@ impl Workspace {
                         host: root.host.clone(),
                         pinned: root.pinned,
                         check: root.check.clone().filter(|_| own),
-                        offload: root
-                            .offload
-                            .clone()
-                            .filter(|_| own && root.host.is_none()),
+                        offload: root.offload.clone().filter(|_| own && root.host.is_none()),
                         builds: root.builds.clone().into_iter().filter(|_| own).collect(),
                     }
                 })

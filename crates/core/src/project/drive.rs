@@ -75,7 +75,10 @@ pub enum Effect {
     Write(Box<ProjectWrite>),
     /// Report [`Input::Elapsed`] with `token` after `after`. A late answer is
     /// **dropped** by its token: a later change armed a later wait.
-    Arm { token: u64, after: Duration },
+    Arm {
+        token: u64,
+        after: Duration,
+    },
     /// The project changed: tell every window holding it.
     Changed(ProjectId),
     Signal(Signal),
@@ -175,7 +178,10 @@ impl ProjectsDrive {
         let Some(project) = self.projects.get_mut(id) else {
             return Vec::new();
         };
-        if project.folder(project.host.as_ref(), &worktree.path).is_some() {
+        if project
+            .folder(project.host.as_ref(), &worktree.path)
+            .is_some()
+        {
             return Vec::new();
         }
         let before = project.worktrees.clone();
@@ -408,7 +414,8 @@ impl ProjectsDrive {
                     // Each folder's offload is a thing of its own, and stays
                     // as it now is.
                     for worktree in &mut worktrees {
-                        if let Some(now) = project.worktrees.iter().find(|w| w.path == worktree.path)
+                        if let Some(now) =
+                            project.worktrees.iter().find(|w| w.path == worktree.path)
                         {
                             worktree.offload = now.offload.clone();
                         }

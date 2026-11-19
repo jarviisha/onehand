@@ -83,8 +83,7 @@ pub(crate) fn asked_blocking(
         Some(name) if name == ".git" => repo.common.parent().unwrap_or(&repo.common),
         _ => &repo.common,
     };
-    let (projects, _) =
-        crate::project::file::load_all_blocking(&crate::config::projects_in(root));
+    let (projects, _) = crate::project::file::load_all_blocking(&crate::config::projects_in(root));
     let is_here = |path: &Path| path == repo.top || path == main;
     let Some(found) = projects.iter().find(|project| {
         project.host.is_none()

@@ -4,10 +4,7 @@ use std::path::{Path, PathBuf};
 
 /// A fresh folder of its own for one test, named for `case`.
 pub(crate) fn scratch(case: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "onehand-projects-{case}-{}",
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("onehand-projects-{case}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
@@ -42,7 +39,10 @@ pub(crate) fn repo_with_worktree(case: &str) -> (PathBuf, PathBuf) {
     git(&main, &["add", "."]);
     git(&main, &["commit", "-qm", "one"]);
     let wt = base.join("wt");
-    git(&main, &["worktree", "add", "-q", "-b", "w", wt.to_str().unwrap()]);
+    git(
+        &main,
+        &["worktree", "add", "-q", "-b", "w", wt.to_str().unwrap()],
+    );
     (
         std::fs::canonicalize(&main).unwrap(),
         std::fs::canonicalize(&wt).unwrap(),

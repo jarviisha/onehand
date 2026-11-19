@@ -716,7 +716,8 @@ fn a_start_off_screen_keeps_its_project_then_its_task_and_asks() {
     assert!(tasks.tasks().is_empty(), "nothing kept before its project");
     let mut workspace =
         crate::workspace::WorkspaceDrive::new(crate::workspace::Workspace::seeded("/other"));
-    let project = crate::project::Project::new(crate::project::ProjectId::mint(1), None, "/p".into());
+    let project =
+        crate::project::Project::new(crate::project::ProjectId::mint(1), None, "/p".into());
     let (fx, _) = link::keep(&mut tasks, Some(&mut workspace), Some(&project), start);
     assert!(
         workspace

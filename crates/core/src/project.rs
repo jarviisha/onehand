@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 
 pub mod drive;
 pub mod file;
+pub(crate) mod migrate;
 mod place;
 pub use drive::ProjectsDrive;
 pub use place::{place_blocking, Placement};
