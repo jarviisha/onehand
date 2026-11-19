@@ -42,7 +42,7 @@ pub use choice::{choice, choice_track, picker, switch};
 pub use choice_mark::choice_mark;
 pub use confirm::{Answer, Confirm, confirm_either_on, confirm_on};
 pub use control_size::{ControlSize, Short, ShortIcon, Tall, TallIcon};
-pub use field::{field, search_input, text_area, text_input};
+pub use field::{disabled_field_fill, field, search_input, text_area, text_input};
 pub use icon::AppIcon;
 pub use ink::{
     StatusInk, Tint, chosen_fill, chosen_ink, control_fill, control_fill_of, faint_rule, meta_ink,

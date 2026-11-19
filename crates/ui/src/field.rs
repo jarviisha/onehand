@@ -78,7 +78,8 @@ pub fn search_input(state: &Entity<InputState>, cx: &App) -> Input {
 ///
 /// **Its fill and edge are drawn here, not by the library**, which offers no
 /// way to keep them while dropping its focus ring; a caller whose card or well
-/// is the field takes them off with `.bg(transparent)` and `.border_0()`.
+/// is the field takes them off with `.bg(transparent)` and `.border_0()`, and
+/// a disabled one takes [`disabled_field_fill`].
 pub fn text_area(state: &Entity<TextareaState>, cx: &App) -> Textarea {
     let theme = cx.theme();
     Textarea::new(state)
@@ -87,4 +88,11 @@ pub fn text_area(state: &Entity<TextareaState>, cx: &App) -> Textarea {
         .border_1()
         .border_color(theme.input)
         .rounded(theme.radius)
+}
+
+/// The fill the library gives a disabled field, for a [`text_area`], whose
+/// fill is drawn here rather than by the library.
+pub fn disabled_field_fill(cx: &App) -> gpui::Hsla {
+    use gpui_component::Colorize as _;
+    cx.theme().input.mix_oklab(cx.theme().transparent, 0.8)
 }

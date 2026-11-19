@@ -35,13 +35,16 @@ const COMMAND_LEAD: char = '>';
 /// the palette took it.
 pub(crate) struct Palette {
     input: Entity<InputState>,
-    /// Holds the field and its list, so a press on a row, which takes the
-    /// keyboard, leaves the list open for its click.
+    /// Holds the field and its list: the list shows while the keyboard is
+    /// anywhere in here.
     focus: FocusHandle,
     cursor: usize,
     scroll: ScrollHandle,
+    /// Where the keyboard was before Ctrl+K put it here; `None` when a click
+    /// did, and closing then gives it to the conversation.
     back: Option<WeakFocusHandle>,
     _input: Subscription,
+    _left: Subscription,
 }
 
 impl Palette {
@@ -58,13 +61,26 @@ impl Palette {
             InputEvent::PressEnter { .. } => shell.palette_take(window, cx),
             InputEvent::Focus | InputEvent::Blur => cx.notify(),
         });
+        let focus = cx.focus_handle();
+        // Left by a click elsewhere, the palette forgets where it was opened
+        // from and what was typed, so the next opening starts afresh rather
+        // than giving the keyboard back to something no longer drawn.
+        let _left = cx.on_focus_out(&focus, window, |shell, _, window, cx| {
+            let input = shell.palette().input.clone();
+            input.update(cx, |input, cx| input.set_value("", window, cx));
+            let palette = shell.palette_mut();
+            palette.back = None;
+            palette.cursor = 0;
+            cx.notify();
+        });
         Self {
             input,
-            focus: cx.focus_handle(),
+            focus,
             cursor: 0,
             scroll: ScrollHandle::new(),
             back: None,
             _input,
+            _left,
         }
     }
 }
@@ -100,7 +116,7 @@ fn matches(query: &str, text: &str) -> bool {
 /// The commands the palette offers: the window's own, which act wherever the
 /// keyboard is, less the one that opens the palette.
 fn offered(command: &Command) -> bool {
-    command.context.starts_with("Shell") && command.id != "focus_rail_search"
+    command.context.split_whitespace().next() == Some("Shell") && command.id != "focus_rail_search"
 }
 
 /// The commands `query` (without its lead) finds, in the keymap's order.
@@ -425,6 +441,8 @@ mod tests {
         // A card's command would act on the title bar, where the keys are.
         assert!(!ids.contains(&"question_take"));
         assert!(!ids.contains(&"rail_down"));
+        // Nor the terminal's shell list, whose context only starts alike.
+        assert!(!ids.contains(&"shell_row_close"));
         let found: Vec<&str> = find_commands("terminal").map(|(_, c)| c.id).collect();
         assert_eq!(found, vec!["terminal"]);
     }
