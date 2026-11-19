@@ -32,8 +32,9 @@
 // three of the states the app spends most of its time in have no finished form
 // to look at: an answer arriving a chunk at a time, a thought still being had,
 // a command still running. Put a `fast` in the prompt to have the whole thing
-// land at once, for when what is wanted is the finished article. Cancelling
-// stops it where it is.
+// land at once, for when what is wanted is the finished article; a `slow` plays
+// it four times slower (`slow 8`, eight), for looking at each state as it
+// passes. Cancelling stops it where it is.
 //
 // Put a `work` in the prompt for a turn at work and nothing else, held long
 // enough to look at: a thought still being had, a plan with an item in hand, a
@@ -1060,7 +1061,10 @@ rl.on('line', (line) => {
         .map((block) => block?.text ?? '')
         .join(' ')
         .toLowerCase();
-      pace = said.includes('fast') ? 0 : 1;
+      // `slow` plays it four times slower, `slow 8` eight: long enough to
+      // look at each state as it passes.
+      const slow = said.match(/\bslow(?:\s+(\d+))?\b/);
+      pace = said.includes('fast') ? 0 : slow ? Math.max(1, Number(slow[1] ?? 4)) : 1;
       // A whole word, so a prompt that only mentions work in passing still
       // gets the tour.
       if (/\bwork\b/.test(said)) return step.working();
