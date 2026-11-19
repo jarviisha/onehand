@@ -8,6 +8,7 @@
 
 use super::{Effect, OffScreen, TasksDrive};
 use crate::chat::Chat;
+use crate::project::Project;
 use crate::task::drive::RunDrive;
 use crate::task::{Task, Working};
 use crate::workspace::{drive as workspace, WorkspaceDrive};
@@ -38,18 +39,22 @@ pub fn finished<W: Copy>(
 }
 
 /// Carry [`Effect::Keep`] for `start`, with the workspace of the window it
-/// was asked from if that is still open: the project the task works in kept
-/// there, listed but not put on screen, then the task kept and asking for
-/// its place. With the window gone, the start is refused. What the tasks do
+/// was asked from if that is still open and the project its folder is of:
+/// the folder kept there, listed but not put on screen, then the task kept
+/// and asking for its place. With the window or the project gone, the start
+/// is refused. What the tasks do
 /// next, and what the workspace does.
 #[must_use]
 pub fn keep<W: Copy>(
     tasks: &mut TasksDrive<W>,
     workspace: Option<&mut WorkspaceDrive>,
+    project: Option<&Project>,
     start: OffScreen<W>,
 ) -> (Vec<Effect<W>>, Vec<workspace::Effect>) {
     let dir = start.launch.dir().to_path_buf();
-    let kept = workspace.map(|workspace| workspace.keep_project_quietly(dir));
+    let kept = workspace
+        .zip(project)
+        .map(|(workspace, project)| workspace.keep_project_quietly(dir, project));
     let mut fx = Vec::new();
     tasks.kept(start, kept.is_some(), &mut fx);
     (fx, kept.unwrap_or_default())

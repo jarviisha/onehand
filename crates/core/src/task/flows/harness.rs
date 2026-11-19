@@ -203,7 +203,13 @@ impl Flow {
                 let Flow {
                     tasks, workspace, ..
                 } = self;
-                let (fx, _) = tasks_link::keep(tasks, Some(workspace), start);
+                let dir = start.launch.dir().to_path_buf();
+                let project = crate::project::Project::new(
+                    crate::project::ProjectId::mint(1),
+                    None,
+                    dir,
+                );
+                let (fx, _) = tasks_link::keep(tasks, Some(workspace), Some(&project), start);
                 self.queue.extend(fx.into_iter().map(Work::Tasks));
             }
             TasksEffect::JudgeRemoval(_)

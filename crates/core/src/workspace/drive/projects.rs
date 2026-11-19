@@ -2,8 +2,23 @@
 //! the host its code was offloaded to.
 
 use super::{Effect, Refusal, Signal, WorkspaceDrive};
-use crate::workspace::{HostName, Offloaded};
+use crate::project::Project;
+use crate::workspace::{normalize_root, HostName, ProjectRoot};
 use std::path::{Path, PathBuf};
+
+/// The row `dir`, on `host`, comes in as: a row of `project`'s folder, or a
+/// bare one when `project` does not hold it, which never draws another
+/// folder's facts.
+fn row(host: Option<&HostName>, dir: PathBuf, project: &Project) -> ProjectRoot {
+    match project.folder(host, &dir) {
+        Some(folder) => ProjectRoot::of(project, folder),
+        None => {
+            let mut root = ProjectRoot::new(dir);
+            root.host = host.cloned();
+            root
+        }
+    }
+}
 
 /// What removing a project takes with it: its sessions, closed, and its
 /// unsaved files, discarded.
@@ -57,19 +72,21 @@ impl WorkspaceDrive {
         }
     }
 
-    /// Add `dir`, a folder here, as a project and select it, or select it if
-    /// it is one already: what the folder picker, a second launch and a
-    /// worktree split off do.
+    /// Add `dir`, a folder here of `project`, and select it, or select it if
+    /// it is in the workspace already: what the folder picker, a second
+    /// launch and a worktree split off do.
     #[must_use = "its effects are to be carried"]
-    pub fn open_project(&mut self, dir: PathBuf) -> Vec<Effect> {
-        self.workspace.add_root(dir);
+    pub fn open_project(&mut self, dir: PathBuf, project: &Project) -> Vec<Effect> {
+        let dir = normalize_root(dir);
+        self.workspace.add_placed(row(None, dir, project));
         self.opened()
     }
 
-    /// [`Self::open_project`] for `path` on `host`.
+    /// [`Self::open_project`] for `project`'s own folder, on its host.
     #[must_use = "its effects are to be carried"]
-    pub fn open_host_project(&mut self, host: HostName, path: PathBuf) -> Vec<Effect> {
-        self.workspace.add_host_root(host, path);
+    pub fn open_host_project(&mut self, project: &Project) -> Vec<Effect> {
+        let root = row(project.host.as_ref(), project.path.clone(), project);
+        self.workspace.add_placed(root);
         self.opened()
     }
 
@@ -84,22 +101,25 @@ impl WorkspaceDrive {
     /// selected but not yet shown: added when the window does not have it.
     /// Answers its index.
     #[must_use = "its effects are to be carried"]
-    pub fn keep_project(&mut self, dir: PathBuf) -> (usize, Vec<Effect>) {
+    pub fn keep_project(&mut self, dir: PathBuf, project: &Project) -> (usize, Vec<Effect>) {
+        let dir = normalize_root(dir);
         if let Some(idx) = self.local_index(&dir) {
             return (idx, Vec::new());
         }
-        let idx = self.workspace.add_root(dir);
+        let idx = self.workspace.add_placed(row(None, dir, project));
         (idx, self.kept())
     }
 
     /// [`Self::keep_project`], selecting nothing: a worktree cut for a task
     /// nobody here started must not move what the person has selected.
     #[must_use = "its effects are to be carried"]
-    pub fn keep_project_quietly(&mut self, dir: PathBuf) -> Vec<Effect> {
+    pub fn keep_project_quietly(&mut self, dir: PathBuf, project: &Project) -> Vec<Effect> {
+        let dir = normalize_root(dir);
         if self.local_index(&dir).is_some() {
             return Vec::new();
         }
-        self.workspace.add_root_quietly(dir);
+        self.workspace
+            .add_placed_quietly(row(None, dir, project));
         self.kept()
     }
 
@@ -140,17 +160,37 @@ impl WorkspaceDrive {
         fx
     }
 
-    /// Say where the sessions of the project at `dir`, a folder here, run:
-    /// on `on`, offloaded, or here again with none. The sessions it had close,
-    /// since they ran where it no longer does, and it is written once things
-    /// are still, as the offload's other writes are. `None` when `dir` is no
-    /// longer a project here: nothing moves.
+    /// `project` changed: every row of it draws it as it now is. A folder
+    /// whose offload changed has its sessions closed, since they ran where it
+    /// no longer does. Nothing here is written: the facts are the project's.
     #[must_use = "its effects are to be carried"]
-    pub fn set_offload(&mut self, dir: &Path, on: Option<Offloaded>) -> Option<Vec<Effect>> {
-        let idx = self.local_index(dir)?;
-        let mut fx = self.drop_sessions_in(dir);
-        self.workspace.roots[idx].offload = on;
-        fx.extend(self.save_soon());
-        Some(fx)
+    pub fn told(&mut self, project: &Project) -> Vec<Effect> {
+        let mut fx = Vec::new();
+        let mut changed = false;
+        let mut moved = Vec::new();
+        for root in &mut self.workspace.roots {
+            if root.project.as_ref() != Some(&project.id) {
+                continue;
+            }
+            let before = (
+                root.label.clone(),
+                root.check.clone(),
+                root.builds.clone(),
+                root.offload.clone(),
+            );
+            root.told(project);
+            if root.offload != before.3 {
+                moved.push(root.path.clone());
+            }
+            changed |= (&root.label, &root.check, &root.builds, &root.offload)
+                != (&before.0, &before.1, &before.2, &before.3);
+        }
+        for dir in moved {
+            fx.extend(self.drop_sessions_in(&dir));
+        }
+        if changed {
+            fx.push(Effect::Changed);
+        }
+        fx
     }
 }

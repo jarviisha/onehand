@@ -21,7 +21,7 @@
 //! [`crate::saving::Saves`]'. A change made in a burst (a name typed, a size
 //! dragged) is written once things have been still for [`SAVE_DEBOUNCE`].
 
-use super::{BuildHost, HostName, ProjectRoot, Workspace};
+use super::{HostName, ProjectRoot, Workspace};
 use crate::config::{AgentSpec, PanelLayout, WorkspaceConfig};
 use crate::host::wire::HostSession;
 use crate::saving::{Pending, Saves};
@@ -51,10 +51,6 @@ pub enum Thing {
     /// A project's pin, by its host (none for this machine) and path: a
     /// local project and a host's may share a path.
     Pin(Option<HostName>, PathBuf),
-    /// A project's check command, by its folder here.
-    Check(PathBuf),
-    /// The hosts a project builds on, by its folder here.
-    Builds(PathBuf),
 }
 
 /// A thing's value, as a failed write puts it back.
@@ -67,14 +63,6 @@ pub enum Value {
         host: Option<HostName>,
         path: PathBuf,
         pinned: bool,
-    },
-    Check {
-        path: PathBuf,
-        check: Option<String>,
-    },
-    Builds {
-        path: PathBuf,
-        builds: Vec<BuildHost>,
     },
 }
 
@@ -208,6 +196,17 @@ pub enum Effect {
     /// leaves nothing behind, and what it found is acted on as the workspace
     /// stands when it lands.
     ReadConversation(String),
+    /// Find the project `saved`'s folder is of, adding one when none holds
+    /// it, then report it through [`WorkspaceDrive::resume_placed`] with
+    /// `spec` and `uid`: a conversation resumed on a folder the workspace
+    /// does not hold. A late answer is **recorded**: the folder is placed
+    /// whatever changed since, and the resume acts on the workspace as it
+    /// stands.
+    Place {
+        saved: conversation::Saved,
+        spec: AgentSpec,
+        uid: u64,
+    },
     /// The workspace kept in `dir` is deleted: stop its views writing into
     /// it, take it off the list, remove what is its own in `dir` after every
     /// write queued before, and close its window.
@@ -470,16 +469,6 @@ impl WorkspaceDrive {
                     root.pinned = *pinned;
                 }
             }
-            Value::Check { path, check } => {
-                if let Some(root) = local_mut(ws, path) {
-                    root.check = check.clone();
-                }
-            }
-            Value::Builds { path, builds } => {
-                if let Some(root) = local_mut(ws, path) {
-                    root.builds = builds.clone();
-                }
-            }
         }
     }
 
@@ -525,110 +514,6 @@ impl WorkspaceDrive {
         fx
     }
 
-    /// Set the check command of the project at `path`, a folder here, to
-    /// `typed`, none when blank; written once the typing stops, and put back
-    /// alone if its write fails. Unchanged, nothing happens.
-    pub fn set_check(&mut self, path: &std::path::Path, typed: &str) -> Vec<Effect> {
-        let typed = typed.trim();
-        let check = (!typed.is_empty()).then(|| typed.to_string());
-        let Some(root) = local_mut(&mut self.workspace, path) else {
-            return Vec::new();
-        };
-        if root.check == check {
-            return Vec::new();
-        }
-        let before = std::mem::replace(&mut root.check, check.clone());
-        let path = path.to_path_buf();
-        let mut fx = self.change(
-            Thing::Check(path.clone()),
-            Value::Check {
-                path: path.clone(),
-                check: before,
-            },
-            Value::Check { path, check },
-            true,
-        );
-        fx.push(Effect::Changed);
-        fx
-    }
-
-    /// Make `entry` one of the build hosts of the project at `path`, a folder
-    /// here: in place of the one at `replacing`, or added at the end. Refused,
-    /// in words, for a project whose sessions run on a host, which builds
-    /// there already, and for a host the project already builds on. Shown at
-    /// once, written now, and put back alone if its write fails; unchanged,
-    /// nothing happens.
-    pub fn put_build_host(
-        &mut self,
-        path: &std::path::Path,
-        entry: BuildHost,
-        replacing: Option<usize>,
-    ) -> Result<Vec<Effect>, String> {
-        let Some(root) = local_mut(&mut self.workspace, path) else {
-            return Ok(Vec::new());
-        };
-        if !root.runs_here() {
-            return Err(format!(
-                "{} runs its sessions on a host; it builds there already",
-                root.label
-            ));
-        }
-        let taken = root
-            .builds
-            .iter()
-            .enumerate()
-            .any(|(at, held)| Some(at) != replacing && held.host == entry.host);
-        if taken {
-            return Err(format!("{} already builds on {}", root.label, entry.host));
-        }
-        let mut builds = root.builds.clone();
-        match replacing.and_then(|at| builds.get_mut(at)) {
-            Some(held) => *held = entry,
-            None => builds.push(entry),
-        }
-        Ok(self.set_builds(path, builds))
-    }
-
-    /// Stop the project at `path` building on `entry`: named by what it is,
-    /// not by its place, which may have moved since it was shown. One that
-    /// is gone already changes nothing.
-    #[must_use = "its effects are to be carried"]
-    pub fn remove_build_host(&mut self, path: &std::path::Path, entry: &BuildHost) -> Vec<Effect> {
-        let Some(root) = local_mut(&mut self.workspace, path) else {
-            return Vec::new();
-        };
-        let builds = root
-            .builds
-            .iter()
-            .filter(|held| *held != entry)
-            .cloned()
-            .collect();
-        self.set_builds(path, builds)
-    }
-
-    /// Replace the project's build hosts with `builds`, already checked.
-    fn set_builds(&mut self, path: &std::path::Path, builds: Vec<BuildHost>) -> Vec<Effect> {
-        let Some(root) = local_mut(&mut self.workspace, path) else {
-            return Vec::new();
-        };
-        if root.builds == builds {
-            return Vec::new();
-        }
-        let before = std::mem::replace(&mut root.builds, builds.clone());
-        let path = path.to_path_buf();
-        let mut fx = self.change(
-            Thing::Builds(path.clone()),
-            Value::Builds {
-                path: path.clone(),
-                builds: before,
-            },
-            Value::Builds { path, builds },
-            false,
-        );
-        fx.push(Effect::Changed);
-        fx
-    }
-
     /// Name the workspace `name`, written once the typing stops; a name
     /// blank or unchanged changes nothing.
     #[must_use = "its effects are to be carried"]
@@ -652,13 +537,6 @@ impl WorkspaceDrive {
     fn agent(spec: Option<AgentSpec>) -> Result<AgentSpec, Refusal> {
         spec.ok_or(Refusal::NoAgent)
     }
-}
-
-/// The project at `path`, a folder on this machine.
-fn local_mut<'a>(ws: &'a mut Workspace, path: &std::path::Path) -> Option<&'a mut ProjectRoot> {
-    ws.roots
-        .iter_mut()
-        .find(|root| root.local_path() == Some(path))
 }
 
 #[cfg(test)]

@@ -11,6 +11,7 @@
 
 use super::{Effect, Signal, StartsOn, WorkspaceDrive};
 use crate::config::AgentSpec;
+use crate::project::Project;
 use std::path::PathBuf;
 
 /// Where a session asked for is live: in this window, in window `W`, or
@@ -68,14 +69,43 @@ impl WorkspaceDrive {
         let Some(spec) = agents.iter().find(|spec| spec.name == saved.agent) else {
             return vec![Effect::Signal(Signal::AgentGone(saved.agent))];
         };
-        let (idx, mut fx) = match self.local_index(&saved.root) {
-            Some(idx) => (idx, Vec::new()),
-            None if saved.there => self.keep_project(saved.root),
+        let idx = match self.local_index(&saved.root) {
+            Some(idx) => idx,
+            None if saved.there => {
+                let spec = spec.clone();
+                return vec![Effect::Place { saved, spec, uid }];
+            }
             None => return vec![Effect::Signal(Signal::FolderGone(saved.root))],
         };
+        self.resume_at(idx, saved, spec.clone(), uid, Vec::new())
+    }
+
+    /// What [`Effect::Place`] found: `saved`'s folder is of `project`. The
+    /// folder is kept as a project of the workspace, and the conversation
+    /// resumed there as session `uid` by `spec`.
+    #[must_use = "its effects are to be carried"]
+    pub fn resume_placed(
+        &mut self,
+        saved: Saved,
+        spec: AgentSpec,
+        uid: u64,
+        project: &Project,
+    ) -> Vec<Effect> {
+        let (idx, fx) = self.keep_project(saved.root.clone(), project);
+        self.resume_at(idx, saved, spec, uid, fx)
+    }
+
+    fn resume_at(
+        &mut self,
+        idx: usize,
+        saved: Saved,
+        spec: AgentSpec,
+        uid: u64,
+        mut fx: Vec<Effect>,
+    ) -> Vec<Effect> {
         fx.extend(self.select_project(idx));
         let starts = StartsOn::Resume(saved.resume);
-        let (_, added) = self.add_session_on(Some(spec.clone()), uid, None, starts);
+        let (_, added) = self.add_session_on(Some(spec), uid, None, starts);
         fx.extend(added);
         fx
     }

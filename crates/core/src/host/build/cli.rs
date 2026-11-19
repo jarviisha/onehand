@@ -94,7 +94,7 @@ pub(crate) fn asked_blocking(
             // One that cannot be read holds no project to build.
             WorkspaceLoad::Missing | WorkspaceLoad::Unreadable(_) => continue,
         };
-        let workspace = Workspace::from_config(cfg, listed.dir);
+        let workspace = Workspace::from_config(cfg, listed.dir, &Default::default());
         found.extend(
             workspace
                 .roots

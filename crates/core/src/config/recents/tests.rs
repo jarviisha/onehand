@@ -143,7 +143,7 @@ fn a_launch_opens_the_first_workspace_that_loads() {
         root.join("state.toml"),
         list_blocking(&root),
     );
-    match launch_blocking(drive.listed(), Workspace::seeded("/x")) {
+    match launch_blocking(drive.listed(), Workspace::seeded("/x"), &Default::default()) {
         Launch::Found(ws) => assert_eq!((ws.storage_dir, ws.name.as_str()), (good, "Good")),
         other => panic!("{other:?}"),
     }
@@ -155,7 +155,7 @@ fn with_none_a_launch_writes_the_seed() {
     let drive = RecentsDrive::new(state(&[]), PathBuf::from("/nowhere/state.toml"), Vec::new());
     let seed = Workspace::seeded("/x/never-made");
     let at = seed.storage_dir.clone();
-    match launch_blocking(drive.listed(), seed) {
+    match launch_blocking(drive.listed(), seed, &Default::default()) {
         Launch::Seeded(ws) => assert_eq!(ws.storage_dir, at),
         other => panic!("{other:?}"),
     }
@@ -170,7 +170,7 @@ fn seed_over_an_unreadable_file_never_writes_it() {
     let file = seed.storage_dir.join(WorkspaceConfig::FILE);
     std::fs::write(&file, "name = ").unwrap();
     let drive = RecentsDrive::new(state(&[]), root.join("state.toml"), Vec::new());
-    match launch_blocking(drive.listed(), seed) {
+    match launch_blocking(drive.listed(), seed, &Default::default()) {
         Launch::Seeded(ws) => {
             assert_eq!(
                 ws.storage_dir,

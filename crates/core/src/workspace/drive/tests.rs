@@ -14,6 +14,23 @@ fn spec() -> AgentSpec {
     }
 }
 
+/// A project of the folder `path` here, its id taken from the path.
+fn at(path: &str) -> crate::project::Project {
+    crate::project::Project::new(
+        crate::project::ProjectId::mint(u64::from(crate::workspace::fnv1a(path.as_bytes()))),
+        None,
+        path.into(),
+    )
+}
+
+/// [`at`] for a folder on `host`.
+fn at_on(host: &str, path: &str) -> crate::project::Project {
+    let mut project = at(&format!("{host}:{path}"));
+    project.host = Some(HostName(host.into()));
+    project.path = path.into();
+    project
+}
+
 /// The tree itself, for a test to set up what it needs.
 fn tree(drive: &mut WorkspaceDrive) -> &mut Workspace {
     &mut drive.workspace
@@ -47,6 +64,7 @@ fn names(fx: &[Effect]) -> Vec<String> {
             Effect::EndOnHost { session, .. } => format!("EndOnHost({})", session.0),
             Effect::ListHostSessions => "ListHostSessions".into(),
             Effect::ReadConversation(id) => format!("ReadConversation({id})"),
+            Effect::Place { saved, .. } => format!("Place({})", saved.root.display()),
             Effect::Deleted(dir) => format!("Deleted({})", dir.display()),
             Effect::Signal(signal) => format!("{signal:?}"),
         })
@@ -74,6 +92,7 @@ fn armed(fx: &[Effect]) -> u64 {
             | Effect::EndOnHost { .. }
             | Effect::ListHostSessions
             | Effect::ReadConversation(_)
+            | Effect::Place { .. }
             | Effect::Signal(_) => None,
         })
         .expect("a wait armed")
@@ -99,6 +118,7 @@ fn written(fx: Vec<Effect>) -> Pending<Thing, Value> {
             | Effect::EndOnHost { .. }
             | Effect::ListHostSessions
             | Effect::ReadConversation(_)
+            | Effect::Place { .. }
             | Effect::Deleted(_)
             | Effect::Signal(_) => None,
         })
@@ -125,6 +145,7 @@ fn swept(effect: Effect) -> (u64, Vec<SweepProject>) {
         | Effect::EndOnHost { .. }
         | Effect::ListHostSessions
         | Effect::ReadConversation(_)
+        | Effect::Place { .. }
         | Effect::Deleted(_)
         | Effect::Signal(_)) => {
             panic!("not a sweep: {:?}", names(&[e]))
@@ -397,40 +418,27 @@ fn an_order_whose_write_fails_goes_back_to_the_one_saved() {
     );
 }
 
-#[test]
-fn a_check_command_is_written_after_the_typing_and_blank_is_none() {
-    let mut drive = bound();
-    assert_eq!(
-        names(&drive.set_check(Path::new("/a"), " make test ")),
-        ["Arm", "Changed"]
-    );
-    assert_eq!(drive.roots[0].check.as_deref(), Some("make test"));
-    assert!(drive.set_check(Path::new("/a"), "make test").is_empty());
-    drive.set_check(Path::new("/a"), "  ");
-    assert_eq!(drive.roots[0].check, None);
-}
-
 // Projects.
 
 #[test]
 fn a_folder_opened_is_selected_shown_swept_and_written() {
     let mut drive = bound();
-    let fx = drive.open_project("/b".into());
+    let fx = drive.open_project("/b".into(), &at("/b"));
     assert_eq!(names(&fx), ["Show", "Resweep", "Write", "Changed"]);
     assert_eq!(drive.active_root, 1);
-    drive.open_project("/b".into());
+    drive.open_project("/b".into(), &at("/b"));
     assert_eq!(drive.roots.len(), 2, "an open project is not doubled");
 }
 
 #[test]
 fn a_folder_kept_for_work_is_added_once() {
     let mut drive = bound();
-    let (idx, fx) = drive.keep_project("/wt".into());
+    let (idx, fx) = drive.keep_project("/wt".into(), &at("/wt"));
     assert_eq!(names(&fx), ["Resweep", "Write", "Changed"]);
-    let (again, fx) = drive.keep_project("/wt".into());
+    let (again, fx) = drive.keep_project("/wt".into(), &at("/wt"));
     assert_eq!((idx, fx.len()), (again, 0));
     tree(&mut drive).select_root(0);
-    drive.keep_project_quietly("/task".into());
+    drive.keep_project_quietly("/task".into(), &at("/task"));
     assert_eq!(drive.active_root, 0, "nothing selected");
 }
 
@@ -461,9 +469,9 @@ fn removing_asks_only_when_it_loses_something() {
 #[test]
 fn a_removal_lands_by_host_and_path() {
     let mut drive = bound();
-    drive.open_project("/b".into());
+    drive.open_project("/b".into(), &at("/b"));
     drive.add_session(Some(spec()), 1, None);
-    drive.open_host_project(HostName("box".into()), "/b".into());
+    drive.open_host_project(&at_on("box", "/b"));
     let fx = drive.remove(None, Path::new("/b"));
     assert_eq!(
         names(&fx),
@@ -494,9 +502,9 @@ fn a_removal_lands_by_host_and_path() {
 #[test]
 fn a_sweep_reads_what_it_can_and_keeps_only_the_newest_answer() {
     let mut drive = bound();
-    drive.open_host_project(HostName("box".into()), "/srv".into());
-    drive.open_host_project(HostName("off".into()), "/x".into());
-    drive.open_host_project(HostName("box".into()), "/a".into());
+    drive.open_host_project(&at_on("box", "/srv"));
+    drive.open_host_project(&at_on("off", "/x"));
+    drive.open_host_project(&at_on("box", "/a"));
     let (old, roots) = swept(drive.sweep(|host| host.0 == "box"));
     let read: Vec<_> = roots.iter().map(|r| r.path.display().to_string()).collect();
     assert_eq!(read, ["/a", "/srv"]);
@@ -531,7 +539,7 @@ fn a_sweep_reads_what_it_can_and_keeps_only_the_newest_answer() {
 #[test]
 fn a_sweep_under_way_when_a_project_leaves_is_dropped() {
     let mut drive = bound();
-    drive.open_project("/b".into());
+    drive.open_project("/b".into(), &at("/b"));
     let (token, _) = swept(drive.sweep(|_| false));
     drive.forget(1);
     let status = crate::gitstat::GitStatus {
@@ -553,7 +561,7 @@ fn a_sweep_under_way_when_a_project_leaves_is_dropped() {
 #[test]
 fn a_late_sweep_does_not_give_a_host_folder_the_local_one_s_status() {
     let mut drive = bound();
-    drive.open_host_project(HostName("box".into()), "/a".into());
+    drive.open_host_project(&at_on("box", "/a"));
     let (token, roots) = swept(drive.sweep(|_| true));
     assert_eq!(roots.len(), 1, "the host's folder on /a is not read");
     drive.forget(0);
@@ -577,18 +585,15 @@ fn a_late_sweep_does_not_give_a_host_folder_the_local_one_s_status() {
 #[test]
 fn what_goes_with_a_project_is_said_by_where_it_is() {
     let mut drive = bound();
-    drive.open_host_project(HostName("box".into()), "/srv".into());
+    drive.open_host_project(&at_on("box", "/srv"));
     let fx = drive.forget(1);
     assert_eq!(names(&fx), ["Forgot(/srv)", "Changed"]);
-    drive.open_project("/b".into());
-    drive.set_offload(
-        Path::new("/b"),
-        Some(crate::workspace::Offloaded {
-            host: HostName("box".into()),
-            mirror: "/m".into(),
-            branch: None,
-        }),
-    );
+    drive.open_project("/b".into(), &at("/b"));
+    tree(&mut drive).roots[1].offload = Some(crate::workspace::Offloaded {
+        host: HostName("box".into()),
+        mirror: "/m".into(),
+        branch: None,
+    });
     let fx = drive.forget(1);
     assert_eq!(
         names(&fx),
@@ -699,7 +704,7 @@ fn a_host_session_watched_is_shown_again_not_opened_twice() {
     use crate::host::wire::HostSession;
     let mut drive = bound();
     let host = HostName("box".into());
-    let _ = drive.open_host_project(host.clone(), "/srv".into());
+    let _ = drive.open_host_project(&at_on(&host.0, "/srv"));
     let id = HostSession("h-1".into());
     let (first, _) = drive.watch(id.clone(), Some(spec()), 1);
     assert_eq!(first, Ok(1));
@@ -765,6 +770,11 @@ fn a_live_conversation_is_shown_where_it_is_else_read() {
 fn a_saved_conversation_resumes_on_its_folder_kept_again() {
     let mut drive = bound();
     let fx = read(&mut drive, saved("/run", true, "agent"));
+    assert_eq!(names(&fx), ["Place(/run)"], "its folder is placed first");
+    let Some(Effect::Place { saved: placed, spec, uid }) = fx.into_iter().next() else {
+        panic!("placed");
+    };
+    let fx = drive.resume_placed(placed, spec, uid, &at("/run"));
     let idx = drive.local_index(Path::new("/run")).expect("kept again");
     assert_eq!(drive.active_root, idx);
     assert_eq!(drive.locate(9).map(|(root, _)| root), Some(idx));
@@ -824,7 +834,7 @@ fn a_run_check_needs_a_project_here_with_a_check_command() {
     let (target, fx) = drive.check_target();
     assert_eq!(target, Err(Refusal::NoCheck));
     assert_eq!(names(&fx), ["Refused(NoCheck)"]);
-    drive.set_check(Path::new("/a"), "make test");
+    tree(&mut drive).roots[0].check = Some("make test".into());
     assert_eq!(
         drive.check_target().0,
         Ok((PathBuf::from("/a"), "make test".to_string()))
@@ -853,111 +863,54 @@ fn a_deleted_workspace_writes_nothing() {
         .all(|n| n != "Write" && n != "Arm"));
 }
 
-// Build hosts.
+// What a project tells its rows.
 
-fn builds_on(host: &str) -> crate::workspace::BuildHost {
-    crate::workspace::BuildHost {
-        host: HostName(host.into()),
-        artifacts: vec!["target/app".into()],
-        into: None,
-    }
+#[test]
+fn told_a_new_name_relabels_the_projects_own_row_only() {
+    let mut p = at("/code/a");
+    p.worktrees.push(crate::project::Worktree {
+        path: "/code/a-x".into(),
+        branch: "x".into(),
+        from: None,
+        made_by: crate::project::MadeBy::Split,
+        offload: None,
+    });
+    let mut drive = bound();
+    drive.open_project("/code/a".into(), &p);
+    drive.open_project("/code/a-x".into(), &p);
+    p.name = "Alpha".into();
+    p.check = Some("make".into());
+    let fx = drive.told(&p);
+    assert_eq!(names(&fx), ["Changed"], "nothing is written");
+    assert_eq!(drive.roots[1].label, "Alpha");
+    assert_eq!(drive.roots[2].label, "a-x");
+    assert_eq!(drive.roots[2].check.as_deref(), Some("make"));
+    assert_eq!(drive.roots[0].label, "a", "a row of no project is untouched");
+    assert!(drive.told(&p).is_empty(), "told again, nothing changed");
 }
 
 #[test]
-fn a_build_host_is_added_shown_at_once_and_written() {
+fn told_an_offload_drops_the_sessions_of_that_folder_only() {
+    let mut p = at("/code/a");
+    p.worktrees.push(crate::project::Worktree {
+        path: "/code/a-x".into(),
+        branch: "x".into(),
+        from: None,
+        made_by: crate::project::MadeBy::Split,
+        offload: None,
+    });
     let mut drive = bound();
-    let fx = drive
-        .put_build_host(Path::new("/a"), builds_on("build01"), None)
-        .expect("added");
-    assert_eq!(names(&fx), ["Write", "Changed"]);
-    assert_eq!(drive.roots[0].builds, vec![builds_on("build01")]);
-}
-
-#[test]
-fn a_build_host_is_changed_in_its_place_and_an_unchanged_one_writes_nothing() {
-    let mut drive = bound();
-    drive.put_build_host(Path::new("/a"), builds_on("build01"), None);
-    drive.put_build_host(Path::new("/a"), builds_on("win"), None);
-    let mut changed = builds_on("other");
-    changed.into = Some("out".into());
-    drive
-        .put_build_host(Path::new("/a"), changed.clone(), Some(0))
-        .expect("changed");
-    assert_eq!(
-        drive.roots[0].builds,
-        vec![changed.clone(), builds_on("win")]
-    );
-    let again = drive
-        .put_build_host(Path::new("/a"), changed, Some(0))
-        .expect("the same");
-    assert!(again.is_empty());
-}
-
-#[test]
-fn the_drive_itself_refuses_a_second_entry_for_one_host() {
-    let mut drive = bound();
-    drive.put_build_host(Path::new("/a"), builds_on("build01"), None);
-    drive.put_build_host(Path::new("/a"), builds_on("win"), None);
-    assert_eq!(
-        drive
-            .put_build_host(Path::new("/a"), builds_on("win"), None)
-            .map(|_| ()),
-        Err("a already builds on win".to_string())
-    );
-    assert_eq!(
-        drive
-            .put_build_host(Path::new("/a"), builds_on("win"), Some(0))
-            .map(|_| ()),
-        Err("a already builds on win".to_string())
-    );
-    // The entry being changed may keep its host.
-    assert!(drive
-        .put_build_host(Path::new("/a"), builds_on("win"), Some(1))
-        .is_ok());
-    assert_eq!(drive.roots[0].builds.len(), 2);
-}
-
-#[test]
-fn a_project_that_runs_on_a_host_is_refused_a_build_host() {
-    let mut drive = bound();
-    tree(&mut drive).roots[0].offload = Some(crate::workspace::Offloaded {
+    drive.open_project("/code/a".into(), &p);
+    drive.add_session(Some(spec()), 1, None);
+    drive.open_project("/code/a-x".into(), &p);
+    drive.add_session(Some(spec()), 2, None);
+    p.worktrees[0].offload = Some(crate::workspace::Offloaded {
         host: HostName("box".into()),
         mirror: "/m".into(),
         branch: None,
     });
-    assert_eq!(
-        drive
-            .put_build_host(Path::new("/a"), builds_on("build01"), None)
-            .map(|_| ()),
-        Err("a runs its sessions on a host; it builds there already".to_string())
-    );
-}
-
-#[test]
-fn a_build_host_is_removed_by_what_it_is_and_one_that_is_gone_writes_nothing() {
-    let mut drive = bound();
-    drive.put_build_host(Path::new("/a"), builds_on("build01"), None);
-    drive.put_build_host(Path::new("/a"), builds_on("win"), None);
-    let fx = drive.remove_build_host(Path::new("/a"), &builds_on("build01"));
-    assert_eq!(names(&fx), ["Write", "Changed"]);
-    assert_eq!(drive.roots[0].builds, vec![builds_on("win")]);
-    assert!(drive
-        .remove_build_host(Path::new("/a"), &builds_on("build01"))
-        .is_empty());
-}
-
-#[test]
-fn a_failed_write_puts_the_build_hosts_back() {
-    let mut drive = bound();
-    let pending = written(
-        drive
-            .put_build_host(Path::new("/a"), builds_on("build01"), None)
-            .expect("added"),
-    );
-    let fx = drive.handle(Input::Written {
-        pending,
-        result: Err("read-only".into()),
-    });
-    assert!(drive.roots[0].builds.is_empty());
-    assert!(names(&fx).iter().any(|name| name.starts_with("Put(Builds")));
+    let fx = drive.told(&p);
+    assert!(names(&fx).contains(&"Close(2)".to_string()), "{:?}", names(&fx));
+    assert!(!names(&fx).contains(&"Close(1)".to_string()));
+    assert!(drive.roots[2].offload.is_some());
 }
