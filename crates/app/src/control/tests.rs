@@ -99,12 +99,18 @@ fn an_opens_deadline_comes_round_and_frees_its_request(cx: &mut TestAppContext) 
 fn a_tools_issue_is_written_once_and_not_again_while_open(cx: &mut TestAppContext) {
     use crate::shell::rig;
     let dir = rig::folder("tool-issue");
-    let (_, shell, cx) = rig::shell(cx, dir.join("tasks"), Vec::new());
-    let storage = cx.update(|_, cx| shell.read(cx).storage_dir().clone());
+    let (handle, shell, cx) = rig::shell(cx, dir.join("tasks"), Vec::new());
+    let project = onehand_core::project::Project::new(
+        onehand_core::project::ProjectId::mint(910_001),
+        None,
+        "/tmp".into(),
+    );
+    rig::keep_projects(handle, &shell, vec![project.clone()], cx);
+    let file = onehand_core::project::file::issues_file(&project.id);
     rig::show_workspace(&shell, cx);
     // An Issues view open on the project, which no rescan will reach.
     let view =
-        cx.update(|_, cx| onehand_issues::testing::OpenView::new(&storage, Path::new("/tmp"), cx));
+        cx.update(|_, cx| onehand_issues::testing::OpenView::new(Path::new("/tmp"), &file, cx));
     // Its first read lands before anything is written.
     for _ in 0..30 {
         cx.run_until_parked();
@@ -148,7 +154,6 @@ fn a_tools_issue_is_written_once_and_not_again_while_open(cx: &mut TestAppContex
         ask(call(" crash "), cx),
         Ok("Issue #1 is already open with that title".to_string())
     );
-    let file = onehand_core::issues::file_for(&storage, Path::new("/tmp"));
     let kept = onehand_core::issues::load_blocking(&file).unwrap();
     assert_eq!(kept.listed().len(), 1);
     let _ = std::fs::remove_dir_all(dir);
@@ -280,5 +285,86 @@ fn a_sessions_call_lands_in_its_window_not_the_one_in_front(cx: &mut TestAppCont
     assert!(outside.contains("/tmp"), "{outside}");
     assert!(!outside.contains(&shown), "{outside}");
     drop(token);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A project's folders share its one issues file: an issue written on its
+/// worktree's row is the project's, and the workspace page lists it once.
+#[gpui::test]
+fn a_projects_folders_share_one_issues_file(cx: &mut TestAppContext) {
+    use crate::shell::rig;
+    use onehand_core::project::{MadeBy, Project, ProjectId, Worktree};
+    let dir = rig::folder("shared-issues");
+    let (handle, shell, cx) = rig::shell(cx, dir.join("tasks"), Vec::new());
+    let (home, worktree) = (dir.join("p"), dir.join("p-x"));
+    for folder in [&home, &worktree] {
+        std::fs::create_dir_all(folder).unwrap();
+    }
+    let (home, worktree) = (
+        std::fs::canonicalize(home).unwrap(),
+        std::fs::canonicalize(worktree).unwrap(),
+    );
+    let mut project = Project::new(ProjectId::mint(910_002), None, home.clone());
+    project.worktrees.push(Worktree {
+        path: worktree.clone(),
+        branch: "x".into(),
+        from: None,
+        made_by: MadeBy::Split,
+        offload: None,
+    });
+    rig::keep_projects(handle, &shell, vec![project.clone()], cx);
+    for folder in [&home, &worktree] {
+        let at = folder.clone();
+        cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
+    }
+    cx.run_until_parked();
+    let file = onehand_core::project::file::issues_file(&project.id);
+    let told = cx.update(|_, cx| shell.read(cx).issue_files());
+    assert_eq!(told.get(&home), Some(&file));
+    assert_eq!(
+        told.get(&worktree),
+        Some(&file),
+        "one file for both folders"
+    );
+    rig::show_workspace(&shell, cx);
+    let call = Call::CreateIssue {
+        project: Some("p-x".into()),
+        title: "Crash".into(),
+        body: String::new(),
+    };
+    assert_eq!(
+        ask(Peer::Outside, call, cx),
+        Ok("Wrote issue #1: Crash".to_string())
+    );
+    let kept = onehand_core::issues::load_blocking(&file).unwrap();
+    assert_eq!(kept.listed().len(), 1);
+    for _ in 0..100 {
+        if !rig::workspace_issues(&shell, cx).is_empty() {
+            break;
+        }
+        cx.run_until_parked();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(rig::workspace_issues(&shell, cx), ["Crash"], "listed once");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A row of no project keeps no issues: a tool writing one there is told so.
+#[gpui::test]
+fn a_row_of_no_project_keeps_no_issues(cx: &mut TestAppContext) {
+    use crate::shell::rig;
+    let dir = rig::folder("no-project-issues");
+    let (_, shell, cx) = rig::shell(cx, dir.join("tasks"), Vec::new());
+    let told = cx.update(|_, cx| shell.read(cx).issue_files());
+    assert!(!told.contains_key(Path::new("/tmp")));
+    let call = Call::CreateIssue {
+        project: Some("tmp".into()),
+        title: "Crash".into(),
+        body: String::new(),
+    };
+    assert_eq!(
+        ask(Peer::Outside, call, cx),
+        Err("that folder's project keeps no issues here".to_string())
+    );
     let _ = std::fs::remove_dir_all(dir);
 }

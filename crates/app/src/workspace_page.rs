@@ -171,11 +171,17 @@ impl WorkspacePage {
     /// screen stays until the new read lands, so a reload does not blank a
     /// list that already had something in it.
     pub(crate) fn reload(&mut self, cx: &mut Context<Self>) {
-        let files: Vec<(PathBuf, PathBuf)> = self
-            .projects
-            .iter()
-            .filter_map(|project| Some((project.root.clone(), project.issues.clone()?)))
-            .collect();
+        // Each file once, under the first row of it: the folders of one
+        // project share their issues.
+        let mut files: Vec<(PathBuf, PathBuf)> = Vec::new();
+        for project in &self.projects {
+            let Some(file) = project.issues.clone() else {
+                continue;
+            };
+            if files.iter().all(|(_, held)| *held != file) {
+                files.push((project.root.clone(), file));
+            }
+        }
         // A host's conversations are not kept here; what is filed under its
         // path is a folder of the same path here.
         let roots: Vec<PathBuf> = self

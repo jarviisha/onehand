@@ -93,9 +93,7 @@ impl Shell {
         window: &mut gpui::Window,
         cx: &mut Context<Self>,
     ) {
-        self.workbench
-            .update(cx, |panel, cx| panel.set_storage(None, cx));
-        self.tell_issues_page(&onehand_workbench::Request::SetStorage(None), cx);
+        self.tell_issue_files_whole(Default::default(), cx);
         let removed = Shared::global(cx).writer.write({
             let dir = dir.clone();
             move || workspace::remove_workspace_blocking(&dir)

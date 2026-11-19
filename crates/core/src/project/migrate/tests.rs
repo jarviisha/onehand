@@ -337,7 +337,8 @@ fn a_second_merge_takes_nothing_twice() {
     let source = legacy_issue(&root, "w1", &main, "only");
     migrate_projects_in(&root, 1);
     // A run cut short after the project's file landed, before its renames.
-    fs::rename(merged(&source), &source).unwrap();
+    fs::copy(merged(&source), &source).unwrap();
+    fs::remove_file(merged(&source)).unwrap();
     migrate_projects_in(&root, 2);
     let p = &projects(&root)[0];
     assert_eq!(issues_of(&root, p), vec![(1, "only".to_string())]);

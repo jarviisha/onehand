@@ -567,17 +567,10 @@ pub fn matches_query(issue: &LocalIssue, query: &str) -> bool {
     }
 }
 
-/// Where the issues of the project at `root` are kept, in the workspace whose
-/// storage directory is `storage`.
-///
-/// Named by the project's folder and a digest of its whole path, as a
-/// workspace's own storage folder is: two checkouts of one repository are two
-/// projects with one folder name.
-pub fn file_for(storage: &Path, root: &Path) -> PathBuf {
-    issues_dir(storage).join(format!("{}.json", crate::workspace::stem_for(root)))
-}
-
-/// The folder a workspace kept in `storage` keeps its issues in.
+/// The folder an earlier build kept a workspace's issues in, one file per
+/// folder: what the migration reads, and what deleting a workspace removes.
+/// A project's issues are kept in its own folder now
+/// ([`crate::project::file::issues_file`]).
 pub(crate) fn issues_dir(storage: &Path) -> PathBuf {
     storage.join("issues")
 }
@@ -620,9 +613,9 @@ pub(crate) fn merge(into: &mut Issues, from: Issues, source: &Path) -> bool {
     true
 }
 
-/// An issue onehand keeps, named by the file it is kept in ([`file_for`]) and
-/// its number there. Never by the project and number alone: two workspaces
-/// can open one project, and each keeps an issue 12 of its own.
+/// An issue onehand keeps, named by the file it is kept in and its number
+/// there: one file per project, which every folder of it and every workspace
+/// holding it reads.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct IssueKey {
     pub file: PathBuf,
@@ -690,10 +683,10 @@ fn update_unless<R>(
 
 /// Write `issues` to `file` so a reader never sees half of it.
 ///
-/// **Never into a workspace that is gone.** The file's folder is made when
-/// it is missing, but the workspace's own folder above it is not: a write
-/// that lands after its workspace was deleted would otherwise put that
-/// folder back.
+/// **Never into a store that is gone.** The file's folder is made when it is
+/// missing, but the folder above it (the projects', or a workspace's for a
+/// file an earlier build kept) is not: a write that lands after that folder
+/// was deleted would otherwise put it back.
 pub(crate) fn save_blocking(file: &Path, issues: &Issues) -> Result<(), String> {
     if let Some(storage) = file.parent().and_then(Path::parent) {
         if !storage.as_os_str().is_empty() && !storage.is_dir() {

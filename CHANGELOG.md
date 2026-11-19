@@ -11,6 +11,11 @@ minor bump may break any of them.
 
 ### Breaking
 
+- A project keeps one issues file, `projects/<id>/issues.json` in the config directory, which
+  every folder of it and every workspace holding it reads. At the first start of this build the
+  issues each workspace kept for the project and for its worktrees are brought in: an issue from a
+  forge once, the copy changed last; one of onehand's own at its number, or at the next free one
+  when that number was taken. Each file taken in stays where it was, renamed `.json.merged`.
 - `pipelines/` in the config directory moves to `workflows/`, and `pipeline-runs/` to `tasks/`, at
   the first start of this build. The move can be cut short and run again, but there is no way back:
   an older build does not read what it leaves.

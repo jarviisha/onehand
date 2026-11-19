@@ -629,7 +629,7 @@ fn issue_place(
     let file = shell
         .read(cx)
         .issues_file(&root)
-        .ok_or_else(|| "this workspace keeps no issues of its own".to_string())?;
+        .ok_or_else(|| "that folder's project keeps no issues here".to_string())?;
     Ok((root, file))
 }
 

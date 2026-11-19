@@ -36,9 +36,6 @@ impl Shell {
             },
             cx,
         );
-        workbench.update(cx, |panel, cx| {
-            panel.set_storage(Some(&workspace.storage_dir), cx)
-        });
         let terminal = TerminalPanel::new(cx);
         let issues_page = Self::new_issues_page(tell, cx);
         let workflows_page = crate::workflows_page::WorkflowsPage::new(cx);
@@ -114,10 +111,6 @@ impl Shell {
             let guard = close_guard.clone();
             window.on_window_should_close(cx, move |window, cx| guard(window, cx));
         }
-        issues_page.handle(
-            &onehand_workbench::Request::SetStorage(Some(&workspace.storage_dir)),
-            cx,
-        );
 
         // Restored from the workspace, which supplies the built-in arrangement
         // when there is nothing saved: both docks closed, because the
@@ -466,7 +459,7 @@ impl Shell {
         )
         .detach();
 
-        Self {
+        let mut shell = Self {
             window: WorkspaceWindow::new(workspace),
             rail_hidden: false,
             rail_split: cx.new(|_| ResizableState::default()),
@@ -485,6 +478,7 @@ impl Shell {
             workspace_name,
             renaming: None,
             project_rename: None,
+            told_issue_files: HashMap::new(),
             rename_input: cx.new(|cx| {
                 InputState::new(window, cx).placeholder("What this conversation is about")
             }),
@@ -538,7 +532,10 @@ impl Shell {
             workbench_drawn: None,
             terminal_drawn: None,
             stepped_aside: false,
-        }
+        };
+        // Each folder's issues file, before anything asks for one.
+        shell.tell_issue_files_whole(shell.issue_files(), cx);
+        shell
     }
 }
 

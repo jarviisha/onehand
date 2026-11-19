@@ -99,12 +99,49 @@ impl Shell {
         self.start_session(agent, Some(archive), window, cx)
     }
 
-    /// Where `root`'s own issues are kept.
+    /// Where the issues of `root`'s project are kept; none for a folder of no
+    /// project, or one on a host.
     pub fn issues_file(&self, root: &Path) -> Option<PathBuf> {
-        Some(onehand_core::issues::file_for(
-            &self.window.workspace.storage_dir,
-            root,
-        ))
+        self.issue_files().remove(root)
+    }
+
+    /// Each project folder of the window on this machine, with the issues
+    /// file its project keeps: one for every folder of a project.
+    pub(crate) fn issue_files(&self) -> std::collections::HashMap<PathBuf, PathBuf> {
+        self.window
+            .workspace
+            .roots
+            .iter()
+            .filter_map(|root| {
+                let id = root.project.as_ref()?;
+                let path = root.local_path()?;
+                Some((
+                    path.to_path_buf(),
+                    onehand_core::project::file::issues_file(id),
+                ))
+            })
+            .collect()
+    }
+
+    /// Tell the Workbench and the Issues page each folder's issues file, when
+    /// it is not what they were last told.
+    pub(crate) fn tell_issue_files(&mut self, cx: &mut Context<Self>) {
+        let files = self.issue_files();
+        if files != self.told_issue_files {
+            self.tell_issue_files_whole(files, cx);
+        }
+    }
+
+    /// Tell them `files`, whatever they were last told.
+    pub(crate) fn tell_issue_files_whole(
+        &mut self,
+        files: std::collections::HashMap<PathBuf, PathBuf>,
+        cx: &mut Context<Self>,
+    ) {
+        self.workbench
+            .update(cx, |panel, cx| panel.set_issue_files(&files, cx));
+        self.tell_issues_page(&onehand_workbench::Request::IssueFiles(&files), cx);
+        self.told_issue_files = files;
     }
 
     /// Start `spec` on `dir`, off screen, for a lead's worker or a task

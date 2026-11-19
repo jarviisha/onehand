@@ -209,16 +209,6 @@ fn labels_are_split_on_commas_trimmed_and_said_once() {
 }
 
 #[test]
-fn the_file_is_per_project_under_the_workspace_storage() {
-    let storage = Path::new("/store");
-    let a = file_for(storage, Path::new("/code/app"));
-    let b = file_for(storage, Path::new("/other/app"));
-    assert!(a.starts_with("/store/issues"));
-    assert_ne!(a, b, "two checkouts with one folder name are two projects");
-    assert_eq!(a, file_for(storage, Path::new("/code/app")));
-}
-
-#[test]
 fn issues_survive_a_round_trip_and_a_missing_file_is_empty() {
     let dir = std::env::temp_dir().join(format!("onehand-issues-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -331,14 +321,14 @@ fn a_blank_title_is_refused_and_nothing_is_written() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// A write that lands after its workspace was deleted does not put the
-/// workspace's folder back: it fails instead.
+/// A write that lands after the folder holding its file's folder is gone
+/// does not put it back: it fails instead.
 #[test]
 fn a_write_into_a_deleted_workspace_puts_nothing_back() {
     let storage =
         std::env::temp_dir().join(format!("onehand-issues-deleted-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&storage);
-    let file = file_for(&storage, Path::new("/p"));
+    let file = storage.join("p").join("issues.json");
     assert!(update_blocking(&file, |_| Ok(())).is_err());
     assert!(!storage.exists());
 }
