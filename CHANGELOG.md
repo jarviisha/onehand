@@ -75,6 +75,11 @@ minor bump may break any of them.
 
 ### The window
 
+- What a step opens into is one box that never grows past sixteen lines: the rest scrolls inside
+  it, with its scrollbar on the box's edge, and a line under it says how many lines there are and
+  opens them whole. A command reads whole above its output, which opens at its end. A new file is
+  shown plain, without a green fill on every line. A turn's changes name one file in one line,
+  and several with their counts lined up at the right; *Show every diff* is gone.
 - A turn that was stopped says so: one *Stopped* line, its running steps marked *stopped* in quiet
   ink rather than *failed* in red, and *Stopped after …* under the answer. A turn the agent ended
   at its output or request limit, or by refusing, is a calm card saying which, with *Continue*
