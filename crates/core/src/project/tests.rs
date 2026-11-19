@@ -1,17 +1,7 @@
 use super::file::{load_all_blocking, load_from, save_to, ProjectLoad, FILE};
+use super::testing::scratch;
 use super::*;
 use std::path::Path;
-
-/// A fresh folder of its own for one test.
-fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "onehand-project-{name}-{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
-}
 
 /// A worktree at `path`, as git listed it and the person adopted.
 fn wt(path: &str) -> Worktree {

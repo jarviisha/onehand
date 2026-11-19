@@ -22,6 +22,8 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 pub mod file;
+mod place;
+pub use place::{place_blocking, Placement};
 
 /// A project's id: eight lowercase hex characters, minted once and never
 /// derived from a path or a name, so neither a rename nor a move changes it.
@@ -215,5 +217,7 @@ impl FromIterator<Project> for Projects {
     }
 }
 
+#[cfg(test)]
+pub(crate) mod testing;
 #[cfg(test)]
 mod tests;
