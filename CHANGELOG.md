@@ -81,6 +81,8 @@ minor bump may break any of them.
   needs only `git`, `tar` and the toolchain on the host, and nothing of onehand's.
 - A project builds on a Windows host too, through its `cmd.exe`: the same flag, tool and page,
   with the command a `cmd.exe` line.
+- Nothing attaches to a host declared as one that only builds, however it is asked: a project
+  that named it before, or a workspace file written by hand, is told why.
 - Putting the offload form away no longer stops a send of the code under way: it runs to its end,
   and what went is kept for the next offload.
 

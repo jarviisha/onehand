@@ -362,10 +362,14 @@ fn attach_with(
         true => Asker::Poll,
         false => Asker::Person,
     };
+    // Whether the host is declared as one that only builds is the settings'
+    // to know; what follows from it is the drive's.
+    let only_builds =
+        onehand_core::config::builds_only(&host.0, &Shared::global(cx).settings.hosts);
     let got = {
         let mut h = held.borrow_mut();
         let alive = h.ready(host).is_some_and(|c| !c.is_closed());
-        h.drive.ask(host, fresh, by, alive)
+        h.drive.ask(host, fresh, by, alive, only_builds.is_some())
     };
     let joined = |made: u64| held.borrow().attempts.get(&made).cloned();
     match got {
@@ -394,7 +398,13 @@ fn attach_with(
             }
             .boxed_local()
         }
-        Got::Make(made) => make(cx, held, host, made, fresh, by == Asker::Person),
+        Got::Make(made) => make(cx, held, host, made, fresh, by == Asker::Person, None),
+        // Landed as refused, in the words that say why, without an attach.
+        Got::Refuse(made) => {
+            let why = only_builds.unwrap_or_else(|| format!("{host} only builds"));
+            let refused = Some(HostFailure::Refused(why));
+            make(cx, held, host, made, fresh, by == Asker::Person, refused)
+        }
     }
 }
 
@@ -410,7 +420,8 @@ fn dropped(host: &HostName) -> HostFailure {
 
 /// Make the `made`th attempt for `host`: run on the agent runtime, its
 /// landing told the drive once, by whichever awaits it first, and the watch
-/// on its connection's closing told it too.
+/// on its connection's closing told it too. One the drive `refused` lands
+/// so at once, and nothing is run: the drive hears it as it hears any other.
 fn make(
     cx: &App,
     held: Rc<RefCell<Held>>,
@@ -418,10 +429,21 @@ fn make(
     made: u64,
     fresh: bool,
     take: bool,
+    refused: Option<HostFailure>,
 ) -> LocalBoxFuture<'static, Result<HostConn, HostFailure>> {
-    let rt = Shared::global(cx).acp.handle();
-    let onehand_io::host::Attaching { landed, closed } =
-        onehand_io::host::attach(&rt, host.clone(), fresh, take);
+    let onehand_io::host::Attaching { landed, closed } = match refused {
+        Some(failure) => {
+            let (landing, landed) = futures::channel::oneshot::channel();
+            // A connection that was never made never closes.
+            let (_, closed) = futures::channel::oneshot::channel();
+            let _ = landing.send(Err(failure));
+            onehand_io::host::Attaching { landed, closed }
+        }
+        None => {
+            let rt = Shared::global(cx).acp.handle();
+            onehand_io::host::attach(&rt, host.clone(), fresh, take)
+        }
+    };
     let attempt: Attempt = {
         let (host, cx, held) = (host.clone(), cx.to_async(), held.clone());
         async move {

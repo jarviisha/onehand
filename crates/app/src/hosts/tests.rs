@@ -26,7 +26,7 @@ fn lands(cx: &mut TestAppContext, result: Result<(), HostFailure>) {
         let fx = {
             let held = held(cx);
             let mut h = held.borrow_mut();
-            let Got::Make(made) = h.drive.ask(&vps(), true, Asker::Person, false) else {
+            let Got::Make(made) = h.drive.ask(&vps(), true, Asker::Person, false, false) else {
                 unreachable!()
             };
             h.drive.handle(Input::Landed {
@@ -76,4 +76,37 @@ fn the_last_listener_going_ends_the_wait_and_its_clock(cx: &mut TestAppContext) 
     cx.run_until_parked();
     let attempts = cx.update(|cx| held(cx).borrow().attempts.len());
     assert_eq!(attempts, 0, "nothing attached for a wait that went");
+}
+
+/// A host declared as one that only builds is never attached to: the ask is
+/// answered with why, and nothing is known of the host for it.
+#[gpui::test]
+fn a_host_that_only_builds_is_refused_without_an_attach(cx: &mut TestAppContext) {
+    use onehand_core::config::drive::SettingsDrive;
+    use onehand_core::config::{HostOs, HostSpec};
+    app(cx);
+    cx.update(|cx| {
+        cx.global_mut::<Shared>().settings = SettingsDrive::new(
+            Vec::new(),
+            Default::default(),
+            vec![HostSpec {
+                name: vps(),
+                os: HostOs::Windows,
+                arch: "AMD64".into(),
+            }],
+        );
+    });
+    let asked = cx.update(|cx| super::conn_quietly(cx, &vps()));
+    cx.run_until_parked();
+    let why = match asked.now_or_never() {
+        Some(Err(HostFailure::Refused(why))) => why,
+        Some(Ok(_)) => panic!("attached"),
+        Some(Err(other)) => panic!("failed another way: {other:?}"),
+        None => panic!("still asking"),
+    };
+    assert_eq!(why, "vps only builds; it runs no sessions");
+    assert_eq!(
+        cx.update(|cx| super::state(cx, &vps())),
+        onehand_core::host::drive::HostState::Unknown
+    );
 }
