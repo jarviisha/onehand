@@ -170,8 +170,9 @@ are not rolled back. A fork that cannot open is a toast saying why, and its sess
 
 Where the agent hands work to a subagent, the transcript draws one line, which never opens in
 place: a mark in the arrow's slot, the subagent's name, what it is doing (its step in hand,
-shimmering) or its state word (*done*, *failed* in the danger ink, *cancelled* and *interrupted*
-in the muted ink), and at the end its tool steps and its time.
+shimmering), *waiting on you* in the warning ink while a permission or a question of its own waits,
+or its state word (*done*, *failed* in the danger ink, *cancelled* and *interrupted* in the muted
+ink), and at the end its tool steps and its time.
 
 Pressed, the line opens the subagent's float over the pane. Its head holds the name, then the
 state, steps and time; at its end *n of N* with the previous and next subagent of the same turn

@@ -26,7 +26,10 @@ pub(super) fn subagent(
     let key = card.key();
     let muted = cx.theme().muted_foreground;
     let lit = cx.theme().foreground;
-    let working = card.state == SubagentState::Working;
+    // Waiting on the person is said, not shimmered: nothing moves until they
+    // answer, and the strip over the composer and the float say the same.
+    let waiting = chat.standing(card) == onehand_core::chat::Standing::Waiting;
+    let working = card.state == SubagentState::Working && !waiting;
     // What it is doing now, as its own steps say it.
     let doing = working.then(|| {
         let items: Vec<&ChatItem> = card.items.iter().collect();
@@ -39,6 +42,9 @@ pub(super) fn subagent(
             )
     });
     let ended = match card.state {
+        SubagentState::Working if waiting => {
+            Some(("waiting on you", crate::theme::status_ink(cx).warning))
+        }
         SubagentState::Working => None,
         SubagentState::Failed => Some(("failed", crate::theme::status_ink(cx).danger)),
         // Neither cancelled nor interrupted failed: one was stopped, the

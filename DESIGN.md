@@ -131,7 +131,8 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   numbered, with no fill and no sign; a changed file's fills run the box's width. Copy floats in
   the box's top corner, on its fill and clear of the bar. Nothing inside a box grows it.
 - **A subagent is one line, read apart in a float.** Its line: a mark of its own in the
-  arrow's slot, its name, what it is doing (shimmering) or how it ended (*done*, *failed* in the
+  arrow's slot, its name, what it is doing (shimmering), *waiting on you* in the warning ink
+  while its own permission or question waits, or how it ended (*done*, *failed* in the
   danger ink, *cancelled*, *interrupted*), and its steps and time at the end. Pressed, its own
   transcript opens in a float over the pane, drawn by the transcript's own renderer: a head (the
   name; its state, steps and time; *n of N* with the previous and next subagent of the turn; a
