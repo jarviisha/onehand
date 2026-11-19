@@ -42,6 +42,11 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
 
     Dialog::new(cx)
         .close_button(false)
+        .on_ok(super::enter_presses(
+            cx.entity().downgrade(),
+            !busy && named,
+            |shell, _, cx| shell.commit_worktree(cx),
+        ))
         .content(move |content, _, cx: &mut App| {
             content.child(title_row("New worktree", cx)).child(
                 div()
@@ -155,6 +160,11 @@ pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
 
     Dialog::new(cx)
         .close_button(false)
+        .on_ok(super::enter_presses(
+            cx.entity().downgrade(),
+            !busy,
+            |shell, _, cx| shell.commit_branch_rename(cx),
+        ))
         .content(move |content, _, cx: &mut App| {
             content.child(title_row("Rename branch", cx)).child(
                 div()

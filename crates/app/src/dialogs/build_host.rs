@@ -51,6 +51,12 @@ pub(crate) fn build_host(shell: &Shell, window: &Window, cx: &mut Context<Shell>
     Dialog::new(cx)
         .w(super::form_width(window))
         .close_button(false)
+        // What is wrong with the entry is said in the form, which stays.
+        .on_ok(super::enter_presses(
+            weak.clone(),
+            true,
+            |shell, window, cx| shell.save_build_host(window, cx),
+        ))
         .content(move |content, _, cx: &mut App| {
             let pick = {
                 let weak = weak.clone();

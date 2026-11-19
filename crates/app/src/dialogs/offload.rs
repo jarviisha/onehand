@@ -68,6 +68,11 @@ pub(crate) fn offload(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -
     Dialog::new(cx)
         .w(super::form_width(window))
         .close_button(false)
+        .on_ok(super::enter_presses(
+            weak.clone(),
+            refusal.is_none(),
+            |shell, window, cx| shell.commit_offload(window, cx),
+        ))
         .content(move |content, _, cx: &mut App| {
             let pick = {
                 let weak = weak.clone();

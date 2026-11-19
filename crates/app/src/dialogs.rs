@@ -118,6 +118,30 @@ pub(crate) fn footer_row() -> gpui::Div {
     div().h_flex().items_center().gap_2().w_full()
 }
 
+/// What Enter does in a dialog of the shell's: what its primary button
+/// does, while that button `takes` a press, and nothing while it refuses or
+/// works.
+///
+/// Enter in a one-line field is not the field's: it reaches the library's
+/// own confirm, which closes the dialog, and closing one of these clears
+/// what put it on screen. Left to the library, a name typed and confirmed
+/// with Enter was thrown away. The dialog is never closed from here: the
+/// press clears the shell's state when it is done, and keeps it while its
+/// work runs or when what was typed is refused, which is what says whether
+/// the dialog stays.
+pub(crate) fn enter_presses(
+    shell: gpui::WeakEntity<Shell>,
+    takes: bool,
+    press: impl Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static,
+) -> impl Fn(&ClickEvent, &mut Window, &mut App) -> bool + 'static {
+    move |_, window, cx| {
+        if takes {
+            let _ = shell.update(cx, |shell, cx| press(shell, window, cx));
+        }
+        false
+    }
+}
+
 /// One field of a dialog's form: the UI crate's, as Settings' are.
 use onehand_ui::field;
 
@@ -140,6 +164,11 @@ pub fn rename_session(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
 
     Dialog::new(cx)
         .close_button(false)
+        .on_ok(enter_presses(
+            cx.entity().downgrade(),
+            !empty,
+            |shell, _, cx| shell.commit_rename(cx),
+        ))
         .content(move |content, _, cx: &mut App| {
             content
                 .child(title_row("Rename conversation", cx))
@@ -309,6 +338,11 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
         .margin_top(margin)
         .p_4()
         .close_button(false)
+        .on_ok(enter_presses(
+            cx.entity().downgrade(),
+            !busy && blocked(blocking).is_none(),
+            |shell, window, cx| shell.commit_workflow(window, cx),
+        ))
         .content(move |content, _, cx: &mut App| {
             // Read here, as it is typed, so the preview follows the brief.
             let shown = runnable.as_ref().map(|template| {
