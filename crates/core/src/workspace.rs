@@ -137,16 +137,27 @@ impl BuildHost {
 }
 
 /// Why `path` cannot be an artifact, or the folder artifacts land under: it
-/// must name one file or folder inside the project.
+/// must name one file or folder inside the project, never the project
+/// itself, which would bring the host's whole checkout back over this one,
+/// and never anything of git's own folder, which a host must not write.
 pub fn inside_refusal(path: &str) -> Option<String> {
-    let outside = Path::new(path).components().any(|part| {
-        !matches!(
-            part,
-            std::path::Component::Normal(_) | std::path::Component::CurDir
-        )
-    });
-    if outside {
+    use std::path::Component;
+    let parts: Vec<Component<'_>> = Path::new(path).components().collect();
+    let outside = parts
+        .iter()
+        .any(|part| !matches!(part, Component::Normal(_) | Component::CurDir));
+    let names_something = parts
+        .iter()
+        .any(|part| matches!(part, Component::Normal(_)));
+    let gits_own = parts
+        .iter()
+        .any(|part| matches!(part, Component::Normal(name) if *name == ".git"));
+    if outside || !names_something {
         Some(format!("{path} must be inside the project"))
+    } else if gits_own {
+        Some(format!(
+            "{path} is git's own folder; it cannot be brought back"
+        ))
     } else if path.contains(['*', '?', '[']) {
         Some(format!("{path} is a pattern; name a file or a folder"))
     } else {
@@ -155,6 +166,16 @@ pub fn inside_refusal(path: &str) -> Option<String> {
 }
 
 impl ProjectRoot {
+    /// The hosts this folder builds on: none while its sessions run on a
+    /// host, where it builds already. What it was given is kept meanwhile,
+    /// for when it runs here again.
+    pub fn build_hosts(&self) -> &[BuildHost] {
+        match self.runs_here() {
+            true => &self.builds,
+            false => &[],
+        }
+    }
+
     pub fn new(path: impl Into<PathBuf>) -> Self {
         let path = path.into();
         Self {
@@ -442,11 +463,7 @@ impl Workspace {
             root.host = host;
             root.pinned = project.pinned;
             root.check = project.check;
-            // Only a folder whose sessions run here builds on a host.
             root.builds = project.builds;
-            if !root.runs_here() {
-                root.builds.clear();
-            }
             roots.push(root);
         }
         let active_root = active_key

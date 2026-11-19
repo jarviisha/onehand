@@ -74,9 +74,12 @@ bring back what it built. Nothing of this needs the host service: it is the pers
   (`BuildHost`, `crates/core/src/workspace.rs`): each a `host`, its `artifacts` (paths inside the
   project, a file or a folder) and an optional `into`, a folder in the project the artifacts land
   under, so two hosts building one project do not write over each other. A path that is absolute,
-  holds `..` or is a pattern is refused (`inside_refusal`). They are changed through
+  holds `..`, is a pattern, names the project itself (`.`) or anything of git's own folder
+  (`.git`) is refused (`inside_refusal`), in the form and again where a build starts, since the
+  file can be written by hand. They are changed through
   `WorkspaceDrive::set_builds`, shown at once and put back if the write fails; a project whose
-  sessions run on a host has none, and one host is named once (`build_host_refusal`).
+  sessions run on a host has none (`ProjectRoot::build_hosts`), though what it was given is kept
+  for when it runs here again, and one host is named once (`build_host_refusal`).
 - **One build is five steps** (`build_blocking`, `crates/core/src/host/build.rs`):
   1. **A snapshot.** The folder as it stands, uncommitted and untracked work included and ignored
      files left out, is committed aside from a temporary index (`task::marks::pin_blocking`). The
@@ -94,10 +97,13 @@ bring back what it built. Nothing of this needs the host service: it is the pers
      (`BUILD_LIMIT`).
   5. **The artifacts come back** only when the command exits 0, all of them or none: one the
      build did not make fails the build, *<path> was not built on <host>*, before anything is
-     written here. What comes back writes over what is here.
+     written here. What comes back writes over what is here. Only the paths named are unpacked,
+     whatever the host sends: its answer is its own to choose, and nothing else is written.
 - **What comes back is a file here**, and goes up with the next snapshot unless git ignores it.
 - **Every word onehand writes into a shell line is quoted** (`quoted`): a folder, an artifact and
-  the command reach the host's shell as one word each.
+  the command reach the host's shell as one word each. Over ssh each line is handed to `sh`
+  whole, so an account whose login shell is not a POSIX one builds all the same; the command
+  itself still runs through that login shell. ssh is given ten seconds to connect.
 - **One build per folder and host at a time**, held by a lock file under `builds/` in the config
   directory: *A build of <project> is already running on <host>*.
 - **A command the host could not find** (exit 127) is said with whose `PATH` lacks it:

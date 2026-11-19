@@ -361,6 +361,7 @@ impl Shell {
             || self.branch_draft.is_some()
             || self.host_project.is_some()
             || self.offload_draft.is_some()
+            || self.build_host_draft.is_some()
             || self.workflow_launcher.is_some()
             || self.agent_form
     }

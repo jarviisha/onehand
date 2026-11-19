@@ -257,6 +257,9 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
 - **`build_on_host` builds the project's own folder,** never a worktree: an agent in a worktree
   of its own runs `onehand --build` from its shell. Its answer carries the last 200 lines, not
   the lines as they come, and no tool can stop a build once asked.
+- **Only a build's command has a limit.** Making the folder, the push and the artifacts' way back
+  wait as long as ssh does once connected. An agent whose own tool call gives up first leaves the
+  build running, and a second ask is refused as already running until it ends.
 - **A build's folder on a host is never pruned.** `~/.onehand-build` there keeps one per working
   folder, a removed worktree's included, until a person deletes it.
 - **No page lists builds.** One is seen where it was asked: a terminal, or a tool's answer.

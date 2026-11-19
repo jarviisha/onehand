@@ -101,7 +101,8 @@ pub fn asked_blocking(
                         .local_path()
                         .is_some_and(|path| path == repo.top || path == main)
                 })
-                .map(|project| (project.label, project.builds)),
+                .map(|project| (project.build_hosts().to_vec(), project.label))
+                .map(|(builds, label)| (label, builds)),
         );
     }
     let Some((project, _)) = found.first().cloned() else {

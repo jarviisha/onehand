@@ -25,11 +25,15 @@ use std::time::{Duration, Instant};
 
 use super::client::{HostAddr, SSH_OPTS};
 use super::offload::branch::{git_to_host, git_url};
-use crate::workspace::BuildHost;
+use crate::workspace::{inside_refusal, BuildHost};
 use crate::worktree::git_message;
 
 /// How long a build may run before it is stopped.
 pub const BUILD_LIMIT: Duration = Duration::from_secs(2 * 60 * 60);
+
+/// How long a host is given to answer ssh at all, so a build asked of a
+/// machine that is off fails in seconds.
+const CONNECT_WAIT: &str = "ConnectTimeout=10";
 
 /// The exit code a shell gives a command it could not find.
 const NOT_FOUND: i32 = 127;
@@ -87,6 +91,15 @@ fn build_in(
     let host = &job.host.host;
     let addr = host.addr();
     let name = folder_name(job.top);
+    // Checked here too, where every way in arrives: an entry written into
+    // the workspace's file by hand has been through no form.
+    let named = job.host.artifacts.iter().chain(&job.host.into);
+    if let Some(why) = named
+        .filter_map(|path| inside_refusal(&path.display().to_string()))
+        .next()
+    {
+        return Err(why);
+    }
     let _held = lock(job.top, &host.0)
         .ok_or_else(|| format!("A build of {name} is already running on {host}"))?;
     refuse_unfit(job.top)?;
@@ -112,6 +125,10 @@ fn build_in(
         ));
     }
     let pushed = git_to_host(job.top)
+        .env(
+            "GIT_SSH_COMMAND",
+            format!("ssh {} -o {CONNECT_WAIT}", SSH_OPTS.join(" ")),
+        )
         .args(["push", "-q", "--no-verify", &url])
         .arg(format!("+{snapshot}:{SNAP_REF}"))
         .output()
@@ -305,11 +322,19 @@ fn on_host(addr: &HostAddr, script: &str) -> Command {
         }
         false => {
             let mut ssh = Command::new("ssh");
-            ssh.args(SSH_OPTS).arg("--").arg(&addr.ssh);
+            ssh.args(SSH_OPTS)
+                .args(["-o", CONNECT_WAIT, "--"])
+                .arg(&addr.ssh);
             ssh
         }
     };
-    cmd.arg(script).stdin(Stdio::null());
+    // Over ssh the line goes to the account's login shell, which may be one
+    // a POSIX line means nothing to: it is handed to `sh`, whole.
+    match addr.local {
+        true => cmd.arg(script),
+        false => cmd.arg(format!("sh -c {}", quoted(script))),
+    };
+    cmd.stdin(Stdio::null());
     cmd
 }
 
@@ -426,6 +451,15 @@ fn run_streaming(
     })
 }
 
+/// `tar` unpacking, into `into`, only `paths` of what it is fed: what a host
+/// sends is the host's to choose, and nothing but what was asked for is
+/// written here, whatever else its answer holds.
+fn unpack(into: &Path, paths: &[PathBuf]) -> Command {
+    let mut tar = Command::new("tar");
+    tar.args(["-xf", "-", "-C"]).arg(into).arg("--").args(paths);
+    tar
+}
+
 /// Bring the job's artifacts back from `dir` on the host, into the working
 /// folder or the folder under it the entry names. All of them or none: one
 /// the build did not make fails the lot before anything is written here.
@@ -455,9 +489,7 @@ fn bring_back(addr: &HostAddr, dir: &str, job: &Job<'_>) -> Result<Vec<PathBuf>,
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("ssh: {e}"))?;
-    let unpacked = Command::new("tar")
-        .args(["-xf", "-", "-C"])
-        .arg(&into)
+    let unpacked = unpack(&into, &job.host.artifacts)
         .stdin(Stdio::from(sent.stdout.take().expect("piped")))
         .stderr(Stdio::piped())
         .output()

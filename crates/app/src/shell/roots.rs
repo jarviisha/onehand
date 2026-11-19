@@ -575,7 +575,7 @@ impl Shell {
     /// The hosts the project at `root` builds on.
     pub(crate) fn builds_of(&self, root: &Path) -> Vec<onehand_core::workspace::BuildHost> {
         self.root_index(root)
-            .map(|at| self.window.workspace.roots[at].builds.clone())
+            .map(|at| self.window.workspace.roots[at].build_hosts().to_vec())
             .unwrap_or_default()
     }
 

@@ -621,6 +621,82 @@ mod cli {
     }
 }
 
+#[test]
+fn an_entry_written_by_hand_with_a_path_outside_is_refused_before_anything_is_sent() {
+    let (home, scratch) = (Scratch::new("home"), Scratch::new("work"));
+    let top = repo(&scratch, "proj");
+    for (artifacts, into) in [
+        (&["../escape"][..], None),
+        (&["made.txt"][..], Some(".git")),
+    ] {
+        let (built, _) = build(
+            &home,
+            &top,
+            "",
+            &on_local(artifacts, into),
+            "echo x > made.txt",
+        );
+        assert!(built.is_err(), "{artifacts:?} {into:?}: {built:?}");
+    }
+    assert!(
+        !home.0.join(".onehand-build").exists(),
+        "nothing was made on the host"
+    );
+}
+
+/// The host is asked for the artifacts, but what it sends is its own to
+/// choose: only the paths named are written here.
+#[test]
+fn only_the_paths_named_are_unpacked_whatever_the_host_sends() {
+    let scratch = Scratch::new("unpack");
+    let (sent, here) = (scratch.0.join("sent"), scratch.0.join("here"));
+    write(&sent, "made.txt", "ok\n");
+    write(&sent, "dist/page.html", "ok\n");
+    write(&sent, ".git/hooks/pre-commit", "#!/bin/sh\necho owned\n");
+    write(&sent, "src/main.rs", "overwritten\n");
+    std::fs::create_dir_all(&here).expect("here");
+    let archive = Command::new("tar")
+        .args(["-cf", "-", "-C"])
+        .arg(&sent)
+        .args(["made.txt", "dist", ".git", "src"])
+        .output()
+        .expect("tar runs")
+        .stdout;
+    let mut unpack = unpack(&here, &[PathBuf::from("made.txt"), PathBuf::from("dist")])
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .expect("tar runs");
+    std::io::Write::write_all(&mut unpack.stdin.take().unwrap(), &archive).expect("fed");
+    assert!(unpack.wait().expect("ended").success());
+    assert!(here.join("made.txt").exists() && here.join("dist/page.html").exists());
+    assert!(!here.join(".git").exists() && !here.join("src").exists());
+}
+
+/// Over ssh the line goes to the account's login shell, which may be none a
+/// POSIX line means anything to: it is handed to `sh` whole.
+#[test]
+fn a_script_reaches_a_host_as_one_word_for_sh_and_ssh_gives_up_on_a_dead_host() {
+    let addr = HostName("me@build01".into()).addr();
+    let cmd = on_host(&addr, "cd 'a b' && echo $HOME");
+    let args: Vec<String> = cmd
+        .get_args()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        args.last().map(String::as_str),
+        Some(r#"sh -c 'cd '\''a b'\'' && echo $HOME'"#)
+    );
+    assert!(
+        args.iter().any(|arg| arg == "ConnectTimeout=10"),
+        "{args:?}"
+    );
+    let before = args
+        .iter()
+        .position(|arg| arg == "--")
+        .expect("options end");
+    assert_eq!(args[before + 1], "me@build01");
+}
+
 /// The last lines `n` lines leave in a tail.
 fn tail_of(n: usize) -> Tail {
     let mut tail = Tail::default();
