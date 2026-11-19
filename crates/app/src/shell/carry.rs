@@ -260,7 +260,7 @@ impl Shell {
                 }
             }
             // Drawn from the tree, which the drive has put back.
-            Value::Order(_) | Value::Pin { .. } => {}
+            Value::Order(_) | Value::Pin { .. } | Value::Builds { .. } => {}
         }
     }
 }

@@ -852,3 +852,81 @@ fn a_deleted_workspace_writes_nothing() {
         .iter()
         .all(|n| n != "Write" && n != "Arm"));
 }
+
+// Build hosts.
+
+fn builds_on(host: &str) -> crate::workspace::BuildHost {
+    crate::workspace::BuildHost {
+        host: HostName(host.into()),
+        artifacts: vec!["target/app".into()],
+        into: None,
+    }
+}
+
+#[test]
+fn build_hosts_are_shown_at_once_and_written() {
+    let mut drive = bound();
+    let fx = drive.set_builds(Path::new("/a"), vec![builds_on("build01")]);
+    assert_eq!(names(&fx), ["Write", "Changed"]);
+    assert_eq!(drive.roots[0].builds, vec![builds_on("build01")]);
+}
+
+#[test]
+fn unchanged_build_hosts_write_nothing() {
+    let mut drive = bound();
+    drive.set_builds(Path::new("/a"), vec![builds_on("build01")]);
+    assert!(drive
+        .set_builds(Path::new("/a"), vec![builds_on("build01")])
+        .is_empty());
+    assert!(drive
+        .set_builds(Path::new("/nowhere"), Vec::new())
+        .is_empty());
+}
+
+#[test]
+fn a_failed_write_puts_the_build_hosts_back() {
+    let mut drive = bound();
+    let pending = written(drive.set_builds(Path::new("/a"), vec![builds_on("build01")]));
+    let fx = drive.handle(Input::Written {
+        pending,
+        result: Err("read-only".into()),
+    });
+    assert!(drive.roots[0].builds.is_empty());
+    assert!(names(&fx).iter().any(|name| name.starts_with("Put(Builds")));
+}
+
+#[test]
+fn a_second_entry_for_one_host_is_refused_and_an_edit_may_keep_its_host() {
+    let mut drive = bound();
+    drive.set_builds(
+        Path::new("/a"),
+        vec![builds_on("build01"), builds_on("win")],
+    );
+    let entry = builds_on("win");
+    assert_eq!(
+        drive.build_host_refusal(Path::new("/a"), &entry, None),
+        Some("a already builds on win".to_string())
+    );
+    assert_eq!(
+        drive.build_host_refusal(Path::new("/a"), &entry, Some(1)),
+        None
+    );
+    assert_eq!(
+        drive.build_host_refusal(Path::new("/a"), &entry, Some(0)),
+        Some("a already builds on win".to_string())
+    );
+}
+
+#[test]
+fn a_project_that_runs_on_a_host_is_refused_a_build_host() {
+    let mut drive = bound();
+    tree(&mut drive).roots[0].offload = Some(crate::workspace::Offloaded {
+        host: HostName("box".into()),
+        mirror: "/m".into(),
+        branch: None,
+    });
+    assert_eq!(
+        drive.build_host_refusal(Path::new("/a"), &builds_on("build01"), None),
+        Some("a runs its sessions on a host; it builds there already".to_string())
+    );
+}
