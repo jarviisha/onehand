@@ -1,6 +1,8 @@
 //! Asking a host what it is and what it has, over the person's own ssh.
 
+use std::io::Read as _;
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use super::client::{HostAddr, SSH_OPTS};
 use crate::config::HostOs;
@@ -28,6 +30,10 @@ const HAS_WINDOWS: &str = "echo __ONEHAND_PROBE__& echo %PROCESSOR_ARCHITECTURE%
 /// that is off ends in seconds rather than at the network's own patience.
 const CONNECT_WAIT: &str = "ConnectTimeout=10";
 
+/// How long one call is given to answer once it runs: a login profile that
+/// waits on something must not leave a probe running for good.
+const ANSWER_WAIT: Duration = Duration::from_secs(30);
+
 /// What a probe found of a host.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Probed {
@@ -52,14 +58,19 @@ impl Probed {
 /// Ask `addr` what it is and what it has, in two calls. A failure is in
 /// words to show: ssh's own when the host was not reached.
 pub fn probe_blocking(addr: &HostAddr) -> Result<Probed, String> {
-    let (said, err) = run(addr, WHAT)?;
+    let (said, err) = run(addr, WHAT, ANSWER_WAIT)?;
     let Some((os, arch)) = system(&said) else {
         let why = err.lines().next().unwrap_or("it printed nothing").trim();
         return Err(format!("{} did not answer the probe: {why}", addr.ssh));
     };
-    let windows = os == HostOs::Windows;
-    let (said, _) = run(addr, if windows { HAS_WINDOWS } else { HAS_POSIX })?;
-    let (named, tools) = tools(&said, windows);
+    let cmd = asks_cmd(&os, &arch);
+    let (said, err) = run(addr, if cmd { HAS_WINDOWS } else { HAS_POSIX }, ANSWER_WAIT)?;
+    // Its shell could not run the question: said as that, never as a host
+    // with nothing installed.
+    let Some((named, tools)) = tools(&said, cmd) else {
+        let why = err.lines().next().unwrap_or("it printed nothing").trim();
+        return Err(format!("{} did not say what it has: {why}", addr.ssh));
+    };
     Ok(Probed {
         os,
         arch: named.unwrap_or(arch),
@@ -67,9 +78,20 @@ pub fn probe_blocking(addr: &HostAddr) -> Result<Probed, String> {
     })
 }
 
-/// Run `cmd` on the host to its end: what it printed, and what it said on
-/// stderr. Only ssh's own failure is an error; the command's is its answer.
-fn run(addr: &HostAddr, cmd: &str) -> Result<(String, String), String> {
+/// Whether a host is asked what it has in `cmd.exe`'s words: a Windows one
+/// that answered with `ver`, which names no architecture. One whose `uname`
+/// answered runs a POSIX shell over ssh, and is asked in that shell's.
+fn asks_cmd(os: &HostOs, arch: &str) -> bool {
+    *os == HostOs::Windows && arch.is_empty()
+}
+
+/// Run `cmd` on the host to its end, or for `wait` at the most: what it
+/// printed, and what it said on stderr. Only ssh's own failure, or no end
+/// within `wait`, is an error; the command's own failure is its answer.
+// ponytail: the answer is read once the command ends, so one printing more
+// than a pipe holds waits out `wait`; read while waiting if a probe ever
+// prints that much.
+fn run(addr: &HostAddr, cmd: &str, wait: Duration) -> Result<(String, String), String> {
     let mut command = if addr.local {
         let mut sh = Command::new("sh");
         sh.arg("-c");
@@ -81,20 +103,46 @@ fn run(addr: &HostAddr, cmd: &str) -> Result<(String, String), String> {
             .arg(&addr.ssh);
         ssh
     };
-    let out = command
+    let mut child = command
         .arg(cmd)
         .stdin(Stdio::null())
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| format!("ssh: {e}"))?;
-    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
-    if !addr.local && out.status.code() == Some(255) {
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait().map_err(|e| format!("ssh: {e}"))? {
+            Some(status) => break status,
+            None if started.elapsed() >= wait => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "{} did not answer within {}s",
+                    addr.ssh,
+                    wait.as_secs()
+                ));
+            }
+            None => std::thread::sleep(Duration::from_millis(20)),
+        }
+    };
+    let (mut said, mut err) = (Vec::new(), Vec::new());
+    if let Some(mut pipe) = child.stdout.take() {
+        let _ = pipe.read_to_end(&mut said);
+    }
+    if let Some(mut pipe) = child.stderr.take() {
+        let _ = pipe.read_to_end(&mut err);
+    }
+    let said = String::from_utf8_lossy(&said).into_owned();
+    let err = String::from_utf8_lossy(&err).trim().to_string();
+    if !addr.local && status.code() == Some(255) {
         return Err(if err.is_empty() {
             format!("{} could not be reached", addr.ssh)
         } else {
             err
         });
     }
-    Ok((String::from_utf8_lossy(&out.stdout).into_owned(), err))
+    Ok((said, err))
 }
 
 /// The lines after the last mark, trimmed, the empty ones left out.
@@ -130,9 +178,11 @@ fn system(out: &str) -> Option<(HostOs, String)> {
 }
 
 /// The architecture a Windows host named, and each program found with its
-/// version: a `name=` line, then what the program said, if anything.
-fn tools(out: &str, windows: bool) -> (Option<String>, Vec<(String, String)>) {
-    let mut lines = answer(out).unwrap_or_default().into_iter().peekable();
+/// version: a `name=` line, then what the program said, if anything. `None`
+/// when the call never answered.
+#[allow(clippy::type_complexity)]
+fn tools(out: &str, windows: bool) -> Option<(Option<String>, Vec<(String, String)>)> {
+    let mut lines = answer(out)?.into_iter().peekable();
     let arch = match windows {
         true => lines.next().map(str::to_string),
         false => None,
@@ -145,7 +195,7 @@ fn tools(out: &str, windows: bool) -> (Option<String>, Vec<(String, String)>) {
         let version = lines.next_if(|next| !next.ends_with('=')).unwrap_or("");
         tools.push((name.to_string(), version.to_string()));
     }
-    (arch, tools)
+    Some((arch, tools))
 }
 
 #[cfg(test)]

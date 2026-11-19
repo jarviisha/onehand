@@ -108,3 +108,23 @@ fn a_config_with_no_hosts_saves_and_names_none() {
     let text = AppConfig::default().to_toml().expect("serializes");
     assert!(!text.contains("hosts"), "{text}");
 }
+
+/// A host written by hand with its name alone is what an undeclared one is
+/// taken for, and never costs the rest of the file.
+#[test]
+fn a_host_written_with_its_name_alone_is_linux_on_x86_64() {
+    let cfg = AppConfig::parse("[[hosts]]\nname = \"build01\"\n").expect("still loads");
+    assert_eq!(cfg.hosts, vec![HostSpec::undeclared(named("build01"))]);
+}
+
+#[test]
+fn a_system_is_read_whatever_its_case() {
+    let cfg = AppConfig::parse("[[hosts]]\nname = \"a\"\nos = \"Linux\"\narch = \"x86_64\"\n")
+        .expect("loads");
+    assert_eq!(cfg.hosts[0].os, HostOs::Linux);
+    assert!(cfg.hosts[0].runs_sessions());
+    assert!(cfg
+        .to_toml()
+        .expect("serializes")
+        .contains("os = \"linux\""));
+}

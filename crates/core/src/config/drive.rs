@@ -446,10 +446,9 @@ impl SettingsDrive {
                             arch: probed.arch.clone(),
                         };
                         self.set_host_probe(&host, Some(HostProbe::Found(probed)));
-                        match self.settings.hosts.contains(&spec) {
-                            true => vec![Effect::Changed],
-                            false => self.edit_hosts(HostEdit::Put(spec)),
-                        }
+                        // Written even when nothing changed: a write of this
+                        // host that failed before is mended by its next check.
+                        self.edit_hosts(HostEdit::Put(spec))
                     }
                     Err(why) => {
                         self.set_host_probe(&host, Some(HostProbe::Failed(why)));

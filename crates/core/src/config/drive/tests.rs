@@ -366,14 +366,15 @@ mod hosts {
     }
 
     #[test]
-    fn a_probe_that_finds_what_is_declared_writes_nothing() {
+    fn a_check_writes_what_it_found_again_so_a_write_that_failed_is_mended() {
         let mut drive = drive(vec![HostSpec::undeclared(named("b"))]);
         let _ = drive.probe_host(named("b"));
         let fx = drive.handle(Input::HostProbed {
             host: named("b"),
             found: Ok(probed(HostOs::Linux, "x86_64")),
         });
-        assert_eq!(kinds(&fx), vec!["changed"]);
+        assert_eq!(kinds(&fx), vec!["changed", "write"]);
+        assert_eq!(drive.hosts.len(), 1);
     }
 
     #[test]

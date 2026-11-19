@@ -258,7 +258,8 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   host a closed workspace names can be removed, and is listed again, not declared, when that
   workspace opens.
 - **A Windows host whose default shell is PowerShell cannot be checked:** the probe's first line
-  is written for a POSIX shell and `cmd.exe`.
+  is written for a POSIX shell and `cmd.exe`. Nor can a Linux host whose login shell does not
+  read POSIX words (fish, tcsh): its check fails saying so.
 - **The laptop's copies are never pruned.** A copy of a session the host has long since dropped,
   or of a project removed here, stays under `hosts/` until a person deletes it.
 - **The permission bypass is changed only while the host is attached:** the page draws no switch

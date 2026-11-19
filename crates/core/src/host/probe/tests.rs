@@ -43,7 +43,7 @@ fn no_marker_is_no_answer() {
 
 #[test]
 fn windows_tools() {
-    let (arch, tools) = tools(WINDOWS_TOOLS, true);
+    let (arch, tools) = tools(WINDOWS_TOOLS, true).expect("answered");
     assert_eq!(arch.as_deref(), Some("AMD64"));
     let probed = Probed {
         os: HostOs::Windows,
@@ -64,7 +64,8 @@ fn linux_tools_without_git() {
     let (arch, tools) = tools(
         "noise\n__ONEHAND_PROBE__\ntar=\ntar (GNU tar) 1.35\n",
         false,
-    );
+    )
+    .expect("answered");
     assert_eq!(arch, None);
     let probed = Probed {
         os: HostOs::Linux,
@@ -76,7 +77,7 @@ fn linux_tools_without_git() {
 
 #[test]
 fn a_tool_that_says_nothing_of_its_version_is_still_found() {
-    let (_, tools) = tools("__ONEHAND_PROBE__\ngit=\ntar=\ntar 1.35\n", false);
+    let (_, tools) = tools("__ONEHAND_PROBE__\ngit=\ntar=\ntar 1.35\n", false).expect("answered");
     assert_eq!(
         tools,
         vec![
@@ -92,4 +93,30 @@ fn probes_this_machine() {
     assert_eq!(probed.os, HostOs::Linux);
     assert!(!probed.arch.is_empty());
     assert!(probed.has("tar"));
+}
+
+/// A shell that could not run the second call says nothing after the mark:
+/// that is a failed probe, never a host with nothing installed.
+#[test]
+fn a_second_call_that_never_answered_is_no_answer() {
+    assert_eq!(tools("fish: Unsupported use of '='\n", false), None);
+    assert_eq!(tools("", true), None);
+}
+
+/// A Windows host whose ssh shell is Git's bash is asked in POSIX words,
+/// and one answering through cmd.exe in cmd.exe's.
+#[test]
+fn each_shell_is_asked_in_its_own_words() {
+    assert!(asks_cmd(&HostOs::Windows, ""));
+    assert!(!asks_cmd(&HostOs::Windows, "x86_64"));
+    assert!(!asks_cmd(&HostOs::Linux, "x86_64"));
+}
+
+#[test]
+fn a_host_that_never_finishes_answering_is_given_up_on() {
+    let local = HostName("local".into()).addr();
+    let started = std::time::Instant::now();
+    let said = run(&local, "sleep 30", std::time::Duration::from_millis(200));
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    assert_eq!(said, Err("local did not answer within 0s".to_string()));
 }

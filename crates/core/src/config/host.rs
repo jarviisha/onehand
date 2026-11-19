@@ -6,22 +6,54 @@ use crate::workspace::HostName;
 
 /// The system a host runs.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(from = "String", into = "String")]
 pub enum HostOs {
     Linux,
     Windows,
     /// One this build does not know, kept as it was written so a save here
     /// does not lose what a newer build declared.
-    #[serde(untagged)]
     Other(String),
 }
 
-/// One declared host.
+/// Read whatever its case, since a person writing the file by hand writes
+/// the name as the page shows it.
+impl From<String> for HostOs {
+    fn from(said: String) -> Self {
+        match said.to_ascii_lowercase().as_str() {
+            "linux" => Self::Linux,
+            "windows" => Self::Windows,
+            _ => Self::Other(said),
+        }
+    }
+}
+
+impl From<HostOs> for String {
+    fn from(os: HostOs) -> Self {
+        match os {
+            HostOs::Linux => "linux".into(),
+            HostOs::Windows => "windows".into(),
+            HostOs::Other(said) => said,
+        }
+    }
+}
+
+fn linux() -> HostOs {
+    HostOs::Linux
+}
+
+fn x86_64() -> String {
+    "x86_64".into()
+}
+
+/// One declared host. An entry written with its name alone is what a host
+/// nobody declared is taken for, so a hand-written one never costs the file.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HostSpec {
     pub name: HostName,
+    #[serde(default = "linux")]
     pub os: HostOs,
     /// As the host names it: `x86_64`, `aarch64`, `AMD64`.
+    #[serde(default = "x86_64")]
     pub arch: String,
 }
 
@@ -37,8 +69,8 @@ impl HostSpec {
     pub fn undeclared(name: HostName) -> Self {
         Self {
             name,
-            os: HostOs::Linux,
-            arch: "x86_64".into(),
+            os: linux(),
+            arch: x86_64(),
         }
     }
 
