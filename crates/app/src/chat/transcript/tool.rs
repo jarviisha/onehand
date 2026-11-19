@@ -1,11 +1,8 @@
 use super::fold_key;
-use super::metrics::{
-    COMMAND_FADE, COMMAND_H, COMMAND_SHARE, LARGE_DIFF, MONO_ADVANCE, PREVIEW_DIFF, PREVIEW_OUT,
-    TIGHT_GAP,
-};
+use super::metrics::{COMMAND_FADE, COMMAND_H, COMMAND_SHARE, LARGE_DIFF, MONO_ADVANCE};
 use super::parts::{
-    ActivityRow, Object, RowMark, accent, activity_row, copy_button, detail_well, line_counts,
-    plain_box, row_note, scrolled, show_all, show_more, sideways,
+    ActivityRow, BOX_MAX_LINES, DetailBox, Object, RowMark, accent, activity_row, command_cut,
+    command_head, detail_box, detail_well, line_counts, plain_box, row_note, show_all, show_more,
 };
 use crate::chat::session::ChatSession;
 use crate::controls::Quiet as _;
@@ -27,8 +24,8 @@ use std::path::Path;
 mod command;
 mod diff;
 pub(super) use command::{CommandBlock, command_cwd};
-pub(crate) use diff::diff_rows;
 use diff::{diff_detail, diff_text};
+pub(crate) use diff::{diff_rows, rows_text};
 
 /// Less than a pixel left to scroll is the scroller's rounding, not more text
 /// under the fade.
@@ -37,9 +34,6 @@ const SCROLL_SLACK: gpui::Pixels = gpui::px(1.);
 /// Diff lines drawn per tool card, **shared across all its hunks** — a
 /// MultiEdit touching twenty files must not cost twenty times the budget.
 const MAX_DIFF_LINES: usize = 200;
-
-/// Lines of a mono output well before the tail is dropped.
-const MAX_MONO_LINES: usize = 60;
 
 // ── tool call ───────────────────────────────────────────────────────────────
 
@@ -350,21 +344,20 @@ fn tool_detail(
             all: String::new(),
         });
     }
-    // Bounded, and the bound is counted rather than swallowed: a list cut at
-    // sixty with nothing said is a list claiming the step looked at sixty
-    // things. Only the lines drawn are redacted for drawing.
-    let hidden = raw.len().saturating_sub(MAX_MONO_LINES);
+    // Bounded, and the bound is counted rather than swallowed: a list cut
+    // with nothing said is a list claiming the step looked at only that much.
+    // Only the lines drawn are redacted for drawing.
+    let hidden = raw.len().saturating_sub(BOX_MAX_LINES);
     let lines: Vec<SharedString> = raw
         .iter()
-        .take(MAX_MONO_LINES)
+        .take(BOX_MAX_LINES)
         .map(|line| SharedString::from(onehand_core::chat::redact(line)))
         .collect();
     let all = onehand_core::chat::redact(&raw.join("\n"));
     Some(Detail::Lines { lines, hidden, all })
 }
 
-/// The well a row opens into, carrying nothing but the text and a way to copy
-/// it.
+/// The box a row opens into: what the step holds, and a way to copy it.
 fn detail_frame(
     session: &Entity<ChatSession>,
     t: &ToolItem,
@@ -372,14 +365,15 @@ fn detail_frame(
     detail: Detail,
     cx: &App,
 ) -> gpui::Div {
-    let copy = detail.text(&diff_text(t));
+    let rows = diff_text(t);
+    let copy = detail.text(&rows);
     let key = fold_key(target);
-    let body = div().flex_1().min_w_0().map(|well| match detail {
+    match detail {
         Detail::Command { command, output } => {
-            command_detail(session, target, &command, &output, well, cx)
+            command_detail(session, target, &command, &output, copy, cx)
         }
-        Detail::Diffs => diff_detail(session, t, target, well, cx),
-        Detail::Image(bytes) => well.p_3().map(|well| {
+        Detail::Diffs => diff_detail(session, t, target, rows, copy, cx),
+        Detail::Image(bytes) => plain_box(cx).p_3().map(|well| {
             // A recognised signature is no promise the bytes decode, and gpui
             // draws nothing for an image that fails to; both say so the same way.
             let ink = cx.theme().muted_foreground;
@@ -396,117 +390,97 @@ fn detail_frame(
                 None => well.text_color(ink).child(unrecognized),
             }
         }),
-        Detail::Lines { lines, hidden, .. } => well
-            .p_3()
-            .text_color(crate::theme::meta_ink(cx))
-            .child(sideways(
-                ("detail-lines", key),
-                div().v_flex().children(
-                    lines
+        // A read or a search opens on what it found first.
+        Detail::Lines { lines, hidden, all } => {
+            let total = lines.len() + hidden;
+            detail_box(
+                DetailBox {
+                    key,
+                    head: None,
+                    lines: lines
                         .into_iter()
-                        .map(|line| div().whitespace_nowrap().child(line)),
-                ),
-            ))
-            // Bounded, and the bound is counted rather than swallowed.
-            .children((hidden > 0).then(|| {
-                div()
-                    .text_xs()
-                    .font_family(cx.theme().font_family.clone())
-                    .child(format!("and {hidden} more lines"))
-            })),
-    });
-    // **Drawn always, never waiting to be hovered**, and in a column of its
-    // own rather than over the text: a control that appears under the pointer
-    // is one nobody finds who was not already reaching for it, and one laid
-    // over the first line covers the part most likely to be read.
-    plain_box(cx)
-        .h_flex()
-        .items_start()
-        .child(body)
-        .children(copy.map(|text| {
-            div().flex_none().p(TIGHT_GAP).child(copy_button(
-                ("detail-copy", key),
-                text,
-                "Copy this",
+                        .map(|line| {
+                            div()
+                                .px_3()
+                                .whitespace_nowrap()
+                                .text_color(crate::theme::meta_ink(cx))
+                                .child(line)
+                                .into_any_element()
+                        })
+                        .collect(),
+                    drawn: total - hidden,
+                    total,
+                    from_end: false,
+                    whole: (total > 0).then(|| (all.clone().into(), None)),
+                    copy,
+                },
                 cx,
-            ))
-        }))
+            )
+        }
+    }
 }
 
-/// A command, then the tail of what it printed.
+/// A command over a hairline, then what it printed, opened at its end.
 ///
-/// **Always the tail, opened or closed.** An output says what happened at its
-/// end -- the error, the summary line, the prompt coming back -- so what is
-/// shown is the last lines, and what is held back is above them, which is
-/// where the way to them is offered.
+/// **The end, because that is where an output keeps its point**: the error,
+/// the summary line, the prompt coming back. What is above it is a scroll
+/// away, and the whole of it a press on *Open*.
 fn command_detail(
     session: &Entity<ChatSession>,
     target: TranscriptItemId,
     command: &str,
     output: &str,
-    well: gpui::Div,
+    copy: Option<String>,
     cx: &App,
 ) -> gpui::Div {
-    let open = session.read(cx).out_is_open(target, 0);
+    let whole = session.read(cx).out_is_open(target, 0);
     let lines: Vec<&str> = output.lines().collect();
-    let cap = match open {
-        true => MAX_MONO_LINES,
-        false => PREVIEW_OUT,
-    };
-    let hidden = lines.len().saturating_sub(cap);
+    let skipped = lines.len().saturating_sub(BOX_MAX_LINES);
     let danger = crate::theme::status_ink(cx).danger;
     let key = fold_key(target);
-
-    well.p_3()
+    let head = div()
         .v_flex()
         .gap_1()
-        .child(sideways(
-            ("command-head", key),
-            div()
-                .h_flex()
-                .gap_2()
-                .whitespace_nowrap()
-                .child(div().text_color(cx.theme().muted_foreground).child("$"))
-                .child(
-                    div()
-                        .text_color(cx.theme().foreground)
-                        .child(command.to_string()),
-                ),
-        ))
-        // Opened, the well is still bounded, so the link says what is
-        // *still* cut rather than claiming the whole of it is on screen.
-        .children((hidden > 0 || open).then(|| {
+        .child(command_head(command, whole, cx))
+        .children(command_cut(command).map(|count| {
             fold_link(
                 session,
                 target,
-                match (open, hidden) {
-                    (true, 0) => "Show less".to_string(),
-                    (true, n) => format!("Show less · {n} earlier lines not shown"),
-                    (false, n) => format!("Show {n} earlier lines"),
+                match whole {
+                    true => "Show less".to_string(),
+                    false => show_all(count),
                 },
                 cx,
             )
-        }))
-        .children((lines.len() > hidden).then(|| {
-            scrolled(
-                open,
-                key,
-                div().child(sideways(
-                    ("command-out", key),
-                    div().v_flex().children(lines[hidden..].iter().map(|line| {
-                        // A failure names itself in what it printed, so the
-                        // ink follows the words rather than the row.
-                        div()
-                            .whitespace_nowrap()
-                            .text_color(match is_error_line(line) {
-                                true => danger,
-                                false => crate::theme::meta_ink(cx),
-                            })
-                            .child(line.to_string())
-                    })),
-                )),
-            )
-        }))
+        }));
+    detail_box(
+        DetailBox {
+            key,
+            head: Some(head.into_any_element()),
+            lines: lines[skipped..]
+                .iter()
+                .map(|line| {
+                    // A failure names itself in what it printed, so the ink
+                    // follows the words rather than the row.
+                    div()
+                        .px_3()
+                        .whitespace_nowrap()
+                        .text_color(match is_error_line(line) {
+                            true => danger,
+                            false => crate::theme::meta_ink(cx),
+                        })
+                        .child(line.to_string())
+                        .into_any_element()
+                })
+                .collect(),
+            total: lines.len(),
+            drawn: lines.len() - skipped,
+            from_end: true,
+            whole: (!output.is_empty()).then(|| (output.to_string().into(), None)),
+            copy,
+        },
+        cx,
+    )
 }
 
 /// Whether a line of output reports a failure: one that starts with what a

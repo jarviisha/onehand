@@ -118,9 +118,24 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   agent says it is doing; a step that runs is named by its own row and not again here). A workflow's steps and a stopped turn are notices, never prompts.
 - **Folding blocks open from one line**, the chevron first, with no box: no edge, no fill and no
   rule beside what they hold, which sits indented under the line's words (a cluster, a thought, a plan, a subagent, a turn's changes). What runs is open until done, the
-  plan stays open, and a reader's fold wins. Long output folds and is capped, an opened cluster
-  too, each saying what it holds back. Wells are filled with no edge, their text at
-  `CODE_TEXT`. A finished turn ends on Copy (its closing paragraph) and how long it took, said as
+  plan stays open, and a reader's fold wins. An opened cluster is capped, saying what it holds
+  back. Wells are filled with no edge, their text at `CODE_TEXT`.
+- **What a row opens into is one box, never taller than sixteen lines** (`DETAIL_OPEN_H`): a
+  command's output, a read's or a search's lines, a file's content, a diff. A command stands on
+  top, wrapped so it reads as typed and cut at four lines with *Show all N lines*, over a
+  hairline. Under it the lines scroll inside the box in both directions, the vertical bar on the
+  box's right edge however far they are pushed sideways and the horizontal one along its foot; a
+  command's opens at its end, where its result is, and a read's or a search's at its start. Under a
+  box holding more than it shows: how many lines (and how many it draws, where it caps them), and
+  *Open*, which shows them whole in a dialog as a table's does. A new file is its content,
+  numbered, with no fill and no sign; a changed file's fills run the box's width. Copy floats in
+  the box's top corner, on its fill and clear of the bar. Nothing inside a box grows it.
+- **A turn's changes say each file once.** One file is one line: what happened to it, its path,
+  its counts, and the chevron opens its diff. Several are a head (*N files changed*, the counts)
+  and a row a file: the path giving way at its start (the folder in the meta ink, the name in the
+  foreground, struck when deleted), *new* or *deleted* in the muted ink, the share bar on a
+  changed file only, and the counts in one column at the right edge. Each diff opens on its own
+  row, in the box. A finished turn ends on Copy (its closing paragraph) and how long it took, said as
   *Failed after …* where the turn ended on a failure and *Stopped after …* where it was stopped
   or cut short.
 - **How a turn ended is said, not alarmed.** A cancel, whoever asked for it, leaves one *Stopped*
@@ -151,7 +166,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   and from `~` outside it. A
   path or a command is mono; the agent's own wording, a folder and what the agent did (a
   thought, a command's output, a read or search list) read in the middle ink. One copy control
-  (`.short_icon()`, quiet, named in its tooltip, in a column of its own; a permission's on the line
+  (`.short_icon()`, quiet, named in its tooltip, over a box's top corner; a permission's on the line
   under its command, beside where it runs; a prompt's under its bubble, with *Fork from here* beside it, shown while
   the prompt is pointed at or a control holds focus) and one show-more control serve every block. Text
   that scrolls keeps a gutter for its scrollbar.

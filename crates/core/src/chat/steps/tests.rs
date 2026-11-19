@@ -534,3 +534,35 @@ fn a_stopped_step_is_counted_apart_from_failures() {
     let bodies: Vec<&ChatItem> = members.iter().collect();
     assert_eq!(run_outcome(&bodies).outcome, Outcome::Clean);
 }
+
+/// A cluster says it created the files its rows say were created.
+#[test]
+fn a_cluster_says_created_where_its_rows_do() {
+    let created = ChatItem::Tool(ToolItem::new(ToolCall {
+        id: "c".into(),
+        title: "Write src/new.rs".into(),
+        description: None,
+        kind: ToolKind::Edit,
+        status: ToolStatus::Completed,
+        content: vec![crate::acp::ToolContent::Diff {
+            path: "src/new.rs".into(),
+            old: None,
+            new: "fn main() {}\n".into(),
+        }],
+    }));
+    let edited = wrote("e", &[("src/lib.rs", "a\n", "b\n")]);
+    assert_eq!(
+        summary(&[created, edited]).plain(),
+        "Created 1 file, edited 1 file"
+    );
+}
+
+#[test]
+fn a_file_verdict_has_a_verb_and_a_note() {
+    assert_eq!(FileVerdict::Added.verb(), "Created");
+    assert_eq!(FileVerdict::Modified.verb(), "Edited");
+    assert_eq!(FileVerdict::Deleted.verb(), "Deleted");
+    assert_eq!(FileVerdict::Added.note(), Some("new"));
+    assert_eq!(FileVerdict::Modified.note(), None);
+    assert_eq!(FileVerdict::Deleted.note(), Some("deleted"));
+}

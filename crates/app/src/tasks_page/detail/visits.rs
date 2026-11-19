@@ -245,7 +245,7 @@ fn visit_body(
         match opened {
             Some(Some(Ok(rows))) => {
                 let mut budget = DIFF_LINES;
-                let drawn = crate::chat::transcript::diff_rows(rows, &mut budget, cx);
+                let drawn = crate::chat::transcript::diff_rows(rows, &mut budget, false, cx);
                 let cut = rows.len().saturating_sub(DIFF_LINES);
                 out.push(
                     onehand_ui::well(cx)

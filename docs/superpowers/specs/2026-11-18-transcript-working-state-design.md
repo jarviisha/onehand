@@ -161,6 +161,12 @@ diff):
   conversation at once.
 - An opened diff is the box above.
 
+**As built** (PR stacked on #360). A box draws at most 400 lines and says *First/Last N of M
+lines* when that bites; *Open* reuses the code dialog, a diff shown as `diff`. A command of one
+long line is clamped by the toolkit's line clamp and offered whole past 320 characters. The
+path in a turn's changes gives way at its start through the toolkit's start truncation. A diff
+past the large-diff bound is still offered rather than drawn.
+
 ### 4. Subagents
 
 - **In the conversation, one line a subagent**, where the work was handed off: a mark of its

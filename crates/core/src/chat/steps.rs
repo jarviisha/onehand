@@ -369,6 +369,7 @@ enum Bucket {
     Read,
     Search,
     Fetch,
+    Create,
     Edit,
     Command,
     Reason,
@@ -383,6 +384,7 @@ impl Bucket {
             Self::Read => ("read", "file", "files"),
             Self::Search => ("searched", "time", "times"),
             Self::Fetch => ("fetched", "page", "pages"),
+            Self::Create => ("created", "file", "files"),
             Self::Edit => ("edited", "file", "files"),
             Self::Command => ("ran", "command", "commands"),
             Self::Reason => ("thought", "time", "times"),
@@ -407,6 +409,7 @@ impl Bucket {
                 ActivityKind::Inspect => Self::Read,
                 ActivityKind::Search => Self::Search,
                 ActivityKind::Fetch => Self::Fetch,
+                ActivityKind::Change if activity::creates(tool) => Self::Create,
                 ActivityKind::Change => Self::Edit,
                 ActivityKind::Run
                 | ActivityKind::Test
@@ -658,6 +661,27 @@ pub enum FileVerdict {
     Added,
     Modified,
     Deleted,
+}
+
+impl FileVerdict {
+    /// What the turn did to the file, as the line naming one file says it.
+    pub fn verb(self) -> &'static str {
+        match self {
+            Self::Added => "Created",
+            Self::Modified => "Edited",
+            Self::Deleted => "Deleted",
+        }
+    }
+
+    /// The word a file's row carries beside its path in a list of several:
+    /// none for a changed file, which is what most of them are.
+    pub fn note(self) -> Option<&'static str> {
+        match self {
+            Self::Added => Some("new"),
+            Self::Modified => None,
+            Self::Deleted => Some("deleted"),
+        }
+    }
 }
 
 /// One file a turn touched, with everything that happened to it in that turn
