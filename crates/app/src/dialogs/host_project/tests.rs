@@ -1,5 +1,5 @@
 use super::{
-    BROWSE_CAP, HOST_CHOICES_CAP, add_refusal, browse_refusal, browse_rows, busy_body,
+    BROWSE_CAP, HOST_CHOICES_CAP, add_refusal, browse_refusal, browse_rows, builds_only, busy_body,
     clone_refusal, clone_target, host_choices,
 };
 use onehand_core::host::wire::HostSession;
@@ -83,16 +83,17 @@ fn host_choices_puts_used_first_and_dedups() {
     let (choices, more) = host_choices(
         strings(&["alpha", "box", "beta", "alpha"]),
         hosts(&["box", "me@vps", "box"]),
+        &[],
     );
     assert_eq!(choices, strings(&["box", "me@vps", "alpha", "beta"]));
     assert_eq!(more, 0);
-    assert_eq!(host_choices(Vec::new(), Vec::new()), (Vec::new(), 0));
+    assert_eq!(host_choices(Vec::new(), Vec::new(), &[]), (Vec::new(), 0));
 }
 
 #[test]
 fn host_choices_caps() {
     let aliases: Vec<String> = (0..HOST_CHOICES_CAP + 7).map(|i| format!("h{i}")).collect();
-    let (choices, more) = host_choices(aliases, hosts(&["used"]));
+    let (choices, more) = host_choices(aliases, hosts(&["used"]), &[]);
     assert_eq!(choices.len(), HOST_CHOICES_CAP);
     assert_eq!(choices[0], "used");
     assert_eq!(more, 8);
@@ -177,4 +178,61 @@ fn clone_target_joins_the_name() {
 #[test]
 fn clone_target_none_for_a_bare_host() {
     assert_eq!(clone_target("https://github.com", Path::new("/srv")), None);
+}
+
+fn declared(
+    name: &str,
+    os: onehand_core::config::HostOs,
+    arch: &str,
+) -> onehand_core::config::HostSpec {
+    onehand_core::config::HostSpec {
+        name: HostName(name.into()),
+        os,
+        arch: arch.into(),
+    }
+}
+
+/// A declared host that runs sessions leads, before the workspace's own and
+/// the SSH config's.
+#[test]
+fn host_choices_puts_declared_session_hosts_first() {
+    use onehand_core::config::HostOs;
+    let (choices, _) = host_choices(
+        strings(&["alpha"]),
+        hosts(&["box"]),
+        &[declared("build01", HostOs::Linux, "x86_64")],
+    );
+    assert_eq!(choices, strings(&["build01", "box", "alpha"]));
+}
+
+/// A host that only builds is never offered where a session would open, not
+/// even as the SSH alias it also is.
+#[test]
+fn host_choices_leaves_out_a_build_only_host_even_as_an_alias() {
+    use onehand_core::config::HostOs;
+    let (choices, more) = host_choices(
+        strings(&["win", "alpha"]),
+        hosts(&["arm"]),
+        &[
+            declared("win", HostOs::Windows, "AMD64"),
+            declared("arm", HostOs::Linux, "aarch64"),
+        ],
+    );
+    assert_eq!(choices, strings(&["alpha"]));
+    assert_eq!(more, 0);
+}
+
+#[test]
+fn builds_only_refuses_a_host_that_runs_no_sessions() {
+    use onehand_core::config::HostOs;
+    let hosts = [
+        declared("win", HostOs::Windows, "AMD64"),
+        declared("build01", HostOs::Linux, "x86_64"),
+    ];
+    assert_eq!(
+        builds_only(" win ", &hosts).as_deref(),
+        Some("win only builds; it runs no sessions")
+    );
+    assert_eq!(builds_only("build01", &hosts), None);
+    assert_eq!(builds_only("never-declared", &hosts), None);
 }

@@ -2,7 +2,7 @@
 //! the host, listed under *Folder*.
 
 use super::HostProjectDraft;
-use crate::dialogs::{browse_refusal, browse_rows};
+use crate::dialogs::{browse_refusal, browse_rows, builds_only};
 use crate::hosts;
 use crate::shell::Shell;
 use gpui::{Context, Window};
@@ -79,7 +79,9 @@ impl Shell {
         };
         // Refused, *Folder* is left as it is: it only ever names what is listed.
         let host = draft.host.read(cx).value();
-        if browse_refusal(&host, draft.busy(), draft.waiting.is_some()).is_some() {
+        if browse_refusal(&host, draft.busy(), draft.waiting.is_some()).is_some()
+            || builds_only(&host, &crate::state::Shared::global(cx).settings.hosts).is_some()
+        {
             return;
         }
         draft.error = None;
@@ -98,7 +100,9 @@ impl Shell {
             return;
         };
         let host = draft.host.read(cx).value().trim().to_string();
-        if browse_refusal(&host, draft.busy(), draft.waiting.is_some()).is_some() {
+        if browse_refusal(&host, draft.busy(), draft.waiting.is_some()).is_some()
+            || builds_only(&host, &crate::state::Shared::global(cx).settings.hosts).is_some()
+        {
             return;
         }
         let host = HostName(host);

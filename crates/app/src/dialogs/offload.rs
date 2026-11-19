@@ -24,9 +24,14 @@ pub(crate) fn offload(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -
     };
     let host = draft.host.clone();
     let sending = draft.sending.clone();
+    let declared = crate::state::Shared::global(cx).settings.hosts.clone();
     let refusal = match &sending {
         Some(_) => Some("Sending the code".to_string()),
-        None => offload_refusal(&host.read(cx).value(), shell.busy_here(&draft.root, cx)),
+        None => offload_refusal(
+            &host.read(cx).value(),
+            shell.busy_here(&draft.root, cx),
+            &declared,
+        ),
     };
     let title = format!("Offload {} to a host", draft.label);
     // What it does while it does it: a first copy of a big project takes a
@@ -37,7 +42,7 @@ pub(crate) fn offload(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -
     };
     let error = draft.error.clone();
     let danger = crate::theme::status_ink(cx).danger;
-    let (choices, more_hosts) = host_choices(draft.aliases.clone(), shell.used_hosts());
+    let (choices, more_hosts) = host_choices(draft.aliases.clone(), shell.used_hosts(), &declared);
     let weak = cx.entity().downgrade();
     let on_branch = draft.on_branch;
     // The branch named as it will be, from what *Host* says now.

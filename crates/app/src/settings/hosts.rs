@@ -292,7 +292,7 @@ fn add_section(handle: &Entity<Shell>, declared: &[HostSpec], cx: &App) -> AnyEl
         .filter(|alias| declared.iter().all(|host| host.name.0 != **alias))
         .cloned()
         .collect();
-    let (choices, more) = host_choices(fresh, Vec::new());
+    let (choices, more) = host_choices(fresh, Vec::new(), &[]);
     let refusal = add_refusal(&draft.name.read(cx).value(), declared);
     let (pick, add) = (handle.clone(), handle.clone());
     section(

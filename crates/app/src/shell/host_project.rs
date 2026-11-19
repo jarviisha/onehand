@@ -4,7 +4,7 @@
 
 use super::Shell;
 use super::confirm::Confirm;
-use crate::dialogs::{add_refusal, busy_body, clone_refusal, clone_target};
+use crate::dialogs::{add_refusal, builds_only, busy_body, clone_refusal, clone_target};
 use crate::hosts::{self, HostFailure};
 pub(crate) use browse::Browse;
 use gpui::{App, AppContext as _, Context, Entity, Focusable as _, Subscription, Task, Window};
@@ -217,6 +217,10 @@ impl Shell {
         let host = draft.host.read(cx).value().trim().to_string();
         let folder = draft.folder.read(cx).value().trim().to_string();
         let repo = draft.repo.read(cx).value().trim().to_string();
+        // A host declared as one that only builds is never attached to.
+        if builds_only(&host, &crate::state::Shared::global(cx).settings.hosts).is_some() {
+            return;
+        }
         // What is added: the folder, or the one the clone makes in it.
         let (path, clone) = match draft.way {
             Way::Folder if add_refusal(&host, &folder).is_none() => (PathBuf::from(folder), None),
