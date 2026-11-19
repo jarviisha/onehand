@@ -3,6 +3,7 @@ use super::confirm::Confirm;
 use crate::settings::{AgentDraft, DraftShift, HostDraft, SettingsPage};
 use crate::state::Shared;
 use gpui::{App, BorrowAppContext, Context, Entity, Focusable as _, Window, WindowAppearance};
+use gpui_component::WindowExt as _;
 use gpui_component::{Theme, ThemeMode};
 use onehand_core::config::{AgentEdit, AgentSpec, Appearance};
 use onehand_core::workspace::HostName;
@@ -244,14 +245,18 @@ impl Shell {
         &mut self.host_draft
     }
 
-    /// Each host this window's projects run their sessions on, with the
-    /// project's name: a project on the host, or one offloaded to it.
+    /// Each host this window's projects use, to run on or to build on, with
+    /// the project's name.
     pub(crate) fn host_users(&self) -> Vec<(HostName, String)> {
         self.window
             .workspace
             .roots
             .iter()
-            .filter_map(|root| Some((root.session_host()?.0.clone(), root.label.clone())))
+            .flat_map(|root| {
+                root.hosts_used()
+                    .into_iter()
+                    .map(|host| (host.clone(), root.label.clone()))
+            })
             .collect()
     }
 
@@ -273,7 +278,7 @@ impl Shell {
     pub(crate) fn add_host(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let typed = self.host_draft.name.read(cx).value().to_string();
         let declared = &Shared::global(cx).settings.hosts;
-        if crate::settings::hosts::add_refusal(&typed, declared).is_some() {
+        if onehand_core::config::add_refusal(&typed, declared).is_some() {
             return;
         }
         let host = HostName(typed.trim().to_string());
@@ -311,9 +316,20 @@ impl Shell {
             ..Default::default()
         };
         self.confirm(ask, window, cx, move |_, window, cx| {
+            // Asked of the drive with who uses the host now, not when the
+            // question was put: a project may have named it meanwhile.
+            let users: Vec<String> = crate::settings::hosts::host_users(cx)
+                .into_iter()
+                .find(|(used, _)| *used == host)
+                .map(|(_, users)| users)
+                .unwrap_or_default();
             let host = host.clone();
-            let fx = cx.update_global::<Shared, _>(|shared, _| shared.settings.remove_host(host));
-            crate::saves::carry_settings(fx, window, cx);
+            let removed = cx
+                .update_global::<Shared, _>(|shared, _| shared.settings.remove_host(host, &users));
+            match removed {
+                Ok(fx) => crate::saves::carry_settings(fx, window, cx),
+                Err(why) => window.push_notification(crate::toast::warning(why), cx),
+            }
         });
     }
 

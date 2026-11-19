@@ -173,7 +173,7 @@ A point in the work a run measures from: where an agent step started (the commit
 fingerprint of the uncommitted work), and the commit a command last passed on. Each step visit's
 start and end also carries a pinned commit of the work, untracked files included, kept under
 `refs/onehand/tasks/<task>/<run>/<visit>/<start|end>`.
-_Avoid_: baseline, checkpoint, snapshot
+_Avoid_: baseline, checkpoint, snapshot (that is what a build carries to a host)
 
 **Place**:
 Where a run's work happens: the checkout the project is open on, left uncommitted, or a new

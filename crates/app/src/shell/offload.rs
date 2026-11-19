@@ -39,7 +39,7 @@ pub(crate) struct OffloadDraft {
 /// that only builds, or `busy` sessions here are mid-turn, which offloading
 /// would close.
 pub(crate) fn offload_refusal(host: &str, busy: usize, declared: &[HostSpec]) -> Option<String> {
-    if let Some(why) = crate::dialogs::builds_only(host, declared) {
+    if let Some(why) = onehand_core::config::builds_only(host, declared) {
         return Some(why);
     }
     match busy {

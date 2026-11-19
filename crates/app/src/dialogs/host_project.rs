@@ -18,7 +18,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants;
 use gpui_component::dialog::Dialog;
 use gpui_component::{ActiveTheme as _, IconName, StyledExt as _};
-use onehand_core::config::HostSpec;
+use onehand_core::config::{HostSpec, builds_only};
 use onehand_core::host::wire::{HostSession, clone_name};
 use onehand_core::tree::TreeEntry;
 use onehand_core::workspace::HostName;
@@ -387,17 +387,6 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
         .on_close(cx.listener(|shell: &mut Shell, _, _, cx| {
             shell.cancel_host_project(cx);
         }))
-}
-
-/// Why no session can open on `host`: it is declared, and as a host that
-/// only builds. One nobody declared is not refused here; its attach says
-/// what it is.
-pub(crate) fn builds_only(host: &str, declared: &[HostSpec]) -> Option<String> {
-    let host = host.trim();
-    declared
-        .iter()
-        .any(|spec| spec.name.0 == host && !spec.runs_sessions())
-        .then(|| format!("{host} only builds; it runs no sessions"))
 }
 
 /// What a host picked from the menu beside a *Host* field is handed to.

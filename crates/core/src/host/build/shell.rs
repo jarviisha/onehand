@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use super::MARK;
 use crate::config::HostOs;
+use crate::host::ssh::CMD_NOT_FOUND;
 
 /// The shell a host's ssh hands a line to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -20,10 +21,13 @@ pub(crate) enum Shell {
 /// The exit code a POSIX shell gives a command it could not find.
 const POSIX_NOT_FOUND: i32 = 127;
 
-/// How `cmd.exe` ends what it says of a program it could not find. Its exit
-/// code is 1, as any failure's, so its words are all there is to go by; they
-/// are English on an English Windows only.
-pub(super) const CMD_NOT_FOUND: &str = "operable program or batch file";
+/// The exit code of [`Shell::init`] when the host lacks a program a build
+/// needs, each named on stderr.
+pub(super) const NEEDS: i32 = 4;
+
+/// The exit code of [`Shell::send`] when a path was not there, named on
+/// stderr.
+pub(super) const NOT_BUILT: i32 = 3;
 
 impl Shell {
     /// A host declared as Windows is told in `cmd.exe`'s words; every other,
@@ -55,15 +59,23 @@ impl Shell {
         }
     }
 
-    /// Make the folder `dir`, and the repository in it. On Windows the
-    /// repository is told to leave line endings alone and to take long
-    /// paths, so the code is built there as it is here.
+    /// Make the folder `dir`, and the repository in it, or exit [`NEEDS`]
+    /// naming on stderr which of `git` and `tar` the host lacks: asked first,
+    /// so a host that cannot build says so before any code is sent to it. On
+    /// Windows the repository is told to leave line endings alone and to
+    /// take long paths, so the code is built there as it is here.
     pub(crate) fn init(self, dir: &str) -> Result<String, String> {
         let dir = self.word(dir)?;
         Ok(match self {
-            Self::Posix => format!("mkdir -p {dir} && git -C {dir} init -q"),
+            Self::Posix => format!(
+                "m=; for t in git tar; do command -v $t >/dev/null 2>&1 || m=\"$m $t\"; done; \
+                 test -z \"$m\" || {{ printf %s \"$m\" >&2; exit {NEEDS}; }}; \
+                 mkdir -p {dir} && git -C {dir} init -q"
+            ),
             Self::Cmd => format!(
-                "git init -q {dir} && git -C {dir} config core.autocrlf false && \
+                "(where git >nul 2>nul || (echo git>&2 & exit {NEEDS})) && \
+                 (where tar >nul 2>nul || (echo tar>&2 & exit {NEEDS})) && \
+                 git init -q {dir} && git -C {dir} config core.autocrlf false && \
                  git -C {dir} config core.longpaths true"
             ),
         })
@@ -108,7 +120,7 @@ impl Shell {
         })
     }
 
-    /// In `dir`, send `paths` as a tar on stdout, or exit 3 naming on stderr
+    /// In `dir`, send `paths` as a tar on stdout, or exit [`NOT_BUILT`] naming on stderr
     /// the first that is not there, before anything is sent.
     pub(crate) fn send(self, dir: &str, paths: &[PathBuf]) -> Result<String, String> {
         let dir = self.word(dir)?;
@@ -120,10 +132,10 @@ impl Shell {
         Ok(match self {
             Self::Posix => format!(
                 "cd {dir} && for p in {paths}; do test -e \"$p\" || {{ printf %s \"$p\" >&2; \
-                 exit 3; }}; done && tar -cf - -- {paths}"
+                 exit {NOT_BUILT}; }}; done && tar -cf - -- {paths}"
             ),
             Self::Cmd => format!(
-                "cd /d {dir} && (for %p in ({paths}) do @if not exist %p (echo %~p>&2 & exit 3)) \
+                "cd /d {dir} && (for %p in ({paths}) do @if not exist %p (echo %~p>&2 & exit {NOT_BUILT})) \
                  && tar -cf - -- {paths}"
             ),
         })
@@ -139,13 +151,49 @@ impl Shell {
         }
     }
 
-    /// Whether a run that ended with `exit`, the last line it printed being
-    /// `last`, could not find its program.
-    pub(crate) fn not_found(self, exit: Option<i32>, last: &str) -> bool {
-        match self {
-            Self::Posix => exit == Some(POSIX_NOT_FOUND),
-            Self::Cmd => exit == Some(1) && last.contains(CMD_NOT_FOUND),
-        }
+    /// The program a run could not find, when that is how it ended: read
+    /// from what the shell said of it among the last `lines` it printed,
+    /// since the command's first word may be `cd`, a variable set for it, or
+    /// a tool that ran another; and, said in no words known here, the first
+    /// word of `command`. `None` for a run that ended any other way.
+    pub(crate) fn not_found(
+        self,
+        exit: Option<i32>,
+        lines: &[String],
+        command: &str,
+    ) -> Option<String> {
+        let named = match self {
+            Self::Posix if exit == Some(POSIX_NOT_FOUND) => lines.iter().rev().find_map(|line| {
+                // `sh: 1: x: not found`, `bash: line 1: x: command not found`
+                // and `zsh:1: command not found: x`.
+                if let Some((_, name)) = line.rsplit_once("command not found: ") {
+                    return Some(name.trim().to_string());
+                }
+                let before = line
+                    .strip_suffix(": command not found")
+                    .or_else(|| line.strip_suffix(": not found"))?;
+                Some(before.rsplit(": ").next()?.trim().to_string())
+            }),
+            // `'x' is not recognized as an internal or external command,`
+            // then the line the sentence ends on.
+            Self::Cmd if exit == Some(1) && lines.iter().any(|l| l.contains(CMD_NOT_FOUND)) => {
+                lines.iter().find_map(|line| {
+                    let rest = line.trim().strip_prefix('\'')?;
+                    let (name, said) = rest.split_once('\'')?;
+                    said.contains("is not recognized").then(|| name.to_string())
+                })
+            }
+            Self::Posix | Self::Cmd => return None,
+        };
+        let first = || {
+            command
+                .split_whitespace()
+                .next()
+                .unwrap_or(command)
+                .trim_matches(['\'', '"'])
+                .to_string()
+        };
+        Some(named.filter(|name| !name.is_empty()).unwrap_or_else(first))
     }
 
     /// Several words of a command line as one line: each a word of its own

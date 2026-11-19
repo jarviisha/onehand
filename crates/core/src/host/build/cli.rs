@@ -4,7 +4,6 @@
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 
 use super::shell::Shell;
 use super::{build_blocking, Built, Job};
@@ -14,13 +13,11 @@ use crate::worktree::worker::repo_of_blocking;
 
 /// What a build was asked of, from a folder.
 #[derive(Debug)]
-pub struct Asked {
+pub(crate) struct Asked {
     /// The working folder's top: the project's own, or a worktree of it.
     pub top: PathBuf,
     /// Where under `top` the person stands, and so where the command runs.
     pub within: PathBuf,
-    /// The project's name, for what is said of it.
-    pub project: String,
     pub entry: BuildHost,
     /// The system the host was declared with.
     pub os: HostOs,
@@ -30,13 +27,16 @@ pub struct Asked {
 /// Linux host and a Windows one build, each asked in its own shell's words,
 /// and a system this build does not know does not. One nobody declared is
 /// taken for Linux.
-pub fn os_of(host: &str, declared: &[HostSpec]) -> Result<HostOs, String> {
-    let Some(spec) = declared.iter().find(|spec| spec.name.0 == host) else {
+fn os_of(host: &str, declared: &[HostSpec]) -> Result<HostOs, String> {
+    let Some(spec) = crate::config::declared(declared, host) else {
         return Ok(HostOs::Linux);
     };
-    match &spec.os {
-        HostOs::Linux | HostOs::Windows => Ok(spec.os.clone()),
-        HostOs::Other(os) => Err(format!("{host} runs {os}; nothing builds on it yet")),
+    match spec.builds() {
+        true => Ok(spec.os.clone()),
+        false => Err(format!(
+            "{host} runs {}; nothing builds on it yet",
+            spec.os_name()
+        )),
     }
 }
 
@@ -71,7 +71,7 @@ pub fn entry_for(
 /// among the workspaces kept under the config root `root`, and its entry for
 /// `host`. A folder that is a project of several workspaces is read from the
 /// first, by name, that names the host.
-pub fn asked_blocking(
+pub(crate) fn asked_blocking(
     root: &Path,
     declared: &[HostSpec],
     cwd: &Path,
@@ -89,8 +89,10 @@ pub fn asked_blocking(
     // Every workspace's entry for this folder, as (the project's name, its build hosts).
     let mut found: Vec<(String, Vec<BuildHost>)> = Vec::new();
     for listed in kept {
-        let WorkspaceLoad::Found(cfg) = WorkspaceConfig::load_from(&listed.dir) else {
-            continue;
+        let cfg = match WorkspaceConfig::load_from(&listed.dir) {
+            WorkspaceLoad::Found(cfg) => cfg,
+            // One that cannot be read holds no project to build.
+            WorkspaceLoad::Missing | WorkspaceLoad::Unreadable(_) => continue,
         };
         let workspace = Workspace::from_config(cfg, listed.dir);
         found.extend(
@@ -102,8 +104,7 @@ pub fn asked_blocking(
                         .local_path()
                         .is_some_and(|path| path == repo.top || path == main)
                 })
-                .map(|project| (project.build_hosts().to_vec(), project.label))
-                .map(|(builds, label)| (label, builds)),
+                .map(|project| (project.label.clone(), project.build_hosts().to_vec())),
         );
     }
     let Some((project, _)) = found.first().cloned() else {
@@ -122,7 +123,6 @@ pub fn asked_blocking(
     Ok(Asked {
         top: repo.top,
         within,
-        project,
         entry,
         os,
     })
@@ -131,7 +131,7 @@ pub fn asked_blocking(
 /// The command a person gave after `--`, for a host of system `os`: one
 /// word is a line for that host's shell, taken as written; several are each
 /// a word of their own, joined as that shell reads words.
-pub fn command_line(words: &[String], os: &HostOs) -> Result<String, String> {
+pub(crate) fn command_line(words: &[String], os: &HostOs) -> Result<String, String> {
     let line = match words {
         [one] => one.trim().to_string(),
         many => Shell::of(os).join(many)?,
@@ -168,7 +168,7 @@ pub(crate) fn run_with(
     words: &[String],
     out: &mut dyn Write,
     err: &mut dyn Write,
-    build: impl FnOnce(&Job<'_>, &mut dyn FnMut(&str), &AtomicBool) -> Result<Built, String>,
+    build: impl FnOnce(&Job<'_>, &mut dyn FnMut(&str)) -> Result<Built, String>,
 ) -> i32 {
     let mut refuse = |why: String| {
         let _ = writeln!(err, "onehand: {why}");
@@ -185,21 +185,15 @@ pub(crate) fn run_with(
     let job = Job {
         top: &asked.top,
         within: &asked.within,
-        host: &asked.entry,
+        entry: &asked.entry,
         os: asked.os.clone(),
         command: &command,
     };
-    // Never set here: an interrupt at the terminal reaches this process and
-    // its ssh alike.
-    let cancel = AtomicBool::new(false);
-    let built = build(
-        &job,
-        &mut |line| {
-            let _ = writeln!(out, "{line}");
-            let _ = out.flush();
-        },
-        &cancel,
-    );
+    // An interrupt at the terminal reaches this process and its ssh alike.
+    let built = build(&job, &mut |line| {
+        let _ = writeln!(out, "{line}");
+        let _ = out.flush();
+    });
     let built = match built {
         Ok(built) => built,
         Err(why) => return refuse(why),

@@ -86,7 +86,7 @@ fn build(
     let job = Job {
         top,
         within: Path::new(within),
-        host,
+        entry: host,
         os: crate::config::HostOs::Linux,
         command,
     };
@@ -125,7 +125,7 @@ fn quoted_survives_spaces_quotes_and_dollars() {
 
 #[test]
 fn the_laptops_id_is_kept_to_safe_letters_in_the_folders_name() {
-    let dir = remote_dir("a b&c|d", Path::new("/work/proj"));
+    let dir = host_dir("a b&c|d", Path::new("/work/proj"));
     assert!(dir.starts_with(".onehand-build/a_b_c_d/proj-"), "{dir}");
 }
 
@@ -141,9 +141,9 @@ fn what_a_host_said_of_a_program_it_lacks_is_kept_whole() {
 
 #[test]
 fn the_folder_on_the_host_is_named_safely_and_by_the_laptop() {
-    let dir = remote_dir("lap-1", Path::new("/work/my proj's"));
+    let dir = host_dir("lap-1", Path::new("/work/my proj's"));
     assert!(dir.starts_with(".onehand-build/lap-1/my_proj_s-"), "{dir}");
-    assert_ne!(dir, remote_dir("lap-1", Path::new("/other/my proj's")));
+    assert_ne!(dir, host_dir("lap-1", Path::new("/other/my proj's")));
 }
 
 #[test]
@@ -441,7 +441,7 @@ fn a_stopped_build_ends_and_says_no_exit() {
         let job = Job {
             top: &top,
             within: Path::new(""),
-            host: &host,
+            entry: &host,
             os: crate::config::HostOs::Linux,
             command: "sleep 30",
         };
@@ -492,7 +492,6 @@ mod cli {
             asked_blocking(&root.0, &[], &top.join("crates/app"), "build01").expect("found");
         assert_eq!(asked.top, top);
         assert_eq!(asked.within, PathBuf::from("crates/app"));
-        assert_eq!(asked.project, "proj");
         assert_eq!(asked.entry.host, HostName("build01".into()));
     }
 
@@ -516,7 +515,6 @@ mod cli {
         let asked = asked_blocking(&root.0, &[], &tree, "build01").expect("found");
         assert_eq!(asked.top, tree);
         assert_eq!(asked.within, PathBuf::new());
-        assert_eq!(asked.project, "proj");
     }
 
     #[test]
@@ -613,7 +611,7 @@ mod cli {
                 &[command.to_string()],
                 &mut out,
                 &mut err,
-                |job, line, cancel| build_in(job, &home.0, "laptop", line, cancel),
+                |job, line| build_in(job, &home.0, "laptop", line, &AtomicBool::new(false)),
             );
             (
                 code,
@@ -676,7 +674,7 @@ mod cli {
             &["true".to_string()],
             &mut out,
             &mut err,
-            |_, _, _| panic!("never built"),
+            |_, _| panic!("never built"),
         );
         assert_eq!(
             (code, String::from_utf8(err).unwrap()),
@@ -886,7 +884,7 @@ mod shells {
     fn cmd_init_makes_the_repository_and_keeps_the_code_as_it_is_here() {
         assert_eq!(
             Shell::Cmd.init(DIR).as_deref(),
-            Ok("git init -q \".onehand-build/lap/my_proj-abc\" && git -C \".onehand-build/lap/my_proj-abc\" config core.autocrlf false && git -C \".onehand-build/lap/my_proj-abc\" config core.longpaths true")
+            Ok("(where git >nul 2>nul || (echo git>&2 & exit 4)) && (where tar >nul 2>nul || (echo tar>&2 & exit 4)) && git init -q \".onehand-build/lap/my_proj-abc\" && git -C \".onehand-build/lap/my_proj-abc\" config core.autocrlf false && git -C \".onehand-build/lap/my_proj-abc\" config core.longpaths true")
         );
     }
 
@@ -951,15 +949,77 @@ mod shells {
         assert_eq!(Shell::Posix.over_ssh("cd 'a b'"), r"sh -c 'cd '\''a b'\'''");
     }
 
+    /// The program that was not there is read from what the shell said of
+    /// it, since the command's first word may be `cd`, a variable, or a tool
+    /// that ran another; only when that cannot be read is it the first word.
     #[test]
-    fn a_program_that_is_not_there_is_told_by_each_shell_its_own_way() {
-        let sentence = "operable program or batch file.";
-        assert!(Shell::Cmd.not_found(Some(1), sentence));
-        assert!(!Shell::Cmd.not_found(Some(1), "error CS1002: ; expected"));
-        assert!(!Shell::Cmd.not_found(Some(0), sentence));
-        assert!(!Shell::Cmd.not_found(Some(127), ""));
-        assert!(Shell::Posix.not_found(Some(127), ""));
-        assert!(!Shell::Posix.not_found(Some(1), sentence));
+    fn a_program_that_is_not_there_is_named_from_what_the_shell_said() {
+        let lines = |said: &[&str]| -> Vec<String> { said.iter().map(|l| l.to_string()).collect() };
+        let posix =
+            |said: &[&str], command: &str| Shell::Posix.not_found(Some(127), &lines(said), command);
+        assert_eq!(
+            posix(
+                &["/bin/bash: line 1: cargo: command not found"],
+                "cd sub && cargo build"
+            )
+            .as_deref(),
+            Some("cargo")
+        );
+        assert_eq!(
+            posix(&["sh: 1: nosuchtool: not found"], "FOO=1 nosuchtool").as_deref(),
+            Some("nosuchtool")
+        );
+        assert_eq!(
+            posix(&["zsh:1: command not found: nosuchtool"], "x").as_deref(),
+            Some("nosuchtool")
+        );
+        // Said in no words this knows: the command's first word, unquoted.
+        assert_eq!(
+            posix(&["something else"], "'mytool' '--v'").as_deref(),
+            Some("mytool")
+        );
+        assert_eq!(
+            Shell::Posix.not_found(Some(1), &lines(&["x: not found"]), "x"),
+            None
+        );
+
+        let sentence = [
+            "'cargo' is not recognized as an internal or external command,",
+            "operable program or batch file.",
+        ];
+        assert_eq!(
+            Shell::Cmd
+                .not_found(Some(1), &lines(&sentence), "cd sub && cargo build")
+                .as_deref(),
+            Some("cargo")
+        );
+        assert_eq!(
+            Shell::Cmd.not_found(
+                Some(1),
+                &lines(&["error CS1002: ; expected"]),
+                "dotnet build"
+            ),
+            None
+        );
+        assert_eq!(Shell::Cmd.not_found(Some(0), &lines(&sentence), "x"), None);
+    }
+
+    /// A host with no git or no tar is refused at the first step, before
+    /// any code is sent, naming what it lacks.
+    #[test]
+    fn a_host_without_what_a_build_needs_is_refused_naming_it() {
+        use super::super::needs_refusal;
+        use crate::workspace::HostName;
+        let host = HostName("build01".into());
+        assert_eq!(
+            needs_refusal(&host, Some(4), b" git tar"),
+            Some("build01 has no git or tar; a build needs both".to_string())
+        );
+        assert_eq!(
+            needs_refusal(&host, Some(4), b"tar \r\n"),
+            Some("build01 has no tar; a build needs git and tar".to_string())
+        );
+        assert_eq!(needs_refusal(&host, Some(1), b"git"), None);
     }
 
     #[test]
@@ -997,7 +1057,9 @@ mod shells {
     fn posix_scripts_are_what_they_were() {
         assert_eq!(
             Shell::Posix.init(DIR).as_deref(),
-            Ok("mkdir -p '.onehand-build/lap/my_proj-abc' && git -C '.onehand-build/lap/my_proj-abc' init -q")
+            Ok(
+                r#"m=; for t in git tar; do command -v $t >/dev/null 2>&1 || m="$m $t"; done; test -z "$m" || { printf %s "$m" >&2; exit 4; }; mkdir -p '.onehand-build/lap/my_proj-abc' && git -C '.onehand-build/lap/my_proj-abc' init -q"#
+            )
         );
         assert_eq!(
             Shell::Posix

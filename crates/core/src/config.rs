@@ -28,7 +28,9 @@ pub(crate) use agent::{default_agents, found_agents, look_key};
 
 mod document;
 mod host;
-pub use host::{listed, removal_refusal, HostEdit, HostOs, HostSpec};
+pub use host::{
+    add_refusal, builds_only, declared, listed, removal_refusal, HostEdit, HostOs, HostSpec,
+};
 
 mod font;
 pub use font::{resolve_monospace, FontConfig};

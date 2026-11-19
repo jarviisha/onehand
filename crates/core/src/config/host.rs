@@ -64,6 +64,16 @@ impl HostSpec {
         self.os == HostOs::Linux && self.arch == "x86_64"
     }
 
+    /// Whether a project can build on it: a Linux host and a Windows one,
+    /// each asked in its own shell's words. A system this build does not know
+    /// builds nothing.
+    pub fn builds(&self) -> bool {
+        match self.os {
+            HostOs::Linux | HostOs::Windows => true,
+            HostOs::Other(_) => false,
+        }
+    }
+
     /// What a project names without anyone having declared it: the only kind
     /// of host there was before hosts were declared.
     pub fn undeclared(name: HostName) -> Self {
@@ -74,15 +84,27 @@ impl HostSpec {
         }
     }
 
-    /// The system in a person's words: `Linux x86_64`.
-    pub fn system(&self) -> String {
-        let os = match &self.os {
+    /// The system's name in a person's words: `Linux`, `Windows`, or what
+    /// one this build does not know was written as.
+    pub fn os_name(&self) -> &str {
+        match &self.os {
             HostOs::Linux => "Linux",
             HostOs::Windows => "Windows",
             HostOs::Other(said) => said,
-        };
-        format!("{os} {}", self.arch).trim().to_string()
+        }
     }
+
+    /// The system in a person's words: `Linux x86_64`.
+    pub fn system(&self) -> String {
+        format!("{} {}", self.os_name(), self.arch)
+            .trim()
+            .to_string()
+    }
+}
+
+/// The host of that name among the declared ones.
+pub fn declared<'a>(hosts: &'a [HostSpec], name: &str) -> Option<&'a HostSpec> {
+    hosts.iter().find(|host| host.name.0 == name.trim())
 }
 
 /// One change to the declared hosts.
@@ -115,6 +137,25 @@ pub fn listed(declared: &[HostSpec], named: &[HostName]) -> Vec<(HostSpec, bool)
         }
     }
     all
+}
+
+/// Why what was typed cannot be added as a host: it names none, or names
+/// one already declared.
+pub fn add_refusal(typed: &str, hosts: &[HostSpec]) -> Option<String> {
+    let name = typed.trim();
+    if name.is_empty() {
+        return Some("Name the host".into());
+    }
+    declared(hosts, name).map(|_| format!("{name} is already declared"))
+}
+
+/// Why no session can open on `host`: it is declared, and as a host that
+/// only builds. One nobody declared is not refused here; its attach says
+/// what it is.
+pub fn builds_only(host: &str, hosts: &[HostSpec]) -> Option<String> {
+    declared(hosts, host)
+        .filter(|spec| !spec.runs_sessions())
+        .map(|_| format!("{} only builds; it runs no sessions", host.trim()))
 }
 
 /// Why `host` cannot be removed while `users`, its projects, name it.

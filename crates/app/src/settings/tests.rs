@@ -152,11 +152,11 @@ fn a_native_built_in_agent_says_what_runs() {
 }
 
 mod hosts {
-    use super::super::hosts::{add_refusal, host_lines};
+    use super::super::hosts::host_lines;
     use onehand_core::config::drive::HostProbe;
     use onehand_core::config::{HostOs, HostSpec};
     use onehand_core::host::drive::HostState;
-    use onehand_core::host::probe::Probed;
+    use onehand_core::host::probe::{Probed, Tool};
     use onehand_core::workspace::HostName;
 
     fn linux() -> HostSpec {
@@ -177,7 +177,10 @@ mod hosts {
             arch: "x86_64".into(),
             tools: tools
                 .iter()
-                .map(|(name, said)| (name.to_string(), said.to_string()))
+                .map(|(name, said)| Tool {
+                    name: name.to_string(),
+                    said: said.to_string(),
+                })
                 .collect(),
         })
     }
@@ -296,19 +299,5 @@ mod hosts {
         let users = ["api".to_string(), "web".to_string()];
         let lines = host_lines(&linux(), None, &HostState::Unknown, false, &users);
         assert_eq!(lines.users.as_deref(), Some("Used by api, web"));
-    }
-
-    #[test]
-    fn add_refuses_no_name_and_a_declared_one() {
-        let declared = [linux()];
-        assert_eq!(
-            add_refusal("  ", &declared).as_deref(),
-            Some("Name the host")
-        );
-        assert_eq!(
-            add_refusal(" build01 ", &declared).as_deref(),
-            Some("build01 is already declared")
-        );
-        assert_eq!(add_refusal("other", &declared), None);
     }
 }

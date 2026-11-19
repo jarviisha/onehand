@@ -1,34 +1,54 @@
 //! Asking a host what it is and what it has, over the person's own ssh.
 
 use std::io::Read as _;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
-use super::client::{HostAddr, SSH_OPTS};
+use super::client::HostAddr;
+use super::ssh;
 use crate::config::HostOs;
 
 /// The line each call prints first, so whatever the host's startup files
 /// print before it is never read as the answer.
 const MARK: &str = "__ONEHAND_PROBE__";
 
-/// The programs asked after: the two a build cannot do without, then the
-/// toolchains a person wants to know of.
+/// The two programs a build cannot do without.
 const NEEDED: [&str; 2] = ["git", "tar"];
+
+/// The toolchains a person wants to know of, asked after with the two above.
+const TOOLCHAINS: [&str; 3] = ["cargo", "rustc", "dotnet"];
+
+/// Every program asked after, in the order asked.
+fn asked() -> String {
+    NEEDED
+        .into_iter()
+        .chain(TOOLCHAINS)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
 
 /// What the host is. One line that a POSIX shell and `cmd.exe` both run: a
 /// host with no `uname` answers with `ver`.
-const WHAT: &str = "echo __ONEHAND_PROBE__ && uname -sm || ver";
+fn what() -> String {
+    format!("echo {MARK} && uname -sm || ver")
+}
 
 /// What a Linux host has, asked of its login shell so the answer is the one
 /// a command run there gets: a toolchain put on `PATH` by a profile counts.
-const HAS_POSIX: &str = r#""${SHELL:-/bin/sh}" -lc 'echo __ONEHAND_PROBE__; for t in git tar cargo rustc dotnet; do if command -v $t >/dev/null 2>&1; then echo "$t="; $t --version 2>/dev/null | head -n1; fi; done'"#;
+fn has_posix() -> String {
+    format!(
+        r#""${{SHELL:-/bin/sh}}" -lc 'echo {MARK}; for t in {}; do if command -v $t >/dev/null 2>&1; then echo "$t="; $t --version 2>/dev/null | head -n1; fi; done'"#,
+        asked()
+    )
+}
 
 /// What a Windows host has, and its architecture, which `ver` does not say.
-const HAS_WINDOWS: &str = "echo __ONEHAND_PROBE__& echo %PROCESSOR_ARCHITECTURE%& for %t in (git tar cargo rustc dotnet) do @(where %t >nul 2>nul && (echo %t=& %t --version))";
-
-/// How long a host is given to answer ssh at all, so a probe of a machine
-/// that is off ends in seconds rather than at the network's own patience.
-const CONNECT_WAIT: &str = "ConnectTimeout=10";
+fn has_windows() -> String {
+    format!(
+        "echo {MARK}& echo %PROCESSOR_ARCHITECTURE%& for %t in ({}) do @(where %t >nul 2>nul && (echo %t=& %t --version))",
+        asked()
+    )
+}
 
 /// How long one call is given to answer once it runs: a login profile that
 /// waits on something must not leave a probe running for good.
@@ -39,14 +59,29 @@ const ANSWER_WAIT: Duration = Duration::from_secs(30);
 pub struct Probed {
     pub os: HostOs,
     pub arch: String,
-    /// Each program found, with the first line it says of its version, in
-    /// the order asked.
-    pub tools: Vec<(String, String)>,
+    /// Each program found, in the order asked.
+    pub tools: Vec<Tool>,
+}
+
+/// One program a host has.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Tool {
+    pub name: String,
+    /// The first line it says of its version; empty when it said nothing.
+    pub said: String,
+}
+
+impl Tool {
+    /// Whether a build cannot do without it, which is all that is asked of
+    /// it: a toolchain is told with its version, this by its name.
+    pub fn needed(&self) -> bool {
+        NEEDED.contains(&self.name.as_str())
+    }
 }
 
 impl Probed {
     pub fn has(&self, tool: &str) -> bool {
-        self.tools.iter().any(|(name, _)| name == tool)
+        self.tools.iter().any(|found| found.name == tool)
     }
 
     /// Which of the two programs a build needs is not there.
@@ -58,13 +93,14 @@ impl Probed {
 /// Ask `addr` what it is and what it has, in two calls. A failure is in
 /// words to show: ssh's own when the host was not reached.
 pub fn probe_blocking(addr: &HostAddr) -> Result<Probed, String> {
-    let (said, err) = run(addr, WHAT, ANSWER_WAIT)?;
+    let (said, err) = run(addr, &what(), ANSWER_WAIT)?;
     let Some((os, arch)) = system(&said) else {
         let why = err.lines().next().unwrap_or("it printed nothing").trim();
         return Err(format!("{} did not answer the probe: {why}", addr.ssh));
     };
     let cmd = asks_cmd(&os, &arch);
-    let (said, err) = run(addr, if cmd { HAS_WINDOWS } else { HAS_POSIX }, ANSWER_WAIT)?;
+    let has = if cmd { has_windows() } else { has_posix() };
+    let (said, err) = run(addr, &has, ANSWER_WAIT)?;
     // Its shell could not run the question: said as that, never as a host
     // with nothing installed.
     let Some((named, tools)) = tools(&said, cmd) else {
@@ -92,20 +128,7 @@ fn asks_cmd(os: &HostOs, arch: &str) -> bool {
 // than a pipe holds waits out `wait`; read while waiting if a probe ever
 // prints that much.
 fn run(addr: &HostAddr, cmd: &str, wait: Duration) -> Result<(String, String), String> {
-    let mut command = if addr.local {
-        let mut sh = Command::new("sh");
-        sh.arg("-c");
-        sh
-    } else {
-        let mut ssh = Command::new("ssh");
-        ssh.args(SSH_OPTS)
-            .args(["-o", CONNECT_WAIT, "--"])
-            .arg(&addr.ssh);
-        ssh
-    };
-    let mut child = command
-        .arg(cmd)
-        .stdin(Stdio::null())
+    let mut child = ssh::command(addr, cmd)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -135,13 +158,7 @@ fn run(addr: &HostAddr, cmd: &str, wait: Duration) -> Result<(String, String), S
     }
     let said = String::from_utf8_lossy(&said).into_owned();
     let err = String::from_utf8_lossy(&err).trim().to_string();
-    if !addr.local && status.code() == Some(255) {
-        return Err(if err.is_empty() {
-            format!("{} could not be reached", addr.ssh)
-        } else {
-            err
-        });
-    }
+    ssh::unreached(addr, &status, err.as_bytes())?;
     Ok((said, err))
 }
 
@@ -180,8 +197,7 @@ fn system(out: &str) -> Option<(HostOs, String)> {
 /// The architecture a Windows host named, and each program found with its
 /// version: a `name=` line, then what the program said, if anything. `None`
 /// when the call never answered.
-#[allow(clippy::type_complexity)]
-fn tools(out: &str, windows: bool) -> Option<(Option<String>, Vec<(String, String)>)> {
+fn tools(out: &str, windows: bool) -> Option<(Option<String>, Vec<Tool>)> {
     let mut lines = answer(out)?.into_iter().peekable();
     let arch = match windows {
         true => lines.next().map(str::to_string),
@@ -193,7 +209,10 @@ fn tools(out: &str, windows: bool) -> Option<(Option<String>, Vec<(String, Strin
             continue;
         };
         let version = lines.next_if(|next| !next.ends_with('=')).unwrap_or("");
-        tools.push((name.to_string(), version.to_string()));
+        tools.push(Tool {
+            name: name.to_string(),
+            said: version.to_string(),
+        });
     }
     Some((arch, tools))
 }

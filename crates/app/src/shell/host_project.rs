@@ -4,12 +4,13 @@
 
 use super::Shell;
 use super::confirm::Confirm;
-use crate::dialogs::{add_refusal, builds_only, busy_body, clone_refusal, clone_target};
+use crate::dialogs::{add_refusal, busy_body, clone_refusal, clone_target};
 use crate::hosts::{self, HostFailure};
 pub(crate) use browse::Browse;
 use gpui::{App, AppContext as _, Context, Entity, Focusable as _, Subscription, Task, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputEvent, InputState};
+use onehand_core::config::builds_only;
 use onehand_core::host::client::HostConn;
 use onehand_core::host::drive::Landing;
 use onehand_core::host::drive::{needs_restart, restart_failure, said_by_wait};

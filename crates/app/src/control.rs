@@ -394,14 +394,13 @@ fn perform_now(
                         let job = Job {
                             top: &top,
                             within: Path::new(""),
-                            host: &entry,
+                            entry: &entry,
                             os,
                             command: &command,
                         };
-                        // Never stopped from here: the tools have no way to
-                        // call one off, and the build's own limit ends it.
-                        let stop = std::sync::atomic::AtomicBool::new(false);
-                        build_blocking(&job, &mut |line| tail.push(line), &stop)
+                        // The tools have no way to call a build off: its own
+                        // limit ends it.
+                        build_blocking(&job, &mut |line| tail.push(line))
                             .map(|built| answer(&built, &tail))
                     })
                     .await;

@@ -15,6 +15,7 @@ pub mod journal;
 pub mod offload;
 pub mod probe;
 pub mod session;
+mod ssh;
 pub mod sshconf;
 pub mod waits;
 pub mod wire;

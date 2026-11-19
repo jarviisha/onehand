@@ -128,3 +128,35 @@ fn a_system_is_read_whatever_its_case() {
         .expect("serializes")
         .contains("os = \"linux\""));
 }
+
+#[test]
+fn adding_refuses_no_name_and_a_declared_one() {
+    let hosts = [host("build01", HostOs::Linux, "x86_64")];
+    assert_eq!(add_refusal("  ", &hosts).as_deref(), Some("Name the host"));
+    assert_eq!(
+        add_refusal(" build01 ", &hosts).as_deref(),
+        Some("build01 is already declared")
+    );
+    assert_eq!(add_refusal("other", &hosts), None);
+}
+
+#[test]
+fn a_session_is_refused_on_a_host_declared_as_one_that_only_builds() {
+    let hosts = [
+        host("win", HostOs::Windows, "AMD64"),
+        host("build01", HostOs::Linux, "x86_64"),
+    ];
+    assert_eq!(
+        builds_only(" win ", &hosts).as_deref(),
+        Some("win only builds; it runs no sessions")
+    );
+    assert_eq!(builds_only("build01", &hosts), None);
+    assert_eq!(builds_only("never-declared", &hosts), None);
+}
+
+#[test]
+fn a_declared_host_is_found_by_its_name() {
+    let hosts = [host("build01", HostOs::Linux, "x86_64")];
+    assert!(declared(&hosts, " build01 ").is_some());
+    assert!(declared(&hosts, "other").is_none());
+}
