@@ -15,6 +15,7 @@
 //! Blocking throughout; a front end runs it off its UI.
 
 pub mod cli;
+mod shell;
 
 use std::io::{BufRead as _, BufReader};
 use std::path::{Path, PathBuf};
@@ -25,8 +26,10 @@ use std::time::{Duration, Instant};
 
 use super::client::{HostAddr, SSH_OPTS};
 use super::offload::branch::{git_to_host, git_url};
+use crate::config::HostOs;
 use crate::workspace::{inside_refusal, BuildHost};
 use crate::worktree::git_message;
+use shell::Shell;
 
 /// How long a build may run before it is stopped.
 pub const BUILD_LIMIT: Duration = Duration::from_secs(2 * 60 * 60);
@@ -35,12 +38,9 @@ pub const BUILD_LIMIT: Duration = Duration::from_secs(2 * 60 * 60);
 /// machine that is off fails in seconds.
 const CONNECT_WAIT: &str = "ConnectTimeout=10";
 
-/// The exit code a shell gives a command it could not find.
-const NOT_FOUND: i32 = 127;
-
 /// The line the host prints once the snapshot is checked out and the command
 /// is about to run: what comes before it is not the command's.
-const MARK: &str = "__ONEHAND_BUILD__";
+pub(super) const MARK: &str = "__ONEHAND_BUILD__";
 
 /// The ref the snapshot is pushed to on the host.
 const SNAP_REF: &str = "refs/onehand/snap";
@@ -52,6 +52,9 @@ pub struct Job<'a> {
     /// Where under `top` the command runs; empty for the top itself.
     pub within: &'a Path,
     pub host: &'a BuildHost,
+    /// The system the host was declared with, which says whose shell the
+    /// steps are spelled for.
+    pub os: HostOs,
     pub command: &'a str,
 }
 
@@ -115,9 +118,23 @@ fn build_in(
         }
         false => (rel.clone(), git_url(&addr, Path::new(&format!("/~/{rel}")))),
     };
-    let dir = quoted(&dir);
+    // The local machine is always asked through `sh`.
+    let shell = match addr.local {
+        true => Shell::Posix,
+        false => Shell::of(&job.os),
+    };
+    // `cmd.exe` cannot take git's own quoting of the folder, so the push is
+    // received through PowerShell there, and the folder named as scp names
+    // one: relative to the home ssh starts in.
+    let (url, receive) = match shell {
+        Shell::Posix => (url, None),
+        Shell::Cmd => (
+            format!("{}:{rel}", addr.ssh),
+            Some("--receive-pack=powershell -NoProfile git receive-pack"),
+        ),
+    };
 
-    let made = run(&addr, &format!("mkdir -p {dir} && git -C {dir} init -q"))?;
+    let made = run(&addr, shell, &shell.init(&dir)?)?;
     if !made.status.success() {
         return Err(format!(
             "{host} could not make the folder to build in: {}",
@@ -129,7 +146,9 @@ fn build_in(
             "GIT_SSH_COMMAND",
             format!("ssh {} -o {CONNECT_WAIT}", SSH_OPTS.join(" ")),
         )
-        .args(["push", "-q", "--no-verify", &url])
+        .args(["push", "-q", "--no-verify"])
+        .args(receive)
+        .arg(&url)
         .arg(format!("+{snapshot}:{SNAP_REF}"))
         .output()
         .map_err(|e| format!("git: {e}"))?;
@@ -140,34 +159,41 @@ fn build_in(
         ));
     }
 
-    let within = match job.within.as_os_str().is_empty() {
-        true => String::new(),
-        false => format!("cd {} && ", quoted(&job.within.display().to_string())),
-    };
-    let script = format!(
-        "cd {dir} && git checkout -q -f --detach {snapshot} && {within}echo {MARK} && \
-         exec \"${{SHELL:-/bin/sh}}\" -lc {} 2>&1",
-        quoted(job.command)
-    );
-    let exit = match run_streaming(&addr, &script, line, cancel)? {
+    let script = shell.run(&dir, &snapshot, job.within, job.command)?;
+    // The last line printed is kept: on Windows it is what tells a program
+    // that was not there from any other failure.
+    let mut last = String::new();
+    let ran = run_streaming(
+        &addr,
+        shell,
+        &script,
+        &mut |text| {
+            if !text.trim().is_empty() {
+                last = text.to_string();
+            }
+            line(text);
+        },
+        cancel,
+    )?;
+    let exit = match ran {
         Ran::Exited(code) => Some(code),
         Ran::Stopped => None,
         Ran::NeverStarted(why) => {
             return Err(format!("{host} could not check the code out: {why}"));
         }
     };
-    let hint = (exit == Some(NOT_FOUND)).then(|| {
+    let hint = shell.not_found(exit, &last).then(|| {
         // The first word, without the quotes a command line's words arrive in.
         let program = job
             .command
             .split_whitespace()
             .next()
             .unwrap_or(job.command)
-            .trim_matches('\'');
+            .trim_matches(['\'', '"']);
         format!("{program} is not on {host}'s PATH for ssh")
     });
     let brought = match exit {
-        Some(0) => bring_back(&addr, &dir, job)?,
+        Some(0) => bring_back(&addr, shell, &dir, job)?,
         Some(_) | None => Vec::new(),
     };
     Ok(Built {
@@ -319,7 +345,7 @@ fn refuse_unfit(top: &Path) -> Result<(), String> {
 }
 
 /// `script` as the host runs it: over ssh, or through `sh` for `local`.
-fn on_host(addr: &HostAddr, script: &str) -> Command {
+fn on_host(addr: &HostAddr, shell: Shell, script: &str) -> Command {
     let mut cmd = match addr.local {
         true => {
             let mut sh = Command::new("sh");
@@ -334,19 +360,17 @@ fn on_host(addr: &HostAddr, script: &str) -> Command {
             ssh
         }
     };
-    // Over ssh the line goes to the account's login shell, which may be one
-    // a POSIX line means nothing to: it is handed to `sh`, whole.
     match addr.local {
         true => cmd.arg(script),
-        false => cmd.arg(format!("sh -c {}", quoted(script))),
+        false => cmd.arg(shell.over_ssh(script)),
     };
     cmd.stdin(Stdio::null());
     cmd
 }
 
 /// Run `script` on the host to its end. Only ssh's own failure is an error.
-fn run(addr: &HostAddr, script: &str) -> Result<std::process::Output, String> {
-    let out = on_host(addr, script)
+fn run(addr: &HostAddr, shell: Shell, script: &str) -> Result<std::process::Output, String> {
+    let out = on_host(addr, shell, script)
         .output()
         .map_err(|e| format!("ssh: {e}"))?;
     unreached(addr, &out.status, &out.stderr)?;
@@ -396,11 +420,12 @@ enum Ran {
 /// is the host's to say: nothing here can reach it once the connection goes.
 fn run_streaming(
     addr: &HostAddr,
+    shell: Shell,
     script: &str,
     line: &mut dyn FnMut(&str),
     cancel: &AtomicBool,
 ) -> Result<Ran, String> {
-    let mut child = on_host(addr, script)
+    let mut child = on_host(addr, shell, script)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -469,28 +494,23 @@ fn unpack(into: &Path, paths: &[PathBuf]) -> Command {
 /// Bring the job's artifacts back from `dir` on the host, into the working
 /// folder or the folder under it the entry names. All of them or none: one
 /// the build did not make fails the lot before anything is written here.
-fn bring_back(addr: &HostAddr, dir: &str, job: &Job<'_>) -> Result<Vec<PathBuf>, String> {
+fn bring_back(
+    addr: &HostAddr,
+    shell: Shell,
+    dir: &str,
+    job: &Job<'_>,
+) -> Result<Vec<PathBuf>, String> {
     let host = &job.host.host;
     if job.host.artifacts.is_empty() {
         return Ok(Vec::new());
     }
-    let paths: Vec<String> = job
-        .host
-        .artifacts
-        .iter()
-        .map(|path| quoted(&path.display().to_string()))
-        .collect();
-    let paths = paths.join(" ");
-    let script = format!(
-        "cd {dir} && for p in {paths}; do test -e \"$p\" || {{ printf %s \"$p\" >&2; exit 3; }}; \
-         done && tar -cf - -- {paths}"
-    );
+    let script = shell.send(dir, &job.host.artifacts)?;
     let into = match &job.host.into {
         Some(into) => job.top.join(into),
         None => job.top.to_path_buf(),
     };
     std::fs::create_dir_all(&into).map_err(|e| format!("{}: {e}", into.display()))?;
-    let mut sent = on_host(addr, &script)
+    let mut sent = on_host(addr, shell, &script)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -507,7 +527,7 @@ fn bring_back(addr: &HostAddr, dir: &str, job: &Job<'_>) -> Result<Vec<PathBuf>,
         Some(3) => {
             return Err(format!(
                 "{} was not built on {host}",
-                String::from_utf8_lossy(&sent.stderr)
+                String::from_utf8_lossy(&sent.stderr).trim()
             ));
         }
         _ => {

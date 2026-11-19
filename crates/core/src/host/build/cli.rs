@@ -183,6 +183,7 @@ pub(crate) fn run_with(
         top: &asked.top,
         within: &asked.within,
         host: &asked.entry,
+        os: HostOs::Linux,
         command: &command,
     };
     // Never set here: an interrupt at the terminal reaches this process and

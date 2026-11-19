@@ -394,6 +394,7 @@ fn perform_now(
                             top: &top,
                             within: Path::new(""),
                             host: &entry,
+                            os: onehand_core::config::HostOs::Linux,
                             command: &command,
                         };
                         // Never stopped from here: the tools have no way to

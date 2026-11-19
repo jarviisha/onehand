@@ -87,6 +87,7 @@ fn build(
         top,
         within: Path::new(within),
         host,
+        os: crate::config::HostOs::Linux,
         command,
     };
     let built = build_in(
@@ -422,6 +423,7 @@ fn a_stopped_build_ends_and_says_no_exit() {
             top: &top,
             within: Path::new(""),
             host: &host,
+            os: crate::config::HostOs::Linux,
             command: "sleep 30",
         };
         build_in(&job, &home.0, "laptop", &mut |_| {}, &cancel)
@@ -696,7 +698,7 @@ fn only_the_paths_named_are_unpacked_whatever_the_host_sends() {
 #[test]
 fn a_script_reaches_a_host_as_one_word_for_sh_and_ssh_gives_up_on_a_dead_host() {
     let addr = HostName("me@build01".into()).addr();
-    let cmd = on_host(&addr, "cd 'a b' && echo $HOME");
+    let cmd = on_host(&addr, shell::Shell::Posix, "cd 'a b' && echo $HOME");
     let args: Vec<String> = cmd
         .get_args()
         .map(|a| a.to_string_lossy().into_owned())
@@ -785,4 +787,128 @@ fn a_projects_entry_for_a_host_is_found_or_refused_in_words() {
         super::cli::entry_for("proj", &builds, "local", &windows),
         Err("local runs Windows; nothing builds on a Windows host yet".to_string())
     );
+}
+
+mod shells {
+    use super::super::shell::Shell;
+    use crate::config::HostOs;
+    use std::path::{Path, PathBuf};
+
+    const SHA: &str = "2ab98d7259af09c62a806ff487818d931abf3b7e";
+    const DIR: &str = ".onehand-build/lap/my_proj-abc";
+
+    #[test]
+    fn a_windows_host_is_told_in_cmds_words_and_every_other_in_posix() {
+        assert_eq!(Shell::of(&HostOs::Windows), Shell::Cmd);
+        assert_eq!(Shell::of(&HostOs::Linux), Shell::Posix);
+        assert_eq!(Shell::of(&HostOs::Other("darwin".into())), Shell::Posix);
+    }
+
+    #[test]
+    fn cmd_words_are_double_quoted() {
+        assert_eq!(
+            Shell::Cmd.word("out/made file.txt").as_deref(),
+            Ok("\"out/made file.txt\"")
+        );
+    }
+
+    #[test]
+    fn cmd_refuses_a_percent_or_a_quote() {
+        for text in ["100%/out", "a\"b"] {
+            assert_eq!(
+                Shell::Cmd.word(text),
+                Err(format!(
+                    "{text} cannot be built on a Windows host: its name holds % or \""
+                ))
+            );
+        }
+        // And so does every line built from such a word.
+        assert!(Shell::Cmd.run(DIR, SHA, Path::new("50%"), "dir").is_err());
+        assert!(Shell::Cmd.send(DIR, &[PathBuf::from("a\"b")]).is_err());
+        assert_eq!(Shell::Posix.word("100%").as_deref(), Ok("'100%'"));
+    }
+
+    #[test]
+    fn cmd_init_makes_the_repository_and_keeps_the_code_as_it_is_here() {
+        assert_eq!(
+            Shell::Cmd.init(DIR).as_deref(),
+            Ok("git init -q \".onehand-build/lap/my_proj-abc\" && git -C \".onehand-build/lap/my_proj-abc\" config core.autocrlf false && git -C \".onehand-build/lap/my_proj-abc\" config core.longpaths true")
+        );
+    }
+
+    #[test]
+    fn cmd_run_is_the_line_checked_by_hand() {
+        assert_eq!(
+            Shell::Cmd.run(DIR, SHA, Path::new("sub dir"), "dotnet build && dir").as_deref(),
+            Ok("cd /d \".onehand-build/lap/my_proj-abc\" && git checkout -q -f --detach 2ab98d7259af09c62a806ff487818d931abf3b7e && cd \"sub dir\" && echo __ONEHAND_BUILD__ && cmd /d /s /c \"dotnet build && dir\" 2>&1")
+        );
+        let top = Shell::Cmd
+            .run(DIR, SHA, Path::new(""), "dir")
+            .expect("a line");
+        assert!(!top.contains("cd \"\""), "{top}");
+    }
+
+    #[test]
+    fn cmd_send_checks_then_tars() {
+        let paths = [PathBuf::from("out/made file.txt"), PathBuf::from("out/dir")];
+        assert_eq!(
+            Shell::Cmd.send(DIR, &paths).as_deref(),
+            Ok("cd /d \".onehand-build/lap/my_proj-abc\" && (for %p in (\"out/made file.txt\" \"out/dir\") do @if not exist %p (echo %~p>&2 & exit 3)) && tar -cf - -- \"out/made file.txt\" \"out/dir\"")
+        );
+    }
+
+    #[test]
+    fn cmd_goes_over_ssh_as_it_is_and_posix_through_sh() {
+        assert_eq!(Shell::Cmd.over_ssh("cd /d \"a b\""), "cd /d \"a b\"");
+        assert_eq!(Shell::Posix.over_ssh("cd 'a b'"), r"sh -c 'cd '\''a b'\'''");
+    }
+
+    #[test]
+    fn a_program_that_is_not_there_is_told_by_each_shell_its_own_way() {
+        let sentence = "operable program or batch file.";
+        assert!(Shell::Cmd.not_found(Some(1), sentence));
+        assert!(!Shell::Cmd.not_found(Some(1), "error CS1002: ; expected"));
+        assert!(!Shell::Cmd.not_found(Some(0), sentence));
+        assert!(!Shell::Cmd.not_found(Some(127), ""));
+        assert!(Shell::Posix.not_found(Some(127), ""));
+        assert!(!Shell::Posix.not_found(Some(1), sentence));
+    }
+
+    #[test]
+    fn several_words_are_joined_for_each_shell() {
+        let words: Vec<String> = ["dotnet", "build", "my app.sln", "-c", "Release", "a&b"]
+            .iter()
+            .map(|w| w.to_string())
+            .collect();
+        assert_eq!(
+            Shell::Cmd.join(&words),
+            "dotnet build \"my app.sln\" -c Release \"a&b\""
+        );
+        assert_eq!(
+            Shell::Posix.join(&words),
+            "'dotnet' 'build' 'my app.sln' '-c' 'Release' 'a&b'"
+        );
+    }
+
+    #[test]
+    fn posix_scripts_are_what_they_were() {
+        assert_eq!(
+            Shell::Posix.init(DIR).as_deref(),
+            Ok("mkdir -p '.onehand-build/lap/my_proj-abc' && git -C '.onehand-build/lap/my_proj-abc' init -q")
+        );
+        assert_eq!(
+            Shell::Posix
+                .run(DIR, SHA, Path::new("sub dir"), "it's")
+                .as_deref(),
+            Ok(
+                r#"cd '.onehand-build/lap/my_proj-abc' && git checkout -q -f --detach 2ab98d7259af09c62a806ff487818d931abf3b7e && cd 'sub dir' && echo __ONEHAND_BUILD__ && exec "${SHELL:-/bin/sh}" -lc 'it'\''s' 2>&1"#
+            )
+        );
+        assert_eq!(
+            Shell::Posix.send(DIR, &[PathBuf::from("a b")]).as_deref(),
+            Ok(
+                r#"cd '.onehand-build/lap/my_proj-abc' && for p in 'a b'; do test -e "$p" || { printf %s "$p" >&2; exit 3; }; done && tar -cf - -- 'a b'"#
+            )
+        );
+    }
 }
