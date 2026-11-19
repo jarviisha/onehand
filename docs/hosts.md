@@ -62,6 +62,12 @@ A person declares a host once, for every workspace; a project then names it.
   included, and refuse one typed by hand, *<host> only builds; it runs no sessions*, before
   anything attaches (`builds_only`, `crates/core/src/config/host.rs`). Their menus lead
   with the declared hosts that run sessions.
+- **And nothing attaches to one, however it is asked.** A project that named the host before it
+  was declared, or a workspace file written by hand, still asks; the host's drive answers every
+  ask for a host that only builds with a refusal (`Got::Refuse`, `HostDrive::ask`), which is
+  landed as any refused attach is, in the same words: nothing is known of the host for it,
+  whatever waited on it ends on why, and nothing reaches the host. A connection made before the
+  host was declared so is not handed out again.
 
 What the page draws is in [screens.md](screens.md#settings).
 

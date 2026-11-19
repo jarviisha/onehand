@@ -94,6 +94,11 @@ pub enum Got {
     Wait(u64),
     /// A new attempt, the `made`th, is made.
     Make(u64),
+    /// The `made`th attempt is not to be made: the host is declared as one
+    /// no session runs on. It is landed as refused, in the words that say
+    /// so, which leaves nothing known of the host and ends what waited on
+    /// it; nothing reaches the host.
+    Refuse(u64),
 }
 
 /// Who asks for a host's attach.
@@ -179,7 +184,27 @@ impl HostDrive {
     /// its connection still has its stream; the attempt under way; or a new
     /// one. With `fresh`, a new one whatever is there: what follows under way
     /// is no longer heard.
-    pub fn ask(&mut self, host: &HostName, fresh: bool, by: Asker, alive: bool) -> Got {
+    ///
+    /// **A host that `only_builds` is never attached to**, whoever asks and
+    /// whatever is up: sessions, files and terminals are a host service's,
+    /// and a host declared as one that only builds runs none. The declared
+    /// hosts are the settings' to know, so the asker says.
+    pub fn ask(
+        &mut self,
+        host: &HostName,
+        fresh: bool,
+        by: Asker,
+        alive: bool,
+        only_builds: bool,
+    ) -> Got {
+        if only_builds {
+            self.made += 1;
+            let made = self.made;
+            self.latest.insert(host.clone(), made);
+            self.slots
+                .insert(host.clone(), Slot::Attaching { made, by });
+            return Got::Refuse(made);
+        }
         let found = match fresh {
             true => None,
             false => self.slots.get(host).copied(),

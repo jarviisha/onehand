@@ -20,12 +20,12 @@ fn gone() -> Result<(), HostFailure> {
 
 /// A person's ask, the connection up still alive when `alive`.
 fn ask(drive: &mut HostDrive, alive: bool) -> Got {
-    drive.ask(&vps(), false, Asker::Person, alive)
+    drive.ask(&vps(), false, Asker::Person, alive, false)
 }
 
 /// An attach made by itself, for a wait.
 fn polled(drive: &mut HostDrive) -> Got {
-    drive.ask(&vps(), false, Asker::Poll, false)
+    drive.ask(&vps(), false, Asker::Poll, false, false)
 }
 
 /// What `host`'s attempt `made` landing so is heard as, and the waits it
@@ -76,7 +76,7 @@ fn heard(
     result: Result<(), HostFailure>,
     by_poll: bool,
 ) -> bool {
-    let made = make(drive.ask(host, true, asker(by_poll), false));
+    let made = make(drive.ask(host, true, asker(by_poll), false, false));
     let landed = land(drive, host, made, result);
     names(&landed.fx).contains(&"Refresh")
 }
@@ -85,7 +85,9 @@ fn heard(
 fn make(got: Got) -> u64 {
     match got {
         Got::Make(made) => made,
-        Got::Ready | Got::Join(_) | Got::Wait(_) => panic!("made nothing: {got:?}"),
+        Got::Ready | Got::Join(_) | Got::Wait(_) | Got::Refuse(_) => {
+            panic!("made nothing: {got:?}")
+        }
     }
 }
 
@@ -127,7 +129,7 @@ fn heard_ending(
     result: Result<(), HostFailure>,
     by_poll: bool,
 ) -> Vec<(u64, WaitEnd)> {
-    let made = make(drive.ask(host, true, asker(by_poll), false));
+    let made = make(drive.ask(host, true, asker(by_poll), false, false));
     ended(&land(drive, host, made, result).fx)
 }
 
@@ -181,7 +183,10 @@ fn a_poll_joining_a_persons_attach_is_heard_as_the_persons() {
 fn a_replaced_attempts_late_result_is_not_its_own() {
     let mut drive = HostDrive::default();
     assert_eq!(polled(&mut drive), Got::Make(1));
-    assert_eq!(drive.ask(&vps(), true, Asker::Person, false), Got::Make(2));
+    assert_eq!(
+        drive.ask(&vps(), true, Asker::Person, false, false),
+        Got::Make(2)
+    );
     assert!(land(&mut drive, &vps(), 2, Ok(())).ready);
     let late = land(&mut drive, &vps(), 1, Err(HostFailure::Other("no".into())));
     assert!(!late.ready && late.fx.is_empty(), "stale");
@@ -705,4 +710,70 @@ fn a_wait_that_fails_ends_what_waited_on_why() {
         idle_landed(vec![], true, true, Err("gone".into())),
         [PageFailed, AddFailed("gone".into())]
     );
+}
+
+// A host declared as one that only builds.
+
+fn only_builds() -> Result<(), HostFailure> {
+    Err(HostFailure::Refused(
+        "vps only builds; it runs no sessions".into(),
+    ))
+}
+
+/// No attach is made to it, whoever asks: the attempt is to be landed as
+/// refused, which leaves nothing known of the host and nothing under way.
+#[test]
+fn a_host_that_only_builds_is_refused_and_never_attached() {
+    let mut drive = HostDrive::default();
+    let Got::Refuse(made) = drive.ask(&vps(), false, Asker::Person, false, true) else {
+        panic!("refused");
+    };
+    land(&mut drive, &vps(), made, only_builds());
+    assert_eq!(drive.state(&vps()), HostState::Unknown);
+    assert_eq!(drive.ready(&vps()), None);
+    // Asked again by a wait's own poll: refused again, as a new attempt.
+    let Got::Refuse(again) = drive.ask(&vps(), false, Asker::Poll, false, true) else {
+        panic!("refused again");
+    };
+    assert_ne!(again, made);
+}
+
+/// One attached before it was declared so is refused from then on: the
+/// connection up is not handed out.
+#[test]
+fn a_live_host_since_declared_as_only_building_is_refused_too() {
+    let mut drive = HostDrive::default();
+    let Got::Make(made) = ask(&mut drive, false) else {
+        panic!("made");
+    };
+    land(&mut drive, &vps(), made, Ok(()));
+    assert_eq!(ask(&mut drive, true), Got::Ready);
+    assert!(matches!(
+        drive.ask(&vps(), false, Asker::Person, true, true),
+        Got::Refuse(_)
+    ));
+}
+
+/// A refusal ends what waited on the host, on why.
+#[test]
+fn a_refusal_ends_the_wait_for_the_host_to_be_back() {
+    let mut drive = HostDrive::default();
+    let Got::Make(made) = ask(&mut drive, false) else {
+        panic!("made");
+    };
+    land(&mut drive, &vps(), made, gone());
+    let (id, _) = drive.listen(&vps(), Kind::Back).expect("a wait");
+    let Got::Refuse(made) = drive.ask(&vps(), false, Asker::Poll, false, true) else {
+        panic!("refused");
+    };
+    let fx = drive.handle(Input::Landed {
+        host: vps(),
+        made,
+        result: only_builds(),
+    });
+    let ended = fx.iter().any(|effect| match effect {
+        Effect::Ended { id: ended, how } => *ended == id && how.is_err(),
+        Effect::Arm { .. } | Effect::Attach { .. } | Effect::Refresh => false,
+    });
+    assert!(ended, "the wait ended on the refusal");
 }

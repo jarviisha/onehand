@@ -276,10 +276,6 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   out** waits; nothing a build does prints there before the command starts.
 - **What a check found of a host is kept for this run only.** The file keeps the system; the
   programs found are asked again when a person presses *Check*.
-- **A session is refused on a build-only host by the two forms that name one, not by the attach.**
-  A workspace file written by hand, or a project that named the host before it was declared,
-  still asks to attach; the attach's own refusal of a machine that is not Linux on x86_64 is what
-  stops it, in its words.
 - **A Windows host whose ssh shell is Git's bash or Cygwin's is declared Windows and asked in
   `cmd.exe`'s words,** which that shell does not read: its build fails at the first step.
 - **A host's row says how its attach stands only when something is wrong:** lost or taken. Live
