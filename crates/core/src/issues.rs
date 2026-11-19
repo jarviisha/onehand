@@ -49,6 +49,12 @@ pub struct Issues {
     /// screen in the other order from the one they reached the disk in.
     #[serde(default)]
     revision: u64,
+    /// The files kept by an earlier build that were taken into this one, by
+    /// path: a project's issues used to be kept per workspace and per folder.
+    /// Written with what they brought, so a merge cut short is never taken
+    /// twice.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    merged_from: Vec<String>,
 }
 
 /// One issue.
@@ -574,6 +580,44 @@ pub fn file_for(storage: &Path, root: &Path) -> PathBuf {
 /// The folder a workspace kept in `storage` keeps its issues in.
 pub(crate) fn issues_dir(storage: &Path) -> PathBuf {
     storage.join("issues")
+}
+
+/// Take `from`, the issues file at `source` an earlier build kept, into
+/// `into`: `false`, changing nothing, when `source` was taken in already.
+///
+/// A forge's issue is one issue wherever it was kept: one `into` holds with
+/// the same link keeps its number and takes the copy changed last. Any other
+/// keeps its own number where `into` has none of it, and takes the next one
+/// where it has.
+pub(crate) fn merge(into: &mut Issues, from: Issues, source: &Path) -> bool {
+    let source = source.to_string_lossy().into_owned();
+    if into.merged_from.contains(&source) {
+        return false;
+    }
+    let same_link = |a: &LocalIssue, b: &LocalIssue| match (&a.link, &b.link) {
+        (Some(a), Some(b)) => a.connector == b.connector && a.key == b.key,
+        (Some(_), None) | (None, Some(_)) | (None, None) => false,
+    };
+    for mut issue in from.issues {
+        if let Some(held) = into.issues.iter_mut().find(|held| same_link(held, &issue)) {
+            if issue.updated > held.updated {
+                issue.number = held.number;
+                *held = issue;
+            }
+            continue;
+        }
+        if into.issues.iter().any(|held| held.number == issue.number) {
+            issue.number = into.next.max(1);
+        }
+        into.next = into.next.max(issue.number + 1);
+        into.issues.push(issue);
+    }
+    if into.synced_with.is_none() {
+        into.synced_with = from.synced_with;
+        into.last_synced = into.last_synced.max(from.last_synced);
+    }
+    into.merged_from.push(source);
+    true
 }
 
 /// An issue onehand keeps, named by the file it is kept in ([`file_for`]) and

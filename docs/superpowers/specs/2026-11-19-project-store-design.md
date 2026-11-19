@@ -223,6 +223,10 @@ re-derived each time; renaming a project never touches a folder.
   what `session/load` is given as `cwd`. Listing a project's conversations reads `project`; a
   conversation whose folder is a removed worktree is listed, read-only, with resume refused in the
   words the restore failure already uses. *(the read-only/refused wording is the builder's call)*
+  Until step 3 a worktree is still a row of its own, so a row lists what ran in its folder, and
+  the project's own row also what ran in a folder the project no longer records; nothing is
+  listed on two rows. Resuming one whose folder is gone is refused as it is today (*The folder
+  that conversation ran in is gone*). *(revised while planning step 2)*
 - Tasks and schedules keep the folders they hold (`Setup.repo/dir`, `Schedule.project`): those say
   where work runs. Grouping them by project goes through the folder index. *(builder's call)*
 - Issues: one file per project, `projects/<id>/issues.json`. `IssueKey.file` points at it; the
@@ -253,7 +257,10 @@ new one as `onehand-workspace.toml.before-projects`.
 4. **Issues.** Every `workspaces/<ws>/issues/<stem>.json` of a project's folders is merged into its
    `issues.json`: an issue imported from a forge appears once (matched by its forge link, the newer
    `updated` kept); local issues keep their numbers where free and are renumbered after the
-   highest otherwise; tasks naming an old `IssueKey` are repointed to the new file and number.
+   highest otherwise. No task names an issues file any more (issue runs were removed before this
+   work), so none is repointed. Each legacy file taken in is renamed `.json.merged`, and the
+   project's file records it, so a run cut short never takes it twice. *(revised while planning
+   step 2)*
    The owner's data has both cases: worktree issue files synced with the same GitHub repository as
    their project's, and numbers starting at 1 in each.
 5. **Conversations.** Each `meta.json` whose `root` resolves to a project gets its `project` id,

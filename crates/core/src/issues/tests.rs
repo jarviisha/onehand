@@ -367,3 +367,112 @@ fn a_supervised_brief_names_an_open_issue_kept_here() {
     assert!(supervised_brief_blocking(Some(file), None, 9).is_err());
     let _ = std::fs::remove_dir_all(dir);
 }
+
+// Merging one project's files into one.
+
+fn local(number: u64, title: &str) -> LocalIssue {
+    LocalIssue {
+        number,
+        title: title.into(),
+        body: String::new(),
+        open: true,
+        labels: Vec::new(),
+        created: 1,
+        updated: 1,
+        notes: Vec::new(),
+        link: None,
+        imported_from: None,
+    }
+}
+
+fn linked(number: u64, connector: &str, key: &str, updated: u64, title: &str) -> LocalIssue {
+    LocalIssue {
+        updated,
+        link: Some(Link {
+            connector: connector.into(),
+            key: key.into(),
+            reference: format!("#{key}"),
+            base: Snapshot::default(),
+            conflict: None,
+        }),
+        imported_from: Some(connector.into()),
+        ..local(number, title)
+    }
+}
+
+fn issues_with(issues: Vec<LocalIssue>) -> Issues {
+    let next = issues.iter().map(|i| i.number).max().unwrap_or(0) + 1;
+    Issues {
+        next,
+        issues,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn a_forge_issue_kept_in_two_files_is_kept_once_the_newer() {
+    let mut into = issues_with(vec![linked(1, "gh", "42", 100, "old title")]);
+    let from = issues_with(vec![linked(7, "gh", "42", 200, "new title")]);
+    assert!(merge(&mut into, from, Path::new("/ws/issues/a-x.json")));
+    assert_eq!(into.issues.len(), 1);
+    assert_eq!(
+        (into.issues[0].number, into.issues[0].title.as_str()),
+        (1, "new title")
+    );
+    // The older copy coming second changes nothing.
+    let older = issues_with(vec![linked(3, "gh", "42", 50, "stale")]);
+    merge(&mut into, older, Path::new("/ws2/issues/a.json"));
+    assert_eq!(into.issues[0].title, "new title");
+}
+
+#[test]
+fn a_local_issue_keeps_its_number_where_free_and_takes_the_next_where_not() {
+    let mut into = issues_with(vec![local(1, "a"), local(2, "b")]);
+    let from = issues_with(vec![local(2, "c"), local(5, "d")]);
+    merge(&mut into, from, Path::new("/ws/issues/a-x.json"));
+    let numbers: Vec<_> = into
+        .issues
+        .iter()
+        .map(|i| (i.number, i.title.clone()))
+        .collect();
+    assert_eq!(
+        numbers,
+        vec![
+            (1, "a".to_string()),
+            (2, "b".to_string()),
+            (3, "c".to_string()),
+            (5, "d".to_string())
+        ]
+    );
+    assert_eq!(into.next, 6);
+}
+
+#[test]
+fn a_source_merged_once_is_not_merged_again() {
+    let mut into = Issues::default();
+    let source = Path::new("/ws/issues/a-x.json");
+    assert!(merge(&mut into, issues_with(vec![local(1, "a")]), source));
+    assert!(!merge(&mut into, issues_with(vec![local(1, "a")]), source));
+    assert_eq!(into.issues.len(), 1);
+}
+
+#[test]
+fn a_merge_keeps_the_forge_it_syncs_with() {
+    let mut into = Issues::default();
+    let mut from = issues_with(vec![]);
+    from.synced_with = Some("gh".into());
+    from.last_synced = 9;
+    merge(&mut into, from, Path::new("/ws/issues/a.json"));
+    assert_eq!((into.synced_with.as_deref(), into.last_synced), (Some("gh"), 9));
+}
+
+#[test]
+fn a_projects_issues_file_is_in_its_folder() {
+    use crate::project::file::{issues_file, store_dir};
+    use crate::project::ProjectId;
+    let id = ProjectId::mint(5);
+    assert_eq!(
+        issues_file(&id),
+        store_dir().join(id.as_str()).join("issues.json")
+    );
+}
