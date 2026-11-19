@@ -979,7 +979,8 @@ fn a_placed_row_writes_its_id_and_leaves_its_facts_to_its_project() {
     use crate::project::{Folder, Project, ProjectId};
     let mut p = Project::new(ProjectId::mint(1), None, "/code/a".into());
     p.check = Some("make".into());
-    let mut ws = Workspace::seeded_on(&p);
+    let mut ws = Workspace::seeded("/elsewhere");
+    ws.roots[0] = ProjectRoot::of(&p, Folder::Home);
     let mut transient = ProjectRoot::new("/worker");
     transient.transient = true;
     ws.roots.push(transient);

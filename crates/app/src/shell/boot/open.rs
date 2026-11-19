@@ -112,7 +112,12 @@ fn open_window(workspace: Workspace, write: bool, cx: &mut App) {
             // registry is what deduplicates windows, so an entry is filed either
             // way rather than the whole window being dropped from it.
             let shell = built.expect("the window was built without a shell");
-            crate::windows::register(storage_dir.clone(), handle.into(), shell, cx);
+            crate::windows::register(storage_dir.clone(), handle.into(), shell.clone(), cx);
+            // A row that names no project gets one, now the window is there
+            // to take it.
+            if let Some(shell) = shell.upgrade() {
+                crate::projects::place_rows(handle.into(), shell, cx);
+            }
             // What reached the socket before any window waited for this one.
             crate::instance::window_up(cx);
             let fx = cx

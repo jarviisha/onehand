@@ -407,19 +407,11 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    /// Seed a workspace from `project`'s folder (the CLI-arg path), kept in
-    /// the folder a workspace made from that folder is kept in.
-    pub fn seeded_on(project: &Project) -> Self {
-        Self::seeded_with(ProjectRoot::of(project, Folder::Home))
-    }
-
-    /// [`Self::seeded_on`] a bare folder, of no project, for a test.
-    #[cfg(any(test, feature = "test-support"))]
+    /// Seed a workspace from a single folder (the CLI-arg path), kept in the
+    /// folder a workspace made from that folder is kept in. Its row names no
+    /// project yet: its window places it as it opens, as any such row.
     pub fn seeded(root: impl Into<PathBuf>) -> Self {
-        Self::seeded_with(ProjectRoot::new(root))
-    }
-
-    fn seeded_with(root: ProjectRoot) -> Self {
+        let root = ProjectRoot::new(root);
         Self {
             name: "Workspace".into(),
             storage_dir: storage_for(&root.path),
@@ -678,7 +670,7 @@ impl Workspace {
     /// instead of creating a twin; a root on a host with the same path is
     /// another root, so only `(None, path)` is compared. Twins of one local folder would
     /// share terminals/layouts/editors while splitting sessions.
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(test)]
     pub(crate) fn add_root(&mut self, path: impl Into<PathBuf>) -> usize {
         self.add_placed(ProjectRoot::new(normalize_root(path.into())))
     }
@@ -686,7 +678,7 @@ impl Workspace {
     /// [`Self::add_root`] for a folder on `host`. The path is kept as typed:
     /// it names nothing on this machine, so there is nothing to resolve it
     /// against. Adding one that is already a root on that host selects it.
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(test)]
     pub(crate) fn add_host_root(&mut self, host: HostName, path: PathBuf) -> usize {
         let mut root = ProjectRoot::new(path);
         root.host = Some(host);
@@ -712,7 +704,7 @@ impl Workspace {
     /// [`Self::add_root`], **selecting nothing**: a worktree cut for a task
     /// nobody here started (a schedule's, a tool's) must not move what the
     /// person has selected, which is also what *Run on* offers first.
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(test)]
     pub(crate) fn add_root_quietly(&mut self, path: impl Into<PathBuf>) -> usize {
         self.add_placed_quietly(ProjectRoot::new(normalize_root(path.into())))
     }

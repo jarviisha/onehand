@@ -196,17 +196,12 @@ pub enum Effect {
     /// leaves nothing behind, and what it found is acted on as the workspace
     /// stands when it lands.
     ReadConversation(String),
-    /// Find the project `saved`'s folder is of, adding one when none holds
-    /// it, then report it through [`WorkspaceDrive::resume_placed`] with
-    /// `spec` and `uid`: a conversation resumed on a folder the workspace
-    /// does not hold. A late answer is **recorded**: the folder is placed
-    /// whatever changed since, and the resume acts on the workspace as it
-    /// stands.
-    Place {
-        saved: conversation::Saved,
-        spec: AgentSpec,
-        uid: u64,
-    },
+    /// The row of this folder here came in of no project, its project not
+    /// known yet: find it, making one when none holds the folder, and report
+    /// it through [`WorkspaceDrive::placed`]. A late answer is **recorded**:
+    /// the project is found whatever changed since, and a row that left
+    /// meanwhile places nothing.
+    Unplaced(PathBuf),
     /// The workspace kept in `dir` is deleted: stop its views writing into
     /// it, take it off the list, remove what is its own in `dir` after every
     /// write queued before, and close its window.
@@ -239,11 +234,13 @@ pub enum Input {
         found: Vec<(PathBuf, crate::gitstat::GitStatus)>,
     },
     /// What [`Effect::ReadConversation`] found, if anything was saved; the
-    /// agents set up now; and the uid a session resuming it takes.
+    /// agents set up now; the uid a session resuming it takes; and the
+    /// project its folder is of, when one holds it.
     ConversationRead {
         found: Option<conversation::Saved>,
         agents: Vec<AgentSpec>,
         uid: u64,
+        project: Option<Box<crate::project::Project>>,
     },
     /// What [`Effect::EndOnHost`] for the host session called `label` on
     /// `host` came to.
@@ -440,9 +437,12 @@ impl WorkspaceDrive {
                 let _ = self.saves.landed(pending, result);
                 Vec::new()
             }
-            Input::ConversationRead { found, agents, uid } => {
-                self.conversation_read(found, &agents, uid)
-            }
+            Input::ConversationRead {
+                found,
+                agents,
+                uid,
+                project,
+            } => self.conversation_read(found, &agents, uid, project.as_deref()),
             Input::EndedOnHost {
                 host,
                 label,

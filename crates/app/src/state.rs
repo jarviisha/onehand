@@ -39,6 +39,10 @@ pub struct Shared {
     next_uid: u64,
     /// Recently opened storage directories, most-recent-first.
     pub recents: onehand_core::config::recents::RecentsDrive,
+    /// Every project onehand keeps: one drive for every window, since a
+    /// project is the same project in each window holding it. Read at boot,
+    /// changed only through it, carried by `crate::projects`.
+    pub projects: onehand_core::project::ProjectsDrive,
     /// The tokio runtime every ACP adapter runs on (see [`crate::acp`]).
     pub acp: AcpRuntime<crate::control::Token>,
     /// The one connection to each host, shared by every window's projects there.
@@ -105,6 +109,10 @@ impl Shared {
             config_saves: Default::default(),
             next_uid: 1,
             recents,
+            projects: onehand_core::project::ProjectsDrive::new(
+                Default::default(),
+                onehand_core::project::file::store_dir(),
+            ),
             // A runtime this process cannot start means no agent can ever run,
             // which is the whole app -- there is nothing useful to degrade to.
             acp: AcpRuntime::new(crate::control::Token::mint)

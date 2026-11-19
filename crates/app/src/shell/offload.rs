@@ -3,7 +3,10 @@
 
 use super::Shell;
 use crate::offload;
-use gpui::{AppContext as _, Context, Entity, Focusable as _, Subscription, Task, Window};
+use gpui::{
+    AppContext as _, BorrowAppContext as _, Context, Entity, Focusable as _, Subscription, Task,
+    Window,
+};
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputEvent, InputState};
 use onehand_core::config::HostSpec;
@@ -250,10 +253,9 @@ impl Shell {
             mirror: mirror.clone(),
             branch,
         };
-        let Some(fx) = self.window.workspace.set_offload(&path, Some(on)) else {
+        if !self.set_offload(&path, Some(on), window, cx) {
             return;
-        };
-        self.carry_workspace(fx, window, cx);
+        }
         match kept {
             Kept::Mirror(state) => offload::track(cx, path, host, Some(state)),
             Kept::Branch(branch) => offload::track_branch(cx, path, host, branch),
@@ -266,6 +268,30 @@ impl Shell {
     /// Run root `idx`'s new sessions here again, while this machine holds its
     /// code. Its sessions on the host are let go here, and run on there until
     /// they end; the mirror stays, so a later offload sends only what changed.
+    /// Say where the sessions of the folder at `path` run: on `on`, or here
+    /// with none. The folder's project keeps it; this window takes it at once,
+    /// closing the sessions that ran where it no longer does, and every other
+    /// window holding the project after this update. False when no project
+    /// holds the folder, and nothing moved.
+    fn set_offload(
+        &mut self,
+        path: &std::path::Path,
+        on: Option<Offloaded>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(fx) = cx.update_global::<crate::state::Shared, _>(|shared, _| {
+            shared.projects.set_offload(None, path, on)
+        }) else {
+            return false;
+        };
+        crate::projects::carry(fx, cx);
+        if let Some(project) = crate::projects::of(path, cx) {
+            self.told_project(&project, window, cx);
+        }
+        true
+    }
+
     pub(crate) fn run_here_again(
         &mut self,
         idx: usize,
@@ -290,12 +316,7 @@ impl Shell {
             window.push_notification(crate::toast::warning(why), cx);
             return;
         }
-        let fx = self
-            .window
-            .workspace
-            .set_offload(&path, None)
-            .unwrap_or_default();
-        self.carry_workspace(fx, window, cx);
+        self.set_offload(&path, None, window, cx);
         offload::forget(cx, &path);
         self.show_active_session(window, cx);
         self.sync_offload(cx);

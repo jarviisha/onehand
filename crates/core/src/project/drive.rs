@@ -63,8 +63,12 @@ pub struct ProjectWrite {
 /// What a person is told.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Signal {
-    /// The file of the project called `name` could not be written: why.
-    SaveFailed { name: String, why: String },
+    /// The file of project `id`, called `name`, could not be written: why.
+    SaveFailed {
+        id: ProjectId,
+        name: String,
+        why: String,
+    },
 }
 
 /// What the front end carries out.
@@ -375,8 +379,8 @@ impl ProjectsDrive {
                     .map(|project| project.name.clone())
                     .unwrap_or_default();
                 vec![
-                    Effect::Changed(id),
-                    Effect::Signal(Signal::SaveFailed { name, why }),
+                    Effect::Changed(id.clone()),
+                    Effect::Signal(Signal::SaveFailed { id, name, why }),
                 ]
             }
             Input::Elapsed { token } => {

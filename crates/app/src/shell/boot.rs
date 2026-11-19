@@ -548,7 +548,7 @@ pub fn boot(cx: &mut App) {
         .into_iter()
         .chain(onehand_core::task::files::migrate_old_dir_blocking())
         // After the tasks are where they are kept, since it repoints them.
-        .chain(onehand_core::workspace::migrate_storage_blocking())
+        .chain(onehand_core::workspace::migrate_storage_blocking(seed()))
     {
         eprintln!("onehand: {problem}");
     }
@@ -558,6 +558,15 @@ pub fn boot(cx: &mut App) {
     let remote = cfg.remote.clone();
     crate::control::boot(&cfg.control);
     cx.set_global(Shared::from_config(cfg, config_path));
+    // After the migration, which brings every workspace's projects in.
+    let store = onehand_core::project::file::store_dir();
+    let (projects, unread) = onehand_core::project::file::load_all_blocking(&store);
+    for problem in unread {
+        eprintln!("onehand: {problem}");
+    }
+    cx.update_global::<Shared, _>(|shared, _| {
+        shared.projects = onehand_core::project::ProjectsDrive::new(projects, store);
+    });
     // The settings, workspace and conversation-name writes still queued at
     // quit would die with the process: waited for, as the task files are,
     // once the windows are gone and their last writes are queued.
@@ -602,10 +611,20 @@ pub fn boot(cx: &mut App) {
     let launch = onehand_core::workspace::launch_blocking(
         Shared::global(cx).recents.listed(),
         seed_workspace(),
+        &Shared::global(cx).projects,
     );
 
     super::render::KeyRelease::register(cx);
     open(launch, cx);
+}
+
+/// What the ids of projects made at this launch are minted from: the clock
+/// and the process, so two launches never start from one seed.
+fn seed() -> u64 {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_nanos() as u64);
+    nanos ^ (u64::from(std::process::id()) << 32)
 }
 
 /// Point the theme's monospace family at one this machine actually has.

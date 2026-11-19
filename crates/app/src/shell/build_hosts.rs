@@ -3,7 +3,7 @@
 
 use super::Shell;
 use super::confirm::Confirm;
-use gpui::{AppContext as _, Context, Entity, Focusable as _, Window};
+use gpui::{AppContext as _, BorrowAppContext as _, Context, Entity, Focusable as _, Window};
 use gpui_component::input::{InputState, TextareaState};
 use onehand_core::workspace::BuildHost;
 use std::path::{Path, PathBuf};
@@ -28,7 +28,7 @@ impl Shell {
     }
 
     /// The project on screen, when its folder is on this machine.
-    fn build_root(&self) -> Option<PathBuf> {
+    pub(super) fn build_root(&self) -> Option<PathBuf> {
         self.local_root(self.window.workspace.active_root)
             .map(Path::to_path_buf)
     }
@@ -129,7 +129,7 @@ impl Shell {
 
     /// *Add* or *Save*: read the form as a build host, and ask the drive to
     /// make it one of the project's, in place of the one being changed.
-    pub(crate) fn save_build_host(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn save_build_host(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         let Some(draft) = self.build_host_draft.as_ref() else {
             return;
         };
@@ -141,12 +141,19 @@ impl Shell {
         );
         // The drive says whether the project may build there, and makes the
         // change; what refuses it is said in the form, which stays.
-        let changed =
-            read.and_then(|entry| self.window.workspace.put_build_host(&root, entry, editing));
+        let Some(id) = self.project_of_row(&root) else {
+            return;
+        };
+        let changed = read.and_then(|entry| {
+            cx.update_global::<crate::state::Shared, _>(|shared, _| {
+                shared.projects.put_build_host(&id, entry, editing)
+            })
+        });
         match changed {
             Ok(fx) => {
                 self.build_host_draft = None;
-                self.carry_build_hosts(&root, fx, window, cx);
+                crate::projects::carry(fx, cx);
+                cx.notify();
             }
             Err(why) => {
                 if let Some(draft) = self.build_host_draft.as_mut() {
@@ -180,23 +187,14 @@ impl Shell {
         };
         // By the entry, not by its place: the list may change while the
         // question is open.
-        self.confirm(ask, window, cx, move |shell, window, cx| {
-            let fx = shell.window.workspace.remove_build_host(&root, &entry);
-            shell.carry_build_hosts(&root, fx, window, cx);
+        let Some(id) = self.project_of_row(&root) else {
+            return;
+        };
+        self.confirm(ask, window, cx, move |_, _, cx| {
+            let fx = cx.update_global::<crate::state::Shared, _>(|shared, _| {
+                shared.projects.remove_build_host(&id, &entry)
+            });
+            crate::projects::carry(fx, cx);
         });
-    }
-
-    /// Carry out what the drive answered of a change to the project's build
-    /// hosts, and tell its page.
-    fn carry_build_hosts(
-        &mut self,
-        root: &Path,
-        fx: Vec<onehand_core::workspace::drive::Effect>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.carry_workspace(fx, window, cx);
-        self.show_build_hosts(Some(root), cx);
-        cx.notify();
     }
 }

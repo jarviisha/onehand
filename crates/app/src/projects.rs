@@ -1,0 +1,260 @@
+//! The projects' drive's carrier: what `ProjectsDrive` decides, carried out
+//! for the whole process. A project is the same project in every window
+//! holding it, so a change to one is told to each of them.
+//!
+//! **Every window is told later, never inside the change.** A change is
+//! usually made from inside a window's own update (a check typed on its
+//! page, a split from its dialog), and updating a window's shell while it is
+//! being updated panics; so each window is reached after this update, as a
+//! shell reaching into another window does.
+
+use crate::state::Shared;
+use gpui::{App, BorrowAppContext as _};
+use gpui_component::WindowExt as _;
+use onehand_core::project::drive::{Effect, Input, ProjectWrite, Signal};
+use onehand_core::project::{MadeBy, Project, ProjectId, Worktree};
+use onehand_core::workspace::HostName;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Carry out the projects' effects, in order, each once.
+pub(crate) fn carry(fx: Vec<Effect>, cx: &mut App) {
+    for effect in fx {
+        match effect {
+            Effect::Write(write) => {
+                let ProjectWrite {
+                    id,
+                    pending,
+                    project,
+                    dir,
+                } = *write;
+                let written = Shared::global(cx).writer.write(move || {
+                    onehand_core::project::file::save_to(&project, &dir)
+                        .map_err(|why| why.to_string())
+                });
+                cx.spawn(async move |cx| {
+                    let result = written.await;
+                    cx.update(|cx| {
+                        let fx = cx.update_global::<Shared, _>(|shared, _| {
+                            shared.projects.handle(Input::Written {
+                                id,
+                                pending,
+                                result,
+                            })
+                        });
+                        carry(fx, cx);
+                    });
+                })
+                .detach();
+            }
+            Effect::Arm { token, after } => {
+                cx.spawn(async move |cx| {
+                    cx.background_executor().timer(after).await;
+                    cx.update(|cx| {
+                        let fx = cx.update_global::<Shared, _>(|shared, _| {
+                            shared.projects.handle(Input::Elapsed { token })
+                        });
+                        carry(fx, cx);
+                    });
+                })
+                .detach();
+            }
+            Effect::Changed(id) => tell(&id, cx),
+            Effect::Signal(Signal::SaveFailed { id, name, why }) => {
+                let what = format!("Saving {name}");
+                for_each_holding(&id, cx, move |_, window, cx| {
+                    window.push_notification(crate::toast::failed(&what, why.clone()), cx);
+                });
+            }
+        }
+    }
+}
+
+/// Tell every window holding project `id` how it now stands.
+fn tell(id: &ProjectId, cx: &mut App) {
+    let Some(project) = Shared::global(cx).projects.get(id).cloned() else {
+        return;
+    };
+    for_each_holding(id, cx, move |shell, window, cx| {
+        shell.told_project(&project, window, cx);
+    });
+}
+
+/// Run `act` in each window holding project `id`, after this update.
+fn for_each_holding(
+    id: &ProjectId,
+    cx: &mut App,
+    act: impl Fn(&mut crate::shell::Shell, &mut gpui::Window, &mut gpui::Context<crate::shell::Shell>)
+    + Clone
+    + 'static,
+) {
+    for (handle, shell) in crate::windows::live(cx) {
+        let (act, id) = (act.clone(), id.clone());
+        // Asked after this update too: the shell may be the one updating.
+        cx.defer(move |cx| {
+            if !shell.read(cx).holds_project(&id) {
+                return;
+            }
+            let _ = handle.update(cx, |_, window, cx| {
+                shell.update(cx, |shell, cx| act(shell, window, cx));
+            });
+        });
+    }
+}
+
+/// Place every row of `shell`'s workspace that names no project, a
+/// worker's aside: the folder a launch seeded the workspace with, or an
+/// entry nothing could place when the projects were brought in.
+pub(crate) fn place_rows(
+    handle: gpui::AnyWindowHandle,
+    shell: gpui::Entity<crate::shell::Shell>,
+    cx: &mut App,
+) {
+    for (host, path) in shell.read(cx).unplaced_rows() {
+        place_one(handle, shell.downgrade(), host, path, cx);
+    }
+}
+
+/// Place the row of `path` here in `shell`'s workspace, which came in of no
+/// project.
+pub(crate) fn place_row(
+    handle: gpui::AnyWindowHandle,
+    shell: gpui::Entity<crate::shell::Shell>,
+    path: PathBuf,
+    cx: &mut App,
+) {
+    place_one(handle, shell.downgrade(), None, path, cx);
+}
+
+fn place_one(
+    handle: gpui::AnyWindowHandle,
+    shell: gpui::WeakEntity<crate::shell::Shell>,
+    host: Option<HostName>,
+    path: PathBuf,
+    cx: &mut App,
+) {
+    let (row_host, row_path) = (host.clone(), path.clone());
+    place(host, path, MadeBy::Added, cx, move |project, cx| {
+        let _ = handle.update(cx, |_, window, cx| {
+            shell.update(cx, |shell, cx| {
+                shell.placed_row(row_host.as_ref(), &row_path, &project, window, cx)
+            })
+        });
+    });
+}
+
+/// The project of `path` on `host`, made when none holds it: a host's folder
+/// asks no git, so it is found or made at once.
+pub(crate) fn of_host(host: HostName, path: PathBuf, cx: &mut App) -> Option<Project> {
+    let fresh = mint(cx);
+    let (id, fx) = cx.update_global::<Shared, _>(|shared, _| {
+        shared.projects.place(
+            Some(host),
+            path,
+            onehand_core::project::Placement::New,
+            MadeBy::Added,
+            fresh,
+        )
+    });
+    carry(fx, cx);
+    Shared::global(cx).projects.get(&id).cloned()
+}
+
+/// A fresh project id: one no project holds and no folder in the store is
+/// named after.
+pub(crate) fn mint(cx: &App) -> ProjectId {
+    static MINTED: AtomicU64 = AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_nanos() as u64);
+    let pid = u64::from(std::process::id()) << 32;
+    let store = onehand_core::project::file::store_dir();
+    loop {
+        let n = MINTED.fetch_add(1, Ordering::Relaxed);
+        let id = ProjectId::mint(nanos ^ pid ^ n);
+        if Shared::global(cx).projects.get(&id).is_none() && !store.join(id.as_str()).exists() {
+            return id;
+        }
+    }
+}
+
+/// Find the project `folder` on `host` is a folder of, placing it when no
+/// project holds it yet (asking git, off the UI loop), then hand it to
+/// `then`, after this update. `made` says who made the folder, should it
+/// become a worktree.
+pub(crate) fn place(
+    host: Option<HostName>,
+    folder: PathBuf,
+    made: MadeBy,
+    cx: &mut App,
+    then: impl FnOnce(Project, &mut App) + 'static,
+) {
+    if let Some((project, _)) = Shared::global(cx).projects.find(host.as_ref(), &folder) {
+        let project = project.clone();
+        cx.defer(move |cx| then(project, cx));
+        return;
+    }
+    let known = (*Shared::global(cx).projects).clone();
+    cx.spawn(async move |cx| {
+        let (placement, folder) = cx
+            .background_executor()
+            .spawn({
+                let host = host.clone();
+                async move {
+                    let folder = match host {
+                        Some(_) => folder,
+                        None => std::fs::canonicalize(&folder).unwrap_or(folder),
+                    };
+                    let placement =
+                        onehand_core::project::place_blocking(&known, host.as_ref(), &folder);
+                    (placement, folder)
+                }
+            })
+            .await;
+        cx.update(|cx| {
+            let fresh = mint(cx);
+            let (id, fx) = cx.update_global::<Shared, _>(|shared, _| {
+                shared.projects.place(host, folder, placement, made, fresh)
+            });
+            carry(fx, cx);
+            if let Some(project) = Shared::global(cx).projects.get(&id).cloned() {
+                then(project, cx);
+            }
+        });
+    })
+    .detach();
+}
+
+/// Record `worktree` in the project holding `of`, a folder here, and answer
+/// the project as it now is; none when no project holds `of`.
+pub(crate) fn record(of: &Path, worktree: Worktree, cx: &mut App) -> Option<Project> {
+    let id = Shared::global(cx).projects.find(None, of)?.0.id.clone();
+    let fx =
+        cx.update_global::<Shared, _>(|shared, _| shared.projects.record_worktree(&id, worktree));
+    carry(fx, cx);
+    Shared::global(cx).projects.get(&id).cloned()
+}
+
+/// Record the worktree a run's cut made, `dir` on `branch`, in the project
+/// holding `of`, the folder it was cut from; the project as it now is.
+pub(crate) fn record_cut(of: &Path, dir: &Path, branch: &str, cx: &mut App) -> Option<Project> {
+    let worktree = Worktree {
+        path: dir.to_path_buf(),
+        branch: branch.to_string(),
+        from: None,
+        made_by: MadeBy::Run,
+        offload: None,
+    };
+    record(of, worktree, cx)
+}
+
+/// The project holding `folder` here, as it now is.
+pub(crate) fn of(folder: &Path, cx: &App) -> Option<Project> {
+    Shared::global(cx)
+        .projects
+        .find(None, folder)
+        .map(|(project, _)| project.clone())
+}
+
+#[cfg(test)]
+mod tests;

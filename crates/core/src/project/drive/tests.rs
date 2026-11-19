@@ -140,7 +140,9 @@ fn a_failed_write_puts_the_name_back_and_says_so_once() {
     let said: Vec<_> = fx
         .iter()
         .filter_map(|e| match e {
-            Effect::Signal(Signal::SaveFailed { name, why }) => Some((name.as_str(), why.as_str())),
+            Effect::Signal(Signal::SaveFailed { name, why, .. }) => {
+                Some((name.as_str(), why.as_str()))
+            }
             Effect::Write(_) | Effect::Arm { .. } | Effect::Changed(_) => None,
         })
         .collect();

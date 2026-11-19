@@ -416,7 +416,8 @@ impl Shell {
     /// Add `dir` as a project and select it, or select it if it is one
     /// already. The folder picker lands here, and so does a second launch.
     pub(crate) fn open_root(&mut self, dir: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        let fx = self.window.workspace.open_project(dir);
+        let project = crate::projects::of(&dir, cx);
+        let fx = self.window.workspace.open_project(dir, project.as_ref());
         self.carry_workspace(fx, window, cx);
     }
 
@@ -429,7 +430,10 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let fx = self.window.workspace.open_host_project(host, path);
+        let Some(project) = crate::projects::of_host(host, path, cx) else {
+            return;
+        };
+        let fx = self.window.workspace.open_host_project(&project);
         self.carry_workspace(fx, window, cx);
     }
 

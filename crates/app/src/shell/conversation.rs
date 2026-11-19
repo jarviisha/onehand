@@ -90,10 +90,15 @@ impl Shell {
     ) {
         let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
         let agents = Shared::global(cx).settings.agents.clone();
-        let fx = self
-            .window
-            .workspace
-            .handle(Input::ConversationRead { found, agents, uid });
+        let fx = self.window.workspace.handle(Input::ConversationRead {
+            project: found
+                .as_ref()
+                .and_then(|saved| crate::projects::of(&saved.root, cx))
+                .map(Box::new),
+            found,
+            agents,
+            uid,
+        });
         self.carry_workspace(fx, window, cx);
     }
 }

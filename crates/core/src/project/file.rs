@@ -4,6 +4,11 @@ use super::{Project, Projects};
 use crate::config::write_atomic;
 use std::path::Path;
 
+/// Where onehand keeps its projects, one folder each, named by id.
+pub fn store_dir() -> std::path::PathBuf {
+    crate::config::projects_in(&crate::config::config_dir())
+}
+
 /// The file a project is kept in, inside its folder.
 pub const FILE: &str = "project.toml";
 

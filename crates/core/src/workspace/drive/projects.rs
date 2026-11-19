@@ -7,11 +7,11 @@ use crate::workspace::{normalize_root, HostName, ProjectRoot};
 use std::path::{Path, PathBuf};
 
 /// The row `dir`, on `host`, comes in as: a row of `project`'s folder, or a
-/// bare one when `project` does not hold it, which never draws another
-/// folder's facts.
-fn row(host: Option<&HostName>, dir: PathBuf, project: &Project) -> ProjectRoot {
-    match project.folder(host, &dir) {
-        Some(folder) => ProjectRoot::of(project, folder),
+/// bare one, of no project, when its project is not known yet or does not
+/// hold it, which never draws another folder's facts.
+fn row(host: Option<&HostName>, dir: PathBuf, project: Option<&Project>) -> ProjectRoot {
+    match project.and_then(|p| Some((p, p.folder(host, &dir)?))) {
+        Some((project, folder)) => ProjectRoot::of(project, folder),
         None => {
             let mut root = ProjectRoot::new(dir);
             root.host = host.cloned();
@@ -75,19 +75,35 @@ impl WorkspaceDrive {
     /// Add `dir`, a folder here of `project`, and select it, or select it if
     /// it is in the workspace already: what the folder picker, a second
     /// launch and a worktree split off do.
+    /// A folder whose project is not known yet comes in at once, of none,
+    /// and is said to be placed.
     #[must_use = "its effects are to be carried"]
-    pub fn open_project(&mut self, dir: PathBuf, project: &Project) -> Vec<Effect> {
+    pub fn open_project(&mut self, dir: PathBuf, project: Option<&Project>) -> Vec<Effect> {
         let dir = normalize_root(dir);
-        self.workspace.add_placed(row(None, dir, project));
-        self.opened()
+        let fresh = self.local_index(&dir).is_none();
+        let idx = self.workspace.add_placed(row(None, dir, project));
+        let mut fx = self.unplaced(idx, fresh);
+        fx.extend(self.opened());
+        fx
     }
 
     /// [`Self::open_project`] for `project`'s own folder, on its host.
     #[must_use = "its effects are to be carried"]
     pub fn open_host_project(&mut self, project: &Project) -> Vec<Effect> {
-        let root = row(project.host.as_ref(), project.path.clone(), project);
+        let root = row(project.host.as_ref(), project.path.clone(), Some(project));
         self.workspace.add_placed(root);
         self.opened()
+    }
+
+    /// Say the row at `idx` is to be placed in a project, when it was just
+    /// added of none. A worker's folder is not: it leaves with the worker.
+    fn unplaced(&self, idx: usize, fresh: bool) -> Vec<Effect> {
+        match self.workspace.roots.get(idx) {
+            Some(root) if fresh && root.project.is_none() && !root.transient => {
+                vec![Effect::Unplaced(root.path.clone())]
+            }
+            Some(_) | None => Vec::new(),
+        }
     }
 
     fn opened(&mut self) -> Vec<Effect> {
@@ -101,25 +117,33 @@ impl WorkspaceDrive {
     /// selected but not yet shown: added when the window does not have it.
     /// Answers its index.
     #[must_use = "its effects are to be carried"]
-    pub fn keep_project(&mut self, dir: PathBuf, project: &Project) -> (usize, Vec<Effect>) {
+    pub fn keep_project(
+        &mut self,
+        dir: PathBuf,
+        project: Option<&Project>,
+    ) -> (usize, Vec<Effect>) {
         let dir = normalize_root(dir);
         if let Some(idx) = self.local_index(&dir) {
             return (idx, Vec::new());
         }
         let idx = self.workspace.add_placed(row(None, dir, project));
-        (idx, self.kept())
+        let mut fx = self.unplaced(idx, true);
+        fx.extend(self.kept());
+        (idx, fx)
     }
 
     /// [`Self::keep_project`], selecting nothing: a worktree cut for a task
     /// nobody here started must not move what the person has selected.
     #[must_use = "its effects are to be carried"]
-    pub fn keep_project_quietly(&mut self, dir: PathBuf, project: &Project) -> Vec<Effect> {
+    pub fn keep_project_quietly(&mut self, dir: PathBuf, project: Option<&Project>) -> Vec<Effect> {
         let dir = normalize_root(dir);
         if self.local_index(&dir).is_some() {
             return Vec::new();
         }
-        self.workspace.add_placed_quietly(row(None, dir, project));
-        self.kept()
+        let idx = self.workspace.add_placed_quietly(row(None, dir, project));
+        let mut fx = self.unplaced(idx, true);
+        fx.extend(self.kept());
+        fx
     }
 
     fn kept(&mut self) -> Vec<Effect> {
@@ -156,6 +180,34 @@ impl WorkspaceDrive {
         fx.push(Effect::Signal(Signal::Removed(label)));
         fx.push(Effect::Show);
         fx.extend(self.save());
+        fx
+    }
+
+    /// The row of `path` on `host`, which named no project, is of `project`:
+    /// it takes the project's facts, and the workspace file is written to
+    /// name it. A row already of a project, or a folder `project` does not
+    /// hold, changes nothing.
+    #[must_use = "its effects are to be carried"]
+    pub fn placed(
+        &mut self,
+        host: Option<&HostName>,
+        path: &Path,
+        project: &Project,
+    ) -> Vec<Effect> {
+        if project.folder(host, path).is_none() {
+            return Vec::new();
+        }
+        let Some(root) =
+            self.workspace.roots.iter_mut().find(|root| {
+                root.host.as_ref() == host && root.path == path && root.project.is_none()
+            })
+        else {
+            return Vec::new();
+        };
+        root.project = Some(project.id.clone());
+        root.told(project);
+        let mut fx = self.save();
+        fx.push(Effect::Changed);
         fx
     }
 

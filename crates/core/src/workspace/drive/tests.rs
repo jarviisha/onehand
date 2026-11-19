@@ -64,7 +64,7 @@ fn names(fx: &[Effect]) -> Vec<String> {
             Effect::EndOnHost { session, .. } => format!("EndOnHost({})", session.0),
             Effect::ListHostSessions => "ListHostSessions".into(),
             Effect::ReadConversation(id) => format!("ReadConversation({id})"),
-            Effect::Place { saved, .. } => format!("Place({})", saved.root.display()),
+            Effect::Unplaced(path) => format!("Unplaced({})", path.display()),
             Effect::Deleted(dir) => format!("Deleted({})", dir.display()),
             Effect::Signal(signal) => format!("{signal:?}"),
         })
@@ -92,7 +92,7 @@ fn armed(fx: &[Effect]) -> u64 {
             | Effect::EndOnHost { .. }
             | Effect::ListHostSessions
             | Effect::ReadConversation(_)
-            | Effect::Place { .. }
+            | Effect::Unplaced(_)
             | Effect::Signal(_) => None,
         })
         .expect("a wait armed")
@@ -118,7 +118,7 @@ fn written(fx: Vec<Effect>) -> Pending<Thing, Value> {
             | Effect::EndOnHost { .. }
             | Effect::ListHostSessions
             | Effect::ReadConversation(_)
-            | Effect::Place { .. }
+            | Effect::Unplaced(_)
             | Effect::Deleted(_)
             | Effect::Signal(_) => None,
         })
@@ -145,7 +145,7 @@ fn swept(effect: Effect) -> (u64, Vec<SweepProject>) {
         | Effect::EndOnHost { .. }
         | Effect::ListHostSessions
         | Effect::ReadConversation(_)
-        | Effect::Place { .. }
+        | Effect::Unplaced(_)
         | Effect::Deleted(_)
         | Effect::Signal(_)) => {
             panic!("not a sweep: {:?}", names(&[e]))
@@ -423,22 +423,22 @@ fn an_order_whose_write_fails_goes_back_to_the_one_saved() {
 #[test]
 fn a_folder_opened_is_selected_shown_swept_and_written() {
     let mut drive = bound();
-    let fx = drive.open_project("/b".into(), &at("/b"));
+    let fx = drive.open_project("/b".into(), Some(&at("/b")));
     assert_eq!(names(&fx), ["Show", "Resweep", "Write", "Changed"]);
     assert_eq!(drive.active_root, 1);
-    drive.open_project("/b".into(), &at("/b"));
+    drive.open_project("/b".into(), Some(&at("/b")));
     assert_eq!(drive.roots.len(), 2, "an open project is not doubled");
 }
 
 #[test]
 fn a_folder_kept_for_work_is_added_once() {
     let mut drive = bound();
-    let (idx, fx) = drive.keep_project("/wt".into(), &at("/wt"));
+    let (idx, fx) = drive.keep_project("/wt".into(), Some(&at("/wt")));
     assert_eq!(names(&fx), ["Resweep", "Write", "Changed"]);
-    let (again, fx) = drive.keep_project("/wt".into(), &at("/wt"));
+    let (again, fx) = drive.keep_project("/wt".into(), Some(&at("/wt")));
     assert_eq!((idx, fx.len()), (again, 0));
     tree(&mut drive).select_root(0);
-    drive.keep_project_quietly("/task".into(), &at("/task"));
+    drive.keep_project_quietly("/task".into(), Some(&at("/task")));
     assert_eq!(drive.active_root, 0, "nothing selected");
 }
 
@@ -469,7 +469,7 @@ fn removing_asks_only_when_it_loses_something() {
 #[test]
 fn a_removal_lands_by_host_and_path() {
     let mut drive = bound();
-    drive.open_project("/b".into(), &at("/b"));
+    drive.open_project("/b".into(), Some(&at("/b")));
     drive.add_session(Some(spec()), 1, None);
     drive.open_host_project(&at_on("box", "/b"));
     let fx = drive.remove(None, Path::new("/b"));
@@ -539,7 +539,7 @@ fn a_sweep_reads_what_it_can_and_keeps_only_the_newest_answer() {
 #[test]
 fn a_sweep_under_way_when_a_project_leaves_is_dropped() {
     let mut drive = bound();
-    drive.open_project("/b".into(), &at("/b"));
+    drive.open_project("/b".into(), Some(&at("/b")));
     let (token, _) = swept(drive.sweep(|_| false));
     drive.forget(1);
     let status = crate::gitstat::GitStatus {
@@ -588,7 +588,7 @@ fn what_goes_with_a_project_is_said_by_where_it_is() {
     drive.open_host_project(&at_on("box", "/srv"));
     let fx = drive.forget(1);
     assert_eq!(names(&fx), ["Forgot(/srv)", "Changed"]);
-    drive.open_project("/b".into(), &at("/b"));
+    drive.open_project("/b".into(), Some(&at("/b")));
     tree(&mut drive).roots[1].offload = Some(crate::workspace::Offloaded {
         host: HostName("box".into()),
         mirror: "/m".into(),
@@ -745,6 +745,7 @@ fn read(drive: &mut WorkspaceDrive, found: Option<Saved>) -> Vec<Effect> {
         found,
         agents: vec![spec()],
         uid: 9,
+        project: None,
     })
 }
 
@@ -770,16 +771,11 @@ fn a_live_conversation_is_shown_where_it_is_else_read() {
 fn a_saved_conversation_resumes_on_its_folder_kept_again() {
     let mut drive = bound();
     let fx = read(&mut drive, saved("/run", true, "agent"));
-    assert_eq!(names(&fx), ["Place(/run)"], "its folder is placed first");
-    let Some(Effect::Place {
-        saved: placed,
-        spec,
-        uid,
-    }) = fx.into_iter().next()
-    else {
-        panic!("placed");
-    };
-    let fx = drive.resume_placed(placed, spec, uid, &at("/run"));
+    assert!(
+        names(&fx).contains(&"Unplaced(/run)".to_string()),
+        "a folder of no project known is said to be placed: {:?}",
+        names(&fx)
+    );
     let idx = drive.local_index(Path::new("/run")).expect("kept again");
     assert_eq!(drive.active_root, idx);
     assert_eq!(drive.locate(9).map(|(root, _)| root), Some(idx));
@@ -881,8 +877,8 @@ fn told_a_new_name_relabels_the_projects_own_row_only() {
         offload: None,
     });
     let mut drive = bound();
-    drive.open_project("/code/a".into(), &p);
-    drive.open_project("/code/a-x".into(), &p);
+    drive.open_project("/code/a".into(), Some(&p));
+    drive.open_project("/code/a-x".into(), Some(&p));
     p.name = "Alpha".into();
     p.check = Some("make".into());
     let fx = drive.told(&p);
@@ -908,9 +904,9 @@ fn told_an_offload_drops_the_sessions_of_that_folder_only() {
         offload: None,
     });
     let mut drive = bound();
-    drive.open_project("/code/a".into(), &p);
+    drive.open_project("/code/a".into(), Some(&p));
     drive.add_session(Some(spec()), 1, None);
-    drive.open_project("/code/a-x".into(), &p);
+    drive.open_project("/code/a-x".into(), Some(&p));
     drive.add_session(Some(spec()), 2, None);
     p.worktrees[0].offload = Some(crate::workspace::Offloaded {
         host: HostName("box".into()),
@@ -925,4 +921,47 @@ fn told_an_offload_drops_the_sessions_of_that_folder_only() {
     );
     assert!(!names(&fx).contains(&"Close(1)".to_string()));
     assert!(drive.roots[2].offload.is_some());
+}
+
+#[test]
+fn a_row_of_no_project_is_placed_written_and_drawn_from_it() {
+    let mut drive = bound();
+    let mut p = at("/a");
+    p.name = "Alpha".into();
+    p.check = Some("make".into());
+    let fx = drive.placed(None, Path::new("/a"), &p);
+    assert_eq!(names(&fx), ["Write", "Changed"]);
+    assert_eq!(drive.roots[0].project.as_ref(), Some(&p.id));
+    assert_eq!(drive.roots[0].label, "Alpha");
+    assert_eq!(drive.roots[0].check.as_deref(), Some("make"));
+    assert!(
+        drive.placed(None, Path::new("/a"), &p).is_empty(),
+        "placed once"
+    );
+    assert!(
+        drive
+            .placed(None, Path::new("/a"), &at("/other"))
+            .is_empty(),
+        "a project not holding the folder places nothing"
+    );
+}
+
+#[test]
+fn a_folder_of_no_known_project_comes_in_at_once_and_is_said_unplaced() {
+    let mut drive = bound();
+    let fx = drive.open_project("/b".into(), None);
+    assert_eq!(
+        names(&fx),
+        ["Unplaced(/b)", "Show", "Resweep", "Write", "Changed"]
+    );
+    assert_eq!(drive.roots[1].project, None);
+    assert!(
+        !names(&drive.open_project("/b".into(), None)).contains(&"Unplaced(/b)".to_string()),
+        "a row already there is not placed again"
+    );
+    let (_, fx) = drive.keep_project("/c".into(), Some(&at("/c")));
+    assert!(
+        !names(&fx).iter().any(|n| n.starts_with("Unplaced")),
+        "a known project's folder"
+    );
 }
