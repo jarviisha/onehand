@@ -11,6 +11,7 @@
 //! here, with no view code anywhere near it, so it is testable headless.
 
 use crate::agent::Session;
+use crate::project::{Folder, Project, ProjectId, Projects};
 
 mod build_host;
 pub(crate) use build_host::inside_refusal;
@@ -20,6 +21,7 @@ mod migrate;
 use crate::config::{AgentSpec, PanelLayout, WorkspaceConfig};
 pub use drive::WorkspaceDrive;
 pub use migrate::migrate_storage_blocking;
+pub(crate) use migrate::OFFLOAD;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -54,6 +56,13 @@ pub struct ProjectRoot {
     /// A root is told apart by the pair, since one path can name a folder here
     /// and another there.
     pub host: Option<HostName>,
+    /// The project this folder is of; none for a worker's transient folder,
+    /// and for an entry no project could be found for.
+    pub project: Option<ProjectId>,
+    /// What the row is called: the project's name for its own folder, the
+    /// folder's name for a worktree. Like `check`, `builds` and `offload`, a
+    /// fact of the project's as it was last told ([`Self::told`]), kept here
+    /// so the window draws it without asking.
     pub label: String,
     pub sessions: Vec<Session>,
     pub active_session: usize,
@@ -121,6 +130,7 @@ impl ProjectRoot {
             label: label_for(&path),
             path,
             host: None,
+            project: None,
             sessions: Vec::new(),
             active_session: 0,
             pinned: false,
@@ -129,6 +139,38 @@ impl ProjectRoot {
             offload: None,
             builds: Vec::new(),
         }
+    }
+
+    /// A row of `project`'s `folder`, drawing the project's facts.
+    pub fn of(project: &Project, folder: Folder) -> Self {
+        let path = match folder {
+            Folder::Home => project.path.clone(),
+            Folder::Worktree(at) => project
+                .worktrees
+                .get(at)
+                .map_or_else(|| project.path.clone(), |worktree| worktree.path.clone()),
+        };
+        let mut root = Self::new(path);
+        root.host = project.host.clone();
+        root.project = Some(project.id.clone());
+        root.told(project);
+        root
+    }
+
+    /// Take `project`'s facts as this row draws them. A row whose folder the
+    /// project no longer holds keeps what it had.
+    pub(crate) fn told(&mut self, project: &Project) {
+        let Some(folder) = project.folder(self.host.as_ref(), &self.path) else {
+            return;
+        };
+        self.label = project.label_of(folder);
+        self.check = project.check.clone();
+        self.builds = project.builds.clone();
+        // Only a folder here is offloaded.
+        self.offload = project
+            .offload_of(folder)
+            .cloned()
+            .filter(|_| self.host.is_none());
     }
 
     /// The host this root's folder is on, if it is not on this machine.
@@ -238,11 +280,12 @@ pub fn storage_for(root: &Path) -> PathBuf {
     crate::config::workspaces_dir().join(stem_for(root))
 }
 
-/// Where what belongs to the project at `path` itself, and to no one
-/// workspace, is kept: what an offload keeps, among others. Apart from the
-/// workspaces' folders, so a folder there is always a workspace.
-pub(crate) fn project_dir(path: &Path) -> PathBuf {
-    crate::config::projects_in(&crate::config::config_dir()).join(stem_for(path))
+/// Where what an offload of the folder at `path` keeps goes: its manifest,
+/// what comes back, the backups taken. Kept by folder, as offload is: each
+/// folder of a project is offloaded on its own, and the offload code finds
+/// its data from the folder alone.
+pub(crate) fn offload_dir(path: &Path) -> PathBuf {
+    crate::config::offload_in(&crate::config::config_dir()).join(stem_for(path))
 }
 
 /// What a launch opens.
@@ -262,11 +305,15 @@ pub enum Launch {
 /// anywhere else: a seed whose own folder holds one is kept in the first free
 /// folder beside it (`<id>-2`, `<id>-3`, …) instead, and the one that cannot
 /// be read stays listed with its reason.
-pub fn launch_blocking(listed: &[crate::config::recents::Listed], mut seed: Workspace) -> Launch {
+pub fn launch_blocking(
+    listed: &[crate::config::recents::Listed],
+    mut seed: Workspace,
+    projects: &Projects,
+) -> Launch {
     use crate::config::{WorkspaceConfig, WorkspaceLoad};
     for listed in listed.iter().filter(|l| l.unreadable.is_none()) {
         if let WorkspaceLoad::Found(cfg) = WorkspaceConfig::load_from(&listed.dir) {
-            return Launch::Found(Workspace::from_config(cfg, listed.dir.clone()));
+            return Launch::Found(Workspace::from_config(cfg, listed.dir.clone(), projects));
         }
     }
     let base = seed.storage_dir.clone();
@@ -276,7 +323,7 @@ pub fn launch_blocking(listed: &[crate::config::recents::Listed], mut seed: Work
         match WorkspaceConfig::load_from(&seed.storage_dir) {
             WorkspaceLoad::Found(cfg) => {
                 let dir = seed.storage_dir.clone();
-                return Launch::Found(Workspace::from_config(cfg, dir));
+                return Launch::Found(Workspace::from_config(cfg, dir, projects));
             }
             WorkspaceLoad::Missing => return Launch::Seeded(seed),
             WorkspaceLoad::Unreadable(_) => {
@@ -338,7 +385,7 @@ fn slug(name: &str) -> String {
 
 /// FNV-1a, 32-bit. Not a security property — this only has to spread folder
 /// paths apart and give the same answer every launch.
-fn fnv1a(bytes: &[u8]) -> u32 {
+pub(crate) fn fnv1a(bytes: &[u8]) -> u32 {
     bytes.iter().fold(0x811c_9dc5, |hash, byte| {
         (hash ^ u32::from(*byte)).wrapping_mul(0x0100_0193)
     })
@@ -360,8 +407,9 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    /// Seed a workspace from a single project root (the CLI-arg path), kept
-    /// in the folder a workspace made from that root is kept in.
+    /// Seed a workspace from a single folder (the CLI-arg path), kept in the
+    /// folder a workspace made from that folder is kept in. Its row names no
+    /// project yet: its window places it as it opens, as any such row.
     pub fn seeded(root: impl Into<PathBuf>) -> Self {
         let root = ProjectRoot::new(root);
         Self {
@@ -378,7 +426,11 @@ impl Workspace {
     /// root paths are normalized + deduped (a hand-edited config may hold
     /// aliases) and `active_root` follows its path through the dedup, clamped
     /// in-bounds.
-    pub fn from_config(cfg: WorkspaceConfig, storage_dir: PathBuf) -> Self {
+    ///
+    /// Each entry draws its project's facts: the project its id names, else
+    /// the one holding its folder. An entry no project holds keeps the facts
+    /// it carries itself, as one an older build wrote does.
+    pub fn from_config(cfg: WorkspaceConfig, storage_dir: PathBuf, projects: &Projects) -> Self {
         // A host's folder means nothing here, so it is kept as typed; a local
         // one is normalized.
         let key = |host: Option<HostName>, path: PathBuf| match host {
@@ -395,14 +447,25 @@ impl Workspace {
             if roots.iter().any(|r| r.host == host && r.path == path) {
                 continue;
             }
-            let mut root = ProjectRoot::new(path);
-            // Only a folder here is offloaded; a hand-edited entry naming a
-            // host's folder is passed over.
-            root.offload = project.offload.filter(|_| host.is_none());
-            root.host = host;
+            let named = project
+                .id
+                .as_ref()
+                .and_then(|id| projects.get(id))
+                .and_then(|p| Some((p, p.folder(host.as_ref(), &path)?)));
+            let mut root = match named.or_else(|| projects.find(host.as_ref(), &path)) {
+                Some((p, folder)) => ProjectRoot::of(p, folder),
+                None => {
+                    let mut root = ProjectRoot::new(path);
+                    // Only a folder here is offloaded; a hand-edited entry
+                    // naming a host's folder is passed over.
+                    root.offload = project.offload.filter(|_| host.is_none());
+                    root.host = host;
+                    root.check = project.check;
+                    root.builds = project.builds;
+                    root
+                }
+            };
             root.pinned = project.pinned;
-            root.check = project.check;
-            root.builds = project.builds;
             roots.push(root);
         }
         let active_root = active_key
@@ -440,13 +503,19 @@ impl Workspace {
             active,
             projects: kept
                 .iter()
-                .map(|root| crate::config::ProjectConfig {
-                    path: root.path.clone(),
-                    host: root.host.clone(),
-                    pinned: root.pinned,
-                    check: root.check.clone(),
-                    offload: root.offload.clone().filter(|_| root.host.is_none()),
-                    builds: root.builds.clone(),
+                .map(|root| {
+                    // A project's facts are its file's; only an entry no
+                    // project holds carries its own.
+                    let own = root.project.is_none();
+                    crate::config::ProjectConfig {
+                        id: root.project.clone(),
+                        path: root.path.clone(),
+                        host: root.host.clone(),
+                        pinned: root.pinned,
+                        check: root.check.clone().filter(|_| own),
+                        offload: root.offload.clone().filter(|_| own && root.host.is_none()),
+                        builds: root.builds.clone().into_iter().filter(|_| own).collect(),
+                    }
                 })
                 .collect(),
             layout: self.layout,
@@ -601,28 +670,32 @@ impl Workspace {
     /// instead of creating a twin; a root on a host with the same path is
     /// another root, so only `(None, path)` is compared. Twins of one local folder would
     /// share terminals/layouts/editors while splitting sessions.
+    #[cfg(test)]
     pub(crate) fn add_root(&mut self, path: impl Into<PathBuf>) -> usize {
-        self.add_found(None, normalize_root(path.into()))
+        self.add_placed(ProjectRoot::new(normalize_root(path.into())))
     }
 
     /// [`Self::add_root`] for a folder on `host`. The path is kept as typed:
     /// it names nothing on this machine, so there is nothing to resolve it
     /// against. Adding one that is already a root on that host selects it.
+    #[cfg(test)]
     pub(crate) fn add_host_root(&mut self, host: HostName, path: PathBuf) -> usize {
-        self.add_found(Some(host), path)
+        let mut root = ProjectRoot::new(path);
+        root.host = Some(host);
+        self.add_placed(root)
     }
 
-    fn add_found(&mut self, host: Option<HostName>, path: PathBuf) -> usize {
+    /// Add `root`, a row built for its project, and make it active; a row of
+    /// its folder already there is selected instead. Returns its index.
+    pub(crate) fn add_placed(&mut self, root: ProjectRoot) -> usize {
         if let Some(i) = self
             .roots
             .iter()
-            .position(|r| r.host == host && r.path == path)
+            .position(|r| r.host == root.host && r.path == root.path)
         {
             self.active_root = i;
             return i;
         }
-        let mut root = ProjectRoot::new(path);
-        root.host = host;
         self.roots.push(root);
         self.active_root = self.roots.len() - 1;
         self.active_root
@@ -631,9 +704,14 @@ impl Workspace {
     /// [`Self::add_root`], **selecting nothing**: a worktree cut for a task
     /// nobody here started (a schedule's, a tool's) must not move what the
     /// person has selected, which is also what *Run on* offers first.
+    #[cfg(test)]
     pub(crate) fn add_root_quietly(&mut self, path: impl Into<PathBuf>) -> usize {
+        self.add_placed_quietly(ProjectRoot::new(normalize_root(path.into())))
+    }
+
+    pub(crate) fn add_placed_quietly(&mut self, root: ProjectRoot) -> usize {
         let selected = self.active_root;
-        let idx = self.add_root(path);
+        let idx = self.add_placed(root);
         self.active_root = selected;
         idx
     }

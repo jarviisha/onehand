@@ -229,7 +229,11 @@ impl Shell {
 
             match loaded {
                 WorkspaceLoad::Found(cfg) => {
-                    cx.update(|cx| open_or_focus(Workspace::from_config(cfg, dir), cx));
+                    cx.update(|cx| {
+                        let workspace =
+                            Workspace::from_config(cfg, dir, &Shared::global(cx).projects);
+                        open_or_focus(workspace, cx)
+                    });
                 }
                 // Gone for good: no such file. Stale, not an error the user
                 // caused, so drop it rather than nag.
@@ -303,7 +307,9 @@ async fn workspace_in(dir: &Path, cx: &mut gpui::AsyncApp) -> Result<Option<Work
         })
         .await;
     match loaded {
-        WorkspaceLoad::Found(cfg) => Ok(Some(Workspace::from_config(cfg, dir.to_path_buf()))),
+        WorkspaceLoad::Found(cfg) => Ok(Some(cx.update(|cx| {
+            Workspace::from_config(cfg, dir.to_path_buf(), &Shared::global(cx).projects)
+        }))),
         WorkspaceLoad::Missing => Ok(None),
         WorkspaceLoad::Unreadable(_) => Err(format!(
             "{} already holds a workspace config that cannot be read — nothing was changed",

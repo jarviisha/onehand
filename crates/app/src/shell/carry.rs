@@ -85,6 +85,16 @@ impl Shell {
                     self.chat.update(cx, |pane, cx| pane.list_host_sessions(cx))
                 }
                 Effect::ReadConversation(id) => self.read_conversation(id, window, cx),
+                Effect::Unplaced(path) => {
+                    let row = self
+                        .unplaced_rows()
+                        .into_iter()
+                        .find(|row| row.path == path);
+                    let (at, shell) = (window.window_handle(), cx.entity().downgrade());
+                    if let Some(row) = row {
+                        crate::projects::place_row(at, shell, row, cx);
+                    }
+                }
                 Effect::Deleted(dir) => self.carry_deleted(dir, window, cx),
                 Effect::Signal(signal) => {
                     let toast = match signal {
@@ -120,6 +130,111 @@ impl Shell {
         }
     }
 
+    /// `project` changed: this window's rows of it draw it as it now is.
+    pub(crate) fn told_project(
+        &mut self,
+        project: &onehand_core::project::Project,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let offloads = |shell: &Self| -> Vec<Option<onehand_core::workspace::Offloaded>> {
+            shell
+                .window
+                .workspace
+                .roots
+                .iter()
+                .map(|root| root.offload.clone())
+                .collect()
+        };
+        let before = offloads(self);
+        let fx = self.window.workspace.told(project);
+        self.carry_workspace(fx, window, cx);
+        // A folder of it moved to or from a host in another window: its
+        // panels here lock or unlock as the offloading window's did, and
+        // what is on screen is shown again, its sessions there closed.
+        if offloads(self) != before {
+            self.sync_offload(cx);
+            self.show_active_session(window, cx);
+        }
+        // What is drawn from the project outside the tree: a check field of
+        // another of its folders, or one a failed write put back, and the
+        // page's build hosts, which it draws from what it was last handed.
+        let check = project.check.clone().unwrap_or_default();
+        let folders: Vec<PathBuf> = self
+            .window
+            .workspace
+            .roots
+            .iter()
+            .filter(|root| root.project.as_ref() == Some(&project.id))
+            .map(|root| root.path.clone())
+            .collect();
+        for folder in &folders {
+            let Some(input) = self.check_inputs.get(folder).cloned() else {
+                continue;
+            };
+            if input.read(cx).value().trim() != check {
+                let check = check.clone();
+                input.update(cx, |input, cx| input.set_value(check, window, cx));
+            }
+        }
+        if let Some(on_screen) = self.build_root().filter(|root| folders.contains(root)) {
+            self.show_build_hosts(Some(&on_screen), cx);
+        }
+    }
+
+    /// Whether a row of this window is of project `id`.
+    pub(crate) fn holds_project(&self, id: &onehand_core::project::ProjectId) -> bool {
+        self.window
+            .workspace
+            .roots
+            .iter()
+            .any(|root| root.project.as_ref() == Some(id))
+    }
+
+    /// The rows of no project, but a worker's: what this window places as
+    /// it opens.
+    pub(crate) fn unplaced_rows(&self) -> Vec<crate::projects::Unplaced> {
+        self.window
+            .workspace
+            .roots
+            .iter()
+            .filter(|root| root.project.is_none() && !root.transient)
+            .map(|root| crate::projects::Unplaced {
+                host: root.host.clone(),
+                path: root.path.clone(),
+                check: root.check.clone(),
+                builds: root.builds.clone(),
+                offload: root.offload.clone(),
+            })
+            .collect()
+    }
+
+    /// The row of `path` on `host` is of `project`.
+    pub(crate) fn placed_row(
+        &mut self,
+        host: Option<&onehand_core::workspace::HostName>,
+        path: &std::path::Path,
+        project: &onehand_core::project::Project,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let fx = self.window.workspace.placed(host, path, project);
+        self.carry_workspace(fx, window, cx);
+    }
+
+    /// The project the row of `folder` is of, if any.
+    pub(crate) fn project_of_row(
+        &self,
+        folder: &std::path::Path,
+    ) -> Option<onehand_core::project::ProjectId> {
+        self.window
+            .workspace
+            .roots
+            .iter()
+            .find(|root| root.path == folder)
+            .and_then(|root| root.project.clone())
+    }
+
     /// Carry out `fx` where no window is in hand: a burst's wait, or a sweep
     /// and what it read, at once; from the first effect that needs the
     /// window on, the rest in order once the window can be reached, after
@@ -145,6 +260,7 @@ impl Shell {
                 | Effect::EndOnHost { .. }
                 | Effect::ListHostSessions
                 | Effect::ReadConversation(_)
+                | Effect::Unplaced(_)
                 | Effect::Deleted(_)
                 | Effect::Signal(_)) => {
                     let rest: Vec<Effect> = std::iter::once(effect).chain(fx).collect();
@@ -253,15 +369,6 @@ impl Shell {
             Value::Name(name) => self
                 .workspace_name
                 .update(cx, |input, cx| input.set_value(name, window, cx)),
-            Value::Check { path, check } => {
-                if let Some(input) = self.check_inputs.get(&path).cloned() {
-                    let text = check.unwrap_or_default();
-                    input.update(cx, |input, cx| input.set_value(text, window, cx));
-                }
-            }
-            // The page draws what it was last handed, so it is handed the
-            // hosts the drive has put back.
-            Value::Builds { path, .. } => self.show_build_hosts(Some(&path), cx),
             // Drawn from the tree, which the drive has put back.
             Value::Order(_) | Value::Pin { .. } => {}
         }

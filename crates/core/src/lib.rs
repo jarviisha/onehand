@@ -41,6 +41,7 @@ pub mod instance;
 pub mod issues;
 pub mod preflight;
 pub mod process;
+pub mod project;
 pub mod remote;
 pub mod saving;
 pub mod schedule;

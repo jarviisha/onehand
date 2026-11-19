@@ -33,10 +33,19 @@ pub struct WorkspaceConfig {
     pub layout: PanelLayout,
 }
 
-/// One project in a workspace file. Everything but `path` is left out when it
-/// holds its default, so a hand-read file says only what was chosen.
+/// One project folder in a workspace file: the project it is a folder of, by
+/// id, and the folder itself. Everything but `path` is left out when it holds
+/// its default, so a hand-read file says only what was chosen.
+///
+/// **The folder is kept beside the id for an older build**, which reads only
+/// the folder and so still opens the workspace. The project's own facts
+/// (`check`, `offload`, `builds`) live in its project file; an entry carries
+/// them only while it names no project, as one an older build wrote does.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ProjectConfig {
+    /// The project this folder is of; none for an entry no project holds yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<crate::project::ProjectId>,
     pub path: PathBuf,
     /// The host the folder lives on; none for this machine.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -110,6 +119,7 @@ impl From<Raw> for WorkspaceConfig {
                         (None, _) => None,
                     });
                 ProjectConfig {
+                    id: None,
                     pinned: raw.pinned.contains(key),
                     check: raw.checks.get(key).cloned(),
                     offload,

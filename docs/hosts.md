@@ -77,14 +77,14 @@ A project whose sessions run on this machine can run a command on a host instead
 bring back what it built. Nothing of this needs the host service: it is the person's own ssh,
 `git` and `tar`, so a build-only host does it as a host that runs sessions does.
 
-- **A project's build hosts** are kept beside its check command in the workspace's file
-  (`BuildHost`, `crates/core/src/workspace.rs`): each a `host`, its `artifacts` (paths inside the
+- **A project's build hosts** are kept beside its check command in its project file
+  (`BuildHost`, `crates/core/src/workspace.rs`; `Project::builds`, `crates/core/src/project.rs`): each a `host`, its `artifacts` (paths inside the
   project, a file or a folder) and an optional `into`, a folder in the project the artifacts land
   under, so two hosts building one project do not write over each other. A path that is absolute,
   holds `..`, is a pattern, names the project itself (`.`) or anything of git's own folder
   (`.git`) is refused (`inside_refusal`), in the form and again where a build starts, since the
   file can be written by hand. They are changed through
-  the workspace's drive, which makes the change or refuses it (`WorkspaceDrive::put_build_host`,
+  the projects' drive, which makes the change or refuses it (`ProjectsDrive::put_build_host`,
   `remove_build_host`): shown at once and put back if the write fails. A project whose sessions
   run on a host has none (`ProjectRoot::build_hosts`), though what it was given is kept for when
   it runs here again, and one host is named once.
@@ -155,8 +155,7 @@ bring back what it built. Nothing of this needs the host service: it is the pers
   - **`onehand --build <host> -- <command…>`**, from a terminal or as a check command. It is
     answered in `main` before the instance lock, so it needs no window and a running onehand
     never takes it for a folder. It finds the project the folder belongs to, its own or a
-    worktree of it, among every workspace, reading the first by name that names the host
-    (`asked_blocking`); prints the command's lines as they come; and exits with the command's
+    worktree of it, among the projects onehand keeps (`asked_blocking`); prints the command's lines as they come; and exits with the command's
     code, 1 for a refusal or a step that failed. One word after `--` is a line for the host's
     shell as written; several are joined as that shell reads words: each quoted for a POSIX
     one, and for `cmd.exe` only those that need it.

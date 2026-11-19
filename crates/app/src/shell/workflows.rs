@@ -285,6 +285,7 @@ impl Shell {
         }
         cx.notify();
         let title = launch.title().to_string();
+        let root_of_cut = root.clone();
         cx.spawn_in(window, async move |shell, cx| {
             let made = cx
                 .background_executor()
@@ -295,7 +296,12 @@ impl Shell {
             let _ = shell.update_in(cx, |shell: &mut Self, window, cx| match made {
                 Ok(cut) => {
                     shell.workflow_launcher = None;
-                    let (_, fx) = shell.window.workspace.keep_project(cut.dir.clone());
+                    let project =
+                        crate::projects::record_cut(&root_of_cut, &cut.dir, &cut.branch, cx);
+                    let (_, fx) = shell
+                        .window
+                        .workspace
+                        .keep_project(cut.dir.clone(), project.as_ref());
                     shell.carry_workspace(fx, window, cx);
                     let launch = launch.on_worktree(cut);
                     shell.start_launch(launch, window, cx);
@@ -393,7 +399,8 @@ impl Shell {
                 spec.and_then(|spec| self.open_off_screen(dir, spec, Vec::new(), cx))
             }
             false => {
-                let (idx, fx) = self.window.workspace.keep_project(dir);
+                let project = crate::projects::of(&dir, cx);
+                let (idx, fx) = self.window.workspace.keep_project(dir, project.as_ref());
                 self.carry_workspace(fx, window, cx);
                 self.select_root(idx, window, cx);
                 let agent = start.run.setup.agent.clone().map(SharedString::from);

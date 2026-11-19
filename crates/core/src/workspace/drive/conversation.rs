@@ -11,6 +11,7 @@
 
 use super::{Effect, Signal, StartsOn, WorkspaceDrive};
 use crate::config::AgentSpec;
+use crate::project::Project;
 use std::path::PathBuf;
 
 /// Where a session asked for is live: in this window, in window `W`, or
@@ -61,6 +62,7 @@ impl WorkspaceDrive {
         found: Option<Saved>,
         agents: &[AgentSpec],
         uid: u64,
+        project: Option<&Project>,
     ) -> Vec<Effect> {
         let Some(saved) = found else {
             return vec![Effect::Signal(Signal::ConversationNotSaved)];
@@ -70,7 +72,7 @@ impl WorkspaceDrive {
         };
         let (idx, mut fx) = match self.local_index(&saved.root) {
             Some(idx) => (idx, Vec::new()),
-            None if saved.there => self.keep_project(saved.root),
+            None if saved.there => self.keep_project(saved.root, project),
             None => return vec![Effect::Signal(Signal::FolderGone(saved.root))],
         };
         fx.extend(self.select_project(idx));

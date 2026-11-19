@@ -363,6 +363,12 @@ pub(crate) fn projects_in(root: &Path) -> PathBuf {
     root.join("projects")
 }
 
+/// Where the root `root` keeps what each offloaded folder's offload keeps,
+/// one folder each.
+pub(crate) fn offload_in(root: &Path) -> PathBuf {
+    root.join("offload")
+}
+
 /// `$ONEHAND_CONFIG_DIR`, when it names a root.
 fn own_root() -> Option<PathBuf> {
     std::env::var_os("ONEHAND_CONFIG_DIR")

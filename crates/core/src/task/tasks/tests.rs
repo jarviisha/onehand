@@ -716,7 +716,9 @@ fn a_start_off_screen_keeps_its_project_then_its_task_and_asks() {
     assert!(tasks.tasks().is_empty(), "nothing kept before its project");
     let mut workspace =
         crate::workspace::WorkspaceDrive::new(crate::workspace::Workspace::seeded("/other"));
-    let (fx, _) = link::keep(&mut tasks, Some(&mut workspace), start);
+    let project =
+        crate::project::Project::new(crate::project::ProjectId::mint(1), None, "/p".into());
+    let (fx, _) = link::keep(&mut tasks, Some(&mut workspace), Some(&project), start);
     assert!(
         workspace
             .roots
@@ -746,7 +748,7 @@ fn a_start_off_screen_whose_window_went_is_refused() {
         launch: Box::new(launch(crate::workflow::Place::Checkout)),
         window: WINDOW,
     };
-    let (fx, _) = link::keep(&mut tasks, None, start);
+    let (fx, _) = link::keep(&mut tasks, None, None, start);
     assert_eq!(
         told(&fx),
         Some(&Placed::Refused("the window closed".into()))

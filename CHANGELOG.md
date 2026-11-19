@@ -31,6 +31,13 @@ minor bump may break any of them.
 - The workspace file keeps one `[[projects]]` record per project, holding its pin, its check and
   its offload. A file in the old shape still reads, and is rewritten in the
   new one at its next save.
+- onehand keeps every project itself, in `projects/<id>/project.toml` in the config directory,
+  and a workspace's file names each folder's project. At the first start of this build every
+  workspace's projects are brought in: the folders of one repository become one project, the
+  others its worktrees, and one folder in two workspaces is one project. Each workspace file is
+  copied to `onehand-workspace.toml.before-projects` before its first rewrite. A project's check
+  command and build hosts move into its project file, and an offloaded folder's data moves from
+  `projects/` to `offload/`. An older build still opens the workspaces, but sees none of this.
 
 ### Workflows and tasks
 

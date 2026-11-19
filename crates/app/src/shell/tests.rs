@@ -41,6 +41,15 @@ fn status(branch: &str) -> onehand_core::gitstat::GitStatus {
     }
 }
 
+/// A project of `path` on `host`.
+fn on_host(host: &str, path: &str) -> onehand_core::project::Project {
+    onehand_core::project::Project::new(
+        onehand_core::project::ProjectId::mint(7),
+        Some(onehand_core::workspace::HostName(host.into())),
+        path.into(),
+    )
+}
+
 /// A folder on a host names nothing on this machine, so neither the agent
 /// started ahead of a session nor the pages ever reach for it.
 #[test]
@@ -48,7 +57,7 @@ fn a_host_root_is_never_given_local_work() {
     use onehand_core::workspace::{HostName, ProjectRoot, Workspace};
     use std::path::PathBuf;
     let mut drive = onehand_core::workspace::WorkspaceDrive::new(Workspace::seeded("/tmp"));
-    let _ = drive.open_host_project(HostName("vps".into()), PathBuf::from("/srv/app"));
+    let _ = drive.open_host_project(&on_host("vps", "/srv/app"));
     let local = PathBuf::from("/tmp");
     // Arriving warms an agent on the local folder only.
     assert_eq!(drive.roots[0].local_path(), Some(local.as_path()));
@@ -76,7 +85,7 @@ fn the_overview_keeps_a_host_project_and_the_other_pages_do_not() {
     // A status for the local folder, which the host's of the same path must
     // never show.
     let mut drive = onehand_core::workspace::WorkspaceDrive::new(ws);
-    let _ = drive.open_host_project(HostName("vps".into()), PathBuf::from("/srv/app"));
+    let _ = drive.open_host_project(&on_host("vps", "/srv/app"));
     swept(
         &mut drive,
         vec![(PathBuf::from("/srv/app"), status("main"))],
@@ -96,11 +105,11 @@ fn the_overview_keeps_a_host_project_and_the_other_pages_do_not() {
 /// attach, as a folder here does; one on a local folder's path shows none.
 #[test]
 fn a_host_root_reads_its_git_status_unless_a_local_root_has_its_path() {
-    use onehand_core::workspace::{HostName, Workspace};
+    use onehand_core::workspace::Workspace;
     use std::path::PathBuf;
     let mut drive = onehand_core::workspace::WorkspaceDrive::new(Workspace::seeded("/srv/app"));
-    let _ = drive.open_host_project(HostName("vps".into()), PathBuf::from("/srv/app"));
-    let _ = drive.open_host_project(HostName("vps".into()), PathBuf::from("/srv/other"));
+    let _ = drive.open_host_project(&on_host("vps", "/srv/app"));
+    let _ = drive.open_host_project(&on_host("vps", "/srv/other"));
     swept(
         &mut drive,
         vec![
@@ -140,7 +149,7 @@ fn a_watched_host_session_is_the_workspaces_as_its_host_says_it(cx: &mut gpui::T
             let _ = shell
                 .window
                 .workspace
-                .open_host_project(host.clone(), "/srv/app".into());
+                .open_host_project(&on_host(&host.0, "/srv/app"));
             let (added, _) = shell.window.workspace.add_session(Some(spec), 41, None);
             added.expect("added")
         })

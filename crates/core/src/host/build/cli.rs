@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 
 use super::shell::Shell;
 use super::{build_blocking, Built, Job};
-use crate::config::{HostOs, HostSpec, WorkspaceConfig, WorkspaceLoad};
-use crate::workspace::{BuildHost, Workspace};
+use crate::config::{HostOs, HostSpec};
+use crate::workspace::BuildHost;
 use crate::worktree::worker::repo_of_blocking;
 
 /// What a build was asked of, from a folder.
@@ -68,9 +68,8 @@ pub fn entry_for(
 }
 
 /// Find the project `cwd` belongs to, as its own folder or a worktree of it,
-/// among the workspaces kept under the config root `root`, and its entry for
-/// `host`. A folder that is a project of several workspaces is read from the
-/// first, by name, that names the host.
+/// among the projects kept under the config root `root`, and its entry for
+/// `host`.
 pub(crate) fn asked_blocking(
     root: &Path,
     declared: &[HostSpec],
@@ -84,36 +83,18 @@ pub(crate) fn asked_blocking(
         Some(name) if name == ".git" => repo.common.parent().unwrap_or(&repo.common),
         _ => &repo.common,
     };
-    let mut kept = crate::config::recents::list_blocking(&crate::config::workspaces_in(root));
-    kept.sort_by(|a, b| (&a.name, &a.dir).cmp(&(&b.name, &b.dir)));
-    // Every workspace's entry for this folder, as (the project's name, its build hosts).
-    let mut found: Vec<(String, Vec<BuildHost>)> = Vec::new();
-    for listed in kept {
-        let cfg = match WorkspaceConfig::load_from(&listed.dir) {
-            WorkspaceLoad::Found(cfg) => cfg,
-            // One that cannot be read holds no project to build.
-            WorkspaceLoad::Missing | WorkspaceLoad::Unreadable(_) => continue,
-        };
-        let workspace = Workspace::from_config(cfg, listed.dir);
-        found.extend(
-            workspace
-                .roots
-                .into_iter()
-                .filter(|project| {
-                    project
-                        .local_path()
-                        .is_some_and(|path| path == repo.top || path == main)
-                })
-                .map(|project| (project.label.clone(), project.build_hosts().to_vec())),
-        );
-    }
-    let Some((project, _)) = found.first().cloned() else {
+    let (projects, _) = crate::project::file::load_all_blocking(&crate::config::projects_in(root));
+    let is_here = |path: &Path| path == repo.top || path == main;
+    let Some(found) = projects.iter().find(|project| {
+        project.host.is_none()
+            && (is_here(&project.path) || project.worktrees.iter().any(|w| is_here(&w.path)))
+    }) else {
         return Err(format!(
-            "{} is not a project of any workspace",
+            "{} is not a project onehand keeps",
             repo.top.display()
         ));
     };
-    let builds: Vec<BuildHost> = found.into_iter().flat_map(|(_, builds)| builds).collect();
+    let (project, builds) = (found.name.clone(), found.builds.clone());
     let (entry, os) = entry_for(&project, &builds, host, declared)?;
     let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
     let within = cwd

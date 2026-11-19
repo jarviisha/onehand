@@ -75,7 +75,7 @@ fn an_external_workspace_is_copied_and_left_in_place() {
     old_workspace(&old, "Foxaiwork");
     old_state(&config, &[&old], &[]);
     let before = tree(&old);
-    assert!(migrate_in(&config).is_empty());
+    assert!(migrate_in(&config, 1).is_empty());
     let new = config.join("workspaces").join(stem_for(&old));
     assert!(new.join(WorkspaceConfig::FILE).is_file());
     assert!(new.join("issues").join("p-1.json").is_file());
@@ -88,7 +88,7 @@ fn the_old_name_fills_an_empty_one() {
     let old = ext.join("ws01");
     old_workspace(&old, "");
     old_state(&config, &[&old], &[(&old, "Kept name")]);
-    migrate_in(&config);
+    migrate_in(&config, 1);
     let new = config.join("workspaces").join(stem_for(&old));
     let cfg = loaded(&new);
     assert_eq!(cfg.name, "Kept name");
@@ -110,7 +110,7 @@ fn task_files_follow_the_copy() {
     fs::write(tasks.join("a.json"), &moved).unwrap();
     let other = "{\"source\":{\"tracker\":{\"file\":\"/elsewhere/issues/q.json\"}}}";
     fs::write(tasks.join("b.json"), other).unwrap();
-    migrate_in(&config);
+    migrate_in(&config, 1);
     let new_file = config
         .join("workspaces")
         .join(stem_for(&old))
@@ -126,14 +126,14 @@ fn task_files_follow_the_copy() {
 }
 
 #[test]
-fn offload_data_moves_to_the_project_dir() {
+fn offload_data_moves_to_the_offload_dir() {
     let (config, _) = scratch("offload");
     let kept = config.join("workspaces").join("x-1");
     fs::create_dir_all(kept.join("coming-back")).unwrap();
     fs::write(kept.join("offload.json"), "{}").unwrap();
     fs::write(kept.join("coming-back").join("f"), "f").unwrap();
-    migrate_in(&config);
-    let project = config.join("projects").join("x-1");
+    migrate_in(&config, 1);
+    let project = config.join("offload").join("x-1");
     assert_eq!(
         fs::read_to_string(project.join("offload.json")).unwrap(),
         "{}"
@@ -156,7 +156,7 @@ fn a_half_copy_is_redone() {
         .join(format!(".{}.migrating", stem_for(&old)));
     fs::create_dir_all(&staging).unwrap();
     fs::write(staging.join("junk"), "x").unwrap();
-    migrate_in(&config);
+    migrate_in(&config, 1);
     let new = config.join("workspaces").join(stem_for(&old));
     assert!(new.join(WorkspaceConfig::FILE).is_file());
     assert!(!new.join("junk").exists());
@@ -169,9 +169,9 @@ fn a_second_run_changes_nothing() {
     let old = ext.join("ws02");
     old_workspace(&old, "W");
     old_state(&config, &[&old], &[]);
-    migrate_in(&config);
+    migrate_in(&config, 1);
     let once = tree(&config);
-    assert!(migrate_in(&config).is_empty());
+    assert!(migrate_in(&config, 1).is_empty());
     assert_eq!(tree(&config), once);
 }
 
@@ -182,7 +182,7 @@ fn state_keeps_the_old_order_as_ids() {
     old_workspace(&a, "A");
     old_workspace(&b, "B");
     old_state(&config, &[&b, &a], &[]);
-    migrate_in(&config);
+    migrate_in(&config, 1);
     let st = state(&config);
     assert_eq!(st.workspaces, [stem_for(&b), stem_for(&a)]);
     assert!(st.recent_workspaces.is_empty() && st.workspace_dir.is_none() && st.names.is_empty());
@@ -194,7 +194,7 @@ fn a_workspace_already_kept_here_keeps_its_folder() {
     let here = config.join("workspaces").join("p-1");
     old_workspace(&here, "P");
     old_state(&config, &[&here], &[]);
-    migrate_in(&config);
+    migrate_in(&config, 1);
     assert_eq!(state(&config).workspaces, ["p-1"]);
 }
 
@@ -206,7 +206,7 @@ fn a_copy_that_cannot_land_keeps_the_old_state() {
     old_state(&config, &[&old], &[]);
     // A file where the workspaces' folder goes: no copy can land.
     fs::write(config.join("workspaces"), "").unwrap();
-    assert!(!migrate_in(&config).is_empty());
+    assert!(!migrate_in(&config, 1).is_empty());
     assert_eq!(state(&config).recent_workspaces, [old]);
 }
 
@@ -221,7 +221,7 @@ fn a_folder_taken_by_another_workspace_is_copied_beside_it() {
     let taken = config.join("workspaces").join(stem_for(&old));
     old_workspace(&taken, "ws02");
     old_state(&config, &[&old], &[]);
-    migrate_in(&config);
+    migrate_in(&config, 1);
     let beside = config
         .join("workspaces")
         .join(format!("{}-2", stem_for(&old)));
@@ -234,7 +234,7 @@ fn a_folder_taken_by_another_workspace_is_copied_beside_it() {
     );
     // Run again with the old fields kept, as after a failure elsewhere.
     old_state(&config, &[&old], &[]);
-    migrate_in(&config);
+    migrate_in(&config, 1);
     assert!(!config
         .join("workspaces")
         .join(format!("{}-3", stem_for(&old)))
@@ -249,7 +249,7 @@ fn a_missing_old_folder_is_kept_for_a_later_launch() {
     let (here, away) = (ext.join("here"), ext.join("unmounted").join("ws"));
     old_workspace(&here, "Here");
     old_state(&config, &[&here, &away], &[(&away, "Away")]);
-    migrate_in(&config);
+    migrate_in(&config, 1);
     let st = state(&config);
     assert_eq!(st.recent_workspaces, std::slice::from_ref(&away));
     assert_eq!(st.names.get(&away).map(String::as_str), Some("Away"));
@@ -266,11 +266,11 @@ fn a_landed_folder_leaves_the_old_state_though_another_failed() {
     fs::create_dir_all(&bad).unwrap();
     fs::write(bad.join(WorkspaceConfig::FILE), "name = ").unwrap();
     old_state(&config, &[&good, &bad], &[]);
-    migrate_in(&config);
+    migrate_in(&config, 1);
     assert_eq!(state(&config).recent_workspaces, std::slice::from_ref(&bad));
     let copy = config.join("workspaces").join(stem_for(&good));
     fs::remove_dir_all(&copy).unwrap();
-    migrate_in(&config);
+    migrate_in(&config, 1);
     assert!(!copy.exists(), "a deleted copy is not brought back");
 }
 
@@ -282,13 +282,13 @@ fn tasks_left_behind_by_an_earlier_run_are_repointed() {
     let old = ext.join("ws02");
     old_workspace(&old, "W");
     old_state(&config, &[&old], &[]);
-    migrate_in(&config);
+    migrate_in(&config, 1);
     old_state(&config, &[&old], &[]);
     let tasks = config.join("tasks");
     fs::create_dir_all(&tasks).unwrap();
     let old_file = old.join("issues").join("p-1.json").display().to_string();
     fs::write(tasks.join("a.json"), format!("{{\"file\":{old_file:?}}}")).unwrap();
-    migrate_in(&config);
+    migrate_in(&config, 1);
     let a: serde_json::Value =
         serde_json::from_slice(&fs::read(tasks.join("a.json")).unwrap()).unwrap();
     assert!(
@@ -309,7 +309,7 @@ fn a_link_in_an_old_folder_is_not_followed() {
     old_workspace(&old, "W");
     std::os::unix::fs::symlink(&old, old.join("issues").join("loop")).unwrap();
     old_state(&config, &[&old], &[]);
-    migrate_in(&config);
+    migrate_in(&config, 1);
     let new = config.join("workspaces").join(stem_for(&old));
     assert!(new.join("issues").join("p-1.json").is_file());
     assert!(!new.join("issues").join("loop").exists());
@@ -323,12 +323,12 @@ fn a_folder_brought_in_later_goes_after_the_opened_ones() {
     let (here, away) = (ext.join("here"), ext.join("away"));
     old_workspace(&here, "Here");
     old_state(&config, &[&here, &away], &[]);
-    migrate_in(&config);
+    migrate_in(&config, 1);
     let mut st = state(&config);
     st.workspaces.insert(0, "opened-since".into());
     st.save_to(&config.join("state.toml")).unwrap();
     old_workspace(&away, "Away");
-    migrate_in(&config);
+    migrate_in(&config, 1);
     assert_eq!(
         state(&config).workspaces,
         ["opened-since".to_string(), stem_for(&here), stem_for(&away)]
@@ -343,13 +343,13 @@ fn a_folder_missing_at_every_launch_is_given_up_on() {
     let away = ext.join("gone");
     old_state(&config, &[&away], &[]);
     for _ in 1..MISSING_LAUNCHES {
-        migrate_in(&config);
+        migrate_in(&config, 1);
         assert_eq!(
             state(&config).recent_workspaces,
             std::slice::from_ref(&away)
         );
     }
-    let said = migrate_in(&config);
+    let said = migrate_in(&config, 1);
     assert!(
         said.iter().any(|line| line.contains("given up")),
         "{said:?}"

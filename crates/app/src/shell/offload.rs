@@ -3,7 +3,10 @@
 
 use super::Shell;
 use crate::offload;
-use gpui::{AppContext as _, Context, Entity, Focusable as _, Subscription, Task, Window};
+use gpui::{
+    AppContext as _, BorrowAppContext as _, Context, Entity, Focusable as _, Subscription, Task,
+    Window,
+};
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputEvent, InputState};
 use onehand_core::config::HostSpec;
@@ -56,7 +59,19 @@ impl Shell {
     }
 
     /// How many of `root`'s sessions here are mid-turn.
-    pub(crate) fn busy_here(&self, root: &std::path::Path, cx: &gpui::App) -> usize {
+    /// How many sessions on the folder at `root` have a turn under way, in
+    /// every window holding it: offloading the folder moves the sessions of
+    /// each of them.
+    pub(crate) fn busy_here(&self, root: &std::path::Path, cx: &Context<Self>) -> usize {
+        let elsewhere: usize = crate::windows::others(cx.entity_id(), cx)
+            .iter()
+            .map(|(_, other)| other.read(cx).busy_in_window(root, cx))
+            .sum();
+        self.busy_in_window(root, cx) + elsewhere
+    }
+
+    /// [`Self::busy_here`] in this window alone.
+    fn busy_in_window(&self, root: &std::path::Path, cx: &gpui::App) -> usize {
         let Some(root) = self
             .window
             .workspace
@@ -250,10 +265,9 @@ impl Shell {
             mirror: mirror.clone(),
             branch,
         };
-        let Some(fx) = self.window.workspace.set_offload(&path, Some(on)) else {
+        if !self.set_offload(&path, Some(on), window, cx) {
             return;
-        };
-        self.carry_workspace(fx, window, cx);
+        }
         match kept {
             Kept::Mirror(state) => offload::track(cx, path, host, Some(state)),
             Kept::Branch(branch) => offload::track_branch(cx, path, host, branch),
@@ -261,6 +275,30 @@ impl Shell {
         self.show_active_session(window, cx);
         self.sync_offload(cx);
         cx.notify();
+    }
+
+    /// Say where the sessions of the folder at `path` run: on `on`, or here
+    /// with none. The folder's project keeps it; this window takes it at once,
+    /// closing the sessions that ran where it no longer does, and every other
+    /// window holding the project after this update. False when no project
+    /// holds the folder, and nothing moved.
+    fn set_offload(
+        &mut self,
+        path: &std::path::Path,
+        on: Option<Offloaded>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(fx) = cx.update_global::<crate::state::Shared, _>(|shared, _| {
+            shared.projects.set_offload(None, path, on)
+        }) else {
+            return false;
+        };
+        crate::projects::carry(fx, cx);
+        if let Some(project) = crate::projects::of(path, cx) {
+            self.told_project(&project, window, cx);
+        }
+        true
     }
 
     /// Run root `idx`'s new sessions here again, while this machine holds its
@@ -290,12 +328,7 @@ impl Shell {
             window.push_notification(crate::toast::warning(why), cx);
             return;
         }
-        let fx = self
-            .window
-            .workspace
-            .set_offload(&path, None)
-            .unwrap_or_default();
-        self.carry_workspace(fx, window, cx);
+        self.set_offload(&path, None, window, cx);
         offload::forget(cx, &path);
         self.show_active_session(window, cx);
         self.sync_offload(cx);

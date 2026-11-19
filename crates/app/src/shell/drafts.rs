@@ -3,6 +3,7 @@ use super::storage::pick_folder;
 use gpui::{App, Context, Entity, Focusable as _, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::input::InputState;
+use onehand_core::project::{MadeBy, Worktree};
 use onehand_core::workspace::{self};
 use onehand_core::worktree;
 use std::path::{Path, PathBuf};
@@ -461,13 +462,19 @@ impl Shell {
                 let (root, branch, top) = (root.clone(), branch.clone(), top.clone());
                 cx.background_executor()
                     .spawn(async move {
+                        // The branch it is cut from, read before git moves
+                        // anything: what the project records it came from.
+                        let from = worktree::current_branch_blocking(&root).ok();
                         worktree::add_blocking(&root, &branch, &dir).map(|made| {
                             // What git made is a checkout of the whole
                             // repository. What is adopted is the part of it the
                             // user actually split -- the same folder, in the new
                             // tree.
-                            let Some(top) = top else { return made };
-                            worktree::subtree_or(made, &top, &root)
+                            let made = match top {
+                                Some(top) => worktree::subtree_or(made, &top, &root),
+                                None => made,
+                            };
+                            (std::fs::canonicalize(&made).unwrap_or(made), from)
                         })
                     })
                     .await
@@ -475,7 +482,7 @@ impl Shell {
             shell
                 .update_in(cx, |shell: &mut Self, window, cx| {
                     match made {
-                        Ok(dir) => {
+                        Ok((dir, from)) => {
                             // Only the draft this was started from. It is the
                             // one on screen in every ordinary case -- the form
                             // refuses to close while it is working -- and
@@ -485,8 +492,7 @@ impl Shell {
                                 .worktree_draft
                                 .take_if(|draft| draft.root == root && draft.busy);
                             let label = workspace::label_for(&dir);
-                            let fx = shell.window.workspace.open_project(dir);
-                            shell.carry_workspace(fx, window, cx);
+                            shell.open_split(&root, dir, branch.clone(), from, window, cx);
                             window.push_notification(
                                 crate::toast::info(format!("Added {label}, on {branch}")),
                                 cx,
@@ -503,6 +509,30 @@ impl Shell {
                 .ok();
         })
         .detach();
+    }
+
+    /// Open `dir`, a worktree just split off the row at `root` on `branch`,
+    /// as a worktree of that row's project, recorded there; one split off a
+    /// row of no project comes in to be placed, as any folder does.
+    fn open_split(
+        &mut self,
+        root: &std::path::Path,
+        dir: PathBuf,
+        branch: String,
+        from: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let worktree = Worktree {
+            path: dir.clone(),
+            branch,
+            from,
+            made_by: MadeBy::Split,
+            offload: None,
+        };
+        let project = crate::projects::record(root, worktree, cx);
+        let fx = self.window.workspace.open_project(dir, project.as_ref());
+        self.carry_workspace(fx, window, cx);
     }
 
     /// Open the rename field on a conversation.
