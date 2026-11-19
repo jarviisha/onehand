@@ -23,8 +23,8 @@ use super::file::{load_all_blocking, save_to, FILE};
 use super::place::repo_key_blocking;
 use super::{Folder, MadeBy, Project, ProjectId, Projects, Worktree};
 use crate::config::{
-    move_into, offload_in, projects_in, workspaces_in, ProjectConfig, WorkspaceConfig,
-    WorkspaceLoad,
+    move_into, offload_in, projects_in, workspaces_in, write_atomic, ProjectConfig,
+    WorkspaceConfig, WorkspaceLoad,
 };
 use crate::workspace::{stem_for, HostName, OFFLOAD};
 use crate::worktree::current_branch_blocking;
@@ -165,7 +165,110 @@ pub(crate) fn migrate_projects_in(config: &Path, seed: u64) -> Vec<String> {
         }
     }
     merge_issues(config, &projects, &mut problems);
+    stamp_conversations(config, &projects, &mut problems);
     problems
+}
+
+/// Give each conversation an earlier build kept the project it belongs to,
+/// in its `meta.json`, every other field kept as it was. Its folder is
+/// looked for among the projects' folders; then, when it is on disk, through
+/// git, as a checkout of a project's repository at that project's place in
+/// it; then, gone, through the tasks that ran in it, to the project they were
+/// started from. Only the id is written: history records no worktree. One
+/// nothing resolves is left as it is.
+///
+/// ponytail: every `meta.json` is read at every launch and git asked for the
+/// unstamped ones; if that ever shows at start, keep a mark of the last run
+/// and pass over what it saw.
+fn stamp_conversations(config: &Path, projects: &Projects, problems: &mut Vec<String>) {
+    let Ok(entries) = fs::read_dir(config.join("conversations")) else {
+        return;
+    };
+    // Asked once, and only when a conversation needs it.
+    let mut keys: Option<Vec<(ProjectId, (PathBuf, PathBuf))>> = None;
+    let mut runs: Option<Vec<(PathBuf, PathBuf)>> = None;
+    for dir in entries.flatten().map(|entry| entry.path()) {
+        let file = dir.join("meta.json");
+        let Ok(bytes) = fs::read(&file) else {
+            continue;
+        };
+        let mut meta: serde_json::Value = match serde_json::from_slice(&bytes) {
+            Ok(meta) => meta,
+            Err(why) => {
+                problems.push(format!("{}: {why}", file.display()));
+                continue;
+            }
+        };
+        if meta.get("project").is_some() {
+            continue;
+        }
+        let Some(root) = meta
+            .get("root")
+            .and_then(|root| root.as_str())
+            .map(PathBuf::from)
+        else {
+            continue;
+        };
+        let found = projects
+            .find(None, &root)
+            .map(|(project, _)| project.id.clone())
+            .or_else(|| {
+                let (common, sub, _) = repo_key_blocking(&root)?;
+                let keys = keys.get_or_insert_with(|| repo_keys(projects));
+                keys.iter()
+                    .find(|(_, key)| key.0 == common && key.1 == sub)
+                    .map(|(id, _)| id.clone())
+            })
+            .or_else(|| {
+                let runs = runs.get_or_insert_with(|| task_places(config));
+                let (_, repo) = runs.iter().find(|(dir, _)| *dir == root)?;
+                projects
+                    .find(None, repo)
+                    .map(|(project, _)| project.id.clone())
+            });
+        let Some(id) = found else {
+            continue;
+        };
+        meta["project"] = serde_json::Value::String(id.as_str().to_string());
+        let written = serde_json::to_string_pretty(&meta)
+            .map_err(|why| why.to_string())
+            .and_then(|text| write_atomic(&file, &text).map_err(|why| why.to_string()));
+        if let Err(why) = written {
+            problems.push(format!("{}: {why}", file.display()));
+        }
+    }
+}
+
+/// Each local project's repository key, for the projects whose folder git
+/// answers for.
+fn repo_keys(projects: &Projects) -> Vec<(ProjectId, (PathBuf, PathBuf))> {
+    projects
+        .iter()
+        .filter(|project| project.host.is_none())
+        .filter_map(|project| {
+            let (common, sub, _) = repo_key_blocking(&project.path)?;
+            Some((project.id.clone(), (common, sub)))
+        })
+        .collect()
+}
+
+/// Where each task kept under `config` ran (`setup.dir`) and the project it
+/// was started from (`setup.repo`), as its file says.
+fn task_places(config: &Path) -> Vec<(PathBuf, PathBuf)> {
+    let Ok(entries) = fs::read_dir(config.join("tasks")) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+        .filter_map(|path| {
+            let task: serde_json::Value = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
+            let setup = task.get("setup")?;
+            let at = |field: &str| setup.get(field)?.as_str().map(PathBuf::from);
+            Some((at("dir")?, at("repo")?))
+        })
+        .collect()
 }
 
 /// Take into each project's issues file what an earlier build kept of them

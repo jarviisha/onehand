@@ -401,3 +401,84 @@ fn a_project_whose_file_is_not_written_takes_no_issues() {
         .join("issues.json")
         .exists());
 }
+
+// Conversations.
+
+/// A conversation `sid` kept under `root`, ran in `folder`, as an earlier
+/// build wrote it: no project.
+fn conversation(root: &Path, sid: &str, folder: &Path) -> PathBuf {
+    let dir = root.join("conversations").join(sid);
+    fs::create_dir_all(&dir).unwrap();
+    let meta = serde_json::json!({
+        "format": 2,
+        "session_id": sid,
+        "root": folder.display().to_string(),
+        "agent": "Claude",
+        "created": 1,
+        "updated": 2,
+        "items": 3,
+        "title": null,
+        "preview": "hello",
+        "prefs": {},
+    });
+    let file = dir.join("meta.json");
+    fs::write(&file, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+    file
+}
+
+fn read_json(file: &Path) -> serde_json::Value {
+    serde_json::from_slice(&fs::read(file).unwrap()).unwrap()
+}
+
+#[test]
+fn a_conversation_of_a_projects_folder_is_stamped() {
+    let (root, (main, _)) = (root("conv-home"), repo_with_worktree("migrate-conv-home"));
+    workspace(&root, "w1", vec![entry(&main)]);
+    let meta = conversation(&root, "s1", &main);
+    let before = read_json(&meta);
+    migrate_projects_in(&root, 1);
+    let p = &projects(&root)[0];
+    let after = read_json(&meta);
+    assert_eq!(after["project"], p.id.as_str());
+    for (field, value) in before.as_object().unwrap() {
+        assert_eq!(&after[field], value, "{field} kept as it was");
+    }
+}
+
+#[test]
+fn a_conversation_of_an_unrecorded_worktree_is_stamped_through_git() {
+    let (root, (main, linked)) = (root("conv-git"), repo_with_worktree("migrate-conv-git"));
+    workspace(&root, "w1", vec![entry(&main)]);
+    let meta = conversation(&root, "s1", &linked);
+    migrate_projects_in(&root, 1);
+    let p = &projects(&root)[0];
+    assert!(p.worktrees.is_empty(), "history records no worktree");
+    assert_eq!(read_json(&meta)["project"], p.id.as_str());
+}
+
+#[test]
+fn a_conversation_of_a_removed_run_worktree_is_stamped_through_its_task() {
+    let (root, (main, _)) = (root("conv-task"), repo_with_worktree("migrate-conv-task"));
+    workspace(&root, "w1", vec![entry(&main)]);
+    let gone = root.join("gone-run-worktree");
+    let meta = conversation(&root, "s1", &gone);
+    let tasks = root.join("tasks");
+    fs::create_dir_all(&tasks).unwrap();
+    let task = serde_json::json!({
+        "id": "t1",
+        "setup": { "repo": main.display().to_string(), "dir": gone.display().to_string() },
+    });
+    fs::write(tasks.join("t1.json"), task.to_string()).unwrap();
+    migrate_projects_in(&root, 1);
+    let p = &projects(&root)[0];
+    assert_eq!(read_json(&meta)["project"], p.id.as_str());
+}
+
+#[test]
+fn a_conversation_nothing_resolves_is_left_as_it_is() {
+    let root = root("conv-none");
+    let meta = conversation(&root, "s1", Path::new("/nonexistent/onehand-conv"));
+    let before = fs::read(&meta).unwrap();
+    migrate_projects_in(&root, 1);
+    assert_eq!(fs::read(&meta).unwrap(), before);
+}
