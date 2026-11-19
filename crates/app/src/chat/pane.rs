@@ -306,6 +306,9 @@ pub struct ChatPane {
     /// frame so non-typing changes (initial mount, a permission arriving, an
     /// attachment disappearing) also update the list's bottom padding.
     composer_h: std::rc::Rc<std::cell::Cell<gpui::Pixels>>,
+    /// How tall the cards pinned over the composer stood last frame: the
+    /// room the transcript's end is given past the composer while they show.
+    cards_h: std::rc::Rc<std::cell::Cell<gpui::Pixels>>,
     /// Whether the last frame this pane drew had a composer in it.
     ///
     /// Recorded by the renderer rather than worked out again by whoever asks,
@@ -403,6 +406,7 @@ impl ChatPane {
                 shown: true,
                 git: None,
                 composer_h: Default::default(),
+                cards_h: Default::default(),
                 composer_drawn: false,
                 turn_began: None,
                 ticker: None,

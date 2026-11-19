@@ -435,7 +435,9 @@ impl ChatPane {
         // The clip is already taken off inside `tail_room`, which is the only
         // place that knows whether the number it returned was measured from the
         // clipped viewport or is a constant that never heard of it.
-        let tail_pad = tail_room;
+        // And past the cards pinned over the composer, while any show, so
+        // the rows under them can be scrolled clear.
+        let tail_pad = tail_room + self.cards_h.get();
         // How much room a composer popup has to open into: the well, less what
         // the composer and its rest already stand in.
         //
