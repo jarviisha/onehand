@@ -14,8 +14,9 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::config::drive::HostProbe;
-use onehand_core::config::{HostOs, HostSpec, listed, removal_refusal};
+use onehand_core::config::{HostSpec, add_refusal, listed, removal_refusal};
 use onehand_core::host::drive::HostState;
+use onehand_core::host::probe::Tool;
 use onehand_core::host::sshconf;
 use onehand_core::workspace::HostName;
 use onehand_ui::{Refuses as _, Short as _, Tall as _};
@@ -69,18 +70,6 @@ impl HostDraft {
     }
 }
 
-/// Why *Add* will not take what the field holds.
-pub(crate) fn add_refusal(typed: &str, declared: &[HostSpec]) -> Option<String> {
-    let name = typed.trim();
-    if name.is_empty() {
-        return Some("Name the host".into());
-    }
-    declared
-        .iter()
-        .any(|host| host.name.0 == name)
-        .then(|| format!("{name} is already declared"))
-}
-
 /// What a host's row says under its name.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct HostLines {
@@ -109,9 +98,9 @@ pub(crate) fn host_lines(
             let tools: Vec<String> = found
                 .tools
                 .iter()
-                .map(|(name, said)| match version(name, said) {
-                    Some(version) => format!("{name} {version}"),
-                    None => name.clone(),
+                .map(|tool| match version(tool) {
+                    Some(version) => format!("{} {version}", tool.name),
+                    None => tool.name.clone(),
                 })
                 .collect();
             format!("{system} · {}", tools.join(", "))
@@ -136,28 +125,31 @@ pub(crate) fn host_lines(
     };
     HostLines {
         about,
-        // A host no session runs on builds, and only a Linux one does yet.
-        note: (!spec.runs_sessions()).then(|| match spec.os {
-            HostOs::Linux => "Builds only".into(),
-            HostOs::Windows | HostOs::Other(_) => "Builds only; nothing builds on it yet".into(),
+        // A host no session runs on builds, unless its system is one this
+        // build does not know.
+        note: (!spec.runs_sessions()).then(|| match spec.builds() {
+            true => "Builds only".into(),
+            false => "Builds only; nothing builds on it yet".into(),
         }),
         warning: unmet.or(attach),
         users: (!users.is_empty()).then(|| format!("Used by {}", users.join(", "))),
     }
 }
 
-/// The version to say of a toolchain: the first word of what it said that
-/// starts with a digit. The two programs every build needs are said by name
+/// The version to say of a program a host has: the first word of what it
+/// said that starts with a digit. The two every build needs are said by name
 /// alone, since which version of them a host has decides nothing.
-fn version<'a>(name: &str, said: &'a str) -> Option<&'a str> {
-    if matches!(name, "git" | "tar") {
+fn version(tool: &Tool) -> Option<&str> {
+    if tool.needed() {
         return None;
     }
-    said.split_whitespace()
+    tool.said
+        .split_whitespace()
         .find(|word| word.starts_with(|c: char| c.is_ascii_digit()))
 }
 
-/// Every host the open windows' projects name, with those projects' names.
+/// Every host the open windows' projects use, to run on or to build on, with
+/// those projects' names.
 pub(crate) fn host_users(cx: &App) -> Vec<(HostName, Vec<String>)> {
     let mut all: Vec<(HostName, Vec<String>)> = Vec::new();
     for (_, shell) in crate::windows::live(cx) {
@@ -280,7 +272,10 @@ fn add_section(handle: &Entity<Shell>, declared: &[HostSpec], cx: &App) -> AnyEl
         .adding
         .as_ref()
         .and_then(|host| Some((host, settings.host_probe(host)?)));
-    let running = matches!(adding, Some((_, HostProbe::Running)));
+    let running = match adding {
+        Some((_, HostProbe::Running)) => true,
+        Some((_, HostProbe::Found(_) | HostProbe::Failed(_))) | None => false,
+    };
     let said = adding.and_then(|(host, probe)| match probe {
         HostProbe::Running => Some((format!("Checking {host}…"), cx.theme().muted_foreground)),
         HostProbe::Failed(why) => Some((

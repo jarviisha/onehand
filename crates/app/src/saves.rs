@@ -10,7 +10,7 @@ use crate::state::Shared;
 use gpui::{App, BorrowAppContext as _, Window};
 use gpui_component::WindowExt as _;
 use onehand_core::config::AppConfig;
-use onehand_core::config::drive::{self, Effect, Input, Signal, Value};
+use onehand_core::config::drive::{self, Edit, Effect, Input, Signal, Value};
 use std::rc::Rc;
 
 /// What puts one setting's value back on screen.
@@ -89,11 +89,7 @@ pub(crate) fn carry_settings(fx: Vec<Effect>, window: &mut Window, cx: &mut App)
             }
             Effect::Show(Value::Agents | Value::Hosts) => {}
             Effect::Write { pending, edit } => {
-                let path = Shared::global(cx).config_path.clone();
-                let write = edit.clone();
-                let written = Shared::global(cx)
-                    .writer
-                    .write(move || AppConfig::update_in_place(&path, |cfg| write.apply(cfg)));
+                let written = write_edit(&edit, cx);
                 window
                     .spawn(cx, async move |cx| {
                         let result = written.await;
@@ -194,15 +190,35 @@ fn probe_host(host: onehand_core::workspace::HostName, cx: &mut App) {
             let fx = cx.update_global::<Shared, _>(|shared, _| {
                 shared.settings.handle(Input::HostProbed { host, found })
             });
-            match crate::windows::front(cx) {
-                Some((window, _)) => {
-                    let _ = window.update(cx, |_, window, cx| carry_settings(fx, window, cx));
-                }
-                None => write_unseen(fx, cx),
+            // Carried in the window in front, where a failure can be said;
+            // with none, or one that went as this landed, written all the same.
+            let mut fx = Some(fx);
+            if let Some((window, _)) = crate::windows::front(cx) {
+                let _ = window.update(cx, |_, window, cx| {
+                    if let Some(fx) = fx.take() {
+                        carry_settings(fx, window, cx);
+                    }
+                });
+            }
+            if let Some(fx) = fx {
+                write_unseen(fx, cx);
             }
         });
     })
     .detach();
+}
+
+/// Write `edit` into the config file, after every write before it: how it
+/// went, once it has.
+fn write_edit(
+    edit: &Edit,
+    cx: &App,
+) -> impl std::future::Future<Output = Result<(), String>> + use<> {
+    let path = Shared::global(cx).config_path.clone();
+    let write = edit.clone();
+    Shared::global(cx)
+        .writer
+        .write(move || AppConfig::update_in_place(&path, |cfg| write.apply(cfg)))
 }
 
 /// Carry out the writes among `fx` with no window at hand, so a host probed
@@ -221,11 +237,7 @@ fn write_unseen(fx: Vec<Effect>, cx: &mut App) {
             | Effect::Changed
             | Effect::Signal(_) => continue,
         };
-        let path = Shared::global(cx).config_path.clone();
-        let write = edit.clone();
-        let written = Shared::global(cx)
-            .writer
-            .write(move || AppConfig::update_in_place(&path, |cfg| write.apply(cfg)));
+        let written = write_edit(&edit, cx);
         cx.spawn(async move |cx| {
             let result = written.await;
             cx.update(|cx| {

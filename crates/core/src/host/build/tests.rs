@@ -86,7 +86,8 @@ fn build(
     let job = Job {
         top,
         within: Path::new(within),
-        host,
+        entry: host,
+        os: crate::config::HostOs::Linux,
         command,
     };
     let built = build_in(
@@ -112,7 +113,10 @@ fn quoted_survives_spaces_quotes_and_dollars() {
     ] {
         let out = Command::new("sh")
             .arg("-c")
-            .arg(format!("printf %s {}", quoted(text)))
+            .arg(format!(
+                "printf %s {}",
+                shell::Shell::Posix.word(text).expect("any text")
+            ))
             .output()
             .expect("sh runs");
         assert_eq!(String::from_utf8_lossy(&out.stdout), text);
@@ -120,10 +124,26 @@ fn quoted_survives_spaces_quotes_and_dollars() {
 }
 
 #[test]
+fn the_laptops_id_is_kept_to_safe_letters_in_the_folders_name() {
+    let dir = host_dir("a b&c|d", Path::new("/work/proj"));
+    assert!(dir.starts_with(".onehand-build/a_b_c_d/proj-"), "{dir}");
+}
+
+#[test]
+fn what_a_host_said_of_a_program_it_lacks_is_kept_whole() {
+    let two = b"'git' is not recognized as an internal or external command,\r\noperable program or batch file.\r\n";
+    assert_eq!(
+        said(two),
+        "'git' is not recognized as an internal or external command, operable program or batch file."
+    );
+    assert_eq!(said(b"warning: x\nfatal: no\n"), "fatal: no");
+}
+
+#[test]
 fn the_folder_on_the_host_is_named_safely_and_by_the_laptop() {
-    let dir = remote_dir("lap-1", Path::new("/work/my proj's"));
+    let dir = host_dir("lap-1", Path::new("/work/my proj's"));
     assert!(dir.starts_with(".onehand-build/lap-1/my_proj_s-"), "{dir}");
-    assert_ne!(dir, remote_dir("lap-1", Path::new("/other/my proj's")));
+    assert_ne!(dir, host_dir("lap-1", Path::new("/other/my proj's")));
 }
 
 #[test]
@@ -421,7 +441,8 @@ fn a_stopped_build_ends_and_says_no_exit() {
         let job = Job {
             top: &top,
             within: Path::new(""),
-            host: &host,
+            entry: &host,
+            os: crate::config::HostOs::Linux,
             command: "sleep 30",
         };
         build_in(&job, &home.0, "laptop", &mut |_| {}, &cancel)
@@ -471,7 +492,6 @@ mod cli {
             asked_blocking(&root.0, &[], &top.join("crates/app"), "build01").expect("found");
         assert_eq!(asked.top, top);
         assert_eq!(asked.within, PathBuf::from("crates/app"));
-        assert_eq!(asked.project, "proj");
         assert_eq!(asked.entry.host, HostName("build01".into()));
     }
 
@@ -495,7 +515,6 @@ mod cli {
         let asked = asked_blocking(&root.0, &[], &tree, "build01").expect("found");
         assert_eq!(asked.top, tree);
         assert_eq!(asked.within, PathBuf::new());
-        assert_eq!(asked.project, "proj");
     }
 
     #[test]
@@ -525,15 +544,22 @@ mod cli {
             refused(&[], &top, "other"),
             "proj does not build on other; it builds on build01, win"
         );
+        let other = [HostSpec {
+            name: HostName("win".into()),
+            os: HostOs::Other("plan9".into()),
+            arch: "x86_64".into(),
+        }];
+        assert_eq!(
+            refused(&other, &top, "win"),
+            "win runs plan9; nothing builds on it yet"
+        );
         let windows = [HostSpec {
             name: HostName("win".into()),
             os: HostOs::Windows,
             arch: "AMD64".into(),
         }];
-        assert_eq!(
-            refused(&windows, &top, "win"),
-            "win runs Windows; nothing builds on a Windows host yet"
-        );
+        let asked = asked_blocking(&root.0, &windows, &top, "win").expect("a Windows host builds");
+        assert_eq!(asked.os, HostOs::Windows);
     }
 
     #[test]
@@ -551,19 +577,19 @@ mod cli {
         let words =
             |words: &[&str]| -> Vec<String> { words.iter().map(|w| w.to_string()).collect() };
         assert_eq!(
-            command_line(&words(&["cargo test && ls"])).as_deref(),
+            command_line(&words(&["cargo test && ls"]), &HostOs::Linux).as_deref(),
             Ok("cargo test && ls")
         );
         assert_eq!(
-            command_line(&words(&["echo", "a b", "it's"])).as_deref(),
+            command_line(&words(&["echo", "a b", "it's"]), &HostOs::Linux).as_deref(),
             Ok(r"'echo' 'a b' 'it'\''s'")
         );
         assert_eq!(
-            command_line(&[]),
+            command_line(&[], &HostOs::Linux),
             Err("Give the command after --".to_string())
         );
         assert_eq!(
-            command_line(&words(&["  "])),
+            command_line(&words(&["  "]), &HostOs::Linux),
             Err("Give the command after --".to_string())
         );
     }
@@ -585,7 +611,7 @@ mod cli {
                 &[command.to_string()],
                 &mut out,
                 &mut err,
-                |job, line, cancel| build_in(job, &home.0, "laptop", line, cancel),
+                |job, line| build_in(job, &home.0, "laptop", line, &AtomicBool::new(false)),
             );
             (
                 code,
@@ -624,6 +650,23 @@ mod cli {
     }
 
     #[test]
+    fn several_words_for_a_windows_host_are_joined_for_cmd() {
+        let words: Vec<String> = ["dotnet", "build", "my app.sln"]
+            .iter()
+            .map(|w| w.to_string())
+            .collect();
+        assert_eq!(
+            command_line(&words, &HostOs::Windows).as_deref(),
+            Ok("dotnet build \"my app.sln\"")
+        );
+        // One word is the person's own line, for whichever shell.
+        assert_eq!(
+            command_line(&["dotnet build && dir".to_string()], &HostOs::Windows).as_deref(),
+            Ok("dotnet build && dir")
+        );
+    }
+
+    #[test]
     fn a_refusal_is_said_and_exits_one() {
         let (mut out, mut err) = (Vec::new(), Vec::new());
         let code = run_with(
@@ -631,7 +674,7 @@ mod cli {
             &["true".to_string()],
             &mut out,
             &mut err,
-            |_, _, _| panic!("never built"),
+            |_, _| panic!("never built"),
         );
         assert_eq!(
             (code, String::from_utf8(err).unwrap()),
@@ -696,7 +739,7 @@ fn only_the_paths_named_are_unpacked_whatever_the_host_sends() {
 #[test]
 fn a_script_reaches_a_host_as_one_word_for_sh_and_ssh_gives_up_on_a_dead_host() {
     let addr = HostName("me@build01".into()).addr();
-    let cmd = on_host(&addr, "cd 'a b' && echo $HOME");
+    let cmd = on_host(&addr, shell::Shell::Posix, "cd 'a b' && echo $HOME");
     let args: Vec<String> = cmd
         .get_args()
         .map(|a| a.to_string_lossy().into_owned())
@@ -766,7 +809,7 @@ fn a_projects_entry_for_a_host_is_found_or_refused_in_words() {
     let builds = [on_local(&["a"], None)];
     assert_eq!(
         super::cli::entry_for("proj", &builds, "local", &[]),
-        Ok(builds[0].clone())
+        Ok((builds[0].clone(), HostOs::Linux))
     );
     assert_eq!(
         super::cli::entry_for("proj", &[], "local", &[]),
@@ -776,6 +819,7 @@ fn a_projects_entry_for_a_host_is_found_or_refused_in_words() {
         super::cli::entry_for("proj", &builds, "other", &[]),
         Err("proj does not build on other; it builds on local".to_string())
     );
+    // A Windows host builds, and is asked in its own shell's words.
     let windows = [HostSpec {
         name: HostName("local".into()),
         os: HostOs::Windows,
@@ -783,6 +827,253 @@ fn a_projects_entry_for_a_host_is_found_or_refused_in_words() {
     }];
     assert_eq!(
         super::cli::entry_for("proj", &builds, "local", &windows),
-        Err("local runs Windows; nothing builds on a Windows host yet".to_string())
+        Ok((builds[0].clone(), HostOs::Windows))
     );
+    // A system this build does not know is still refused.
+    let other = [HostSpec {
+        name: HostName("local".into()),
+        os: HostOs::Other("plan9".into()),
+        arch: "x86_64".into(),
+    }];
+    assert_eq!(
+        super::cli::entry_for("proj", &builds, "local", &other),
+        Err("local runs plan9; nothing builds on it yet".to_string())
+    );
+}
+
+mod shells {
+    use super::super::shell::Shell;
+    use crate::config::HostOs;
+    use std::path::{Path, PathBuf};
+
+    const SHA: &str = "2ab98d7259af09c62a806ff487818d931abf3b7e";
+    const DIR: &str = ".onehand-build/lap/my_proj-abc";
+
+    #[test]
+    fn a_windows_host_is_told_in_cmds_words_and_every_other_in_posix() {
+        assert_eq!(Shell::of(&HostOs::Windows), Shell::Cmd);
+        assert_eq!(Shell::of(&HostOs::Linux), Shell::Posix);
+        assert_eq!(Shell::of(&HostOs::Other("darwin".into())), Shell::Posix);
+    }
+
+    #[test]
+    fn cmd_words_are_double_quoted() {
+        assert_eq!(
+            Shell::Cmd.word("out/made file.txt").as_deref(),
+            Ok("\"out/made file.txt\"")
+        );
+    }
+
+    #[test]
+    fn cmd_refuses_a_percent_or_a_quote() {
+        for text in ["100%/out", "a\"b"] {
+            assert_eq!(
+                Shell::Cmd.word(text),
+                Err(format!(
+                    "{text} cannot be built on a Windows host: its name holds % or \""
+                ))
+            );
+        }
+        // And so does every line built from such a word.
+        assert!(Shell::Cmd.run(DIR, SHA, Path::new("50%"), "dir").is_err());
+        assert!(Shell::Cmd.send(DIR, &[PathBuf::from("a\"b")]).is_err());
+        assert_eq!(Shell::Posix.word("100%").as_deref(), Ok("'100%'"));
+    }
+
+    #[test]
+    fn cmd_init_makes_the_repository_and_keeps_the_code_as_it_is_here() {
+        assert_eq!(
+            Shell::Cmd.init(DIR).as_deref(),
+            Ok("(where git >nul 2>nul || (echo git>&2 & exit 4)) && (where tar >nul 2>nul || (echo tar>&2 & exit 4)) && git init -q \".onehand-build/lap/my_proj-abc\" && git -C \".onehand-build/lap/my_proj-abc\" config core.autocrlf false && git -C \".onehand-build/lap/my_proj-abc\" config core.longpaths true")
+        );
+    }
+
+    #[test]
+    fn cmd_run_is_the_line_checked_by_hand() {
+        assert_eq!(
+            Shell::Cmd.run(DIR, SHA, Path::new("sub dir"), "dotnet build && dir").as_deref(),
+            Ok("cd /d \".onehand-build/lap/my_proj-abc\" && git checkout -q -f --detach 2ab98d7259af09c62a806ff487818d931abf3b7e && cd \"sub dir\" && echo __ONEHAND_BUILD__ && cmd /d /s /c ^\"dotnet build ^&^& dir^\" 2>&1")
+        );
+        let top = Shell::Cmd
+            .run(DIR, SHA, Path::new(""), "dir")
+            .expect("a line");
+        assert!(!top.contains("cd \"\""), "{top}");
+    }
+
+    /// The line is read twice, by the `cmd.exe` ssh starts and by the one
+    /// that runs the command: every character the first would act on is
+    /// escaped, so the second is handed the person's line as they wrote it.
+    #[test]
+    fn a_cmd_command_reaches_its_own_shell_as_written() {
+        let line = Shell::Cmd
+            .run(
+                DIR,
+                SHA,
+                Path::new(""),
+                r#"findstr "a|b" f.txt & echo (x) > o^ut"#,
+            )
+            .expect("a line");
+        assert!(
+            line.ends_with(
+                r#"cmd /d /s /c ^"findstr ^"a^|b^" f.txt ^& echo ^(x^) ^> o^^ut^" 2>&1"#
+            ),
+            "{line}"
+        );
+    }
+
+    #[test]
+    fn cmd_refuses_a_line_break_in_a_word() {
+        for text in ["a\nb", "a\rb", "a\u{0}b"] {
+            assert_eq!(
+                Shell::Cmd.word(text),
+                Err(format!(
+                    "{} cannot be built on a Windows host: its name holds a line break",
+                    text.escape_debug()
+                ))
+            );
+        }
+    }
+
+    #[test]
+    fn cmd_send_checks_then_tars() {
+        let paths = [PathBuf::from("out/made file.txt"), PathBuf::from("out/dir")];
+        assert_eq!(
+            Shell::Cmd.send(DIR, &paths).as_deref(),
+            Ok("cd /d \".onehand-build/lap/my_proj-abc\" && (for %p in (\"out/made file.txt\" \"out/dir\") do @if not exist %p (echo %~p>&2 & exit 3)) && tar -cf - -- \"out/made file.txt\" \"out/dir\"")
+        );
+    }
+
+    #[test]
+    fn cmd_goes_over_ssh_as_it_is_and_posix_through_sh() {
+        assert_eq!(Shell::Cmd.over_ssh("cd /d \"a b\""), "cd /d \"a b\"");
+        assert_eq!(Shell::Posix.over_ssh("cd 'a b'"), r"sh -c 'cd '\''a b'\'''");
+    }
+
+    /// The program that was not there is read from what the shell said of
+    /// it, since the command's first word may be `cd`, a variable, or a tool
+    /// that ran another; only when that cannot be read is it the first word.
+    #[test]
+    fn a_program_that_is_not_there_is_named_from_what_the_shell_said() {
+        let lines = |said: &[&str]| -> Vec<String> { said.iter().map(|l| l.to_string()).collect() };
+        let posix =
+            |said: &[&str], command: &str| Shell::Posix.not_found(Some(127), &lines(said), command);
+        assert_eq!(
+            posix(
+                &["/bin/bash: line 1: cargo: command not found"],
+                "cd sub && cargo build"
+            )
+            .as_deref(),
+            Some("cargo")
+        );
+        assert_eq!(
+            posix(&["sh: 1: nosuchtool: not found"], "FOO=1 nosuchtool").as_deref(),
+            Some("nosuchtool")
+        );
+        assert_eq!(
+            posix(&["zsh:1: command not found: nosuchtool"], "x").as_deref(),
+            Some("nosuchtool")
+        );
+        // Said in no words this knows: the command's first word, unquoted.
+        assert_eq!(
+            posix(&["something else"], "'mytool' '--v'").as_deref(),
+            Some("mytool")
+        );
+        assert_eq!(
+            Shell::Posix.not_found(Some(1), &lines(&["x: not found"]), "x"),
+            None
+        );
+
+        let sentence = [
+            "'cargo' is not recognized as an internal or external command,",
+            "operable program or batch file.",
+        ];
+        assert_eq!(
+            Shell::Cmd
+                .not_found(Some(1), &lines(&sentence), "cd sub && cargo build")
+                .as_deref(),
+            Some("cargo")
+        );
+        assert_eq!(
+            Shell::Cmd.not_found(
+                Some(1),
+                &lines(&["error CS1002: ; expected"]),
+                "dotnet build"
+            ),
+            None
+        );
+        assert_eq!(Shell::Cmd.not_found(Some(0), &lines(&sentence), "x"), None);
+    }
+
+    /// A host with no git or no tar is refused at the first step, before
+    /// any code is sent, naming what it lacks.
+    #[test]
+    fn a_host_without_what_a_build_needs_is_refused_naming_it() {
+        use super::super::needs_refusal;
+        use crate::workspace::HostName;
+        let host = HostName("build01".into());
+        assert_eq!(
+            needs_refusal(&host, Some(4), b" git tar"),
+            Some("build01 has no git or tar; a build needs both".to_string())
+        );
+        assert_eq!(
+            needs_refusal(&host, Some(4), b"tar \r\n"),
+            Some("build01 has no tar; a build needs git and tar".to_string())
+        );
+        assert_eq!(needs_refusal(&host, Some(1), b"git"), None);
+    }
+
+    #[test]
+    fn several_words_are_joined_for_each_shell() {
+        let words: Vec<String> = ["dotnet", "build", "my app.sln", "-c", "Release", "a&b"]
+            .iter()
+            .map(|w| w.to_string())
+            .collect();
+        assert_eq!(
+            Shell::Cmd.join(&words).as_deref(),
+            Ok("dotnet build \"my app.sln\" -c Release \"a&b\"")
+        );
+        assert_eq!(
+            Shell::Posix.join(&words).as_deref(),
+            Ok("'dotnet' 'build' 'my app.sln' '-c' 'Release' 'a&b'")
+        );
+        // A quoted word ending in a backslash would read as an escaped quote
+        // to the program it is handed to: the backslash is doubled.
+        let folder = ["dir".to_string(), r"C:\my out\".to_string()];
+        assert_eq!(
+            Shell::Cmd.join(&folder).as_deref(),
+            Ok(r#"dir "C:\my out\\""#)
+        );
+        // A word holding a quote cannot be joined for cmd.exe.
+        let quoted = ["echo".to_string(), "say \"hi\"".to_string()];
+        assert_eq!(
+            Shell::Cmd.join(&quoted),
+            Err(
+                "say \"hi\" holds a quote; give the whole command as one word after --".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn posix_scripts_are_what_they_were() {
+        assert_eq!(
+            Shell::Posix.init(DIR).as_deref(),
+            Ok(
+                r#"m=; for t in git tar; do command -v $t >/dev/null 2>&1 || m="$m $t"; done; test -z "$m" || { printf %s "$m" >&2; exit 4; }; mkdir -p '.onehand-build/lap/my_proj-abc' && git -C '.onehand-build/lap/my_proj-abc' init -q"#
+            )
+        );
+        assert_eq!(
+            Shell::Posix
+                .run(DIR, SHA, Path::new("sub dir"), "it's")
+                .as_deref(),
+            Ok(
+                r#"cd '.onehand-build/lap/my_proj-abc' && git checkout -q -f --detach 2ab98d7259af09c62a806ff487818d931abf3b7e && cd 'sub dir' && echo __ONEHAND_BUILD__ && exec "${SHELL:-/bin/sh}" -lc 'it'\''s' 2>&1"#
+            )
+        );
+        assert_eq!(
+            Shell::Posix.send(DIR, &[PathBuf::from("a b")]).as_deref(),
+            Ok(
+                r#"cd '.onehand-build/lap/my_proj-abc' && for p in 'a b'; do test -e "$p" || { printf %s "$p" >&2; exit 3; }; done && tar -cf - -- 'a b'"#
+            )
+        );
+    }
 }

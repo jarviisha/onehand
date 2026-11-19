@@ -507,8 +507,9 @@ danger ink, asking before it closes the window and removes the workspace with th
 The Hosts page lists each declared host, at most 50 and then *N more not shown*: its name; under
 it its system (*Linux x86_64*) and, once checked, what the check found, the two programs a build
 needs by name and each toolchain with its version (*git, tar, cargo 1.99.1*), or *Checking…* while
-one runs; then, in the muted ink, *Builds only* on a Linux host that runs no sessions, and *Builds only;
-nothing builds on it yet* on any other; then, in the warning ink, what is wrong: why its check failed, *git is not installed*,
+one runs; then, in the muted ink, *Builds only* on a host that runs no sessions, a Windows one or a Linux
+one of another architecture, and *Builds only; nothing builds on it yet* on a system this build
+does not know; then, in the warning ink, what is wrong: why its check failed, *git is not installed*,
 or for a host sessions run on the rail's own *Not connected to <host>* or *<host> was attached
 from another machine*; and last *Used by <projects>*. Each row ends with *Check*, and a declared
 one with *Remove…* in the danger ink, which asks *Remove <host>?* and refuses, saying which, while

@@ -552,10 +552,62 @@ impl WorkspaceDrive {
         fx
     }
 
-    /// Replace the build hosts of the project at `path`, a folder here: shown
-    /// at once, written now, and put back alone if its write fails.
-    /// Unchanged, nothing happens.
-    pub fn set_builds(&mut self, path: &std::path::Path, builds: Vec<BuildHost>) -> Vec<Effect> {
+    /// Make `entry` one of the build hosts of the project at `path`, a folder
+    /// here: in place of the one at `replacing`, or added at the end. Refused,
+    /// in words, for a project whose sessions run on a host, which builds
+    /// there already, and for a host the project already builds on. Shown at
+    /// once, written now, and put back alone if its write fails; unchanged,
+    /// nothing happens.
+    pub fn put_build_host(
+        &mut self,
+        path: &std::path::Path,
+        entry: BuildHost,
+        replacing: Option<usize>,
+    ) -> Result<Vec<Effect>, String> {
+        let Some(root) = local_mut(&mut self.workspace, path) else {
+            return Ok(Vec::new());
+        };
+        if !root.runs_here() {
+            return Err(format!(
+                "{} runs its sessions on a host; it builds there already",
+                root.label
+            ));
+        }
+        let taken = root
+            .builds
+            .iter()
+            .enumerate()
+            .any(|(at, held)| Some(at) != replacing && held.host == entry.host);
+        if taken {
+            return Err(format!("{} already builds on {}", root.label, entry.host));
+        }
+        let mut builds = root.builds.clone();
+        match replacing.and_then(|at| builds.get_mut(at)) {
+            Some(held) => *held = entry,
+            None => builds.push(entry),
+        }
+        Ok(self.set_builds(path, builds))
+    }
+
+    /// Stop the project at `path` building on `entry`: named by what it is,
+    /// not by its place, which may have moved since it was shown. One that
+    /// is gone already changes nothing.
+    #[must_use = "its effects are to be carried"]
+    pub fn remove_build_host(&mut self, path: &std::path::Path, entry: &BuildHost) -> Vec<Effect> {
+        let Some(root) = local_mut(&mut self.workspace, path) else {
+            return Vec::new();
+        };
+        let builds = root
+            .builds
+            .iter()
+            .filter(|held| *held != entry)
+            .cloned()
+            .collect();
+        self.set_builds(path, builds)
+    }
+
+    /// Replace the project's build hosts with `builds`, already checked.
+    fn set_builds(&mut self, path: &std::path::Path, builds: Vec<BuildHost>) -> Vec<Effect> {
         let Some(root) = local_mut(&mut self.workspace, path) else {
             return Vec::new();
         };
@@ -575,34 +627,6 @@ impl WorkspaceDrive {
         );
         fx.push(Effect::Changed);
         fx
-    }
-
-    /// Why `entry` cannot be one of the build hosts of the project at
-    /// `path`: its sessions do not run here, so it builds where they run, or
-    /// it already builds on that host. `replacing` is the entry being edited,
-    /// which may keep its host.
-    pub fn build_host_refusal(
-        &self,
-        path: &std::path::Path,
-        entry: &BuildHost,
-        replacing: Option<usize>,
-    ) -> Option<String> {
-        let root = self
-            .workspace
-            .roots
-            .iter()
-            .find(|root| root.local_path() == Some(path))?;
-        if !root.runs_here() {
-            return Some(format!(
-                "{} runs its sessions on a host; it builds there already",
-                root.label
-            ));
-        }
-        root.builds
-            .iter()
-            .enumerate()
-            .any(|(at, held)| Some(at) != replacing && held.host == entry.host)
-            .then(|| format!("{} already builds on {}", root.label, entry.host))
     }
 
     /// Name the workspace `name`, written once the typing stops; a name

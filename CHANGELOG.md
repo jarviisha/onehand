@@ -78,8 +78,9 @@ minor bump may break any of them.
   and what each brings back; `onehand --build <host> -- <command>` sends the folder as it
   stands, runs the command there with its output coming back as it prints, and brings the named
   paths back when it exits 0. A session's agent has the same as the tool `build_on_host`. It
-  needs only `git`, `tar` and the toolchain on the host, and nothing of onehand's. A Windows
-  host does not build yet.
+  needs only `git`, `tar` and the toolchain on the host, and nothing of onehand's.
+- A project builds on a Windows host too, through its `cmd.exe`: the same flag, tool and page,
+  with the command a `cmd.exe` line.
 - Putting the offload form away no longer stops a send of the code under way: it runs to its end,
   and what went is kept for the next offload.
 

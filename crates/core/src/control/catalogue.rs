@@ -248,9 +248,10 @@ fn catalogue() -> Vec<Tool> {
              command runs there, and when it exits 0 the paths the project names come back. \
              Answers once the command ends, with its exit code, what came back and the last \
              lines it printed; nothing else can be asked of onehand meanwhile. list_projects \
-             says which hosts a project builds on. Working in a worktree of your own, run \
-             `onehand --build <host> -- <command>` from your shell there instead: this builds \
-             the project's own folder",
+             says which hosts a project builds on. For a build longer than you can wait on one \
+             call, or working in a worktree of your own, run `onehand --build <host> -- \
+             <command>` from your shell instead: it prints as it goes, and this builds the \
+             project's own folder",
             schema(
                 json!({
                     "project": text("A project of the window; this session's when left out"),

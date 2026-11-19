@@ -2,10 +2,11 @@
 //! the host, listed under *Folder*.
 
 use super::HostProjectDraft;
-use crate::dialogs::{browse_refusal, browse_rows, builds_only};
+use crate::dialogs::{browse_refusal, browse_rows};
 use crate::hosts;
 use crate::shell::Shell;
 use gpui::{Context, Window};
+use onehand_core::config::builds_only;
 use onehand_core::host::client::HostConn;
 use onehand_core::tree::TreeEntry;
 use onehand_core::workspace::HostName;

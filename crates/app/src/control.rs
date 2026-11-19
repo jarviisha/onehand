@@ -380,7 +380,8 @@ fn perform_now(
                 .map_or_else(|| top.display().to_string(), |(name, _)| name.clone());
             let builds = shell.read(cx).builds_of(&top);
             let declared = &Shared::global(cx).settings.hosts;
-            let entry = onehand_core::host::build::cli::entry_for(&name, &builds, &host, declared)?;
+            let (entry, os) =
+                onehand_core::host::build::cli::entry_for(&name, &builds, &host, declared)?;
             // Answered when the command ends, off the UI loop: a build is
             // minutes of another machine's work.
             let answer = answer.take();
@@ -393,13 +394,13 @@ fn perform_now(
                         let job = Job {
                             top: &top,
                             within: Path::new(""),
-                            host: &entry,
+                            entry: &entry,
+                            os,
                             command: &command,
                         };
-                        // Never stopped from here: the tools have no way to
-                        // call one off, and the build's own limit ends it.
-                        let stop = std::sync::atomic::AtomicBool::new(false);
-                        build_blocking(&job, &mut |line| tail.push(line), &stop)
+                        // The tools have no way to call a build off: its own
+                        // limit ends it.
+                        build_blocking(&job, &mut |line| tail.push(line))
                             .map(|built| answer(&built, &tail))
                     })
                     .await;

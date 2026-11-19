@@ -152,11 +152,11 @@ fn a_native_built_in_agent_says_what_runs() {
 }
 
 mod hosts {
-    use super::super::hosts::{add_refusal, host_lines};
+    use super::super::hosts::host_lines;
     use onehand_core::config::drive::HostProbe;
     use onehand_core::config::{HostOs, HostSpec};
     use onehand_core::host::drive::HostState;
-    use onehand_core::host::probe::Probed;
+    use onehand_core::host::probe::{Probed, Tool};
     use onehand_core::workspace::HostName;
 
     fn linux() -> HostSpec {
@@ -177,7 +177,10 @@ mod hosts {
             arch: "x86_64".into(),
             tools: tools
                 .iter()
-                .map(|(name, said)| (name.to_string(), said.to_string()))
+                .map(|(name, said)| Tool {
+                    name: name.to_string(),
+                    said: said.to_string(),
+                })
                 .collect(),
         })
     }
@@ -245,9 +248,20 @@ mod hosts {
     }
 
     #[test]
-    fn a_host_that_runs_no_sessions_says_it_only_builds() {
+    fn a_windows_host_says_it_builds_only() {
         let lines = host_lines(&windows(), None, &HostState::Unknown, false, &[]);
         assert_eq!(lines.about, "Windows AMD64");
+        assert_eq!(lines.note.as_deref(), Some("Builds only"));
+    }
+
+    #[test]
+    fn a_system_this_build_does_not_know_builds_nothing_yet() {
+        let odd = HostSpec {
+            name: HostName("odd".into()),
+            os: HostOs::Other("plan9".into()),
+            arch: "x86_64".into(),
+        };
+        let lines = host_lines(&odd, None, &HostState::Unknown, false, &[]);
         assert_eq!(
             lines.note.as_deref(),
             Some("Builds only; nothing builds on it yet")
@@ -285,19 +299,5 @@ mod hosts {
         let users = ["api".to_string(), "web".to_string()];
         let lines = host_lines(&linux(), None, &HostState::Unknown, false, &users);
         assert_eq!(lines.users.as_deref(), Some("Used by api, web"));
-    }
-
-    #[test]
-    fn add_refuses_no_name_and_a_declared_one() {
-        let declared = [linux()];
-        assert_eq!(
-            add_refusal("  ", &declared).as_deref(),
-            Some("Name the host")
-        );
-        assert_eq!(
-            add_refusal(" build01 ", &declared).as_deref(),
-            Some("build01 is already declared")
-        );
-        assert_eq!(add_refusal("other", &declared), None);
     }
 }

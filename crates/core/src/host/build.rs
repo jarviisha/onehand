@@ -8,39 +8,37 @@
 //! is incremental; the command run in it, each line it prints handed over as
 //! it comes; and, when it exits 0, the paths the project names brought back.
 //!
-//! **Every word onehand writes into a shell line is quoted** ([`quoted`]): a
-//! folder, an artifact and the command itself reach the host's shell as one
-//! word each, whatever they hold.
+//! **Every word onehand writes into a shell line is quoted for the host's
+//! shell** (`Shell::word`), or refused where that shell has no way to hold
+//! it: a folder and an artifact reach it as one word each, and the command
+//! reaches the shell that runs it as the person wrote it.
 //!
 //! Blocking throughout; a front end runs it off its UI.
 
 pub mod cli;
+mod shell;
 
 use std::io::{BufRead as _, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use super::client::{HostAddr, SSH_OPTS};
+use super::client::HostAddr;
 use super::offload::branch::{git_to_host, git_url};
-use crate::workspace::{inside_refusal, BuildHost};
+use super::ssh::{self, said};
+use crate::config::HostOs;
+use crate::workspace::{inside_refusal, BuildHost, HostName};
 use crate::worktree::git_message;
+use shell::Shell;
 
 /// How long a build may run before it is stopped.
-pub const BUILD_LIMIT: Duration = Duration::from_secs(2 * 60 * 60);
-
-/// How long a host is given to answer ssh at all, so a build asked of a
-/// machine that is off fails in seconds.
-const CONNECT_WAIT: &str = "ConnectTimeout=10";
-
-/// The exit code a shell gives a command it could not find.
-const NOT_FOUND: i32 = 127;
+pub(crate) const BUILD_LIMIT: Duration = Duration::from_secs(2 * 60 * 60);
 
 /// The line the host prints once the snapshot is checked out and the command
 /// is about to run: what comes before it is not the command's.
-const MARK: &str = "__ONEHAND_BUILD__";
+pub(super) const MARK: &str = "__ONEHAND_BUILD__";
 
 /// The ref the snapshot is pushed to on the host.
 const SNAP_REF: &str = "refs/onehand/snap";
@@ -51,7 +49,11 @@ pub struct Job<'a> {
     pub top: &'a Path,
     /// Where under `top` the command runs; empty for the top itself.
     pub within: &'a Path,
-    pub host: &'a BuildHost,
+    /// The project's entry for the host it builds on.
+    pub entry: &'a BuildHost,
+    /// The system the host was declared with, which says whose shell the
+    /// steps are spelled for.
+    pub os: HostOs,
     pub command: &'a str,
 }
 
@@ -67,20 +69,18 @@ pub struct Built {
 }
 
 /// Run `job`, handing each line the command prints to `line` as it comes,
-/// until it ends, `cancel` is set or [`BUILD_LIMIT`] passes. `Err` is a step
-/// of onehand's own that failed, in words naming the host; the command's own
-/// failure is `Ok` with its exit code.
-pub fn build_blocking(
-    job: &Job<'_>,
-    line: &mut dyn FnMut(&str),
-    cancel: &AtomicBool,
-) -> Result<Built, String> {
+/// until it ends or [`BUILD_LIMIT`] passes. `Err` is a step of onehand's own
+/// that failed, in words naming the host; the command's own failure is `Ok`
+/// with its exit code.
+pub fn build_blocking(job: &Job<'_>, line: &mut dyn FnMut(&str)) -> Result<Built, String> {
     let home = dirs::home_dir().ok_or("This machine has no home folder to build in")?;
-    build_in(job, &home, super::client::laptop(), line, cancel)
+    // Nothing sets it: whoever asked ends the build by ending this.
+    let never = AtomicBool::new(false);
+    build_in(job, &home, super::client::laptop(), line, &never)
 }
 
-/// [`build_blocking`], with the folder the host `local` builds under and the
-/// laptop's id given.
+/// [`build_blocking`], with the folder the host `local` builds under, the
+/// laptop's id, and a flag that stops it.
 fn build_in(
     job: &Job<'_>,
     local_home: &Path,
@@ -88,86 +88,30 @@ fn build_in(
     line: &mut dyn FnMut(&str),
     cancel: &AtomicBool,
 ) -> Result<Built, String> {
-    let host = &job.host.host;
-    let addr = host.addr();
-    let name = folder_name(job.top);
+    let host = &job.entry.host;
     // Checked here too, where every way in arrives: an entry written into
     // the workspace's file by hand has been through no form.
-    let named = job.host.artifacts.iter().chain(&job.host.into);
+    let named = job.entry.artifacts.iter().chain(&job.entry.into);
     if let Some(why) = named
         .filter_map(|path| inside_refusal(&path.display().to_string()))
         .next()
     {
         return Err(why);
     }
-    let _held = lock(job.top, &host.0)
-        .ok_or_else(|| format!("A build of {name} is already running on {host}"))?;
+    let _held = lock(job.top, &host.0).ok_or_else(|| {
+        format!(
+            "A build of {} is already running on {host}",
+            folder_name(job.top)
+        )
+    })?;
     refuse_unfit(job.top)?;
     let snapshot = crate::task::marks::pin_blocking(job.top, &[])?;
+    let place = Place::of(host, &job.os, &host_dir(laptop, job.top), local_home);
 
-    // Where the folder is on the host: under its home for ssh, which starts
-    // there, and under `local_home` for this machine.
-    let rel = remote_dir(laptop, job.top);
-    let (dir, url) = match addr.local {
-        true => {
-            let dir = local_home.join(&rel);
-            (dir.display().to_string(), git_url(&addr, &dir))
-        }
-        false => (rel.clone(), git_url(&addr, Path::new(&format!("/~/{rel}")))),
-    };
-    let dir = quoted(&dir);
-
-    let made = run(&addr, &format!("mkdir -p {dir} && git -C {dir} init -q"))?;
-    if !made.status.success() {
-        return Err(format!(
-            "{host} could not make the folder to build in: {}",
-            said(&made.stderr)
-        ));
-    }
-    let pushed = git_to_host(job.top)
-        .env(
-            "GIT_SSH_COMMAND",
-            format!("ssh {} -o {CONNECT_WAIT}", SSH_OPTS.join(" ")),
-        )
-        .args(["push", "-q", "--no-verify", &url])
-        .arg(format!("+{snapshot}:{SNAP_REF}"))
-        .output()
-        .map_err(|e| format!("git: {e}"))?;
-    if !pushed.status.success() {
-        return Err(format!(
-            "The code did not reach {host}: {}",
-            git_message(&pushed.stderr)
-        ));
-    }
-
-    let within = match job.within.as_os_str().is_empty() {
-        true => String::new(),
-        false => format!("cd {} && ", quoted(&job.within.display().to_string())),
-    };
-    let script = format!(
-        "cd {dir} && git checkout -q -f --detach {snapshot} && {within}echo {MARK} && \
-         exec \"${{SHELL:-/bin/sh}}\" -lc {} 2>&1",
-        quoted(job.command)
-    );
-    let exit = match run_streaming(&addr, &script, line, cancel)? {
-        Ran::Exited(code) => Some(code),
-        Ran::Stopped => None,
-        Ran::NeverStarted(why) => {
-            return Err(format!("{host} could not check the code out: {why}"));
-        }
-    };
-    let hint = (exit == Some(NOT_FOUND)).then(|| {
-        // The first word, without the quotes a command line's words arrive in.
-        let program = job
-            .command
-            .split_whitespace()
-            .next()
-            .unwrap_or(job.command)
-            .trim_matches('\'');
-        format!("{program} is not on {host}'s PATH for ssh")
-    });
+    place.receive(job.top, &snapshot)?;
+    let (exit, hint) = place.run(job, &snapshot, line, cancel)?;
     let brought = match exit {
-        Some(0) => bring_back(&addr, &dir, job)?,
+        Some(0) => place.send_back(job)?,
         Some(_) | None => Vec::new(),
     };
     Ok(Built {
@@ -177,8 +121,228 @@ fn build_in(
     })
 }
 
+/// Where a build happens: the host, how its shell is spoken to, and the
+/// folder it keeps for the working folder being built.
+struct Place<'a> {
+    host: &'a HostName,
+    addr: HostAddr,
+    shell: Shell,
+    /// The folder as the host's shell is told it: relative to the home ssh
+    /// starts in, or whole for this machine.
+    dir: String,
+    /// The same folder as `git push` is told it.
+    url: String,
+}
+
+impl<'a> Place<'a> {
+    /// The folder `rel` on `host`, a system `os`; under `local_home` when
+    /// the host is this machine, which is always asked through `sh`.
+    fn of(host: &'a HostName, os: &HostOs, rel: &str, local_home: &Path) -> Self {
+        let addr = host.addr();
+        let (shell, dir, url) = match (addr.local, Shell::of(os)) {
+            (true, _) => {
+                let dir = local_home.join(rel);
+                (
+                    Shell::Posix,
+                    dir.display().to_string(),
+                    git_url(&addr, &dir),
+                )
+            }
+            (false, Shell::Posix) => (
+                Shell::Posix,
+                rel.to_string(),
+                git_url(&addr, Path::new(&format!("/~/{rel}"))),
+            ),
+            // `cmd.exe` cannot take git's own quoting of the folder, so it
+            // is named as scp names one, relative to the home.
+            (false, Shell::Cmd) => (Shell::Cmd, rel.to_string(), format!("{}:{rel}", addr.ssh)),
+        };
+        Self {
+            host,
+            addr,
+            shell,
+            dir,
+            url,
+        }
+    }
+
+    /// `script` run on the host to its end. Only ssh's own failure is an error.
+    fn ask(&self, script: &str) -> Result<Output, String> {
+        let out = self
+            .on_host(script)
+            .output()
+            .map_err(|e| format!("ssh: {e}"))?;
+        ssh::unreached(&self.addr, &out.status, &out.stderr)?;
+        Ok(out)
+    }
+
+    /// `script` as the host is to run it.
+    fn on_host(&self, script: &str) -> Command {
+        on_host(&self.addr, self.shell, script)
+    }
+
+    /// Make the folder and its repository on the host, refusing one with no
+    /// `git` or `tar` before anything is sent, then push `snapshot` to it.
+    fn receive(&self, top: &Path, snapshot: &str) -> Result<(), String> {
+        let host = self.host;
+        let made = self.ask(&self.shell.init(&self.dir)?)?;
+        if let Some(why) = needs_refusal(host, made.status.code(), &made.stderr) {
+            return Err(why);
+        }
+        if !made.status.success() {
+            return Err(format!(
+                "{host} could not make the folder to build in: {}",
+                said(&made.stderr)
+            ));
+        }
+        // On Windows the push is received through PowerShell, for the same
+        // reason the folder is named as scp names it.
+        let receive = match self.shell {
+            Shell::Posix => None,
+            Shell::Cmd => Some("--receive-pack=powershell -NoProfile git receive-pack"),
+        };
+        let pushed = git_to_host(top)
+            .env("GIT_SSH_COMMAND", ssh::for_git())
+            .args(["push", "-q", "--no-verify"])
+            .args(receive)
+            .arg(&self.url)
+            .arg(format!("+{snapshot}:{SNAP_REF}"))
+            .output()
+            .map_err(|e| format!("git: {e}"))?;
+        match pushed.status.success() {
+            true => Ok(()),
+            false => Err(format!(
+                "The code did not reach {host}: {}",
+                git_message(&pushed.stderr)
+            )),
+        }
+    }
+
+    /// Check `snapshot` out and run the job's command: its exit code, none
+    /// when it was stopped, and whose `PATH` lacked its program when it was
+    /// not found.
+    fn run(
+        &self,
+        job: &Job<'_>,
+        snapshot: &str,
+        line: &mut dyn FnMut(&str),
+        cancel: &AtomicBool,
+    ) -> Result<(Option<i32>, Option<String>), String> {
+        let host = self.host;
+        let script = self
+            .shell
+            .run(&self.dir, snapshot, job.within, job.command)?;
+        // The last lines printed are kept: they are where a shell says a
+        // program was not there, and which.
+        let mut last: Vec<String> = Vec::new();
+        let ran = run_streaming(
+            self.on_host(&script),
+            &self.addr,
+            &mut |text| {
+                if !text.trim().is_empty() {
+                    if last.len() == LAST_LINES {
+                        last.remove(0);
+                    }
+                    last.push(text.to_string());
+                }
+                line(text);
+            },
+            cancel,
+        )?;
+        let exit = match ran {
+            Ran::Exited(code) => Some(code),
+            Ran::Stopped => None,
+            Ran::NeverStarted(why) => {
+                return Err(format!("{host} could not check the code out: {why}"));
+            }
+        };
+        let hint = self
+            .shell
+            .not_found(exit, &last, job.command)
+            .map(|program| format!("{program} is not on {host}'s PATH for ssh"));
+        Ok((exit, hint))
+    }
+
+    /// Bring the job's artifacts back from the host, into the working folder
+    /// or the folder under it the entry names. All of them or none: one the
+    /// build did not make fails the lot before anything is written here.
+    fn send_back(&self, job: &Job<'_>) -> Result<Vec<PathBuf>, String> {
+        let host = self.host;
+        let entry = job.entry;
+        if entry.artifacts.is_empty() {
+            return Ok(Vec::new());
+        }
+        let script = self.shell.send(&self.dir, &entry.artifacts)?;
+        let into = match &entry.into {
+            Some(into) => job.top.join(into),
+            None => job.top.to_path_buf(),
+        };
+        std::fs::create_dir_all(&into).map_err(|e| format!("{}: {e}", into.display()))?;
+        let mut sent = self
+            .on_host(&script)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("ssh: {e}"))?;
+        let unpacked = unpack(&into, &entry.artifacts)
+            .stdin(Stdio::from(sent.stdout.take().expect("piped")))
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(|e| format!("tar: {e}"))?;
+        let sent = sent.wait_with_output().map_err(|e| format!("ssh: {e}"))?;
+        ssh::unreached(&self.addr, &sent.status, &sent.stderr)?;
+        match sent.status.code() {
+            Some(0) => {}
+            Some(shell::NOT_BUILT) => {
+                return Err(format!(
+                    "{} was not built on {host}",
+                    String::from_utf8_lossy(&sent.stderr).trim()
+                ));
+            }
+            _ => {
+                return Err(format!(
+                    "{host} could not send what it built: {}",
+                    said(&sent.stderr)
+                ));
+            }
+        }
+        if !unpacked.status.success() {
+            return Err(format!(
+                "What {host} built could not be written here: {}",
+                said(&unpacked.stderr)
+            ));
+        }
+        Ok(entry
+            .artifacts
+            .iter()
+            .map(|path| match &entry.into {
+                Some(into) => into.join(path),
+                None => path.clone(),
+            })
+            .collect())
+    }
+}
+
+/// How many of the last lines a command printed are kept to read what its
+/// shell said of a program it could not find: `cmd.exe` says it over two.
+const LAST_LINES: usize = 2;
+
+/// Why nothing builds on `host`, when making its folder ended saying which
+/// of the programs a build needs it lacks.
+fn needs_refusal(host: &HostName, exit: Option<i32>, stderr: &[u8]) -> Option<String> {
+    if exit != Some(shell::NEEDS) {
+        return None;
+    }
+    let text = String::from_utf8_lossy(stderr);
+    let lacking: Vec<&str> = text.split_whitespace().collect();
+    Some(match lacking.as_slice() {
+        [one] => format!("{host} has no {one}; a build needs git and tar"),
+        many => format!("{host} has no {}; a build needs both", many.join(" or ")),
+    })
+}
+
 /// How many of the last lines a command printed a tool's answer carries.
-pub const TOOL_LINES: usize = 200;
+pub(crate) const TOOL_LINES: usize = 200;
 
 /// The last [`TOOL_LINES`] lines a command printed, and how many came before
 /// them: what a build of any length leaves for an answer.
@@ -222,27 +386,32 @@ pub fn answer(built: &Built, tail: &Tail) -> String {
     said.join("\n")
 }
 
-/// `text` as one word of a POSIX shell line.
-pub(crate) fn quoted(text: &str) -> String {
-    format!("'{}'", text.replace('\'', r"'\''"))
-}
-
 /// The folder on the host a working folder is built in, relative to the
 /// host's home: by this laptop, then the folder's name and a hash of its
 /// whole path, so two folders of one name never share one. The name is kept
 /// to letters a shell and a URL both take as they are.
-pub(crate) fn remote_dir(laptop: &str, top: &Path) -> String {
-    let name: String = folder_name(top)
-        .chars()
+pub(crate) fn host_dir(laptop: &str, top: &Path) -> String {
+    let name = folder_name(top);
+    let hash = crate::chat::store::fnv1a(top.as_os_str().as_encoded_bytes());
+    // The laptop's id is read from a file, and goes into a URL and a shell
+    // line as the name does.
+    format!(
+        ".onehand-build/{}/{}-{hash:016x}",
+        safe(laptop),
+        safe(&name)
+    )
+}
+
+/// `text` kept to the letters a shell and a URL both take as they are.
+fn safe(text: &str) -> String {
+    text.chars()
         .map(
             |c| match c.is_ascii_alphanumeric() || matches!(c, '.' | '-') {
                 true => c,
                 false => '_',
             },
         )
-        .collect();
-    let hash = crate::chat::store::fnv1a(top.as_os_str().as_encoded_bytes());
-    format!(".onehand-build/{laptop}/{name}-{hash:016x}")
+        .collect()
 }
 
 fn folder_name(top: &Path) -> String {
@@ -318,66 +487,13 @@ fn refuse_unfit(top: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// `script` as the host runs it: over ssh, or through `sh` for `local`.
-fn on_host(addr: &HostAddr, script: &str) -> Command {
-    let mut cmd = match addr.local {
-        true => {
-            let mut sh = Command::new("sh");
-            sh.arg("-c");
-            sh
-        }
-        false => {
-            let mut ssh = Command::new("ssh");
-            ssh.args(SSH_OPTS)
-                .args(["-o", CONNECT_WAIT, "--"])
-                .arg(&addr.ssh);
-            ssh
-        }
-    };
-    // Over ssh the line goes to the account's login shell, which may be one
-    // a POSIX line means nothing to: it is handed to `sh`, whole.
+/// `script` as the host runs it: as it is for this machine, and for another
+/// as its shell is handed a line over ssh.
+fn on_host(addr: &HostAddr, shell: Shell, script: &str) -> Command {
     match addr.local {
-        true => cmd.arg(script),
-        false => cmd.arg(format!("sh -c {}", quoted(script))),
-    };
-    cmd.stdin(Stdio::null());
-    cmd
-}
-
-/// Run `script` on the host to its end. Only ssh's own failure is an error.
-fn run(addr: &HostAddr, script: &str) -> Result<std::process::Output, String> {
-    let out = on_host(addr, script)
-        .output()
-        .map_err(|e| format!("ssh: {e}"))?;
-    unreached(addr, &out.status, &out.stderr)?;
-    Ok(out)
-}
-
-/// ssh's own failure, in its words: the host was not reached.
-fn unreached(
-    addr: &HostAddr,
-    status: &std::process::ExitStatus,
-    stderr: &[u8],
-) -> Result<(), String> {
-    if addr.local || status.code() != Some(255) {
-        return Ok(());
+        true => ssh::command(addr, script),
+        false => ssh::command(addr, &shell.over_ssh(script)),
     }
-    let why = said(stderr);
-    Err(match why.is_empty() {
-        true => format!("{} could not be reached", addr.ssh),
-        false => why,
-    })
-}
-
-/// The last line of what a command said on stderr, which is the one that
-/// says what went wrong.
-fn said(stderr: &[u8]) -> String {
-    String::from_utf8_lossy(stderr)
-        .lines()
-        .map(str::trim)
-        .rfind(|line| !line.is_empty())
-        .unwrap_or_default()
-        .to_string()
 }
 
 /// How the command's run ended.
@@ -395,12 +511,12 @@ enum Ran {
 /// A stopped run kills its ssh. Whether the command on the host dies with it
 /// is the host's to say: nothing here can reach it once the connection goes.
 fn run_streaming(
+    mut on_host: Command,
     addr: &HostAddr,
-    script: &str,
     line: &mut dyn FnMut(&str),
     cancel: &AtomicBool,
 ) -> Result<Ran, String> {
-    let mut child = on_host(addr, script)
+    let mut child = on_host
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -447,7 +563,7 @@ fn run_streaming(
     if let Some(mut pipe) = child.stderr.take() {
         let _ = std::io::Read::read_to_end(&mut pipe, &mut stderr);
     }
-    unreached(addr, &status, &stderr)?;
+    ssh::unreached(addr, &status, &stderr)?;
     if !running {
         return Ok(Ran::NeverStarted(said(&stderr)));
     }
@@ -464,74 +580,6 @@ fn unpack(into: &Path, paths: &[PathBuf]) -> Command {
     let mut tar = Command::new("tar");
     tar.args(["-xf", "-", "-C"]).arg(into).arg("--").args(paths);
     tar
-}
-
-/// Bring the job's artifacts back from `dir` on the host, into the working
-/// folder or the folder under it the entry names. All of them or none: one
-/// the build did not make fails the lot before anything is written here.
-fn bring_back(addr: &HostAddr, dir: &str, job: &Job<'_>) -> Result<Vec<PathBuf>, String> {
-    let host = &job.host.host;
-    if job.host.artifacts.is_empty() {
-        return Ok(Vec::new());
-    }
-    let paths: Vec<String> = job
-        .host
-        .artifacts
-        .iter()
-        .map(|path| quoted(&path.display().to_string()))
-        .collect();
-    let paths = paths.join(" ");
-    let script = format!(
-        "cd {dir} && for p in {paths}; do test -e \"$p\" || {{ printf %s \"$p\" >&2; exit 3; }}; \
-         done && tar -cf - -- {paths}"
-    );
-    let into = match &job.host.into {
-        Some(into) => job.top.join(into),
-        None => job.top.to_path_buf(),
-    };
-    std::fs::create_dir_all(&into).map_err(|e| format!("{}: {e}", into.display()))?;
-    let mut sent = on_host(addr, &script)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("ssh: {e}"))?;
-    let unpacked = unpack(&into, &job.host.artifacts)
-        .stdin(Stdio::from(sent.stdout.take().expect("piped")))
-        .stderr(Stdio::piped())
-        .output()
-        .map_err(|e| format!("tar: {e}"))?;
-    let sent = sent.wait_with_output().map_err(|e| format!("ssh: {e}"))?;
-    unreached(addr, &sent.status, &sent.stderr)?;
-    match sent.status.code() {
-        Some(0) => {}
-        Some(3) => {
-            return Err(format!(
-                "{} was not built on {host}",
-                String::from_utf8_lossy(&sent.stderr)
-            ));
-        }
-        _ => {
-            return Err(format!(
-                "{host} could not send what it built: {}",
-                said(&sent.stderr)
-            ));
-        }
-    }
-    if !unpacked.status.success() {
-        return Err(format!(
-            "What {host} built could not be written here: {}",
-            said(&unpacked.stderr)
-        ));
-    }
-    Ok(job
-        .host
-        .artifacts
-        .iter()
-        .map(|path| match &job.host.into {
-            Some(into) => into.join(path),
-            None => path.clone(),
-        })
-        .collect())
 }
 
 #[cfg(test)]

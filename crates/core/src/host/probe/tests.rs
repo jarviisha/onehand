@@ -51,10 +51,8 @@ fn windows_tools() {
         tools,
     };
     assert_eq!(probed.tools.len(), 3);
-    assert_eq!(
-        probed.tools[2],
-        ("dotnet".to_string(), "8.0.405".to_string())
-    );
+    assert_eq!(probed.tools[2].name, "dotnet");
+    assert_eq!(probed.tools[2].said, "8.0.405");
     assert!(probed.missing().is_empty());
     assert!(probed.has("git") && !probed.has("cargo"));
 }
@@ -78,13 +76,11 @@ fn linux_tools_without_git() {
 #[test]
 fn a_tool_that_says_nothing_of_its_version_is_still_found() {
     let (_, tools) = tools("__ONEHAND_PROBE__\ngit=\ntar=\ntar 1.35\n", false).expect("answered");
-    assert_eq!(
-        tools,
-        vec![
-            ("git".to_string(), String::new()),
-            ("tar".to_string(), "tar 1.35".to_string())
-        ]
-    );
+    let said: Vec<(&str, &str)> = tools
+        .iter()
+        .map(|tool| (tool.name.as_str(), tool.said.as_str()))
+        .collect();
+    assert_eq!(said, vec![("git", ""), ("tar", "tar 1.35")]);
 }
 
 #[test]

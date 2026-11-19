@@ -30,20 +30,22 @@ pub(crate) fn build_host(shell: &Shell, window: &Window, cx: &mut Context<Shell>
     };
     let error = draft.error.clone();
     let danger = crate::theme::status_ink(cx).danger;
-    // Every declared host, one that only builds included: building is what
-    // such a host is for.
-    let choices: Vec<String> = crate::state::Shared::global(cx)
+    // Every declared host a project can build on, one that runs no sessions
+    // included: building is what such a host is for.
+    let offered: Vec<String> = crate::state::Shared::global(cx)
         .settings
         .hosts
         .iter()
+        .filter(|host| host.builds())
         .map(|host| host.name.to_string())
+        .collect();
+    let more = offered
+        .len()
+        .saturating_sub(super::host_project::HOST_CHOICES_CAP);
+    let choices: Vec<String> = offered
+        .into_iter()
         .take(super::host_project::HOST_CHOICES_CAP)
         .collect();
-    let more = crate::state::Shared::global(cx)
-        .settings
-        .hosts
-        .len()
-        .saturating_sub(choices.len());
     let weak = cx.entity().downgrade();
 
     Dialog::new(cx)

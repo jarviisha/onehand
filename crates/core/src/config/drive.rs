@@ -101,7 +101,6 @@ pub enum Tested {
     Missing,
 }
 
-/// What the settings are, read through the drive.
 /// A probe of a host under way, or what the last one came to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HostProbe {
@@ -110,6 +109,7 @@ pub enum HostProbe {
     Failed(String),
 }
 
+/// What the settings are, read through the drive.
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
     pub agents: Vec<AgentSpec>,
@@ -328,12 +328,15 @@ impl SettingsDrive {
         vec![Effect::Changed, Effect::ProbeHost { host }]
     }
 
-    /// Stop declaring `host`, and forget what was learned of it. Whether a
-    /// project still names it is the caller's to have asked first.
-    #[must_use = "its effects are to be carried"]
-    pub fn remove_host(&mut self, host: HostName) -> Vec<Effect> {
+    /// Stop declaring `host`, and forget what was learned of it. Refused, in
+    /// words, while `users`, the projects that run or build on it, name it:
+    /// they are another drive's to know, so they are told here.
+    pub fn remove_host(&mut self, host: HostName, users: &[String]) -> Result<Vec<Effect>, String> {
+        if let Some(why) = super::removal_refusal(&host, users) {
+            return Err(why);
+        }
         self.set_host_probe(&host, None);
-        self.edit_hosts(HostEdit::Remove(host))
+        Ok(self.edit_hosts(HostEdit::Remove(host)))
     }
 
     fn edit_hosts(&mut self, edit: HostEdit) -> Vec<Effect> {

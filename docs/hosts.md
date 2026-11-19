@@ -53,13 +53,14 @@ A person declares a host once, for every workspace; a project then names it.
   there was before hosts were declared, and marked *Not declared* (`config::host::listed`). Its
   *Check* declares it. Nothing it does as a host project changes.
 - **Only `git` and `tar` are required of a host;** the toolchains are told, never required.
-- **Removing** takes the host out of the list and touches nothing on the host. It is refused
-  while a project of an open window names the host, *<host> is used by <projects>*
-  (`removal_refusal`).
+- **Removing** takes the host out of the list and touches nothing on the host. The drive itself
+  refuses it while a project of an open window uses the host, to run on or to build on, *<host>
+  is used by <projects>* (`SettingsDrive::remove_host`, told who uses it;
+  `ProjectRoot::hosts_used`).
 - **A build-only host is never offered where a session opens.** The host-project and offload
   forms leave it out of their menus, by whichever way it would have come, the SSH config's alias
   included, and refuse one typed by hand, *<host> only builds; it runs no sessions*, before
-  anything attaches (`builds_only`, `crates/app/src/dialogs/host_project.rs`). Their menus lead
+  anything attaches (`builds_only`, `crates/core/src/config/host.rs`). Their menus lead
   with the declared hosts that run sessions.
 
 What the page draws is in [screens.md](screens.md#settings).
@@ -77,18 +78,21 @@ bring back what it built. Nothing of this needs the host service: it is the pers
   holds `..`, is a pattern, names the project itself (`.`) or anything of git's own folder
   (`.git`) is refused (`inside_refusal`), in the form and again where a build starts, since the
   file can be written by hand. They are changed through
-  `WorkspaceDrive::set_builds`, shown at once and put back if the write fails; a project whose
-  sessions run on a host has none (`ProjectRoot::build_hosts`), though what it was given is kept
-  for when it runs here again, and one host is named once (`build_host_refusal`).
+  the workspace's drive, which makes the change or refuses it (`WorkspaceDrive::put_build_host`,
+  `remove_build_host`): shown at once and put back if the write fails. A project whose sessions
+  run on a host has none (`ProjectRoot::build_hosts`), though what it was given is kept for when
+  it runs here again, and one host is named once.
 - **One build is five steps** (`build_blocking`, `crates/core/src/host/build.rs`):
   1. **A snapshot.** The folder as it stands, uncommitted and untracked work included and ignored
      files left out, is committed aside from a temporary index (`task::marks::pin_blocking`). The
      branch, the index and the files here do not move. A folder that is not a working tree's top
      is refused, and so is one holding another repository, which git would commit as a pointer.
      A worktree builds as its project does.
-  2. **Pushed** to a repository the host keeps for this folder,
+  2. **A host with no `git` or no `tar` is refused first**, before any code is sent, naming what
+     it lacks: *<host> has no tar; a build needs git and tar* (`Shell::init`, `needs_refusal`).
+     Then the snapshot is **pushed** to a repository the host keeps for this folder,
      `~/.onehand-build/<laptop>/<name>-<hash of the folder's path>`, made on first use
-     (`remote_dir`). Each worktree has its own, and so its own incremental state.
+     (`host_dir`). Each worktree has its own, and so its own incremental state.
   3. **Checked out** there, detached and forced: what the snapshot dropped goes, and what git
      ignores (`target/`, `obj/`) stays, which is what makes the next build incremental.
   4. **The command runs** in the same folder, relative to the top, that it was asked from,
@@ -100,24 +104,56 @@ bring back what it built. Nothing of this needs the host service: it is the pers
      written here. What comes back writes over what is here. Only the paths named are unpacked,
      whatever the host sends: its answer is its own to choose, and nothing else is written.
 - **What comes back is a file here**, and goes up with the next snapshot unless git ignores it.
-- **Every word onehand writes into a shell line is quoted** (`quoted`): a folder, an artifact and
-  the command reach the host's shell as one word each. Over ssh each line is handed to `sh`
-  whole, so an account whose login shell is not a POSIX one builds all the same; the command
-  itself still runs through that login shell. ssh is given ten seconds to connect.
+- **Every word onehand writes into a shell line is quoted for the host's shell** (`Shell::word`),
+  or refused where that shell has no way to hold it: a folder and an artifact reach it as one
+  word each, and the command reaches the shell that runs it as the person wrote it. Over ssh a
+  POSIX host's line is handed to `sh` whole, so an account whose login shell is not a POSIX one
+  builds all the same; the command itself still runs through that login shell. ssh is given ten
+  seconds to connect.
+- **An artifact is written with `/`** on whichever system its host runs: one written with `\` is
+  refused, *<path> is written with \; write it with /*, since what comes back is matched by that
+  spelling.
 - **One build per folder and host at a time**, held by a lock file under `builds/` in the config
   directory: *A build of <project> is already running on <host>*.
-- **A command the host could not find** (exit 127) is said with whose `PATH` lacks it:
-  *<program> is not on <host>'s PATH for ssh*. onehand installs nothing on a host.
-- **Only a Linux host builds.** One declared as Windows is refused, *<host> runs Windows; nothing
-  builds on a Windows host yet* (`os_refusal`); one nobody declared is taken for Linux.
+- **A command the host could not find** (exit 127 from a POSIX shell) is said with whose `PATH`
+  lacks it: *<program> is not on <host>'s PATH for ssh*. The program is read from what the
+  shell said of it, since the command's first word may be `cd`, a variable set for it, or a tool
+  that ran another; said in no words known, it is the command's first word
+  (`Shell::not_found`). onehand installs nothing on a host.
+- **A Linux host and a Windows one build, each in its own shell's words** (`Shell`,
+  `crates/core/src/host/build/shell.rs`). The steps are the same; what differs is how a word is
+  quoted and how each step is spelled, picked by the system the host was declared with (`os_of`).
+  One nobody declared is taken for Linux, and a system this build does not know builds nothing:
+  *<host> runs <os>; nothing builds on it yet*.
+  - **On Windows the shell is `cmd.exe`**, the one its OpenSSH starts. The command is a `cmd.exe`
+    line, run by a `cmd.exe` of its own so the whole line's stderr comes with its output.
+  - **The push is received through PowerShell** (`--receive-pack=powershell -NoProfile git
+    receive-pack`), the folder named as scp names one, since `cmd.exe` cannot take git's own
+    quoting of it.
+  - **The repository the host keeps is set `core.autocrlf false` and `core.longpaths true`,** so
+    the code is built there as it is here, line endings included.
+  - **A word holding `%`, `"` or a line break is refused** for a Windows host, a folder, an
+    artifact or an `into`: `cmd.exe` expands `%` even inside quotes, and ends a line at a line
+    break. *<text> cannot be built on a Windows host: its name holds % or "*.
+  - **The command is read by two `cmd.exe`s**, the one ssh starts and the one that runs it, and
+    quotes there toggle rather than nest. Every character the first would act on is escaped with
+    `^` (`for_outer_cmd`), so a `|` or an `&` inside the command's own quotes reaches the second
+    as written.
+  - **Several words after `--` holding a quote are refused**, *<word> holds a quote; give the
+    whole command as one word after --*, and a quoted word ending in `\` has it doubled.
+  - **What a host says of a program it lacks is kept whole** when a step of onehand's own fails
+    for it, `git` or `tar`: `cmd.exe` says it over two lines.
+  - **A program the host lacks** exits 1 there like any failure, and is recognised, and named,
+    from `cmd.exe`'s own sentence, in English.
 - **Three ways in**, one set of refusals (`entry_for`, `crates/core/src/host/build/cli.rs`):
   - **`onehand --build <host> -- <command…>`**, from a terminal or as a check command. It is
     answered in `main` before the instance lock, so it needs no window and a running onehand
     never takes it for a folder. It finds the project the folder belongs to, its own or a
     worktree of it, among every workspace, reading the first by name that names the host
     (`asked_blocking`); prints the command's lines as they come; and exits with the command's
-    code, 1 for a refusal or a step that failed. One word after `--` is a shell line as written;
-    several are each quoted.
+    code, 1 for a refusal or a step that failed. One word after `--` is a line for the host's
+    shell as written; several are joined as that shell reads words: each quoted for a POSIX
+    one, and for `cmd.exe` only those that need it.
   - **The tool `build_on_host`**, for a session's agent ([control.md](control.md#the-tools)).
   - **The check command**, which is the flag typed into its field.
 

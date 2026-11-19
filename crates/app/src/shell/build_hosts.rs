@@ -127,9 +127,8 @@ impl Shell {
         }
     }
 
-    /// *Add* or *Save*: read the form as a build host, and make it one of the
-    /// project's, in place of the one being changed. What refuses it is said
-    /// in the form, which stays.
+    /// *Add* or *Save*: read the form as a build host, and ask the drive to
+    /// make it one of the project's, in place of the one being changed.
     pub(crate) fn save_build_host(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(draft) = self.build_host_draft.as_ref() else {
             return;
@@ -139,34 +138,23 @@ impl Shell {
             &draft.host.read(cx).value(),
             &draft.artifacts.read(cx).value(),
             &draft.into.read(cx).value(),
-        )
-        .and_then(|entry| {
-            match self
-                .window
-                .workspace
-                .build_host_refusal(&root, &entry, editing)
-            {
-                Some(why) => Err(why),
-                None => Ok(entry),
+        );
+        // The drive says whether the project may build there, and makes the
+        // change; what refuses it is said in the form, which stays.
+        let changed =
+            read.and_then(|entry| self.window.workspace.put_build_host(&root, entry, editing));
+        match changed {
+            Ok(fx) => {
+                self.build_host_draft = None;
+                self.carry_build_hosts(&root, fx, window, cx);
             }
-        });
-        let entry = match read {
-            Ok(entry) => entry,
             Err(why) => {
                 if let Some(draft) = self.build_host_draft.as_mut() {
                     draft.error = Some(why);
                 }
                 cx.notify();
-                return;
             }
-        };
-        let mut builds = self.builds_of(&root);
-        match editing.and_then(|at| builds.get_mut(at)) {
-            Some(held) => *held = entry,
-            None => builds.push(entry),
         }
-        self.build_host_draft = None;
-        self.set_build_hosts(&root, builds, window, cx);
     }
 
     /// Ask before the build host at `at` of the project on screen goes.
@@ -193,21 +181,20 @@ impl Shell {
         // By the entry, not by its place: the list may change while the
         // question is open.
         self.confirm(ask, window, cx, move |shell, window, cx| {
-            let mut builds = shell.builds_of(&root);
-            builds.retain(|held| *held != entry);
-            shell.set_build_hosts(&root, builds, window, cx);
+            let fx = shell.window.workspace.remove_build_host(&root, &entry);
+            shell.carry_build_hosts(&root, fx, window, cx);
         });
     }
 
-    /// Make `builds` the project's build hosts, and tell its page.
-    fn set_build_hosts(
+    /// Carry out what the drive answered of a change to the project's build
+    /// hosts, and tell its page.
+    fn carry_build_hosts(
         &mut self,
         root: &Path,
-        builds: Vec<BuildHost>,
+        fx: Vec<onehand_core::workspace::drive::Effect>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let fx = self.window.workspace.set_builds(root, builds);
         self.carry_workspace(fx, window, cx);
         self.show_build_hosts(Some(root), cx);
         cx.notify();

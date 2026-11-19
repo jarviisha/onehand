@@ -263,10 +263,17 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
 - **A host that is not supported, or whose `onehand-host` is missing, is not tried again,** and
   its project row shows no mark. Trying again cannot change it; a person's Restart or *Try again*
   does after the binary is there.
-- **A build over ssh is covered by no test.** The suite builds on the host `local`, through `sh`;
-  the ssh path was tried by hand against a Linux host and is not run by CI.
-- **Nothing builds on a Windows host yet.** One can be declared, checked and named as a project's
-  build host, and a build asked of it is refused in those words.
+- **A build over ssh is covered by no test.** The suite builds on the host `local`, through `sh`,
+  and checks the lines a Windows host is sent as text; a build over ssh was tried by hand against
+  a Linux host and a Windows one, and is not run by CI.
+- **A Windows host builds through `cmd.exe` only.** One whose OpenSSH default shell was changed
+  is asked in words that shell does not read, and its build fails at the first step.
+- **On a Windows host a missing program is recognised in English only.** Its exit code is 1, as
+  any failure's; on a Windows speaking another language the build fails as plainly, without
+  *<program> is not on <host>'s PATH for ssh*.
+- **A folder or artifact whose name holds `%` or `"` cannot be built on a Windows host.**
+- **A build on a Windows host takes a few seconds more than its command,** each step starting a
+  shell there and the push a PowerShell.
 - **A stopped build's command may run on.** Stopping kills the ssh that carried it; whether the
   command on the host dies with it is the host's to say. Nothing lists or ends what was left.
 - **`build_on_host` builds the project's own folder,** never a worktree: an agent in a worktree
@@ -282,6 +289,14 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   out** waits; nothing a build does prints there before the command starts.
 - **What a check found of a host is kept for this run only.** The file keeps the system; the
   programs found are asked again when a person presses *Check*.
+- **A session is refused on a build-only host by the two forms that name one, not by the attach.**
+  A workspace file written by hand, or a project that named the host before it was declared,
+  still asks to attach; the attach's own refusal of a machine that is not Linux on x86_64 is what
+  stops it, in its words.
+- **A Windows host whose ssh shell is Git's bash or Cygwin's is declared Windows and asked in
+  `cmd.exe`'s words,** which that shell does not read: its build fails at the first step.
+- **A host's row says how its attach stands only when something is wrong:** lost or taken. Live
+  and attaching are not said there.
 - **A host's *Used by*, and the refusal to remove it, count the open windows' projects only.** A
   host a closed workspace names can be removed, and is listed again, not declared, when that
   workspace opens.

@@ -868,3 +868,33 @@ fn a_project_whose_sessions_run_on_a_host_has_no_build_hosts_but_keeps_them() {
     back.roots[0].offload = None;
     assert_eq!(back.roots[0].build_hosts(), ws.roots[0].builds);
 }
+
+#[test]
+fn an_artifact_is_written_with_forward_slashes() {
+    assert_eq!(
+        inside_refusal(r"bin\Release").as_deref(),
+        Some(r"bin\Release is written with \; write it with /")
+    );
+    assert_eq!(inside_refusal("bin/Release"), None);
+}
+
+#[test]
+fn a_project_uses_the_host_its_sessions_run_on_and_the_hosts_it_builds_on() {
+    let mut ws = Workspace::seeded("/a");
+    ws.roots[0].builds = vec![builds_on("build01", &[], None), builds_on("win", &[], None)];
+    let used = |root: &ProjectRoot| -> Vec<String> {
+        root.hosts_used()
+            .into_iter()
+            .map(|host| host.0.clone())
+            .collect()
+    };
+    assert_eq!(used(&ws.roots[0]), ["build01", "win"]);
+    // Offloaded, its sessions' host is the one it uses; it builds there.
+    ws.roots[0].offload = Some(Offloaded {
+        host: HostName("box".into()),
+        mirror: "/m".into(),
+        branch: None,
+    });
+    assert_eq!(used(&ws.roots[0]), ["box"]);
+    assert!(used(&Workspace::seeded("/b").roots[0]).is_empty());
+}

@@ -381,7 +381,7 @@ mod hosts {
     fn removing_writes_and_forgets_its_probe() {
         let mut drive = drive(vec![HostSpec::undeclared(named("b"))]);
         let _ = drive.probe_host(named("b"));
-        let fx = drive.remove_host(named("b"));
+        let fx = drive.remove_host(named("b"), &[]).expect("removed");
         assert!(drive.hosts.is_empty());
         assert_eq!(drive.host_probe(&named("b")), None);
         assert_eq!(
@@ -396,6 +396,17 @@ mod hosts {
         });
         assert!(drive.hosts.is_empty());
         assert!(fx.is_empty());
+    }
+
+    #[test]
+    fn the_drive_itself_refuses_to_remove_a_host_a_project_uses() {
+        let mut drive = drive(vec![HostSpec::undeclared(named("b"))]);
+        let users = ["api".to_string(), "web".to_string()];
+        assert_eq!(
+            drive.remove_host(named("b"), &users).map(|_| ()),
+            Err("b is used by api, web".to_string())
+        );
+        assert_eq!(drive.hosts.len(), 1);
     }
 
     #[test]

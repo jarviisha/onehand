@@ -1,5 +1,5 @@
 use super::{
-    BROWSE_CAP, HOST_CHOICES_CAP, add_refusal, browse_refusal, browse_rows, builds_only, busy_body,
+    BROWSE_CAP, HOST_CHOICES_CAP, add_refusal, browse_refusal, browse_rows, busy_body,
     clone_refusal, clone_target, host_choices,
 };
 use onehand_core::host::wire::HostSession;
@@ -220,19 +220,4 @@ fn host_choices_leaves_out_a_build_only_host_even_as_an_alias() {
     );
     assert_eq!(choices, strings(&["alpha"]));
     assert_eq!(more, 0);
-}
-
-#[test]
-fn builds_only_refuses_a_host_that_runs_no_sessions() {
-    use onehand_core::config::HostOs;
-    let hosts = [
-        declared("win", HostOs::Windows, "AMD64"),
-        declared("build01", HostOs::Linux, "x86_64"),
-    ];
-    assert_eq!(
-        builds_only(" win ", &hosts).as_deref(),
-        Some("win only builds; it runs no sessions")
-    );
-    assert_eq!(builds_only("build01", &hosts), None);
-    assert_eq!(builds_only("never-declared", &hosts), None);
 }

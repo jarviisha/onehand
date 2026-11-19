@@ -864,57 +864,57 @@ fn builds_on(host: &str) -> crate::workspace::BuildHost {
 }
 
 #[test]
-fn build_hosts_are_shown_at_once_and_written() {
+fn a_build_host_is_added_shown_at_once_and_written() {
     let mut drive = bound();
-    let fx = drive.set_builds(Path::new("/a"), vec![builds_on("build01")]);
+    let fx = drive
+        .put_build_host(Path::new("/a"), builds_on("build01"), None)
+        .expect("added");
     assert_eq!(names(&fx), ["Write", "Changed"]);
     assert_eq!(drive.roots[0].builds, vec![builds_on("build01")]);
 }
 
 #[test]
-fn unchanged_build_hosts_write_nothing() {
+fn a_build_host_is_changed_in_its_place_and_an_unchanged_one_writes_nothing() {
     let mut drive = bound();
-    drive.set_builds(Path::new("/a"), vec![builds_on("build01")]);
-    assert!(drive
-        .set_builds(Path::new("/a"), vec![builds_on("build01")])
-        .is_empty());
-    assert!(drive
-        .set_builds(Path::new("/nowhere"), Vec::new())
-        .is_empty());
+    drive.put_build_host(Path::new("/a"), builds_on("build01"), None);
+    drive.put_build_host(Path::new("/a"), builds_on("win"), None);
+    let mut changed = builds_on("other");
+    changed.into = Some("out".into());
+    drive
+        .put_build_host(Path::new("/a"), changed.clone(), Some(0))
+        .expect("changed");
+    assert_eq!(
+        drive.roots[0].builds,
+        vec![changed.clone(), builds_on("win")]
+    );
+    let again = drive
+        .put_build_host(Path::new("/a"), changed, Some(0))
+        .expect("the same");
+    assert!(again.is_empty());
 }
 
 #[test]
-fn a_failed_write_puts_the_build_hosts_back() {
+fn the_drive_itself_refuses_a_second_entry_for_one_host() {
     let mut drive = bound();
-    let pending = written(drive.set_builds(Path::new("/a"), vec![builds_on("build01")]));
-    let fx = drive.handle(Input::Written {
-        pending,
-        result: Err("read-only".into()),
-    });
-    assert!(drive.roots[0].builds.is_empty());
-    assert!(names(&fx).iter().any(|name| name.starts_with("Put(Builds")));
-}
-
-#[test]
-fn a_second_entry_for_one_host_is_refused_and_an_edit_may_keep_its_host() {
-    let mut drive = bound();
-    drive.set_builds(
-        Path::new("/a"),
-        vec![builds_on("build01"), builds_on("win")],
-    );
-    let entry = builds_on("win");
+    drive.put_build_host(Path::new("/a"), builds_on("build01"), None);
+    drive.put_build_host(Path::new("/a"), builds_on("win"), None);
     assert_eq!(
-        drive.build_host_refusal(Path::new("/a"), &entry, None),
-        Some("a already builds on win".to_string())
+        drive
+            .put_build_host(Path::new("/a"), builds_on("win"), None)
+            .map(|_| ()),
+        Err("a already builds on win".to_string())
     );
     assert_eq!(
-        drive.build_host_refusal(Path::new("/a"), &entry, Some(1)),
-        None
+        drive
+            .put_build_host(Path::new("/a"), builds_on("win"), Some(0))
+            .map(|_| ()),
+        Err("a already builds on win".to_string())
     );
-    assert_eq!(
-        drive.build_host_refusal(Path::new("/a"), &entry, Some(0)),
-        Some("a already builds on win".to_string())
-    );
+    // The entry being changed may keep its host.
+    assert!(drive
+        .put_build_host(Path::new("/a"), builds_on("win"), Some(1))
+        .is_ok());
+    assert_eq!(drive.roots[0].builds.len(), 2);
 }
 
 #[test]
@@ -926,7 +926,38 @@ fn a_project_that_runs_on_a_host_is_refused_a_build_host() {
         branch: None,
     });
     assert_eq!(
-        drive.build_host_refusal(Path::new("/a"), &builds_on("build01"), None),
-        Some("a runs its sessions on a host; it builds there already".to_string())
+        drive
+            .put_build_host(Path::new("/a"), builds_on("build01"), None)
+            .map(|_| ()),
+        Err("a runs its sessions on a host; it builds there already".to_string())
     );
+}
+
+#[test]
+fn a_build_host_is_removed_by_what_it_is_and_one_that_is_gone_writes_nothing() {
+    let mut drive = bound();
+    drive.put_build_host(Path::new("/a"), builds_on("build01"), None);
+    drive.put_build_host(Path::new("/a"), builds_on("win"), None);
+    let fx = drive.remove_build_host(Path::new("/a"), &builds_on("build01"));
+    assert_eq!(names(&fx), ["Write", "Changed"]);
+    assert_eq!(drive.roots[0].builds, vec![builds_on("win")]);
+    assert!(drive
+        .remove_build_host(Path::new("/a"), &builds_on("build01"))
+        .is_empty());
+}
+
+#[test]
+fn a_failed_write_puts_the_build_hosts_back() {
+    let mut drive = bound();
+    let pending = written(
+        drive
+            .put_build_host(Path::new("/a"), builds_on("build01"), None)
+            .expect("added"),
+    );
+    let fx = drive.handle(Input::Written {
+        pending,
+        result: Err("read-only".into()),
+    });
+    assert!(drive.roots[0].builds.is_empty());
+    assert!(names(&fx).iter().any(|name| name.starts_with("Put(Builds")));
 }
