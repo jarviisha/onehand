@@ -341,7 +341,10 @@ room and leaves the terminal as it is.
   under it, *Run check* (spinning while a check runs) and *New session* (primary, with a caret
   picking another agent while more than one is configured) at the end); then, in one column at every width, the box *Past
   conversations* with its count, its rows the overview's (age, title, then items and agent at the
-  edge, then a `⋯` on hover holding *Resume* and *Delete…*, the same on a right-click), capped, its wait and empty lines inside it; under
+  edge, then a `⋯` on hover holding *Resume* and *Delete…*, the same on a right-click), capped, its wait and empty lines inside it:
+  those that ran in its folder and, on a project folder's own page, those of the project that ran in
+  a folder it no longer holds (a worktree since removed), whose *Resume* says the folder is gone;
+  a conversation is listed on one page only; under
   it the box *Tasks* (how many need attention, run or wait, each opening the Tasks page
   narrowed to the project; *Nothing running here* at zero); then the box *Schedules* (the
   project's schedules by name with when each runs next, or *off*, each opening the Schedules page
@@ -416,7 +419,8 @@ room and leaves the terminal as it is.
   toast, *Sending the code to the host failed*, the prompt left in the composer.
 - *Workspace overview* shows, under its head (*Overview*), across all projects, the boxes *Waiting
   on you* (sessions waiting, failed, finished or lost) and *Working*, then *Projects* as a grid of tiles (not drawn without projects), then the
-  boxes *Recent conversations* and *Open issues* (its project picker kept while the page is left).
+  boxes *Recent conversations* and *Open issues* (its project picker kept while the page is left),
+  each conversation and each project's issues listed once however many rows the project has.
   The head stays in place; the boxes scroll under it as one.
 - *Schedules*: a head (*Schedules*, with how many are on and off), the project picker at the end
   of the row under it, as Tasks', the two kept in place; then one box, *Schedules*, with its count: a row per schedule as a task's

@@ -11,6 +11,10 @@ minor bump may break any of them.
 
 ### Breaking
 
+- A conversation records the project it belongs to. At the first start of this build each kept
+  conversation is given its project, found by its folder, through git for a worktree, or through
+  the task that ran there for one since removed; an older build still reads it. A project's own page
+  lists the conversations of a worktree since removed, and each conversation is listed on one row.
 - A project keeps one issues file, `projects/<id>/issues.json` in the config directory, which
   every folder of it and every workspace holding it reads. At the first start of this build the
   issues each workspace kept for the project and for its worktrees are brought in: an issue from a
