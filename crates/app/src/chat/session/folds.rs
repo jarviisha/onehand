@@ -155,40 +155,6 @@ impl ChatSession {
             .get(&(anchor, path.to_string()))
             .map(Vec::as_slice)
     }
-
-    /// Show every file of the turn anchored at `anchor`, or hide them all if
-    /// they are already showing.
-    ///
-    /// One control for the whole block, since opening eight rows one at a time
-    /// to read a turn's diff is the block asking to be scrolled rather than
-    /// read.
-    pub fn toggle_every_file(
-        &mut self,
-        anchor: TranscriptItemId,
-        paths: &[String],
-        body: &[TranscriptItemId],
-    ) {
-        let all_open = paths.iter().all(|path| self.file_is_open(anchor, path));
-        self.file_open.retain(|(at, _), _| *at != anchor);
-        if !all_open {
-            let rows: Vec<(String, Vec<onehand_core::diff::Row>)> =
-                self.with_turn_items(body, |items| {
-                    paths
-                        .iter()
-                        .map(|path| {
-                            (
-                                path.clone(),
-                                onehand_core::chat::turn_file_diff(items, path),
-                            )
-                        })
-                        .collect()
-                });
-            self.file_open
-                .extend(rows.into_iter().map(|(path, diff)| ((anchor, path), diff)));
-        }
-        self.fold_changed();
-    }
-
     /// Run `f` over the transcript items `body` names.
     ///
     /// The summary block holds a turn's items by id rather than by value, so

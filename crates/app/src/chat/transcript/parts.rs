@@ -324,21 +324,31 @@ pub(super) fn fold_line(
 struct ScrollBody {
     key: usize,
     max_h: Rems,
+    /// Opened at the end of what it holds rather than its start.
+    from_end: bool,
     children: Vec<gpui::AnyElement>,
 }
 
 impl RenderOnce for ScrollBody {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let key = self.key;
+        let from_end = self.from_end;
+        // Made once, when the box first opens: where it opens is decided then,
+        // and the reader's own scrolling is kept after.
         let scroll = window
-            .use_keyed_state(("detail-scroll-state", key), cx, |_, _| {
-                ScrollHandle::default()
+            .use_keyed_state(("detail-scroll-state", key), cx, move |_, _| {
+                let scroll = ScrollHandle::default();
+                if from_end {
+                    scroll.scroll_to_bottom();
+                }
+                scroll
             })
             .read(cx)
             .clone();
         // Last frame's measure: the first frame of an opened detail draws
         // without the gutter and the second has it, a frame nobody sees.
         let overflows = scroll.max_offset().y > gpui::px(0.);
+        let overflows_x = scroll.max_offset().x > gpui::px(0.);
 
         div()
             .id(("detail-frame", key))
@@ -357,12 +367,20 @@ impl RenderOnce for ScrollBody {
                     // the scrolled box so the bar stays on the frame's edge
                     // and the text stops short of its thumb.
                     .when(overflows, |area| area.pr(SCROLLBAR_W))
-                    .overflow_y_scroll()
+                    .when(overflows_x, |area| area.pb(SCROLLBAR_W))
+                    // **Both axes in one container**, so the vertical bar,
+                    // a sibling of it in the frame, stays on the frame's
+                    // right edge however far the lines are pushed sideways.
+                    .overflow_scroll()
                     .track_scroll(&scroll)
                     .children(self.children),
             )
             .child(contain_wheel(scroll.clone()))
-            .child(onehand_ui::scrollbar(&scroll).mode(ScrollbarMode::Always))
+            .child(
+                onehand_ui::scrollbar(&scroll)
+                    .axis(gpui_component::scroll::ScrollbarAxis::Both)
+                    .mode(ScrollbarMode::Always),
+            )
     }
 }
 
@@ -443,37 +461,10 @@ fn contain_wheel(scroll: ScrollHandle) -> impl IntoElement {
     .size_full()
 }
 
-/// A detail's body, scrolling inside its box only once it has been opened.
-pub(super) fn scrolled(open: bool, key: usize, body: gpui::Div) -> gpui::AnyElement {
-    match open {
-        true => ScrollBody {
-            key,
-            max_h: DETAIL_OPEN_H,
-            children: vec![body.into_any_element()],
-        }
-        .into_any_element(),
-        false => body.into_any_element(),
-    }
-}
-
 /// A well of machine text: the sunk fill, no edge, mono at the code size. What a tool read, printed or changed sits in one, and so does
 /// an answer's fenced code, so the two read as the same kind of thing.
 pub(super) fn plain_box(cx: &App) -> gpui::Div {
     onehand_ui::well(cx).line_height(relative(LEADING))
-}
-
-/// Lines wider than their well scroll sideways inside it, rather than
-/// wrapping a command or a diff line into something nobody typed.
-pub(super) fn sideways(
-    id: impl Into<gpui::ElementId>,
-    body: impl IntoElement,
-) -> gpui::Stateful<gpui::Div> {
-    div()
-        .id(id)
-        .w_full()
-        .min_w_0()
-        .overflow_x_scroll()
-        .child(body)
 }
 
 /// Let a control take the height its own text needs.
@@ -626,6 +617,8 @@ pub(super) fn card_foot() -> gpui::Div {
 
 mod activity;
 pub(super) use activity::{ActivityRow, Object, RowMark, activity_row};
+mod detail_box;
+pub(super) use detail_box::{BOX_MAX_LINES, DetailBox, command_cut, command_head, detail_box};
 mod working;
 pub(in crate::chat) use working::{WorkingLine, working_text};
 

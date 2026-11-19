@@ -1,17 +1,15 @@
 use super::fold_key;
 use super::metrics::{FOLD_INDENT, TEXT_SM};
 use super::parts::{
-    ActivityRow, Object, RowMark, WorkingLine, activity_row, chevron, detail_well, fold_box,
-    fold_line, line_counts, plain_box, show_more, sideways, working_text,
+    ActivityRow, DetailBox, Object, RowMark, WorkingLine, activity_row, chevron, detail_box,
+    detail_well, fold_box, fold_line, line_counts, show_more, working_text,
 };
-use super::tool::diff_rows;
+use super::tool::{diff_rows, rows_text};
 use crate::chat::session::ChatSession;
-use crate::controls::Quiet as _;
-use crate::controls::Short as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, ClickEvent, Entity, InteractiveElement, IntoElement, ParentElement, Rems, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, rems,
+    StatefulInteractiveElement, Styled, StyledText, Window, div, rems,
 };
 use gpui_component::{ActiveTheme, IconName, StyledExt};
 use onehand_core::chat::ChatItem;
@@ -182,6 +180,14 @@ pub(in crate::chat) fn turn_summary(
 ) -> gpui::AnyElement {
     let changes = &plan.changes;
     let anchor = plan.anchor;
+    // **One file is one line**: what happened to it, where, how much. A head
+    // saying *1 file changed* over a row saying the same file was the block
+    // saying everything twice.
+    if let [file] = changes.files.as_slice() {
+        return fold_box()
+            .child(file_row(session, plan, file, true, cx))
+            .into_any_element();
+    }
     // **`fold_key`, never the bare index.** History and Live indices overlap,
     // so a resumed conversation can hand two different rows one id -- which is
     // how two elements come to share one piece of retained state.
@@ -193,10 +199,7 @@ pub(in crate::chat) fn turn_summary(
             div()
                 .flex_none()
                 .whitespace_nowrap()
-                .child(match changes.files.len() {
-                    1 => "1 file changed".to_string(),
-                    n => format!("{n} files changed"),
-                }),
+                .child(format!("{} files changed", changes.files.len())),
         )
         .children(line_counts(changes.added, changes.removed, cx));
 
@@ -223,11 +226,8 @@ pub(in crate::chat) fn turn_summary(
         }
     }
 
-    let paths: Vec<String> = changes.files.iter().map(|f| f.path.clone()).collect();
-    let all_open = paths
-        .iter()
-        .all(|path| session.read(cx).file_is_open(anchor, path));
-
+    // Every diff opens on its own row: opening them all at once poured the
+    // whole turn into the conversation.
     block
         .child(
             div()
@@ -240,7 +240,7 @@ pub(in crate::chat) fn turn_summary(
                 .children(
                     listed
                         .into_iter()
-                        .map(|file| file_row(session, plan, file, cx)),
+                        .map(|file| file_row(session, plan, file, false, cx)),
                 )
                 // **What was left out says so, says how many, and opens.**
                 .children((over > 0).then(|| {
@@ -263,56 +263,51 @@ pub(in crate::chat) fn turn_summary(
                             }
                         }),
                     )
-                }))
-                .child(
-                    div().h_flex().child(
-                        crate::controls::action(("turn-diff-all", key))
-                            .quiet(cx)
-                            .short()
-                            .label(match all_open {
-                                true => "Hide every diff",
-                                false => "Show every diff",
-                            })
-                            .on_click({
-                                let session = session.clone();
-                                let body = plan.body.clone();
-                                move |_, _, cx: &mut App| {
-                                    session.update(cx, |session, cx| {
-                                        session.toggle_every_file(anchor, &paths, &body);
-                                        cx.notify();
-                                    });
-                                }
-                            }),
-                    ),
-                ),
+                })),
         )
         .into_any_element()
 }
 
+/// How wide the column of line counts is, so the counts of every file in a
+/// turn's list stand one under another at the right edge.
+const COUNTS_W: Rems = rems(5.);
+
 /// One file of a turn's summary, and its diff when it is open.
+///
+/// `alone` is the turn's only file: the line then says what happened to it,
+/// as no head over it does, and its counts follow its path. Among several, it
+/// says *new* or *deleted* where that is so and keeps its counts in the
+/// column at the right edge.
 fn file_row(
     session: &Entity<ChatSession>,
     plan: &crate::chat::viewport::ChangePlan,
     file: &onehand_core::chat::FileChange,
+    alone: bool,
     cx: &App,
 ) -> gpui::AnyElement {
     use onehand_core::chat::FileVerdict;
 
-    let status = crate::theme::status_ink(cx);
     let anchor = plan.anchor;
     let open = session.read(cx).file_is_open(anchor, &file.path);
     let gone = file.verdict == FileVerdict::Deleted;
-    let (mark, ink) = match file.verdict {
-        FileVerdict::Added => ("A", status.success),
-        FileVerdict::Modified => ("M", status.warning),
-        FileVerdict::Deleted => ("D", status.danger),
-    };
+    let root = session.read(cx).chat().root.clone();
+    let shown = onehand_core::chat::activity::display_path(&root, &file.path);
     // The folder is context for the name, so it is a step quieter than it.
-    let (folder, name) = match file.path.rfind('/') {
-        Some(at) => file.path.split_at(at + 1),
-        None => ("", file.path.as_str()),
-    };
+    let folder = shown.rfind('/').map_or(0, |at| at + 1);
     let lit = cx.theme().foreground;
+    let name_ink = match gone {
+        true => cx.theme().muted_foreground,
+        false => cx.theme().foreground,
+    };
+    let ink = |color| gpui::HighlightStyle {
+        color: Some(color),
+        ..Default::default()
+    };
+    let path = StyledText::new(shown.clone()).with_highlights([
+        (0..folder, ink(crate::theme::meta_ink(cx))),
+        (folder..shown.len(), ink(name_ink)),
+    ]);
+    let row_key = turn_file_key(anchor, &file.path);
 
     let row = div()
         .id(gpui::ElementId::NamedInteger(
@@ -325,6 +320,7 @@ fn file_row(
         .w_full()
         .min_w_0()
         .cursor_pointer()
+        .text_size(TEXT_SM)
         .text_color(cx.theme().muted_foreground)
         // **Ink, not a plate**, as every other row in the transcript answers.
         .hover(move |row| row.text_color(lit))
@@ -340,44 +336,45 @@ fn file_row(
             }
         })
         .child(chevron(open))
-        // **A letter in its own ink, not a coloured dot**: the one every diff
-        // tool already uses.
-        .child(
-            div()
-                .flex_none()
-                .font_family(cx.theme().mono_font_family.clone())
-                .text_color(ink)
-                .child(mark),
-        )
+        .when(alone, |row| {
+            row.child(div().flex_none().child(file.verdict.verb()))
+        })
+        // **Giving way at its start**, so a deep path keeps the name it ends
+        // on: the folder is what is the same from file to file.
         .child(
             div()
                 .min_w_0()
-                .h_flex()
                 .overflow_hidden()
                 .whitespace_nowrap()
+                .text_ellipsis_start()
                 .font_family(cx.theme().mono_font_family.clone())
                 .when(gone, |path| path.line_through())
-                .child(
-                    div()
-                        .min_w_0()
-                        .truncate()
-                        .when(!gone, |folder| {
-                            folder.text_color(crate::theme::meta_ink(cx))
-                        })
-                        .child(folder.to_string()),
-                )
-                .child(
-                    div()
-                        .flex_none()
-                        .text_color(match gone {
-                            true => cx.theme().muted_foreground,
-                            false => cx.theme().foreground,
-                        })
-                        .child(name.to_string()),
-                ),
+                .child(path),
         )
-        .children(line_counts(file.added, file.removed, cx))
-        .child(ratio_bar(file, cx));
+        .when(!alone, |row| {
+            row.children(
+                file.verdict
+                    .note()
+                    .map(|note| div().flex_none().child(note)),
+            )
+            .child(div().flex_1())
+            // Only a changed file has a share worth a bar: a new file is
+            // all new and a deleted one all gone.
+            .when(file.verdict == FileVerdict::Modified, |row| {
+                row.child(ratio_bar(file, cx))
+            })
+            .child(
+                div()
+                    .flex_none()
+                    .w(COUNTS_W)
+                    .h_flex()
+                    .justify_end()
+                    .children(line_counts(file.added, file.removed, cx)),
+            )
+        })
+        .when(alone, |row| {
+            row.children(line_counts(file.added, file.removed, cx))
+        });
 
     if !open {
         return row.into_any_element();
@@ -390,21 +387,36 @@ fn file_row(
         .file_diff(anchor, &file.path)
         .unwrap_or_default()
         .to_vec();
+    let text = rows_text(&hunks);
     let mut budget = SUMMARY_DIFF;
+    let lines = diff_rows(&hunks, &mut budget, file.verdict == FileVerdict::Added, cx);
     div()
         .v_flex()
         .w_full()
         .min_w_0()
         .gap_1()
         .child(row)
-        .child(detail_well(plain_box(cx).py_3().child(sideways(
-            gpui::ElementId::NamedInteger(
-                SharedString::from(format!("turn-diff-{}", file.path)),
-                fold_key(anchor) as u64,
-            ),
-            div().v_flex().children(diff_rows(&hunks, &mut budget, cx)),
-        ))))
+        .child(detail_well(detail_box(
+            DetailBox {
+                key: row_key,
+                head: None,
+                total: text.len().max(lines.len()),
+                lines,
+                from_end: false,
+                copy: Some(text.join("\n")),
+                whole: Some((text.join("\n").into(), Some("diff".into()))),
+            },
+            cx,
+        )))
         .into_any_element()
+}
+
+/// A key for one file's box in one turn's summary, apart from every step's.
+fn turn_file_key(anchor: onehand_core::chat::TranscriptItemId, path: &str) -> usize {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    ("turn-file", fold_key(anchor), path).hash(&mut hasher);
+    hasher.finish() as usize
 }
 
 /// How much of a file the turn touched, as a bar.
