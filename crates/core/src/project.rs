@@ -21,8 +21,10 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+pub mod drive;
 pub mod file;
 mod place;
+pub use drive::ProjectsDrive;
 pub use place::{place_blocking, Placement};
 
 /// A project's id: eight lowercase hex characters, minted once and never

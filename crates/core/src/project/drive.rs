@@ -1,0 +1,471 @@
+//! What happens next for every project onehand keeps: one drive for the
+//! process, since a project is the same project in every window holding it.
+//!
+//! **Decided here, carried out elsewhere.** A [`ProjectsDrive`] owns every
+//! project read at launch or placed since, and answers each change with
+//! effects: a project file to write ([`Effect::Write`]), a wait before a
+//! burst is written ([`Effect::Arm`]), and that a project changed
+//! ([`Effect::Changed`]), which the front end tells every window holding it.
+//! It derefs to [`Projects`] and hands out no mutable one.
+//!
+//! **A file is written whole, in order, and put back by thing**, as the
+//! workspace file is: a change shows at once and is written after every write
+//! before it; a write that fails puts back each thing no later write carries,
+//! to its value last known saved, and is said once. A change made in a burst
+//! (a check command typed, an offload's moves) is written once things have
+//! been still for [`SAVE_DEBOUNCE`].
+
+use super::{MadeBy, Placement, Project, ProjectId, Projects, Worktree};
+use crate::saving::{Pending, Saves};
+use crate::workspace::{BuildHost, HostName, Offloaded};
+use std::collections::{BTreeSet, HashMap};
+use std::ops::Deref;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+/// How long the projects must sit still before a burst of changes is
+/// written: the workspace's own wait, for the same reasons.
+pub const SAVE_DEBOUNCE: Duration = crate::workspace::drive::SAVE_DEBOUNCE;
+
+/// One thing in a project file a failed write puts back on its own.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Thing {
+    Name,
+    Check,
+    Builds,
+    Worktrees,
+    /// The offload of one folder of the project, by its path here.
+    Offload(PathBuf),
+}
+
+/// A thing's value, as a failed write puts it back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Value {
+    Name(String),
+    Check(Option<String>),
+    Builds(Vec<BuildHost>),
+    Worktrees(Vec<Worktree>),
+    Offload {
+        folder: PathBuf,
+        on: Option<Offloaded>,
+    },
+}
+
+/// One write of a project file: the project as it stood, where it goes, and
+/// which changes it carries.
+pub struct ProjectWrite {
+    pub id: ProjectId,
+    pub pending: Pending<Thing, Value>,
+    pub project: Project,
+    pub dir: PathBuf,
+}
+
+/// What a person is told.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Signal {
+    /// The file of the project called `name` could not be written: why.
+    SaveFailed { name: String, why: String },
+}
+
+/// What the front end carries out.
+pub enum Effect {
+    /// Make `write`, after every write before it, and report
+    /// [`Input::Written`]. A late answer is **recorded**: the write landed or
+    /// it did not, whatever changed since.
+    Write(Box<ProjectWrite>),
+    /// Report [`Input::Elapsed`] with `token` after `after`. A late answer is
+    /// **dropped** by its token: a later change armed a later wait.
+    Arm { token: u64, after: Duration },
+    /// The project changed: tell every window holding it.
+    Changed(ProjectId),
+    Signal(Signal),
+}
+
+/// What the front end reports back.
+pub enum Input {
+    /// The write [`Effect::Write`] asked for landed, or failed.
+    Written {
+        id: ProjectId,
+        pending: Pending<Thing, Value>,
+        result: Result<(), String>,
+    },
+    /// The wait [`Effect::Arm`] asked for ran out.
+    Elapsed { token: u64 },
+}
+
+/// Every project's drive. See the module header.
+pub struct ProjectsDrive {
+    projects: Projects,
+    /// `<data root>/projects`, each project's folder named by its id inside.
+    dir: PathBuf,
+    saves: HashMap<ProjectId, Saves<Thing, Value>>,
+    /// The projects with a change waiting for things to be still.
+    waiting: BTreeSet<ProjectId>,
+    /// The newest wait armed, while one waits.
+    soon: Option<u64>,
+    minted: u64,
+}
+
+impl Deref for ProjectsDrive {
+    type Target = Projects;
+    fn deref(&self) -> &Projects {
+        &self.projects
+    }
+}
+
+impl ProjectsDrive {
+    /// A drive over `projects`, whose files go in `dir`.
+    pub fn new(projects: Projects, dir: PathBuf) -> Self {
+        Self {
+            projects,
+            dir,
+            saves: HashMap::new(),
+            waiting: BTreeSet::new(),
+            soon: None,
+            minted: 0,
+        }
+    }
+
+    /// Put `folder` on `host` where `placement` says, made by `made` if it
+    /// becomes a worktree, or a project of its own named `fresh`. Answers the
+    /// project it is a folder of.
+    ///
+    /// A new folder something already placed since `placement` was worked
+    /// out is that project's, and makes none of its own.
+    #[must_use = "its effects are to be carried"]
+    pub fn place(
+        &mut self,
+        host: Option<HostName>,
+        folder: PathBuf,
+        placement: Placement,
+        made: MadeBy,
+        fresh: ProjectId,
+    ) -> (ProjectId, Vec<Effect>) {
+        if let Some((project, _)) = self.projects.find(host.as_ref(), &folder) {
+            return (project.id.clone(), Vec::new());
+        }
+        match placement {
+            Placement::Known(id, _) if self.projects.get(&id).is_some() => (id, Vec::new()),
+            Placement::WorktreeOf { project, branch } if self.projects.get(&project).is_some() => {
+                let worktree = Worktree {
+                    path: folder,
+                    branch,
+                    from: None,
+                    made_by: made,
+                    offload: None,
+                };
+                let fx = self.record_worktree(&project, worktree);
+                (project, fx)
+            }
+            Placement::Known(..) | Placement::WorktreeOf { .. } | Placement::New => {
+                let project = Project::new(fresh, host, folder);
+                let id = project.id.clone();
+                self.projects.put(project);
+                let mut fx: Vec<Effect> = self.write(&id).into_iter().collect();
+                fx.push(Effect::Changed(id.clone()));
+                (id, fx)
+            }
+        }
+    }
+
+    /// Record `worktree` as one of project `id`'s, written now: what a split
+    /// and a run's cut do. A folder the project already has is left as it is.
+    #[must_use = "its effects are to be carried"]
+    pub fn record_worktree(&mut self, id: &ProjectId, worktree: Worktree) -> Vec<Effect> {
+        let Some(project) = self.projects.get_mut(id) else {
+            return Vec::new();
+        };
+        if project.folder(project.host.as_ref(), &worktree.path).is_some() {
+            return Vec::new();
+        }
+        let before = project.worktrees.clone();
+        project.worktrees.push(worktree);
+        let after = project.worktrees.clone();
+        self.change(
+            id,
+            Thing::Worktrees,
+            Value::Worktrees(before),
+            Value::Worktrees(after),
+            false,
+        )
+    }
+
+    /// Name project `id` `name`, trimmed, written now; a name blank or
+    /// unchanged changes nothing.
+    #[must_use = "its effects are to be carried"]
+    pub fn rename(&mut self, id: &ProjectId, name: &str) -> Vec<Effect> {
+        let name = name.trim();
+        let Some(project) = self.projects.get_mut(id) else {
+            return Vec::new();
+        };
+        if name.is_empty() || project.name == name {
+            return Vec::new();
+        }
+        let before = std::mem::replace(&mut project.name, name.to_string());
+        self.change(
+            id,
+            Thing::Name,
+            Value::Name(before),
+            Value::Name(name.to_string()),
+            false,
+        )
+    }
+
+    /// Set project `id`'s check command to `typed`, none when blank; written
+    /// once the typing stops. Unchanged, nothing happens.
+    #[must_use = "its effects are to be carried"]
+    pub fn set_check(&mut self, id: &ProjectId, typed: &str) -> Vec<Effect> {
+        let typed = typed.trim();
+        let check = (!typed.is_empty()).then(|| typed.to_string());
+        let Some(project) = self.projects.get_mut(id) else {
+            return Vec::new();
+        };
+        if project.check == check {
+            return Vec::new();
+        }
+        let before = std::mem::replace(&mut project.check, check.clone());
+        self.change(
+            id,
+            Thing::Check,
+            Value::Check(before),
+            Value::Check(check),
+            true,
+        )
+    }
+
+    /// Make `entry` one of project `id`'s build hosts: in place of the one at
+    /// `replacing`, or added at the end. Refused, in words, for a project
+    /// whose sessions run on a host, which builds there already, and for a
+    /// host the project already builds on. Written now; unchanged, nothing
+    /// happens.
+    pub fn put_build_host(
+        &mut self,
+        id: &ProjectId,
+        entry: BuildHost,
+        replacing: Option<usize>,
+    ) -> Result<Vec<Effect>, String> {
+        let Some(project) = self.projects.get(id) else {
+            return Ok(Vec::new());
+        };
+        if project.host.is_some() || project.offload.is_some() {
+            return Err(format!(
+                "{} runs its sessions on a host; it builds there already",
+                project.name
+            ));
+        }
+        let taken = project
+            .builds
+            .iter()
+            .enumerate()
+            .any(|(at, held)| Some(at) != replacing && held.host == entry.host);
+        if taken {
+            return Err(format!("{} already builds on {}", project.name, entry.host));
+        }
+        let mut builds = project.builds.clone();
+        match replacing.and_then(|at| builds.get_mut(at)) {
+            Some(held) => *held = entry,
+            None => builds.push(entry),
+        }
+        Ok(self.set_builds(id, builds))
+    }
+
+    /// Stop project `id` building on `entry`: named by what it is, not by its
+    /// place, which may have moved since it was shown. One that is gone
+    /// already changes nothing.
+    #[must_use = "its effects are to be carried"]
+    pub fn remove_build_host(&mut self, id: &ProjectId, entry: &BuildHost) -> Vec<Effect> {
+        let Some(project) = self.projects.get(id) else {
+            return Vec::new();
+        };
+        let builds = project
+            .builds
+            .iter()
+            .filter(|held| *held != entry)
+            .cloned()
+            .collect();
+        self.set_builds(id, builds)
+    }
+
+    fn set_builds(&mut self, id: &ProjectId, builds: Vec<BuildHost>) -> Vec<Effect> {
+        let Some(project) = self.projects.get_mut(id) else {
+            return Vec::new();
+        };
+        if project.builds == builds {
+            return Vec::new();
+        }
+        let before = std::mem::replace(&mut project.builds, builds.clone());
+        self.change(
+            id,
+            Thing::Builds,
+            Value::Builds(before),
+            Value::Builds(builds),
+            false,
+        )
+    }
+
+    /// Say where the sessions of `folder` on `host` run: on `on`, offloaded,
+    /// or here again with none. Each folder of a project is offloaded on its
+    /// own. Written once things are still, as an offload's other writes are;
+    /// `None` when no project holds the folder.
+    #[must_use = "its effects are to be carried"]
+    pub fn set_offload(
+        &mut self,
+        host: Option<&HostName>,
+        folder: &Path,
+        on: Option<Offloaded>,
+    ) -> Option<Vec<Effect>> {
+        let (project, at) = self.projects.find(host, folder)?;
+        let id = project.id.clone();
+        let before = project.offload_of(at).cloned();
+        if before == on {
+            return Some(Vec::new());
+        }
+        self.put_offload(&id, folder, on.clone());
+        let folder = folder.to_path_buf();
+        Some(self.change(
+            &id,
+            Thing::Offload(folder.clone()),
+            Value::Offload {
+                folder: folder.clone(),
+                on: before,
+            },
+            Value::Offload { folder, on },
+            true,
+        ))
+    }
+
+    fn put_offload(&mut self, id: &ProjectId, folder: &Path, on: Option<Offloaded>) {
+        let Some(project) = self.projects.get_mut(id) else {
+            return;
+        };
+        if project.path == folder {
+            project.offload = on;
+        } else if let Some(worktree) = project.worktrees.iter_mut().find(|w| w.path == folder) {
+            worktree.offload = on;
+        }
+    }
+
+    /// What the front end reports back.
+    #[must_use = "its effects are to be carried"]
+    pub fn handle(&mut self, input: Input) -> Vec<Effect> {
+        match input {
+            Input::Written {
+                id,
+                pending,
+                result,
+            } => {
+                let Some(saves) = self.saves.get_mut(&id) else {
+                    return Vec::new();
+                };
+                let Some((why, back)) = saves.landed(pending, result) else {
+                    return Vec::new();
+                };
+                for value in back {
+                    self.put(&id, value);
+                }
+                let name = self
+                    .projects
+                    .get(&id)
+                    .map(|project| project.name.clone())
+                    .unwrap_or_default();
+                vec![
+                    Effect::Changed(id),
+                    Effect::Signal(Signal::SaveFailed { name, why }),
+                ]
+            }
+            Input::Elapsed { token } => {
+                if self.soon != Some(token) {
+                    return Vec::new();
+                }
+                self.soon = None;
+                let waiting = std::mem::take(&mut self.waiting);
+                waiting.iter().filter_map(|id| self.write(id)).collect()
+            }
+        }
+    }
+
+    /// Put `value` back into project `id`.
+    fn put(&mut self, id: &ProjectId, value: Value) {
+        match value {
+            Value::Offload { folder, on } => self.put_offload(id, &folder, on),
+            Value::Name(name) => {
+                if let Some(project) = self.projects.get_mut(id) {
+                    project.name = name;
+                }
+            }
+            Value::Check(check) => {
+                if let Some(project) = self.projects.get_mut(id) {
+                    project.check = check;
+                }
+            }
+            Value::Builds(builds) => {
+                if let Some(project) = self.projects.get_mut(id) {
+                    project.builds = builds;
+                }
+            }
+            Value::Worktrees(mut worktrees) => {
+                if let Some(project) = self.projects.get_mut(id) {
+                    // Each folder's offload is a thing of its own, and stays
+                    // as it now is.
+                    for worktree in &mut worktrees {
+                        if let Some(now) = project.worktrees.iter().find(|w| w.path == worktree.path)
+                        {
+                            worktree.offload = now.offload.clone();
+                        }
+                    }
+                    project.worktrees = worktrees;
+                }
+            }
+        }
+    }
+
+    /// Change `thing` of project `id` from `before` to `after`, as already
+    /// done to the project, and write it now (`soon` false) or after the
+    /// burst; then say the project changed.
+    fn change(
+        &mut self,
+        id: &ProjectId,
+        thing: Thing,
+        before: Value,
+        after: Value,
+        soon: bool,
+    ) -> Vec<Effect> {
+        self.saves
+            .entry(id.clone())
+            .or_default()
+            .change(thing, before, after);
+        let mut fx = match soon {
+            true => self.save_soon(id),
+            false => self.write(id).into_iter().collect(),
+        };
+        fx.push(Effect::Changed(id.clone()));
+        fx
+    }
+
+    fn save_soon(&mut self, id: &ProjectId) -> Vec<Effect> {
+        self.waiting.insert(id.clone());
+        self.minted += 1;
+        self.soon = Some(self.minted);
+        vec![Effect::Arm {
+            token: self.minted,
+            after: SAVE_DEBOUNCE,
+        }]
+    }
+
+    /// The whole of project `id` as it now stands, and where it goes. Carries
+    /// a change waiting on a burst too, so that one is not written again.
+    fn write(&mut self, id: &ProjectId) -> Option<Effect> {
+        let project = self.projects.get(id)?.clone();
+        self.waiting.remove(id);
+        let pending = self.saves.entry(id.clone()).or_default().write_all();
+        Some(Effect::Write(Box::new(ProjectWrite {
+            id: id.clone(),
+            pending,
+            dir: self.dir.join(id.as_str()),
+            project,
+        })))
+    }
+}
+
+#[cfg(test)]
+mod tests;
