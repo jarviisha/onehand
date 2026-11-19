@@ -83,7 +83,11 @@ fn a_spawn_adds_a_working_card() {
     assert_eq!(s.id, "c1");
     assert_eq!(s.name, "Read the auth tests");
     assert_eq!(s.state, SubagentState::Working);
-    assert_eq!(s.task.as_deref(), Some("Read tests/auth and report"));
+    // The whole of what it was asked, which the float shows under *Show all*.
+    assert_eq!(
+        s.task.as_deref(),
+        Some("Read tests/auth and report\nthen more")
+    );
     assert_eq!(chat.subagents_working(), 1);
     assert!(chat.running());
 }
@@ -288,7 +292,7 @@ fn a_replay_adds_no_cards() {
 
 #[test]
 fn a_longer_replay_keeps_the_files_cards() {
-    let mut saved = SubagentItem::new("c1".into(), "Reader".into(), "Read");
+    let mut saved = SubagentItem::new("c1".into(), "Reader".into(), "Read", None);
     saved.state = SubagentState::Completed;
     let mut chat = chat();
     chat.resume_from(crate::chat::store::ConversationSnapshot {

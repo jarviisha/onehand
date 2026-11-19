@@ -188,6 +188,8 @@ mod tests {
             task: Some("find the loader".into()),
             state: SubagentState::Failed,
             items: vec![ChatItem::Agent(Md::parse("looked in src"))],
+            started: None,
+            secs: None,
         })];
         let out = export_markdown(&chat);
         assert!(

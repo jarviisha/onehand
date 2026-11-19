@@ -6,7 +6,7 @@
 //! sends are taken, and everything else it says is dropped.
 
 use super::apply::{plan, seal_thought, settle_steps, tool_call, tool_update};
-use super::items::{ChatItem, Md, Thought};
+use super::items::{ChatItem, Md, Thought, TranscriptItemId};
 use super::{Chat, Replay};
 use crate::acp::{AcpEvent, SubagentEnd, ToolStatus};
 use crate::Now;
@@ -39,25 +39,60 @@ impl SubagentState {
 pub struct SubagentItem {
     pub id: String,
     pub name: String,
-    /// The first line of what it was asked, when that says more than its name.
+    /// What it was asked, whole, when that says more than its name.
     pub task: Option<String>,
     pub state: SubagentState,
     pub items: Vec<ChatItem>,
+    /// When it was handed the work, in epoch seconds; `None` for a card read
+    /// back from disk, whose length is in `secs`.
+    pub started: Option<u64>,
+    /// How long it ran, once it has ended; `None` while it works and for a
+    /// card saved before lengths were kept.
+    pub secs: Option<u64>,
+}
+
+/// How a subagent stands, as the strip over the composer counts it, the most
+/// urgent first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Standing {
+    /// Working, with a permission or a question of its own waiting on the
+    /// person.
+    Waiting,
+    Failed,
+    Running,
+    Done,
+    /// Cancelled, or cut off by the agent going away.
+    Stopped,
+}
+
+impl Standing {
+    /// The word a count of it is said with.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Waiting => "waiting",
+            Self::Failed => "failed",
+            Self::Running => "running",
+            Self::Done => "done",
+            Self::Stopped => "stopped",
+        }
+    }
 }
 
 impl SubagentItem {
-    fn new(id: String, name: String, task: &str) -> Self {
+    fn new(id: String, name: String, task: &str, now: Option<Now>) -> Self {
         // The adapter fills the task with its own words when it has none to
         // give; a line that only repeats the name says nothing either.
         let line = task.lines().next().unwrap_or("").trim();
         let task = (!line.is_empty() && line != name && !line.starts_with("Delegated task for "))
-            .then(|| line.to_string());
+            .then(|| task.trim().to_string());
         Self {
             id,
             name,
             task,
             state: SubagentState::Working,
             items: Vec::new(),
+            started: now.map(|now| now.secs),
+            secs: None,
         }
     }
 
@@ -65,6 +100,10 @@ impl SubagentItem {
     /// will never be settled.
     fn close(&mut self, state: SubagentState, now: Option<Now>) {
         self.state = state;
+        self.secs = self
+            .started
+            .zip(now)
+            .map(|(started, now)| now.secs.saturating_sub(started));
         interrupt(&mut self.items, now);
         seal_thought(&mut self.items, now);
         // A cancelled subagent was stopped; any other end left its steps
@@ -80,7 +119,83 @@ impl SubagentItem {
     }
 }
 
+impl SubagentItem {
+    /// The card's key: what its items' addresses name it by. Taken from its
+    /// id, which is the subagent's own session and never shared.
+    pub fn key(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.id.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    /// How many steps it took: its tool calls, not its words or thoughts.
+    pub fn steps(&self) -> usize {
+        self.items
+            .iter()
+            .filter(|item| matches!(item, ChatItem::Tool(_)))
+            .count()
+    }
+}
+
 impl Chat {
+    /// The card `key` names, wherever it is, the history and nested cards
+    /// included.
+    pub fn card(&self, key: u64) -> Option<&SubagentItem> {
+        by_key(&self.history, key).or_else(|| by_key(&self.items, key))
+    }
+
+    /// The item `target` addresses, wherever it is.
+    pub fn item_at(&self, target: TranscriptItemId) -> Option<&ChatItem> {
+        self.list(target).get(target.index())
+    }
+
+    /// How `card` stands: whether it waits on the person, has failed, works
+    /// or has ended, and how.
+    pub fn standing(&self, card: &SubagentItem) -> Standing {
+        match card.state {
+            SubagentState::Working if self.asks_for(&card.id) => Standing::Waiting,
+            SubagentState::Working => Standing::Running,
+            SubagentState::Failed => Standing::Failed,
+            SubagentState::Completed => Standing::Done,
+            SubagentState::Cancelled | SubagentState::Interrupted => Standing::Stopped,
+        }
+    }
+
+    /// The subagents handed work since the last prompt, in the order they
+    /// were, each with how it stands: what the strip over the composer counts.
+    pub fn turn_subagents(&self) -> Vec<(u64, Standing)> {
+        let start = self
+            .items
+            .iter()
+            .rposition(|item| matches!(item, ChatItem::User(_)))
+            .map_or(0, |at| at + 1);
+        self.items[start..]
+            .iter()
+            .filter_map(|item| match item {
+                ChatItem::Subagent(card) => Some((card.key(), self.standing(card))),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The subagents of the turn `key` was handed work in, in order, itself
+    /// included: what the float steps through. A nested one's are the cards
+    /// beside it in the card it is in.
+    pub fn subagents_beside(&self, key: u64) -> Vec<u64> {
+        let all: Vec<&ChatItem> = self.history.iter().chain(self.items.iter()).collect();
+        beside(&all, key).unwrap_or_default()
+    }
+
+    /// Whether a permission or a question from subagent `id` waits.
+    fn asks_for(&self, id: &str) -> bool {
+        self.items.iter().any(|item| match item {
+            ChatItem::Permission(p) => p.resolved.is_none() && p.req.child.as_deref() == Some(id),
+            ChatItem::Ask(a) => a.resolved.is_none() && a.req.child.as_deref() == Some(id),
+            _ => false,
+        })
+    }
+
     /// How many subagents are still working, nested ones included.
     pub fn subagents_working(&self) -> usize {
         working(&self.items)
@@ -106,8 +221,9 @@ impl Chat {
                     return false;
                 }
                 seal_thought(&mut self.items, self.told);
-                self.items
-                    .push(ChatItem::Subagent(SubagentItem::new(id, name, &task)));
+                self.items.push(ChatItem::Subagent(SubagentItem::new(
+                    id, name, &task, self.told,
+                )));
                 true
             }
             AcpEvent::SubagentEnded { id, end } => self.end_subagent(&id, end),
@@ -199,6 +315,50 @@ fn working(items: &[ChatItem]) -> usize {
         .sum()
 }
 
+fn by_key(items: &[ChatItem], key: u64) -> Option<&SubagentItem> {
+    items.iter().find_map(|item| match item {
+        ChatItem::Subagent(card) if card.key() == key => Some(card),
+        ChatItem::Subagent(card) => by_key(&card.items, key),
+        _ => None,
+    })
+}
+
+/// The cards of the turn holding card `key` at its top, or of the card
+/// holding it; `None` where it is in neither.
+fn beside(items: &[&ChatItem], key: u64) -> Option<Vec<u64>> {
+    let at = items
+        .iter()
+        .position(|item| matches!(item, ChatItem::Subagent(card) if card.key() == key));
+    match at {
+        Some(at) => {
+            let start = items[..at]
+                .iter()
+                .rposition(|item| matches!(item, ChatItem::User(_)))
+                .map_or(0, |p| p + 1);
+            let end = items[at..]
+                .iter()
+                .position(|item| matches!(item, ChatItem::User(_)))
+                .map_or(items.len(), |p| at + p);
+            Some(
+                items[start..end]
+                    .iter()
+                    .filter_map(|item| match item {
+                        ChatItem::Subagent(card) => Some(card.key()),
+                        _ => None,
+                    })
+                    .collect(),
+            )
+        }
+        None => items.iter().find_map(|item| match item {
+            ChatItem::Subagent(card) => {
+                let inner: Vec<&ChatItem> = card.items.iter().collect();
+                beside(&inner, key)
+            }
+            _ => None,
+        }),
+    }
+}
+
 fn find<'a>(items: &'a [ChatItem], id: &str) -> Option<&'a SubagentItem> {
     items.iter().find_map(|item| match item {
         ChatItem::Subagent(card) if card.id == id => Some(card),
@@ -260,7 +420,7 @@ fn step(items: &mut Vec<ChatItem>, event: AcpEvent, now: Option<Now>) -> bool {
         }
         AcpEvent::SubagentSpawned { id, name, task } => {
             seal_thought(items, now);
-            items.push(ChatItem::Subagent(SubagentItem::new(id, name, &task)));
+            items.push(ChatItem::Subagent(SubagentItem::new(id, name, &task, now)));
         }
         AcpEvent::Connected { .. }
         | AcpEvent::SessionId(_)

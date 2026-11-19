@@ -721,6 +721,8 @@ fn subagent(id: &str, state: SubagentState, items: Vec<ChatItem>) -> ChatItem {
         task: Some("find the config loader".into()),
         state,
         items,
+        started: None,
+        secs: None,
     })
 }
 
@@ -1011,5 +1013,36 @@ fn a_step_keeps_when_it_settled() {
         (tool.elapsed_secs, tool.settled_at),
         (Some(50), Some(1_050))
     );
+    let _ = std::fs::remove_dir_all(&store);
+}
+
+/// A card's length is written with it and read back; one written before
+/// lengths were kept reads back with none.
+#[test]
+fn a_cards_length_comes_back_as_it_was_saved() {
+    let store = scratch("card-length");
+    let mut chat = chat_in(&store, "s1");
+    chat.push_user("go".into(), Vec::new(), crate::chat::store::now_secs());
+    let mut card = subagent("c1", SubagentState::Completed, vec![done_tool("t1")]);
+    if let ChatItem::Subagent(card) = &mut card {
+        card.secs = Some(42);
+    }
+    chat.items.push(card);
+    chat.items.push(subagent(
+        "c2",
+        SubagentState::Completed,
+        vec![done_tool("t2")],
+    ));
+    save(&mut chat);
+    let back = load(&conv_dir(&store, "s1")).unwrap();
+    let secs: Vec<Option<u64>> = back
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            ChatItem::Subagent(card) => Some(card.secs),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(secs, [Some(42), None]);
     let _ = std::fs::remove_dir_all(&store);
 }

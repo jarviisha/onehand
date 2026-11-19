@@ -349,6 +349,9 @@ impl Chat {
         match target {
             TranscriptItemId::History(_) => &self.history,
             TranscriptItemId::Live(_) => &self.items,
+            TranscriptItemId::InCard { card, .. } => {
+                self.card(card).map_or(&[][..], |card| &card.items)
+            }
         }
     }
 
@@ -522,8 +525,15 @@ impl Chat {
     /// item with no prompt after it, while the session is busy. An earlier
     /// turn's step left in hand is not being worked on, whatever runs later.
     pub fn in_running_turn(&self, target: TranscriptItemId) -> bool {
-        let TranscriptItemId::Live(idx) = target else {
-            return false;
+        let idx = match target {
+            TranscriptItemId::Live(idx) => idx,
+            TranscriptItemId::History(_) => return false,
+            // Worked on while its card works.
+            TranscriptItemId::InCard { card, .. } => {
+                return self
+                    .card(card)
+                    .is_some_and(|card| card.state == super::SubagentState::Working);
+            }
         };
         self.busy
             && self
@@ -569,9 +579,11 @@ impl Chat {
             is_last: idx == last_agent,
             // The active turn is the trailing region (no user prompt after it)
             // while a turn is in flight — Copy waits for it to settle.
-            is_active: matches!(target, TranscriptItemId::Live(_))
-                && end == self.items.len()
-                && self.busy,
+            is_active: match target {
+                TranscriptItemId::Live(_) => end == self.items.len() && self.busy,
+                TranscriptItemId::History(_) => false,
+                TranscriptItemId::InCard { .. } => self.in_running_turn(target),
+            },
             elapsed_secs,
             ending: ending(&items[start..end]),
         })

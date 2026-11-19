@@ -106,6 +106,8 @@ fn a_subagents_edit_is_counted_as_written() {
         task: None,
         state: crate::chat::model::SubagentState::Completed,
         items: vec![wrote("inner", &[("src/sub.rs", "a\n", "b\n")])],
+        started: None,
+        secs: None,
     });
     let items = [card];
     let items: Vec<&ChatItem> = items.iter().collect();
