@@ -12,7 +12,7 @@ use gpui::{
     App, ElementId, Entity, InteractiveElement, IntoElement, ParentElement,
     StatefulInteractiveElement, Styled, div,
 };
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
 use onehand_core::chat::{ChatItem, SubagentItem, SubagentState};
 
 /// The line for one subagent: its mark, its name, what it is doing or how it
@@ -74,7 +74,7 @@ pub(super) fn subagent(
             div()
                 .w_3()
                 .flex_none()
-                .child(Icon::new(IconName::Bot).xsmall()),
+                .child(Icon::new(crate::icons::Icon::CornerDownRight).xsmall()),
         )
         .child(
             div()

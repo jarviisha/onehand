@@ -162,6 +162,10 @@ icons! {
         // use for ending a session, and unlike a power mark it does not read as
         // quitting the whole app.
         LogOut,
+        // A subagent's line in the transcript: work handed down a level. The
+        // bundled set's only mark for it is `bot`, a robot face, which gives
+        // the line a character the rest of the transcript does not have.
+        CornerDownRight,
         // The Shortcuts entry in Settings' nav. The bundled set draws no
         // keyboard or key of any kind; its nearest shapes are `square-terminal`,
         // the terminal the app already has a dock for, and `asterisk`.
