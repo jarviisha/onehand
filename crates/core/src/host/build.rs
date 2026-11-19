@@ -8,7 +8,7 @@
 //! is incremental; the command run in it, each line it prints handed over as
 //! it comes; and, when it exits 0, the paths the project names brought back.
 //!
-//! **Every word onehand writes into a shell line is quoted** ([`quoted`]): a
+//! **Every word onehand writes into a shell line is quoted** (`Shell::word`): a
 //! folder, an artifact and the command itself reach the host's shell as one
 //! word each, whatever they hold.
 //!
@@ -246,11 +246,6 @@ pub fn answer(built: &Built, tail: &Tail) -> String {
     }
     said.extend(tail.lines.iter().cloned());
     said.join("\n")
-}
-
-/// `text` as one word of a POSIX shell line.
-pub(crate) fn quoted(text: &str) -> String {
-    format!("'{}'", text.replace('\'', r"'\''"))
 }
 
 /// The folder on the host a working folder is built in, relative to the

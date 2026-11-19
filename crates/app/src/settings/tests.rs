@@ -245,9 +245,20 @@ mod hosts {
     }
 
     #[test]
-    fn a_host_that_runs_no_sessions_says_it_only_builds() {
+    fn a_windows_host_says_it_builds_only() {
         let lines = host_lines(&windows(), None, &HostState::Unknown, false, &[]);
         assert_eq!(lines.about, "Windows AMD64");
+        assert_eq!(lines.note.as_deref(), Some("Builds only"));
+    }
+
+    #[test]
+    fn a_system_this_build_does_not_know_builds_nothing_yet() {
+        let odd = HostSpec {
+            name: HostName("odd".into()),
+            os: HostOs::Other("plan9".into()),
+            arch: "x86_64".into(),
+        };
+        let lines = host_lines(&odd, None, &HostState::Unknown, false, &[]);
         assert_eq!(
             lines.note.as_deref(),
             Some("Builds only; nothing builds on it yet")

@@ -113,7 +113,10 @@ fn quoted_survives_spaces_quotes_and_dollars() {
     ] {
         let out = Command::new("sh")
             .arg("-c")
-            .arg(format!("printf %s {}", quoted(text)))
+            .arg(format!(
+                "printf %s {}",
+                shell::Shell::Posix.word(text).expect("any text")
+            ))
             .output()
             .expect("sh runs");
         assert_eq!(String::from_utf8_lossy(&out.stdout), text);
@@ -527,15 +530,22 @@ mod cli {
             refused(&[], &top, "other"),
             "proj does not build on other; it builds on build01, win"
         );
+        let other = [HostSpec {
+            name: HostName("win".into()),
+            os: HostOs::Other("plan9".into()),
+            arch: "x86_64".into(),
+        }];
+        assert_eq!(
+            refused(&other, &top, "win"),
+            "win runs plan9; nothing builds on it yet"
+        );
         let windows = [HostSpec {
             name: HostName("win".into()),
             os: HostOs::Windows,
             arch: "AMD64".into(),
         }];
-        assert_eq!(
-            refused(&windows, &top, "win"),
-            "win runs Windows; nothing builds on a Windows host yet"
-        );
+        let asked = asked_blocking(&root.0, &windows, &top, "win").expect("a Windows host builds");
+        assert_eq!(asked.os, HostOs::Windows);
     }
 
     #[test]
@@ -553,19 +563,19 @@ mod cli {
         let words =
             |words: &[&str]| -> Vec<String> { words.iter().map(|w| w.to_string()).collect() };
         assert_eq!(
-            command_line(&words(&["cargo test && ls"])).as_deref(),
+            command_line(&words(&["cargo test && ls"]), &HostOs::Linux).as_deref(),
             Ok("cargo test && ls")
         );
         assert_eq!(
-            command_line(&words(&["echo", "a b", "it's"])).as_deref(),
+            command_line(&words(&["echo", "a b", "it's"]), &HostOs::Linux).as_deref(),
             Ok(r"'echo' 'a b' 'it'\''s'")
         );
         assert_eq!(
-            command_line(&[]),
+            command_line(&[], &HostOs::Linux),
             Err("Give the command after --".to_string())
         );
         assert_eq!(
-            command_line(&words(&["  "])),
+            command_line(&words(&["  "]), &HostOs::Linux),
             Err("Give the command after --".to_string())
         );
     }
@@ -622,6 +632,23 @@ mod cli {
                 String::new(),
                 "onehand: made.txt was not built on local\n".to_string()
             )
+        );
+    }
+
+    #[test]
+    fn several_words_for_a_windows_host_are_joined_for_cmd() {
+        let words: Vec<String> = ["dotnet", "build", "my app.sln"]
+            .iter()
+            .map(|w| w.to_string())
+            .collect();
+        assert_eq!(
+            command_line(&words, &HostOs::Windows).as_deref(),
+            Ok("dotnet build \"my app.sln\"")
+        );
+        // One word is the person's own line, for whichever shell.
+        assert_eq!(
+            command_line(&["dotnet build && dir".to_string()], &HostOs::Windows).as_deref(),
+            Ok("dotnet build && dir")
         );
     }
 
@@ -768,7 +795,7 @@ fn a_projects_entry_for_a_host_is_found_or_refused_in_words() {
     let builds = [on_local(&["a"], None)];
     assert_eq!(
         super::cli::entry_for("proj", &builds, "local", &[]),
-        Ok(builds[0].clone())
+        Ok((builds[0].clone(), HostOs::Linux))
     );
     assert_eq!(
         super::cli::entry_for("proj", &[], "local", &[]),
@@ -778,6 +805,7 @@ fn a_projects_entry_for_a_host_is_found_or_refused_in_words() {
         super::cli::entry_for("proj", &builds, "other", &[]),
         Err("proj does not build on other; it builds on local".to_string())
     );
+    // A Windows host builds, and is asked in its own shell's words.
     let windows = [HostSpec {
         name: HostName("local".into()),
         os: HostOs::Windows,
@@ -785,7 +813,17 @@ fn a_projects_entry_for_a_host_is_found_or_refused_in_words() {
     }];
     assert_eq!(
         super::cli::entry_for("proj", &builds, "local", &windows),
-        Err("local runs Windows; nothing builds on a Windows host yet".to_string())
+        Ok((builds[0].clone(), HostOs::Windows))
+    );
+    // A system this build does not know is still refused.
+    let other = [HostSpec {
+        name: HostName("local".into()),
+        os: HostOs::Other("plan9".into()),
+        arch: "x86_64".into(),
+    }];
+    assert_eq!(
+        super::cli::entry_for("proj", &builds, "local", &other),
+        Err("local runs plan9; nothing builds on it yet".to_string())
     );
 }
 

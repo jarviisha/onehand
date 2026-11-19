@@ -136,10 +136,11 @@ pub(crate) fn host_lines(
     };
     HostLines {
         about,
-        // A host no session runs on builds, and only a Linux one does yet.
+        // A host no session runs on builds, unless its system is one this
+        // build does not know.
         note: (!spec.runs_sessions()).then(|| match spec.os {
-            HostOs::Linux => "Builds only".into(),
-            HostOs::Windows | HostOs::Other(_) => "Builds only; nothing builds on it yet".into(),
+            HostOs::Linux | HostOs::Windows => "Builds only".into(),
+            HostOs::Other(_) => "Builds only; nothing builds on it yet".into(),
         }),
         warning: unmet.or(attach),
         users: (!users.is_empty()).then(|| format!("Used by {}", users.join(", "))),

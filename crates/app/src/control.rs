@@ -380,7 +380,8 @@ fn perform_now(
                 .map_or_else(|| top.display().to_string(), |(name, _)| name.clone());
             let builds = shell.read(cx).builds_of(&top);
             let declared = &Shared::global(cx).settings.hosts;
-            let entry = onehand_core::host::build::cli::entry_for(&name, &builds, &host, declared)?;
+            let (entry, os) =
+                onehand_core::host::build::cli::entry_for(&name, &builds, &host, declared)?;
             // Answered when the command ends, off the UI loop: a build is
             // minutes of another machine's work.
             let answer = answer.take();
@@ -394,7 +395,7 @@ fn perform_now(
                             top: &top,
                             within: Path::new(""),
                             host: &entry,
-                            os: onehand_core::config::HostOs::Linux,
+                            os,
                             command: &command,
                         };
                         // Never stopped from here: the tools have no way to
