@@ -250,6 +250,8 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
 - **A host that is not supported, or whose `onehand-host` is missing, is not tried again,** and
   its project row shows no mark. Trying again cannot change it; a person's Restart or *Try again*
   does after the binary is there.
+- **A build over ssh is covered by no test.** The suite builds on the host `local`, through `sh`;
+  the ssh path was tried by hand against a Linux host and is not run by CI.
 - **Nothing builds on a Windows host yet.** One can be declared, checked and named as a project's
   build host, and a build asked of it is refused in those words.
 - **A stopped build's command may run on.** Stopping kills the ssh that carried it; whether the

@@ -157,7 +157,13 @@ fn build_in(
         }
     };
     let hint = (exit == Some(NOT_FOUND)).then(|| {
-        let program = job.command.split_whitespace().next().unwrap_or(job.command);
+        // The first word, without the quotes a command line's words arrive in.
+        let program = job
+            .command
+            .split_whitespace()
+            .next()
+            .unwrap_or(job.command)
+            .trim_matches('\'');
         format!("{program} is not on {host}'s PATH for ssh")
     });
     let brought = match exit {

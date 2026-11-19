@@ -283,6 +283,25 @@ fn a_command_not_found_says_whose_path() {
     );
 }
 
+/// Several words from a command line arrive each quoted; the program is
+/// named as the person typed it.
+#[test]
+fn a_quoted_command_not_found_is_named_without_its_quotes() {
+    let (home, scratch) = (Scratch::new("home"), Scratch::new("work"));
+    let top = repo(&scratch, "proj");
+    let (built, _) = build(
+        &home,
+        &top,
+        "",
+        &on_local(&[], None),
+        "'nosuchtool' '--version'",
+    );
+    assert_eq!(
+        built.expect("ran").hint.as_deref(),
+        Some("nosuchtool is not on local's PATH for ssh")
+    );
+}
+
 #[test]
 fn the_command_runs_within_the_folder_asked() {
     let (home, scratch) = (Scratch::new("home"), Scratch::new("work"));
