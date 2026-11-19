@@ -250,10 +250,17 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
 - **A host that is not supported, or whose `onehand-host` is missing, is not tried again,** and
   its project row shows no mark. Trying again cannot change it; a person's Restart or *Try again*
   does after the binary is there.
-- **A build over ssh is covered by no test.** The suite builds on the host `local`, through `sh`;
-  the ssh path was tried by hand against a Linux host and is not run by CI.
-- **Nothing builds on a Windows host yet.** One can be declared, checked and named as a project's
-  build host, and a build asked of it is refused in those words.
+- **A build over ssh is covered by no test.** The suite builds on the host `local`, through `sh`,
+  and checks the lines a Windows host is sent as text; a build over ssh was tried by hand against
+  a Linux host and a Windows one, and is not run by CI.
+- **A Windows host builds through `cmd.exe` only.** One whose OpenSSH default shell was changed
+  is asked in words that shell does not read, and its build fails at the first step.
+- **On a Windows host a missing program is recognised in English only.** Its exit code is 1, as
+  any failure's; on a Windows speaking another language the build fails as plainly, without
+  *<program> is not on <host>'s PATH for ssh*.
+- **A folder or artifact whose name holds `%` or `"` cannot be built on a Windows host.**
+- **A build on a Windows host takes a few seconds more than its command,** each step starting a
+  shell there and the push a PowerShell.
 - **A stopped build's command may run on.** Stopping kills the ssh that carried it; whether the
   command on the host dies with it is the host's to say. Nothing lists or ends what was left.
 - **`build_on_host` builds the project's own folder,** never a worktree: an agent in a worktree

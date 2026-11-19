@@ -108,16 +108,32 @@ bring back what it built. Nothing of this needs the host service: it is the pers
   directory: *A build of <project> is already running on <host>*.
 - **A command the host could not find** (exit 127) is said with whose `PATH` lacks it:
   *<program> is not on <host>'s PATH for ssh*. onehand installs nothing on a host.
-- **Only a Linux host builds.** One declared as Windows is refused, *<host> runs Windows; nothing
-  builds on a Windows host yet* (`os_refusal`); one nobody declared is taken for Linux.
+- **A Linux host and a Windows one build, each in its own shell's words** (`Shell`,
+  `crates/core/src/host/build/shell.rs`). The steps are the same; what differs is how a word is
+  quoted and how each step is spelled, picked by the system the host was declared with (`os_of`).
+  One nobody declared is taken for Linux, and a system this build does not know builds nothing:
+  *<host> runs <os>; nothing builds on it yet*.
+  - **On Windows the shell is `cmd.exe`**, the one its OpenSSH starts. The command is a `cmd.exe`
+    line, run by a `cmd.exe` of its own so the whole line's stderr comes with its output.
+  - **The push is received through PowerShell** (`--receive-pack=powershell -NoProfile git
+    receive-pack`), the folder named as scp names one, since `cmd.exe` cannot take git's own
+    quoting of it.
+  - **The repository the host keeps is set `core.autocrlf false` and `core.longpaths true`,** so
+    the code is built there as it is here, line endings included.
+  - **A word holding `%` or `"` is refused** for a Windows host, a folder, an artifact or an
+    `into`: `cmd.exe` expands `%` even inside quotes. *<text> cannot be built on a Windows host:
+    its name holds % or "*.
+  - **A program the host lacks** exits 1 there like any failure, and is recognised by the end
+    of `cmd.exe`'s own sentence, in English.
 - **Three ways in**, one set of refusals (`entry_for`, `crates/core/src/host/build/cli.rs`):
   - **`onehand --build <host> -- <command…>`**, from a terminal or as a check command. It is
     answered in `main` before the instance lock, so it needs no window and a running onehand
     never takes it for a folder. It finds the project the folder belongs to, its own or a
     worktree of it, among every workspace, reading the first by name that names the host
     (`asked_blocking`); prints the command's lines as they come; and exits with the command's
-    code, 1 for a refusal or a step that failed. One word after `--` is a shell line as written;
-    several are each quoted.
+    code, 1 for a refusal or a step that failed. One word after `--` is a line for the host's
+    shell as written; several are joined as that shell reads words: each quoted for a POSIX
+    one, and for `cmd.exe` only those that need it.
   - **The tool `build_on_host`**, for a session's agent ([control.md](control.md#the-tools)).
   - **The check command**, which is the flag typed into its field.
 
