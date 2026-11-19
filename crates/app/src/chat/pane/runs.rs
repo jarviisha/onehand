@@ -8,16 +8,9 @@ use gpui::{
     relative, rems,
 };
 use gpui_component::StyledExt;
-use onehand_core::chat::{ChatItem, Link, TranscriptItemId};
+use onehand_core::chat::{ChatItem, Link, TranscriptItemId, TurnActivity};
 
 impl ChatPane {
-    /// The widest the elapsed column ever has to be.
-    ///
-    /// **Reserved**, so nothing after it moves when `9s` becomes `10s` or
-    /// `59s` becomes `1m 0s`: the digits grow into room already spoken for,
-    /// and what follows the clock begins at the same place whatever it says.
-    const CLOCK_W: Rems = rems(3.25);
-
     /// The line under a live turn: its clock, how many steps run, and what
     /// the agent says it is doing where it says so.
     ///
@@ -33,7 +26,9 @@ impl ChatPane {
             .iter()
             .filter(|item| matches!(item, ChatItem::Tool(tool) if tool.call.status.is_running()))
             .count();
-        let status = chat.activity_status();
+        let activity = chat.turn_activity();
+        let status = activity.and_then(|activity| activity.words(&chat.agent));
+        let waiting = activity.is_some_and(TurnActivity::waits_on_person);
         // The clock is kept for the session on screen; a worker's turn shows
         // its words without one.
         let elapsed = (self.active == Some(chat.uid))
@@ -44,10 +39,12 @@ impl ChatPane {
         let mut parts: Vec<gpui::AnyElement> = Vec::new();
         if let Some(elapsed) = elapsed {
             parts.push(
+                // In the machine face, so its digits keep their width as it
+                // counts and nothing after it moves.
                 div()
                     .flex_none()
-                    .w(Self::CLOCK_W)
                     .whitespace_nowrap()
+                    .font_family(cx.theme().mono_font_family.clone())
                     .child(onehand_core::duration(elapsed))
                     .into_any_element(),
             );
@@ -62,13 +59,22 @@ impl ChatPane {
             );
         }
         if let Some(status) = status {
-            // The one part that gives way, and the one that is alive: the
-            // agent's own words about what it is doing.
-            parts.push(transcript::working_text(
-                ("turn-status", chat.uid),
-                transcript::WorkingLine::words(status),
-                cx,
-            ));
+            // The one part that gives way. Alive while the agent works;
+            // waiting on the person, said in the ink that asks for them and
+            // still, since nothing moves until they answer.
+            parts.push(match waiting {
+                true => div()
+                    .min_w_0()
+                    .truncate()
+                    .text_color(crate::theme::status_ink(cx).warning)
+                    .child(status)
+                    .into_any_element(),
+                false => transcript::working_text(
+                    ("turn-status", chat.uid),
+                    transcript::WorkingLine::words(status),
+                    cx,
+                ),
+            });
         }
 
         // A turn of a session that is not the one on screen has no clock, and
@@ -88,9 +94,15 @@ impl ChatPane {
             .gap_2()
             .text_size(transcript::TEXT_SM)
             .text_color(cx.theme().muted_foreground)
-            // The slot a row's arrow stands in, kept empty, so the clock
-            // begins on the axis the rows above it read on.
-            .child(div().w_3().flex_none());
+            // In the slot a row's arrow stands in, so the clock begins on the
+            // axis the rows above it read on: a mark for what the turn is
+            // doing, which never turns.
+            .child(
+                div()
+                    .w_3()
+                    .flex_none()
+                    .children(activity.map(|activity| activity_mark(activity, cx))),
+            );
         for (n, part) in parts.into_iter().enumerate() {
             if n > 0 {
                 row = row.child(div().flex_none().child("·"));
@@ -462,6 +474,27 @@ impl ChatPane {
             })
             .into_any_element()
     }
+}
+
+/// The mark at the head of the running line, by what the turn is doing: the
+/// pulse while the agent works, a bell in the ink that asks for the person
+/// while it waits on them, a pen while it writes, the network while it
+/// connects.
+fn activity_mark(activity: TurnActivity, cx: &App) -> gpui::AnyElement {
+    use gpui_component::{ActiveTheme as _, Icon, IconName, Sizable as _};
+    let muted = cx.theme().muted_foreground;
+    let (icon, ink) = match activity {
+        TurnActivity::Connecting => (Icon::new(IconName::Network), muted),
+        TurnActivity::Approval | TurnActivity::Answer => (
+            Icon::new(IconName::Bell),
+            crate::theme::status_ink(cx).warning,
+        ),
+        TurnActivity::Responding => (Icon::new(crate::icons::Icon::PenLine), muted),
+        TurnActivity::InStep | TurnActivity::Working => {
+            (Icon::new(crate::icons::Icon::Activity), muted)
+        }
+    };
+    icon.xsmall().text_color(ink).into_any_element()
 }
 
 /// How many sections an opened cluster draws before the earlier ones are

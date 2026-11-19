@@ -114,8 +114,10 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   notices (a remark is a divider: the words centred between two hairlines across the column, in
   the muted ink) and errors (the neutral card, flat: the alert mark in the danger ink beside the
   words, *Turn failed* over them when a turn ended on it, the restart key for a lost agent), the files the turn changed,
-  and, while it runs, the running line (no mark: its clock, *N running*, what the
-  agent says it is doing; a step that runs is named by its own row and not again here). A workflow's steps and a stopped turn are notices, never prompts.
+  and, while it runs, the running line (a mark for what the turn is doing, which never turns: a pulse while the agent
+  works, a bell in the warning ink while it waits on the person, a pen while it writes; its clock,
+  *N running*, what the agent says it is doing, still and in the warning ink while it waits on the
+  person; a step that runs is named by its own row and not again here). A workflow's steps and a stopped turn are notices, never prompts.
 - **Folding blocks open from one line**, the chevron first, with no box: no edge, no fill and no
   rule beside what they hold, which sits indented under the line's words (a cluster, a thought, a plan, a turn's changes). What runs is open until done, the
   plan stays open, and a reader's fold wins. An opened cluster is capped, saying what it holds

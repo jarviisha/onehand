@@ -1501,6 +1501,19 @@ fn connecting_outranks_everything_the_status_could_say() {
 
     chat.link = Link::Connected;
     assert_eq!(chat.activity_status().as_deref(), Some("Working…"));
+    assert_eq!(chat.turn_activity(), Some(TurnActivity::Working));
+    // A step in hand is named by its own row: a kind to mark, no words.
+    chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
+        id: "t".into(),
+        title: "cargo build".into(),
+        description: None,
+        kind: crate::acp::ToolKind::Execute,
+        status: ToolStatus::Pending,
+        content: Vec::new(),
+    })));
+    assert_eq!(chat.turn_activity(), Some(TurnActivity::InStep));
+    assert_eq!(chat.activity_status(), None);
+    chat.items.clear();
     chat.busy = false;
     assert_eq!(
         chat.activity_status(),

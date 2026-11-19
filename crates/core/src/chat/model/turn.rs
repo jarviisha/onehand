@@ -880,13 +880,19 @@ impl Chat {
     /// `None` when there is nothing to say. Derived from the link and, once
     /// that is up, from the live transcript while a turn is in flight.
     pub fn activity_status(&self) -> Option<String> {
+        self.turn_activity()?.words(&self.agent)
+    }
+
+    /// What this conversation is doing right now, as a kind a front end can
+    /// mark: `None` while it is connected and idle.
+    pub fn turn_activity(&self) -> Option<TurnActivity> {
         // Before anything else, because it outranks everything else: until the
         // handshake lands there is no agent to be doing any of it. A resumed
         // conversation shows its archive the moment it is picked, so without
         // this the pane looks live several seconds before it is -- and the only
         // thing that said otherwise was a Send that refused when pressed.
         if self.link == Link::Connecting {
-            return Some(format!("Connecting to {}…", self.agent));
+            return Some(TurnActivity::Connecting);
         }
         if !self.busy {
             return None;
@@ -902,22 +908,58 @@ impl Chat {
             })
         };
         if parked(true) {
-            return Some("Waiting for your approval…".to_string());
+            return Some(TurnActivity::Approval);
         }
         if parked(false) {
-            return Some("Waiting for your answer…".to_string());
+            return Some(TurnActivity::Answer);
         }
-        match self.items.last() {
+        Some(match self.items.last() {
             // A live thought already renders "Thinking…"; a running tool already
             // shows "· running" — don't repeat them in the trailing status.
-            Some(ChatItem::Thought(th)) if th.elapsed_secs.is_none() => None,
-            Some(ChatItem::Tool(t))
-                if matches!(t.call.status, ToolStatus::InProgress | ToolStatus::Pending) =>
-            {
-                None
-            }
-            Some(ChatItem::Agent(_)) => Some("Responding…".to_string()),
-            _ => Some("Working…".to_string()),
+            Some(ChatItem::Thought(th)) if th.elapsed_secs.is_none() => TurnActivity::InStep,
+            Some(ChatItem::Tool(t)) if t.call.status.is_running() => TurnActivity::InStep,
+            Some(ChatItem::Agent(_)) => TurnActivity::Responding,
+            _ => TurnActivity::Working,
+        })
+    }
+}
+
+/// What a conversation is doing while it is not idle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnActivity {
+    /// The agent is not up yet.
+    Connecting,
+    /// A permission waits on the person.
+    Approval,
+    /// A question waits on the person.
+    Answer,
+    /// The agent is writing its answer.
+    Responding,
+    /// In a step or a thought, which its own row already names.
+    InStep,
+    /// At work, with nothing more particular to say.
+    Working,
+}
+
+impl TurnActivity {
+    /// What the status line says, `agent` named while it connects; `None`
+    /// where the transcript already says it.
+    pub fn words(self, agent: &str) -> Option<String> {
+        match self {
+            Self::Connecting => Some(format!("Connecting to {agent}…")),
+            Self::Approval => Some("Waiting for your approval…".to_string()),
+            Self::Answer => Some("Waiting for your answer…".to_string()),
+            Self::Responding => Some("Responding…".to_string()),
+            Self::InStep => None,
+            Self::Working => Some("Working…".to_string()),
+        }
+    }
+
+    /// Whether it waits on the person rather than the agent.
+    pub fn waits_on_person(self) -> bool {
+        match self {
+            Self::Approval | Self::Answer => true,
+            Self::Connecting | Self::Responding | Self::InStep | Self::Working => false,
         }
     }
 }
