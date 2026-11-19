@@ -5,7 +5,12 @@ use super::{CLOSE_SESSION, Command, NEW_SESSION, RESTART};
 use crate::shell::*;
 
 pub const COMMANDS: &[Command] = &[
-    command!("settings", "Open Settings", ["ctrl-,"], OpenSettings),
+    command!(
+        "settings",
+        "Open or close Settings",
+        ["ctrl-,"],
+        OpenSettings
+    ),
     command!(
         "toggle_rail",
         "Show or hide the rail",

@@ -92,9 +92,8 @@ pub(crate) fn workspace_control(
 pub(crate) fn search_field(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
     let state = shell.rail_state();
     div()
-        .flex_1()
         .min_w_0()
-        .max_w(crate::tokens::TITLE_SEARCH_W)
+        .w(crate::tokens::TITLE_SEARCH_W)
         .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_mouse_down(gpui::MouseButton::Right, |_, _, cx| cx.stop_propagation())
         .child(

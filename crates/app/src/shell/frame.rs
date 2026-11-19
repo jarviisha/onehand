@@ -1,6 +1,6 @@
 //! The window's frame around the rail and the dock: the title bar, holding the
-//! workspace and the rail's toggle, the search over the rail's sessions, and
-//! the docks' toggles. Nothing runs along the
+//! rail's toggle and the workspace, the search over the rail's sessions, the
+//! docks' toggles and Settings'. Nothing runs along the
 //! foot: the branch stands under the composer.
 //!
 //! **The platform's menus hold only the keymap's commands**; the window draws
@@ -9,7 +9,7 @@
 //! command's action, so a menu never offers something no key reaches and the
 //! key it shows is the one the keymap binds, overrides included.
 
-use super::{Shell, ToggleRail, ToggleTerminal, ToggleWorkbenchVisibility};
+use super::{OpenSettings, Shell, ToggleRail, ToggleTerminal, ToggleWorkbenchVisibility};
 use crate::controls::{Named as _, Quiet as _, action};
 use crate::keymap::{CLOSE_SESSION, COMMANDS, NEW_SESSION, RESTART};
 use gpui::prelude::FluentBuilder as _;
@@ -34,7 +34,7 @@ const MENUS: &[(&str, &[Item])] = &[
             None,
             Some(("save", "Save the open file")),
             None,
-            Some(("settings", "Open Settings")),
+            Some(("settings", "Open or close Settings")),
         ],
     ),
     (
@@ -115,11 +115,16 @@ pub(super) fn install_menus(cx: &mut App) {
 }
 
 impl Shell {
-    /// The title bar: the workspace and the rail's toggle at the start; the
-    /// search over the rail's sessions and projects, centred in the room left;
-    /// the terminal's and the Workbench's toggles at the end. The window's own
-    /// controls are the library's, drawn where the window is decorated by the
-    /// app.
+    /// The title bar: the rail's toggle and the workspace at the start; the
+    /// search over the rail's sessions and projects in the middle; the
+    /// terminal's, the Workbench's and Settings' toggles at the end. The
+    /// window's own controls are the library's, drawn where the window is
+    /// decorated by the app.
+    ///
+    /// **Nothing moves with the workspace's name.** The rail's toggle leads,
+    /// and the two ends grow alike from nothing, so the search stands at the
+    /// bar's centre however long the name is; only a window too narrow for
+    /// both ends and the search lets the search narrow.
     pub(super) fn title_bar(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement + use<> {
         let guard = self.close_guard.clone();
         TitleBar::new()
@@ -132,7 +137,6 @@ impl Shell {
             .child(self.title_start(cx))
             .child(
                 h_flex()
-                    .flex_1()
                     .min_w_0()
                     .justify_center()
                     .px_2()
@@ -148,11 +152,10 @@ impl Shell {
             })
     }
 
-    /// The workspace control and the rail's toggle, at the title bar's start.
-    /// The workspace leads, its tile holding the line's start, and the rail's
-    /// toggle follows it, beside the rail it shows and hides. A press here stops before the bar,
-    /// as the end toggles' does, so a nudge presses rather than moving the
-    /// window.
+    /// The rail's toggle and the workspace control, at the title bar's start.
+    /// The toggle leads, so it stands in one place whatever the workspace is
+    /// called. A press here stops before the bar, as the end toggles' does,
+    /// so a nudge presses rather than moving the window.
     fn title_start(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement + use<> {
         let rail = panel_toggle(
             "title-rail",
@@ -162,25 +165,26 @@ impl Shell {
             Box::new(ToggleRail),
             cx,
         );
-        h_flex()
-            .flex_none()
-            .items_center()
-            .gap_1()
-            .mr_2()
-            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
-            .on_mouse_down(gpui::MouseButton::Right, |_, _, cx| cx.stop_propagation())
-            .child(crate::rail::workspace_control(self, cx))
-            .child(rail)
+        h_flex().flex_1().items_center().gap_1().child(
+            h_flex()
+                .flex_none()
+                .items_center()
+                .gap_1()
+                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_mouse_down(gpui::MouseButton::Right, |_, _, cx| cx.stop_propagation())
+                .child(rail)
+                .child(crate::rail::workspace_control(self, cx)),
+        )
     }
 
-    /// The terminal's and the Workbench's toggles, at the title bar's end, in
-    /// [`toggle_order`]. The title bar drags the window from a press and opens
+    /// The terminal's, the Workbench's and Settings' toggles, at the title
+    /// bar's end, in [`toggle_order`]. The title bar drags the window from a press and opens
     /// the window's menu from a right press, so either stops here before the
     /// bar: a nudge presses the toggle rather than moving the window.
     fn dock_toggles(&self, cx: &App) -> impl IntoElement + use<> {
         let terminal = self.dock.read(cx).is_dock_open(DockPlacement::Bottom);
         let live = self.terminal_live;
-        h_flex()
+        let toggles = h_flex()
             .flex_none()
             .gap_1()
             .pr_2()
@@ -229,8 +233,18 @@ impl Shell {
                     cx,
                 )
                 .into_any_element(),
+                Toggle::Settings => panel_toggle(
+                    "title-settings",
+                    IconName::Settings,
+                    "Open or close Settings",
+                    self.settings_shown(cx),
+                    Box::new(OpenSettings),
+                    cx,
+                )
+                .into_any_element(),
             }
-            }))
+            }));
+        h_flex().flex_1().justify_end().child(toggles)
     }
 }
 
@@ -240,12 +254,14 @@ impl Shell {
 enum Toggle {
     Terminal,
     Workbench,
+    Settings,
 }
 
-/// The toggles at the end, in the order the regions they show stand in the
-/// window, read left to right: the terminal under the boxes, the Workbench.
-fn toggle_order() -> [Toggle; 2] {
-    [Toggle::Terminal, Toggle::Workbench]
+/// The toggles at the end: the docks in the order the regions they show
+/// stand in the window, read left to right (the terminal under the boxes, the
+/// Workbench), then Settings in the corner, apart from the docks.
+fn toggle_order() -> [Toggle; 3] {
+    [Toggle::Terminal, Toggle::Workbench, Toggle::Settings]
 }
 
 /// A panel's toggle: an icon alone, its glyph in the foreground ink while
@@ -282,10 +298,14 @@ mod tests {
     use crate::keymap::COMMANDS;
 
     /// The toggles at the title bar's end read as the window does, left to
-    /// right: the terminal under the boxes, the Workbench on the right.
+    /// right: the terminal under the boxes, the Workbench on the right, and
+    /// Settings in the corner.
     #[test]
-    fn the_title_bar_end_toggles_terminal_then_workbench() {
-        assert_eq!(toggle_order(), [Toggle::Terminal, Toggle::Workbench]);
+    fn the_title_bar_end_toggles_terminal_workbench_then_settings() {
+        assert_eq!(
+            toggle_order(),
+            [Toggle::Terminal, Toggle::Workbench, Toggle::Settings]
+        );
     }
 
     /// A menu item names a command the keymap holds, or the menus cannot be

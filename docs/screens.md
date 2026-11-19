@@ -10,24 +10,27 @@ never cites this file.
 ## Title bar
 
 The library's `TitleBar` on the window's fill with no line under it, its whole width a handle to
-move the window. At its start, a tile holding the workspace's initial on the accent fill,
+move the window. Its start and its end grow alike from nothing, so the search stands at the bar's
+centre and nothing in the bar moves with the workspace's name. At its start, the rail's toggle (a
+panel at the left, its glyph in the foreground ink while the rail is shown and in the muted ink
+while hidden, no fill at rest, its key in its tooltip, dispatching the command its key does), so
+it stands in one place whatever the workspace is called; then a tile holding the workspace's initial on the accent fill,
 standing apart and not pressable (none for a name with no letter), then the workspace's name in
 medium weight and the content ink with a chevron (a name cut short said whole in its tooltip), a quiet button of its own at `.short()` and a tab stop of its own, which opens
 the workspace menu (every workspace onehand keeps, most recently opened first and capped, then
 *New workspace…*) when pressed and
-on Enter; then the rail's toggle (a panel at the left, its glyph in the foreground ink while the
-rail is shown and in the muted ink while hidden, no fill at rest, its key in its tooltip,
-dispatching the command its key does). The window draws no menus of its own: every command is
-the keymap's, and the platform's own menu bar holds them where there is one. Centred in the room
-left and narrowing with it, the search over session titles and project names, the library's
+on Enter. The window draws no menus of its own: every command is
+the keymap's, and the platform's own menu bar holds them where there is one. Centred on the bar at a
+fixed width, narrowing only when the window leaves the ends no room, the search over session titles and project names, the library's
 edged field at `.short()` with no fill of its own, its edge alone parting it from the bar, with
 its key's hint (`Ctrl+K` outside a terminal, showing a hidden rail); what it narrows is the
 rail's list, so typing into it shows a hidden rail too, a panel filling the window giving way as
 it does for the key, and a press in it selects words rather than moving the window. Toward its
-end, the terminal's and the Workbench's toggles, in that order, each an icon alone
-(a panel at the bottom and the right), its glyph in the
+end, the terminal's, the Workbench's and Settings' toggles, in that order, each an icon alone
+(a panel at the bottom, a panel at the right, a gear), its glyph in the
 foreground ink while what it shows is open and in the muted ink while closed, with no fill at rest,
-its key in its tooltip, and dispatching the command its key does;
+its key in its tooltip, and dispatching the command its key does; Settings' opens Settings and,
+pressed again, closes it onto the page or the session it was opened over;
 the terminal's carries an `info` dot while its dock is closed over a shell running a command. At
 its end, the window's minimize, maximize and close, drawn by the library where the
 app decorates the window; its close asks first what the compositor's close asks (a workflow
@@ -47,8 +50,7 @@ need attention* chip (shown above zero or while on, toggling that filter and bac
 that puts the keys in the title bar's search, as its key does, and the filter menu (*By project*,
 *All sessions*, *Needs attention*, *Recent activity*) over a hairline; the scrolling list, ending on
 *Add project…* and, under it with no gap, *Add a project on a host…*, which opens the form naming
-the host and its folder there; a foot with *Settings*, a page row like the five above, filled while
-it shows. The rail is drawn as the library's sidebar draws its items: a row's name in the sidebar's
+the host and its folder there. Settings is the title bar's, not the rail's. The rail is drawn as the library's sidebar draws its items: a row's name in the sidebar's
 ink and its second line muted, the row under the pointer on the sidebar's accent fill, and the one
 where the person is on the chosen fill, a step past it, in the content ink. A row's weight is its
 kind's, chosen or not: a page row and a project row medium, a session's title regular, its second

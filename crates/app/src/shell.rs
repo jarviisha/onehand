@@ -347,6 +347,9 @@ pub struct Shell {
     /// Whether the Workbench was open when the workspace page put it away, so
     /// leaving the page puts it back.
     page_hid_workbench: bool,
+    /// The page Settings was opened over, or `None` for a session, so closing
+    /// Settings goes back to it.
+    settings_from: Option<crate::chat::pane::PageKind>,
     /// Session uids per root, most recently viewed first. What `Ctrl+Tab`
     /// walks.
     mru: HashMap<PathBuf, Vec<u64>>,

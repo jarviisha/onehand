@@ -29,6 +29,9 @@ impl Shell {
     /// is open, and a shortcut being edited is the shell's, kept until its own
     /// *Save* or *Cancel*: leave and come back, and it is as it was.
     pub fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.settings_shown(cx) {
+            self.settings_from = self.shown_page(cx);
+        }
         self.held_commands.clear();
         self.docks_aside(window, cx);
         let view: gpui::AnyView = self.settings_view.clone().into();
@@ -36,6 +39,24 @@ impl Shell {
             pane.show_page(crate::chat::pane::PageKind::Settings, view, window, cx)
         });
         self.settings_focus.focus(window, cx);
+        cx.notify();
+    }
+
+    /// Open Settings, or close it and go back to what it was opened over: a
+    /// page, else the session or project page it covered.
+    pub fn toggle_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.settings_shown(cx) {
+            return self.open_settings(window, cx);
+        }
+        use crate::chat::pane::PageKind;
+        match self.settings_from.take() {
+            Some(PageKind::Workspace) => self.show_workspace(window, cx),
+            Some(PageKind::Tasks) => self.show_tasks(None, window, cx),
+            Some(PageKind::Issues) => self.show_issues(window, cx),
+            Some(PageKind::Workflows) => self.show_workflows(window, cx),
+            Some(PageKind::Schedules) => self.show_schedules(None, window, cx),
+            Some(PageKind::Settings) | None => self.show_active_session(window, cx),
+        }
         cx.notify();
     }
 

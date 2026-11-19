@@ -82,7 +82,7 @@ impl Render for Shell {
             .key_context("Shell")
             .on_action(
                 cx.listener(|shell: &mut Self, _: &OpenSettings, window, cx| {
-                    shell.open_settings(window, cx);
+                    shell.toggle_settings(window, cx);
                 }),
             )
             .on_action(cx.listener(

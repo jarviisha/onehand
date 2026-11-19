@@ -526,6 +526,7 @@ impl Shell {
                 saved.terminal_open,
             ),
             page_hid_workbench: false,
+            settings_from: None,
             mru: HashMap::new(),
             tab_cycle: None,
             app_maximized: None,

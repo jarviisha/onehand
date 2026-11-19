@@ -1,7 +1,7 @@
 //! The navigation rail.
 //!
-//! Top to bottom: *New session*; the pages; the sessions under a filter; and
-//! a one-row foot with Settings. Only the list scrolls. It hides completely,
+//! Top to bottom: *New session*; the pages; the sessions under a filter.
+//! Only the list scrolls. It hides completely,
 //! never to an icon column, and the title bar's toggle brings it back. The
 //! search over sessions and projects narrows this list but stands in the
 //! title bar, led by the workspace and its menu, so both are in reach whether
@@ -374,7 +374,6 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
                 .gap_0p5()
                 .children(rows),
         )
-        .child(pages::foot(shell, cx))
 }
 
 /// A muted line in the list where rows would be, on the axis their titles

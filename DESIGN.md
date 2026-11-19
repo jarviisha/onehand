@@ -49,8 +49,8 @@ a hex literal is a bug even when it looks right, as no theme switch reaches it.
 
 ## Layout
 
-One window hosts one workspace. A title bar holding the workspace's name, the rail's toggle, the
-search and the docks' toggles runs along the top; nothing runs along the foot. The title bar and
+One window hosts one workspace. A title bar holding the rail's toggle, the workspace's name, the
+search, the docks' toggles and Settings' runs along the top; nothing runs along the foot. The title bar and
 the rail stand on the window's fill, unboxed. Beside the rail, every
 other region is a box of its own on that fill: the agent pane and the Workbench side by side, the
 Workbench the right half of a split in the `DockArea`'s centre, and under both, across their whole
@@ -60,7 +60,7 @@ plain ASCII and box-drawing, so it stays aligned in any mono font.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────┐
-│ W Workspace v rail            [ Search sessions ^K ]               term wb  _ [] x │
+│ rail W Workspace v            [ Search sessions ^K ]           term wb set  _ [] x │
 │ + New session ^N ┌────────────────────────────┐ ┌────────────────────────────────┐ │
 │ Overview         │ Title (...)     past close │ │ Editor Markdown ...   max hide │ │
 │ Tasks         2  │ workflow > step >     Stop │ │ open file v               tree │ │
@@ -77,17 +77,17 @@ plain ASCII and box-drawing, so it stays aligned in any mono font.
 │                  ┌───────────────────────────────────────────────────────────────┐ │
 │                  │ shell 1                                          +  max hide  │ │
 │                  │ terminal (bottom dock, under both boxes)       shell 1        │ │
-│ Settings         │                                                 shell 2       │ │
+│                  │                                                 shell 2       │ │
 │                  └───────────────────────────────────────────────────────────────┘ │
 └────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 What each region holds, and in what order, is `docs/screens.md`'s, under the region's name:
 
-- **Title bar**: the workspace's name and its menu, the rail's toggle, the search
-  over the rail's sessions, the terminal's and the Workbench's toggles, and the window's own
+- **Title bar**: the rail's toggle, the workspace's name and its menu, the search
+  over the rail's sessions, the terminal's, the Workbench's and Settings' toggles, and the window's own
   controls where the app decorates it.
-- **Rail**: app chrome outside the dock, on the window's fill, from *New session* down to *Settings*.
+- **Rail**: app chrome outside the dock, on the window's fill, from *New session* down to the sessions.
 - **Agent pane header**: the conversation's name, its menu and the session's controls, a worker's
   standing among them; chrome alone over a page that names itself in its head.
 - **Step strip**: a run's steps under the header, while it drives the session on screen.

@@ -1,5 +1,5 @@
-//! The rail's pages, Overview through Schedules, under *New session*, and
-//! its foot, Settings: rows that each open a page, filled while it shows.
+//! The rail's pages, Overview through Schedules, under *New session*: rows
+//! that each open a page, filled while it shows. Settings is the title bar's.
 
 use super::page_fill;
 use crate::shell::Shell;
@@ -130,21 +130,4 @@ pub(super) fn rail_badge(ink: gpui::Hsla, cx: &App) -> Tint {
 /// at zero, so a pill is always news.
 pub(super) fn attention_pill(n: usize) -> Option<String> {
     (n > 0).then(|| n.to_string())
-}
-
-/// The foot: Settings, a page like the four above the list and drawn as one,
-/// filled while it shows. Set off from the list by its place at the bottom.
-pub(super) fn foot(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
-    div().flex_none().px_1p5().py_2().child(page_row(
-        ("rail-settings", "Settings"),
-        Icon::new(IconName::Settings),
-        shell.settings_shown(cx),
-        None,
-        (
-            "Appearance, the workspace, agents and connections",
-            Some(&crate::shell::OpenSettings),
-        ),
-        cx,
-        |shell, window, cx| shell.open_settings(window, cx),
-    ))
 }
