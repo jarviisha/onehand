@@ -331,12 +331,16 @@ fn list(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
                 .text_color(muted)
                 .child(note)
         }));
-    gpui::deferred(
-        gpui::anchored()
-            .snap_to_window()
-            .child(div().w(TITLE_SEARCH_W).occlude().child(surface)),
+    // The float is placed out of the flow, at the top of what holds it, so it
+    // hangs from an empty line under the field rather than covering it.
+    div().relative().w_full().child(
+        gpui::deferred(
+            gpui::anchored()
+                .snap_to_window()
+                .child(div().w(TITLE_SEARCH_W).occlude().child(surface)),
+        )
+        .with_priority(1),
     )
-    .with_priority(1)
 }
 
 /// One hit: its mark, its name, and on the right its detail, a command's key
