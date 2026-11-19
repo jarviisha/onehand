@@ -88,6 +88,26 @@ minor bump may break any of them.
 
 ### The window
 
+- A subagent is one line in the conversation: its name, what it is doing or how it ended, its
+  steps and its time. Pressed, its own conversation opens in a panel floating over the pane, with
+  the previous and next subagent a press away and Escape to close it. While subagents work, a strip
+  over the composer counts them.
+- What a step opens into is one box that never grows past sixteen lines: the rest scrolls inside
+  it, with its scrollbar on the box's edge, and a line under it says how many lines there are and
+  opens them whole. A command reads whole above its output, which opens at its end. A new file is
+  shown plain, without a green fill on every line. A turn's changes name one file in one line,
+  and several with their counts lined up at the right; *Show every diff* is gone.
+- A turn that was stopped says so: one *Stopped* line, its running steps marked *stopped* in quiet
+  ink rather than *failed* in red, and *Stopped after …* under the answer. A turn the agent ended
+  at its output or request limit, or by refusing, is a calm card saying which, with *Continue*
+  after a limit to have the agent carry on; it still counts as a failed turn in the rail. A failed
+  step's exit code stops being red once its turn is over.
+- While a turn works, the conversation says each thing once. What runs is told by its own words,
+  in the present tense (*Running*, *Reading*, *Editing*), with a band of brighter ink crossing
+  them; the turning marks are gone, and every row keeps the mark of its kind of work. A step
+  that runs past ten seconds shows its own clock. The line under a live turn keeps the clock and
+  the count (*2 running*) and no longer repeats the running command. A thought that took under a second reads *Thought*, and a file
+  outside the project is named from `~`.
 - *Delete workspace…*, in Settings ▸ Workspace, closes the window and removes the workspace and
   the issues it keeps, after asking; its projects stay on disk. Refused while a task works one of
   its issues.
@@ -197,6 +217,9 @@ minor bump may break any of them.
 - Every text field and search sits on a fill of its own with no edge until it takes focus; the
   composer is unchanged.
 - Menus are lettered at the size of the chrome around them, a step smaller than before.
+- The composer's menus (`+`, model, effort, mode, branch) look like the window's other menus: the
+  same surface and edge, no title over them, and a row's detail at its end. The `@` and `/` lists
+  keep their title.
 - Claude Code and Codex sessions show the work their agent left running in the background: an
   *N in background* button in the agent pane's header lists each item with how long it has run, and
   pressing one stops it without stopping the turn. Under the composer, a meter says how full the
@@ -230,6 +253,8 @@ minor bump may break any of them.
 
 ### Fixed
 
+- A step still running while its agent writes on below it (work handed to a subagent, a command
+  left running) no longer has the blocks after it drawn over its growing output.
 - A run waiting on its pull request's status checks keeps waiting when a forge answer it did not
   ask for lands; before, the run could stop looking at its checks for good.
 - A worktree removed while the window it was asked from closed is kept with its task, and its

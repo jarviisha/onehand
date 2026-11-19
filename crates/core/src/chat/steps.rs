@@ -19,6 +19,7 @@
 use crate::acp::ToolKind;
 use crate::chat::activity::{self, ActivityKind};
 use crate::chat::model::ChatItem;
+use std::path::Path;
 
 pub mod cluster;
 
@@ -265,6 +266,9 @@ pub struct ClusterSummary {
     /// What has been done, in the order the kinds of work first appeared.
     pub done: Vec<SummaryPart>,
     pub errors: usize,
+    /// Steps a cancel stopped before they ended: counted apart from the
+    /// failures, since nothing went wrong.
+    pub stopped: usize,
     /// Lines added and removed across every edit in the cluster.
     pub added: usize,
     pub removed: usize,
@@ -280,25 +284,76 @@ pub struct ClusterSummary {
     pub seconds: u64,
 }
 
+impl SummaryPart {
+    /// The part as it reads: its verb and what follows it.
+    fn words(&self) -> String {
+        format!("{}{}", self.verb, self.rest)
+    }
+}
+
+/// `text` opening on a capital.
+fn capitalised(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+/// What a cluster's line says, in the two stretches it is drawn in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClusterLine {
+    /// The step in hand, drawn as what runs: its verb, and what it is done to.
+    pub in_hand: Option<SummaryPart>,
+    /// What has settled, in the line's own ink.
+    pub settled: String,
+}
+
 impl ClusterSummary {
+    /// What has been done, the parts in a row: `read 2 files, ran 1 command`.
+    fn done_words(&self) -> String {
+        self.done
+            .iter()
+            .map(SummaryPart::words)
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// What the cluster's line says, open or folded.
+    ///
+    /// **The step in hand is named once.** Opened, its own row is on screen,
+    /// so the line says only what has settled, and *Working* while nothing
+    /// has, so it is never an empty line over work in flight. Folded, nothing
+    /// else would name the step, so the line leads with it and what settled
+    /// follows mid-sentence.
+    pub fn line(&self, open: bool) -> ClusterLine {
+        match (&self.running, open) {
+            (None, _) => ClusterLine {
+                in_hand: None,
+                settled: self.done_words(),
+            },
+            (Some(_), true) => ClusterLine {
+                in_hand: None,
+                settled: match self.done.is_empty() {
+                    true => "Working".to_string(),
+                    false => capitalised(&self.done_words()),
+                },
+            },
+            (Some(running), false) => ClusterLine {
+                in_hand: Some(running.clone()),
+                settled: self.done_words(),
+            },
+        }
+    }
+
     /// The whole sentence as one string, for the places that cannot draw runs
     /// of it separately — a test, a notification, an export.
     pub fn plain(&self) -> String {
-        let mut out = String::new();
-        if let Some(running) = &self.running {
-            out.push_str(&running.verb);
-            out.push_str(&running.rest);
+        match (&self.running, self.done.is_empty()) {
+            (Some(running), true) => running.words(),
+            (Some(running), false) => format!("{} · {}", running.words(), self.done_words()),
+            (None, _) => self.done_words(),
         }
-        for (n, part) in self.done.iter().enumerate() {
-            out.push_str(match (n, self.running.is_some()) {
-                (0, false) => "",
-                (0, true) => " · ",
-                _ => ", ",
-            });
-            out.push_str(&part.verb);
-            out.push_str(&part.rest);
-        }
-        out
     }
 }
 
@@ -314,6 +369,7 @@ enum Bucket {
     Read,
     Search,
     Fetch,
+    Create,
     Edit,
     Command,
     Reason,
@@ -328,6 +384,7 @@ impl Bucket {
             Self::Read => ("read", "file", "files"),
             Self::Search => ("searched", "time", "times"),
             Self::Fetch => ("fetched", "page", "pages"),
+            Self::Create => ("created", "file", "files"),
             Self::Edit => ("edited", "file", "files"),
             Self::Command => ("ran", "command", "commands"),
             Self::Reason => ("thought", "time", "times"),
@@ -352,6 +409,7 @@ impl Bucket {
                 ActivityKind::Inspect => Self::Read,
                 ActivityKind::Search => Self::Search,
                 ActivityKind::Fetch => Self::Fetch,
+                ActivityKind::Change if activity::creates(tool) => Self::Create,
                 ActivityKind::Change => Self::Edit,
                 ActivityKind::Run
                 | ActivityKind::Test
@@ -365,39 +423,35 @@ impl Bucket {
     }
 }
 
-/// The present-tense opening for a step still in flight.
-fn running_part(item: &ChatItem) -> SummaryPart {
-    let verb = match Bucket::of(item) {
-        Some(Bucket::Read) => "Reading",
-        Some(Bucket::Search) => "Searching",
-        Some(Bucket::Fetch) => "Fetching",
-        Some(Bucket::Edit) => "Editing",
-        Some(Bucket::Command) => "Running",
-        Some(Bucket::Reason) => "Thinking",
-        _ => "Working",
+/// How many characters of what a step is done to its cluster's line gives.
+const IN_HAND_CHARS: usize = 40;
+
+/// The present-tense opening for a step still in flight: the verb its own
+/// row leads with, and what it is done to as that row names it.
+fn running_part(item: &ChatItem, root: &Path) -> SummaryPart {
+    let ChatItem::Tool(tool) = item else {
+        return SummaryPart {
+            verb: "Thinking".to_string(),
+            rest: String::new(),
+        };
     };
-    // **The whole short label, not the cut-down one a child row draws.** A row
-    // inside a cluster has its siblings to be told apart from, so its line
-    // drops the program they all share; this line has no siblings and no
-    // context, so dropping it leaves `Running test` where `Running dotnet
-    // test` was wanted.
-    let subject = match item {
-        ChatItem::Tool(tool) => activity::presentation(tool).subject,
-        _ => String::new(),
-    };
-    let subject = match item {
-        ChatItem::Tool(tool) if tool.call.kind != ToolKind::Execute => {
-            activity::short_path(&subject)
-        }
-        _ => subject,
+    let shown = activity::presentation(tool);
+    let verb = shown.verb(tool.call.status);
+    // **Cut hard**: this sits at the head of a line that has to stay one
+    // line, and what follows it is the count of everything already done. A
+    // command gives way at its end, a path at its start, where the name is.
+    let subject = match tool.call.kind {
+        ToolKind::Execute => activity::first_line_trunc(shown.subject.trim(), IN_HAND_CHARS),
+        _ => activity::tail_trunc(
+            &activity::display_path(root, shown.subject.trim()),
+            IN_HAND_CHARS,
+        ),
     };
     SummaryPart {
         verb: verb.to_string(),
-        // Cut hard: this sits at the head of a line that has to stay one line,
-        // and what follows it is the count of everything already done.
-        rest: match subject.trim().is_empty() {
+        rest: match subject.is_empty() {
             true => String::new(),
-            false => format!(" {}", activity::first_line_trunc(subject.trim(), 40)),
+            false => format!(" {subject}"),
         },
     }
 }
@@ -409,12 +463,13 @@ fn running_part(item: &ChatItem) -> SummaryPart {
 /// unfolded one; and not a bare total, which says how much happened without
 /// saying what. A reader skimming a conversation is asking one question — what
 /// did it do, and did anything break — and both answers are here.
-pub fn cluster_summary(members: &[&ChatItem]) -> ClusterSummary {
+pub fn cluster_summary(members: &[&ChatItem], root: &Path) -> ClusterSummary {
     use crate::acp::ToolStatus;
 
     let mut order: Vec<Bucket> = Vec::new();
     let mut counts: Vec<usize> = Vec::new();
     let mut errors = 0;
+    let mut stopped = 0;
     let mut added = 0;
     let mut removed = 0;
     let mut summed = 0;
@@ -426,6 +481,7 @@ pub fn cluster_summary(members: &[&ChatItem]) -> ClusterSummary {
         if let ChatItem::Tool(tool) = item {
             match tool.call.status {
                 ToolStatus::Failed => errors += 1,
+                ToolStatus::Stopped => stopped += 1,
                 // The last one still going is what the line leads with: an
                 // agent that has moved on from the first is not still on it.
                 ToolStatus::Pending | ToolStatus::InProgress => running = Some(*item),
@@ -500,22 +556,20 @@ pub fn cluster_summary(members: &[&ChatItem]) -> ClusterSummary {
     // **Only the first word of the sentence is capitalised**, and only where
     // the sentence starts with it: a running cluster opens with its own verb,
     // and a second capital mid-line reads as two sentences run together.
-    let running = running.map(running_part);
+    let running = running.map(|item| running_part(item, root));
     if let (None, Some(first)) = (&running, done.first_mut()) {
         let head = match first.verb.is_empty() {
             true => &mut first.rest,
             false => &mut first.verb,
         };
-        let mut chars = head.chars();
-        if let Some(c) = chars.next() {
-            *head = c.to_uppercase().collect::<String>() + chars.as_str();
-        }
+        *head = capitalised(head);
     }
 
     ClusterSummary {
         running,
         done,
         errors,
+        stopped,
         added,
         removed,
         seconds: match span {
@@ -568,6 +622,9 @@ pub fn run_outcome(members: &[&ChatItem]) -> RunOutcome {
                     last = Some(false);
                 }
                 ToolStatus::Completed => last = Some(true),
+                // Stopped by somebody: neither how the run went wrong nor how
+                // it ended well.
+                ToolStatus::Stopped => {}
                 ToolStatus::Pending | ToolStatus::InProgress => running = true,
             },
             ChatItem::Thought(thought) => running |= thought.elapsed_secs.is_none(),
@@ -604,6 +661,27 @@ pub enum FileVerdict {
     Added,
     Modified,
     Deleted,
+}
+
+impl FileVerdict {
+    /// What the turn did to the file, as the line naming one file says it.
+    pub fn verb(self) -> &'static str {
+        match self {
+            Self::Added => "Created",
+            Self::Modified => "Edited",
+            Self::Deleted => "Deleted",
+        }
+    }
+
+    /// The word a file's row carries beside its path in a list of several:
+    /// none for a changed file, which is what most of them are.
+    pub fn note(self) -> Option<&'static str> {
+        match self {
+            Self::Added => Some("new"),
+            Self::Modified => None,
+            Self::Deleted => Some("deleted"),
+        }
+    }
 }
 
 /// One file a turn touched, with everything that happened to it in that turn
@@ -659,12 +737,15 @@ pub fn turn_changes(items: &[&ChatItem]) -> Option<TurnChanges> {
 
     let mut files: Vec<FileChange> = Vec::new();
     for tool in tools_within(items) {
-        // **An edit that failed did not happen.** The diff on a failed call is
+        // **An edit that failed or was stopped did not happen.** The diff on a failed call is
         // what the agent proposed, not what is on disk, and counting it puts a
         // file in a list headed "what this turn wrote" that the turn did not
         // write. The step is still in the transcript above, in the cluster it
         // failed in, saying so.
-        if tool.call.status == crate::acp::ToolStatus::Failed {
+        if matches!(
+            tool.call.status,
+            crate::acp::ToolStatus::Failed | crate::acp::ToolStatus::Stopped
+        ) {
             continue;
         }
         for section in &tool.call.content {
@@ -765,7 +846,10 @@ pub fn turn_file_diff(items: &[&ChatItem], path: &str) -> Vec<crate::diff::Row> 
     for tool in tools_within(items) {
         // Same rule as the counts: a failed edit is not part of what the turn
         // did to this file.
-        if tool.call.status == crate::acp::ToolStatus::Failed {
+        if matches!(
+            tool.call.status,
+            crate::acp::ToolStatus::Failed | crate::acp::ToolStatus::Stopped
+        ) {
             continue;
         }
         for section in &tool.call.content {

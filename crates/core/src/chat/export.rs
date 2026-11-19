@@ -83,8 +83,13 @@ fn push_items<'a>(out: &mut String, chat: &Chat, items: impl Iterator<Item = &'a
                     card.name,
                     card.state.as_str()
                 ));
+                // A line each, so a task of several paragraphs stays one
+                // emphasis per line rather than one broken across them.
                 if let Some(task) = &card.task {
-                    out.push_str(&format!("_{task}_\n\n"));
+                    for line in task.lines().filter(|line| !line.trim().is_empty()) {
+                        out.push_str(&format!("_{}_\n", line.trim()));
+                    }
+                    out.push('\n');
                 }
                 let mut inner = String::new();
                 push_items(&mut inner, chat, card.items.iter());
@@ -188,6 +193,8 @@ mod tests {
             task: Some("find the loader".into()),
             state: SubagentState::Failed,
             items: vec![ChatItem::Agent(Md::parse("looked in src"))],
+            started: None,
+            secs: None,
         })];
         let out = export_markdown(&chat);
         assert!(

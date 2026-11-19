@@ -3,50 +3,52 @@
 use super::*;
 use crate::controls::Short as _;
 
-/// A diff's rows as the lines they would be in a file.
+/// A diff's rows as the lines they would be in a file: a new file's as its
+/// own content.
 pub(super) fn diff_text(t: &ToolItem) -> Vec<String> {
-    let mut out = Vec::new();
-    for key in 0..t.call.content.len() {
-        let Some(rows) = t.diff_rows.get(&key) else {
-            continue;
-        };
-        for row in rows {
-            out.push(match row {
-                DiffRow::Context(l) => format!(" {l}"),
-                DiffRow::Added(l) => format!("+{l}"),
-                DiffRow::Removed(l) => format!("-{l}"),
-                DiffRow::Skipped(n) => format!("@@ {n} unchanged lines @@"),
-            });
-        }
-    }
-    out
+    t.call
+        .content
+        .iter()
+        .enumerate()
+        .filter_map(|(key, content)| {
+            let fresh = matches!(content, ToolContent::Diff { old: None, .. });
+            t.diff_rows.get(&key).map(|rows| rows_text(rows, fresh))
+        })
+        .flatten()
+        .collect()
 }
 
-/// How many added and removed lines the drawn rows of `t` hold, walked under
-/// the same budget the rows are drawn with.
-pub(super) fn changed_drawn(t: &ToolItem) -> usize {
-    let mut budget = MAX_DIFF_LINES;
-    let mut changed = 0;
-    for key in 0..t.call.content.len() {
-        for row in t.diff_rows.get(&key).map(Vec::as_slice).unwrap_or_default() {
-            if budget == 0 {
-                return changed;
-            }
-            budget -= 1;
-            if matches!(row, DiffRow::Added(_) | DiffRow::Removed(_)) {
-                changed += 1;
-            }
-        }
-    }
-    changed
+/// Whether every edit of `t` brought its file into being, so what it hands
+/// over is content rather than a diff.
+pub(super) fn all_fresh(t: &ToolItem) -> bool {
+    t.call
+        .content
+        .iter()
+        .filter(|content| matches!(content, ToolContent::Diff { .. }))
+        .all(|content| matches!(content, ToolContent::Diff { old: None, .. }))
 }
 
-/// Every edit the step made, one diff after another.
+/// `rows` as what Copy and *Open* hand over: the lines of a unified diff, or
+/// a new file's own lines where `fresh`, with no sign before them.
+pub(crate) fn rows_text(rows: &[DiffRow], fresh: bool) -> Vec<String> {
+    rows.iter()
+        .map(|row| match (row, fresh) {
+            (DiffRow::Added(l) | DiffRow::Context(l), true) => l.clone(),
+            (DiffRow::Context(l), false) => format!(" {l}"),
+            (DiffRow::Added(l), false) => format!("+{l}"),
+            (DiffRow::Removed(l), _) => format!("-{l}"),
+            (DiffRow::Skipped(n), _) => format!("@@ {n} unchanged lines @@"),
+        })
+        .collect()
+}
+
+/// Every edit the step made, one diff after another, in one box.
 pub(super) fn diff_detail(
     session: &Entity<ChatSession>,
     t: &ToolItem,
     target: TranscriptItemId,
-    well: gpui::Div,
+    text: Vec<String>,
+    copy: Option<String>,
     cx: &App,
 ) -> gpui::Div {
     let open = session.read(cx).out_is_open(target, 0);
@@ -61,7 +63,7 @@ pub(super) fn diff_detail(
     // rows for the same reason.
     if changed > LARGE_DIFF && !open {
         let session = session.clone();
-        return well
+        return plain_box(cx)
             .p_3()
             .font_family(cx.theme().font_family.clone())
             .child(
@@ -97,7 +99,7 @@ pub(super) fn diff_detail(
         .filter(|c| matches!(c, ToolContent::Diff { .. }))
         .count();
     for (key, content) in t.call.content.iter().enumerate() {
-        let ToolContent::Diff { path, .. } = content else {
+        let ToolContent::Diff { path, old, .. } = content else {
             continue;
         };
         // **A header only where there is more than one file**, and it is the
@@ -108,45 +110,35 @@ pub(super) fn diff_detail(
             rows.push(diff_path(session, &root, key, path, cx));
         }
         let hunks = t.diff_rows.get(&key).map(Vec::as_slice).unwrap_or_default();
-        rows.extend(diff_rows(hunks, &mut budget, cx));
+        rows.extend(diff_rows(hunks, &mut budget, old.is_none(), cx));
     }
-    let total = rows.len();
-    let shown = match open {
-        true => total,
-        false => total.min(PREVIEW_DIFF),
-    };
-    let hidden = total - shown;
-    rows.truncate(shown);
-    // What the budget left out, said after the rows rather than cut silently.
-    let left = changed.saturating_sub(changed_drawn(t));
-
-    well.py_3()
-        .v_flex()
-        .gap_1()
-        .child(scrolled(
-            open,
+    // What the budget left out is said under the box, counted in the diff's
+    // own lines, the file headers not among them.
+    let drawn = MAX_DIFF_LINES - budget;
+    // A diff loaded past the large-diff bound can be put away again.
+    let head = (changed > LARGE_DIFF).then(|| {
+        super::fold_link(session, target, "Put the large diff away", cx)
+            .font_family(cx.theme().font_family.clone())
+            .into_any_element()
+    });
+    detail_box(
+        DetailBox {
             key,
-            div().child(sideways(("diff-rows", key), div().v_flex().children(rows))),
-        ))
-        .children((hidden > 0 || open).then(|| {
-            div().px_3().child(fold_link(
-                session,
-                target,
-                match open {
-                    true => "Show less".to_string(),
-                    false => format!("Show {hidden} more lines"),
-                },
-                cx,
-            ))
-        }))
-        .children((open && left > 0).then(|| {
-            div()
-                .px_3()
-                .text_xs()
-                .font_family(cx.theme().font_family.clone())
-                .text_color(cx.theme().muted_foreground)
-                .child(format!("{left} more changed lines not shown"))
-        }))
+            head,
+            lines: rows,
+            total: text.len(),
+            drawn,
+            from_end: false,
+            whole: (!text.is_empty()).then(|| {
+                (
+                    text.join("\n").into(),
+                    (!all_fresh(t)).then(|| "diff".into()),
+                )
+            }),
+            copy,
+        },
+        cx,
+    )
 }
 
 /// Which file the rows under it belong to, and the way into it.
@@ -157,7 +149,7 @@ pub(super) fn diff_path(
     path: &str,
     cx: &App,
 ) -> gpui::AnyElement {
-    let shown = path_for_display(root, path);
+    let shown = onehand_core::chat::activity::display_path(root, path);
     // Resolved here, where the project root is known: the Workbench opens
     // whatever path it is handed, and a relative one there resolves against the
     // process working directory.
@@ -187,7 +179,16 @@ pub(super) fn diff_path(
 ///
 /// The number is the line's in the file as it is now, so a removed line has
 /// none and a skipped run moves the count on by what it skipped.
-pub(crate) fn diff_rows(hunks: &[DiffRow], budget: &mut usize, cx: &App) -> Vec<gpui::AnyElement> {
+///
+/// `fresh` is a file the edit brought into being: its content, numbered, with
+/// no fill and no sign, since every line of it is new and marking each one
+/// says nothing.
+pub(crate) fn diff_rows(
+    hunks: &[DiffRow],
+    budget: &mut usize,
+    fresh: bool,
+    cx: &App,
+) -> Vec<gpui::AnyElement> {
     let status = crate::theme::status_ink(cx);
     let muted = cx.theme().muted_foreground;
     // A changed line's wash: its hue mixed into the well it lies in, one solid
@@ -216,11 +217,12 @@ pub(crate) fn diff_rows(hunks: &[DiffRow], budget: &mut usize, cx: &App) -> Vec<
                 number += count;
                 continue;
             }
+            DiffRow::Added(l) if fresh => (" ", None, l),
             DiffRow::Added(l) => ("+", Some((status.success, added)), l),
             DiffRow::Removed(l) => ("−", Some((status.danger, removed)), l),
             DiffRow::Context(l) => (" ", None, l),
         };
-        let shown = (sign != "−").then(|| {
+        let shown = (!matches!(line, DiffRow::Removed(_))).then(|| {
             number += 1;
             (number - 1).to_string()
         });
@@ -238,13 +240,15 @@ pub(crate) fn diff_rows(hunks: &[DiffRow], budget: &mut usize, cx: &App) -> Vec<
                         .text_color(muted)
                         .child(shown.unwrap_or_default()),
                 )
-                .child(
-                    div()
-                        .w_4()
-                        .flex_none()
-                        .text_color(ink.map_or(muted, |(ink, _)| ink))
-                        .child(sign),
-                )
+                .when(!fresh, |row| {
+                    row.child(
+                        div()
+                            .w_4()
+                            .flex_none()
+                            .text_color(ink.map_or(muted, |(ink, _)| ink))
+                            .child(sign),
+                    )
+                })
                 .child(
                     div()
                         .whitespace_nowrap()

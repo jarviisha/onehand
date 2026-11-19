@@ -266,8 +266,25 @@ impl Chat {
     /// cannot recover from, since a card claiming a write went through is worse
     /// than one saying it is unclear. This is the same answer
     /// `cancel_pending_permissions` gives a dangling card one line above.
-    pub(super) fn settle_running_steps(&mut self) {
-        super::apply::settle_steps(&mut self.items, self.told);
+    pub(super) fn settle_running_steps(&mut self, to: ToolStatus) {
+        super::apply::settle_steps(&mut self.items, self.told, to);
+    }
+
+    /// Whether the turn running now already says it was stopped.
+    pub(super) fn turn_says_stopped(&self) -> bool {
+        self.items
+            .iter()
+            .rev()
+            .take_while(|item| !matches!(item, ChatItem::User(_)))
+            .any(|item| {
+                matches!(
+                    item,
+                    ChatItem::Notice {
+                        level: NoticeLevel::Stopped,
+                        ..
+                    }
+                )
+            })
     }
 
     ///
@@ -332,6 +349,9 @@ impl Chat {
         match target {
             TranscriptItemId::History(_) => &self.history,
             TranscriptItemId::Live(_) => &self.items,
+            TranscriptItemId::InCard { card, .. } => {
+                self.card(card).map_or(&[][..], |card| &card.items)
+            }
         }
     }
 
@@ -505,8 +525,15 @@ impl Chat {
     /// item with no prompt after it, while the session is busy. An earlier
     /// turn's step left in hand is not being worked on, whatever runs later.
     pub fn in_running_turn(&self, target: TranscriptItemId) -> bool {
-        let TranscriptItemId::Live(idx) = target else {
-            return false;
+        let idx = match target {
+            TranscriptItemId::Live(idx) => idx,
+            TranscriptItemId::History(_) => return false,
+            // Worked on while its card works.
+            TranscriptItemId::InCard { card, .. } => {
+                return self
+                    .card(card)
+                    .is_some_and(|card| card.state == super::SubagentState::Working);
+            }
         };
         self.busy
             && self
@@ -552,19 +579,13 @@ impl Chat {
             is_last: idx == last_agent,
             // The active turn is the trailing region (no user prompt after it)
             // while a turn is in flight — Copy waits for it to settle.
-            is_active: matches!(target, TranscriptItemId::Live(_))
-                && end == self.items.len()
-                && self.busy,
+            is_active: match target {
+                TranscriptItemId::Live(_) => end == self.items.len() && self.busy,
+                TranscriptItemId::History(_) => false,
+                TranscriptItemId::InCard { .. } => self.in_running_turn(target),
+            },
             elapsed_secs,
-            failed: items[start..end].iter().any(|it| {
-                matches!(
-                    it,
-                    ChatItem::Notice {
-                        level: NoticeLevel::Failed,
-                        ..
-                    }
-                )
-            }),
+            ending: ending(&items[start..end]),
         })
     }
 
@@ -670,6 +691,19 @@ impl Chat {
         self.failure().is_some()
     }
 
+    /// Whether the last turn stopped at a limit, with no prompt after it: the
+    /// one failure asking the agent to go on can mend.
+    pub fn stopped_at_limit(&self) -> bool {
+        let item = match &self.replay {
+            Replay::Partial(stash) => standing_failure(stash.iter().rev()),
+            Replay::Settled | Replay::Armed => standing_failure(self.transcript_back()),
+        };
+        matches!(
+            item,
+            Some(ChatItem::Notice { level: NoticeLevel::CutShort(cut), .. }) if cut.continues()
+        )
+    }
+
     /// What the failure [`Self::failed`] reads says, in its own words.
     pub fn failure(&self) -> Option<&str> {
         // Mid-replay the whole transcript is the stash; what is in `items` is a
@@ -679,6 +713,12 @@ impl Chat {
             Replay::Settled | Replay::Armed => standing_failure(self.transcript_back()),
         };
         match item? {
+            // What stopped it, which is what a lead or a run needs to read; the
+            // text under it only says what that means.
+            ChatItem::Notice {
+                level: NoticeLevel::CutShort(cut),
+                ..
+            } => Some(cut.title()),
             ChatItem::Notice { text, .. } => Some(text),
             _ => None,
         }
@@ -840,13 +880,19 @@ impl Chat {
     /// `None` when there is nothing to say. Derived from the link and, once
     /// that is up, from the live transcript while a turn is in flight.
     pub fn activity_status(&self) -> Option<String> {
+        self.turn_activity()?.words(&self.agent)
+    }
+
+    /// What this conversation is doing right now, as a kind a front end can
+    /// mark: `None` while it is connected and idle.
+    pub fn turn_activity(&self) -> Option<TurnActivity> {
         // Before anything else, because it outranks everything else: until the
         // handshake lands there is no agent to be doing any of it. A resumed
         // conversation shows its archive the moment it is picked, so without
         // this the pane looks live several seconds before it is -- and the only
         // thing that said otherwise was a Send that refused when pressed.
         if self.link == Link::Connecting {
-            return Some(format!("Connecting to {}…", self.agent));
+            return Some(TurnActivity::Connecting);
         }
         if !self.busy {
             return None;
@@ -862,22 +908,58 @@ impl Chat {
             })
         };
         if parked(true) {
-            return Some("Waiting for your approval…".to_string());
+            return Some(TurnActivity::Approval);
         }
         if parked(false) {
-            return Some("Waiting for your answer…".to_string());
+            return Some(TurnActivity::Answer);
         }
-        match self.items.last() {
+        Some(match self.items.last() {
             // A live thought already renders "Thinking…"; a running tool already
             // shows "· running" — don't repeat them in the trailing status.
-            Some(ChatItem::Thought(th)) if th.elapsed_secs.is_none() => None,
-            Some(ChatItem::Tool(t))
-                if matches!(t.call.status, ToolStatus::InProgress | ToolStatus::Pending) =>
-            {
-                None
-            }
-            Some(ChatItem::Agent(_)) => Some("Responding…".to_string()),
-            _ => Some("Working…".to_string()),
+            Some(ChatItem::Thought(th)) if th.elapsed_secs.is_none() => TurnActivity::InStep,
+            Some(ChatItem::Tool(t)) if t.call.status.is_running() => TurnActivity::InStep,
+            Some(ChatItem::Agent(_)) => TurnActivity::Responding,
+            _ => TurnActivity::Working,
+        })
+    }
+}
+
+/// What a conversation is doing while it is not idle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnActivity {
+    /// The agent is not up yet.
+    Connecting,
+    /// A permission waits on the person.
+    Approval,
+    /// A question waits on the person.
+    Answer,
+    /// The agent is writing its answer.
+    Responding,
+    /// In a step or a thought, which its own row already names.
+    InStep,
+    /// At work, with nothing more particular to say.
+    Working,
+}
+
+impl TurnActivity {
+    /// What the status line says, `agent` named while it connects; `None`
+    /// where the transcript already says it.
+    pub fn words(self, agent: &str) -> Option<String> {
+        match self {
+            Self::Connecting => Some(format!("Connecting to {agent}…")),
+            Self::Approval => Some("Waiting for your approval…".to_string()),
+            Self::Answer => Some("Waiting for your answer…".to_string()),
+            Self::Responding => Some("Responding…".to_string()),
+            Self::InStep => None,
+            Self::Working => Some("Working…".to_string()),
+        }
+    }
+
+    /// Whether it waits on the person rather than the agent.
+    pub fn waits_on_person(self) -> bool {
+        match self {
+            Self::Approval | Self::Answer => true,
+            Self::Connecting | Self::Responding | Self::InStep | Self::Working => false,
         }
     }
 }
@@ -926,11 +1008,25 @@ pub(super) fn standing_failure<'a>(
 ) -> Option<&'a ChatItem> {
     back.find_map(|item| match item {
         ChatItem::User(prompt) if prompt.sent_at.is_some() => Some(None),
-        ChatItem::Notice {
-            level: NoticeLevel::Failed,
-            ..
-        } => Some(Some(item)),
+        ChatItem::Notice { level, .. } if level.fails_turn() => Some(Some(item)),
         _ => None,
     })
     .flatten()
+}
+
+/// How the turn made of `items` ended: failed where a failure it ended on is
+/// in it, stopped where a stop or a cut short is, finished otherwise.
+fn ending(items: &[ChatItem]) -> super::TurnEnding {
+    use super::TurnEnding;
+    let mut ending = TurnEnding::Finished;
+    for item in items {
+        if let ChatItem::Notice { level, .. } = item {
+            match level {
+                NoticeLevel::Failed => return TurnEnding::Failed,
+                NoticeLevel::Stopped | NoticeLevel::CutShort(_) => ending = TurnEnding::Stopped,
+                NoticeLevel::Info | NoticeLevel::Error => {}
+            }
+        }
+    }
+    ending
 }

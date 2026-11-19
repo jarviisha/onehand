@@ -83,7 +83,11 @@ fn a_spawn_adds_a_working_card() {
     assert_eq!(s.id, "c1");
     assert_eq!(s.name, "Read the auth tests");
     assert_eq!(s.state, SubagentState::Working);
-    assert_eq!(s.task.as_deref(), Some("Read tests/auth and report"));
+    // The whole of what it was asked, which the float shows under *Show all*.
+    assert_eq!(
+        s.task.as_deref(),
+        Some("Read tests/auth and report\nthen more")
+    );
     assert_eq!(chat.subagents_working(), 1);
     assert!(chat.running());
 }
@@ -288,7 +292,7 @@ fn a_replay_adds_no_cards() {
 
 #[test]
 fn a_longer_replay_keeps_the_files_cards() {
-    let mut saved = SubagentItem::new("c1".into(), "Reader".into(), "Read");
+    let mut saved = SubagentItem::new("c1".into(), "Reader".into(), "Read", None);
     saved.state = SubagentState::Completed;
     let mut chat = chat();
     chat.resume_from(crate::chat::store::ConversationSnapshot {
@@ -473,4 +477,16 @@ fn a_terminal_inside_a_card_keeps_its_output() {
     chat.apply(AcpEvent::Disconnected("gone".into()));
     let (text, _) = card_tool_output(&chat);
     assert!(text.starts_with("hello"), "{text}");
+}
+
+/// A card waits on the person while a subagent nested in it asks, as much as
+/// while it asks itself.
+#[test]
+fn a_card_waits_while_a_nested_subagent_asks() {
+    let mut chat = chat();
+    chat.apply(spawn("c1", "Outer", "look"));
+    chat.apply(inside("c1", spawn("c2", "Inner", "deeper")));
+    chat.apply(AcpEvent::Permission(permission(Some("c2"))));
+    let outer = card(&chat.items, "c1");
+    assert_eq!(chat.standing(outer), Standing::Waiting);
 }

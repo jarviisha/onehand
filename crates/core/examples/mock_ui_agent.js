@@ -32,8 +32,20 @@
 // three of the states the app spends most of its time in have no finished form
 // to look at: an answer arriving a chunk at a time, a thought still being had,
 // a command still running. Put a `fast` in the prompt to have the whole thing
-// land at once, for when what is wanted is the finished article. Cancelling
-// stops it where it is.
+// land at once, for when what is wanted is the finished article; a `slow` plays
+// it four times slower (`slow 8`, eight), for looking at each state as it
+// passes. Cancelling stops it where it is.
+//
+// Put a `work` in the prompt for a turn at work and nothing else, held long
+// enough to look at: a thought still being had, a plan with an item in hand, a
+// command left running for half a minute beside one still pending, then the
+// answer arriving. Fold the cluster while the command runs to see its line
+// name the step. It needs no answer and ends by itself; press Stop while the
+// command runs to see a stopped turn.
+//
+// Put a `limit` in the prompt for a short turn the agent ends at its output
+// limit, which is the one ending a person cannot cause; *Continue* on its card
+// plays the rest.
 //
 // It answers `session/set_config_option` and `session/set_mode` by echoing the
 // new state back, so the chips move when they are used, except Max effort,
@@ -616,7 +628,126 @@ function backgroundStart() {
   bgEnds.push(asyncTaskId);
 }
 
+// How long the `work` turn holds its thought, and its long command.
+const THINK = 7000;
+const LONG_RUN = 30000;
+
+// What the app sends when a person continues a turn stopped at a limit.
+const CONTINUED = 'continue from where you stopped';
+
 const step = {
+  // A short turn cut off at the output limit, half way through a sentence.
+  limited() {
+    turn += 1;
+    prose('Going through the release profile one setting at a time.');
+    step_('read', 'Read Cargo.toml');
+    step_('search', 'Search "codegen-units"', { content: text('Cargo.toml:42:codegen-units = 1') });
+    prose('One codegen unit is what makes the link slow, because every crate is');
+    const id = promptId;
+    beat(BEAT, () => send({ jsonrpc: '2.0', id, result: { stopReason: 'max_tokens' } }));
+    promptId = null;
+    play();
+  },
+
+  // The rest of the limited turn, once a person asks for it.
+  continued() {
+    turn += 1;
+    prose(
+      'optimised as one piece. Raising it to 16 trades a little speed for a much ' +
+        'shorter link, which is the trade wanted for a release built this often.',
+    );
+    const id = promptId;
+    beat(BEAT, () => send({ jsonrpc: '2.0', id, result: { stopReason: 'end_turn' } }));
+    promptId = null;
+    play();
+  },
+
+  // A turn at work, slowly, and nothing else: the states the full tour passes
+  // through in a tenth of a second each.
+  working() {
+    turn += 1;
+    prose('The release build is what is slow. Looking at how it is set up before changing it.');
+    thought(
+      'Fat LTO across the whole workspace is the usual cause. If the profile ' +
+        'asks for it, thin LTO should give most of the speed for a fraction of the link time.',
+      THINK,
+    );
+    step_('read', 'Read Cargo.toml');
+    step_('search', 'Search "lto"', { content: text('Cargo.toml:41:lto = "fat"') });
+    prose('The profile asks for fat LTO. Trying thin, then timing a clean build.');
+    beat(BEAT, () =>
+      update({
+        sessionUpdate: 'plan',
+        entries: [
+          { content: 'Find what the release profile asks for', status: 'completed' },
+          { content: 'Switch `lto` to thin and time a clean build', status: 'in_progress' },
+          { content: 'Report the before and after', status: 'pending' },
+        ],
+      }),
+    );
+    step_('edit', 'Cargo.toml', {
+      content: [
+        {
+          type: 'diff',
+          path: 'Cargo.toml',
+          oldText: ['[profile.release]', 'lto = "fat"', 'codegen-units = 1'].join('\n'),
+          newText: ['[profile.release]', 'lto = "thin"', 'codegen-units = 1'].join('\n'),
+        },
+      ],
+    });
+    // One in hand and one reported as pending, both for as long as it takes
+    // the first to show its own clock.
+    beat(BEAT, () =>
+      update({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'work-1',
+        kind: 'execute',
+        title: 'cargo build --release --locked',
+        status: 'in_progress',
+      }),
+    );
+    beat(BEAT, () =>
+      update({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'work-2',
+        kind: 'read',
+        title: 'Read target/release/.fingerprint/onehand/invoked.timestamp',
+        status: 'pending',
+      }),
+    );
+    beat(LONG_RUN, () =>
+      update({
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'work-1',
+        status: 'completed',
+        content: text('    Finished `release` profile [optimized] target(s) in 4m 12s'),
+      }),
+    );
+    beat(BEAT * 20, () =>
+      update({ sessionUpdate: 'tool_call_update', toolCallId: 'work-2', status: 'completed' }),
+    );
+    beat(BEAT, () =>
+      update({
+        sessionUpdate: 'plan',
+        entries: [
+          { content: 'Find what the release profile asks for', status: 'completed' },
+          { content: 'Switch `lto` to thin and time a clean build', status: 'completed' },
+          { content: 'Report the before and after', status: 'in_progress' },
+        ],
+      }),
+    );
+    // A pause with nothing arriving, which is the running line on its own.
+    beat(THINK / 2, () => {});
+    prose(
+      'A clean release build now links in about four minutes where it took eleven. ' +
+        'The binary is a little larger; nothing else changed.',
+    );
+    const id = promptId;
+    beat(BEAT, () => send({ jsonrpc: '2.0', id, result: { stopReason: 'end_turn' } }));
+    promptId = null;
+    play();
+  },
+
   // Everything that needs no answer, in the order a real turn would produce it.
   // Prose between some of the runs and not others, deliberately: a block is
   // every stretch of adjacent activity, so the runs with nothing between them
@@ -930,7 +1061,15 @@ rl.on('line', (line) => {
         .map((block) => block?.text ?? '')
         .join(' ')
         .toLowerCase();
-      pace = said.includes('fast') ? 0 : 1;
+      // `slow` plays it four times slower, `slow 8` eight: long enough to
+      // look at each state as it passes.
+      const slow = said.match(/\bslow(?:\s+(\d+))?\b/);
+      pace = said.includes('fast') ? 0 : slow ? Math.max(1, Number(slow[1] ?? 4)) : 1;
+      // A whole word, so a prompt that only mentions work in passing still
+      // gets the tour.
+      if (/\bwork\b/.test(said)) return step.working();
+      if (/\blimit\b/.test(said)) return step.limited();
+      if (said.includes(CONTINUED)) return step.continued();
       return step.tools();
     }
   }

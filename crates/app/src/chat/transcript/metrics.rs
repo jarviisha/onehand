@@ -64,14 +64,8 @@ pub(super) const FOLD_INDENT: Rems = rems(0.75 + 0.5);
 /// One line of machine text.
 pub(super) const LINE_H: Rems = rems(1.25);
 
-/// What a collapsed detail shows before it says there is more.
-///
-/// **A diff from the top and an output from the bottom**, because that is where
-/// each keeps its point: a diff opens on the change, and a command's failure is
-/// the last thing it printed.
-pub(super) const PREVIEW_DIFF: usize = 12;
-pub(super) const PREVIEW_OUT: usize = 5;
-/// How tall an opened detail stands before it scrolls inside itself.
+/// How tall a detail's box stands before it scrolls inside itself: sixteen
+/// lines of machine text.
 pub(super) const DETAIL_OPEN_H: Rems = rems(20.);
 /// Changed lines past which a diff is offered rather than drawn.
 ///
@@ -155,3 +149,7 @@ pub(in crate::chat) const TUCK: Rems = rems(0.625);
 pub(super) const FRAME_PAD: Rems = rems(0.75);
 /// Width a question's tab label is elided at. Only a *tab* is ever elided.
 pub(super) const ASK_TAB_W: Rems = rems(8.75);
+
+/// How wide the column of line counts is, so the counts of every file in a
+/// turn's list stand one under another at the right edge.
+pub(super) const COUNTS_W: Rems = rems(5.);

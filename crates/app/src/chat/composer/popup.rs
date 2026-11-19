@@ -11,7 +11,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, div, rems,
 };
 use gpui_component::scroll::ScrollbarMode;
-use gpui_component::{ActiveTheme, StyledExt};
+use gpui_component::{ActiveTheme, StyledExt, ThemeStyled as _};
 use onehand_core::completion::TriggerKind;
 
 /// The least room a list is ever given, however short the panel is.
@@ -82,8 +82,8 @@ pub(super) fn popup_chrome() -> Rems {
     rems(POPUP_HEADER_H.0 + CONTROL_H.0 + POPUP_INSET_H.0)
 }
 
-/// The inset every popup surface pads its contents by.
-pub(super) const POPUP_INSET: Rems = rems(0.375);
+/// The inset every popup surface pads its contents by: the library menu's.
+pub(super) const POPUP_INSET: Rems = rems(0.25);
 
 /// A popup's scrolling list, with its scrollbar on the popup's own right edge.
 ///
@@ -147,9 +147,10 @@ fn anchor(overlay: &Overlay) -> Anchor {
     }
 }
 
-/// The surface every popup is drawn on: the floating fill, a control's edge
-/// and a container's corner, the app's lift, and the wheel held so the conversation behind does not move
-/// with the list.
+/// The surface every popup is drawn on: the library's own popup surface (its
+/// fill, ring edge and compact shadow), so these read as the window's other
+/// menus do, at a container's corner, and the wheel held so the conversation
+/// behind does not move with the list.
 ///
 /// **The wheel is claimed on the surface**, so the header and the inset swallow
 /// it too: gpui's handler for a scrolling box never claims the event, and the
@@ -159,11 +160,8 @@ pub(super) fn popup_surface(cx: &App) -> gpui::Div {
     div()
         .v_flex()
         .w_full()
+        .popover_style(cx)
         .rounded(cx.theme().radius_lg)
-        .border_1()
-        .border_color(cx.theme().border)
-        .bg(cx.theme().popover.alpha(1.))
-        .shadow(crate::tokens::lift(cx))
         .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
         .p(POPUP_INSET)
 }
@@ -381,13 +379,15 @@ impl Composer {
         // narrowing below the cap does not take a line out from under the list.
         let more = (rows.len() + capped).saturating_sub(POPUP_MAX_ROWS as usize);
         let more_line = more > 0 || opened > POPUP_MAX_ROWS as usize;
-        let title = popup_title(&overlay, self.trigger.as_ref().map(|t| t.kind), &rows);
+        // Only a completion is titled: a menu opens on the control that names
+        // it, as the window's other menus do, and its groups head themselves.
+        let title = completion.then(|| popup_title(self.trigger.as_ref().map(|t| t.kind)));
         // A list of one group would be named twice an inch apart, on the pinned
         // row and on the first row under it; the heading is the one that goes.
         let mut rows = rows;
         if let Some(first) = rows
             .first_mut()
-            .filter(|r| r.group.as_ref() == Some(&title))
+            .filter(|r| title.is_some() && r.group == title)
         {
             first.group = None;
         }
@@ -400,7 +400,7 @@ impl Composer {
                 // The whole popup is what the panel has to hold, not the list
                 // alone.
                 .max_h(room)
-                .child(popup_header(title, cx))
+                .children(title.map(|title| popup_header(title, cx)))
                 .child(edge_scrolled(
                     &self.rows_scroll,
                     div()
@@ -517,32 +517,13 @@ pub(super) fn popup_header(title: SharedString, cx: &App) -> gpui::Div {
         .child(title)
 }
 
-/// What the open popup is, as its pinned header says it.
-///
-/// A completion says what is being completed, because the trigger is the only
-/// thing that knows and a lone `@` is not self-explanatory. A menu says what it
-/// is about. A list of settings takes the name of its one group where it has
-/// one, and the general word where it holds several.
-pub(super) fn popup_title(
-    overlay: &Overlay,
-    trigger: Option<TriggerKind>,
-    rows: &[Row],
-) -> SharedString {
-    match overlay {
-        Overlay::Completion => match trigger {
-            Some(TriggerKind::Command) => "Run a slash command".into(),
-            _ => "Mention a file".into(),
-        },
-        Overlay::Add => "Add to the prompt".into(),
-        Overlay::Branch => "Branch".into(),
-        Overlay::Attachments => "Attachments".into(),
-        Overlay::Mode | Overlay::Options | Overlay::Fast | Overlay::Effort => {
-            let mut groups = rows.iter().filter_map(|row| row.group.clone());
-            match (groups.next(), groups.next()) {
-                (Some(only), None) => only,
-                _ => "Settings".into(),
-            }
-        }
+/// What an open completion is completing, as its pinned header says it: the
+/// trigger is the only thing that knows, and a lone `@` is not
+/// self-explanatory.
+pub(super) fn popup_title(trigger: Option<TriggerKind>) -> SharedString {
+    match trigger {
+        Some(TriggerKind::Command) => "Run a slash command".into(),
+        _ => "Mention a file".into(),
     }
 }
 

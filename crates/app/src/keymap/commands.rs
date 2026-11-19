@@ -531,6 +531,14 @@ pub const COMMANDS: &[Command] = &[
         "Permission card"
     ),
     command!(
+        "subagent_close",
+        "Close the subagent's float",
+        ["escape"],
+        crate::chat::pane::CloseSubagent,
+        "SubagentFloat && !Dialog && !Input",
+        "Subagent float"
+    ),
+    command!(
         "tasks_close",
         "Close the task, back to the cards",
         ["escape"],
