@@ -30,6 +30,7 @@ mod instance;
 mod keymap;
 mod offload;
 mod page_parts;
+mod palette;
 mod rail;
 mod remote;
 mod saves;

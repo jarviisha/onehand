@@ -95,7 +95,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | The composer card | `card` | `crates/app/src/chat/composer/card.rs` |
 | A chip in the composer's row for the turn's helpers (a lead's workers, the turn's subagents) | `status_chip(id, mark, counts, name, cx)`: the composer's chip with a mark, then a count per state in the rail's mark and ink, its words in `name` (tooltip and accessible name) | `crates/app/src/chat/composer/card.rs` |
 | An attached file's plate (a picture's preview), pressable; a picture whole in a dialog | `plate`, `opens`; `show_image` | `crates/app/src/chat/transcript/user.rs`, `image_view.rs` |
-| The composer popup and its parts | `popup_surface`, `popup_header`, `popup_title`, `candidate_row`, `choice_row` | `crates/app/src/chat/composer/popup.rs`, `rows.rs` |
+| The composer popup and its parts; `popup_surface` and `popup_row` also draw the title bar's palette | `popup_surface`, `popup_row`, `popup_header`, `popup_title`, `candidate_row`, `choice_row` | `crates/app/src/chat/composer/popup.rs`, `rows.rs` |
 | A rail row's fills, inks and controls | `row_surfaces`, `row_inks`, `hover_fill`, `chosen_fill`, `key_ring`, `row_control`, `meta_control`, `menu_button` | `crates/app/src/rail/row.rs` |
 | A page row (the rail's pages and foot, Settings' nav), at the medium weight chosen or not | `page_fill(row, on, cx)` | `crates/app/src/rail/row.rs` |
 

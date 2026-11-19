@@ -518,7 +518,8 @@ impl Shell {
             refused: Vec::new(),
             #[cfg(test)]
             saves_asked: 0,
-            rail: crate::rail::RailState::new(window, cx),
+            rail: crate::rail::RailState::new(cx),
+            palette: crate::palette::Palette::new(window, cx),
             folds: HashMap::new(),
             last_panel: FocusedPanel::Chat,
             terminal_homes: super::dock_rules::TerminalHomes::seeded(

@@ -1,5 +1,5 @@
-//! The workspace control and the search over the list, drawn in the title bar, and the header that
-//! names the list: how many sessions wait on the person, the way to the search, and the filter.
+//! The workspace control, drawn in the title bar, and the header that names the list: how many
+//! sessions wait on the person, the way to the title bar's palette, and the filter.
 
 use super::RailState;
 use super::model::{Filter, toggle_attention};
@@ -7,10 +7,9 @@ use super::row::{MAX_LABEL, ellipsize, labelled};
 use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::controls::Short as _;
-use crate::controls::search_input;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
-use gpui::{Anchor, Context, InteractiveElement as _, IntoElement, ParentElement, Styled, div};
+use gpui::{Anchor, Context, IntoElement, ParentElement, Styled, div};
 use gpui_component::menu::DropdownMenu as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, StyledExt, h_flex};
 use onehand_ui::ShortIcon as _;
@@ -85,30 +84,6 @@ pub(crate) fn workspace_control(
         ))
 }
 
-/// The search field, the library's edged field, with the key that reaches it
-/// from anywhere. It stands in the title bar, whose press drags the window and
-/// whose right press opens the window's menu, so either stops here before the
-/// bar: a drag selects words, not the window.
-pub(crate) fn search_field(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
-    let state = shell.rail_state();
-    div()
-        .min_w_0()
-        .w(crate::tokens::TITLE_SEARCH_W)
-        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        .on_mouse_down(gpui::MouseButton::Right, |_, _, cx| cx.stop_propagation())
-        .child(
-            search_input(&state.search, cx)
-                .short()
-                // Its edge alone parts it from the bar: no fill of its own,
-                // so it stands on the window's fill as the bar does.
-                .bg(gpui::transparent_black())
-                .when_some(
-                    crate::keymap::first_key("focus_rail_search", cx),
-                    |input, key| input.suffix(gpui_component::kbd::Kbd::new(key)),
-                ),
-        )
-}
-
 /// *Sessions*, how many wait on the person, the search and the filter: a heading over
 /// the list, its words on the edge the rows' marks start at, its controls at
 /// a row's size.
@@ -164,16 +139,16 @@ pub(super) fn sessions_header(
             )
         })
         .child(div().flex_1())
-        // The keys go to the title bar's search, as its own key puts them.
+        // The keys go to the title bar's palette, as its own key puts them.
         .child(labelled(
             "rail-search-name",
-            "Search sessions and projects",
+            "Search sessions, projects and commands",
             crate::controls::action("rail-search")
                 .quiet_icon(false, cx)
                 .short_icon()
                 .icon(Icon::new(IconName::Search))
                 .named_with_action(
-                    "Search sessions and projects",
+                    "Search sessions, projects and commands",
                     &super::FocusRailSearch,
                     None,
                 )

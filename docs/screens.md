@@ -21,11 +21,17 @@ the workspace menu (every workspace onehand keeps, most recently opened first an
 *New workspace…*) when pressed and
 on Enter. The window draws no menus of its own: every command is
 the keymap's, and the platform's own menu bar holds them where there is one. Centred on the bar at a
-fixed width, narrowing only when the window leaves the ends no room, the search over session titles and project names, the library's
+fixed width, narrowing only when the window leaves the ends no room, the palette: the library's
 edged field at `.short()` with no fill of its own, its edge alone parting it from the bar, with
-its key's hint (`Ctrl+K` outside a terminal, showing a hidden rail); what it narrows is the
-rail's list, so typing into it shows a hidden rail too, a panel filling the window giving way as
-it does for the key, and a press in it selects words rather than moving the window. Toward its
+its key's hint (`Ctrl+K` outside a terminal), and a press in it selects words rather than moving
+the window. While it holds the keyboard a list floats under it at its width, on the composer's
+popup surface and rows: the sessions whose title or project holds every word typed (each with a
+bot mark and its project on the right), then the projects whose name does (a folder mark),
+going to the one picked; led by `>`, the window's own commands whose name does, each with its
+key's hint, running the one picked where the keyboard was, as its key would. Up and Down move
+the row, Enter takes it, a click takes one, Escape empties the field and gives the keyboard back.
+It lists at most 50 and says *Showing 50 of N; type more to narrow*, and *No session or project
+matches* or *No command matches* when nothing does. It does not narrow the rail. Toward its
 end, the terminal's, the Workbench's and Settings' toggles, in that order, each an icon alone
 (a panel at the bottom, a panel at the right, a gear), its glyph in the
 foreground ink while what it shows is open and in the muted ink while closed, with no fill at rest,
@@ -47,7 +53,7 @@ the row's end, shown on hover and on the keyboard's row, and on a right-click; *
 (a pill counting tasks that need attention, none at zero), *Issues*, *Workflows* and *Schedules*,
 each filled while its page shows; *Sessions*, in semibold and the full ink, with a warning-ink *N
 need attention* chip (shown above zero or while on, toggling that filter and back), a search button
-that puts the keys in the title bar's search, as its key does, and the filter menu (*By project*,
+that puts the keys in the title bar's palette, as its key does, and the filter menu (*By project*,
 *All sessions*, *Needs attention*, *Recent activity*) over a hairline; the scrolling list, ending on
 *Add project…* and, under it with no gap, *Add a project on a host…*, which opens the form naming
 the host and its folder there. Settings is the title bar's, not the rail's. The rail is drawn as the library's sidebar draws its items: a row's name in the sidebar's

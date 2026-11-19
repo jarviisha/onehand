@@ -325,6 +325,7 @@ pub struct Shell {
     saves_asked: usize,
     /// The rail's filter, search and keyboard row, which no launch keeps.
     rail: crate::rail::RailState,
+    palette: crate::palette::Palette,
     /// Whether each project's sessions are showing under it in the rail.
     ///
     /// **Here and not in the row, because the row does not live long enough.**

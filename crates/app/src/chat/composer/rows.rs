@@ -49,7 +49,7 @@ pub(super) const OPTION_MAX_W: Rems = rems(9.);
 /// a selected thing takes everywhere in this window -- a tab, a mode chip, a
 /// rail row. The pointer moves the fill as the arrows do, so the ghost's hover,
 /// the same step, never stands beside it as a second one.
-pub(super) fn popup_row(id: impl Into<gpui::ElementId>, highlighted: bool, cx: &App) -> Button {
+pub(crate) fn popup_row(id: impl Into<gpui::ElementId>, highlighted: bool, cx: &App) -> Button {
     crate::controls::action(id)
         .quiet(cx)
         // Not for the geometry, which is set outright below and lands after the

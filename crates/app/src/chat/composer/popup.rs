@@ -156,7 +156,7 @@ fn anchor(overlay: &Overlay) -> Anchor {
 /// it too: gpui's handler for a scrolling box never claims the event, and the
 /// transcript underneath would scroll with the list. The inner list still
 /// scrolls, because the deeper listener runs first.
-pub(super) fn popup_surface(cx: &App) -> gpui::Div {
+pub(crate) fn popup_surface(cx: &App) -> gpui::Div {
     div()
         .v_flex()
         .w_full()

@@ -1,5 +1,5 @@
 //! The window's frame around the rail and the dock: the title bar, holding the
-//! rail's toggle and the workspace, the search over the rail's sessions, the
+//! rail's toggle and the workspace, the palette, the
 //! docks' toggles and Settings'. Nothing runs along the
 //! foot: the branch stands under the composer.
 //!
@@ -57,7 +57,10 @@ const MENUS: &[(&str, &[Item])] = &[
     (
         "Go",
         &[
-            Some(("focus_rail_search", "Search sessions and projects")),
+            Some((
+                "focus_rail_search",
+                "Search sessions, projects and commands",
+            )),
             Some(("composer", "Go to the composer")),
             None,
             Some(("show_tasks", "Tasks")),
@@ -116,7 +119,7 @@ pub(super) fn install_menus(cx: &mut App) {
 
 impl Shell {
     /// The title bar: the rail's toggle and the workspace at the start; the
-    /// search over the rail's sessions and projects in the middle; the
+    /// palette in the middle; the
     /// terminal's, the Workbench's and Settings' toggles at the end. The
     /// window's own controls are the library's, drawn where the window is
     /// decorated by the app.
@@ -125,7 +128,11 @@ impl Shell {
     /// and the two ends grow alike from nothing, so the search stands at the
     /// bar's centre however long the name is; only a window too narrow for
     /// both ends and the search lets the search narrow.
-    pub(super) fn title_bar(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement + use<> {
+    pub(super) fn title_bar(
+        &self,
+        window: &gpui::Window,
+        cx: &mut gpui::Context<Self>,
+    ) -> impl IntoElement + use<> {
         let guard = self.close_guard.clone();
         TitleBar::new()
             // No line under it: the bar stands on the window's fill, as the
@@ -140,7 +147,7 @@ impl Shell {
                     .min_w_0()
                     .justify_center()
                     .px_2()
-                    .child(crate::rail::search_field(self, cx)),
+                    .child(crate::palette::palette_field(self, window, cx)),
             )
             .child(self.dock_toggles(cx))
             // The library's close removes the window outright; this one asks

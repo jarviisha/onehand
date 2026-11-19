@@ -3,9 +3,8 @@
 //! Top to bottom: *New session*; the pages; the sessions under a filter.
 //! Only the list scrolls. It hides completely,
 //! never to an icon column, and the title bar's toggle brings it back. The
-//! search over sessions and projects narrows this list but stands in the
-//! title bar, led by the workspace and its menu, so both are in reach whether
-//! the rail is shown or not.
+//! search over sessions, projects and commands is the title bar's palette,
+//! in reach whether the rail is shown or not.
 //!
 //! The list is the projects with their sessions, or under a flat filter the
 //! sessions alone with the project on each row. Every group lists a capped
@@ -24,12 +23,10 @@ use crate::shell::Shell;
 use crate::tokens::ROW_H;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, AppContext as _, Context, Entity, FocusHandle, Focusable as _,
-    InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
-    Styled, Subscription, Task, Window, div,
+    AnyElement, App, Context, FocusHandle, InteractiveElement, IntoElement, ParentElement,
+    SharedString, StatefulInteractiveElement, Styled, Task, Window, div,
 };
 use gpui::{Rems, rems};
-use gpui_component::input::{InputEvent, InputState};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use model::{Filter, Item, Row};
@@ -45,7 +42,7 @@ mod session;
 mod workspace;
 pub(crate) use model::needs_attention;
 pub(crate) use row::page_fill;
-pub(crate) use search::{search_field, workspace_control};
+pub(crate) use search::workspace_control;
 pub(crate) use session::{session_label, signal_mark, status_icon, word_ink};
 pub(crate) use workspace::ellipsize_front;
 
@@ -77,30 +74,17 @@ pub(crate) struct RailState {
     keyed: bool,
     /// Groups shown in full past the cap: a project, or `None` for a flat list.
     uncapped: Vec<Option<PathBuf>>,
-    search: Entity<InputState>,
     /// The list's own focus, so Enter and the arrows reach it and not a field.
     focus: FocusHandle,
     /// *New session*'s focus: a tab stop, so the keyboard reaches the
     /// chevron that opens its menu.
     new_focus: FocusHandle,
-    _search: Subscription,
     /// Says every session's age again while the rail shows.
     _tick: Task<()>,
 }
 
 impl RailState {
-    pub(crate) fn new(window: &mut Window, cx: &mut Context<Shell>) -> Self {
-        let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search…"));
-        // What the search narrows is the rail's list, so typing into it
-        // brings a hidden rail back.
-        let _search = cx.subscribe_in(&search, window, |shell, search, event, window, cx| {
-            if matches!(event, InputEvent::Change) {
-                if !search.read(cx).value().trim().is_empty() {
-                    shell.show_rail(window, cx);
-                }
-                cx.notify();
-            }
-        });
+    pub(crate) fn new(cx: &mut Context<Shell>) -> Self {
         let _tick = cx.spawn(async move |shell, cx| {
             loop {
                 cx.background_executor().timer(AGE_TICK).await;
@@ -120,10 +104,8 @@ impl RailState {
             cursor: None,
             keyed: false,
             uncapped: Vec::new(),
-            search,
             focus: cx.focus_handle(),
             new_focus: cx.focus_handle().tab_stop(true),
-            _search,
             _tick,
         }
     }
@@ -146,13 +128,8 @@ impl RailState {
     /// Whether the caret is in the rail: its list or *New session*.
     /// Whoever takes the rail off screen has to move it first, or the window
     /// is left pointing at an element no frame draws and no shortcut reaches.
-    /// The search is in the title bar, drawn whether the rail is or not.
     pub(crate) fn holds_focus(&self, window: &Window, cx: &App) -> bool {
         self.focus.contains_focused(window, cx) || self.new_focus.contains_focused(window, cx)
-    }
-
-    fn searching(&self, cx: &App) -> bool {
-        !self.search.read(cx).value().trim().is_empty()
     }
 }
 
@@ -207,21 +184,17 @@ impl List {
         // A worktree holding only workers drawn under their lead is theirs,
         // not the person's.
         let emptied = model::emptied(&items);
-        let names: Vec<&str> = roots.iter().map(|root| root.label.as_str()).collect();
         let order: Vec<usize> = workspace
             .display_order()
             .into_iter()
             .filter(|root| !(roots[*root].transient && emptied.contains(root)))
             .collect();
         let state = shell.rail_state();
-        let query = state.search.read(cx).value().to_string();
         let rows = model::rows(
             &items,
             &model::Shape {
-                projects: &names,
                 order: &order,
                 filter: state.filter,
-                query: &query,
                 open: &|root| shell.project_unfolded(&roots[root].path),
                 uncapped: &|group| {
                     let path = group.map(|root| roots[root].path.clone());
@@ -531,11 +504,9 @@ impl Shell {
         rail.keyed = false;
     }
 
-    /// The person folding a project. While a search is on every project
-    /// stays open, so a fold would change nothing on screen and then land
-    /// unasked when the search clears; it waits instead.
+    /// The person folding a project.
     fn rail_fold(&mut self, path: PathBuf, fold: bool, cx: &mut Context<Self>) {
-        if !self.rail_state().searching(cx) && self.project_unfolded(&path) == fold {
+        if self.project_unfolded(&path) == fold {
             self.toggle_fold(path, cx);
         }
         cx.notify();
@@ -643,14 +614,6 @@ impl Shell {
         if let Some(&(root, session, _)) = next {
             self.rail_open_session(root, session, true, window, cx);
         }
-    }
-
-    /// Brings the rail back if it is off screen, and puts the caret in its
-    /// search.
-    pub(crate) fn focus_rail_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.show_rail(window, cx);
-        let search = self.rail_state().search.clone();
-        search.read(cx).focus_handle(cx).focus(window, cx);
     }
 }
 

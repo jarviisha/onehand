@@ -50,7 +50,7 @@ a hex literal is a bug even when it looks right, as no theme switch reaches it.
 ## Layout
 
 One window hosts one workspace. A title bar holding the rail's toggle, the workspace's name, the
-search, the docks' toggles and Settings' runs along the top; nothing runs along the foot. The title bar and
+palette, the docks' toggles and Settings' runs along the top; nothing runs along the foot. The title bar and
 the rail stand on the window's fill, unboxed. Beside the rail, every
 other region is a box of its own on that fill: the agent pane and the Workbench side by side, the
 Workbench the right half of a split in the `DockArea`'s centre, and under both, across their whole
@@ -84,8 +84,8 @@ plain ASCII and box-drawing, so it stays aligned in any mono font.
 
 What each region holds, and in what order, is `docs/screens.md`'s, under the region's name:
 
-- **Title bar**: the rail's toggle, the workspace's name and its menu, the search
-  over the rail's sessions, the terminal's, the Workbench's and Settings' toggles, and the window's own
+- **Title bar**: the rail's toggle, the workspace's name and its menu, the
+  palette over sessions, projects and commands, the terminal's, the Workbench's and Settings' toggles, and the window's own
   controls where the app decorates it.
 - **Rail**: app chrome outside the dock, on the window's fill, from *New session* down to the sessions.
 - **Agent pane header**: the conversation's name, its menu and the session's controls, a worker's
@@ -371,7 +371,7 @@ the UI crate's builders, which set the pointer cursor and the library's corner (
 through `action`; fields through `text_input`, `search_input` and `text_area`. **A field is the
 library's**: edged in `input` on the page's fill and ringed on focus, in a form, a dialog, a page's
 top and a search alike; a search adds the search mark and the clear button, and the composer's field
-is its card's. Two searches stand on a bar instead: the title bar's keeps its edge and drops its
+is its card's. Two searches stand on a bar instead: the title bar's palette keeps its edge and drops its
 fill, standing on the bar's; one framed by its bar's own lines (the Issues tab's filter bar) is
 bare, with no edge and no clear button, *Clear filters* beside it clearing it. A button names its
 variant by role, each drawn as the library draws it: `primary` the one commitment in a decision

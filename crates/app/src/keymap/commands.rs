@@ -177,7 +177,7 @@ pub const COMMANDS: &[Command] = &[
     ),
     command!(
         "focus_rail_search",
-        "Search sessions and projects",
+        "Search sessions, projects and commands",
         ["ctrl-k"],
         crate::rail::FocusRailSearch,
         "Shell && !Terminal && !Dialog",
@@ -198,6 +198,22 @@ pub const COMMANDS: &[Command] = &[
         crate::rail::RailPrev,
         "Shell && !Terminal && !Dialog",
         "Outside terminal"
+    ),
+    command!(
+        "palette_up",
+        "Move to the hit above",
+        ["up"],
+        crate::palette::PaletteUp,
+        "Palette > Input",
+        "Search palette"
+    ),
+    command!(
+        "palette_down",
+        "Move to the hit below",
+        ["down"],
+        crate::palette::PaletteDown,
+        "Palette > Input",
+        "Search palette"
     ),
     command!(
         "rail_open",
