@@ -19,10 +19,12 @@
 //! as far as its session, whose answer carries the modes and config options
 //! ([`fold_probe`]), and dropped, within [`CHECK_WAIT`].
 
-use super::{AgentEdit, AgentSpec, AppConfig, Appearance};
+use super::{AgentEdit, AgentSpec, AppConfig, Appearance, HostEdit, HostSpec};
 use crate::acp::AcpEvent;
+use crate::host::probe::Probed;
 use crate::saving::{Pending, Saves};
 use crate::workflow::Offer;
+use crate::workspace::HostName;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -37,6 +39,7 @@ pub enum Setting {
     Agents,
     /// Whether a program outside onehand may use the tools.
     Outside,
+    Hosts,
 }
 
 /// A setting's value, as it is put in force.
@@ -46,6 +49,9 @@ pub enum Value {
     Outside(bool),
     /// The agent list, which is never put back.
     Agents,
+    /// The declared hosts, never put back either: a failed write is said
+    /// and the list on screen stands.
+    Hosts,
 }
 
 /// What one write edits in the file, in place.
@@ -54,6 +60,7 @@ pub enum Edit {
     Appearance(Appearance),
     Agents(Box<AgentEdit>),
     Outside(bool),
+    Hosts(HostEdit),
 }
 
 impl Edit {
@@ -63,6 +70,7 @@ impl Edit {
             Self::Appearance(choice) => cfg.appearance = *choice,
             Self::Agents(edit) => edit.apply(&mut cfg.agents),
             Self::Outside(on) => cfg.control.outside = *on,
+            Self::Hosts(edit) => edit.apply(&mut cfg.hosts),
         }
     }
 
@@ -72,6 +80,7 @@ impl Edit {
             Self::Appearance(_) => "Saving the appearance",
             Self::Agents(_) => "Saving the agents",
             Self::Outside(_) => "Saving outside control",
+            Self::Hosts(_) => "Saving the hosts",
         }
     }
 }
@@ -93,6 +102,14 @@ pub enum Tested {
 }
 
 /// What the settings are, read through the drive.
+/// A probe of a host under way, or what the last one came to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HostProbe {
+    Running,
+    Found(Probed),
+    Failed(String),
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
     pub agents: Vec<AgentSpec>,
@@ -106,6 +123,11 @@ pub struct Settings {
     /// What the last *Test* of each command line found, or that it runs.
     /// For this process, every window's.
     tested: Vec<(String, Tested)>,
+    /// The hosts a person declared.
+    pub hosts: Vec<HostSpec>,
+    /// The probe of each host under way, or what its last one came to. For
+    /// this process only: a restart asks again when a person does.
+    host_probes: Vec<(HostName, HostProbe)>,
 }
 
 impl Settings {
@@ -116,6 +138,14 @@ impl Settings {
             .iter()
             .find(|(seen, _)| *seen == key)
             .map(|(_, tested)| tested)
+    }
+
+    /// The probe of `host` under way, or what its last one came to.
+    pub fn host_probe(&self, host: &HostName) -> Option<&HostProbe> {
+        self.host_probes
+            .iter()
+            .find(|(seen, _)| seen == host)
+            .map(|(_, probe)| probe)
     }
 
     /// The check of `spec` under way, or its last failure.
@@ -164,6 +194,12 @@ pub enum Effect {
         spec: AgentSpec,
         root: Option<PathBuf>,
     },
+    /// Ask `host` what it is and what it has, off the UI loop
+    /// (`probe_blocking`), and report [`Input::HostProbed`]. A late answer
+    /// for a host removed meanwhile is **dropped**.
+    ProbeHost {
+        host: HostName,
+    },
     /// Call off the check `token`: drop its agent.
     CallOff {
         token: u64,
@@ -193,6 +229,11 @@ pub enum Input {
         spec: AgentSpec,
         found: Option<(PathBuf, Option<String>)>,
     },
+    /// What [`Effect::ProbeHost`] found of `host`, or why it could not ask.
+    HostProbed {
+        host: HostName,
+        found: Result<Probed, String>,
+    },
 }
 
 /// The settings' drive. See the module header.
@@ -213,11 +254,12 @@ impl Deref for SettingsDrive {
 
 impl SettingsDrive {
     /// The settings as the config file was read at start.
-    pub fn new(agents: Vec<AgentSpec>, appearance: Appearance) -> Self {
+    pub fn new(agents: Vec<AgentSpec>, appearance: Appearance, hosts: Vec<HostSpec>) -> Self {
         Self {
             settings: Settings {
                 agents,
                 appearance,
+                hosts,
                 ..Settings::default()
             },
             saves: Saves::default(),
@@ -274,6 +316,46 @@ impl SettingsDrive {
         ]
     }
 
+    /// Probe `host`: how one is added, and how a listed one is checked. What
+    /// the probe finds is declared, in place of what was. A second ask while
+    /// one runs for that host starts nothing.
+    #[must_use = "its effects are to be carried"]
+    pub fn probe_host(&mut self, host: HostName) -> Vec<Effect> {
+        if self.settings.host_probe(&host) == Some(&HostProbe::Running) {
+            return Vec::new();
+        }
+        self.set_host_probe(&host, Some(HostProbe::Running));
+        vec![Effect::Changed, Effect::ProbeHost { host }]
+    }
+
+    /// Stop declaring `host`, and forget what was learned of it. Whether a
+    /// project still names it is the caller's to have asked first.
+    #[must_use = "its effects are to be carried"]
+    pub fn remove_host(&mut self, host: HostName) -> Vec<Effect> {
+        self.set_host_probe(&host, None);
+        self.edit_hosts(HostEdit::Remove(host))
+    }
+
+    fn edit_hosts(&mut self, edit: HostEdit) -> Vec<Effect> {
+        edit.apply(&mut self.settings.hosts);
+        vec![
+            Effect::Changed,
+            self.write(
+                Setting::Hosts,
+                Value::Hosts,
+                Value::Hosts,
+                Edit::Hosts(edit),
+            ),
+        ]
+    }
+
+    fn set_host_probe(&mut self, host: &HostName, to: Option<HostProbe>) {
+        self.settings.host_probes.retain(|(seen, _)| seen != host);
+        if let Some(to) = to {
+            self.settings.host_probes.push((host.clone(), to));
+        }
+    }
+
     /// `spec` came up offering `offer`: what was learned of it before is
     /// replaced.
     pub fn saw_offer(&mut self, spec: AgentSpec, offer: Offer) {
@@ -323,7 +405,7 @@ impl SettingsDrive {
                     match &value {
                         Value::Appearance(choice) => self.settings.appearance = *choice,
                         Value::Outside(_) => {}
-                        Value::Agents => continue,
+                        Value::Agents | Value::Hosts => continue,
                     }
                     fx.push(Effect::Show(value));
                 }
@@ -350,6 +432,30 @@ impl SettingsDrive {
                 let why = format!("the agent did not come up within {}s", CHECK_WAIT.as_secs());
                 self.set_check(&spec, Some(Checking::Failed(why)));
                 vec![Effect::CallOff { token }, Effect::Changed]
+            }
+            Input::HostProbed { host, found } => {
+                // Removed while its probe ran: nothing is declared again.
+                if self.settings.host_probe(&host) != Some(&HostProbe::Running) {
+                    return Vec::new();
+                }
+                match found {
+                    Ok(probed) => {
+                        let spec = HostSpec {
+                            name: host.clone(),
+                            os: probed.os.clone(),
+                            arch: probed.arch.clone(),
+                        };
+                        self.set_host_probe(&host, Some(HostProbe::Found(probed)));
+                        match self.settings.hosts.contains(&spec) {
+                            true => vec![Effect::Changed],
+                            false => self.edit_hosts(HostEdit::Put(spec)),
+                        }
+                    }
+                    Err(why) => {
+                        self.set_host_probe(&host, Some(HostProbe::Failed(why)));
+                        vec![Effect::Changed]
+                    }
+                }
             }
             Input::Looked { spec, found } => {
                 let tested = match found {

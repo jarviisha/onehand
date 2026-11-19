@@ -1,7 +1,7 @@
 use super::*;
 
 fn drive() -> SettingsDrive {
-    SettingsDrive::new(Vec::new(), Appearance::System)
+    SettingsDrive::new(Vec::new(), Appearance::System, Vec::new())
 }
 
 fn spec(name: &str) -> AgentSpec {
@@ -20,6 +20,7 @@ fn written(drive: &mut SettingsDrive, fx: Vec<Effect>, result: Result<(), String
             Effect::Show(_)
             | Effect::Probe { .. }
             | Effect::Look { .. }
+            | Effect::ProbeHost { .. }
             | Effect::CallOff { .. }
             | Effect::Changed
             | Effect::Signal(_) => None,
@@ -39,6 +40,7 @@ fn shown(fx: &[Effect]) -> Vec<Value> {
             Effect::Write { .. }
             | Effect::Probe { .. }
             | Effect::Look { .. }
+            | Effect::ProbeHost { .. }
             | Effect::CallOff { .. }
             | Effect::Changed
             | Effect::Signal(_) => None,
@@ -54,6 +56,7 @@ fn failed(fx: &[Effect]) -> Vec<&'static str> {
             | Effect::Write { .. }
             | Effect::Probe { .. }
             | Effect::Look { .. }
+            | Effect::ProbeHost { .. }
             | Effect::CallOff { .. }
             | Effect::Changed => None,
         })
@@ -66,6 +69,7 @@ fn name(effect: &Effect) -> &'static str {
         Effect::Write { .. } => "Write",
         Effect::Probe { .. } => "Probe",
         Effect::Look { .. } => "Look",
+        Effect::ProbeHost { .. } => "ProbeHost",
         Effect::CallOff { .. } => "CallOff",
         Effect::Changed => "Changed",
         Effect::Signal(_) => "Signal",
@@ -84,6 +88,7 @@ fn probe(fx: &[Effect]) -> u64 {
             Effect::Show(_)
             | Effect::Write { .. }
             | Effect::Look { .. }
+            | Effect::ProbeHost { .. }
             | Effect::CallOff { .. }
             | Effect::Changed
             | Effect::Signal(_) => None,
@@ -166,6 +171,7 @@ fn a_check_runs_once_and_lands_once() {
         | Effect::Write { .. }
         | Effect::Probe { .. }
         | Effect::Look { .. }
+        | Effect::ProbeHost { .. }
         | Effect::Changed
         | Effect::Signal(_)) => panic!("not a call-off: {}", name(e)),
     }
@@ -207,7 +213,7 @@ fn command(name: &str, command: &str) -> AgentSpec {
 /// filed by the command line, so a rename keeps it.
 #[test]
 fn a_test_runs_once_and_is_filed_by_its_command_line() {
-    let mut settings = SettingsDrive::new(Vec::new(), Appearance::default());
+    let mut settings = SettingsDrive::new(Vec::new(), Appearance::default(), Vec::new());
     let spec = command("a", "agent-x");
     let fx = settings.test(spec.clone(), None);
     assert_eq!(names(&fx), ["Changed", "Look"]);
@@ -239,7 +245,7 @@ fn a_test_runs_once_and_is_filed_by_its_command_line() {
 /// not shown under the other.
 #[test]
 fn a_test_belongs_to_the_whole_command_line() {
-    let mut settings = SettingsDrive::new(Vec::new(), Appearance::default());
+    let mut settings = SettingsDrive::new(Vec::new(), Appearance::default(), Vec::new());
     let on = |args: &[&str]| AgentSpec {
         args: args.iter().map(|a| a.to_string()).collect(),
         ..command("a", "npx")
@@ -247,4 +253,157 @@ fn a_test_belongs_to_the_whole_command_line() {
     let _ = settings.test(on(&["-y", "one"]), None);
     assert_eq!(settings.tested(&on(&["-y", "one"])), Some(&Tested::Running));
     assert_eq!(settings.tested(&on(&["-y", "two"])), None);
+}
+
+mod hosts {
+    use super::super::*;
+    use crate::config::{HostEdit, HostOs, HostSpec};
+    use crate::host::probe::Probed;
+    use crate::workspace::HostName;
+
+    fn named(name: &str) -> HostName {
+        HostName(name.into())
+    }
+
+    fn probed(os: HostOs, arch: &str) -> Probed {
+        Probed {
+            os,
+            arch: arch.into(),
+            tools: Vec::new(),
+        }
+    }
+
+    fn drive(hosts: Vec<HostSpec>) -> SettingsDrive {
+        SettingsDrive::new(Vec::new(), Appearance::System, hosts)
+    }
+
+    /// Each effect by its kind, since an effect is not compared whole.
+    fn kinds(fx: &[Effect]) -> Vec<&'static str> {
+        fx.iter()
+            .map(|effect| match effect {
+                Effect::Show(_) => "show",
+                Effect::Write { .. } => "write",
+                Effect::Probe { .. } => "probe",
+                Effect::ProbeHost { .. } => "probe-host",
+                Effect::Look { .. } => "look",
+                Effect::CallOff { .. } => "call-off",
+                Effect::Changed => "changed",
+                Effect::Signal(_) => "signal",
+            })
+            .collect()
+    }
+
+    fn writes(fx: &[Effect]) -> Vec<&Edit> {
+        fx.iter()
+            .filter_map(|effect| match effect {
+                Effect::Write { edit, .. } => Some(edit),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_probed_host_is_declared_and_written() {
+        let mut drive = drive(Vec::new());
+        let fx = drive.probe_host(named("b"));
+        assert_eq!(kinds(&fx), vec!["changed", "probe-host"]);
+        assert!(matches!(&fx[1], Effect::ProbeHost { host } if *host == named("b")));
+        assert_eq!(drive.host_probe(&named("b")), Some(&HostProbe::Running));
+        assert!(drive.hosts.is_empty());
+
+        let found = probed(HostOs::Linux, "x86_64");
+        let fx = drive.handle(Input::HostProbed {
+            host: named("b"),
+            found: Ok(found.clone()),
+        });
+        let spec = HostSpec {
+            name: named("b"),
+            os: HostOs::Linux,
+            arch: "x86_64".into(),
+        };
+        assert_eq!(drive.hosts, vec![spec.clone()]);
+        assert_eq!(
+            drive.host_probe(&named("b")),
+            Some(&HostProbe::Found(found))
+        );
+        assert_eq!(kinds(&fx), vec!["changed", "write"]);
+        assert_eq!(writes(&fx), vec![&Edit::Hosts(HostEdit::Put(spec))]);
+    }
+
+    #[test]
+    fn a_failed_probe_declares_nothing() {
+        let mut drive = drive(Vec::new());
+        let _ = drive.probe_host(named("b"));
+        let fx = drive.handle(Input::HostProbed {
+            host: named("b"),
+            found: Err("no route".into()),
+        });
+        assert!(drive.hosts.is_empty());
+        assert_eq!(
+            drive.host_probe(&named("b")),
+            Some(&HostProbe::Failed("no route".into()))
+        );
+        assert_eq!(kinds(&fx), vec!["changed"]);
+    }
+
+    #[test]
+    fn a_second_probe_while_one_runs_starts_nothing() {
+        let mut drive = drive(Vec::new());
+        let _ = drive.probe_host(named("b"));
+        assert!(drive.probe_host(named("b")).is_empty());
+    }
+
+    #[test]
+    fn checking_a_declared_host_replaces_it() {
+        let mut drive = drive(vec![HostSpec::undeclared(named("b"))]);
+        let _ = drive.probe_host(named("b"));
+        let _ = drive.handle(Input::HostProbed {
+            host: named("b"),
+            found: Ok(probed(HostOs::Windows, "AMD64")),
+        });
+        assert_eq!(drive.hosts.len(), 1);
+        assert_eq!(drive.hosts[0].os, HostOs::Windows);
+    }
+
+    #[test]
+    fn a_probe_that_finds_what_is_declared_writes_nothing() {
+        let mut drive = drive(vec![HostSpec::undeclared(named("b"))]);
+        let _ = drive.probe_host(named("b"));
+        let fx = drive.handle(Input::HostProbed {
+            host: named("b"),
+            found: Ok(probed(HostOs::Linux, "x86_64")),
+        });
+        assert_eq!(kinds(&fx), vec!["changed"]);
+    }
+
+    #[test]
+    fn removing_writes_and_forgets_its_probe() {
+        let mut drive = drive(vec![HostSpec::undeclared(named("b"))]);
+        let _ = drive.probe_host(named("b"));
+        let fx = drive.remove_host(named("b"));
+        assert!(drive.hosts.is_empty());
+        assert_eq!(drive.host_probe(&named("b")), None);
+        assert_eq!(
+            writes(&fx),
+            vec![&Edit::Hosts(HostEdit::Remove(named("b")))]
+        );
+        // The probe still under way lands on a host that is gone: nothing is
+        // declared again behind the person's back.
+        let fx = drive.handle(Input::HostProbed {
+            host: named("b"),
+            found: Ok(probed(HostOs::Linux, "x86_64")),
+        });
+        assert!(drive.hosts.is_empty());
+        assert!(fx.is_empty());
+    }
+
+    #[test]
+    fn the_hosts_edit_lands_in_the_file() {
+        let mut cfg = AppConfig::default();
+        let spec = HostSpec::undeclared(named("b"));
+        Edit::Hosts(HostEdit::Put(spec.clone())).apply(&mut cfg);
+        assert_eq!(cfg.hosts, vec![spec]);
+        Edit::Hosts(HostEdit::Remove(named("b"))).apply(&mut cfg);
+        assert!(cfg.hosts.is_empty());
+    }
 }

@@ -133,6 +133,7 @@ fn probing(
                 Effect::Show(_)
                 | Effect::Write { .. }
                 | Effect::Look { .. }
+                | Effect::ProbeHost { .. }
                 | Effect::CallOff { .. }
                 | Effect::Changed
                 | Effect::Signal(_) => None,
