@@ -33,6 +33,7 @@ fn the_old_shape_reads_as_one_record_per_project() {
                 mirror: "/m".into(),
                 branch: Some("feat/x".into()),
             }),
+            builds: Vec::new(),
         }
     );
     assert_eq!(cfg.projects[1].host, Some(HostName("build01".into())));

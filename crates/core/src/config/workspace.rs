@@ -50,6 +50,9 @@ pub(crate) struct ProjectConfig {
     /// The host its sessions run on, and how; only for a folder here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub offload: Option<crate::workspace::Offloaded>,
+    /// The hosts it builds on, and what comes back from each.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub builds: Vec<crate::workspace::BuildHost>,
 }
 
 /// What a workspace file may hold, this build's shape and the one before it.
@@ -112,6 +115,7 @@ impl From<Raw> for WorkspaceConfig {
                     offload,
                     host,
                     path,
+                    builds: Vec::new(),
                 }
             })
             .collect();
