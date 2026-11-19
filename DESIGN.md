@@ -49,8 +49,8 @@ a hex literal is a bug even when it looks right, as no theme switch reaches it.
 
 ## Layout
 
-One window hosts one workspace. A title bar holding the workspace's name, the rail's toggle, the
-search and the docks' toggles runs along the top; nothing runs along the foot. The title bar and
+One window hosts one workspace. A title bar holding the rail's toggle, the workspace's name, the
+palette, the docks' toggles and Settings' runs along the top; nothing runs along the foot. The title bar and
 the rail stand on the window's fill, unboxed. Beside the rail, every
 other region is a box of its own on that fill: the agent pane and the Workbench side by side, the
 Workbench the right half of a split in the `DockArea`'s centre, and under both, across their whole
@@ -60,7 +60,7 @@ plain ASCII and box-drawing, so it stays aligned in any mono font.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────┐
-│ W Workspace v rail            [ Search sessions ^K ]               term wb  _ [] x │
+│ rail W Workspace v            [ Search sessions ^K ]           term wb set  _ [] x │
 │ + New session ^N ┌────────────────────────────┐ ┌────────────────────────────────┐ │
 │ Overview         │ Title (...)     past close │ │ Editor Markdown ...   max hide │ │
 │ Tasks         2  │ workflow > step >     Stop │ │ open file v               tree │ │
@@ -77,17 +77,17 @@ plain ASCII and box-drawing, so it stays aligned in any mono font.
 │                  ┌───────────────────────────────────────────────────────────────┐ │
 │                  │ shell 1                                          +  max hide  │ │
 │                  │ terminal (bottom dock, under both boxes)       shell 1        │ │
-│ Settings         │                                                 shell 2       │ │
+│                  │                                                 shell 2       │ │
 │                  └───────────────────────────────────────────────────────────────┘ │
 └────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 What each region holds, and in what order, is `docs/screens.md`'s, under the region's name:
 
-- **Title bar**: the workspace's name and its menu, the rail's toggle, the search
-  over the rail's sessions, the terminal's and the Workbench's toggles, and the window's own
+- **Title bar**: the rail's toggle, the workspace's name and its menu, the
+  palette over sessions, projects and commands, the terminal's, the Workbench's and Settings' toggles, and the window's own
   controls where the app decorates it.
-- **Rail**: app chrome outside the dock, on the window's fill, from *New session* down to *Settings*.
+- **Rail**: app chrome outside the dock, on the window's fill, from *New session* down to the sessions.
 - **Agent pane header**: the conversation's name, its menu and the session's controls, a worker's
   standing among them; chrome alone over a page that names itself in its head.
 - **Step strip**: a run's steps under the header, while it drives the session on screen.
@@ -352,8 +352,8 @@ reaches.
   `chosen_ink`; the library's own hover on a ghost button. The row the keys are on inside a popup takes
   the same selected step (`accent`). A secondary button rests on a fill of its own and takes
   its pointed-at step under the pointer; the selected step is a chosen row's. Keyboard
-  focus on a control is the ring. A field is edged at rest and ringed on focus, as the library
-  draws it; the composer, the input surface, shows focus by its caret (*Components*).
+  focus on a control is the ring. A field is edged and shows focus by its caret alone, its edge
+  unchanged; the composer, the input surface, likewise (*Components*).
 - At most one primary in a view; a view needs none (the Settings page has none). Where layers
   stack, what waits on the person holds it while it shows (a floating issue, an open form, a
   pinned card, a run's approval), and what it covers steps down to `secondary`.
@@ -369,10 +369,10 @@ Reuse gpui-component before building anything: `Root`, `DockArea`, `Sidebar`, `D
 `InputState`, `Editor`, `TextView`, plus gpui's own `list` for the transcript. Controls go through
 the UI crate's builders, which set the pointer cursor and the library's corner (`radius`): buttons
 through `action`; fields through `text_input`, `search_input` and `text_area`. **A field is the
-library's**: edged in `input` on the page's fill and ringed on focus, in a form, a dialog, a page's
+library's**: edged in `input` on the page's fill, unchanged by focus, in a form, a dialog, a page's
 top and a search alike; a search adds the search mark and the clear button, and the composer's field
-is its card's. Two searches stand on a bar instead: the title bar's keeps its edge and drops its
-fill, standing on the bar's; one framed by its bar's own lines (the Issues tab's filter bar) is
+is its card's. Two searches stand on a bar instead: the title bar's palette keeps its edge and drops its
+fill, standing on the bar's, and has no search mark; one framed by its bar's own lines (the Issues tab's filter bar) is
 bare, with no edge and no clear button, *Clear filters* beside it clearing it. A button names its
 variant by role, each drawn as the library draws it: `primary` the one commitment in a decision
 area, `secondary` (edged, on its own fill) an ordinary action beside it, a set picker's trigger (an

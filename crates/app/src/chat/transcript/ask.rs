@@ -386,14 +386,10 @@ impl AskForm<'_> {
                     true => cx.theme().ring,
                     false => cx.theme().input,
                 })
-                .child(
-                    div().flex_1().min_w_0().child(
-                        // On the well's own fill: the well is the field.
-                        text_area(&state, cx)
-                            .appearance(false)
-                            .bg(cx.theme().transparent),
-                    ),
-                )
+                .child(div().flex_1().min_w_0().child(
+                    // On the well's own fill: the well is the field.
+                    text_area(&state, cx).bg(cx.theme().transparent).border_0(),
+                ))
                 .children(key),
         )
     }

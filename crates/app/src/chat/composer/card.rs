@@ -188,8 +188,8 @@ impl Composer {
                     // text area draws no fill of its own.
                     .child(
                         text_area(&self.state, cx)
-                            .appearance(false)
                             .bg(cx.theme().transparent)
+                            .border_0()
                             .on_paste({
                                 let composer = cx.entity().downgrade();
                                 move |item, window, cx| {

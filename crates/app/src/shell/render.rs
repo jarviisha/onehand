@@ -82,7 +82,7 @@ impl Render for Shell {
             .key_context("Shell")
             .on_action(
                 cx.listener(|shell: &mut Self, _: &OpenSettings, window, cx| {
-                    shell.open_settings(window, cx);
+                    shell.toggle_settings(window, cx);
                 }),
             )
             .on_action(cx.listener(
@@ -183,7 +183,7 @@ impl Render for Shell {
             )
             .on_action(cx.listener(
                 |shell: &mut Self, _: &crate::rail::FocusRailSearch, window, cx| {
-                    shell.focus_rail_search(window, cx);
+                    shell.open_palette(window, cx);
                 },
             ))
             .on_action(
@@ -221,7 +221,7 @@ impl Render for Shell {
                     }
                 },
             ))
-            .child(self.title_bar(cx))
+            .child(self.title_bar(window, cx))
             .child(body);
 
         // The library's own sheet, dialog and toast layers are mounted by

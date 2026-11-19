@@ -43,6 +43,8 @@ mod rows;
 pub(in crate::chat) use card::{COMPOSER_SPLIT, status_chip};
 pub(in crate::chat) use popup::POPUP_STACK_PEEK;
 pub use popup::popup_room;
+pub(crate) use popup::popup_surface;
+pub(crate) use rows::popup_row;
 
 /// What is showing above the composer. Mutually exclusive **by construction**:
 /// one `Option` makes that structural, where a flag per overlay needs a

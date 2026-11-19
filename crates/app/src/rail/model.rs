@@ -168,31 +168,14 @@ pub(super) fn waiting_span(
     workers_said(waiting).map(|said| start..start + said.len())
 }
 
-/// The sessions a filter and a query keep, as indices into `items`, in the
-/// order they are listed. The query matches a title or the project's name,
-/// ignoring case; `projects` names each project by its index. Only the top of
-/// each tree is listed here: a lead is kept when it or a worker under it
-/// matches, and its workers follow it in [`rows`].
-pub(super) fn visible(
-    items: &[Item],
-    projects: &[&str],
-    filter: Filter,
-    query: &str,
-) -> Vec<usize> {
-    let query = query.trim().to_lowercase();
-    let matches = |s: &Item| {
-        query.is_empty()
-            || s.title.to_lowercase().contains(&query)
-            || projects
-                .get(s.root)
-                .is_some_and(|name| name.to_lowercase().contains(&query))
-    };
+/// The sessions a filter keeps, as indices into `items`, in the order they
+/// are listed. Only the top of each tree is listed here: its workers follow
+/// it in [`rows`].
+pub(super) fn visible(items: &[Item], filter: Filter) -> Vec<usize> {
     let mut out: Vec<usize> = (0..items.len())
         .filter(|i| {
             let s = &items[*i];
-            s.under.is_none()
-                && (matches(s) || workers_under(items, *i).any(|w| matches(&items[w])))
-                && (filter != Filter::NeedsAttention || needs_attention(s.rolled()))
+            s.under.is_none() && (filter != Filter::NeedsAttention || needs_attention(s.rolled()))
         })
         .collect();
     match filter {
@@ -354,13 +337,10 @@ impl Place {
 
 /// What the rows are built from, besides the sessions.
 pub(super) struct Shape<'a> {
-    /// Every project's name, by index.
-    pub(super) projects: &'a [&'a str],
     /// The projects in the order they are drawn: pinned first.
     pub(super) order: &'a [usize],
     pub(super) filter: Filter,
-    pub(super) query: &'a str,
-    /// Whether a project's sessions are showing, outside a search.
+    /// Whether a project's sessions are showing.
     pub(super) open: &'a dyn Fn(usize) -> bool,
     /// Whether a group was shown in full past the cap: a project, or `None`
     /// for the flat list.
@@ -368,13 +348,9 @@ pub(super) struct Shape<'a> {
 }
 
 /// The list as it is drawn, before it is drawn: one source for the elements
-/// and for the order the keyboard walks, so the two never differ. A search
-/// opens every project, so no match hides behind a fold, and leaves out the
-/// projects with nothing that matches.
+/// and for the order the keyboard walks, so the two never differ.
 pub(super) fn rows(items: &[Item], shape: &Shape) -> Vec<Row> {
-    let query = shape.query.trim().to_lowercase();
-    let searching = !query.is_empty();
-    let shown = visible(items, shape.projects, shape.filter, &query);
+    let shown = visible(items, shape.filter);
     let mut rows = Vec::new();
     if shape.filter != Filter::ByProject {
         capped(&mut rows, items, None, shown, true, shape);
@@ -385,11 +361,7 @@ pub(super) fn rows(items: &[Item], shape: &Shape) -> Vec<Row> {
                 .copied()
                 .filter(|s| items[*s].root == root)
                 .collect();
-            let named = shape.projects[root].to_lowercase().contains(&query);
-            if searching && mine.is_empty() && !named {
-                continue;
-            }
-            let open = searching || (shape.open)(root);
+            let open = (shape.open)(root);
             if !rows.is_empty() {
                 rows.push(Row::Gap);
             }
@@ -403,7 +375,7 @@ pub(super) fn rows(items: &[Item], shape: &Shape) -> Vec<Row> {
             capped(&mut rows, items, Some(root), mine, false, shape);
         }
     }
-    if rows.is_empty() && (searching || shape.filter != Filter::ByProject) {
+    if rows.is_empty() && shape.filter != Filter::ByProject {
         rows.push(Row::NoMatch);
     }
     rows.extend([Row::AddProject, Row::AddHostProject]);

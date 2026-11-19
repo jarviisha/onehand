@@ -12,8 +12,6 @@ use gpui::SharedString;
 use onehand_core::config::PanelLayout;
 use std::path::Path;
 
-const PROJECTS: [&str; 3] = ["atlas-api", "atlas-billing", "docs-site"];
-
 /// Six sessions over three projects, in tree order, each `uid` its start.
 fn seed() -> Vec<Item> {
     use SessionSignal::*;
@@ -54,15 +52,12 @@ fn since(age: u64) -> std::time::Instant {
 
 fn shape<'a>(
     filter: Filter,
-    query: &'a str,
     open: &'a dyn Fn(usize) -> bool,
     uncapped: &'a dyn Fn(Option<usize>) -> bool,
 ) -> Shape<'a> {
     Shape {
-        projects: &PROJECTS,
         order: &[0, 1, 2],
         filter,
-        query,
         open,
         uncapped,
     }
@@ -71,42 +66,16 @@ fn shape<'a>(
 #[test]
 fn a_filter_keeps_what_it_says() {
     let s = seed();
-    assert_eq!(
-        visible(&s, &PROJECTS, Filter::ByProject, ""),
-        vec![0, 1, 2, 3, 4, 5]
-    );
+    assert_eq!(visible(&s, Filter::ByProject), vec![0, 1, 2, 3, 4, 5]);
     // Started order, by uid.
-    assert_eq!(
-        visible(&s, &PROJECTS, Filter::All, ""),
-        vec![0, 1, 3, 4, 5, 2]
-    );
-    assert_eq!(
-        visible(&s, &PROJECTS, Filter::NeedsAttention, ""),
-        vec![0, 2]
-    );
+    assert_eq!(visible(&s, Filter::All), vec![0, 1, 3, 4, 5, 2]);
+    assert_eq!(visible(&s, Filter::NeedsAttention), vec![0, 2]);
     // The latest change of state first: 1m, 4m, 12m, 25m, 90m, two days.
-    assert_eq!(
-        visible(&s, &PROJECTS, Filter::Recent, ""),
-        vec![1, 0, 5, 2, 4, 3]
-    );
+    assert_eq!(visible(&s, Filter::Recent), vec![1, 0, 5, 2, 4, 3]);
     // Within one minute the later moment still comes first.
     let mut s = s;
     s[3].since = s[1].since + std::time::Duration::from_secs(1);
-    assert_eq!(visible(&s, &PROJECTS, Filter::Recent, "")[0], 3);
-}
-
-#[test]
-fn the_query_matches_a_title_or_a_project_ignoring_case() {
-    let s = seed();
-    assert_eq!(
-        visible(&s, &PROJECTS, Filter::ByProject, "  RETRY "),
-        vec![1, 3]
-    );
-    assert_eq!(
-        visible(&s, &PROJECTS, Filter::ByProject, "billing"),
-        vec![4, 5]
-    );
-    assert!(visible(&s, &PROJECTS, Filter::NeedsAttention, "retry").is_empty());
+    assert_eq!(visible(&s, Filter::Recent)[0], 3);
 }
 
 #[test]
@@ -219,7 +188,7 @@ fn the_tree_draws_open_projects_with_their_sessions_and_ends_on_the_add_rows() {
     let s = seed();
     let open = |root: usize| root != 0;
     assert_eq!(
-        rows(&s, &shape(Filter::ByProject, "", &open, &|_| false)),
+        rows(&s, &shape(Filter::ByProject, &open, &|_| false)),
         vec![
             Row::Project {
                 root: 0,
@@ -245,43 +214,9 @@ fn the_tree_draws_open_projects_with_their_sessions_and_ends_on_the_add_rows() {
 }
 
 #[test]
-fn a_search_opens_every_project_that_matches_and_drops_the_rest() {
-    let s = seed();
-    let rows = rows(
-        &s,
-        &shape(Filter::ByProject, "ledger", &|_| false, &|_| false),
-    );
-    assert_eq!(
-        rows,
-        vec![
-            Row::Project {
-                root: 1,
-                open: true
-            },
-            session(4, false, false),
-            session(5, false, false),
-            Row::AddProject,
-            Row::AddHostProject,
-        ]
-    );
-    let none = rows_for(&s, "nothing like this");
-    assert_eq!(
-        none,
-        vec![Row::NoMatch, Row::AddProject, Row::AddHostProject]
-    );
-}
-
-fn rows_for(s: &[Item], query: &str) -> Vec<Row> {
-    rows(s, &shape(Filter::ByProject, query, &|_| true, &|_| false))
-}
-
-#[test]
 fn a_flat_list_names_no_projects_and_says_when_nothing_matches() {
     let s = seed();
-    let rows = rows(
-        &s,
-        &shape(Filter::NeedsAttention, "", &|_| true, &|_| false),
-    );
+    let rows = rows(&s, &shape(Filter::NeedsAttention, &|_| true, &|_| false));
     assert_eq!(
         rows,
         vec![
@@ -301,7 +236,7 @@ fn a_flat_list_names_no_projects_and_says_when_nothing_matches() {
     assert_eq!(
         super::model::rows(
             &quiet,
-            &shape(Filter::NeedsAttention, "", &|_| true, &|_| false)
+            &shape(Filter::NeedsAttention, &|_| true, &|_| false)
         ),
         vec![Row::NoMatch, Row::AddProject, Row::AddHostProject]
     );
@@ -329,7 +264,7 @@ fn a_group_past_the_cap_says_how_many_more_until_shown_whole() {
             host: None,
         })
         .collect();
-    let capped = rows(&many, &shape(Filter::ByProject, "", &|_| true, &|_| false));
+    let capped = rows(&many, &shape(Filter::ByProject, &|_| true, &|_| false));
     assert_eq!(order(&capped).len(), SESSION_CAP);
     assert!(capped.contains(&Row::More {
         group: Some(0),
@@ -337,11 +272,11 @@ fn a_group_past_the_cap_says_how_many_more_until_shown_whole() {
     }));
     let whole = rows(
         &many,
-        &shape(Filter::ByProject, "", &|_| true, &|group| group == Some(0)),
+        &shape(Filter::ByProject, &|_| true, &|group| group == Some(0)),
     );
     assert_eq!(order(&whole).len(), SESSION_CAP + 2);
     assert!(!whole.iter().any(|row| matches!(row, Row::More { .. })));
-    let flat = rows(&many, &shape(Filter::All, "", &|_| true, &|_| false));
+    let flat = rows(&many, &shape(Filter::All, &|_| true, &|_| false));
     assert!(flat.contains(&Row::More {
         group: None,
         hidden: 2
@@ -564,7 +499,7 @@ fn session(item: usize, flat: bool, nested: bool) -> Row {
 #[test]
 fn workers_are_listed_under_their_lead_whatever_their_project() {
     let items = nested(with_workers());
-    let rows = rows(&items, &shape(Filter::ByProject, "", &|_| true, &|_| false));
+    let rows = rows(&items, &shape(Filter::ByProject, &|_| true, &|_| false));
     // Under project 0: the lead (item 0), then its workers by uid: 2 (item
     // 1, its own project) and 7 (item 6, in project 2).
     assert_eq!(
@@ -578,7 +513,7 @@ fn workers_are_listed_under_their_lead_whatever_their_project() {
     );
     // Project 2 holds only a nested worker: nothing of it is drawn there.
     assert!(!rows.contains(&session(6, false, false)));
-    let flat = super::model::rows(&items, &shape(Filter::All, "", &|_| true, &|_| false));
+    let flat = super::model::rows(&items, &shape(Filter::All, &|_| true, &|_| false));
     assert_eq!(
         flat[..3],
         [
@@ -652,10 +587,7 @@ fn a_folded_project_hides_the_tree_and_badges_it_once() {
     let items = nested(items);
     assert_eq!(badge(&items, 0), Some(SessionSignal::Failed));
     assert_eq!(badge(&items, 1), None, "counted through its lead only");
-    let rows = rows(
-        &items,
-        &shape(Filter::ByProject, "", &|r| r != 0, &|_| false),
-    );
+    let rows = rows(&items, &shape(Filter::ByProject, &|r| r != 0, &|_| false));
     assert!(
         !rows
             .iter()
@@ -689,7 +621,7 @@ fn a_worker_of_a_lead_not_listed_stays() {
     let items = nested(items);
     assert_eq!(items[1].under, None);
     assert!(
-        rows(&items, &shape(Filter::ByProject, "", &|_| true, &|_| false))
+        rows(&items, &shape(Filter::ByProject, &|_| true, &|_| false))
             .contains(&session(1, false, false))
     );
 }
@@ -728,7 +660,7 @@ fn the_cap_counts_a_lead_and_its_workers_as_one() {
         }
         nested(items)
     };
-    let all = |items: &[Item]| rows(items, &shape(Filter::ByProject, "", &|_| true, &|_| false));
+    let all = |items: &[Item]| rows(items, &shape(Filter::ByProject, &|_| true, &|_| false));
     // Four top sessions and two workers: six rows, no cap.
     assert!(
         !all(&tree(0))
@@ -752,20 +684,6 @@ fn the_cap_counts_a_lead_and_its_workers_as_one() {
 }
 
 #[test]
-fn a_search_matching_a_worker_lists_its_lead_and_tree() {
-    let items = nested(with_workers());
-    let rows = rows_for(&items, "Worker");
-    assert_eq!(
-        rows[1..4],
-        [
-            session(0, false, false),
-            session(1, false, true),
-            session(6, false, true)
-        ]
-    );
-}
-
-#[test]
 fn the_needs_attention_filter_lists_the_lead_with_its_tree() {
     let mut items = seed();
     items[0].signal = None;
@@ -774,7 +692,7 @@ fn the_needs_attention_filter_lists_the_lead_with_its_tree() {
     let items = nested(items);
     let rows = rows(
         &items,
-        &shape(Filter::NeedsAttention, "", &|_| true, &|_| false),
+        &shape(Filter::NeedsAttention, &|_| true, &|_| false),
     );
     assert_eq!(rows[..2], [session(0, true, false), session(1, true, true)]);
 }

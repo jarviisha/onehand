@@ -508,6 +508,14 @@ impl Shell {
         &mut self.rail
     }
 
+    pub(crate) fn palette(&self) -> &crate::palette::Palette {
+        &self.palette
+    }
+
+    pub(crate) fn palette_mut(&mut self) -> &mut crate::palette::Palette {
+        &mut self.palette
+    }
+
     /// The window's workspace and what is known about its projects, for the
     /// rail to draw.
     pub(crate) fn workspace_window(&self) -> &crate::state::WorkspaceWindow {
