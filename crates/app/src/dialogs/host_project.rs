@@ -9,6 +9,7 @@ use crate::controls::Refuses as _;
 use crate::controls::Short as _;
 use crate::controls::text_input;
 use crate::shell::{Browse, Shell, Way};
+use gpui::Focusable as _;
 use gpui::SharedString;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -240,6 +241,16 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
     Dialog::new(cx)
         .w(super::form_width(window))
         .close_button(false)
+        .on_ok(super::enter_presses(
+            shell.clone(),
+            refusal.is_none(),
+            vec![
+                host.focus_handle(cx),
+                repo.focus_handle(cx),
+                folder.focus_handle(cx),
+            ],
+            |shell, window, cx| shell.commit_host_project(window, cx),
+        ))
         .content(move |content, _, cx: &mut App| {
             let ways = onehand_ui::switch(
                 "host-project-way",

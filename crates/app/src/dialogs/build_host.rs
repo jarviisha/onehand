@@ -5,6 +5,7 @@ use super::{field, footer_row, title_row};
 use crate::controls::Quiet as _;
 use crate::controls::{text_area, text_input};
 use crate::shell::Shell;
+use gpui::Focusable as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, ClickEvent, Context, ParentElement, Styled, Window, div};
 use gpui_component::StyledExt as _;
@@ -51,6 +52,13 @@ pub(crate) fn build_host(shell: &Shell, window: &Window, cx: &mut Context<Shell>
     Dialog::new(cx)
         .w(super::form_width(window))
         .close_button(false)
+        // What is wrong with the entry is said in the form, which stays.
+        .on_ok(super::enter_presses(
+            weak.clone(),
+            true,
+            vec![host.focus_handle(cx), into.focus_handle(cx)],
+            |shell, window, cx| shell.save_build_host(window, cx),
+        ))
         .content(move |content, _, cx: &mut App| {
             let pick = {
                 let weak = weak.clone();

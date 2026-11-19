@@ -7,6 +7,7 @@ use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::text_input;
 use crate::shell::{Shell, offload_refusal};
+use gpui::Focusable as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, ClickEvent, Context, ParentElement, Styled, Window, div};
 use gpui_component::StyledExt as _;
@@ -68,6 +69,12 @@ pub(crate) fn offload(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -
     Dialog::new(cx)
         .w(super::form_width(window))
         .close_button(false)
+        .on_ok(super::enter_presses(
+            weak.clone(),
+            refusal.is_none(),
+            vec![host.focus_handle(cx)],
+            |shell, window, cx| shell.commit_offload(window, cx),
+        ))
         .content(move |content, _, cx: &mut App| {
             let pick = {
                 let weak = weak.clone();
