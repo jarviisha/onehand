@@ -124,6 +124,22 @@ fn quoted_survives_spaces_quotes_and_dollars() {
 }
 
 #[test]
+fn the_laptops_id_is_kept_to_safe_letters_in_the_folders_name() {
+    let dir = remote_dir("a b&c|d", Path::new("/work/proj"));
+    assert!(dir.starts_with(".onehand-build/a_b_c_d/proj-"), "{dir}");
+}
+
+#[test]
+fn what_a_host_said_of_a_program_it_lacks_is_kept_whole() {
+    let two = b"'git' is not recognized as an internal or external command,\r\noperable program or batch file.\r\n";
+    assert_eq!(
+        said(two),
+        "'git' is not recognized as an internal or external command, operable program or batch file."
+    );
+    assert_eq!(said(b"warning: x\nfatal: no\n"), "fatal: no");
+}
+
+#[test]
 fn the_folder_on_the_host_is_named_safely_and_by_the_laptop() {
     let dir = remote_dir("lap-1", Path::new("/work/my proj's"));
     assert!(dir.starts_with(".onehand-build/lap-1/my_proj_s-"), "{dir}");
@@ -878,12 +894,46 @@ mod shells {
     fn cmd_run_is_the_line_checked_by_hand() {
         assert_eq!(
             Shell::Cmd.run(DIR, SHA, Path::new("sub dir"), "dotnet build && dir").as_deref(),
-            Ok("cd /d \".onehand-build/lap/my_proj-abc\" && git checkout -q -f --detach 2ab98d7259af09c62a806ff487818d931abf3b7e && cd \"sub dir\" && echo __ONEHAND_BUILD__ && cmd /d /s /c \"dotnet build && dir\" 2>&1")
+            Ok("cd /d \".onehand-build/lap/my_proj-abc\" && git checkout -q -f --detach 2ab98d7259af09c62a806ff487818d931abf3b7e && cd \"sub dir\" && echo __ONEHAND_BUILD__ && cmd /d /s /c ^\"dotnet build ^&^& dir^\" 2>&1")
         );
         let top = Shell::Cmd
             .run(DIR, SHA, Path::new(""), "dir")
             .expect("a line");
         assert!(!top.contains("cd \"\""), "{top}");
+    }
+
+    /// The line is read twice, by the `cmd.exe` ssh starts and by the one
+    /// that runs the command: every character the first would act on is
+    /// escaped, so the second is handed the person's line as they wrote it.
+    #[test]
+    fn a_cmd_command_reaches_its_own_shell_as_written() {
+        let line = Shell::Cmd
+            .run(
+                DIR,
+                SHA,
+                Path::new(""),
+                r#"findstr "a|b" f.txt & echo (x) > o^ut"#,
+            )
+            .expect("a line");
+        assert!(
+            line.ends_with(
+                r#"cmd /d /s /c ^"findstr ^"a^|b^" f.txt ^& echo ^(x^) ^> o^^ut^" 2>&1"#
+            ),
+            "{line}"
+        );
+    }
+
+    #[test]
+    fn cmd_refuses_a_line_break_in_a_word() {
+        for text in ["a\nb", "a\rb", "a\u{0}b"] {
+            assert_eq!(
+                Shell::Cmd.word(text),
+                Err(format!(
+                    "{} cannot be built on a Windows host: its name holds a line break",
+                    text.escape_debug()
+                ))
+            );
+        }
     }
 
     #[test]
@@ -919,12 +969,27 @@ mod shells {
             .map(|w| w.to_string())
             .collect();
         assert_eq!(
-            Shell::Cmd.join(&words),
-            "dotnet build \"my app.sln\" -c Release \"a&b\""
+            Shell::Cmd.join(&words).as_deref(),
+            Ok("dotnet build \"my app.sln\" -c Release \"a&b\"")
         );
         assert_eq!(
-            Shell::Posix.join(&words),
-            "'dotnet' 'build' 'my app.sln' '-c' 'Release' 'a&b'"
+            Shell::Posix.join(&words).as_deref(),
+            Ok("'dotnet' 'build' 'my app.sln' '-c' 'Release' 'a&b'")
+        );
+        // A quoted word ending in a backslash would read as an escaped quote
+        // to the program it is handed to: the backslash is doubled.
+        let folder = ["dir".to_string(), r"C:\my out\".to_string()];
+        assert_eq!(
+            Shell::Cmd.join(&folder).as_deref(),
+            Ok(r#"dir "C:\my out\\""#)
+        );
+        // A word holding a quote cannot be joined for cmd.exe.
+        let quoted = ["echo".to_string(), "say \"hi\"".to_string()];
+        assert_eq!(
+            Shell::Cmd.join(&quoted),
+            Err(
+                "say \"hi\" holds a quote; give the whole command as one word after --".to_string()
+            )
         );
     }
 

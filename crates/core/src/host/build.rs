@@ -8,9 +8,10 @@
 //! is incremental; the command run in it, each line it prints handed over as
 //! it comes; and, when it exits 0, the paths the project names brought back.
 //!
-//! **Every word onehand writes into a shell line is quoted** (`Shell::word`): a
-//! folder, an artifact and the command itself reach the host's shell as one
-//! word each, whatever they hold.
+//! **Every word onehand writes into a shell line is quoted for the host's
+//! shell** (`Shell::word`), or refused where that shell has no way to hold
+//! it: a folder and an artifact reach it as one word each, and the command
+//! reaches the shell that runs it as the person wrote it.
 //!
 //! Blocking throughout; a front end runs it off its UI.
 
@@ -253,17 +254,27 @@ pub fn answer(built: &Built, tail: &Tail) -> String {
 /// whole path, so two folders of one name never share one. The name is kept
 /// to letters a shell and a URL both take as they are.
 pub(crate) fn remote_dir(laptop: &str, top: &Path) -> String {
-    let name: String = folder_name(top)
-        .chars()
+    let name = folder_name(top);
+    let hash = crate::chat::store::fnv1a(top.as_os_str().as_encoded_bytes());
+    // The laptop's id is read from a file, and goes into a URL and a shell
+    // line as the name does.
+    format!(
+        ".onehand-build/{}/{}-{hash:016x}",
+        safe(laptop),
+        safe(&name)
+    )
+}
+
+/// `text` kept to the letters a shell and a URL both take as they are.
+fn safe(text: &str) -> String {
+    text.chars()
         .map(
             |c| match c.is_ascii_alphanumeric() || matches!(c, '.' | '-') {
                 true => c,
                 false => '_',
             },
         )
-        .collect();
-    let hash = crate::chat::store::fnv1a(top.as_os_str().as_encoded_bytes());
-    format!(".onehand-build/{laptop}/{name}-{hash:016x}")
+        .collect()
 }
 
 fn folder_name(top: &Path) -> String {
@@ -389,14 +400,20 @@ fn unreached(
 }
 
 /// The last line of what a command said on stderr, which is the one that
-/// says what went wrong.
+/// says what went wrong; with the line before it when `cmd.exe` is saying a
+/// program is not there, which it says over two.
 fn said(stderr: &[u8]) -> String {
-    String::from_utf8_lossy(stderr)
+    let text = String::from_utf8_lossy(stderr);
+    let mut lines = text
         .lines()
         .map(str::trim)
-        .rfind(|line| !line.is_empty())
-        .unwrap_or_default()
-        .to_string()
+        .filter(|line| !line.is_empty())
+        .rev();
+    let last = lines.next().unwrap_or_default();
+    match (last.contains(shell::CMD_NOT_FOUND), lines.next()) {
+        (true, Some(before)) => format!("{before} {last}"),
+        _ => last.to_string(),
+    }
 }
 
 /// How the command's run ended.

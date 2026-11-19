@@ -134,7 +134,7 @@ pub fn asked_blocking(
 pub fn command_line(words: &[String], os: &HostOs) -> Result<String, String> {
     let line = match words {
         [one] => one.trim().to_string(),
-        many => Shell::of(os).join(many),
+        many => Shell::of(os).join(many)?,
     };
     match line.is_empty() {
         true => Err("Give the command after --".into()),

@@ -23,7 +23,7 @@ const POSIX_NOT_FOUND: i32 = 127;
 /// How `cmd.exe` ends what it says of a program it could not find. Its exit
 /// code is 1, as any failure's, so its words are all there is to go by; they
 /// are English on an English Windows only.
-const CMD_NOT_FOUND: &str = "operable program or batch file";
+pub(super) const CMD_NOT_FOUND: &str = "operable program or batch file";
 
 impl Shell {
     /// A host declared as Windows is told in `cmd.exe`'s words; every other,
@@ -43,6 +43,11 @@ impl Shell {
     pub(crate) fn word(self, text: &str) -> Result<String, String> {
         match self {
             Self::Posix => Ok(format!("'{}'", text.replace('\'', r"'\''"))),
+            // A line ends at a line break, whatever quotes it stands in.
+            Self::Cmd if text.contains(|c: char| c.is_control()) => Err(format!(
+                "{} cannot be built on a Windows host: its name holds a line break",
+                text.escape_debug()
+            )),
             Self::Cmd if text.contains(['%', '"']) => Err(format!(
                 "{text} cannot be built on a Windows host: its name holds % or \""
             )),
@@ -71,6 +76,12 @@ impl Shell {
     /// shell on a POSIX host, so a toolchain a profile puts on `PATH` is
     /// found, and by a `cmd.exe` of its own on Windows, so the whole line's
     /// stderr is folded in, not its last command's.
+    ///
+    /// **On Windows the line is read twice**, by the `cmd.exe` ssh starts and
+    /// by the one that runs the command, and quotes there toggle rather than
+    /// nest: a `|` inside the command's own quotes would be a pipe to the
+    /// first. So every character the first would act on is escaped
+    /// ([`for_outer_cmd`]), and the second is handed the line as written.
     pub(crate) fn run(
         self,
         dir: &str,
@@ -91,7 +102,8 @@ impl Shell {
             ),
             Self::Cmd => format!(
                 "cd /d {dir} && git checkout -q -f --detach {sha} && {within}echo {MARK} && \
-                 cmd /d /s /c \"{command}\" 2>&1"
+                 cmd /d /s /c ^\"{}^\" 2>&1",
+                for_outer_cmd(command)
             ),
         })
     }
@@ -139,21 +151,44 @@ impl Shell {
     /// Several words of a command line as one line: each a word of its own
     /// for a POSIX shell; for `cmd.exe`, quoted only when it holds anything
     /// but the letters a bare word is made of.
-    pub(crate) fn join(self, words: &[String]) -> String {
+    ///
+    /// A word `cmd.exe` is given in quotes cannot hold one, and one ending in
+    /// a backslash has it doubled: the program it is handed to would read
+    /// `\"` as a quote of its own.
+    pub(crate) fn join(self, words: &[String]) -> Result<String, String> {
         let bare = |word: &str| {
             !word.is_empty()
                 && word
                     .chars()
                     .all(|c| c.is_ascii_alphanumeric() || "_./\\:=-+,@".contains(c))
         };
-        words
+        let joined = words
             .iter()
             .map(|word| match self {
-                Self::Posix => Self::Posix.word(word).expect("any text"),
-                Self::Cmd if bare(word) => word.clone(),
-                Self::Cmd => format!("\"{word}\""),
+                Self::Posix => Self::Posix.word(word),
+                Self::Cmd if bare(word) => Ok(word.clone()),
+                Self::Cmd if word.contains('"') => Err(format!(
+                    "{word} holds a quote; give the whole command as one word after --"
+                )),
+                Self::Cmd if word.ends_with('\\') => Ok(format!("\"{word}\\\"")),
+                Self::Cmd => Ok(format!("\"{word}\"")),
             })
-            .collect::<Vec<_>>()
-            .join(" ")
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(joined.join(" "))
     }
+}
+
+/// `command` with every character the `cmd.exe` that reads the whole line
+/// would act on escaped, so it passes it on untouched: its quotes, which
+/// would otherwise switch that shell's own quoting on and off, and what it
+/// reads as an operator. `%` is left: a variable is the person's to write.
+fn for_outer_cmd(command: &str) -> String {
+    let mut escaped = String::with_capacity(command.len() + 8);
+    for c in command.chars() {
+        if "^&|<>()\"".contains(c) {
+            escaped.push('^');
+        }
+        escaped.push(c);
+    }
+    escaped
 }

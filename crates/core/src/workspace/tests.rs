@@ -868,3 +868,12 @@ fn a_project_whose_sessions_run_on_a_host_has_no_build_hosts_but_keeps_them() {
     back.roots[0].offload = None;
     assert_eq!(back.roots[0].build_hosts(), ws.roots[0].builds);
 }
+
+#[test]
+fn an_artifact_is_written_with_forward_slashes() {
+    assert_eq!(
+        inside_refusal(r"bin\Release").as_deref(),
+        Some(r"bin\Release is written with \; write it with /")
+    );
+    assert_eq!(inside_refusal("bin/Release"), None);
+}

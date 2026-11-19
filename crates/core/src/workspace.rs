@@ -152,7 +152,11 @@ pub fn inside_refusal(path: &str) -> Option<String> {
     let gits_own = parts
         .iter()
         .any(|part| matches!(part, Component::Normal(name) if *name == ".git"));
-    if outside || !names_something {
+    if path.contains('\\') {
+        // A path here is written as git writes one, on whichever system the
+        // host runs: what comes back is matched by that spelling.
+        Some(format!("{path} is written with \\; write it with /"))
+    } else if outside || !names_something {
         Some(format!("{path} must be inside the project"))
     } else if gits_own {
         Some(format!(

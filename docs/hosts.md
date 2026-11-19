@@ -100,13 +100,19 @@ bring back what it built. Nothing of this needs the host service: it is the pers
      written here. What comes back writes over what is here. Only the paths named are unpacked,
      whatever the host sends: its answer is its own to choose, and nothing else is written.
 - **What comes back is a file here**, and goes up with the next snapshot unless git ignores it.
-- **Every word onehand writes into a shell line is quoted** (`quoted`): a folder, an artifact and
-  the command reach the host's shell as one word each. Over ssh each line is handed to `sh`
-  whole, so an account whose login shell is not a POSIX one builds all the same; the command
-  itself still runs through that login shell. ssh is given ten seconds to connect.
+- **Every word onehand writes into a shell line is quoted for the host's shell** (`Shell::word`),
+  or refused where that shell has no way to hold it: a folder and an artifact reach it as one
+  word each, and the command reaches the shell that runs it as the person wrote it. Over ssh a
+  POSIX host's line is handed to `sh` whole, so an account whose login shell is not a POSIX one
+  builds all the same; the command itself still runs through that login shell. ssh is given ten
+  seconds to connect.
+- **An artifact is written with `/`** on whichever system its host runs: one written with `\` is
+  refused, *<path> is written with \; write it with /*, since what comes back is matched by that
+  spelling.
 - **One build per folder and host at a time**, held by a lock file under `builds/` in the config
   directory: *A build of <project> is already running on <host>*.
-- **A command the host could not find** (exit 127) is said with whose `PATH` lacks it:
+- **A command the host could not find** (exit 127 from a POSIX shell) is said with whose `PATH`
+  lacks it:
   *<program> is not on <host>'s PATH for ssh*. onehand installs nothing on a host.
 - **A Linux host and a Windows one build, each in its own shell's words** (`Shell`,
   `crates/core/src/host/build/shell.rs`). The steps are the same; what differs is how a word is
@@ -120,9 +126,17 @@ bring back what it built. Nothing of this needs the host service: it is the pers
     quoting of it.
   - **The repository the host keeps is set `core.autocrlf false` and `core.longpaths true`,** so
     the code is built there as it is here, line endings included.
-  - **A word holding `%` or `"` is refused** for a Windows host, a folder, an artifact or an
-    `into`: `cmd.exe` expands `%` even inside quotes. *<text> cannot be built on a Windows host:
-    its name holds % or "*.
+  - **A word holding `%`, `"` or a line break is refused** for a Windows host, a folder, an
+    artifact or an `into`: `cmd.exe` expands `%` even inside quotes, and ends a line at a line
+    break. *<text> cannot be built on a Windows host: its name holds % or "*.
+  - **The command is read by two `cmd.exe`s**, the one ssh starts and the one that runs it, and
+    quotes there toggle rather than nest. Every character the first would act on is escaped with
+    `^` (`for_outer_cmd`), so a `|` or an `&` inside the command's own quotes reaches the second
+    as written.
+  - **Several words after `--` holding a quote are refused**, *<word> holds a quote; give the
+    whole command as one word after --*, and a quoted word ending in `\` has it doubled.
+  - **What a host says of a program it lacks is kept whole** when a step of onehand's own fails
+    for it, `git` or `tar`: `cmd.exe` says it over two lines.
   - **A program the host lacks** exits 1 there like any failure, and is recognised by the end
     of `cmd.exe`'s own sentence, in English.
 - **Three ways in**, one set of refusals (`entry_for`, `crates/core/src/host/build/cli.rs`):
