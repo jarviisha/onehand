@@ -5,6 +5,7 @@ use super::{field, footer_row, title_row};
 use crate::controls::Quiet as _;
 use crate::controls::{text_area, text_input};
 use crate::shell::Shell;
+use gpui::Focusable as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, ClickEvent, Context, ParentElement, Styled, Window, div};
 use gpui_component::StyledExt as _;
@@ -55,6 +56,7 @@ pub(crate) fn build_host(shell: &Shell, window: &Window, cx: &mut Context<Shell>
         .on_ok(super::enter_presses(
             weak.clone(),
             true,
+            vec![host.focus_handle(cx), into.focus_handle(cx)],
             |shell, window, cx| shell.save_build_host(window, cx),
         ))
         .content(move |content, _, cx: &mut App| {

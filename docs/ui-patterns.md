@@ -512,6 +512,9 @@ danger tint.
   page's issue) leaves focus on the list, so ↑ and ↓ keep stepping it. Each closes on Esc, asking first when a form in it holds unsaved
   changes. On closing, focus goes back to what opened it, or to the conversation when that is gone.
 - Esc closes the innermost layer only. A page is a place, not a layer: Esc leaves it where it is.
+- Enter in a dialog's one-line field presses its primary action, and does nothing while that
+  refuses or works; the dialog stays when what was typed is refused, saying why. A field of
+  several lines keeps Enter for a new line, and Enter on a focused button presses nothing.
 - A key with no modifier that a region handles never fires while a field inside it holds the
   caret. A field inside a region hands the keys back to that region on Esc.
 - **A card pinned over the composer** (a permission, a question) takes the keyboard once, as it is

@@ -7,6 +7,7 @@ use crate::controls::Refuses as _;
 use crate::controls::Short as _;
 use crate::controls::text_input;
 use crate::shell::Shell;
+use gpui::Focusable as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, ClickEvent, Context, IntoElement, ParentElement, SharedString, Styled, div};
 use gpui_component::button::ButtonVariants;
@@ -45,6 +46,7 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         .on_ok(super::enter_presses(
             cx.entity().downgrade(),
             !busy && named,
+            vec![input.focus_handle(cx)],
             |shell, _, cx| shell.commit_worktree(cx),
         ))
         .content(move |content, _, cx: &mut App| {
@@ -163,6 +165,7 @@ pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         .on_ok(super::enter_presses(
             cx.entity().downgrade(),
             !busy,
+            vec![input.focus_handle(cx)],
             |shell, _, cx| shell.commit_branch_rename(cx),
         ))
         .content(move |content, _, cx: &mut App| {

@@ -3,6 +3,7 @@ use crate::controls::Quiet as _;
 use crate::controls::Refuses as _;
 use crate::controls::text_input;
 use crate::shell::Shell;
+use gpui::Focusable as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, ClickEvent, Context, IntoElement, ParentElement, SharedString, Styled, Window, div,
@@ -50,6 +51,10 @@ pub fn agent_form(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
         .on_ok(super::enter_presses(
             handle.downgrade(),
             refusal.is_none(),
+            [&name, &command, &args, &env]
+                .iter()
+                .map(|field| field.focus_handle(cx))
+                .collect(),
             |shell, window, cx| shell.save_agent_draft(window, cx),
         ))
         .content(move |content, _, cx: &mut App| {
