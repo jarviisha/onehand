@@ -266,8 +266,8 @@ minor bump may break any of them.
 
 ### Fixed
 
-- Enter in a dialog's field does what its main button does: renaming a conversation or a branch,
-  a new worktree, the workflow launcher, a project on a host, an offload, a build host
+- Enter in a dialog's field does what its main button does: renaming a conversation, a branch or
+  a project, a new worktree, the workflow launcher, a project on a host, an offload, a build host
   and an agent. It used to close the dialog and throw away what was typed.
 - A question's typed answer counts while an input method is still composing it, so *Next* and
   *Submit* no longer stay refusing over words written in Vietnamese.
