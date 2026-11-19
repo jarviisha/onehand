@@ -36,25 +36,21 @@ impl ChatPane {
             stack: pinned,
             tucked,
         } = self.pinned(session, room.well, window, cx);
-        // A lead's strip, else a worker's band: a worker switched on to lead
-        // workers of its own is read as their lead.
-        let lead = self
-            .lead_strip(cx)
-            .or_else(|| self.worker_band(cx))
-            .or_else(|| self.subagent_strip(session, cx));
+        // A lead's workers and the turn's subagents are a chip each in the
+        // composer's row, side by side, since a lead's own turn can hand work
+        // to both.
+        let helpers: Vec<gpui::AnyElement> = self
+            .lead_chip(cx)
+            .into_iter()
+            .chain(self.subagent_chip(session, cx))
+            .collect();
         // **A waiting card's foot runs under the composer**, which is drawn
         // after it and opaque, so the composer reads as laid over the card.
-        // The column's gap goes too, or the two would stand apart. While
-        // workers run the lead's strip tops the composer, opaque and edged as
-        // it is, and the card's foot runs under the strip instead.
+        // The column's gap goes too, or the two would stand apart.
         // Everything that can stand over the composer is known here: the
         // pinned stack holds the reconnect line, the queue, staged files and
-        // the cards, and the lead's strip or worker's band is `lead`.
-        let greeting = super::greeting::greets(
-            room.connected,
-            room.items,
-            !pinned.is_empty() || lead.is_some(),
-        );
+        // the cards.
+        let greeting = super::greeting::greets(room.connected, room.items, !pinned.is_empty());
         let tuck = tucked.then(|| -gpui::rems(COLUMN_GAP.0 + transcript::TUCK.0));
         let git = self.git.clone();
         let pane = cx.entity();
@@ -362,9 +358,6 @@ impl ChatPane {
                                     .w_full()
                                     .max_w(COMPOSER_COLUMN)
                                     .mx_auto()
-                                    // Standing on the composer, its line
-                                    // above the card's.
-                                    .children(lead)
                                     .child({
                                         // A run waiting at an approval holds the
                                         // view's one primary, so Send steps down.
@@ -373,7 +366,7 @@ impl ChatPane {
                                             .and_then(|uid| crate::task::shown(uid, cx))
                                             .is_some_and(|shown| shown.review.is_some());
                                         self.composer.update(cx, |composer, cx| {
-                                            composer.card(session, blocked, waits, cx)
+                                            composer.card(session, blocked, waits, helpers, cx)
                                         })
                                     })
                                     // Under the card and inside the measured

@@ -5,8 +5,8 @@ pub(super) const GREETING: &str = "What are we building?";
 
 /// Whether the pane greets rather than draws a transcript: a connected
 /// session with nothing in it and nothing standing over the composer (a
-/// reconnect, the queue, staged files, a waiting card, a lead's strip, a
-/// worker's band). The first item moves the composer to the foot.
+/// reconnect, the queue, staged files, a waiting card). The first item moves
+/// the composer to the foot.
 pub(super) fn greets(connected: bool, items: usize, over_composer: bool) -> bool {
     connected && items == 0 && !over_composer
 }

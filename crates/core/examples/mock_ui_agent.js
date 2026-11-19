@@ -47,10 +47,17 @@
 // limit, which is the one ending a person cannot cause; *Continue* on its card
 // plays the rest.
 //
+// Put a `worker` in the prompt and it leads: through onehand's own tools it
+// opens two workers on the window's other projects, one at work and one parked
+// on a permission, so the lead's chip in the composer's row has a count per
+// state to show. It needs *Agent controls onehand* switched on in the `+` menu
+// first; switched off, the turn says so.
+//
 // It answers `session/set_config_option` and `session/set_mode` by echoing the
 // new state back, so the chips move when they are used, except Max effort,
 // which it refuses. Nothing is written to
-// disk and no process is spawned.
+// disk, and the one process it starts is the tool server onehand hands every
+// agent, for a `worker` prompt.
 //
 // Being a mock *agent* rather than a mock mode inside the app is the whole
 // point: the app is driven over its real transport, by its real parser, through
@@ -63,6 +70,10 @@ const send = (o) => process.stdout.write(JSON.stringify(o) + '\n');
 // Its own per session, as a real agent's is: onehand keeps a transcript by
 // session id, so one shared id would mix every session's into one.
 let SESSION = 'mock-ui';
+// The session's folder, and the stdio tool server onehand hands every agent
+// in `session/new`, which a `worker` prompt calls.
+let cwd = null;
+let onehandServer = null;
 const update = (u) =>
   send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: SESSION, update: u } });
 
@@ -635,6 +646,65 @@ const LONG_RUN = 30000;
 // What the app sends when a person continues a turn stopped at a limit.
 const CONTINUED = 'continue from where you stopped';
 
+// ── onehand's tools ─────────────────────────────────────────────────────────
+
+const { spawn } = require('child_process');
+
+/// One MCP conversation with the server onehand handed over: started, asked,
+/// and closed, one request at a time.
+function mcp(server) {
+  const child = spawn(server.command, server.args ?? [], { stdio: ['pipe', 'pipe', 'ignore'] });
+  const waiting = new Map();
+  let next = 1;
+  const fail = (message) => {
+    for (const done of waiting.values()) done({ error: { message } });
+    waiting.clear();
+  };
+  child.on('error', (e) => fail(String(e.message ?? e)));
+  child.on('exit', () => fail('the tool server went away'));
+  readline.createInterface({ input: child.stdout }).on('line', (line) => {
+    let m;
+    try {
+      m = JSON.parse(line);
+    } catch {
+      return;
+    }
+    const done = waiting.get(m.id);
+    if (done) {
+      waiting.delete(m.id);
+      done(m);
+    }
+  });
+  const write = (o) => child.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...o }) + '\n');
+  const call = (method, params) =>
+    new Promise((resolve) => {
+      const id = next++;
+      waiting.set(id, resolve);
+      write({ id, method, params });
+    });
+  return {
+    async start() {
+      await call('initialize', {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'mock-ui', version: '0' },
+      });
+      write({ method: 'notifications/initialized' });
+    },
+    /// A tool's words, and whether they are a refusal.
+    async tool(name, args = {}) {
+      const m = await call('tools/call', { name, arguments: args });
+      if (m.error) return { text: m.error.message, refused: true };
+      const text = (m.result?.content ?? []).map((c) => c.text ?? '').join('\n');
+      return { text, refused: !!m.result?.isError };
+    },
+    close() {
+      child.stdin.end();
+      child.kill();
+    },
+  };
+}
+
 const step = {
   // A short turn cut off at the output limit, half way through a sentence.
   limited() {
@@ -660,6 +730,69 @@ const step = {
     beat(BEAT, () => send({ jsonrpc: '2.0', id, result: { stopReason: 'end_turn' } }));
     promptId = null;
     play();
+  },
+
+  // The mock as a lead: two workers on the window's other projects, one given
+  // a turn at work and one the tour at once, which parks on its permission.
+  async workers() {
+    turn += 1;
+    const id = promptId;
+    const finish = (lines) => {
+      // A cancel has already answered the prompt.
+      if (promptId !== id) return;
+      prose('\n' + lines.join('\n\n'));
+      beat(BEAT, () => send({ jsonrpc: '2.0', id, result: { stopReason: 'end_turn' } }));
+      promptId = null;
+      play();
+    };
+    if (!onehandServer) return finish(['onehand handed this session no tools, so there is no one to lead.']);
+    prose('Opening two workers on the other projects in this window.');
+    play();
+    const tools = mcp(onehandServer);
+    try {
+      await tools.start();
+      const projects = await tools.tool('list_projects');
+      if (projects.refused) {
+        return finish([
+          `onehand refused: ${projects.text}`,
+          'Switch on *Agent controls onehand* in the `+` menu, then ask again.',
+        ]);
+      }
+      const names = (await tools.tool('list_agents')).text.split('\n').filter(Boolean);
+      const agent = names.find((name) => /mock/i.test(name)) ?? names[0];
+      // `name — path — check: yes/no`, one a line.
+      const paths = projects.text
+        .split('\n')
+        .map((line) => line.split(' — ')[1])
+        .filter((path) => path && path !== cwd);
+      const jobs = [
+        ['Works a while', 'work'],
+        ['Waits on you', 'fast'],
+      ];
+      const said = [];
+      for (const path of paths) {
+        if (!jobs.length) break;
+        const [name, prompt] = jobs[0];
+        const opened = await tools.tool('open_worker', {
+          project: path,
+          agent,
+          request: `mock-${turn}-${path}`,
+          name,
+          prompt,
+          turn: 1,
+        });
+        if (opened.refused) {
+          said.push(`Not on \`${path}\`: ${opened.text}`);
+          continue;
+        }
+        jobs.shift();
+        said.push(`Opened *${name}* on \`${path}\`.`);
+      }
+      if (!said.length) said.push('There is no other project in this window to open a worker on.');
+      finish(said);
+    } finally {
+      tools.close();
+    }
   },
 
   // A turn at work, slowly, and nothing else: the states the full tour passes
@@ -791,10 +924,16 @@ const step = {
       params: {
         sessionId: SESSION,
         toolCall: { toolCallId: 'tc2', kind: 'execute', title: command },
+        // Worded as an adapter words them, at length: the card says each by
+        // its kind, and these are its tooltips.
         options: [
-          { optionId: 'allow', name: 'Allow once', kind: 'allow_once' },
-          { optionId: 'always', name: 'Always allow', kind: 'allow_always' },
-          { optionId: 'deny', name: 'Deny', kind: 'reject_once' },
+          { optionId: 'allow', name: 'Yes, run it this once', kind: 'allow_once' },
+          {
+            optionId: 'always',
+            name: "Yes, and don't ask again for this command in this project",
+            kind: 'allow_always',
+          },
+          { optionId: 'deny', name: 'No, and tell the agent what to do instead', kind: 'reject_once' },
         ],
       },
     });
@@ -1004,6 +1143,8 @@ rl.on('line', (line) => {
     case 'session/new':
     case 'session/load':
       SESSION = m.params?.sessionId ?? `mock-ui-${process.pid}-${Date.now()}`;
+      cwd = m.params?.cwd ?? cwd;
+      onehandServer = (m.params?.mcpServers ?? []).find((s) => s.name === 'onehand') ?? onehandServer;
       send({
         jsonrpc: '2.0',
         id: m.id,
@@ -1067,6 +1208,8 @@ rl.on('line', (line) => {
       pace = said.includes('fast') ? 0 : slow ? Math.max(1, Number(slow[1] ?? 4)) : 1;
       // A whole word, so a prompt that only mentions work in passing still
       // gets the tour.
+      // Before `work`, which as a whole word never matches `worker`.
+      if (/\bworkers?\b/.test(said)) return step.workers();
       if (/\bwork\b/.test(said)) return step.working();
       if (/\blimit\b/.test(said)) return step.limited();
       if (said.includes(CONTINUED)) return step.continued();

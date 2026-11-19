@@ -97,7 +97,7 @@ impl RenderOnce for BlockingBody {
             .absolute()
             .size_0()
         };
-        let surface = crate::theme::waiting_card(cx);
+        let surface = crate::theme::raised(cx);
 
         div()
             .id(("blocking-body-frame", key))
@@ -117,6 +117,11 @@ impl RenderOnce for BlockingBody {
                     .overflow_y_scroll()
                     .track_scroll(&scroll)
                     .pr(self.inset)
+                    // The air the list keeps under the hairline over it, kept
+                    // over the hairline under it too, and inside the scroll:
+                    // cut, the list still runs to that line; scrolled to its
+                    // end, the last row stands clear of it rather than on it.
+                    .pb_2()
                     .children(self.children),
             )
             // The mask takes vertical wheel input in the capture phase. A bubble
@@ -520,31 +525,35 @@ pub(super) fn grows(button: Button) -> Button {
 /// corner: one window drawing the two at two corners is a difference nobody
 /// chose.
 ///
-/// **Neutral, whatever it asks.** An edge in the control grey at the theme's
-/// corner, and no wash: a tinted card over a flat transcript was the loudest
-/// box on screen even for a question nobody was in a hurry about, so the tone
-/// lives in its mark and title (see [`card_head`]) and the surface stays one
-/// shape for every kind of waiting.
+/// **Neutral, whatever it asks.** A hairline edge at the theme's corner, the
+/// one its own lines are drawn in, and no wash: on the composer's fill the edge
+/// is all that parts the card from the page, and the control grey a field takes
+/// drew it heavier than the composer laid over it. A tinted card over a flat
+/// transcript was the loudest box on screen even for a question nobody was in
+/// a hurry about, so the tone lives in its mark and title (see [`card_head`])
+/// and the surface stays one shape for every kind of waiting.
 ///
-/// **A step off the page and lifted only while it is pinned.** A card waiting
-/// on an answer stands on [`crate::theme::waiting_card`] with the app's shadow,
-/// so it is the most visible thing in the column; one drawn back in the
-/// history is a block of the column like any other, on the page's own fill.
+/// **The composer's own surface, and lifted only while it is pinned.** A card
+/// waiting on an answer stands on [`crate::theme::raised`] with the composer's
+/// own lift, as everything stacked on the composer does: the app's heavier
+/// shadow under a card the composer is laid over read as the card standing
+/// above it. One drawn back in the history is a block of the column like any
+/// other, on the page's own fill.
 pub(in crate::chat) fn floating_card(pinned: bool, cx: &App) -> gpui::Div {
     // Opaque, and not the reading surface: the transcript runs underneath
     // these and text showing through a box that is asking a question is the
     // one place in the app that cannot afford it.
     let fill = match pinned {
-        true => crate::theme::waiting_card(cx),
+        true => crate::theme::raised(cx),
         false => cx.theme().background,
     };
     div()
         .w_full()
         .rounded(cx.theme().radius_lg)
         .border_1()
-        .border_color(cx.theme().input)
+        .border_color(cx.theme().border)
         .bg(fill)
-        .when(pinned, |card| card.shadow(crate::tokens::lift(cx)))
+        .when(pinned, |card| card.shadow(crate::theme::composer_lift(cx)))
 }
 
 /// The shell both pinned cards share: the floating surface holding a head, a

@@ -1,11 +1,10 @@
-//! A subagent's own transcript, in a float over the pane, and the strip over
-//! the composer that counts the turn's subagents while any works.
+//! A subagent's own transcript, in a float over the pane, and the chip in
+//! the composer's row that counts the turn's subagents while any works.
 //!
 //! **Beside the conversation, never instead of it.** The float is not modal:
 //! the conversation behind it still scrolls and takes presses, and the float
 //! reads the pane it stands in, not the window, for how much of it to take.
 
-use super::over_composer::over_composer;
 use super::{ChatPane, FLOAT_BESIDE, FLOAT_W, SIDE_MARGIN_NARROW};
 use crate::chat::session::ChatSession;
 use crate::chat::transcript;
@@ -340,10 +339,10 @@ impl ChatPane {
         )
     }
 
-    /// The strip over the composer while any of the turn's subagents works:
-    /// how many there are and a count per standing, most urgent first.
+    /// The subagents' chip in the composer's row while any of the turn's
+    /// subagents works: a count per standing, most urgent first, in marks.
     /// Pressed, the float opens on the most urgent.
-    pub(super) fn subagent_strip(
+    pub(super) fn subagent_chip(
         &self,
         session: &Entity<ChatSession>,
         cx: &mut Context<Self>,
@@ -359,25 +358,46 @@ impl ChatPane {
         }
         let (urgent, _) = *stood.iter().min_by_key(|(_, standing)| *standing)?;
         let counts = chat.turn_subagent_counts();
-        let muted = cx.theme().muted_foreground;
-        let line =
-            over_composer("subagent-strip", cx)
-                .text_color(muted)
-                .cursor_pointer()
-                .hover(|line| line.text_color(cx.theme().foreground))
-                .on_click(cx.listener(move |this, _, _, cx| this.open_subagent(uid, urgent, cx)))
-                .child(div().flex_none().text_color(cx.theme().foreground).child(
-                    match stood.len() {
-                        1 => "1 subagent".to_string(),
-                        n => format!("{n} subagents"),
-                    },
-                ))
-                .children(counts.into_iter().map(|(standing, n)| {
-                    div()
-                        .flex_none()
-                        .text_color(transcript::standing_ink(standing, cx))
-                        .child(format!("{n} {}", standing.word()))
-                }));
-        Some(div().w_full().px_3().child(line).into_any_element())
+        let said: Vec<String> = counts
+            .iter()
+            .map(|(standing, n)| format!("{n} {}", standing.word()))
+            .collect();
+        let name = format!(
+            "{}: {}. Open the most urgent",
+            match stood.len() {
+                1 => "1 subagent".to_string(),
+                n => format!("{n} subagents"),
+            },
+            said.join(", ")
+        );
+        Some(
+            crate::chat::composer::status_chip(
+                "subagent-chip",
+                gpui_component::Icon::new(crate::icons::Icon::CornerDownRight),
+                counts
+                    .into_iter()
+                    .map(|(standing, n)| (standing_signal(standing), n))
+                    .collect(),
+                name,
+                cx,
+            )
+            .on_click(cx.listener(move |this, _, _, cx| this.open_subagent(uid, urgent, cx)))
+            .into_any_element(),
+        )
+    }
+}
+
+/// A subagent's standing in the mark the rail gives a session in the like
+/// state, so the composer's row and the rail read one set of marks: waiting
+/// on the person is the hand, failed the alert, running the dot, done the
+/// check, stopped the bare ring.
+fn standing_signal(standing: Standing) -> Option<super::SessionSignal> {
+    use super::SessionSignal;
+    match standing {
+        Standing::Waiting => Some(SessionSignal::AwaitingUser),
+        Standing::Failed => Some(SessionSignal::Failed),
+        Standing::Running => Some(SessionSignal::Busy),
+        Standing::Done => Some(SessionSignal::UnseenTurn),
+        Standing::Stopped => None,
     }
 }

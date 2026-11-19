@@ -28,7 +28,7 @@ pub(super) fn subagent(
     let lit = cx.theme().foreground;
     // Only a subagent at work shimmers what it is doing. Waiting on the
     // person is said, not shimmered: nothing moves until they answer, and the
-    // strip over the composer and the float say the same.
+    // chip in the composer's row and the float say the same.
     let standing = chat.standing(card);
     let working = standing == Standing::Running;
     // What it is doing now, as its own steps say it.

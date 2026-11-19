@@ -52,6 +52,13 @@ EOF
     echo "Seeded $home"
 fi
 
+# The Mock UI agent is the one in the checkout running the showcase, on every
+# run: the root keeps the path it was seeded with, so a worktree would play
+# another checkout's mock.
+mock=$repo/crates/core/examples/mock_ui_agent.js
+sed "s|\"[^\"]*/crates/core/examples/mock_ui_agent\.js\"|\"$mock\"|" "$home/config.toml" >"$home/config.toml.new"
+mv "$home/config.toml.new" "$home/config.toml"
+
 cd "$repo"
 # The app attaches to a host with the service's binary built beside it.
 cargo build -p onehand-host

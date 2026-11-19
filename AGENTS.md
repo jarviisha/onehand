@@ -109,6 +109,8 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   lands it at once; `slow` plays it four times slower, `slow 8` eight. `work` in the prompt plays a turn at work instead, held for about
   45s: a live thought, a plan with an item in hand, a command left running, then the answer.
   `limit` plays a short turn the agent ends at its output limit, and its *Continue* plays the rest.
+  `worker` opens two workers on the window's other projects through onehand's tools, one at work
+  and one waiting on a permission, once *Agent controls onehand* is on in the composer's `+` menu.
 
   ```toml
   [[agents]]

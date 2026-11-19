@@ -89,23 +89,29 @@ impl ChatSession {
                     .placeholder(hint)
                     .default_value(typed)
             });
-            let typing = cx.subscribe(&state, move |s: &mut Self, state, ev: &InputEvent, cx| {
-                match ev {
-                    InputEvent::Change => {
-                        let text = state.read(cx).value().to_string();
-                        s.ask_type(idx, field, text, cx);
-                        cx.notify();
-                    }
-                    // Enter is the only key that finishes the card: the choices above it answer on a
-                    // click, so somebody who writes their own answer instead
-                    // would otherwise have to leave the box to send it. Nothing
-                    // typed and nothing picked sends nothing -- an empty accept
-                    // is an answer the agent cannot read.
-                    InputEvent::PressEnter { shift: false, .. } => {
-                        s.ask_submit(idx, cx);
-                        cx.notify();
-                    }
-                    _ => {}
+            // **What the box shows is the answer, read whenever the box
+            // changes**, not only when it says its text changed: an input
+            // method holds the word it is composing in the box, shown, and
+            // the box says nothing of it until the word is committed. Taken
+            // from the change alone, a question answered in Vietnamese kept
+            // its forward button refusing over words plainly written.
+            let typing = cx.observe(&state, move |s: &mut Self, state, cx| {
+                let text = state.read(cx).value().to_string();
+                let held = s.chat().ask_at(idx).and_then(|a| a.custom.get(field));
+                if held != Some(&text) {
+                    s.ask_type(idx, field, text, cx);
+                    cx.notify();
+                }
+            });
+            // Enter is the only key that finishes the card: the choices above
+            // it answer on a click, so somebody who writes their own answer
+            // instead would otherwise have to leave the box to send it.
+            // Nothing typed and nothing picked sends nothing -- an empty
+            // accept is an answer the agent cannot read.
+            let keys = cx.subscribe(&state, move |s: &mut Self, _, ev: &InputEvent, cx| {
+                if let InputEvent::PressEnter { shift: false, .. } = ev {
+                    s.ask_submit(idx, cx);
+                    cx.notify();
                 }
             });
             self.ask_inputs.insert(
@@ -113,6 +119,7 @@ impl ChatSession {
                 AskInput {
                     state,
                     _typing: typing,
+                    _keys: keys,
                 },
             );
         }
@@ -323,5 +330,60 @@ mod tests {
             !takes_keys(false, false, true, false),
             "a card already offered them does not take back a caret clicked away"
         );
+    }
+    /// What is written in a question's box is that question's answer, so the
+    /// forward button under it is armed, on whichever question of the form
+    /// the box belongs to, and whether the words went in at once or are
+    /// still held by an input method composing them.
+    #[gpui::test]
+    fn a_written_answer_arms_the_forward_button(cx: &mut gpui::TestAppContext) {
+        use crate::chat::session::tests::carrier::{driven, up};
+        use gpui::EntityInputHandler as _;
+        use onehand_core::acp::{AcpEvent, Elicitation};
+        use onehand_core::chat::Chat;
+
+        let chat = Chat::new(1, "/repo".into(), "agent".into(), None);
+        let (session, mut tx, _) = driven(cx, chat);
+        let _requests = up(&mut tx);
+        let field = |key: &str| {
+            serde_json::json!({
+                "key": key, "title": key, "description": null,
+                "kind": "Text", "custom_key": null,
+            })
+        };
+        let ask: Elicitation = serde_json::from_value(serde_json::json!({
+            "rpc_id": 7, "tool_call_id": null, "message": "A few things", "child": null,
+            "fields": [field("one"), field("two"), field("three")],
+        }))
+        .unwrap();
+        tx.try_send(AcpEvent::Elicitation(ask)).unwrap();
+        cx.run_until_parked();
+
+        let window = cx.add_empty_window();
+        let idx = session.read_with(window, |s, _| s.chat().pending_asks()[0].0);
+        for question in 0..3 {
+            let input = window.update(|window, cx| {
+                session.update(cx, |s, cx| {
+                    let mut place = s.ask_place(idx);
+                    place.go_to(question);
+                    s.set_ask_place(idx, place);
+                    s.sync_ask_inputs(window, cx);
+                    s.ask_input(idx, question).cloned().unwrap()
+                })
+            });
+            // The first two straight in, the last as an input method types:
+            // the word held in composition, shown in the box.
+            window.update(|window, cx| {
+                input.update(cx, |input, cx| match question {
+                    2 => input.replace_and_mark_text_in_range(None, "an answer", None, window, cx),
+                    _ => input.replace_text_in_range(None, "an answer", window, cx),
+                })
+            });
+            window.run_until_parked();
+            let armed = session.read_with(window, |s, _| {
+                s.chat().ask_at(idx).unwrap().may_advance(question)
+            });
+            assert!(armed, "question {} holds what was written", question + 1);
+        }
     }
 }

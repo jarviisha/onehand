@@ -44,9 +44,8 @@ Helpers:
 | `meta_ink(cx)` | the middle ink: a detail beside a name, between prose and muted | `crates/ui/src/ink.rs`; the app says `crate::theme::meta_ink` |
 | `middle_ink(full, meta)` | the same step under another full ink: on a fill, under that fill's paired ink | `crates/ui/src/ink.rs` |
 | `hue_ink(base, cx)` | a hue tempered for ink: code inside prose | `crates/app/src/theme.rs` |
-| `raised(cx)` | the composer card's fill: the page's | `crates/app/src/theme.rs` |
+| `raised(cx)` | the composer card's fill, and the pinned cards' tucked under it: the page's | `crates/app/src/theme.rs` |
 | `inset(cx)` | a badge in the rail: the page's fill | `crates/app/src/theme.rs` |
-| `floating_well(cx)` | a well on a floating card, the command a pinned permission asks to run: the page's fill | `crates/app/src/theme.rs` |
 
 Inks (roles: `DESIGN.md`, *Type, space and shape*; by place: UI patterns, *Hierarchy*). The three
 neutral ones, for text on a neutral surface:
@@ -142,7 +141,7 @@ small menu row, its tabs) comes out at 2px and is left to it. A button (`action`
 | Write | For | Lives in |
 |---|---|---|
 | `tokens::lift(cx)` | anything the app floats | `crates/ui/src/tokens.rs` |
-| `composer_lift(cx)` | the composer card | `crates/app/src/theme.rs` |
+| `composer_lift(cx)` | the composer card, and the pinned cards tucked under it | `crates/app/src/theme.rs` |
 
 ## Control sizes
 

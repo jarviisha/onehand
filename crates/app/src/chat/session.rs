@@ -156,14 +156,15 @@ pub enum ChatEvent {
     OpenSubagent(u64),
 }
 
-/// The widget behind one question field's free-text box, and the subscription
-/// that carries what is typed into it back to the model.
+/// The widget behind one question field's free-text box, the watch that
+/// carries what it shows back to the model, and the one that takes its Enter.
 ///
-/// The subscription is held rather than detached for the reason the pump is:
-/// it writes into this session, so it has no business outliving it.
+/// Both are held rather than detached for the reason the pump is: they write
+/// into this session, so they have no business outliving it.
 struct AskInput {
     state: Entity<TextareaState>,
     _typing: Subscription,
+    _keys: Subscription,
 }
 
 /// One parked question's claim on a box: which question, which of its fields is

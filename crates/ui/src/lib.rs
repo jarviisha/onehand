@@ -50,7 +50,7 @@ pub use ink::{
 };
 pub use list_detail::{ListDetail, ListWidths, back_link, crumb_link, crumbs, list_detail};
 pub use menu::{
-    menu_below, menu_command, menu_item, menu_label, menu_row, menu_still, split_action,
+    key_hint, menu_below, menu_command, menu_item, menu_label, menu_row, menu_still, split_action,
 };
 pub use notice::{hint, status_line};
 pub use onehand_core::worktree::removal::Process;

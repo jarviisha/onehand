@@ -40,11 +40,14 @@ impl Composer {
     ///
     /// `waits`: the run driving this session waits at an approval, whose
     /// *Continue* is the view's primary while it does.
+    /// `helpers`: the chips standing for the lead's workers and the turn's
+    /// subagents, drawn before Send, where the row says what the turn is doing.
     pub fn card(
         &mut self,
         session: &Entity<ChatSession>,
         blocked: Option<onehand_core::chat::SubmitBlock>,
         waits: bool,
+        helpers: Vec<gpui::AnyElement>,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let (step_down, step_up, take_row) = (session.clone(), session.clone(), session.clone());
@@ -222,6 +225,7 @@ impl Composer {
                             .children(fast)
                             .children(options_control),
                     )
+                    .children(helpers)
                     .child(
                         send_controls(
                             blocked.clone(),
@@ -361,6 +365,34 @@ impl Composer {
                 ),
         )
     }
+}
+
+/// A chip in the card's row standing for the turn's helpers (its subagents, a
+/// lead's workers): their mark, then a count per state that has any, most
+/// urgent first, each in the mark and ink the rail gives a session in that
+/// state. No words, so it stays small beside the model; `name` says them, as
+/// its tooltip and its accessible name.
+pub(in crate::chat) fn status_chip(
+    id: &'static str,
+    mark: Icon,
+    counts: Vec<(Option<crate::chat::pane::SessionSignal>, usize)>,
+    name: String,
+    cx: &App,
+) -> Button {
+    let muted = cx.theme().muted_foreground;
+    chip(id, false, cx)
+        .gap_1p5()
+        .child(mark.small().text_color(muted))
+        .children(counts.into_iter().map(|(signal, n)| {
+            div()
+                .h_flex()
+                .items_center()
+                .gap_0p5()
+                .text_color(crate::rail::word_ink(signal, cx).unwrap_or(muted))
+                .child(crate::rail::status_icon(signal, cx))
+                .child(n.to_string())
+        }))
+        .named(name)
 }
 
 /// A chip's words, in the chip's own ink and size, giving way with an ellipsis

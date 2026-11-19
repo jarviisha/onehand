@@ -187,6 +187,43 @@ fn the_refusal_key_refuses_once_whatever_order_the_agent_lists_them_in() {
 }
 
 #[test]
+fn an_answer_says_its_kind_and_the_agent_s_words_only_where_that_is_not_enough() {
+    let req = PermissionRequest {
+        options: [
+            ("No, keep planning", "reject_once"),
+            ("Yes, and manually approve edits", "allow_once"),
+            ("Yes, and auto-accept edits", "allow_always"),
+            ("Never for this tool", "reject_always"),
+        ]
+        .iter()
+        .map(|(name, kind)| PermissionOption {
+            id: (*kind).into(),
+            name: (*name).into(),
+            kind: (*kind).into(),
+        })
+        .collect(),
+        ..sample_permission()
+    };
+    let labels: Vec<&str> = req.options.iter().map(|o| req.label(o)).collect();
+    assert_eq!(
+        labels,
+        ["Deny", "Allow once", "Always allow", "Always deny"]
+    );
+
+    // Two of one kind keep the agent's words, or both would say "Allow once".
+    let twice = permission_with(&[
+        ("Allow this read", "allow_once"),
+        ("Allow this write", "allow_once"),
+    ]);
+    let labels: Vec<&str> = twice.options.iter().map(|o| twice.label(o)).collect();
+    assert_eq!(labels, ["Allow this read", "Allow this write"]);
+
+    // A kind this build does not know is said in the agent's words.
+    let odd = permission_with(&[("Ask the admin", "escalate")]);
+    assert_eq!(odd.label(&odd.options[0]), "Ask the admin");
+}
+
+#[test]
 fn a_choice_that_throws_work_away_is_read_off_its_label() {
     let choice = |label: &str| ElicitChoice {
         value: "v".into(),

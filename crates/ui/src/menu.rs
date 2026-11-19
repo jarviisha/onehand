@@ -116,17 +116,18 @@ pub fn menu_command(label: impl Into<SharedString>, action: Box<dyn Action>) -> 
             .w_full()
             .gap_3()
             .child(said(&label).flex_1().child(label.clone()))
-            // Bare, as the library's own menu rows letter their keys: no
-            // fill and no edge, so a key reads the same in every menu.
-            .children(
-                Kbd::binding_for_action(action.as_ref(), None, window).map(|key| {
-                    key.p_0()
-                        .flex_nowrap()
-                        .border_0()
-                        .bg(gpui::transparent_white())
-                }),
-            )
+            .children(Kbd::binding_for_action(action.as_ref(), None, window).map(key_hint))
     })
+}
+
+/// A key at the end of a row, as a menu row letters it: the library's key in
+/// its own quiet ink and small size, bare, with no fill and no edge, so a key
+/// reads the same in every list.
+pub fn key_hint(key: Kbd) -> Kbd {
+    key.p_0()
+        .flex_nowrap()
+        .border_0()
+        .bg(gpui::transparent_white())
 }
 
 /// A menu that opens *below* its trigger, left-aligned to it.

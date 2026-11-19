@@ -77,8 +77,8 @@ minor bump may break any of them.
 
 - A subagent is one line in the conversation: its name, what it is doing or how it ended, its
   steps and its time. Pressed, its own conversation opens in a panel floating over the pane, with
-  the previous and next subagent a press away and Escape to close it. While subagents work, a strip
-  over the composer counts them.
+  the previous and next subagent a press away and Escape to close it. While subagents work, a chip
+  in the composer's row counts them by how they stand.
 - What a step opens into is one box that never grows past sixteen lines: the rest scrolls inside
   it, with its scrollbar on the box's edge, and a line under it says how many lines there are and
   opens them whole. A command reads whole above its output, which opens at its end. A new file is
@@ -207,6 +207,10 @@ minor bump may break any of them.
 - The composer's menus (`+`, model, effort, mode, branch) look like the window's other menus: the
   same surface and edge, no title over them, and a row's detail at its end. The `@` and `/` lists
   keep their title.
+- The waiting permission and question cards stand on the composer's own fill under a hairline, so
+  the row under the keys, the row under the pointer and the taken one read apart in both themes.
+  A permission's answers say *Allow once*, *Always allow* or *Deny*, the agent's own wording in
+  their tooltips, so they stay on one line.
 - Claude Code and Codex sessions show the work their agent left running in the background: an
   *N in background* button in the agent pane's header lists each item with how long it has run, and
   pressing one stops it without stopping the turn. Under the composer, a meter says how full the
@@ -223,10 +227,10 @@ minor bump may break any of them.
   rolled back.
 - A session whose agent opens workers is their lead: the rail lists its workers under its row,
   whatever project they run in, and the lead's row keeps its own state and counts *N workers need
-  you*. A worker opens in the agent pane as any session, a band over its composer naming the lead
-  that coordinates it, with *Back to lead*. One line above the lead's composer counts its
-  workers, how they stand and who needs you; pressed, it shows the most urgent one. Writing to a
-  worker takes it from the lead; *Give back to the lead* on its band returns it. Closing a lead
+  you*. A worker opens in the agent pane as any session, its header naming the lead that
+  coordinates it, with *Back to lead*. A chip in the lead's composer row counts its workers by how
+  they stand; pressed, it lists them, and a worker picked there shows. Writing to a worker takes it
+  from the lead; *Give back to the lead* in its header returns it. Closing a lead
   asks first whether its workers close with it; closed alone, it puts them back under their own
   project until its conversation is opened again, which takes them back as they stand.
 - A permission card shows its command whole up to about ten lines, then *Show all N lines*,
@@ -240,6 +244,8 @@ minor bump may break any of them.
 
 ### Fixed
 
+- A question's typed answer counts while an input method is still composing it, so *Next* and
+  *Submit* no longer stay refusing over words written in Vietnamese.
 - A step still running while its agent writes on below it (work handed to a subagent, a command
   left running) no longer has the blocks after it drawn over its growing output.
 - A run waiting on its pull request's status checks keeps waiting when a forge answer it did not

@@ -74,7 +74,8 @@ impl RenderOnce for CommandBlock {
         let overflows = scroll.max_offset().y > gpui::px(0.);
         let more_below = scroll.max_offset().y - scroll.offset().y.abs() > SCROLL_SLACK;
 
-        let well = crate::theme::floating_well(cx);
+        // Every well's fill, a step off the card it sits in.
+        let well = cx.theme().muted;
         let toggle = (overflows || open).then(|| {
             crate::controls::action(("perm-command-all", key))
                 .quiet(cx)
