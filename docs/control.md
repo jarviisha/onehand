@@ -73,7 +73,7 @@ answer, and exits.
 
 | Tool | Input | Does | Answers |
 |---|---|---|---|
-| `list_projects` | none | the window's projects | `name — path — check: yes/no`, one per line |
+| `list_projects` | none | the window's projects | `name — path — check: yes/no`, one per line, then ` — builds on: <hosts>` for a project with build hosts |
 | `list_agents` | none | the agents a session can be opened with | one name per line |
 | `open_session` | `project`, `agent`, optional `prompt` | opens a session on the project with that agent, not shown; it appears in the rail, the person's own, beside any session already on the project; `prompt` is sent once the agent is up. A session's agent opens one the same way, counted under its cap | what it opened, or why not |
 | `open_worker` | `project`, `agent`, `request`, optional `prompt` (with `turn`), `model`, `dirs` and `name`; `project` may also be a worktree's top level | for a session's agent only, never listed to an outside program: opens a worker, see *A worker* below | the worker's handle and what it runs with, or why not |
@@ -87,6 +87,7 @@ answer, and exits.
 | `open_file` | `path` | opens the file in the Workbench and shows the Workbench, without taking focus | what it opened, or why not |
 | `list_issues` | optional `project` | the project's own open issues, as its Issues tab keeps them (a synced project's imported ones too); the calling session's project when none is named | `#<n> — <title>`, one per line |
 | `create_issue` | optional `project`, `title`, optional `body` | writes one issue into the project's own issue file, through the copy every view of it shares, so it shows in every window's views of the file as it lands; an open issue with the same title (case and spaces aside) is not written again. It takes no labels: the issue gets those of the calling session's schedule | `Wrote issue #<n>: …`, or `Issue #<n> is already open with that title` |
+| `build_on_host` | optional `project`, `host`, `command` | runs `command` in the project's folder on one of its build hosts ([hosts.md](hosts.md#builds-on-a-host)), the calling session's project when none is named. It builds the project's own folder: an agent in a worktree of its own runs `onehand --build` from its shell instead. Answered when the command ends, so nothing else can be asked on that connection meanwhile | `exit <n>` or `did not finish`, whose `PATH` lacked the program, `brought back: <paths>`, then the last 200 lines printed; or why it could not build |
 | `session_state` | `session`, a worker's handle | for a session's agent, about a worker it opened; never listed to an outside program | the worker's state, one fact per line; `link: closed` once it is gone; or why not |
 | `send_prompt` | `session`, `text`, `turn`, optional `model` | for a session's agent, gives a worker it opened its next turn, on `model` when named; never listed to an outside program | `turn <n> accepted`, `turn <n> already sent`, or why not |
 | `cancel_turn` | `session` | for a session's agent, cancels the turn a worker it opened runs, as the person's Stop does | `cancelling turn <n>`, or why not |

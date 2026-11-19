@@ -321,7 +321,13 @@ room and leaves the terminal as it is.
   project's schedules by name with when each runs next, or *off*, each opening the Schedules page
   narrowed to the project; *No schedules here* at none; capped at five; reading and a failed read
   said as on the page); then the box *Settings*
-  (its *Check command* field). The page scrolls as one.
+  (its *Check command* field, then *Build hosts*: one row per host the project builds on, at most
+  20, its name over what a build brings back and, when it names one, the folder that lands
+  under, *target/release/app, into out/linux*, or *Brings nothing back*; an edit mark and
+  *Remove…*, which asks *Stop building on <host>?*; *No build hosts* with none; then *Add build
+  host…*. The form is a dialog, *Host* with the menu of declared hosts, *Artifacts*, one path a
+  line, and *Into*; *Cancel*, then *Add* or *Save*, and what refuses it is said in the form).
+  The page scrolls as one.
 - A project on a host shows the same head, its path written `<host>:<path>` (never shortened to
   `~/`), its git line once read over a live attach (none while a local project on the same path
   is in the workspace), and *Refresh* (a quiet icon) before *New session*; under it one box,
@@ -489,8 +495,8 @@ danger ink, asking before it closes the window and removes the workspace with th
 The Hosts page lists each declared host, at most 50 and then *N more not shown*: its name; under
 it its system (*Linux x86_64*) and, once checked, what the check found, the two programs a build
 needs by name and each toolchain with its version (*git, tar, cargo 1.99.1*), or *Checking…* while
-one runs; then, in the muted ink, *Builds only; nothing builds on it yet* on a host that runs no
-sessions; then, in the warning ink, what is wrong: why its check failed, *git is not installed*,
+one runs; then, in the muted ink, *Builds only* on a Linux host that runs no sessions, and *Builds only;
+nothing builds on it yet* on any other; then, in the warning ink, what is wrong: why its check failed, *git is not installed*,
 or for a host sessions run on the rail's own *Not connected to <host>* or *<host> was attached
 from another machine*; and last *Used by <projects>*. Each row ends with *Check*, and a declared
 one with *Remove…* in the danger ink, which asks *Remove <host>?* and refuses, saying which, while

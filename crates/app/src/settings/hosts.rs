@@ -14,7 +14,7 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::config::drive::HostProbe;
-use onehand_core::config::{HostSpec, listed, removal_refusal};
+use onehand_core::config::{HostOs, HostSpec, listed, removal_refusal};
 use onehand_core::host::drive::HostState;
 use onehand_core::host::sshconf;
 use onehand_core::workspace::HostName;
@@ -136,7 +136,11 @@ pub(crate) fn host_lines(
     };
     HostLines {
         about,
-        note: (!spec.runs_sessions()).then(|| "Builds only; nothing builds on it yet".into()),
+        // A host no session runs on builds, and only a Linux one does yet.
+        note: (!spec.runs_sessions()).then(|| match spec.os {
+            HostOs::Linux => "Builds only".into(),
+            HostOs::Windows | HostOs::Other(_) => "Builds only; nothing builds on it yet".into(),
+        }),
         warning: unmet.or(attach),
         users: (!users.is_empty()).then(|| format!("Used by {}", users.join(", "))),
     }

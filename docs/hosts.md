@@ -64,6 +64,57 @@ A person declares a host once, for every workspace; a project then names it.
 
 What the page draws is in [screens.md](screens.md#settings).
 
+## Builds on a host
+
+A project whose sessions run on this machine can run a command on a host instead of here, and
+bring back what it built. Nothing of this needs the host service: it is the person's own ssh,
+`git` and `tar`, so a build-only host does it as a host that runs sessions does.
+
+- **A project's build hosts** are kept beside its check command in the workspace's file
+  (`BuildHost`, `crates/core/src/workspace.rs`): each a `host`, its `artifacts` (paths inside the
+  project, a file or a folder) and an optional `into`, a folder in the project the artifacts land
+  under, so two hosts building one project do not write over each other. A path that is absolute,
+  holds `..` or is a pattern is refused (`inside_refusal`). They are changed through
+  `WorkspaceDrive::set_builds`, shown at once and put back if the write fails; a project whose
+  sessions run on a host has none, and one host is named once (`build_host_refusal`).
+- **One build is five steps** (`build_blocking`, `crates/core/src/host/build.rs`):
+  1. **A snapshot.** The folder as it stands, uncommitted and untracked work included and ignored
+     files left out, is committed aside from a temporary index (`task::marks::pin_blocking`). The
+     branch, the index and the files here do not move. A folder that is not a working tree's top
+     is refused, and so is one holding another repository, which git would commit as a pointer.
+     A worktree builds as its project does.
+  2. **Pushed** to a repository the host keeps for this folder,
+     `~/.onehand-build/<laptop>/<name>-<hash of the folder's path>`, made on first use
+     (`remote_dir`). Each worktree has its own, and so its own incremental state.
+  3. **Checked out** there, detached and forced: what the snapshot dropped goes, and what git
+     ignores (`target/`, `obj/`) stays, which is what makes the next build incremental.
+  4. **The command runs** in the same folder, relative to the top, that it was asked from,
+     through the host's login shell, so a toolchain a profile puts on `PATH` is found. Each line
+     it prints, stderr with stdout, is handed over as it comes. It is given two hours
+     (`BUILD_LIMIT`).
+  5. **The artifacts come back** only when the command exits 0, all of them or none: one the
+     build did not make fails the build, *<path> was not built on <host>*, before anything is
+     written here. What comes back writes over what is here.
+- **What comes back is a file here**, and goes up with the next snapshot unless git ignores it.
+- **Every word onehand writes into a shell line is quoted** (`quoted`): a folder, an artifact and
+  the command reach the host's shell as one word each.
+- **One build per folder and host at a time**, held by a lock file under `builds/` in the config
+  directory: *A build of <project> is already running on <host>*.
+- **A command the host could not find** (exit 127) is said with whose `PATH` lacks it:
+  *<program> is not on <host>'s PATH for ssh*. onehand installs nothing on a host.
+- **Only a Linux host builds.** One declared as Windows is refused, *<host> runs Windows; nothing
+  builds on a Windows host yet* (`os_refusal`); one nobody declared is taken for Linux.
+- **Three ways in**, one set of refusals (`entry_for`, `crates/core/src/host/build/cli.rs`):
+  - **`onehand --build <host> -- <command…>`**, from a terminal or as a check command. It is
+    answered in `main` before the instance lock, so it needs no window and a running onehand
+    never takes it for a folder. It finds the project the folder belongs to, its own or a
+    worktree of it, among every workspace, reading the first by name that names the host
+    (`asked_blocking`); prints the command's lines as they come; and exits with the command's
+    code, 1 for a refusal or a step that failed. One word after `--` is a shell line as written;
+    several are each quoted.
+  - **The tool `build_on_host`**, for a session's agent ([control.md](control.md#the-tools)).
+  - **The check command**, which is the flag typed into its field.
+
 ## The host service
 
 - **The binary is the one built beside this one:** `onehand-host` in `current_exe()`'s directory

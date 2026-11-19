@@ -310,6 +310,19 @@ compiled there, and nothing else of onehand reaches it. Compiling a project is a
 from the host service's **Build**, below.
 _Avoid_: build server, build machine, VPS
 
+**Build host**:
+A host a project builds on: one of the entries on its page, with what a build brings back. A
+build-only host and a host that runs sessions can both be one.
+
+**Snapshot**:
+The commit a build carries to a host: the folder as it stands, uncommitted work included and
+ignored files left out, made aside so the branch and the index do not move.
+_Avoid_: mirror (that is an offloaded project's copy), stash
+
+**Artifact**:
+A path a build brings back from a host into the project: a file or a folder.
+_Avoid_: output, build product
+
 **Build**:
 Which copy of the host service a host runs, named by a hash of the binary itself. The laptop puts
 its own build on a host beside any other, and restarts the service onto it only when no session

@@ -250,8 +250,18 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
 - **A host that is not supported, or whose `onehand-host` is missing, is not tried again,** and
   its project row shows no mark. Trying again cannot change it; a person's Restart or *Try again*
   does after the binary is there.
-- **Nothing builds on a host yet.** A build-only host can be declared and checked, and that is
-  all: its row says so.
+- **Nothing builds on a Windows host yet.** One can be declared, checked and named as a project's
+  build host, and a build asked of it is refused in those words.
+- **A stopped build's command may run on.** Stopping kills the ssh that carried it; whether the
+  command on the host dies with it is the host's to say. Nothing lists or ends what was left.
+- **`build_on_host` builds the project's own folder,** never a worktree: an agent in a worktree
+  of its own runs `onehand --build` from its shell. Its answer carries the last 200 lines, not
+  the lines as they come, and no tool can stop a build once asked.
+- **A build's folder on a host is never pruned.** `~/.onehand-build` there keeps one per working
+  folder, a removed worktree's included, until a person deletes it.
+- **No page lists builds.** One is seen where it was asked: a terminal, or a tool's answer.
+- **A build whose command prints more than a pipe holds on stderr before its code is checked
+  out** waits; nothing a build does prints there before the command starts.
 - **What a check found of a host is kept for this run only.** The file keeps the system; the
   programs found are asked again when a person presses *Check*.
 - **A host's *Used by*, and the refusal to remove it, count the open windows' projects only.** A
