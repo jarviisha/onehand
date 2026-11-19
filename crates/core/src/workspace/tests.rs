@@ -764,3 +764,107 @@ fn deleting_a_workspace_leaves_what_is_not_its_own() {
     assert!(remove_workspace_blocking(&dir).is_ok());
     assert!(!dir.exists());
 }
+
+fn builds_on(host: &str, artifacts: &[&str], into: Option<&str>) -> BuildHost {
+    BuildHost {
+        host: HostName(host.into()),
+        artifacts: artifacts.iter().map(PathBuf::from).collect(),
+        into: into.map(PathBuf::from),
+    }
+}
+
+#[test]
+fn build_hosts_round_trip_through_the_workspace_file() {
+    let mut ws = Workspace::seeded("/a");
+    ws.roots[0].builds = vec![
+        builds_on("build01", &["target/release/app", "dist"], None),
+        builds_on("win", &["bin/Release"], Some("out/windows")),
+    ];
+    let text = toml::to_string(&ws.to_config()).expect("serializes");
+    assert!(text.contains("builds"), "{text}");
+    let cfg: WorkspaceConfig = toml::from_str(&text).expect("parses");
+    let back = Workspace::from_config(cfg, PathBuf::from("/store"));
+    assert_eq!(back.roots[0].builds, ws.roots[0].builds);
+}
+
+#[test]
+fn a_project_with_no_build_hosts_writes_none() {
+    let text = toml::to_string(&Workspace::seeded("/a").to_config()).expect("serializes");
+    assert!(!text.contains("builds"), "{text}");
+}
+
+#[test]
+fn parse_reads_one_artifact_a_line() {
+    let entry = BuildHost::parse(" build01 ", "a/b\n\n c \n", "").expect("reads");
+    assert_eq!(entry, builds_on("build01", &["a/b", "c"], None));
+    let entry = BuildHost::parse("build01", "", " out/linux ").expect("reads");
+    assert_eq!(entry, builds_on("build01", &[], Some("out/linux")));
+}
+
+#[test]
+fn parse_refuses_what_is_not_a_path_inside_the_project() {
+    let refused = |host: &str, artifacts: &str, into: &str| {
+        BuildHost::parse(host, artifacts, into).expect_err("refused")
+    };
+    assert_eq!(refused("  ", "a", ""), "Name the host");
+    assert_eq!(
+        refused("h", "/etc/passwd", ""),
+        "/etc/passwd must be inside the project"
+    );
+    assert_eq!(
+        refused("h", "a/../../b", ""),
+        "a/../../b must be inside the project"
+    );
+    assert_eq!(
+        refused("h", "bin/*.dll", ""),
+        "bin/*.dll is a pattern; name a file or a folder"
+    );
+    assert_eq!(
+        refused("h", "a", "../out"),
+        "../out must be inside the project"
+    );
+    assert_eq!(
+        refused("h", "a", "out/[x]"),
+        "out/[x] is a pattern; name a file or a folder"
+    );
+}
+
+#[test]
+fn the_project_itself_and_gits_own_folder_are_never_an_artifact() {
+    for path in [".", "./", "a/..", ""] {
+        assert!(
+            inside_refusal(path).is_some(),
+            "{path:?} names no file or folder inside"
+        );
+    }
+    assert_eq!(
+        inside_refusal(".git").as_deref(),
+        Some(".git is git's own folder; it cannot be brought back")
+    );
+    assert_eq!(
+        inside_refusal("sub/.git/hooks").as_deref(),
+        Some("sub/.git/hooks is git's own folder; it cannot be brought back")
+    );
+    assert_eq!(inside_refusal(".github/workflows"), None);
+    assert_eq!(inside_refusal("./target/app"), None);
+}
+
+#[test]
+fn a_project_whose_sessions_run_on_a_host_has_no_build_hosts_but_keeps_them() {
+    let mut ws = Workspace::seeded("/a");
+    ws.roots[0].builds = vec![builds_on("build01", &["dist"], None)];
+    assert_eq!(ws.roots[0].build_hosts().len(), 1);
+    ws.roots[0].offload = Some(Offloaded {
+        host: HostName("box".into()),
+        mirror: "/m".into(),
+        branch: None,
+    });
+    assert!(ws.roots[0].build_hosts().is_empty());
+    // Kept in the file all the same, for when it runs here again.
+    let text = toml::to_string(&ws.to_config()).expect("serializes");
+    let cfg: WorkspaceConfig = toml::from_str(&text).expect("parses");
+    let mut back = Workspace::from_config(cfg, PathBuf::from("/store"));
+    assert!(back.roots[0].build_hosts().is_empty());
+    back.roots[0].offload = None;
+    assert_eq!(back.roots[0].build_hosts(), ws.roots[0].builds);
+}

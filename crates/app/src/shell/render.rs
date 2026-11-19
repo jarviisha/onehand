@@ -285,6 +285,12 @@ impl Render for Shell {
                     .is_some()
                     .then(|| crate::dialogs::offload(self, window, cx)),
             )
+            // And the build host form, opened from a project's page.
+            .children(
+                self.build_host_draft
+                    .is_some()
+                    .then(|| crate::dialogs::build_host(self, window, cx)),
+            )
             // And the agent form, opened from Settings' rows, rebuilt every
             // frame.
             .children(
@@ -355,6 +361,7 @@ impl Shell {
             || self.branch_draft.is_some()
             || self.host_project.is_some()
             || self.offload_draft.is_some()
+            || self.build_host_draft.is_some()
             || self.workflow_launcher.is_some()
             || self.agent_form
     }

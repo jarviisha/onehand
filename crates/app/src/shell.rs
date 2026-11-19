@@ -17,6 +17,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 mod boot;
+mod build_hosts;
 mod carry;
 mod check_commands;
 mod cleanup;
@@ -275,6 +276,8 @@ pub struct Shell {
     host_listening: BTreeMap<(HostName, bool), gpui::Task<()>>,
     /// The offload form, while it is up.
     offload_draft: Option<offload::OffloadDraft>,
+    /// The form that adds or changes one of a project's build hosts.
+    build_host_draft: Option<build_hosts::BuildHostDraft>,
     /// The folders of this window's offloaded projects whose writers are
     /// off, with the line said under them, as last told to the docks.
     offload_locks: HashMap<PathBuf, String>,

@@ -29,6 +29,32 @@ fn main() {
         }
         return;
     }
+    // A build on a host, asked from a terminal, a check command or an agent's
+    // shell. Before the lock as well: it needs no window, and a running
+    // onehand must not take the flag for a folder to open.
+    if args.get(1).is_some_and(|flag| flag == "--build") {
+        let code = match (args.as_slice(), std::env::current_dir()) {
+            ([_, _, host, dashes, words @ ..], Ok(cwd)) if dashes == "--" => {
+                let (out, err) = (std::io::stdout(), std::io::stderr());
+                onehand_core::host::build::cli::run(
+                    host,
+                    words,
+                    &cwd,
+                    &mut out.lock(),
+                    &mut err.lock(),
+                )
+            }
+            (_, Err(why)) => {
+                eprintln!("onehand: the folder this was run from cannot be read: {why}");
+                1
+            }
+            _ => {
+                eprintln!("usage: onehand --build <host> -- <command…>");
+                2
+            }
+        };
+        std::process::exit(code);
+    }
     shell::hold_or_forward();
 
     gpui_platform::application()

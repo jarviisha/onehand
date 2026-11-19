@@ -600,6 +600,7 @@ impl ChatPane {
                 // moment can honestly say.
                 facts: ProjectFacts::default(),
                 check_input: None,
+                builds: Vec::new(),
                 rows: super::project_page::home_rows(cx),
             }
         });

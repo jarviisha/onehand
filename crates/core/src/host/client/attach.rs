@@ -234,7 +234,7 @@ pub(super) async fn hello(
 /// This laptop, as a host is told it: an id made once and kept in the config
 /// directory, so a mirror the host keeps for this laptop stays its own across
 /// runs. One that cannot be kept stands for this run alone.
-fn laptop() -> &'static str {
+pub(crate) fn laptop() -> &'static str {
     static LAPTOP: OnceLock<String> = OnceLock::new();
     LAPTOP.get_or_init(|| {
         if cfg!(test) {

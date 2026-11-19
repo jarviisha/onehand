@@ -364,6 +364,52 @@ fn perform_now(
             );
             Ok(String::new())
         }
+        Call::BuildOnHost {
+            project,
+            host,
+            command,
+        } => {
+            let top = control::calls::issues_project(
+                &projects,
+                project.as_deref(),
+                caller.as_ref().map(|(_, project)| project.as_path()),
+            )?;
+            let name = projects
+                .iter()
+                .find(|(_, path)| *path == top)
+                .map_or_else(|| top.display().to_string(), |(name, _)| name.clone());
+            let builds = shell.read(cx).builds_of(&top);
+            let declared = &Shared::global(cx).settings.hosts;
+            let entry = onehand_core::host::build::cli::entry_for(&name, &builds, &host, declared)?;
+            // Answered when the command ends, off the UI loop: a build is
+            // minutes of another machine's work.
+            let answer = answer.take();
+            cx.spawn(async move |cx| {
+                let outcome = cx
+                    .background_executor()
+                    .spawn(async move {
+                        use onehand_core::host::build::{Job, Tail, answer, build_blocking};
+                        let mut tail = Tail::default();
+                        let job = Job {
+                            top: &top,
+                            within: Path::new(""),
+                            host: &entry,
+                            command: &command,
+                        };
+                        // Never stopped from here: the tools have no way to
+                        // call one off, and the build's own limit ends it.
+                        let stop = std::sync::atomic::AtomicBool::new(false);
+                        build_blocking(&job, &mut |line| tail.push(line), &stop)
+                            .map(|built| answer(&built, &tail))
+                    })
+                    .await;
+                if let Some(answer) = answer {
+                    let _ = answer.send(outcome);
+                }
+            })
+            .detach();
+            Ok(String::new())
+        }
         Call::ListProjects => {
             let shell = shell.read(cx);
             let lines = projects
@@ -374,7 +420,21 @@ fn perform_now(
                     } else {
                         "no"
                     };
-                    format!("{name} — {} — check: {check}", path.display())
+                    let builds: Vec<String> = shell
+                        .builds_of(path)
+                        .into_iter()
+                        .map(|entry| entry.host.0)
+                        .collect();
+                    // Said only of a project that has any, so a line without
+                    // build hosts reads as it always has.
+                    match builds.is_empty() {
+                        true => format!("{name} — {} — check: {check}", path.display()),
+                        false => format!(
+                            "{name} — {} — check: {check} — builds on: {}",
+                            path.display(),
+                            builds.join(", ")
+                        ),
+                    }
                 })
                 .collect();
             Ok(control::listed(lines, "This window has no project"))

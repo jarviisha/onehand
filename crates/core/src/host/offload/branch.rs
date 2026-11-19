@@ -53,7 +53,7 @@ pub fn tracking(branch: &str) -> String {
 
 /// The mirror, as git reaches a repository on the host: over ssh, or as a
 /// path for the host `local`. A bare IPv6 host is bracketed, as a URL needs.
-fn git_url(addr: &HostAddr, mirror: &Path) -> String {
+pub(crate) fn git_url(addr: &HostAddr, mirror: &Path) -> String {
     if addr.local {
         return mirror.display().to_string();
     }
@@ -69,7 +69,7 @@ fn git_url(addr: &HostAddr, mirror: &Path) -> String {
 }
 
 /// Git in `folder` reaching the host over the attach's ssh options.
-fn git_to_host(folder: &Path) -> Command {
+pub(crate) fn git_to_host(folder: &Path) -> Command {
     let mut cmd = git(folder);
     cmd.env("GIT_SSH_COMMAND", format!("ssh {}", SSH_OPTS.join(" ")))
         .stdin(std::process::Stdio::null());

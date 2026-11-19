@@ -64,14 +64,71 @@ A person declares a host once, for every workspace; a project then names it.
 
 What the page draws is in [screens.md](screens.md#settings).
 
+## Builds on a host
+
+A project whose sessions run on this machine can run a command on a host instead of here, and
+bring back what it built. Nothing of this needs the host service: it is the person's own ssh,
+`git` and `tar`, so a build-only host does it as a host that runs sessions does.
+
+- **A project's build hosts** are kept beside its check command in the workspace's file
+  (`BuildHost`, `crates/core/src/workspace.rs`): each a `host`, its `artifacts` (paths inside the
+  project, a file or a folder) and an optional `into`, a folder in the project the artifacts land
+  under, so two hosts building one project do not write over each other. A path that is absolute,
+  holds `..`, is a pattern, names the project itself (`.`) or anything of git's own folder
+  (`.git`) is refused (`inside_refusal`), in the form and again where a build starts, since the
+  file can be written by hand. They are changed through
+  `WorkspaceDrive::set_builds`, shown at once and put back if the write fails; a project whose
+  sessions run on a host has none (`ProjectRoot::build_hosts`), though what it was given is kept
+  for when it runs here again, and one host is named once (`build_host_refusal`).
+- **One build is five steps** (`build_blocking`, `crates/core/src/host/build.rs`):
+  1. **A snapshot.** The folder as it stands, uncommitted and untracked work included and ignored
+     files left out, is committed aside from a temporary index (`task::marks::pin_blocking`). The
+     branch, the index and the files here do not move. A folder that is not a working tree's top
+     is refused, and so is one holding another repository, which git would commit as a pointer.
+     A worktree builds as its project does.
+  2. **Pushed** to a repository the host keeps for this folder,
+     `~/.onehand-build/<laptop>/<name>-<hash of the folder's path>`, made on first use
+     (`remote_dir`). Each worktree has its own, and so its own incremental state.
+  3. **Checked out** there, detached and forced: what the snapshot dropped goes, and what git
+     ignores (`target/`, `obj/`) stays, which is what makes the next build incremental.
+  4. **The command runs** in the same folder, relative to the top, that it was asked from,
+     through the host's login shell, so a toolchain a profile puts on `PATH` is found. Each line
+     it prints, stderr with stdout, is handed over as it comes. It is given two hours
+     (`BUILD_LIMIT`).
+  5. **The artifacts come back** only when the command exits 0, all of them or none: one the
+     build did not make fails the build, *<path> was not built on <host>*, before anything is
+     written here. What comes back writes over what is here. Only the paths named are unpacked,
+     whatever the host sends: its answer is its own to choose, and nothing else is written.
+- **What comes back is a file here**, and goes up with the next snapshot unless git ignores it.
+- **Every word onehand writes into a shell line is quoted** (`quoted`): a folder, an artifact and
+  the command reach the host's shell as one word each. Over ssh each line is handed to `sh`
+  whole, so an account whose login shell is not a POSIX one builds all the same; the command
+  itself still runs through that login shell. ssh is given ten seconds to connect.
+- **One build per folder and host at a time**, held by a lock file under `builds/` in the config
+  directory: *A build of <project> is already running on <host>*.
+- **A command the host could not find** (exit 127) is said with whose `PATH` lacks it:
+  *<program> is not on <host>'s PATH for ssh*. onehand installs nothing on a host.
+- **Only a Linux host builds.** One declared as Windows is refused, *<host> runs Windows; nothing
+  builds on a Windows host yet* (`os_refusal`); one nobody declared is taken for Linux.
+- **Three ways in**, one set of refusals (`entry_for`, `crates/core/src/host/build/cli.rs`):
+  - **`onehand --build <host> -- <command…>`**, from a terminal or as a check command. It is
+    answered in `main` before the instance lock, so it needs no window and a running onehand
+    never takes it for a folder. It finds the project the folder belongs to, its own or a
+    worktree of it, among every workspace, reading the first by name that names the host
+    (`asked_blocking`); prints the command's lines as they come; and exits with the command's
+    code, 1 for a refusal or a step that failed. One word after `--` is a shell line as written;
+    several are each quoted.
+  - **The tool `build_on_host`**, for a session's agent ([control.md](control.md#the-tools)).
+  - **The check command**, which is the flag typed into its field.
+
 ## The host service
 
 - **The binary is the one built beside this one:** `onehand-host` in `current_exe()`'s directory
   (`bundled_binary`, `crates/io/src/host.rs`). The release tarball ships the two together;
   `make dev` and `make showcase` build `-p onehand-host` before the app. Missing, an attach fails
   with *onehand-host is not beside onehand; build it with `cargo build -p onehand-host`*.
-- **Installed by build:** the attach copies it to `~/.onehand-host/<build>/onehand-host` unless
-  that build is already there, `<build>` a hash of the binary itself
+- **Installed by service build:** the attach copies it to `~/.onehand-host/<build>/onehand-host`
+  unless that service build is already there, `<build>` a hash of the binary itself
   (`crates/core/src/host/client/install.rs`), so a rebuilt binary is never taken for the old one.
 - **One per user on a host**, behind a lock in its data directory, `~/.onehand-host/data`
   (`ONEHAND_HOST_DIR` moves it), listening on a Unix socket there only its user can open, and
@@ -155,22 +212,24 @@ What the page draws is in [screens.md](screens.md#settings).
   to attach to. A session the host has not named yet has nothing there to end, and says so. A
   turn ended halfway in a branch mirror is not committed then; the next update commits it.
 
-## Builds and the restart offer
+## Service builds and the restart offer
 
-Every attach opens by exchanging builds (`client::attach`):
+A service build is which copy of the host service a host runs; building a project on a host is
+another thing, under *Builds on a host*. Every attach opens by exchanging service builds
+(`client::attach`):
 
-- **The same build:** attached.
-- **Another build, nothing mid-turn and no terminal open:** the old service is shut down and the
-  attach made again, onto this build.
-- **Another build with sessions mid-turn or terminals open:** the host is left alone and the
+- **The same service build:** attached.
+- **Another, nothing mid-turn and no terminal open:** the old service is shut down and the
+  attach made again, onto this laptop's.
+- **Another, with sessions mid-turn or terminals open:** the host is left alone and the
   attach fails as busy, since a service that exits closes every terminal, hanging up each shell,
   an idle one included, and the command it runs (the hello's `terms`). **The laptop waits for
   those sessions to go idle and those terminals to close** (which, since it has no attach to the
-  host meanwhile, it cannot do itself: a terminal closes from a laptop on the host's build, or by
+  host meanwhile, it cannot do itself: a terminal closes from a laptop on the host's service build, or by
   its shell exiting), once per host however many sessions, pages
   and forms wait on it (`HostDrive`'s waits, `crates/core/src/host/drive/waits.rs`): it attaches again every 15 s
   (`HOST_IDLE_POLL`), and the first attach that lands, which restarts the idle service onto this
-  build by itself, ends the wait. An attach that cannot reach the host ends it too, on that
+  laptop's service build by itself, ends the wait. An attach that cannot reach the host ends it too, on that
   failure (from the poll only after two misses in a row, `HOST_UNREACHABLE_POLLS`, so a blip
   does not; from anything else at once): a waiting session ends as a lost one does (*Disconnected: …*, which Restart tries
   again), the page shows its failed line with *Try again*, and the form its inline error. The
@@ -254,7 +313,7 @@ Every attach opens by exchanging builds (`client::attach`):
 - **Add** trims both fields, attaches (installing the service if needed), asks the host whether
   the folder is a directory there (`hosts::is_dir`, the wire's `Probe`), then adds the project and
   selects it. A failure stands once, inline under the fields: the attach's own words, *Could not
-  ask <host> about the folder: …*, or *There is no folder <path> on <host>*. A host on another
+  ask <host> about the folder: …*, or *There is no folder <path> on <host>*. A host on another service
   build with sessions mid-turn keeps the form waiting, *Add* refused, with the waiting line and
   *Restart now* in place of a failure; the wait's end carries the *Add* on.
 - **Adding one that is already there selects it.** A root is told apart by host and path together
@@ -419,7 +478,7 @@ and a watch need only fetch what the copy lacks (`crates/core/src/host/copy.rs`)
   `crates/workbench/src/lib.rs`; `offered` in `crates/app/src/workbench/panel.rs`); an active mode
   that is not offered gives way to the first that is.
 - **The Workbench attaches when a host root is shown** (`show_host_files`,
-  `crates/app/src/shell/roots.rs`). Meanwhile it says *Attaching to <host>…*; on a host on another
+  `crates/app/src/shell/roots.rs`). Meanwhile it says *Attaching to <host>…*; on a host on another service
   build with sessions mid-turn it says the waiting line and carries on when the wait ends; a
   failure stands as a line with *Try again*, which attaches again. With an attach already live the
   files show at once, with no waiting line.

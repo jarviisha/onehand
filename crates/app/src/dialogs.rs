@@ -24,6 +24,7 @@ use onehand_ui::Tall as _;
 
 mod agent;
 mod branch;
+mod build_host;
 mod host_project;
 mod offload;
 mod rows;
@@ -38,6 +39,7 @@ pub(crate) use host_project::{
     host_choices, host_menu,
 };
 
+pub(crate) use build_host::build_host;
 pub(crate) use offload::offload;
 pub(crate) use rows::{issue_row, page_row};
 

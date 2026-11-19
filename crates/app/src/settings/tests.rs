@@ -255,6 +255,17 @@ mod hosts {
     }
 
     #[test]
+    fn a_linux_host_that_runs_no_sessions_builds_and_says_only_that() {
+        let arm = HostSpec {
+            name: HostName("arm".into()),
+            os: HostOs::Linux,
+            arch: "aarch64".into(),
+        };
+        let lines = host_lines(&arm, None, &HostState::Unknown, false, &[]);
+        assert_eq!(lines.note.as_deref(), Some("Builds only"));
+    }
+
+    #[test]
     fn a_lost_or_taken_session_host_says_so() {
         let lost = HostState::Lost("timed out".into());
         let lines = host_lines(&linux(), None, &lost, true, &[]);

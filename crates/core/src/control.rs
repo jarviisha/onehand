@@ -60,6 +60,11 @@ pub enum Call {
     ListIssues {
         project: Option<String>,
     },
+    BuildOnHost {
+        project: Option<String>,
+        host: String,
+        command: String,
+    },
     CreateIssue {
         project: Option<String>,
         title: String,
@@ -116,7 +121,8 @@ impl Call {
             | Call::OpenWorker { project, .. } => Some(project),
             Call::ListTasks { project }
             | Call::ListIssues { project }
-            | Call::CreateIssue { project, .. } => project.as_deref(),
+            | Call::CreateIssue { project, .. }
+            | Call::BuildOnHost { project, .. } => project.as_deref(),
             Call::ListProjects
             | Call::ListAgents
             | Call::ListWorkflows
@@ -362,6 +368,11 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
         },
         "list_issues" => Call::ListIssues {
             project: optional("project")?,
+        },
+        "build_on_host" => Call::BuildOnHost {
+            project: optional("project")?,
+            host: required("host")?,
+            command: required("command")?,
         },
         "create_issue" => Call::CreateIssue {
             project: optional("project")?,

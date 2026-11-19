@@ -6,6 +6,7 @@
 //! journal, and `offload` an offloaded project's code on its way to a
 //! host's mirror and back. None of them needs a GUI.
 
+pub mod build;
 pub mod client;
 pub mod copy;
 pub mod drive;

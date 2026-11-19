@@ -38,10 +38,10 @@ mod install;
 mod terms;
 
 use attach::command;
-pub(crate) use attach::SSH_OPTS;
 pub use attach::{attach, restart, HostAddr};
 #[cfg(test)]
 use attach::{hello, restart_over, settle, settle_again, Settled};
+pub(crate) use attach::{laptop, SSH_OPTS};
 pub use install::install;
 pub use terms::{Recorded, TermReader, TermWriter};
 
@@ -75,7 +75,7 @@ impl std::fmt::Display for HostError {
             Self::Unreachable(why) | Self::Protocol(why) | Self::Unsupported(why) => {
                 f.write_str(why)
             }
-            Self::Busy { build, .. } => write!(f, "the host runs another build ({build})"),
+            Self::Busy { build, .. } => write!(f, "the host runs another service build ({build})"),
             Self::Held => f.write_str("another machine is attached to the host"),
         }
     }

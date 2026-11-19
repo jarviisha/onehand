@@ -21,7 +21,7 @@
 //! [`crate::saving::Saves`]'. A change made in a burst (a name typed, a size
 //! dragged) is written once things have been still for [`SAVE_DEBOUNCE`].
 
-use super::{HostName, ProjectRoot, Workspace};
+use super::{BuildHost, HostName, ProjectRoot, Workspace};
 use crate::config::{AgentSpec, PanelLayout, WorkspaceConfig};
 use crate::host::wire::HostSession;
 use crate::saving::{Pending, Saves};
@@ -53,6 +53,8 @@ pub enum Thing {
     Pin(Option<HostName>, PathBuf),
     /// A project's check command, by its folder here.
     Check(PathBuf),
+    /// The hosts a project builds on, by its folder here.
+    Builds(PathBuf),
 }
 
 /// A thing's value, as a failed write puts it back.
@@ -69,6 +71,10 @@ pub enum Value {
     Check {
         path: PathBuf,
         check: Option<String>,
+    },
+    Builds {
+        path: PathBuf,
+        builds: Vec<BuildHost>,
     },
 }
 
@@ -469,6 +475,11 @@ impl WorkspaceDrive {
                     root.check = check.clone();
                 }
             }
+            Value::Builds { path, builds } => {
+                if let Some(root) = local_mut(ws, path) {
+                    root.builds = builds.clone();
+                }
+            }
         }
     }
 
@@ -539,6 +550,59 @@ impl WorkspaceDrive {
         );
         fx.push(Effect::Changed);
         fx
+    }
+
+    /// Replace the build hosts of the project at `path`, a folder here: shown
+    /// at once, written now, and put back alone if its write fails.
+    /// Unchanged, nothing happens.
+    pub fn set_builds(&mut self, path: &std::path::Path, builds: Vec<BuildHost>) -> Vec<Effect> {
+        let Some(root) = local_mut(&mut self.workspace, path) else {
+            return Vec::new();
+        };
+        if root.builds == builds {
+            return Vec::new();
+        }
+        let before = std::mem::replace(&mut root.builds, builds.clone());
+        let path = path.to_path_buf();
+        let mut fx = self.change(
+            Thing::Builds(path.clone()),
+            Value::Builds {
+                path: path.clone(),
+                builds: before,
+            },
+            Value::Builds { path, builds },
+            false,
+        );
+        fx.push(Effect::Changed);
+        fx
+    }
+
+    /// Why `entry` cannot be one of the build hosts of the project at
+    /// `path`: its sessions do not run here, so it builds where they run, or
+    /// it already builds on that host. `replacing` is the entry being edited,
+    /// which may keep its host.
+    pub fn build_host_refusal(
+        &self,
+        path: &std::path::Path,
+        entry: &BuildHost,
+        replacing: Option<usize>,
+    ) -> Option<String> {
+        let root = self
+            .workspace
+            .roots
+            .iter()
+            .find(|root| root.local_path() == Some(path))?;
+        if !root.runs_here() {
+            return Some(format!(
+                "{} runs its sessions on a host; it builds there already",
+                root.label
+            ));
+        }
+        root.builds
+            .iter()
+            .enumerate()
+            .any(|(at, held)| Some(at) != replacing && held.host == entry.host)
+            .then(|| format!("{} already builds on {}", root.label, entry.host))
     }
 
     /// Name the workspace `name`, written once the typing stops; a name
