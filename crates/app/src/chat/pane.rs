@@ -191,6 +191,9 @@ pub struct ProjectFacts {
     /// folder here to a host, `Some(true)` runs an offloaded one here again,
     /// offered only while this machine holds its code.
     pub offload: Option<bool>,
+    /// It is its project's own folder, which has the project's name: a
+    /// worktree's row is named for its folder, and renames nothing.
+    pub renames: bool,
 }
 
 impl ProjectFacts {
@@ -207,6 +210,7 @@ impl ProjectFacts {
             is_repo: local && is_repo,
             check: local && root.check.is_some(),
             asks: false,
+            renames: root.home,
             offload: match (&root.host, &root.offload) {
                 _ if root.transient => None,
                 (Some(_), _) => None,

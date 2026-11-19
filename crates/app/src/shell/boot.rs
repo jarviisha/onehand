@@ -168,6 +168,7 @@ impl Shell {
                         let root_idx = shell.window.workspace.active_root;
                         match action {
                             P::TogglePin => shell.toggle_pin(root_idx, window, cx),
+                            P::Rename => shell.begin_project_rename(root_idx, window, cx),
                             P::Worktree => shell.begin_worktree(root_idx, window, cx),
                             P::RenameBranch => shell.begin_branch_rename(window, cx),
                             P::CopyPath => shell.copy_root_path(root_idx, window, cx),
@@ -483,6 +484,7 @@ impl Shell {
             close_guard,
             workspace_name,
             renaming: None,
+            project_rename: None,
             rename_input: cx.new(|cx| {
                 InputState::new(window, cx).placeholder("What this conversation is about")
             }),

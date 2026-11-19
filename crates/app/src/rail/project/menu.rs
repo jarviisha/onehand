@@ -39,6 +39,7 @@ pub(super) fn project_menu(
         check: _,
         asks: _,
         offload,
+        renames,
     }: ProjectFacts,
     asks: bool,
     shell: WeakEntity<Shell>,
@@ -46,6 +47,7 @@ pub(super) fn project_menu(
     move |menu, _, cx: &mut App| {
         let danger = crate::theme::status_ink(cx).danger;
         let away = shell.clone();
+        let rename = shell.clone();
         let (pin, start, split, terminal, copy, refresh, remove) = (
             shell.clone(),
             shell.clone(),
@@ -68,6 +70,19 @@ pub(super) fn project_menu(
                 },
             ),
         )
+        // On the project's own folder: a worktree's row is named for its
+        // folder, not the project.
+        .when(renames, |menu| {
+            menu.item(crate::controls::menu_item("Rename project…").on_click(
+                move |_, window, cx: &mut App| {
+                    rename
+                        .update(cx, |shell: &mut Shell, cx| {
+                            shell.begin_project_rename(root_idx, window, cx);
+                        })
+                        .ok();
+                },
+            ))
+        })
         .item(
             crate::controls::menu_item("New session").on_click(move |_, window, cx: &mut App| {
                 start

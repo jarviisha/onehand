@@ -1,6 +1,6 @@
 use super::Shell;
 use super::storage::pick_folder;
-use gpui::{App, Context, Entity, Focusable as _, Window};
+use gpui::{App, AppContext as _, BorrowAppContext as _, Context, Entity, Focusable as _, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::input::InputState;
 use onehand_core::project::{MadeBy, Worktree};
@@ -566,6 +566,64 @@ impl Shell {
     /// Close the rename field without changing anything.
     pub fn cancel_rename(&mut self, cx: &mut Context<Self>) {
         if self.renaming.take().is_some() {
+            cx.notify();
+        }
+    }
+
+    /// Open the rename dialog on the project of row `idx`, its own folder,
+    /// on the name it has.
+    pub(crate) fn begin_project_rename(
+        &mut self,
+        idx: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(id) = self
+            .window
+            .workspace
+            .roots
+            .get(idx)
+            .filter(|root| root.home)
+            .and_then(|root| root.project.clone())
+        else {
+            return;
+        };
+        let Some(name) = crate::state::Shared::global(cx)
+            .projects
+            .get(&id)
+            .map(|project| project.name.clone())
+        else {
+            return;
+        };
+        self.remember_focus(window, cx);
+        let input = cx.new(|cx| InputState::new(window, cx).default_value(name));
+        input.focus_handle(cx).focus(window, cx);
+        self.project_rename = Some((id, input));
+        cx.notify();
+    }
+
+    /// The field of the project rename dialog, while it is up.
+    pub(crate) fn project_rename_input(&self) -> Option<&Entity<InputState>> {
+        self.project_rename.as_ref().map(|(_, input)| input)
+    }
+
+    /// Name the project what the field says; a name blank or unchanged
+    /// changes nothing.
+    pub(crate) fn commit_project_rename(&mut self, cx: &mut Context<Self>) {
+        let Some((id, input)) = self.project_rename.take() else {
+            return;
+        };
+        let name = input.read(cx).value().to_string();
+        let fx = cx.update_global::<crate::state::Shared, _>(|shared, _| {
+            shared.projects.rename(&id, &name)
+        });
+        crate::projects::carry(fx, cx);
+        cx.notify();
+    }
+
+    /// Close the project rename dialog without changing anything.
+    pub(crate) fn cancel_project_rename(&mut self, cx: &mut Context<Self>) {
+        if self.project_rename.take().is_some() {
             cx.notify();
         }
     }

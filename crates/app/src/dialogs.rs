@@ -192,6 +192,52 @@ pub fn rename_session(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         }))
 }
 
+/// The project-rename window, opened from a project's menu as the
+/// conversation's is, and with no trigger for the same reason. The name is
+/// the project's alone: its folder stays as it is.
+pub fn rename_project(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
+    let Some(input) = shell.project_rename_input().cloned() else {
+        return Dialog::new(cx);
+    };
+    let empty = input.read(cx).value().trim().is_empty();
+    Dialog::new(cx)
+        .close_button(false)
+        .content(move |content, _, cx: &mut App| {
+            content.child(title_row("Rename project", cx)).child(field(
+                "Name",
+                None,
+                text_input(&input, cx).short(),
+                cx,
+            ))
+        })
+        .footer(
+            footer_row()
+                .child(div().flex_1())
+                .child(
+                    crate::controls::action("cancel-project-rename")
+                        .short()
+                        .quiet(cx)
+                        .label("Cancel")
+                        .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
+                            shell.cancel_project_rename(cx);
+                        })),
+                )
+                .child(
+                    crate::controls::action("save-project-rename")
+                        .short()
+                        .primary()
+                        .label("Rename")
+                        .refuses(empty.then_some("Name it first"))
+                        .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
+                            shell.commit_project_rename(cx);
+                        })),
+                ),
+        )
+        .on_close(cx.listener(|shell: &mut Shell, _, _, cx| {
+            shell.cancel_project_rename(cx);
+        }))
+}
+
 /// The workflow launcher: which template, what to do, and what to ask of
 /// every step.
 ///

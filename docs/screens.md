@@ -70,7 +70,10 @@ marks it while this machine holds the code. One on a branch is never locked; whi
 branch has commits its own does not, a merge mark stands in its meta in the muted ink, its hover
 *onehand/<host> on <host> has N commits to merge*. Its menu reads *Offload to a host…* on a local project,
 and *Run here again* on an offloaded one while this machine holds its code, or, on a branch,
-while the branch is not being fetched or updated.
+while the branch is not being fetched or updated. A project folder's row, and the project's dots
+menu, offer *Rename project…* after *Pin to top*: a dialog, *Name* starting on the name, *Rename*
+spent while it is blank; the folder keeps its own name. A worktree's row, named for its folder,
+offers none.
 Narrowed, the name keeps a minimum and the branch, or the host, gives way first. Its chevron alone
 folds it (not during a search); the rest of the row shows the project's last session, or its page,
 which then fills the row. `+` and `⋯` show on hover and on the keyboard's row, over the end of its

@@ -252,6 +252,11 @@ impl Render for Shell {
                 self.renaming
                     .map(|_| crate::dialogs::rename_session(self, cx)),
             )
+            .children(
+                self.project_rename
+                    .is_some()
+                    .then(|| crate::dialogs::rename_project(self, cx)),
+            )
             // Opened from the same kind of menu entry, and mounted here for the
             // same reason: there is no control left on screen to hang a
             // `Dialog::trigger` on by the time it is wanted.
@@ -357,6 +362,7 @@ impl Shell {
     /// Whether one of the shell's own dialogs is up.
     fn dialog_up(&self) -> bool {
         self.renaming.is_some()
+            || self.project_rename.is_some()
             || self.worktree_draft.is_some()
             || self.branch_draft.is_some()
             || self.host_project.is_some()
