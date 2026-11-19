@@ -154,10 +154,9 @@ pub fn write(
 /// alike.
 fn handle(view: &Entity<IssuesView>, request: &Request<'_>, cx: &mut App) -> bool {
     match request {
-        Request::SetStorage(storage) => {
-            view.update(cx, |view, cx| {
-                view.set_storage(storage.map(Path::to_path_buf), cx)
-            });
+        Request::IssueFiles(files) => {
+            let files = (*files).clone();
+            view.update(cx, |view, cx| view.set_files(files, cx));
             true
         }
         // Something other than this view may have written the file — a

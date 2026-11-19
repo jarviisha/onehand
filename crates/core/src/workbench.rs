@@ -266,12 +266,11 @@ pub enum Request<'a> {
     Reap,
     /// The workspace's `git status`, for whoever draws change badges.
     SetGit(&'a HashMap<PathBuf, GitStatus>),
-    /// Where this window's workspace keeps what it persists, or `None` for a
-    /// workspace bound to no storage — which keeps nothing.
-    ///
-    /// Told once when the panel is built and again whenever the binding
-    /// changes, and only a mode that keeps files of its own answers it.
-    SetStorage(Option<&'a Path>),
+    /// Each project folder of the window on this machine, with the issues
+    /// file its project keeps: one file for every folder of a project.
+    /// Broadcast whole whenever it changes, so a folder left out keeps no
+    /// issues here; only a mode that lists issues answers it.
+    IssueFiles(&'a HashMap<PathBuf, PathBuf>),
     /// The reading size for a mode that is measured rather than laid out, in
     /// pixels.
     ///

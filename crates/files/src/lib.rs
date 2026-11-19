@@ -100,7 +100,7 @@ impl WorkbenchMode for Mode {
             | Request::Start
             | Request::Shown
             | Request::Reap
-            | Request::SetStorage(_)
+            | Request::IssueFiles(_)
             | Request::SetFontSize(_)
             | Request::ShowIssue(_)
             | Request::AgentStarted(_)

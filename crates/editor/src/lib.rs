@@ -96,7 +96,7 @@ impl WorkbenchMode for Mode {
             | Request::Shown
             | Request::Reap
             | Request::SetGit(_)
-            | Request::SetStorage(_)
+            | Request::IssueFiles(_)
             | Request::SetFontSize(_)
             | Request::ShowIssue(_)
             | Request::AgentStarted(_)

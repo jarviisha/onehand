@@ -62,19 +62,19 @@ pub mod testing {
     use std::path::{Path, PathBuf};
     use std::rc::Rc;
 
-    /// A view of the Workbench's Issues mode, on the project at `root` of a
-    /// workspace keeping its issues in `storage`, its file read.
+    /// A view of the Workbench's Issues mode, on the project folder `root`
+    /// whose issues are kept in `file`, its file read.
     pub struct OpenView {
         view: Entity<IssuesView>,
         root: PathBuf,
     }
 
     impl OpenView {
-        pub fn new(storage: &Path, root: &Path, cx: &mut App) -> Self {
+        pub fn new(root: &Path, file: &Path, cx: &mut App) -> Self {
             let view =
                 IssuesView::new(&[], Rc::new(|_, _, _| {}), Rc::new(|_, _, _| {}), false, cx);
             view.update(cx, |view, cx| {
-                view.set_storage(Some(storage.to_path_buf()), cx);
+                view.set_files([(root.to_path_buf(), file.to_path_buf())].into(), cx);
                 view.set_root(root, cx);
                 if let Some(state) = view.state_for(root, cx) {
                     let file = state.file.clone();
@@ -115,10 +115,12 @@ const HISTORY_SHOWN: usize = 50;
 
 pub(crate) struct IssuesView {
     root: Option<PathBuf>,
-    /// The workspace's storage directory. `None` is a workspace bound to
-    /// nothing, which keeps no issues — said on screen rather than offering a
-    /// form whose work would be thrown away.
-    storage: Option<PathBuf>,
+    /// Each project folder of the window with the issues file its project
+    /// keeps, as the window last told it. A folder left out keeps no issues
+    /// here (a host's, one whose project is still being found), which is
+    /// said on screen rather than offering a form whose work would be thrown
+    /// away.
+    files: HashMap<PathBuf, PathBuf>,
     /// Each project's issues file, and what is open in it.
     roots: HashMap<PathBuf, RootIssues>,
     split: Entity<gpui_component::ResizableState>,
@@ -240,7 +242,7 @@ impl IssuesView {
         Self {
             page: page.then(page::PageState::default),
             root: None,
-            storage: None,
+            files: HashMap::new(),
             roots: HashMap::new(),
             split: cx.new(|_| gpui_component::ResizableState::default()),
             detail: false,
@@ -320,14 +322,18 @@ impl IssuesView {
         cx.notify();
     }
 
-    /// Point at another storage directory. Everything read from the old one
-    /// is dropped: it was another workspace's file, or none.
-    pub(crate) fn set_storage(&mut self, storage: Option<PathBuf>, cx: &mut Context<Self>) {
-        if self.storage == storage {
+    /// Take each folder's issues file as the window now tells it. What was
+    /// read for a folder whose file changed or left is dropped: it was
+    /// another file, or none; the rest is kept.
+    pub(crate) fn set_files(&mut self, files: HashMap<PathBuf, PathBuf>, cx: &mut Context<Self>) {
+        if self.files == files {
             return;
         }
-        self.storage = storage;
-        self.roots.clear();
+        let old = std::mem::replace(&mut self.files, files);
+        self.roots.retain(|root, _| {
+            old.get(root)
+                .is_some_and(|was| self.files.get(root) == Some(was))
+        });
         self.watch_active(cx);
         cx.notify();
     }
@@ -346,10 +352,10 @@ impl IssuesView {
     }
 
     /// `root`'s entry, made on first use with the file every view of it
-    /// shares. `None` for a workspace that keeps nothing.
+    /// shares. `None` for a folder that keeps no issues here.
     fn state_for(&mut self, root: &Path, cx: &mut Context<Self>) -> Option<&mut RootIssues> {
         if !self.roots.contains_key(root) {
-            let path = issues::file_for(self.storage.as_deref()?, root);
+            let path = self.files.get(root)?.clone();
             let file = IssuesFile::get(root, path, self.connectors, cx);
             let watch = cx.observe(&file, |_, _, cx| cx.notify());
             let at = root.to_path_buf();
@@ -384,10 +390,10 @@ impl IssuesView {
         self.roots.get(root)?.file.read(cx).forge
     }
 
-    /// The active project's file, if this workspace keeps one.
+    /// The active project's file, if it keeps one here.
     fn file(&self) -> Option<(PathBuf, PathBuf)> {
         let root = self.root.clone()?;
-        let file = issues::file_for(self.storage.as_deref()?, &root);
+        let file = self.files.get(&root)?.clone();
         Some((root, file))
     }
 
@@ -566,11 +572,8 @@ impl IssuesView {
         let Some(root) = self.root.clone() else {
             return hint("No project selected", cx);
         };
-        if self.storage.is_none() {
-            return hint(
-                "This workspace keeps nothing until it is bound to a storage folder in Settings",
-                cx,
-            );
+        if !self.files.contains_key(&root) {
+            return hint("Issues are kept for the projects on this machine", cx);
         }
         let Some(issues) = self.issues_of(&root, cx).cloned() else {
             return hint("Reading issues…", cx);

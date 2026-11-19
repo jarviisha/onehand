@@ -58,7 +58,7 @@ impl WorkbenchMode for Stub {
             | Request::Start
             | Request::Reap
             | Request::SetGit(_)
-            | Request::SetStorage(_)
+            | Request::IssueFiles(_)
             | Request::SetFontSize(_)
             | Request::ShowIssue(_)
             | Request::AgentStarted(_)
