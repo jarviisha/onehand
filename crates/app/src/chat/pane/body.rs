@@ -435,7 +435,9 @@ impl ChatPane {
         // The clip is already taken off inside `tail_room`, which is the only
         // place that knows whether the number it returned was measured from the
         // clipped viewport or is a constant that never heard of it.
-        let tail_pad = tail_room;
+        // And past the cards pinned over the composer, while any show, so
+        // the rows under them can be scrolled clear.
+        let tail_pad = tail_room + self.cards_h.get();
         // How much room a composer popup has to open into: the well, less what
         // the composer and its rest already stand in.
         //
@@ -493,6 +495,10 @@ impl ChatPane {
             window,
             cx,
         );
+
+        // After the overlay is built, which borrows the pane, and drawn under
+        // it, so a popup from the composer is never covered.
+        let float = self.subagent_float(&session, list_w, room.clone(), window, cx);
 
         div()
             .size_full()
@@ -616,6 +622,7 @@ impl ChatPane {
                                 ),
                         )
                     })
+                    .children(float)
                     .child(overlay),
             )
             .into_any_element()

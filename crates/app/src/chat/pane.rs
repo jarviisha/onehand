@@ -25,6 +25,8 @@ use std::collections::HashMap;
 mod body;
 mod bridge;
 mod events;
+mod float;
+pub(crate) use float::CloseSubagent;
 mod fork;
 mod greeting;
 mod header;
@@ -216,8 +218,22 @@ impl ProjectFacts {
     }
 }
 
+/// How wide the float stands beside the conversation.
+pub(super) const FLOAT_W: Rems = rems(27.5);
+/// The pane's width from which the float stands at its top right; under it,
+/// it runs the pane's width.
+pub(super) const FLOAT_BESIDE: Rems = rems(37.5);
+
 pub struct ChatPane {
     focus_handle: FocusHandle,
+    /// The subagent shown in the float over the conversation, if any.
+    float: Option<float::Float>,
+    /// What the float takes the keys with, so Escape reaches it.
+    float_focus: FocusHandle,
+    /// The float's own scroll, kept as its subagent grows.
+    float_scroll: gpui::ScrollHandle,
+    /// The float was just opened and takes the keys on its next frame.
+    focus_float: bool,
     /// Every session the user has opened, in whatever phase it has reached.
     ///
     /// One map, not six. What each session's phase means, and why the parallel
@@ -306,6 +322,9 @@ pub struct ChatPane {
     /// frame so non-typing changes (initial mount, a permission arriving, an
     /// attachment disappearing) also update the list's bottom padding.
     composer_h: std::rc::Rc<std::cell::Cell<gpui::Pixels>>,
+    /// How tall the cards pinned over the composer stood last frame: the
+    /// room the transcript's end is given past the composer while they show.
+    cards_h: std::rc::Rc<std::cell::Cell<gpui::Pixels>>,
     /// Whether the last frame this pane drew had a composer in it.
     ///
     /// Recorded by the renderer rather than worked out again by whoever asks,
@@ -385,6 +404,10 @@ impl ChatPane {
 
             Self {
                 focus_handle: cx.focus_handle(),
+                float: None,
+                float_focus: cx.focus_handle(),
+                float_scroll: gpui::ScrollHandle::default(),
+                focus_float: false,
                 conversations: HashMap::new(),
                 host_asks: 0,
                 active: None,
@@ -403,6 +426,7 @@ impl ChatPane {
                 shown: true,
                 git: None,
                 composer_h: Default::default(),
+                cards_h: Default::default(),
                 composer_drawn: false,
                 turn_began: None,
                 ticker: None,

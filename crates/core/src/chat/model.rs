@@ -25,13 +25,13 @@ pub use background::{BackgroundItem, Level, Meter};
 pub use fork::{fork_seed, ForkPoint, ForkSeed};
 pub(crate) use items::line_change_counts;
 pub use items::{
-    AskItem, AskPlace, AskRow, ChatItem, Md, MdId, NoticeLevel, PermItem, PlanItem, Thought,
-    ToolItem, TranscriptItemId, TurnAnswer, UserMsg, MAX_TERM_BYTES,
+    AskItem, AskPlace, AskRow, ChatItem, CutShort, Md, MdId, NoticeLevel, PermItem, PlanItem,
+    Thought, ToolItem, TranscriptItemId, TurnAnswer, TurnEnding, UserMsg, MAX_TERM_BYTES,
 };
 pub(crate) use meta::summarize_title;
 pub use meta::{Selector, SelectorChoice, MODE_SELECTOR};
-pub use subagent::{SubagentItem, SubagentState};
-pub use turn::{QueuedPrompt, SubmitBlock};
+pub use subagent::{Standing, SubagentItem, SubagentState};
+pub use turn::{QueuedPrompt, SubmitBlock, TurnActivity};
 
 /// Where a conversation's adapter is in its life.
 ///

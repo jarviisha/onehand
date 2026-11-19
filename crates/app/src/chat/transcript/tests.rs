@@ -2,7 +2,7 @@ use super::metrics::{DETAIL_OPEN_H, HAIR_GAP, LINE_H, PART_GAP, STACK_GAP, THUMB
 use super::parts::Object;
 use super::parts::RowMark;
 use super::strip::activity_identity;
-use super::tool::is_error_line;
+use super::tool::{StepInk, is_error_line, step_end};
 use super::*;
 use crate::tokens::CONTROL_H;
 use onehand_core::chat::activity;
@@ -191,4 +191,49 @@ fn a_notice_is_a_divider_only_when_it_is_a_remark() {
             past: true
         }
     );
+    // A stop is a remark; a turn cut short is a card of its own, with no
+    // alarm in it.
+    assert_eq!(
+        notice_shape(NoticeLevel::Stopped, false),
+        NoticeShape::Divider
+    );
+    let cut = onehand_core::chat::CutShort::OutputLimit;
+    assert_eq!(
+        notice_shape(NoticeLevel::CutShort(cut), false),
+        NoticeShape::CutShort { cut, past: false }
+    );
+}
+
+/// A failed step's code is an alarm while its turn runs and a record after.
+#[test]
+fn a_failed_step_quiets_once_its_turn_is_over() {
+    use onehand_core::acp::ToolStatus;
+    assert_eq!(
+        step_end(ToolStatus::Failed, Some(2), false),
+        Some(("exit 2".to_string(), StepInk::Danger))
+    );
+    assert_eq!(
+        step_end(ToolStatus::Failed, None, false),
+        Some(("failed".to_string(), StepInk::Danger))
+    );
+    assert_eq!(
+        step_end(ToolStatus::Failed, Some(2), true),
+        Some(("exit 2".to_string(), StepInk::Muted))
+    );
+    assert_eq!(
+        step_end(ToolStatus::Stopped, None, false),
+        Some(("stopped".to_string(), StepInk::Muted))
+    );
+    assert_eq!(step_end(ToolStatus::Completed, None, false), None);
+    assert_eq!(step_end(ToolStatus::InProgress, None, false), None);
+}
+
+/// What Copy and *Open* hand over for a new file is its own lines; for a
+/// changed one, the diff's.
+#[test]
+fn a_new_file_is_handed_over_as_its_content() {
+    use onehand_core::diff::Row;
+    let rows = [Row::Added("fn main() {}".into()), Row::Added("".into())];
+    assert_eq!(super::tool::rows_text(&rows, true), ["fn main() {}", ""]);
+    assert_eq!(super::tool::rows_text(&rows, false), ["+fn main() {}", "+"]);
 }

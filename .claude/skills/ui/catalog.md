@@ -88,6 +88,8 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A mono well on a page | `mono_well`, built on `well` | `crates/app/src/tasks_page/detail.rs` |
 | Shared sizes and the floating shadow | `tokens` | `crates/ui/src/tokens.rs` |
 | A transcript well, a folding block (bare: no edge, no fill), a pinned card, a row's note | `plain_box`, `fold_box()`, `floating_card(pinned, cx)` (neutral; a step off the page and lifted while pinned), `row_note` | `crates/app/src/chat/transcript/parts.rs` |
+| The words of what still runs, a band of brighter ink crossing them | `working_text(id, runs, cx)` over `WorkingRun::words` / `WorkingRun::mono` | `crates/app/src/chat/transcript/parts/working.rs` |
+| What a row opens into: a command over a hairline, lines scrolling in both axes under a cap, Copy in the corner, a count and *Open* under it | `detail_box(DetailBox { .. }, cx)`, `command_head`, `box_count` | `crates/app/src/chat/transcript/parts/detail_box.rs` |
 | A prompt | the library's `Bubble` with `BubbleVariant::Muted`, its size on a `BubbleContent` | `crates/app/src/chat/transcript/user.rs` |
 | Transcript sizes | the constants | `crates/app/src/chat/transcript/metrics.rs` |
 | The composer card | `card` | `crates/app/src/chat/composer/card.rs` |

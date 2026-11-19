@@ -376,6 +376,7 @@ impl ChatPane {
                         Ended::Lost | Ended::Waiting(_) => {}
                     },
                     ChatEvent::Fork(target) => pane.begin_fork(uid, *target, cx),
+                    ChatEvent::OpenSubagent(key) => pane.open_subagent(uid, *key, cx),
                     ChatEvent::Session(Signal::Appended) => {}
                     ChatEvent::Session(Signal::PickRefused(why)) => {
                         cx.emit(ChatPaneEvent::PickRefused(why.clone()));

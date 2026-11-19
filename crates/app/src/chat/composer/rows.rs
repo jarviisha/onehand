@@ -250,9 +250,10 @@ fn marked(
 /// or branch menu. Its glyph where it has one, its name, what the agent or the
 /// app says about it beside the name, and a tick where it is the one in force.
 ///
-/// **One line, the detail truncating beside the name**, so every row of a menu
-/// stands at one height and the list can be bounded in whole rows. The name
-/// gives way only once the detail has gone.
+/// **One line, the detail set against the row's end**, where the window's
+/// other menus put a key, so every row of a menu stands at one height and the
+/// list can be bounded in whole rows. The name gives way only once the detail
+/// has gone.
 pub(super) fn choice_row(id: usize, row: Row, highlighted: bool, cx: &App) -> Button {
     let id = ("candidate", id);
     let detail_ink = detail_ink(highlighted, cx);
@@ -271,10 +272,14 @@ pub(super) fn choice_row(id: usize, row: Row, highlighted: bool, cx: &App) -> Bu
             div()
                 .flex_1()
                 .min_w_0()
-                .truncate()
+                .h_flex()
+                .justify_end()
                 .text_xs()
                 .text_color(detail_ink)
-                .children(row.detail),
+                .children(
+                    row.detail
+                        .map(|detail| div().min_w_0().truncate().child(detail)),
+                ),
         )
         .children(
             row.checked

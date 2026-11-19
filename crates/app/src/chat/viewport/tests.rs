@@ -673,6 +673,8 @@ fn a_subagent_card_is_measured_again_where_it_is() {
             task: None,
             state: SubagentState::Working,
             items: Vec::new(),
+            started: None,
+            secs: None,
         }),
     );
     let mut viewport = Viewport::default();
@@ -697,4 +699,35 @@ fn a_subagent_card_is_measured_again_where_it_is() {
 
     viewport.replan(&chat, 1, |_, open| open, |_, d| d, |_, default| default);
     assert_eq!(viewport.card_remeasure, [1], "a fold may have been its");
+}
+
+/// A step still running grows in place too, and not only at the tail: an
+/// agent that hands work off writes on while the step it started is still
+/// streaming its output, so the run holding that step is measured again on
+/// every change until it settles.
+#[test]
+fn a_running_step_is_measured_again_where_it_is() {
+    let mut chat = chat();
+    chat.items
+        .insert(1, read_with_status("Run the suite", ToolStatus::InProgress));
+    chat.items
+        .insert(2, ChatItem::Agent(Md::parse("meanwhile")));
+    let mut viewport = Viewport::default();
+    // 0: answer · 1: the running step · 2: prose · 3: the cluster of reads.
+    viewport.replan(&chat, 0, |_, open| open, |_, d| d, |_, default| default);
+    assert_eq!(viewport.card_remeasure, [1]);
+    let _ = viewport.list_state(false, ROOM);
+
+    let ChatItem::Tool(step) = &mut chat.items[1] else {
+        unreachable!()
+    };
+    step.call.status = ToolStatus::Completed;
+    chat.items.push(read("Read src/c.rs"));
+    viewport.replan(&chat, 0, |_, open| open, |_, d| d, |_, default| default);
+    assert_eq!(viewport.card_remeasure, [1], "once more as it settles");
+    let _ = viewport.list_state(false, ROOM);
+
+    chat.items.push(ChatItem::Agent(Md::parse("done")));
+    viewport.replan(&chat, 0, |_, open| open, |_, d| d, |_, default| default);
+    assert!(viewport.card_remeasure.is_empty(), "a settled step rests");
 }

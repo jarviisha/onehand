@@ -48,6 +48,19 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   path) take Tab, but only while drawn: the transcript is a `gpui::list` that draws the rows on
   screen, so a tab order through it skips what is scrolled away. The pinned cards and the
   composer take the keyboard whole.
+- **A subagent's words read as the agent's do in its float.** The float draws them with the
+  transcript's own renderer, at its size and ink, rather than a step smaller with only its last
+  answer in the foreground.
+- ***Continue* is offered in a run's session too.** A session does not know that a run drives it,
+  so a turn a run's agent ended at a limit shows *Continue* as any other does, the same reach as
+  *Send the last prompt again* in the rail. The run has already read the turn as failed; pressing
+  it is a person's prompt in that session.
+- **Nothing turns the transcript's motion off.** The words of what runs shimmer for everybody:
+  onehand has no motion setting and does not read the platform's. The animation would stand
+  still under the window toolkit's reduced-motion flag, which nothing sets yet.
+- **A step waiting its turn cannot be told from one in hand.** The default agent reports every
+  step as pending until it ends, so pending reads as running, and a step that is truly queued
+  shimmers with the rest.
 - **There is no search in the transcript**, and the removal was deliberate rather than pending. It
   matched whole *items* and never occurrences, so a word said ten times in one answer was one hit
   with no mark on the word itself, and a hit in text a block had truncated was counted, scrolled to

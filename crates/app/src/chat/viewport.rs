@@ -238,14 +238,17 @@ pub struct Viewport {
     /// late on a transcript that also loses rows -- a blocking card leaves the
     /// list while it waits for an answer and comes back once it has one.
     newest_prompt: Option<TranscriptItemId>,
-    /// The runs holding a working subagent card at the last replan.
+    /// The runs holding a working subagent card or a running step at the last
+    /// replan.
     working_cards: Vec<usize>,
-    /// Runs holding a subagent card to measure again on the next frame.
+    /// Runs holding a subagent card or a running step, to measure again on
+    /// the next frame.
     ///
-    /// **A card changes height in place, anywhere in the transcript**: its
-    /// steps arrive while the parent's own blocks follow it, it folds when it
-    /// ends, and it opens on a press. Its run draws the same to the plan all
-    /// the while, so nothing else would tell the list.
+    /// **Both change height in place, anywhere in the transcript**: a card's
+    /// steps and a step's output arrive while the parent's own blocks follow
+    /// them, and a card folds when it ends and opens on a press. Their run
+    /// draws the same to the plan all the while, so nothing else would tell
+    /// the list.
     card_remeasure: Vec<usize>,
 }
 
@@ -268,6 +271,79 @@ struct PlanKey {
     /// integrations can settle their final tool status immediately before
     /// clearing `busy`, without adding another transcript item.
     busy: bool,
+}
+
+/// Group `addressed` into the runs the transcript draws: a cluster of steps as
+/// one strip, everything else a run of its own. The conversation's and a
+/// subagent's float are planned by this one rule.
+fn plan_clusters(
+    chat: &Chat,
+    addressed: &[(TranscriptItemId, &ChatItem)],
+    is_open: &impl Fn(TranscriptItemId, bool) -> bool,
+    item_open: &impl Fn(TranscriptItemId, bool) -> bool,
+) -> Vec<RunPlan> {
+    clusters(addressed)
+        .into_iter()
+        .map(|run| match run {
+            Cluster::Single(target) => RunPlan {
+                members: vec![target],
+                strip: None,
+                changes: None,
+                open: true,
+                kind: item(chat, target)
+                    .map_or(RunKind::Block, |it| single_kind(target, it, &item_open)),
+            },
+            Cluster::Activity { members } => {
+                let anchor = members[0];
+                let bodies: Vec<&ChatItem> = members
+                    .iter()
+                    .copied()
+                    .filter_map(|t| item(chat, t))
+                    .collect();
+
+                let summary = cluster_summary(&bodies, &chat.root);
+                // **Open while anything in it runs, closed once it is
+                // done**, until the reader opens or closes it themselves.
+                let open = is_open(anchor, summary.running.is_some());
+                RunPlan {
+                    strip: Some(ActivityPlan {
+                        summary,
+                        sections: sections(chat, &members),
+                    }),
+                    changes: None,
+                    open,
+                    members,
+                    // Folded it is one muted line; opened it is a frame with
+                    // every step it holds in it.
+                    kind: if open {
+                        RunKind::Block
+                    } else {
+                        RunKind::Compact
+                    },
+                }
+            }
+        })
+        .collect()
+}
+
+/// The runs of subagent card `key`'s own items, planned as the conversation's
+/// are, for the float that shows it. Empty when the card is gone.
+pub fn card_runs(
+    chat: &Chat,
+    key: u64,
+    is_open: impl Fn(TranscriptItemId, bool) -> bool,
+    item_open: impl Fn(TranscriptItemId, bool) -> bool,
+) -> Vec<RunPlan> {
+    let Some(card) = chat.card(key) else {
+        return Vec::new();
+    };
+    let addressed: Vec<(TranscriptItemId, &ChatItem)> = card
+        .items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| (TranscriptItemId::InCard { card: key, index }, item))
+        .collect();
+    plan_clusters(chat, &addressed, &is_open, &item_open)
 }
 
 impl Viewport {
@@ -314,48 +390,7 @@ impl Viewport {
         self.planned = Some(key);
         let addressed: Vec<(TranscriptItemId, &ChatItem)> = addressed(chat).collect();
 
-        let mut plan: Vec<RunPlan> = clusters(&addressed)
-            .into_iter()
-            .map(|run| match run {
-                Cluster::Single(target) => RunPlan {
-                    members: vec![target],
-                    strip: None,
-                    changes: None,
-                    open: true,
-                    kind: item(chat, target)
-                        .map_or(RunKind::Block, |it| single_kind(target, it, &item_open)),
-                },
-                Cluster::Activity { members } => {
-                    let anchor = members[0];
-                    let bodies: Vec<&ChatItem> = members
-                        .iter()
-                        .copied()
-                        .filter_map(|t| item(chat, t))
-                        .collect();
-
-                    let summary = cluster_summary(&bodies);
-                    // **Open while anything in it runs, closed once it is
-                    // done**, until the reader opens or closes it themselves.
-                    let open = is_open(anchor, summary.running.is_some());
-                    RunPlan {
-                        strip: Some(ActivityPlan {
-                            summary,
-                            sections: sections(chat, &members),
-                        }),
-                        changes: None,
-                        open,
-                        members,
-                        // Folded it is one muted line; opened it is a frame with
-                        // every step it holds in it.
-                        kind: if open {
-                            RunKind::Block
-                        } else {
-                            RunKind::Compact
-                        },
-                    }
-                }
-            })
-            .collect();
+        let mut plan: Vec<RunPlan> = plan_clusters(chat, &addressed, &is_open, &item_open);
 
         // **Accumulated, never overwritten.** A replan can find a divergence the
         // list is not told about in the same breath -- a lone step settling

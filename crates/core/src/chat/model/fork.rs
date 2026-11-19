@@ -63,7 +63,7 @@ impl Chat {
         };
         let mut before = self.list(target)[..at].iter().rev().chain(match target {
             TranscriptItemId::Live(_) => self.history.iter().rev(),
-            TranscriptItemId::History(_) => [].iter().rev(),
+            TranscriptItemId::History(_) | TranscriptItemId::InCard { .. } => [].iter().rev(),
         });
         let ChatItem::Agent(answer) = before.next()? else {
             return None;
