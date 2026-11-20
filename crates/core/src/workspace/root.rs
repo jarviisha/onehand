@@ -207,6 +207,12 @@ impl ProjectRoot {
         )
     }
 
+    /// Whether the sessions in `folder`, one of this row's, run on this
+    /// machine: neither the row on a host nor that folder offloaded.
+    pub fn runs_here_in(&self, folder: &Path) -> bool {
+        self.host.is_none() && self.host_of(folder).is_none()
+    }
+
     /// The host this root's folder is on, if it is not on this machine.
     pub fn on_host(&self) -> Option<&HostName> {
         self.host.as_ref()
@@ -247,5 +253,63 @@ impl ProjectRoot {
     pub fn folder_on_screen(&self) -> &Path {
         self.active_session()
             .map_or(self.path.as_path(), |session| session.folder.as_path())
+    }
+}
+
+impl super::Workspace {
+    /// The row a session in `folder` stands under: the one it is a folder
+    /// of, else one a session of it runs in.
+    fn row_of_folder(&self, folder: &Path) -> Option<&ProjectRoot> {
+        (self.roots.iter().find(|root| root.holds(folder))).or_else(|| {
+            (self.roots.iter()).find(|root| root.sessions.iter().any(|s| s.folder == folder))
+        })
+    }
+
+    /// Whether the sessions in `folder` run on this machine, the folder
+    /// judged on its own: a project's worktree is offloaded apart from it.
+    pub fn runs_here_in(&self, folder: &Path) -> bool {
+        self.row_of_folder(folder)
+            .is_some_and(|root| root.runs_here_in(folder))
+    }
+
+    /// Every folder whose sessions run on this machine, with how many are
+    /// open in it: a host's sessions occupy no folder here, nor do an
+    /// offloaded folder's, which run in its mirror there.
+    pub fn sessions_by_folder(&self) -> Vec<(PathBuf, usize)> {
+        (self.roots.iter())
+            .flat_map(|root| {
+                (root.folders_used().into_iter())
+                    .filter(|folder| root.runs_here_in(folder))
+                    .map(|folder| {
+                        let open = root.sessions.iter().filter(|s| s.folder == folder);
+                        let open = open.count();
+                        (folder, open)
+                    })
+            })
+            .collect()
+    }
+
+    /// Each project as onehand's tools name it, by those of its folders
+    /// whose sessions run here (`here`) or not: the first of them, its own
+    /// when it is one, then the worktrees'. A project with none is left out.
+    pub fn named(&self, here: bool) -> Vec<crate::control::Named> {
+        (self.roots.iter())
+            .filter_map(|root| {
+                let own =
+                    (root.runs_here_in(&root.path) == here).then(|| (None, root.path.clone()));
+                let worktrees = (root.worktrees.iter())
+                    .filter(|w| root.runs_here_in(&w.path) == here)
+                    .map(|w| (Some(w.branch.clone()), w.path.clone()));
+                let mut folders = own.into_iter().chain(worktrees);
+                let (_, path) = folders.next()?;
+                Some(crate::control::Named {
+                    name: root.label.clone(),
+                    path,
+                    worktrees: folders
+                        .map(|(branch, folder)| (branch.unwrap_or_default(), folder))
+                        .collect(),
+                })
+            })
+            .collect()
     }
 }

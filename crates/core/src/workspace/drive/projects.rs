@@ -82,9 +82,14 @@ impl WorkspaceDrive {
     pub fn open_project(&mut self, dir: PathBuf, project: Option<&Project>) -> Vec<Effect> {
         let dir = normalize_root(dir);
         let mut fx = self.told_first(project);
-        let fresh = self.local_index(&dir).is_none();
+        // A folder of a row already here selects that row.
+        if let Some(idx) = self.local_index(&dir) {
+            self.workspace.select_root(idx);
+            fx.extend(self.opened());
+            return fx;
+        }
         let idx = self.workspace.add_placed(row(None, dir, project));
-        fx.extend(self.unplaced(idx, fresh));
+        fx.extend(self.unplaced(idx, true));
         fx.extend(self.opened());
         fx
     }

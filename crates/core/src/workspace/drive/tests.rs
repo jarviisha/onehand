@@ -1093,9 +1093,10 @@ fn a_worktree_folder_opens_on_its_projects_row() {
 fn a_worktree_row_an_unplaced_folder_was_folds_into_its_project() {
     let p = with_worktree("/code/a");
     let mut drive = bound();
-    drive.open_project("/code/a".into(), Some(&p));
     drive.open_project("/code/a-x".into(), None);
     tree(&mut drive).add_session_at(spec(), 3, PathBuf::from("/code/a-x"));
+    drive.open_project("/code/a".into(), Some(&p));
+    drive.select_project(1);
     assert_eq!(drive.roots.len(), 3);
     drive.placed(None, Path::new("/code/a-x"), &p);
     assert_eq!(drive.roots.len(), 2, "folded into the project's row");
@@ -1221,4 +1222,36 @@ fn a_session_in_a_folder_no_sweep_reads_asks_for_one() {
         "{:?}",
         names(&fx)
     );
+}
+
+#[test]
+fn a_session_in_an_offloaded_worktree_watches_its_host() {
+    use crate::host::wire::HostSession;
+    let mut p = with_worktree("/code/a");
+    p.worktrees[0].offload = Some(crate::workspace::Offloaded {
+        host: HostName("vps".into()),
+        mirror: "/m".into(),
+        branch: None,
+    });
+    let mut drive = bound();
+    drive.open_project("/code/a".into(), Some(&p));
+    drive.add_session_at(Some(spec()), 5, PathBuf::from("/code/a-x"));
+    let id = HostSession("h-5".into());
+    drive.watching(5, id.clone());
+    assert_eq!(
+        drive.watched_on(5),
+        Some((HostName("vps".into()), id.clone()))
+    );
+    assert_eq!(drive.watcher(&HostName("vps".into()), &id, None), Some(5));
+}
+
+#[test]
+fn opening_a_worktree_of_a_row_adds_no_second_row() {
+    let p = with_worktree("/code/a");
+    let mut drive = bound();
+    drive.open_project("/code/a".into(), Some(&p));
+    drive.select_project(0);
+    let fx = drive.open_project("/code/a-x".into(), None);
+    assert_eq!(drive.roots.len(), 2, "{:?}", names(&fx));
+    assert_eq!(drive.active_root, 1);
 }

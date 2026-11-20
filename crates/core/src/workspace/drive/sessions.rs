@@ -56,12 +56,12 @@ impl WorkspaceDrive {
     /// The session already on host session `id` of `host`; in the folder
     /// `root` when one is named.
     pub fn watcher(&self, host: &HostName, id: &HostSession, root: Option<&Path>) -> Option<u64> {
-        self.workspace
-            .roots
-            .iter()
-            .filter(|project| project.session_host().is_some_and(|(on, _)| on == host))
-            .filter(|project| root.is_none_or(|root| project.path == root))
-            .flat_map(|project| project.sessions.iter().map(|session| session.uid))
+        // By the session's folder: a worktree is offloaded on its own.
+        (self.workspace.roots.iter())
+            .flat_map(|project| project.sessions.iter().map(move |s| (project, s)))
+            .filter(|(project, s)| project.host_of(&s.folder).is_some_and(|(on, _)| on == host))
+            .filter(|(project, s)| root.is_none_or(|root| project.path == root || s.folder == root))
+            .map(|(_, session)| session.uid)
             .find(|uid| self.watches.get(uid) == Some(id))
     }
 
@@ -77,8 +77,9 @@ impl WorkspaceDrive {
         uid: u64,
     ) -> (Result<u64, Refusal>, Vec<Effect>) {
         let open = self.workspace.active_root().and_then(|project| {
-            let (host, _) = project.session_host()?;
-            self.watcher(host, &id, Some(&project.path))
+            let folder = project.folder_on_screen();
+            let (host, _) = project.host_of(folder)?;
+            self.watcher(host, &id, Some(folder))
         });
         match open {
             Some(open) => (Ok(open), self.select(open)),
@@ -89,8 +90,9 @@ impl WorkspaceDrive {
     /// The host and host session session `uid` watches, once its host has
     /// said which.
     pub fn watched_on(&self, uid: u64) -> Option<(HostName, HostSession)> {
-        let (root, _) = self.locate(uid)?;
-        let (host, _) = self.workspace.roots.get(root)?.session_host()?;
+        let (root, session) = self.locate(uid)?;
+        let root = self.workspace.roots.get(root)?;
+        let (host, _) = root.host_of(&root.sessions[session].folder)?;
         Some((host.clone(), self.watches.get(&uid)?.clone()))
     }
 

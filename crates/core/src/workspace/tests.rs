@@ -1101,3 +1101,54 @@ fn a_rows_folders_in_use_are_its_own_its_worktrees_and_its_sessions() {
         ]
     );
 }
+
+/// `/a` here with worktrees `/a-x` offloaded to `vps` and `/a-y` here, and a
+/// session in each worktree.
+fn mixed() -> Workspace {
+    let mut p = with_worktree();
+    p.worktrees[0].offload = Some(Offloaded {
+        host: HostName("vps".into()),
+        mirror: "/m/a-x".into(),
+        branch: None,
+    });
+    let mut y = worktree("/a-y");
+    y.branch = "y".into();
+    p.worktrees.push(y);
+    let mut ws = Workspace::seeded("/elsewhere");
+    ws.roots[0] = ProjectRoot::of(&p);
+    for (uid, folder) in [(1, "/a-x"), (2, "/a-y")] {
+        ws.roots[0]
+            .sessions
+            .push(crate::agent::Session::new(spec("a"), uid, folder.into()));
+    }
+    ws
+}
+
+#[test]
+fn whether_a_folder_runs_here_is_its_own() {
+    let ws = mixed();
+    assert!(ws.runs_here_in(Path::new("/a")));
+    assert!(ws.runs_here_in(Path::new("/a-y")));
+    assert!(!ws.runs_here_in(Path::new("/a-x")), "offloaded on its own");
+    assert!(!ws.runs_here_in(Path::new("/nowhere")));
+    assert_eq!(
+        ws.sessions_by_folder(),
+        [(PathBuf::from("/a"), 0), (PathBuf::from("/a-y"), 1)],
+        "an offloaded folder's sessions occupy nothing here"
+    );
+}
+
+#[test]
+fn the_tools_reach_the_folders_that_run_here() {
+    let ws = mixed();
+    let here = ws.named(true);
+    assert_eq!(here.len(), 1);
+    assert_eq!(here[0].path, PathBuf::from("/a"));
+    assert_eq!(
+        here[0].worktrees,
+        [("y".to_string(), PathBuf::from("/a-y"))]
+    );
+    let hosted = ws.named(false);
+    assert_eq!(hosted.len(), 1);
+    assert_eq!(hosted[0].path, PathBuf::from("/a-x"));
+}
