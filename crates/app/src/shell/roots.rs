@@ -176,6 +176,10 @@ impl Shell {
         };
         let label = SharedString::from(root.label.clone());
         let path = root.path.clone();
+        // What the panels show: the folder the session on screen runs in,
+        // the row's own with none. A switch between two sessions of one
+        // project in two folders moves them as a switch of project does.
+        let folder = root.folder_on_screen().to_path_buf();
         // Read out of the tree before anything below borrows the shell mutably,
         // rather than reached for again further down.
         let session = root
@@ -201,15 +205,15 @@ impl Shell {
             None => {
                 self._host_files = None;
                 self.workbench.update(cx, |panel, cx| {
-                    panel.set_root(path.clone(), Disk::Local, cx)
+                    panel.set_root(folder.clone(), Disk::Local, cx)
                 });
             }
-            Some(host) => self.show_host_files(host.clone(), path.clone(), cx),
+            Some(host) => self.show_host_files(host.clone(), folder.clone(), cx),
         }
         self.terminal.update(cx, |panel, cx| {
-            panel.set_root(path.clone(), host.clone(), cx)
+            panel.set_root(folder.clone(), host.clone(), cx)
         });
-        self.follow_terminal_dock(&path, window, cx);
+        self.follow_terminal_dock(&folder, window, cx);
         // Whether a shell is alive is a fact about the project being arrived at,
         // not about the window, and the title bar draws it. The
         // observers that normally push it only fire when a panel notifies, and
@@ -244,7 +248,7 @@ impl Shell {
         };
         let starts = self.window.workspace.take_start(uid);
         self.chat.update(cx, |pane, cx| {
-            pane.show(uid, path.clone(), on, &spec, starts, window, cx);
+            pane.show(uid, folder.clone(), on, &spec, starts, window, cx);
         });
         // After `show`, which is what connects a session shown for the first
         // time — before it, a fresh session has no agent to have started.
@@ -382,14 +386,10 @@ impl Shell {
         &self.chat
     }
 
-    /// The project session `uid` is on, when this window holds it.
+    /// The folder session `uid` runs in, when this window holds it: its
+    /// project's own, or a worktree of it.
     pub(crate) fn session_project(&self, uid: u64) -> Option<PathBuf> {
-        self.window
-            .workspace
-            .roots
-            .iter()
-            .find(|root| root.sessions.iter().any(|s| s.uid == uid))
-            .map(|root| root.path.clone())
+        self.window.workspace.folder_of(uid)
     }
 
     /// The project on screen, its name and path, when it is on this machine.

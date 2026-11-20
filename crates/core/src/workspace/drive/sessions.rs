@@ -4,7 +4,7 @@
 use super::{Effect, Forgotten, HostName, Refusal, Signal, StartsOn, WorkspaceDrive};
 use crate::config::AgentSpec;
 use crate::host::wire::HostSession;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Why a fork goes nowhere when the project it was of left the workspace
 /// while its conversation was read.
@@ -159,6 +159,29 @@ impl WorkspaceDrive {
         let added = Self::agent(spec).and_then(|spec| {
             self.workspace
                 .add_session(spec, uid)
+                .map(|_| uid)
+                .ok_or(Refusal::NoProject)
+        });
+        let fx = match added {
+            Ok(_) => vec![Effect::Show, Effect::Changed],
+            Err(why) => vec![Effect::Signal(Signal::Refused(why))],
+        };
+        (added, fx)
+    }
+
+    /// [`Self::add_session`] on the active project, running in `folder`, one
+    /// of the project's: a worktree's, or the folder of the session beside
+    /// it.
+    #[must_use = "its effects are to be carried"]
+    pub fn add_session_at(
+        &mut self,
+        spec: Option<AgentSpec>,
+        uid: u64,
+        folder: PathBuf,
+    ) -> (Result<u64, Refusal>, Vec<Effect>) {
+        let added = Self::agent(spec).and_then(|spec| {
+            self.workspace
+                .add_session_at(spec, uid, folder)
                 .map(|_| uid)
                 .ok_or(Refusal::NoProject)
         });

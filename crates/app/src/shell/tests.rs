@@ -184,6 +184,50 @@ fn a_watched_host_session_is_the_workspaces_as_its_host_says_it(cx: &mut gpui::T
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// A project's sessions in two of its folders: showing each puts the
+/// Workbench and the terminal on that session's folder, and showing the
+/// first again moves them back.
+#[gpui::test]
+fn switching_to_a_session_in_another_folder_moves_the_panels(cx: &mut gpui::TestAppContext) {
+    use std::path::{Path, PathBuf};
+    let spec = crate::shell::rig::nowhere();
+    let dir = crate::shell::rig::folder("follow-folder");
+    let (_, shell, cx) = crate::shell::rig::shell(cx, dir.join("tasks"), vec![spec.clone()]);
+    let (home, other) = (PathBuf::from("/tmp"), dir.join("a-x"));
+    std::fs::create_dir_all(&other).unwrap();
+    cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| {
+            for (uid, folder) in [(51, home.clone()), (52, other.clone())] {
+                let (added, fx) =
+                    shell
+                        .window
+                        .workspace
+                        .add_session_at(Some(spec.clone()), uid, folder);
+                added.expect("added");
+                shell.carry_workspace(fx, window, cx);
+            }
+        })
+    });
+    let mut show = |session: usize| {
+        cx.update(|window, cx| {
+            shell.update(cx, |shell, cx| {
+                shell.select_root_session(0, session, window, cx)
+            })
+        });
+        cx.run_until_parked();
+        cx.update(|_, cx| {
+            let shell = shell.read(cx);
+            let workbench = shell.workbench.read(cx).root().map(Path::to_path_buf);
+            let terminal = shell.terminal.read(cx).root().map(Path::to_path_buf);
+            (workbench, terminal)
+        })
+    };
+    assert_eq!(show(1), (Some(other.clone()), Some(other.clone())));
+    assert_eq!(show(0), (Some(home.clone()), Some(home.clone())));
+    assert_eq!(show(1), (Some(other.clone()), Some(other)));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 /// The rail's toggle shows the rail whenever it is off screen, hidden or
 /// under a panel filling the window, and hides it only while it shows.
 #[test]

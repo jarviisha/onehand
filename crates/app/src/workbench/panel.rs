@@ -373,6 +373,12 @@ impl Workbench {
         cx.notify();
     }
 
+    /// The folder the modes are pointed at.
+    #[cfg(test)]
+    pub(crate) fn root(&self) -> Option<&std::path::Path> {
+        self.root.as_deref()
+    }
+
     /// Point every mode offered there at a project root, and the disk its
     /// files are on.
     ///

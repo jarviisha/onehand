@@ -1007,3 +1007,24 @@ fn dropping_the_sessions_of_a_folder_leaves_the_rows_others() {
     assert!(!names(&fx).contains(&"Close(1)".to_string()));
     assert_eq!(drive.locate(1), Some((0, 0)));
 }
+
+#[test]
+fn a_sweep_reads_each_folder_a_session_runs_in() {
+    let mut drive = bound();
+    tree(&mut drive).add_session_at(spec(), 2, PathBuf::from("/a-x"));
+    let (token, roots) = swept(drive.sweep(|_| true));
+    let read: Vec<_> = roots.iter().map(|r| r.path.display().to_string()).collect();
+    assert_eq!(read, ["/a", "/a-x"]);
+    let status = crate::gitstat::GitStatus {
+        branch: "feat".into(),
+        changed: 0,
+        ahead: 0,
+        behind: 0,
+        entries: Default::default(),
+    };
+    drive.handle(Input::Swept {
+        token,
+        found: vec![("/a-x".into(), status)],
+    });
+    assert_eq!(drive.git().get(Path::new("/a-x")).unwrap().branch, "feat");
+}
