@@ -213,7 +213,9 @@ fn ending_a_session_closes_it_and_shows_what_is_left() {
 #[test]
 fn a_run_project_goes_with_its_last_session() {
     let mut drive = bound();
-    let idx = drive.add_run_session(Path::new("/run"), spec(), 5).unwrap();
+    let idx = drive
+        .add_run_session(Path::new("/run"), spec(), 5, None)
+        .unwrap();
     assert!(drive.roots[idx].transient);
     assert!(!drive.left_behind(idx), "a session is still on it");
     assert!(!drive.left_behind(0), "the person's own project stays");
@@ -255,7 +257,10 @@ fn a_run_session_goes_on_an_open_project_and_selects_nothing() {
     let mut drive = bound();
     tree(&mut drive).add_root("/b");
     tree(&mut drive).select_root(0);
-    assert_eq!(drive.add_run_session(Path::new("/b"), spec(), 3), Some(1));
+    assert_eq!(
+        drive.add_run_session(Path::new("/b"), spec(), 3, None),
+        Some(1)
+    );
     assert_eq!(drive.active_root, 0);
     assert!(
         !drive.roots[1].transient,
@@ -266,7 +271,7 @@ fn a_run_session_goes_on_an_open_project_and_selects_nothing() {
 #[test]
 fn an_opened_session_that_never_opened_takes_only_its_own_project() {
     let mut drive = bound();
-    drive.add_run_session(Path::new("/w"), spec(), 3);
+    drive.add_run_session(Path::new("/w"), spec(), 3, None);
     let fx = drive.drop_opened(3, Path::new("/w"), true, false);
     assert_eq!(
         names(&fx),
@@ -1082,7 +1087,7 @@ fn a_worktree_folder_opens_on_its_projects_row() {
     assert_eq!(drive.locate(1), Some((1, 0)));
     assert_eq!(drive.folder_of(1), Some(PathBuf::from("/code/a-x")));
     assert_eq!(
-        drive.add_run_session(Path::new("/code/a-x"), spec(), 2),
+        drive.add_run_session(Path::new("/code/a-x"), spec(), 2, None),
         Some(1),
         "a run in a worktree sits on its project's row"
     );
@@ -1254,4 +1259,47 @@ fn opening_a_worktree_of_a_row_adds_no_second_row() {
     let fx = drive.open_project("/code/a-x".into(), None);
     assert_eq!(drive.roots.len(), 2, "{:?}", names(&fx));
     assert_eq!(drive.active_root, 1);
+}
+
+#[test]
+fn a_worker_on_a_project_not_in_the_window_brings_its_row_in_and_takes_it_out() {
+    let p = with_worktree("/code/a");
+    let mut drive = bound();
+    let idx = drive.add_run_session(Path::new("/code/a-x"), spec(), 1, Some(&p));
+    assert_eq!(idx, Some(1));
+    assert_eq!(
+        drive.roots[1].path,
+        PathBuf::from("/code/a"),
+        "the project's row"
+    );
+    assert!(drive.roots[1].transient);
+    assert_eq!(drive.folder_of(1), Some(PathBuf::from("/code/a-x")));
+    assert_eq!(drive.active_root, 0, "nothing on screen moves");
+    assert_eq!(drive.to_config().projects.len(), 1, "never written");
+    drive.end(1, None);
+    assert_eq!(drive.roots.len(), 1, "it leaves with its last session");
+}
+
+#[test]
+fn a_project_opened_while_only_a_worker_brought_it_is_kept() {
+    let p = at("/code/a");
+    let mut drive = bound();
+    drive.add_run_session(Path::new("/code/a"), spec(), 1, Some(&p));
+    drive.open_project("/code/a".into(), Some(&p));
+    assert!(!drive.roots[1].transient, "the person's now");
+    drive.end(1, None);
+    assert_eq!(drive.roots.len(), 2);
+}
+
+#[test]
+fn a_worker_on_a_worktree_just_recorded_joins_its_row() {
+    let mut drive = bound();
+    drive.open_project("/code/a".into(), Some(&at("/code/a")));
+    let p = with_worktree("/code/a");
+    assert_eq!(
+        drive.add_run_session(Path::new("/code/a-x"), spec(), 1, Some(&p)),
+        Some(1)
+    );
+    assert_eq!(drive.roots.len(), 2, "no second row of the project");
+    assert!(!drive.roots[1].transient);
 }

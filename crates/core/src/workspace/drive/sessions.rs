@@ -249,13 +249,30 @@ impl WorkspaceDrive {
         (added, fx)
     }
 
-    /// Add session `uid` of `spec` for a run in `dir`, selecting nothing: on
-    /// the project there when the window has it, else on a project of its own
-    /// that is never written and goes once empty. `None` when neither can be.
-    pub fn add_run_session(&mut self, dir: &Path, spec: AgentSpec, uid: u64) -> Option<usize> {
+    /// Add session `uid` of `spec` for a run or a worker in `dir`, selecting
+    /// nothing: on the row holding `dir` when the window has one, else on
+    /// `project`'s row, the project `dir` is a folder of, added for the work
+    /// alone: never written, and gone once empty. `None` when neither can be.
+    pub fn add_run_session(
+        &mut self,
+        dir: &Path,
+        spec: AgentSpec,
+        uid: u64,
+        project: Option<&crate::project::Project>,
+    ) -> Option<usize> {
+        // The project as the caller has it: a worktree it just recorded is a
+        // folder of its row before the row is looked for. Its own telling,
+        // with what goes with it, follows.
+        if let Some(project) = project {
+            for root in &mut self.workspace.roots {
+                if root.project.as_ref() == Some(&project.id) {
+                    root.told(project);
+                }
+            }
+        }
         match self.workspace.add_session_quietly(dir, spec.clone(), uid) {
             Some(idx) => Some(idx),
-            None => self.workspace.add_transient_root(dir, spec, uid),
+            None => self.workspace.add_transient_root(dir, project, spec, uid),
         }
     }
 
@@ -266,9 +283,10 @@ impl WorkspaceDrive {
         dir: &Path,
         spec: AgentSpec,
         uid: u64,
+        project: Option<&crate::project::Project>,
         starts: StartsOn,
     ) -> Option<usize> {
-        let idx = self.add_run_session(dir, spec, uid)?;
+        let idx = self.add_run_session(dir, spec, uid, project)?;
         self.starts.insert(uid, starts);
         Some(idx)
     }

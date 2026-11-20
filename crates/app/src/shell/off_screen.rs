@@ -161,9 +161,9 @@ impl Shell {
     }
 
     /// Start `spec` on `dir`, off screen, for a lead's worker or a task
-    /// started where nothing may move: on the project already open there,
-    /// or on `dir` added as a transient project. Its agent may also write
-    /// `dirs`.
+    /// started where nothing may move: on the row holding `dir` when the
+    /// window has one, else on the row of the project `dir` is a folder of,
+    /// added as a transient one. Its agent may also write `dirs`.
     ///
     /// **Nothing the user is looking at moves.** No root is selected and the
     /// pane connects the session without showing it. A root added here is
@@ -178,9 +178,10 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> Option<(u64, Entity<crate::chat::session::ChatSession>)> {
         let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
+        let project = crate::projects::of(&dir, cx);
         self.window
             .workspace
-            .add_run_session(&dir, spec.clone(), uid)?;
+            .add_run_session(&dir, spec.clone(), uid, project.as_ref())?;
         let folder = self.window.workspace.folder_of(uid)?;
         let session = self.chat.update(cx, |pane, cx| {
             pane.open_unshown(uid, folder, &spec, dirs, cx)
@@ -205,9 +206,11 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> Option<u64> {
         let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
+        let project = crate::projects::of(&dir, cx);
+        let starts = StartsOn::Resume(archive);
         self.window
             .workspace
-            .add_run_session_on(&dir, spec, uid, StartsOn::Resume(archive))?;
+            .add_run_session_on(&dir, spec, uid, project.as_ref(), starts)?;
         self.chat
             .update(cx, |pane, _| pane.hold(uid, dirs, conversation));
         self.refresh_git(cx);

@@ -14,6 +14,7 @@ use gpui::{BorrowAppContext as _, TestAppContext, VisualTestContext};
 use onehand_core::acp::{AcpEvent, AcpRequest};
 use onehand_core::config::AgentSpec;
 use onehand_core::control::{Call, Peer};
+use std::path::PathBuf;
 use std::time::Duration;
 
 fn agent() -> AgentSpec {
@@ -408,5 +409,263 @@ fn a_turn_in_another_window_counts_as_busy_on_its_folder(cx: &mut TestAppContext
     let (_, other) = crate::shell::rig::another(cx, &project);
     let busy = cx.update(|_, cx| other.update(cx, |other, cx| other.busy_here(&project, cx)));
     assert_eq!(busy, 1, "the turn in the first window counts");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Run git in `dir`, failing the test when it fails.
+fn git(dir: &std::path::Path, args: &[&str]) {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .expect("git must be installed to run this test");
+    assert!(out.status.success(), "git {args:?}: {out:?}");
+}
+
+/// A repository at `<dir>/main` holding `sub/a.txt`, one commit on `main`,
+/// and a linked worktree of it at `<dir>/wt` on branch `w`, both canonical.
+fn repo_with_worktree(dir: &std::path::Path) -> (PathBuf, PathBuf) {
+    let main = dir.join("main");
+    std::fs::create_dir_all(main.join("sub")).unwrap();
+    git(&main, &["init", "-q", "-b", "main"]);
+    git(&main, &["config", "user.email", "t@example.com"]);
+    git(&main, &["config", "user.name", "T"]);
+    std::fs::write(main.join("sub").join("a.txt"), "x").unwrap();
+    git(&main, &["add", "."]);
+    git(&main, &["commit", "-qm", "one"]);
+    let wt = dir.join("wt");
+    git(
+        &main,
+        &["worktree", "add", "-q", "-b", "w", wt.to_str().unwrap()],
+    );
+    (
+        std::fs::canonicalize(main).unwrap(),
+        std::fs::canonicalize(wt).unwrap(),
+    )
+}
+
+/// A worker opened on a linked worktree of a project's repository that the
+/// project does not record yet: the project records it as the worker's, the
+/// worker runs on the project's row in that folder, and closing it leaves the
+/// row.
+#[gpui::test]
+fn a_worker_on_a_worktree_records_it_and_runs_in_its_project(cx: &mut TestAppContext) {
+    use onehand_core::project::{MadeBy, Project, ProjectId};
+    let dir = folder("worker-worktree");
+    let (handle, shell, cx) = shell(cx, dir.join("tasks"), vec![agent()]);
+    let _lead_events = canned(cx);
+    let (lead, token) = lead(&shell, 910_600, cx);
+    let (main, wt) = repo_with_worktree(&dir);
+    let project = Project::new(ProjectId::mint(910_601), None, main.clone());
+    crate::shell::rig::keep_projects(handle, &shell, vec![project.clone()], cx);
+    let at = main.clone();
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
+    let mut worker_events = canned(cx);
+    let (peer, call) = open(wt.to_str().unwrap(), &token);
+    let (tx, mut answer) = oneshot::channel();
+    cx.update(|_, cx| cx.defer(move |cx| perform(peer, call, tx, cx)));
+    let mut worker = None;
+    until(cx, |_| {
+        worker = super::super::workers_of(lead).first().map(|w| w.uid);
+        worker.is_some()
+    });
+    let worker = worker.unwrap();
+    let _requests = up(&mut worker_events);
+    let mut said = None;
+    until(cx, |_| {
+        said = answer.try_recv().unwrap();
+        said.is_some()
+    });
+    let said = said.unwrap().expect("opened");
+    cx.update(|_, cx| {
+        let recorded = Shared::global(cx)
+            .projects
+            .get(&project.id)
+            .cloned()
+            .unwrap();
+        let worktree = recorded.worktrees.iter().find(|w| w.path == wt);
+        assert_eq!(
+            worktree.map(|w| (w.made_by, w.branch.as_str())),
+            Some((MadeBy::Worker, "w")),
+            "{recorded:?}"
+        );
+        let workspace = &shell.read(cx).workspace_window().workspace;
+        let row = workspace.local_index(&main).expect("the project's row");
+        assert_eq!(workspace.locate(worker).map(|(root, _)| root), Some(row));
+        assert_eq!(workspace.folder_of(worker), Some(wt.clone()));
+        assert!(!workspace.roots[row].transient);
+    });
+    worker_events
+        .try_send(AcpEvent::TurnEnded {
+            stop_reason: "end_turn".into(),
+        })
+        .unwrap();
+    until(cx, |cx| {
+        cx.update(|_, cx| {
+            super::session_of(worker, cx).is_some_and(|session| !session.read(cx).chat().busy)
+        })
+    });
+    let handle = said
+        .lines()
+        .find_map(|line| line.strip_prefix("session: "))
+        .unwrap()
+        .to_string();
+    let close = Call::CloseWorker { session: handle };
+    assert_eq!(
+        asked(Peer::Session(token.0.clone()), close, cx),
+        Ok("closed".into())
+    );
+    until(cx, |cx| {
+        cx.update(|_, cx| shell.read(cx).session_project(worker))
+            .is_none()
+    });
+    cx.update(|_, cx| {
+        let workspace = &shell.read(cx).workspace_window().workspace;
+        assert!(workspace.local_index(&main).is_some(), "the row stays");
+    });
+    let _ = drive().forget(lead);
+    drop(token);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A worker on a worktree of a project the window does not hold (the window
+/// holds another project, a sub-folder of the same repository) brings that
+/// project's row in for it alone, nested under its lead, and takes it out as
+/// it closes.
+#[gpui::test]
+fn a_worker_on_a_project_not_in_the_window_brings_it_in_and_takes_it_out(cx: &mut TestAppContext) {
+    use onehand_core::project::{Project, ProjectId};
+    let dir = folder("worker-elsewhere");
+    let (handle, shell, cx) = shell(cx, dir.join("tasks"), vec![agent()]);
+    let _lead_events = canned(cx);
+    let (lead, token) = lead(&shell, 910_700, cx);
+    let (main, wt) = repo_with_worktree(&dir);
+    let sub = main.join("sub");
+    let held = Project::new(ProjectId::mint(910_701), None, sub.clone());
+    let other = Project::new(ProjectId::mint(910_702), None, main.clone());
+    crate::shell::rig::keep_projects(handle, &shell, vec![held, other.clone()], cx);
+    let at = sub.clone();
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
+    let mut worker_events = canned(cx);
+    let (peer, call) = open(wt.to_str().unwrap(), &token);
+    let (tx, mut answer) = oneshot::channel();
+    cx.update(|_, cx| cx.defer(move |cx| perform(peer, call, tx, cx)));
+    let mut worker = None;
+    until(cx, |_| {
+        worker = super::super::workers_of(lead).first().map(|w| w.uid);
+        worker.is_some()
+    });
+    let worker = worker.unwrap();
+    let _requests = up(&mut worker_events);
+    let mut said = None;
+    until(cx, |_| {
+        said = answer.try_recv().unwrap();
+        said.is_some()
+    });
+    let said = said.unwrap().expect("opened");
+    cx.update(|_, cx| {
+        assert_eq!(crate::control::lead_of(worker), Some(lead), "nested");
+        let workspace = &shell.read(cx).workspace_window().workspace;
+        let row = workspace.local_index(&wt).expect("a row holding it");
+        assert_eq!(workspace.roots[row].path, main, "the project's own row");
+        assert!(workspace.roots[row].transient, "added for the worker alone");
+        assert_eq!(workspace.folder_of(worker), Some(wt.clone()));
+    });
+    worker_events
+        .try_send(AcpEvent::TurnEnded {
+            stop_reason: "end_turn".into(),
+        })
+        .unwrap();
+    until(cx, |cx| {
+        cx.update(|_, cx| {
+            super::session_of(worker, cx).is_some_and(|session| !session.read(cx).chat().busy)
+        })
+    });
+    let handle = said
+        .lines()
+        .find_map(|line| line.strip_prefix("session: "))
+        .unwrap()
+        .to_string();
+    let close = Call::CloseWorker { session: handle };
+    assert_eq!(
+        asked(Peer::Session(token.0.clone()), close, cx),
+        Ok("closed".into())
+    );
+    until(cx, |cx| {
+        cx.update(|_, cx| shell.read(cx).session_project(worker))
+            .is_none()
+    });
+    cx.update(|_, cx| {
+        let workspace = &shell.read(cx).workspace_window().workspace;
+        assert!(
+            workspace.local_index(&main).is_none(),
+            "gone with its worker"
+        );
+        assert!(workspace.local_index(&sub).is_some(), "the person's stays");
+    });
+    let _ = drive().forget(lead);
+    drop(token);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// An open whose window closed before its start records nothing in the
+/// project store: a failure leaves nothing behind.
+#[gpui::test]
+fn an_open_that_cannot_start_records_no_worktree(cx: &mut TestAppContext) {
+    use onehand_core::project::{Project, ProjectId};
+    let dir = folder("worker-no-record");
+    let (asked_window, asked, cx) = shell(cx, dir.join("tasks"), vec![agent()]);
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let (_, lead_shell) = crate::shell::rig::another(cx, &home);
+    let _lead_events = canned(cx);
+    let (lead, token) = lead(&lead_shell, 910_800, cx);
+    let (main, wt) = repo_with_worktree(&dir);
+    let project = Project::new(ProjectId::mint(910_801), None, main.clone());
+    crate::shell::rig::keep_projects(asked_window, &asked, vec![project.clone()], cx);
+    let projects = vec![onehand_core::control::Named::new("main", main.clone())];
+    let (tx, mut answer) = oneshot::channel();
+    cx.update(|window, cx| {
+        let mut answer = Some(tx);
+        let open = onehand_core::control::drive::Open {
+            lead,
+            project: wt.display().to_string(),
+            agent: "a".into(),
+            prompt: Some("go".into()),
+            dirs: Vec::new(),
+            request: "r-no-record".into(),
+            turn: Some(1),
+            model: None,
+            name: None,
+            back: None,
+        };
+        let begun = super::open(
+            open,
+            asked_window,
+            asked.clone(),
+            &projects,
+            &mut answer,
+            cx,
+        );
+        assert_eq!(begun, Ok(String::new()), "answered later");
+        window.remove_window();
+    });
+    drop(asked);
+    let mut said = None;
+    until(cx, |_| {
+        said = answer.try_recv().unwrap();
+        said.is_some()
+    });
+    assert!(said.unwrap().is_err());
+    let recorded = cx.cx.update(|cx| {
+        Shared::global(cx)
+            .projects
+            .get(&project.id)
+            .map(|p| p.worktrees.len())
+    });
+    assert_eq!(recorded, Some(0), "nothing recorded");
+    let _ = drive().forget(lead);
+    drop(token);
     let _ = std::fs::remove_dir_all(dir);
 }

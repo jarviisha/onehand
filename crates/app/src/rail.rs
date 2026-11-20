@@ -184,8 +184,8 @@ impl List {
             .collect();
         let waiting = model::attention_count(&items);
         model::nest_workers(&mut items);
-        // A worktree holding only workers drawn under their lead is theirs,
-        // not the person's.
+        // A project row brought in for workers alone, all drawn under their
+        // lead, is theirs, not the person's.
         let emptied = model::emptied(&items);
         let order: Vec<usize> = workspace
             .display_order()

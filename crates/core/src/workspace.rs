@@ -599,15 +599,19 @@ impl Workspace {
         }
     }
 
-    /// Add `path` as a transient root holding one session, **without selecting
-    /// it** — the root a lead's worker works in, which must not move what the
-    /// user is looking at. Returns its index.
+    /// Add a transient row holding one session, in `path`, **without
+    /// selecting it**: the row of `project`, the project `path` is a folder
+    /// of, added for a lead's worker or a run alone, which must not move what
+    /// the person is looking at; a row of `path` itself when no project is
+    /// known for it. Returns its index.
     ///
-    /// `None` when `path` is already a project: marking a root the user added as
-    /// transient would quietly drop it from their workspace file.
+    /// `None` when `path` is a folder of a row already: marking a row the
+    /// person added as transient would quietly drop it from their workspace
+    /// file.
     pub(crate) fn add_transient_root(
         &mut self,
         path: impl Into<PathBuf>,
+        project: Option<&crate::project::Project>,
         spec: AgentSpec,
         uid: u64,
     ) -> Option<usize> {
@@ -619,10 +623,12 @@ impl Workspace {
         {
             return None;
         }
-        let mut root = ProjectRoot::new(path);
+        let mut root = match project.filter(|p| p.folder(None, &path).is_some()) {
+            Some(project) => ProjectRoot::of(project),
+            None => ProjectRoot::new(path.clone()),
+        };
         root.transient = true;
-        let folder = root.path.clone();
-        root.sessions.push(Session::new(spec, uid, folder));
+        root.sessions.push(Session::new(spec, uid, path));
         self.roots.push(root);
         Some(self.roots.len() - 1)
     }

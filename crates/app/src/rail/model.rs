@@ -262,7 +262,7 @@ pub(super) fn nest_workers(items: &mut [Item]) {
 }
 
 /// The projects that have sessions and all of them drawn under a lead
-/// elsewhere: a worktree holding only workers.
+/// elsewhere: a project row brought in for workers alone.
 pub(super) fn emptied(items: &[Item]) -> Vec<usize> {
     let mut roots: Vec<usize> = items
         .iter()
