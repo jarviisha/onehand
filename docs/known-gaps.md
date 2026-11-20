@@ -31,6 +31,9 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
 - **A project onehand keeps is never deleted.** Removing it from a workspace leaves its file in
   `projects/` in the config directory, so adding its folder again finds its name and the rest
   back; nothing yet deletes a project, and its file stays when no workspace holds it.
+- **A worker on a folder no project holds makes a project of it.** The folder is placed as any
+  folder added is, and the project it becomes stays in `projects/` once the worker is gone; nothing
+  marks it as made for a worker.
 - **A project folder moved or renamed on disk is not followed.** The project is kept by an id, not
   by its folder, but nothing yet points it at the folder's new place: the moved folder comes back
   as a project of its own.

@@ -20,7 +20,9 @@ _Avoid_: root, home
 
 **Worktree**:
 A further checkout of a project folder's repository, recorded in the project with its branch and
-what cut it: a split, a run, a worker, or git listing one onehand did not cut.
+what cut it: a split, a run, a worker, or git listing one onehand did not cut. One the project
+records that git no longer lists is *missing*; one git lists that no project records is offered to
+the project whose folder it holds.
 _Avoid_: clone, copy
 
 **Session**:
