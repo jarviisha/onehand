@@ -190,6 +190,9 @@ offered `open_worker`, and `open_session` takes none of its further arguments.
   other reason than being gone, or than the system refusing it to its own user (a process it may
   not trace, such as `systemd --user` or `ssh-agent`, which an agent never is), refuses it as
   unknown, as does a process table that could not be read at all. Nothing is opened either way.
+- An open that can no longer start (its window closed, its agent unknown) records nothing of its
+  folder. One whose agent fails once started has already recorded its worktree in its project: the
+  checkout is on disk, and the project lists it as the worker's.
 - A worker whose window closed holds its folder no longer: the next open lets it go.
 - A worker the person closes takes its project's row with it when that row was added for it and
   holds nothing else; the worktree stays on disk, recorded in its project.
