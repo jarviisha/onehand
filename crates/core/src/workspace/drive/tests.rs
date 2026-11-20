@@ -1321,3 +1321,26 @@ fn forgetting_a_missing_worktree_keeps_its_sessions() {
     assert!(drive.roots[1].worktrees.is_empty());
     assert_eq!(drive.folder_of(1), Some(PathBuf::from("/code/a-x")));
 }
+
+#[test]
+fn a_worktree_the_record_drops_is_let_go_of_unless_a_session_runs_there() {
+    let mut p = with_worktree("/code/a");
+    p.worktrees.push(crate::project::Worktree {
+        path: "/code/a-y".into(),
+        branch: "y".into(),
+        from: None,
+        made_by: crate::project::MadeBy::Split,
+        offload: None,
+    });
+    let mut drive = bound();
+    drive.open_project("/code/a".into(), Some(&p));
+    drive.add_session_at(Some(spec()), 1, PathBuf::from("/code/a-y"));
+    p.worktrees.clear();
+    let fx = names(&drive.told(&p));
+    assert!(fx.contains(&"ForgotHere(/code/a-x)".to_string()), "{fx:?}");
+    assert!(fx.contains(&"Forgot(/code/a-x)".to_string()));
+    assert!(
+        !fx.iter().any(|n| n.contains("/code/a-y")),
+        "a session runs there"
+    );
+}

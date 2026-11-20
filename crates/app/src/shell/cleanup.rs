@@ -136,13 +136,11 @@ impl Shell {
                 let sessions = (root.sessions.iter())
                     .filter(|session| inside.contains(&session.folder))
                     .count();
-                let mut what = Vec::new();
-                if sessions > 0 {
-                    what.push(count(sessions, "session"));
-                }
-                if terminals > 0 {
-                    what.push(count(terminals, "terminal"));
-                }
+                let workbench = self.workbench.read(cx);
+                let unsaved: usize = (inside.iter())
+                    .map(|path| workbench.unsaved_in(path, false, cx))
+                    .sum();
+                let what = open_in(sessions, terminals, unsaved);
                 // A worktree the row only records, nothing open in it, is no
                 // project open on the folder: the row's own folder inside is.
                 if what.is_empty() && !root.path.starts_with(folder) {
@@ -159,10 +157,37 @@ impl Shell {
     }
 }
 
+/// What a project has open in a folder, as said: its sessions, its shells
+/// and the Workbench's unsaved files there; nothing when none.
+fn open_in(sessions: usize, terminals: usize, unsaved: usize) -> Vec<String> {
+    [
+        (sessions, "session"),
+        (terminals, "terminal"),
+        (unsaved, "unsaved file"),
+    ]
+    .into_iter()
+    .filter(|(n, _)| *n > 0)
+    .map(|(n, thing)| count(n, thing))
+    .collect()
+}
+
 /// `n` of `thing`, as a person counts them.
 fn count(n: usize, thing: &str) -> String {
     match n {
+        1 if thing.starts_with(['a', 'e', 'i', 'o', 'u']) => format!("an {thing}"),
         1 => format!("a {thing}"),
         n => format!("{n} {thing}s"),
+    }
+}
+
+#[cfg(test)]
+mod users_tests {
+    use super::open_in;
+
+    #[test]
+    fn unsaved_files_use_a_folder_as_sessions_and_shells_do() {
+        assert_eq!(open_in(0, 0, 0), Vec::<String>::new());
+        assert_eq!(open_in(1, 0, 3), ["a session", "3 unsaved files"]);
+        assert_eq!(open_in(0, 2, 1), ["2 terminals", "an unsaved file"]);
     }
 }

@@ -24,6 +24,9 @@ pub struct OwnFacts {
     pub users: Vec<String>,
     /// The other projects recording a folder inside this checkout, by name.
     pub shared_with: Vec<String>,
+    /// The tasks whose worktree this is, by title: removed through the task,
+    /// as its pull request merged, never from here.
+    pub tasks: Vec<String>,
 }
 
 /// Whether the worktree `facts` describe may be removed, and why not.
@@ -34,6 +37,10 @@ pub fn judge_own(facts: &OwnFacts) -> Judged {
         (facts.shared_with.iter())
             .map(|name| format!("The project {name} has a folder in this checkout.")),
     );
+    refused.extend(
+        (facts.tasks.iter())
+            .map(|title| format!("Task “{title}” keeps this worktree: remove it from the task.")),
+    );
     match refused.is_empty() {
         true => Judged::Remove {
             branch: facts.branch.clone(),
@@ -43,9 +50,14 @@ pub fn judge_own(facts: &OwnFacts) -> Judged {
     }
 }
 
-/// What git says of the worktree at `folder`; its users and the projects
-/// sharing it are the caller's. Blocking.
-pub fn own_facts_blocking(folder: &Path, users: Vec<String>, shared_with: Vec<String>) -> OwnFacts {
+/// What git says of the worktree at `folder`; its users, the projects
+/// sharing it and the tasks keeping it are the caller's. Blocking.
+pub fn own_facts_blocking(
+    folder: &Path,
+    users: Vec<String>,
+    shared_with: Vec<String>,
+    tasks: Vec<String>,
+) -> OwnFacts {
     OwnFacts {
         folder: folder.to_path_buf(),
         branch: crate::worktree::current_branch_blocking(folder).ok(),
@@ -53,6 +65,7 @@ pub fn own_facts_blocking(folder: &Path, users: Vec<String>, shared_with: Vec<St
             .map(|out| out.lines().map(str::to_string).collect()),
         users,
         shared_with,
+        tasks,
     }
 }
 

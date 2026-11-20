@@ -46,15 +46,48 @@ fn a_git_list_that_fails_keeps_the_recorded_rows() {
 }
 
 #[test]
+fn a_row_the_record_no_longer_holds_is_not_drawn() {
+    let mut p = project();
+    let read = Ok(vec![
+        WorktreeRow::Recorded {
+            path: "/r-gone".into(),
+            on_disk: false,
+        },
+        WorktreeRow::Recorded {
+            path: "/r-x".into(),
+            on_disk: true,
+        },
+    ]);
+    // `/r-gone` forgotten since git was read.
+    p.worktrees.remove(1);
+    let (lines, _) = lines(&p, Some(&read), &HashMap::new());
+    assert_eq!(kinds(&lines), [("x", Kind::Recorded { sessions: 0 })]);
+}
+
+#[test]
+fn a_folder_outside_git_with_no_worktrees_draws_no_box() {
+    let mut p = project();
+    let failed: Read = Err("not a git repository".to_string());
+    assert!(shows_box(&p, Some(&failed)));
+    p.worktrees.clear();
+    assert!(
+        !shows_box(&p, Some(&failed)),
+        "nothing to say but a failure"
+    );
+    assert!(shows_box(&p, Some(&Ok(Vec::new()))));
+    assert!(shows_box(&p, None));
+}
+
+#[test]
 fn the_worktrees_box_lists_recorded_missing_and_offered() {
     let p = project();
     let read = Ok(vec![
         WorktreeRow::Recorded {
-            at: 0,
+            path: "/r-x".into(),
             on_disk: true,
         },
         WorktreeRow::Recorded {
-            at: 1,
+            path: "/r-gone".into(),
             on_disk: false,
         },
         WorktreeRow::Offered(Listed {

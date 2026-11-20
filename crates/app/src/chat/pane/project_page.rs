@@ -86,6 +86,9 @@ pub(super) struct EmptyProject {
     /// The worktrees the project records, as the shell last told them: a
     /// change is what reads git's list again. `None` until told.
     pub(super) recorded: Option<Vec<PathBuf>>,
+    /// The newest read of git's worktrees asked, so an older answer landing
+    /// late is dropped.
+    pub(super) worktrees_asked: u64,
     /// One focus handle per past conversation the page lists, by place: each
     /// row is a tab stop, so the keyboard reaches its *Delete…* as the pointer
     /// does.
@@ -604,6 +607,7 @@ impl ChatPane {
             .children((project.host.is_none() || project.mirror.is_some()).then_some(history))
             .children(
                 kept.as_ref()
+                    .filter(|kept| worktrees_box::shows_box(kept, project.worktrees.as_ref()))
                     .map(|kept| worktrees_box::worktrees_box(project, kept, cx)),
             )
             .children(

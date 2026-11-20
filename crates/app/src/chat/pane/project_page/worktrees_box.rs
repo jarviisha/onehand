@@ -82,8 +82,10 @@ pub(super) fn lines(
     let lines = rows
         .iter()
         .filter_map(|row| match row {
-            WorktreeRow::Recorded { at, on_disk } => {
-                let worktree = project.worktrees.get(*at)?;
+            // One the record no longer holds, git read before it changed,
+            // is not drawn.
+            WorktreeRow::Recorded { path, on_disk } => {
+                let worktree = project.worktrees.iter().find(|w| w.path == *path)?;
                 let kind = match on_disk {
                     true => Kind::Recorded {
                         sessions: sessions.get(&worktree.path).copied().unwrap_or(0),
@@ -104,6 +106,12 @@ pub(super) fn lines(
         })
         .collect();
     (lines, note)
+}
+
+/// Whether the page draws the box: not for a folder outside git that
+/// records no worktree, which has nothing to say but git's refusal.
+pub(super) fn shows_box(project: &Project, read: Option<&Read>) -> bool {
+    !matches!(read, Some(Err(_))) || !project.worktrees.is_empty()
 }
 
 /// What a line says under its branch: its folder, then what runs in it or
@@ -296,6 +304,12 @@ impl ChatPane {
             return;
         };
         let others = (*crate::state::Shared::global(cx).projects).clone();
+        // Only the newest read is kept: two can be under way, and land in
+        // any order.
+        let asked = self.empty.as_mut().map_or(0, |page| {
+            page.worktrees_asked += 1;
+            page.worktrees_asked
+        });
         cx.spawn(async move |pane, cx| {
             let at = path.clone();
             let read = cx
@@ -313,7 +327,9 @@ impl ChatPane {
                 .await;
             let _ = pane.update(cx, |pane: &mut Self, cx| {
                 // An answer about a project the page has left is not its own.
-                if let Some(page) = pane.empty.as_mut().filter(|page| page.path == path) {
+                if let Some(page) = (pane.empty.as_mut())
+                    .filter(|page| page.path == path && page.worktrees_asked == asked)
+                {
                     page.worktrees = Some(read);
                     cx.notify();
                 }

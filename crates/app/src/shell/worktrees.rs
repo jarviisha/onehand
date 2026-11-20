@@ -11,7 +11,6 @@
 use super::{Confirm, Shell};
 use crate::chat::pane::WorktreeAct;
 use gpui::{Context, Window};
-use gpui_component::WindowExt as _;
 use onehand_core::project::{MadeBy, Worktree};
 use onehand_core::worktree::removal::{self, Judged, OwnFacts};
 use std::path::{Path, PathBuf};
@@ -118,42 +117,43 @@ impl Shell {
                     async move { removal::top_blocking(&folder) }
                 })
                 .await;
-            let Ok((users, processes, shared_with)) = shell.update(cx, |shell, cx| {
+            let Ok((users, processes, shared_with, tasks)) = shell.update(cx, |shell, cx| {
                 let (users, processes) = shell.folder_users(&top, cx);
-                // Another project recording a folder inside this checkout.
-                let shared_with: Vec<String> = (crate::state::Shared::global(cx).projects.iter())
-                    .filter(|project| Some(&project.id) != own.as_ref() && project.host.is_none())
-                    .filter(|project| {
-                        std::iter::once(&project.path)
-                            .chain(project.worktrees.iter().map(|w| &w.path))
-                            .any(|path| path.starts_with(&top))
-                    })
-                    .map(|project| project.name.clone())
-                    .collect();
-                (users, processes, shared_with)
+                // Another project with a folder inside this checkout, and the
+                // tasks whose worktree it is.
+                let shared_with =
+                    (crate::state::Shared::global(cx).projects).sharing(&top, own.as_ref());
+                let tasks = crate::task::each(cx, |task, _| {
+                    task.setup()
+                        .dir
+                        .starts_with(&top)
+                        .then(|| task.brief().title.clone())
+                });
+                (users, processes, shared_with, tasks)
             }) else {
                 return;
             };
-            let judging =
-                cx.background_executor()
-                    .spawn({
-                        let (top, root) = (top.clone(), root.clone());
-                        async move {
-                            let mut users = users;
-                            users.extend(removal::working_in_blocking(&top, &processes));
-                            let facts = removal::own_facts_blocking(&top, users, shared_with);
-                            let judged = removal::judge_own(&facts);
-                            let merged = facts.branch.as_deref().is_some_and(|branch| {
-                                removal::branch_merged_blocking(&root, branch)
-                            });
-                            Judging {
-                                facts,
-                                judged,
-                                merged,
-                            }
+            let judging = cx
+                .background_executor()
+                .spawn({
+                    let (top, root) = (top.clone(), root.clone());
+                    async move {
+                        let mut users = users;
+                        users.extend(removal::working_in_blocking(&top, &processes));
+                        let facts = removal::own_facts_blocking(&top, users, shared_with, tasks);
+                        let judged = removal::judge_own(&facts);
+                        let merged = facts
+                            .branch
+                            .as_deref()
+                            .is_some_and(|branch| removal::branch_merged_blocking(&root, branch));
+                        Judging {
+                            facts,
+                            judged,
+                            merged,
                         }
-                    })
-                    .await;
+                    }
+                })
+                .await;
             let _ = shell.update_in(cx, |shell, window, cx| {
                 then(shell, folder, judging, window, cx)
             });
@@ -209,19 +209,17 @@ impl Shell {
             return;
         };
         self.judge_worktree(folder, window, cx, move |_, folder, judging, window, cx| {
+            use onehand_core::project::drive::Removal;
             let branch = match judging.judged {
                 Judged::Remove { branch, .. } => branch,
                 Judged::Refused(why) => {
-                    window.push_notification(
-                        crate::toast::warning(format!("The worktree stays: {}", why.join(" "))),
-                        cx,
-                    );
-                    return;
+                    let refused = Removal::Refused(why);
+                    return crate::projects::worktree_removal(&root, &folder, refused, window, cx);
                 }
             };
             let top = judging.facts.folder;
             cx.spawn_in(window, async move |_, cx| {
-                let removed = cx
+                let result = cx
                     .background_executor()
                     .spawn({
                         let (root, top, branch) = (root.clone(), top.clone(), branch.clone());
@@ -229,21 +227,12 @@ impl Shell {
                     })
                     .await;
                 let _ = cx.update(|window, cx| {
-                    let toast = match removed {
-                        Ok(removed) => {
-                            crate::projects::forget_worktree(&root, &folder, cx);
-                            let name = branch.clone().unwrap_or_else(|| top.display().to_string());
-                            match (removed.branch_kept, branch) {
-                                (Some(_), Some(branch)) => crate::toast::success(format!(
-                                    "Removed {}; its branch {branch} is kept: it is not merged",
-                                    top.display()
-                                )),
-                                _ => crate::toast::success(format!("Removed {name}")),
-                            }
-                        }
-                        Err(why) => crate::toast::failed("Removing the worktree", why),
+                    let done = Removal::Done {
+                        top,
+                        branch,
+                        result,
                     };
-                    window.push_notification(toast, cx);
+                    crate::projects::worktree_removal(&root, &folder, done, window, cx);
                 });
             })
             .detach();

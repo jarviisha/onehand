@@ -8,13 +8,14 @@ fn facts(users: Vec<String>, shared_with: Vec<String>) -> OwnFacts {
         uncommitted: Ok(Vec::new()),
         users,
         shared_with,
+        tasks: Vec::new(),
     }
 }
 
 #[test]
 fn a_clean_unused_worktree_is_removed() {
     let (main, wt) = repo_with_worktree("own-clean");
-    let facts = own_facts_blocking(&wt, Vec::new(), Vec::new());
+    let facts = own_facts_blocking(&wt, Vec::new(), Vec::new(), Vec::new());
     assert_eq!(facts.branch.as_deref(), Some("w"));
     assert!(matches!(
         judge_own(&facts),
@@ -65,4 +66,17 @@ fn a_merged_branch_goes_with_its_worktree() {
     assert_eq!(removed.branch_kept, None);
     assert!(!crate::worktree::branch_exists_blocking(&main, "w"));
     let _ = std::fs::remove_dir_all(main.parent().unwrap());
+}
+
+#[test]
+fn a_worktree_a_task_keeps_is_not_removed() {
+    let mut kept = facts(Vec::new(), Vec::new());
+    kept.tasks = vec!["Fix the login".into()];
+    let Judged::Refused(why) = judge_own(&kept) else {
+        panic!("refused");
+    };
+    assert_eq!(
+        why,
+        ["Task “Fix the login” keeps this worktree: remove it from the task."]
+    );
 }

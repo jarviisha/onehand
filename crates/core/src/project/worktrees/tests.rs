@@ -35,11 +35,11 @@ fn a_recorded_worktree_git_no_longer_lists_is_missing() {
         rows(&p, Some(&git), &Projects::default(), there),
         [
             WorktreeRow::Recorded {
-                at: 0,
+                path: "/r-x".into(),
                 on_disk: true
             },
             WorktreeRow::Recorded {
-                at: 1,
+                path: "/r-gone".into(),
                 on_disk: false
             },
         ]
@@ -48,11 +48,11 @@ fn a_recorded_worktree_git_no_longer_lists_is_missing() {
         rows(&p, None, &Projects::default(), there),
         [
             WorktreeRow::Recorded {
-                at: 0,
+                path: "/r-x".into(),
                 on_disk: true
             },
             WorktreeRow::Recorded {
-                at: 1,
+                path: "/r-gone".into(),
                 on_disk: true
             },
         ],
@@ -105,4 +105,20 @@ fn a_shared_repository_offers_each_project_its_own() {
         .is_empty(),
         "a checkout without the project's sub-folder is not offered"
     );
+}
+
+#[test]
+fn projects_sharing_a_checkout_are_named() {
+    let front = Project::new(ProjectId::mint(1), None, "/r/front".into());
+    let mut back = Project::new(ProjectId::mint(2), None, "/r/back".into());
+    back.name = "Back".into();
+    back.worktrees.push(recorded("/r-y/back"));
+    let projects = Projects::from_iter([front.clone(), back]);
+    assert_eq!(
+        projects.sharing(Path::new("/r-y"), Some(&front.id)),
+        ["Back"]
+    );
+    assert!(projects
+        .sharing(Path::new("/r-z"), Some(&front.id))
+        .is_empty());
 }

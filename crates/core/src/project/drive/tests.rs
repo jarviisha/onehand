@@ -1,3 +1,4 @@
+use super::Removal;
 use super::*;
 use crate::project::{Folder, MadeBy, Placement, Project, ProjectId, Projects, Worktree};
 use crate::workspace::{BuildHost, HostName, Offloaded};
@@ -143,7 +144,14 @@ fn a_failed_write_puts_the_name_back_and_says_so_once() {
             Effect::Signal(Signal::SaveFailed { name, why, .. }) => {
                 Some((name.as_str(), why.as_str()))
             }
-            Effect::Write(_) | Effect::Arm { .. } | Effect::Changed(_) => None,
+            Effect::Signal(
+                Signal::WorktreeRemoved { .. }
+                | Signal::WorktreeStays(_)
+                | Signal::WorktreeNotRemoved(_),
+            )
+            | Effect::Write(_)
+            | Effect::Arm { .. }
+            | Effect::Changed(_) => None,
         })
         .collect();
     assert_eq!(said, vec![("a", "disk full")]);
@@ -359,4 +367,50 @@ fn a_worktree_parent_is_set_and_cleared_and_written() {
     );
     let fx = d.set_worktree_parent(&p.id, None);
     assert_eq!(write_of(fx).project.worktree_parent, None);
+}
+
+#[test]
+fn a_removed_worktree_is_forgotten_and_said() {
+    let (mut d, p) = drive();
+    let _ = d.record_worktree(&p.id, split("/code/a-x"));
+    let fx = d.worktree_removal(
+        &p.id,
+        Path::new("/code/a-x"),
+        Removal::Done {
+            top: "/code/a-x".into(),
+            branch: Some("x".into()),
+            result: Ok(crate::worktree::removal::Removed {
+                branch_kept: Some("not fully merged".into()),
+            }),
+        },
+    );
+    assert!(d.get(&p.id).unwrap().worktrees.is_empty(), "forgotten");
+    assert!(fx.iter().any(|e| matches!(e,
+        Effect::Signal(Signal::WorktreeRemoved { name, kept: Some(why) })
+            if name == "x" && why == "not fully merged")));
+}
+
+#[test]
+fn a_refused_or_failed_removal_keeps_the_record() {
+    let (mut d, p) = drive();
+    let _ = d.record_worktree(&p.id, split("/code/a-x"));
+    let fx = d.worktree_removal(
+        &p.id,
+        Path::new("/code/a-x"),
+        Removal::Refused(vec!["Uncommitted or untracked files: a.txt.".into()]),
+    );
+    assert!(matches!(&fx[..], [Effect::Signal(Signal::WorktreeStays(why))] if why.len() == 1));
+    let fx = d.worktree_removal(
+        &p.id,
+        Path::new("/code/a-x"),
+        Removal::Done {
+            top: "/code/a-x".into(),
+            branch: None,
+            result: Err("locked".into()),
+        },
+    );
+    assert!(
+        matches!(&fx[..], [Effect::Signal(Signal::WorktreeNotRemoved(why))] if why == "locked")
+    );
+    assert_eq!(d.get(&p.id).unwrap().worktrees.len(), 1);
 }

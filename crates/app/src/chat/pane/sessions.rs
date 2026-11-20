@@ -604,6 +604,7 @@ impl ChatPane {
                 worktrees: None,
                 worktree_sessions: Default::default(),
                 recorded: None,
+                worktrees_asked: 0,
                 rows: super::project_page::home_rows(cx),
             }
         });

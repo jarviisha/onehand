@@ -71,6 +71,25 @@ pub enum Signal {
         name: String,
         why: String,
     },
+    /// The worktree called `name` (its branch, else its folder) was removed,
+    /// its branch `kept` for git's reason when git kept it.
+    WorktreeRemoved { name: String, kept: Option<String> },
+    /// Judged again, the worktree stays, for each reason.
+    WorktreeStays(Vec<String>),
+    /// git did not remove the worktree: why.
+    WorktreeNotRemoved(String),
+}
+
+/// How removing a worktree that is not a task's came out.
+pub enum Removal {
+    /// Judged again on the answer, it was refused: why.
+    Refused(Vec<String>),
+    /// git was asked to remove the checkout at `top`, then `branch`.
+    Done {
+        top: PathBuf,
+        branch: Option<String>,
+        result: Result<crate::worktree::removal::Removed, String>,
+    },
 }
 
 /// What the front end carries out.
@@ -223,6 +242,35 @@ impl ProjectsDrive {
             Value::Worktrees(after),
             false,
         )
+    }
+
+    /// Removing project `id`'s worktree at `folder` came out as `removal`: a
+    /// checkout git removed is forgotten, written now; each outcome is said.
+    #[must_use = "its effects are to be carried"]
+    pub fn worktree_removal(
+        &mut self,
+        id: &ProjectId,
+        folder: &Path,
+        removal: Removal,
+    ) -> Vec<Effect> {
+        match removal {
+            Removal::Refused(why) => vec![Effect::Signal(Signal::WorktreeStays(why))],
+            Removal::Done {
+                result: Err(why), ..
+            } => vec![Effect::Signal(Signal::WorktreeNotRemoved(why))],
+            Removal::Done {
+                top,
+                branch,
+                result: Ok(removed),
+            } => {
+                let mut fx = self.forget_worktree(id, folder);
+                fx.push(Effect::Signal(Signal::WorktreeRemoved {
+                    name: branch.unwrap_or_else(|| top.display().to_string()),
+                    kept: removed.branch_kept,
+                }));
+                fx
+            }
+        }
     }
 
     /// Put project `id`'s new worktrees in `parent`, or beside the repository

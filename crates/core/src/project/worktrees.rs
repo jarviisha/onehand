@@ -11,9 +11,10 @@ use std::path::{Path, PathBuf};
 /// One row of a project's worktrees.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorktreeRow {
-    /// The worktree at this index of [`Project::worktrees`]; `on_disk` while
-    /// git lists its checkout.
-    Recorded { at: usize, on_disk: bool },
+    /// The recorded worktree at this folder, by path rather than index, so a
+    /// row read before the record changed never names another; `on_disk`
+    /// while git lists its checkout.
+    Recorded { path: PathBuf, on_disk: bool },
     /// A checkout git lists that no project records, as the folder of it the
     /// project would run in.
     Offered(Listed),
@@ -32,9 +33,9 @@ pub fn rows(
     exists: impl Fn(&Path) -> bool,
 ) -> Vec<WorktreeRow> {
     let recorded = |on_disk: &dyn Fn(&Path) -> bool| {
-        (project.worktrees.iter().enumerate())
-            .map(|(at, worktree)| WorktreeRow::Recorded {
-                at,
+        (project.worktrees.iter())
+            .map(|worktree| WorktreeRow::Recorded {
+                path: worktree.path.clone(),
                 on_disk: on_disk(&worktree.path),
             })
             .collect::<Vec<_>>()

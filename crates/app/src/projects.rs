@@ -66,6 +66,12 @@ pub(crate) fn carry(fx: Vec<Effect>, cx: &mut App) {
                     window.push_notification(crate::toast::failed(&what, why.clone()), cx);
                 });
             }
+            // Said where the removal was asked, by `worktree_removal`.
+            Effect::Signal(
+                Signal::WorktreeRemoved { .. }
+                | Signal::WorktreeStays(_)
+                | Signal::WorktreeNotRemoved(_),
+            ) => {}
         }
     }
 }
@@ -271,6 +277,51 @@ pub(crate) fn forget_worktree(of: &Path, folder: &Path, cx: &mut App) {
     };
     let fx =
         cx.update_global::<Shared, _>(|shared, _| shared.projects.forget_worktree(&id, folder));
+    carry(fx, cx);
+}
+
+/// Removing the worktree at `folder` of the project holding `of` came out as
+/// `removal`: the drive's answer carried, and what it says toasted in
+/// `window`, where the removal was asked.
+pub(crate) fn worktree_removal(
+    of: &Path,
+    folder: &Path,
+    removal: onehand_core::project::drive::Removal,
+    window: &mut gpui::Window,
+    cx: &mut App,
+) {
+    let Some(id) = Shared::global(cx)
+        .projects
+        .find(None, of)
+        .map(|(p, _)| p.id.clone())
+    else {
+        return;
+    };
+    let fx = cx.update_global::<Shared, _>(|shared, _| {
+        shared.projects.worktree_removal(&id, folder, removal)
+    });
+    for effect in &fx {
+        let toast = match effect {
+            Effect::Signal(Signal::WorktreeRemoved { name, kept: None }) => {
+                crate::toast::success(format!("Removed {name}"))
+            }
+            Effect::Signal(Signal::WorktreeRemoved {
+                name,
+                kept: Some(why),
+            }) => crate::toast::success(format!("Removed {name}; its branch is kept: {why}")),
+            Effect::Signal(Signal::WorktreeStays(why)) => {
+                crate::toast::warning(format!("The worktree stays. {}", why.join(" ")))
+            }
+            Effect::Signal(Signal::WorktreeNotRemoved(why)) => {
+                crate::toast::failed("Removing the worktree", why.clone())
+            }
+            Effect::Signal(Signal::SaveFailed { .. })
+            | Effect::Write(_)
+            | Effect::Arm { .. }
+            | Effect::Changed(_) => continue,
+        };
+        window.push_notification(toast, cx);
+    }
     carry(fx, cx);
 }
 
