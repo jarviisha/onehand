@@ -96,9 +96,12 @@ impl ProjectRoot {
     pub fn hosts_used(&self) -> Vec<&HostName> {
         let mut used = self.session_hosts();
         if self.session_host().is_none() {
-            used.extend(self.build_hosts().iter().map(|entry| &entry.host));
+            for entry in self.build_hosts() {
+                if !used.contains(&&entry.host) {
+                    used.push(&entry.host);
+                }
+            }
         }
-        used.dedup();
         used
     }
 

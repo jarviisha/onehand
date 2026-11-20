@@ -65,7 +65,7 @@ impl Shell {
         self.tell_removing(cx);
     }
 
-    fn tell_removing(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn tell_removing(&mut self, cx: &mut Context<Self>) {
         let removing: Vec<PathBuf> = self.removing_worktrees.iter().cloned().collect();
         self.chat
             .update(cx, |pane, cx| pane.set_worktrees_removing(removing, cx));

@@ -74,7 +74,7 @@ pub(super) fn new_session(
                 }
                 if let Some(more) = in_branch.len().checked_sub(shown).filter(|n| *n > 0) {
                     menu = menu.item(crate::controls::menu_label(format!(
-                        "{more} more on this page"
+                        "{more} more not shown"
                     )));
                 }
             }

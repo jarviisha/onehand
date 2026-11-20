@@ -1186,6 +1186,17 @@ fn a_rows_hosts_are_its_own_folders_and_its_offloaded_worktrees() {
     let root = ProjectRoot::of(&p);
     let used: Vec<&str> = root.hosts_used().iter().map(|h| h.0.as_str()).collect();
     assert_eq!(used, ["box"]);
+    let mut q = p.clone();
+    q.worktrees.push(worktree("/a-y"));
+    q.worktrees[1].offload = Some(Offloaded {
+        host: HostName("vps".into()),
+        mirror: "/m/a-y".into(),
+        branch: None,
+    });
+    q.builds.push(BuildHost::parse("box", "", "").unwrap());
+    let both = ProjectRoot::of(&q);
+    let used: Vec<&str> = both.hosts_used().iter().map(|h| h.0.as_str()).collect();
+    assert_eq!(used, ["box", "vps"], "each host once");
     let on: Vec<&str> = root.session_hosts().iter().map(|h| h.0.as_str()).collect();
     assert_eq!(on, ["box"]);
 }

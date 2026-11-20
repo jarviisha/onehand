@@ -347,7 +347,8 @@ room and leaves the terminal as it is.
   *Open the agent settings* (secondary), which opens Settings on Agents.
 - A project with no session shows, from the top: a head (the project's name, its path and git line
   under it, *Run check* (spinning while a check runs) and *New session* (primary, with a caret
-  under *Start in* an *In <branch>* per recorded worktree on disk, then, while more than one agent
+  under *Start in* an *In <branch>* per recorded worktree on disk, capped at 20 with *N more not
+  shown*, then, while more than one agent
   is configured, *With agent*) at the end); then, in one column at every width, the box *Past
   conversations* with its count, its rows the overview's (age, title, then items and agent at the
   edge, then a `⋯` on hover holding *Resume* and *Delete…*, the same on a right-click), capped, its wait and empty lines inside it:
