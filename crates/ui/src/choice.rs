@@ -3,8 +3,8 @@
 
 use crate::{ControlSize, Quiet as _, action, control_fill};
 use gpui::{
-    AnyElement, App, BoxShadow, Div, ElementId, Hsla, IntoElement, ParentElement as _,
-    SharedString, Styled as _, Window, div, point, px,
+    AnyElement, App, BoxShadow, Div, ElementId, Hsla, IntoElement, ParentElement as _, Rems,
+    SharedString, Styled as _, Window, div, point, px, rems,
 };
 use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants as _};
 use gpui_component::{ActiveTheme as _, Colorize as _, Selectable as _, StyledExt as _, Theme};
@@ -77,7 +77,7 @@ pub fn segment(
     let theme = cx.theme();
     let fills = segment_fills(theme);
     let button = action(id).label(label.into()).selected(on);
-    size.on(match on {
+    let button = size.on(match on {
         true => button
             .custom(
                 ButtonCustomVariant::new(cx)
@@ -96,8 +96,14 @@ pub fn segment(
                     .active(step),
             )
         }
-    })
+    });
+    // The track stands at the role's height; a segment fills it less its inset.
+    button.h(rems(size.height().0 - 2. * SEGMENT_INSET.0))
 }
+
+/// How far a track holds its segments in from its rim: enough that the pick
+/// reads as standing on the track rather than filling it.
+const SEGMENT_INSET: Rems = rems(0.1875);
 
 /// A pick-one track's two fills.
 pub struct SegmentFills {
@@ -162,11 +168,10 @@ fn segment_lift(cx: &App) -> Vec<BoxShadow> {
 ///
 /// **No two fills touch.** A hovered choice beside the chosen one would run
 /// into it as one band, and either into the track's rim: the track pads its
-/// choices in from its rim and parts them by a gap, a step taller than the
-/// control it holds for it.
+/// choices in from its rim and parts them by a gap.
 ///
-/// `size` is the role's, so its choices stand at the height of that role's
-/// buttons and inputs; the track around them stands a step taller.
+/// `size` is the role's, so the track stands at the height of that role's
+/// buttons and inputs and its choices inside it, held in by its inset.
 pub fn switch(
     id: &'static str,
     labels: &[SharedString],
@@ -182,7 +187,7 @@ pub fn switch(
         .w_full()
         .rounded(cx.theme().radius)
         .bg(segment_fills(cx.theme()).track)
-        .p_1()
+        .p(SEGMENT_INSET)
         .gap_0p5()
         .children(labels.iter().enumerate().map(|(i, label)| {
             let pick = pick.clone();
@@ -209,7 +214,7 @@ pub fn choice_track(choices: impl IntoIterator<Item = impl IntoElement>, cx: &Ap
         .max_w_full()
         .rounded(cx.theme().radius)
         .bg(segment_fills(cx.theme()).track)
-        .p_1()
+        .p(SEGMENT_INSET)
         .gap_0p5()
         .children(choices)
 }

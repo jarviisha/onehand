@@ -299,7 +299,7 @@ frame of its own around the list, keeps those fills off that region's edges: a t
 `tokens::ROW_GUTTER`, any other list in a dock by its own padding, a list page by its inset. In a
 list where a row can be selected, two fills never touch: a hovered row beside the selected one
 stays parted from it, a tree's fills by `tokens::ROW_GUTTER` inside the row's pitch, any other
-list by a gap between its rows; a switch's choices likewise (`switch` pads its filled, edgeless track `p_1` and
+list by a gap between its rows; a switch's choices likewise (`switch` draws a filled, edgeless track at the role's height, holds its choices in 3px from its rim and
 parts its choices `gap_0p5`). A list nothing in it is ever selected (Plugins) may run its hover
 fills together. Rows
 inside a box are the box's parts: their fills run to its edge, as the hairlines between them do. A row's own actions are ghost buttons at their control sizes, shown

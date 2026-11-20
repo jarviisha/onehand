@@ -107,6 +107,14 @@ pub enum ControlSize {
 }
 
 impl ControlSize {
+    /// The height a control of this role stands at.
+    pub(crate) fn height(self) -> gpui::Rems {
+        match self {
+            Self::Short => tokens::CONTROL_H,
+            Self::Tall => tokens::FIELD_H,
+        }
+    }
+
     pub(crate) fn on(self, button: Button) -> Button {
         match self {
             Self::Short => button.short(),
