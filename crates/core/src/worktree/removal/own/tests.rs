@@ -80,3 +80,25 @@ fn a_worktree_a_task_keeps_is_not_removed() {
         ["Task “Fix the login” keeps this worktree: remove it from the task."]
     );
 }
+
+#[test]
+fn a_project_uses_a_folder_while_something_is_open_in_it_or_it_is_its_own() {
+    let open = |sessions, terminals, unsaved| OpenIn {
+        sessions,
+        terminals,
+        unsaved,
+    };
+    assert_eq!(project_user("p", "this window", open(0, 0, 0), false), None);
+    assert_eq!(
+        project_user("p", "this window", open(0, 0, 0), true).as_deref(),
+        Some("Project p, open in this window,")
+    );
+    assert_eq!(
+        project_user("p", "another window", open(1, 0, 3), false).as_deref(),
+        Some("Project p, open in another window, with a session and 3 unsaved files,")
+    );
+    assert_eq!(
+        project_user("p", "this window", open(0, 2, 1), false).as_deref(),
+        Some("Project p, open in this window, with 2 terminals and an unsaved file,")
+    );
+}

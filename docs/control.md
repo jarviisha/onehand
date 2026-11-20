@@ -208,7 +208,8 @@ offered `open_worker`, and `open_session` takes none of its further arguments.
   - A `prompt` needs a `turn`, the caller's number for it, and a `turn` needs a prompt.
 - **What it answers**, one fact per line: `session:` the handle, `w-` and 32 hex digits, minted
   when the worker's session starts and the worker's for good: it names the same worker in every
-  run, whatever uid its session has then; `name:` as the rail shows it; `project:`;
+  run, whatever uid its session has then; `name:` as the rail shows it; `project:` its project's
+  name, when the window holds it; `folder:` the folder it runs in;
   `mode:` and `model:` in force, or *the agent's own*; `dirs:` or *none*; and `turn: <n>
   accepted` with a prompt, which means the agent was handed it, nothing more.
 - **`request` is the caller's id for the open**, per lead and for this run of the app; a lead

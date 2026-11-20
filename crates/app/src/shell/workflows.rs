@@ -286,11 +286,18 @@ impl Shell {
         cx.notify();
         let title = launch.title().to_string();
         let root_of_cut = root.clone();
+        // In the project's worktree folder, set on its page.
+        let parent = crate::projects::worktree_parent(&root, cx);
         cx.spawn_in(window, async move |shell, cx| {
             let made = cx
                 .background_executor()
                 .spawn(async move {
-                    onehand_core::task::cut_blocking(&root, &title, crate::features::connectors())
+                    onehand_core::task::cut_blocking(
+                        &root,
+                        &title,
+                        parent.as_deref(),
+                        crate::features::connectors(),
+                    )
                 })
                 .await;
             let _ = shell.update_in(cx, |shell: &mut Self, window, cx| match made {
@@ -407,7 +414,6 @@ impl Shell {
                 self.carry_workspace(fx, window, cx);
                 // In the run's folder, which may be a worktree of the project.
                 let agent = start.run.setup.agent.clone().map(SharedString::from);
-                let agent = super::sessions::agent_index(agent, cx);
                 self.new_session_in_folder(idx, dir, agent, window, cx)
                     .and_then(|uid| Some((uid, self.chat.read(cx).session_entity(uid)?)))
             }

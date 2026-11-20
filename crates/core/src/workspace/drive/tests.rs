@@ -1368,3 +1368,32 @@ fn a_transient_row_is_never_a_second_row_of_its_project() {
         None
     );
 }
+
+#[test]
+fn a_rows_worktrees_on_disk_are_those_git_was_read_in() {
+    let p = with_worktree("/code/a");
+    let mut drive = bound();
+    drive.open_project("/code/a".into(), Some(&p));
+    assert!(
+        drive.worktrees_on_disk(&drive.roots[1]).is_empty(),
+        "not read yet"
+    );
+    let (token, _) = swept(drive.sweep(|_| true));
+    let status = crate::gitstat::GitStatus {
+        branch: "x".into(),
+        changed: 0,
+        ahead: 0,
+        behind: 0,
+        entries: Default::default(),
+    };
+    drive.handle(Input::Swept {
+        token,
+        found: vec![("/code/a-x".into(), status)],
+    });
+    let on: Vec<_> = drive
+        .worktrees_on_disk(&drive.roots[1])
+        .iter()
+        .map(|w| w.branch.clone())
+        .collect();
+    assert_eq!(on, ["x"]);
+}

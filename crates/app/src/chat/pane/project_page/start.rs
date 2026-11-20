@@ -59,7 +59,7 @@ pub(super) fn new_session(
         move |mut menu, _, _| {
             if !in_branch.is_empty() {
                 menu = menu.item(crate::controls::menu_label("Start in"));
-                let shown = super::worktrees_box::WORKTREES_SHOWN;
+                let shown = crate::projects::WORKTREES_SHOWN;
                 for (folder, branch) in in_branch.iter().take(shown) {
                     let (folder, pane) = (folder.clone(), pane.clone());
                     menu = menu.item(crate::controls::menu_item(format!("In {branch}")).on_click(
@@ -72,10 +72,8 @@ pub(super) fn new_session(
                         },
                     ));
                 }
-                if let Some(more) = in_branch.len().checked_sub(shown).filter(|n| *n > 0) {
-                    menu = menu.item(crate::controls::menu_label(format!(
-                        "{more} more not shown"
-                    )));
+                if let Some(more) = crate::projects::more_not_shown(in_branch.len()) {
+                    menu = menu.item(crate::controls::menu_label(more));
                 }
             }
             if agents.len() < 2 {

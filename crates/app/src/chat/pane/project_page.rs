@@ -89,8 +89,9 @@ pub(super) struct EmptyProject {
     /// The newest read of git's worktrees asked, so an older answer landing
     /// late is dropped.
     pub(super) worktrees_asked: u64,
-    /// The worktrees a removal is working on, the shell's.
-    pub(super) removing: Vec<PathBuf>,
+    /// The project's worktrees on disk, by folder and branch, as the shell
+    /// last told them: what *In <branch>* lists.
+    pub(super) on_disk: Vec<(PathBuf, String)>,
     /// One focus handle per past conversation the page lists, by place: each
     /// row is a tab stop, so the keyboard reaches its *Delete…* as the pointer
     /// does.
@@ -102,6 +103,12 @@ impl EmptyProject {
     /// offloaded project, else its own path.
     pub(super) fn cwd(&self) -> &std::path::Path {
         self.mirror.as_deref().unwrap_or(&self.path)
+    }
+
+    /// Whether its folder is on this machine, its sessions running here or
+    /// offloaded: what has worktrees.
+    pub(super) fn here(&self) -> bool {
+        self.host.is_none() || self.mirror.is_some()
     }
 
     /// Its host and that folder, when its sessions run on one.
@@ -423,14 +430,12 @@ impl ChatPane {
             .collect::<Vec<_>>()
             .join(" · ");
         // The project as the store has it, for its worktrees: none for a
-        // folder of no project, or one on a host, which has none.
-        let kept = (project.host.is_none())
-            .then(|| worktrees_box::project_of(&project.path, cx))
+        // folder of no project, or one on a host, which has none. An
+        // offloaded folder's worktrees run here or on their own.
+        let kept = (project.here())
+            .then(|| crate::projects::of(&project.path, cx))
             .flatten();
-        let in_branch = kept
-            .as_ref()
-            .map(|kept| worktrees_box::on_disk(project, kept))
-            .unwrap_or_default();
+        let in_branch = project.on_disk.clone();
         // The head: the project named as every page is, over where it
         // is, and what it can start at the end.
         let head = page_head(

@@ -29,6 +29,7 @@ impl ControlDrive {
             _ => {}
         }
         let key = (open.lead, open.request.clone());
+        let mut project = None;
         match self.requests.see(open.lead, &open.request, &open.asked())? {
             Seen::New => {}
             Seen::Opening(uid) => {
@@ -44,7 +45,12 @@ impl ControlDrive {
             Seen::Answered(answer) => return Ok(Begun::Said(answer)),
         }
         let target = match super::super::pick_project(projects, &open.project) {
-            Ok(dir) => Target::Project(dir.to_path_buf()),
+            Ok(dir) => {
+                project = (projects.iter())
+                    .find(|named| named.folders().any(|folder| folder == dir))
+                    .map(|named| named.name.clone());
+                Target::Project(dir.to_path_buf())
+            }
             Err(_) if Path::new(&open.project).is_absolute() => {
                 Target::Worktree(PathBuf::from(&open.project))
             }
@@ -59,6 +65,7 @@ impl ControlDrive {
             key.clone(),
             Pending {
                 open,
+                project,
                 mode,
                 phase: Phase::Resolving,
                 token,
@@ -291,6 +298,7 @@ impl ControlDrive {
         }
         let Some(Pending {
             open,
+            project,
             phase: Phase::Up {
                 root, dirs, handle, ..
             },
@@ -303,11 +311,14 @@ impl ControlDrive {
         let mut lines = vec![
             format!("session: {handle}"),
             format!("name: {}", facts.name),
-            format!("project: {}", root.display()),
+        ];
+        lines.extend(project.map(|name| format!("project: {name}")));
+        lines.extend([
+            format!("folder: {}", root.display()),
             format!("mode: {}", facts.mode),
             format!("model: {}", facts.model),
             format!("dirs: {}", said::dirs_said(&dirs)),
-        ];
+        ]);
         if let Some(turn) = open.turn {
             lines.push(format!("turn: {turn} accepted"));
         }

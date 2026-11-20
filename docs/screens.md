@@ -355,19 +355,23 @@ room and leaves the terminal as it is.
   every one of the project, in whichever of its folders it ran, and one that ran in a folder it
   no longer holds (a worktree since removed) has its *Resume* say the folder is gone; under
   it, for a project on this machine, the box *Worktrees* with the count of those its project
-  records: a row each (its branch, under it its folder and *N sessions* running there, at its end
-  *New session* and *Remove…* in the danger ink, spinning while it is judged or removed), one git no longer lists reading *Missing* with
-  *Forget* in their place, then each checkout git lists that holds the project's folder and no
+  records: a row each (its branch, under it its folder and *N sessions* running there, or
+  *Removing…* while a removal is judged or runs, at its end *New session* and a `⋯` holding
+  *Remove worktree…* in the danger ink, gone while removing), one git no longer lists reading
+  *Missing* with *Forget* in their place, then each checkout git lists that holds the project's folder and no
   project records, *Not in this project*, with *Add to this project*; capped at 20 with *N more not
   shown*, *No worktrees* at none, *Reading git's worktrees…* while git is read and *git's
-  worktrees could not be read: <why>* when it fails, the recorded rows drawn either way; then *New
+  worktrees could not be read: <why>* when it fails, the recorded rows drawn either way (a folder
+  outside git that records none shows no box); an offloaded project folder's box is as a local
+  one's, its worktrees running here or on their own; then *New
   worktree…* (refused on a folder that is no repository whose sessions run here) and the field
   *Worktree folder*: the folder new worktrees go in, or *Beside the repository*, with *Change…*
-  and, while one is set, *Beside the repository*. *Remove…* asks *Remove worktree <branch>?*,
+  and, while one is set, *Beside the repository*. *Remove worktree…* asks *Remove worktree <branch>?*,
   saying the folder is deleted and whether its branch goes with it (merged, unless git keeps it)
   or is kept, and
-  refuses while the checkout has uncommitted files, something of onehand's or a process uses it,
-  or another project has a folder in it, listing each; judged again when answered, a toast says
+  refuses while the checkout has uncommitted files, something of onehand's (a session, a shell,
+  an unsaved file) or a process uses it, another project has a folder in it, or a task keeps it as
+  its worktree, listing each; judged again when answered, a toast says
   what was removed and what was kept. Under that the box *Tasks* (how many need attention, run or wait, each opening the Tasks page
   narrowed to the project; *Nothing running here* at zero); then the box *Schedules* (the
   project's schedules by name with when each runs next, or *off*, each opening the Schedules page

@@ -485,7 +485,6 @@ impl Shell {
                 InputState::new(window, cx).placeholder("What this conversation is about")
             }),
             worktree_draft: None,
-            removing_worktrees: Default::default(),
             branch_draft: None,
             host_project: None,
             host_waits: Default::default(),

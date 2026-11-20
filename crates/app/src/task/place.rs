@@ -69,6 +69,25 @@ pub(crate) fn not_started(id: String, why: String, kind: Failure, cx: &mut App) 
 }
 
 /// Tell the tasks' drive what the world found, and carry out what it says.
+/// What removing a task's worktree came to, carried to the task and to the
+/// project recording it.
+fn removed_worktree(input: Input<AnyWindowHandle>, cx: &mut App) {
+    if !cx.has_global::<Tasks>() {
+        return;
+    }
+    let (fx, said) = cx.update_global::<Tasks, _>(|t, cx| {
+        cx.update_global::<crate::state::Shared, _>(|shared, _| {
+            onehand_core::task::tasks::link::worktree_removed(
+                &mut t.drive,
+                &mut shared.projects,
+                input,
+            )
+        })
+    });
+    crate::projects::carry(said, cx);
+    perform(fx, None, cx);
+}
+
 fn feed(input: Input<AnyWindowHandle>, cx: &mut App) {
     with_drive(cx, |d| ((), d.handle(input)));
 }
@@ -135,6 +154,8 @@ pub(super) fn perform(
                 let launch = &start.launch;
                 let (repo, title) = (launch.repo().to_path_buf(), launch.title().to_string());
                 let repo_of_cut = repo.clone();
+                // In the project's worktree folder, set on its page.
+                let parent = crate::projects::worktree_parent(&repo, cx);
                 cx.spawn(async move |cx| {
                     let made = cx
                         .background_executor()
@@ -142,6 +163,7 @@ pub(super) fn perform(
                             onehand_core::task::cut_blocking(
                                 &repo,
                                 &title,
+                                parent.as_deref(),
                                 crate::features::connectors(),
                             )
                         })
@@ -195,7 +217,9 @@ pub(super) fn perform(
                         branch,
                         removed,
                     };
-                    cx.update(|cx| feed(input, cx));
+                    // To the task, and to its project, which forgets the
+                    // worktree gone: core's link.
+                    cx.update(|cx| removed_worktree(input, cx));
                 })
                 .detach();
             }

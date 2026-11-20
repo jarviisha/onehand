@@ -100,7 +100,8 @@ wait = "1h"               # how long the checks may take; the default
 
 onehand ships three, read-only: *Work in checkout* (Plan → Approve → Implement → Verify, in the
 checkout, left uncommitted), *Implement on a branch* (Plan → Implement → Verify, on a new
-`workflow/<title>` branch in a worktree beside the project's repository, committed; a project that
+`workflow/<title>` branch in a worktree in the project's worktree folder (beside the project's
+repository with none set), recorded in the project, committed; a project that
 is a folder inside its repository works in the same folder of the new checkout, as a worktree made
 from the project menu does) and *Work an issue* (`builtin:issue`, the same steps on a branch, then
 Push → Pull request → Status checks; what a lead's `start_issue` runs by default, see

@@ -164,6 +164,7 @@ pub struct Worktree {
 pub fn cut_blocking(
     root: &Path,
     title: &str,
+    parent: Option<&Path>,
     connectors: &[&'static dyn crate::connector::Connector],
 ) -> Result<Worktree, String> {
     // Git checks out repositories, not folders: the worktree is of the
@@ -174,7 +175,8 @@ pub fn cut_blocking(
     // ponytail: only local branches count here; a `workflow/` branch whose
     // worktree is gone but whose pull request is on the forge is reused. Ask
     // the forge whether the branch has a pull request if that is seen.
-    let (branch, made) = crate::worktree::cut_blocking(&top, &crate::workflow::branch_for(title))?;
+    let (branch, made) =
+        crate::worktree::cut_blocking(&top, &crate::workflow::branch_for(title), parent)?;
     let dir = crate::worktree::subtree_or(made, &top, root);
     let forge = crate::connector::serving(connectors, &top)
         .ok()

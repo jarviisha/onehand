@@ -910,3 +910,35 @@ fn a_worktree_is_judged_asked_judged_again_then_removed() {
     assert!(named(&fx, "Signal::Removed"));
     assert_eq!(tasks.acting("1"), None);
 }
+
+#[test]
+fn a_tasks_worktree_removed_is_forgotten_by_its_project() {
+    use crate::project::{MadeBy, Project, ProjectId, Projects, ProjectsDrive, Worktree};
+    let mut project = Project::new(ProjectId::mint(1), None, "/r".into());
+    project.worktrees.push(Worktree {
+        path: "/w/sub".into(),
+        branch: "b".into(),
+        from: None,
+        made_by: MadeBy::Run,
+        offload: None,
+    });
+    let mut projects = ProjectsDrive::new(Projects::from_iter([project.clone()]), "/data".into());
+    let mut tasks = TasksDrive::<Win>::default();
+    let removed = |result| Input::WorktreeRemoved {
+        task: "1".into(),
+        window: WINDOW,
+        folder: PathBuf::from("/w"),
+        branch: Some("b".into()),
+        removed: result,
+    };
+    let (_, said) =
+        super::link::worktree_removed(&mut tasks, &mut projects, removed(Err("locked".into())));
+    assert!(said.is_empty(), "a removal that failed forgets nothing");
+    let (_, said) = super::link::worktree_removed(
+        &mut tasks,
+        &mut projects,
+        removed(Ok(crate::worktree::removal::Removed { branch_kept: None })),
+    );
+    assert!(!said.is_empty(), "written");
+    assert!(projects.get(&project.id).unwrap().worktrees.is_empty());
+}

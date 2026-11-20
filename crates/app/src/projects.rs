@@ -255,89 +255,149 @@ pub(crate) fn place(
     .detach();
 }
 
+/// How many of a project's worktrees a list draws (the page's box, the
+/// menus offering *In <branch>*) before it says how many it left out.
+pub(crate) const WORKTREES_SHOWN: usize = 20;
+
+/// What a list cut at [`WORKTREES_SHOWN`] says of the `n` it left out.
+pub(crate) fn more_not_shown(n: usize) -> Option<String> {
+    let more = n.checked_sub(WORKTREES_SHOWN).filter(|more| *more > 0)?;
+    Some(format!("{more} more not shown"))
+}
+
+/// The id of the project holding `of`, a folder here.
+fn id_of(of: &Path, cx: &App) -> Option<ProjectId> {
+    Shared::global(cx)
+        .projects
+        .find(None, of)
+        .map(|(project, _)| project.id.clone())
+}
+
+/// Carry what project `of`'s drive answers to `change`; nothing when no
+/// project holds `of`.
+fn change_of(
+    of: &Path,
+    cx: &mut App,
+    change: impl FnOnce(&mut onehand_core::project::ProjectsDrive, &ProjectId) -> Vec<Effect>,
+) {
+    let Some(id) = id_of(of, cx) else {
+        return;
+    };
+    let fx = cx.update_global::<Shared, _>(|shared, _| change(&mut shared.projects, &id));
+    carry(fx, cx);
+}
+
 /// Record `worktree` in the project holding `of`, a folder here, and answer
 /// the project as it now is; none when no project holds `of`.
 pub(crate) fn record(of: &Path, worktree: Worktree, cx: &mut App) -> Option<Project> {
-    let id = Shared::global(cx).projects.find(None, of)?.0.id.clone();
-    let fx =
-        cx.update_global::<Shared, _>(|shared, _| shared.projects.record_worktree(&id, worktree));
-    carry(fx, cx);
+    change_of(of, cx, |drive, id| drive.record_worktree(id, worktree));
+    let id = id_of(of, cx)?;
     Shared::global(cx).projects.get(&id).cloned()
+}
+
+/// Take in `listed`, a checkout git lists, as a worktree of the project
+/// holding `of`.
+pub(crate) fn adopt_worktree(of: &Path, listed: onehand_core::worktree::Listed, cx: &mut App) {
+    change_of(of, cx, |drive, id| drive.adopt_worktree(id, listed));
 }
 
 /// Forget the worktree at `folder` in the project holding `of`, a folder
 /// here.
 pub(crate) fn forget_worktree(of: &Path, folder: &Path, cx: &mut App) {
-    let Some(id) = Shared::global(cx)
-        .projects
-        .find(None, of)
-        .map(|(p, _)| p.id.clone())
-    else {
-        return;
-    };
-    let fx =
-        cx.update_global::<Shared, _>(|shared, _| shared.projects.forget_worktree(&id, folder));
-    carry(fx, cx);
+    change_of(of, cx, |drive, id| drive.forget_worktree(id, folder));
+}
+
+/// A removal of the worktree at `folder` begins: false when one is under way
+/// already. Every window's page draws it.
+pub(crate) fn begin_removal(folder: &Path, cx: &mut App) -> bool {
+    let fresh = cx.update_global::<Shared, _>(|shared, _| shared.projects.begin_removal(folder));
+    redraw_pages(cx);
+    fresh
+}
+
+/// The removal of `folder` waits on the person's answer, or was let go: it
+/// is under way no more.
+pub(crate) fn removal_asked(folder: &Path, cx: &mut App) {
+    cx.update_global::<Shared, _>(|shared, _| shared.projects.removal_asked(folder));
+    redraw_pages(cx);
+}
+
+/// Every window's project page drawn again: a removal under way is the
+/// projects', whichever window asked for it. After this update, since the
+/// window asking is being updated as this runs.
+fn redraw_pages(cx: &mut App) {
+    cx.defer(|cx| {
+        for (_, shell) in crate::windows::live(cx) {
+            let pane = shell.read(cx).chat_pane().clone();
+            pane.update(cx, |_, cx| cx.notify());
+        }
+    });
 }
 
 /// Removing the worktree at `folder` of the project holding `of` came out as
-/// `removal`: the drive's answer carried, and what it says toasted in
-/// `window`, where the removal was asked.
+/// `removal`: the drive's answer carried, whatever became of the window it
+/// was asked in, and what it says answered as toasts for that window. One
+/// whose project left meanwhile is under way no more.
 pub(crate) fn worktree_removal(
     of: &Path,
     folder: &Path,
     removal: onehand_core::project::drive::Removal,
-    window: &mut gpui::Window,
     cx: &mut App,
-) {
-    let Some(id) = Shared::global(cx)
-        .projects
-        .find(None, of)
-        .map(|(p, _)| p.id.clone())
-    else {
-        return;
+) -> Vec<gpui_component::notification::Notification> {
+    let Some(id) = id_of(of, cx) else {
+        removal_asked(folder, cx);
+        return Vec::new();
     };
     let fx = cx.update_global::<Shared, _>(|shared, _| {
         shared.projects.worktree_removal(&id, folder, removal)
     });
-    for effect in &fx {
-        let toast = match effect {
-            Effect::Signal(Signal::WorktreeRemoved { name, kept: None }) => {
-                crate::toast::success(format!("Removed {name}"))
-            }
+    let toasts = fx
+        .iter()
+        .filter_map(|effect| match effect {
             Effect::Signal(Signal::WorktreeRemoved {
-                name,
-                kept: Some(why),
-            }) => crate::toast::success(format!("Removed {name}; its branch is kept: {why}")),
-            Effect::Signal(Signal::WorktreeStays(why)) => {
-                crate::toast::warning(format!("The worktree stays. {}", why.join(" ")))
+                folder,
+                branch,
+                kept,
+            }) => {
+                let at = folder.display();
+                Some(match (branch, kept) {
+                    (Some(branch), Some(why)) => crate::toast::success(format!(
+                        "Removed {at}; its branch {branch} is kept: {why}"
+                    )),
+                    (Some(branch), None) => {
+                        crate::toast::success(format!("Removed {at} and its branch {branch}"))
+                    }
+                    (None, _) => crate::toast::success(format!("Removed {at}")),
+                })
             }
+            Effect::Signal(Signal::WorktreeStays(why)) => Some(crate::toast::warning(format!(
+                "The worktree stays. {}",
+                why.join(" ")
+            ))),
             Effect::Signal(Signal::WorktreeNotRemoved(why)) => {
-                crate::toast::failed("Removing the worktree", why.clone())
+                Some(crate::toast::failed("Removing the worktree", why.clone()))
             }
             Effect::Signal(Signal::SaveFailed { .. })
             | Effect::Write(_)
             | Effect::Arm { .. }
-            | Effect::Changed(_) => continue,
-        };
-        window.push_notification(toast, cx);
-    }
+            | Effect::Changed(_) => None,
+        })
+        .collect();
     carry(fx, cx);
+    redraw_pages(cx);
+    toasts
 }
 
 /// Put the new worktrees of the project holding `of` in `parent`, or beside
 /// the repository with none.
 pub(crate) fn set_worktree_parent(of: &Path, parent: Option<PathBuf>, cx: &mut App) {
-    let Some(id) = Shared::global(cx)
-        .projects
-        .find(None, of)
-        .map(|(p, _)| p.id.clone())
-    else {
-        return;
-    };
-    let fx =
-        cx.update_global::<Shared, _>(|shared, _| shared.projects.set_worktree_parent(&id, parent));
-    carry(fx, cx);
+    change_of(of, cx, |drive, id| drive.set_worktree_parent(id, parent));
+}
+
+/// The folder new worktrees of the project holding `of` go in; none for
+/// beside the repository.
+pub(crate) fn worktree_parent(of: &Path, cx: &App) -> Option<PathBuf> {
+    self::of(of, cx).and_then(|project| project.worktree_parent)
 }
 
 /// Record the worktree a run's cut made, `dir` on `branch`, in the project

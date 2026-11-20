@@ -136,6 +136,9 @@ pub enum Input<'a> {
         key: Key,
         started: Result<u64, String>,
     },
+    /// Open `key`'s folder was placed in the project called `project`, which
+    /// its answer names: what a worktree its project did not record comes to.
+    Placed { key: Key, project: String },
     /// Worker `uid`'s session changed, or is gone (`chat` is `None`);
     /// `lead_here` says whether its lead is still a session of some window.
     Woke {
@@ -290,6 +293,9 @@ enum Phase {
 
 struct Pending {
     open: Open,
+    /// The name of the project the folder named is of, when the window
+    /// holds it; for the answer.
+    project: Option<String>,
     mode: Option<String>,
     phase: Phase,
     /// The deadline's wait, armed at the call.
@@ -648,6 +654,12 @@ impl ControlDrive {
                 world,
             } => self.resolved(&key, resolved, &world),
             Input::Started { key, started } => self.started(&key, started),
+            Input::Placed { key, project } => {
+                if let Some(pending) = self.pending.get_mut(&key) {
+                    pending.project = Some(project);
+                }
+                Vec::new()
+            }
             Input::Woke {
                 uid,
                 chat,

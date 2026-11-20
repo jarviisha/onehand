@@ -29,6 +29,47 @@ pub struct OwnFacts {
     pub tasks: Vec<String>,
 }
 
+/// What a project has open in a folder: what makes it a user of the folder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OpenIn {
+    pub sessions: usize,
+    pub terminals: usize,
+    /// The Workbench's files edited there and not saved.
+    pub unsaved: usize,
+}
+
+/// The project called `label`, open in `said` (a window), as a user of a
+/// folder being removed: while something of it is open there, or its own
+/// folder is inside; none for one that only records a worktree there.
+pub fn project_user(label: &str, said: &str, open: OpenIn, own_inside: bool) -> Option<String> {
+    let what: Vec<String> = [
+        (open.sessions, "session"),
+        (open.terminals, "terminal"),
+        (open.unsaved, "unsaved file"),
+    ]
+    .into_iter()
+    .filter(|(n, _)| *n > 0)
+    .map(|(n, thing)| count(n, thing))
+    .collect();
+    if what.is_empty() && !own_inside {
+        return None;
+    }
+    let with = match what.is_empty() {
+        true => String::new(),
+        false => format!(", with {}", what.join(" and ")),
+    };
+    Some(format!("Project {label}, open in {said}{with},"))
+}
+
+/// `n` of `thing`, as a person counts them.
+fn count(n: usize, thing: &str) -> String {
+    match n {
+        1 if thing.starts_with(['a', 'e', 'i', 'o', 'u']) => format!("an {thing}"),
+        1 => format!("a {thing}"),
+        n => format!("{n} {thing}s"),
+    }
+}
+
 /// Whether the worktree `facts` describe may be removed, and why not.
 pub fn judge_own(facts: &OwnFacts) -> Judged {
     let mut refused: Vec<String> = uncommitted_said(&facts.uncommitted).into_iter().collect();

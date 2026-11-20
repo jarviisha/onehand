@@ -21,8 +21,7 @@ use onehand_core::project::worktrees::WorktreeRow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-/// How many worktrees the box lists before it says how many it left out.
-pub(super) const WORKTREES_SHOWN: usize = 20;
+use crate::projects::{WORKTREES_SHOWN, more_not_shown};
 
 /// What git's read of the project's worktrees came to: its rows, or why
 /// there are none.
@@ -34,6 +33,9 @@ pub(super) struct Line {
     pub(super) branch: String,
     pub(super) folder: PathBuf,
     pub(super) kind: Kind,
+    /// The checkout as git lists it, for an offered line: what *Add to this
+    /// project* takes in.
+    pub(super) listed: Option<onehand_core::worktree::Listed>,
 }
 
 /// What a line is.
@@ -55,30 +57,23 @@ pub(super) fn lines(
     read: Option<&Read>,
     sessions: &HashMap<PathBuf, usize>,
 ) -> (Vec<Line>, Option<String>) {
-    let unread;
+    // With git unread, or failing, the recorded worktrees as recorded.
     let (rows, note) = match read {
-        Some(Ok(rows)) => (rows.as_slice(), None),
-        Some(Err(why)) => {
-            unread =
-                onehand_core::project::worktrees::rows(project, None, &Default::default(), |_| {
-                    true
-                });
-            (
-                unread.as_slice(),
-                Some(format!("git's worktrees could not be read: {why}")),
-            )
-        }
-        None => {
-            unread =
-                onehand_core::project::worktrees::rows(project, None, &Default::default(), |_| {
-                    true
-                });
-            (
-                unread.as_slice(),
-                Some("Reading git's worktrees…".to_string()),
-            )
-        }
+        Some(Ok(rows)) => (Some(std::borrow::Cow::Borrowed(rows.as_slice())), None),
+        Some(Err(why)) => (
+            None,
+            Some(format!("git's worktrees could not be read: {why}")),
+        ),
+        None => (None, Some("Reading git's worktrees…".to_string())),
     };
+    let rows = rows.unwrap_or_else(|| {
+        std::borrow::Cow::Owned(onehand_core::project::worktrees::rows(
+            project,
+            None,
+            &Default::default(),
+            |_| true,
+        ))
+    });
     let lines = rows
         .iter()
         .filter_map(|row| match row {
@@ -96,12 +91,14 @@ pub(super) fn lines(
                     branch: worktree.branch.clone(),
                     folder: worktree.path.clone(),
                     kind,
+                    listed: None,
                 })
             }
             WorktreeRow::Offered(listed) => Some(Line {
-                branch: listed.branch.clone().unwrap_or_else(|| "HEAD".into()),
+                branch: listed.branch_or_head(),
                 folder: listed.path.clone(),
                 kind: Kind::Offered,
+                listed: Some(listed.clone()),
             }),
         })
         .collect();
@@ -114,10 +111,13 @@ pub(super) fn shows_box(project: &Project, read: Option<&Read>) -> bool {
     !matches!(read, Some(Err(_))) || !project.worktrees.is_empty()
 }
 
-/// What a line says under its branch: its folder, then what runs in it or
-/// that it is missing.
-fn about(line: &Line) -> String {
+/// What a line says under its branch: its folder, then what runs in it, that
+/// it is being removed, or that it is missing.
+fn about(line: &Line, removing: bool) -> String {
     let folder = super::host::place(None, &line.folder, std::env::home_dir().as_deref());
+    if removing {
+        return format!("{folder} · Removing…");
+    }
     match line.kind {
         Kind::Recorded { sessions: 0 } => folder,
         Kind::Offered => format!("{folder} · Not in this project"),
@@ -127,17 +127,8 @@ fn about(line: &Line) -> String {
     }
 }
 
-/// The worktrees on disk `project` records, for *In <branch>*.
-pub(super) fn on_disk(page: &EmptyProject, project: &Project) -> Vec<(PathBuf, String)> {
-    let (lines, _) = lines(project, page.worktrees.as_ref(), &page.worktree_sessions);
-    lines
-        .into_iter()
-        .filter(|line| matches!(line.kind, Kind::Recorded { .. }))
-        .map(|line| (line.folder, line.branch))
-        .collect()
-}
-
-/// The box, for a project on this machine of `project`.
+/// The box, for a project folder on this machine (offloaded or not) of
+/// `project`.
 pub(super) fn worktrees_box(
     page: &EmptyProject,
     project: &Project,
@@ -145,9 +136,8 @@ pub(super) fn worktrees_box(
 ) -> Div {
     let (lines, note) = lines(project, page.worktrees.as_ref(), &page.worktree_sessions);
     let muted = cx.theme().muted_foreground;
-    let danger = crate::theme::status_ink(cx).danger;
     let said = |line: String| div().text_xs().text_color(muted).child(line);
-    let more = lines.len().saturating_sub(WORKTREES_SHOWN);
+    let more = more_not_shown(lines.len());
     let none = lines.is_empty() && matches!(page.worktrees, Some(Ok(_)));
     let emit = |act: WorktreeAct| {
         move |_: &mut ChatPane,
@@ -161,27 +151,47 @@ pub(super) fn worktrees_box(
         .enumerate()
         .map(|(idx, line)| {
             let folder = line.folder.clone();
+            let removing = crate::state::Shared::global(cx).projects.removing(&folder);
             let control = match line.kind {
-                Kind::Recorded { .. } => div()
-                    .h_flex()
-                    .items_center()
-                    .gap_2()
-                    .child(
-                        crate::controls::action(("worktree-session", idx))
-                            .short()
-                            .secondary()
-                            .label("New session")
-                            .on_click(cx.listener(emit(WorktreeAct::NewSession(folder.clone())))),
+                // *Remove worktree…* behind the row's ⋯, as a past
+                // conversation's *Delete…* is.
+                Kind::Recorded { .. } => {
+                    let pane = cx.entity().downgrade();
+                    let at = folder.clone();
+                    let remove = std::rc::Rc::new(
+                        move |_: &gpui::ClickEvent, _: &mut gpui::Window, cx: &mut gpui::App| {
+                            let act = WorktreeAct::Remove(at.clone());
+                            let _ = pane.update(cx, |_: &mut ChatPane, cx| {
+                                cx.emit(ChatPaneEvent::Worktree(act))
+                            });
+                        },
                     )
-                    .child(
-                        crate::controls::action(("worktree-remove", idx))
-                            .short()
-                            .secondary()
-                            .text_color(danger)
-                            .label("Remove…")
-                            .loading(page.removing.contains(&folder))
-                            .on_click(cx.listener(emit(WorktreeAct::Remove(folder)))),
-                    ),
+                        as std::rc::Rc<
+                            dyn Fn(&gpui::ClickEvent, &mut gpui::Window, &mut gpui::App),
+                        >;
+                    let acts: std::rc::Rc<[onehand_ui::RowAct]> = std::rc::Rc::new([
+                        onehand_ui::RowAct::new("Remove worktree…", remove).danger(),
+                    ]);
+                    div()
+                        .h_flex()
+                        .items_center()
+                        .gap_2()
+                        .child(
+                            crate::controls::action(("worktree-session", idx))
+                                .short()
+                                .secondary()
+                                .label("New session")
+                                .on_click(cx.listener(emit(WorktreeAct::NewSession(folder)))),
+                        )
+                        .when(!removing, |row| {
+                            row.child(onehand_ui::row_more(
+                                format!("worktree-more-{idx}"),
+                                "Worktree actions",
+                                acts,
+                                cx,
+                            ))
+                        })
+                }
                 Kind::Missing => div().child(
                     crate::controls::action(("worktree-forget", idx))
                         .short()
@@ -190,20 +200,17 @@ pub(super) fn worktrees_box(
                         .tooltip("Its folder is gone; forget it in this project")
                         .on_click(cx.listener(emit(WorktreeAct::Forget(folder)))),
                 ),
-                Kind::Offered => div().child(
+                Kind::Offered => div().children(line.listed.clone().map(|listed| {
                     crate::controls::action(("worktree-add", idx))
                         .short()
                         .secondary()
                         .label("Add to this project")
-                        .on_click(cx.listener(emit(WorktreeAct::Add {
-                            folder,
-                            branch: Some(line.branch.clone()),
-                        }))),
-                ),
+                        .on_click(cx.listener(emit(WorktreeAct::Add(listed))))
+                })),
             };
             list_row(
                 line.branch.clone(),
-                Some(about(line).into_any_element()),
+                Some(about(line, removing).into_any_element()),
                 control,
                 cx,
             )
@@ -219,7 +226,7 @@ pub(super) fn worktrees_box(
     page_card("Worktrees", Some(recorded), None, cx)
         .children(note.map(said))
         .children((!rows.is_empty()).then(|| list_rows(rows, cx)))
-        .children((more > 0).then(|| said(format!("{more} more not shown"))))
+        .children(more.map(said))
         .children(none.then(|| said("No worktrees".into())))
         .child(
             div().h_flex().child(
@@ -266,18 +273,6 @@ pub(super) fn worktrees_box(
 }
 
 impl ChatPane {
-    /// Told by the shell which worktrees a removal is working on.
-    pub(crate) fn set_worktrees_removing(
-        &mut self,
-        removing: Vec<PathBuf>,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(page) = self.empty.as_mut().filter(|page| page.removing != removing) {
-            page.removing = removing;
-            cx.notify();
-        }
-    }
-
     /// Read git's worktrees of the project on screen again: git was read
     /// again, and a worktree may have come or gone outside onehand.
     pub(crate) fn reread_worktrees(&mut self, cx: &mut Context<Self>) {
@@ -297,15 +292,17 @@ impl ChatPane {
         &mut self,
         recorded: Vec<std::path::PathBuf>,
         sessions: std::collections::HashMap<std::path::PathBuf, usize>,
+        on_disk: Vec<(PathBuf, String)>,
         cx: &mut Context<Self>,
     ) {
         let Some(project) = self.empty.as_mut() else {
             return;
         };
         let changed = project.recorded.as_ref() != Some(&recorded);
-        if changed || project.worktree_sessions != sessions {
+        if changed || project.worktree_sessions != sessions || project.on_disk != on_disk {
             project.recorded = Some(recorded);
             project.worktree_sessions = sessions;
+            project.on_disk = on_disk;
             cx.notify();
         }
         if changed {
@@ -320,12 +317,12 @@ impl ChatPane {
         let Some(path) = self
             .empty
             .as_ref()
-            .filter(|project| project.host.is_none())
+            .filter(|project| project.here())
             .map(|project| project.path.clone())
         else {
             return;
         };
-        let Some(project) = project_of(&path, cx) else {
+        let Some(project) = crate::projects::of(&path, cx) else {
             return;
         };
         let others = (*crate::state::Shared::global(cx).projects).clone();
@@ -362,12 +359,6 @@ impl ChatPane {
         })
         .detach();
     }
-}
-
-/// The project page's project, as the store has it now; none for a folder
-/// of no project.
-pub(super) fn project_of(path: &Path, cx: &gpui::App) -> Option<Project> {
-    crate::projects::of(path, cx)
 }
 
 #[cfg(test)]

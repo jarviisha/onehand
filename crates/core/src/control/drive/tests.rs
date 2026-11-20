@@ -180,6 +180,10 @@ fn a_worker_up_is_given_its_prompt_then_answered() {
         said.contains("name: repo") && said.ends_with("turn: 1 accepted"),
         "{said}"
     );
+    assert!(
+        said.contains("project: repo\nfolder: /repo\n"),
+        "names its project and its folder: {said}"
+    );
     assert_eq!(
         drive.workers_of(1),
         [Worker {
@@ -1705,4 +1709,40 @@ fn a_released_worker_whose_window_closed_comes_back_rather_than_taken() {
     let _ = drive.take_back(3, &kept);
     assert_eq!(drive.lead_of(7), None, "a session that is gone");
     assert_eq!(drive.back(3, kept, &projects()).len(), 1);
+}
+
+/// A worker opened on a worktree the window's project does not record yet:
+/// the project its folder is placed in is the one its answer names.
+#[test]
+fn a_worker_on_an_unrecorded_worktree_names_the_project_it_was_placed_in() {
+    let mut drive = lead_on();
+    let open = Open {
+        project: "/repo".into(),
+        ..asked("go")
+    };
+    let (key, _) = resolves(drive.open_worker(open, &[], None));
+    drive.handle(Input::Resolved {
+        key: key.clone(),
+        resolved: Ok(resolved()),
+        world: world(),
+    });
+    drive.handle(Input::Placed {
+        key: key.clone(),
+        project: "Repo".into(),
+    });
+    drive.handle(Input::Started {
+        key: key.clone(),
+        started: Ok(7),
+    });
+    drive.handle(Input::Woke {
+        uid: 7,
+        chat: Some(&connected()),
+        lead_here: true,
+    });
+    let fx = drive.handle(Input::Begun {
+        uid: 7,
+        facts: facts(Some(Intake::Sent)),
+    });
+    let said = answer(&fx).unwrap().as_ref().unwrap();
+    assert!(said.contains("project: Repo\nfolder: /repo\n"), "{said}");
 }

@@ -11,7 +11,7 @@
 use super::{Confirm, Shell};
 use crate::chat::pane::WorktreeAct;
 use gpui::{Context, Window};
-use onehand_core::project::{MadeBy, Worktree};
+use gpui_component::WindowExt as _;
 use onehand_core::worktree::removal::{self, Judged, OwnFacts};
 use std::path::{Path, PathBuf};
 
@@ -34,10 +34,14 @@ impl Shell {
         match act {
             WorktreeAct::NewSession(folder) => {
                 let idx = self.window.workspace.active_root;
-                let _ = self.new_session_in_folder(idx, folder, 0, window, cx);
+                let _ = self.new_session_in_folder(idx, folder, None, window, cx);
             }
             WorktreeAct::Remove(folder) => self.ask_remove_worktree(folder, window, cx),
-            WorktreeAct::Add { folder, branch } => self.add_worktree(folder, branch, window, cx),
+            WorktreeAct::Add(listed) => {
+                if let Some(root) = self.project_here() {
+                    crate::projects::adopt_worktree(&root, listed, cx);
+                }
+            }
             WorktreeAct::Forget(folder) => {
                 if let Some(root) = self.project_here() {
                     crate::projects::forget_worktree(&root, &folder, cx);
@@ -52,23 +56,15 @@ impl Shell {
         }
     }
 
-    /// Mark a removal of `folder` under way; false when one already is.
+    /// Begin a removal of `folder`, the projects' drive saying whether one is
+    /// under way already; the page draws its *Remove…* from it.
     fn start_removing(&mut self, folder: &Path, cx: &mut Context<Self>) -> bool {
-        let fresh = self.removing_worktrees.insert(folder.to_path_buf());
-        self.tell_removing(cx);
-        fresh
+        crate::projects::begin_removal(folder, cx)
     }
 
-    /// The removal of `folder` is over, or waits on the person's answer.
+    /// The removal of `folder` waits on the person's answer, or was let go.
     fn done_removing(&mut self, folder: &Path, cx: &mut Context<Self>) {
-        self.removing_worktrees.remove(folder);
-        self.tell_removing(cx);
-    }
-
-    pub(super) fn tell_removing(&mut self, cx: &mut Context<Self>) {
-        let removing: Vec<PathBuf> = self.removing_worktrees.iter().cloned().collect();
-        self.chat
-            .update(cx, |pane, cx| pane.set_worktrees_removing(removing, cx));
+        crate::projects::removal_asked(folder, cx);
     }
 
     /// The project on screen's own folder, when it is on this machine.
@@ -77,28 +73,6 @@ impl Shell {
             .workspace
             .active_root()
             .and_then(|root| root.local_path().map(Path::to_path_buf))
-    }
-
-    /// Take in `folder`, a checkout git lists, on `branch`, as a worktree of
-    /// the project on screen.
-    pub(super) fn add_worktree(
-        &mut self,
-        folder: PathBuf,
-        branch: Option<String>,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(root) = self.project_here() else {
-            return;
-        };
-        let worktree = Worktree {
-            path: folder,
-            branch: branch.unwrap_or_else(|| "HEAD".into()),
-            from: None,
-            made_by: MadeBy::Added,
-            offload: None,
-        };
-        let _ = crate::projects::record(&root, worktree, cx);
     }
 
     /// Choose the folder the project on screen's new worktrees go in.
@@ -129,6 +103,9 @@ impl Shell {
             return;
         };
         let own = crate::projects::of(&root, cx).map(|project| project.id);
+        // Ended at the app's level should the window go meanwhile, so a
+        // removal under way never outlives what asked for it.
+        let app = cx.to_async();
         cx.spawn_in(window, async move |shell, cx| {
             let top = cx
                 .background_executor()
@@ -151,6 +128,7 @@ impl Shell {
                 });
                 (users, processes, shared_with, tasks)
             }) else {
+                app.update(|cx| crate::projects::removal_asked(&folder, cx));
                 return;
             };
             let judging = cx
@@ -174,9 +152,15 @@ impl Shell {
                     }
                 })
                 .await;
-            let _ = shell.update_in(cx, |shell, window, cx| {
-                then(shell, folder, judging, window, cx)
-            });
+            let shown = folder.clone();
+            if shell
+                .update_in(cx, |shell, window, cx| {
+                    then(shell, folder, judging, window, cx)
+                })
+                .is_err()
+            {
+                app.update(|cx| crate::projects::removal_asked(&shown, cx));
+            }
         })
         .detach();
     }
@@ -237,47 +221,47 @@ impl Shell {
         if !self.start_removing(&folder, cx) {
             return;
         }
-        self.judge_worktree(
-            folder,
-            window,
-            cx,
-            move |shell, folder, judging, window, cx| {
-                use onehand_core::project::drive::Removal;
-                let branch = match judging.judged {
-                    Judged::Remove { branch, .. } => branch,
-                    Judged::Refused(why) => {
-                        shell.done_removing(&folder, cx);
-                        let refused = Removal::Refused(why);
-                        return crate::projects::worktree_removal(
-                            &root, &folder, refused, window, cx,
-                        );
+        self.judge_worktree(folder, window, cx, move |_, folder, judging, window, cx| {
+            use onehand_core::project::drive::Removal;
+            let branch = match judging.judged {
+                Judged::Remove { branch, .. } => branch,
+                // The drive ends the removal under way with its answer.
+                Judged::Refused(why) => {
+                    let refused = Removal::Refused(why);
+                    for toast in crate::projects::worktree_removal(&root, &folder, refused, cx) {
+                        window.push_notification(toast, cx);
                     }
-                };
-                let top = judging.facts.folder;
-                cx.spawn_in(window, async move |shell, cx| {
-                    let result =
-                        cx.background_executor()
-                            .spawn({
-                                let (root, top, branch) =
-                                    (root.clone(), top.clone(), branch.clone());
-                                async move {
-                                    removal::remove_own_blocking(&root, &top, branch.as_deref())
-                                }
-                            })
-                            .await;
-                    let _ = shell.update(cx, |shell, cx| shell.done_removing(&folder, cx));
-                    let _ = cx.update(|window, cx| {
-                        let done = Removal::Done {
-                            top,
-                            branch,
-                            result,
-                        };
-                        crate::projects::worktree_removal(&root, &folder, done, window, cx);
+                    return;
+                }
+            };
+            let top = judging.facts.folder;
+            // At the app's level: the checkout git removes is forgotten,
+            // and the removal ended, whatever became of the window.
+            let handle = window.window_handle();
+            cx.spawn(async move |_, cx| {
+                let result = cx
+                    .background_executor()
+                    .spawn({
+                        let (root, top, branch) = (root.clone(), top.clone(), branch.clone());
+                        async move { removal::remove_own_blocking(&root, &top, branch.as_deref()) }
+                    })
+                    .await;
+                cx.update(|cx| {
+                    let done = Removal::Done {
+                        top,
+                        branch,
+                        result,
+                    };
+                    let toasts = crate::projects::worktree_removal(&root, &folder, done, cx);
+                    let _ = handle.update(cx, |_, window, cx| {
+                        for toast in toasts {
+                            window.push_notification(toast, cx);
+                        }
                     });
-                })
-                .detach();
-            },
-        );
+                });
+            })
+            .detach();
+        });
     }
 }
 

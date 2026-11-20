@@ -251,7 +251,14 @@ pub(super) fn carry_one(effect: Effect, cx: &mut App) {
             // Its folder is its project's first: a worktree no project
             // records yet is recorded as the worker's, once it can start.
             if let Some(at) = startable(&key, &root, cx) {
-                crate::projects::place(None, at, MadeBy::Worker, cx, move |_, cx| {
+                crate::projects::place(None, at, MadeBy::Worker, cx, move |project, cx| {
+                    // Its answer names the project its folder is of now.
+                    let placed = Input::Placed {
+                        key: key.clone(),
+                        project: project.name,
+                    };
+                    let fx = drive().handle(placed);
+                    carry(fx, cx);
                     start(key, root, dirs, folder, name, cx)
                 });
             }

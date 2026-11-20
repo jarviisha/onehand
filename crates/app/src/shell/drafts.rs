@@ -548,7 +548,7 @@ impl Shell {
         self.carry_workspace(fx, window, cx);
         // Split to work in it: a session starts there, on the project's row.
         if let Some(idx) = self.window.workspace.local_index(&dir) {
-            let _ = self.new_session_in_folder(idx, dir, 0, window, cx);
+            let _ = self.new_session_in_folder(idx, dir, None, window, cx);
         }
     }
 
