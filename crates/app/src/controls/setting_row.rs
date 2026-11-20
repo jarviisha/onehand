@@ -23,7 +23,7 @@ pub(crate) type SettingPick = Rc<dyn Fn(Option<String>, &mut Window, &mut App)>;
 /// decides it), muted otherwise (the run's check at the step does).
 /// `offered` is `None` while what the agent offers is not known, and nothing
 /// is marked.
-/// In one edged track that wraps on a narrow panel; past [`CHOICES_SHOWN`]
+/// In one filled track that wraps on a narrow panel; past [`CHOICES_SHOWN`]
 /// a line says how many more.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn setting_row(
@@ -41,7 +41,7 @@ pub(crate) fn setting_row(
     let warning = crate::theme::status_ink(cx).warning;
     let chip = |n: usize, label: SharedString, to: Option<String>, on: bool| {
         let pick = pick.clone();
-        onehand_ui::choice(
+        onehand_ui::segment(
             SharedString::from(format!("{id}-{n}")),
             label,
             on,

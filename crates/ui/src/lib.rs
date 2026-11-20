@@ -38,7 +38,7 @@ pub mod tokens;
 mod tooltip;
 pub use badge::{badge, badge_edge, label_badge, label_tint};
 pub use button::{Named, Quiet, Refuses, action, fold_toggle};
-pub use choice::{choice, choice_track, picker, switch};
+pub use choice::{SegmentFills, choice, choice_track, picker, segment, segment_fills, switch};
 pub use choice_mark::choice_mark;
 pub use confirm::{Answer, Confirm, confirm_either_on, confirm_on};
 pub use control_size::{ControlSize, Short, ShortIcon, Tall, TallIcon};
