@@ -105,6 +105,40 @@ pub(super) fn home_rows(cx: &mut App) -> Vec<FocusHandle> {
         .collect()
 }
 
+/// What resuming the past conversation `meta`, listed for the folder
+/// `folder`, asks: a session on that folder when it ran there; else (it ran in
+/// a folder its project no longer holds) the conversation by its id, which
+/// resumes it where it ran and refuses a folder that is gone. Never a session
+/// in `folder`: its agent would load the wrong place, and its record of where
+/// it ran would be written over.
+pub(super) fn resume_of(folder: &Path, meta: &onehand_core::chat::ConvMeta) -> Resume {
+    match meta.root == folder {
+        true => Resume::Here(SharedString::from(meta.agent.clone()), meta.dir.clone()),
+        false => Resume::WhereItRan(meta.session_id.clone()),
+    }
+}
+
+/// How a past conversation is resumed: see [`resume_of`].
+#[derive(Clone)]
+pub(super) enum Resume {
+    /// On the row's folder, by `agent`, from the archive.
+    Here(SharedString, PathBuf),
+    /// By its id, where it ran.
+    WhereItRan(String),
+}
+
+impl Resume {
+    pub(super) fn event(&self) -> ChatPaneEvent {
+        match self {
+            Resume::Here(agent, archive) => ChatPaneEvent::StartSession {
+                agent: Some(agent.clone()),
+                resume: Some(archive.clone()),
+            },
+            Resume::WhereItRan(session) => ChatPaneEvent::OpenConversation(session.clone()),
+        }
+    }
+}
+
 impl ChatPane {
     /// Point the header's menu at `root`, reading its conversations if it is not
     /// already the one being held.
@@ -139,14 +173,14 @@ impl ChatPane {
         let Some(path) = self.archives.as_ref().map(|held| held.root.clone()) else {
             return;
         };
-        let scan = path.clone();
+        let scope = crate::projects::scope_of(&path, cx);
         cx.spawn(async move |pane, cx| {
             let past = cx
                 .background_executor()
                 .spawn(async move {
                     onehand_core::chat::list_conversations(
                         &onehand_core::chat::conversations_dir(),
-                        &scan,
+                        &scope,
                         None,
                     )
                 })
@@ -182,14 +216,14 @@ impl ChatPane {
         else {
             return;
         };
-        let scan = path.clone();
+        let scope = crate::projects::scope_of(&path, cx);
         cx.spawn(async move |pane, cx| {
             let past = cx
                 .background_executor()
                 .spawn(async move {
                     onehand_core::chat::list_conversations(
                         &onehand_core::chat::conversations_dir(),
-                        &scan,
+                        &scope,
                         None,
                     )
                 })
@@ -420,8 +454,7 @@ impl ChatPane {
                 .zip(&project.rows)
                 .enumerate()
                 .map(|(i, (meta, focus))| {
-                    let (agent, archive) =
-                        (SharedString::from(meta.agent.clone()), meta.dir.clone());
+                    let resumed = resume_of(&project.path, &meta);
                     let dir = meta.dir.clone();
                     let name = SharedString::from(meta.title.clone());
                     let group = SharedString::from(format!("home-row-{i}"));
@@ -429,14 +462,9 @@ impl ChatPane {
                     // right-click offer it by name, and the removal.
                     let pane = cx.entity().downgrade();
                     let resume = {
-                        let (pane, agent, archive) = (pane.clone(), agent.clone(), archive.clone());
+                        let (pane, resumed) = (pane.clone(), resumed.clone());
                         Rc::new(move |_: &gpui::ClickEvent, _: &mut Window, cx: &mut App| {
-                            let _ = pane.update(cx, |_: &mut Self, cx| {
-                                cx.emit(ChatPaneEvent::StartSession {
-                                    agent: Some(agent.clone()),
-                                    resume: Some(archive.clone()),
-                                });
-                            });
+                            let _ = pane.update(cx, |_: &mut Self, cx| cx.emit(resumed.event()));
                         })
                             as Rc<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App)>
                     };
@@ -491,12 +519,9 @@ impl ChatPane {
                             count_of(meta.item_count, "item"),
                             meta.agent
                         )))
-                        .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
-                            cx.emit(ChatPaneEvent::StartSession {
-                                agent: Some(agent.clone()),
-                                resume: Some(archive.clone()),
-                            });
-                        }))
+                        .on_click(
+                            cx.listener(move |_: &mut Self, _, _, cx| cx.emit(resumed.event())),
+                        )
                         // The press on ⋯ stays its own, or it also opens the
                         // row.
                         .child(

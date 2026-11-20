@@ -409,6 +409,7 @@ mod lifecycle {
         vec![onehand_core::chat::ConvMeta {
             dir: PathBuf::from("/nonexistent/onehand-past"),
             session_id: "past".into(),
+            root: PathBuf::from("/tmp"),
             agent: "nowhere".into(),
             updated: 0,
             title: "a past conversation".into(),
@@ -441,4 +442,33 @@ mod lifecycle {
         assert!(!pane.read_with(cx, |pane, _| pane.is_choosing(1)));
         assert!(now.upgrade().is_some(), "a stale list takes nothing off");
     }
+}
+
+/// Resuming a past conversation from a row runs it where it ran: on the row's
+/// own folder, a session there; from another folder (one its project no
+/// longer holds), by its id, which refuses a folder that is gone.
+#[test]
+fn a_past_conversation_resumes_where_it_ran() {
+    use super::ChatPaneEvent;
+    use std::path::{Path, PathBuf};
+    let meta = |root: &str| onehand_core::chat::ConvMeta {
+        dir: PathBuf::from("/store/s"),
+        session_id: "s".into(),
+        root: PathBuf::from(root),
+        agent: "a".into(),
+        updated: 0,
+        title: "t".into(),
+        item_count: 1,
+    };
+    assert!(matches!(
+        super::project_page::resume_of(Path::new("/a"), &meta("/a")).event(),
+        ChatPaneEvent::StartSession {
+            resume: Some(_),
+            ..
+        }
+    ));
+    assert!(matches!(
+        super::project_page::resume_of(Path::new("/a"), &meta("/a-gone")).event(),
+        ChatPaneEvent::OpenConversation(id) if id == "s"
+    ));
 }

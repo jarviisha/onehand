@@ -1,6 +1,6 @@
 # Projects kept by onehand, owning their worktrees
 
-Status: approved by the owner on 2026-11-19. Decisions marked *owner* were made by the owner in
+Status: approved by the owner on 2026-11-19; steps 1 and 2 built. Decisions marked *owner* were made by the owner in
 conversation; those marked *builder's call* are the designer's and may be overturned by the plan.
 
 ## Intent

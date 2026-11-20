@@ -182,7 +182,7 @@ impl Front {
 /// and the drop that writes the rest fails there, as it may.
 fn connected() -> (Front, Rx) {
     let store = PathBuf::from("/nonexistent/onehand-drive-tests");
-    let chat = Chat::new(1, PathBuf::from("/repo"), "agent".into(), Some(store));
+    let chat = Chat::new(1, PathBuf::from("/repo"), "agent".into(), Some(store), None);
     let (mut drive, rx) = Front::new(SessionDrive::new(chat));
     let (tx, _): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
     feed(
@@ -1277,7 +1277,7 @@ fn a_busy_host_is_waited_on_apart_from_one_away() {
 /// where the fork was asked for, and the session goes.
 #[test]
 fn a_fork_that_never_opened_ends_without_news() {
-    let chat = Chat::new(1, PathBuf::from("/repo"), "agent".into(), None);
+    let chat = Chat::new(1, PathBuf::from("/repo"), "agent".into(), None, None);
     let (mut drive, _rx) = Front::new(SessionDrive::new(chat));
     drive.drive.fork(crate::chat::ForkSeed::named("a fork"));
     feed(
@@ -1372,6 +1372,7 @@ fn on_disk(name: &str) -> (Front, Rx, PathBuf) {
         PathBuf::from("/repo"),
         "agent".into(),
         Some(store.clone()),
+        None,
     );
     let (mut drive, rx) = Front::new(SessionDrive::new(chat));
     let (tx, _): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
@@ -1452,6 +1453,7 @@ fn a_session_restarted_with_a_save_on_its_way_keeps_that_turn_if_the_save_fails(
         PathBuf::from("/repo"),
         "agent".into(),
         Some(store.clone()),
+        None,
     );
     let mut next = SessionDrive::new(chat);
     next.resume(snapshot);
@@ -1488,6 +1490,7 @@ fn a_save_landing_after_the_restarted_session_wrote_the_whole_file_adds_nothing_
         PathBuf::from("/repo"),
         "agent".into(),
         Some(store.clone()),
+        None,
     );
     let mut next = SessionDrive::new(chat);
     next.resume(snapshot);

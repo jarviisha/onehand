@@ -289,12 +289,12 @@ fn scan(chat: String, cx: &mut App) {
 
 /// Every project root on this machine that runs its sessions here, once each:
 /// two windows can hold one folder.
-fn roots(cx: &App) -> Vec<(std::path::PathBuf, String)> {
-    let mut out: Vec<(std::path::PathBuf, String)> = Vec::new();
+fn roots(cx: &App) -> Vec<(onehand_core::chat::Scope, String)> {
+    let mut out: Vec<(onehand_core::chat::Scope, String)> = Vec::new();
     for (_, shell) in crate::windows::live(cx) {
-        for root in shell.read(cx).remote_roots() {
-            if !out.iter().any(|(path, _)| *path == root.0) {
-                out.push(root);
+        for (path, name) in shell.read(cx).remote_roots() {
+            if !out.iter().any(|(scope, _)| scope.folder == path) {
+                out.push((crate::projects::scope_of(&path, cx), name));
             }
         }
     }

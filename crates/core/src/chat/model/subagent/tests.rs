@@ -7,7 +7,7 @@ use crate::chat::model::UserMsg;
 use std::path::PathBuf;
 
 fn chat() -> Chat {
-    Chat::new(1, PathBuf::from("/r"), "Claude".into(), None)
+    Chat::new(1, PathBuf::from("/r"), "Claude".into(), None, None)
 }
 
 fn spawn(id: &str, name: &str, task: &str) -> AcpEvent {
@@ -164,7 +164,7 @@ fn an_end_stops_the_count() {
         (SubagentEnd::Cancelled, SubagentState::Cancelled),
         (SubagentEnd::Disconnected, SubagentState::Interrupted),
     ] {
-        let mut chat = Chat::new(1, PathBuf::from("/r"), "C".into(), None);
+        let mut chat = Chat::new(1, PathBuf::from("/r"), "C".into(), None, None);
         chat.apply(spawn("c", "N", "T"));
         chat.apply(ended("c", end));
         assert_eq!(card(&chat.items, "c").state, state);
@@ -241,7 +241,7 @@ fn a_lost_adapter_interrupts_working_cards() {
     assert_eq!(chat.subagents_working(), 0);
     assert!(!chat.running());
 
-    let mut chat = Chat::new(1, PathBuf::from("/r"), "C".into(), None);
+    let mut chat = Chat::new(1, PathBuf::from("/r"), "C".into(), None, None);
     chat.apply(spawn("c1", "Reader", "Read"));
     chat.stream_ended();
     assert_eq!(card(&chat.items, "c1").state, SubagentState::Interrupted);
@@ -472,7 +472,7 @@ fn a_terminal_inside_a_card_keeps_its_output() {
     assert!(text.starts_with("hello"), "{text}");
     assert_eq!(code, Some(0));
 
-    let mut chat = Chat::new(1, PathBuf::from("/r"), "C".into(), None);
+    let mut chat = Chat::new(1, PathBuf::from("/r"), "C".into(), None, None);
     terminal_run(&mut chat);
     chat.apply(AcpEvent::Disconnected("gone".into()));
     let (text, _) = card_tool_output(&chat);

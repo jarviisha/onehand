@@ -319,6 +319,7 @@ fn unsaved_between_turns_waits_for_a_settled_tail() {
         PathBuf::from("/r"),
         "Claude".into(),
         Some(PathBuf::from("/store")),
+        None,
     );
     chat.session_id = Some("sid-1".into());
     chat.link = Link::Connected;
@@ -368,6 +369,7 @@ fn settled_chat() -> Chat {
         PathBuf::from("/r"),
         "Codex".into(),
         Some(PathBuf::from("/store")),
+        None,
     );
     told(&mut chat);
     chat.session_id = Some("sid-1".into());
@@ -508,6 +510,7 @@ fn a_pending_rewrite_is_not_work_between_turns() {
         PathBuf::from("/r"),
         "Claude".into(),
         Some(PathBuf::from("/store")),
+        None,
     );
     chat.resume_from(crate::chat::store::ConversationSnapshot {
         session_id: "sid-1".into(),
@@ -544,6 +547,7 @@ fn a_working_card_alone_is_not_unsaved() {
         PathBuf::from("/r"),
         "Claude".into(),
         Some(PathBuf::from("/store")),
+        None,
     );
     chat.session_id = Some("sid-1".into());
     chat.link = Link::Connected;

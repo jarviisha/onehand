@@ -125,6 +125,11 @@ pub enum ChatPaneEvent {
         agent: Option<SharedString>,
         resume: Option<PathBuf>,
     },
+    /// Put the conversation the agent named this on screen: its live session,
+    /// else the saved one resumed in the folder it ran in, refused when that
+    /// folder is gone. What a past conversation listed from a folder its
+    /// project no longer holds resumes through.
+    OpenConversation(String),
     /// Start a session in the project on screen, a host's, attached to the
     /// host session `session`, which `agent` runs.
     WatchHostSession {

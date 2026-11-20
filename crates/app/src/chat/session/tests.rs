@@ -15,7 +15,7 @@ fn a_host_chat_has_no_store() {
     // A turn's end is when a transcript is written. The write is only built
     // here, and building it moves the mark, so the drop writes nothing either.
     let saves = |on_host: bool| {
-        let mut chat = new_chat(1, PathBuf::from("/srv/app"), &spec, on_host);
+        let mut chat = new_chat(1, PathBuf::from("/srv/app"), &spec, on_host, None);
         chat.session_id = Some("acp-1".into());
         chat.items.push(ChatItem::notice("said".to_string()));
         let mut drive = SessionDrive::new(chat);
@@ -123,7 +123,7 @@ pub(crate) mod carrier {
         std::fs::write(&file, b"").unwrap();
         let store = file.join("conversations");
         (
-            Chat::new(1, PathBuf::from("/repo"), "agent".into(), Some(store)),
+            Chat::new(1, PathBuf::from("/repo"), "agent".into(), Some(store), None),
             file,
         )
     }

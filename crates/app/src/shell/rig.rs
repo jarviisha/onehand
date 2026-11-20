@@ -128,3 +128,12 @@ pub(crate) fn keep_projects(
     });
     cx.run_until_parked();
 }
+
+/// The recent conversations `shell`'s workspace page lists, by the row each
+/// is listed under and its session id.
+pub(crate) fn workspace_recent(
+    shell: &Entity<crate::shell::Shell>,
+    cx: &mut VisualTestContext,
+) -> Vec<(PathBuf, String)> {
+    cx.update(|_, cx| shell.read(cx).workspace_page.read(cx).recent_keys())
+}

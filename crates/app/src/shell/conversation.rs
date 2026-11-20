@@ -11,7 +11,7 @@ impl Shell {
     /// Put the conversation the agent named `session` on screen: its live
     /// session wherever it is, else the saved one, resumed on the project it
     /// ran in.
-    pub(super) fn open_conversation(
+    pub(crate) fn open_conversation(
         &mut self,
         session: &str,
         window: &mut Window,

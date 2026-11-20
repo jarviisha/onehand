@@ -462,7 +462,9 @@ impl ChatSession {
             }
         };
 
-        let chat = new_chat(uid, root.clone(), spec, host);
+        // The project its folder is of, which its metadata names.
+        let project = crate::projects::of(&root, cx).map(|project| project.id);
+        let chat = new_chat(uid, root.clone(), spec, host, project);
         cx.new(|cx| Self::begin(chat, spec, host, source, started, token, cx))
     }
 

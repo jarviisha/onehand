@@ -23,7 +23,13 @@ fn read_with_status(title: &str, status: ToolStatus) -> ChatItem {
 
 /// An answer, then two reads that fold into one activity cluster.
 fn chat() -> Chat {
-    let mut chat = Chat::new(1, PathBuf::from("/tmp/project"), "claude".to_string(), None);
+    let mut chat = Chat::new(
+        1,
+        PathBuf::from("/tmp/project"),
+        "claude".to_string(),
+        None,
+        None,
+    );
     chat.items = vec![
         ChatItem::Agent(Md::parse("here is what I found")),
         read("Read src/a.rs"),

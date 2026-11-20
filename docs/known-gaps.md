@@ -24,6 +24,10 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   stays away until the pointer leaves the control, not as soon as it moves from where it was
   pressed: gpui's own tooltip, which these use, counts the one kept away as shown and offers no
   way to ask again from outside. The library's controls follow the rule as written.
+- **An issue renumbered when a project's issues were brought together keeps nothing of its old
+  number.** Issues an earlier build kept per workspace and per folder were merged into one file
+  per project, and an issue of onehand's own whose number was taken took the next one; what named
+  it by its old number (another issue's body, a note) still says the old one.
 - **A project onehand keeps is never deleted.** Removing it from a workspace leaves its file in
   `projects/` in the config directory, so adding its folder again finds its name and the rest
   back; nothing yet deletes a project, and its file stays when no workspace holds it.

@@ -631,6 +631,7 @@ fn resumed_chat(n: usize) -> Chat {
         PathBuf::from("/r"),
         "Claude".into(),
         Some(PathBuf::from("/store")),
+        None,
     );
     chat.resume_from(ConversationSnapshot {
         session_id: "sid-1".into(),
@@ -828,6 +829,7 @@ fn a_restart_carries_the_mark() {
         PathBuf::from("/r"),
         "Claude".into(),
         Some(PathBuf::from("/store")),
+        None,
     );
     next.resume_from(snapshot);
     let write = next.flush().expect("the unwritten prompt still is");
@@ -1236,7 +1238,13 @@ fn only_a_running_turn_queues() {
 }
 
 fn chat_with(items: Vec<ChatItem>) -> Chat {
-    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "Claude Code".to_string(), None);
+    let mut chat = Chat::new(
+        1,
+        PathBuf::from("/tmp/p"),
+        "Claude Code".to_string(),
+        None,
+        None,
+    );
     chat.items = items;
     chat
 }
@@ -1480,7 +1488,13 @@ fn choosing_something_that_is_not_there_changes_nothing() {
 /// picked, which is several seconds before anything can be sent to it.
 #[test]
 fn connecting_outranks_everything_the_status_could_say() {
-    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "Claude Code".to_string(), None);
+    let mut chat = Chat::new(
+        1,
+        PathBuf::from("/tmp/p"),
+        "Claude Code".to_string(),
+        None,
+        None,
+    );
     assert_eq!(
         chat.link,
         Link::Connecting,
@@ -1956,7 +1970,13 @@ fn streaming_into_one_block_still_counts_as_a_change() {
 #[test]
 fn a_turn_ending_settles_what_it_left_running() {
     let running = || {
-        let mut chat = Chat::new(1, std::path::PathBuf::from("/tmp/p"), "a".into(), None);
+        let mut chat = Chat::new(
+            1,
+            std::path::PathBuf::from("/tmp/p"),
+            "a".into(),
+            None,
+            None,
+        );
         chat.busy = true;
         chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
             id: "slow".into(),
@@ -2019,7 +2039,13 @@ fn a_turn_ending_settles_what_it_left_running() {
 #[test]
 fn a_lost_adapter_settles_what_it_left_running() {
     for lost in [true, false] {
-        let mut chat = Chat::new(1, std::path::PathBuf::from("/tmp/p"), "a".into(), None);
+        let mut chat = Chat::new(
+            1,
+            std::path::PathBuf::from("/tmp/p"),
+            "a".into(),
+            None,
+            None,
+        );
         chat.busy = true;
         chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
             id: "slow".into(),
@@ -2313,6 +2339,7 @@ fn a_failed_turn_outlives_a_restart_until_a_prompt_goes_out() {
         PathBuf::from("/r"),
         "Claude".into(),
         Some(PathBuf::from("/store")),
+        None,
     );
     next.resume_from(snapshot);
     assert!(next.failed(), "the restart did not answer it");
@@ -2339,6 +2366,7 @@ fn a_failed_turn_survives_a_replay_that_replaces_the_file() {
         PathBuf::from("/r"),
         "Claude".into(),
         Some(PathBuf::from("/store")),
+        None,
     );
     chat.resume_from(ConversationSnapshot {
         session_id: "sid-1".into(),
@@ -2380,6 +2408,7 @@ fn a_message_the_agent_delivers_does_not_answer_a_failure() {
         PathBuf::from("/r"),
         "Claude".into(),
         Some(PathBuf::from("/store")),
+        None,
     );
     chat.resume_from(ConversationSnapshot {
         session_id: "sid-1".into(),
@@ -2717,7 +2746,7 @@ fn picks_waiting_until_the_agent_answers() {
 
 #[test]
 fn a_stream_that_ends_leaves_no_turn_running() {
-    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "a".into(), None);
+    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "a".into(), None, None);
     chat.busy = true;
     chat.link = Link::Connected;
     chat.stream_ended();
@@ -2729,7 +2758,7 @@ fn a_stream_that_ends_leaves_no_turn_running() {
 
 #[test]
 fn a_stream_that_ends_after_disconnected_changes_nothing() {
-    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "a".into(), None);
+    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "a".into(), None, None);
     chat.apply(AcpEvent::Disconnected("gone".into()));
     let seen = |chat: &Chat| {
         (
@@ -2808,7 +2837,7 @@ fn a_login_required_start_is_said_once_and_the_link_is_lost() {
 /// A chat whose spec set no hint still says what happened.
 #[test]
 fn a_login_without_a_hint_names_the_agent() {
-    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "Gemini".to_string(), None);
+    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "Gemini".to_string(), None, None);
     chat.apply(AcpEvent::LoginRequired { advice: None });
     chat.apply(AcpEvent::Disconnected(
         "Could not start a session: Authentication required".into(),
@@ -2819,7 +2848,13 @@ fn a_login_without_a_hint_names_the_agent() {
 /// A declared agent that says how it is logged in is told so in its words.
 #[test]
 fn a_declared_agent_is_told_how_to_log_in_in_its_own_words() {
-    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "OpenCode".to_string(), None);
+    let mut chat = Chat::new(
+        1,
+        PathBuf::from("/tmp/p"),
+        "OpenCode".to_string(),
+        None,
+        None,
+    );
     chat.apply(AcpEvent::LoginRequired {
         advice: Some("Run opencode auth login in the terminal".into()),
     });
@@ -2923,7 +2958,13 @@ fn a_form_answered_only_with_none_counts_one_answer() {
 /// its id: those draw nothing, while an update with a title still does.
 #[test]
 fn an_update_with_nothing_to_read_for_an_unknown_id_draws_no_card() {
-    let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "Claude Code".to_string(), None);
+    let mut chat = Chat::new(
+        1,
+        PathBuf::from("/tmp/p"),
+        "Claude Code".to_string(),
+        None,
+        None,
+    );
     let update = |title: Option<&str>| {
         AcpEvent::ToolUpdate(crate::acp::ToolCallUpdate {
             id: "toolu_1".into(),
@@ -3256,7 +3297,7 @@ fn a_prompt_typed_after_a_replay_is_stamped_now() {
 #[test]
 fn a_journal_replay_into_an_empty_chat_holds_each_item_once() {
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-    let mut chat = Chat::new(1, PathBuf::from("/srv/app"), "Claude".into(), None);
+    let mut chat = Chat::new(1, PathBuf::from("/srv/app"), "Claude".into(), None, None);
     chat.apply(AcpEvent::Echo(AcpRequest::Prompt {
         text: "go".into(),
         attachments: vec![],
@@ -3317,7 +3358,7 @@ fn a_resume_onto_a_failed_conversation_says_its_failure_once() {
         (vec!["go"], true),
     ] {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut chat = Chat::new(1, PathBuf::from("/srv/app"), "Claude".into(), None);
+        let mut chat = Chat::new(1, PathBuf::from("/srv/app"), "Claude".into(), None, None);
         chat.resume_from(adopted());
         for (n, text) in replay.iter().enumerate() {
             chat.apply(if n == 0 {
@@ -3358,7 +3399,7 @@ fn a_resume_onto_a_failed_conversation_says_its_failure_once() {
 fn a_resume_that_fails_again_keeps_its_own_notice() {
     let said = "Loading the session failed: gone; starting a fresh one";
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-    let mut chat = Chat::new(1, PathBuf::from("/r"), "Claude".into(), None);
+    let mut chat = Chat::new(1, PathBuf::from("/r"), "Claude".into(), None, None);
     chat.resume_from(ConversationSnapshot {
         session_id: "sid-1".into(),
         title: None,
@@ -3396,7 +3437,7 @@ fn a_resume_that_fails_again_keeps_its_own_notice() {
 /// notice after it, or one of the same words said otherwise, stays.
 #[test]
 fn the_host_wait_line_is_taken_back_alone() {
-    let mut chat = Chat::new(1, PathBuf::from("/w"), "a".into(), None);
+    let mut chat = Chat::new(1, PathBuf::from("/w"), "a".into(), None, None);
     chat.items.push(ChatItem::notice("earlier"));
     chat.say_host_wait("Waiting for 1 session on vps".into());
     chat.items.push(ChatItem::notice("after"));

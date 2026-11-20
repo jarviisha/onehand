@@ -188,6 +188,7 @@ mod tests {
         ConvMeta {
             dir: PathBuf::from("/tmp/conversations/one"),
             session_id: "one".to_string(),
+            root: PathBuf::from("/tmp"),
             agent: "claude".to_string(),
             updated: 0,
             title: "a past conversation".to_string(),

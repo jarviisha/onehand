@@ -36,5 +36,5 @@ pub use steps::{
 pub use store::{
     commit, conv_dir, conversations_dir, delete, find_conversation, list_across,
     list_conversations, load, now_secs, ConfigPick, ConvMeta, ConversationSnapshot, PendingWrite,
-    Prefs,
+    Prefs, Scope,
 };

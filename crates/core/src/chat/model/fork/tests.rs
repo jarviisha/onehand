@@ -147,7 +147,13 @@ fn only_a_prompt_has_a_point() {
 
 /// The original conversation, saved on session `orig` under `store`.
 fn saved(store: &std::path::Path, items: Vec<ChatItem>) -> Chat {
-    let mut chat = Chat::new(1, PathBuf::from("/r"), "Claude".into(), Some(store.into()));
+    let mut chat = Chat::new(
+        1,
+        PathBuf::from("/r"),
+        "Claude".into(),
+        Some(store.into()),
+        None,
+    );
     chat.forkable = true;
     chat.session_id = Some("orig".into());
     chat.items = items;
@@ -191,7 +197,13 @@ fn an_adopted_fork_writes_itself_whole() {
     let point = chat.fork_point(TranscriptItemId::Live(2)).unwrap();
     let seed = fork_seed(&store, &point).unwrap();
 
-    let mut fork = Chat::new(2, PathBuf::from("/r"), "Claude".into(), Some(store.clone()));
+    let mut fork = Chat::new(
+        2,
+        PathBuf::from("/r"),
+        "Claude".into(),
+        Some(store.clone()),
+        None,
+    );
     fork.adopt_fork(seed);
     assert!(
         fork.flush().is_none(),
@@ -229,7 +241,13 @@ fn fork_seed_survives_the_original_being_deleted() {
     );
     let point = chat.fork_point(TranscriptItemId::Live(3)).unwrap();
     let seed = fork_seed(&store, &point).unwrap();
-    let mut fork = Chat::new(2, PathBuf::from("/r"), "Claude".into(), Some(store.clone()));
+    let mut fork = Chat::new(
+        2,
+        PathBuf::from("/r"),
+        "Claude".into(),
+        Some(store.clone()),
+        None,
+    );
     fork.adopt_fork(seed);
     fork.apply(AcpEvent::SessionId("f1".into()));
     commit(&fork.flush().unwrap()).unwrap();

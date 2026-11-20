@@ -594,7 +594,7 @@ impl Shell {
 
 impl Shell {
     /// Answer what the workspace page asked for.
-    pub(super) fn on_workspace_page(
+    pub(crate) fn on_workspace_page(
         &mut self,
         event: &crate::workspace_page::WorkspacePageEvent,
         window: &mut Window,
@@ -619,10 +619,20 @@ impl Shell {
             // is minted on that, but not shown: showing it would
             // connect the session it was last on, which nobody asked
             // for. The new session's own arrival shows the project.
+            // One that ran in a folder no row of its project is resumes
+            // where it ran, by its id, which refuses a folder that is gone:
+            // in the project's folder its agent would load the wrong place.
+            E::ResumeIn {
+                root,
+                ran_in,
+                session,
+                ..
+            } if ran_in != root => self.open_conversation(session, window, cx),
             E::ResumeIn {
                 root,
                 agent,
                 archive,
+                ..
             } => {
                 if let Some(idx) = self.root_index(root) {
                     let agent = super::sessions::agent_index(Some(agent.clone()), cx);

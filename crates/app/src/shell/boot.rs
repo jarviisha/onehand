@@ -203,6 +203,7 @@ impl Shell {
                         // just stopped being empty; it reads the list again.
                         shell.chat.update(cx, |_, cx| cx.notify());
                     }
+                    E::OpenConversation(session) => shell.open_conversation(session, window, cx),
                     E::StartSession { agent, resume } => {
                         // The uid is only wanted where the caller has to name
                         // what it just made; a click on the page has the new

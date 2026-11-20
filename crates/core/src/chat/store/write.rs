@@ -124,14 +124,19 @@ fn write_meta(dir: &Path, meta: &MetaWrite, stale: bool) -> std::io::Result<()> 
         .and_then(|text| serde_json::from_str(&text).ok());
     let existing = match (stale, existing) {
         (true, Some(mut existing)) => {
-            return match meta.updated {
-                Some(at) if at > existing.updated => {
-                    existing.updated = at;
+            // Of a stale write, a later date for added messages, and a
+            // project the file does not name yet.
+            let named = existing.project.is_none() && meta.project.is_some();
+            let later = meta.updated.filter(|at| *at > existing.updated);
+            return match (later, named) {
+                (None, false) => Ok(()),
+                (later, _) => {
+                    existing.updated = later.unwrap_or(existing.updated);
+                    existing.project = existing.project.take().or_else(|| meta.project.clone());
                     let text =
                         serde_json::to_string_pretty(&existing).map_err(std::io::Error::other)?;
                     crate::config::write_atomic(&path, &text)
                 }
-                _ => Ok(()),
             };
         }
         // Nothing there to keep: the newer write is gone, so this is all
@@ -143,6 +148,10 @@ fn write_meta(dir: &Path, meta: &MetaWrite, stale: bool) -> std::io::Result<()> 
         format: FORMAT,
         session_id: meta.session_id.clone(),
         root: meta.root.clone(),
+        project: meta
+            .project
+            .clone()
+            .or_else(|| existing.as_ref().and_then(|m| m.project.clone())),
         agent: meta.agent.clone(),
         created: existing.as_ref().map(|m| m.created).unwrap_or(now),
         updated: meta

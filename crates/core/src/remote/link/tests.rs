@@ -17,7 +17,13 @@ type Rx = tokio::sync::mpsc::UnboundedReceiver<AcpRequest>;
 
 /// A session whose agent is up and keeps no transcript, and what it sends.
 fn connected() -> (SessionDrive, Rx) {
-    let mut drive = SessionDrive::new(Chat::new(1, PathBuf::from("/repo"), "agent".into(), None));
+    let mut drive = SessionDrive::new(Chat::new(
+        1,
+        PathBuf::from("/repo"),
+        "agent".into(),
+        None,
+        None,
+    ));
     let (tx, rx): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
     feed(
         &mut drive,
