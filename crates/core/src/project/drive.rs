@@ -34,6 +34,7 @@ pub enum Thing {
     Check,
     Builds,
     Worktrees,
+    WorktreeParent,
     /// The offload of one folder of the project, by its path here.
     Offload(PathBuf),
 }
@@ -45,6 +46,7 @@ pub enum Value {
     Check(Option<String>),
     Builds(Vec<BuildHost>),
     Worktrees(Vec<Worktree>),
+    WorktreeParent(Option<PathBuf>),
     Offload {
         folder: PathBuf,
         on: Option<Offloaded>,
@@ -196,6 +198,49 @@ impl ProjectsDrive {
             Thing::Worktrees,
             Value::Worktrees(before),
             Value::Worktrees(after),
+            false,
+        )
+    }
+
+    /// Forget the worktree at `path` of project `id`, written now: what
+    /// *Forget* on a missing one and a removal through onehand do. Its folder
+    /// is not touched, and a session in it keeps running there.
+    #[must_use = "its effects are to be carried"]
+    pub fn forget_worktree(&mut self, id: &ProjectId, path: &Path) -> Vec<Effect> {
+        let Some(project) = self.projects.get_mut(id) else {
+            return Vec::new();
+        };
+        if !project.worktrees.iter().any(|w| w.path == path) {
+            return Vec::new();
+        }
+        let before = project.worktrees.clone();
+        project.worktrees.retain(|w| w.path != path);
+        let after = project.worktrees.clone();
+        self.change(
+            id,
+            Thing::Worktrees,
+            Value::Worktrees(before),
+            Value::Worktrees(after),
+            false,
+        )
+    }
+
+    /// Put project `id`'s new worktrees in `parent`, or beside the repository
+    /// with none, written now; unchanged changes nothing.
+    #[must_use = "its effects are to be carried"]
+    pub fn set_worktree_parent(&mut self, id: &ProjectId, parent: Option<PathBuf>) -> Vec<Effect> {
+        let Some(project) = self.projects.get_mut(id) else {
+            return Vec::new();
+        };
+        if project.worktree_parent == parent {
+            return Vec::new();
+        }
+        let before = std::mem::replace(&mut project.worktree_parent, parent.clone());
+        self.change(
+            id,
+            Thing::WorktreeParent,
+            Value::WorktreeParent(before),
+            Value::WorktreeParent(parent),
             false,
         )
     }
@@ -484,6 +529,11 @@ impl ProjectsDrive {
             Value::Builds(builds) => {
                 if let Some(project) = self.projects.get_mut(id) {
                     project.builds = builds;
+                }
+            }
+            Value::WorktreeParent(parent) => {
+                if let Some(project) = self.projects.get_mut(id) {
+                    project.worktree_parent = parent;
                 }
             }
             Value::Worktrees(mut worktrees) => {

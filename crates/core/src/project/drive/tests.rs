@@ -343,3 +343,20 @@ fn a_flush_writes_what_waits_on_a_burst_at_once() {
     assert_eq!(w.project.check.as_deref(), Some("make"));
     assert!(d.flush().is_empty(), "nothing waits any more");
 }
+
+#[test]
+fn a_worktree_parent_is_set_and_cleared_and_written() {
+    let (mut d, p) = drive();
+    let fx = d.set_worktree_parent(&p.id, Some("/work".into()));
+    assert_eq!(
+        write_of(fx).project.worktree_parent.as_deref(),
+        Some(Path::new("/work"))
+    );
+    assert!(
+        d.set_worktree_parent(&p.id, Some("/work".into()))
+            .is_empty(),
+        "unchanged"
+    );
+    let fx = d.set_worktree_parent(&p.id, None);
+    assert_eq!(write_of(fx).project.worktree_parent, None);
+}

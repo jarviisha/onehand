@@ -1303,3 +1303,21 @@ fn a_worker_on_a_worktree_just_recorded_joins_its_row() {
     assert_eq!(drive.roots.len(), 2, "no second row of the project");
     assert!(!drive.roots[1].transient);
 }
+
+#[test]
+fn forgetting_a_missing_worktree_keeps_its_sessions() {
+    use crate::project::{Projects, ProjectsDrive};
+    let p = with_worktree("/code/a");
+    let mut projects = ProjectsDrive::new(Projects::from_iter([p.clone()]), "/data".into());
+    let mut drive = bound();
+    drive.open_project("/code/a".into(), Some(&p));
+    drive.add_session_at(Some(spec()), 1, PathBuf::from("/code/a-x"));
+    let fx = projects.forget_worktree(&p.id, Path::new("/code/a-x"));
+    assert!(!fx.is_empty(), "written");
+    let now = projects.get(&p.id).unwrap().clone();
+    assert!(now.worktrees.is_empty());
+    let fx = drive.told(&now);
+    assert!(!names(&fx).contains(&"Close(1)".to_string()));
+    assert!(drive.roots[1].worktrees.is_empty());
+    assert_eq!(drive.folder_of(1), Some(PathBuf::from("/code/a-x")));
+}

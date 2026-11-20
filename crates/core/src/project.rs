@@ -25,6 +25,7 @@ pub mod drive;
 pub mod file;
 pub(crate) mod migrate;
 mod place;
+pub mod worktrees;
 pub use drive::ProjectsDrive;
 pub use place::{place_blocking, Placement};
 
