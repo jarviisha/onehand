@@ -583,7 +583,6 @@ impl Shell {
             .workspace
             .roots
             .get(idx)
-            .filter(|root| root.home)
             .and_then(|root| root.project.clone())
         else {
             return;

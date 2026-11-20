@@ -22,15 +22,20 @@ impl WorkspaceDrive {
     ) -> (Result<u64, Refusal>, Vec<Effect>) {
         let (added, fx) = self.add_session(spec, uid, home);
         if let Ok(uid) = added {
-            match &starts {
-                StartsOn::Watch(id) => {
-                    self.watches.insert(uid, id.clone());
-                }
-                StartsOn::Fresh | StartsOn::Resume(_) | StartsOn::Fork => {}
-            }
-            self.starts.insert(uid, starts);
+            self.starts_on(uid, starts);
         }
         (added, fx)
+    }
+
+    /// Session `uid`, just added, starts on `starts` once shown.
+    pub(super) fn starts_on(&mut self, uid: u64, starts: StartsOn) {
+        match &starts {
+            StartsOn::Watch(id) => {
+                self.watches.insert(uid, id.clone());
+            }
+            StartsOn::Fresh | StartsOn::Resume(_) | StartsOn::Fork => {}
+        }
+        self.starts.insert(uid, starts);
     }
 
     /// What session `uid` starts on, taken as it is first shown: what it was
@@ -397,23 +402,39 @@ impl WorkspaceDrive {
         };
         let uids: Vec<u64> = root.sessions.iter().map(|session| session.uid).collect();
         let mut fx: Vec<Effect> = uids.iter().map(|&uid| Effect::Close(uid)).collect();
+        // Every folder of the row goes with it: its own, its worktrees', and
+        // any other a session of it ran in.
+        let mut folders: Vec<PathBuf> = root.folders().map(Path::to_path_buf).collect();
+        for session in &root.sessions {
+            if !folders.contains(&session.folder) {
+                folders.push(session.folder.clone());
+            }
+        }
         // Its code is no longer checked for here; offloaded again, it comes
         // back as any does.
         if root.offload.is_some() {
             fx.push(Effect::ForgotOffload(root.path.clone()));
         }
+        for worktree in root.worktrees.iter().filter(|w| w.offload.is_some()) {
+            fx.push(Effect::ForgotOffload(worktree.path.clone()));
+        }
         // What is kept under a folder here goes with it: what was read of it,
         // and what the window files under its path. A host's folder never had
         // any of its own, and what is filed under its path belongs to a
         // folder of the same path here.
-        if root.host.is_none() {
-            self.git.remove(&root.path);
-            fx.push(Effect::ForgotHere(root.path.clone()));
+        let host = root.host.clone();
+        if host.is_none() {
+            for folder in &folders {
+                self.git.remove(folder);
+                fx.push(Effect::ForgotHere(folder.clone()));
+            }
         }
-        fx.push(Effect::Forgot(Forgotten {
-            path: root.path.clone(),
-            host: root.host.clone(),
-        }));
+        for path in folders {
+            fx.push(Effect::Forgot(Forgotten {
+                path,
+                host: host.clone(),
+            }));
+        }
         self.workspace.remove_root(idx);
         uids.into_iter().for_each(|uid| self.let_go(uid));
         fx.push(Effect::Changed);
@@ -434,8 +455,8 @@ impl WorkspaceDrive {
         Some(self.workspace.roots[root].sessions[session].folder.clone())
     }
 
-    /// The project here holding `folder`: the one at it, else one a session
-    /// of it runs in.
+    /// The project here holding `folder`: the one it is a folder of, else one
+    /// a session of it runs in.
     fn row_holding(&self, folder: &Path) -> Option<usize> {
         self.local_index(folder).or_else(|| {
             self.workspace.roots.iter().position(|root| {
@@ -444,11 +465,12 @@ impl WorkspaceDrive {
         })
     }
 
-    /// Where the project at `dir`, a folder on this machine, sits.
+    /// Where the project holding `dir`, a folder on this machine, as its
+    /// own or a worktree's, sits.
     pub fn local_index(&self, dir: &Path) -> Option<usize> {
         self.workspace
             .roots
             .iter()
-            .position(|root| root.local_path() == Some(dir))
+            .position(|root| root.local_path().is_some() && root.holds(dir))
     }
 }

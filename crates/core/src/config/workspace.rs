@@ -21,10 +21,10 @@ use std::path::{Path, PathBuf};
 #[serde(from = "Raw")]
 pub struct WorkspaceConfig {
     pub name: String,
-    /// The active project, by its key (`<host>:<path>` on a host, the bare
-    /// path here) rather than by index: an index slides onto another project
-    /// when one before it is removed. A key matching no project reads as the
-    /// first.
+    /// The active project, by its id (`id:<id>`), or for a row of no project
+    /// by its folder's key (`<host>:<path>` on a host, the bare path here),
+    /// rather than by index: an index slides onto another project when one
+    /// before it is removed. A key matching no project reads as the first.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active: Option<String>,
     pub(crate) projects: Vec<ProjectConfig>,
@@ -33,8 +33,9 @@ pub struct WorkspaceConfig {
     pub layout: PanelLayout,
 }
 
-/// One project folder in a workspace file: the project it is a folder of, by
-/// id, and the folder itself. Everything but `path` is left out when it holds
+/// One project in a workspace file: the project, by id, and its own folder.
+/// A file an earlier build wrote may hold an entry per worktree too; each
+/// folds into its project's row as it is read. Everything but `path` is left out when it holds
 /// its default, so a hand-read file says only what was chosen.
 ///
 /// **The folder is kept beside the id for an older build**, which reads only

@@ -138,9 +138,10 @@ pub enum Effect {
     /// its path for this machine's folder (its issues, its check field, its
     /// terminal's home, a form about it).
     ForgotHere(PathBuf),
-    /// A project has left: let go of what every project has (its editor
-    /// buffers, tree and shells, its place in the session lists). Its
-    /// sessions were each said with [`Effect::Close`] first.
+    /// A folder of a project that has left, said for each of the row's: let
+    /// go of what every folder has (its editor buffers, tree and shells, its
+    /// place in the session lists). Its sessions were each said with
+    /// [`Effect::Close`] first.
     Forgot(Forgotten),
     /// Put the active project's active session on screen.
     Show,

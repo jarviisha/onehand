@@ -941,10 +941,11 @@ fn rows_take_their_facts_from_their_project() {
         ..Default::default()
     };
     let ws = Workspace::from_config(cfg, "/ws".into(), &projects);
+    assert_eq!(ws.roots.len(), 1);
     assert_eq!(ws.roots[0].label, "Alpha");
-    assert_eq!(ws.roots[1].label, "a-x");
-    assert_eq!(ws.roots[1].check.as_deref(), Some("make"));
-    assert_eq!(ws.roots[1].project.as_ref(), Some(&p.id));
+    assert_eq!(ws.roots[0].check.as_deref(), Some("make"));
+    assert_eq!(ws.roots[0].project.as_ref(), Some(&p.id));
+    assert_eq!(ws.roots[0].branch_of(Path::new("/code/a-x")), Some("x"));
 }
 
 #[test]
@@ -976,11 +977,11 @@ fn an_entry_no_project_holds_keeps_and_writes_its_own_facts() {
 
 #[test]
 fn a_placed_row_writes_its_id_and_leaves_its_facts_to_its_project() {
-    use crate::project::{Folder, Project, ProjectId};
+    use crate::project::{Project, ProjectId};
     let mut p = Project::new(ProjectId::mint(1), None, "/code/a".into());
     p.check = Some("make".into());
     let mut ws = Workspace::seeded("/elsewhere");
-    ws.roots[0] = ProjectRoot::of(&p, Folder::Home);
+    ws.roots[0] = ProjectRoot::of(&p);
     let mut transient = ProjectRoot::new("/worker");
     transient.transient = true;
     ws.roots.push(transient);
@@ -988,10 +989,7 @@ fn a_placed_row_writes_its_id_and_leaves_its_facts_to_its_project() {
     assert_eq!(cfg.projects.len(), 1, "a transient row is left out");
     assert_eq!(cfg.projects[0].id, Some(p.id.clone()));
     assert_eq!(cfg.projects[0].check, None);
-    assert_eq!(
-        ProjectRoot::of(&p, Folder::Home).check.as_deref(),
-        Some("make")
-    );
+    assert_eq!(ProjectRoot::of(&p).check.as_deref(), Some("make"));
 }
 
 #[test]
@@ -1003,4 +1001,84 @@ fn offload_data_is_kept_by_folder() {
             .join("offload")
             .join(stem_for(Path::new("/code/onehand")))
     );
+}
+
+// One row per project.
+
+/// A project at `/a` with a worktree `/a-x` on branch `x`.
+fn with_worktree() -> crate::project::Project {
+    let mut p = crate::project::Project::new(crate::project::ProjectId::mint(7), None, "/a".into());
+    p.worktrees.push(worktree("/a-x"));
+    p
+}
+
+#[test]
+fn a_projects_entries_fold_into_one_row() {
+    let p = with_worktree();
+    let projects = crate::project::Projects::from_iter([p.clone()]);
+    let cfg = WorkspaceConfig {
+        active: Some("/a-x".into()),
+        projects: vec![
+            entry(Some(&p.id), "/a"),
+            ProjectConfig {
+                pinned: true,
+                ..entry(Some(&p.id), "/a-x")
+            },
+            project("/b"),
+        ],
+        ..Default::default()
+    };
+    let ws = Workspace::from_config(cfg, "/ws".into(), &projects);
+    let rows: Vec<_> = ws.roots.iter().map(|r| r.path.clone()).collect();
+    assert_eq!(rows, [PathBuf::from("/a"), PathBuf::from("/b")]);
+    assert!(ws.roots[0].pinned, "pinned when any entry was");
+    assert_eq!(ws.active_root, 0, "the row holding the active folder");
+    assert!(ws.roots[0].holds(Path::new("/a-x")));
+    assert_eq!(ws.roots[0].branch_of(Path::new("/a-x")), Some("x"));
+    assert_eq!(ws.roots[0].branch_of(Path::new("/a")), None);
+    // A worktree's entry an older build wrote without an id folds the same.
+    let cfg = WorkspaceConfig {
+        projects: vec![entry(None, "/a-x"), entry(Some(&p.id), "/a")],
+        ..Default::default()
+    };
+    let ws = Workspace::from_config(cfg, "/ws".into(), &projects);
+    assert_eq!(ws.roots.len(), 1);
+    assert_eq!(ws.roots[0].path, PathBuf::from("/a"));
+}
+
+#[test]
+fn the_file_holds_one_entry_per_project_and_its_active_by_id() {
+    let p = with_worktree();
+    let projects = crate::project::Projects::from_iter([p.clone()]);
+    let cfg = WorkspaceConfig {
+        active: Some("/a".into()),
+        projects: vec![entry(Some(&p.id), "/a"), entry(Some(&p.id), "/a-x")],
+        ..Default::default()
+    };
+    let ws = Workspace::from_config(cfg, "/ws".into(), &projects);
+    let cfg = ws.to_config();
+    assert_eq!(paths(&cfg), [PathBuf::from("/a")]);
+    assert_eq!(cfg.active, Some(format!("id:{}", p.id)));
+    let ws = Workspace::from_config(cfg, "/ws".into(), &projects);
+    assert_eq!(ws.active_root, 0);
+    // A row of no project keeps its folder key.
+    let ws = Workspace::seeded("/lone");
+    assert_eq!(ws.to_config().active.as_deref(), Some("/lone"));
+}
+
+#[test]
+fn a_sessions_host_is_its_folders() {
+    let mut p = with_worktree();
+    p.worktrees[0].offload = Some(Offloaded {
+        host: HostName("vps".into()),
+        mirror: "/m/a-x".into(),
+        branch: None,
+    });
+    let root = ProjectRoot::of(&p);
+    assert_eq!(
+        root.host_of(Path::new("/a-x")),
+        Some((&HostName("vps".into()), Path::new("/m/a-x")))
+    );
+    assert_eq!(root.host_of(Path::new("/a")), None);
+    assert!(root.runs_here(), "the project folder still runs here");
 }
