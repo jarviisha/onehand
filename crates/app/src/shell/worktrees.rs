@@ -11,6 +11,7 @@
 use super::{Confirm, Shell};
 use crate::chat::pane::WorktreeAct;
 use gpui::{Context, Window};
+use gpui_component::WindowExt as _;
 use onehand_core::worktree::removal::{self, Judged, OwnFacts};
 use std::path::{Path, PathBuf};
 
@@ -58,15 +59,12 @@ impl Shell {
     /// Begin a removal of `folder`, the projects' drive saying whether one is
     /// under way already; the page draws its *Remove…* from it.
     fn start_removing(&mut self, folder: &Path, cx: &mut Context<Self>) -> bool {
-        let fresh = crate::projects::begin_removal(folder, cx);
-        self.chat.update(cx, |_, cx| cx.notify());
-        fresh
+        crate::projects::begin_removal(folder, cx)
     }
 
     /// The removal of `folder` waits on the person's answer, or was let go.
     fn done_removing(&mut self, folder: &Path, cx: &mut Context<Self>) {
         crate::projects::removal_asked(folder, cx);
-        self.chat.update(cx, |_, cx| cx.notify());
     }
 
     /// The project on screen's own folder, when it is on this machine.
@@ -105,6 +103,9 @@ impl Shell {
             return;
         };
         let own = crate::projects::of(&root, cx).map(|project| project.id);
+        // Ended at the app's level should the window go meanwhile, so a
+        // removal under way never outlives what asked for it.
+        let app = cx.to_async();
         cx.spawn_in(window, async move |shell, cx| {
             let top = cx
                 .background_executor()
@@ -127,6 +128,7 @@ impl Shell {
                 });
                 (users, processes, shared_with, tasks)
             }) else {
+                app.update(|cx| crate::projects::removal_asked(&folder, cx));
                 return;
             };
             let judging = cx
@@ -150,9 +152,15 @@ impl Shell {
                     }
                 })
                 .await;
-            let _ = shell.update_in(cx, |shell, window, cx| {
-                then(shell, folder, judging, window, cx)
-            });
+            let shown = folder.clone();
+            if shell
+                .update_in(cx, |shell, window, cx| {
+                    then(shell, folder, judging, window, cx)
+                })
+                .is_err()
+            {
+                app.update(|cx| crate::projects::removal_asked(&shown, cx));
+            }
         })
         .detach();
     }
@@ -213,46 +221,47 @@ impl Shell {
         if !self.start_removing(&folder, cx) {
             return;
         }
-        self.judge_worktree(
-            folder,
-            window,
-            cx,
-            move |shell, folder, judging, window, cx| {
-                use onehand_core::project::drive::Removal;
-                let branch = match judging.judged {
-                    Judged::Remove { branch, .. } => branch,
-                    // The drive ends the removal under way with its answer.
-                    Judged::Refused(why) => {
-                        let refused = Removal::Refused(why);
-                        crate::projects::worktree_removal(&root, &folder, refused, window, cx);
-                        return shell.chat.update(cx, |_, cx| cx.notify());
+        self.judge_worktree(folder, window, cx, move |_, folder, judging, window, cx| {
+            use onehand_core::project::drive::Removal;
+            let branch = match judging.judged {
+                Judged::Remove { branch, .. } => branch,
+                // The drive ends the removal under way with its answer.
+                Judged::Refused(why) => {
+                    let refused = Removal::Refused(why);
+                    for toast in crate::projects::worktree_removal(&root, &folder, refused, cx) {
+                        window.push_notification(toast, cx);
                     }
-                };
-                let top = judging.facts.folder;
-                cx.spawn_in(window, async move |shell, cx| {
-                    let result =
-                        cx.background_executor()
-                            .spawn({
-                                let (root, top, branch) =
-                                    (root.clone(), top.clone(), branch.clone());
-                                async move {
-                                    removal::remove_own_blocking(&root, &top, branch.as_deref())
-                                }
-                            })
-                            .await;
-                    let _ = shell.update_in(cx, |shell, window, cx| {
-                        let done = Removal::Done {
-                            top,
-                            branch,
-                            result,
-                        };
-                        crate::projects::worktree_removal(&root, &folder, done, window, cx);
-                        shell.chat.update(cx, |_, cx| cx.notify());
+                    return;
+                }
+            };
+            let top = judging.facts.folder;
+            // At the app's level: the checkout git removes is forgotten,
+            // and the removal ended, whatever became of the window.
+            let handle = window.window_handle();
+            cx.spawn(async move |_, cx| {
+                let result = cx
+                    .background_executor()
+                    .spawn({
+                        let (root, top, branch) = (root.clone(), top.clone(), branch.clone());
+                        async move { removal::remove_own_blocking(&root, &top, branch.as_deref()) }
+                    })
+                    .await;
+                cx.update(|cx| {
+                    let done = Removal::Done {
+                        top,
+                        branch,
+                        result,
+                    };
+                    let toasts = crate::projects::worktree_removal(&root, &folder, done, cx);
+                    let _ = handle.update(cx, |_, window, cx| {
+                        for toast in toasts {
+                            window.push_notification(toast, cx);
+                        }
                     });
-                })
-                .detach();
-            },
-        );
+                });
+            })
+            .detach();
+        });
     }
 }
 

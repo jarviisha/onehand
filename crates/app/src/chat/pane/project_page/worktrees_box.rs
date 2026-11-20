@@ -59,7 +59,7 @@ pub(super) fn lines(
 ) -> (Vec<Line>, Option<String>) {
     // With git unread, or failing, the recorded worktrees as recorded.
     let (rows, note) = match read {
-        Some(Ok(rows)) => (Some(rows.clone()), None),
+        Some(Ok(rows)) => (Some(std::borrow::Cow::Borrowed(rows.as_slice())), None),
         Some(Err(why)) => (
             None,
             Some(format!("git's worktrees could not be read: {why}")),
@@ -67,7 +67,12 @@ pub(super) fn lines(
         None => (None, Some("Reading git's worktrees…".to_string())),
     };
     let rows = rows.unwrap_or_else(|| {
-        onehand_core::project::worktrees::rows(project, None, &Default::default(), |_| true)
+        std::borrow::Cow::Owned(onehand_core::project::worktrees::rows(
+            project,
+            None,
+            &Default::default(),
+            |_| true,
+        ))
     });
     let lines = rows
         .iter()

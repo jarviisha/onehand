@@ -170,3 +170,51 @@ fn a_missing_worktree_folder_is_refused_in_the_form(cx: &mut TestAppContext) {
     assert!(!gone.exists(), "nothing made");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A removal whose window closes before it lands still ends: nothing is left
+/// under way, and the record says what is on disk.
+#[gpui::test]
+fn a_removal_whose_window_closes_still_ends(cx: &mut TestAppContext) {
+    let (dir, shell, cx, project, _, wt) = opened("wt-remove-closed", 914_005, cx, |p, _| {
+        let wt = std::fs::canonicalize(p.path.parent().unwrap().join("wt")).unwrap();
+        p.worktrees.push(Worktree {
+            path: wt,
+            branch: "w".into(),
+            from: None,
+            made_by: MadeBy::Split,
+            offload: None,
+        });
+    });
+    let at = wt.clone();
+    cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| shell.remove_worktree_now(at, window, cx));
+        window.remove_window();
+    });
+    drop(shell);
+    let ended = |cx: &mut gpui::VisualTestContext| {
+        cx.cx
+            .update(|cx| !Shared::global(cx).projects.removing(&wt))
+    };
+    for _ in 0..300 {
+        cx.cx.run_until_parked();
+        if ended(cx) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(ended(cx), "nothing left under way");
+    let recorded = cx.cx.update(|cx| {
+        Shared::global(cx)
+            .projects
+            .get(&project.id)
+            .unwrap()
+            .worktrees
+            .len()
+    });
+    assert_eq!(
+        recorded == 1,
+        wt.exists(),
+        "the record says what is on disk"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

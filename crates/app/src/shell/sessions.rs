@@ -463,8 +463,8 @@ impl Shell {
     }
 
     /// Add a session of the agent named, else the first, on a *named* root,
-    /// running in
-    /// `folder`, one of its: *In <branch>*, a split's new worktree, a run's.
+    /// running in `folder`, one of its: *In <branch>*, a split's new
+    /// worktree, a run's.
     pub fn new_session_in_folder(
         &mut self,
         root_idx: usize,

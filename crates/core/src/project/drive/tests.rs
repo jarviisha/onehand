@@ -461,8 +461,17 @@ fn a_removal_under_way_takes_no_second_press_until_it_is_over() {
 fn a_worktree_gone_by_a_tasks_removal_is_forgotten_in_its_project() {
     let (mut d, p) = drive();
     let _ = d.record_worktree(&p.id, split("/code/a-x"));
+    let _ = d.record_worktree(&p.id, split("/code/a-x/sub"));
+    let _ = d.record_worktree(&p.id, split("/code/a-x2"));
     let fx = d.worktree_gone(Path::new("/code/a-x"));
     assert!(!fx.is_empty());
-    assert!(d.get(&p.id).unwrap().worktrees.is_empty());
+    let left: Vec<_> = (d.get(&p.id).unwrap().worktrees.iter())
+        .map(|w| w.path.display().to_string())
+        .collect();
+    assert_eq!(
+        left,
+        ["/code/a-x2"],
+        "inside the checkout only, by component"
+    );
     assert!(d.worktree_gone(Path::new("/code/a-x")).is_empty(), "once");
 }

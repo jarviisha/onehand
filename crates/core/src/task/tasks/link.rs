@@ -106,3 +106,24 @@ impl<'a, W: Copy> Seen<'a, W> {
         self.tasks.task(id)
     }
 }
+
+/// What removing a task's worktree came to (`input`, an
+/// [`super::Input::WorktreeRemoved`]): what the task does, and, the checkout
+/// gone, what its project does on forgetting every worktree it recorded in it.
+pub fn worktree_removed<W: Copy>(
+    tasks: &mut TasksDrive<W>,
+    projects: &mut crate::project::ProjectsDrive,
+    input: super::Input<W>,
+) -> (Vec<Effect<W>>, Vec<crate::project::drive::Effect>) {
+    let gone = match &input {
+        super::Input::WorktreeRemoved {
+            folder,
+            removed: Ok(_),
+            ..
+        } => Some(folder.clone()),
+        _ => None,
+    };
+    let fx = tasks.handle(input);
+    let said = gone.map_or_else(Vec::new, |top| projects.worktree_gone(&top));
+    (fx, said)
+}
