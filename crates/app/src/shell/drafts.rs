@@ -168,11 +168,14 @@ impl Shell {
         self.remember_focus(window, cx);
         self.worktree_branch
             .update(cx, |state, cx| state.set_value("", window, cx));
+        // Where the project puts its worktrees, set on its page; beside the
+        // repository with none.
+        let parent = crate::projects::of(&root, cx).and_then(|project| project.worktree_parent);
         self.worktree_draft = Some(WorktreeDraft {
             form: Draft::new(root.clone()),
             label,
             top: None,
-            parent: None,
+            parent,
         });
         self.worktree_branch.focus_handle(cx).focus(window, cx);
         cx.notify();
@@ -454,6 +457,7 @@ impl Shell {
         };
         let root = draft.root.clone();
         let top = draft.top.clone();
+        let parent = draft.parent.clone();
         draft.start();
         cx.notify();
 
@@ -462,6 +466,11 @@ impl Shell {
                 let (root, branch, top) = (root.clone(), branch.clone(), top.clone());
                 cx.background_executor()
                     .spawn(async move {
+                        // git makes a folder it is given that is not there,
+                        // so one chosen and since gone is refused here.
+                        if let Some(parent) = parent.filter(|parent| !parent.is_dir()) {
+                            return Err(format!("{} is not there any more", parent.display()));
+                        }
                         // The branch it is cut from, read before git moves
                         // anything: what the project records it came from.
                         let from = worktree::current_branch_blocking(&root).ok();

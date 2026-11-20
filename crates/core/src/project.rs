@@ -25,6 +25,7 @@ pub mod drive;
 pub mod file;
 pub(crate) mod migrate;
 mod place;
+pub mod worktrees;
 pub use drive::ProjectsDrive;
 pub use place::{place_blocking, Placement};
 
@@ -197,6 +198,21 @@ impl Projects {
 
     pub fn iter(&self) -> impl Iterator<Item = &Project> {
         self.0.values()
+    }
+
+    /// The names of the projects here, but `except`, that have a folder, their
+    /// own or a worktree's, inside the checkout at `top`: what keeps it from
+    /// being removed for one of them alone.
+    pub fn sharing(&self, top: &Path, except: Option<&ProjectId>) -> Vec<String> {
+        self.iter()
+            .filter(|project| Some(&project.id) != except && project.host.is_none())
+            .filter(|project| {
+                std::iter::once(&project.path)
+                    .chain(project.worktrees.iter().map(|w| &w.path))
+                    .any(|path| path.starts_with(top))
+            })
+            .map(|project| project.name.clone())
+            .collect()
     }
 
     /// Keep `project`, in place of the one with its id.

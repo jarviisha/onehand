@@ -16,6 +16,11 @@ use super::{git, git_message, head_blocking, LOCAL_LIMIT};
 use crate::process::output_within;
 use std::path::{Path, PathBuf};
 
+mod own;
+pub use own::{
+    branch_merged_blocking, judge_own, own_facts_blocking, remove_own_blocking, OwnFacts,
+};
+
 /// How many uncommitted files a refusal names before saying how many more.
 const UNCOMMITTED_SHOWN: usize = 5;
 
@@ -99,32 +104,8 @@ pub fn judge(facts: &Facts) -> Judged {
             )),
         }
     }
-    match &facts.uncommitted {
-        Ok(files) if files.is_empty() => {}
-        Ok(files) => {
-            let shown: Vec<&str> = files
-                .iter()
-                .take(UNCOMMITTED_SHOWN)
-                .map(|f| f.trim())
-                .collect();
-            let more = files.len().saturating_sub(UNCOMMITTED_SHOWN);
-            let more = match more {
-                0 => String::new(),
-                n => format!(" and {n} more"),
-            };
-            refused.push(format!(
-                "Uncommitted or untracked files: {}{more}.",
-                shown.join(", ")
-            ));
-        }
-        Err(why) => refused.push(format!("git could not say what is uncommitted: {why}")),
-    }
-    refused.extend(
-        facts
-            .users
-            .iter()
-            .map(|user| format!("{user} uses the folder.")),
-    );
+    refused.extend(uncommitted_said(&facts.uncommitted));
+    refused.extend(users_said(&facts.users));
     match (refused.is_empty(), merged) {
         (true, Some(merged)) => Judged::Remove {
             branch: facts.expected.clone().or_else(|| facts.branch.clone()),
@@ -137,6 +118,35 @@ pub fn judge(facts: &Facts) -> Judged {
         },
         _ => Judged::Refused(refused),
     }
+}
+
+/// What uncommitted work refuses, as said: the files, capped, or why git
+/// could not say; nothing when there is none.
+fn uncommitted_said(uncommitted: &Result<Vec<String>, String>) -> Option<String> {
+    match uncommitted {
+        Ok(files) if files.is_empty() => None,
+        Ok(files) => {
+            let shown: Vec<&str> = files
+                .iter()
+                .take(UNCOMMITTED_SHOWN)
+                .map(|f| f.trim())
+                .collect();
+            let more = match files.len().saturating_sub(UNCOMMITTED_SHOWN) {
+                0 => String::new(),
+                n => format!(" and {n} more"),
+            };
+            Some(format!(
+                "Uncommitted or untracked files: {}{more}.",
+                shown.join(", ")
+            ))
+        }
+        Err(why) => Some(format!("git could not say what is uncommitted: {why}")),
+    }
+}
+
+/// Each user of the folder, as said.
+fn users_said(users: &[String]) -> impl Iterator<Item = String> + '_ {
+    users.iter().map(|user| format!("{user} uses the folder."))
 }
 
 /// A commit as a person reads it.

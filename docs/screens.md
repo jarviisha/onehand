@@ -347,12 +347,26 @@ room and leaves the terminal as it is.
   *Open the agent settings* (secondary), which opens Settings on Agents.
 - A project with no session shows, from the top: a head (the project's name, its path and git line
   under it, *Run check* (spinning while a check runs) and *New session* (primary, with a caret
-  picking another agent while more than one is configured) at the end); then, in one column at every width, the box *Past
+  under *Start in* an *In <branch>* per recorded worktree on disk, then, while more than one agent
+  is configured, *With agent*) at the end); then, in one column at every width, the box *Past
   conversations* with its count, its rows the overview's (age, title, then items and agent at the
   edge, then a `⋯` on hover holding *Resume* and *Delete…*, the same on a right-click), capped, its wait and empty lines inside it:
   every one of the project, in whichever of its folders it ran, and one that ran in a folder it
   no longer holds (a worktree since removed) has its *Resume* say the folder is gone; under
-  it the box *Tasks* (how many need attention, run or wait, each opening the Tasks page
+  it, for a project on this machine, the box *Worktrees* with the count of those its project
+  records: a row each (its branch, under it its folder and *N sessions* running there, at its end
+  *New session* and *Remove…* in the danger ink), one git no longer lists reading *Missing* with
+  *Forget* in their place, then each checkout git lists that holds the project's folder and no
+  project records, *Not in this project*, with *Add to this project*; capped at 20 with *N more not
+  shown*, *No worktrees* at none, *Reading git's worktrees…* while git is read and *git's
+  worktrees could not be read: <why>* when it fails, the recorded rows drawn either way; then *New
+  worktree…* (refused on a folder that is no repository whose sessions run here) and the field
+  *Worktree folder*: the folder new worktrees go in, or *Beside the repository*, with *Change…*
+  and, while one is set, *Beside the repository*. *Remove…* asks *Remove worktree <branch>?*,
+  saying the folder is deleted and whether its branch goes with it (merged) or is kept, and
+  refuses while the checkout has uncommitted files, something of onehand's or a process uses it,
+  or another project has a folder in it, listing each; judged again when answered, a toast says
+  what was removed and what was kept. Under that the box *Tasks* (how many need attention, run or wait, each opening the Tasks page
   narrowed to the project; *Nothing running here* at zero); then the box *Schedules* (the
   project's schedules by name with when each runs next, or *off*, each opening the Schedules page
   narrowed to the project; *No schedules here* at none; capped at five; reading and a failed read

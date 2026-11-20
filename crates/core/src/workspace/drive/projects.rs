@@ -270,6 +270,7 @@ impl WorkspaceDrive {
         let mut fx = Vec::new();
         let mut changed = false;
         let mut moved = Vec::new();
+        let mut dropped = Vec::new();
         for root in &mut self.workspace.roots {
             if root.project.as_ref() != Some(&project.id) {
                 continue;
@@ -287,6 +288,15 @@ impl WorkspaceDrive {
             if root.offload != before.3 {
                 moved.push(root.path.clone());
             }
+            // A worktree the record dropped (forgotten, removed) that no
+            // session runs in is let go of, as a removed row's folders are.
+            if root.host.is_none() {
+                for gone in before.4.iter().filter(|w| !root.holds(&w.path)) {
+                    if !root.sessions.iter().any(|s| s.folder == gone.path) {
+                        dropped.push(gone.path.clone());
+                    }
+                }
+            }
             for worktree in &root.worktrees {
                 let was = before.4.iter().find(|w| w.path == worktree.path);
                 if was.and_then(|w| w.offload.as_ref()) != worktree.offload.as_ref() {
@@ -303,6 +313,11 @@ impl WorkspaceDrive {
         }
         for dir in moved {
             fx.extend(self.drop_sessions_in(&dir));
+        }
+        for path in dropped {
+            self.git.remove(&path);
+            fx.push(Effect::ForgotHere(path.clone()));
+            fx.push(Effect::Forgot(super::Forgotten { path, host: None }));
         }
         if changed {
             fx.push(Effect::Changed);

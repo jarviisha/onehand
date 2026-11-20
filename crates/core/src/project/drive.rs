@@ -34,6 +34,7 @@ pub enum Thing {
     Check,
     Builds,
     Worktrees,
+    WorktreeParent,
     /// The offload of one folder of the project, by its path here.
     Offload(PathBuf),
 }
@@ -45,6 +46,7 @@ pub enum Value {
     Check(Option<String>),
     Builds(Vec<BuildHost>),
     Worktrees(Vec<Worktree>),
+    WorktreeParent(Option<PathBuf>),
     Offload {
         folder: PathBuf,
         on: Option<Offloaded>,
@@ -68,6 +70,25 @@ pub enum Signal {
         id: ProjectId,
         name: String,
         why: String,
+    },
+    /// The worktree called `name` (its branch, else its folder) was removed,
+    /// its branch `kept` for git's reason when git kept it.
+    WorktreeRemoved { name: String, kept: Option<String> },
+    /// Judged again, the worktree stays, for each reason.
+    WorktreeStays(Vec<String>),
+    /// git did not remove the worktree: why.
+    WorktreeNotRemoved(String),
+}
+
+/// How removing a worktree that is not a task's came out.
+pub enum Removal {
+    /// Judged again on the answer, it was refused: why.
+    Refused(Vec<String>),
+    /// git was asked to remove the checkout at `top`, then `branch`.
+    Done {
+        top: PathBuf,
+        branch: Option<String>,
+        result: Result<crate::worktree::removal::Removed, String>,
     },
 }
 
@@ -196,6 +217,78 @@ impl ProjectsDrive {
             Thing::Worktrees,
             Value::Worktrees(before),
             Value::Worktrees(after),
+            false,
+        )
+    }
+
+    /// Forget the worktree at `path` of project `id`, written now: what
+    /// *Forget* on a missing one and a removal through onehand do. Its folder
+    /// is not touched, and a session in it keeps running there.
+    #[must_use = "its effects are to be carried"]
+    pub fn forget_worktree(&mut self, id: &ProjectId, path: &Path) -> Vec<Effect> {
+        let Some(project) = self.projects.get_mut(id) else {
+            return Vec::new();
+        };
+        if !project.worktrees.iter().any(|w| w.path == path) {
+            return Vec::new();
+        }
+        let before = project.worktrees.clone();
+        project.worktrees.retain(|w| w.path != path);
+        let after = project.worktrees.clone();
+        self.change(
+            id,
+            Thing::Worktrees,
+            Value::Worktrees(before),
+            Value::Worktrees(after),
+            false,
+        )
+    }
+
+    /// Removing project `id`'s worktree at `folder` came out as `removal`: a
+    /// checkout git removed is forgotten, written now; each outcome is said.
+    #[must_use = "its effects are to be carried"]
+    pub fn worktree_removal(
+        &mut self,
+        id: &ProjectId,
+        folder: &Path,
+        removal: Removal,
+    ) -> Vec<Effect> {
+        match removal {
+            Removal::Refused(why) => vec![Effect::Signal(Signal::WorktreeStays(why))],
+            Removal::Done {
+                result: Err(why), ..
+            } => vec![Effect::Signal(Signal::WorktreeNotRemoved(why))],
+            Removal::Done {
+                top,
+                branch,
+                result: Ok(removed),
+            } => {
+                let mut fx = self.forget_worktree(id, folder);
+                fx.push(Effect::Signal(Signal::WorktreeRemoved {
+                    name: branch.unwrap_or_else(|| top.display().to_string()),
+                    kept: removed.branch_kept,
+                }));
+                fx
+            }
+        }
+    }
+
+    /// Put project `id`'s new worktrees in `parent`, or beside the repository
+    /// with none, written now; unchanged changes nothing.
+    #[must_use = "its effects are to be carried"]
+    pub fn set_worktree_parent(&mut self, id: &ProjectId, parent: Option<PathBuf>) -> Vec<Effect> {
+        let Some(project) = self.projects.get_mut(id) else {
+            return Vec::new();
+        };
+        if project.worktree_parent == parent {
+            return Vec::new();
+        }
+        let before = std::mem::replace(&mut project.worktree_parent, parent.clone());
+        self.change(
+            id,
+            Thing::WorktreeParent,
+            Value::WorktreeParent(before),
+            Value::WorktreeParent(parent),
             false,
         )
     }
@@ -484,6 +577,11 @@ impl ProjectsDrive {
             Value::Builds(builds) => {
                 if let Some(project) = self.projects.get_mut(id) {
                     project.builds = builds;
+                }
+            }
+            Value::WorktreeParent(parent) => {
+                if let Some(project) = self.projects.get_mut(id) {
+                    project.worktree_parent = parent;
                 }
             }
             Value::Worktrees(mut worktrees) => {

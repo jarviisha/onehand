@@ -346,6 +346,43 @@ pub fn commits_since_blocking(dir: &Path, base: &str) -> Result<u64, String> {
         .map_err(|err| format!("git printed an unreadable count: {err}"))
 }
 
+/// One checkout `git worktree list` names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Listed {
+    /// The checkout's top, canonical.
+    pub path: PathBuf,
+    /// The branch checked out there; none when detached.
+    pub branch: Option<String>,
+}
+
+/// Every checkout of the repository `folder` is in, as git lists them: the
+/// main one first. One git says is prunable, its folder gone, is left out,
+/// as is a bare repository. Blocking.
+pub fn list_blocking(folder: &Path) -> Result<Vec<Listed>, String> {
+    let out = read_blocking(folder, &["worktree", "list", "--porcelain"])?;
+    let mut listed = Vec::new();
+    for block in out.split("\n\n") {
+        let mut path = None;
+        let mut branch = None;
+        let mut gone = false;
+        for line in block.lines() {
+            match line.split_once(' ').unwrap_or((line, "")) {
+                ("worktree", at) => path = Some(PathBuf::from(at)),
+                ("branch", name) => {
+                    branch = Some(name.strip_prefix("refs/heads/").unwrap_or(name).to_string())
+                }
+                ("bare" | "prunable", _) => gone = true,
+                _ => {}
+            }
+        }
+        if let Some(path) = path.filter(|_| !gone) {
+            let path = std::fs::canonicalize(&path).unwrap_or(path);
+            listed.push(Listed { path, branch });
+        }
+    }
+    Ok(listed)
+}
+
 /// `git -C <dir> <args>`, answering with what it printed, trimmed.
 pub(crate) fn read_blocking(dir: &Path, args: &[&str]) -> Result<String, String> {
     let out =
@@ -503,6 +540,26 @@ fn free_branch_blocking(root: &Path, branch: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn git_lists_the_main_checkout_then_the_linked_one() {
+        let (main, wt) = crate::project::testing::repo_with_worktree("list-worktrees");
+        let listed = list_blocking(&main.join("sub")).unwrap();
+        assert_eq!(
+            listed,
+            [
+                Listed {
+                    path: main.clone(),
+                    branch: Some("main".into())
+                },
+                Listed {
+                    path: wt.clone(),
+                    branch: Some("w".into())
+                },
+            ]
+        );
+        let _ = std::fs::remove_dir_all(main.parent().unwrap());
+    }
 
     #[test]
     fn a_branch_whose_worktree_folder_is_left_is_passed_over() {

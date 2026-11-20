@@ -44,6 +44,27 @@ pub enum ProjectAction {
     Remove,
 }
 
+/// What the project page's *Worktrees* asks of the window, each about a
+/// folder of the project on screen.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WorktreeAct {
+    /// Start a session in this worktree.
+    NewSession(PathBuf),
+    /// Ask whether to remove this worktree, and remove it.
+    Remove(PathBuf),
+    /// Take in this checkout git lists, on its branch, as the project's.
+    Add {
+        folder: PathBuf,
+        branch: Option<String>,
+    },
+    /// Forget this missing worktree.
+    Forget(PathBuf),
+    /// Choose the folder new worktrees go in.
+    PickFolder,
+    /// Put new worktrees beside the repository again.
+    ClearFolder,
+}
+
 /// What the pane asks the shell for. Kept tiny on purpose: the chat's job is
 /// the conversation, and routing a file into the Workbench is the shell's.
 pub enum ChatPaneEvent {
@@ -204,6 +225,8 @@ pub enum ChatPaneEvent {
     EditBuildHost(usize),
     /// Ask before the project's build host at this place is removed.
     RemoveBuildHost(usize),
+    /// What the project page's *Worktrees* asks.
+    Worktree(WorktreeAct),
     /// `host` runs another build of the host service, with sessions
     /// mid-turn, so session `uid` there was not attached, or, with no `uid`,
     /// the project page could not list its sessions: either waits for them,
