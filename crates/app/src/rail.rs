@@ -175,7 +175,10 @@ impl List {
                     lead: crate::control::lead_of(s.uid),
                     waiting: 0,
                     under: None,
-                    host: roots[root].session_host().map(|(host, _)| host.to_string()),
+                    host: roots[root]
+                        .host_of(&s.folder)
+                        .map(|(host, _)| host.to_string()),
+                    branch: model::branch_mark(&roots[root], &s.folder),
                 }
             })
             .collect();

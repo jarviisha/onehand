@@ -32,6 +32,7 @@ fn seed() -> Vec<Item> {
         waiting: 0,
         under: None,
         host: None,
+        branch: None,
     };
     vec![
         s(0, 0, 1, "Inspect dashboard", Some(AwaitingUser), 4),
@@ -262,6 +263,7 @@ fn a_group_past_the_cap_says_how_many_more_until_shown_whole() {
             waiting: 0,
             under: None,
             host: None,
+            branch: None,
         })
         .collect();
     let capped = rows(&many, &shape(Filter::ByProject, &|_| true, &|_| false));
@@ -479,6 +481,7 @@ fn with_workers() -> Vec<Item> {
         waiting: 0,
         under: None,
         host: None,
+        branch: None,
     });
     items
 }
@@ -715,4 +718,23 @@ fn a_row_s_place_sets_its_indent_its_name_and_its_drag() {
             (1, false, false)
         ]
     );
+}
+
+#[test]
+fn a_session_in_a_worktree_is_marked_with_its_branch() {
+    use onehand_core::project::{MadeBy, Project, ProjectId, Worktree};
+    let mut p = Project::new(ProjectId::mint(1), None, "/a".into());
+    p.worktrees.push(Worktree {
+        path: "/a-x".into(),
+        branch: "feat".into(),
+        from: None,
+        made_by: MadeBy::Split,
+        offload: None,
+    });
+    let root = onehand_core::workspace::ProjectRoot::of(&p);
+    assert_eq!(
+        super::model::branch_mark(&root, Path::new("/a-x")).as_deref(),
+        Some("feat")
+    );
+    assert_eq!(super::model::branch_mark(&root, Path::new("/a")), None);
 }

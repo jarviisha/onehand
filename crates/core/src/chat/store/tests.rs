@@ -1072,38 +1072,20 @@ fn saved_in(store: &Path, sid: &str, root: &str, project: Option<ProjectId>) {
 }
 
 #[test]
-fn a_scope_takes_its_folder_and_its_projects_strays() {
+fn a_scope_takes_its_folder_and_every_conversation_of_its_project() {
     let p = ProjectId::mint(1);
     let home = Scope {
         folder: "/a".into(),
         project: Some(p.clone()),
-        home: true,
-        recorded: vec!["/a-x".into()],
     };
     assert!(
         home.holds(Path::new("/a"), None),
         "its own folder, project or not"
     );
-    assert!(
-        home.holds(Path::new("/a-gone"), Some(&p)),
-        "a folder its project no longer records"
-    );
-    assert!(
-        !home.holds(Path::new("/a-x"), Some(&p)),
-        "a recorded worktree lists its own"
-    );
+    assert!(home.holds(Path::new("/a-gone"), Some(&p)), "a stray");
+    assert!(home.holds(Path::new("/a-x"), Some(&p)), "a worktree's");
     assert!(!home.holds(Path::new("/b"), Some(&ProjectId::mint(2))));
     assert!(!home.holds(Path::new("/b"), None));
-    let worktree = Scope {
-        folder: "/a-x".into(),
-        project: Some(p.clone()),
-        home: false,
-        recorded: vec![],
-    };
-    assert!(
-        !worktree.holds(Path::new("/a-gone"), Some(&p)),
-        "only the project's own row takes strays"
-    );
 }
 
 #[test]
@@ -1164,14 +1146,10 @@ fn listing_across_lists_each_conversation_once() {
         Scope {
             folder: "/a".into(),
             project: Some(p.clone()),
-            home: true,
-            recorded: vec!["/a-x".into()],
         },
         Scope {
             folder: "/a-x".into(),
             project: Some(p.clone()),
-            home: false,
-            recorded: vec!["/a".into()],
         },
     ];
     let mut found: Vec<(PathBuf, String)> = list_across(&store, &scopes)
@@ -1197,8 +1175,6 @@ fn a_listed_conversation_says_the_folder_it_ran_in() {
     let home = Scope {
         folder: "/a".into(),
         project: Some(p),
-        home: true,
-        recorded: vec![],
     };
     let found = list_conversations(&store, &home, None);
     assert_eq!(found[0].root, PathBuf::from("/a-gone"));
@@ -1215,8 +1191,6 @@ fn listing_across_keys_a_conversation_by_its_own_folders_row_first() {
         Scope {
             folder: "/a".into(),
             project: Some(p.clone()),
-            home: true,
-            recorded: vec![],
         },
         Scope::folder("/a-worker"),
     ];

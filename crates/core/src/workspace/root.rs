@@ -154,6 +154,18 @@ impl ProjectRoot {
         std::iter::once(self.path.as_path()).chain(self.worktrees.iter().map(|w| w.path.as_path()))
     }
 
+    /// Every folder this row uses: its own, its worktrees', and any other a
+    /// session of it runs in (a worktree its project no longer records).
+    pub fn folders_used(&self) -> Vec<PathBuf> {
+        let mut folders: Vec<PathBuf> = self.folders().map(Path::to_path_buf).collect();
+        for session in &self.sessions {
+            if !folders.contains(&session.folder) {
+                folders.push(session.folder.clone());
+            }
+        }
+        folders
+    }
+
     /// Whether `folder` is one of this row's.
     pub fn holds(&self, folder: &Path) -> bool {
         self.folders().any(|at| at == folder)
@@ -182,6 +194,17 @@ impl ProjectRoot {
                 .map(|on| (&on.host, on.mirror.as_path())),
             None => self.session_host(),
         }
+    }
+
+    /// Each folder of this row that is offloaded, with where to: its own,
+    /// then its worktrees', each on its own.
+    pub fn offloaded(&self) -> impl Iterator<Item = (&Path, &Offloaded)> {
+        let own = self.offload.as_ref().map(|on| (self.path.as_path(), on));
+        own.into_iter().chain(
+            self.worktrees
+                .iter()
+                .filter_map(|w| Some((w.path.as_path(), w.offload.as_ref()?))),
+        )
     }
 
     /// The host this root's folder is on, if it is not on this machine.

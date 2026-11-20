@@ -156,9 +156,11 @@ impl WorkspaceDrive {
     }
 
     /// Add a session `uid` of `spec` on the active project, selected, for the
-    /// front end to start and show. `home` is the project a new session goes
-    /// to when the person is beside a worker, whose folder is kept for it
-    /// alone. Refused with no agent or no project, and said.
+    /// front end to start and show, in the folder of the session on screen
+    /// (the project's own with none). `home` is the project a new session
+    /// goes to, in its own folder, when the person is beside a worker, whose
+    /// folder is kept for it alone. Refused with no agent or no project, and
+    /// said.
     #[must_use = "its effects are to be carried"]
     pub fn add_session(
         &mut self,
@@ -166,11 +168,17 @@ impl WorkspaceDrive {
         uid: u64,
         home: Option<usize>,
     ) -> (Result<u64, Refusal>, Vec<Effect>) {
-        if let Some(home) = home {
-            self.workspace.select_root(home);
-        }
+        let folder = match home {
+            Some(home) => {
+                self.workspace.select_root(home);
+                self.workspace.active_root().map(|root| root.path.clone())
+            }
+            None => self
+                .workspace
+                .active_root()
+                .map(|root| root.folder_on_screen().to_path_buf()),
+        };
         // With no project, no folder: refused as one.
-        let folder = self.workspace.active_root().map(|root| root.path.clone());
         self.add_session_at(spec, uid, folder.unwrap_or_default())
     }
 
@@ -184,6 +192,9 @@ impl WorkspaceDrive {
         uid: u64,
         folder: PathBuf,
     ) -> (Result<u64, Refusal>, Vec<Effect>) {
+        // A folder no sweep reads yet has its git read for its badges.
+        let unread = (self.workspace.active_root())
+            .is_some_and(|root| !root.folders_used().contains(&folder));
         let added = Self::agent(spec).and_then(|spec| {
             self.workspace
                 .add_session_at(spec, uid, folder)
@@ -191,15 +202,17 @@ impl WorkspaceDrive {
                 .ok_or(Refusal::NoProject)
         });
         let fx = match added {
+            Ok(_) if unread => vec![Effect::Show, Effect::Resweep, Effect::Changed],
             Ok(_) => vec![Effect::Show, Effect::Changed],
             Err(why) => vec![Effect::Signal(Signal::Refused(why))],
         };
         (added, fx)
     }
 
-    /// [`Self::add_session`] on project `root`, selected first: the panels
-    /// follow the selection whether or not a session could be added, or the
-    /// rail names one project while every panel shows another.
+    /// [`Self::add_session`] on project `root`, in its own folder, selected
+    /// first: the panels follow the selection whether or not a session could
+    /// be added, or the rail names one project while every panel shows
+    /// another.
     #[must_use = "its effects are to be carried"]
     pub fn add_session_in(
         &mut self,
@@ -207,10 +220,29 @@ impl WorkspaceDrive {
         spec: Option<AgentSpec>,
         uid: u64,
     ) -> (Result<u64, Refusal>, Vec<Effect>) {
+        let folder = (self.workspace.roots.get(root))
+            .or(self.workspace.active_root())
+            .map(|root| root.path.clone());
+        self.add_session_in_folder(root, folder.unwrap_or_default(), spec, uid, StartsOn::Fresh)
+    }
+
+    /// [`Self::add_session_in`], running in `folder`, one of the project's,
+    /// and starting on `starts` once shown: what *In <branch>*, a split and
+    /// a conversation reopened from outside start.
+    #[must_use = "its effects are to be carried"]
+    pub fn add_session_in_folder(
+        &mut self,
+        root: usize,
+        folder: PathBuf,
+        spec: Option<AgentSpec>,
+        uid: u64,
+        starts: StartsOn,
+    ) -> (Result<u64, Refusal>, Vec<Effect>) {
         self.workspace.select_root(root);
-        let (added, mut fx) = self.add_session(spec, uid, None);
-        if added.is_err() {
-            fx.insert(0, Effect::Show);
+        let (added, mut fx) = self.add_session_at(spec, uid, folder);
+        match added {
+            Ok(uid) => self.starts_on(uid, starts),
+            Err(_) => fx.insert(0, Effect::Show),
         }
         (added, fx)
     }
@@ -404,12 +436,7 @@ impl WorkspaceDrive {
         let mut fx: Vec<Effect> = uids.iter().map(|&uid| Effect::Close(uid)).collect();
         // Every folder of the row goes with it: its own, its worktrees', and
         // any other a session of it ran in.
-        let mut folders: Vec<PathBuf> = root.folders().map(Path::to_path_buf).collect();
-        for session in &root.sessions {
-            if !folders.contains(&session.folder) {
-                folders.push(session.folder.clone());
-            }
-        }
+        let folders = root.folders_used();
         // Its code is no longer checked for here; offloaded again, it comes
         // back as any does.
         if root.offload.is_some() {

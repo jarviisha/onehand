@@ -1,6 +1,6 @@
 //! A session's row, its state's mark and words, and its menu.
 
-use super::model::{Item, meta};
+use super::model::Item;
 use super::row::{
     DragGhost, SessionDrag, covered_tip, covering, ellipsize, faded, hover_fill, key_ring,
     labelled, menu_button, meta_control, on_hover, row_control, row_inks, row_surfaces,
@@ -290,15 +290,14 @@ pub(super) fn session_row(
     let title = SharedString::from(item.title.clone());
     let host = item.host.as_deref();
     let host_name = host.map(SharedString::from);
-    let facts = SharedString::from(meta(
-        signal,
-        host,
-        item.background,
-        item.subagents,
-        item.waiting,
-        who,
-        item.age,
-    ));
+    let state =
+        super::model::meta_state(signal, host, item.background, item.subagents, item.waiting);
+    let tail = super::model::meta_tail(signal, who, item.age);
+    // The whole line, as the hover reads it: the branch after the state.
+    let facts = SharedString::from(match &item.branch {
+        Some(branch) => format!("{state} · {branch}{tail}"),
+        None => format!("{state}{tail}"),
+    });
     let ink = |color| HighlightStyle {
         color: Some(color),
         ..HighlightStyle::default()
@@ -308,7 +307,7 @@ pub(super) fn session_row(
     let word_end = super::model::state_word(signal, host).len();
     let waiting = super::model::waiting_span(signal, host, item.waiting)
         .map(|span| (span, ink(crate::theme::status_ink(cx).warning)));
-    let words = StyledText::new(facts.clone()).with_highlights(
+    let words = StyledText::new(SharedString::from(state)).with_highlights(
         word_ink(signal, cx)
             .map(|color| (0..word_end, ink(color)))
             .into_iter()
@@ -401,11 +400,17 @@ pub(super) fn session_row(
                 .pl_6()
                 .text_xs()
                 .child(
-                    faded(("meta", uid), words, group.clone(), rest, hovered)
-                        .text_color(meta_ink)
-                        .tooltip(covered_tip(&group, move |window, cx| {
-                            Tooltip::new(meta_tip.clone()).build(window, cx)
-                        })),
+                    faded(
+                        ("meta", uid),
+                        meta_line(words, item.branch.clone(), tail),
+                        group.clone(),
+                        rest,
+                        hovered,
+                    )
+                    .text_color(meta_ink)
+                    .tooltip(covered_tip(&group, move |window, cx| {
+                        Tooltip::new(meta_tip.clone()).build(window, cx)
+                    })),
                 )
                 .child(actions(
                     item,
@@ -525,4 +530,28 @@ fn actions(
                 shell.close_session(root, session, window, cx);
             })),
         ))
+}
+
+/// A session's second line: the state and its counts, then, in a worktree,
+/// the branch mark and the branch, then ` · who · age`. Narrowed, the branch
+/// gives way first; what is left past it is cut at the row's end.
+fn meta_line(state: StyledText, branch: Option<SharedString>, tail: String) -> impl IntoElement {
+    div()
+        .h_flex()
+        .items_center()
+        .min_w_0()
+        .child(div().flex_none().child(state))
+        .when_some(branch, |line, branch| {
+            line.child(div().flex_none().child(" · ")).child(
+                div()
+                    .h_flex()
+                    .items_center()
+                    .gap_1()
+                    .min_w_0()
+                    .flex_shrink_1()
+                    .child(Icon::new(crate::icons::Icon::GitBranch).xsmall())
+                    .child(div().min_w_0().truncate().child(branch)),
+            )
+        })
+        .child(div().flex_none().child(tail))
 }

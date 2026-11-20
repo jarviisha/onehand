@@ -1081,4 +1081,23 @@ fn a_sessions_host_is_its_folders() {
     );
     assert_eq!(root.host_of(Path::new("/a")), None);
     assert!(root.runs_here(), "the project folder still runs here");
+    let offloaded: Vec<_> = root.offloaded().map(|(path, _)| path).collect();
+    assert_eq!(offloaded, [Path::new("/a-x")]);
+}
+
+#[test]
+fn a_rows_folders_in_use_are_its_own_its_worktrees_and_its_sessions() {
+    let mut root = ProjectRoot::of(&with_worktree());
+    root.sessions
+        .push(crate::agent::Session::new(spec("a"), 1, "/a-x".into()));
+    root.sessions
+        .push(crate::agent::Session::new(spec("a"), 2, "/a-gone".into()));
+    assert_eq!(
+        root.folders_used(),
+        [
+            PathBuf::from("/a"),
+            PathBuf::from("/a-x"),
+            PathBuf::from("/a-gone")
+        ]
+    );
 }

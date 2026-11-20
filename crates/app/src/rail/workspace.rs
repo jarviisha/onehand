@@ -11,6 +11,7 @@ use gpui_component::menu::{ContextMenuExt as _, PopupMenu};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_ui::mark_slot;
+use std::path::PathBuf;
 
 /// The parent path of a workspace folder, shortened from the *front*.
 ///
@@ -168,9 +169,25 @@ pub(super) fn new_session_row(
         .into_iter()
         .filter_map(|idx| Some((idx, ellipsize(&roots.get(idx)?.label, MAX_LABEL))))
         .collect();
+    // The target's worktrees on disk, which a sweep has read: each a place
+    // to start in besides the project's own folder.
+    let worktrees: Vec<(PathBuf, SharedString)> = target
+        .and_then(|idx| roots.get(idx))
+        .map(|root| {
+            root.worktrees
+                .iter()
+                .filter(|worktree| window_state.workspace.git().contains_key(&worktree.path))
+                .map(|worktree| {
+                    let words = format!("In {}", worktree.branch);
+                    (worktree.path.clone(), ellipsize(&words, MAX_LABEL))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     let build = std::rc::Rc::new(new_session_menu(
         projects,
         target,
+        worktrees,
         agents,
         cx.entity().downgrade(),
     ));
@@ -203,7 +220,7 @@ pub(super) fn new_session_row(
                 .hover(move |row| row.bg(hover))
                 .on_click(
                     cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {
-                        shell.new_session_in(root, window, cx);
+                        shell.new_session_beside(root, window, cx);
                     }),
                 )
         })
@@ -237,12 +254,14 @@ pub(super) fn new_session_row(
         .context_menu(move |menu, window, cx| context_build(menu, window, cx))
 }
 
-/// Where a new session can go: which project, then which agent. A project
-/// row starts the default agent there; an agent row starts in the project
-/// *New* would, the first one drawn when there is none.
+/// Where a new session can go: which project, or which worktree of the
+/// target, then which agent. A project row starts the default agent in its
+/// own folder, an *In <branch>* row in that worktree; an agent row starts in
+/// the project *New* would, the first one drawn when there is none.
 fn new_session_menu(
     projects: Vec<(usize, SharedString)>,
     target: Option<usize>,
+    worktrees: Vec<(PathBuf, SharedString)>,
     agents: Vec<SharedString>,
     shell: WeakEntity<Shell>,
 ) -> impl Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + use<> {
@@ -260,6 +279,20 @@ fn new_session_menu(
                         .ok();
                     }),
             );
+            if Some(idx) != target {
+                continue;
+            }
+            for (folder, words) in &worktrees {
+                let (folder, to) = (folder.clone(), shell.clone());
+                menu = menu.item(crate::controls::menu_item(words.clone()).on_click(
+                    move |_, window, cx: &mut App| {
+                        to.update(cx, |shell: &mut Shell, cx| {
+                            let _ = shell.new_session_in_folder(idx, folder.clone(), 0, window, cx);
+                        })
+                        .ok();
+                    },
+                ));
+            }
         }
         let Some(root) = target.or(projects.first().map(|(idx, _)| *idx)) else {
             return menu;

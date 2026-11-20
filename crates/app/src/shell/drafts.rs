@@ -512,9 +512,10 @@ impl Shell {
     }
 
     /// Open `dir`, a worktree just split off the row at `root` on `branch`,
-    /// as a worktree of that row's project, recorded there; one split off a
-    /// row of no project comes in to be placed, as any folder does.
-    fn open_split(
+    /// as a worktree of that row's project, recorded there, and start a
+    /// session in it; one split off a row of no project comes in to be
+    /// placed, as any folder does.
+    pub(super) fn open_split(
         &mut self,
         root: &std::path::Path,
         dir: PathBuf,
@@ -531,8 +532,15 @@ impl Shell {
             offload: None,
         };
         let project = crate::projects::record(root, worktree, cx);
-        let fx = self.window.workspace.open_project(dir, project.as_ref());
+        let fx = self
+            .window
+            .workspace
+            .open_project(dir.clone(), project.as_ref());
         self.carry_workspace(fx, window, cx);
+        // Split to work in it: a session starts there, on the project's row.
+        if let Some(idx) = self.window.workspace.local_index(&dir) {
+            let _ = self.new_session_in_folder(idx, dir, 0, window, cx);
+        }
     }
 
     /// Open the rename field on a conversation.

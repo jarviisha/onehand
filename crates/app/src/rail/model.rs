@@ -69,8 +69,22 @@ pub(super) struct Item {
     /// [`nest_workers`] over the items as they stay: nothing reorders them
     /// after, as lists sort indices into them instead.
     pub(super) under: Option<usize>,
-    /// The host its project is on, which a session waiting for it names.
+    /// The host its folder's sessions run on, which a session waiting for
+    /// it names.
     pub(super) host: Option<String>,
+    /// The branch of the worktree it runs in; none in the project's own
+    /// folder.
+    pub(super) branch: Option<gpui::SharedString>,
+}
+
+/// The branch a session's line carries: its worktree's, when it runs in one
+/// of its project's rather than the project's own folder.
+pub(super) fn branch_mark(
+    root: &onehand_core::workspace::ProjectRoot,
+    folder: &std::path::Path,
+) -> Option<gpui::SharedString> {
+    root.branch_of(folder)
+        .map(|branch| branch.to_string().into())
 }
 
 impl Item {
@@ -119,6 +133,7 @@ pub(super) fn age_label(minutes: u64) -> String {
 /// `state · who · age`, where who is the agent, or the project in a flat list.
 /// A lead's waiting workers, then live background work and working subagents,
 /// are counted after the state, and only when there are some.
+#[cfg(test)]
 pub(super) fn meta(
     signal: Option<SessionSignal>,
     host: Option<&str>,
@@ -128,11 +143,28 @@ pub(super) fn meta(
     who: &str,
     age: u64,
 ) -> String {
+    meta_state(signal, host, background, subagents, waiting) + &meta_tail(signal, who, age)
+}
+
+/// The end of [`meta`]'s line, past the state and its counts: ` · who · age`.
+/// A branch mark stands before it, so the branch gives way before who does.
+pub(super) fn meta_tail(signal: Option<SessionSignal>, who: &str, age: u64) -> String {
     let age = age_label(age);
     let age = match signal {
         Some(SessionSignal::AwaitingUser) => format!("waiting {age}"),
         _ => age,
     };
+    format!(" · {who} · {age}")
+}
+
+/// The start of [`meta`]'s line: the state's word, then its counts.
+pub(super) fn meta_state(
+    signal: Option<SessionSignal>,
+    host: Option<&str>,
+    background: usize,
+    subagents: usize,
+    waiting: usize,
+) -> String {
     let mut state = state_word(signal, host);
     if let Some(said) = workers_said(waiting) {
         state += &format!(" · {said}");
@@ -145,7 +177,7 @@ pub(super) fn meta(
         1 => state += " · 1 subagent",
         n => state += &format!(" · {n} subagents"),
     }
-    format!("{state} · {who} · {age}")
+    state
 }
 
 /// A lead's waiting workers, as its row counts them; nothing for none.

@@ -81,11 +81,18 @@ impl WorkspaceDrive {
     #[must_use = "its effects are to be carried"]
     pub fn open_project(&mut self, dir: PathBuf, project: Option<&Project>) -> Vec<Effect> {
         let dir = normalize_root(dir);
+        let mut fx = self.told_first(project);
         let fresh = self.local_index(&dir).is_none();
         let idx = self.workspace.add_placed(row(None, dir, project));
-        let mut fx = self.unplaced(idx, fresh);
+        fx.extend(self.unplaced(idx, fresh));
         fx.extend(self.opened());
         fx
+    }
+
+    /// `project` as the caller now has it, told its rows first: a worktree
+    /// just recorded is a folder of its row before the row is looked for.
+    fn told_first(&mut self, project: Option<&Project>) -> Vec<Effect> {
+        project.map_or_else(Vec::new, |project| self.told(project))
     }
 
     /// [`Self::open_project`] for `project`'s own folder, on its host.
@@ -124,11 +131,12 @@ impl WorkspaceDrive {
         project: Option<&Project>,
     ) -> (usize, Vec<Effect>) {
         let dir = normalize_root(dir);
+        let mut fx = self.told_first(project);
         if let Some(idx) = self.local_index(&dir) {
-            return (idx, Vec::new());
+            return (idx, fx);
         }
         let idx = self.workspace.add_placed(row(None, dir, project));
-        let mut fx = self.unplaced(idx, true);
+        fx.extend(self.unplaced(idx, true));
         fx.extend(self.kept());
         (idx, fx)
     }
@@ -138,11 +146,12 @@ impl WorkspaceDrive {
     #[must_use = "its effects are to be carried"]
     pub fn keep_project_quietly(&mut self, dir: PathBuf, project: Option<&Project>) -> Vec<Effect> {
         let dir = normalize_root(dir);
+        let mut fx = self.told_first(project);
         if self.local_index(&dir).is_some() {
-            return Vec::new();
+            return fx;
         }
         let idx = self.workspace.add_placed_quietly(row(None, dir, project));
-        let mut fx = self.unplaced(idx, true);
+        fx.extend(self.unplaced(idx, true));
         fx.extend(self.kept());
         fx
     }

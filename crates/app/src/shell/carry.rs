@@ -139,13 +139,11 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let offloads = |shell: &Self| -> Vec<Option<onehand_core::workspace::Offloaded>> {
-            shell
-                .window
-                .workspace
-                .roots
-                .iter()
-                .map(|root| root.offload.clone())
+        // Every offloaded folder, a project's own or a worktree's.
+        let offloads = |shell: &Self| -> Vec<(PathBuf, onehand_core::workspace::Offloaded)> {
+            (shell.window.workspace.roots.iter())
+                .flat_map(|root| root.offloaded())
+                .map(|(path, on)| (path.to_path_buf(), on.clone()))
                 .collect()
         };
         let before = offloads(self);

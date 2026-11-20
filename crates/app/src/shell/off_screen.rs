@@ -96,8 +96,13 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> Option<u64> {
         let idx = self.root_index(root)?;
-        self.select_root(idx, window, cx);
-        self.start_session(agent, Some(archive), window, cx)
+        if self.refuse_open_twice(&archive, window, cx) {
+            return None;
+        }
+        // In `root`, which may be a worktree of the row's project.
+        let agent = super::sessions::agent_index(agent, cx);
+        let starts = onehand_core::workspace::drive::StartsOn::Resume(archive);
+        self.session_in_folder(idx, root.to_path_buf(), agent, starts, window, cx)
     }
 
     /// Where the issues of `root`'s project are kept: a row's, else, for a
@@ -113,22 +118,24 @@ impl Shell {
         })
     }
 
-    /// Each project folder of the window on this machine, with where its
-    /// project keeps its issues: one file for every folder of a project.
+    /// Each folder of every project of the window on this machine, its own
+    /// and its worktrees', with where its project keeps its issues: one file
+    /// for every folder of a project.
     pub(crate) fn issue_files(&self, cx: &App) -> std::collections::HashMap<PathBuf, KeptIssues> {
         let projects = &crate::state::Shared::global(cx).projects;
         self.window
             .workspace
             .roots
             .iter()
-            .filter_map(|root| {
-                let project = projects.get(root.project.as_ref()?)?;
-                let path = root.local_path()?;
+            .filter(|root| root.local_path().is_some())
+            .filter_map(|root| Some((root, projects.get(root.project.as_ref()?)?)))
+            .flat_map(|(root, project)| {
                 let kept = KeptIssues {
                     file: onehand_core::project::file::issues_file(&project.id),
                     home: project.path.clone(),
                 };
-                Some((path.to_path_buf(), kept))
+                root.folders()
+                    .map(move |folder| (folder.to_path_buf(), kept.clone()))
             })
             .collect()
     }

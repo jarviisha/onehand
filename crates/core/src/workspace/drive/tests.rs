@@ -1141,3 +1141,84 @@ fn a_conversation_that_ran_in_a_worktree_resumes_there() {
         StartsOn::Resume(PathBuf::from("/conv/c1"))
     );
 }
+
+#[test]
+fn a_new_session_beside_one_in_a_worktree_starts_in_its_folder() {
+    let p = with_worktree("/code/a");
+    let mut drive = bound();
+    drive.open_project("/code/a".into(), Some(&p));
+    drive.add_session_at(Some(spec()), 1, PathBuf::from("/code/a-x"));
+    drive.add_session(Some(spec()), 2, None);
+    assert_eq!(
+        drive.folder_of(2),
+        Some(PathBuf::from("/code/a-x")),
+        "beside the session on screen"
+    );
+    drive.add_session_in(1, Some(spec()), 3);
+    assert_eq!(
+        drive.folder_of(3),
+        Some(PathBuf::from("/code/a")),
+        "asked of the project: its own folder"
+    );
+}
+
+#[test]
+fn a_sweep_reads_every_folder_of_a_row() {
+    let p = with_worktree("/code/a");
+    let mut drive = bound();
+    drive.open_project("/code/a".into(), Some(&p));
+    let (_, roots) = swept(drive.sweep(|_| true));
+    let read: Vec<_> = roots.iter().map(|r| r.path.display().to_string()).collect();
+    assert_eq!(read, ["/a", "/code/a", "/code/a-x"]);
+}
+
+#[test]
+fn new_session_in_a_worktree_starts_in_its_folder() {
+    let p = with_worktree("/code/a");
+    let mut drive = bound();
+    drive.open_project("/code/a".into(), Some(&p));
+    drive.select_project(0);
+    let (added, fx) = drive.add_session_in_folder(
+        1,
+        PathBuf::from("/code/a-x"),
+        Some(spec()),
+        4,
+        StartsOn::Resume("/conv/c1".into()),
+    );
+    assert_eq!(added, Ok(4));
+    assert_eq!(drive.active_root, 1, "its project selected");
+    assert_eq!(drive.folder_of(4), Some(PathBuf::from("/code/a-x")));
+    assert!(names(&fx).contains(&"Show".to_string()));
+    assert_eq!(drive.take_start(4), StartsOn::Resume("/conv/c1".into()));
+}
+
+#[test]
+fn a_worktree_just_recorded_opens_on_its_row_at_once() {
+    let mut drive = bound();
+    drive.open_project("/code/a".into(), Some(&at("/code/a")));
+    let p = with_worktree("/code/a");
+    drive.open_project("/code/a-x".into(), Some(&p));
+    assert_eq!(drive.roots.len(), 2);
+    assert_eq!(drive.local_index(Path::new("/code/a-x")), Some(1));
+    let mut q = with_worktree("/code/a");
+    q.worktrees[0].path = "/code/a-y".into();
+    let (idx, _) = drive.keep_project("/code/a-y".into(), Some(&q));
+    assert_eq!(idx, 1);
+    assert_eq!(drive.local_index(Path::new("/code/a-y")), Some(1));
+}
+
+#[test]
+fn a_session_in_a_folder_no_sweep_reads_asks_for_one() {
+    let mut drive = bound();
+    let (_, fx) = drive.add_session(Some(spec()), 1, None);
+    assert!(
+        !names(&fx).contains(&"Resweep".to_string()),
+        "its row's own"
+    );
+    let (_, fx) = drive.add_session_at(Some(spec()), 2, PathBuf::from("/a-gone"));
+    assert!(
+        names(&fx).contains(&"Resweep".to_string()),
+        "{:?}",
+        names(&fx)
+    );
+}
