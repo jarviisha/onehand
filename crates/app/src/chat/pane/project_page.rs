@@ -1,7 +1,6 @@
 use super::header::Archives;
 use super::{ChatPane, ChatPaneEvent, ProjectFacts, rel_time};
 use crate::chat::conversation::Conversation;
-use crate::controls::Named as _;
 use crate::controls::Short as _;
 use crate::controls::text_input;
 use crate::page_parts::{count_of, page_card, page_head, ruled};
@@ -15,7 +14,6 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::chat::ConvMeta;
-use onehand_ui::ShortIcon as _;
 use onehand_ui::Tall as _;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -24,6 +22,8 @@ mod build_hosts;
 mod host;
 mod offload_box;
 mod schedules_box;
+mod start;
+mod worktrees_box;
 use schedules_box::schedules_box;
 
 /// How many past conversations the project page lists.
@@ -78,6 +78,14 @@ pub(super) struct EmptyProject {
     /// The hosts it builds on, the workspace's: pushed by the shell with the
     /// field above, and again whenever they change.
     pub(super) builds: Vec<onehand_core::workspace::BuildHost>,
+    /// git's list of the project's worktrees, as its rows; `None` while it is
+    /// read.
+    pub(super) worktrees: Option<worktrees_box::Read>,
+    /// How many sessions run in each folder of the project, the shell's.
+    pub(super) worktree_sessions: std::collections::HashMap<PathBuf, usize>,
+    /// The worktrees the project records, as the shell last told them: a
+    /// change is what reads git's list again. `None` until told.
+    pub(super) recorded: Option<Vec<PathBuf>>,
     /// One focus handle per past conversation the page lists, by place: each
     /// row is a tab stop, so the keyboard reaches its *Delete…* as the pointer
     /// does.
@@ -409,6 +417,15 @@ impl ChatPane {
             .chain(self.git.as_ref().map(ToString::to_string))
             .collect::<Vec<_>>()
             .join(" · ");
+        // The project as the store has it, for its worktrees: none for a
+        // folder of no project, or one on a host, which has none.
+        let kept = (project.host.is_none())
+            .then(|| worktrees_box::project_of(&project.path, cx))
+            .flatten();
+        let in_branch = kept
+            .as_ref()
+            .map(|kept| worktrees_box::on_disk(project, kept))
+            .unwrap_or_default();
         // The head: the project named as every page is, over where it
         // is, and what it can start at the end.
         let head = page_head(
@@ -436,7 +453,7 @@ impl ChatPane {
                         .as_ref()
                         .map(|host| host::refresh(host, project.listing, cx)),
                 )
-                .chain([new_session(cx)])
+                .chain([start::new_session(in_branch, cx)])
                 .collect(),
             cx,
         );
@@ -586,6 +603,10 @@ impl ChatPane {
             // readable here, under the host's.
             .children((project.host.is_none() || project.mirror.is_some()).then_some(history))
             .children(
+                kept.as_ref()
+                    .map(|kept| worktrees_box::worktrees_box(project, kept, cx)),
+            )
+            .children(
                 project
                     .mirror
                     .is_some()
@@ -698,68 +719,6 @@ fn no_agent(cx: &mut Context<ChatPane>) -> gpui::AnyElement {
                 })),
         )
         .into_any_element()
-}
-
-/// *New session*, the page's one primary, joined to a caret starting one with
-/// another agent while more than one is configured.
-fn new_session(cx: &mut Context<ChatPane>) -> gpui::AnyElement {
-    let agents: Vec<SharedString> = crate::state::Shared::global(cx)
-        .settings
-        .agents
-        .iter()
-        .map(|spec| SharedString::from(spec.name.clone()))
-        .collect();
-    // At the head's size, as *Run check* beside it is: one row of actions
-    // stands at one height.
-    let start = crate::controls::action("project-new-session")
-        .short()
-        .primary()
-        .label("New session")
-        .tooltip_with_action(
-            "Start a session in this project",
-            &crate::shell::NewSession,
-            None,
-        )
-        .on_click(cx.listener(|_: &mut ChatPane, _, _, cx| {
-            cx.emit(ChatPaneEvent::StartSession {
-                agent: None,
-                resume: None,
-            });
-        }));
-    if agents.len() < 2 {
-        return start.into_any_element();
-    }
-    let pane = cx.entity();
-    crate::controls::split_action(
-        "project-new-session-menu",
-        start,
-        // Square at the head's height: an icon alone under a worded size's
-        // padding was left a couple of pixels and drew as a dot.
-        crate::controls::action("project-new-session-agent")
-            .primary()
-            .short_icon()
-            .named("Start a session with another agent"),
-        cx.theme().background,
-        gpui::Anchor::TopRight,
-        move |mut menu, _, _| {
-            menu = menu.item(crate::controls::menu_label("With agent"));
-            for name in &agents {
-                let (name, pane) = (name.clone(), pane.clone());
-                menu = menu.item(crate::controls::menu_item(name.clone()).on_click(
-                    move |_, _, cx: &mut App| {
-                        pane.update(cx, |_: &mut ChatPane, cx| {
-                            cx.emit(ChatPaneEvent::StartSession {
-                                agent: Some(name.clone()),
-                                resume: None,
-                            });
-                        });
-                    },
-                ));
-            }
-            menu
-        },
-    )
-    .into_any_element()
 }
 
 /// What the tasks of the project at `root` need, run or wait on, a row each

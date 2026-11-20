@@ -43,10 +43,18 @@ impl Shell {
             .git_on_screen(root)
             .map(|status| gpui::SharedString::from(status.label()));
         let label = gpui::SharedString::from(root.label.clone());
+        // What the page's *Worktrees* draws from the tree: what the row
+        // records, and how many sessions run in each of its folders.
+        let recorded: Vec<PathBuf> = root.worktrees.iter().map(|w| w.path.clone()).collect();
+        let mut sessions = std::collections::HashMap::<PathBuf, usize>::new();
+        for session in &root.sessions {
+            *sessions.entry(session.folder.clone()).or_default() += 1;
+        }
         self.chat.update(cx, |pane, cx| {
             pane.set_project_label(label, cx);
             pane.set_project_facts(facts, cx);
             pane.set_git(line, cx);
+            pane.set_worktree_facts(recorded, sessions, cx);
         });
     }
 

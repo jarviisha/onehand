@@ -171,6 +171,7 @@ impl Shell {
                             P::Remove => shell.remove_root(root_idx, window, cx),
                         }
                     }
+                    E::Worktree(act) => shell.worktree_act(act.clone(), window, cx),
                     E::Restart => shell.restart_session(window, cx),
                     E::CloseSession => shell.close_active_session(window, cx),
                     E::Rename => shell.rename_active_session(window, cx),

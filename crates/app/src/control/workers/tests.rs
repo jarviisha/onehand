@@ -7,14 +7,13 @@
 
 use super::super::{Token, drive, perform};
 use crate::chat::session::tests::carrier::up;
-use crate::shell::rig::{folder, shell};
+use crate::shell::rig::{folder, repo_with_worktree, shell};
 use crate::state::Shared;
 use futures::channel::{mpsc, oneshot};
 use gpui::{BorrowAppContext as _, TestAppContext, VisualTestContext};
 use onehand_core::acp::{AcpEvent, AcpRequest};
 use onehand_core::config::AgentSpec;
 use onehand_core::control::{Call, Peer};
-use std::path::PathBuf;
 use std::time::Duration;
 
 fn agent() -> AgentSpec {
@@ -410,39 +409,6 @@ fn a_turn_in_another_window_counts_as_busy_on_its_folder(cx: &mut TestAppContext
     let busy = cx.update(|_, cx| other.update(cx, |other, cx| other.busy_here(&project, cx)));
     assert_eq!(busy, 1, "the turn in the first window counts");
     let _ = std::fs::remove_dir_all(dir);
-}
-
-/// Run git in `dir`, failing the test when it fails.
-fn git(dir: &std::path::Path, args: &[&str]) {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(args)
-        .output()
-        .expect("git must be installed to run this test");
-    assert!(out.status.success(), "git {args:?}: {out:?}");
-}
-
-/// A repository at `<dir>/main` holding `sub/a.txt`, one commit on `main`,
-/// and a linked worktree of it at `<dir>/wt` on branch `w`, both canonical.
-fn repo_with_worktree(dir: &std::path::Path) -> (PathBuf, PathBuf) {
-    let main = dir.join("main");
-    std::fs::create_dir_all(main.join("sub")).unwrap();
-    git(&main, &["init", "-q", "-b", "main"]);
-    git(&main, &["config", "user.email", "t@example.com"]);
-    git(&main, &["config", "user.name", "T"]);
-    std::fs::write(main.join("sub").join("a.txt"), "x").unwrap();
-    git(&main, &["add", "."]);
-    git(&main, &["commit", "-qm", "one"]);
-    let wt = dir.join("wt");
-    git(
-        &main,
-        &["worktree", "add", "-q", "-b", "w", wt.to_str().unwrap()],
-    );
-    (
-        std::fs::canonicalize(main).unwrap(),
-        std::fs::canonicalize(wt).unwrap(),
-    )
 }
 
 /// A worker opened on a linked worktree of a project's repository that the

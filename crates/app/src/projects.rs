@@ -259,6 +259,36 @@ pub(crate) fn record(of: &Path, worktree: Worktree, cx: &mut App) -> Option<Proj
     Shared::global(cx).projects.get(&id).cloned()
 }
 
+/// Forget the worktree at `folder` in the project holding `of`, a folder
+/// here.
+pub(crate) fn forget_worktree(of: &Path, folder: &Path, cx: &mut App) {
+    let Some(id) = Shared::global(cx)
+        .projects
+        .find(None, of)
+        .map(|(p, _)| p.id.clone())
+    else {
+        return;
+    };
+    let fx =
+        cx.update_global::<Shared, _>(|shared, _| shared.projects.forget_worktree(&id, folder));
+    carry(fx, cx);
+}
+
+/// Put the new worktrees of the project holding `of` in `parent`, or beside
+/// the repository with none.
+pub(crate) fn set_worktree_parent(of: &Path, parent: Option<PathBuf>, cx: &mut App) {
+    let Some(id) = Shared::global(cx)
+        .projects
+        .find(None, of)
+        .map(|(p, _)| p.id.clone())
+    else {
+        return;
+    };
+    let fx =
+        cx.update_global::<Shared, _>(|shared, _| shared.projects.set_worktree_parent(&id, parent));
+    carry(fx, cx);
+}
+
 /// Record the worktree a run's cut made, `dir` on `branch`, in the project
 /// holding `of`, the folder it was cut from; the project as it now is.
 pub(crate) fn record_cut(of: &Path, dir: &Path, branch: &str, cx: &mut App) -> Option<Project> {

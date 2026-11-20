@@ -53,6 +53,7 @@ mod storage;
 mod workbench_slot;
 mod workers;
 mod workflows;
+mod worktrees;
 pub use crate::instance::hold_or_forward;
 pub use boot::{boot, open_or_focus, seed_workspace};
 pub use drafts::{BranchDraft, Draft, WorktreeDraft};

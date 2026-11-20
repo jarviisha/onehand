@@ -137,3 +137,36 @@ pub(crate) fn workspace_recent(
 ) -> Vec<(PathBuf, String)> {
     cx.update(|_, cx| shell.read(cx).workspace_page.read(cx).recent_keys())
 }
+
+/// Run git in `dir`, failing the test when it fails.
+pub(crate) fn git(dir: &std::path::Path, args: &[&str]) {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .expect("git must be installed to run this test");
+    assert!(out.status.success(), "git {args:?}: {out:?}");
+}
+
+/// A repository at `<dir>/main` holding `sub/a.txt`, one commit on `main`,
+/// and a linked worktree of it at `<dir>/wt` on branch `w`, both canonical.
+pub(crate) fn repo_with_worktree(dir: &std::path::Path) -> (PathBuf, PathBuf) {
+    let main = dir.join("main");
+    std::fs::create_dir_all(main.join("sub")).unwrap();
+    git(&main, &["init", "-q", "-b", "main"]);
+    git(&main, &["config", "user.email", "t@example.com"]);
+    git(&main, &["config", "user.name", "T"]);
+    std::fs::write(main.join("sub").join("a.txt"), "x").unwrap();
+    git(&main, &["add", "."]);
+    git(&main, &["commit", "-qm", "one"]);
+    let wt = dir.join("wt");
+    git(
+        &main,
+        &["worktree", "add", "-q", "-b", "w", wt.to_str().unwrap()],
+    );
+    (
+        std::fs::canonicalize(main).unwrap(),
+        std::fs::canonicalize(wt).unwrap(),
+    )
+}

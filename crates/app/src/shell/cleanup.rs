@@ -130,7 +130,7 @@ impl Shell {
                     .collect();
                 (!inside.is_empty()).then_some((root, inside))
             })
-            .map(|(root, inside)| {
+            .filter_map(|(root, inside)| {
                 let terminal = self.terminal.read(cx);
                 let terminals: usize = inside.iter().map(|path| terminal.shells_in(path)).sum();
                 let sessions = (root.sessions.iter())
@@ -143,11 +143,16 @@ impl Shell {
                 if terminals > 0 {
                     what.push(count(terminals, "terminal"));
                 }
+                // A worktree the row only records, nothing open in it, is no
+                // project open on the folder: the row's own folder inside is.
+                if what.is_empty() && !root.path.starts_with(folder) {
+                    return None;
+                }
                 let what = match what.is_empty() {
                     true => String::new(),
                     false => format!(", with {}", what.join(" and ")),
                 };
-                format!("Project {}, open in {said}{what},", root.label)
+                Some(format!("Project {}, open in {said}{what},", root.label))
             })
             .collect();
         (users, processes)
