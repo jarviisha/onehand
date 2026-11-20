@@ -5,11 +5,12 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-/// Whether the terminal dock was open, per project root, and which root the
-/// dock on screen belongs to.
+/// Whether the terminal dock was open, per folder (a project's own, or the
+/// worktree a session of it runs in), and which folder the dock on screen
+/// belongs to.
 ///
-/// **The terminal is per project all the way down, so its dock is too.** Its
-/// tabs, its shells and its working directory are all keyed by root, and none
+/// **The terminal is per folder all the way down, so its dock is too.** Its
+/// tabs, its shells and its working directory are all keyed by folder, and none
 /// of them come along when the selection moves — so a dock that stayed open
 /// across a switch was showing the new project an empty panel where the old
 /// project's shells had been, which reads as the terminal having lost them
@@ -42,9 +43,9 @@ impl TerminalHomes {
     }
 
     /// `root` arrives with the dock `live`: what is on screen is filed under
-    /// the root it belongs to, and the dock `root` wants is returned — `None`
-    /// when `root` is the one on screen already, as between two sessions of
-    /// one project, where restoring would fight a person who just opened it.
+    /// the folder it belongs to, and the dock `root` wants is returned — `None`
+    /// when `root` is the folder on screen already, as between two sessions
+    /// in one folder, where restoring would fight a person who just opened it.
     pub(super) fn arrive(&mut self, root: &Path, live: bool) -> Option<bool> {
         let leaving = self.on_screen.replace(root.to_path_buf());
         if let Some(leaving) = leaving.as_ref() {

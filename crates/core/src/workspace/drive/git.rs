@@ -43,6 +43,15 @@ impl WorkspaceDrive {
         }
     }
 
+    /// The `git status` of the folder `root` shows: its session on screen's,
+    /// a worktree's on its own branch, else the row's own.
+    pub fn git_on_screen(&self, root: &ProjectRoot) -> Option<&GitStatus> {
+        match root.folder_on_screen() {
+            folder if folder == root.path => self.git_of(root),
+            folder => self.git.get(folder),
+        }
+    }
+
     /// Read every project's `git status` again: those here, and those on a
     /// host `attached` says is attached, which are never attached for a
     /// sweep; never a host's folder on a local one's path.
@@ -58,9 +67,19 @@ impl WorkspaceDrive {
                 Some(_) if self.workspace.shares_local_path(root) => false,
                 Some(host) => attached(host),
             })
-            .map(|root| SweepProject {
-                path: root.path.clone(),
-                host: root.host.clone(),
+            // The row's own folder, and each other one a session of it runs
+            // in: what the git badges show is the folder on screen's.
+            .flat_map(|root| {
+                let mut folders = vec![root.path.clone()];
+                for session in &root.sessions {
+                    if !folders.contains(&session.folder) {
+                        folders.push(session.folder.clone());
+                    }
+                }
+                folders.into_iter().map(|path| SweepProject {
+                    path,
+                    host: root.host.clone(),
+                })
             })
             .collect::<Vec<_>>();
         self.sweeping = roots.clone();
@@ -85,7 +104,8 @@ impl WorkspaceDrive {
             read.iter().filter(|at| at.path == *path).any(|at| {
                 ws.roots
                     .iter()
-                    .any(|r| r.host == at.host && r.path == at.path)
+                    .filter(|r| r.host == at.host)
+                    .any(|r| r.path == at.path || r.sessions.iter().any(|s| s.folder == at.path))
             })
         };
         self.git = found.into_iter().filter(|(path, _)| still(path)).collect();

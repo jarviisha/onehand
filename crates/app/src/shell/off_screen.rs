@@ -172,14 +172,13 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> Option<(u64, Entity<crate::chat::session::ChatSession>)> {
         let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
-        let idx = self
-            .window
+        self.window
             .workspace
             .add_run_session(&dir, spec.clone(), uid)?;
-        let root = self.window.workspace.roots[idx].path.clone();
-        let session = self
-            .chat
-            .update(cx, |pane, cx| pane.open_unshown(uid, root, &spec, dirs, cx));
+        let folder = self.window.workspace.folder_of(uid)?;
+        let session = self.chat.update(cx, |pane, cx| {
+            pane.open_unshown(uid, folder, &spec, dirs, cx)
+        });
         self.refresh_git(cx);
         cx.notify();
         Some((uid, session?))
@@ -215,7 +214,7 @@ impl Shell {
     pub fn connect_unshown(&mut self, uid: u64, cx: &mut Context<Self>) {
         let Some((root, spec)) = self.window.workspace.roots.iter().find_map(|root| {
             let session = root.sessions.iter().find(|session| session.uid == uid)?;
-            Some((root.path.clone(), session.spec.clone()))
+            Some((session.folder.clone(), session.spec.clone()))
         }) else {
             return;
         };
@@ -269,10 +268,17 @@ impl Shell {
     /// `Session` is its description rather than its condition.
     pub fn remote_sessions(&self, cx: &App) -> Vec<crate::remote::RemoteSession> {
         let roots = &self.window.workspace.roots;
+        // A session's folder is its project's own, else a worktree a session
+        // of the project runs in.
         let runs_here = |path: &Path| {
             roots
                 .iter()
                 .find(|root| root.path == path)
+                .or_else(|| {
+                    roots
+                        .iter()
+                        .find(|root| root.sessions.iter().any(|s| s.folder == path))
+                })
                 .is_some_and(|root| root.runs_here())
         };
         self.chat.read(cx).remote_sessions(runs_here, cx)

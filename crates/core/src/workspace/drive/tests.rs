@@ -965,3 +965,89 @@ fn a_folder_of_no_known_project_comes_in_at_once_and_is_said_unplaced() {
         "a known project's folder"
     );
 }
+
+// The folder a session runs in.
+
+#[test]
+fn a_session_runs_in_the_folder_it_was_added_in() {
+    let mut drive = bound();
+    assert_eq!(
+        drive.roots[0].folder_on_screen(),
+        Path::new("/a"),
+        "no session: the row's"
+    );
+    let (added, _) = drive.add_session(Some(spec()), 1, None);
+    assert_eq!(added, Ok(1));
+    assert_eq!(
+        drive.folder_of(1),
+        Some(PathBuf::from("/a")),
+        "the row's own folder"
+    );
+    tree(&mut drive).add_session_at(spec(), 2, PathBuf::from("/a-x"));
+    assert_eq!(drive.folder_of(2), Some(PathBuf::from("/a-x")));
+    assert_eq!(
+        drive.roots[0].folder_on_screen(),
+        Path::new("/a-x"),
+        "the session on screen's"
+    );
+    assert_eq!(drive.folder_of(1), Some(PathBuf::from("/a")));
+}
+
+#[test]
+fn dropping_the_sessions_of_a_folder_leaves_the_rows_others() {
+    let mut drive = bound();
+    drive.add_session(Some(spec()), 1, None);
+    tree(&mut drive).add_session_at(spec(), 2, PathBuf::from("/a-x"));
+    let fx = drive.drop_sessions_in(Path::new("/a-x"));
+    assert!(
+        names(&fx).contains(&"Close(2)".to_string()),
+        "{:?}",
+        names(&fx)
+    );
+    assert!(!names(&fx).contains(&"Close(1)".to_string()));
+    assert_eq!(drive.locate(1), Some((0, 0)));
+}
+
+#[test]
+fn a_sweep_reads_each_folder_a_session_runs_in() {
+    let mut drive = bound();
+    tree(&mut drive).add_session_at(spec(), 2, PathBuf::from("/a-x"));
+    let (token, roots) = swept(drive.sweep(|_| true));
+    let read: Vec<_> = roots.iter().map(|r| r.path.display().to_string()).collect();
+    assert_eq!(read, ["/a", "/a-x"]);
+    let status = crate::gitstat::GitStatus {
+        branch: "feat".into(),
+        changed: 0,
+        ahead: 0,
+        behind: 0,
+        entries: Default::default(),
+    };
+    drive.handle(Input::Swept {
+        token,
+        found: vec![("/a-x".into(), status)],
+    });
+    assert_eq!(drive.git().get(Path::new("/a-x")).unwrap().branch, "feat");
+    let shown = drive.git_on_screen(drive.active_root().unwrap());
+    assert_eq!(
+        shown.map(|s| s.branch.as_str()),
+        Some("feat"),
+        "the session's folder"
+    );
+}
+
+/// A session forked in a worktree's folder runs there, on the project
+/// holding it.
+#[test]
+fn a_fork_runs_in_the_folder_it_was_forked_from() {
+    let mut drive = bound();
+    let (added, _) = drive.add_session_at(Some(spec()), 2, PathBuf::from("/a-x"));
+    assert_eq!(added, Ok(2));
+    let (added, _) = drive.fork(Path::new("/a-x"), spec(), 3);
+    assert_eq!(added, Ok(3));
+    assert_eq!(drive.folder_of(3), Some(PathBuf::from("/a-x")));
+    assert_eq!(
+        drive.locate(3).map(|(root, _)| root),
+        drive.locate(2).map(|(root, _)| root)
+    );
+    assert!(matches!(drive.take_start(3), StartsOn::Fork));
+}

@@ -210,6 +210,13 @@ impl ProjectRoot {
     pub fn active_session(&self) -> Option<&Session> {
         self.sessions.get(self.active_session)
     }
+
+    /// The folder the window's panels show for this row: its session on
+    /// screen's, else the row's own.
+    pub fn folder_on_screen(&self) -> &Path {
+        self.active_session()
+            .map_or(self.path.as_path(), |session| session.folder.as_path())
+    }
 }
 
 /// A folder as a person names it: `<host>:<path>` on a host, as ssh names
@@ -758,7 +765,8 @@ impl Workspace {
         }
         let mut root = ProjectRoot::new(path);
         root.transient = true;
-        root.sessions.push(Session::new(spec, uid));
+        let folder = root.path.clone();
+        root.sessions.push(Session::new(spec, uid, folder));
         self.roots.push(root);
         Some(self.roots.len() - 1)
     }
@@ -783,16 +791,30 @@ impl Workspace {
             .roots
             .iter()
             .position(|r| r.host.is_none() && r.path == path)?;
-        self.roots[idx].sessions.push(Session::new(spec, uid));
+        self.roots[idx].sessions.push(Session::new(spec, uid, path));
         Some(idx)
     }
 
     /// Spawn a new session on the active root from `spec`, making it active.
     /// Returns `(root_idx, session_idx)`, or `None` if there is no active root.
+    #[cfg(test)]
     pub(crate) fn add_session(&mut self, spec: AgentSpec, uid: u64) -> Option<(usize, usize)> {
+        let folder = self.active_root()?.path.clone();
+        self.add_session_at(spec, uid, folder)
+    }
+
+    /// Spawn a new session on the active root from `spec`, running in
+    /// `folder`, one of the root's, and make it active. `None` with no
+    /// active root.
+    pub(crate) fn add_session_at(
+        &mut self,
+        spec: AgentSpec,
+        uid: u64,
+        folder: PathBuf,
+    ) -> Option<(usize, usize)> {
         let ri = self.active_root;
         let root = self.roots.get_mut(ri)?;
-        root.sessions.push(Session::new(spec, uid));
+        root.sessions.push(Session::new(spec, uid, folder));
         root.active_session = root.sessions.len() - 1;
         Some((ri, root.sessions.len() - 1))
     }

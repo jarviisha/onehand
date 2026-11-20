@@ -275,6 +275,12 @@ impl TerminalPanel {
             .collect()
     }
 
+    /// The folder whose shells are on show.
+    #[cfg(test)]
+    pub(crate) fn root(&self) -> Option<&std::path::Path> {
+        self.root.as_ref().map(|(_, root)| root.as_path())
+    }
+
     /// Show the shells of `root`, on `host` when it is there: those the
     /// host keeps for it are asked for, and opened as tabs.
     pub fn set_root(&mut self, root: PathBuf, host: Option<HostName>, cx: &mut Context<Self>) {

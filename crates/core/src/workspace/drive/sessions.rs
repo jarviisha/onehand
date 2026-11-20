@@ -4,7 +4,7 @@
 use super::{Effect, Forgotten, HostName, Refusal, Signal, StartsOn, WorkspaceDrive};
 use crate::config::AgentSpec;
 use crate::host::wire::HostSession;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Why a fork goes nowhere when the project it was of left the workspace
 /// while its conversation was read.
@@ -89,18 +89,26 @@ impl WorkspaceDrive {
         Some((host.clone(), self.watches.get(&uid)?.clone()))
     }
 
-    /// Add the session `uid` a fork of a conversation on the project at
-    /// `root` opens on, running `spec` as the original did, selected; or, the
-    /// project gone from the workspace meanwhile, say the fork failed.
+    /// Add the session `uid` a fork of a conversation that ran in `folder`
+    /// opens on, in that folder on the project holding it, running `spec` as
+    /// the original did, selected; or, the project gone from the workspace
+    /// meanwhile, say the fork failed.
     #[must_use = "its effects are to be carried"]
     pub fn fork(
         &mut self,
-        root: &Path,
+        folder: &Path,
         spec: AgentSpec,
         uid: u64,
     ) -> (Result<u64, Refusal>, Vec<Effect>) {
-        match self.local_index(root) {
-            Some(idx) => self.add_session_on(Some(spec), uid, Some(idx), StartsOn::Fork),
+        match self.row_holding(folder) {
+            Some(idx) => {
+                self.workspace.select_root(idx);
+                let (added, fx) = self.add_session_at(Some(spec), uid, folder.to_path_buf());
+                if let Ok(uid) = added {
+                    self.starts.insert(uid, StartsOn::Fork);
+                }
+                (added, fx)
+            }
             None => (
                 Err(Refusal::NoProject),
                 vec![Effect::Signal(Signal::ForkFailed(
@@ -156,9 +164,24 @@ impl WorkspaceDrive {
         if let Some(home) = home {
             self.workspace.select_root(home);
         }
+        // With no project, no folder: refused as one.
+        let folder = self.workspace.active_root().map(|root| root.path.clone());
+        self.add_session_at(spec, uid, folder.unwrap_or_default())
+    }
+
+    /// [`Self::add_session`] on the active project, running in `folder`, one
+    /// of the project's: a worktree's, or the folder of the session beside
+    /// it.
+    #[must_use = "its effects are to be carried"]
+    pub fn add_session_at(
+        &mut self,
+        spec: Option<AgentSpec>,
+        uid: u64,
+        folder: PathBuf,
+    ) -> (Result<u64, Refusal>, Vec<Effect>) {
         let added = Self::agent(spec).and_then(|spec| {
             self.workspace
-                .add_session(spec, uid)
+                .add_session_at(spec, uid, folder)
                 .map(|_| uid)
                 .ok_or(Refusal::NoProject)
         });
@@ -251,15 +274,17 @@ impl WorkspaceDrive {
         self.watches.remove(&uid);
     }
 
-    /// Close every session of the project at `dir`, a folder here, showing
-    /// what is left: what its code moving to or from a host does.
+    /// Close every session running in `dir`, a folder here, showing what is
+    /// left: what its code moving to or from a host does.
     pub(super) fn drop_sessions_in(&mut self, dir: &Path) -> Vec<Effect> {
         let uids: Vec<u64> = self
             .workspace
             .roots
             .iter()
-            .filter(|root| root.local_path() == Some(dir))
-            .flat_map(|root| root.sessions.iter().map(|session| session.uid))
+            .filter(|root| root.host.is_none())
+            .flat_map(|root| &root.sessions)
+            .filter(|session| session.folder == dir)
+            .map(|session| session.uid)
             .collect();
         uids.into_iter()
             .flat_map(|uid| self.drop_session(uid))
@@ -401,6 +426,22 @@ impl WorkspaceDrive {
         lead.and_then(|lead| self.locate(lead))
             .or_else(|| self.locate(uid))
             .map(|(root, _)| root)
+    }
+
+    /// The folder session `uid` runs in.
+    pub fn folder_of(&self, uid: u64) -> Option<PathBuf> {
+        let (root, session) = self.locate(uid)?;
+        Some(self.workspace.roots[root].sessions[session].folder.clone())
+    }
+
+    /// The project here holding `folder`: the one at it, else one a session
+    /// of it runs in.
+    fn row_holding(&self, folder: &Path) -> Option<usize> {
+        self.local_index(folder).or_else(|| {
+            self.workspace.roots.iter().position(|root| {
+                root.local_path().is_some() && root.sessions.iter().any(|s| s.folder == folder)
+            })
+        })
     }
 
     /// Where the project at `dir`, a folder on this machine, sits.
