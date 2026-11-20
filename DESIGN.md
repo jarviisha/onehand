@@ -346,7 +346,8 @@ reaches.
 - A box on a page is a border; a region's box is a fill in a hairline; wells and the bubbles are
   fills. Ordinary sections remain unboxed. Do not combine a border, contrasting fill and shadow
   just to make a group visible. A pick-one track is a sunk fill (`muted`) with no edge, the pick
-  raised on the page fill under a tight lift: the one control that carries a lift.
+  raised a step lighter under a tight lift (the page fill by day, the selected step by night,
+  where the page is darker than the well): the one control that carries a lift.
 - Hover and selection are fills, neutral steps apart: a hovered row the hover step (`list_hover`; on the rail
   `sidebar_accent`, as a fill is a step from the surface under it), the chosen row a step past it
   (`chosen_fill`, solid, as a row's fade and the controls over a row are painted in it) with its name in

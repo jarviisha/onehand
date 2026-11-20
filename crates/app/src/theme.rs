@@ -396,6 +396,27 @@ mod tests {
         }
     }
 
+    /// A pick-one track stands off the page and off a dialog's fill, and its
+    /// pick stands off it on the lighter side, so it reads as raised in both
+    /// palettes rather than cut into the track.
+    #[test]
+    fn a_segment_pick_is_raised_off_its_track() {
+        for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
+            let theme = installed(mode);
+            let fills = onehand_ui::segment_fills(&theme);
+            for (surface, fill) in [("page", theme.background), ("dialog", theme.popover)] {
+                let ratio = contrast(fills.track, fill);
+                assert!(ratio >= 1.04, "{name}: track on {surface} {ratio:.3}");
+            }
+            let ratio = contrast(fills.pick, fills.track);
+            assert!(ratio >= 1.1, "{name}: pick on track {ratio:.3}");
+            assert!(
+                luminance(fills.pick) > luminance(fills.track),
+                "{name}: the pick is lighter than its track"
+            );
+        }
+    }
+
     /// The three neutral inks read on every neutral surface text lies on.
     #[test]
     fn the_inks_read_on_every_neutral_surface() {

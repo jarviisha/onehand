@@ -3,11 +3,11 @@
 
 use crate::{ControlSize, Quiet as _, action, control_fill};
 use gpui::{
-    AnyElement, App, BoxShadow, Div, ElementId, IntoElement, ParentElement as _, SharedString,
-    Styled as _, Window, div, point, px,
+    AnyElement, App, BoxShadow, Div, ElementId, Hsla, IntoElement, ParentElement as _,
+    SharedString, Styled as _, Window, div, point, px,
 };
 use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants as _};
-use gpui_component::{ActiveTheme as _, Colorize as _, Selectable as _, StyledExt as _};
+use gpui_component::{ActiveTheme as _, Colorize as _, Selectable as _, StyledExt as _, Theme};
 use std::rc::Rc;
 
 /// A picker's trigger: a button naming what it is set to, then the caret that
@@ -59,7 +59,8 @@ pub fn choice(
 }
 
 /// One choice inside a track, a [`switch`]'s or a [`choice_track`]'s: chosen,
-/// it stands on the raised fill, in the prose ink, under a tight lift, and
+/// it stands on the pick's fill ([`segment_fills`]), in the prose ink, under a
+/// tight lift, and
 /// pressing it changes nothing; the others are bare words in the muted ink
 /// on the track's sunk fill, a hover a step between the two fills, never the
 /// chosen look.
@@ -74,19 +75,20 @@ pub fn segment(
     cx: &App,
 ) -> Button {
     let theme = cx.theme();
+    let fills = segment_fills(theme);
     let button = action(id).label(label.into()).selected(on);
     size.on(match on {
         true => button
             .custom(
                 ButtonCustomVariant::new(cx)
-                    .color(theme.background)
+                    .color(fills.pick)
                     .foreground(theme.foreground)
-                    .hover(theme.background)
-                    .active(theme.background),
+                    .hover(fills.pick)
+                    .active(fills.pick),
             )
             .shadow(segment_lift(cx)),
         false => {
-            let step = theme.muted.mix_oklab(theme.background, 0.5);
+            let step = fills.track.mix_oklab(fills.pick, 0.5);
             button.custom(
                 ButtonCustomVariant::new(cx)
                     .foreground(theme.muted_foreground)
@@ -95,6 +97,29 @@ pub fn segment(
             )
         }
     })
+}
+
+/// A pick-one track's two fills.
+pub struct SegmentFills {
+    /// The track's: the well, a step off the page and off a floating surface.
+    pub track: Hsla,
+    /// The chosen segment's: a step lighter than the track in both palettes,
+    /// so it reads as raised. The page fill by day; by night the page is
+    /// darker than the well, and the pick takes the selected step instead.
+    pub pick: Hsla,
+}
+
+/// [`SegmentFills`] from a resolved theme. `pub` for the reason
+/// [`control_fill_of`](crate::control_fill_of) is: the app's contrast test
+/// works from a resolved ramp.
+pub fn segment_fills(theme: &Theme) -> SegmentFills {
+    SegmentFills {
+        track: theme.muted,
+        pick: match theme.mode.is_dark() {
+            true => theme.accent,
+            false => theme.background,
+        },
+    }
 }
 
 /// The chosen segment's lift, in pixels as a hairline is: one tight shadow
@@ -156,7 +181,7 @@ pub fn switch(
         .h_flex()
         .w_full()
         .rounded(cx.theme().radius)
-        .bg(cx.theme().muted)
+        .bg(segment_fills(cx.theme()).track)
         .p_0p5()
         .gap_0p5()
         .children(labels.iter().enumerate().map(|(i, label)| {
@@ -183,7 +208,7 @@ pub fn choice_track(choices: impl IntoIterator<Item = impl IntoElement>, cx: &Ap
         .self_start()
         .max_w_full()
         .rounded(cx.theme().radius)
-        .bg(cx.theme().muted)
+        .bg(segment_fills(cx.theme()).track)
         .p_0p5()
         .gap_0p5()
         .children(choices)
