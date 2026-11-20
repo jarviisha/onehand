@@ -273,9 +273,6 @@ pub struct Shell {
     /// The project being split onto a branch of its own, if that dialog is
     /// open. `Some` is what puts it on screen, the same as the rename above.
     worktree_draft: Option<WorktreeDraft>,
-    /// The worktrees a removal is judging or removing, so a second press on
-    /// one is not taken and its *Remove…* shows it working.
-    removing_worktrees: std::collections::HashSet<PathBuf>,
     branch_draft: Option<BranchDraft>,
     /// The add-a-project-on-a-host form, while it is up.
     host_project: Option<host_project::HostProjectDraft>,

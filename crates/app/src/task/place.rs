@@ -135,6 +135,8 @@ pub(super) fn perform(
                 let launch = &start.launch;
                 let (repo, title) = (launch.repo().to_path_buf(), launch.title().to_string());
                 let repo_of_cut = repo.clone();
+                // In the project's worktree folder, set on its page.
+                let parent = crate::projects::worktree_parent(&repo, cx);
                 cx.spawn(async move |cx| {
                     let made = cx
                         .background_executor()
@@ -142,6 +144,7 @@ pub(super) fn perform(
                             onehand_core::task::cut_blocking(
                                 &repo,
                                 &title,
+                                parent.as_deref(),
                                 crate::features::connectors(),
                             )
                         })
@@ -410,6 +413,8 @@ fn say(signal: Signal<AnyWindowHandle>, cx: &mut App) {
             branch,
             kept,
         } => {
+            // Its project records it no more.
+            crate::projects::worktree_gone(&folder, cx);
             let folder = folder.display();
             let note = match (branch, kept) {
                 (Some(branch), Some(why)) => crate::toast::warning(format!(

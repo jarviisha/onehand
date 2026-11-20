@@ -290,6 +290,9 @@ enum Phase {
 
 struct Pending {
     open: Open,
+    /// The name of the project the folder named is of, when the window
+    /// holds it; for the answer.
+    project: Option<String>,
     mode: Option<String>,
     phase: Phase,
     /// The deadline's wait, armed at the call.

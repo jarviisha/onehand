@@ -212,14 +212,35 @@ pub fn add_blocking(root: &Path, branch: &str, dir: &Path) -> Result<PathBuf, St
 /// directory such a branch gets, branched off `start`. The branch made and the
 /// directory git made. Blocking.
 ///
+/// `parent` is the project's worktree folder, none for beside the
+/// repository.
+///
 /// The one way every run gets its worktree, cut off `HEAD`: a branch left by
 /// an earlier run is never reused, and the directory is always where the
 /// rest of onehand looks for it.
-pub(crate) fn cut_blocking(top: &Path, wanted: &str) -> Result<(String, PathBuf), String> {
-    let branch = free_branch_blocking(top, wanted)?;
-    let dir = worktree_dir(top, &branch);
+pub(crate) fn cut_blocking(
+    top: &Path,
+    wanted: &str,
+    parent: Option<&Path>,
+) -> Result<(String, PathBuf), String> {
+    // git makes a folder it is given that is not there, so a project's
+    // worktree folder since gone is refused rather than made again.
+    if let Some(parent) = parent.filter(|parent| !parent.is_dir()) {
+        return Err(format!("{} is not there any more", parent.display()));
+    }
+    let branch = free_branch_blocking(top, wanted, parent)?;
+    let dir = dir_for(parent, top, &branch);
     let made = branch_off_blocking(top, &branch, &dir, "HEAD")?;
     Ok((branch, made))
+}
+
+/// Where a worktree of `top` on `branch` goes: in `parent`, the project's
+/// worktree folder, else beside the repository.
+fn dir_for(parent: Option<&Path>, top: &Path, branch: &str) -> PathBuf {
+    match parent {
+        Some(parent) => worktree_dir_in(parent, top, branch),
+        None => worktree_dir(top, branch),
+    }
 }
 
 /// The folder of `made` that `root` is of `top`, when the branch checked out
@@ -353,6 +374,14 @@ pub struct Listed {
     pub path: PathBuf,
     /// The branch checked out there; none when detached.
     pub branch: Option<String>,
+}
+
+impl Listed {
+    /// The branch it is on, or `HEAD` for a detached checkout: what a
+    /// worktree taken in from git's list records.
+    pub fn branch_or_head(&self) -> String {
+        self.branch.clone().unwrap_or_else(|| "HEAD".to_string())
+    }
 }
 
 /// Every checkout of the repository `folder` is in, as git lists them: the
@@ -527,10 +556,14 @@ pub fn git_message(stderr: &[u8]) -> String {
 /// The folder is asked as well as the branch: a branch deleted by hand leaves
 /// its worktree folder behind, and `git worktree add` refuses a folder that is
 /// there. Past the last name it is an error, never a name nobody looked at.
-fn free_branch_blocking(root: &Path, branch: &str) -> Result<String, String> {
+fn free_branch_blocking(
+    root: &Path,
+    branch: &str,
+    parent: Option<&Path>,
+) -> Result<String, String> {
     for name in std::iter::once(branch.to_string()).chain((2..=99).map(|n| format!("{branch}-{n}")))
     {
-        if !branch_exists_blocking(root, &name) && !worktree_dir(root, &name).exists() {
+        if !branch_exists_blocking(root, &name) && !dir_for(parent, root, &name).exists() {
             return Ok(name);
         }
     }
@@ -570,7 +603,7 @@ mod tests {
         let root = parent.join("proj");
         std::fs::create_dir_all(worktree_dir(&root, "onehand/x")).unwrap();
         assert_eq!(
-            free_branch_blocking(&root, "onehand/x"),
+            free_branch_blocking(&root, "onehand/x", None),
             Ok("onehand/x-2".to_string())
         );
         std::fs::remove_dir_all(parent).unwrap();
@@ -900,6 +933,24 @@ mod tests {
     }
 
     #[test]
+    fn a_cut_goes_in_the_projects_worktree_folder() {
+        let (main, _) = crate::project::testing::repo_with_worktree("cut-parent");
+        let trees = main.parent().unwrap().join("trees");
+        assert_eq!(
+            cut_blocking(&main, "onehand/y", Some(&trees)),
+            Err(format!("{} is not there any more", trees.display()))
+        );
+        std::fs::create_dir_all(&trees).unwrap();
+        let (branch, made) = cut_blocking(&main, "onehand/y", Some(&trees)).unwrap();
+        assert_eq!(branch, "onehand/y");
+        assert_eq!(
+            std::fs::canonicalize(&made).unwrap(),
+            std::fs::canonicalize(worktree_dir_in(&trees, &main, "onehand/y")).unwrap()
+        );
+        let _ = std::fs::remove_dir_all(main.parent().unwrap());
+    }
+
+    #[test]
     fn a_cut_takes_the_next_free_name() {
         let git = |dir: &Path, args: &[&str]| {
             let out = std::process::Command::new("git")
@@ -924,11 +975,11 @@ mod tests {
         git(&repo, &["add", "a.txt"]);
         git(&repo, &["commit", "-qm", "one"]);
 
-        let (first, made) = cut_blocking(&repo, "onehand/x").unwrap();
+        let (first, made) = cut_blocking(&repo, "onehand/x", None).unwrap();
         assert_eq!(first, "onehand/x");
         assert!(made.is_dir());
         // The name is now a branch here, so the next cut steps past it.
-        let (second, again) = cut_blocking(&repo, "onehand/x").unwrap();
+        let (second, again) = cut_blocking(&repo, "onehand/x", None).unwrap();
         assert_eq!(second, "onehand/x-2");
         assert_ne!(made, again);
         for dir in [made, again] {

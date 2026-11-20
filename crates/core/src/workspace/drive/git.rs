@@ -52,6 +52,17 @@ impl WorkspaceDrive {
         }
     }
 
+    /// The worktrees of `root` on disk: those the last sweep read a `git
+    /// status` in. What the menus offering *In <branch>* list.
+    pub fn worktrees_on_disk<'a>(
+        &self,
+        root: &'a ProjectRoot,
+    ) -> Vec<&'a crate::workspace::RowFolder> {
+        (root.worktrees.iter())
+            .filter(|worktree| self.git.contains_key(&worktree.path))
+            .collect()
+    }
+
     /// Read every project's `git status` again: those here, and those on a
     /// host `attached` says is attached, which are never attached for a
     /// sweep; never a host's folder on a local one's path.

@@ -89,7 +89,12 @@ fn app(cx: &mut TestAppContext, store: &Path) -> AnyWindowHandle {
     cx.executor().allow_parking();
     cx.update(gpui_component::init);
     let store = store.to_path_buf();
-    cx.update(|cx| cx.set_global(Tasks::in_dir(store)));
+    cx.update(|cx| {
+        // The process's state, as the app always has it: a removal tells
+        // its projects.
+        cx.set_global(crate::state::Shared::for_test());
+        cx.set_global(Tasks::in_dir(store));
+    });
     cx.add_window(|window, cx| Root::new(cx.new(|_| Blank), window, cx))
         .into()
 }

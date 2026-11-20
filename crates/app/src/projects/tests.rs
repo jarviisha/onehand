@@ -397,3 +397,12 @@ fn a_stray_conversation_never_resumes_in_its_projects_folder(cx: &mut TestAppCon
     let _ = std::fs::remove_dir_all(archive);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn a_list_of_worktrees_says_how_many_it_left_out() {
+    assert_eq!(crate::projects::more_not_shown(20), None);
+    assert_eq!(
+        crate::projects::more_not_shown(25).as_deref(),
+        Some("5 more not shown")
+    );
+}

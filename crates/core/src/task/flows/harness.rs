@@ -194,7 +194,7 @@ impl Flow {
             }
             TasksEffect::Cut(start) => {
                 let made =
-                    crate::task::cut_blocking(start.launch.repo(), start.launch.title(), &[]);
+                    crate::task::cut_blocking(start.launch.repo(), start.launch.title(), None, &[]);
                 self.tasks_input(TasksInput::Cut { start, made });
             }
             TasksEffect::Keep(start) => {

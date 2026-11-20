@@ -99,7 +99,6 @@ impl Shell {
             return None;
         }
         // In `root`, which may be a worktree of the row's project.
-        let agent = super::sessions::agent_index(agent, cx);
         let starts = onehand_core::workspace::drive::StartsOn::Resume(archive);
         self.session_in_folder(idx, root.to_path_buf(), agent, starts, window, cx)
     }

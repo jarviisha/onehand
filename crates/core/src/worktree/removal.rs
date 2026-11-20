@@ -18,7 +18,8 @@ use std::path::{Path, PathBuf};
 
 mod own;
 pub use own::{
-    branch_merged_blocking, judge_own, own_facts_blocking, remove_own_blocking, OwnFacts,
+    branch_merged_blocking, judge_own, own_facts_blocking, project_user, remove_own_blocking,
+    OpenIn, OwnFacts,
 };
 
 /// How many uncommitted files a refusal names before saying how many more.

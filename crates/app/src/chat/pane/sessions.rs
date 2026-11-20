@@ -605,7 +605,7 @@ impl ChatPane {
                 worktree_sessions: Default::default(),
                 recorded: None,
                 worktrees_asked: 0,
-                removing: Vec::new(),
+                on_disk: Vec::new(),
                 rows: super::project_page::home_rows(cx),
             }
         });

@@ -46,6 +46,11 @@ impl Shell {
         // What the page's *Worktrees* draws from the tree: what the row
         // records, and how many sessions run in each of its folders.
         let recorded: Vec<PathBuf> = root.worktrees.iter().map(|w| w.path.clone()).collect();
+        // Its worktrees on disk, as core reads them: what *In <branch>* lists.
+        let on_disk: Vec<(PathBuf, String)> = (self.window.workspace.worktrees_on_disk(root))
+            .into_iter()
+            .map(|w| (w.path.clone(), w.branch.clone()))
+            .collect();
         let mut sessions = std::collections::HashMap::<PathBuf, usize>::new();
         for session in &root.sessions {
             *sessions.entry(session.folder.clone()).or_default() += 1;
@@ -54,10 +59,8 @@ impl Shell {
             pane.set_project_label(label, cx);
             pane.set_project_facts(facts, cx);
             pane.set_git(line, cx);
-            pane.set_worktree_facts(recorded, sessions, cx);
+            pane.set_worktree_facts(recorded, sessions, on_disk, cx);
         });
-        // A page built again keeps showing a removal still under way.
-        self.tell_removing(cx);
     }
 
     /// Whether a project's sessions are showing under it in the rail.

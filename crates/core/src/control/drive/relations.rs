@@ -457,8 +457,10 @@ impl ControlDrive {
                     name: back.name.clone(),
                     back: Some(back),
                 };
+                // Coming back answers no call: no project is named.
                 let pending = Pending {
                     open,
+                    project: None,
                     mode: None,
                     phase: Phase::Resolving,
                     token,

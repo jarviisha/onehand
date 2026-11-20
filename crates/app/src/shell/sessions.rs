@@ -456,19 +456,20 @@ impl Shell {
             .map(|root| root.folder_on_screen().to_path_buf());
         match folder {
             Some(folder) => {
-                let _ = self.new_session_in_folder(root_idx, folder, 0, window, cx);
+                let _ = self.new_session_in_folder(root_idx, folder, None, window, cx);
             }
             None => self.new_session_in(root_idx, window, cx),
         }
     }
 
-    /// Add a session of `agents[agent]` on a *named* root, running in
+    /// Add a session of the agent named, else the first, on a *named* root,
+    /// running in
     /// `folder`, one of its: *In <branch>*, a split's new worktree, a run's.
     pub fn new_session_in_folder(
         &mut self,
         root_idx: usize,
         folder: PathBuf,
-        agent: usize,
+        agent: Option<SharedString>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<u64> {
@@ -480,12 +481,15 @@ impl Shell {
         &mut self,
         root_idx: usize,
         folder: PathBuf,
-        agent: usize,
+        agent: Option<SharedString>,
         starts: StartsOn,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<u64> {
-        let spec = Shared::global(cx).settings.agents.get(agent).cloned();
+        // The agent named, else the first: what *New session* starts.
+        let spec = (Shared::global(cx).settings.agents)
+            .get(agent_index(agent, cx))
+            .cloned();
         self.add_by(
             |workspace, uid| workspace.add_session_in_folder(root_idx, folder, spec, uid, starts),
             window,

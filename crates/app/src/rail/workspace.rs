@@ -169,14 +169,13 @@ pub(super) fn new_session_row(
         .into_iter()
         .filter_map(|idx| Some((idx, ellipsize(&roots.get(idx)?.label, MAX_LABEL))))
         .collect();
-    // The target's worktrees on disk, which a sweep has read: each a place
-    // to start in besides the project's own folder.
+    // The target's worktrees on disk, as core reads them: each a place to
+    // start in besides the project's own folder.
     let worktrees: Vec<(PathBuf, SharedString)> = target
         .and_then(|idx| roots.get(idx))
         .map(|root| {
-            root.worktrees
-                .iter()
-                .filter(|worktree| window_state.workspace.git().contains_key(&worktree.path))
+            (window_state.workspace.worktrees_on_disk(root))
+                .into_iter()
                 .map(|worktree| {
                     let words = format!("In {}", worktree.branch);
                     (worktree.path.clone(), ellipsize(&words, MAX_LABEL))
@@ -282,16 +281,20 @@ fn new_session_menu(
             if Some(idx) != target {
                 continue;
             }
-            for (folder, words) in &worktrees {
+            for (folder, words) in worktrees.iter().take(crate::projects::WORKTREES_SHOWN) {
                 let (folder, to) = (folder.clone(), shell.clone());
                 menu = menu.item(crate::controls::menu_item(words.clone()).on_click(
                     move |_, window, cx: &mut App| {
                         to.update(cx, |shell: &mut Shell, cx| {
-                            let _ = shell.new_session_in_folder(idx, folder.clone(), 0, window, cx);
+                            let _ =
+                                shell.new_session_in_folder(idx, folder.clone(), None, window, cx);
                         })
                         .ok();
                     },
                 ));
+            }
+            if let Some(more) = crate::projects::more_not_shown(worktrees.len()) {
+                menu = menu.item(crate::controls::menu_label(more));
             }
         }
         let Some(root) = target.or(projects.first().map(|(idx, _)| *idx)) else {

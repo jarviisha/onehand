@@ -63,7 +63,11 @@ fn adding_an_offered_checkout_records_it_and_its_row_holds_it(cx: &mut TestAppCo
     let at = wt.clone();
     cx.update(|window, cx| {
         shell.update(cx, |shell, cx| {
-            shell.add_worktree(at, Some("w".into()), window, cx)
+            let listed = onehand_core::worktree::Listed {
+                path: at,
+                branch: Some("w".into()),
+            };
+            shell.worktree_act(crate::chat::pane::WorktreeAct::Add(listed), window, cx)
         })
     });
     cx.run_until_parked();
@@ -71,9 +75,9 @@ fn adding_an_offered_checkout_records_it_and_its_row_holds_it(cx: &mut TestAppCo
     assert_eq!(
         recorded
             .iter()
-            .map(|w| (w.path.clone(), w.made_by))
+            .map(|w| (w.path.clone(), w.made_by, w.branch.clone()))
             .collect::<Vec<_>>(),
-        [(wt.clone(), MadeBy::Added)]
+        [(wt.clone(), MadeBy::Added, "w".to_string())]
     );
     cx.update(|_, cx| {
         let workspace = &shell.read(cx).window.workspace;
@@ -96,13 +100,13 @@ fn removing_a_worktree_forgets_it_and_its_folder_goes(cx: &mut TestAppContext) {
     });
     let at = wt.clone();
     cx.update(|window, cx| shell.update(cx, |shell, cx| shell.remove_worktree_now(at, window, cx)));
-    let busy = cx.update(|_, cx| shell.read(cx).removing_worktrees.contains(&wt));
+    let busy = cx.update(|_, cx| Shared::global(cx).projects.removing(&wt));
     assert!(busy, "under way: a second press is not taken");
     until(cx, |cx| {
         !wt.exists() && worktrees_of(&project.id, cx).is_empty()
     });
     until(cx, |cx| {
-        cx.update(|_, cx| shell.read(cx).removing_worktrees.is_empty())
+        cx.update(|_, cx| !Shared::global(cx).projects.removing(&wt))
     });
     let _ = std::fs::remove_dir_all(dir);
 }

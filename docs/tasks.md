@@ -439,8 +439,8 @@ migration it protects.
   modal opens and again when *Remove* is pressed: it refuses while the forge cannot be read or says
   the pull request is not merged, while the branch holds commits past the head the forge merged (or
   that head is not in this clone), while anything is uncommitted or untracked, and while anything
-  of onehand's uses the folder in any window: a project open inside it, with its sessions and
-  terminals, a task still working there, or any shell or Neovim whose directory is inside it now,
+  of onehand's uses the folder in any window: a project open inside it, with its sessions,
+  terminals and the Workbench's unsaved files, a task still working there, or any shell or Neovim whose directory is inside it now,
   as the system says (`/proc/<pid>/cwd`, so on Linux; elsewhere the projects open on it are what
   tells). Every reason is listed; onehand closes nothing for the person. The branch is judged by
   the forge's merged head, not by `git branch -d`, which refuses the usual squash merge and cannot

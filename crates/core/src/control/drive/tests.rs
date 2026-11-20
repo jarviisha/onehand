@@ -180,6 +180,10 @@ fn a_worker_up_is_given_its_prompt_then_answered() {
         said.contains("name: repo") && said.ends_with("turn: 1 accepted"),
         "{said}"
     );
+    assert!(
+        said.contains("project: repo\nfolder: /repo\n"),
+        "names its project and its folder: {said}"
+    );
     assert_eq!(
         drive.workers_of(1),
         [Worker {

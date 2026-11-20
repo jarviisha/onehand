@@ -111,7 +111,8 @@ minor bump may break any of them.
 - A project's page lists its worktrees: each it records with its sessions, *New session* and
   *Remove…*, which deletes the checkout only when nothing would be lost and keeps a branch that is
   not merged; checkouts git lists that the project does not record, to add; recorded ones git no
-  longer lists, to forget; *New worktree…*; and the folder its new worktrees go in. Its *New
+  longer lists, to forget; *New worktree…*; and the folder its new worktrees go in, a workflow
+  run's included. A worktree a task removes is forgotten by its project. Its *New
   session* caret starts one in a worktree.
 - A project is one row in the rail: its worktrees are no longer rows of their own, and a session
   running in one carries the branch mark and the branch's name on its line. *New session* starts

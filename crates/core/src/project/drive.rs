@@ -71,9 +71,13 @@ pub enum Signal {
         name: String,
         why: String,
     },
-    /// The worktree called `name` (its branch, else its folder) was removed,
-    /// its branch `kept` for git's reason when git kept it.
-    WorktreeRemoved { name: String, kept: Option<String> },
+    /// The worktree at `folder` on `branch` was removed, its branch `kept`
+    /// for git's reason when git kept it.
+    WorktreeRemoved {
+        folder: PathBuf,
+        branch: Option<String>,
+        kept: Option<String>,
+    },
     /// Judged again, the worktree stays, for each reason.
     WorktreeStays(Vec<String>),
     /// git did not remove the worktree: why.
@@ -132,6 +136,9 @@ pub struct ProjectsDrive {
     /// The newest wait armed, while one waits.
     soon: Option<u64>,
     minted: u64,
+    /// The worktrees a removal is judging or removing, so a second press on
+    /// one is not taken.
+    removing: std::collections::HashSet<PathBuf>,
 }
 
 impl Deref for ProjectsDrive {
@@ -151,6 +158,7 @@ impl ProjectsDrive {
             waiting: BTreeSet::new(),
             soon: None,
             minted: 0,
+            removing: Default::default(),
         }
     }
 
@@ -254,23 +262,83 @@ impl ProjectsDrive {
         removal: Removal,
     ) -> Vec<Effect> {
         match removal {
-            Removal::Refused(why) => vec![Effect::Signal(Signal::WorktreeStays(why))],
+            Removal::Refused(why) => {
+                self.removing.remove(folder);
+                vec![Effect::Signal(Signal::WorktreeStays(why))]
+            }
             Removal::Done {
                 result: Err(why), ..
-            } => vec![Effect::Signal(Signal::WorktreeNotRemoved(why))],
+            } => {
+                self.removing.remove(folder);
+                vec![Effect::Signal(Signal::WorktreeNotRemoved(why))]
+            }
             Removal::Done {
                 top,
                 branch,
                 result: Ok(removed),
             } => {
+                self.removing.remove(folder);
                 let mut fx = self.forget_worktree(id, folder);
                 fx.push(Effect::Signal(Signal::WorktreeRemoved {
-                    name: branch.unwrap_or_else(|| top.display().to_string()),
+                    folder: top,
+                    branch,
                     kept: removed.branch_kept,
                 }));
                 fx
             }
         }
+    }
+
+    /// Take in `listed`, a checkout git lists, as a worktree of project `id`,
+    /// on its branch or `HEAD`, written now.
+    #[must_use = "its effects are to be carried"]
+    pub fn adopt_worktree(
+        &mut self,
+        id: &ProjectId,
+        listed: crate::worktree::Listed,
+    ) -> Vec<Effect> {
+        let worktree = Worktree {
+            branch: listed.branch_or_head(),
+            path: listed.path,
+            from: None,
+            made_by: crate::project::MadeBy::Added,
+            offload: None,
+        };
+        self.record_worktree(id, worktree)
+    }
+
+    /// A removal of the worktree at `folder` begins: false when one is under
+    /// way already, which a second press does not start again.
+    pub fn begin_removal(&mut self, folder: &Path) -> bool {
+        self.removing.insert(folder.to_path_buf())
+    }
+
+    /// The removal of `folder` is judged and waits on the person's answer,
+    /// or was let go: it is under way no more.
+    pub fn removal_asked(&mut self, folder: &Path) {
+        self.removing.remove(folder);
+    }
+
+    /// Whether a removal of the worktree at `folder` is under way.
+    pub fn removing(&self, folder: &Path) -> bool {
+        self.removing.contains(folder)
+    }
+
+    /// The checkout at `top` was removed by another way than its project's
+    /// (a task's, after its pull request merged): every recorded worktree
+    /// in it, a project's sub-folder of it too, is forgotten, written now.
+    #[must_use = "its effects are to be carried"]
+    pub fn worktree_gone(&mut self, top: &Path) -> Vec<Effect> {
+        let gone: Vec<(ProjectId, PathBuf)> = (self.projects.iter())
+            .flat_map(|project| {
+                (project.worktrees.iter())
+                    .filter(|w| w.path.starts_with(top))
+                    .map(|w| (project.id.clone(), w.path.clone()))
+            })
+            .collect();
+        gone.into_iter()
+            .flat_map(|(id, path)| self.forget_worktree(&id, &path))
+            .collect()
     }
 
     /// Put project `id`'s new worktrees in `parent`, or beside the repository

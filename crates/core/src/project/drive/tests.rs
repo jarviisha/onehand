@@ -386,8 +386,8 @@ fn a_removed_worktree_is_forgotten_and_said() {
     );
     assert!(d.get(&p.id).unwrap().worktrees.is_empty(), "forgotten");
     assert!(fx.iter().any(|e| matches!(e,
-        Effect::Signal(Signal::WorktreeRemoved { name, kept: Some(why) })
-            if name == "x" && why == "not fully merged")));
+        Effect::Signal(Signal::WorktreeRemoved { folder, branch: Some(b), kept: Some(why) })
+            if folder == Path::new("/code/a-x") && b == "x" && why == "not fully merged")));
 }
 
 #[test]
@@ -425,4 +425,44 @@ fn a_failed_write_puts_the_worktree_folder_back() {
         result: Err("disk full".into()),
     });
     assert_eq!(d.get(&p.id).unwrap().worktree_parent, None);
+}
+
+#[test]
+fn a_checkout_git_lists_is_adopted_on_its_branch_or_head() {
+    let (mut d, p) = drive();
+    let fx = d.adopt_worktree(
+        &p.id,
+        crate::worktree::Listed {
+            path: "/code/a-d".into(),
+            branch: None,
+        },
+    );
+    assert!(!fx.is_empty(), "written");
+    let w = &d.get(&p.id).unwrap().worktrees[0];
+    assert_eq!((w.branch.as_str(), w.made_by), ("HEAD", MadeBy::Added));
+}
+
+#[test]
+fn a_removal_under_way_takes_no_second_press_until_it_is_over() {
+    let (mut d, p) = drive();
+    let _ = d.record_worktree(&p.id, split("/code/a-x"));
+    let at = Path::new("/code/a-x");
+    assert!(d.begin_removal(at));
+    assert!(!d.begin_removal(at), "a second press");
+    assert!(d.removing(at));
+    d.removal_asked(at);
+    assert!(!d.removing(at), "the question is up");
+    assert!(d.begin_removal(at));
+    let _ = d.worktree_removal(&p.id, at, Removal::Refused(vec!["x".into()]));
+    assert!(!d.removing(at), "over");
+}
+
+#[test]
+fn a_worktree_gone_by_a_tasks_removal_is_forgotten_in_its_project() {
+    let (mut d, p) = drive();
+    let _ = d.record_worktree(&p.id, split("/code/a-x"));
+    let fx = d.worktree_gone(Path::new("/code/a-x"));
+    assert!(!fx.is_empty());
+    assert!(d.get(&p.id).unwrap().worktrees.is_empty());
+    assert!(d.worktree_gone(Path::new("/code/a-x")).is_empty(), "once");
 }

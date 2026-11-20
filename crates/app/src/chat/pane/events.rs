@@ -52,11 +52,8 @@ pub enum WorktreeAct {
     NewSession(PathBuf),
     /// Ask whether to remove this worktree, and remove it.
     Remove(PathBuf),
-    /// Take in this checkout git lists, on its branch, as the project's.
-    Add {
-        folder: PathBuf,
-        branch: Option<String>,
-    },
+    /// Take in this checkout git lists as the project's.
+    Add(onehand_core::worktree::Listed),
     /// Forget this missing worktree.
     Forget(PathBuf),
     /// Choose the folder new worktrees go in.
