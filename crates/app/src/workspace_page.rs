@@ -124,12 +124,28 @@ impl WorkspacePage {
         let Some(read) = &self.read else {
             return;
         };
+        // A filter on a folder whose project's file another row lists stands
+        // for that row.
+        let under = onehand_core::issues::listed_under(&self.issue_folders());
+        let only = self
+            .filter
+            .as_ref()
+            .map(|only| under.get(only).unwrap_or(only));
         let kept = read
             .iter()
-            .filter(|(root, _)| self.filter.as_ref().is_none_or(|only| only == root))
+            .filter(|(root, _)| only.is_none_or(|only| only == root))
             .cloned()
             .collect();
         self.shown = onehand_core::issues::open_across(kept, PAGE_ISSUES);
+    }
+
+    /// Each row that keeps issues, with the file its project keeps them in,
+    /// in rail order.
+    fn issue_folders(&self) -> Vec<(PathBuf, PathBuf)> {
+        self.projects
+            .iter()
+            .filter_map(|p| Some((p.root.clone(), p.issues.clone()?)))
+            .collect()
     }
 
     /// What `root`, a folder on this machine, is called here, or its
@@ -171,10 +187,13 @@ impl WorkspacePage {
     /// screen stays until the new read lands, so a reload does not blank a
     /// list that already had something in it.
     pub(crate) fn reload(&mut self, cx: &mut Context<Self>) {
-        let files: Vec<(PathBuf, PathBuf)> = self
-            .projects
-            .iter()
-            .filter_map(|project| Some((project.root.clone(), project.issues.clone()?)))
+        // Each file once, under the first row of it: the folders of one
+        // project share their issues.
+        let folders = self.issue_folders();
+        let under = onehand_core::issues::listed_under(&folders);
+        let files: Vec<(PathBuf, PathBuf)> = folders
+            .into_iter()
+            .filter(|(root, _)| under.get(root) == Some(root))
             .collect();
         // A host's conversations are not kept here; what is filed under its
         // path is a folder of the same path here.
@@ -473,9 +492,7 @@ impl WorkspacePage {
             cx,
         );
         let note = match &page.read {
-            _ if unbound => {
-                Some("This workspace is bound to no folder, so it keeps no issues".to_string())
-            }
+            _ if unbound => Some("Issues are kept for the projects on this machine".to_string()),
             None => Some("Looking for open issues…".to_string()),
             Some(_) if page.shown.rows.is_empty() => Some("No open issues".to_string()),
             Some(_) => None,
@@ -617,9 +634,8 @@ fn holds(
     }
 }
 
-/// Whether no project keeps an issue file: the workspace is bound to no
-/// folder. A host's project never has one here, so a workspace of host
-/// projects alone keeps none either.
+/// Whether no project keeps an issue file: a workspace of host projects
+/// alone, or of folders whose projects are still being found.
 fn keeps_no_issues(projects: &[PageProject]) -> bool {
     !projects.is_empty() && projects.iter().all(|project| project.issues.is_none())
 }

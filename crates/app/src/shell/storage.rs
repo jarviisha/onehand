@@ -69,7 +69,7 @@ impl Shell {
         let ask = super::confirm::Confirm {
             id: "delete-workspace",
             title: format!("Delete {name}?").into(),
-            description: "Its projects stay on disk. Its issues kept in onehand go with it.".into(),
+            description: "Its projects stay on disk, and onehand keeps their issues.".into(),
             act: "Delete",
             ..Default::default()
         };
@@ -93,9 +93,7 @@ impl Shell {
         window: &mut gpui::Window,
         cx: &mut Context<Self>,
     ) {
-        self.workbench
-            .update(cx, |panel, cx| panel.set_storage(None, cx));
-        self.tell_issues_page(&onehand_workbench::Request::SetStorage(None), cx);
+        self.tell_issue_files_whole(Default::default(), cx);
         let removed = Shared::global(cx).writer.write({
             let dir = dir.clone();
             move || workspace::remove_workspace_blocking(&dir)

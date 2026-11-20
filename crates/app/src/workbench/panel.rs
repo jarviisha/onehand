@@ -414,9 +414,13 @@ impl Workbench {
         }
     }
 
-    /// Tell every mode where this window's workspace keeps its files.
-    pub fn set_storage(&mut self, storage: Option<&Path>, cx: &mut Context<Self>) {
-        self.broadcast(&Request::SetStorage(storage), cx);
+    /// Tell every mode the issues file of each project folder of the window.
+    pub fn set_issue_files(
+        &mut self,
+        files: &std::collections::HashMap<std::path::PathBuf, onehand_core::workbench::KeptIssues>,
+        cx: &mut Context<Self>,
+    ) {
+        self.broadcast(&Request::IssueFiles(files), cx);
         cx.notify();
     }
 

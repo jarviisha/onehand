@@ -9,6 +9,12 @@ pub fn store_dir() -> std::path::PathBuf {
     crate::config::projects_in(&crate::config::config_dir())
 }
 
+/// The file `id`'s issues are kept in: one for the project, whichever of
+/// its folders and whichever workspace they are read from.
+pub fn issues_file(id: &super::ProjectId) -> std::path::PathBuf {
+    store_dir().join(id.as_str()).join("issues.json")
+}
+
 /// The file a project is kept in, inside its folder.
 pub const FILE: &str = "project.toml";
 

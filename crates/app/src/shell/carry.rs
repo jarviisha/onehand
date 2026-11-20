@@ -41,6 +41,8 @@ impl Shell {
                 Effect::Changed => {
                     // The project page's menu says what the tree holds too.
                     self.sync_project_facts(cx);
+                    // A row came, left or found its project.
+                    self.tell_issue_files(cx);
                     cx.notify();
                 }
                 Effect::Put(value) => self.put_back(value, window, cx),

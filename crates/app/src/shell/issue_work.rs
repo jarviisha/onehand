@@ -27,7 +27,12 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let (idx, file) = match work_here(self.root_index(root), self.issues_file(root)) {
+        let kept = self.issues_file(root, cx);
+        // The note is written as from the project's own folder.
+        let place = kept
+            .as_ref()
+            .map_or(root.to_path_buf(), |kept| kept.home.clone());
+        let (idx, file) = match work_here(self.root_index(root), kept.map(|kept| kept.file)) {
             Ok(here) => here,
             Err(why) => {
                 let said = not_here(why);
@@ -54,7 +59,6 @@ impl Shell {
         });
         let at = self.chat.read(cx).window_handle();
         let mut owed = TakenUp::new(file, number);
-        let place = root.to_path_buf();
         cx.subscribe(&session, move |_, session, _: &ChatEvent, cx| {
             let Some((file, change)) = owed.heard(session.read(cx).chat()) else {
                 return;
@@ -106,7 +110,9 @@ impl Shell {
 fn not_here(why: NotHere) -> &'static str {
     match why {
         NotHere::ProjectGone => super::carry::PROJECT_GONE,
-        NotHere::NoIssuesFile => "This workspace keeps no issues, so that issue cannot be noted",
+        NotHere::NoIssuesFile => {
+            "That folder's project keeps no issues here, so that issue cannot be noted"
+        }
     }
 }
 

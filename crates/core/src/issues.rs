@@ -49,6 +49,12 @@ pub struct Issues {
     /// screen in the other order from the one they reached the disk in.
     #[serde(default)]
     revision: u64,
+    /// The files kept by an earlier build that were taken into this one, by
+    /// path: a project's issues used to be kept per workspace and per folder.
+    /// Written with what they brought, so a merge cut short is never taken
+    /// twice.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    merged_from: Vec<String>,
 }
 
 /// One issue.
@@ -561,24 +567,83 @@ pub fn matches_query(issue: &LocalIssue, query: &str) -> bool {
     }
 }
 
-/// Where the issues of the project at `root` are kept, in the workspace whose
-/// storage directory is `storage`.
-///
-/// Named by the project's folder and a digest of its whole path, as a
-/// workspace's own storage folder is: two checkouts of one repository are two
-/// projects with one folder name.
-pub fn file_for(storage: &Path, root: &Path) -> PathBuf {
-    issues_dir(storage).join(format!("{}.json", crate::workspace::stem_for(root)))
-}
-
-/// The folder a workspace kept in `storage` keeps its issues in.
+/// The folder an earlier build kept a workspace's issues in, one file per
+/// folder: what the migration reads, and what deleting a workspace removes.
+/// A project's issues are kept in its own folder now
+/// ([`crate::project::file::issues_file`]).
 pub(crate) fn issues_dir(storage: &Path) -> PathBuf {
     storage.join("issues")
 }
 
-/// An issue onehand keeps, named by the file it is kept in ([`file_for`]) and
-/// its number there. Never by the project and number alone: two workspaces
-/// can open one project, and each keeps an issue 12 of its own.
+/// For each of `folders`, each with the issues file its project keeps, in
+/// the order they are listed: the folder its issues are listed under, the
+/// first with the same file. The folders of one project share their file, so
+/// a list across folders lists it once, and a filter on any of them stands
+/// for the folder it is listed under.
+pub fn listed_under(folders: &[(PathBuf, PathBuf)]) -> std::collections::HashMap<PathBuf, PathBuf> {
+    folders
+        .iter()
+        .map(|(folder, file)| {
+            let first = folders
+                .iter()
+                .find(|(_, held)| held == file)
+                .map_or(folder, |(first, _)| first);
+            (folder.clone(), first.clone())
+        })
+        .collect()
+}
+
+/// Take `from`, the issues file at `source` an earlier build kept, into
+/// `into`: `false`, changing nothing, when `source` was taken in already.
+///
+/// A forge's issue is one issue wherever it was kept: one `into` holds with
+/// the same link keeps its number and takes the copy changed last. Any other
+/// keeps its own number where `into` has none of it, and takes the next one
+/// where it has.
+pub(crate) fn merge(into: &mut Issues, from: Issues, source: &Path) -> bool {
+    let source = source.to_string_lossy().into_owned();
+    if into.merged_from.contains(&source) {
+        return false;
+    }
+    let same_link = |a: &LocalIssue, b: &LocalIssue| match (&a.link, &b.link) {
+        (Some(a), Some(b)) => a.connector == b.connector && a.key == b.key,
+        (Some(_), None) | (None, Some(_)) | (None, None) => false,
+    };
+    for mut issue in from.issues {
+        if let Some(held) = into.issues.iter_mut().find(|held| same_link(held, &issue)) {
+            // The notes of both: who took it up, and where, is kept on
+            // whichever copy it happened to be written on.
+            let mut notes = std::mem::take(&mut held.notes);
+            for note in std::mem::take(&mut issue.notes) {
+                if !notes.contains(&note) {
+                    notes.push(note);
+                }
+            }
+            notes.sort_by_key(|note| note.at);
+            if issue.updated > held.updated {
+                issue.number = held.number;
+                *held = issue;
+            }
+            held.notes = notes;
+            continue;
+        }
+        if into.issues.iter().any(|held| held.number == issue.number) {
+            issue.number = into.next.max(1);
+        }
+        into.next = into.next.max(issue.number + 1);
+        into.issues.push(issue);
+    }
+    if into.synced_with.is_none() {
+        into.synced_with = from.synced_with;
+        into.last_synced = into.last_synced.max(from.last_synced);
+    }
+    into.merged_from.push(source);
+    true
+}
+
+/// An issue onehand keeps, named by the file it is kept in and its number
+/// there: one file per project, which every folder of it and every workspace
+/// holding it reads.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct IssueKey {
     pub file: PathBuf,
@@ -646,11 +711,11 @@ fn update_unless<R>(
 
 /// Write `issues` to `file` so a reader never sees half of it.
 ///
-/// **Never into a workspace that is gone.** The file's folder is made when
-/// it is missing, but the workspace's own folder above it is not: a write
-/// that lands after its workspace was deleted would otherwise put that
-/// folder back.
-fn save_blocking(file: &Path, issues: &Issues) -> Result<(), String> {
+/// **Never into a store that is gone.** The file's folder is made when it is
+/// missing, but the folder above it (the projects', or a workspace's for a
+/// file an earlier build kept) is not: a write that lands after that folder
+/// was deleted would otherwise put it back.
+pub(crate) fn save_blocking(file: &Path, issues: &Issues) -> Result<(), String> {
     if let Some(storage) = file.parent().and_then(Path::parent) {
         if !storage.as_os_str().is_empty() && !storage.is_dir() {
             return Err(format!("{} is gone", storage.display()));
@@ -749,7 +814,7 @@ pub fn supervised_brief_blocking(
     forge: Option<&'static dyn crate::connector::Connector>,
     number: u64,
 ) -> Result<crate::workflow::Brief, String> {
-    let file = file.ok_or("this workspace keeps no issues of its own")?;
+    let file = file.ok_or("that folder's project keeps no issues here")?;
     let kept = load_blocking(&file)?;
     let synced = forge.filter(|forge| kept.in_step_with(forge.name()));
     let issue = kept

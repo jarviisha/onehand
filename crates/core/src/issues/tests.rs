@@ -209,16 +209,6 @@ fn labels_are_split_on_commas_trimmed_and_said_once() {
 }
 
 #[test]
-fn the_file_is_per_project_under_the_workspace_storage() {
-    let storage = Path::new("/store");
-    let a = file_for(storage, Path::new("/code/app"));
-    let b = file_for(storage, Path::new("/other/app"));
-    assert!(a.starts_with("/store/issues"));
-    assert_ne!(a, b, "two checkouts with one folder name are two projects");
-    assert_eq!(a, file_for(storage, Path::new("/code/app")));
-}
-
-#[test]
 fn issues_survive_a_round_trip_and_a_missing_file_is_empty() {
     let dir = std::env::temp_dir().join(format!("onehand-issues-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -331,14 +321,14 @@ fn a_blank_title_is_refused_and_nothing_is_written() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// A write that lands after its workspace was deleted does not put the
-/// workspace's folder back: it fails instead.
+/// A write that lands after the folder holding its file's folder is gone
+/// does not put it back: it fails instead.
 #[test]
 fn a_write_into_a_deleted_workspace_puts_nothing_back() {
     let storage =
         std::env::temp_dir().join(format!("onehand-issues-deleted-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&storage);
-    let file = file_for(&storage, Path::new("/p"));
+    let file = storage.join("p").join("issues.json");
     assert!(update_blocking(&file, |_| Ok(())).is_err());
     assert!(!storage.exists());
 }
@@ -366,4 +356,158 @@ fn a_supervised_brief_names_an_open_issue_kept_here() {
     assert!(supervised_brief_blocking(Some(file.clone()), None, 2).is_err());
     assert!(supervised_brief_blocking(Some(file), None, 9).is_err());
     let _ = std::fs::remove_dir_all(dir);
+}
+
+// Merging one project's files into one.
+
+fn local(number: u64, title: &str) -> LocalIssue {
+    LocalIssue {
+        number,
+        title: title.into(),
+        body: String::new(),
+        open: true,
+        labels: Vec::new(),
+        created: 1,
+        updated: 1,
+        notes: Vec::new(),
+        link: None,
+        imported_from: None,
+    }
+}
+
+fn linked(number: u64, connector: &str, key: &str, updated: u64, title: &str) -> LocalIssue {
+    LocalIssue {
+        updated,
+        link: Some(Link {
+            connector: connector.into(),
+            key: key.into(),
+            reference: format!("#{key}"),
+            base: Snapshot::default(),
+            conflict: None,
+        }),
+        imported_from: Some(connector.into()),
+        ..local(number, title)
+    }
+}
+
+fn issues_with(issues: Vec<LocalIssue>) -> Issues {
+    let next = issues.iter().map(|i| i.number).max().unwrap_or(0) + 1;
+    Issues {
+        next,
+        issues,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn a_forge_issue_kept_in_two_files_is_kept_once_the_newer() {
+    let mut into = issues_with(vec![linked(1, "gh", "42", 100, "old title")]);
+    let from = issues_with(vec![linked(7, "gh", "42", 200, "new title")]);
+    assert!(merge(&mut into, from, Path::new("/ws/issues/a-x.json")));
+    assert_eq!(into.issues.len(), 1);
+    assert_eq!(
+        (into.issues[0].number, into.issues[0].title.as_str()),
+        (1, "new title")
+    );
+    // The older copy coming second changes nothing.
+    let older = issues_with(vec![linked(3, "gh", "42", 50, "stale")]);
+    merge(&mut into, older, Path::new("/ws2/issues/a.json"));
+    assert_eq!(into.issues[0].title, "new title");
+}
+
+#[test]
+fn a_local_issue_keeps_its_number_where_free_and_takes_the_next_where_not() {
+    let mut into = issues_with(vec![local(1, "a"), local(2, "b")]);
+    let from = issues_with(vec![local(2, "c"), local(5, "d")]);
+    merge(&mut into, from, Path::new("/ws/issues/a-x.json"));
+    let numbers: Vec<_> = into
+        .issues
+        .iter()
+        .map(|i| (i.number, i.title.clone()))
+        .collect();
+    assert_eq!(
+        numbers,
+        vec![
+            (1, "a".to_string()),
+            (2, "b".to_string()),
+            (3, "c".to_string()),
+            (5, "d".to_string())
+        ]
+    );
+    assert_eq!(into.next, 6);
+}
+
+#[test]
+fn a_source_merged_once_is_not_merged_again() {
+    let mut into = Issues::default();
+    let source = Path::new("/ws/issues/a-x.json");
+    assert!(merge(&mut into, issues_with(vec![local(1, "a")]), source));
+    assert!(!merge(&mut into, issues_with(vec![local(1, "a")]), source));
+    assert_eq!(into.issues.len(), 1);
+}
+
+#[test]
+fn a_merge_keeps_the_forge_it_syncs_with() {
+    let mut into = Issues::default();
+    let mut from = issues_with(vec![]);
+    from.synced_with = Some("gh".into());
+    from.last_synced = 9;
+    merge(&mut into, from, Path::new("/ws/issues/a.json"));
+    assert_eq!(
+        (into.synced_with.as_deref(), into.last_synced),
+        (Some("gh"), 9)
+    );
+}
+
+#[test]
+fn a_projects_issues_file_is_in_its_folder() {
+    use crate::project::file::{issues_file, store_dir};
+    use crate::project::ProjectId;
+    let id = ProjectId::mint(5);
+    assert_eq!(
+        issues_file(&id),
+        store_dir().join(id.as_str()).join("issues.json")
+    );
+}
+
+#[test]
+fn a_forge_issue_kept_twice_keeps_the_notes_of_both() {
+    let note = |at: u64, text: &str| Note {
+        at,
+        text: text.into(),
+        session: Some(format!("s{at}")),
+    };
+    let mut old = linked(1, "gh", "42", 100, "old");
+    old.notes = vec![note(1, "taken up in the worktree")];
+    let mut new = linked(4, "gh", "42", 200, "new");
+    new.notes = vec![
+        note(2, "taken up here"),
+        note(1, "taken up in the worktree"),
+    ];
+    let mut into = issues_with(vec![old]);
+    merge(
+        &mut into,
+        issues_with(vec![new]),
+        Path::new("/ws/issues/a.json"),
+    );
+    let notes: Vec<_> = into.issues[0].notes.iter().map(|n| n.at).collect();
+    assert_eq!(notes, vec![1, 2], "each note once, in order");
+    assert_eq!(into.issues[0].title, "new");
+}
+
+#[test]
+fn a_file_is_listed_under_the_first_folder_of_it() {
+    let folders = vec![
+        (PathBuf::from("/a"), PathBuf::from("/p/1.json")),
+        (PathBuf::from("/b"), PathBuf::from("/p/2.json")),
+        (PathBuf::from("/a-x"), PathBuf::from("/p/1.json")),
+    ];
+    let under = listed_under(&folders);
+    assert_eq!(under[Path::new("/a")], Path::new("/a"));
+    assert_eq!(
+        under[Path::new("/a-x")],
+        Path::new("/a"),
+        "a worktree stands for its project's row"
+    );
+    assert_eq!(under[Path::new("/b")], Path::new("/b"));
 }

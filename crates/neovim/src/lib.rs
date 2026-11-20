@@ -82,7 +82,7 @@ impl WorkbenchMode for Mode {
             | Request::Rescan
             | Request::Shown
             | Request::SetGit(_)
-            | Request::SetStorage(_)
+            | Request::IssueFiles(_)
             | Request::ShowIssue(_)
             | Request::AgentStarted(_)
             | Request::LiveConversations(_)

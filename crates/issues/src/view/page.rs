@@ -22,7 +22,7 @@ use gpui::{
     ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled, Window, div,
 };
 use gpui_component::{ActiveTheme, StyledExt};
-use onehand_core::issues::{self, IssueKey, LocalIssue};
+use onehand_core::issues::{IssueKey, LocalIssue};
 use onehand_core::task::work::list::{Filters, Held, Item, list};
 use onehand_ui::{faint_rule, hint};
 use std::collections::BTreeSet;
@@ -244,11 +244,12 @@ impl IssuesView {
     /// The page: its top over the list, and the issue picked floating
     /// over the list while it is open.
     pub(super) fn page_body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        if self.storage.is_none() {
-            return hint(
-                "This workspace keeps nothing until it is bound to a storage folder in Settings",
-                cx,
-            );
+        if self
+            .root
+            .as_ref()
+            .is_some_and(|root| !self.files.contains_key(root))
+        {
+            return hint("Issues are kept for the projects on this machine", cx);
         }
         let projects = self
             .page
@@ -325,7 +326,7 @@ impl IssuesView {
     /// The issue `number` of `root`, named by the file it is kept in.
     fn key(&self, root: &Path, number: u64) -> Option<IssueKey> {
         Some(IssueKey {
-            file: issues::file_for(self.storage.as_deref()?, root),
+            file: self.files.get(root)?.file.clone(),
             number,
         })
     }
@@ -347,9 +348,18 @@ impl IssuesView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> (AnyElement, AnyElement, Option<AnyElement>) {
+        // Each file once, under the first folder of it: the folders of one
+        // project share their issues, and a filter on any of them stands for
+        // that folder.
+        let folders: Vec<(PathBuf, PathBuf)> = projects
+            .iter()
+            .filter_map(|(root, _)| Some((root.clone(), self.files.get(root)?.file.clone())))
+            .collect();
+        let under = onehand_core::issues::listed_under(&folders);
         // What the rows borrow, held for the length of this draw.
         let owned: Vec<(PathBuf, LocalIssue)> = projects
             .iter()
+            .filter(|(root, _)| under.get(root) == Some(root))
             .flat_map(|(root, _)| {
                 self.issues_of(root, cx)
                     .map(|kept| kept.listed().into_iter().cloned().collect::<Vec<_>>())
@@ -358,15 +368,14 @@ impl IssuesView {
                     .map(|issue| (root.clone(), issue))
             })
             .collect();
-        let storage = self.storage.clone().unwrap_or_default();
         let items: Vec<Item<'_>> = owned
             .iter()
-            .map(|(root, issue)| {
+            .filter_map(|(root, issue)| {
                 let key = IssueKey {
-                    file: issues::file_for(&storage, root),
+                    file: self.files.get(root)?.file.clone(),
                     number: issue.number(),
                 };
-                Item { root, key, issue }
+                Some(Item { root, key, issue })
             })
             .collect();
         let query = self.query(window, cx);
@@ -377,6 +386,9 @@ impl IssuesView {
         };
         let mut filters = page.filters.clone();
         filters.query = text;
+        if let Some(listed) = filters.project.as_ref().and_then(|only| under.get(only)) {
+            filters.project = Some(listed.clone());
+        }
         // A project or label filter nothing carries any more is dropped: a
         // filter nothing on screen can clear hides every issue.
         if let Some(only) = &page.filters.project

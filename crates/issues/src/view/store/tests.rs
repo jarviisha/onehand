@@ -122,10 +122,20 @@ fn a_file_syncs_on_its_own_clock_while_a_view_is_on_it(cx: &mut TestAppContext) 
     for folder in [&storage, &on, &off] {
         std::fs::create_dir_all(folder).unwrap();
     }
-    let paths: Vec<_> = [&off, &on]
+    let paths: Vec<_> = ["off.json", "on.json"]
         .into_iter()
-        .map(|root| issues::file_for(&storage, root))
+        .map(|name| storage.join(name))
         .collect();
+    let kept = |file: &PathBuf, home: &PathBuf| onehand_core::workbench::KeptIssues {
+        file: file.clone(),
+        home: home.clone(),
+    };
+    let told: std::collections::HashMap<_, _> = [
+        (off.clone(), kept(&paths[0], &off)),
+        (on.clone(), kept(&paths[1], &on)),
+    ]
+    .into_iter()
+    .collect();
     // Both kept in step on disk, so each read syncs once at once.
     for path in &paths {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -147,7 +157,7 @@ fn a_file_syncs_on_its_own_clock_while_a_view_is_on_it(cx: &mut TestAppContext) 
     let mut files = Vec::new();
     for view in [&a, &b] {
         files = view.update(cx, |view, cx| {
-            view.set_storage(Some(storage.clone()), cx);
+            view.set_files(told.clone(), cx);
             let mut files = Vec::new();
             for root in [&off, &on] {
                 view.set_root(root, cx);

@@ -105,3 +105,26 @@ pub(crate) fn another(
         .update(|cx| crate::windows::register(storage, handle, weak, cx));
     (handle, shell)
 }
+
+/// Keep `projects` as every project of the process, each one's folder made
+/// in the store, then place `shell`'s rows of them as a window opening does.
+pub(crate) fn keep_projects(
+    handle: gpui::AnyWindowHandle,
+    shell: &Entity<crate::shell::Shell>,
+    projects: Vec<onehand_core::project::Project>,
+    cx: &mut VisualTestContext,
+) {
+    use gpui::BorrowAppContext as _;
+    let store = onehand_core::project::file::store_dir();
+    for project in &projects {
+        std::fs::create_dir_all(store.join(project.id.as_str())).unwrap();
+    }
+    cx.update(|_, cx| {
+        cx.update_global::<Shared, _>(|shared, _| {
+            shared.projects =
+                onehand_core::project::ProjectsDrive::new(projects.into_iter().collect(), store);
+        });
+        crate::projects::place_rows(handle, shell.clone(), cx);
+    });
+    cx.run_until_parked();
+}

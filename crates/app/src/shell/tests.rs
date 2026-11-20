@@ -82,6 +82,14 @@ fn the_overview_keeps_a_host_project_and_the_other_pages_do_not() {
     use std::path::PathBuf;
     let mut ws = Workspace::seeded("/srv/app");
     ws.storage_dir = PathBuf::from("/s");
+    // The folder here is of a project, which keeps its issues.
+    let here = onehand_core::project::Project::new(
+        onehand_core::project::ProjectId::mint(3),
+        None,
+        "/srv/app".into(),
+    );
+    ws.roots[0] =
+        onehand_core::workspace::ProjectRoot::of(&here, onehand_core::project::Folder::Home);
     // A status for the local folder, which the host's of the same path must
     // never show.
     let mut drive = onehand_core::workspace::WorkspaceDrive::new(ws);

@@ -154,7 +154,8 @@ pub(super) fn page_projects_in(
                     .collect(),
                 git: workspace.git_of(root).map(gitstat::GitStatus::label),
                 issues: local
-                    .map(|path| onehand_core::issues::file_for(&workspace.storage_dir, path)),
+                    .and(root.project.as_ref())
+                    .map(onehand_core::project::file::issues_file),
             }
         })
         .collect()
