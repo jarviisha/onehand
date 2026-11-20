@@ -253,13 +253,15 @@ impl WorkspaceDrive {
 
     /// Close every session of the project at `dir`, a folder here, showing
     /// what is left: what its code moving to or from a host does.
-    pub(super) fn drop_sessions_in(&mut self, dir: &Path) -> Vec<Effect> {
+    pub(crate) fn drop_sessions_in(&mut self, dir: &Path) -> Vec<Effect> {
         let uids: Vec<u64> = self
             .workspace
             .roots
             .iter()
-            .filter(|root| root.local_path() == Some(dir))
-            .flat_map(|root| root.sessions.iter().map(|session| session.uid))
+            .filter(|root| root.host.is_none())
+            .flat_map(|root| &root.sessions)
+            .filter(|session| session.folder == dir)
+            .map(|session| session.uid)
             .collect();
         uids.into_iter()
             .flat_map(|uid| self.drop_session(uid))
@@ -404,6 +406,12 @@ impl WorkspaceDrive {
     }
 
     /// Where the project at `dir`, a folder on this machine, sits.
+    /// The folder session `uid` runs in.
+    pub fn folder_of(&self, uid: u64) -> Option<std::path::PathBuf> {
+        let (root, session) = self.locate(uid)?;
+        Some(self.workspace.roots[root].sessions[session].folder.clone())
+    }
+
     pub fn local_index(&self, dir: &Path) -> Option<usize> {
         self.workspace
             .roots

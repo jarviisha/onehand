@@ -18,19 +18,23 @@
 //! `Chat::awaiting_permission`, read through the chat pane.
 
 use crate::config::AgentSpec;
+use std::path::PathBuf;
 
-/// One agent bound to a project root.
+/// One agent bound to a project, running in one of its folders.
 #[derive(Debug)]
 pub struct Session {
     pub spec: AgentSpec,
     /// Process-wide-unique id salt so a session's widget state survives
     /// switching roots/sessions, and so an agent event can find its window.
     pub uid: u64,
+    /// The folder its agent runs in: its project's own, or a worktree of it.
+    /// What the window's panels follow while it is on screen.
+    pub folder: PathBuf,
 }
 
 impl Session {
-    pub fn new(spec: AgentSpec, uid: u64) -> Self {
-        Self { spec, uid }
+    pub fn new(spec: AgentSpec, uid: u64, folder: PathBuf) -> Self {
+        Self { spec, uid, folder }
     }
 
     /// A short label for the session row — the agent name.
@@ -54,7 +58,7 @@ mod tests {
 
     #[test]
     fn a_session_is_its_spec_and_its_uid() {
-        let s = Session::new(spec(), 7);
+        let s = Session::new(spec(), 7, "/a".into());
         assert_eq!(s.uid, 7);
         assert_eq!(s.title(), "Claude Code");
     }

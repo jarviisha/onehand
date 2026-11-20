@@ -965,3 +965,45 @@ fn a_folder_of_no_known_project_comes_in_at_once_and_is_said_unplaced() {
         "a known project's folder"
     );
 }
+
+// The folder a session runs in.
+
+#[test]
+fn a_session_runs_in_the_folder_it_was_added_in() {
+    let mut drive = bound();
+    assert_eq!(
+        drive.roots[0].folder_on_screen(),
+        Path::new("/a"),
+        "no session: the row's"
+    );
+    let (added, _) = drive.add_session(Some(spec()), 1, None);
+    assert_eq!(added, Ok(1));
+    assert_eq!(
+        drive.folder_of(1),
+        Some(PathBuf::from("/a")),
+        "the row's own folder"
+    );
+    tree(&mut drive).add_session_at(spec(), 2, PathBuf::from("/a-x"));
+    assert_eq!(drive.folder_of(2), Some(PathBuf::from("/a-x")));
+    assert_eq!(
+        drive.roots[0].folder_on_screen(),
+        Path::new("/a-x"),
+        "the session on screen's"
+    );
+    assert_eq!(drive.roots[0].session_folder(1), Some(Path::new("/a")));
+}
+
+#[test]
+fn dropping_the_sessions_of_a_folder_leaves_the_rows_others() {
+    let mut drive = bound();
+    drive.add_session(Some(spec()), 1, None);
+    tree(&mut drive).add_session_at(spec(), 2, PathBuf::from("/a-x"));
+    let fx = drive.drop_sessions_in(Path::new("/a-x"));
+    assert!(
+        names(&fx).contains(&"Close(2)".to_string()),
+        "{:?}",
+        names(&fx)
+    );
+    assert!(!names(&fx).contains(&"Close(1)".to_string()));
+    assert_eq!(drive.locate(1), Some((0, 0)));
+}
