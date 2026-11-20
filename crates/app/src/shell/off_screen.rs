@@ -26,17 +26,10 @@ impl Shell {
             .collect()
     }
 
-    /// Every root on this machine, with how many sessions are open on it.
+    /// Every folder whose sessions run on this machine, a project's own or a
+    /// worktree's, with how many sessions are open in it.
     pub fn roots_with_sessions(&self) -> Vec<(PathBuf, usize)> {
-        self.window
-            .workspace
-            .roots
-            .iter()
-            // A host's sessions occupy no folder here, nor do an offloaded
-            // project's, which run in its mirror there.
-            .filter(|root| root.runs_here())
-            .map(|root| (root.path.clone(), root.sessions.len()))
-            .collect()
+        self.window.workspace.sessions_by_folder()
     }
 
     /// The process id of every shell in this window's terminal.
@@ -57,10 +50,16 @@ impl Shell {
         self.roots_where(|root| root.runs_here())
     }
 
-    /// The projects on a host, or offloaded to one, which onehand's tools
-    /// refuse by name.
-    pub fn host_roots(&self) -> Vec<(PathBuf, String)> {
-        self.roots_where(|root| !root.runs_here())
+    /// The projects onehand's tools reach, by their folders whose sessions
+    /// run here.
+    pub fn tool_projects(&self) -> Vec<onehand_core::control::Named> {
+        self.window.workspace.named(true)
+    }
+
+    /// The projects, by their folders on a host or offloaded to one, which
+    /// onehand's tools refuse by name.
+    pub fn tool_hosted(&self) -> Vec<onehand_core::control::Named> {
+        self.window.workspace.named(false)
     }
 
     fn roots_where(
@@ -96,8 +95,13 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> Option<u64> {
         let idx = self.root_index(root)?;
-        self.select_root(idx, window, cx);
-        self.start_session(agent, Some(archive), window, cx)
+        if self.refuse_open_twice(&archive, window, cx) {
+            return None;
+        }
+        // In `root`, which may be a worktree of the row's project.
+        let agent = super::sessions::agent_index(agent, cx);
+        let starts = onehand_core::workspace::drive::StartsOn::Resume(archive);
+        self.session_in_folder(idx, root.to_path_buf(), agent, starts, window, cx)
     }
 
     /// Where the issues of `root`'s project are kept: a row's, else, for a
@@ -113,22 +117,24 @@ impl Shell {
         })
     }
 
-    /// Each project folder of the window on this machine, with where its
-    /// project keeps its issues: one file for every folder of a project.
+    /// Each folder of every project of the window on this machine, its own
+    /// and its worktrees', with where its project keeps its issues: one file
+    /// for every folder of a project.
     pub(crate) fn issue_files(&self, cx: &App) -> std::collections::HashMap<PathBuf, KeptIssues> {
         let projects = &crate::state::Shared::global(cx).projects;
         self.window
             .workspace
             .roots
             .iter()
-            .filter_map(|root| {
-                let project = projects.get(root.project.as_ref()?)?;
-                let path = root.local_path()?;
+            .filter(|root| root.local_path().is_some())
+            .filter_map(|root| Some((root, projects.get(root.project.as_ref()?)?)))
+            .flat_map(|(root, project)| {
                 let kept = KeptIssues {
                     file: onehand_core::project::file::issues_file(&project.id),
                     home: project.path.clone(),
                 };
-                Some((path.to_path_buf(), kept))
+                root.folders()
+                    .map(move |folder| (folder.to_path_buf(), kept.clone()))
             })
             .collect()
     }
@@ -267,20 +273,9 @@ impl Shell {
     /// is where a session's running state actually lives, and the tree's
     /// `Session` is its description rather than its condition.
     pub fn remote_sessions(&self, cx: &App) -> Vec<crate::remote::RemoteSession> {
-        let roots = &self.window.workspace.roots;
-        // A session's folder is its project's own, else a worktree a session
-        // of the project runs in.
-        let runs_here = |path: &Path| {
-            roots
-                .iter()
-                .find(|root| root.path == path)
-                .or_else(|| {
-                    roots
-                        .iter()
-                        .find(|root| root.sessions.iter().any(|s| s.folder == path))
-                })
-                .is_some_and(|root| root.runs_here())
-        };
+        // Judged by the session's folder: a worktree is offloaded on its own.
+        let workspace = &self.window.workspace;
+        let runs_here = |path: &Path| workspace.runs_here_in(path);
         self.chat.read(cx).remote_sessions(runs_here, cx)
     }
 }

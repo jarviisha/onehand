@@ -67,16 +67,11 @@ impl WorkspaceDrive {
                 Some(_) if self.workspace.shares_local_path(root) => false,
                 Some(host) => attached(host),
             })
-            // The row's own folder, and each other one a session of it runs
-            // in: what the git badges show is the folder on screen's.
+            // Every folder of the row, and each other one a session of it
+            // runs in: what the git badges show is the folder on screen's,
+            // and a worktree read is one on disk to start a session in.
             .flat_map(|root| {
-                let mut folders = vec![root.path.clone()];
-                for session in &root.sessions {
-                    if !folders.contains(&session.folder) {
-                        folders.push(session.folder.clone());
-                    }
-                }
-                folders.into_iter().map(|path| SweepProject {
+                root.folders_used().into_iter().map(|path| SweepProject {
                     path,
                     host: root.host.clone(),
                 })
@@ -105,7 +100,7 @@ impl WorkspaceDrive {
                 ws.roots
                     .iter()
                     .filter(|r| r.host == at.host)
-                    .any(|r| r.path == at.path || r.sessions.iter().any(|s| s.folder == at.path))
+                    .any(|r| r.holds(&at.path) || r.sessions.iter().any(|s| s.folder == at.path))
             })
         };
         self.git = found.into_iter().filter(|(path, _)| still(path)).collect();

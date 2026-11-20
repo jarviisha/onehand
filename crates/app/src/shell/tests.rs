@@ -88,8 +88,7 @@ fn the_overview_keeps_a_host_project_and_the_other_pages_do_not() {
         None,
         "/srv/app".into(),
     );
-    ws.roots[0] =
-        onehand_core::workspace::ProjectRoot::of(&here, onehand_core::project::Folder::Home);
+    ws.roots[0] = onehand_core::workspace::ProjectRoot::of(&here);
     // A status for the local folder, which the host's of the same path must
     // never show.
     let mut drive = onehand_core::workspace::WorkspaceDrive::new(ws);
@@ -225,6 +224,51 @@ fn switching_to_a_session_in_another_folder_moves_the_panels(cx: &mut gpui::Test
     assert_eq!(show(1), (Some(other.clone()), Some(other.clone())));
     assert_eq!(show(0), (Some(home.clone()), Some(home.clone())));
     assert_eq!(show(1), (Some(other.clone()), Some(other)));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A worktree split off a project is recorded in it, and a session starts in
+/// it on the project's own row, shown.
+#[gpui::test]
+fn a_split_starts_a_session_in_the_new_worktree(cx: &mut gpui::TestAppContext) {
+    let spec = crate::shell::rig::nowhere();
+    let dir = crate::shell::rig::folder("split-starts");
+    let (handle, shell, cx) = crate::shell::rig::shell(cx, dir.join("tasks"), vec![spec]);
+    let (home, worktree) = (dir.join("p"), dir.join("p-feat"));
+    for folder in [&home, &worktree] {
+        std::fs::create_dir_all(folder).unwrap();
+    }
+    let (home, worktree) = (
+        std::fs::canonicalize(home).unwrap(),
+        std::fs::canonicalize(worktree).unwrap(),
+    );
+    let project = onehand_core::project::Project::new(
+        onehand_core::project::ProjectId::mint(912_001),
+        None,
+        home.clone(),
+    );
+    crate::shell::rig::keep_projects(handle, &shell, vec![project], cx);
+    let at = home.clone();
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
+    let wt = worktree.clone();
+    cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| {
+            shell.open_split(&home, wt, "feat".into(), None, window, cx)
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let workspace = &shell.read(cx).window.workspace;
+        let rows: Vec<_> = workspace.roots.iter().map(|r| r.path.clone()).collect();
+        assert_eq!(rows.iter().filter(|r| **r == home).count(), 1, "{rows:?}");
+        assert!(!rows.contains(&worktree), "no row of its own: {rows:?}");
+        let uid = workspace.active_uid().expect("a session shown");
+        assert_eq!(workspace.folder_of(uid), Some(worktree.clone()));
+        assert_eq!(
+            workspace.active_root().map(|r| r.path.clone()),
+            Some(home.clone())
+        );
+    });
     let _ = std::fs::remove_dir_all(dir);
 }
 

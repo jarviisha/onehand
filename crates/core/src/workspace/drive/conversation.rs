@@ -72,13 +72,16 @@ impl WorkspaceDrive {
         };
         let (idx, mut fx) = match self.local_index(&saved.root) {
             Some(idx) => (idx, Vec::new()),
-            None if saved.there => self.keep_project(saved.root, project),
+            None if saved.there => self.keep_project(saved.root.clone(), project),
             None => return vec![Effect::Signal(Signal::FolderGone(saved.root))],
         };
         fx.extend(self.select_project(idx));
-        let starts = StartsOn::Resume(saved.resume);
-        let (_, added) = self.add_session_on(Some(spec.clone()), uid, None, starts);
-        fx.extend(added);
+        // In the folder it ran in, which may be a worktree of the project.
+        let (added, more) = self.add_session_at(Some(spec.clone()), uid, saved.root);
+        if let Ok(uid) = added {
+            self.starts_on(uid, StartsOn::Resume(saved.resume));
+        }
+        fx.extend(more);
         fx
     }
 }

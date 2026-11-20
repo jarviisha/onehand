@@ -191,11 +191,11 @@ impl Shell {
             .active_session()
             .map(|session| (session.uid, session.spec.clone()));
         let host = root.on_host().cloned();
-        // Where its sessions run: a host project's own folder, or an
-        // offloaded one's mirror. The panels beside the chat read `host`,
-        // so an offloaded project's files and shells stay this machine's.
+        // Where the folder's sessions run: a host project's own folder, or an
+        // offloaded folder's mirror. The panels beside the chat read `host`,
+        // so an offloaded folder's files and shells stay this machine's.
         let on = root
-            .session_host()
+            .host_of(&folder)
             .map(|(host, cwd)| (host.clone(), cwd.to_path_buf()));
         // A check command is this machine's to run, on a folder whose
         // sessions run here too.
@@ -490,7 +490,11 @@ impl Shell {
         };
         // A host's folder has its files open in the editor as one here does.
         let on_host = root.on_host().is_some();
-        let unsaved = self.workbench.read(cx).unsaved_in(&root.path, on_host, cx);
+        // Every folder of it: the editor keeps its buffers by folder.
+        let workbench = self.workbench.read(cx);
+        let unsaved = (root.folders_used().iter())
+            .map(|folder| workbench.unsaved_in(folder, on_host, cx))
+            .sum();
         let Some(Losses { sessions, unsaved }) = self.window.workspace.losses(idx, unsaved) else {
             return Vec::new();
         };
@@ -567,15 +571,12 @@ impl Shell {
         self.window.workspace.roots.get(idx)?.local_path()
     }
 
-    /// Where the project at `root`, a folder on this machine, sits in this
-    /// window's list of roots. Never a root on a host of the same path: every
+    /// Where the project holding `root`, a folder on this machine, its own or
+    /// a worktree's, sits in this window's list of roots. Never a root on a
+    /// host of the same path: every
     /// caller names a folder here, which work here is about to read.
     pub(super) fn root_index(&self, root: &Path) -> Option<usize> {
-        self.window
-            .workspace
-            .roots
-            .iter()
-            .position(|r| r.local_path() == Some(root))
+        self.window.workspace.local_index(root)
     }
 
     /// Whether `root`, a folder on this machine, is one of this window's

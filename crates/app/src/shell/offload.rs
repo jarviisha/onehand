@@ -428,11 +428,12 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some((folder, host, mirror)) = self.window.workspace.roots.iter().find_map(|r| {
-            let Offloaded { host, mirror, .. } = r.offload.clone()?;
-            path.starts_with(&r.path)
-                .then(|| (r.path.clone(), host, mirror))
-        }) else {
+        // The offloaded folder holding it, a project's own or a worktree's.
+        let Some((folder, host, mirror)) = (self.window.workspace.roots.iter())
+            .flat_map(|r| r.offloaded())
+            .find(|(folder, _)| path.starts_with(folder))
+            .map(|(folder, on)| (folder.to_path_buf(), on.host.clone(), on.mirror.clone()))
+        else {
             return;
         };
         let rel = path.strip_prefix(&folder).unwrap_or(&path).to_path_buf();
@@ -457,15 +458,13 @@ impl Shell {
         .detach();
     }
 
-    /// Keep every offloaded root of this window, and tell the Workbench and
-    /// the terminal which folders are locked; only when that changed.
+    /// Keep every offloaded folder of this window, a project's own or a
+    /// worktree's, each on its own, and tell the Workbench and the terminal
+    /// which folders are locked; only when that changed.
     pub(super) fn sync_offload(&mut self, cx: &mut Context<Self>) {
-        let kept: Vec<(PathBuf, Offloaded)> = self
-            .window
-            .workspace
-            .roots
-            .iter()
-            .filter_map(|r| Some((r.path.clone(), r.offload.clone()?)))
+        let kept: Vec<(PathBuf, Offloaded)> = (self.window.workspace.roots.iter())
+            .flat_map(|r| r.offloaded())
+            .map(|(path, on)| (path.to_path_buf(), on.clone()))
             .collect();
         let offloaded: HashMap<PathBuf, String> = kept
             .iter()
@@ -488,7 +487,7 @@ impl Shell {
                     .workspace
                     .roots
                     .iter()
-                    .any(|r| r.local_path() == Some(path.as_path()))
+                    .any(|r| r.local_path().is_some() && r.holds(path))
             })
             .collect();
         if locks != self.offload_locks {

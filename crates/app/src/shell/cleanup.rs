@@ -122,15 +122,23 @@ impl Shell {
             .roots
             .iter()
             // A host's folder of the same path is not this worktree.
-            .filter(|root| {
-                root.local_path()
-                    .is_some_and(|path| path.starts_with(folder))
+            .filter(|root| root.local_path().is_some())
+            // Its folders inside: its own, a worktree of it, a session's.
+            .filter_map(|root| {
+                let inside: Vec<std::path::PathBuf> = (root.folders_used().into_iter())
+                    .filter(|path| path.starts_with(folder))
+                    .collect();
+                (!inside.is_empty()).then_some((root, inside))
             })
-            .map(|root| {
-                let terminals = self.terminal.read(cx).shells_in(&root.path);
+            .map(|(root, inside)| {
+                let terminal = self.terminal.read(cx);
+                let terminals: usize = inside.iter().map(|path| terminal.shells_in(path)).sum();
+                let sessions = (root.sessions.iter())
+                    .filter(|session| inside.contains(&session.folder))
+                    .count();
                 let mut what = Vec::new();
-                if !root.sessions.is_empty() {
-                    what.push(count(root.sessions.len(), "session"));
+                if sessions > 0 {
+                    what.push(count(sessions, "session"));
                 }
                 if terminals > 0 {
                     what.push(count(terminals, "terminal"));

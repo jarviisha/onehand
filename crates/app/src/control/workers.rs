@@ -46,7 +46,7 @@ pub(super) fn open_plain(
     agent: &str,
     prompt: Option<String>,
     shell: &Entity<Shell>,
-    projects: &[(String, PathBuf)],
+    projects: &[onehand_core::control::Named],
     cx: &mut App,
 ) -> Result<String, String> {
     let spec = agent_named(agent, cx)?;
@@ -88,7 +88,7 @@ pub(super) fn open(
     open: Open,
     window: AnyWindowHandle,
     shell: Entity<Shell>,
-    projects: &[(String, PathBuf)],
+    projects: &[onehand_core::control::Named],
     answer: &mut Option<Answer>,
     cx: &mut App,
 ) -> Result<String, String> {
@@ -126,12 +126,7 @@ pub(crate) fn bring_back(lead: u64, archive: PathBuf, cx: &mut App) {
             let Some((window, shell)) = crate::windows::holding_session(lead, cx) else {
                 return;
             };
-            let projects: Vec<(String, PathBuf)> = shell
-                .read(cx)
-                .remote_roots()
-                .into_iter()
-                .map(|(path, name)| (name, path))
-                .collect();
+            let projects = shell.read(cx).tool_projects();
             let agents: HashMap<String, String> = kept
                 .workers
                 .iter()
@@ -173,7 +168,7 @@ fn resolve(
     fx: Vec<Effect>,
     dirs: &[PathBuf],
     asked: Asked,
-    projects: &[(String, PathBuf)],
+    projects: &[onehand_core::control::Named],
     cx: &mut App,
 ) {
     let lead = key.0;
@@ -187,7 +182,9 @@ fn resolve(
                 .unwrap_or_default(),
         )
         .collect();
-    let roots: Vec<PathBuf> = projects.iter().map(|(_, path)| path.clone()).collect();
+    let roots: Vec<PathBuf> = (projects.iter())
+        .flat_map(|named| named.folders().map(std::path::Path::to_path_buf))
+        .collect();
     // Every window's projects, to find a session on the folder or inside it.
     let everywhere: Vec<PathBuf> = counts(cx).into_iter().map(|(path, _)| path).collect();
     let home = std::env::var_os("HOME").map(PathBuf::from);

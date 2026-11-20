@@ -330,17 +330,12 @@ fn describe(dir: &Path, meta: Meta) -> ConvMeta {
 }
 
 /// Which conversations one row lists: those that ran in its folder, and, on
-/// its project's own row, those of its project that ran in a folder the
-/// project no longer records (a worktree since removed, a worker's folder).
-/// A recorded worktree lists its own, so nothing is listed on two rows.
+/// a project's row, every one of its project, in whichever of its folders it
+/// ran (a worktree, one since removed, a worker's folder).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Scope {
     pub folder: PathBuf,
     pub project: Option<crate::project::ProjectId>,
-    /// The row is its project's own folder.
-    pub home: bool,
-    /// The project's other folders, which list their own.
-    pub recorded: Vec<PathBuf>,
 }
 
 impl Scope {
@@ -349,21 +344,13 @@ impl Scope {
         Self {
             folder: folder.into(),
             project: None,
-            home: false,
-            recorded: Vec::new(),
         }
     }
 
     /// Whether a conversation that ran in `root`, of `project`, is listed on
     /// this row.
     pub fn holds(&self, root: &Path, project: Option<&crate::project::ProjectId>) -> bool {
-        if root == self.folder {
-            return true;
-        }
-        self.home
-            && project.is_some()
-            && project == self.project.as_ref()
-            && !self.recorded.iter().any(|folder| folder == root)
+        root == self.folder || (project.is_some() && project == self.project.as_ref())
     }
 }
 

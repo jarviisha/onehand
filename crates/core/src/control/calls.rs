@@ -43,7 +43,7 @@ pub fn aim(peer: &Peer, holder: Option<u64>, call: &Call) -> Result<Aim, String>
 /// The project an issue tool works on: the one `named`, else the calling
 /// session's (`caller`), else none.
 pub fn issues_project(
-    projects: &[(String, PathBuf)],
+    projects: &[crate::control::Named],
     named: Option<&str>,
     caller: Option<&Path>,
 ) -> Result<PathBuf, String> {
@@ -66,8 +66,8 @@ const ISSUE_WORKFLOW: &str = "builtin:issue";
 /// Refuse `named` by name when it is no project here but one on a host or
 /// offloaded to one, rather than say it does not exist.
 pub fn hosted(
-    here: &[(String, PathBuf)],
-    hosted: &[(String, PathBuf)],
+    here: &[crate::control::Named],
+    hosted: &[crate::control::Named],
     named: &str,
 ) -> Result<(), String> {
     if pick_project(here, named).is_err() && pick_project(hosted, named).is_ok() {
@@ -145,13 +145,13 @@ pub fn group_said(group: Group) -> &'static str {
 mod tests {
     use super::*;
 
-    fn here() -> Vec<(String, PathBuf)> {
-        vec![("app".into(), PathBuf::from("/repo/app"))]
+    fn here() -> Vec<crate::control::Named> {
+        vec![crate::control::Named::new("app", "/repo/app")]
     }
 
     #[test]
     fn a_hosted_project_is_refused_by_name_not_as_missing() {
-        let on_host = vec![("far".into(), PathBuf::from("/srv/far"))];
+        let on_host = vec![crate::control::Named::new("far", "/srv/far")];
         let why = hosted(&here(), &on_host, "far").unwrap_err();
         assert!(why.contains("runs its sessions on a host"), "{why}");
         assert!(hosted(&here(), &on_host, "app").is_ok());

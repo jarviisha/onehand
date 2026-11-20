@@ -22,15 +22,20 @@ impl WorkspaceDrive {
     ) -> (Result<u64, Refusal>, Vec<Effect>) {
         let (added, fx) = self.add_session(spec, uid, home);
         if let Ok(uid) = added {
-            match &starts {
-                StartsOn::Watch(id) => {
-                    self.watches.insert(uid, id.clone());
-                }
-                StartsOn::Fresh | StartsOn::Resume(_) | StartsOn::Fork => {}
-            }
-            self.starts.insert(uid, starts);
+            self.starts_on(uid, starts);
         }
         (added, fx)
+    }
+
+    /// Session `uid`, just added, starts on `starts` once shown.
+    pub(super) fn starts_on(&mut self, uid: u64, starts: StartsOn) {
+        match &starts {
+            StartsOn::Watch(id) => {
+                self.watches.insert(uid, id.clone());
+            }
+            StartsOn::Fresh | StartsOn::Resume(_) | StartsOn::Fork => {}
+        }
+        self.starts.insert(uid, starts);
     }
 
     /// What session `uid` starts on, taken as it is first shown: what it was
@@ -51,12 +56,12 @@ impl WorkspaceDrive {
     /// The session already on host session `id` of `host`; in the folder
     /// `root` when one is named.
     pub fn watcher(&self, host: &HostName, id: &HostSession, root: Option<&Path>) -> Option<u64> {
-        self.workspace
-            .roots
-            .iter()
-            .filter(|project| project.session_host().is_some_and(|(on, _)| on == host))
-            .filter(|project| root.is_none_or(|root| project.path == root))
-            .flat_map(|project| project.sessions.iter().map(|session| session.uid))
+        // By the session's folder: a worktree is offloaded on its own.
+        (self.workspace.roots.iter())
+            .flat_map(|project| project.sessions.iter().map(move |s| (project, s)))
+            .filter(|(project, s)| project.host_of(&s.folder).is_some_and(|(on, _)| on == host))
+            .filter(|(project, s)| root.is_none_or(|root| project.path == root || s.folder == root))
+            .map(|(_, session)| session.uid)
             .find(|uid| self.watches.get(uid) == Some(id))
     }
 
@@ -72,8 +77,9 @@ impl WorkspaceDrive {
         uid: u64,
     ) -> (Result<u64, Refusal>, Vec<Effect>) {
         let open = self.workspace.active_root().and_then(|project| {
-            let (host, _) = project.session_host()?;
-            self.watcher(host, &id, Some(&project.path))
+            let folder = project.folder_on_screen();
+            let (host, _) = project.host_of(folder)?;
+            self.watcher(host, &id, Some(folder))
         });
         match open {
             Some(open) => (Ok(open), self.select(open)),
@@ -84,8 +90,9 @@ impl WorkspaceDrive {
     /// The host and host session session `uid` watches, once its host has
     /// said which.
     pub fn watched_on(&self, uid: u64) -> Option<(HostName, HostSession)> {
-        let (root, _) = self.locate(uid)?;
-        let (host, _) = self.workspace.roots.get(root)?.session_host()?;
+        let (root, session) = self.locate(uid)?;
+        let root = self.workspace.roots.get(root)?;
+        let (host, _) = root.host_of(&root.sessions[session].folder)?;
         Some((host.clone(), self.watches.get(&uid)?.clone()))
     }
 
@@ -151,9 +158,11 @@ impl WorkspaceDrive {
     }
 
     /// Add a session `uid` of `spec` on the active project, selected, for the
-    /// front end to start and show. `home` is the project a new session goes
-    /// to when the person is beside a worker, whose folder is kept for it
-    /// alone. Refused with no agent or no project, and said.
+    /// front end to start and show, in the folder of the session on screen
+    /// (the project's own with none). `home` is the project a new session
+    /// goes to, in its own folder, when the person is beside a worker, whose
+    /// folder is kept for it alone. Refused with no agent or no project, and
+    /// said.
     #[must_use = "its effects are to be carried"]
     pub fn add_session(
         &mut self,
@@ -161,11 +170,17 @@ impl WorkspaceDrive {
         uid: u64,
         home: Option<usize>,
     ) -> (Result<u64, Refusal>, Vec<Effect>) {
-        if let Some(home) = home {
-            self.workspace.select_root(home);
-        }
+        let folder = match home {
+            Some(home) => {
+                self.workspace.select_root(home);
+                self.workspace.active_root().map(|root| root.path.clone())
+            }
+            None => self
+                .workspace
+                .active_root()
+                .map(|root| root.folder_on_screen().to_path_buf()),
+        };
         // With no project, no folder: refused as one.
-        let folder = self.workspace.active_root().map(|root| root.path.clone());
         self.add_session_at(spec, uid, folder.unwrap_or_default())
     }
 
@@ -179,6 +194,9 @@ impl WorkspaceDrive {
         uid: u64,
         folder: PathBuf,
     ) -> (Result<u64, Refusal>, Vec<Effect>) {
+        // A folder no sweep reads yet has its git read for its badges.
+        let unread = (self.workspace.active_root())
+            .is_some_and(|root| !root.folders_used().contains(&folder));
         let added = Self::agent(spec).and_then(|spec| {
             self.workspace
                 .add_session_at(spec, uid, folder)
@@ -186,15 +204,17 @@ impl WorkspaceDrive {
                 .ok_or(Refusal::NoProject)
         });
         let fx = match added {
+            Ok(_) if unread => vec![Effect::Show, Effect::Resweep, Effect::Changed],
             Ok(_) => vec![Effect::Show, Effect::Changed],
             Err(why) => vec![Effect::Signal(Signal::Refused(why))],
         };
         (added, fx)
     }
 
-    /// [`Self::add_session`] on project `root`, selected first: the panels
-    /// follow the selection whether or not a session could be added, or the
-    /// rail names one project while every panel shows another.
+    /// [`Self::add_session`] on project `root`, in its own folder, selected
+    /// first: the panels follow the selection whether or not a session could
+    /// be added, or the rail names one project while every panel shows
+    /// another.
     #[must_use = "its effects are to be carried"]
     pub fn add_session_in(
         &mut self,
@@ -202,10 +222,29 @@ impl WorkspaceDrive {
         spec: Option<AgentSpec>,
         uid: u64,
     ) -> (Result<u64, Refusal>, Vec<Effect>) {
+        let folder = (self.workspace.roots.get(root))
+            .or(self.workspace.active_root())
+            .map(|root| root.path.clone());
+        self.add_session_in_folder(root, folder.unwrap_or_default(), spec, uid, StartsOn::Fresh)
+    }
+
+    /// [`Self::add_session_in`], running in `folder`, one of the project's,
+    /// and starting on `starts` once shown: what *In <branch>*, a split and
+    /// a conversation reopened from outside start.
+    #[must_use = "its effects are to be carried"]
+    pub fn add_session_in_folder(
+        &mut self,
+        root: usize,
+        folder: PathBuf,
+        spec: Option<AgentSpec>,
+        uid: u64,
+        starts: StartsOn,
+    ) -> (Result<u64, Refusal>, Vec<Effect>) {
         self.workspace.select_root(root);
-        let (added, mut fx) = self.add_session(spec, uid, None);
-        if added.is_err() {
-            fx.insert(0, Effect::Show);
+        let (added, mut fx) = self.add_session_at(spec, uid, folder);
+        match added {
+            Ok(uid) => self.starts_on(uid, starts),
+            Err(_) => fx.insert(0, Effect::Show),
         }
         (added, fx)
     }
@@ -397,23 +436,34 @@ impl WorkspaceDrive {
         };
         let uids: Vec<u64> = root.sessions.iter().map(|session| session.uid).collect();
         let mut fx: Vec<Effect> = uids.iter().map(|&uid| Effect::Close(uid)).collect();
+        // Every folder of the row goes with it: its own, its worktrees', and
+        // any other a session of it ran in.
+        let folders = root.folders_used();
         // Its code is no longer checked for here; offloaded again, it comes
         // back as any does.
         if root.offload.is_some() {
             fx.push(Effect::ForgotOffload(root.path.clone()));
         }
+        for worktree in root.worktrees.iter().filter(|w| w.offload.is_some()) {
+            fx.push(Effect::ForgotOffload(worktree.path.clone()));
+        }
         // What is kept under a folder here goes with it: what was read of it,
         // and what the window files under its path. A host's folder never had
         // any of its own, and what is filed under its path belongs to a
         // folder of the same path here.
-        if root.host.is_none() {
-            self.git.remove(&root.path);
-            fx.push(Effect::ForgotHere(root.path.clone()));
+        let host = root.host.clone();
+        if host.is_none() {
+            for folder in &folders {
+                self.git.remove(folder);
+                fx.push(Effect::ForgotHere(folder.clone()));
+            }
         }
-        fx.push(Effect::Forgot(Forgotten {
-            path: root.path.clone(),
-            host: root.host.clone(),
-        }));
+        for path in folders {
+            fx.push(Effect::Forgot(Forgotten {
+                path,
+                host: host.clone(),
+            }));
+        }
         self.workspace.remove_root(idx);
         uids.into_iter().for_each(|uid| self.let_go(uid));
         fx.push(Effect::Changed);
@@ -434,8 +484,8 @@ impl WorkspaceDrive {
         Some(self.workspace.roots[root].sessions[session].folder.clone())
     }
 
-    /// The project here holding `folder`: the one at it, else one a session
-    /// of it runs in.
+    /// The project here holding `folder`: the one it is a folder of, else one
+    /// a session of it runs in.
     fn row_holding(&self, folder: &Path) -> Option<usize> {
         self.local_index(folder).or_else(|| {
             self.workspace.roots.iter().position(|root| {
@@ -444,11 +494,12 @@ impl WorkspaceDrive {
         })
     }
 
-    /// Where the project at `dir`, a folder on this machine, sits.
+    /// Where the project holding `dir`, a folder on this machine, as its
+    /// own or a worktree's, sits.
     pub fn local_index(&self, dir: &Path) -> Option<usize> {
         self.workspace
             .roots
             .iter()
-            .position(|root| root.local_path() == Some(dir))
+            .position(|root| root.local_path().is_some() && root.holds(dir))
     }
 }

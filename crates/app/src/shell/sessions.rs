@@ -440,6 +440,60 @@ impl Shell {
         self.carry_workspace(fx, window, cx);
     }
 
+    /// *New session* on a *named* root: in the folder of the session on
+    /// screen when the root is the one on screen, as the key starts it; in
+    /// the root's own folder otherwise.
+    pub fn new_session_beside(
+        &mut self,
+        root_idx: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let workspace = &self.window.workspace;
+        let folder = (workspace.active_root == root_idx)
+            .then(|| workspace.active_root())
+            .flatten()
+            .map(|root| root.folder_on_screen().to_path_buf());
+        match folder {
+            Some(folder) => {
+                let _ = self.new_session_in_folder(root_idx, folder, 0, window, cx);
+            }
+            None => self.new_session_in(root_idx, window, cx),
+        }
+    }
+
+    /// Add a session of `agents[agent]` on a *named* root, running in
+    /// `folder`, one of its: *In <branch>*, a split's new worktree, a run's.
+    pub fn new_session_in_folder(
+        &mut self,
+        root_idx: usize,
+        folder: PathBuf,
+        agent: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<u64> {
+        self.session_in_folder(root_idx, folder, agent, StartsOn::Fresh, window, cx)
+    }
+
+    /// [`Self::new_session_in_folder`], starting on `starts` once shown.
+    pub(super) fn session_in_folder(
+        &mut self,
+        root_idx: usize,
+        folder: PathBuf,
+        agent: usize,
+        starts: StartsOn,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<u64> {
+        let spec = Shared::global(cx).settings.agents.get(agent).cloned();
+        self.add_by(
+            |workspace, uid| workspace.add_session_in_folder(root_idx, folder, spec, uid, starts),
+            window,
+            cx,
+            |_, _| {},
+        )
+    }
+
     /// Drop a session at another place under its project.
     ///
     /// Nothing to save: sessions are not persisted, they respawn.
@@ -487,9 +541,26 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<u64> {
-        // One conversation in one session: two would each write it back as
-        // only what came after.
-        if let Some(dir) = &resume {
+        if resume
+            .as_deref()
+            .is_some_and(|dir| self.refuse_open_twice(dir, window, cx))
+        {
+            return None;
+        }
+        let idx = agent_index(agent, cx);
+        self.spawn_session(idx, resume, None, window, cx)
+    }
+
+    /// One conversation in one session: two would each write it back as only
+    /// what came after. Whether the conversation kept in `dir` is open in a
+    /// session already, said when it is.
+    pub(super) fn refuse_open_twice(
+        &self,
+        dir: &std::path::Path,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        {
             let me = cx.entity_id();
             let open: Vec<String> = self
                 .chat
@@ -505,11 +576,10 @@ impl Shell {
                 .collect();
             if crate::chat::is_open(&open, dir) {
                 window.push_notification(crate::toast::warning(ALREADY_OPEN), cx);
-                return None;
+                return true;
             }
         }
-        let idx = agent_index(agent, cx);
-        self.spawn_session(idx, resume, None, window, cx)
+        false
     }
 
     /// Start a session on the active root, a host's, attached to the host

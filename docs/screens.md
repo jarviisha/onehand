@@ -49,7 +49,9 @@ composer, and a transient state is a toast.
 App chrome outside the dock, so a layout restore cannot lose it, on the window's fill with no edge
 of its own beside the boxes. Top to bottom: *New session*, a row as a page's (its plus mark, its
 words in semibold and the full ink, the key's hint at its end), which starts in the keyboard's
-project, else the one on screen, and whose menu (*Start in*, *With agent*) opens from a chevron at
+project, else the one on screen (there in the folder of the session on screen, as its key does), and
+whose menu (*Start in*, each project starting in its own folder and, under the one it would start
+in, an *In <branch>* per worktree of it on disk, starting in that worktree; *With agent*) opens from a chevron at
 the row's end, shown on hover and on the keyboard's row, and on a right-click; *Overview*, *Tasks*
 (a pill counting tasks that need attention, none at zero), *Issues*, *Workflows* and *Schedules*,
 each filled while its page shows; *Sessions*, in semibold and the full ink, with a warning-ink *N
@@ -79,15 +81,19 @@ marks it while this machine holds the code. One on a branch is never locked; whi
 branch has commits its own does not, a merge mark stands in its meta in the muted ink, its hover
 *onehand/<host> on <host> has N commits to merge*. Its menu reads *Offload to a host…* on a local project,
 and *Run here again* on an offloaded one while this machine holds its code, or, on a branch,
-while the branch is not being fetched or updated. A project folder's row, and the project's dots
+while the branch is not being fetched or updated. A project is one row: its worktrees are no rows
+of their own, their sessions listed under it. A project's row, and the project's dots
 menu, offer *Rename project…* after the pin's entry: a dialog, *Name* starting on the name, Enter
-or *Rename* renaming, refused while the name is blank; the folder keeps its own name. A worktree's
-row, named for its folder, offers none.
+or *Rename* renaming, refused while the name is blank; the folder keeps its own name. Its `+`
+starts a session in the project's own folder; a worktree split off it opens with a session in that
+worktree, shown.
 Narrowed, the name keeps a minimum and the branch, or the host, gives way first. Its chevron alone
 folds it (not during a search); the rest of the row shows the project's last session, or its page,
 which then fills the row. `+` and `⋯` show on hover and on the keyboard's row, over the end of its
 meta, which fades into them; right-click opens the same menu. A session row, indented under its project: its state mark, title and `⋯` (on hover, on
-the keyboard's row, always on the one shown), and under them `state · agent · age` (*waiting Nm*
+the keyboard's row, always on the one shown), and under them `state · agent · age` (a session in a
+worktree of its project carries the branch mark and the branch's name after the state, in the meta
+ink, the branch giving way first when the row narrows; *waiting Nm*
 while it needs input, a card or its run's approval, the state's word in its ink while it waits on the
 person; *Running · N in background · M subagents · agent · age* while background work outlives the
 turn or a subagent works, which keeps the session running, as does the agent writing with no turn
@@ -342,9 +348,8 @@ room and leaves the terminal as it is.
   picking another agent while more than one is configured) at the end); then, in one column at every width, the box *Past
   conversations* with its count, its rows the overview's (age, title, then items and agent at the
   edge, then a `⋯` on hover holding *Resume* and *Delete…*, the same on a right-click), capped, its wait and empty lines inside it:
-  those that ran in its folder and, on a project folder's own page, those of the project that ran in
-  a folder it no longer holds (a worktree since removed), whose *Resume* says the folder is gone;
-  a conversation is listed on one page only; under
+  every one of the project, in whichever of its folders it ran, and one that ran in a folder it
+  no longer holds (a worktree since removed) has its *Resume* say the folder is gone; under
   it the box *Tasks* (how many need attention, run or wait, each opening the Tasks page
   narrowed to the project; *Nothing running here* at zero); then the box *Schedules* (the
   project's schedules by name with when each runs next, or *off*, each opening the Schedules page

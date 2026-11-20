@@ -400,11 +400,15 @@ impl Shell {
             }
             false => {
                 let project = crate::projects::of(&dir, cx);
-                let (idx, fx) = self.window.workspace.keep_project(dir, project.as_ref());
+                let (idx, fx) = self
+                    .window
+                    .workspace
+                    .keep_project(dir.clone(), project.as_ref());
                 self.carry_workspace(fx, window, cx);
-                self.select_root(idx, window, cx);
+                // In the run's folder, which may be a worktree of the project.
                 let agent = start.run.setup.agent.clone().map(SharedString::from);
-                self.start_session(agent, None, window, cx)
+                let agent = super::sessions::agent_index(agent, cx);
+                self.new_session_in_folder(idx, dir, agent, window, cx)
                     .and_then(|uid| Some((uid, self.chat.read(cx).session_entity(uid)?)))
             }
         };

@@ -287,33 +287,23 @@ fn project_with_worktree(
 fn a_conversation_of_a_removed_worktree_shows_on_its_projects_page(cx: &mut TestAppContext) {
     let dir = folder("conv-stray");
     let (handle, _shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
-    let (project, home, worktree) = project_with_worktree(&dir, 911_001);
+    let (project, home, _) = project_with_worktree(&dir, 911_001);
     crate::shell::rig::keep_projects(handle, &_shell, vec![project.clone()], cx);
     let gone = dir.join("p-gone");
     let sid = format!("conv-stray-{}", std::process::id());
     kept_conversation(&sid, &gone, &project.id);
-    let (own, other) = cx.update(|_, cx| {
-        (
-            crate::projects::scope_of(&home, cx),
-            crate::projects::scope_of(&worktree, cx),
-        )
-    });
-    assert!(own.home && own.recorded == vec![worktree.clone()]);
-    assert!(!other.home);
+    let own = cx.update(|_, cx| crate::projects::scope_of(&home, cx));
     let store = onehand_core::chat::conversations_dir();
-    let listed = |scope| {
-        onehand_core::chat::list_conversations(&store, scope, None)
-            .into_iter()
-            .any(|conv| conv.session_id == sid)
-    };
-    assert!(listed(&own), "the project's own row lists it");
-    assert!(!listed(&other), "a worktree's row does not");
+    let listed = onehand_core::chat::list_conversations(&store, &own, None)
+        .into_iter()
+        .any(|conv| conv.session_id == sid);
+    assert!(listed, "the project's row lists it");
     let _ = std::fs::remove_dir_all(store.join(&sid));
     let _ = std::fs::remove_dir_all(dir);
 }
 
 #[gpui::test]
-fn a_conversation_is_listed_once_across_a_projects_rows(cx: &mut TestAppContext) {
+fn a_projects_row_lists_every_conversation_of_it(cx: &mut TestAppContext) {
     let dir = folder("conv-once");
     let (handle, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
     let (project, home, worktree) = project_with_worktree(&dir, 911_002);
@@ -340,14 +330,11 @@ fn a_conversation_is_listed_once_across_a_projects_rows(cx: &mut TestAppContext)
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     found.sort();
-    let mut want = vec![
-        (worktree.clone(), sid.clone()),
-        (home.clone(), stray.clone()),
-    ];
+    let mut want = vec![(home.clone(), sid.clone()), (home.clone(), stray.clone())];
     want.sort();
     assert_eq!(
         found, want,
-        "each once: the worktree's on its row, a stray on the project's"
+        "each once, on the project's one row: one that ran in its worktree, and a stray"
     );
     for id in [&sid, &stray] {
         let _ = std::fs::remove_dir_all(onehand_core::chat::conversations_dir().join(id));

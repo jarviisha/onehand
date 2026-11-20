@@ -210,7 +210,7 @@ impl ProjectFacts {
             is_repo: local && is_repo,
             check: local && root.check.is_some(),
             asks: false,
-            renames: root.home,
+            renames: root.project.is_some(),
             offload: match (&root.host, &root.offload) {
                 _ if root.transient => None,
                 (Some(_), _) => None,

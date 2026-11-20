@@ -867,25 +867,26 @@ fn a_deleted_workspace_writes_nothing() {
 // What a project tells its rows.
 
 #[test]
-fn told_a_new_name_relabels_the_projects_own_row_only() {
-    let mut p = at("/code/a");
+fn told_a_project_relabels_its_row_and_tells_its_folders_again() {
+    let mut p = with_worktree("/code/a");
+    let mut drive = bound();
+    drive.open_project("/code/a".into(), Some(&p));
+    drive.open_project("/code/a-x".into(), Some(&p));
+    assert_eq!(drive.roots.len(), 2, "one row for the project");
+    p.name = "Alpha".into();
+    p.check = Some("make".into());
     p.worktrees.push(crate::project::Worktree {
-        path: "/code/a-x".into(),
-        branch: "x".into(),
+        path: "/code/a-y".into(),
+        branch: "y".into(),
         from: None,
         made_by: crate::project::MadeBy::Split,
         offload: None,
     });
-    let mut drive = bound();
-    drive.open_project("/code/a".into(), Some(&p));
-    drive.open_project("/code/a-x".into(), Some(&p));
-    p.name = "Alpha".into();
-    p.check = Some("make".into());
     let fx = drive.told(&p);
     assert_eq!(names(&fx), ["Changed"], "nothing is written");
     assert_eq!(drive.roots[1].label, "Alpha");
-    assert_eq!(drive.roots[2].label, "a-x");
-    assert_eq!(drive.roots[2].check.as_deref(), Some("make"));
+    assert_eq!(drive.roots[1].check.as_deref(), Some("make"));
+    assert_eq!(drive.roots[1].branch_of(Path::new("/code/a-y")), Some("y"));
     assert_eq!(
         drive.roots[0].label, "a",
         "a row of no project is untouched"
@@ -895,19 +896,11 @@ fn told_a_new_name_relabels_the_projects_own_row_only() {
 
 #[test]
 fn told_an_offload_drops_the_sessions_of_that_folder_only() {
-    let mut p = at("/code/a");
-    p.worktrees.push(crate::project::Worktree {
-        path: "/code/a-x".into(),
-        branch: "x".into(),
-        from: None,
-        made_by: crate::project::MadeBy::Split,
-        offload: None,
-    });
+    let mut p = with_worktree("/code/a");
     let mut drive = bound();
     drive.open_project("/code/a".into(), Some(&p));
     drive.add_session(Some(spec()), 1, None);
-    drive.open_project("/code/a-x".into(), Some(&p));
-    drive.add_session(Some(spec()), 2, None);
+    drive.add_session_at(Some(spec()), 2, PathBuf::from("/code/a-x"));
     p.worktrees[0].offload = Some(crate::workspace::Offloaded {
         host: HostName("box".into()),
         mirror: "/m".into(),
@@ -920,7 +913,8 @@ fn told_an_offload_drops_the_sessions_of_that_folder_only() {
         names(&fx)
     );
     assert!(!names(&fx).contains(&"Close(1)".to_string()));
-    assert!(drive.roots[2].offload.is_some());
+    assert!(drive.roots[1].worktrees[0].offload.is_some());
+    assert!(drive.roots[1].offload.is_none());
 }
 
 #[test]
@@ -1050,4 +1044,214 @@ fn a_fork_runs_in_the_folder_it_was_forked_from() {
         drive.locate(2).map(|(root, _)| root)
     );
     assert!(matches!(drive.take_start(3), StartsOn::Fork));
+}
+
+// One row per project.
+
+/// [`at`] with a worktree `<path>-x` on branch `x`.
+fn with_worktree(path: &str) -> crate::project::Project {
+    let mut p = at(path);
+    p.worktrees.push(crate::project::Worktree {
+        path: format!("{path}-x").into(),
+        branch: "x".into(),
+        from: None,
+        made_by: crate::project::MadeBy::Split,
+        offload: None,
+    });
+    p
+}
+
+#[test]
+fn a_worktree_folder_opens_on_its_projects_row() {
+    let p = with_worktree("/code/a");
+    let mut drive = bound();
+    drive.open_project("/code/a-x".into(), Some(&p));
+    assert_eq!(drive.roots.len(), 2);
+    assert_eq!(drive.roots[1].path, PathBuf::from("/code/a"));
+    assert_eq!(drive.active_root, 1);
+    drive.open_project("/code/a".into(), Some(&p));
+    assert_eq!(
+        drive.roots.len(),
+        2,
+        "the project's own folder: the same row"
+    );
+    let (idx, _) = drive.keep_project("/code/a-x".into(), Some(&p));
+    assert_eq!(idx, 1);
+    let (added, _) = drive.add_session_at(Some(spec()), 1, PathBuf::from("/code/a-x"));
+    assert_eq!(added, Ok(1));
+    assert_eq!(drive.locate(1), Some((1, 0)));
+    assert_eq!(drive.folder_of(1), Some(PathBuf::from("/code/a-x")));
+    assert_eq!(
+        drive.add_run_session(Path::new("/code/a-x"), spec(), 2),
+        Some(1),
+        "a run in a worktree sits on its project's row"
+    );
+    assert_eq!(drive.folder_of(2), Some(PathBuf::from("/code/a-x")));
+}
+
+#[test]
+fn a_worktree_row_an_unplaced_folder_was_folds_into_its_project() {
+    let p = with_worktree("/code/a");
+    let mut drive = bound();
+    drive.open_project("/code/a-x".into(), None);
+    tree(&mut drive).add_session_at(spec(), 3, PathBuf::from("/code/a-x"));
+    drive.open_project("/code/a".into(), Some(&p));
+    drive.select_project(1);
+    assert_eq!(drive.roots.len(), 3);
+    drive.placed(None, Path::new("/code/a-x"), &p);
+    assert_eq!(drive.roots.len(), 2, "folded into the project's row");
+    assert_eq!(drive.locate(3), Some((1, 0)));
+    assert_eq!(drive.folder_of(3), Some(PathBuf::from("/code/a-x")));
+    assert_eq!(drive.active_root, 1, "the selection follows the fold");
+}
+
+#[test]
+fn removing_a_row_forgets_every_folder_it_held() {
+    let p = with_worktree("/code/a");
+    let mut drive = bound();
+    drive.open_project("/code/a".into(), Some(&p));
+    drive.add_session(Some(spec()), 1, None);
+    drive.add_session_at(Some(spec()), 2, PathBuf::from("/code/a-x"));
+    let fx = names(&drive.remove(None, Path::new("/code/a")));
+    for want in [
+        "Close(1)",
+        "Close(2)",
+        "ForgotHere(/code/a)",
+        "ForgotHere(/code/a-x)",
+        "Forgot(/code/a)",
+    ] {
+        assert!(fx.contains(&want.to_string()), "{want} in {fx:?}");
+    }
+}
+
+#[test]
+fn a_conversation_that_ran_in_a_worktree_resumes_there() {
+    let p = with_worktree("/code/a");
+    let mut drive = bound();
+    drive.handle(Input::ConversationRead {
+        found: saved("/code/a-x", true, "agent"),
+        agents: vec![spec()],
+        uid: 9,
+        project: Some(Box::new(p)),
+    });
+    assert_eq!(drive.roots[1].path, PathBuf::from("/code/a"));
+    assert_eq!(drive.locate(9), Some((1, 0)));
+    assert_eq!(drive.folder_of(9), Some(PathBuf::from("/code/a-x")));
+    assert_eq!(
+        drive.take_start(9),
+        StartsOn::Resume(PathBuf::from("/conv/c1"))
+    );
+}
+
+#[test]
+fn a_new_session_beside_one_in_a_worktree_starts_in_its_folder() {
+    let p = with_worktree("/code/a");
+    let mut drive = bound();
+    drive.open_project("/code/a".into(), Some(&p));
+    drive.add_session_at(Some(spec()), 1, PathBuf::from("/code/a-x"));
+    drive.add_session(Some(spec()), 2, None);
+    assert_eq!(
+        drive.folder_of(2),
+        Some(PathBuf::from("/code/a-x")),
+        "beside the session on screen"
+    );
+    drive.add_session_in(1, Some(spec()), 3);
+    assert_eq!(
+        drive.folder_of(3),
+        Some(PathBuf::from("/code/a")),
+        "asked of the project: its own folder"
+    );
+}
+
+#[test]
+fn a_sweep_reads_every_folder_of_a_row() {
+    let p = with_worktree("/code/a");
+    let mut drive = bound();
+    drive.open_project("/code/a".into(), Some(&p));
+    let (_, roots) = swept(drive.sweep(|_| true));
+    let read: Vec<_> = roots.iter().map(|r| r.path.display().to_string()).collect();
+    assert_eq!(read, ["/a", "/code/a", "/code/a-x"]);
+}
+
+#[test]
+fn new_session_in_a_worktree_starts_in_its_folder() {
+    let p = with_worktree("/code/a");
+    let mut drive = bound();
+    drive.open_project("/code/a".into(), Some(&p));
+    drive.select_project(0);
+    let (added, fx) = drive.add_session_in_folder(
+        1,
+        PathBuf::from("/code/a-x"),
+        Some(spec()),
+        4,
+        StartsOn::Resume("/conv/c1".into()),
+    );
+    assert_eq!(added, Ok(4));
+    assert_eq!(drive.active_root, 1, "its project selected");
+    assert_eq!(drive.folder_of(4), Some(PathBuf::from("/code/a-x")));
+    assert!(names(&fx).contains(&"Show".to_string()));
+    assert_eq!(drive.take_start(4), StartsOn::Resume("/conv/c1".into()));
+}
+
+#[test]
+fn a_worktree_just_recorded_opens_on_its_row_at_once() {
+    let mut drive = bound();
+    drive.open_project("/code/a".into(), Some(&at("/code/a")));
+    let p = with_worktree("/code/a");
+    drive.open_project("/code/a-x".into(), Some(&p));
+    assert_eq!(drive.roots.len(), 2);
+    assert_eq!(drive.local_index(Path::new("/code/a-x")), Some(1));
+    let mut q = with_worktree("/code/a");
+    q.worktrees[0].path = "/code/a-y".into();
+    let (idx, _) = drive.keep_project("/code/a-y".into(), Some(&q));
+    assert_eq!(idx, 1);
+    assert_eq!(drive.local_index(Path::new("/code/a-y")), Some(1));
+}
+
+#[test]
+fn a_session_in_a_folder_no_sweep_reads_asks_for_one() {
+    let mut drive = bound();
+    let (_, fx) = drive.add_session(Some(spec()), 1, None);
+    assert!(
+        !names(&fx).contains(&"Resweep".to_string()),
+        "its row's own"
+    );
+    let (_, fx) = drive.add_session_at(Some(spec()), 2, PathBuf::from("/a-gone"));
+    assert!(
+        names(&fx).contains(&"Resweep".to_string()),
+        "{:?}",
+        names(&fx)
+    );
+}
+
+#[test]
+fn a_session_in_an_offloaded_worktree_watches_its_host() {
+    use crate::host::wire::HostSession;
+    let mut p = with_worktree("/code/a");
+    p.worktrees[0].offload = Some(crate::workspace::Offloaded {
+        host: HostName("vps".into()),
+        mirror: "/m".into(),
+        branch: None,
+    });
+    let mut drive = bound();
+    drive.open_project("/code/a".into(), Some(&p));
+    drive.add_session_at(Some(spec()), 5, PathBuf::from("/code/a-x"));
+    let id = HostSession("h-5".into());
+    drive.watching(5, id.clone());
+    assert_eq!(
+        drive.watched_on(5),
+        Some((HostName("vps".into()), id.clone()))
+    );
+    assert_eq!(drive.watcher(&HostName("vps".into()), &id, None), Some(5));
+}
+
+#[test]
+fn opening_a_worktree_of_a_row_adds_no_second_row() {
+    let p = with_worktree("/code/a");
+    let mut drive = bound();
+    drive.open_project("/code/a".into(), Some(&p));
+    drive.select_project(0);
+    let fx = drive.open_project("/code/a-x".into(), None);
+    assert_eq!(drive.roots.len(), 2, "{:?}", names(&fx));
+    assert_eq!(drive.active_root, 1);
 }

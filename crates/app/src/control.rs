@@ -228,12 +228,9 @@ fn perform_now(
     // Only the folders on this machine: a project on a host has no issue
     // file, worktree or check here for a tool to reach, and is refused by
     // name rather than said not to exist.
-    let by_name = |roots: Vec<(PathBuf, String)>| -> Vec<(String, PathBuf)> {
-        roots.into_iter().map(|(path, name)| (name, path)).collect()
-    };
-    let projects = by_name(shell.read(cx).remote_roots());
+    let projects = shell.read(cx).tool_projects();
     if let Some(named) = call.project() {
-        let hosted = by_name(shell.read(cx).host_roots());
+        let hosted = shell.read(cx).tool_hosted();
         control::calls::hosted(&projects, &hosted, named)?;
     }
     match call {
@@ -376,8 +373,8 @@ fn perform_now(
             )?;
             let name = projects
                 .iter()
-                .find(|(_, path)| *path == top)
-                .map_or_else(|| top.display().to_string(), |(name, _)| name.clone());
+                .find(|named| named.folders().any(|folder| folder == top))
+                .map_or_else(|| top.display().to_string(), |named| named.name.clone());
             let builds = shell.read(cx).builds_of(&top);
             let declared = &Shared::global(cx).settings.hosts;
             let (entry, os) =
@@ -415,28 +412,38 @@ fn perform_now(
             let shell = shell.read(cx);
             let lines = projects
                 .iter()
-                .map(|(name, path)| {
-                    let check = if shell.check_of(path).is_some() {
-                        "yes"
-                    } else {
-                        "no"
-                    };
-                    let builds: Vec<String> = shell
-                        .builds_of(path)
-                        .into_iter()
-                        .map(|entry| entry.host.0)
-                        .collect();
-                    // Said only of a project that has any, so a line without
-                    // build hosts reads as it always has.
-                    match builds.is_empty() {
-                        true => format!("{name} — {} — check: {check}", path.display()),
-                        false => format!(
-                            "{name} — {} — check: {check} — builds on: {}",
-                            path.display(),
-                            builds.join(", ")
-                        ),
-                    }
-                })
+                .map(
+                    |onehand_core::control::Named {
+                         name,
+                         path,
+                         worktrees,
+                     }| {
+                        let check = if shell.check_of(path).is_some() {
+                            "yes"
+                        } else {
+                            "no"
+                        };
+                        let builds: Vec<String> = shell
+                            .builds_of(path)
+                            .into_iter()
+                            .map(|entry| entry.host.0)
+                            .collect();
+                        // Each said only of a project that has any, so a line
+                        // without build hosts or worktrees reads as it always has.
+                        let mut line = format!("{name} — {} — check: {check}", path.display());
+                        if !builds.is_empty() {
+                            line += &format!(" — builds on: {}", builds.join(", "));
+                        }
+                        if !worktrees.is_empty() {
+                            let branches: Vec<&str> = worktrees
+                                .iter()
+                                .map(|(branch, _)| branch.as_str())
+                                .collect();
+                            line += &format!(" — worktrees: {}", branches.join(", "));
+                        }
+                        line
+                    },
+                )
                 .collect();
             Ok(control::listed(lines, "This window has no project"))
         }
@@ -487,7 +494,10 @@ fn perform_now(
         Call::ListTasks { project } => {
             let roots = match &project {
                 Some(named) => vec![control::pick_project(&projects, named)?.to_path_buf()],
-                None => projects.iter().map(|(_, path)| path.clone()).collect(),
+                // Every folder of each, where its tasks run.
+                None => (projects.iter())
+                    .flat_map(|named| named.folders().map(Path::to_path_buf))
+                    .collect(),
             };
             let lines = crate::task::rows(&roots, cx)
                 .iter()
@@ -513,7 +523,9 @@ fn perform_now(
             Ok(control::listed(lines, "No task in this window's projects"))
         }
         Call::StopTask { task } => {
-            let roots: Vec<PathBuf> = projects.into_iter().map(|(_, path)| path).collect();
+            let roots: Vec<PathBuf> = (projects.iter())
+                .flat_map(|named| named.folders().map(Path::to_path_buf))
+                .collect();
             let row = crate::task::rows(&roots, cx)
                 .into_iter()
                 .find(|row| row.id == task)
@@ -604,7 +616,7 @@ fn perform_now(
 /// none is named, or why there is none.
 fn issue_file(
     shell: &gpui::Entity<crate::shell::Shell>,
-    projects: &[(String, PathBuf)],
+    projects: &[onehand_core::control::Named],
     named: Option<String>,
     caller: &Option<(u64, PathBuf)>,
     cx: &App,
@@ -616,7 +628,7 @@ fn issue_file(
 /// are kept in.
 fn issue_place(
     shell: &gpui::Entity<crate::shell::Shell>,
-    projects: &[(String, PathBuf)],
+    projects: &[onehand_core::control::Named],
     named: Option<String>,
     caller: &Option<(u64, PathBuf)>,
     cx: &App,

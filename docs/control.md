@@ -64,6 +64,9 @@ answer, and exits.
 - **A refusal the caller can act on is the tool's answer**, marked `isError`: an argument missing
   or of the wrong type, a project or task not found, a file outside the project on screen. An
   unknown tool is `-32602`; a malformed line `-32700`, and the conversation goes on.
+- **A `project` argument** names a project of the window by its name, its own folder or one of
+  its worktrees' folders (`control::pick_project`); named by a worktree's folder, a session starts
+  in that worktree, on the project's row.
 - **Where a call lands:** an outside program's in the window in front, or the first one; a
   session's in the window holding that session, about its own project (`control::calls::aim`). A
   call that arrives before the first window is up is held, and carried the moment that window
@@ -73,9 +76,9 @@ answer, and exits.
 
 | Tool | Input | Does | Answers |
 |---|---|---|---|
-| `list_projects` | none | the window's projects | `name — path — check: yes/no`, one per line, then ` — builds on: <hosts>` for a project with build hosts |
+| `list_projects` | none | the window's projects | `name — path — check: yes/no`, one per line, then ` — builds on: <hosts>` for a project with build hosts and ` — worktrees: <branch>, …` for one with worktrees |
 | `list_agents` | none | the agents a session can be opened with | one name per line |
-| `open_session` | `project`, `agent`, optional `prompt` | opens a session on the project with that agent, not shown; it appears in the rail, the person's own, beside any session already on the project; `prompt` is sent once the agent is up. A session's agent opens one the same way, counted under its cap | what it opened, or why not |
+| `open_session` | `project`, `agent`, optional `prompt` | opens a session on the project with that agent, in the folder named, not shown; it appears in the rail, the person's own, beside any session already on the project; `prompt` is sent once the agent is up. A session's agent opens one the same way, counted under its cap | what it opened, or why not |
 | `open_worker` | `project`, `agent`, `request`, optional `prompt` (with `turn`), `model`, `dirs` and `name`; `project` may also be a worktree's top level | for a session's agent only, never listed to an outside program: opens a worker, see *A worker* below | the worker's handle and what it runs with, or why not |
 | `list_workflows` | none | the library's workflows | `id — name`; an unreadable file says why |
 | `read_workflow` | `workflow` id | the workflow's file as TOML, a shipped one's too | the TOML, or why not |

@@ -2,26 +2,29 @@
 //!
 //! ```text
 //! Workspace { name, roots, active_root }
-//!   ProjectRoot { path, label, sessions, active_session }
-//!     Session { spec, uid }                     (see agent.rs)
+//!   ProjectRoot { path, label, worktrees, sessions, active_session }  (root.rs)
+//!     Session { spec, uid, folder }             (see agent.rs)
 //! ```
 //!
 //! One window hosts exactly one workspace. A workspace groups one or more
-//! project roots; each root runs one or more sessions. Pure tree logic lives
+//! project roots, one per project; each root runs one or more sessions, each
+//! in the project's own folder or one of its worktrees. Pure tree logic lives
 //! here, with no view code anywhere near it, so it is testable headless.
 
 use crate::agent::Session;
-use crate::project::{Folder, Project, ProjectId, Projects};
+use crate::project::Projects;
 
 mod build_host;
 pub(crate) use build_host::inside_refusal;
 pub use build_host::BuildHost;
 pub mod drive;
 mod migrate;
+mod root;
 use crate::config::{AgentSpec, PanelLayout, WorkspaceConfig};
 pub use drive::WorkspaceDrive;
 pub use migrate::migrate_storage_blocking;
 pub(crate) use migrate::OFFLOAD;
+pub use root::{Offloaded, ProjectRoot, RowFolder};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -45,177 +48,6 @@ impl HostName {
 impl fmt::Display for HostName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
-    }
-}
-
-/// A project folder bound to a workspace, holding its concurrent sessions.
-#[derive(Debug)]
-pub struct ProjectRoot {
-    pub path: PathBuf,
-    /// The host this folder lives on; `None` for a folder on this machine.
-    /// A root is told apart by the pair, since one path can name a folder here
-    /// and another there.
-    pub host: Option<HostName>,
-    /// The project this folder is of; none for a worker's transient folder,
-    /// and for an entry no project could be found for.
-    pub project: Option<ProjectId>,
-    /// What the row is called: the project's name for its own folder, the
-    /// folder's name for a worktree. Like `check`, `builds` and `offload`, a
-    /// fact of the project's as it was last told ([`Self::told`]), kept here
-    /// so the window draws it without asking.
-    pub label: String,
-    /// Whether this row is its project's own folder, not a worktree of it:
-    /// what has the project's name, and so what renames it.
-    pub home: bool,
-    pub sessions: Vec<Session>,
-    pub active_session: usize,
-    /// Whether this root is held at the top of the list.
-    ///
-    /// A *display* fact, not a structural one: `roots` keeps its own order and
-    /// every index in the app still means the same root. Pinning only changes
-    /// the order rows are drawn in, which is what makes it safe to toggle while
-    /// sessions, editors and terminals are keyed by index and by path.
-    pub pinned: bool,
-    /// Whether this root is left out of the workspace file.
-    ///
-    /// Set on the folder a lead's worker is opened on when the workspace did
-    /// not hold it: that root is dropped when the worker closes, and a crash
-    /// between the add and the drop would otherwise leave it in the
-    /// workspace for good.
-    pub transient: bool,
-    /// The command a workflow's work here must pass before it goes further:
-    /// the app runs it itself rather than taking the agent's word for it.
-    pub check: Option<String>,
-    /// Where this folder's sessions run while it is offloaded. Only a folder
-    /// on this machine is offloaded: its tree, editor, terminal and git stay
-    /// this machine's.
-    pub offload: Option<Offloaded>,
-    /// The hosts this folder builds on; only for one whose sessions run here.
-    pub builds: Vec<BuildHost>,
-}
-
-/// An offloaded folder's host, its mirror there, and how its code comes back.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct Offloaded {
-    pub host: HostName,
-    /// Absolute, on the host.
-    pub mirror: PathBuf,
-    /// The branch the host's sessions work on, in branch mode: no key, the
-    /// branch fetched here for the person to merge. None for a mirror whose
-    /// code comes back into the folder, one side holding it at a time.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub branch: Option<String>,
-}
-
-impl ProjectRoot {
-    /// The hosts this folder builds on: none while its sessions run on a
-    /// host, where it builds already. What it was given is kept meanwhile,
-    /// for when it runs here again.
-    pub fn build_hosts(&self) -> &[BuildHost] {
-        match self.runs_here() {
-            true => &self.builds,
-            false => &[],
-        }
-    }
-
-    /// Every host this folder uses: the one its sessions run on, or, running
-    /// here, each it builds on.
-    pub fn hosts_used(&self) -> Vec<&HostName> {
-        match self.session_host() {
-            Some((host, _)) => vec![host],
-            None => self.build_hosts().iter().map(|entry| &entry.host).collect(),
-        }
-    }
-
-    pub fn new(path: impl Into<PathBuf>) -> Self {
-        let path = path.into();
-        Self {
-            label: label_for(&path),
-            path,
-            host: None,
-            project: None,
-            home: false,
-            sessions: Vec::new(),
-            active_session: 0,
-            pinned: false,
-            transient: false,
-            check: None,
-            offload: None,
-            builds: Vec::new(),
-        }
-    }
-
-    /// A row of `project`'s `folder`, drawing the project's facts.
-    pub fn of(project: &Project, folder: Folder) -> Self {
-        let path = match folder {
-            Folder::Home => project.path.clone(),
-            Folder::Worktree(at) => project
-                .worktrees
-                .get(at)
-                .map_or_else(|| project.path.clone(), |worktree| worktree.path.clone()),
-        };
-        let mut root = Self::new(path);
-        root.host = project.host.clone();
-        root.project = Some(project.id.clone());
-        root.told(project);
-        root
-    }
-
-    /// Take `project`'s facts as this row draws them. A row whose folder the
-    /// project no longer holds keeps what it had.
-    pub(crate) fn told(&mut self, project: &Project) {
-        let Some(folder) = project.folder(self.host.as_ref(), &self.path) else {
-            return;
-        };
-        self.label = project.label_of(folder);
-        self.home = folder == Folder::Home;
-        self.check = project.check.clone();
-        self.builds = project.builds.clone();
-        // Only a folder here is offloaded.
-        self.offload = project
-            .offload_of(folder)
-            .cloned()
-            .filter(|_| self.host.is_none());
-    }
-
-    /// The host this root's folder is on, if it is not on this machine.
-    pub fn on_host(&self) -> Option<&HostName> {
-        self.host.as_ref()
-    }
-
-    /// The folder on this machine; `None` for a root on a host, whose path
-    /// names nothing here for git, a shell or a file read to reach.
-    pub fn local_path(&self) -> Option<&Path> {
-        self.host.is_none().then_some(self.path.as_path())
-    }
-
-    /// Where this root's sessions run when not here: a host root's own host
-    /// and folder, or an offloaded root's host and its mirror there.
-    pub fn session_host(&self) -> Option<(&HostName, &Path)> {
-        match (&self.host, &self.offload) {
-            (Some(host), _) => Some((host, &self.path)),
-            (None, Some(on)) => Some((&on.host, &on.mirror)),
-            (None, None) => None,
-        }
-    }
-
-    /// Whether the features that act on this machine's folder by themselves
-    /// (workflows, tasks, schedules, worktrees, the check command, the remote
-    /// bridge) reach it: a folder here whose sessions run here too.
-    pub fn runs_here(&self) -> bool {
-        self.host.is_none() && self.offload.is_none()
-    }
-
-    /// Read the active session, if any. Index is kept in-bounds by mutators.
-    pub fn active_session(&self) -> Option<&Session> {
-        self.sessions.get(self.active_session)
-    }
-
-    /// The folder the window's panels show for this row: its session on
-    /// screen's, else the row's own.
-    pub fn folder_on_screen(&self) -> &Path {
-        self.active_session()
-            .map_or(self.path.as_path(), |session| session.folder.as_path())
     }
 }
 
@@ -403,6 +235,10 @@ pub(crate) fn fnv1a(bytes: &[u8]) -> u32 {
     })
 }
 
+/// What the workspace file's `active` starts with when it names a project
+/// by id rather than a folder by its key.
+const ACTIVE_ID: &str = "id:";
+
 /// One window's single workspace.
 #[derive(Debug)]
 pub struct Workspace {
@@ -449,23 +285,27 @@ impl Workspace {
             Some(host) => (Some(host), path),
             None => (None, normalize_root(path)),
         };
-        let active_key = cfg.active.as_deref().map(|active| {
-            let (host, path) = parse_root_key(Path::new(active));
-            key(host, path)
-        });
         let mut roots: Vec<ProjectRoot> = Vec::new();
         for project in cfg.projects {
             let (host, path) = key(project.host, project.path);
-            if roots.iter().any(|r| r.host == host && r.path == path) {
-                continue;
-            }
             let named = project
                 .id
                 .as_ref()
                 .and_then(|id| projects.get(id))
-                .and_then(|p| Some((p, p.folder(host.as_ref(), &path)?)));
-            let mut root = match named.or_else(|| projects.find(host.as_ref(), &path)) {
-                Some((p, folder)) => ProjectRoot::of(p, folder),
+                .filter(|p| p.folder(host.as_ref(), &path).is_some())
+                .or_else(|| projects.find(host.as_ref(), &path).map(|(p, _)| p));
+            // Every entry of one project, its own folder's or a worktree's
+            // an earlier build kept as a row of its own, folds into one row.
+            let at = roots.iter().position(|r| match named {
+                Some(p) => r.project.as_ref() == Some(&p.id),
+                None => r.project.is_none() && r.host == host && r.path == path,
+            });
+            if let Some(at) = at {
+                roots[at].pinned |= project.pinned;
+                continue;
+            }
+            let mut root = match named {
+                Some(p) => ProjectRoot::of(p),
                 None => {
                     let mut root = ProjectRoot::new(path);
                     // Only a folder here is offloaded; a hand-edited entry
@@ -480,8 +320,21 @@ impl Workspace {
             root.pinned = project.pinned;
             roots.push(root);
         }
-        let active_root = active_key
-            .and_then(|(h, p)| roots.iter().position(|r| r.host == h && r.path == p))
+        // The active row by its project's id, or, written by an earlier
+        // build, by a folder it holds.
+        let active_root = cfg
+            .active
+            .as_deref()
+            .and_then(|active| match active.strip_prefix(ACTIVE_ID) {
+                Some(id) => roots
+                    .iter()
+                    .position(|r| r.project.as_ref().is_some_and(|p| p.as_str() == id)),
+                None => {
+                    let (host, path) = parse_root_key(Path::new(active));
+                    let (host, path) = key(host, path);
+                    roots.iter().position(|r| r.host == host && r.holds(&path))
+                }
+            })
             .unwrap_or(0);
         Self {
             name: if cfg.name.is_empty() {
@@ -509,7 +362,10 @@ impl Workspace {
             .active_root()
             .filter(|active| !active.transient)
             .or_else(|| kept.first().copied())
-            .map(|root| host_path(root.host.as_ref(), &root.path));
+            .map(|root| match &root.project {
+                Some(id) => format!("{ACTIVE_ID}{id}"),
+                None => host_path(root.host.as_ref(), &root.path),
+            });
         WorkspaceConfig {
             name: self.name.clone(),
             active,
@@ -759,7 +615,7 @@ impl Workspace {
         if self
             .roots
             .iter()
-            .any(|r| r.host.is_none() && r.path == path)
+            .any(|r| r.host.is_none() && r.holds(&path))
         {
             return None;
         }
@@ -777,7 +633,8 @@ impl Workspace {
         }
     }
 
-    /// Add a session of `spec` to the root at `path`, **selecting nothing**:
+    /// Add a session of `spec` running in `path` to the root holding it,
+    /// **selecting nothing**:
     /// a run taken up again on a project already open must not move what the
     /// person is looking at. Returns the root's index; `None` without one.
     pub(crate) fn add_session_quietly(
@@ -790,7 +647,7 @@ impl Workspace {
         let idx = self
             .roots
             .iter()
-            .position(|r| r.host.is_none() && r.path == path)?;
+            .position(|r| r.host.is_none() && r.holds(&path))?;
         self.roots[idx].sessions.push(Session::new(spec, uid, path));
         Some(idx)
     }

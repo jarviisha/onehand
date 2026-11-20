@@ -449,20 +449,48 @@ fn folders(value: Option<&Value>) -> Result<Vec<PathBuf>, String> {
     }
 }
 
-/// The project of `projects` (name, path) that `named` names: by its path,
-/// or by its name when only one project has it.
-pub fn pick_project<'a>(
-    projects: &'a [(String, PathBuf)],
-    named: &str,
-) -> Result<&'a Path, String> {
+/// A project of the window as onehand's tools name it: its name, its own
+/// folder, and its worktrees' (branch, folder).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Named {
+    pub name: String,
+    pub path: PathBuf,
+    pub worktrees: Vec<(String, PathBuf)>,
+}
+
+impl Named {
+    /// A project of `name` at `path`, with no worktrees.
+    pub fn new(name: impl Into<String>, path: impl Into<PathBuf>) -> Self {
+        Self {
+            name: name.into(),
+            path: path.into(),
+            worktrees: Vec::new(),
+        }
+    }
+
+    /// Its folders: its own, then its worktrees'.
+    pub fn folders(&self) -> impl Iterator<Item = &Path> {
+        std::iter::once(self.path.as_path())
+            .chain(self.worktrees.iter().map(|(_, folder)| folder.as_path()))
+    }
+
+    fn folder(&self, path: &Path) -> Option<&Path> {
+        self.folders().find(|folder| *folder == path)
+    }
+}
+
+/// The folder of `projects` that `named` names: a project's own or a
+/// worktree's by its path, or a project's own by its name when only one
+/// project has it.
+pub fn pick_project<'a>(projects: &'a [Named], named: &str) -> Result<&'a Path, String> {
     let as_path = Path::new(named.trim_end_matches('/'));
-    if let Some((_, path)) = projects.iter().find(|(_, path)| path == as_path) {
-        return Ok(path);
+    if let Some(folder) = projects.iter().find_map(|project| project.folder(as_path)) {
+        return Ok(folder);
     }
     let alike: Vec<&Path> = projects
         .iter()
-        .filter(|(name, _)| name == named)
-        .map(|(_, path)| path.as_path())
+        .filter(|project| project.name == named)
+        .map(|project| project.path.as_path())
         .collect();
     match alike.as_slice() {
         [one] => Ok(one),

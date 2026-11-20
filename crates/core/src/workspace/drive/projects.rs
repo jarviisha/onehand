@@ -6,12 +6,13 @@ use crate::project::Project;
 use crate::workspace::{normalize_root, HostName, ProjectRoot};
 use std::path::{Path, PathBuf};
 
-/// The row `dir`, on `host`, comes in as: a row of `project`'s folder, or a
-/// bare one, of no project, when its project is not known yet or does not
-/// hold it, which never draws another folder's facts.
+/// The row `dir`, on `host`, comes in as: `project`'s row, at its own folder,
+/// when `dir` is one of its folders; or a bare one, of no project, when its
+/// project is not known yet or does not hold it, which never draws another
+/// folder's facts.
 fn row(host: Option<&HostName>, dir: PathBuf, project: Option<&Project>) -> ProjectRoot {
-    match project.and_then(|p| Some((p, p.folder(host, &dir)?))) {
-        Some((project, folder)) => ProjectRoot::of(project, folder),
+    match project.filter(|p| p.folder(host, &dir).is_some()) {
+        Some(project) => ProjectRoot::of(project),
         None => {
             let mut root = ProjectRoot::new(dir);
             root.host = host.cloned();
@@ -80,11 +81,23 @@ impl WorkspaceDrive {
     #[must_use = "its effects are to be carried"]
     pub fn open_project(&mut self, dir: PathBuf, project: Option<&Project>) -> Vec<Effect> {
         let dir = normalize_root(dir);
-        let fresh = self.local_index(&dir).is_none();
+        let mut fx = self.told_first(project);
+        // A folder of a row already here selects that row.
+        if let Some(idx) = self.local_index(&dir) {
+            self.workspace.select_root(idx);
+            fx.extend(self.opened());
+            return fx;
+        }
         let idx = self.workspace.add_placed(row(None, dir, project));
-        let mut fx = self.unplaced(idx, fresh);
+        fx.extend(self.unplaced(idx, true));
         fx.extend(self.opened());
         fx
+    }
+
+    /// `project` as the caller now has it, told its rows first: a worktree
+    /// just recorded is a folder of its row before the row is looked for.
+    fn told_first(&mut self, project: Option<&Project>) -> Vec<Effect> {
+        project.map_or_else(Vec::new, |project| self.told(project))
     }
 
     /// [`Self::open_project`] for `project`'s own folder, on its host.
@@ -123,11 +136,12 @@ impl WorkspaceDrive {
         project: Option<&Project>,
     ) -> (usize, Vec<Effect>) {
         let dir = normalize_root(dir);
+        let mut fx = self.told_first(project);
         if let Some(idx) = self.local_index(&dir) {
-            return (idx, Vec::new());
+            return (idx, fx);
         }
         let idx = self.workspace.add_placed(row(None, dir, project));
-        let mut fx = self.unplaced(idx, true);
+        fx.extend(self.unplaced(idx, true));
         fx.extend(self.kept());
         (idx, fx)
     }
@@ -137,11 +151,12 @@ impl WorkspaceDrive {
     #[must_use = "its effects are to be carried"]
     pub fn keep_project_quietly(&mut self, dir: PathBuf, project: Option<&Project>) -> Vec<Effect> {
         let dir = normalize_root(dir);
+        let mut fx = self.told_first(project);
         if self.local_index(&dir).is_some() {
-            return Vec::new();
+            return fx;
         }
         let idx = self.workspace.add_placed_quietly(row(None, dir, project));
-        let mut fx = self.unplaced(idx, true);
+        fx.extend(self.unplaced(idx, true));
         fx.extend(self.kept());
         fx
     }
@@ -185,8 +200,10 @@ impl WorkspaceDrive {
 
     /// The row of `path` on `host`, which named no project, is of `project`:
     /// it takes the project's facts, and the workspace file is written to
-    /// name it. A row already of a project, or a folder `project` does not
-    /// hold, changes nothing.
+    /// name it. A worktree's folder folds into its project's row, when the
+    /// window has one, its sessions keeping their folder; else the row
+    /// becomes the project's, at its own folder. A row already of a project,
+    /// or a folder `project` does not hold, changes nothing.
     #[must_use = "its effects are to be carried"]
     pub fn placed(
         &mut self,
@@ -197,23 +214,55 @@ impl WorkspaceDrive {
         if project.folder(host, path).is_none() {
             return Vec::new();
         }
-        let Some(root) =
-            self.workspace.roots.iter_mut().find(|root| {
-                root.host.as_ref() == host && root.path == path && root.project.is_none()
-            })
-        else {
+        let ws = &mut self.workspace;
+        let Some(bare) = ws.roots.iter().position(|root| {
+            root.host.as_ref() == host && root.path == path && root.project.is_none()
+        }) else {
             return Vec::new();
         };
-        root.project = Some(project.id.clone());
-        root.told(project);
-        let mut fx = self.save();
+        let mut fx = Vec::new();
+        let into = ws
+            .roots
+            .iter()
+            .position(|root| root.project.as_ref() == Some(&project.id));
+        match into {
+            Some(into) => {
+                let shown = ws.active_root == bare;
+                let gone = &mut ws.roots[bare];
+                let (sessions, active, pinned) = (
+                    std::mem::take(&mut gone.sessions),
+                    gone.active_session,
+                    gone.pinned,
+                );
+                let target = &mut ws.roots[into];
+                let first = target.sessions.len();
+                let moved = !sessions.is_empty();
+                target.sessions.extend(sessions);
+                target.pinned |= pinned;
+                if shown && moved {
+                    target.active_session = first + active;
+                }
+                ws.remove_root(bare);
+                if shown {
+                    ws.select_root(if into > bare { into - 1 } else { into });
+                    fx.push(Effect::Show);
+                }
+            }
+            None => {
+                let root = &mut ws.roots[bare];
+                root.path = project.path.clone();
+                root.project = Some(project.id.clone());
+                root.told(project);
+            }
+        }
+        fx.extend(self.save());
         fx.push(Effect::Changed);
         fx
     }
 
-    /// `project` changed: every row of it draws it as it now is. A folder
-    /// whose offload changed has its sessions closed, since they ran where it
-    /// no longer does. Nothing here is written: the facts are the project's.
+    /// `project` changed: every row of it draws it as it now is, its folders
+    /// told again. A folder whose offload changed has its sessions closed,
+    /// since they ran where it no longer does. Nothing here is written: the facts are the project's.
     #[must_use = "its effects are to be carried"]
     pub fn told(&mut self, project: &Project) -> Vec<Effect> {
         let mut fx = Vec::new();
@@ -228,13 +277,27 @@ impl WorkspaceDrive {
                 root.check.clone(),
                 root.builds.clone(),
                 root.offload.clone(),
+                root.worktrees.clone(),
             );
             root.told(project);
+            // A folder whose offload changed: its sessions ran where it no
+            // longer does. One the project no longer records keeps running.
             if root.offload != before.3 {
                 moved.push(root.path.clone());
             }
-            changed |= (&root.label, &root.check, &root.builds, &root.offload)
-                != (&before.0, &before.1, &before.2, &before.3);
+            for worktree in &root.worktrees {
+                let was = before.4.iter().find(|w| w.path == worktree.path);
+                if was.and_then(|w| w.offload.as_ref()) != worktree.offload.as_ref() {
+                    moved.push(worktree.path.clone());
+                }
+            }
+            changed |= (
+                &root.label,
+                &root.check,
+                &root.builds,
+                &root.offload,
+                &root.worktrees,
+            ) != (&before.0, &before.1, &before.2, &before.3, &before.4);
         }
         for dir in moved {
             fx.extend(self.drop_sessions_in(&dir));

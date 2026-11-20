@@ -20,7 +20,7 @@ impl ControlDrive {
     pub fn open_worker(
         &mut self,
         open: Open,
-        projects: &[(String, PathBuf)],
+        projects: &[crate::control::Named],
         mode: Option<String>,
     ) -> Result<Begun, String> {
         match (&open.prompt, open.turn) {
