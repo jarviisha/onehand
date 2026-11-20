@@ -605,9 +605,9 @@ impl Workspace {
     /// the person is looking at; a row of `path` itself when no project is
     /// known for it. Returns its index.
     ///
-    /// `None` when `path` is a folder of a row already: marking a row the
-    /// person added as transient would quietly drop it from their workspace
-    /// file.
+    /// `None` when `path` is a folder of a row already, or `project` has a
+    /// row: marking a row the person added as transient would quietly drop it
+    /// from their workspace file, and a second row of one project is none.
     pub(crate) fn add_transient_root(
         &mut self,
         path: impl Into<PathBuf>,
@@ -616,10 +616,12 @@ impl Workspace {
         uid: u64,
     ) -> Option<usize> {
         let path = normalize_root(path.into());
+        let of_project =
+            |r: &ProjectRoot| project.is_some_and(|p| r.project.as_ref() == Some(&p.id));
         if self
             .roots
             .iter()
-            .any(|r| r.host.is_none() && r.holds(&path))
+            .any(|r| (r.host.is_none() && r.holds(&path)) || of_project(r))
         {
             return None;
         }

@@ -122,3 +122,52 @@ fn projects_sharing_a_checkout_are_named() {
         .sharing(Path::new("/r-z"), Some(&front.id))
         .is_empty());
 }
+
+#[test]
+fn a_project_folder_that_is_a_linked_checkout_is_never_offered_its_own() {
+    // The project was added from the linked checkout `/r-x`; the main one
+    // is never taken for a worktree, nor its own checkout.
+    let p = Project::new(ProjectId::mint(1), None, "/r-x".into());
+    let git = [
+        listed("/r", "main"),
+        listed("/r-x", "x"),
+        listed("/r-y", "y"),
+    ];
+    assert_eq!(
+        rows(&p, Some(&git), &Projects::default(), there),
+        [WorktreeRow::Offered(listed("/r-y", "y"))]
+    );
+}
+
+#[test]
+fn a_detached_checkout_is_offered_on_no_branch() {
+    let p = Project::new(ProjectId::mint(1), None, "/r".into());
+    let git = [
+        listed("/r", "main"),
+        Listed {
+            path: "/r-d".into(),
+            branch: None,
+        },
+    ];
+    assert_eq!(
+        rows(&p, Some(&git), &Projects::default(), there),
+        [WorktreeRow::Offered(Listed {
+            path: "/r-d".into(),
+            branch: None
+        })]
+    );
+}
+
+#[test]
+fn a_worktree_inside_the_main_checkout_reads_by_its_own_top() {
+    let mut p = Project::new(ProjectId::mint(1), None, "/r".into());
+    p.worktrees.push(recorded("/r/.trees/x"));
+    let git = [listed("/r", "main"), listed("/r/.trees/x", "x")];
+    assert_eq!(
+        rows(&p, Some(&git), &Projects::default(), there),
+        [WorktreeRow::Recorded {
+            path: "/r/.trees/x".into(),
+            on_disk: true
+        }]
+    );
+}

@@ -145,3 +145,51 @@ fn the_page_reads_git_for_its_worktrees(cx: &mut gpui::TestAppContext) {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A worktree removed outside onehand reads as missing once git is read
+/// again, as a refresh of the projects' git does.
+#[gpui::test]
+fn a_worktree_removed_outside_reads_missing_after_a_git_read(cx: &mut gpui::TestAppContext) {
+    use crate::shell::rig;
+    let dir = rig::folder("page-worktree-gone");
+    let (handle, shell, cx) = rig::shell(cx, dir.join("tasks"), Vec::new());
+    let (main, wt) = rig::repo_with_worktree(&dir);
+    let mut project = Project::new(ProjectId::mint(913_002), None, main.clone());
+    project.worktrees.push(Worktree {
+        path: wt.clone(),
+        branch: "w".into(),
+        from: None,
+        made_by: MadeBy::Split,
+        offload: None,
+    });
+    rig::keep_projects(handle, &shell, vec![project], cx);
+    let at = main.clone();
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
+    let read = |cx: &mut gpui::VisualTestContext| {
+        cx.update(|_, cx| {
+            let chat = shell.read(cx).chat_pane().read(cx);
+            chat.empty.as_ref().and_then(|page| page.worktrees.clone())
+        })
+    };
+    let on_disk = |on_disk| {
+        Some(Ok(vec![WorktreeRow::Recorded {
+            path: wt.clone(),
+            on_disk,
+        }]))
+    };
+    let until = |cx: &mut gpui::VisualTestContext, want| {
+        for _ in 0..300 {
+            cx.run_until_parked();
+            if read(cx) == want {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("read {:?}", read(cx));
+    };
+    until(cx, on_disk(true));
+    rig::git(&main, &["worktree", "remove", wt.to_str().unwrap()]);
+    cx.update(|_, cx| shell.update(cx, |shell, cx| shell.refresh_git(cx)));
+    until(cx, on_disk(false));
+    let _ = std::fs::remove_dir_all(dir);
+}

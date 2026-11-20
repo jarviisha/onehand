@@ -414,3 +414,15 @@ fn a_refused_or_failed_removal_keeps_the_record() {
     );
     assert_eq!(d.get(&p.id).unwrap().worktrees.len(), 1);
 }
+
+#[test]
+fn a_failed_write_puts_the_worktree_folder_back() {
+    let (mut d, p) = drive();
+    let w = write_of(d.set_worktree_parent(&p.id, Some("/work".into())));
+    let _ = d.handle(Input::Written {
+        id: p.id.clone(),
+        pending: w.pending,
+        result: Err("disk full".into()),
+    });
+    assert_eq!(d.get(&p.id).unwrap().worktree_parent, None);
+}

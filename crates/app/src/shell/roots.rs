@@ -56,6 +56,8 @@ impl Shell {
             pane.set_git(line, cx);
             pane.set_worktree_facts(recorded, sessions, cx);
         });
+        // A page built again keeps showing a removal still under way.
+        self.tell_removing(cx);
     }
 
     /// Whether a project's sessions are showing under it in the rail.

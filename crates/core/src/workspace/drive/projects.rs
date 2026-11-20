@@ -250,11 +250,21 @@ impl WorkspaceDrive {
                     fx.push(Effect::Show);
                 }
             }
+            // Its folders change: the project's own and its worktrees come
+            // with it, to be shown and read.
             None => {
+                let shown = ws.active_root == bare;
                 let root = &mut ws.roots[bare];
+                let moved = root.path != project.path;
                 root.path = project.path.clone();
                 root.project = Some(project.id.clone());
                 root.told(project);
+                if shown && moved {
+                    fx.push(Effect::Show);
+                }
+                if moved || !root.worktrees.is_empty() {
+                    fx.push(Effect::Resweep);
+                }
             }
         }
         fx.extend(self.save());
