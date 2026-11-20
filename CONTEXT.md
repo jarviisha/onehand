@@ -49,7 +49,8 @@ _Avoid_: parent, manager, orchestrator
 **Worker**:
 A session a lead opened with `open_worker`, listed under its lead while the lead is open. The
 lead holds it until the person sends it a prompt; *Give back to the lead* returns it; the lead
-may close it.
+may close it. One opened on a worktree runs in that folder of its project, which records the
+worktree as the worker's when it did not hold it.
 _Avoid_: child, subagent, job
 
 **Subagent**:

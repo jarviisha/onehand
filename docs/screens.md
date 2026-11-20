@@ -137,8 +137,10 @@ moves on by itself. A worker whose lead is in another window is a row of its own
 for its lead's project: folding from its row folds that project, *New session* beside a worker on
 screen starts in it, and closing the worker on screen shows its lead. Its row's menu reads *Restart
 the host service…* in place of *Restart the agent*. A host session's row menu ends on *End on
-<host>…*, in the danger ink, after *Close session*. A worktree project holding nothing but such
-workers is left out, and shows no row while one of them is on screen; closing the last session of a
+<host>…*, in the danger ink, after *Close session*. A worker opened on a worktree runs on its
+project's row, the worktree recorded in the project as the worker's when it did not hold it. A
+project row brought in for workers alone, holding nothing but such workers, is left out, and shows
+no row while one of them is on screen; closing the last session of a
 project added for a worker or a run alone takes that project with it. Closing a lead asks whether its
 workers close with it; when the lead closes alone or is lost, its workers are listed again under
 their project, and under the lead again once its conversation is opened.

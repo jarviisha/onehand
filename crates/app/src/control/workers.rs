@@ -15,6 +15,7 @@ use onehand_core::chat::drive::{Code, Origin};
 use onehand_core::config::AgentSpec;
 use onehand_core::control::drive::{Begun, Effect, Facts, Input, Key, Open, World};
 use onehand_core::control::{self, workers::resolve_blocking};
+use onehand_core::project::MadeBy;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -227,7 +228,13 @@ pub(super) fn carry_one(effect: Effect, cx: &mut App) {
             folder: _,
             name: _,
             resume: Some(conversation),
-        } => come_back(key, root, dirs, conversation, cx),
+        } => {
+            // As a fresh start: its folder is its project's first.
+            let at = root.clone();
+            crate::projects::place(None, at, MadeBy::Worker, cx, move |_, cx| {
+                come_back(key, root, dirs, conversation, cx)
+            });
+        }
         Effect::Start {
             key,
             root,
@@ -236,27 +243,12 @@ pub(super) fn carry_one(effect: Effect, cx: &mut App) {
             name,
             resume: None,
         } => {
-            let started = asked_of(&key, cx)
-                .ok_or_else(|| "the window closed".to_string())
-                .and_then(|(shell, spec)| Ok((shell, spec?)))
-                .and_then(|(shell, spec)| {
-                    shell
-                        .update(cx, |shell, cx| shell.open_off_screen(root, spec, dirs, cx))
-                        .ok_or_else(|| "the session did not start".to_string())
-                })
-                .map(|(uid, session)| {
-                    // No conversation file exists yet; the first turn's end
-                    // writes the given name with the rest.
-                    session.update(cx, |session, cx| {
-                        session.drive(cx, |chat, _| {
-                            chat.name_for_folder(folder, name);
-                            ((), Vec::new())
-                        })
-                    });
-                    uid
-                });
-            let fx = drive().handle(Input::Started { key, started });
-            carry(fx, cx);
+            // Its folder is its project's first: a worktree no project
+            // records yet is recorded as the worker's.
+            let at = root.clone();
+            crate::projects::place(None, at, MadeBy::Worker, cx, move |_, cx| {
+                start(key, root, dirs, folder, name, cx)
+            });
         }
         Effect::Watch(uid) => {
             if let Some(session) = session_of(uid, cx) {
@@ -378,6 +370,39 @@ fn begin(uid: u64, session: &Entity<ChatSession>, prompt: Option<String>, cx: &m
         model: control::state::model_said(chat),
         name,
     }
+}
+
+/// Start worker `key` afresh on `root` with `dirs`, naming its conversation
+/// for `folder` (or `name`), and report how it went.
+fn start(
+    key: Key,
+    root: PathBuf,
+    dirs: Vec<PathBuf>,
+    folder: String,
+    name: Option<String>,
+    cx: &mut App,
+) {
+    let started = asked_of(&key, cx)
+        .ok_or_else(|| "the window closed".to_string())
+        .and_then(|(shell, spec)| Ok((shell, spec?)))
+        .and_then(|(shell, spec)| {
+            shell
+                .update(cx, |shell, cx| shell.open_off_screen(root, spec, dirs, cx))
+                .ok_or_else(|| "the session did not start".to_string())
+        })
+        .map(|(uid, session)| {
+            // No conversation file exists yet; the first turn's end
+            // writes the given name with the rest.
+            session.update(cx, |session, cx| {
+                session.drive(cx, |chat, _| {
+                    chat.name_for_folder(folder, name);
+                    ((), Vec::new())
+                })
+            });
+            uid
+        });
+    let fx = drive().handle(Input::Started { key, started });
+    carry(fx, cx);
 }
 
 /// Start worker `key`, coming back, on `root` with `dirs`, on the

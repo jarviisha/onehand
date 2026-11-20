@@ -114,6 +114,9 @@ minor bump may break any of them.
   worktree split off a project opens with a session in it, and the Workbench, the terminal and the
   git badges follow the folder of the session on screen. A workspace file written by an earlier
   build opens with each project's entries folded into one row, pinned when any was.
+- A lead's worker opened on a worktree runs on its project's row, nested under its lead, and a
+  worktree the project did not hold is recorded in it as the worker's. A project brought in for
+  workers alone leaves with its last one.
 - onehand's tools name a project by its name, its folder or one of its worktrees' folders:
   `open_session` and `open_worker` named by a worktree start there, and `list_projects` lists a
   project's worktrees.

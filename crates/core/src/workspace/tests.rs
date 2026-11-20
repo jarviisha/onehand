@@ -71,7 +71,9 @@ fn a_run_root_arrives_with_its_session_and_moves_nothing() {
         args: vec![],
         ..Default::default()
     };
-    let idx = ws.add_transient_root("/run", spec.clone(), 7).unwrap();
+    let idx = ws
+        .add_transient_root("/run", None, spec.clone(), 7)
+        .unwrap();
     assert_eq!(
         ws.active_root, 0,
         "the selection stays where the user left it"
@@ -80,7 +82,7 @@ fn a_run_root_arrives_with_its_session_and_moves_nothing() {
     assert_eq!(ws.roots[idx].sessions.len(), 1);
     assert_eq!(ws.roots[idx].sessions[0].uid, 7);
     // A folder that is already a project is refused, not marked transient.
-    assert!(ws.add_transient_root("/b", spec, 8).is_none());
+    assert!(ws.add_transient_root("/b", None, spec, 8).is_none());
     assert!(!ws.roots[1].transient);
 }
 

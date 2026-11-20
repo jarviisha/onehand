@@ -82,9 +82,11 @@ impl WorkspaceDrive {
     pub fn open_project(&mut self, dir: PathBuf, project: Option<&Project>) -> Vec<Effect> {
         let dir = normalize_root(dir);
         let mut fx = self.told_first(project);
-        // A folder of a row already here selects that row.
+        // A folder of a row already here selects that row, which the person
+        // keeps from now on though only a worker or a run brought it.
         if let Some(idx) = self.local_index(&dir) {
             self.workspace.select_root(idx);
+            self.workspace.roots[idx].transient = false;
             fx.extend(self.opened());
             return fx;
         }

@@ -165,8 +165,10 @@ offered `open_worker`, and `open_session` takes none of its further arguments.
   of the window's projects belongs to. Every path is canonicalized first (symlinks resolved),
   and the repository is told by git's common directory, read the same way from the worktree and
   from each project, main checkout, linked worktree or a folder inside one. A folder inside a
-  checkout is refused, naming the top level; any other folder, naming why. A worktree that is no
-  project of the window opens as a transient project, selecting nothing.
+  checkout is refused, naming the top level; any other folder, naming why. A worktree is its
+  project's: one its project does not record yet is recorded as the worker's (`made_by = worker`),
+  and the worker runs in it on the project's row, selecting nothing; a project not in the window
+  comes in as a row added for the worker, never written to the workspace file.
 - **What it may write besides its folder**, sent as ACP's `additionalDirectories` in
   `session/new`, `session/load` and `session/fork`: the repository's common git directory when
   the folder is a linked worktree, where its commits go, then each of `dirs`, absolute, existing
@@ -189,8 +191,8 @@ offered `open_worker`, and `open_session` takes none of its further arguments.
   not trace, such as `systemd --user` or `ssh-agent`, which an agent never is), refuses it as
   unknown, as does a process table that could not be read at all. Nothing is opened either way.
 - A worker whose window closed holds its folder no longer: the next open lets it go.
-- A worker the person closes takes its project with it when that project was added for it and
-  holds nothing else; the worktree stays on disk.
+- A worker the person closes takes its project's row with it when that row was added for it and
+  holds nothing else; the worktree stays on disk, recorded in its project.
 - The checks read git, the file system and the process table off the UI thread.
 - **The answer comes once the worker is up**, within 120 seconds of the call: its agent connected,
   put in its mode and on its model one pick at a time, each answered, then its prompt accepted.
