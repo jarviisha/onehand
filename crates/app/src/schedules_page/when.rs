@@ -205,7 +205,7 @@ pub(super) fn when_section(
 fn weekday_track(handle: &Entity<SchedulesPage>, draft: &ScheduleDraft, cx: &App) -> AnyElement {
     let days = DAYS.iter().enumerate().map(|(n, day)| {
         let handle = handle.clone();
-        onehand_ui::choice(
+        onehand_ui::segment(
             ("schedule-weekday", n),
             SharedString::from(&day[..3]),
             usize::from(draft.weekday) == n,

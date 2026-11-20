@@ -142,6 +142,7 @@ small menu row, its tabs) comes out at 2px and is left to it. A button (`action`
 |---|---|---|
 | `tokens::lift(cx)` | anything the app floats | `crates/ui/src/tokens.rs` |
 | `composer_lift(cx)` | the composer card, and the pinned cards tucked under it | `crates/app/src/theme.rs` |
+| `segment_lift(cx)` (private; drawn by `segment`) | the chosen choice raised off a pick-one track | `crates/ui/src/choice.rs` |
 
 ## Control sizes
 
@@ -161,7 +162,7 @@ Moving the library's rev means checking this table.
 An icon-only button is square at its height. A button's `.short()` is the library's extra small
 held at `CONTROL_H` and its `.tall()` the library's small held at `FIELD_H`, its words at
 `CHROME_TEXT`; a field takes the library's small at both, its words at `CHROME_TEXT` (`Short`, `ShortIcon`, `Tall` and `TallIcon` in `crates/ui/src/control_size.rs`); their words, icons and insets are the library's. A builder that
-sizes the controls it makes (`choice`, `switch`, `picker`) takes one of them as a `ControlSize`.
+sizes the controls it makes (`choice`, `segment`, `switch`, `picker`) takes one of them as a `ControlSize`.
 
 A field of several lines (`text_area`) is the library's `Textarea`, which takes no size: its text
 sits at the default's inset, 10 **px**, which no wrapper reaches, so it starts 2px inside a

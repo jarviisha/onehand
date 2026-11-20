@@ -1,13 +1,13 @@
-//! Picking one of a few: a picker's trigger, a choice, the switch and the
-//! track that hold choices side by side.
+//! Picking one of a few: a picker's trigger, a choice, a segment, and the
+//! switch and the track that hold segments side by side.
 
 use crate::{ControlSize, Quiet as _, action, control_fill};
 use gpui::{
-    AnyElement, App, Div, ElementId, IntoElement, ParentElement as _, SharedString, Styled as _,
-    Window, div,
+    AnyElement, App, BoxShadow, Div, ElementId, IntoElement, ParentElement as _, SharedString,
+    Styled as _, Window, div, point, px,
 };
 use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants as _};
-use gpui_component::{ActiveTheme as _, Selectable as _, StyledExt as _};
+use gpui_component::{ActiveTheme as _, Colorize as _, Selectable as _, StyledExt as _};
 use std::rc::Rc;
 
 /// A picker's trigger: a button naming what it is set to, then the caret that
@@ -41,9 +41,8 @@ pub fn picker(
 }
 
 /// One of a few choices, the one taken among them filled: a ghost button,
-/// `selected` on the choice that holds. Every pick-one row draws its choices
-/// with this, the halves of a [`switch`] and a row of filter chips alike, so
-/// one condition keeps one shape.
+/// `selected` on the choice that holds. A row of filter chips draws its
+/// choices with this; a choice inside a track is a [`segment`].
 ///
 /// A [`Quiet`](crate::Quiet) ghost, so a selected choice and a hovered one share the
 /// selected step, the one `accent` is too; selected, it has no edge and no
@@ -59,7 +58,64 @@ pub fn choice(
     size.on(action(id).quiet(cx).label(label.into()).selected(on))
 }
 
-/// A choice between a few views of one panel: a [`choice`] per view, every
+/// One choice inside a track, a [`switch`]'s or a [`choice_track`]'s: chosen,
+/// it stands on the raised fill, in the prose ink, under a tight lift, and
+/// pressing it changes nothing; the others are bare words in the muted ink
+/// on the track's sunk fill, a hover a step between the two fills, never the
+/// chosen look.
+///
+/// A custom ghost through [`action`], so the cursor, the focus ring and a
+/// refusal stay the library's.
+pub fn segment(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    on: bool,
+    size: ControlSize,
+    cx: &App,
+) -> Button {
+    let theme = cx.theme();
+    let button = action(id).label(label.into()).selected(on);
+    size.on(match on {
+        true => button
+            .custom(
+                ButtonCustomVariant::new(cx)
+                    .color(theme.background)
+                    .foreground(theme.foreground)
+                    .hover(theme.background)
+                    .active(theme.background),
+            )
+            .shadow(segment_lift(cx)),
+        false => {
+            let step = theme.muted.mix_oklab(theme.background, 0.5);
+            button.custom(
+                ButtonCustomVariant::new(cx)
+                    .foreground(theme.muted_foreground)
+                    .hover(step)
+                    .active(step),
+            )
+        }
+    })
+}
+
+/// The chosen segment's lift, in pixels as a hairline is: one tight shadow
+/// where an edge would be. The prose ink, thinned, on the light page; on the
+/// dark one, where no shadow shows, the hairline's colour.
+fn segment_lift(cx: &App) -> Vec<BoxShadow> {
+    let theme = cx.theme();
+    let color = match theme.mode.is_dark() {
+        true => theme.border,
+        false => theme.foreground.alpha(0.16),
+    };
+    vec![BoxShadow {
+        color,
+        offset: point(px(0.), px(0.5)),
+        blur_radius: px(1.),
+        spread_radius: px(0.),
+        inset: false,
+    }]
+}
+
+/// A choice between a few views of one panel: a [`segment`] per view, every
 /// one the same width across the row.
 ///
 /// **Drawn here, after both of the library's answers were tried.** A
@@ -73,15 +129,16 @@ pub fn choice(
 /// feature crate both draw one, and a feature crate cannot reach into the binary
 /// hosting it.
 ///
-/// **One edged track.** Loose ghosts side by side read as two words, the
+/// **One filled track.** Loose ghosts side by side read as two words, the
 /// unchosen one as plain text: nothing said they were one control with one
-/// choice standing. The choices sit in a control's edge, the chosen one
-/// filled, so the track says "one of these" before anything is pressed.
+/// choice standing. The choices sit on one sunk fill, no edge, the chosen one
+/// raised off it, so the track says "one of these" before anything is
+/// pressed; an edge inside a settings box read as a box in a box.
 ///
 /// **No two fills touch.** A hovered choice beside the chosen one would run
-/// into it as one band, and either into the edge: the track pads its choices
-/// off its edge and parts them by a gap, a step taller than the control it
-/// holds for it.
+/// into it as one band, and either into the track's rim: the track pads its
+/// choices in from its rim and parts them by a gap, a step taller than the
+/// control it holds for it.
 ///
 /// `size` is the role's, so its choices stand at the height of that role's
 /// buttons and inputs; the track around them stands a step taller.
@@ -99,13 +156,12 @@ pub fn switch(
         .h_flex()
         .w_full()
         .rounded(cx.theme().radius)
-        .border_1()
-        .border_color(cx.theme().input)
+        .bg(cx.theme().muted)
         .p_0p5()
         .gap_0p5()
         .children(labels.iter().enumerate().map(|(i, label)| {
             let pick = pick.clone();
-            choice((id, i), label.clone(), i == active, size, cx)
+            segment((id, i), label.clone(), i == active, size, cx)
                 .flex_1()
                 .min_w_0()
                 .on_click(move |_, window, cx| pick(&i, window, cx))
@@ -114,8 +170,8 @@ pub fn switch(
 }
 
 /// One of more choices than a [`switch`] holds, each at its own width: the
-/// same edged track, padded and parted as a switch's, its [`choice`]s
-/// wrapping onto further lines in a narrow container. The edge is what
+/// same filled track, padded and parted as a switch's, its [`segment`]s
+/// wrapping onto further lines in a narrow container. The fill is what
 /// makes a row of loose words read as one setting; stacked settings stand
 /// apart as boxes rather than running into one paragraph. The track holds
 /// its choices and no more: run on past the last, it is an empty stretch
@@ -127,8 +183,7 @@ pub fn choice_track(choices: impl IntoIterator<Item = impl IntoElement>, cx: &Ap
         .self_start()
         .max_w_full()
         .rounded(cx.theme().radius)
-        .border_1()
-        .border_color(cx.theme().input)
+        .bg(cx.theme().muted)
         .p_0p5()
         .gap_0p5()
         .children(choices)

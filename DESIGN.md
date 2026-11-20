@@ -345,7 +345,8 @@ reaches.
   content.
 - A box on a page is a border; a region's box is a fill in a hairline; wells and the bubbles are
   fills. Ordinary sections remain unboxed. Do not combine a border, contrasting fill and shadow
-  just to make a group visible.
+  just to make a group visible. A pick-one track is a sunk fill (`muted`) with no edge, the pick
+  raised on the page fill under a tight lift: the one control that carries a lift.
 - Hover and selection are fills, neutral steps apart: a hovered row the hover step (`list_hover`; on the rail
   `sidebar_accent`, as a fill is a step from the surface under it), the chosen row a step past it
   (`chosen_fill`, solid, as a row's fade and the controls over a row are painted in it) with its name in
@@ -377,7 +378,8 @@ bare, with no edge and no clear button, *Clear filters* beside it clearing it. A
 variant by role, each drawn as the library draws it: `primary` the one commitment in a decision
 area, `secondary` (edged, on its own fill) an ordinary action beside it, a set picker's trigger (an
 unset one is a ghost, through `picker`), every Settings button; `outline` an action that needs a
-boundary with less weight; `choice` in a pick-one row; `danger` as below; and ghost (`.quiet(cx)`)
+boundary with less weight; `segment` in a pick-one track (a switch's, a setting's values), its
+pick raised off the track's fill, and `choice` for filter chips, a ghost selected when taken; `danger` as below; and ghost (`.quiet(cx)`)
 the familiar, low-emphasis commands of a toolbar, a strip or a row. A control that refuses says so
 and why (`.refuses(why)`, the reason its tooltip) and goes back to the arrow.
 

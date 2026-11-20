@@ -17,7 +17,7 @@ pub(super) const LIST_SHOWN: usize = 50;
 /// The light/dark/system picker.
 ///
 /// One value with three answers, drawn as the app draws every pick-one row: a
-/// [`choice`](onehand_ui::choice) per answer, the one in force filled.
+/// [`segment`](onehand_ui::segment) per answer, the one in force filled.
 ///
 /// App-wide, unlike everything else on the page it sits in, because the theme
 /// it selects is a global: two windows cannot be drawn in two modes.
@@ -29,7 +29,7 @@ fn appearance_picker(
     onehand_ui::choice_track(
         Appearance::ALL.into_iter().enumerate().map(|(i, choice)| {
             let shell = shell.clone();
-            onehand_ui::choice(
+            onehand_ui::segment(
                 ("appearance", i),
                 choice.label(),
                 choice == current,

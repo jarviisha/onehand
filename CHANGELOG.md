@@ -117,6 +117,8 @@ minor bump may break any of them.
 - onehand's tools name a project by its name, its folder or one of its worktrees' folders:
   `open_session` and `open_worker` named by a worktree start there, and `list_projects` lists a
   project's worktrees.
+- A pick-one setting (the theme, an agent dialog's kinds, a schedule's days, a Plugins or Issues
+  switch) is one filled track with no edge, the chosen value raised off it.
 - A project has a name of its own: *Rename project…* on its row's menu and its page's dots menu
   renames it in every window holding it, and its folder keeps its own name.
 - A subagent is one line in the conversation: its name, what it is doing or how it ended, its
