@@ -35,8 +35,13 @@ impl Shell {
             facts.offload = None;
         }
         // The same line the rail prints beside the project's name, from core's
-        // own rule rather than composed again here.
-        let line = status.map(|status| gpui::SharedString::from(status.label()));
+        // own rule rather than composed again here, of the folder on screen:
+        // a session in a worktree is on that worktree's branch.
+        let line = self
+            .window
+            .workspace
+            .git_on_screen(root)
+            .map(|status| gpui::SharedString::from(status.label()));
         let label = gpui::SharedString::from(root.label.clone());
         self.chat.update(cx, |pane, cx| {
             pane.set_project_label(label, cx);
@@ -392,10 +397,12 @@ impl Shell {
         self.window.workspace.folder_of(uid)
     }
 
-    /// The project on screen, its name and path, when it is on this machine.
+    /// The project on screen, its name and the folder the panels show, when
+    /// it is on this machine.
     pub(crate) fn on_screen(&self) -> Option<(String, PathBuf)> {
         let root = self.window.workspace.active_root()?;
-        Some((root.label.clone(), root.local_path()?.to_path_buf()))
+        root.local_path()?;
+        Some((root.label.clone(), root.folder_on_screen().to_path_buf()))
     }
 
     /// Open `path` in the Workbench and show the Workbench, without moving

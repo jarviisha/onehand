@@ -268,11 +268,17 @@ impl Shell {
     /// `Session` is its description rather than its condition.
     pub fn remote_sessions(&self, cx: &App) -> Vec<crate::remote::RemoteSession> {
         let roots = &self.window.workspace.roots;
-        // A session's folder is its project's own or a worktree of it.
+        // A session's folder is its project's own, else a worktree a session
+        // of the project runs in.
         let runs_here = |path: &Path| {
             roots
                 .iter()
-                .find(|root| root.path == path || root.sessions.iter().any(|s| s.folder == path))
+                .find(|root| root.path == path)
+                .or_else(|| {
+                    roots
+                        .iter()
+                        .find(|root| root.sessions.iter().any(|s| s.folder == path))
+                })
                 .is_some_and(|root| root.runs_here())
         };
         self.chat.read(cx).remote_sessions(runs_here, cx)

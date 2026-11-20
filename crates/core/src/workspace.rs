@@ -211,14 +211,6 @@ impl ProjectRoot {
         self.sessions.get(self.active_session)
     }
 
-    /// The folder session `uid` of this row runs in.
-    pub fn session_folder(&self, uid: u64) -> Option<&Path> {
-        self.sessions
-            .iter()
-            .find(|session| session.uid == uid)
-            .map(|session| session.folder.as_path())
-    }
-
     /// The folder the window's panels show for this row: its session on
     /// screen's, else the row's own.
     pub fn folder_on_screen(&self) -> &Path {
@@ -805,12 +797,15 @@ impl Workspace {
 
     /// Spawn a new session on the active root from `spec`, making it active.
     /// Returns `(root_idx, session_idx)`, or `None` if there is no active root.
+    #[cfg(test)]
     pub(crate) fn add_session(&mut self, spec: AgentSpec, uid: u64) -> Option<(usize, usize)> {
         let folder = self.active_root()?.path.clone();
         self.add_session_at(spec, uid, folder)
     }
 
-    /// [`Self::add_session`] in `folder`, one of the active root's.
+    /// Spawn a new session on the active root from `spec`, running in
+    /// `folder`, one of the root's, and make it active. `None` with no
+    /// active root.
     pub(crate) fn add_session_at(
         &mut self,
         spec: AgentSpec,

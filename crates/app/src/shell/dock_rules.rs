@@ -5,11 +5,12 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-/// Whether the terminal dock was open, per project root, and which root the
-/// dock on screen belongs to.
+/// Whether the terminal dock was open, per folder (a project's own, or the
+/// worktree a session of it runs in), and which folder the dock on screen
+/// belongs to.
 ///
-/// **The terminal is per project all the way down, so its dock is too.** Its
-/// tabs, its shells and its working directory are all keyed by root, and none
+/// **The terminal is per folder all the way down, so its dock is too.** Its
+/// tabs, its shells and its working directory are all keyed by folder, and none
 /// of them come along when the selection moves — so a dock that stayed open
 /// across a switch was showing the new project an empty panel where the old
 /// project's shells had been, which reads as the terminal having lost them

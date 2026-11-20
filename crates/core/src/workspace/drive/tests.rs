@@ -990,7 +990,7 @@ fn a_session_runs_in_the_folder_it_was_added_in() {
         Path::new("/a-x"),
         "the session on screen's"
     );
-    assert_eq!(drive.roots[0].session_folder(1), Some(Path::new("/a")));
+    assert_eq!(drive.folder_of(1), Some(PathBuf::from("/a")));
 }
 
 #[test]
@@ -1027,4 +1027,27 @@ fn a_sweep_reads_each_folder_a_session_runs_in() {
         found: vec![("/a-x".into(), status)],
     });
     assert_eq!(drive.git().get(Path::new("/a-x")).unwrap().branch, "feat");
+    let shown = drive.git_on_screen(drive.active_root().unwrap());
+    assert_eq!(
+        shown.map(|s| s.branch.as_str()),
+        Some("feat"),
+        "the session's folder"
+    );
+}
+
+/// A session forked in a worktree's folder runs there, on the project
+/// holding it.
+#[test]
+fn a_fork_runs_in_the_folder_it_was_forked_from() {
+    let mut drive = bound();
+    let (added, _) = drive.add_session_at(Some(spec()), 2, PathBuf::from("/a-x"));
+    assert_eq!(added, Ok(2));
+    let (added, _) = drive.fork(Path::new("/a-x"), spec(), 3);
+    assert_eq!(added, Ok(3));
+    assert_eq!(drive.folder_of(3), Some(PathBuf::from("/a-x")));
+    assert_eq!(
+        drive.locate(3).map(|(root, _)| root),
+        drive.locate(2).map(|(root, _)| root)
+    );
+    assert!(matches!(drive.take_start(3), StartsOn::Fork));
 }

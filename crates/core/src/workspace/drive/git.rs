@@ -43,6 +43,15 @@ impl WorkspaceDrive {
         }
     }
 
+    /// The `git status` of the folder `root` shows: its session on screen's,
+    /// a worktree's on its own branch, else the row's own.
+    pub fn git_on_screen(&self, root: &ProjectRoot) -> Option<&GitStatus> {
+        match root.folder_on_screen() {
+            folder if folder == root.path => self.git_of(root),
+            folder => self.git.get(folder),
+        }
+    }
+
     /// Read every project's `git status` again: those here, and those on a
     /// host `attached` says is attached, which are never attached for a
     /// sweep; never a host's folder on a local one's path.
