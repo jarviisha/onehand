@@ -96,8 +96,13 @@ fn removing_a_worktree_forgets_it_and_its_folder_goes(cx: &mut TestAppContext) {
     });
     let at = wt.clone();
     cx.update(|window, cx| shell.update(cx, |shell, cx| shell.remove_worktree_now(at, window, cx)));
+    let busy = cx.update(|_, cx| shell.read(cx).removing_worktrees.contains(&wt));
+    assert!(busy, "under way: a second press is not taken");
     until(cx, |cx| {
         !wt.exists() && worktrees_of(&project.id, cx).is_empty()
+    });
+    until(cx, |cx| {
+        cx.update(|_, cx| shell.read(cx).removing_worktrees.is_empty())
     });
     let _ = std::fs::remove_dir_all(dir);
 }

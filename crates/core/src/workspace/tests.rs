@@ -1154,3 +1154,48 @@ fn the_tools_reach_the_folders_that_run_here() {
     assert_eq!(hosted.len(), 1);
     assert_eq!(hosted[0].path, PathBuf::from("/a-x"));
 }
+
+#[test]
+fn a_folder_the_row_no_longer_records_runs_here_whatever_its_own_folder_does() {
+    let mut p = with_worktree();
+    p.offload = Some(Offloaded {
+        host: HostName("vps".into()),
+        mirror: "/m/a".into(),
+        branch: None,
+    });
+    let root = ProjectRoot::of(&p);
+    assert_eq!(
+        root.host_of(Path::new("/a")).map(|(h, _)| h.0.as_str()),
+        Some("vps")
+    );
+    assert_eq!(
+        root.host_of(Path::new("/a-gone")),
+        None,
+        "not the own mirror"
+    );
+}
+
+#[test]
+fn a_rows_hosts_are_its_own_folders_and_its_offloaded_worktrees() {
+    let mut p = with_worktree();
+    p.worktrees[0].offload = Some(Offloaded {
+        host: HostName("box".into()),
+        mirror: "/m/a-x".into(),
+        branch: None,
+    });
+    let root = ProjectRoot::of(&p);
+    let used: Vec<&str> = root.hosts_used().iter().map(|h| h.0.as_str()).collect();
+    assert_eq!(used, ["box"]);
+    let on: Vec<&str> = root.session_hosts().iter().map(|h| h.0.as_str()).collect();
+    assert_eq!(on, ["box"]);
+}
+
+#[test]
+fn a_folder_is_named_by_the_project_whose_row_holds_it() {
+    let mut p = with_worktree();
+    p.name = "Alpha".into();
+    let mut ws = Workspace::seeded("/elsewhere");
+    ws.roots[0] = ProjectRoot::of(&p);
+    assert_eq!(ws.label_of_folder(Path::new("/a-x")), Some("Alpha"));
+    assert_eq!(ws.label_of_folder(Path::new("/nowhere")), None);
+}

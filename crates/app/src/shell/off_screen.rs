@@ -278,7 +278,10 @@ impl Shell {
     pub fn remote_sessions(&self, cx: &App) -> Vec<crate::remote::RemoteSession> {
         // Judged by the session's folder: a worktree is offloaded on its own.
         let workspace = &self.window.workspace;
-        let runs_here = |path: &Path| workspace.runs_here_in(path);
-        self.chat.read(cx).remote_sessions(runs_here, cx)
+        let about = |path: &Path| {
+            let name = workspace.label_of_folder(path).map(str::to_string);
+            (workspace.runs_here_in(path), name)
+        };
+        self.chat.read(cx).remote_sessions(about, cx)
     }
 }

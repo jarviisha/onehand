@@ -97,6 +97,8 @@ impl Shell {
     /// names a branch or marks a change.
     pub(super) fn git_read(&mut self, cx: &mut Context<Self>) {
         self.tell_workbench_git(cx);
+        // The project page's worktrees, which git lists, with it.
+        self.chat.update(cx, |pane, cx| pane.reread_worktrees(cx));
         // The workspace page's project tiles name each branch.
         if self.page_shown(cx) {
             let local = self.local_page_projects();

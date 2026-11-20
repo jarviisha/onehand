@@ -18,11 +18,11 @@ impl ChatPane {
     /// listed as unavailable: it is still on its resume picker, so there is no
     /// conversation to name and nothing that could be sent to it.
     ///
-    /// `runs_here` says whether the project at a root runs its sessions on
-    /// this machine, which the bridge alone weighs.
+    /// `about` says of a session's folder whether its sessions run on this
+    /// machine, which the bridge alone weighs, and what its project is called.
     pub fn remote_sessions(
         &self,
-        runs_here: impl Fn(&std::path::Path) -> bool,
+        about: impl Fn(&std::path::Path) -> (bool, Option<String>),
         cx: &App,
     ) -> Vec<crate::remote::RemoteSession> {
         let mut uids: Vec<u64> = self.conversations.keys().copied().collect();
@@ -31,20 +31,19 @@ impl ChatPane {
             .filter_map(|&uid| {
                 let conv = self.conversations.get(&uid)?;
                 let session = conv.session()?;
+                // Its project's name, a worktree's session's too; the folder's
+                // own for one no row holds.
+                let (here, name) = about(&conv.root);
                 Some(crate::remote::RemoteSession {
                     uid,
-                    project: conv
-                        .root
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| conv.root.display().to_string()),
+                    project: name.unwrap_or_else(|| onehand_core::workspace::label_for(&conv.root)),
                     conversation: session.read(cx).chat().conversation_title(),
                     agent: conv.spec.name.clone(),
                     // The rail's own word for the same condition, so a row on
                     // screen and a line on a phone cannot end up calling one
                     // state two things.
                     state: self.signal(uid, cx).map(SessionSignal::word),
-                    here: runs_here(&conv.root),
+                    here,
                 })
             })
             .collect()

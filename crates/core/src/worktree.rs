@@ -356,8 +356,9 @@ pub struct Listed {
 }
 
 /// Every checkout of the repository `folder` is in, as git lists them: the
-/// main one first. One git says is prunable, its folder gone, is left out,
-/// as is a bare repository. Blocking.
+/// main one first. One whose folder is gone (git says prunable, or an older
+/// git says nothing and the folder is not there) is left out, as is a bare
+/// repository. Blocking.
 pub fn list_blocking(folder: &Path) -> Result<Vec<Listed>, String> {
     let out = read_blocking(folder, &["worktree", "list", "--porcelain"])?;
     let mut listed = Vec::new();
@@ -375,7 +376,8 @@ pub fn list_blocking(folder: &Path) -> Result<Vec<Listed>, String> {
                 _ => {}
             }
         }
-        if let Some(path) = path.filter(|_| !gone) {
+        // A git before 2.31 says nothing of a folder gone: it is asked.
+        if let Some(path) = path.filter(|path| !gone && path.is_dir()) {
             let path = std::fs::canonicalize(&path).unwrap_or(path);
             listed.push(Listed { path, branch });
         }

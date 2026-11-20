@@ -89,6 +89,8 @@ pub(super) struct EmptyProject {
     /// The newest read of git's worktrees asked, so an older answer landing
     /// late is dropped.
     pub(super) worktrees_asked: u64,
+    /// The worktrees a removal is working on, the shell's.
+    pub(super) removing: Vec<PathBuf>,
     /// One focus handle per past conversation the page lists, by place: each
     /// row is a tab stop, so the keyboard reaches its *Delete…* as the pointer
     /// does.

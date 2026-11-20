@@ -1344,3 +1344,27 @@ fn a_worktree_the_record_drops_is_let_go_of_unless_a_session_runs_there() {
         "a session runs there"
     );
 }
+
+#[test]
+fn a_bare_worktree_row_becoming_its_projects_shows_and_reads_its_folders() {
+    let p = with_worktree("/code/a");
+    let mut drive = bound();
+    drive.open_project("/code/a-x".into(), None);
+    let fx = names(&drive.placed(None, Path::new("/code/a-x"), &p));
+    assert_eq!(drive.roots[1].path, PathBuf::from("/code/a"));
+    assert!(fx.contains(&"Show".to_string()), "{fx:?}");
+    assert!(fx.contains(&"Resweep".to_string()), "{fx:?}");
+}
+
+#[test]
+fn a_transient_row_is_never_a_second_row_of_its_project() {
+    let p = with_worktree("/code/a");
+    let mut ws = Workspace::seeded("/elsewhere");
+    let mut row = ProjectRoot::of(&p);
+    row.worktrees.clear();
+    ws.roots.push(row);
+    assert_eq!(
+        ws.add_transient_root("/code/a-x", Some(&p), spec(), 1),
+        None
+    );
+}

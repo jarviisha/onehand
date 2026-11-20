@@ -22,7 +22,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// How many worktrees the box lists before it says how many it left out.
-const WORKTREES_SHOWN: usize = 20;
+pub(super) const WORKTREES_SHOWN: usize = 20;
 
 /// What git's read of the project's worktrees came to: its rows, or why
 /// there are none.
@@ -179,6 +179,7 @@ pub(super) fn worktrees_box(
                             .secondary()
                             .text_color(danger)
                             .label("Remove…")
+                            .loading(page.removing.contains(&folder))
                             .on_click(cx.listener(emit(WorktreeAct::Remove(folder)))),
                     ),
                 Kind::Missing => div().child(
@@ -265,6 +266,30 @@ pub(super) fn worktrees_box(
 }
 
 impl ChatPane {
+    /// Told by the shell which worktrees a removal is working on.
+    pub(crate) fn set_worktrees_removing(
+        &mut self,
+        removing: Vec<PathBuf>,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(page) = self.empty.as_mut().filter(|page| page.removing != removing) {
+            page.removing = removing;
+            cx.notify();
+        }
+    }
+
+    /// Read git's worktrees of the project on screen again: git was read
+    /// again, and a worktree may have come or gone outside onehand.
+    pub(crate) fn reread_worktrees(&mut self, cx: &mut Context<Self>) {
+        if self
+            .empty
+            .as_ref()
+            .is_some_and(|page| page.recorded.is_some())
+        {
+            self.scan_worktrees(cx);
+        }
+    }
+
     /// Told by the shell the worktrees the project on screen records and how
     /// many sessions run in each of its folders; git's list of them is read
     /// again when the record changed.

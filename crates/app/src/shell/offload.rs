@@ -81,10 +81,11 @@ impl Shell {
         else {
             return 0;
         };
+        // Only the sessions in the folder offloaded: a worktree's run on.
         let pane = self.chat.read(cx);
         root.sessions
             .iter()
-            .filter(|s| pane.turn_in_flight(s.uid, cx))
+            .filter(|s| s.folder == root.path && pane.turn_in_flight(s.uid, cx))
             .count()
     }
 

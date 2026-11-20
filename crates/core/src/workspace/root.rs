@@ -90,13 +90,31 @@ impl ProjectRoot {
         }
     }
 
-    /// Every host this folder uses: the one its sessions run on, or, running
-    /// here, each it builds on.
+    /// Every host this row uses: those its sessions run on, its own folder's
+    /// and its offloaded worktrees', and, its own folder running here, each
+    /// it builds on.
     pub fn hosts_used(&self) -> Vec<&HostName> {
-        match self.session_host() {
-            Some((host, _)) => vec![host],
-            None => self.build_hosts().iter().map(|entry| &entry.host).collect(),
+        let mut used = self.session_hosts();
+        if self.session_host().is_none() {
+            used.extend(self.build_hosts().iter().map(|entry| &entry.host));
         }
+        used.dedup();
+        used
+    }
+
+    /// Every host sessions of this row run on: its own folder's, then each
+    /// offloaded worktree's, each once.
+    pub fn session_hosts(&self) -> Vec<&HostName> {
+        let mut hosts: Vec<&HostName> = Vec::new();
+        let own = self.session_host().map(|(host, _)| host);
+        let worktrees =
+            (self.worktrees.iter()).filter_map(|w| w.offload.as_ref().map(|on| &on.host));
+        for host in own.into_iter().chain(worktrees) {
+            if !hosts.contains(&host) {
+                hosts.push(host);
+            }
+        }
+        hosts
     }
 
     pub fn new(path: impl Into<PathBuf>) -> Self {
@@ -192,7 +210,12 @@ impl ProjectRoot {
                 .offload
                 .as_ref()
                 .map(|on| (&on.host, on.mirror.as_path())),
-            None => self.session_host(),
+            // The row's own folder runs where the row does; a folder the row
+            // no longer records (a worktree forgotten under a session) was
+            // never offloaded with it, so it runs here. A host's row has no
+            // folder but its own.
+            None if folder == self.path => self.session_host(),
+            None => None,
         }
     }
 
@@ -263,6 +286,11 @@ impl super::Workspace {
         (self.roots.iter().find(|root| root.holds(folder))).or_else(|| {
             (self.roots.iter()).find(|root| root.sessions.iter().any(|s| s.folder == folder))
         })
+    }
+
+    /// What the project whose row holds `folder` is called.
+    pub fn label_of_folder(&self, folder: &Path) -> Option<&str> {
+        self.row_of_folder(folder).map(|root| root.label.as_str())
     }
 
     /// Whether the sessions in `folder` run on this machine, the folder

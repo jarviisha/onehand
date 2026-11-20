@@ -52,6 +52,25 @@ impl Shell {
         }
     }
 
+    /// Mark a removal of `folder` under way; false when one already is.
+    fn start_removing(&mut self, folder: &Path, cx: &mut Context<Self>) -> bool {
+        let fresh = self.removing_worktrees.insert(folder.to_path_buf());
+        self.tell_removing(cx);
+        fresh
+    }
+
+    /// The removal of `folder` is over, or waits on the person's answer.
+    fn done_removing(&mut self, folder: &Path, cx: &mut Context<Self>) {
+        self.removing_worktrees.remove(folder);
+        self.tell_removing(cx);
+    }
+
+    fn tell_removing(&mut self, cx: &mut Context<Self>) {
+        let removing: Vec<PathBuf> = self.removing_worktrees.iter().cloned().collect();
+        self.chat
+            .update(cx, |pane, cx| pane.set_worktrees_removing(removing, cx));
+    }
+
     /// The project on screen's own folder, when it is on this machine.
     fn project_here(&self) -> Option<PathBuf> {
         self.window
@@ -106,6 +125,7 @@ impl Shell {
         then: impl FnOnce(&mut Self, PathBuf, Judging, &mut Window, &mut Context<Self>) + 'static,
     ) {
         let Some(root) = self.project_here() else {
+            self.done_removing(&folder, cx);
             return;
         };
         let own = crate::projects::of(&root, cx).map(|project| project.id);
@@ -169,12 +189,18 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if !self.start_removing(&folder, cx) {
+            return;
+        }
         self.judge_worktree(folder, window, cx, |shell, folder, judging, window, cx| {
+            shell.done_removing(&folder, cx);
             let (facts, judged, merged) = (judging.facts, judging.judged, judging.merged);
             let at = facts.folder.display().to_string();
             let named = facts.branch.clone().unwrap_or_else(|| at.clone());
             let branch = match (&facts.branch, merged) {
-                (Some(branch), true) => format!(" Its branch {branch} goes with it: it is merged."),
+                (Some(branch), true) => {
+                    format!(" Its branch {branch} goes with it, unless git keeps it.")
+                }
                 (Some(branch), false) => format!(" Its branch {branch} is kept: it is not merged."),
                 (None, _) => " It is on no branch.".to_string(),
             };
@@ -208,35 +234,50 @@ impl Shell {
         let Some(root) = self.project_here() else {
             return;
         };
-        self.judge_worktree(folder, window, cx, move |_, folder, judging, window, cx| {
-            use onehand_core::project::drive::Removal;
-            let branch = match judging.judged {
-                Judged::Remove { branch, .. } => branch,
-                Judged::Refused(why) => {
-                    let refused = Removal::Refused(why);
-                    return crate::projects::worktree_removal(&root, &folder, refused, window, cx);
-                }
-            };
-            let top = judging.facts.folder;
-            cx.spawn_in(window, async move |_, cx| {
-                let result = cx
-                    .background_executor()
-                    .spawn({
-                        let (root, top, branch) = (root.clone(), top.clone(), branch.clone());
-                        async move { removal::remove_own_blocking(&root, &top, branch.as_deref()) }
-                    })
-                    .await;
-                let _ = cx.update(|window, cx| {
-                    let done = Removal::Done {
-                        top,
-                        branch,
-                        result,
-                    };
-                    crate::projects::worktree_removal(&root, &folder, done, window, cx);
-                });
-            })
-            .detach();
-        });
+        if !self.start_removing(&folder, cx) {
+            return;
+        }
+        self.judge_worktree(
+            folder,
+            window,
+            cx,
+            move |shell, folder, judging, window, cx| {
+                use onehand_core::project::drive::Removal;
+                let branch = match judging.judged {
+                    Judged::Remove { branch, .. } => branch,
+                    Judged::Refused(why) => {
+                        shell.done_removing(&folder, cx);
+                        let refused = Removal::Refused(why);
+                        return crate::projects::worktree_removal(
+                            &root, &folder, refused, window, cx,
+                        );
+                    }
+                };
+                let top = judging.facts.folder;
+                cx.spawn_in(window, async move |shell, cx| {
+                    let result =
+                        cx.background_executor()
+                            .spawn({
+                                let (root, top, branch) =
+                                    (root.clone(), top.clone(), branch.clone());
+                                async move {
+                                    removal::remove_own_blocking(&root, &top, branch.as_deref())
+                                }
+                            })
+                            .await;
+                    let _ = shell.update(cx, |shell, cx| shell.done_removing(&folder, cx));
+                    let _ = cx.update(|window, cx| {
+                        let done = Removal::Done {
+                            top,
+                            branch,
+                            result,
+                        };
+                        crate::projects::worktree_removal(&root, &folder, done, window, cx);
+                    });
+                })
+                .detach();
+            },
+        );
     }
 }
 
