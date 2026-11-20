@@ -474,10 +474,7 @@ fn an_unknown_tool_is_a_protocol_error() {
 
 #[test]
 fn a_name_two_projects_share_is_refused_naming_both() {
-    let projects = vec![
-        ("app".to_string(), PathBuf::from("/one/app")),
-        ("app".to_string(), PathBuf::from("/two/app")),
-    ];
+    let projects = vec![Named::new("app", "/one/app"), Named::new("app", "/two/app")];
     let why = pick_project(&projects, "app").unwrap_err();
     assert!(
         why.contains("/one/app") && why.contains("/two/app"),
@@ -492,8 +489,8 @@ fn a_name_two_projects_share_is_refused_naming_both() {
 #[test]
 fn a_project_is_found_by_path_or_name() {
     let projects = vec![
-        ("app".to_string(), PathBuf::from("/one/app")),
-        ("site".to_string(), PathBuf::from("/one/site")),
+        Named::new("app", "/one/app"),
+        Named::new("site", "/one/site"),
     ];
     assert_eq!(
         pick_project(&projects, "site").unwrap(),
@@ -506,6 +503,25 @@ fn a_project_is_found_by_path_or_name() {
     assert!(pick_project(&projects, "nope")
         .unwrap_err()
         .contains("nope"));
+}
+
+#[test]
+fn a_worktree_folder_names_its_project() {
+    let projects = vec![Named {
+        name: "app".into(),
+        path: PathBuf::from("/one/app"),
+        worktrees: vec![("feat".into(), PathBuf::from("/one/app-feat"))],
+    }];
+    assert_eq!(
+        pick_project(&projects, "/one/app-feat/").unwrap(),
+        Path::new("/one/app-feat"),
+        "the folder named"
+    );
+    assert_eq!(
+        pick_project(&projects, "app").unwrap(),
+        Path::new("/one/app"),
+        "by name, the project's own"
+    );
 }
 
 #[test]

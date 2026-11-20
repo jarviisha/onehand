@@ -18,8 +18,8 @@ fn asked(prompt: &str) -> Open {
     }
 }
 
-fn projects() -> Vec<(String, PathBuf)> {
-    vec![("repo".into(), PathBuf::from("/repo"))]
+fn projects() -> Vec<crate::control::Named> {
+    vec![crate::control::Named::new("repo", "/repo")]
 }
 
 fn resolved() -> Resolved {

@@ -69,7 +69,7 @@ fn an_opens_deadline_comes_round_and_frees_its_request(cx: &mut TestAppContext) 
         name: None,
         back: None,
     };
-    let projects = vec![("repo".to_string(), PathBuf::from("/repo"))];
+    let projects = vec![onehand_core::control::Named::new("repo", "/repo")];
     let Ok(Begun::Resolve { fx, .. }) = drive().open_worker(open(), &projects, None) else {
         panic!("a new request");
     };
@@ -288,8 +288,8 @@ fn a_sessions_call_lands_in_its_window_not_the_one_in_front(cx: &mut TestAppCont
     let _ = std::fs::remove_dir_all(dir);
 }
 
-/// A project's folders share its one issues file: an issue written on its
-/// worktree's row is the project's, and the workspace page lists it once.
+/// A project's folders share its one issues file: an issue written through
+/// the project's name is the project's, and the workspace page lists it once.
 #[gpui::test]
 fn a_projects_folders_share_one_issues_file(cx: &mut TestAppContext) {
     use crate::shell::rig;
@@ -332,7 +332,7 @@ fn a_projects_folders_share_one_issues_file(cx: &mut TestAppContext) {
     );
     rig::show_workspace(&shell, cx);
     let call = Call::CreateIssue {
-        project: Some("p-x".into()),
+        project: Some("p".into()),
         title: "Crash".into(),
         body: String::new(),
     };
@@ -350,6 +350,51 @@ fn a_projects_folders_share_one_issues_file(cx: &mut TestAppContext) {
         std::thread::sleep(Duration::from_millis(10));
     }
     assert_eq!(rig::workspace_issues(&shell, cx), ["Crash"], "listed once");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// `open_session` naming a worktree's folder starts there, on its project's
+/// row, and `list_projects` names the project's worktrees.
+#[gpui::test]
+fn open_session_on_a_worktree_folder_starts_there(cx: &mut TestAppContext) {
+    use crate::shell::rig;
+    use onehand_core::project::{MadeBy, Project, ProjectId, Worktree};
+    let dir = rig::folder("open-in-worktree");
+    let (handle, shell, cx) = rig::shell(cx, dir.join("tasks"), vec![rig::nowhere()]);
+    let (home, worktree) = (dir.join("p"), dir.join("p-x"));
+    for folder in [&home, &worktree] {
+        std::fs::create_dir_all(folder).unwrap();
+    }
+    let (home, worktree) = (
+        std::fs::canonicalize(home).unwrap(),
+        std::fs::canonicalize(worktree).unwrap(),
+    );
+    let mut project = Project::new(ProjectId::mint(910_005), None, home.clone());
+    project.worktrees.push(Worktree {
+        path: worktree.clone(),
+        branch: "x".into(),
+        from: None,
+        made_by: MadeBy::Split,
+        offload: None,
+    });
+    rig::keep_projects(handle, &shell, vec![project], cx);
+    let at = home.clone();
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
+    let listed = ask(Peer::Outside, Call::ListProjects, cx).expect("listed");
+    assert!(listed.contains("— worktrees: x"), "{listed}");
+    let call = Call::OpenSession {
+        project: worktree.display().to_string(),
+        agent: "nowhere".into(),
+        prompt: None,
+    };
+    ask(Peer::Outside, call, cx).expect("opened");
+    cx.update(|_, cx| {
+        let workspace = &shell.read(cx).workspace_window().workspace;
+        let row = workspace.local_index(&home).expect("the project's row");
+        let session = workspace.roots[row].sessions.last().expect("a session");
+        assert_eq!(session.folder, worktree);
+        assert_eq!(workspace.local_index(&worktree), Some(row));
+    });
     let _ = std::fs::remove_dir_all(dir);
 }
 

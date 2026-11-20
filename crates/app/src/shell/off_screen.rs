@@ -57,10 +57,32 @@ impl Shell {
         self.roots_where(|root| root.runs_here())
     }
 
+    /// The projects onehand's tools reach, each with its worktrees: those on
+    /// this machine whose sessions run here.
+    pub fn tool_projects(&self) -> Vec<onehand_core::control::Named> {
+        self.named_where(|root| root.runs_here())
+    }
+
     /// The projects on a host, or offloaded to one, which onehand's tools
     /// refuse by name.
-    pub fn host_roots(&self) -> Vec<(PathBuf, String)> {
-        self.roots_where(|root| !root.runs_here())
+    pub fn tool_hosted(&self) -> Vec<onehand_core::control::Named> {
+        self.named_where(|root| !root.runs_here())
+    }
+
+    fn named_where(
+        &self,
+        keep: impl Fn(&onehand_core::workspace::ProjectRoot) -> bool,
+    ) -> Vec<onehand_core::control::Named> {
+        (self.window.workspace.roots.iter())
+            .filter(|root| keep(root))
+            .map(|root| onehand_core::control::Named {
+                name: root.label.clone(),
+                path: root.path.clone(),
+                worktrees: (root.worktrees.iter())
+                    .map(|w| (w.branch.clone(), w.path.clone()))
+                    .collect(),
+            })
+            .collect()
     }
 
     fn roots_where(

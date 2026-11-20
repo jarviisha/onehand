@@ -414,7 +414,12 @@ impl ControlDrive {
     /// ended read closed to it from now on, and each worker it still held
     /// comes back, in the order kept, through the checks an open runs. One
     /// that cannot ends, its handle reading closed with why.
-    pub fn back(&mut self, lead: u64, kept: Kept, projects: &[(String, PathBuf)]) -> Vec<Begun> {
+    pub fn back(
+        &mut self,
+        lead: u64,
+        kept: Kept,
+        projects: &[crate::control::Named],
+    ) -> Vec<Begun> {
         // Oldest first, as kept, so the newest stay.
         for closed in kept.closed {
             self.close_record(closed.handle, lead, closed.why);

@@ -108,6 +108,15 @@ minor bump may break any of them.
 
 ### The window
 
+- A project is one row in the rail: its worktrees are no longer rows of their own, and a session
+  running in one carries the branch mark and the branch's name on its line. *New session* starts
+  beside the session on screen in its folder, its menu offers *In <branch>* for each worktree, a
+  worktree split off a project opens with a session in it, and the Workbench, the terminal and the
+  git badges follow the folder of the session on screen. A workspace file written by an earlier
+  build opens with each project's entries folded into one row, pinned when any was.
+- onehand's tools name a project by its name, its folder or one of its worktrees' folders:
+  `open_session` and `open_worker` named by a worktree start there, and `list_projects` lists a
+  project's worktrees.
 - A project has a name of its own: *Rename project…* on its row's menu and its page's dots menu
   renames it in every window holding it, and its folder keeps its own name.
 - A subagent is one line in the conversation: its name, what it is doing or how it ended, its

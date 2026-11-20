@@ -200,7 +200,10 @@ fn an_open_whose_window_closed_before_its_start_says_so(cx: &mut TestAppContext)
     let project = dir.join("project");
     std::fs::create_dir_all(&project).unwrap();
     let _worker_events = canned(cx);
-    let projects = vec![("project".to_string(), project.clone())];
+    let projects = vec![onehand_core::control::Named::new(
+        "project",
+        project.clone(),
+    )];
     let (tx, mut answer) = oneshot::channel();
     // Asked from the rig's window, which goes before the folder's read lands.
     cx.update(|window, cx| {
