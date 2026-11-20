@@ -182,7 +182,7 @@ pub fn switch(
         .w_full()
         .rounded(cx.theme().radius)
         .bg(segment_fills(cx.theme()).track)
-        .p_0p5()
+        .p_1()
         .gap_0p5()
         .children(labels.iter().enumerate().map(|(i, label)| {
             let pick = pick.clone();
@@ -209,7 +209,7 @@ pub fn choice_track(choices: impl IntoIterator<Item = impl IntoElement>, cx: &Ap
         .max_w_full()
         .rounded(cx.theme().radius)
         .bg(segment_fills(cx.theme()).track)
-        .p_0p5()
+        .p_1()
         .gap_0p5()
         .children(choices)
 }
