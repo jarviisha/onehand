@@ -427,18 +427,20 @@ another thing, under *Builds on a host*. Every attach opens by exchanging servic
 A session left alone on a host does not stand still on a card: while a folder's switch is on, the
 host service answers every card its sessions park, so the work goes on while nobody watches.
 
-- **One switch per host project, on by default,** *Answer cards on the host*, in the *Settings*
-  box of its project page (see [screens.md](screens.md#pages-without-a-session)). The host keeps
+- **One switch per host project, on by default,** drawn as its page's *Cards* chip, at the end of
+  the *Start in* strip under its composer, with two levels: *Bypass* (on) and *Manual* (off) (see
+  [screens.md](screens.md#pages-without-a-session)). A session on a host has no *Cards* chip of
+  its own: the host answers per folder. The host keeps
   it, per folder, in `bypass.json` in its data directory, as the folders switched off; a folder
   it never heard of is on (`Hub::bypass`, `crates/host/src/hub.rs`). A `bypass.json` that cannot
   be read is not taken for none kept: the host answers no card at all and refuses to change the
   switch, saying why in `host.log`, until a person mends or removes the file. So it holds while the laptop
   is away, through a restart of the service, and for whichever laptop attaches. The page reads it
-  over the attach with the session list (the wire's `Bypass`, `HostConn::bypass`) and draws no box
+  over the attach with the session list (the wire's `Bypass`, `HostConn::bypass`) and draws no chip
   while it has not; a press shows the new state at once, and a host that does not take it puts
   the switch back with a toast, *Changing the switch on <host> failed: …*.
-- **What it costs is said under it, always:** an agent can then do anything the host's user can
-  on that host, `git push` and deleting files included. This is deliberate for hosts, a machine
+- **What it costs is said under the strip while it is on:** an agent can then do anything the
+  host's user can on that host, `git push` and deleting files included. This is deliberate for hosts, a machine
   apart from the laptop.
 - **A permission is allowed** with its narrowest grant, *allow once* before *allow always*
   (`PermissionRequest::bypass_answer`, `crates/core/src/acp/types.rs`). One with no grant to give

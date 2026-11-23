@@ -582,13 +582,6 @@ impl ChatPane {
                     .is_some()
                     .then(|| offload_box::offload_box(&project.path, cx))
                     .flatten(),
-            )
-            .children(
-                project
-                    .host
-                    .as_ref()
-                    .zip(project.bypass)
-                    .map(|(host, on)| host::bypass_box(host, on, cx)),
             );
 
         div()
