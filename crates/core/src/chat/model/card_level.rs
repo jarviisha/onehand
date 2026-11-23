@@ -84,20 +84,47 @@ const GUARDED: [&str; 4] = [".git", ".claude", ".codex", ".gemini"];
 /// absolute, inside `root` with no step out of it, and in none of the
 /// guarded folders. Nothing named is nothing allowed.
 fn inside(paths: &[std::path::PathBuf], root: &Path) -> bool {
+    // Where the folder really is, links resolved: a path spelled inside it
+    // through a link that leads out lands out of it.
+    let Ok(real_root) = root.canonicalize() else {
+        return false;
+    };
     !paths.is_empty()
         && paths.iter().all(|path| {
-            let Ok(rest) = path.strip_prefix(root) else {
-                return false;
-            };
             path.is_absolute()
-                && rest.components().all(|part| match part {
-                    Component::Normal(name) => !GUARDED
-                        .iter()
-                        .any(|guarded| name == std::ffi::OsStr::new(guarded)),
-                    Component::CurDir => true,
-                    Component::ParentDir | Component::RootDir | Component::Prefix(_) => false,
-                })
+                && within(path, root)
+                && landing(path).is_some_and(|real| within(&real, &real_root))
         })
+}
+
+/// Whether `path` is under `root` with no step out of it and in none of the
+/// guarded folders, as it is spelled.
+fn within(path: &Path, root: &Path) -> bool {
+    let Ok(rest) = path.strip_prefix(root) else {
+        return false;
+    };
+    rest.components().all(|part| match part {
+        Component::Normal(name) => !GUARDED
+            .iter()
+            .any(|guarded| name == std::ffi::OsStr::new(guarded)),
+        Component::CurDir => true,
+        Component::ParentDir | Component::RootDir | Component::Prefix(_) => false,
+    })
+}
+
+/// Where work at `path` lands: its nearest folder that is there, links
+/// resolved, then the rest of it as written, which is yet to be made.
+/// Blocking: a stat per step, a handful for one card.
+fn landing(path: &Path) -> Option<std::path::PathBuf> {
+    let mut there = path;
+    let mut rest = Vec::new();
+    loop {
+        if let Ok(real) = there.canonicalize() {
+            return Some(rest.iter().rev().fold(real, |at, part| at.join(part)));
+        }
+        rest.push(there.file_name()?.to_os_string());
+        there = there.parent()?;
+    }
 }
 
 impl Chat {

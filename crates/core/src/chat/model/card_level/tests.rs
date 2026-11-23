@@ -6,8 +6,15 @@ fn up() -> (Chat, UnboundedReceiver<AcpRequest>) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let mut chat = Chat::default();
     chat.tx = Some(tx);
-    chat.root = "/work/app".into();
+    chat.root = work();
     (chat, rx)
+}
+
+/// A real folder standing for a session's, so its links can be resolved.
+fn work() -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("onehand-cards-work-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    dir.canonicalize().unwrap()
 }
 
 fn asks(kind: ToolKind) -> AcpEvent {
@@ -20,7 +27,14 @@ fn asks_at(kind: ToolKind, paths: &[&str]) -> AcpEvent {
         tool_call_id: None,
         kind,
         child: None,
-        locations: paths.iter().map(std::path::PathBuf::from).collect(),
+        // Written against `/work/app`, the session's folder in these tests.
+        locations: paths
+            .iter()
+            .map(|path| match path.strip_prefix("/work/app") {
+                Some(rest) => std::path::PathBuf::from(format!("{}{rest}", work().display())),
+                None => std::path::PathBuf::from(path),
+            })
+            .collect(),
         title: "do it".into(),
         options: vec![
             PermissionOption {
@@ -136,4 +150,36 @@ fn allow_edits_stays_inside_the_folder() {
         &["/work/app/README.md", "/work/app/src"],
     ));
     assert_eq!(granted(&mut chat).as_deref(), Some("allow-1"));
+}
+
+/// A link inside the folder that leads out of it is out of it: what counts
+/// is where the work lands, not how its path is spelled.
+#[test]
+fn allow_edits_follows_links_out_of_the_folder() {
+    let base = std::env::temp_dir().join(format!("onehand-cards-links-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let (root, elsewhere) = (base.join("work"), base.join("elsewhere"));
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, root.join("out")).unwrap();
+    std::os::unix::fs::symlink(root.join(".git-real"), root.join("hooks-link")).ok();
+    let ask = |path: std::path::PathBuf| {
+        let (mut chat, _rx) = up();
+        chat.root = root.clone();
+        chat.set_cards(Cards::AllowEdits);
+        chat.apply(asks_at(ToolKind::Edit, &[path.to_str().unwrap()]));
+        granted(&mut chat)
+    };
+    assert_eq!(ask(root.join("out/x.rs")), None, "a link out of the folder");
+    assert_eq!(
+        ask(root.join("src/new.rs")).as_deref(),
+        Some("allow-1"),
+        "a new file in it"
+    );
+    assert_eq!(
+        ask(root.join("a/b/c.rs")).as_deref(),
+        Some("allow-1"),
+        "folders yet to be made"
+    );
+    let _ = std::fs::remove_dir_all(base);
 }
