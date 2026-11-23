@@ -3,6 +3,7 @@
 
 pub mod call;
 pub mod drive;
+pub mod shim;
 
 use std::path::PathBuf;
 

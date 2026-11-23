@@ -96,7 +96,14 @@ impl TerminalRegistry {
     }
 
     /// `terminal/create`: spawn the command in a PTY, returning `{ terminalId }`.
-    pub(crate) fn create(&mut self, params: &Value, default_cwd: &Path) -> Result<Value, String> {
+    /// `extra_env` is what onehand adds to every terminal; the request's own
+    /// `env` is set after it, so a name the agent gives wins.
+    pub(crate) fn create(
+        &mut self,
+        params: &Value,
+        default_cwd: &Path,
+        extra_env: &[(String, String)],
+    ) -> Result<Value, String> {
         let command = params
             .get("command")
             .and_then(Value::as_str)
@@ -137,6 +144,9 @@ impl TerminalRegistry {
             cmd.arg(a);
         }
         cmd.cwd(&cwd);
+        for (k, v) in extra_env {
+            cmd.env(k, v);
+        }
         if let Some(env) = params.get("env").and_then(Value::as_array) {
             for e in env {
                 if let (Some(k), Some(v)) = (
@@ -375,6 +385,7 @@ mod tests {
             .create(
                 &serde_json::json!({ "command": "sh", "args": ["-c", script] }),
                 &std::env::temp_dir(),
+                &[],
             )
             .unwrap();
         let id = made["terminalId"].as_str().unwrap().to_string();
@@ -396,6 +407,47 @@ mod tests {
             !marker.exists(),
             "a child of the released command still ran"
         );
+    }
+
+    /// What onehand adds to a terminal's environment reaches the command,
+    /// and what the agent's request names itself wins over it.
+    #[cfg(unix)]
+    #[test]
+    fn acp_terminal_gets_the_extra_env() {
+        let (tx, _rx) = tokio::sync::mpsc::channel(256);
+        let mut registry = super::TerminalRegistry::new(tx);
+        let extra = [("PATH".to_string(), "X".to_string())];
+        let printed = |registry: &mut super::TerminalRegistry, params: serde_json::Value| {
+            let made = registry
+                .create(&params, &std::env::temp_dir(), &extra)
+                .unwrap();
+            let id = made["terminalId"].as_str().unwrap().to_string();
+            let started = std::time::Instant::now();
+            loop {
+                let out = registry.output(&id).unwrap();
+                let text = out["output"].as_str().unwrap().trim().to_string();
+                if !out["exitStatus"].is_null() && !text.is_empty() {
+                    return text;
+                }
+                assert!(started.elapsed() < std::time::Duration::from_secs(5));
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        };
+        let echo = serde_json::json!(["-c", "echo $PATH"]);
+        let ours = printed(
+            &mut registry,
+            serde_json::json!({ "command": "/bin/sh", "args": echo }),
+        );
+        assert_eq!(ours, "X");
+        let theirs = printed(
+            &mut registry,
+            serde_json::json!({
+                "command": "/bin/sh",
+                "args": echo,
+                "env": [{ "name": "PATH", "value": "Y" }],
+            }),
+        );
+        assert_eq!(theirs, "Y");
     }
 
     #[test]

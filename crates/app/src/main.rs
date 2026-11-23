@@ -55,6 +55,17 @@ fn main() {
         };
         std::process::exit(code);
     }
+    // A build command an agent ran through its shim, handed to the running
+    // onehand. Before the lock too: it is a command, never a window.
+    if let [_, flag, socket, program, args @ ..] = args.as_slice()
+        && flag == "--route"
+    {
+        std::process::exit(onehand_core::host::route::shim::route_main(
+            socket.as_ref(),
+            program,
+            args,
+        ));
+    }
     shell::hold_or_forward();
 
     gpui_platform::application()

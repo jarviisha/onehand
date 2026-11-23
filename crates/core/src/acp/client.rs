@@ -73,6 +73,9 @@ pub struct SessionOpts {
     /// `additionalDirectories`: none for most sessions, which then send no
     /// such key at all.
     pub dirs: Vec<PathBuf>,
+    /// What every terminal the agent asks for gets in its environment,
+    /// before what the request sets itself.
+    pub term_env: Vec<(String, String)>,
 }
 
 /// What a fork that did not open says first.
@@ -603,12 +606,12 @@ impl Conn {
         id: &Value,
         params: &Value,
     ) -> Result<(), String> {
-        let (cwd, registry) = (&self.opts.cwd, &mut self.registry);
+        let (cwd, term_env, registry) = (&self.opts.cwd, &self.opts.term_env, &mut self.registry);
         let term_id = params.get("terminalId").and_then(Value::as_str);
 
         // Answer-now methods return a Result; `wait_for_exit` is handled specially.
         let inline: Option<Result<Value, String>> = match method {
-            "create" => Some(registry.create(params, cwd)),
+            "create" => Some(registry.create(params, cwd, term_env)),
             "output" => {
                 Some(term_id.map_or(Err("missing terminalId".into()), |t| registry.output(t)))
             }

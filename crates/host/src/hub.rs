@@ -199,6 +199,7 @@ impl Hub {
             opening,
             mcp_servers: vec![],
             dirs: vec![],
+            term_env: Vec::new(),
         };
         let events = connector(launch, opts);
         // Spawned with the hub held, so the session is never without its

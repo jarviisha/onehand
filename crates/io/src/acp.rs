@@ -23,6 +23,7 @@ use onehand_core::acp::{self, AcpEvent};
 use onehand_core::config::AgentSpec;
 use onehand_core::host::client::HostConn;
 use onehand_core::host::copy;
+use onehand_core::host::route;
 use onehand_core::host::wire::HostSession;
 use onehand_core::workspace::HostName;
 use std::cell::RefCell;
@@ -275,18 +276,32 @@ impl<P: Pass> AcpRuntime<P> {
         let launch = spec.launch(std::env::var_os("PATH").as_deref());
 
         self.rt.spawn(async move {
-            let launch = match launch {
+            let mut launch = match launch {
                 Ok(launch) => launch,
                 Err(why) => {
                     let _ = tx.send(AcpEvent::Disconnected(why)).await;
                     return;
                 }
             };
+            // The shims first on the agent's PATH and its terminals', so a
+            // build command it runs reaches onehand. Only here, on this
+            // machine: an agent on a host builds where it is.
+            let path = tokio::task::spawn_blocking(route::shim::agent_path_blocking)
+                .await
+                .ok()
+                .flatten();
+            let mut term_env = Vec::new();
+            if let Some(path) = path {
+                let path = ("PATH".to_string(), path.to_string_lossy().into_owned());
+                launch.env.push(path.clone());
+                term_env.push(path);
+            }
             let opts = acp::SessionOpts {
                 cwd,
                 opening,
                 mcp_servers,
                 dirs,
+                term_env,
             };
             forward(acp::connect(launch, opts), tx, alive).await;
         });

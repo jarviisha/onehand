@@ -20,7 +20,7 @@ const LINE: &str = "onehand/line";
 
 /// The line a shim sends: run `program` with `args` from `cwd`, made
 /// absolute because the process reading it has a working folder of its own.
-pub fn route_request(program: &str, args: &[String], cwd: &Path) -> String {
+pub(crate) fn route_request(program: &str, args: &[String], cwd: &Path) -> String {
     let cwd = std::path::absolute(cwd).unwrap_or_else(|_| cwd.to_path_buf());
     let params = json!({"program": program, "args": args, "cwd": cwd.to_string_lossy()});
     json!({"jsonrpc": "2.0", "id": 1, "method": METHOD, "params": params}).to_string()
@@ -175,6 +175,12 @@ pub fn client_blocking(
             }
             let fell_back = result["fell_back"].as_bool().unwrap_or(false);
             return Ok(RouteEnd::Here { fell_back });
+        }
+        // An answer with no result is an error: a onehand that does not
+        // know the call, which would otherwise be waited on for ever.
+        if msg.get("id").is_some() {
+            let why = msg["error"]["message"].as_str().map(str::to_string);
+            return Err(Unreached::Gone(why.unwrap_or_else(|| msg.to_string())));
         }
         let params = &msg["params"];
         if let Some(text) = params["out"].as_str() {

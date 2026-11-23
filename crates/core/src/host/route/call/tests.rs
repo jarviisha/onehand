@@ -94,3 +94,31 @@ fn a_relative_folder_runs_here() {
     );
     assert_eq!(end, RouteEnd::Here { fell_back: false });
 }
+
+#[test]
+fn client_ends_on_an_error_reply() {
+    let path = socket_path("error");
+    let listener = UnixListener::bind(&path).unwrap();
+    let served = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut first = String::new();
+        std::io::BufReader::new(&stream)
+            .read_line(&mut first)
+            .unwrap();
+        let error =
+            r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"no such method"}}"#;
+        writeln!(stream, "{error}").unwrap();
+        // Held open: a client that waits for more would hang here.
+        std::thread::sleep(std::time::Duration::from_secs(5));
+    });
+    let end = client_blocking(
+        &path,
+        "cargo",
+        &[],
+        Path::new("/p"),
+        &mut Vec::new(),
+        &mut Vec::new(),
+    );
+    assert_eq!(end, Err(Unreached::Gone("no such method".into())));
+    drop(served);
+}
