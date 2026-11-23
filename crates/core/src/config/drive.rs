@@ -118,6 +118,9 @@ pub struct Settings {
     /// started with. For this process only: a restart forgets, so an adapter
     /// upgraded meanwhile is looked at afresh.
     pub offers_seen: Vec<(AgentSpec, Offer)>,
+    /// What each agent offered when a session of it last came up, by its
+    /// name, kept across launches.
+    facts: super::FactsFile,
     /// The checks under way, or the last one that failed, per spec.
     pub checks: Vec<(AgentSpec, Checking)>,
     /// What the last *Test* of each command line found, or that it runs.
@@ -361,6 +364,32 @@ impl SettingsDrive {
 
     /// `spec` came up offering `offer`: what was learned of it before is
     /// replaced.
+    /// Take what the file kept of each agent, read at launch.
+    pub fn know_facts(&mut self, file: super::FactsFile) {
+        self.settings.facts = file;
+    }
+
+    /// What the agent called `name` offered when a session of it last came
+    /// up, if one has.
+    pub fn facts_of(&self, name: &str) -> Option<&super::AgentFacts> {
+        self.settings.facts.agents.get(name)
+    }
+
+    /// A session of the agent called `name` offers `facts`: kept, and the
+    /// whole file to write when that changed what was kept.
+    #[must_use = "a change is to be written"]
+    pub fn saw_facts(
+        &mut self,
+        name: String,
+        facts: super::AgentFacts,
+    ) -> Option<super::FactsFile> {
+        if self.settings.facts.agents.get(&name) == Some(&facts) {
+            return None;
+        }
+        self.settings.facts.agents.insert(name, facts);
+        Some(self.settings.facts.clone())
+    }
+
     pub fn saw_offer(&mut self, spec: AgentSpec, offer: Offer) {
         self.settings.offers_seen.retain(|(seen, _)| *seen != spec);
         self.settings.offers_seen.push((spec, offer));

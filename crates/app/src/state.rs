@@ -95,12 +95,13 @@ impl Shared {
     }
 
     fn with_recents(cfg: AppConfig, config_path: PathBuf, recents: RecentsDrive) -> Self {
+        let mut settings =
+            onehand_core::config::drive::SettingsDrive::new(cfg.agents, cfg.appearance, cfg.hosts);
+        settings.know_facts(onehand_core::config::FactsFile::load_from(
+            &onehand_core::config::FactsFile::path(),
+        ));
         Self {
-            settings: onehand_core::config::drive::SettingsDrive::new(
-                cfg.agents,
-                cfg.appearance,
-                cfg.hosts,
-            ),
+            settings,
             on_machine: onehand_core::config::on_machine(std::env::var_os("PATH").as_deref()),
             config_path,
             keymap: cfg.keymap,

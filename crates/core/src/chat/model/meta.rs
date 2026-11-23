@@ -371,6 +371,18 @@ impl Chat {
     /// actually advertises -- the protocol-shaped [`Chat::modes`] /
     /// [`Chat::config_options`] are no use to a caller outside the chat that
     /// just wants the ids.
+    /// What the agent offers, as a project's page keeps it for the agent's
+    /// next session: its modes, its config groups as they stand, its `/`
+    /// commands.
+    pub fn facts(&self) -> crate::config::AgentFacts {
+        crate::config::AgentFacts {
+            modes: self.modes.clone(),
+            current_mode: self.current_mode.clone(),
+            options: self.config_options.clone(),
+            commands: self.commands.clone(),
+        }
+    }
+
     pub fn offer(&self) -> Offer {
         Offer {
             modes: self.modes.iter().map(|m| m.id.clone()).collect(),

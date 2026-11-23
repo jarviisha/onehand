@@ -648,7 +648,26 @@ impl ChatSession {
                 // before it brings an agent up.
                 Effect::OfferChanged => {
                     let (spec, offer) = (self.agent.clone(), self.chat.offer());
-                    cx.update_global::<Shared, _>(|s, _| s.settings.saw_offer(spec, offer));
+                    let (name, facts) = (spec.name.clone(), self.chat.facts());
+                    let changed = cx.update_global::<Shared, _>(|s, _| {
+                        s.settings.saw_offer(spec, offer);
+                        s.settings.saw_facts(name, facts)
+                    });
+                    // Kept for a project's page, the whole file each time, in
+                    // order with the other settings' writes.
+                    if let Some(file) = changed {
+                        let path = onehand_core::config::FactsFile::path();
+                        let written = Shared::global(cx)
+                            .writer
+                            .write(move || file.save_to(&path).map_err(|e| e.to_string()));
+                        cx.background_executor()
+                            .spawn(async move {
+                                if let Err(why) = written.await {
+                                    eprintln!("onehand: the agents' facts were not written: {why}");
+                                }
+                            })
+                            .detach();
+                    }
                 }
                 Effect::Save(write) => {
                     cx.spawn(async move |session, cx| {
