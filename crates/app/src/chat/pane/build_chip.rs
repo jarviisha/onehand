@@ -16,6 +16,10 @@ use onehand_core::host::route::{Builds, builds, routable_hosts};
 use onehand_core::project::Project;
 use onehand_core::workspace::HostName;
 
+/// How many build hosts the menu lists before it says how many it left out,
+/// as Settings lists them.
+const HOSTS_SHOWN: usize = 20;
+
 /// The chip for `project`'s head; none for a project with no build host a
 /// command of it can be routed to.
 pub(super) fn build_chip(project: &Project, cx: &mut Context<ChatPane>) -> Option<AnyElement> {
@@ -49,8 +53,9 @@ pub(super) fn build_chip(project: &Project, cx: &mut Context<ChatPane>) -> Optio
         );
     }
     let id = project.id.clone();
+    let more = hosts.len().saturating_sub(HOSTS_SHOWN);
     let rows: Vec<(Option<HostName>, String)> = std::iter::once((None, "This machine".into()))
-        .chain(hosts.into_iter().map(|host| {
+        .chain(hosts.into_iter().take(HOSTS_SHOWN).map(|host| {
             let label = host.to_string();
             (Some(host), label)
         }))
@@ -67,6 +72,9 @@ pub(super) fn build_chip(project: &Project, cx: &mut Context<ChatPane>) -> Optio
                             pick(&id, host.clone(), window, cx)
                         }),
                 );
+            }
+            if more > 0 {
+                menu = menu.item(crate::controls::menu_label(format!("{more} more not shown")));
             }
             menu.separator().item(
                 crate::controls::menu_item("Build on hosts")
