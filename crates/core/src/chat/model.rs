@@ -14,6 +14,7 @@ use std::path::PathBuf;
 
 mod apply;
 mod background;
+mod card_level;
 mod fork;
 mod items;
 mod meta;
@@ -22,6 +23,7 @@ mod subagent;
 mod turn;
 pub use apply::{ApplyOutcome, Away, UserAsk};
 pub use background::{BackgroundItem, Level, Meter};
+pub use card_level::Cards;
 pub use fork::{fork_seed, ForkPoint, ForkSeed};
 pub(crate) use items::line_change_counts;
 pub use items::{
@@ -207,6 +209,8 @@ pub struct Chat {
     /// What a person picked for a fresh session before it connected, by
     /// group (`mode` for the mode): set once it does.
     start_picks: Vec<(String, String)>,
+    /// What this session answers of its cards by itself.
+    cards: card_level::Cards,
     /// Files staged with 📎 to send with the next prompt.
     /// Live terminals (ACP terminal extension), keyed by terminalId.
     pub terminals: HashMap<String, TermView>,

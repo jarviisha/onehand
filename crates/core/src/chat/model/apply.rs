@@ -199,7 +199,7 @@ impl Chat {
             AcpEvent::Background(_) | AcpEvent::SubagentEnded { .. } | AcpEvent::InChild { .. }
         ) && self.works_aside();
         let mut asked_end = false;
-        let asked_user = match event {
+        let mut asked_user = match event {
             AcpEvent::Permission(_) => Some(UserAsk::Permission),
             AcpEvent::Elicitation(_) => Some(UserAsk::Question),
             _ => None,
@@ -369,7 +369,11 @@ impl Chat {
                     req,
                     resolved: None,
                     asker,
-                }))
+                }));
+                // Answered by the session's level, it asks nobody.
+                if self.answer_alone(self.items.len() - 1) {
+                    asked_user = None;
+                }
             }
             AcpEvent::Elicitation(req) => {
                 self.consume_replay();
@@ -379,7 +383,10 @@ impl Chat {
                 self.items.push(ChatItem::Ask(AskItem {
                     asker,
                     ..AskItem::new(req)
-                }))
+                }));
+                if self.answer_alone(self.items.len() - 1) {
+                    asked_user = None;
+                }
             }
             AcpEvent::AvailableCommands(c) => self.commands = c,
             AcpEvent::Modes { current, available } => {

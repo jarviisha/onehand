@@ -23,6 +23,13 @@ impl SessionDrive {
         (now, self.sent(Vec::new()))
     }
 
+    /// Answer this session's cards at `level` from now on, and what waits
+    /// that it answers.
+    pub fn set_cards(&mut self, level: crate::chat::Cards) -> Vec<Effect> {
+        self.chat.set_cards(level);
+        self.sent(Vec::new())
+    }
+
     /// Arm `picks`, by group (`mode` for the mode), to be set once this
     /// session connects fresh, before a held prompt goes.
     pub fn arm_start_picks(&mut self, picks: Vec<(String, String)>) {

@@ -332,6 +332,7 @@ impl Chat {
         self.bounded = !snapshot.complete;
         self.custom_title = snapshot.title;
         self.last_activity = Some(snapshot.updated);
+        self.take_prefs_cards(&snapshot.prefs);
         self.arm_prefs(
             snapshot.prefs.mode,
             snapshot

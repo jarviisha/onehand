@@ -163,6 +163,13 @@ pub struct Prefs {
     pub(crate) mode: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) config: Vec<ConfigPick>,
+    /// What the conversation answered of its cards by itself.
+    #[serde(default, skip_serializing_if = "is_manual")]
+    pub(crate) cards: crate::chat::Cards,
+}
+
+fn is_manual(cards: &crate::chat::Cards) -> bool {
+    *cards == crate::chat::Cards::Manual
 }
 
 /// One config-option pick (`id` → chosen `value`).

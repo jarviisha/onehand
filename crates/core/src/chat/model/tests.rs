@@ -1655,6 +1655,7 @@ fn resuming_adopts_transcript_title_prefs_and_date() {
                 id: "effort".into(),
                 value: "high".into(),
             }],
+            ..Prefs::default()
         },
         items: Vec::new(),
         written: 0,
