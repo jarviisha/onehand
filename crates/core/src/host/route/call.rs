@@ -4,17 +4,19 @@
 
 use std::cell::RefCell;
 use std::io::{BufRead as _, Write};
+use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
 use serde_json::{json, Value};
 
-use super::drive::route_drive;
+use super::drive::{route_drive, RouteDrive};
 use super::{decide, Ask, Decision, Machine};
 use crate::config::HostOs;
 use crate::host::build::cli::{project_of_blocking, told};
 use crate::host::build::{build_cancellable, reachable_blocking, AskedBy, Job};
+use crate::workspace::HostName;
 
 const METHOD: &str = "onehand/route";
 const LINE: &str = "onehand/line";
@@ -74,16 +76,17 @@ pub fn said_line(said: &Said) -> Option<String> {
 /// How a routed run ended.
 #[derive(Debug, PartialEq, Eq)]
 pub enum RouteEnd {
-    /// The shim runs the command itself; `fell_back` when it was meant for
-    /// a host that did not answer.
-    Here { fell_back: bool },
+    /// The shim runs the command itself; `settled` when a command it starts
+    /// in turn runs here too without asking: builds on hosts are off, or the
+    /// host it was meant for did not answer.
+    Here { settled: bool },
     /// It ran on the host and came to this exit code.
     Exit(i32),
 }
 
 pub fn end_line(end: &RouteEnd) -> String {
     let result = match end {
-        RouteEnd::Here { fell_back } => json!({"run": "here", "fell_back": fell_back}),
+        RouteEnd::Here { settled } => json!({"run": "here", "settled": settled}),
         RouteEnd::Exit(code) => json!({"exit": code}),
     };
     json!({"jsonrpc": "2.0", "id": 1, "result": result}).to_string()
@@ -93,31 +96,18 @@ pub fn end_line(end: &RouteEnd) -> String {
 /// `emit` what it prints and what onehand says, until it ends or `cancel`
 /// is set.
 pub fn serve_blocking(ask: &Ask, emit: &mut dyn FnMut(Said), cancel: &AtomicBool) -> RouteEnd {
-    let here = RouteEnd::Here { fell_back: false };
     if !ask.cwd.is_absolute() {
-        return here;
+        return RouteEnd::Here { settled: false };
     }
     let found = project_of_blocking(&crate::config::config_dir(), &ask.cwd);
     let declared = crate::config::AppConfig::load_resolved().0.hosts;
     let hosts_on = route_drive().hosts_on();
     let routed = match decide(found, hosts_on, &Machine::this(&declared), ask) {
-        Decision::Here => return here,
+        Decision::Here { settled } => return RouteEnd::Here { settled },
         Decision::Host(routed) => routed,
     };
-    let host = &routed.host;
-    emit(Said::Note(format!("running on {host}")));
-    // A host that just did not answer is not asked again yet. Only Linux
-    // hosts are routed to.
-    let answered = !route_drive().recently_down(host, Instant::now()) && {
-        let answered = reachable_blocking(host);
-        if route_drive().reached(host, answered) {
-            emit(Said::Reached);
-        }
-        answered
-    };
-    if !answered {
-        emit(Said::Note(format!("{host} did not answer; building here")));
-        return RouteEnd::Here { fell_back: true };
+    if !take(&routed.host, route_drive, reachable_blocking, emit) {
+        return RouteEnd::Here { settled: true };
     }
     let job = Job {
         top: &routed.top,
@@ -143,6 +133,30 @@ pub fn serve_blocking(ask: &Ask, emit: &mut dyn FnMut(Said), cancel: &AtomicBool
             RouteEnd::Exit(1)
         }
     }
+}
+
+/// Whether `host` takes the run, said either way once it is known: a host
+/// that did not answer moments ago is not asked again yet, and one asked
+/// is `probe`d before any snapshot. `drive` is held only between asks, never
+/// across the probe's wait.
+fn take<G: DerefMut<Target = RouteDrive>>(
+    host: &HostName,
+    drive: impl Fn() -> G,
+    probe: impl FnOnce(&HostName) -> bool,
+    emit: &mut dyn FnMut(Said),
+) -> bool {
+    let answered = !drive().recently_down(host, Instant::now()) && {
+        let answered = probe(host);
+        if drive().reached(host, answered) {
+            emit(Said::Reached);
+        }
+        answered
+    };
+    emit(Said::Note(match answered {
+        true => format!("running on {host}"),
+        false => format!("{host} did not answer; building here"),
+    }));
+    answered
 }
 
 /// Why a shim's call never reached its end.
@@ -184,8 +198,8 @@ pub(crate) fn client_blocking(
             if let Some(code) = result["exit"].as_i64() {
                 return Ok(RouteEnd::Exit(code as i32));
             }
-            let fell_back = result["fell_back"].as_bool().unwrap_or(false);
-            return Ok(RouteEnd::Here { fell_back });
+            let settled = result["settled"].as_bool().unwrap_or(false);
+            return Ok(RouteEnd::Here { settled });
         }
         // An answer with no result is an error: a onehand that does not
         // know the call, which would otherwise be waited on for ever.

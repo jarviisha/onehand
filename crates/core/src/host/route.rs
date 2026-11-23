@@ -24,8 +24,11 @@ pub struct Ask {
 /// Where the command runs.
 #[derive(Debug)]
 pub(crate) enum Decision {
-    /// On this machine, as the agent asked.
-    Here,
+    /// On this machine, as the agent asked; `settled` when what it starts
+    /// in turn runs here too without asking, as with builds on hosts off.
+    Here {
+        settled: bool,
+    },
     Host(Routed),
 }
 
@@ -73,26 +76,26 @@ pub(crate) fn decide(
         within,
     }) = found
     else {
-        return Decision::Here;
+        return Decision::Here { settled: false };
     };
     if !hosts_on {
-        return Decision::Here;
+        return Decision::Here { settled: true };
     }
     let Some(host) = picked(&project, machine) else {
-        return Decision::Here;
+        return Decision::Here { settled: false };
     };
     let Some(route) = project
         .routes
         .iter()
         .find(|route| route.matches(&ask.program, &ask.args))
     else {
-        return Decision::Here;
+        return Decision::Here { settled: false };
     };
     let words: Vec<String> = std::iter::once(ask.program.clone())
         .chain(ask.args.iter().cloned())
         .collect();
     let Ok(command) = command_line(&words, &HostOs::Linux) else {
-        return Decision::Here;
+        return Decision::Here { settled: false };
     };
     Decision::Host(Routed {
         entry: BuildHost {

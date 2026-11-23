@@ -10,12 +10,16 @@ use std::path::{Path, PathBuf};
 use super::call::{client_blocking, RouteEnd, Unreached};
 use crate::host::build::shell::Shell;
 
-/// Set for a command run here because its route fell through, so a shim it
-/// starts in turn runs here at once rather than asking again.
+/// Set for a command run here once its route was settled (builds on hosts
+/// off, or the host or onehand out of reach), so a shim it starts in turn
+/// runs here at once rather than asking again.
 const ROUTED_HERE: &str = "ONEHAND_ROUTED_HERE";
 
 /// The exit code a shell gives a command it could not find.
 const NOT_FOUND: i32 = 127;
+
+/// The exit code a shell gives a command it found but could not run.
+const NOT_RUN: i32 = 126;
 
 /// The folder the shims are written to.
 pub(crate) fn shim_dir(config: &Path) -> PathBuf {
@@ -48,7 +52,7 @@ pub(super) fn route_in(
     path: Option<&OsStr>,
     shims: &Path,
 ) -> i32 {
-    let here = |fell_back: bool| run_here(program, args, path, shims, fell_back);
+    let here = |settled: bool| run_here(program, args, path, shims, settled);
     if routed_here {
         return here(true);
     }
@@ -64,7 +68,7 @@ pub(super) fn route_in(
     );
     match end {
         Ok(RouteEnd::Exit(code)) => code,
-        Ok(RouteEnd::Here { fell_back }) => here(fell_back),
+        Ok(RouteEnd::Here { settled }) => here(settled),
         Err(Unreached::Blocked) => {
             eprintln!(
                 "onehand: the agent's sandbox blocks onehand's socket; allow network in its sandbox; building here"
@@ -78,14 +82,14 @@ pub(super) fn route_in(
     }
 }
 
-/// Replace this process with the real `program`, marked when it runs here
-/// because its route fell through; the code to exit with when it cannot.
+/// Replace this process with the real `program`, marked when its route was
+/// settled here; the code to exit with when it cannot.
 fn run_here(
     program: &str,
     args: &[String],
     path: Option<&OsStr>,
     shims: &Path,
-    fell_back: bool,
+    settled: bool,
 ) -> i32 {
     use std::os::unix::process::CommandExt as _;
     let Some(real) = real_program(program, path, shims) else {
@@ -94,12 +98,12 @@ fn run_here(
     };
     let mut command = std::process::Command::new(real);
     command.args(args);
-    if fell_back {
+    if settled {
         command.env(ROUTED_HERE, "1");
     }
     let why = command.exec();
     eprintln!("onehand: {program}: {why}");
-    126
+    NOT_RUN
 }
 
 /// The first executable `program` on `path` outside the shim folder.

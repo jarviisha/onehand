@@ -69,8 +69,9 @@ and says nothing after it. The process decides and builds off the socket's runti
 notification per line, `{"jsonrpc":"2.0","method":"onehand/line","params":{"out":"…"}}` for a line
 the command printed or `{"note":"…"}` for onehand's own, then the answer:
 `{"jsonrpc":"2.0","id":1,"result":{"exit":<code>}}` for a command that ran on the host, or
-`{"result":{"run":"here","fell_back":<bool>}}` for one the shim runs itself, `fell_back` when it
-was meant for a host that did not answer. A connection that drops before the answer stops the
+`{"result":{"run":"here","settled":<bool>}}` for one the shim runs itself, `settled` when a
+command it starts in turn runs here too without asking: builds on hosts are off, or the host it
+was meant for did not answer. A connection that drops before the answer stops the
 build. Each run that ends, and each host's answer that changes its standing while the run goes
 on, tells the app (`Incoming::Routed`), which redraws its windows, so the project page reads how
 the host answered during a long build too.

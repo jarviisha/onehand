@@ -48,7 +48,7 @@ fn mac() -> Machine<'static> {
 fn here(found: Result<Found, String>) -> bool {
     matches!(
         decide(found, true, &linux(&[]), &ask(&["build"])),
-        Decision::Here
+        Decision::Here { settled: false }
     )
 }
 
@@ -66,8 +66,9 @@ fn here_without_a_pick() {
 
 #[test]
 fn here_when_hosts_are_off() {
+    // Settled: what the command starts in turn runs here too, unasked.
     let d = decide(found(project()), false, &linux(&[]), &ask(&["build"]));
-    assert!(matches!(d, Decision::Here));
+    assert!(matches!(d, Decision::Here { settled: true }));
 }
 
 #[test]
@@ -98,7 +99,7 @@ fn here_when_the_pick_is_no_longer_a_build_host() {
 #[test]
 fn here_when_no_route_matches() {
     let d = decide(found(project()), true, &linux(&[]), &ask(&["test"]));
-    assert!(matches!(d, Decision::Here));
+    assert!(matches!(d, Decision::Here { settled: false }));
 }
 
 #[test]
@@ -109,13 +110,13 @@ fn here_for_a_windows_host() {
         arch: "x86_64".into(),
     }];
     let d = decide(found(project()), true, &linux(&declared), &ask(&["build"]));
-    assert!(matches!(d, Decision::Here));
+    assert!(matches!(d, Decision::Here { settled: false }));
 }
 
 #[test]
 fn here_from_a_mac() {
     let d = decide(found(project()), true, &mac(), &ask(&["build"]));
-    assert!(matches!(d, Decision::Here));
+    assert!(matches!(d, Decision::Here { settled: false }));
 }
 
 #[test]

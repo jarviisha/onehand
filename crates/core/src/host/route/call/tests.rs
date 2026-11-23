@@ -1,6 +1,9 @@
 use super::*;
 use serde_json::Value;
 
+use super::super::drive::RouteDrive;
+use crate::workspace::HostName;
+
 use std::os::unix::net::UnixListener;
 
 fn socket_path(name: &str) -> PathBuf {
@@ -30,10 +33,10 @@ fn lines_and_ends_are_json_rpc() {
     assert_eq!(out["params"]["out"], "hi");
     let note = parse(said_line(&Said::Note("n".into())).unwrap());
     assert_eq!(note["params"]["note"], "n");
-    let here = parse(end_line(&RouteEnd::Here { fell_back: true }));
+    let here = parse(end_line(&RouteEnd::Here { settled: true }));
     assert_eq!(here["id"], 1);
     assert_eq!(here["result"]["run"], "here");
-    assert_eq!(here["result"]["fell_back"], true);
+    assert_eq!(here["result"]["settled"], true);
     assert_eq!(said_line(&Said::Reached), None);
     let exit = parse(end_line(&RouteEnd::Exit(3)));
     assert_eq!(exit["result"]["exit"], 3);
@@ -93,7 +96,7 @@ fn a_relative_folder_runs_here() {
         &mut |_| panic!("nothing said"),
         &AtomicBool::new(false),
     );
-    assert_eq!(end, RouteEnd::Here { fell_back: false });
+    assert_eq!(end, RouteEnd::Here { settled: false });
 }
 
 #[test]
@@ -122,4 +125,75 @@ fn client_ends_on_an_error_reply() {
     );
     assert_eq!(end, Err(Unreached::Gone("no such method".into())));
     drop(served);
+}
+
+#[test]
+fn client_reads_a_settled_end() {
+    let path = socket_path("settled");
+    let listener = UnixListener::bind(&path).unwrap();
+    let served = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut first = String::new();
+        std::io::BufReader::new(&stream)
+            .read_line(&mut first)
+            .unwrap();
+        writeln!(stream, "{}", end_line(&RouteEnd::Here { settled: true })).unwrap();
+    });
+    let end = client_blocking(
+        &path,
+        "cargo",
+        &[],
+        Path::new("/p"),
+        &mut Vec::new(),
+        &mut Vec::new(),
+    );
+    assert_eq!(end, Ok(RouteEnd::Here { settled: true }));
+    served.join().unwrap();
+}
+
+fn drive_in(name: &str) -> std::sync::Mutex<RouteDrive> {
+    let dir = socket_path(name);
+    std::sync::Mutex::new(RouteDrive::load(dir.parent().unwrap()))
+}
+
+/// Where the run goes is said once the host answered or did not, never
+/// before: a fall-back says only that it builds here.
+#[test]
+fn where_a_run_goes_is_said_after_the_host_answers() {
+    let host = HostName("h".into());
+    for (answers, said) in [
+        (true, "running on h"),
+        (false, "h did not answer; building here"),
+    ] {
+        let drive = drive_in(&format!("take-{answers}"));
+        let mut notes = Vec::new();
+        let took = take(&host, || drive.lock().unwrap(), |_| answers, &mut |s| {
+            if let Said::Note(n) = s {
+                notes.push(n)
+            }
+        });
+        assert_eq!(took, answers);
+        assert_eq!(notes, [said]);
+    }
+}
+
+/// A host that did not answer moments ago is not asked again.
+#[test]
+fn a_host_just_down_is_not_asked() {
+    let host = HostName("h".into());
+    let drive = drive_in("take-down");
+    drive.lock().unwrap().reached(&host, false);
+    let mut notes = Vec::new();
+    let took = take(
+        &host,
+        || drive.lock().unwrap(),
+        |_| panic!("not asked"),
+        &mut |s| {
+            if let Said::Note(n) = s {
+                notes.push(n)
+            }
+        },
+    );
+    assert!(!took);
+    assert_eq!(notes, ["h did not answer; building here"]);
 }

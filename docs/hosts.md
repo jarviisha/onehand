@@ -245,13 +245,13 @@ nothing:
    (`project_of_blocking`).
 2. Builds on hosts is on, and the project's pick is still one of its routable hosts.
 3. The command matches one of the project's routed commands.
-4. Then it builds on the host, saying first *running on <host>*. The host is asked first whether
-   it answers at all (`reachable_blocking`: `ssh -o BatchMode=yes -o ConnectTimeout=5 <host>
-   true`), before any snapshot; only ssh's own failure, exit 255, is a host that did not answer.
-   Such a host is a fall-back, not a failure: *<host> did not answer; building here*, and the
-   page's chip says so until a routed run reaches it again. For 30 seconds after it did not
-   answer it is not asked again: a routed command falls back at once, with the same line
-   (`RouteDrive::recently_down`).
+4. Then it builds on the host. The host is asked first whether it answers at all
+   (`reachable_blocking`: `ssh -o BatchMode=yes -o ConnectTimeout=5 <host> true`), before any
+   snapshot; only ssh's own failure, exit 255, is a host that did not answer. For 30 seconds after
+   it did not answer it is not asked again (`RouteDrive::recently_down`). Only once that is known
+   is where the run goes said (`take`): *running on <host>* for a host that answered; for one that
+   did not, a fall-back, not a failure, only *<host> did not answer; building here*, and the
+   page's chip says so until a routed run reaches it again.
 5. The build is the five steps of a build on a host, with two differences (`AskedBy::Route`
    on its `Job`):
    - **It waits its turn.** A build already running in that folder on that host is waited for,
@@ -267,13 +267,15 @@ nothing:
 
    What `--build` says after it, its hint, *brought back <paths>* and *the build did not finish*,
    follows as onehand's own lines (`told`); any other failure of a step is the command's, exit 1.
-- **Falling back.** A host that did not answer, a socket nobody answers (*onehand is not
-  reachable; building here*) and a socket the agent's sandbox refuses (*the agent's sandbox blocks
-  onehand's socket; allow network in its sandbox; building here*) run the command here with
-  `ONEHAND_ROUTED_HERE=1` set, under which a nested `--route` runs here at once without asking:
-  a `make test` calling `cargo test` is not sent to an absent host again for every nested call.
-  Builds on hosts off and a command no route matches are not fall-backs; a nested command under
-  them is routed as any other.
+- **Settled here.** Builds on hosts off, a host that did not answer, a socket nobody answers
+  (*onehand is not reachable; building here*) and a socket the agent's sandbox refuses (*the
+  agent's sandbox blocks onehand's socket; allow network in its sandbox; building here*) settle
+  the command here (`RouteEnd::Here { settled: true }`): it runs here with
+  `ONEHAND_ROUTED_HERE=1` set, under which a nested `--route` runs here at once without asking, so
+  a `make test` calling `cargo test` does not ask the socket, or an absent host, again for every
+  nested call. A folder in no project, a project with no pick, a command no route matches and a
+  machine that is not Linux do not settle anything; a nested command under them is routed as any
+  other.
 - **The agent stopping the command** (its tool times out, it kills the process) drops the
   connection, and the running process stops the build on the host as any stopped build is.
 - **Sandboxes.** Codex's default sandbox, `workspace-write`, forbids the Unix socket: routing
