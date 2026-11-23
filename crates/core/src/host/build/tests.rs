@@ -89,8 +89,7 @@ fn build(
         entry: host,
         os: crate::config::HostOs::Linux,
         command,
-        fresh_only: false,
-        wait: false,
+        asked_by: AskedBy::Person,
     };
     let built = build_in(
         &job,
@@ -447,8 +446,7 @@ fn a_stopped_build_ends_and_says_no_exit() {
             entry: &host,
             os: crate::config::HostOs::Linux,
             command: "sleep 30",
-            fresh_only: false,
-            wait: false,
+            asked_by: AskedBy::Person,
         };
         build_in(&job, &home.0, "laptop", &mut |_| {}, &mut |_| {}, &cancel)
     });
@@ -470,7 +468,7 @@ fn routed(
     top: &Path,
     host: &BuildHost,
     command: &str,
-    wait: bool,
+    asked_by: AskedBy,
     cancel: &AtomicBool,
 ) -> (Result<Built, String>, Vec<String>) {
     let mut notes = Vec::new();
@@ -480,8 +478,7 @@ fn routed(
         entry: host,
         os: crate::config::HostOs::Linux,
         command,
-        fresh_only: true,
-        wait,
+        asked_by,
     };
     let built = build_in(
         &job,
@@ -495,7 +492,7 @@ fn routed(
 }
 
 #[test]
-fn fresh_only_brings_back_what_the_run_wrote() {
+fn routed_brings_back_what_the_run_wrote() {
     let (home, scratch) = (Scratch::new("home"), Scratch::new("work"));
     let top = repo(&scratch, "proj");
     let host = on_local(&["target/a", "target/b"], None);
@@ -510,7 +507,14 @@ fn fresh_only_brings_back_what_the_run_wrote() {
     );
     assert_eq!(built.map(|b| b.exit), Ok(Some(0)));
     write(&top, "target/b", "here\n");
-    let (built, _) = routed(&home, &top, &host, "echo a > target/a", false, &never);
+    let (built, _) = routed(
+        &home,
+        &top,
+        &host,
+        "echo a > target/a",
+        AskedBy::Route,
+        &never,
+    );
     assert_eq!(
         built,
         Ok(Built {
@@ -530,11 +534,18 @@ fn fresh_only_brings_back_what_the_run_wrote() {
 }
 
 #[test]
-fn fresh_only_with_nothing_written_is_not_a_failure() {
+fn routed_with_nothing_written_is_not_a_failure() {
     let (home, scratch) = (Scratch::new("home"), Scratch::new("work"));
     let top = repo(&scratch, "proj");
     let host = on_local(&["target/a"], None);
-    let (built, _) = routed(&home, &top, &host, "true", false, &AtomicBool::new(false));
+    let (built, _) = routed(
+        &home,
+        &top,
+        &host,
+        "true",
+        AskedBy::Route,
+        &AtomicBool::new(false),
+    );
     assert_eq!(
         built,
         Ok(Built {
@@ -546,7 +557,7 @@ fn fresh_only_with_nothing_written_is_not_a_failure() {
 }
 
 #[test]
-fn fresh_only_ignores_an_artifact_left_from_an_earlier_run() {
+fn routed_ignores_an_artifact_left_from_an_earlier_run() {
     let (home, scratch) = (Scratch::new("home"), Scratch::new("work"));
     let top = repo(&scratch, "proj");
     let host = on_local(&["target/a"], None);
@@ -556,14 +567,14 @@ fn fresh_only_ignores_an_artifact_left_from_an_earlier_run() {
         &top,
         &host,
         "mkdir -p target && echo a > target/a",
-        false,
+        AskedBy::Route,
         &never,
     );
     assert_eq!(
         built.map(|b| b.brought),
         Ok(vec![PathBuf::from("target/a")])
     );
-    let (built, _) = routed(&home, &top, &host, "true", false, &never);
+    let (built, _) = routed(&home, &top, &host, "true", AskedBy::Route, &never);
     assert_eq!(built.map(|b| b.brought), Ok(Vec::new()));
 }
 
@@ -574,7 +585,7 @@ fn waiting_job_waits_for_the_lock() {
     let host = on_local(&[], None);
     let never = AtomicBool::new(false);
     let held = lock(&top, "local").expect("no error").expect("the lock");
-    let (refused, _) = routed(&home, &top, &host, "true", false, &never);
+    let (refused, _) = routed(&home, &top, &host, "true", AskedBy::Person, &never);
     assert_eq!(
         refused,
         Err("A build of proj is already running on local".to_string())
@@ -584,7 +595,7 @@ fn waiting_job_waits_for_the_lock() {
             std::thread::sleep(std::time::Duration::from_millis(300));
             drop(held);
         });
-        let (built, notes) = routed(&home, &top, &host, "true", true, &never);
+        let (built, notes) = routed(&home, &top, &host, "true", AskedBy::Route, &never);
         assert_eq!(built.map(|b| b.exit), Ok(Some(0)));
         assert_eq!(notes, ["waiting for the build already running on local"]);
     });
@@ -615,7 +626,7 @@ fn cancel_stops_a_running_command() {
             std::thread::sleep(std::time::Duration::from_millis(100));
             cancel.store(true, Ordering::Relaxed);
         });
-        routed(&home, &top, &host, &command, false, &cancel).0
+        routed(&home, &top, &host, &command, AskedBy::Route, &cancel).0
     });
     assert!(started.elapsed() < std::time::Duration::from_secs(10));
     assert_eq!(built.map(|b| b.exit), Ok(None));

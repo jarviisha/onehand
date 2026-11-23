@@ -386,7 +386,9 @@ fn perform_now(
                 let outcome = cx
                     .background_executor()
                     .spawn(async move {
-                        use onehand_core::host::build::{Job, Tail, answer, build_blocking};
+                        use onehand_core::host::build::{
+                            AskedBy, Job, Tail, answer, build_blocking,
+                        };
                         let mut tail = Tail::default();
                         let job = Job {
                             top: &top,
@@ -394,8 +396,7 @@ fn perform_now(
                             entry: &entry,
                             os,
                             command: &command,
-                            fresh_only: false,
-                            wait: false,
+                            asked_by: AskedBy::Person,
                         };
                         // The tools have no way to call a build off: its own
                         // limit ends it.

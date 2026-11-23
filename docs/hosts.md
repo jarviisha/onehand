@@ -252,8 +252,8 @@ nothing:
    page's chip says so until a routed run reaches it again. For 30 seconds after it did not
    answer it is not asked again: a routed command falls back at once, with the same line
    (`RouteDrive::recently_down`).
-5. The build is the five steps of a build on a host, with two differences (`Job::fresh_only`,
-   `Job::wait`):
+5. The build is the five steps of a build on a host, with two differences (`AskedBy::Route`
+   on its `Job`):
    - **It waits its turn.** A build already running in that folder on that host is waited for,
      *waiting for the build already running on <host>*, up to the two hours a command is given;
      a person's `--build` still refuses.

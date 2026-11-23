@@ -63,12 +63,19 @@ pub struct Job<'a> {
     /// steps are spelled for.
     pub os: HostOs,
     pub command: &'a str,
-    /// Bring back only the artifacts this run wrote; none written is no
-    /// failure.
-    pub fresh_only: bool,
-    /// Wait for the folder's build already running on the host instead of
-    /// refusing.
-    pub wait: bool,
+    pub asked_by: AskedBy,
+}
+
+/// Who asked for a build, which says how it runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AskedBy {
+    /// A person or a tool: a build of the folder already running on the
+    /// host is refused, and every artifact named comes back.
+    Person,
+    /// An agent's routed command: it waits for the folder's build already
+    /// running on the host, and brings back only the artifacts this run
+    /// wrote, none written no failure.
+    Route,
 }
 
 /// What a build came to.
@@ -144,7 +151,7 @@ fn build_in(
     }
     let _held = match lock(job.top, &host.0)? {
         Some(held) => held,
-        None if job.wait => {
+        None if job.asked_by == AskedBy::Route => {
             note(&format!("waiting for the build already running on {host}"));
             let started = Instant::now();
             loop {
@@ -299,7 +306,10 @@ impl<'a> Place<'a> {
         cancel: &AtomicBool,
     ) -> Result<(Option<i32>, Option<String>), String> {
         let host = self.host;
-        let mark = job.fresh_only.then_some(ROUTE_MARK);
+        let mark = match job.asked_by {
+            AskedBy::Route => Some(ROUTE_MARK),
+            AskedBy::Person => None,
+        };
         let script = self
             .shell
             .run(&self.dir, snapshot, job.within, job.command, mark)?;
@@ -353,11 +363,11 @@ impl<'a> Place<'a> {
         if entry.artifacts.is_empty() {
             return Ok(Vec::new());
         }
-        let script = match job.fresh_only {
-            true => self
+        let script = match job.asked_by {
+            AskedBy::Route => self
                 .shell
                 .send_fresh(&self.dir, &entry.artifacts, ROUTE_MARK)?,
-            false => self.shell.send(&self.dir, &entry.artifacts)?,
+            AskedBy::Person => self.shell.send(&self.dir, &entry.artifacts)?,
         };
         let into = match &entry.into {
             Some(into) => job.top.join(into),
@@ -370,9 +380,9 @@ impl<'a> Place<'a> {
             .spawn()
             .map_err(|e| format!("ssh: {e}"))?;
         let mut out = BufReader::new(sent.stdout.take().expect("piped"));
-        let paths = match job.fresh_only {
-            true => fresh_named(&mut out, &entry.artifacts),
-            false => entry.artifacts.clone(),
+        let paths = match job.asked_by {
+            AskedBy::Route => fresh_named(&mut out, &entry.artifacts),
+            AskedBy::Person => entry.artifacts.clone(),
         };
         let unpacked = match paths.is_empty() {
             true => None,

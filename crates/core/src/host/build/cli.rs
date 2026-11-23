@@ -6,7 +6,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use super::shell::Shell;
-use super::{build_blocking, Built, Job};
+use super::{build_blocking, AskedBy, Built, Job};
 use crate::config::{HostOs, HostSpec};
 use crate::project::Project;
 use crate::workspace::BuildHost;
@@ -192,8 +192,7 @@ pub(crate) fn run_with(
         entry: &asked.entry,
         os: asked.os.clone(),
         command: &command,
-        fresh_only: false,
-        wait: false,
+        asked_by: AskedBy::Person,
     };
     // An interrupt at the terminal reaches this process and its ssh alike.
     let built = build(&job, &mut |line| {

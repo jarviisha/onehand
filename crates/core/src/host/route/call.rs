@@ -14,7 +14,7 @@ use super::drive::route_drive;
 use super::{decide, Ask, Decision, Machine};
 use crate::config::HostOs;
 use crate::host::build::cli::{project_of_blocking, told};
-use crate::host::build::{build_cancellable, reachable_blocking, Job};
+use crate::host::build::{build_cancellable, reachable_blocking, AskedBy, Job};
 
 const METHOD: &str = "onehand/route";
 const LINE: &str = "onehand/line";
@@ -125,8 +125,7 @@ pub fn serve_blocking(ask: &Ask, emit: &mut dyn FnMut(Said), cancel: &AtomicBool
         entry: &routed.entry,
         os: HostOs::Linux,
         command: &routed.command,
-        fresh_only: true,
-        wait: true,
+        asked_by: AskedBy::Route,
     };
     // The command's lines and onehand's notes both go to the one `emit`.
     let emit = RefCell::new(emit);
