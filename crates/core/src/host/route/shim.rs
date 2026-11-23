@@ -159,7 +159,15 @@ pub(crate) fn write_shims_blocking(
         }
     }
     for program in programs {
-        let text = format!("#!/bin/sh\nexec {exe} --route {socket} {shims} {program} \"$@\"\n");
+        // With its onehand gone (a newer build replaced the file), the
+        // shim takes itself off PATH and runs the real program.
+        let text = format!(
+            "#!/bin/sh\n\
+             [ -x {exe} ] && exec {exe} --route {socket} {shims} {program} \"$@\"\n\
+             set -f; IFS=:; p=; for d in $PATH; do [ \"$d\" = {shims} ] || p=${{p:+$p:}}$d; done; \
+             unset IFS; set +f; PATH=$p; export PATH\n\
+             exec {program} \"$@\"\n"
+        );
         let file = dir.join(program);
         if std::fs::read_to_string(&file).is_ok_and(|had| had == text) {
             continue;
@@ -189,10 +197,19 @@ pub fn agent_path_blocking(base: Option<&OsStr>) -> Option<OsString> {
         return None;
     }
     let dir = shim_dir(&config);
-    let exe = std::env::current_exe().ok()?;
+    let exe = live_exe(std::env::current_exe().ok()?);
     let socket = crate::instance::socket_path(&config);
     write_shims_blocking(&dir, &exe, &socket, &programs).ok()?;
     Some(agent_path(&dir, base))
+}
+
+/// `exe` as its file is named: Linux names a running binary whose file was
+/// replaced, as every cargo build replaces it, with ` (deleted)` after it.
+fn live_exe(exe: PathBuf) -> PathBuf {
+    match exe.to_str().and_then(|e| e.strip_suffix(" (deleted)")) {
+        Some(live) => PathBuf::from(live),
+        None => exe,
+    }
 }
 
 /// `shims` first, then `base`.

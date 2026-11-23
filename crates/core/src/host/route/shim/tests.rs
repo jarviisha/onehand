@@ -62,8 +62,12 @@ fn shims_are_written_and_pruned() {
     assert_eq!(
         std::fs::read_to_string(&cargo).unwrap(),
         format!(
-            "#!/bin/sh\nexec '/opt/onehand' --route '/run/onehand.sock' '{}' cargo \"$@\"\n",
-            dir.display()
+            "#!/bin/sh\n\
+             [ -x '/opt/onehand' ] && exec '/opt/onehand' --route '/run/onehand.sock' '{d}' cargo \"$@\"\n\
+             set -f; IFS=:; p=; for d in $PATH; do [ \"$d\" = '{d}' ] || p=${{p:+$p:}}$d; done; \
+             unset IFS; set +f; PATH=$p; export PATH\n\
+             exec cargo \"$@\"\n",
+            d = dir.display()
         )
     );
 }
@@ -123,4 +127,38 @@ fn an_agent_path_leads_with_the_shims() {
     let path = agent_path(Path::new("/s"), Some(OsStr::new("/a:/b")));
     assert_eq!(path, OsString::from("/s:/a:/b"));
     assert_eq!(agent_path(Path::new("/s"), None), OsString::from("/s"));
+}
+
+/// A shim whose onehand is gone, its file replaced by a newer build or
+/// removed, runs the real program, never itself.
+#[test]
+fn a_shim_without_its_onehand_runs_the_real_program() {
+    let root = scratch("orphan");
+    let (shims, real) = (root.join("route-shims"), root.join("real"));
+    std::fs::create_dir_all(&real).unwrap();
+    let program = "onehand-shim-test-prog";
+    std::fs::write(real.join(program), "#!/bin/sh\nexit \"$1\"\n").unwrap();
+    std::fs::set_permissions(real.join(program), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let gone = root.join("no-onehand-here");
+    write_shims_blocking(&shims, &gone, Path::new("/s.sock"), &[program.into()]).unwrap();
+    let path = std::env::join_paths([&shims, &real, Path::new("/usr/bin"), Path::new("/bin")])
+        .unwrap();
+    // Bounded, as a shim that found itself again would never end.
+    let status = std::process::Command::new("timeout")
+        .args(["10"])
+        .arg(shims.join(program))
+        .arg("7")
+        .env("PATH", path)
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(7));
+}
+
+#[test]
+fn a_replaced_binary_is_named_as_its_file() {
+    assert_eq!(
+        live_exe(PathBuf::from("/t/onehand (deleted)")),
+        PathBuf::from("/t/onehand")
+    );
+    assert_eq!(live_exe(PathBuf::from("/t/onehand")), PathBuf::from("/t/onehand"));
 }

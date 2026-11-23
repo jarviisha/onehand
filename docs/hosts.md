@@ -209,16 +209,20 @@ and one line saying where it ran.
 ### The shim
 
 - **One script per routed program**, `cargo`, `dotnet`, under `route-shims/` in the config
-  directory (`write_shims_blocking`, `crates/core/src/host/route/shim.rs`), each one line:
+  directory (`write_shims_blocking`, `crates/core/src/host/route/shim.rs`), each running
   `exec '<onehand>' --route '<socket>' '<shim folder>' <program> "$@"`. They name the instance's
   own binary and socket, so a `make dev` build and the installed one never route through each
-  other. They are written again at every agent start from the project files on disk, a shim for a
+  other. The binary is named as its file is, never with the ` (deleted)` Linux adds once a newer
+  build replaced it; a shim whose binary is not there takes its folder off `PATH` and runs the
+  real program here. They are written again at every agent start from the project files on disk, a shim for a
   program no longer named removed; only a plain program name gets one. With no routed command in
   any project nothing is written and the agent's `PATH` is left alone.
 - **The shim folder is put first on the agent's `PATH`** and on that of every terminal it asks
   for over ACP (`crates/io/src/acp.rs`, `SessionOpts.term_env`), in front of the `PATH` the
   agent's own config sets when it sets one, else of onehand's. Nothing else gets it: not the
-  terminal dock, not a check command, not a session on a host.
+  terminal dock, not a check command, not a session on a host. A shell profile the agent's shell tool
+  reads that puts a toolchain's folder first again (`export PATH="$HOME/.cargo/bin:$PATH"`)
+  puts the real program ahead of the shim, and nothing is routed for that agent.
 - **`onehand --route`** is answered in `main` before the instance lock, as `--build` is
   (`route_main`). It sends the command to the socket (`onehand/route`,
   [control.md](control.md#a-routed-command)) and prints what comes back as it comes: the
