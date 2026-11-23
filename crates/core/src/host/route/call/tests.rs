@@ -167,11 +167,16 @@ fn where_a_run_goes_is_said_after_the_host_answers() {
     ] {
         let drive = drive_in(&format!("take-{answers}"));
         let mut notes = Vec::new();
-        let took = take(&host, || drive.lock().unwrap(), |_| answers, &mut |s| {
-            if let Said::Note(n) = s {
-                notes.push(n)
-            }
-        });
+        let took = take(
+            &host,
+            || drive.lock().unwrap(),
+            |_| answers,
+            &mut |s| match s {
+                Said::Note(n) => notes.push(n),
+                Said::Started(h) => notes.push(format!("running on {h}")),
+                Said::Out(_) | Said::Reached => {}
+            },
+        );
         assert_eq!(took, answers);
         assert_eq!(notes, [said]);
     }
@@ -188,10 +193,10 @@ fn a_host_just_down_is_not_asked() {
         &host,
         || drive.lock().unwrap(),
         |_| panic!("not asked"),
-        &mut |s| {
-            if let Said::Note(n) = s {
-                notes.push(n)
-            }
+        &mut |s| match s {
+            Said::Note(n) => notes.push(n),
+            Said::Started(h) => notes.push(format!("running on {h}")),
+            Said::Out(_) | Said::Reached => {}
         },
     );
     assert!(!took);
@@ -237,4 +242,65 @@ fn client_refuses_a_line_past_the_cap() {
     );
     assert!(matches!(end, Err(Unreached::Gone(_))), "{end:?}");
     served.join().unwrap();
+}
+
+/// A client served `lines` and then dropped, or sent a line past the cap
+/// when `long`: how it ends, and what it said on stderr.
+fn cut_after(name: &str, lines: Vec<String>, long: bool) -> (Result<RouteEnd, Unreached>, String) {
+    let path = socket_path(name);
+    let listener = UnixListener::bind(&path).unwrap();
+    let served = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut first = String::new();
+        std::io::BufReader::new(&stream)
+            .read_line(&mut first)
+            .unwrap();
+        for line in lines {
+            writeln!(stream, "{line}").unwrap();
+        }
+        if long {
+            let _ = writeln!(stream, "{}", "x".repeat(LINE_CAP + 10));
+        }
+    });
+    let mut err = Vec::new();
+    let end = client_blocking(
+        &path,
+        "cargo",
+        &[],
+        Path::new("/p"),
+        &mut Vec::new(),
+        &mut err,
+    );
+    served.join().unwrap();
+    (end, String::from_utf8(err).unwrap())
+}
+
+/// Once the command started on the host, a lost connection or an
+/// overlong line is the build failing, never a cue to run it here again.
+#[test]
+fn a_run_cut_after_it_started_is_not_run_again() {
+    let started = said_lines(&Said::Started(HostName("h".into()))).remove(0);
+    let (end, err) = cut_after("cut-started", vec![started.clone()], false);
+    assert_eq!(
+        end,
+        Err(Unreached::Cut(
+            "onehand went away during the build on h".into()
+        ))
+    );
+    assert_eq!(err, "onehand: running on h\n");
+    let (end, _) = cut_after("cut-long", vec![started], true);
+    assert_eq!(end, Err(Unreached::Cut("a reply line was too long".into())));
+    let out = said_lines(&Said::Out("one".into())).remove(0);
+    let (end, _) = cut_after("cut-out", vec![out], false);
+    assert!(matches!(end, Err(Unreached::Cut(_))), "{end:?}");
+}
+
+/// Cut before anything started, the run falls back as ever.
+#[test]
+fn a_run_cut_before_it_started_falls_back() {
+    let waiting = said_lines(&Said::Note("waiting".into())).remove(0);
+    let (end, _) = cut_after("cut-before", vec![waiting], false);
+    assert!(matches!(end, Err(Unreached::Gone(_))), "{end:?}");
+    let (end, _) = cut_after("cut-before-long", Vec::new(), true);
+    assert!(matches!(end, Err(Unreached::Gone(_))), "{end:?}");
 }

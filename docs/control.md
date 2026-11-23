@@ -67,13 +67,16 @@ A shim on an agent's `PATH` hands its command to the running process
 and says nothing after it. The process decides and builds off the socket's runtime
 (`serve_blocking`, served in `crates/io/src/socket.rs`), writing back, as they come, one
 notification per line, `{"jsonrpc":"2.0","method":"onehand/line","params":{"out":"…"}}` for a line
-the command printed or `{"note":"…"}` for onehand's own, then the answer:
+the command printed or `{"note":"…"}` for onehand's own, `{"note":"running on <host>","started":
+"<host>"}` as the command starts on the host, then the answer:
 `{"jsonrpc":"2.0","id":1,"result":{"exit":<code>}}` for a command that ran on the host, or
 `{"result":{"run":"here","settled":<bool>}}` for one the shim runs itself, `settled` when a
 command it starts in turn runs here too without asking: builds on hosts are off, or the host it
 was meant for did not answer. A connection that drops before the answer stops the
 build. No line passes 64 KiB either way (`LINE_CAP`): a line the command printed longer than
-48 KiB goes as several `out` lines, and the shim takes a longer reply line as onehand gone. The
+48 KiB goes as several `out` lines, and the shim takes a longer reply line as onehand gone. Gone before the command started
+(no `started`, no `out`), the shim runs the command here; gone after, it fails with exit 1
+(`Unreached::Cut`) and never runs it a second time. The
 process holds at most 256 lines the shim has yet to read (`ROUTE_BACKLOG`); past them the run
 waits for the shim. Each run that ends, and each host's answer that changes its standing while the run goes
 on, tells the app (`Incoming::Routed`), which redraws its windows, so the project page reads how

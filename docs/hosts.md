@@ -283,6 +283,11 @@ nothing:
   nested call. A folder in no project, a project with no pick, a command no route matches and a
   machine that is not Linux do not settle anything; a nested command under them is routed as any
   other.
+- **Cut off once started, it fails.** Onehand going, or a reply line past 64 KiB, after the
+  command started on the host (*running on <host>* or a line of its output came) is not a
+  fall-back: the shim says *onehand: onehand went away during the build on <host>*, or
+  *onehand: a reply line was too long*, and exits 1, without `ONEHAND_ROUTED_HERE` and without
+  running the command here a second time (`Unreached::Cut`). Before it started, it falls back.
 - **The agent stopping the command** (its tool times out, it kills the process) drops the
   connection, and the running process stops the build on the host as any stopped build is.
 - **Sandboxes.** Codex's default sandbox, `workspace-write`, forbids the Unix socket: routing

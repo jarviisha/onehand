@@ -66,6 +66,9 @@ pub enum Said {
     Out(String),
     /// What onehand says of its own.
     Note(String),
+    /// The command is starting on this host: from here on, a run cut off
+    /// is the build failing, not one to run here again.
+    Started(HostName),
     /// A host's standing changed: the front end's to hear, nothing the
     /// shim is told.
     Reached,
@@ -77,6 +80,10 @@ pub fn said_lines(said: &Said) -> Vec<String> {
     let (key, text) = match said {
         Said::Out(line) => ("out", line),
         Said::Note(note) => ("note", note),
+        Said::Started(host) => {
+            let params = json!({"note": format!("running on {host}"), "started": host.0});
+            return vec![json!({"jsonrpc": "2.0", "method": LINE, "params": params}).to_string()];
+        }
         Said::Reached => return Vec::new(),
     };
     chunks(text)
@@ -182,10 +189,10 @@ fn take<G: DerefMut<Target = RouteDrive>>(
         }
         answered
     };
-    emit(Said::Note(match answered {
-        true => format!("running on {host}"),
-        false => format!("{host} did not answer; building here"),
-    }));
+    emit(match answered {
+        true => Said::Started(host.clone()),
+        false => Said::Note(format!("{host} did not answer; building here")),
+    });
     answered
 }
 
@@ -195,8 +202,12 @@ pub(crate) enum Unreached {
     /// Connecting to the socket was refused permission: the agent's
     /// sandbox forbids it.
     Blocked,
-    /// No onehand answered, or it went before the run ended, and why.
+    /// No onehand answered, or it went before the command started, and
+    /// why: the shim runs it here.
     Gone(String),
+    /// The command had started on the host when the run was cut off, in
+    /// words: the shim fails, never running it here a second time.
+    Cut(String),
 }
 
 /// Hand `program` with `args`, from `cwd`, to the onehand on `socket`,
@@ -221,20 +232,30 @@ pub(crate) fn client_blocking(
     writeln!(stream, "{}", route_request(program, args, cwd)).map_err(gone)?;
     let mut reader = std::io::BufReader::new(&stream);
     let mut line = Vec::new();
+    // The host the command started on, once it has: past that, what cuts
+    // the run off is no fall-back.
+    let mut started: Option<String> = None;
+    let went = |started: &Option<String>, why: String| match started {
+        Some(host) => Unreached::Cut(format!("onehand went away during the build on {host}")),
+        None => Unreached::Gone(why),
+    };
     loop {
         line.clear();
         let read = (&mut reader)
             .take(LINE_CAP as u64)
             .read_until(b'\n', &mut line)
-            .map_err(gone)?;
+            .map_err(|e| went(&started, e.to_string()))?;
         if read == 0 {
             break;
         }
         if line.last() != Some(&b'\n') && line.len() >= LINE_CAP {
-            return Err(Unreached::Gone(format!(
-                "a line from onehand passed {} KiB",
-                LINE_CAP / 1024
-            )));
+            return Err(match started {
+                Some(_) => Unreached::Cut("a reply line was too long".into()),
+                None => Unreached::Gone(format!(
+                    "a line from onehand passed {} KiB",
+                    LINE_CAP / 1024
+                )),
+            });
         }
         let msg: Value = match serde_json::from_slice(&line) {
             Ok(msg) => msg,
@@ -251,10 +272,15 @@ pub(crate) fn client_blocking(
         // know the call, which would otherwise be waited on for ever.
         if msg.get("id").is_some() {
             let why = msg["error"]["message"].as_str().map(str::to_string);
-            return Err(Unreached::Gone(why.unwrap_or_else(|| msg.to_string())));
+            return Err(went(&started, why.unwrap_or_else(|| msg.to_string())));
         }
         let params = &msg["params"];
+        if let Some(host) = params["started"].as_str() {
+            started = Some(host.to_string());
+        }
         if let Some(text) = params["out"].as_str() {
+            // Only a command that started prints; its host is named first.
+            started.get_or_insert_with(|| "its host".into());
             let _ = writeln!(out, "{text}");
             let _ = out.flush();
         } else if let Some(note) = params["note"].as_str() {
@@ -262,7 +288,7 @@ pub(crate) fn client_blocking(
             let _ = err.flush();
         }
     }
-    Err(Unreached::Gone("onehand went before the run ended".into()))
+    Err(went(&started, "onehand went before the run ended".into()))
 }
 
 #[cfg(test)]

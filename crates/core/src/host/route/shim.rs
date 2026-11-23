@@ -75,6 +75,10 @@ pub(super) fn route_in(
             );
             here(true)
         }
+        Err(Unreached::Cut(why)) => {
+            eprintln!("onehand: {why}");
+            1
+        }
         Err(Unreached::Gone(_)) => {
             eprintln!("onehand: onehand is not reachable; building here");
             here(true)

@@ -158,7 +158,7 @@ async fn serve_route<F>(
                     Said::Reached => {
                         let _ = tx.unbounded_send(Incoming::Routed);
                     }
-                    Said::Out(_) | Said::Note(_) => {
+                    Said::Out(_) | Said::Note(_) | Said::Started(_) => {
                         for line in route::said_lines(&s) {
                             // Fails only once the client is gone, which
                             // cancels the run.
