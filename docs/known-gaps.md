@@ -315,6 +315,9 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   read POSIX words (fish, tcsh): its check fails saying so.
 - **The laptop's copies are never pruned.** A copy of a session the host has long since dropped,
   or of a project removed here, stays under `hosts/` until a person deletes it.
+- **A hand-off file stays in `.onehand/continued/` until a person deletes it.** It holds the whole
+  conversation, tool output included; git ignores it, but a tool that does not read a nested
+  `.gitignore` (a container's build context, a copy) still sees it.
 - **A past conversation is not continued in a new session on a host's or an offloaded project's
   page.** The hand-off file is written on this machine, where a session on a host cannot read
   it; writing it through the host's attach would fix it.

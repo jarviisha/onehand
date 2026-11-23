@@ -538,20 +538,23 @@ impl ChatPane {
                         // own picker: this list crosses every agent that
                         // has worked in the project, and resuming a row
                         // starts a session on the one that held it.
-                        .child(div().flex_none().text_xs().text_color(muted).child(
-                            match &meta.continued {
-                                Some(earlier) => format!(
-                                    "Continued from {earlier} · {} · {}",
-                                    count_of(meta.item_count, "item"),
-                                    meta.agent
-                                ),
-                                None => format!(
-                                    "{} · {}",
-                                    count_of(meta.item_count, "item"),
-                                    meta.agent
-                                ),
-                            },
-                        ))
+                        // What it continued gives way first, so the row's
+                        // own title keeps its room.
+                        .children(meta.continued.as_ref().map(|earlier| {
+                            div()
+                                .flex_shrink_1()
+                                .min_w_0()
+                                .max_w(gpui::relative(0.4))
+                                .truncate()
+                                .text_xs()
+                                .text_color(muted)
+                                .child(format!("Continued from {earlier}"))
+                        }))
+                        .child(div().flex_none().text_xs().text_color(muted).child(format!(
+                            "{} · {}",
+                            count_of(meta.item_count, "item"),
+                            meta.agent
+                        )))
                         .on_click(
                             cx.listener(move |_: &mut Self, _, _, cx| cx.emit(resumed.event())),
                         )

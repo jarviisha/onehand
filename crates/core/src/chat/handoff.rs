@@ -19,7 +19,12 @@ const CONTINUED: &str = "continued";
 pub fn write_blocking(kept: &Path, folder: &Path) -> Result<PathBuf, String> {
     let snapshot =
         super::store::load(kept).ok_or_else(|| format!("{} could not be read", kept.display()))?;
-    let id = snapshot.session_id.clone();
+    // Named for the folder it is kept in, which the store already made safe
+    // and one per conversation: two conversations never share a file.
+    let name = kept
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .ok_or_else(|| format!("{} names no conversation", kept.display()))?;
     let mut chat = super::Chat::default();
     chat.resume_from(snapshot);
     let text = super::export_markdown(&chat);
@@ -30,12 +35,7 @@ pub fn write_blocking(kept: &Path, folder: &Path) -> Result<PathBuf, String> {
     if !ignore.exists() {
         std::fs::write(&ignore, "*\n").map_err(|e| format!("{}: {e}", ignore.display()))?;
     }
-    let short: String = id
-        .chars()
-        .filter(char::is_ascii_alphanumeric)
-        .take(12)
-        .collect();
-    let file = dir.join(format!("{short}.md"));
+    let file = dir.join(format!("{name}.md"));
     std::fs::write(&file, text).map_err(|e| format!("{}: {e}", file.display()))?;
     Ok(file)
 }

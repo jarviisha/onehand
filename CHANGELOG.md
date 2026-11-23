@@ -108,6 +108,24 @@ minor bump may break any of them.
 
 ### The window
 
+- A project's page is where its sessions start. A project's row on the rail, and its tile on the
+  overview, show its page even while it has sessions open, and every *New session* lands there
+  with its place and agent picked; no session is made until a prompt is sent. The page carries a
+  composer under *What are we building?*: the agent, its model, effort, fast switch and mode as a
+  session of it last offered them (kept across launches in `agents-seen.toml`), files to attach,
+  `@` and `/`, and under it *Start in* (the project's folder, a worktree, or a new worktree cut on
+  send) and *Cards*. A session starts off screen and shows once its agent is up; one that never
+  comes up leaves nothing on the rail, and the page says why, its words kept.
+- *Cards*: a session answers its agent's cards at its level, *Manual*, *Allow edits* (a read or an
+  edit inside its folder, its git and agent settings aside) or *Bypass*. A project keeps a default
+  for the sessions sent from its page; every other session starts on *Manual*. On a host's page the
+  chip is the host's own switch, in place of its *Settings* box.
+- A past conversation continues in a new session, with its agent or another: *Continue in a new
+  session…* on its row; the conversation is handed over as a Markdown file in
+  `.onehand/continued/`, which git ignores, optionally asking for a summary first.
+- A project's settings (check command, build hosts, worktree folder) move to Settings ▸ Projects,
+  reached from *Project settings…* in its menu; the page no longer lists tasks or schedules.
+
 - A project's page lists its worktrees: each it records with its sessions, *New session* and
   *Remove…*, which deletes the checkout only when nothing would be lost and keeps a branch that is
   not merged; checkouts git lists that the project does not record, to add; recorded ones git no
