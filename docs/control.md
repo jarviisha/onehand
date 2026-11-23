@@ -21,8 +21,9 @@ session a tool opens starts on *Manual*.
   that directory finds the same name.
 - **Mode `0600`:** the user's own, as the config directory beside it is.
 - **What is said:** JSON-RPC 2.0, one message per line. A connection says what it is in its first
-  line: `onehand/open` is a second launch, answered and closed; anything else starts an MCP
-  conversation, carried on until the client hangs up. A first line that does not come within five
+  line: `onehand/open` is a second launch, answered and closed; `onehand/route` is a shim's
+  routed command, served until its run ends; anything else starts an MCP conversation, carried on
+  until the client hangs up. A first line that does not come within five
   seconds, or any line past 64 KiB without a newline, drops the connection.
 - **Where the rule lives:** core's `instance` reads and writes a second launch's lines and holds
   what arrives before the first window, core's `control` every MCP message and where each call
@@ -52,6 +53,26 @@ answer, and exits.
 | not a folder (`-32602`) | nothing | prints `onehand: <path> is not a folder`, exits 1 |
 | a path that is not UTF-8 | (never sent) | prints `onehand: <path> is not a UTF-8 path`, exits 1 |
 | nobody on the socket | (an older build, or one that could not bind) | prints `onehand is already running on <dir>`, exits 1 |
+
+## A routed command
+
+A shim on an agent's `PATH` hands its command to the running process
+([hosts.md](hosts.md#routed-builds)) in one first line (`route_request`,
+`crates/core/src/host/route/call.rs`):
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"onehand/route","params":{"program":"cargo","args":["build"],"cwd":"/abs/path"}}
+```
+
+and says nothing after it. The process decides and builds off the socket's runtime
+(`serve_blocking`, served in `crates/io/src/socket.rs`), writing back, as they come, one
+notification per line, `{"jsonrpc":"2.0","method":"onehand/line","params":{"out":"…"}}` for a line
+the command printed or `{"note":"…"}` for onehand's own, then the answer:
+`{"jsonrpc":"2.0","id":1,"result":{"exit":<code>}}` for a command that ran on the host, or
+`{"result":{"run":"here","fell_back":<bool>}}` for one the shim runs itself, `fell_back` when it
+was meant for a host that did not answer. A connection that drops before the answer stops the
+build. Each run that ends tells the app (`Incoming::Routed`), which redraws its windows, so the
+project page reads how the host answered.
 
 ## The MCP conversation
 

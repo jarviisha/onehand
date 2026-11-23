@@ -347,6 +347,11 @@ _Avoid_: build server, build machine, VPS
 A host a project builds on: one of the entries on its page, with what a build brings back. A
 build-only host and a host that runs sessions can both be one.
 
+**Routed command**:
+A command a project names, such as `cargo build`, whose run by one of its agents goes to the
+project's picked build host instead of this machine, with what it brings back.
+_Avoid_: intercepted, proxied, wrapped command
+
 **Snapshot**:
 The commit a build carries to a host: the folder as it stands, uncommitted work included and
 ignored files left out, made aside so the branch and the index do not move.

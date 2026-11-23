@@ -355,7 +355,7 @@ room and leaves the terminal as it is.
   the code face), *Then restart onehand, or add another agent in the settings*, and
   *Open the agent settings* (secondary), which opens Settings on Agents.
 - A project's page, reached by its row or with no session open, shows, from the top: a head (the project's name, its path and git line
-  under it, *Run check* (spinning while a check runs) at the end); then *What are we building?*,
+  under it, then at the end the *Builds* chip and *Run check* (spinning while a check runs)); then *What are we building?*,
   semibold and centred, over the page's composer: an edged card as the session's, its field, then
   `+` (a menu: *Attach files…*, the native picker; *Mention a file* and *Run a slash command*,
   which type `@` and `/` from code), the agent chip (*Agent*, each configured agent, the one picked ticked; the first while none is
@@ -426,6 +426,16 @@ room and leaves the terminal as it is.
   its worktree, listing each; judged again when answered, a toast says
   what was removed and what was kept. What the project is set to is in Settings' *Projects*.
   The page scrolls as one.
+- The *Builds* chip, in a project page's head before *Run check*, is drawn for a project on this
+  machine that builds on at least one Linux host, and only when this machine runs Linux: a
+  picker at the head's control size reading *Builds: This machine*, *Builds: <host>*, *Builds:
+  here (hosts off)* while builds on hosts are off for the machine, or *Builds: here (<host> not
+  answering)* in the warning ink after a routed run found the picked host not answering, until
+  one reaches it again. Its menu: the label *Builds*, *This machine* and each Linux build host,
+  the pick checked (while the switch is off too); a separator; *Build on hosts*, checked while
+  on, which turns the machine's switch. A pick refused, or a switch the file would not take,
+  is said in a toast, the switch put back. The palette's command *Toggle builds on hosts*
+  turns the same switch.
 - A project on a host shows the same head, its path written `<host>:<path>` (never shortened to
   `~/`), its git line once read over a live attach (none while a local project on the same path
   is in the workspace), and *Refresh* (a quiet icon) in the head; its composer's *Start in*
@@ -590,8 +600,17 @@ under, *target/release/app, into out/linux*, or *Brings nothing back*; an edit m
 host…*: a dialog, *Host* with the menu of declared hosts, *Artifacts*, one path a line, and
 *Into*; *Cancel*, then *Add* or *Save*, and what refuses it is said in the form) and *Worktree
 folder* (the folder new worktrees go in, or *Beside the repository*, with *Change…* and, while
-one is set, *Beside the repository*). With no such project it says *No project here runs on
-this machine*. A project's dots menu, on the rail and over its page, offers *Project
+one is set, *Beside the repository*). Under *Build hosts*, *Routed commands*, headed *What an
+agent's build runs on the build host, and what comes back*: one row per command, at most 20 and
+*N more not shown* past them, its words over what it brings back, the paths joined with `, `, or
+*Brings nothing back*; an edit mark and *Remove…*, which asks *Stop routing <words>?*; *No routed
+commands* with none; then *Add routed command…*: a dialog, *Add a routed command to <project>*
+(*A routed command of <project>* for an edit), led by *Suggested:* and the commands the
+project's folder offers and it does not route yet, each a link that fills *Command* (`Cargo.toml`
+offers *cargo build*, *cargo test* and *cargo clippy*; a `*.sln` or `*.csproj`, *dotnet build* and
+*dotnet test*); *Command*, *Artifacts*, one path a line; *Cancel*, then *Add* or *Save*, and what
+refuses it, the drive's words included, is said in the form. With no such project it
+says *No project here runs on this machine*. A project's dots menu, on the rail and over its page, offers *Project
 settings…* after *Copy project path* for such a project, opening this page on it. Under the
 Agents page's rows, each built-in agent installed on the
 machine with no entry of its own gets a line, *<agent> is on this machine*, with *Add* at its end,

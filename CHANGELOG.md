@@ -101,6 +101,13 @@ minor bump may break any of them.
   needs only `git`, `tar` and the toolchain on the host, and nothing of onehand's.
 - A project builds on a Windows host too, through its `cmd.exe`: the same flag, tool and page,
   with the command a `cmd.exe` line.
+- An agent's build runs on the project's build host without being told: a project names its
+  routed commands (`cargo build`, `dotnet test`) in Settings ▸ Projects, its page's *Builds* chip
+  picks the host, and a shim on the agent's `PATH` hands each such command to the running onehand,
+  which builds it there and brings back what it wrote. A host that does not answer builds here,
+  saying so; *Build on hosts*, or the palette's *Toggle builds on hosts*, switches it off for the
+  whole machine. Linux to Linux only.
+- A stopped build ends its command on the host, and what it started where the host has `setsid`.
 - Nothing attaches to a host declared as one that only builds, however it is asked: a project
   that named it before, or a workspace file written by hand, is told why.
 - Putting the offload form away no longer stops a send of the code under way: it runs to its end,

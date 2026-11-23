@@ -104,7 +104,10 @@ bring back what it built. Nothing of this needs the host service: it is the pers
   4. **The command runs** in the same folder, relative to the top, that it was asked from,
      through the host's login shell, so a toolchain a profile puts on `PATH` is found. Each line
      it prints, stderr with stdout, is handed over as it comes. It is given two hours
-     (`BUILD_LIMIT`).
+     (`BUILD_LIMIT`). On a POSIX host with `setsid` it runs in a session of its own, still in the
+     foreground, and its process group is written to `.git/onehand-route-pid` in the host's
+     folder (`Shell::run`); without `setsid` it runs as before and the file holds the command's
+     own id.
   5. **The artifacts come back** only when the command exits 0, all of them or none: one the
      build did not make fails the build, *<path> was not built on <host>*, before anything is
      written here. What comes back writes over what is here. Only the paths named are unpacked,
@@ -120,7 +123,14 @@ bring back what it built. Nothing of this needs the host service: it is the pers
   refused, *<path> is written with \; write it with /*, since what comes back is matched by that
   spelling.
 - **One build per folder and host at a time**, held by a lock file under `builds/` in the config
-  directory: *A build of <project> is already running on <host>*.
+  directory: *A build of <project> is already running on <host>*. A lock file that cannot be made
+  or locked fails the build, naming it, rather than being taken for a build already running.
+- **A stopped build, or one out of time, ends its command on the host** before the folder's lock is let go, so the
+  next build never checks out under a command still writing: the group or the id in
+  `.git/onehand-route-pid` is sent TERM, then KILL after five seconds, over a connection of its
+  own (`Shell::stop`). A host without `setsid` loses only the command itself, not what it started.
+  A stop during the checkout, before that file is written, stops nothing on the host; a Windows
+  host writes no such file, and its command is left as ssh going leaves it.
 - **A command the host could not find** (exit 127 from a POSIX shell) is said with whose `PATH`
   lacks it: *<program> is not on <host>'s PATH for ssh*. The program is read from what the
   shell said of it, since the command's first word may be `cd`, a variable set for it, or a tool
@@ -161,6 +171,111 @@ bring back what it built. Nothing of this needs the host service: it is the pers
     one, and for `cmd.exe` only those that need it.
   - **The tool `build_on_host`**, for a session's agent ([control.md](control.md#the-tools)).
   - **The check command**, which is the flag typed into its field.
+
+## Routed builds
+
+An agent onehand started runs a project's build command on the project's build host without being
+told: its `cargo build` goes through a shim to the running onehand, which builds it on the host
+the project picked and hands back its lines and its exit code. The agent sees the command it ran,
+and one line saying where it ran.
+
+- **A routed command** is one a project names, kept in its project file beside its build hosts
+  as `[[routes]]` (`RoutedCommand`, `crates/core/src/workspace/routed.rs`; `Project::routes`):
+  its `words`, the program and the words after it (`cargo build`), and its `artifacts`, paths
+  inside the project refused as a build host's are (`inside_refusal`). The program is a plain
+  name, never a path: *<program> must be a program's name, not a path*. A command matches when
+  the program is the same and, after any leading words starting with `-` or `+` (`cargo +nightly
+  build`, `cargo -q build`), the next words are the same, word for word
+  (`RoutedCommand::matches`). A project routes at most 20, and one set of words once. They are
+  changed through the projects' drive (`ProjectsDrive::put_route`, `remove_route`,
+  `crates/core/src/project/drive/routes.rs`), which refuses *<project> already routes <words>*,
+  *<project> routes at most 20 commands*, and any for a project whose sessions run on a host.
+- **The project's pick** is the build host its routed commands go to, or none for *This
+  machine*, kept as `builds_on` in its project file and changed through the same drive
+  (`ProjectsDrive::pick_build_host`), which refuses a host the project does not build on,
+  *<project> does not build on <host>*. Removing the picked build host clears the pick in the
+  same write. Its worktrees follow it.
+- **Builds on hosts is one switch for the whole machine**, on unless the flag file
+  `builds/hosts-off` stands in the config directory. The route drive holds it, one per process
+  (`RouteDrive`, `crates/core/src/host/route/drive.rs`), with how each host answered the last
+  routed run; the carrier writes the file. Off, every project builds here and each project's pick
+  is kept for when it is on again. Both the switch and the pick are read at every command, so
+  neither needs a session opened again.
+- **Only from a Linux machine to a Linux host** (`routable_hosts`,
+  `crates/core/src/host/route.rs`): another system compiles other `cfg` code, so its errors and
+  tests would not be this machine's. A host nobody declared is taken for Linux. A project whose
+  sessions run on a host, or that is offloaded, routes nothing: its agents build there already.
+
+### The shim
+
+- **One script per routed program**, `cargo`, `dotnet`, under `route-shims/` in the config
+  directory (`write_shims_blocking`, `crates/core/src/host/route/shim.rs`), each one line:
+  `exec '<onehand>' --route '<socket>' '<shim folder>' <program> "$@"`. They name the instance's
+  own binary and socket, so a `make dev` build and the installed one never route through each
+  other. They are written again at every agent start from the project files on disk, a shim for a
+  program no longer named removed; only a plain program name gets one. With no routed command in
+  any project nothing is written and the agent's `PATH` is left alone.
+- **The shim folder is put first on the agent's `PATH`** and on that of every terminal it asks
+  for over ACP (`crates/io/src/acp.rs`, `SessionOpts.term_env`), in front of the `PATH` the
+  agent's own config sets when it sets one, else of onehand's. Nothing else gets it: not the
+  terminal dock, not a check command, not a session on a host.
+- **`onehand --route`** is answered in `main` before the instance lock, as `--build` is
+  (`route_main`). It sends the command to the socket (`onehand/route`,
+  [control.md](control.md#a-routed-command)) and prints what comes back as it comes: the
+  command's lines on stdout, onehand's own on stderr after `onehand: `, then exits with the
+  host's code. Told to run here, it replaces itself with the real program: the first executable
+  of that name on `PATH` outside its own folder (`real_program`), with the same arguments,
+  folder and environment. A program found nowhere, or found only as a shim reached through a
+  link, is *onehand: <program>: command not found*, exit 127.
+
+### When a command goes to the host
+
+The running process decides (`decide`, `crates/core/src/host/route.rs`; `serve_blocking`,
+`crates/core/src/host/route/call.rs`), and anything short of a clear route runs here, saying
+nothing:
+
+1. The folder, made absolute by the shim (a relative one is answered here), belongs to a project
+   onehand keeps, its own folder or a worktree of it, found as `--build` finds one
+   (`project_of_blocking`).
+2. Builds on hosts is on, and the project's pick is still one of its routable hosts.
+3. The command matches one of the project's routed commands.
+4. Then it builds on the host, saying first *running on <host>*. The host is asked first whether
+   it answers at all (`reachable_blocking`: `ssh -o BatchMode=yes -o ConnectTimeout=5 <host>
+   true`), before any snapshot; only ssh's own failure, exit 255, is a host that did not answer.
+   Such a host is a fall-back, not a failure: *<host> did not answer; building here*, and the
+   page's chip says so until a routed run reaches it again.
+5. The build is the five steps of a build on a host, with two differences (`Job::fresh_only`,
+   `Job::wait`):
+   - **It waits its turn.** A build already running in that folder on that host is waited for,
+     *waiting for the build already running on <host>*, up to the two hours a command is given;
+     a person's `--build` still refuses.
+   - **Only what this run wrote comes back.** The host's folder has `.git/onehand-route-mark`
+     touched just before the command, and of the routed command's artifacts only those holding
+     something newer come back (`Shell::send_fresh`), each where the command would have written
+     it here, never under the build host's `into`. One the run did not write is left alone, not a
+     failure, so `cargo build` can name both `target/debug/app` and `target/release/app`. A
+     routed command that names no artifacts brings nothing back and returns only its output and
+     exit code.
+
+   What `--build` says after it, its hint, *brought back <paths>* and *the build did not finish*,
+   follows as onehand's own lines (`told`); any other failure of a step is the command's, exit 1.
+- **Falling back.** A host that did not answer, a socket nobody answers (*onehand is not
+  reachable; building here*) and a socket the agent's sandbox refuses (*the agent's sandbox blocks
+  onehand's socket; allow network in its sandbox; building here*) run the command here with
+  `ONEHAND_ROUTED_HERE=1` set, under which a nested `--route` runs here at once without asking:
+  a `make test` calling `cargo test` is not sent to an absent host again for every nested call.
+  Builds on hosts off and a command no route matches are not fall-backs; a nested command under
+  them is routed as any other.
+- **The agent stopping the command** (its tool times out, it kills the process) drops the
+  connection, and the running process stops the build on the host as any stopped build is.
+- **Sandboxes.** Codex's default sandbox, `workspace-write`, forbids the Unix socket: routing
+  works for Codex only with `sandbox_workspace_write.network_access = true` in its config.
+  Claude Code's sandbox, when it is on, needs the socket allowed too.
+- **What is accepted.** Any process of the same user on the socket may ask for a route, but only
+  a project's declared routed command is ever built on a host. An agent whose sandbox has no
+  network still runs code on the build host through one (`build.rs`, tests).
+
+What the page and Settings draw is in [screens.md](screens.md#pages-without-a-session).
 
 ## The host service
 
