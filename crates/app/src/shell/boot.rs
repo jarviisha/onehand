@@ -152,6 +152,7 @@ impl Shell {
                         shell.sync_agent_started(cx);
                     }
                     E::PageChanged => shell.prune_host_waits(cx),
+                    E::StartFromPage { .. } => {}
                     E::ShowSession(uid) => shell.show_session(*uid, window, cx),
                     // Every one of these acts on the selected project, because
                     // the page that offers them is only drawn for it.

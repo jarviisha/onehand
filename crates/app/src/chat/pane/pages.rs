@@ -38,8 +38,10 @@ impl ChatPane {
     ) {
         // Off another page, a field there may hold the caret.
         self.leave_page(window, cx);
-        self.page = Some(Page { kind, view });
+        // Before the page is set: off a project's page, what was written
+        // there is set aside under its project.
         self.leave_shown_session(window, cx);
+        self.page = Some(Page { kind, view });
         self.active = None;
         self.put_project_page(None, cx);
         cx.notify();

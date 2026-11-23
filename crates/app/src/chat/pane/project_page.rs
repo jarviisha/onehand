@@ -16,7 +16,6 @@ use std::rc::Rc;
 
 mod host;
 mod offload_box;
-mod start;
 mod worktrees_box;
 
 /// How many past conversations the project page lists.
@@ -407,7 +406,10 @@ impl ChatPane {
         let kept = (project.here())
             .then(|| crate::projects::of(&project.path, cx))
             .flatten();
-        let in_branch = project.on_disk.clone();
+        // Where the session it starts runs: its own folder, a worktree on
+        // disk, or a new one where git can cut it.
+        let composer =
+            self.page_composer(&project.path, &project.on_disk, project.facts.is_repo, cx);
         // The head: the project named as every page is, over where it
         // is, and what it can start at the end.
         let head = page_head(
@@ -435,7 +437,6 @@ impl ChatPane {
                         .as_ref()
                         .map(|host| host::refresh(host, project.listing, cx)),
                 )
-                .chain([start::new_session(in_branch, cx)])
                 .collect(),
             cx,
         );
@@ -605,6 +606,7 @@ impl ChatPane {
                                 .max_w(PAGE_PROSE)
                                 .text_size(crate::tokens::CHROME_TEXT)
                                 .child(head)
+                                .child(composer)
                                 .child(body),
                         ),
                     ),

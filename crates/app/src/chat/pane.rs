@@ -36,6 +36,7 @@ mod history;
 mod lead_strip;
 mod offload_send;
 mod overlay;
+mod page_draft;
 mod pages;
 mod project_page;
 mod resume_picker;
@@ -46,7 +47,7 @@ mod titles;
 mod turns;
 mod unshown;
 mod worker_band;
-pub use events::{ChatPaneEvent, ProjectAction, Restart, SessionSignal, WorktreeAct};
+pub use events::{ChatPaneEvent, ProjectAction, Restart, SessionSignal, StartIn, WorktreeAct};
 use header::Archives;
 pub use pages::PageKind;
 use project_page::EmptyProject;
@@ -271,6 +272,10 @@ pub struct ChatPane {
     ///
     /// Only ever read while no session is showing.
     empty: Option<EmptyProject>,
+    /// What each project's page has written and picked, by its folder.
+    page_drafts: HashMap<std::path::PathBuf, page_draft::PageDraft>,
+    /// The branch a new worktree is cut on, written on a project's page.
+    page_branch: Entity<gpui_component::input::InputState>,
     /// The workspace page or the Tasks page, while one is what the pane
     /// shows. Set only with no session showing, and cleared by anything that
     /// shows a session or a project.
@@ -368,6 +373,16 @@ impl ChatPane {
         cx.new(|cx| {
             let composer = cx.new(|cx| Composer::new(window, cx));
             let input = composer.read(cx).state.clone();
+            let page_branch = cx.new(|cx| {
+                gpui_component::input::InputState::new(window, cx).placeholder("Branch name")
+            });
+            // Send on the page refuses by the branch, so each key draws it.
+            cx.subscribe(&page_branch, |_: &mut Self, _, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
+                    cx.notify();
+                }
+            })
+            .detach();
 
             cx.subscribe_in(
                 &input,
@@ -427,6 +442,8 @@ impl ChatPane {
                 window: window.window_handle(),
                 handle: cx.entity().downgrade(),
                 empty: None,
+                page_drafts: HashMap::new(),
+                page_branch,
                 page: None,
                 archives: None,
                 pending_fork: None,

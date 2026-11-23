@@ -490,3 +490,97 @@ fn a_project_added_under_settings_has_its_check_field(cx: &mut gpui::TestAppCont
     assert!(cx.update(|_, cx| shell.read(cx).check_input(&later).is_some()));
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Two projects' pages, written on in turn.
+fn two_pages<'a>(
+    cx: &'a mut gpui::TestAppContext,
+    name: &str,
+) -> (
+    gpui::Entity<crate::shell::Shell>,
+    &'a mut gpui::VisualTestContext,
+    std::path::PathBuf,
+    std::path::PathBuf,
+    std::path::PathBuf,
+) {
+    let spec = crate::shell::rig::nowhere();
+    let dir = crate::shell::rig::folder(name);
+    let (_, shell, cx) = crate::shell::rig::shell(cx, dir.join("tasks"), vec![spec]);
+    let (a, b) = (dir.join("a"), dir.join("b"));
+    for folder in [&a, &b] {
+        std::fs::create_dir_all(folder).unwrap();
+    }
+    let (a, b) = (
+        std::fs::canonicalize(a).unwrap(),
+        std::fs::canonicalize(b).unwrap(),
+    );
+    for at in [a.clone(), b.clone()] {
+        cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
+    }
+    cx.run_until_parked();
+    (shell, cx, dir, a, b)
+}
+
+fn show_page_of(
+    shell: &gpui::Entity<crate::shell::Shell>,
+    root: &std::path::Path,
+    cx: &mut gpui::VisualTestContext,
+) {
+    cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| {
+            let idx = shell.window.workspace.local_index(root).expect("a row");
+            shell.show_project_page(idx, window, cx);
+        })
+    });
+    cx.run_until_parked();
+}
+
+/// What is written on a project's page stays with that project.
+#[gpui::test]
+fn a_page_draft_stays_with_its_project(cx: &mut gpui::TestAppContext) {
+    let (shell, cx, dir, a, b) = two_pages(cx, "page-drafts");
+    show_page_of(&shell, &a, cx);
+    let pane = cx.update(|_, cx| shell.read(cx).chat.clone());
+    cx.update(|window, cx| pane.update(cx, |pane, cx| pane.type_in_composer("for a", window, cx)));
+    show_page_of(&shell, &b, cx);
+    assert_eq!(cx.update(|_, cx| pane.read(cx).composer_text(cx)), "");
+    show_page_of(&shell, &a, cx);
+    assert_eq!(cx.update(|_, cx| pane.read(cx).composer_text(cx)), "for a");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Send on a page asks for a session with what was written and picked.
+#[gpui::test]
+fn send_on_the_page_asks_for_a_session_with_what_was_picked(cx: &mut gpui::TestAppContext) {
+    use crate::chat::pane::{ChatPaneEvent, StartIn};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let (shell, cx, dir, a, _) = two_pages(cx, "page-send");
+    show_page_of(&shell, &a, cx);
+    let pane = cx.update(|_, cx| shell.read(cx).chat.clone());
+    let heard: Rc<RefCell<Vec<(std::path::PathBuf, String, StartIn)>>> = Rc::default();
+    let into = heard.clone();
+    let _keep = cx.update(|_, cx| {
+        cx.subscribe(&pane, move |_, event: &ChatPaneEvent, _| {
+            if let ChatPaneEvent::StartFromPage {
+                root, text, start, ..
+            } = event
+            {
+                into.borrow_mut()
+                    .push((root.clone(), text.clone(), start.clone()));
+            }
+        })
+    });
+    let elsewhere = dir.join("a-feat");
+    cx.update(|window, cx| {
+        pane.update(cx, |pane, cx| {
+            pane.set_page_start(StartIn::Folder(elsewhere.clone()), None, window, cx);
+            pane.type_in_composer("go", window, cx);
+            pane.press_send(window, cx);
+        })
+    });
+    assert_eq!(
+        heard.borrow().as_slice(),
+        [(a.clone(), "go".to_string(), StartIn::Folder(elsewhere))]
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

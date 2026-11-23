@@ -60,6 +60,18 @@ pub enum WorktreeAct {
     Forget(PathBuf),
 }
 
+/// Where a session sent from a project's page is to run.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum StartIn {
+    /// The project's own folder.
+    #[default]
+    Project,
+    /// One of its worktrees, by its folder.
+    Folder(PathBuf),
+    /// A worktree cut for it on a branch named on the page.
+    NewWorktree,
+}
+
 /// What the pane asks the shell for. Kept tiny on purpose: the chat's job is
 /// the conversation, and routing a file into the Workbench is the shell's.
 pub enum ChatPaneEvent {
@@ -150,6 +162,16 @@ pub enum ChatPaneEvent {
     WatchHostSession {
         agent: SharedString,
         session: onehand_core::host::wire::HostSession,
+    },
+    /// Start a session in the project at `root` from its page: `text` its
+    /// first prompt, run by `agent`, in the place `start` names; `branch` the
+    /// new worktree's, when one is to be cut.
+    StartFromPage {
+        root: PathBuf,
+        text: String,
+        agent: Option<gpui::SharedString>,
+        start: StartIn,
+        branch: Option<String>,
     },
     /// Open Settings on its Agents page — the no-agent state's way to where an
     /// agent is set up. Settings is the shell's, as every page is.

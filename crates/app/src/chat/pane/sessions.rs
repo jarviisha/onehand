@@ -120,8 +120,10 @@ impl ChatPane {
             .update(cx, |composer, cx| composer.take_draft(window, cx));
         // A draft belonging to nobody -- typed against a session that has since
         // been closed -- has nowhere to go back to.
-        if let Some(conv) = self.active_conversation_mut() {
-            conv.draft = (!draft.is_empty()).then_some(draft);
+        match self.active_conversation_mut() {
+            Some(conv) => conv.draft = (!draft.is_empty()).then_some(draft),
+            // Off a project's page, what was written there stays with it.
+            None => self.stash_page_draft(draft, cx),
         }
     }
 
@@ -600,6 +602,9 @@ impl ChatPane {
             return;
         }
         self.leave_page(window, cx);
+        // Before the page changes: what was written on the one left is set
+        // aside under its own project.
+        self.leave_shown_session(window, cx);
         self.page = None;
         let page = root.map(|(label, path, on)| {
             // An offloaded project's sessions run in its mirror there.
@@ -637,12 +642,8 @@ impl ChatPane {
         self.put_project_page(page, cx);
         self.scan_project_history(cx);
         self.list_host_sessions(cx);
-        // Going to no session at all is still leaving the one that was showing,
-        // and the draft has to be put down here too: a prompt left in the box
-        // while passing through an empty project would otherwise be sitting
-        // there, addressed to nobody, when the next session opens.
-        self.leave_shown_session(window, cx);
         self.active = None;
+        self.restore_page_draft(window, cx);
         cx.notify();
     }
 

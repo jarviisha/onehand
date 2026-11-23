@@ -38,6 +38,7 @@ mod presentation;
 mod attachments;
 mod card;
 mod complete;
+mod page_card;
 mod popup;
 mod rows;
 pub(in crate::chat) use card::{COMPOSER_SPLIT, status_chip};
