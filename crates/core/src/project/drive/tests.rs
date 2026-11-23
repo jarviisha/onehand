@@ -475,3 +475,15 @@ fn a_worktree_gone_by_a_tasks_removal_is_forgotten_in_its_project() {
     );
     assert!(d.worktree_gone(Path::new("/code/a-x")).is_empty(), "once");
 }
+
+/// A project's Cards default is kept as its check command is.
+#[test]
+fn a_projects_cards_default_is_kept() {
+    let (mut d, p) = drive();
+    let fx = d.set_cards(&p.id, crate::chat::Cards::AllowEdits);
+    assert!(matches!(&fx[..], [Effect::Arm { .. }, Effect::Changed(id)] if *id == p.id));
+    assert_eq!(d.get(&p.id).unwrap().cards, crate::chat::Cards::AllowEdits);
+    assert!(d
+        .set_cards(&p.id, crate::chat::Cards::AllowEdits)
+        .is_empty());
+}

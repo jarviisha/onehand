@@ -32,6 +32,7 @@ pub const SAVE_DEBOUNCE: Duration = crate::workspace::drive::SAVE_DEBOUNCE;
 pub enum Thing {
     Name,
     Check,
+    Cards,
     Builds,
     Worktrees,
     WorktreeParent,
@@ -44,6 +45,7 @@ pub enum Thing {
 pub enum Value {
     Name(String),
     Check(Option<String>),
+    Cards(crate::chat::Cards),
     Builds(Vec<BuildHost>),
     Worktrees(Vec<Worktree>),
     WorktreeParent(Option<PathBuf>),
@@ -404,6 +406,25 @@ impl ProjectsDrive {
         )
     }
 
+    /// Set what a session sent from project `id`'s page answers of its cards.
+    #[must_use = "its effects are to be carried"]
+    pub fn set_cards(&mut self, id: &ProjectId, cards: crate::chat::Cards) -> Vec<Effect> {
+        let Some(project) = self.projects.get_mut(id) else {
+            return Vec::new();
+        };
+        if project.cards == cards {
+            return Vec::new();
+        }
+        let before = std::mem::replace(&mut project.cards, cards);
+        self.change(
+            id,
+            Thing::Cards,
+            Value::Cards(before),
+            Value::Cards(cards),
+            true,
+        )
+    }
+
     /// Make `entry` one of project `id`'s build hosts: in place of the one at
     /// `replacing`, or added at the end. Refused, in words, for a project
     /// whose sessions run on a host, which builds there already, and for a
@@ -645,6 +666,11 @@ impl ProjectsDrive {
             Value::Builds(builds) => {
                 if let Some(project) = self.projects.get_mut(id) {
                     project.builds = builds;
+                }
+            }
+            Value::Cards(cards) => {
+                if let Some(project) = self.projects.get_mut(id) {
+                    project.cards = cards;
                 }
             }
             Value::WorktreeParent(parent) => {

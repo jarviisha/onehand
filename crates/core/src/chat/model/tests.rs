@@ -1568,6 +1568,7 @@ fn permission(title: &str) -> PermissionRequest {
         tool_call_id: None,
         kind: crate::acp::ToolKind::Execute,
         child: None,
+        locations: Vec::new(),
         title: title.into(),
         options: vec![
             PermissionOption {
@@ -1655,6 +1656,7 @@ fn resuming_adopts_transcript_title_prefs_and_date() {
                 id: "effort".into(),
                 value: "high".into(),
             }],
+            ..Prefs::default()
         },
         items: Vec::new(),
         written: 0,

@@ -117,6 +117,10 @@ pub struct Project {
     pub worktree_parent: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub worktrees: Vec<Worktree>,
+    /// What a session the person sends from the project's page answers of
+    /// its cards by itself, until it is changed there.
+    #[serde(default, skip_serializing_if = "is_manual")]
+    pub cards: crate::chat::Cards,
 }
 
 /// Which of a project's folders a path is.
@@ -126,6 +130,10 @@ pub enum Folder {
     Home,
     /// The worktree at this index of [`Project::worktrees`].
     Worktree(usize),
+}
+
+fn is_manual(cards: &crate::chat::Cards) -> bool {
+    *cards == crate::chat::Cards::Manual
 }
 
 impl Project {
@@ -141,6 +149,7 @@ impl Project {
             builds: Vec::new(),
             worktree_parent: None,
             worktrees: Vec::new(),
+            cards: crate::chat::Cards::Manual,
         }
     }
 

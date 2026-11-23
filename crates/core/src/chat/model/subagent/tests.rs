@@ -334,6 +334,7 @@ fn permission(child: Option<&str>) -> PermissionRequest {
         title: "Run command".into(),
         options: vec![],
         child: child.map(str::to_string),
+        locations: Vec::new(),
     }
 }
 

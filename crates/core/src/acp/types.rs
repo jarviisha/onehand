@@ -479,6 +479,10 @@ pub struct PermissionRequest {
     pub options: Vec<PermissionOption>,
     /// The subagent session that asks, when it is not the root session.
     pub child: Option<String>,
+    /// The paths the work touches, as the tool call names them: what a level
+    /// that allows edits checks before it allows any.
+    #[serde(default)]
+    pub locations: Vec<std::path::PathBuf>,
 }
 
 // ── Elicitation (the agent *asking a question*, not asking permission) ───────

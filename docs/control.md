@@ -4,8 +4,9 @@ How onehand is driven from outside a window: the socket the running process list
 second launch does with it, and onehand's own tools, which a program outside onehand may call over
 it when Settings allows, or the agent of a session a person has switched on.
 
-**No tool answers a card, a permission or an approval.** Those always wait for a person; no tool
-is written for them.
+**No tool answers a card, a permission or an approval.** Those wait for a person, or are answered
+by the session's own *Cards* level, which only a person sets; no tool is written for them, and a
+session a tool opens starts on *Manual*.
 
 ## The socket
 

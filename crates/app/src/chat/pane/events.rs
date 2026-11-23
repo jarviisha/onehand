@@ -89,6 +89,8 @@ pub struct PageSend {
     pub picks: Vec<(String, String)>,
     /// What was staged to go with the first prompt.
     pub staged: Vec<onehand_core::attachment::StagedAttachment>,
+    /// What the session answers of its cards by itself.
+    pub cards: onehand_core::chat::Cards,
 }
 
 /// What the pane asks the shell for. Kept tiny on purpose: the chat's job is

@@ -327,6 +327,7 @@ impl Composer {
         });
         let branch = branch.map(|chip| self.opens_menu(Overlay::Branch, chip));
         let control = control_chip(session, cx);
+        let cards = super::cards_chip::cards_chip(session, cx);
         let meters: Vec<_> = {
             let chat = &session.read(cx).chat();
             [chat.context_meter(), chat.limit_meter()]
@@ -336,14 +337,26 @@ impl Composer {
         .enumerate()
         .map(|(i, meter)| meter_view(i, meter, cx))
         .collect();
-        if branch.is_none() && mode.is_none() && control.is_none() && meters.is_empty() {
+        if branch.is_none()
+            && mode.is_none()
+            && control.is_none()
+            && cards.is_none()
+            && meters.is_empty()
+        {
             return None;
         }
         let strip = match narrow {
             true => div().v_flex().items_start().gap_2(),
             false => div().h_flex().items_center().justify_between().gap_2(),
         };
-        Some(
+        let cost = super::cards_chip::cards_cost(session, cx).map(|cost| {
+            div()
+                .px_1p5()
+                .text_xs()
+                .text_color(crate::theme::status_ink(cx).warning)
+                .child(cost)
+        });
+        let strip = Some(
             strip
                 .w_full()
                 // The card's own inset, so the branch lines up with the `+`
@@ -361,9 +374,13 @@ impl Composer {
                         // Left of the mode: standing state about the session
                         // beside the one setting it runs under.
                         .children(meters)
-                        .children(mode),
+                        .children(mode)
+                        // Last, at the strip's end, as on a project's page.
+                        .children(cards),
                 ),
-        )
+        );
+        // What the level costs, under the strip, while it answers cards.
+        strip.map(|strip| div().v_flex().w_full().child(strip).children(cost))
     }
 }
 
@@ -399,7 +416,7 @@ pub(in crate::chat) fn status_chip(
 
 /// A chip's words, in the chip's own ink and size, giving way with an ellipsis
 /// rather than pushing the chip's caret out of its box.
-fn chip_text(text: impl Into<SharedString>) -> gpui::Div {
+pub(super) fn chip_text(text: impl Into<SharedString>) -> gpui::Div {
     div().min_w_0().truncate().child(text.into())
 }
 

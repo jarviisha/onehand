@@ -262,7 +262,13 @@ impl Chat {
                     })
                 })
                 .collect(),
+            cards: self.cards,
         }
+    }
+
+    /// Take the level a saved conversation answered its cards at.
+    pub(super) fn take_prefs_cards(&mut self, prefs: &Prefs) {
+        self.cards = prefs.cards;
     }
 
     /// A title derived from the conversation's **first user prompt** — its first

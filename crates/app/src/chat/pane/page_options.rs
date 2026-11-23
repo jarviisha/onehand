@@ -178,6 +178,72 @@ impl ChatPane {
     }
 }
 
+impl ChatPane {
+    /// The level a session sent from `root`'s page answers its cards at: the
+    /// project's default, *Manual* on a host's page until its chip is the
+    /// host's own.
+    pub(super) fn page_cards(&self, root: &Path, cx: &App) -> onehand_core::chat::Cards {
+        let here = self
+            .empty
+            .as_ref()
+            .is_some_and(|project| project.host.is_none());
+        match here {
+            true => crate::projects::of(root, cx)
+                .map(|project| project.cards)
+                .unwrap_or_default(),
+            false => onehand_core::chat::Cards::Manual,
+        }
+    }
+
+    /// The page's *Cards* chip, setting its project's default, and what the
+    /// level costs, on a page on this machine.
+    pub(super) fn page_cards_chip(
+        &self,
+        root: &Path,
+        cx: &mut Context<Self>,
+    ) -> Option<(AnyElement, Option<&'static str>)> {
+        if !self
+            .empty
+            .as_ref()
+            .is_some_and(|project| project.host.is_none())
+        {
+            return None;
+        }
+        let level = self.page_cards(root, cx);
+        let at = root.to_path_buf();
+        let chip = crate::controls::menu_below(
+            "page-cards",
+            onehand_ui::picker(
+                "page-cards-trigger",
+                format!("Cards: {}", level.label()),
+                false,
+                onehand_ui::ControlSize::Short,
+                cx,
+            ),
+            move |mut menu, _, _| {
+                menu = menu.item(crate::controls::menu_label("Cards, this project's default"));
+                for choice in onehand_core::chat::Cards::ALL {
+                    let at = at.clone();
+                    menu = menu.item(
+                        crate::controls::menu_item(format!(
+                            "{} · {}",
+                            choice.label(),
+                            choice.about()
+                        ))
+                        .checked(choice == level)
+                        .on_click(move |_, _, cx: &mut App| {
+                            crate::projects::set_cards(&at, choice, cx);
+                        }),
+                    );
+                }
+                menu
+            },
+        )
+        .into_any_element();
+        Some((chip, level.cost()))
+    }
+}
+
 /// The mode as a group, the one picked or else the one in force.
 fn mode_group(facts: &AgentFacts, picked: Option<String>) -> Option<Group> {
     (!facts.modes.is_empty()).then(|| Group {

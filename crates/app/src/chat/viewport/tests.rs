@@ -168,6 +168,7 @@ fn permission(resolved: Option<&str>) -> ChatItem {
             tool_call_id: None,
             kind: ToolKind::Execute,
             child: None,
+            locations: Vec::new(),
             title: "Run `rm -rf build`?".to_string(),
             options: Vec::new(),
         },

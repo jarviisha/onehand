@@ -41,6 +41,7 @@ fn card(chat: &mut Chat) {
         tool_call_id: None,
         kind: ToolKind::Execute,
         child: None,
+        locations: Vec::new(),
         title: "cargo test".into(),
         options: vec![PermissionOption {
             id: "allow".into(),
@@ -180,6 +181,7 @@ fn a_subagent_s_card_after_the_turn_refuses_the_cancel() {
         tool_call_id: None,
         kind: ToolKind::Execute,
         child: Some("c1".into()),
+        locations: Vec::new(),
         title: "cargo test".into(),
         options: vec![],
     }));

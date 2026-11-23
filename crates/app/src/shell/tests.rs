@@ -972,3 +972,48 @@ fn enter_on_the_page_takes_the_highlighted_row(cx: &mut gpui::TestAppContext) {
     assert!(text.starts_with("/review"), "{text:?}");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A page sends the level its project's Cards default is at; changed on the
+/// page, the project keeps it.
+#[gpui::test]
+fn the_page_sends_its_projects_cards(cx: &mut gpui::TestAppContext) {
+    use crate::chat::pane::ChatPaneEvent;
+    use onehand_core::chat::Cards;
+    use std::cell::Cell;
+    use std::rc::Rc;
+    let spec = crate::shell::rig::nowhere();
+    let dir = crate::shell::rig::folder("page-cards");
+    let (handle, shell, cx) = crate::shell::rig::shell(cx, dir.join("tasks"), vec![spec]);
+    let home = dir.join("p");
+    std::fs::create_dir_all(&home).unwrap();
+    let home = std::fs::canonicalize(home).unwrap();
+    let project = onehand_core::project::Project::new(
+        onehand_core::project::ProjectId::mint(912_777),
+        None,
+        home.clone(),
+    );
+    crate::shell::rig::keep_projects(handle, &shell, vec![project], cx);
+    let at = home.clone();
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
+    cx.run_until_parked();
+    cx.update(|_, cx| crate::projects::set_cards(&home, Cards::AllowEdits, cx));
+    show_page_of(&shell, &home, cx);
+    let pane = cx.update(|_, cx| shell.read(cx).chat.clone());
+    let heard = Rc::new(Cell::new(None));
+    let into = heard.clone();
+    let _keep = cx.update(|_, cx| {
+        cx.subscribe(&pane, move |_, event: &ChatPaneEvent, _| {
+            if let ChatPaneEvent::StartFromPage(send) = event {
+                into.set(Some(send.cards));
+            }
+        })
+    });
+    cx.update(|window, cx| {
+        pane.update(cx, |pane, cx| {
+            pane.type_in_composer("go", window, cx);
+            pane.press_send(window, cx);
+        })
+    });
+    assert_eq!(heard.get(), Some(Cards::AllowEdits));
+    let _ = std::fs::remove_dir_all(dir);
+}

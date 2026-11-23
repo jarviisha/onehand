@@ -313,6 +313,14 @@ only what it lacks. The host's journal stays the truth: a copy that disagrees is
 again.
 _Avoid_: cache, backup, mirror (that is an offloaded project's folder)
 
+**Cards**:
+What a session answers of its agent's cards by itself: *Manual* (every card waits for the person),
+*Allow edits* (a permission to read or edit files is allowed with its narrowest grant; the rest
+waits), *Bypass* (every card answered as a permission bypass answers it). A project keeps a
+default, which only a session the person sends from its page starts on; every other session starts
+on *Manual*, and each session's own level is kept with its conversation.
+_Avoid_: approval (a workflow step's), auto-approve
+
 **Permission bypass**:
 A host project's switch, on by default, under which the host service answers every card its
 sessions park: a permission is allowed, and a question is told to decide on its own and say what

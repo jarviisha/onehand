@@ -394,6 +394,12 @@ pub(crate) fn set_worktree_parent(of: &Path, parent: Option<PathBuf>, cx: &mut A
     change_of(of, cx, |drive, id| drive.set_worktree_parent(id, parent));
 }
 
+/// Answer the cards of a session sent from the page of the project holding
+/// `of` at `cards`.
+pub(crate) fn set_cards(of: &Path, cards: onehand_core::chat::Cards, cx: &mut App) {
+    change_of(of, cx, |drive, id| drive.set_cards(id, cards));
+}
+
 /// The folder new worktrees of the project holding `of` go in; none for
 /// beside the repository.
 pub(crate) fn worktree_parent(of: &Path, cx: &App) -> Option<PathBuf> {
