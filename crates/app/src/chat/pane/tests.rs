@@ -483,3 +483,16 @@ fn an_open_conversation_is_found_by_its_folder() {
     assert_eq!(super::history::held_by(&open, &dir), Some(9));
     assert_eq!(super::history::held_by(&open[..1], &dir), None);
 }
+
+/// A host's switch reads as a level once the host has said how it stands,
+/// and its cost names the host.
+#[test]
+fn a_hosts_switch_reads_as_cards() {
+    use super::page_options::{host_cards, host_cost};
+    use onehand_core::chat::Cards;
+    assert_eq!(host_cards(None), None, "nothing drawn until the host says");
+    assert_eq!(host_cards(Some(false)), Some(Cards::Manual));
+    assert_eq!(host_cards(Some(true)), Some(Cards::Bypass));
+    let host = onehand_core::workspace::HostName("box".into());
+    assert!(host_cost(&host).contains("on box"));
+}

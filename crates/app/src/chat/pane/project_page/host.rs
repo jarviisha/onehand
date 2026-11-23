@@ -230,45 +230,16 @@ impl ChatPane {
     }
 }
 
-/// The page's *Settings* on a host: whether the host answers the folder's
-/// cards by itself, with what that costs said under it, always.
-pub(super) fn bypass_box(host: &HostName, on: bool, cx: &mut Context<ChatPane>) -> AnyElement {
-    let cost = format!(
-        "While on, the host allows every permission an agent asks for, and tells it to decide \
-         its own questions and say what it chose. An agent can then do anything the host's user \
-         can on {host}, git push and deleting files included. Off, cards wait for you."
-    );
-    page_card("Settings", None, None, cx)
-        .child(
-            div()
-                .v_flex()
-                .gap_1()
-                .child(
-                    div().h_flex().child(
-                        div().flex_none().cursor_pointer().child(
-                            onehand_ui::toggle("host-bypass", on)
-                                .label("Answer cards on the host")
-                                .on_click(cx.listener(|pane, on: &bool, window, cx| {
-                                    pane.set_host_bypass(*on, window, cx)
-                                })),
-                        ),
-                    ),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(cost),
-                ),
-        )
-        .into_any_element()
-}
-
 impl ChatPane {
     /// Turn the host's answering of the page folder's cards on or off. Shown
     /// at once; the host's answer is what stays, and a failure puts the switch
     /// back and says why.
-    fn set_host_bypass(&mut self, on: bool, window: &mut gpui::Window, cx: &mut Context<Self>) {
+    pub(in crate::chat::pane) fn set_host_bypass(
+        &mut self,
+        on: bool,
+        window: &mut gpui::Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(project) = self.empty.as_mut() else {
             return;
         };

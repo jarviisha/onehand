@@ -7,6 +7,7 @@ use gpui::{AnyElement, App, Context, IntoElement, ParentElement, SharedString, S
 use gpui_component::ActiveTheme;
 use gpui_component::button::ButtonVariants as _;
 use onehand_core::acp::Role;
+use onehand_core::chat::Cards;
 use onehand_core::chat::MODE_SELECTOR;
 use onehand_core::config::AgentFacts;
 use onehand_ui::ShortIcon as _;
@@ -180,8 +181,8 @@ impl ChatPane {
 
 impl ChatPane {
     /// The level a session sent from `root`'s page answers its cards at: the
-    /// project's default, *Manual* on a host's page until its chip is the
-    /// host's own.
+    /// project's default; *Manual* on a host's page, whose host answers the
+    /// folder's cards itself (its chip is the host's switch).
     pub(super) fn page_cards(&self, root: &Path, cx: &App) -> onehand_core::chat::Cards {
         let here = self
             .empty
@@ -195,22 +196,41 @@ impl ChatPane {
         }
     }
 
-    /// The page's *Cards* chip, setting its project's default, and what the
-    /// level costs, on a page on this machine.
+    /// The page's *Cards* chip and what the level costs: on this machine,
+    /// the project's default; on a host, the host's own answering of the
+    /// folder's cards, once the host has said how it stands.
     pub(super) fn page_cards_chip(
         &self,
         root: &Path,
         cx: &mut Context<Self>,
-    ) -> Option<(AnyElement, Option<&'static str>)> {
-        if !self
-            .empty
-            .as_ref()
-            .is_some_and(|project| project.host.is_none())
-        {
-            return None;
-        }
-        let level = self.page_cards(root, cx);
+    ) -> Option<(AnyElement, Option<String>)> {
+        let project = self.empty.as_ref()?;
+        let (level, choices, heading, cost) = match &project.host {
+            None => {
+                let level = self.page_cards(root, cx);
+                let cost = level.cost().map(str::to_string);
+                (
+                    level,
+                    &Cards::ALL[..],
+                    "Cards, this project's default".to_string(),
+                    cost,
+                )
+            }
+            Some(host) => {
+                let level = host_cards(project.bypass)?;
+                let cost = (level == Cards::Bypass).then(|| host_cost(host));
+                (
+                    level,
+                    &HOST_CARDS[..],
+                    format!("Cards, this folder on {host}"),
+                    cost,
+                )
+            }
+        };
+        let on_host = project.host.is_some();
         let at = root.to_path_buf();
+        let pane = cx.entity().downgrade();
+        let choices = choices.to_vec();
         let chip = crate::controls::menu_below(
             "page-cards",
             onehand_ui::picker(
@@ -221,9 +241,9 @@ impl ChatPane {
                 cx,
             ),
             move |mut menu, _, _| {
-                menu = menu.item(crate::controls::menu_label("Cards, this project's default"));
-                for choice in onehand_core::chat::Cards::ALL {
-                    let at = at.clone();
+                menu = menu.item(crate::controls::menu_label(heading.clone()));
+                for choice in &choices {
+                    let (at, pane, choice) = (at.clone(), pane.clone(), *choice);
                     menu = menu.item(
                         crate::controls::menu_item(format!(
                             "{} · {}",
@@ -231,8 +251,14 @@ impl ChatPane {
                             choice.about()
                         ))
                         .checked(choice == level)
-                        .on_click(move |_, _, cx: &mut App| {
-                            crate::projects::set_cards(&at, choice, cx);
+                        .on_click(move |_, window, cx: &mut App| match on_host {
+                            // The host keeps the folder's switch.
+                            true => {
+                                let _ = pane.update(cx, |pane: &mut Self, cx| {
+                                    pane.set_host_bypass(choice == Cards::Bypass, window, cx)
+                                });
+                            }
+                            false => crate::projects::set_cards(&at, choice, cx),
                         }),
                     );
                 }
@@ -240,8 +266,28 @@ impl ChatPane {
             },
         )
         .into_any_element();
-        Some((chip, level.cost()))
+        Some((chip, cost))
     }
+}
+
+/// What a host offers of *Cards*: its switch is on or off, so the folder's
+/// cards all wait or are all answered.
+const HOST_CARDS: [Cards; 2] = [Cards::Manual, Cards::Bypass];
+
+/// The host's switch for a folder as a level; none until the host has said.
+pub(super) fn host_cards(bypass: Option<bool>) -> Option<Cards> {
+    bypass.map(|on| match on {
+        true => Cards::Bypass,
+        false => Cards::Manual,
+    })
+}
+
+/// What the host answering a folder's cards costs.
+pub(super) fn host_cost(host: &onehand_core::workspace::HostName) -> String {
+    format!(
+        "The host answers every card itself: an agent can do anything the host's user can on \
+         {host}, git push and deleting files included"
+    )
 }
 
 /// The mode as a group, the one picked or else the one in force.

@@ -373,7 +373,8 @@ room and leaves the terminal as it is.
   lists *Project folder*, each recorded worktree on disk (capped at 20, *N more not shown*) and,
   on a repository whose sessions run here, *New worktree…*; picked, a *Branch name* field stands
   beside the chip and takes the caret, its rule's refusal said under it in the danger ink as it
-  is typed. At the strip's end, on a project on this machine, *Cards: <level>*, its menu (*Cards,
+  is typed. At the strip's end, on a project on this machine (a host's is the host's switch,
+  below), *Cards: <level>*, its menu (*Cards,
   this project's default*) setting the level a session sent from the page starts on; a level
   other than *Manual* says its cost under the strip in the warning ink. A file dropped on the card or pasted into it is staged, as the picker stages one, in
   the session's tray over the card, and goes with the first prompt; `@` lists the project's files
@@ -435,12 +436,11 @@ room and leaves the terminal as it is.
   machine, through the same rows and cap: a muted status line *Not connected to <host>* (with *;
   trying again* while that is so), the failure's words under it in the muted ink, and *Try again*
   (secondary) beside them; with nothing kept for the folder the box says *No sessions kept on this
-  machine for this folder*. Under it, once the host has said it over a live attach, the box
-  *Settings* holds one switch, *Answer cards on the host*, and under it, always, in the muted
-  ink: *While on, the host allows every permission an agent asks for, and tells it to decide its
-  own questions and say what it chose. An agent can then do anything the host's user can on
-  <host>, git push and deleting files included. Off, cards wait for you.* The rail marks it
-  neither on nor off.
+  machine for this folder*. Its composer's *Cards* chip, once the host has said it over a live
+  attach, is the host's switch for the folder: *Cards, this folder on <host>*, its two rows
+  *Manual* and *Bypass* each with its line as on this machine, and while *Bypass* the strip's cost
+  line reads *The host answers every card itself: an agent can do anything the host's user can on
+  <host>, git push and deleting files included*. The rail marks it neither on nor off.
 - An offloaded project shows a local project's head, its path this machine's, with *Refresh*
   in it; its composer's *Start in* offers its folder alone; under it *Sessions on <host>* as on a host project, for the sessions in
   its mirror; then *Past conversations*, those it had here before it went, which open readable;
@@ -455,7 +455,7 @@ room and leaves the terminal as it is.
   shown*), then *Check again* and *Take the host's code…* (both secondary, refusing while the
   code moves; *Check again* spins while it checks). *Take the host's code…* asks *Take <host>'s
   code over these changes?*, naming the backup folder, and toasts where the backup is; then
-  *Settings* with the host's switch, as on a host project. No check command. On a branch the box *On <host>* reads instead *Sessions on <host>
+  its composer's *Cards* chip is the host's switch for its mirror, as on a host project. No check command. On a branch the box *On <host>* reads instead *Sessions on <host>
   work on onehand/<host>; this folder stays yours*, then, once counted, *onehand/<host> has N
   commits this branch does not* (or *has nothing this branch does not*), a failure in the danger
   ink, *Update host from laptop* (secondary, spinning while it runs, refusing while the branch is

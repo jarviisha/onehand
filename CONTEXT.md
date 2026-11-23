@@ -322,7 +322,7 @@ on *Manual*, and each session's own level is kept with its conversation.
 _Avoid_: approval (a workflow step's), auto-approve
 
 **Permission bypass**:
-A host project's switch, on by default, under which the host service answers every card its
+A host project's switch, on by default and drawn as its page's *Cards* chip at *Bypass*, under which the host service answers every card its
 sessions park: a permission is allowed, and a question is told to decide on its own and say what
 it chose. Kept on the host, so it holds while the laptop is away.
 _Avoid_: auto-approve, YOLO mode
