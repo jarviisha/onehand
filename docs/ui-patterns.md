@@ -206,7 +206,7 @@ name starts on its nav column's edge). The head's hairline parts it from what th
 body's own top inset stands what scrolls clear of the top.
 
 - **The head.** Its actions are `.short()`, at one height; its icon-only ghost buttons
-  (*Refresh*) stand before its creating action. The creating action (*New session*, Workflows'
+  (*Refresh*) stand before its creating action. The creating action (a project page's Send, Workflows'
   *New*, *New schedule*, *New issue*) is the view's one primary, stepping down to `secondary`
   while a form it opened, or an item floating over the list, is open and holds it. A page that
   only sets values (Settings) holds no primary, every button on it secondary, and stands its many

@@ -26,7 +26,7 @@ running, what needs me, and what has finished.
   A waiting run is answered in its session; an ended one is resumed, retried or dismissed. Dismiss
   moves it to *Finished* and keeps its outcome.
 - **The project page does not list a project's tasks**; this page, narrowed to the project, does.
-  Beside *New session* the project page offers **Run check** when the project has a check command.
+  In its head the project page offers **Run check** when the project has a check command.
   Pressed with a project on a host selected, with no project, or on one with no check command, it
   says so (`WorkspaceDrive::check_target`).
 - **A row says where its task came from** when a person did not start it: a schedule's task reads

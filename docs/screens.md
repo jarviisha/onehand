@@ -48,10 +48,11 @@ composer, and a transient state is a toast.
 
 App chrome outside the dock, so a layout restore cannot lose it, on the window's fill with no edge
 of its own beside the boxes. Top to bottom: *New session*, a row as a page's (its plus mark, its
-words in semibold and the full ink, the key's hint at its end), which starts in the keyboard's
-project, else the one on screen (there in the folder of the session on screen, as its key does), and
-whose menu (*Start in*, each project starting in its own folder and, under the one it would start
-in, an *In <branch>* per worktree of it on disk, starting in that worktree; *With agent*) opens from a chevron at
+words in semibold and the full ink, the key's hint at its end), which shows the page of the
+keyboard's project, else the one on screen, ready to start a session there (in the folder of the
+session on screen, as its key does), and
+whose menu (*Start in*, each project's page ready for its own folder and, under the one it would start
+in, an *In <branch>* per worktree of it on disk, ready for that worktree; *With agent*, that agent picked) opens from a chevron at
 the row's end, shown on hover and on the keyboard's row, and on a right-click; *Overview*, *Tasks*
 (a pill counting tasks that need attention, none at zero), *Issues*, *Workflows* and *Schedules*,
 each filled while its page shows; *Sessions*, in semibold and the full ink, with a warning-ink *N
@@ -85,8 +86,8 @@ while the branch is not being fetched or updated. A project is one row: its work
 of their own, their sessions listed under it. A project's row, and the project's dots
 menu, offer *Rename project…* after the pin's entry: a dialog, *Name* starting on the name, Enter
 or *Rename* renaming, refused while the name is blank; the folder keeps its own name. Its `+`
-starts a session in the project's own folder; a worktree split off it opens with a session in that
-worktree, shown.
+shows its page ready for the project's own folder; a worktree split off it shows the page ready
+for that worktree. No session is made until a prompt is sent from the page.
 Narrowed, the name keeps a minimum and the branch, or the host, gives way first. Its chevron alone
 folds it (not during a search); the rest of the row shows the project's page, which then fills the
 row, over whatever sessions it has open: they run on, and a session's own row shows it. `+` and `⋯` show on hover and on the keyboard's row, over the end of its
@@ -346,17 +347,28 @@ room and leaves the terminal as it is.
   the code face), *Then restart onehand, or add another agent in the settings*, and
   *Open the agent settings* (secondary), which opens Settings on Agents.
 - A project's page, reached by its row or with no session open, shows, from the top: a head (the project's name, its path and git line
-  under it, *Run check* (spinning while a check runs) and *New session* (primary, with a caret
-  under *Start in* an *In <branch>* per recorded worktree on disk, capped at 20 with *N more not
-  shown*, then, while more than one agent
-  is configured, *With agent*) at the end); then, in one column at every width, the box *Past
+  under it, *Run check* (spinning while a check runs) at the end); then *What are we building?*,
+  semibold and centred, over the page's composer: an edged card as the session's, its field, then
+  the agent chip (*Agent*, each configured agent, the one picked ticked; the first while none is
+  picked or the one picked is gone) and Send, the page's one primary, refused while nothing is
+  written (*Write a prompt first*), while the branch below fails its rule, and while a worktree is
+  being made; Enter sends, Shift+Enter a newline. Under the card, *Start in*: a chip naming
+  where the session runs, *Project folder*, a worktree's branch or *New worktree*, whose menu
+  lists *Project folder*, each recorded worktree on disk (capped at 20, *N more not shown*) and,
+  on a repository whose sessions run here, *New worktree…*; picked, a *Branch name* field stands
+  beside the chip and takes the caret, its rule's refusal said under it in the danger ink as it
+  is typed. What is written and picked is kept per project while the person is elsewhere. Send
+  cuts the worktree first when one is asked for (*Making worktree <branch>…* meanwhile; a
+  failure stays under the card in the danger ink, the words kept), then makes the session in
+  the place picked, run by the agent picked, and shows it; the words are its first prompt, held
+  until the agent is up, and come back to its composer if the agent never comes up. Then, in one column at every width, the box *Past
   conversations* with its count, its rows the overview's (age, title, then items and agent at the
   edge, then a `⋯` on hover holding *Resume* and *Delete…*, the same on a right-click), capped, its wait and empty lines inside it:
   every one of the project, in whichever of its folders it ran, and one that ran in a folder it
   no longer holds (a worktree since removed) has its *Resume* say the folder is gone; under
   it, for a project on this machine, the box *Worktrees* with the count of those its project
   records: a row each (its branch, under it its folder and *N sessions* running there, or
-  *Removing…* while a removal is judged or runs, at its end *New session* and a `⋯` holding
+  *Removing…* while a removal is judged or runs, at its end *New session*, which picks it under *Start in*, and a `⋯` holding
   *Remove worktree…* in the danger ink, gone while removing), one git no longer lists reading
   *Missing* with *Forget* in their place, then each checkout git lists that holds the project's folder and no
   project records, *Not in this project*, with *Add to this project*; capped at 20 with *N more not
@@ -374,7 +386,8 @@ room and leaves the terminal as it is.
   The page scrolls as one.
 - A project on a host shows the same head, its path written `<host>:<path>` (never shortened to
   `~/`), its git line once read over a live attach (none while a local project on the same path
-  is in the workspace), and *Refresh* (a quiet icon) before *New session*; under it one box,
+  is in the workspace), and *Refresh* (a quiet icon) in the head; its composer's *Start in*
+  offers its folder alone; under it one box,
   *Sessions on <host>* with its count, in place of *Past conversations*, and neither *Tasks*,
   *Schedules*, which are this machine's: a row per session the host keeps in that
   folder, newest first (its agent, then *started 3m ago* or *started just now*, and *running*, in
@@ -398,7 +411,7 @@ room and leaves the terminal as it is.
   <host>, git push and deleting files included. Off, cards wait for you.* The rail marks it
   neither on nor off.
 - An offloaded project shows a local project's head, its path this machine's, with *Refresh*
-  before *New session*; under it *Sessions on <host>* as on a host project, for the sessions in
+  in it; its composer's *Start in* offers its folder alone; under it *Sessions on <host>* as on a host project, for the sessions in
   its mirror; then *Past conversations*, those it had here before it went, which open readable;
   then the box *On <host>*: where the code is (*The code is here; it goes to <host> with the next
   prompt*, *<host> has this project's code until its sessions finish; edits are off meanwhile*,

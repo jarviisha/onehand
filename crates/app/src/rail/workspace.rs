@@ -286,8 +286,7 @@ fn new_session_menu(
                 menu = menu.item(crate::controls::menu_item(words.clone()).on_click(
                     move |_, window, cx: &mut App| {
                         to.update(cx, |shell: &mut Shell, cx| {
-                            let _ =
-                                shell.new_session_in_folder(idx, folder.clone(), None, window, cx);
+                            shell.page_to_start(idx, Some(folder.clone()), None, window, cx);
                         })
                         .ok();
                     },

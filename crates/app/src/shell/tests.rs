@@ -227,10 +227,10 @@ fn switching_to_a_session_in_another_folder_moves_the_panels(cx: &mut gpui::Test
     let _ = std::fs::remove_dir_all(dir);
 }
 
-/// A worktree split off a project is recorded in it, and a session starts in
-/// it on the project's own row, shown.
+/// A worktree split off a project is recorded in it, and the project's own
+/// row shows its page, ready to start a session there.
 #[gpui::test]
-fn a_split_starts_a_session_in_the_new_worktree(cx: &mut gpui::TestAppContext) {
+fn a_split_lands_on_the_page_in_the_new_worktree(cx: &mut gpui::TestAppContext) {
     let spec = crate::shell::rig::nowhere();
     let dir = crate::shell::rig::folder("split-starts");
     let (handle, shell, cx) = crate::shell::rig::shell(cx, dir.join("tasks"), vec![spec]);
@@ -262,8 +262,11 @@ fn a_split_starts_a_session_in_the_new_worktree(cx: &mut gpui::TestAppContext) {
         let rows: Vec<_> = workspace.roots.iter().map(|r| r.path.clone()).collect();
         assert_eq!(rows.iter().filter(|r| **r == home).count(), 1, "{rows:?}");
         assert!(!rows.contains(&worktree), "no row of its own: {rows:?}");
-        let uid = workspace.active_uid().expect("a session shown");
-        assert_eq!(workspace.folder_of(uid), Some(worktree.clone()));
+        assert_eq!(workspace.active_uid(), None, "the page, no session");
+        assert_eq!(
+            shell.read(cx).chat.read(cx).page_start_of(&home),
+            crate::chat::pane::StartIn::Folder(worktree.clone())
+        );
         assert_eq!(
             workspace.active_root().map(|r| r.path.clone()),
             Some(home.clone())
@@ -642,6 +645,46 @@ fn a_worktree_that_cannot_be_made_keeps_the_page(cx: &mut gpui::TestAppContext) 
         let pane = pane.read(cx);
         assert_eq!(pane.composer_text(cx), "go");
         assert!(pane.page_failure(&a).is_some(), "the page says why");
+    });
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// *New session* lands on the project's page, its place picked: the folder
+/// of the session that was on screen.
+#[gpui::test]
+fn new_session_lands_on_the_page_with_its_place_picked(cx: &mut gpui::TestAppContext) {
+    use crate::chat::pane::StartIn;
+    let spec = crate::shell::rig::nowhere();
+    let (shell, cx, dir, a, _) = two_pages(cx, "new-session-page");
+    let other = dir.join("a-x");
+    std::fs::create_dir_all(&other).unwrap();
+    show_page_of(&shell, &a, cx);
+    let idx = cx.update(|_, cx| shell.read(cx).window.workspace.local_index(&a).unwrap());
+    cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| {
+            let (added, fx) =
+                shell
+                    .window
+                    .workspace
+                    .add_session_at(Some(spec.clone()), 81, other.clone());
+            added.expect("added");
+            shell.carry_workspace(fx, window, cx);
+            shell.new_session_beside(idx, window, cx);
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let shell = shell.read(cx);
+        assert_eq!(
+            shell.window.workspace.roots[idx].sessions.len(),
+            1,
+            "none made"
+        );
+        assert_eq!(shell.active_session_uid(), None, "the page is shown");
+        assert_eq!(
+            shell.chat.read(cx).page_start_of(&a),
+            StartIn::Folder(other.clone())
+        );
     });
     let _ = std::fs::remove_dir_all(dir);
 }

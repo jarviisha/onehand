@@ -13,6 +13,29 @@ use onehand_core::worktree;
 use std::path::PathBuf;
 
 impl Shell {
+    /// Show the page of the project at row `idx`, ready to write: to start in
+    /// `folder` when it names one of its others, run by `agent` when one is
+    /// named.
+    pub(crate) fn page_to_start(
+        &mut self,
+        idx: usize,
+        folder: Option<PathBuf>,
+        agent: Option<SharedString>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(row) = self.window.workspace.roots.get(idx) else {
+            return;
+        };
+        let start = match folder {
+            Some(folder) if folder != row.path => StartIn::Folder(folder),
+            Some(_) | None => StartIn::Project,
+        };
+        self.show_project_page(idx, window, cx);
+        self.chat
+            .update(cx, |pane, cx| pane.set_page_start(start, agent, window, cx));
+    }
+
     /// Start what the page of the project at `root` sent; see the module.
     pub(super) fn start_from_page(
         &mut self,

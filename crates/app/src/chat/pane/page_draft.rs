@@ -392,3 +392,14 @@ impl ChatPane {
         self.page_drafts.get(root)?.failure.clone()
     }
 }
+
+#[cfg(test)]
+impl ChatPane {
+    /// Where `root`'s page starts its session.
+    pub(crate) fn page_start_of(&self, root: &Path) -> StartIn {
+        self.page_drafts
+            .get(root)
+            .map(|kept| kept.start.clone())
+            .unwrap_or_default()
+    }
+}

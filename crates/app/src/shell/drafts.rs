@@ -509,9 +509,9 @@ impl Shell {
     }
 
     /// Open `dir`, a worktree just split off the row at `root` on `branch`,
-    /// as a worktree of that row's project, recorded there, and start a
-    /// session in it; one split off a row of no project comes in to be
-    /// placed, as any folder does.
+    /// as a worktree of that row's project, recorded there, and show that
+    /// project's page ready to start a session in it; one split off a row of
+    /// no project comes in to be placed, as any folder does.
     pub(super) fn open_split(
         &mut self,
         root: &std::path::Path,
@@ -521,9 +521,9 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // Split to work in it: a session starts there, on the project's row.
+        // Split to work in it: its project's page, ready to write there.
         if let Some(idx) = self.record_split(root, dir.clone(), branch, from, window, cx) {
-            let _ = self.new_session_in_folder(idx, dir, None, window, cx);
+            self.page_to_start(idx, Some(dir), None, window, cx);
         }
     }
 
