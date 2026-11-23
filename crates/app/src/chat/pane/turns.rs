@@ -14,9 +14,13 @@ impl ChatPane {
             self.submit_page(cx);
             return;
         };
-        let accepted = self
-            .composer
-            .update(cx, |composer, cx| composer.commit(&session, window, cx));
+        let accepted = self.composer.update(cx, |composer, cx| {
+            composer.commit(
+                &crate::chat::composer::Lists::Session(session.clone()),
+                window,
+                cx,
+            )
+        });
         if !accepted {
             self.submit(window, cx);
         }

@@ -147,12 +147,41 @@ pub(super) fn trigger_spot(ch: char, text: &str, caret: usize) -> TriggerSpot {
     }
 }
 
+/// Where the composer's lists come from: a session, or a project's page,
+/// which has none yet and completes against what it keeps of its own.
+#[derive(Clone)]
+pub(in crate::chat) enum Lists {
+    Session(Entity<ChatSession>),
+    Page(std::rc::Rc<PageLists>),
+}
+
+impl Lists {
+    /// The session behind the lists, where there is one.
+    pub(in crate::chat) fn session(&self) -> Option<&Entity<ChatSession>> {
+        match self {
+            Self::Session(session) => Some(session),
+            Self::Page(_) => None,
+        }
+    }
+}
+
+/// What a project's page completes against: its files and folders, scanned
+/// off the UI loop as a session's are, and the commands its agent last
+/// offered.
+#[derive(Clone, Debug, Default)]
+pub(in crate::chat) struct PageLists {
+    pub(in crate::chat) files: Vec<String>,
+    pub(in crate::chat) folders: Vec<(String, usize)>,
+    pub(in crate::chat) scanned: bool,
+    pub(in crate::chat) commands: Vec<onehand_core::acp::SlashCommand>,
+}
+
 impl Composer {
     /// Do what a row was for, whether it was clicked or committed with Enter.
     pub(super) fn apply_pick(
         &mut self,
         pick: &Pick,
-        session: &Entity<ChatSession>,
+        lists: &Lists,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
@@ -161,9 +190,16 @@ impl Composer {
         // thing the user does is keep writing the message.
         self.state.update(cx, |state, cx| state.focus(window, cx));
         match pick {
-            Pick::Complete(_) => self.accept(session, window, cx),
+            Pick::Complete(_) => self.accept(lists, window, cx),
+            // A page has no session to act on: its lists hold no such rows.
+            Pick::Act(_) | Pick::Mode(_) | Pick::Config { .. } if lists.session().is_none() => {
+                false
+            }
             Pick::Act(act) => {
                 let act = *act;
+                let Some(session) = lists.session() else {
+                    return false;
+                };
                 // **The words that reached the control come back out first.**
                 // `/model` is a way to a picker and not a message, so leaving
                 // it in the field would make it the opening of whatever the
@@ -223,6 +259,9 @@ impl Composer {
             }
             Pick::Mode(id) => {
                 let id = id.clone();
+                let Some(session) = lists.session() else {
+                    return false;
+                };
                 session.update(cx, |session, cx| {
                     session.drive(cx, |chat, _| ((), chat.set_mode(&id)))
                 });
@@ -231,6 +270,9 @@ impl Composer {
             }
             Pick::Config { config_id, value } => {
                 let (config_id, value) = (config_id.clone(), value.clone());
+                let Some(session) = lists.session() else {
+                    return false;
+                };
                 session.update(cx, |session, cx| {
                     session.drive(cx, |chat, _| {
                         ((), chat.set_config_option(&config_id, &value))
@@ -330,8 +372,8 @@ impl Composer {
     /// keeps its own height rather than being padded to the cap — a three
     /// command agent gets a three row popup, and it is the same three rows
     /// high whatever is typed into it.
-    pub(super) fn shape(&self, session: &Entity<ChatSession>, cx: &App) -> (usize, usize) {
-        let (all, _) = self.matches_for("", session, cx);
+    pub(super) fn shape(&self, lists: &Lists, cx: &App) -> (usize, usize) {
+        let (all, _) = self.matches_for("", lists, cx);
         (
             all.len(),
             all.iter().filter(|row| row.group.is_some()).count(),
@@ -352,13 +394,13 @@ impl Composer {
     /// with nothing admitting it, a query that matched four hundred files reads
     /// as one that matched fifty, and the file the user is looking for is
     /// missing for no visible reason.
-    pub(super) fn matches(&self, session: &Entity<ChatSession>, cx: &App) -> (Vec<Row>, usize) {
+    pub(super) fn matches(&self, lists: &Lists, cx: &App) -> (Vec<Row>, usize) {
         let query = self
             .trigger
             .as_ref()
             .map(|t| t.query.as_str())
             .unwrap_or("");
-        self.matches_for(query, session, cx)
+        self.matches_for(query, lists, cx)
     }
 
     /// The same list against a query that is not necessarily the one typed.
@@ -366,28 +408,32 @@ impl Composer {
     /// The override exists for one caller: the popup asks what this list holds
     /// with **nothing** typed, because that is the height it should stand at
     /// for as long as it is open. See [`Self::shape`].
-    fn matches_for(
-        &self,
-        query: &str,
-        session: &Entity<ChatSession>,
-        cx: &App,
-    ) -> (Vec<Row>, usize) {
+    fn matches_for(&self, query: &str, lists: &Lists, cx: &App) -> (Vec<Row>, usize) {
         let Some(trigger) = &self.trigger else {
             return (Vec::new(), 0);
         };
-        let entity = session;
-        let session = entity.read(cx);
-        let chat = &session.chat();
+        // What each list reads, from the session or the page.
+        let (files, folders, artifacts, commands) = match lists {
+            Lists::Session(entity) => {
+                let session = entity.read(cx);
+                (
+                    &session.files[..],
+                    &session.folders[..],
+                    session.chat().artifacts(MAX_ARTIFACT_SCAN),
+                    &session.chat().commands[..],
+                )
+            }
+            Lists::Page(page) => (
+                &page.files[..],
+                &page.folders[..],
+                Vec::new(),
+                &page.commands[..],
+            ),
+        };
         match trigger.kind {
             TriggerKind::File => {
-                let artifacts = chat.artifacts(MAX_ARTIFACT_SCAN);
-                let (found, held) = completion::mentions(
-                    &session.files,
-                    &session.folders,
-                    &artifacts,
-                    query,
-                    MAX_COMPLETION_ROWS,
-                );
+                let (found, held) =
+                    completion::mentions(files, folders, &artifacts, query, MAX_COMPLETION_ROWS);
                 // The heading is carried by the first row of each run rather
                 // than by a row of its own, so the index the arrows walk stays
                 // made entirely of things that can be taken.
@@ -440,8 +486,7 @@ impl Composer {
                 (rows, held)
             }
             TriggerKind::Command => {
-                let (found, held) =
-                    completion::commands(&chat.commands, query, MAX_COMPLETION_ROWS);
+                let (found, held) = completion::commands(commands, query, MAX_COMPLETION_ROWS);
                 // The heading opens each run, as it does in the mention list,
                 // and for the same reason: hung off the first row of the run,
                 // the index the arrows walk stays made entirely of commands.
@@ -461,7 +506,11 @@ impl Composer {
                 // something a hand learns the position of; put under a list of
                 // unknown length it is somewhere different every time.
                 let mut rows: Vec<Row> = Vec::new();
-                let mut own = act_rows(query, entity, cx).into_iter();
+                let mut own = lists
+                    .session()
+                    .map(|session| act_rows(query, session, cx))
+                    .unwrap_or_default()
+                    .into_iter();
                 if let Some(first) = own.next() {
                     rows.push(Row {
                         group: Some("Composer".into()),
@@ -496,13 +545,16 @@ impl Composer {
     }
 
     /// How many rows the open list has, which is what walking it is bounded by.
-    fn row_count(&self, session: &Entity<ChatSession>, cx: &App) -> usize {
+    fn row_count(&self, lists: &Lists, cx: &App) -> usize {
         match &self.overlay {
             None => 0,
-            Some(Overlay::Completion) => self.matches(session, cx).0.len(),
+            Some(Overlay::Completion) => self.matches(lists, cx).0.len(),
             // The tray draws its own list and the arrows do not walk it.
             Some(Overlay::Attachments) => 0,
-            Some(picker) => picker_rows(picker, session, cx).map_or(0, |rows| rows.len()),
+            Some(picker) => lists
+                .session()
+                .and_then(|session| picker_rows(picker, session, cx))
+                .map_or(0, |rows| rows.len()),
         }
     }
 
@@ -511,13 +563,8 @@ impl Composer {
     /// Wrapping because the list is short and the keys are held: stopping dead
     /// at the last row makes the user let go and reach for the other arrow to
     /// get back to a match they passed.
-    pub(super) fn step(
-        &mut self,
-        delta: isize,
-        session: &Entity<ChatSession>,
-        cx: &mut Context<Self>,
-    ) {
-        let rows = self.row_count(session, cx);
+    pub(in crate::chat) fn step(&mut self, delta: isize, lists: &Lists, cx: &mut Context<Self>) {
+        let rows = self.row_count(lists, cx);
         let Some(from) = highlight(self.selected, rows) else {
             return;
         };
@@ -529,13 +576,13 @@ impl Composer {
 
     /// Accept the highlighted candidate, rewriting the buffer around the
     /// trigger. Returns whether anything was accepted.
-    pub fn accept(
+    pub(in crate::chat) fn accept(
         &mut self,
-        session: &Entity<ChatSession>,
+        lists: &Lists,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let rows = self.matches(session, cx).0;
+        let rows = self.matches(lists, cx).0;
         // The insert comes off the row rather than from its label: a mention
         // row reads as a filename and inserts a whole path, and a folder row
         // inserts a trailing slash that appears nowhere in what it says.

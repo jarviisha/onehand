@@ -1,7 +1,7 @@
 use super::attachments::chip;
 use super::presentation::{effort_action, fast_action, fast_toggle, mode_action, options_action};
 use super::rows::OPTION_MAX_W;
-use super::{Composer, ComposerEvent, Overlay};
+use super::{Composer, ComposerEvent, Lists, Overlay};
 use crate::chat::session::ChatSession;
 use crate::controls::Named as _;
 use crate::controls::Quiet as _;
@@ -165,12 +165,12 @@ impl Composer {
                     })
                     .on_action(cx.listener(
                         move |composer: &mut Self, _: &crate::shell::CompletionNext, _, cx| {
-                            composer.step(1, &step_down, cx);
+                            composer.step(1, &Lists::Session(step_down.clone()), cx);
                         },
                     ))
                     .on_action(cx.listener(
                         move |composer: &mut Self, _: &crate::shell::CompletionPrev, _, cx| {
-                            composer.step(-1, &step_up, cx);
+                            composer.step(-1, &Lists::Session(step_up.clone()), cx);
                         },
                     ))
                     // Tab takes the highlighted row, through the same call
@@ -181,7 +181,7 @@ impl Composer {
                               _: &crate::shell::CompletionAccept,
                               window,
                               cx| {
-                            composer.commit(&take_row, window, cx);
+                            composer.commit(&Lists::Session(take_row.clone()), window, cx);
                         },
                     ))
                     // On the card's own fill: the card is the field, so the

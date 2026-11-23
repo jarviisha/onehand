@@ -24,7 +24,6 @@
 //! `Esc` needs none of that: the input propagates an escape it has no use for,
 //! and the pane catches the action on its way out.
 
-use super::session::ChatSession;
 use gpui::{App, AppContext, Context, Entity, IntoElement, Render, Subscription, Window, div};
 use gpui::{Bounds, Pixels};
 use gpui_component::input::{InputEvent, TextareaState};
@@ -40,6 +39,7 @@ mod card;
 mod complete;
 mod page_card;
 mod popup;
+pub(in crate::chat) use complete::{Lists, PageLists};
 mod rows;
 pub(in crate::chat) use card::{COMPOSER_SPLIT, bolt, status_chip};
 pub(in crate::chat) use popup::POPUP_STACK_PEEK;
@@ -363,9 +363,9 @@ impl Composer {
     /// arrow keys walked a selector's choices while Enter sent the prompt
     /// anyway -- a list that can be moved through but not committed reads as
     /// broken rather than as one Enter has no opinion about.
-    pub fn commit(
+    pub(in crate::chat) fn commit(
         &mut self,
-        session: &Entity<ChatSession>,
+        lists: &Lists,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
@@ -378,14 +378,14 @@ impl Composer {
             // answered by doing nothing at all — the mouse worked and the
             // keyboard did not, on the list whose whole point is the keyboard.
             Some(Overlay::Completion) => {
-                let rows = self.matches(session, cx).0;
+                let rows = self.matches(lists, cx).0;
                 let Some(pick) = highlight(self.selected, rows.len())
                     .and_then(|row| rows.into_iter().nth(row))
                     .map(|row| row.pick)
                 else {
                     return false;
                 };
-                self.apply_pick(&pick, session, window, cx)
+                self.apply_pick(&pick, lists, window, cx)
             }
             Some(
                 picker @ (Overlay::Fast
@@ -395,14 +395,17 @@ impl Composer {
                 | Overlay::Add
                 | Overlay::Branch),
             ) => {
-                let rows = complete::picker_rows(&picker, session, cx).unwrap_or_default();
+                let rows = lists
+                    .session()
+                    .and_then(|session| complete::picker_rows(&picker, session, cx))
+                    .unwrap_or_default();
                 let Some(row) =
                     highlight(self.selected, rows.len()).and_then(|row| rows.into_iter().nth(row))
                 else {
                     self.close_overlay(cx);
                     return true;
                 };
-                self.apply_pick(&row.pick, session, window, cx)
+                self.apply_pick(&row.pick, lists, window, cx)
             }
             Some(Overlay::Attachments) => {
                 self.close_overlay(cx);

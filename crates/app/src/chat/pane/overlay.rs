@@ -139,13 +139,23 @@ impl ChatPane {
             // while one is open is the case that would be silent, and that is
             // answered at the event instead: parking an ask closes the popup.
             .children(self.composer.update(cx, |composer, cx| {
-                composer.anchored_menu(session, room.popup, window.rem_size(), cx)
+                composer.anchored_menu(
+                    &crate::chat::composer::Lists::Session(session.clone()),
+                    room.popup,
+                    window.rem_size(),
+                    cx,
+                )
             }))
             .children({
                 let popup = self
                     .composer
                     .update(cx, |composer, cx| {
-                        composer.detached_popup(session, room.popup, window.rem_size(), cx)
+                        composer.detached_popup(
+                            &crate::chat::composer::Lists::Session(session.clone()),
+                            room.popup,
+                            window.rem_size(),
+                            cx,
+                        )
                     })
                     // **What spans the stack**: a completion, the attachments,
                     // and a menu whose control is not on screen. A menu opened
