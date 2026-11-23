@@ -144,6 +144,14 @@ impl ChatPane {
         }));
     }
 
+    /// Whether what `root`'s page holds is locked: a worktree is being cut
+    /// for it, and the words sent are the words the session gets.
+    pub(crate) fn page_locked(&self, root: &Path) -> bool {
+        self.page_drafts
+            .get(root)
+            .is_some_and(|kept| kept.busy.is_some())
+    }
+
     /// Why Send does nothing yet on the page on screen, if it does not.
     fn page_refuses(&self, cx: &App) -> Option<SharedString> {
         let root = self.page_root()?;
@@ -186,10 +194,11 @@ impl ChatPane {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let refuses = self.page_refuses(cx);
+        let locked = self.page_locked(root);
         let agent = self.agent_chip(root, cx);
-        let card = self
-            .composer
-            .update(cx, |composer, cx| composer.page_card(agent, refuses, cx));
+        let card = self.composer.update(cx, |composer, cx| {
+            composer.page_card(agent, refuses, locked, cx)
+        });
         let kept = self.page_drafts.get(root);
         let start = kept.map(|kept| kept.start.clone()).unwrap_or_default();
         let busy = kept.and_then(|kept| kept.busy.clone());
@@ -210,7 +219,7 @@ impl ChatPane {
                 strip.child(
                     div()
                         .w(gpui::rems(16.))
-                        .child(text_input(&self.page_branch, cx)),
+                        .child(text_input(&self.page_branch, cx).disabled(locked)),
                 )
             });
         div()

@@ -408,8 +408,13 @@ impl ChatPane {
             .flatten();
         // Where the session it starts runs: its own folder, a worktree on
         // disk, or a new one where git can cut it.
-        let composer =
-            self.page_composer(&project.path, &project.on_disk, project.facts.is_repo, cx);
+        // An offloaded project's sessions run in its mirror, so it offers its
+        // own folder alone, as a host project does.
+        let worktrees: &[_] = match project.host {
+            None => &project.on_disk,
+            Some(_) => &[],
+        };
+        let composer = self.page_composer(&project.path, worktrees, project.facts.is_repo, cx);
         // The head: the project named as every page is, over where it
         // is, and what it can start at the end.
         let head = page_head(

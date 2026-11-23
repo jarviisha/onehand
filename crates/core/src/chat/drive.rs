@@ -425,7 +425,8 @@ impl SessionDrive {
     }
 
     /// Send `text` from `origin` once the agent is up: at once when it already
-    /// is, dropped if it never comes up.
+    /// is. If it never comes up, a person's words come back
+    /// ([`Effect::Unsent`]); any other origin's are dropped.
     ///
     /// Issue work's prompt goes only to a session nobody has prompted yet: a
     /// person who wrote first is driving it.

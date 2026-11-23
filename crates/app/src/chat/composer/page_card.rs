@@ -15,12 +15,14 @@ use gpui_component::{ActiveTheme, Icon, StyledExt};
 use onehand_ui::ShortIcon as _;
 
 impl Composer {
-    /// The page's card: `agent` the chip picking who runs the session, and
-    /// `refuses` why Send does nothing yet, if it does not.
+    /// The page's card: `agent` the chip picking who runs the session,
+    /// `refuses` why Send does nothing yet, if it does not, and `locked`
+    /// whether the words are fixed while what they were sent for is made.
     pub(in crate::chat) fn page_card(
         &mut self,
         agent: AnyElement,
         refuses: Option<SharedString>,
+        locked: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let send = crate::controls::action("page-send")
@@ -61,7 +63,8 @@ impl Composer {
                     .child(
                         text_area(&self.state, cx)
                             .bg(cx.theme().transparent)
-                            .border_0(),
+                            .border_0()
+                            .disabled(locked),
                     ),
             )
             .child(

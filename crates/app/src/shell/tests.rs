@@ -688,3 +688,20 @@ fn new_session_lands_on_the_page_with_its_place_picked(cx: &mut gpui::TestAppCon
     });
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// While a worktree is cut for a page, what is written there is locked: the
+/// words sent are the words the session gets.
+#[gpui::test]
+fn the_page_locks_while_a_worktree_is_cut(cx: &mut gpui::TestAppContext) {
+    let (shell, cx, dir, a, _) = two_pages(cx, "page-locks");
+    show_page_of(&shell, &a, cx);
+    let pane = cx.update(|_, cx| shell.read(cx).chat.clone());
+    assert!(!cx.update(|_, cx| pane.read(cx).page_locked(&a)));
+    cx.update(|_, cx| {
+        pane.update(cx, |pane, cx| {
+            pane.page_busy(&a, Some("Making worktree x…".into()), cx)
+        })
+    });
+    assert!(cx.update(|_, cx| pane.read(cx).page_locked(&a)));
+    let _ = std::fs::remove_dir_all(dir);
+}
