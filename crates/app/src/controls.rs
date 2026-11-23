@@ -43,7 +43,7 @@ pub(crate) fn action(id: impl Into<ElementId>) -> Button {
 /// — a feature crate that draws a menu cannot reach into the binary hosting it, and a
 /// second copy is a second place for the arrow cursor to come back.
 pub(crate) use onehand_ui::{
-    menu_below, menu_command, menu_item, menu_label, menu_row, menu_still, split_action,
+    menu_below, menu_command, menu_item, menu_label, menu_row, menu_still,
 };
 
 /// A text field at a control's corner. The rule and its reasoning live with

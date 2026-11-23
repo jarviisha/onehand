@@ -74,6 +74,7 @@ impl Front {
                 | Effect::Disarm
                 | Effect::SendCode { .. }
                 | Effect::PromptAgain
+                | Effect::Unsent(_)
                 | Effect::SaveTitle { .. }
                 | Effect::Look(_)
                 | Effect::Tell { .. } => {}
@@ -246,6 +247,7 @@ fn names(fx: &[Effect]) -> Vec<String> {
             Effect::Disarm => Some("Disarm".into()),
             Effect::SendCode { .. } => Some("SendCode".into()),
             Effect::PromptAgain => Some("PromptAgain".into()),
+            Effect::Unsent(_) => Some("Unsent".into()),
             Effect::SaveTitle { .. } => Some("SaveTitle".into()),
             Effect::Look(what) => Some(format!("Look({what:?})")),
             Effect::Tell { what, .. } => Some(format!("Tell({what:?})")),
@@ -292,6 +294,7 @@ fn armed(fx: &[Effect]) -> Option<u64> {
         | Effect::Disarm
         | Effect::SendCode { .. }
         | Effect::PromptAgain
+        | Effect::Unsent(_)
         | Effect::Request(_)
         | Effect::SaveTitle { .. }
         | Effect::Look(_)
@@ -310,6 +313,7 @@ fn take_save(fx: Vec<Effect>) -> Box<PendingWrite> {
             | Effect::Disarm
             | Effect::SendCode { .. }
             | Effect::PromptAgain
+            | Effect::Unsent(_)
             | Effect::Request(_)
             | Effect::SaveTitle { .. }
             | Effect::Look(_)
@@ -330,6 +334,7 @@ fn code_token(fx: &[Effect]) -> u64 {
             | Effect::Arm { .. }
             | Effect::Disarm
             | Effect::PromptAgain
+            | Effect::Unsent(_)
             | Effect::Request(_)
             | Effect::SaveTitle { .. }
             | Effect::Look(_)
@@ -615,6 +620,29 @@ fn a_held_prompt_is_dropped_when_the_agent_never_comes_up() {
     feed(&mut drive, AcpEvent::Disconnected("gone".into()));
     assert!(sent(&mut rx).is_none());
     assert!(drive.held.is_none());
+}
+
+#[test]
+fn a_persons_held_prompt_comes_back_when_the_agent_never_comes_up() {
+    let (mut drive, _tx, mut rx) = connecting();
+    let (intake, _) = drive.prompt_when_up("hi", Origin::Person);
+    assert_eq!(intake, Intake::Held);
+    let fx = feed(&mut drive, AcpEvent::Disconnected("gone".into()));
+    assert!(sent(&mut rx).is_none());
+    assert!(
+        fx.iter()
+            .any(|effect| matches!(effect, Effect::Unsent(text) if text == "hi")),
+        "{:?}",
+        names(&fx)
+    );
+}
+
+#[test]
+fn an_issues_held_prompt_is_dropped_without_a_word() {
+    let (mut drive, _tx, _rx) = connecting();
+    drive.prompt_when_up("the issue", Origin::Issue);
+    let fx = feed(&mut drive, AcpEvent::Disconnected("gone".into()));
+    assert!(!fx.iter().any(|effect| matches!(effect, Effect::Unsent(_))));
 }
 
 #[test]
@@ -1103,6 +1131,7 @@ fn title_write(fx: &[Effect]) -> Option<(u64, Option<String>)> {
         | Effect::Disarm
         | Effect::SendCode { .. }
         | Effect::PromptAgain
+        | Effect::Unsent(_)
         | Effect::Request(_)
         | Effect::Look(_)
         | Effect::Tell { .. } => None,
@@ -1667,6 +1696,7 @@ fn tells(fx: &[Effect]) -> Vec<(Away, bool, bool)> {
             | Effect::Disarm
             | Effect::SendCode { .. }
             | Effect::PromptAgain
+            | Effect::Unsent(_)
             | Effect::Request(_)
             | Effect::SaveTitle { .. }
             | Effect::Look(_) => None,

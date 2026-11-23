@@ -120,9 +120,37 @@ impl ChatPane {
             .update(cx, |composer, cx| composer.take_draft(window, cx));
         // A draft belonging to nobody -- typed against a session that has since
         // been closed -- has nowhere to go back to.
-        if let Some(conv) = self.active_conversation_mut() {
-            conv.draft = (!draft.is_empty()).then_some(draft);
+        match self.active_conversation_mut() {
+            Some(conv) => conv.draft = (!draft.is_empty()).then_some(draft),
+            // Off a project's page, what was written there stays with it.
+            None => self.stash_page_draft(draft, cx),
         }
+    }
+
+    /// Put back `text`, a prompt of `uid`'s that never went, where it is
+    /// written: ahead of whatever was typed since, so nothing is lost.
+    pub(super) fn unsent(&mut self, uid: u64, text: String, cx: &mut Context<Self>) {
+        if self.active != Some(uid) {
+            if let Some(conv) = self.conversations.get_mut(&uid) {
+                conv.draft
+                    .get_or_insert_with(crate::chat::composer::Draft::default)
+                    .put_first(&text);
+            }
+            return;
+        }
+        let composer = self.composer.clone();
+        let at = self.window_handle();
+        // The window is not in reach from a session's news; written into the
+        // composer once this update is done.
+        cx.defer(move |cx| {
+            let _ = at.update(cx, |_, window, cx| {
+                composer.update(cx, |composer, cx| {
+                    let mut draft = composer.take_draft(window, cx);
+                    draft.put_first(&text);
+                    composer.restore_draft(draft, window, cx);
+                });
+            });
+        });
     }
 
     /// Give `uid` back whatever it had unsent. The composer was emptied by the
@@ -351,6 +379,7 @@ impl ChatPane {
                         cx.notify();
                     }
                     ChatEvent::Look(what) => pane.look(uid, *what, &agent, &root_label, cx),
+                    ChatEvent::Unsent(text) => pane.unsent(uid, text.clone(), cx),
                     // Re-emitted rather than acted on: the transcript says what
                     // was asked for, and where a file goes is the shell's call.
                     // Matched exhaustively so a new variant cannot be added and
@@ -573,6 +602,9 @@ impl ChatPane {
             return;
         }
         self.leave_page(window, cx);
+        // Before the page changes: what was written on the one left is set
+        // aside under its own project.
+        self.leave_shown_session(window, cx);
         self.page = None;
         let page = root.map(|(label, path, on)| {
             // An offloaded project's sessions run in its mirror there.
@@ -610,12 +642,8 @@ impl ChatPane {
         self.put_project_page(page, cx);
         self.scan_project_history(cx);
         self.list_host_sessions(cx);
-        // Going to no session at all is still leaving the one that was showing,
-        // and the draft has to be put down here too: a prompt left in the box
-        // while passing through an empty project would otherwise be sitting
-        // there, addressed to nobody, when the next session opens.
-        self.leave_shown_session(window, cx);
         self.active = None;
+        self.restore_page_draft(window, cx);
         cx.notify();
     }
 

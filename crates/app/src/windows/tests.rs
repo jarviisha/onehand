@@ -14,7 +14,7 @@ fn a_session_and_a_project_are_found_in_the_window_holding_them(cx: &mut TestApp
     let (second, two) = another(cx, &root);
     cx.update(|_, cx| {
         with_shell(second, cx, |shell, window, cx| {
-            shell.new_session(window, cx)
+            shell.start_session(None, None, window, cx);
         })
     });
     cx.run_until_parked();

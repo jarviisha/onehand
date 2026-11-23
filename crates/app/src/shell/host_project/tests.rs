@@ -19,7 +19,9 @@ fn waiting<'a>(
 ) -> (Entity<crate::shell::Shell>, u64, &'a mut VisualTestContext) {
     let dir = folder(name);
     let (_, shell, cx) = shell(cx, dir.join("tasks"), vec![nowhere()]);
-    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.new_session(window, cx)));
+    cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| shell.start_session(None, None, window, cx))
+    });
     cx.run_until_parked();
     let uid = cx.update(|_, cx| shell.read(cx).active_session_uid().expect("a session"));
     cx.update(|window, cx| {

@@ -129,13 +129,9 @@ impl Render for Shell {
                 // start an agent per repeat.
                 // The caret goes to the new composer: a key pressed from the
                 // terminal is asking to type to the agent it just started.
-                if shell.held_commands.insert(crate::keymap::NEW_SESSION)
-                    && shell.spawn_session(0, None, None, window, cx).is_some()
-                {
+                if shell.held_commands.insert(crate::keymap::NEW_SESSION) {
+                    shell.new_session(window, cx);
                     shell.last_panel = FocusedPanel::Chat;
-                    shell
-                        .chat
-                        .update(cx, |pane, cx| pane.focus_composer(window, cx));
                 }
             }))
             .on_action(

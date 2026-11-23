@@ -466,25 +466,13 @@ impl Shell {
                 let (root, branch, top) = (root.clone(), branch.clone(), top.clone());
                 cx.background_executor()
                     .spawn(async move {
-                        // git makes a folder it is given that is not there,
-                        // so one chosen and since gone is refused here.
-                        if let Some(parent) = parent.filter(|parent| !parent.is_dir()) {
-                            return Err(format!("{} is not there any more", parent.display()));
-                        }
-                        // The branch it is cut from, read before git moves
-                        // anything: what the project records it came from.
-                        let from = worktree::current_branch_blocking(&root).ok();
-                        worktree::add_blocking(&root, &branch, &dir).map(|made| {
-                            // What git made is a checkout of the whole
-                            // repository. What is adopted is the part of it the
-                            // user actually split -- the same folder, in the new
-                            // tree.
-                            let made = match top {
-                                Some(top) => worktree::subtree_or(made, &top, &root),
-                                None => made,
-                            };
-                            (std::fs::canonicalize(&made).unwrap_or(made), from)
-                        })
+                        make_worktree_blocking(
+                            &root,
+                            &branch,
+                            &dir,
+                            top.as_deref(),
+                            parent.as_deref(),
+                        )
                     })
                     .await
             };
@@ -521,9 +509,9 @@ impl Shell {
     }
 
     /// Open `dir`, a worktree just split off the row at `root` on `branch`,
-    /// as a worktree of that row's project, recorded there, and start a
-    /// session in it; one split off a row of no project comes in to be
-    /// placed, as any folder does.
+    /// as a worktree of that row's project, recorded there, and show that
+    /// project's page ready to start a session in it; one split off a row of
+    /// no project comes in to be placed, as any folder does.
     pub(super) fn open_split(
         &mut self,
         root: &std::path::Path,
@@ -533,6 +521,24 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // Split to work in it: its project's page, ready to write there.
+        if let Some(idx) = self.record_split(root, dir.clone(), branch, from, window, cx) {
+            self.page_to_start(idx, Some(dir), None, window, cx);
+        }
+    }
+
+    /// Record `dir`, a worktree just split off the row at `root` on
+    /// `branch`, in that row's project and open it there: the row it is a
+    /// folder of, if one holds it.
+    pub(super) fn record_split(
+        &mut self,
+        root: &std::path::Path,
+        dir: PathBuf,
+        branch: String,
+        from: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<usize> {
         let worktree = Worktree {
             path: dir.clone(),
             branch,
@@ -546,10 +552,7 @@ impl Shell {
             .workspace
             .open_project(dir.clone(), project.as_ref());
         self.carry_workspace(fx, window, cx);
-        // Split to work in it: a session starts there, on the project's row.
-        if let Some(idx) = self.window.workspace.local_index(&dir) {
-            let _ = self.new_session_in_folder(idx, dir, None, window, cx);
-        }
+        self.window.workspace.local_index(&dir)
     }
 
     /// Open the rename field on a conversation.
@@ -653,4 +656,35 @@ impl Shell {
         self.chat.update(cx, |pane, cx| pane.reset_title(uid, cx));
         cx.notify();
     }
+}
+
+/// Cut a worktree of `root` on `branch` at `dir`, `top` the repository's
+/// own folder where the project is a folder inside one and `parent` the
+/// folder chosen to hold it: the folder made, as the project is to adopt it,
+/// and the branch it was cut from. Blocking: it runs git.
+pub(super) fn make_worktree_blocking(
+    root: &std::path::Path,
+    branch: &str,
+    dir: &std::path::Path,
+    top: Option<&std::path::Path>,
+    parent: Option<&std::path::Path>,
+) -> Result<(PathBuf, Option<String>), String> {
+    // git makes a folder it is given that is not there, so one chosen and
+    // since gone is refused here.
+    if let Some(parent) = parent.filter(|parent| !parent.is_dir()) {
+        return Err(format!("{} is not there any more", parent.display()));
+    }
+    // The branch it is cut from, read before git moves anything: what the
+    // project records it came from.
+    let from = worktree::current_branch_blocking(root).ok();
+    worktree::add_blocking(root, branch, dir).map(|made| {
+        // What git made is a checkout of the whole repository. What is
+        // adopted is the part of it the user actually split -- the same
+        // folder, in the new tree.
+        let made = match top {
+            Some(top) => worktree::subtree_or(made, top, root),
+            None => made,
+        };
+        (std::fs::canonicalize(&made).unwrap_or(made), from)
+    })
 }

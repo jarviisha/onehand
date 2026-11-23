@@ -56,6 +56,7 @@ fn requests(fx: Vec<Effect>) -> Vec<AcpRequest> {
             | Effect::Disarm
             | Effect::SendCode { .. }
             | Effect::PromptAgain
+            | Effect::Unsent(_)
             | Effect::SaveTitle { .. }
             | Effect::Look(_)
             | Effect::Tell { .. } => None,

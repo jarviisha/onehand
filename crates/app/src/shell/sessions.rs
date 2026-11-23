@@ -414,27 +414,20 @@ impl Shell {
             .update(cx, |pane, cx| pane.resend_last_prompt(uid, cx));
     }
 
-    /// Add a session on the active root using the default agent, and show it.
-    ///
-    /// The *default* is the first configured agent, which is the Claude Code
-    /// built-in unless the user has reordered the list. One agent is the common
-    /// case and it must stay one click; choosing a different one is the rail's
-    /// agent list (see [`Self::new_session_with`]).
+    /// *New session* on the project on screen, as the key asks for it: its
+    /// page, ready to write in the folder on screen. A worker on screen stands
+    /// for its lead's project.
     pub fn new_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.new_session_with(0, window, cx);
     }
 
-    /// Add a session on a *named* root using the default agent.
-    ///
-    /// The root is selected first, so this cannot start an agent somewhere the
-    /// user is not looking: a session is bound to one project root for its
-    /// whole life, and starting one on a root the rail is not showing would be
-    /// a prompt sent into a project nobody has open.
+    /// *New session* on a *named* root, the default agent: its page.
     pub fn new_session_in(&mut self, root_idx: usize, window: &mut Window, cx: &mut Context<Self>) {
-        self.new_session_at(root_idx, 0, window, cx);
+        self.page_to_start(root_idx, None, None, window, cx);
     }
 
-    /// Add a session on a *named* root running `agents[agent]`.
+    /// *New session* on a *named* root running `agents[agent]`: its page,
+    /// that agent picked.
     pub fn new_session_at(
         &mut self,
         root_idx: usize,
@@ -442,15 +435,15 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let spec = Shared::global(cx).settings.agents.get(agent).cloned();
-        let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
-        let (_, fx) = self.window.workspace.add_session_in(root_idx, spec, uid);
-        self.carry_workspace(fx, window, cx);
+        let name = (Shared::global(cx).settings.agents)
+            .get(agent)
+            .map(|spec| SharedString::from(spec.name.clone()));
+        self.page_to_start(root_idx, None, name, window, cx);
     }
 
-    /// *New session* on a *named* root: in the folder of the session on
-    /// screen when the root is the one on screen, as the key starts it; in
-    /// the root's own folder otherwise.
+    /// *New session* on a *named* root: its page, in the folder of the
+    /// session on screen when the root is the one on screen; in the root's
+    /// own folder otherwise.
     pub fn new_session_beside(
         &mut self,
         root_idx: usize,
@@ -462,12 +455,7 @@ impl Shell {
             .then(|| workspace.active_root())
             .flatten()
             .map(|root| root.folder_on_screen().to_path_buf());
-        match folder {
-            Some(folder) => {
-                let _ = self.new_session_in_folder(root_idx, folder, None, window, cx);
-            }
-            None => self.new_session_in(root_idx, window, cx),
-        }
+        self.page_to_start(root_idx, folder, None, window, cx);
     }
 
     /// Add a session of the agent named, else the first, on a *named* root,
@@ -527,12 +515,21 @@ impl Shell {
         }
     }
 
-    /// Add a session running `agents[idx]`.
+    /// *New session* running `agents[idx]` on the project on screen: its
+    /// page, ready to write in the folder on screen.
     pub fn new_session_with(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
-        // Only here, where the project is the one on screen: a caller that
-        // named a project keeps it.
+        // Only here, where the project is the one on screen: a worker on
+        // screen stands for its lead's.
         let home = self.worker_home();
-        self.spawn_session(idx, None, home, window, cx);
+        let root = home.unwrap_or(self.window.workspace.active_root);
+        let folder = (home.is_none())
+            .then(|| self.window.workspace.active_root())
+            .flatten()
+            .map(|row| row.folder_on_screen().to_path_buf());
+        let name = (Shared::global(cx).settings.agents)
+            .get(idx)
+            .map(|spec| SharedString::from(spec.name.clone()));
+        self.page_to_start(root, folder, name, window, cx);
     }
 
     /// Start a session on the active root, as the project page asks for it: on

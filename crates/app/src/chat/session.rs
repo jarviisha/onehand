@@ -151,6 +151,9 @@ pub enum ChatEvent {
     /// The session has news a person may want told: whoever knows where they
     /// are answers with `Input::Seen` (`ChatPane::look`).
     Look(onehand_core::chat::Away),
+    /// A person's prompt held for an agent that never came up: put it back
+    /// where they write.
+    Unsent(String),
     /// Show the subagent whose card this key names, in the float beside the
     /// conversation. Where it goes is the pane's to decide.
     OpenSubagent(u64),
@@ -717,6 +720,7 @@ impl ChatSession {
                     .detach();
                 }
                 Effect::Look(what) => cx.emit(ChatEvent::Look(what)),
+                Effect::Unsent(text) => cx.emit(ChatEvent::Unsent(text)),
                 Effect::SendCode { .. } | Effect::PromptAgain | Effect::Tell { .. } => {
                     left.push(effect)
                 }
@@ -751,6 +755,7 @@ impl ChatSession {
                 | Effect::SaveTitle { .. }
                 | Effect::Look(_)
                 | Effect::PromptAgain
+                | Effect::Unsent(_)
                 | Effect::Tell { .. } => {
                     debug_assert!(false, "not a prompt's to hand back")
                 }
@@ -791,6 +796,7 @@ impl ChatSession {
                 | Effect::SaveTitle { .. }
                 | Effect::Look(_)
                 | Effect::SendCode { .. }
+                | Effect::Unsent(_)
                 | Effect::Tell { .. } => {
                     debug_assert!(false, "not a code send's to hand back")
                 }
@@ -834,6 +840,7 @@ impl ChatSession {
                 | Effect::SaveTitle { .. }
                 | Effect::Look(_)
                 | Effect::SendCode { .. }
+                | Effect::Unsent(_)
                 | Effect::PromptAgain => {
                     debug_assert!(false, "not a look's to hand back")
                 }

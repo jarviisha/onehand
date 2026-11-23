@@ -11,6 +11,7 @@ impl ChatPane {
     /// What Enter does, which depends on whether the popup is open.
     pub(super) fn enter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(session) = self.session() else {
+            self.submit_page(cx);
             return;
         };
         let accepted = self
@@ -23,6 +24,7 @@ impl ChatPane {
 
     pub(super) fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(session) = self.session() else {
+            self.submit_page(cx);
             return;
         };
         Self::submit_from(&session, &self.composer.clone(), window, cx);

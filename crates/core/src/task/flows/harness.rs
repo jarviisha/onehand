@@ -347,7 +347,8 @@ impl Flow {
             | SessionEffect::Disarm
             | SessionEffect::SaveTitle { .. }
             | SessionEffect::Look(_)
-            | SessionEffect::Tell { .. } => {}
+            | SessionEffect::Tell { .. }
+            | SessionEffect::Unsent(_) => {}
             SessionEffect::SendCode { .. } | SessionEffect::PromptAgain => {
                 panic!("these flows work here, and send nothing again")
             }

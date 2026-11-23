@@ -187,6 +187,9 @@ pub enum Effect {
     SendCode { token: u64 },
     /// The code is up: send the person's prompt again, from where it waits.
     PromptAgain,
+    /// A person's prompt held for an agent that never came up: put it back
+    /// where they write, rather than lose what they typed.
+    Unsent(String),
     /// Send `request` to the agent on its channel
     /// ([`Chat::agent_channel`]), in the order given.
     ///
@@ -422,7 +425,8 @@ impl SessionDrive {
     }
 
     /// Send `text` from `origin` once the agent is up: at once when it already
-    /// is, dropped if it never comes up.
+    /// is. If it never comes up, a person's words come back
+    /// ([`Effect::Unsent`]); any other origin's are dropped.
     ///
     /// Issue work's prompt goes only to a session nobody has prompted yet: a
     /// person who wrote first is driving it.
@@ -542,8 +546,10 @@ impl SessionDrive {
             }
         }
         if let Some(held) = self.held.take_if(|_| self.chat.link != Link::Connecting) {
-            if self.chat.link == Link::Connected {
-                fx.extend(self.prompt_held(held, now).1);
+            match self.chat.link {
+                Link::Connected => fx.extend(self.prompt_held(held, now).1),
+                Link::Lost if held.origin == Origin::Person => fx.push(Effect::Unsent(held.text)),
+                Link::Lost | Link::Connecting => {}
             }
         }
         self.batch.changed |= outcome.transcript_changed;

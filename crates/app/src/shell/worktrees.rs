@@ -34,7 +34,7 @@ impl Shell {
         match act {
             WorktreeAct::NewSession(folder) => {
                 let idx = self.window.workspace.active_root;
-                let _ = self.new_session_in_folder(idx, folder, None, window, cx);
+                self.page_to_start(idx, Some(folder), None, window, cx);
             }
             WorktreeAct::Remove(folder) => self.ask_remove_worktree(folder, window, cx),
             WorktreeAct::Add(listed) => {
