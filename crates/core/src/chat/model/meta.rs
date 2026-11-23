@@ -551,6 +551,49 @@ impl Chat {
         self.pending_config = config;
     }
 
+    /// Arm `picks`, by group (`mode` for the mode), to be set once this
+    /// session connects fresh: what a person picked before its agent was up.
+    pub(crate) fn arm_start_picks(&mut self, picks: Vec<(String, String)>) {
+        self.start_picks = picks;
+    }
+
+    /// Set the picks armed for a fresh session, the model included. One the
+    /// agent no longer offers is not sent, and the session says so.
+    pub(super) fn apply_start_picks(&mut self) {
+        for (group, value) in std::mem::take(&mut self.start_picks) {
+            if group == super::MODE_SELECTOR {
+                match self.modes.iter().any(|m| m.id == value) {
+                    true if self.current_mode.as_deref() != Some(value.as_str()) => {
+                        self.set_mode(&value)
+                    }
+                    true => {}
+                    false => self.not_offered("Mode", &value),
+                }
+                continue;
+            }
+            let found = self.config_options.iter().find(|o| o.id == group);
+            match found {
+                Some(o) if o.choices.iter().any(|c| c.value == value) => {
+                    if o.current.as_deref() != Some(value.as_str()) {
+                        self.set_config_option(&group, &value);
+                    }
+                }
+                Some(o) => {
+                    let name = o.name.clone();
+                    self.not_offered(&name, &value);
+                }
+                None => self.not_offered(&group, &value),
+            }
+        }
+    }
+
+    /// Say that `value` of the group `name` is not offered any more.
+    fn not_offered(&mut self, name: &str, value: &str) {
+        self.items.push(ChatItem::notice(format!(
+            "{name} {value} is no longer offered; the session runs on the agent's default"
+        )));
+    }
+
     /// Replay the armed selector state onto a freshly-reconnected resumed
     /// session. Re-sends `set_mode` / `set_config_option` only where the
     /// adapter came up on a *different* value than the archive recorded, and

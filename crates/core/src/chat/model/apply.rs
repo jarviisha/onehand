@@ -265,9 +265,11 @@ impl Chat {
                 // already in place to diff against.
                 if resumed {
                     self.reapply_prefs();
+                    self.start_picks.clear();
                 } else {
                     self.pending_mode = None;
                     self.pending_config.clear();
+                    self.apply_start_picks();
                 }
             }
             AcpEvent::SessionId(id) => self.session_id = Some(id),

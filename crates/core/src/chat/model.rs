@@ -204,6 +204,9 @@ pub struct Chat {
     /// on `session/load`, so without this a reopened session loses them.
     pub(crate) pending_mode: Option<String>,
     pub(crate) pending_config: Vec<(String, String)>,
+    /// What a person picked for a fresh session before it connected, by
+    /// group (`mode` for the mode): set once it does.
+    start_picks: Vec<(String, String)>,
     /// Files staged with 📎 to send with the next prompt.
     /// Live terminals (ACP terminal extension), keyed by terminalId.
     pub terminals: HashMap<String, TermView>,
