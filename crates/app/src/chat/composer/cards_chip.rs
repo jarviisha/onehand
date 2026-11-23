@@ -60,6 +60,18 @@ pub(super) fn cards_chip(
                 menu
             },
         )
+        // Above the chip, its right edge on the chip's, as every menu of the
+        // strip at the bottom of the pane opens.
+        .anchor(gpui::Anchor::BottomRight)
         .into_any_element(),
     )
+}
+
+/// What `session`'s level costs, said under the strip while it answers any
+/// card by itself.
+pub(super) fn cards_cost(session: &Entity<ChatSession>, cx: &App) -> Option<&'static str> {
+    let read = session.read(cx);
+    (!read.on_host)
+        .then(|| read.chat().cards().cost())
+        .flatten()
 }

@@ -6,15 +6,21 @@ fn up() -> (Chat, UnboundedReceiver<AcpRequest>) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let mut chat = Chat::default();
     chat.tx = Some(tx);
+    chat.root = "/work/app".into();
     (chat, rx)
 }
 
 fn asks(kind: ToolKind) -> AcpEvent {
+    asks_at(kind, &["/work/app/src/main.rs"])
+}
+
+fn asks_at(kind: ToolKind, paths: &[&str]) -> AcpEvent {
     AcpEvent::Permission(PermissionRequest {
         rpc_id: serde_json::Value::from(7),
         tool_call_id: None,
         kind,
         child: None,
+        locations: paths.iter().map(std::path::PathBuf::from).collect(),
         title: "do it".into(),
         options: vec![
             PermissionOption {
@@ -102,4 +108,32 @@ fn the_level_is_kept_with_the_conversation() {
     let mut back = Chat::default();
     back.take_prefs_cards(&prefs);
     assert_eq!(back.cards(), Cards::AllowEdits);
+}
+
+/// Allow edits allows only work inside the session's folder that it can
+/// name, and never what would let the agent give itself more: git's own
+/// folder, an agent's settings, or anything outside.
+#[test]
+fn allow_edits_stays_inside_the_folder() {
+    for paths in [
+        &[][..],
+        &["/home/me/.bashrc"][..],
+        &["/work/app/.git/hooks/pre-commit"][..],
+        &["/work/app/.claude/settings.local.json"][..],
+        &["/work/app/../other/x"][..],
+        &["src/relative.rs"][..],
+        &["/work/app/src/a.rs", "/etc/passwd"][..],
+    ] {
+        let (mut chat, _rx) = up();
+        chat.set_cards(Cards::AllowEdits);
+        chat.apply(asks_at(ToolKind::Edit, paths));
+        assert_eq!(granted(&mut chat), None, "{paths:?}");
+    }
+    let (mut chat, _rx) = up();
+    chat.set_cards(Cards::AllowEdits);
+    chat.apply(asks_at(
+        ToolKind::Read,
+        &["/work/app/README.md", "/work/app/src"],
+    ));
+    assert_eq!(granted(&mut chat).as_deref(), Some("allow-1"));
 }

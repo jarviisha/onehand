@@ -45,3 +45,14 @@ level)*. Step 5 of 6, split: 5a here (this machine), 5b the host project's chip 
    end of the strip under its composer, setting that session's level. Tests:
    `the_page_sends_its_projects_cards`, `a_sessions_chip_sets_its_level`. Docs: `docs/screens.md`,
    `CONTEXT.md` (*Cards*).
+
+## After review
+
+- *Allow edits* allows a read or an edit only when the request names its paths and every one is
+  absolute, inside the session's folder with no step out, and outside `.git`, `.claude`, `.codex`
+  and `.gemini` (`PermissionRequest.locations`, read off the tool call). Test
+  `allow_edits_stays_inside_the_folder`.
+- A level set on a kept conversation is written at once (`save_meta`). Test
+  `a_cards_level_is_written_when_it_changes`.
+- The session's cost line under its strip; its chip's menu opens above it.
+- `docs/control.md` and `docs/known-gaps.md` say a session's own level may answer its cards.

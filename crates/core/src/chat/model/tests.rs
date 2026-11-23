@@ -1568,6 +1568,7 @@ fn permission(title: &str) -> PermissionRequest {
         tool_call_id: None,
         kind: crate::acp::ToolKind::Execute,
         child: None,
+        locations: Vec::new(),
         title: title.into(),
         options: vec![
             PermissionOption {

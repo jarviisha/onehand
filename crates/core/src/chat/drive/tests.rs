@@ -225,6 +225,7 @@ fn permission() -> PermissionRequest {
         tool_call_id: None,
         kind: crate::acp::ToolKind::Execute,
         child: None,
+        locations: Vec::new(),
         title: "Run command".into(),
         options: vec![PermissionOption {
             id: "allow-1".into(),
@@ -1839,4 +1840,19 @@ fn a_session_waiting_on_its_host_restarts_through_the_host() {
     let (mut drive, _rx) = connected();
     drive.drive.wait_on_host(HostName("box".into()), 1, 0);
     assert_eq!(drive.restarting(), Restarting::Host(HostName("box".into())));
+}
+
+/// A level set on a conversation already kept is written at once, so a
+/// resume never brings back the one it replaced.
+#[test]
+fn a_cards_level_is_written_when_it_changes() {
+    let (mut drive, _rx) = connected();
+    drive.prompt("go", &[], Origin::Person, Code::Here);
+    let write = take_save(feed(&mut drive, turn_ends()));
+    drive.handle(Input::Saved {
+        write,
+        result: Ok(()),
+    });
+    let fx = drive.drive.set_cards(crate::chat::Cards::Bypass);
+    assert!(names(&fx).contains(&"Save".to_string()), "{:?}", names(&fx));
 }

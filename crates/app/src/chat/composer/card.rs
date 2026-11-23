@@ -349,7 +349,14 @@ impl Composer {
             true => div().v_flex().items_start().gap_2(),
             false => div().h_flex().items_center().justify_between().gap_2(),
         };
-        Some(
+        let cost = super::cards_chip::cards_cost(session, cx).map(|cost| {
+            div()
+                .px_1p5()
+                .text_xs()
+                .text_color(crate::theme::status_ink(cx).warning)
+                .child(cost)
+        });
+        let strip = Some(
             strip
                 .w_full()
                 // The card's own inset, so the branch lines up with the `+`
@@ -371,7 +378,9 @@ impl Composer {
                         // Last, at the strip's end, as on a project's page.
                         .children(cards),
                 ),
-        )
+        );
+        // What the level costs, under the strip, while it answers cards.
+        strip.map(|strip| div().v_flex().w_full().child(strip).children(cost))
     }
 }
 

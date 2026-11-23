@@ -17,6 +17,7 @@ fn sample_permission() -> PermissionRequest {
         title: "ls".into(),
         options: vec![option("allow_once"), option("reject_once")],
         child: None,
+        locations: Vec::new(),
     }
 }
 
@@ -159,6 +160,7 @@ fn the_refusal_key_refuses_once_whatever_order_the_agent_lists_them_in() {
         kind: ToolKind::Other,
         title: String::new(),
         child: None,
+        locations: Vec::new(),
         options: kinds
             .iter()
             .map(|kind| PermissionOption {

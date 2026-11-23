@@ -83,6 +83,7 @@ fn a_card_waiting_is_counted() {
         tool_call_id: None,
         kind: ToolKind::Execute,
         child: None,
+        locations: Vec::new(),
         title: "cargo test".into(),
         options: vec![PermissionOption {
             id: "allow".into(),

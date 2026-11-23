@@ -115,6 +115,7 @@ fn permission(drive: &mut SessionDrive) -> usize {
             tool_call_id: None,
             kind: crate::acp::ToolKind::Execute,
             child: None,
+            locations: Vec::new(),
             title: "Run command".into(),
             options: vec![option("allow-1", "Allow once"), option("deny", "Deny")],
         }),

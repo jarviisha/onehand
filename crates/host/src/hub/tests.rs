@@ -257,6 +257,7 @@ async fn card_parked_while_detached_is_answerable_after() {
         title: "run it".into(),
         options: vec![],
         child: None,
+        locations: Vec::new(),
     }));
     let mut lines = watch(&hub, &fake.session);
     assert_eq!(
@@ -636,6 +637,7 @@ fn asking(rpc: u64) -> AcpEvent {
             option("once", "allow_once"),
         ],
         child: None,
+        locations: Vec::new(),
     })
 }
 

@@ -27,7 +27,9 @@ impl SessionDrive {
     /// that it answers.
     pub fn set_cards(&mut self, level: crate::chat::Cards) -> Vec<Effect> {
         self.chat.set_cards(level);
-        self.sent(Vec::new())
+        // Written at once: a resume must not bring back the level replaced.
+        let saved = self.save_meta();
+        self.sent(saved)
     }
 
     /// Arm `picks`, by group (`mode` for the mode), to be set once this

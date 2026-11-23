@@ -50,6 +50,16 @@ pub(super) fn parse_permission(rpc_id: Value, params: &Value) -> PermissionReque
                 .collect()
         })
         .unwrap_or_default();
+    let locations = tool_call
+        .and_then(|t| t.get("locations"))
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|l| l.get("path").and_then(Value::as_str))
+                .map(std::path::PathBuf::from)
+                .collect()
+        })
+        .unwrap_or_default();
     PermissionRequest {
         rpc_id,
         tool_call_id,
@@ -57,6 +67,7 @@ pub(super) fn parse_permission(rpc_id: Value, params: &Value) -> PermissionReque
         title,
         options,
         child: None,
+        locations,
     }
 }
 

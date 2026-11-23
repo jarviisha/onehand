@@ -9,6 +9,7 @@ use super::Chat;
 use crate::acp::types::BYPASS_ANSWER;
 use crate::acp::{AcpRequest, PermissionRequest, ToolKind};
 use serde::{Deserialize, Serialize};
+use std::path::{Component, Path};
 
 /// What a session answers by itself.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,19 +48,24 @@ impl Cards {
     pub fn cost(self) -> Option<&'static str> {
         match self {
             Self::Manual => None,
-            Self::AllowEdits => Some("The agent can read and change files in the folder without asking"),
+            Self::AllowEdits => Some(
+                "The agent can read and change files in this folder without asking, its git and agent settings aside",
+            ),
             Self::Bypass => Some(
                 "The agent can do anything your user can on this machine, git push and deleting files included",
             ),
         }
     }
 
-    /// The grant this level gives `req` by itself: its narrowest, once
-    /// before always; none where the level leaves it to the person.
-    fn grants(self, req: &PermissionRequest) -> Option<String> {
+    /// The grant this level gives `req`, asked in a session working in
+    /// `root`, by itself: its narrowest, once before always; none where the
+    /// level leaves it to the person.
+    fn grants(self, req: &PermissionRequest, root: &Path) -> Option<String> {
         let answers = match self {
             Self::Manual => false,
-            Self::AllowEdits => matches!(req.kind, ToolKind::Read | ToolKind::Edit),
+            Self::AllowEdits => {
+                matches!(req.kind, ToolKind::Read | ToolKind::Edit) && inside(&req.locations, root)
+            }
             Self::Bypass => true,
         };
         match req.bypass_answer().filter(|_| answers)? {
@@ -67,6 +73,31 @@ impl Cards {
             _ => None,
         }
     }
+}
+
+/// Folders whose files decide what runs or what an agent may do: git's
+/// hooks and settings, and the agents' own settings. Work in one is never
+/// allowed by a level that allows edits.
+const GUARDED: [&str; 4] = [".git", ".claude", ".codex", ".gemini"];
+
+/// Whether `paths` are all work a level that allows edits may allow: named,
+/// absolute, inside `root` with no step out of it, and in none of the
+/// guarded folders. Nothing named is nothing allowed.
+fn inside(paths: &[std::path::PathBuf], root: &Path) -> bool {
+    !paths.is_empty()
+        && paths.iter().all(|path| {
+            let Ok(rest) = path.strip_prefix(root) else {
+                return false;
+            };
+            path.is_absolute()
+                && rest.components().all(|part| match part {
+                    Component::Normal(name) => !GUARDED
+                        .iter()
+                        .any(|guarded| name == std::ffi::OsStr::new(guarded)),
+                    Component::CurDir => true,
+                    Component::ParentDir | Component::RootDir | Component::Prefix(_) => false,
+                })
+        })
 }
 
 impl Chat {
@@ -91,7 +122,7 @@ impl Chat {
         }
         match self.items.get(idx) {
             Some(ChatItem::Permission(p)) if p.resolved.is_none() => {
-                let Some(option) = self.cards.grants(&p.req) else {
+                let Some(option) = self.cards.grants(&p.req, &self.root) else {
                     return false;
                 };
                 self.answer_permission(idx, &option);

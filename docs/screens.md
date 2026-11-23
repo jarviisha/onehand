@@ -244,7 +244,11 @@ session's agent may use onehand's tools, *Controls onehand* stands before the mo
 in the warning ink, and pressing it switches that off. At the strip's end, on a session of this
 machine, *Cards*: its shield mark, muted at *Manual* and in the warning ink otherwise, and the
 level's name; its menu (*Cards, this session only*) lists *Manual*, *Allow edits* and *Bypass*,
-each with what it does, and changes this session alone; its tooltip says what the level costs. The `+` menu ends on *Agent controls
+each with what it does, opens above the chip and changes this session alone; a level other than
+*Manual* says its cost under the strip in the warning ink. *Allow edits* allows only a read or an
+edit whose paths are all named, inside the session's folder, and outside its `.git` and an
+agent's settings folder (`.claude`, `.codex`, `.gemini`); anything else waits. A card answered so
+is drawn answered and raises no notice. The `+` menu ends on *Agent controls
 onehand* under a heading of its own, *This session*, checked while on. Each chip's
 menu opens just above it, without its tooltip. Above the card, top down: one surface on the card's
 fill, edge and lift holding a reconnect and the queue as lines, then the staged files as one row
