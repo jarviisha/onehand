@@ -1,7 +1,7 @@
 use super::Removal;
 use super::*;
 use crate::project::{Folder, MadeBy, Placement, Project, ProjectId, Projects, Worktree};
-use crate::workspace::{BuildHost, HostName, Offloaded};
+use crate::workspace::{BuildHost, HostName, Offloaded, RoutedCommand};
 use std::path::Path;
 
 /// A drive over one project, `a`, at `/code/a`.
@@ -486,4 +486,100 @@ fn a_projects_cards_default_is_kept() {
     assert!(d
         .set_cards(&p.id, crate::chat::Cards::AllowEdits)
         .is_empty());
+}
+
+// Routed commands and the picked build host.
+
+fn route(words: &str) -> RoutedCommand {
+    RoutedCommand::parse(words, "").unwrap()
+}
+
+#[test]
+fn put_route_refuses_a_host_project() {
+    let p = Project::new(
+        ProjectId::mint(2),
+        Some(HostName("vps".into())),
+        "/code/a".into(),
+    );
+    let mut d = ProjectsDrive::new(Projects::from_iter([p.clone()]), "/data/projects".into());
+    assert_eq!(
+        d.put_route(&p.id, route("cargo build"), None)
+            .err()
+            .unwrap(),
+        "a runs its sessions on a host; it builds there already"
+    );
+}
+
+#[test]
+fn put_route_refuses_the_same_words_twice() {
+    let (mut d, p) = drive();
+    assert!(d.put_route(&p.id, route("cargo build"), None).is_ok());
+    assert_eq!(
+        d.put_route(&p.id, route("cargo build"), None)
+            .err()
+            .unwrap(),
+        "a already routes cargo build"
+    );
+    assert!(d.put_route(&p.id, route("cargo build"), Some(0)).is_ok());
+}
+
+#[test]
+fn at_most_twenty_routes() {
+    let (mut d, p) = drive();
+    for n in 0..20 {
+        d.put_route(&p.id, route(&format!("tool{n}")), None)
+            .unwrap();
+    }
+    assert_eq!(
+        d.put_route(&p.id, route("tool20"), None).err().unwrap(),
+        "a routes at most 20 commands"
+    );
+}
+
+#[test]
+fn pick_must_be_a_build_host() {
+    let (mut d, p) = drive();
+    assert_eq!(
+        d.pick_build_host(&p.id, Some(HostName("nope".into())))
+            .err()
+            .unwrap(),
+        "a does not build on nope"
+    );
+    let _ = d.put_build_host(&p.id, builds_on("100-52"), None).unwrap();
+    let fx = d
+        .pick_build_host(&p.id, Some(HostName("100-52".into())))
+        .unwrap();
+    assert!(matches!(&fx[..], [Effect::Write(_), Effect::Changed(_)]));
+    assert_eq!(
+        d.get(&p.id).unwrap().builds_on,
+        Some(HostName("100-52".into()))
+    );
+    let _ = d.pick_build_host(&p.id, None).unwrap();
+    assert_eq!(d.get(&p.id).unwrap().builds_on, None);
+}
+
+#[test]
+fn removing_the_picked_build_host_clears_the_pick() {
+    let (mut d, p) = drive();
+    let _ = d.put_build_host(&p.id, builds_on("100-52"), None).unwrap();
+    let _ = d
+        .pick_build_host(&p.id, Some(HostName("100-52".into())))
+        .unwrap();
+    let w = write_of(d.remove_build_host(&p.id, &builds_on("100-52")));
+    assert_eq!(w.project.builds_on, None);
+    assert!(w.project.builds.is_empty());
+    assert_eq!(d.get(&p.id).unwrap().builds_on, None);
+}
+
+#[test]
+fn a_failed_write_puts_the_routes_and_the_pick_back() {
+    let (mut d, p) = drive();
+    let _ = d.put_build_host(&p.id, builds_on("100-52"), None).unwrap();
+    let w = write_of(d.put_route(&p.id, route("cargo build"), None).unwrap());
+    let _ = d.handle(Input::Written {
+        id: p.id.clone(),
+        pending: w.pending,
+        result: Err("read-only".into()),
+    });
+    assert!(d.get(&p.id).unwrap().routes.is_empty());
 }

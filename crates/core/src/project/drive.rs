@@ -17,7 +17,7 @@
 
 use super::{MadeBy, Placement, Project, ProjectId, Projects, Worktree};
 use crate::saving::{Pending, Saves};
-use crate::workspace::{BuildHost, HostName, Offloaded};
+use crate::workspace::{BuildHost, HostName, Offloaded, RoutedCommand};
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -34,6 +34,8 @@ pub enum Thing {
     Check,
     Cards,
     Builds,
+    Routes,
+    BuildsOn,
     Worktrees,
     WorktreeParent,
     /// The offload of one folder of the project, by its path here.
@@ -47,6 +49,8 @@ pub enum Value {
     Check(Option<String>),
     Cards(crate::chat::Cards),
     Builds(Vec<BuildHost>),
+    Routes(Vec<RoutedCommand>),
+    BuildsOn(Option<HostName>),
     Worktrees(Vec<Worktree>),
     WorktreeParent(Option<PathBuf>),
     Offload {
@@ -469,12 +473,25 @@ impl ProjectsDrive {
         let Some(project) = self.projects.get(id) else {
             return Vec::new();
         };
-        let builds = project
+        let builds: Vec<BuildHost> = project
             .builds
             .iter()
             .filter(|held| *held != entry)
             .cloned()
             .collect();
+        if project.builds == builds {
+            return Vec::new();
+        }
+        // The pick goes with its host, in the same write.
+        if project.builds_on.as_ref() == Some(&entry.host) {
+            let project = self.projects.get_mut(id).expect("just read");
+            let before = project.builds_on.take();
+            self.saves.entry(id.clone()).or_default().change(
+                Thing::BuildsOn,
+                Value::BuildsOn(before),
+                Value::BuildsOn(None),
+            );
+        }
         self.set_builds(id, builds)
     }
 
@@ -668,6 +685,16 @@ impl ProjectsDrive {
                     project.builds = builds;
                 }
             }
+            Value::Routes(routes) => {
+                if let Some(project) = self.projects.get_mut(id) {
+                    project.routes = routes;
+                }
+            }
+            Value::BuildsOn(host) => {
+                if let Some(project) = self.projects.get_mut(id) {
+                    project.builds_on = host;
+                }
+            }
             Value::Cards(cards) => {
                 if let Some(project) = self.projects.get_mut(id) {
                     project.cards = cards;
@@ -742,6 +769,8 @@ impl ProjectsDrive {
         })))
     }
 }
+
+mod routes;
 
 #[cfg(test)]
 mod tests;
