@@ -102,6 +102,16 @@ impl PageStarts {
         }
     }
 
+    /// Session `uid` was closed: if a page waited on it, that page's send is
+    /// over, and it takes words again.
+    pub fn closed(&mut self, uid: u64) -> Vec<Effect> {
+        let Some(root) = self.waits.remove(&uid) else {
+            return Vec::new();
+        };
+        self.starting.remove(&root);
+        vec![Effect::Busy { root, said: None }]
+    }
+
     /// Whether session `uid` waits on its agent for a page.
     pub fn waits_on(&self, uid: u64) -> bool {
         self.waits.contains_key(&uid)

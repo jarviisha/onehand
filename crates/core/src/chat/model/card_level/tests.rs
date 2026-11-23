@@ -183,3 +183,23 @@ fn allow_edits_follows_links_out_of_the_folder() {
     );
     let _ = std::fs::remove_dir_all(base);
 }
+
+/// A link to something not made yet is a link all the same: writing through
+/// it lands wherever it points, so it is never allowed.
+#[test]
+fn allow_edits_refuses_a_link_to_nothing_yet() {
+    let base = std::env::temp_dir().join(format!("onehand-cards-dangling-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let root = base.join("work");
+    std::fs::create_dir_all(&root).unwrap();
+    std::os::unix::fs::symlink(base.join("not-yet/new.sh"), root.join("out")).unwrap();
+    let (mut chat, _rx) = up();
+    chat.root = root.clone();
+    chat.set_cards(Cards::AllowEdits);
+    chat.apply(asks_at(
+        ToolKind::Edit,
+        &[root.join("out").to_str().unwrap()],
+    ));
+    assert_eq!(granted(&mut chat), None);
+    let _ = std::fs::remove_dir_all(base);
+}

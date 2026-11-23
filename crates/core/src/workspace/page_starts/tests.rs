@@ -80,3 +80,22 @@ fn an_agent_never_up_leaves_no_session_and_says_why() {
         "said once"
     );
 }
+
+/// A session closed while it waits ends its page's send: the page takes
+/// words and sends again.
+#[test]
+fn a_session_closed_while_it_waits_frees_its_page() {
+    let mut starts = PageStarts::default();
+    starts.take(&p("/a"), Some(&p("/a")));
+    starts.started(&p("/a"), 7, "Claude");
+    assert_eq!(
+        starts.closed(7),
+        [Effect::Busy {
+            root: p("/a"),
+            said: None
+        }]
+    );
+    assert!(!starts.waits_on(7));
+    assert!(starts.take(&p("/a"), Some(&p("/a"))));
+    assert!(starts.closed(8).is_empty(), "a session no page waits on");
+}

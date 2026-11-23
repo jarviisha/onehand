@@ -94,6 +94,11 @@ impl Shell {
             continued: None,
             on_host,
         };
+        // A host's row offers its own folder alone.
+        let start = match on_host {
+            true => StartIn::Project,
+            false => start,
+        };
         match start {
             // The row's own folder: a host's runs there, an offloaded one's
             // in its mirror, as the session's start finds.

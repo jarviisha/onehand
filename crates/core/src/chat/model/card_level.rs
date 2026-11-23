@@ -134,6 +134,14 @@ fn landing(path: &Path) -> Option<std::path::PathBuf> {
         if let Ok(real) = there.canonicalize() {
             return Some(rest.iter().rev().fold(real, |at, part| at.join(part)));
         }
+        // Not there, or a link to something not there: a link leads wherever
+        // it points once that is made, so where it lands cannot be told.
+        if there
+            .symlink_metadata()
+            .is_ok_and(|meta| meta.file_type().is_symlink())
+        {
+            return None;
+        }
         rest.push(there.file_name()?.to_os_string());
         there = there.parent()?;
     }

@@ -329,6 +329,20 @@ impl Shell {
     /// nothing the window keeps names it any more.
     fn let_go_of(&mut self, uid: u64, cx: &mut Context<Self>) {
         self.chat.update(cx, |pane, cx| pane.close(uid, cx));
+        // A page waiting on it to come up takes words and sends again.
+        self.page_waits.remove(&uid);
+        for effect in self.page_starts.closed(uid) {
+            use onehand_core::workspace::page_starts::Effect as PageEffect;
+            match effect {
+                PageEffect::Busy { root, said } => self
+                    .chat
+                    .update(cx, |pane, cx| pane.page_busy(&root, said, cx)),
+                PageEffect::Failed { .. }
+                | PageEffect::Sent { .. }
+                | PageEffect::Show { .. }
+                | PageEffect::Close { .. } => debug_assert!(false, "not a close's to carry"),
+            }
+        }
         // What it waited on its host for goes with it.
         self.prune_host_waits(cx);
         for order in self.mru.values_mut() {
