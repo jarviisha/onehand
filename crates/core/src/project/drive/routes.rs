@@ -5,7 +5,7 @@ use crate::project::ProjectId;
 use crate::workspace::{HostName, RoutedCommand};
 
 /// The most commands one project routes.
-const MOST_ROUTES: usize = 20;
+pub const MOST_ROUTES: usize = 20;
 
 impl ProjectsDrive {
     /// Make `route` one of project `id`'s routed commands: in place of

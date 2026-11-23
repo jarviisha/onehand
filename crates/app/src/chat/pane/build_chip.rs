@@ -18,7 +18,7 @@ use onehand_core::workspace::HostName;
 
 /// How many build hosts the menu lists before it says how many it left out,
 /// as Settings lists them.
-const HOSTS_SHOWN: usize = 20;
+const HOSTS_SHOWN: usize = crate::settings::BUILD_HOSTS_SHOWN;
 
 /// The chip for `project`'s head; none for a project with no build host a
 /// command of it can be routed to.

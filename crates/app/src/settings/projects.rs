@@ -27,7 +27,7 @@ pub(super) use routes::route_line;
 use std::path::{Path, PathBuf};
 
 /// How many build hosts the page lists before it says how many it left out.
-const BUILD_HOSTS_SHOWN: usize = 20;
+pub(crate) const BUILD_HOSTS_SHOWN: usize = 20;
 
 /// The projects of `roots` this page is about, by folder and name: those
 /// whose sessions run on this machine, a worker's row left out.

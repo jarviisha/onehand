@@ -14,7 +14,7 @@ use std::path::Path;
 
 /// How many routed commands the page lists before it says how many it left
 /// out: as many as a project routes, so it bites only if that grows.
-const ROUTES_SHOWN: usize = 20;
+const ROUTES_SHOWN: usize = onehand_core::project::drive::MOST_ROUTES;
 
 /// What a routed command's row says under its words: what it brings back.
 pub(in crate::settings) fn route_line(route: &RoutedCommand) -> String {
