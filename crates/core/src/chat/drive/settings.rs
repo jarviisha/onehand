@@ -32,6 +32,11 @@ impl SessionDrive {
         self.sent(saved)
     }
 
+    /// Record that this conversation continues the one called `title`.
+    pub fn continues(&mut self, title: String) {
+        self.chat.continues(title);
+    }
+
     /// Arm `picks`, by group (`mode` for the mode), to be set once this
     /// session connects fresh, before a held prompt goes.
     pub fn arm_start_picks(&mut self, picks: Vec<(String, String)>) {

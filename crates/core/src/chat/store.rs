@@ -166,6 +166,9 @@ pub struct Prefs {
     /// What the conversation answered of its cards by itself.
     #[serde(default, skip_serializing_if = "is_manual")]
     pub(crate) cards: crate::chat::Cards,
+    /// The conversation this one continued, by its title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) continued: Option<String>,
 }
 
 fn is_manual(cards: &crate::chat::Cards) -> bool {
@@ -197,6 +200,8 @@ pub struct ConvMeta {
     /// first prompt, else the agent's name.
     pub title: String,
     pub item_count: usize,
+    /// The conversation it continued, by its title, when it continued one.
+    pub continued: Option<String>,
 }
 
 /// A conversation in hand — read from disk, or lifted out of a live chat for a
@@ -333,6 +338,7 @@ fn describe(dir: &Path, meta: Meta) -> ConvMeta {
         updated: meta.updated,
         title,
         item_count: meta.items,
+        continued: meta.prefs.continued,
     }
 }
 

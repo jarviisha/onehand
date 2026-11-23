@@ -414,6 +414,7 @@ mod lifecycle {
             updated: 0,
             title: "a past conversation".into(),
             item_count: 1,
+            continued: None,
         }]
     }
 
@@ -459,6 +460,7 @@ fn a_past_conversation_resumes_where_it_ran() {
         updated: 0,
         title: "t".into(),
         item_count: 1,
+        continued: None,
     };
     assert!(matches!(
         super::project_page::resume_of(Path::new("/a"), &meta("/a")).event(),
