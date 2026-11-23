@@ -376,7 +376,14 @@ room and leaves the terminal as it is.
   is typed. At the strip's end, on a project on this machine (a host's is the host's switch,
   below), *Cards: <level>*, its menu (*Cards,
   this project's default*) setting the level a session sent from the page starts on; a level
-  other than *Manual* says its cost under the strip in the warning ink. A file dropped on the card or pasted into it is staged, as the picker stages one, in
+  other than *Manual* says its cost under the strip in the warning ink. *Continue in a new
+  session…* on a past conversation puts it over the card as a line, *Continues “<title>”*, with
+  *Summarise first* (a switch, off) and a ghost × (*Start fresh instead*), the agent chip on the
+  conversation's agent; on send the conversation is written as Markdown to `.onehand/continued/`
+  in the session's folder (a `.gitignore` of `*` beside it keeps git from seeing it; *Writing out
+  “<title>”…* meanwhile, a failure standing under the card) and the first prompt is the person's
+  words, then a line naming the file (and, with *Summarise first*, asking for a summary of it
+  first); the new conversation keeps the title it continued. A file dropped on the card or pasted into it is staged, as the picker stages one, in
   the session's tray over the card, and goes with the first prompt; `@` lists the project's files
   and folders (read again each time the page shows; none on a host) and `/` the commands its
   agent last offered, in the session's own list floated over the card (it hangs from the card's
@@ -395,7 +402,9 @@ room and leaves the terminal as it is.
   draft. An agent that never comes up leaves no session: the page says why under the card, the
   words kept. A host project's session is shown at once, as a host session always is. Then, in one column at every width, the box *Past
   conversations* with its count, its rows the overview's (age, title, then items and agent at the
-  edge, then a `⋯` on hover holding *Resume* and *Delete…*, the same on a right-click), capped, its wait and empty lines inside it:
+  edge, led by *Continued from <title>* for one that continued another, then a `⋯` on hover
+  holding *Resume*, on a page whose sessions run here *Continue in a new session…*, and
+  *Delete…*, the same on a right-click), capped, its wait and empty lines inside it:
   every one of the project, in whichever of its folders it ran, and one that ran in a folder it
   no longer holds (a worktree since removed) has its *Resume* say the folder is gone; under
   it, for a project on this machine, the box *Worktrees* with the count of those its project

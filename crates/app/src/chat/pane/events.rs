@@ -91,6 +91,18 @@ pub struct PageSend {
     pub staged: Vec<onehand_core::attachment::StagedAttachment>,
     /// What the session answers of its cards by itself.
     pub cards: onehand_core::chat::Cards,
+    /// The past conversation it continues, when it continues one.
+    pub continuing: Option<Continuing>,
+}
+
+/// A past conversation carried into a new session from a project's page.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Continuing {
+    /// Where it is kept.
+    pub dir: PathBuf,
+    pub title: String,
+    /// Whether the agent is asked for a summary of it first.
+    pub summarise: bool,
 }
 
 /// What the pane asks the shell for. Kept tiny on purpose: the chat's job is

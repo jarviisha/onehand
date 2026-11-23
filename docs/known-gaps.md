@@ -315,6 +315,9 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   read POSIX words (fish, tcsh): its check fails saying so.
 - **The laptop's copies are never pruned.** A copy of a session the host has long since dropped,
   or of a project removed here, stays under `hosts/` until a person deletes it.
+- **A past conversation is not continued in a new session on a host's or an offloaded project's
+  page.** The hand-off file is written on this machine, where a session on a host cannot read
+  it; writing it through the host's attach would fix it.
 - **The permission bypass is changed only while the host is attached:** the page draws no *Cards*
   chip until the host has said where it stands, and says nothing of why it is missing. A permission card offering no grant waits for a person
   even with the switch on.

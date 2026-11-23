@@ -467,6 +467,7 @@ impl ChatPane {
                     // Resuming is the row's own press; its ⋯ and a
                     // right-click offer it by name, and the removal.
                     let pane = cx.entity().downgrade();
+                    let carry_pane = pane.clone();
                     let resume = {
                         let (pane, resumed) = (pane.clone(), resumed.clone());
                         Rc::new(move |_: &gpui::ClickEvent, _: &mut Window, cx: &mut App| {
@@ -483,10 +484,27 @@ impl ChatPane {
                         },
                     )
                         as Rc<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App)>;
-                    let acts: Rc<[onehand_ui::RowAct]> = Rc::new([
-                        onehand_ui::RowAct::new("Resume", resume),
-                        onehand_ui::RowAct::new("Delete…", delete).danger(),
-                    ]);
+                    // Carried into a new session from the page's own
+                    // composer, with whichever agent is picked there; a
+                    // page whose sessions run on a host does not offer it.
+                    let carry = project.host.is_none().then(|| {
+                        let (pane, meta) = (carry_pane.clone(), meta.clone());
+                        Rc::new(
+                            move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
+                                let _ = pane.update(cx, |pane: &mut Self, cx| {
+                                    pane.continue_on_page(&meta, window, cx);
+                                });
+                            },
+                        )
+                            as Rc<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App)>
+                    });
+                    let acts: Rc<[onehand_ui::RowAct]> =
+                        std::iter::once(onehand_ui::RowAct::new("Resume", resume))
+                            .chain(carry.map(|carry| {
+                                onehand_ui::RowAct::new("Continue in a new session…", carry)
+                            }))
+                            .chain([onehand_ui::RowAct::new("Delete…", delete).danger()])
+                            .collect();
                     let menu_acts = acts.clone();
                     let row = onehand_ui::row(false, cx)
                         .id(("home", i))
@@ -520,11 +538,20 @@ impl ChatPane {
                         // own picker: this list crosses every agent that
                         // has worked in the project, and resuming a row
                         // starts a session on the one that held it.
-                        .child(div().flex_none().text_xs().text_color(muted).child(format!(
-                            "{} · {}",
-                            count_of(meta.item_count, "item"),
-                            meta.agent
-                        )))
+                        .child(div().flex_none().text_xs().text_color(muted).child(
+                            match &meta.continued {
+                                Some(earlier) => format!(
+                                    "Continued from {earlier} · {} · {}",
+                                    count_of(meta.item_count, "item"),
+                                    meta.agent
+                                ),
+                                None => format!(
+                                    "{} · {}",
+                                    count_of(meta.item_count, "item"),
+                                    meta.agent
+                                ),
+                            },
+                        ))
                         .on_click(
                             cx.listener(move |_: &mut Self, _, _, cx| cx.emit(resumed.event())),
                         )
