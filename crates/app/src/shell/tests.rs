@@ -282,3 +282,44 @@ fn the_rail_toggle_shows_a_rail_a_maximized_panel_hides() {
     assert_eq!(rail_toggle(false, true), RailToggle::Show);
     assert_eq!(rail_toggle(true, true), RailToggle::Show);
 }
+
+/// A project's row shows its page over sessions that stay open; the pane
+/// then views no session, and its page is up.
+#[gpui::test]
+fn a_project_row_shows_its_page_over_open_sessions(cx: &mut gpui::TestAppContext) {
+    use std::path::PathBuf;
+    let spec = crate::shell::rig::nowhere();
+    let dir = crate::shell::rig::folder("page-over-sessions");
+    let (_, shell, cx) = crate::shell::rig::shell(cx, dir.join("tasks"), vec![spec.clone()]);
+    cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| {
+            let (added, fx) = shell.window.workspace.add_session_at(
+                Some(spec.clone()),
+                61,
+                PathBuf::from("/tmp"),
+            );
+            added.expect("added");
+            shell.carry_workspace(fx, window, cx);
+        })
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|_, cx| shell.read(cx).active_session_uid()),
+        Some(61)
+    );
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.show_project_page(0, window, cx)));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let shell = shell.read(cx);
+        assert_eq!(shell.active_session_uid(), None);
+        assert_eq!(
+            shell.window.workspace.roots[0].sessions.len(),
+            1,
+            "still open"
+        );
+        let pane = shell.chat.read(cx);
+        assert_eq!(pane.viewing(), None);
+        assert!(pane.project_page_shown());
+    });
+    let _ = std::fs::remove_dir_all(dir);
+}

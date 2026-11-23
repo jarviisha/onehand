@@ -153,8 +153,8 @@ pub(super) struct Place {
 /// its sessions. Under the pointer, over the row's end: a new session here,
 /// and `⋯`.
 ///
-/// A click goes to the project: its last session shows, or its page when it
-/// has none, and the keyboard's row moves there. Only the chevron, a button
+/// A click goes to the project: its page shows, over whatever sessions it has
+/// open, and the keyboard's row moves there. Only the chevron, a button
 /// of its own, folds it.
 pub(super) fn project_row(
     window_state: &WorkspaceWindow,

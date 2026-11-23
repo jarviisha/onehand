@@ -193,7 +193,7 @@ impl Shell {
             .window
             .workspace
             .active_root()
-            .map(|root| root.active_session)
+            .and_then(|root| root.active_session)
         else {
             return;
         };

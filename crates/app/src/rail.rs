@@ -235,7 +235,7 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
     let page = shell.page_shown(cx);
     let shown = workspace
         .active_root()
-        .map(|root| (workspace.active_root, root.active_session))
+        .and_then(|root| Some((workspace.active_root, root.active_session?)))
         .filter(|_| !page);
     // A project with no session shows its own page, which its row marks.
     let project_page = workspace
@@ -496,12 +496,12 @@ impl Shell {
         rail.keyed = keyed;
     }
 
-    /// A project row's click: the project's last session shows, or its page
-    /// when it has none, and the keyboard's row goes there. Going to a project
-    /// opens it; only its chevron folds it.
+    /// A project row's click: the project's page shows, over whatever
+    /// sessions it has open, and the keyboard's row goes there. Going to a
+    /// project opens it; only its chevron folds it.
     fn rail_click_project(&mut self, root: usize, window: &mut Window, cx: &mut Context<Self>) {
         let path = self.workspace_window().workspace.roots[root].path.clone();
-        self.select_root(root, window, cx);
+        self.show_project_page(root, window, cx);
         let rail = self.rail_state_mut();
         rail.cursor = Some(Cursor::Project(path));
         rail.keyed = false;
