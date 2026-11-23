@@ -573,7 +573,7 @@ fn waiting_job_waits_for_the_lock() {
     let top = repo(&scratch, "proj");
     let host = on_local(&[], None);
     let never = AtomicBool::new(false);
-    let held = lock(&top, "local").expect("the lock");
+    let held = lock(&top, "local").expect("no error").expect("the lock");
     let (refused, _) = routed(&home, &top, &host, "true", false, &never);
     assert_eq!(
         refused,
@@ -596,18 +596,53 @@ fn cancel_stops_a_running_command() {
     let top = repo(&scratch, "proj");
     let host = on_local(&["target/a"], None);
     let cancel = AtomicBool::new(false);
+    let pid_file = scratch.0.join("sleep.pid");
+    let command = format!(
+        // A grandchild, as a command's own tools are: killing the shell that
+        // started it does not end it.
+        "sleep 30 & echo $! > {}; wait",
+        shell::Shell::Posix
+            .word(&pid_file.display().to_string())
+            .unwrap()
+    );
     let started = std::time::Instant::now();
     let built = std::thread::scope(|scope| {
         scope.spawn(|| {
-            std::thread::sleep(std::time::Duration::from_millis(200));
+            // Stopped once the command runs, not while the code is checked out.
+            while !pid_file.exists() && started.elapsed().as_secs() < 5 {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
             cancel.store(true, Ordering::Relaxed);
         });
-        routed(&home, &top, &host, "sleep 30", false, &cancel).0
+        routed(&home, &top, &host, &command, false, &cancel).0
     });
-    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    assert!(started.elapsed() < std::time::Duration::from_secs(10));
     assert_eq!(built.map(|b| b.exit), Ok(None));
+    // The command on the host is gone, not left running: at most a zombie
+    // its new parent has yet to reap.
+    let pid = std::fs::read_to_string(&pid_file).expect("the command ran");
+    let stat = Path::new("/proc").join(pid.trim()).join("stat");
+    let alive = || {
+        std::fs::read_to_string(&stat).is_ok_and(|stat| {
+            stat.rsplit_once(") ")
+                .is_some_and(|(_, rest)| !rest.starts_with('Z'))
+        })
+    };
+    assert!(!alive(), "the sleep {} is still running", pid.trim());
     // The folder's lock went with it.
-    assert!(lock(&top, "local").is_some());
+    assert!(matches!(lock(&top, "local"), Ok(Some(_))));
+}
+
+#[test]
+fn a_lock_that_cannot_be_made_is_an_error_not_a_build_running() {
+    let scratch = Scratch::new("locks");
+    write(&scratch.0, "file", "not a folder\n");
+    let under_a_file = scratch.0.join("file").join("builds");
+    match lock_in(&under_a_file, Path::new("/work/proj"), "local") {
+        Err(why) => assert!(why.contains(&under_a_file.display().to_string()), "{why}"),
+        Ok(_) => panic!("a lock under a file"),
+    }
 }
 
 #[test]
@@ -1240,6 +1275,17 @@ mod shells {
     }
 
     #[test]
+    fn a_stopped_run_is_ended_by_its_group_on_posix_only() {
+        assert_eq!(
+            Shell::Posix.stop(DIR).as_deref(),
+            Some(
+                r#"cd '.onehand-build/lap/my_proj-abc' && p=$(cat .git/onehand-route-pid 2>/dev/null) && test -n "$p" && { kill -TERM -"$p" 2>/dev/null; i=0; while kill -0 -"$p" 2>/dev/null && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done; kill -KILL -"$p" 2>/dev/null; rm -f .git/onehand-route-pid; }; true"#
+            )
+        );
+        assert_eq!(Shell::Cmd.stop(DIR), None);
+    }
+
+    #[test]
     fn posix_scripts_are_what_they_were() {
         assert_eq!(
             Shell::Posix.init(DIR).as_deref(),
@@ -1252,7 +1298,7 @@ mod shells {
                 .run(DIR, SHA, Path::new("sub dir"), "it's", None)
                 .as_deref(),
             Ok(
-                r#"cd '.onehand-build/lap/my_proj-abc' && git checkout -q -f --detach 2ab98d7259af09c62a806ff487818d931abf3b7e && cd 'sub dir' && echo __ONEHAND_BUILD__ && exec "${SHELL:-/bin/sh}" -lc 'it'\''s' 2>&1"#
+                r#"cd '.onehand-build/lap/my_proj-abc' && r=$PWD && rm -f .git/onehand-route-pid && git checkout -q -f --detach 2ab98d7259af09c62a806ff487818d931abf3b7e && cd 'sub dir' && echo __ONEHAND_BUILD__ && { setsid "${SHELL:-/bin/sh}" -lc 'it'\''s' 2>&1 & echo $! > "$r/.git/onehand-route-pid"; wait $!; }"#
             )
         );
         assert_eq!(

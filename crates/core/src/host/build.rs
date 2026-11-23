@@ -44,6 +44,10 @@ pub(super) const MARK: &str = "__ONEHAND_BUILD__";
 /// command, so what it wrote is what is newer.
 pub(super) const ROUTE_MARK: &str = ".git/onehand-route-mark";
 
+/// The file in the host's folder the command's process group id is kept
+/// in while it runs on a POSIX host.
+pub(super) const RUN_PID: &str = ".git/onehand-route-pid";
+
 /// The ref the snapshot is pushed to on the host.
 const SNAP_REF: &str = "refs/onehand/snap";
 
@@ -139,10 +143,11 @@ fn build_in(
     {
         return Err(why);
     }
-    let _held = match lock(job.top, &host.0) {
+    let _held = match lock(job.top, &host.0)? {
         Some(held) => held,
         None if job.wait => {
             note(&format!("waiting for the build already running on {host}"));
+            let started = Instant::now();
             loop {
                 if cancel.load(Ordering::Relaxed) {
                     return Ok(Built {
@@ -151,8 +156,14 @@ fn build_in(
                         hint: None,
                     });
                 }
+                if started.elapsed() >= BUILD_LIMIT {
+                    return Err(format!(
+                        "The build of {} already running on {host} did not end in time",
+                        folder_name(job.top)
+                    ));
+                }
                 std::thread::sleep(Duration::from_millis(100));
-                if let Some(held) = lock(job.top, &host.0) {
+                if let Some(held) = lock(job.top, &host.0)? {
                     break held;
                 }
             }
@@ -312,7 +323,15 @@ impl<'a> Place<'a> {
         )?;
         let exit = match ran {
             Ran::Exited(code) => Some(code),
-            Ran::Stopped => None,
+            Ran::Stopped => {
+                // Ended on the host before the folder is let go, so the next
+                // build never checks out under a command still writing. ssh
+                // going does not end it there.
+                if let Some(stop) = self.shell.stop(&self.dir) {
+                    let _ = self.ask(&stop);
+                }
+                None
+            }
             Ran::NeverStarted(why) => {
                 return Err(format!("{host} could not check the code out: {why}"));
             }
@@ -536,17 +555,27 @@ impl Drop for Held {
 
 /// The lock that keeps a folder to one build on a host at a time; `None`
 /// while another holds it.
-fn lock(top: &Path, host: &str) -> Option<Held> {
-    let dir = crate::config::config_dir().join("builds");
-    std::fs::create_dir_all(&dir).ok()?;
+fn lock(top: &Path, host: &str) -> Result<Option<Held>, String> {
+    lock_in(&crate::config::config_dir().join("builds"), top, host)
+}
+
+/// [`lock`], its file kept in `dir`. A file that cannot be made or locked
+/// is an error naming it, never taken for a build already running.
+fn lock_in(dir: &Path, top: &Path, host: &str) -> Result<Option<Held>, String> {
     let key = format!("{}\0{host}", top.display());
     let path = dir.join(format!(
         "{:016x}.lock",
         crate::chat::store::fnv1a(key.as_bytes())
     ));
-    let file = std::fs::File::create(path).ok()?;
-    file.try_lock().ok()?;
-    Some(Held(file))
+    let failed =
+        |e: std::io::Error| format!("The build lock {} could not be taken: {e}", path.display());
+    std::fs::create_dir_all(dir).map_err(failed)?;
+    let file = std::fs::File::create(&path).map_err(failed)?;
+    match file.try_lock() {
+        Ok(()) => Ok(Some(Held(file))),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+        Err(std::fs::TryLockError::Error(e)) => Err(failed(e)),
+    }
 }
 
 /// Refuse a folder a snapshot cannot carry whole: one that is not a working
@@ -609,8 +638,8 @@ enum Ran {
 /// Run `script`, handing `line` each line printed after [`MARK`], until it
 /// ends, `cancel` is set or [`BUILD_LIMIT`] passes.
 ///
-/// A stopped run kills its ssh. Whether the command on the host dies with it
-/// is the host's to say: nothing here can reach it once the connection goes.
+/// A stopped run kills its ssh, which does not end the command on the host:
+/// its caller does that, over a connection of its own.
 fn run_streaming(
     mut on_host: Command,
     addr: &HostAddr,

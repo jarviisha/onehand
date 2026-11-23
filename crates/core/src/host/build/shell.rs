@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::MARK;
+use super::{MARK, RUN_PID};
 use crate::config::HostOs;
 use crate::host::ssh::CMD_NOT_FOUND;
 
@@ -90,7 +90,8 @@ impl Shell {
     ///
     /// The command is the person's own line for that shell: run by the login
     /// shell on a POSIX host, so a toolchain a profile puts on `PATH` is
-    /// found, and by a `cmd.exe` of its own on Windows, so the whole line's
+    /// found, in a session of its own whose id is written to [`RUN_PID`], so
+    /// a stopped run can end it and all it started ([`Shell::stop`]), and by a `cmd.exe` of its own on Windows, so the whole line's
     /// stderr is folded in, not its last command's.
     ///
     /// **On Windows the line is read twice**, by the `cmd.exe` ssh starts and
@@ -121,8 +122,9 @@ impl Shell {
         };
         Ok(match self {
             Self::Posix => format!(
-                "cd {dir} && git checkout -q -f --detach {sha} && {touch}{within}echo {MARK} && \
-                 exec \"${{SHELL:-/bin/sh}}\" -lc {} 2>&1",
+                "cd {dir} && r=$PWD && rm -f {RUN_PID} && git checkout -q -f --detach {sha} && \
+                 {touch}{within}echo {MARK} && {{ setsid \"${{SHELL:-/bin/sh}}\" -lc {} 2>&1 & \
+                 echo $! > \"$r/{RUN_PID}\"; wait $!; }}",
                 self.word(command)?
             ),
             Self::Cmd => format!(
@@ -178,6 +180,22 @@ impl Shell {
                  printf '\\0'; test $# -eq 0 || exec tar -cf - -- \"$@\""
             )),
             Self::Cmd => Err(ROUTED_ON_LINUX.to_string()),
+        }
+    }
+
+    /// In `dir`, end the command a stopped [`Shell::run`] left running, and
+    /// all it started: the group whose id it wrote, sent TERM, given five
+    /// seconds, then KILL. `None` for `cmd.exe`, which has no such group.
+    pub(crate) fn stop(self, dir: &str) -> Option<String> {
+        match self {
+            Self::Posix => Some(format!(
+                "cd {} && p=$(cat {RUN_PID} 2>/dev/null) && test -n \"$p\" && {{ \
+                 kill -TERM -\"$p\" 2>/dev/null; i=0; \
+                 while kill -0 -\"$p\" 2>/dev/null && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done; \
+                 kill -KILL -\"$p\" 2>/dev/null; rm -f {RUN_PID}; }}; true",
+                self.word(dir).expect("any text")
+            )),
+            Self::Cmd => None,
         }
     }
 
