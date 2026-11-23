@@ -473,3 +473,20 @@ fn project_settings_opens_settings_on_that_project(cx: &mut gpui::TestAppContext
     });
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A project that comes while Settings is open has its check command field
+/// on the Projects page, as one there before it does.
+#[gpui::test]
+fn a_project_added_under_settings_has_its_check_field(cx: &mut gpui::TestAppContext) {
+    let dir = crate::shell::rig::folder("settings-then-project");
+    let (_, shell, cx) = crate::shell::rig::shell(cx, dir.join("tasks"), Vec::new());
+    let later = dir.join("later");
+    std::fs::create_dir_all(&later).unwrap();
+    let later = std::fs::canonicalize(later).unwrap();
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_settings(window, cx)));
+    let at = later.clone();
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| shell.read(cx).check_input(&later).is_some()));
+    let _ = std::fs::remove_dir_all(dir);
+}
