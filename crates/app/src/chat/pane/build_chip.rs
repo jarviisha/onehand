@@ -93,8 +93,8 @@ fn chip_label(now: &Builds) -> (String, bool) {
     match now {
         Builds::Here => ("Builds: This machine".to_string(), false),
         Builds::On(host) => (format!("Builds: {host}"), false),
-        Builds::HostsOff => ("Builds: here (hosts off)".to_string(), false),
-        Builds::NotAnswering(host) => (format!("Builds: here ({host} not answering)"), true),
+        Builds::HostsOff => ("Builds: This machine (hosts off)".to_string(), false),
+        Builds::NotAnswering(host) => (format!("Builds: This machine ({host} not answering)"), true),
     }
 }
 

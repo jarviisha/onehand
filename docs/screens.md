@@ -429,8 +429,8 @@ room and leaves the terminal as it is.
 - The *Builds* chip, in a project page's head before *Run check*, is drawn for a project on this
   machine that builds on at least one Linux host, and only when this machine runs Linux: a
   picker at the head's control size reading *Builds: This machine*, *Builds: <host>*, *Builds:
-  here (hosts off)* while builds on hosts are off for the machine, or *Builds: here (<host> not
-  answering)* in the warning ink after a routed run found the picked host not answering, until
+  This machine (hosts off)* while builds on hosts are off for the machine, or *Builds: This
+  machine (<host> not answering)* in the warning ink after a routed run found the picked host not answering, until
   one reaches it again. Its menu: the label *Builds*, *This machine* and each Linux build host
   up to 20, then *<n> more not shown*, the pick checked (while the switch is off too); a separator; *Build on hosts*, checked while
   on, which turns the machine's switch. A pick refused, or a switch the file would not take,

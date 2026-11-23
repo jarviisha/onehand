@@ -15,10 +15,10 @@ fn the_chip_words_each_place_builds_go() {
     );
     assert_eq!(
         chip_label(&Builds::HostsOff),
-        ("Builds: here (hosts off)".into(), false)
+        ("Builds: This machine (hosts off)".into(), false)
     );
     assert_eq!(
         chip_label(&Builds::NotAnswering(host)),
-        ("Builds: here (build01 not answering)".into(), true)
+        ("Builds: This machine (build01 not answering)".into(), true)
     );
 }
