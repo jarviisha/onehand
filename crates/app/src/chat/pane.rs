@@ -24,6 +24,8 @@ use std::collections::HashMap;
 
 mod body;
 mod bridge;
+mod build_chip;
+pub(crate) use build_chip::toggle_host_builds;
 mod events;
 mod float;
 pub(crate) use float::CloseSubagent;

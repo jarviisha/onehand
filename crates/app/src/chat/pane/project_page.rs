@@ -1,5 +1,5 @@
 use super::header::Archives;
-use super::{ChatPane, ChatPaneEvent, ProjectFacts, rel_time};
+use super::{ChatPane, ChatPaneEvent, ProjectFacts, build_chip, rel_time};
 use crate::controls::Short as _;
 use crate::page_parts::{count_of, page_card, page_head, ruled};
 use crate::tokens::PAGE_PROSE;
@@ -421,10 +421,10 @@ impl ChatPane {
         let head = page_head(
             project.label.clone(),
             Some(place.into_any_element()),
-            project
-                .facts
-                .check
-                .then(|| {
+            kept.as_ref()
+                .and_then(|kept| build_chip::build_chip(kept, cx))
+                .into_iter()
+                .chain(project.facts.check.then(|| {
                     crate::controls::action("project-run-check")
                         .short()
                         .secondary()
@@ -435,8 +435,7 @@ impl ChatPane {
                             cx.emit(ChatPaneEvent::RunCheck);
                         }))
                         .into_any_element()
-                })
-                .into_iter()
+                }))
                 .chain(
                     project
                         .host

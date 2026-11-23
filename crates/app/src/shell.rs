@@ -91,7 +91,8 @@ gpui::actions!(
         CycleMode,
         RunWorkflow,
         ShowTasks,
-        ShowSchedules
+        ShowSchedules,
+        ToggleHostBuilds
     ]
 );
 

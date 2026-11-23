@@ -200,6 +200,9 @@ impl Render for Shell {
                     shell.show_schedules(None, window, cx);
                 }),
             )
+            .on_action(|_: &crate::shell::ToggleHostBuilds, window, cx| {
+                crate::chat::pane::toggle_host_builds(window, cx);
+            })
             .on_action(
                 cx.listener(|shell: &mut Self, _: &ToggleMaximize, window, cx| {
                     shell.toggle_maximize(window, cx);
