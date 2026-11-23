@@ -95,7 +95,7 @@ impl Front {
     }
 
     fn prompt_when_up(&mut self, text: &str, origin: Origin) -> (Intake, Vec<Effect>) {
-        let out = self.drive.prompt_when_up(text, origin, now());
+        let out = self.drive.prompt_when_up(text, &[], origin, now());
         self.take(&out.1);
         out
     }
@@ -622,6 +622,39 @@ fn a_held_prompt_is_dropped_when_the_agent_never_comes_up() {
     assert!(drive.held.is_none());
 }
 
+/// What is staged with a held prompt goes with it once the agent is up.
+#[test]
+fn a_held_prompt_takes_what_was_staged_with_it() {
+    let (mut drive, tx, mut rx) = connecting();
+    let file = std::env::temp_dir().join(format!("onehand-held-{}.txt", std::process::id()));
+    std::fs::write(&file, "notes").unwrap();
+    let staged = [crate::attachment::StagedAttachment::inspect(
+        file.clone(),
+        crate::attachment::AttachmentSource::Picker,
+    )];
+    let out = drive
+        .drive
+        .prompt_when_up("look", &staged, Origin::Person, now());
+    drive.take(&out.1);
+    assert_eq!(out.0, Intake::Held);
+    feed(
+        &mut drive,
+        AcpEvent::Connected {
+            tx,
+            resumed: false,
+            forkable: false,
+        },
+    );
+    match rx.try_recv() {
+        Ok(AcpRequest::Prompt { text, attachments }) => {
+            assert_eq!(text, "look");
+            assert_eq!(attachments.len(), 1);
+        }
+        other => panic!("{other:?}"),
+    }
+    let _ = std::fs::remove_file(file);
+}
+
 #[test]
 fn a_persons_held_prompt_comes_back_when_the_agent_never_comes_up() {
     let (mut drive, _tx, mut rx) = connecting();
@@ -631,7 +664,40 @@ fn a_persons_held_prompt_comes_back_when_the_agent_never_comes_up() {
     assert!(sent(&mut rx).is_none());
     assert!(
         fx.iter()
-            .any(|effect| matches!(effect, Effect::Unsent(text) if text == "hi")),
+            .any(|effect| matches!(effect, Effect::Unsent(back) if back.text == "hi")),
+        "{:?}",
+        names(&fx)
+    );
+}
+
+/// A person's held prompt the agent cannot take (a staged file that cannot
+/// be read) comes back with its files, rather than going nowhere.
+#[test]
+fn a_persons_held_prompt_with_an_unreadable_file_comes_back() {
+    let (mut drive, tx, mut rx) = connecting();
+    let gone = std::env::temp_dir().join("onehand-held-never-there");
+    let staged = [crate::attachment::StagedAttachment::inspect(
+        gone,
+        crate::attachment::AttachmentSource::Picker,
+    )];
+    let out = drive
+        .drive
+        .prompt_when_up("look", &staged, Origin::Person, now());
+    drive.take(&out.1);
+    let fx = feed(
+        &mut drive,
+        AcpEvent::Connected {
+            tx,
+            resumed: false,
+            forkable: false,
+        },
+    );
+    assert!(sent(&mut rx).is_none());
+    assert!(
+        fx.iter().any(|effect| matches!(
+            effect,
+            Effect::Unsent(back) if back.text == "look" && back.attachments.len() == 1
+        )),
         "{:?}",
         names(&fx)
     );

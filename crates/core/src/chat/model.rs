@@ -31,7 +31,7 @@ pub use items::{
 pub(crate) use meta::summarize_title;
 pub use meta::{Selector, SelectorChoice, MODE_SELECTOR};
 pub use subagent::{Standing, SubagentItem, SubagentState};
-pub use turn::{QueuedPrompt, SubmitBlock, TurnActivity};
+pub use turn::{draft_blocker, QueuedPrompt, SubmitBlock, TurnActivity};
 
 /// Where a conversation's adapter is in its life.
 ///

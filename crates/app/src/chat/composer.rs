@@ -95,12 +95,16 @@ pub struct Draft {
 }
 
 impl Draft {
-    /// Put `words` ahead of what is written, a blank line between.
-    pub fn put_first(&mut self, words: &str) {
+    /// Put `back`, a prompt that never went, ahead of what is written, a
+    /// blank line between, its files ahead of what is staged.
+    pub fn put_first(&mut self, back: onehand_core::chat::QueuedPrompt) {
         self.text = match self.text.trim().is_empty() {
-            true => words.to_string(),
-            false => format!("{words}\n\n{}", self.text),
+            true => back.text,
+            false => format!("{}\n\n{}", back.text, self.text),
         };
+        let since = std::mem::take(&mut self.attachments);
+        self.attachments = back.attachments;
+        self.attachments.extend(since);
     }
 
     /// Nothing typed and nothing staged, so there is nothing to set aside.

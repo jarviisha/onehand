@@ -55,7 +55,7 @@ impl Shell {
         };
         // Sent once the agent is up, unless a person prompted it first.
         session.update(cx, |session, cx| {
-            session.prompt_when_up(prompt, Origin::Issue, cx)
+            session.prompt_when_up(prompt, &[], Origin::Issue, cx)
         });
         let at = self.chat.read(cx).window_handle();
         let mut owed = TakenUp::new(file, number);

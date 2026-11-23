@@ -18,6 +18,7 @@ struct Ask {
     agent: Option<SharedString>,
     text: String,
     picks: Vec<(String, String)>,
+    staged: Vec<onehand_core::attachment::StagedAttachment>,
 }
 
 impl Shell {
@@ -58,6 +59,7 @@ impl Shell {
             start,
             branch,
             picks,
+            staged,
         } = send;
         // The page on screen is the active project's; a send from one the
         // person has since left is not taken.
@@ -73,7 +75,12 @@ impl Shell {
         match start {
             StartIn::Project => match self.local_root(idx).map(PathBuf::from) {
                 Some(folder) => {
-                    let ask = Ask { agent, text, picks };
+                    let ask = Ask {
+                        agent,
+                        text,
+                        picks,
+                        staged,
+                    };
                     self.start_unshown(root, folder, ask, window, cx)
                 }
                 // A host's folder: its session opens there and is shown at
@@ -97,6 +104,7 @@ impl Shell {
                             agent: None,
                             text,
                             picks,
+                            staged,
                         },
                         window,
                         cx,
@@ -104,12 +112,28 @@ impl Shell {
                 }
             },
             StartIn::Folder(folder) => {
-                let ask = Ask { agent, text, picks };
+                let ask = Ask {
+                    agent,
+                    text,
+                    picks,
+                    staged,
+                };
                 self.start_unshown(root, folder, ask, window, cx)
             }
             StartIn::NewWorktree => {
                 let branch = branch.unwrap_or_default();
-                self.cut_for_page(root, branch, Ask { agent, text, picks }, window, cx);
+                self.cut_for_page(
+                    root,
+                    branch,
+                    Ask {
+                        agent,
+                        text,
+                        picks,
+                        staged,
+                    },
+                    window,
+                    cx,
+                );
             }
         }
     }
@@ -185,7 +209,12 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Ask { agent, text, picks } = ask;
+        let Ask {
+            agent,
+            text,
+            picks,
+            staged,
+        } = ask;
         let Some(spec) = Shared::global(cx)
             .settings
             .agents
@@ -220,7 +249,7 @@ impl Shell {
                 chat.arm_start_picks(picks);
                 ((), Vec::new())
             });
-            session.prompt_when_up(&text, Origin::Person, cx)
+            session.prompt_when_up(&text, &staged, Origin::Person, cx)
         });
         let wait = cx.observe_in(
             &session,
@@ -304,13 +333,18 @@ impl Shell {
             });
             return;
         };
-        let Ask { text, picks, .. } = ask;
+        let Ask {
+            text,
+            picks,
+            staged,
+            ..
+        } = ask;
         session.update(cx, |session, cx| {
             session.drive(cx, |chat, _| {
                 chat.arm_start_picks(picks);
                 ((), Vec::new())
             });
-            session.prompt_when_up(&text, Origin::Person, cx)
+            session.prompt_when_up(&text, &staged, Origin::Person, cx)
         });
         self.chat
             .update(cx, |pane, cx| pane.page_sent(&root, window, cx));

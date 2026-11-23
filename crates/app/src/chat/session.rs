@@ -153,7 +153,7 @@ pub enum ChatEvent {
     Look(onehand_core::chat::Away),
     /// A person's prompt held for an agent that never came up: put it back
     /// where they write.
-    Unsent(String),
+    Unsent(onehand_core::chat::QueuedPrompt),
     /// Show the subagent whose card this key names, in the float beside the
     /// conversation. Where it goes is the pane's to decide.
     OpenSubagent(u64),
@@ -739,7 +739,7 @@ impl ChatSession {
                     .detach();
                 }
                 Effect::Look(what) => cx.emit(ChatEvent::Look(what)),
-                Effect::Unsent(text) => cx.emit(ChatEvent::Unsent(text)),
+                Effect::Unsent(back) => cx.emit(ChatEvent::Unsent(back)),
                 Effect::SendCode { .. } | Effect::PromptAgain | Effect::Tell { .. } => {
                     left.push(effect)
                 }
@@ -874,12 +874,13 @@ impl ChatSession {
     pub(crate) fn prompt_when_up(
         &mut self,
         text: &str,
+        staged: &[onehand_core::attachment::StagedAttachment],
         origin: Origin,
         cx: &mut Context<Self>,
     ) -> Intake {
-        let (intake, fx) = self
-            .chat
-            .prompt_when_up(text, origin, onehand_core::Now::read());
+        let (intake, fx) =
+            self.chat
+                .prompt_when_up(text, staged, origin, onehand_core::Now::read());
         self.carry(fx, cx);
         cx.notify();
         intake

@@ -87,6 +87,8 @@ pub struct PageSend {
     pub branch: Option<String>,
     /// What was picked of the agent's offer, by group (`mode` for the mode).
     pub picks: Vec<(String, String)>,
+    /// What was staged to go with the first prompt.
+    pub staged: Vec<onehand_core::attachment::StagedAttachment>,
 }
 
 /// What the pane asks the shell for. Kept tiny on purpose: the chat's job is

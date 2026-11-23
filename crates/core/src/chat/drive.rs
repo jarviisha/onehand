@@ -187,9 +187,10 @@ pub enum Effect {
     SendCode { token: u64 },
     /// The code is up: send the person's prompt again, from where it waits.
     PromptAgain,
-    /// A person's prompt held for an agent that never came up: put it back
-    /// where they write, rather than lose what they typed.
-    Unsent(String),
+    /// A person's prompt held for an agent that never came up, or that the
+    /// agent could not take: put it back where they write, its files with it,
+    /// rather than lose it.
+    Unsent(QueuedPrompt),
     /// Send `request` to the agent on its channel
     /// ([`Chat::agent_channel`]), in the order given.
     ///
@@ -271,6 +272,8 @@ pub enum Next {
 #[derive(Debug, Clone)]
 struct Held {
     text: String,
+    /// What was staged to go with it.
+    staged: Vec<StagedAttachment>,
     origin: Origin,
 }
 
@@ -433,6 +436,7 @@ impl SessionDrive {
     pub fn prompt_when_up(
         &mut self,
         text: &str,
+        staged: &[StagedAttachment],
         origin: Origin,
         now: Now,
     ) -> (Intake, Vec<Effect>) {
@@ -441,6 +445,7 @@ impl SessionDrive {
             Link::Connected => self.prompt_held(
                 Held {
                     text: text.to_string(),
+                    staged: staged.to_vec(),
                     origin,
                 },
                 now,
@@ -448,6 +453,7 @@ impl SessionDrive {
             Link::Connecting => {
                 self.held = Some(Held {
                     text: text.to_string(),
+                    staged: staged.to_vec(),
                     origin,
                 });
                 (Intake::Held, Vec::new())
@@ -468,7 +474,15 @@ impl SessionDrive {
                 Vec::new(),
             );
         }
-        self.prompt(&held.text, &[], held.origin, Code::Here, now)
+        let (intake, mut fx) = self.prompt(&held.text, &held.staged, held.origin, Code::Here, now);
+        // A person's words the agent would not take are put back, not lost.
+        if held.origin == Origin::Person && matches!(intake, Intake::Refused(_)) {
+            fx.push(Effect::Unsent(QueuedPrompt {
+                text: held.text,
+                attachments: held.staged,
+            }));
+        }
+        (intake, fx)
     }
 
     /// Send the last prompt again, after a turn that failed, as a person's.
@@ -548,7 +562,12 @@ impl SessionDrive {
         if let Some(held) = self.held.take_if(|_| self.chat.link != Link::Connecting) {
             match self.chat.link {
                 Link::Connected => fx.extend(self.prompt_held(held, now).1),
-                Link::Lost if held.origin == Origin::Person => fx.push(Effect::Unsent(held.text)),
+                Link::Lost if held.origin == Origin::Person => {
+                    fx.push(Effect::Unsent(QueuedPrompt {
+                        text: held.text,
+                        attachments: held.staged,
+                    }))
+                }
                 Link::Lost | Link::Connecting => {}
             }
         }

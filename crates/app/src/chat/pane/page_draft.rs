@@ -131,6 +131,7 @@ impl ChatPane {
             return;
         }
         let text = self.composer.read(cx).text(cx);
+        let staged = self.composer.read(cx).attachments.clone();
         let branch = self.page_branch.read(cx).value().trim().to_string();
         let agent = self.page_agent(&root, cx);
         let kept = self.page_drafts.entry(root.clone()).or_default();
@@ -146,6 +147,7 @@ impl ChatPane {
             start,
             branch,
             picks,
+            staged,
         }));
     }
 
@@ -186,8 +188,11 @@ impl ChatPane {
         if let Some(busy) = kept.and_then(|kept| kept.busy.clone()) {
             return Some(busy.into());
         }
-        if self.composer.read(cx).text(cx).trim().is_empty() {
-            return Some("Write a prompt first".into());
+        let composer = self.composer.read(cx);
+        if let Some(block) =
+            onehand_core::chat::draft_blocker(&composer.text(cx), &composer.attachments)
+        {
+            return Some(block.hint().into());
         }
         if kept.is_some_and(|kept| kept.start == StartIn::NewWorktree) {
             let branch = self.page_branch.read(cx).value();
@@ -268,6 +273,11 @@ impl ChatPane {
                     .text_xl()
                     .font_semibold()
                     .child(super::greeting::GREETING),
+            )
+            // What is staged rests over the card, as on a session's.
+            .children(
+                self.composer
+                    .update(cx, |composer, cx| composer.page_tray(locked, cx)),
             )
             .child(card)
             .child(strip)
@@ -449,5 +459,14 @@ impl ChatPane {
             .get(root)
             .map(|kept| kept.start.clone())
             .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+impl ChatPane {
+    /// Stage `path` on what the composer holds.
+    pub(crate) fn stage_on_page(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        self.composer
+            .update(cx, |composer, cx| composer.stage_picked(path, cx));
     }
 }
