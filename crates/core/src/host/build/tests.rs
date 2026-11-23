@@ -485,7 +485,10 @@ fn routed(
         &home.0,
         "laptop",
         &mut |_| {},
-        &mut |note| notes.push(note.to_string()),
+        &mut |told| match told {
+            Told::Note(note) => notes.push(note.to_string()),
+            Told::Running => notes.push("running".to_string()),
+        },
         cancel,
     );
     (built, notes)
@@ -585,7 +588,8 @@ fn waiting_job_waits_for_the_lock() {
     let host = on_local(&[], None);
     let never = AtomicBool::new(false);
     let held = lock(&top, "local").expect("no error").expect("the lock");
-    let (refused, _) = routed(&home, &top, &host, "true", AskedBy::Person, &never);
+    let (refused, said) = routed(&home, &top, &host, "true", AskedBy::Person, &never);
+    assert!(said.is_empty(), "{said:?}");
     assert_eq!(
         refused,
         Err("A build of proj is already running on local".to_string())
@@ -597,7 +601,11 @@ fn waiting_job_waits_for_the_lock() {
         });
         let (built, notes) = routed(&home, &top, &host, "true", AskedBy::Route, &never);
         assert_eq!(built.map(|b| b.exit), Ok(Some(0)));
-        assert_eq!(notes, ["waiting for the build already running on local"]);
+        // Running only once the lock is taken and the code checked out.
+        assert_eq!(
+            notes,
+            ["waiting for the build already running on local", "running"]
+        );
     });
 }
 
@@ -1405,4 +1413,30 @@ mod shells {
             )
         );
     }
+}
+
+/// A command printing far faster than its lines are taken fills what is
+/// held, and a stop then still ends the run at once.
+#[test]
+fn a_stop_with_the_lines_held_full_ends_at_once() {
+    let mut command = Command::new("sh");
+    command.args(["-c", &format!("echo {MARK}; yes")]);
+    let cancel = AtomicBool::new(false);
+    let started = std::time::Instant::now();
+    let mut taken = 0;
+    let ran = run_streaming(
+        command,
+        &HostName("local".into()).addr(),
+        &mut |_| {
+            taken += 1;
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            if taken == 300 {
+                cancel.store(true, Ordering::Relaxed);
+            }
+        },
+        &mut || {},
+        &cancel,
+    );
+    assert!(matches!(ran, Ok(Ran::Stopped)));
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
 }

@@ -68,7 +68,7 @@ and says nothing after it. The process decides and builds off the socket's runti
 (`serve_blocking`, served in `crates/io/src/socket.rs`), writing back, as they come, one
 notification per line, `{"jsonrpc":"2.0","method":"onehand/line","params":{"out":"…"}}` for a line
 the command printed or `{"note":"…"}` for onehand's own, `{"note":"running on <host>","started":
-"<host>"}` as the command starts on the host, then the answer:
+"<host>"}` once the code is checked out and the command starts on the host, then the answer:
 `{"jsonrpc":"2.0","id":1,"result":{"exit":<code>}}` for a command that ran on the host, or
 `{"result":{"run":"here","settled":<bool>}}` for one the shim runs itself, `settled` when a
 command it starts in turn runs here too without asking: builds on hosts are off, or the host it

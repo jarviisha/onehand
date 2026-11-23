@@ -98,16 +98,26 @@ pub fn build_blocking(job: &Job<'_>, line: &mut dyn FnMut(&str)) -> Result<Built
     build_cancellable(job, line, &mut |_| {}, &AtomicBool::new(false))
 }
 
-/// [`build_blocking`], stopped when `cancel` is set, handing `note` what
-/// onehand says of its own while it runs: that it waits its turn.
+/// What a build says of its own while it runs, beside the command's lines.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Told<'a> {
+    /// Words for whoever asked: that it waits its turn.
+    Note(&'a str),
+    /// The code is checked out and the command is about to run on the host:
+    /// past here, something has run there.
+    Running,
+}
+
+/// [`build_blocking`], stopped when `cancel` is set, handing `told` what
+/// onehand says of its own while it runs.
 pub(crate) fn build_cancellable(
     job: &Job<'_>,
     line: &mut dyn FnMut(&str),
-    note: &mut dyn FnMut(&str),
+    told: &mut dyn FnMut(Told),
     cancel: &AtomicBool,
 ) -> Result<Built, String> {
     let home = dirs::home_dir().ok_or("This machine has no home folder to build in")?;
-    build_in(job, &home, super::client::laptop(), line, note, cancel)
+    build_in(job, &home, super::client::laptop(), line, told, cancel)
 }
 
 /// Whether `host` answers ssh at all: `false` only when ssh could not
@@ -136,7 +146,7 @@ fn build_in(
     local_home: &Path,
     laptop: &str,
     line: &mut dyn FnMut(&str),
-    note: &mut dyn FnMut(&str),
+    told: &mut dyn FnMut(Told),
     cancel: &AtomicBool,
 ) -> Result<Built, String> {
     let host = &job.entry.host;
@@ -152,7 +162,9 @@ fn build_in(
     let _held = match lock(job.top, &host.0)? {
         Some(held) => held,
         None if job.asked_by == AskedBy::Route => {
-            note(&format!("waiting for the build already running on {host}"));
+            told(Told::Note(&format!(
+                "waiting for the build already running on {host}"
+            )));
             let started = Instant::now();
             loop {
                 if cancel.load(Ordering::Relaxed) {
@@ -186,7 +198,7 @@ fn build_in(
     let place = Place::of(host, &job.os, &host_dir(laptop, job.top), local_home);
 
     place.receive(job.top, &snapshot)?;
-    let (exit, hint) = place.run(job, &snapshot, line, cancel)?;
+    let (exit, hint) = place.run(job, &snapshot, line, told, cancel)?;
     let brought = match exit {
         Some(0) => place.send_back(job)?,
         Some(_) | None => Vec::new(),
@@ -303,6 +315,7 @@ impl<'a> Place<'a> {
         job: &Job<'_>,
         snapshot: &str,
         line: &mut dyn FnMut(&str),
+        told: &mut dyn FnMut(Told),
         cancel: &AtomicBool,
     ) -> Result<(Option<i32>, Option<String>), String> {
         let host = self.host;
@@ -328,6 +341,7 @@ impl<'a> Place<'a> {
                 }
                 line(text);
             },
+            &mut || told(Told::Running),
             cancel,
         )?;
         let exit = match ran {
@@ -644,8 +658,14 @@ enum Ran {
     NeverStarted(String),
 }
 
+/// How many of the command's lines wait to be handed on before the host's
+/// output waits for them: a caller slower than the command holds back ssh's
+/// pipe, not this process's memory.
+const LINES_HELD: usize = 256;
+
 /// Run `script`, handing `line` each line printed after [`MARK`], until it
-/// ends, `cancel` is set or [`BUILD_LIMIT`] passes.
+/// ends, `cancel` is set or [`BUILD_LIMIT`] passes; `running` is called as
+/// [`MARK`] comes.
 ///
 /// A stopped run kills its ssh, which does not end the command on the host:
 /// its caller does that, over a connection of its own.
@@ -653,6 +673,7 @@ fn run_streaming(
     mut on_host: Command,
     addr: &HostAddr,
     line: &mut dyn FnMut(&str),
+    running_now: &mut dyn FnMut(),
     cancel: &AtomicBool,
 ) -> Result<Ran, String> {
     let mut child = on_host
@@ -661,9 +682,10 @@ fn run_streaming(
         .spawn()
         .map_err(|e| format!("ssh: {e}"))?;
     let stdout = child.stdout.take().expect("piped");
-    let (tx, rx) = mpsc::channel::<String>();
+    let (tx, rx) = mpsc::sync_channel::<String>(LINES_HELD);
     // Never joined: a command that outlives a stopped run keeps the pipe
-    // open, and the reader ends with it.
+    // open, and the reader ends with it, or at its next line once this has
+    // gone.
     std::thread::spawn(move || {
         for text in BufReader::new(stdout).split(b'\n').map_while(Result::ok) {
             let text = String::from_utf8_lossy(&text)
@@ -678,7 +700,12 @@ fn run_streaming(
     let mut running = false;
     let mut take = |text: String, running: &mut bool| match *running {
         true => line(&text),
-        false => *running = text.trim() == MARK,
+        false => {
+            *running = text.trim() == MARK;
+            if *running {
+                running_now();
+            }
+        }
     };
     let status = loop {
         match rx.recv_timeout(Duration::from_millis(50)) {

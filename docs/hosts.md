@@ -122,6 +122,9 @@ bring back what it built. Nothing of this needs the host service: it is the pers
 - **An artifact is written with `/`** on whichever system its host runs: one written with `\` is
   refused, *<path> is written with \; write it with /*, since what comes back is matched by that
   spelling.
+- **The command's output waits for whoever reads it.** At most 256 of its lines are held between
+  ssh and the reader (`LINES_HELD`); past them ssh's pipe backs up rather than this process's
+  memory growing, and a stop still ends the run at once.
 - **One build per folder and host at a time**, held by a lock file under `builds/` in the config
   directory: *A build of <project> is already running on <host>*. A lock file that cannot be made
   or locked fails the build, naming it, rather than being taken for a build already running:
@@ -225,7 +228,8 @@ and one line saying where it ran.
   `refresh_blocking`), so an agent already running with the folder on its `PATH` reaches a new
   program at once; a shim for a program no longer named is removed, and only a plain program
   name gets one (`plain_program`). With no routed command in
-  any project nothing is written and the agent's `PATH` is left alone.
+  any project an agent starting writes nothing and its `PATH` is left alone; a change that leaves
+  no routed command anywhere writes the folder empty, every shim removed.
 - **The shim folder is put first on the agent's `PATH`** and on that of every terminal it asks
   for over ACP (`crates/io/src/acp.rs`, `SessionOpts.term_env`), in front of the `PATH` the
   agent's own config sets when it sets one, else of onehand's. Nothing else gets it: not the
@@ -255,10 +259,11 @@ nothing:
 4. Then it builds on the host. The host is asked first whether it answers at all
    (`reachable_blocking`: `ssh -o BatchMode=yes -o ConnectTimeout=5 <host> true`), before any
    snapshot; only ssh's own failure, exit 255, is a host that did not answer. For 30 seconds after
-   it did not answer it is not asked again (`RouteDrive::recently_down`). Only once that is known
-   is where the run goes said (`take`): *running on <host>* for a host that answered; for one that
-   did not, a fall-back, not a failure, only *<host> did not answer; building here*, and the
-   page's chip says so until a routed run reaches it again.
+   it did not answer it is not asked again (`RouteDrive::recently_down`). A host that did not
+   answer is a fall-back, not a failure, saying only *<host> did not answer; building here*
+   (`take`), and the page's chip says so until a routed run reaches it again. For one that
+   answered nothing is said until the build has its turn and the code is checked out, as the
+   command is about to run there: then *running on <host>* (`Told::Running`, `Said::Started`).
 5. The build is the five steps of a build on a host, with two differences (`AskedBy::Route`
    on its `Job`):
    - **It waits its turn.** A build already running in that folder on that host is waited for,
@@ -280,14 +285,16 @@ nothing:
   the command here (`RouteEnd::Here { settled: true }`): it runs here with
   `ONEHAND_ROUTED_HERE=1` set, under which a nested `--route` runs here at once without asking, so
   a `make test` calling `cargo test` does not ask the socket, or an absent host, again for every
-  nested call. A folder in no project, a project with no pick, a command no route matches and a
-  machine that is not Linux do not settle anything; a nested command under them is routed as any
-  other.
+  nested call. Builds on hosts off settles before anything else is looked at, a folder in no
+  project, a project with no pick or a machine that is not Linux included. With the switch on, a
+  folder in no project, a project with no pick, a command no route matches and a machine that is
+  not Linux do not settle anything; a nested command under them is routed as any other.
 - **Cut off once started, it fails.** Onehand going, or a reply line past 64 KiB, after the
-  command started on the host (*running on <host>* or a line of its output came) is not a
-  fall-back: the shim says *onehand: onehand went away during the build on <host>*, or
+  command started on the host (*running on <host>*, said once the code is checked out, or a
+  line of its output came) is not a fall-back: the shim says *onehand: onehand went away during the build on <host>*, or
   *onehand: a reply line was too long*, and exits 1, without `ONEHAND_ROUTED_HERE` and without
-  running the command here a second time (`Unreached::Cut`). Before it started, it falls back.
+  running the command here a second time (`Unreached::Cut`). Before it started, while it waits
+  its turn or the code goes over, it falls back.
 - **The agent stopping the command** (its tool times out, it kills the process) drops the
   connection, and the running process stops the build on the host as any stopped build is.
 - **Sandboxes.** Codex's default sandbox, `workspace-write`, forbids the Unix socket: routing

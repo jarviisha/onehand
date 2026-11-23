@@ -161,9 +161,10 @@ fn drive_in(name: &str) -> std::sync::Mutex<RouteDrive> {
 #[test]
 fn where_a_run_goes_is_said_after_the_host_answers() {
     let host = HostName("h".into());
+    // One that answers says nothing yet: the build says when it runs.
     for (answers, said) in [
-        (true, "running on h"),
-        (false, "h did not answer; building here"),
+        (true, None),
+        (false, Some("h did not answer; building here")),
     ] {
         let drive = drive_in(&format!("take-{answers}"));
         let mut notes = Vec::new();
@@ -178,7 +179,7 @@ fn where_a_run_goes_is_said_after_the_host_answers() {
             },
         );
         assert_eq!(took, answers);
-        assert_eq!(notes, [said]);
+        assert_eq!(notes, Vec::from_iter(said));
     }
 }
 
@@ -207,7 +208,12 @@ fn a_host_just_down_is_not_asked() {
 /// the line cap, and reads back as the whole.
 #[test]
 fn a_long_out_line_is_split() {
-    let long = "é".repeat(40 * 1024);
+    for long in ["é".repeat(40 * 1024), "\x1b[31m\"\\".repeat(30 * 1024)] {
+        split_under_the_cap(long);
+    }
+}
+
+fn split_under_the_cap(long: String) {
     let lines = said_lines(&Said::Out(long.clone()));
     assert!(lines.len() > 1);
     let mut back = String::new();

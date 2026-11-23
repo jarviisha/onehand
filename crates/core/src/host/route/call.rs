@@ -15,7 +15,7 @@ use super::drive::{route_drive, RouteDrive};
 use super::{decide, Ask, Decision, Machine};
 use crate::config::HostOs;
 use crate::host::build::cli::{project_of_blocking, told};
-use crate::host::build::{build_cancellable, reachable_blocking, AskedBy, Job};
+use crate::host::build::{build_cancellable, reachable_blocking, AskedBy, Job, Told};
 use crate::workspace::HostName;
 
 const METHOD: &str = "onehand/route";
@@ -25,9 +25,10 @@ const LINE: &str = "onehand/line";
 /// drops the run rather than hold the line in memory.
 pub const LINE_CAP: usize = 64 * 1024;
 
-/// The most of a command's line one `out` line holds, leaving the rest of
-/// [`LINE_CAP`] for the JSON around it and its escapes.
-const OUT_CHUNK: usize = 48 * 1024;
+/// The most of a command's line one `out` line holds, as JSON writes it
+/// (a control character such as a colour's escape takes six bytes), leaving
+/// the rest of [`LINE_CAP`] for the JSON around it.
+const OUT_CHUNK: usize = LINE_CAP - 256;
 
 /// The line a shim sends: run `program` with `args` from `cwd`, made
 /// absolute because the process reading it has a working folder of its own.
@@ -91,8 +92,8 @@ pub fn said_lines(said: &Said) -> Vec<String> {
         .collect()
 }
 
-/// `text` in pieces of at most [`OUT_CHUNK`] bytes, cut between characters;
-/// an empty one is one empty piece.
+/// `text` in pieces each at most [`OUT_CHUNK`] bytes once written as a JSON
+/// string, cut between characters; an empty one is one empty piece.
 fn chunks(mut text: &str) -> impl Iterator<Item = &str> {
     let mut first = true;
     std::iter::from_fn(move || {
@@ -100,14 +101,27 @@ fn chunks(mut text: &str) -> impl Iterator<Item = &str> {
             return None;
         }
         first = false;
-        let mut at = text.len().min(OUT_CHUNK);
-        while !text.is_char_boundary(at) {
-            at -= 1;
+        let (mut at, mut written) = (0, 0);
+        for c in text.chars() {
+            written += escaped_len(c);
+            if written > OUT_CHUNK {
+                break;
+            }
+            at += c.len_utf8();
         }
         let (piece, rest) = text.split_at(at);
         text = rest;
         Some(piece)
     })
+}
+
+/// How many bytes `c` takes inside a JSON string, as serde_json writes it.
+fn escaped_len(c: char) -> usize {
+    match c {
+        '"' | '\\' | '\n' | '\r' | '\t' | '\u{8}' | '\u{c}' => 2,
+        c if (c as u32) < 0x20 => 6,
+        c => c.len_utf8(),
+    }
 }
 
 /// How a routed run ended.
@@ -160,7 +174,12 @@ pub fn serve_blocking(ask: &Ask, emit: &mut dyn FnMut(Said), cancel: &AtomicBool
     let built = build_cancellable(
         &job,
         &mut |line| (emit.borrow_mut())(Said::Out(line.to_string())),
-        &mut |n| note(n),
+        &mut |told| match told {
+            Told::Note(n) => note(n),
+            // Said only now: until the command runs, a run cut off has
+            // built nothing, and may fall back.
+            Told::Running => (emit.borrow_mut())(Said::Started(routed.host.clone())),
+        },
         cancel,
     );
     match built {
@@ -172,8 +191,8 @@ pub fn serve_blocking(ask: &Ask, emit: &mut dyn FnMut(Said), cancel: &AtomicBool
     }
 }
 
-/// Whether `host` takes the run, said either way once it is known: a host
-/// that did not answer moments ago is not asked again yet, and one asked
+/// Whether `host` takes the run, said when it does not: a host that did
+/// not answer moments ago is not asked again yet, and one asked
 /// is `probe`d before any snapshot. `drive` is held only between asks, never
 /// across the probe's wait.
 fn take<G: DerefMut<Target = RouteDrive>>(
@@ -189,10 +208,9 @@ fn take<G: DerefMut<Target = RouteDrive>>(
         }
         answered
     };
-    emit(match answered {
-        true => Said::Started(host.clone()),
-        false => Said::Note(format!("{host} did not answer; building here")),
-    });
+    if !answered {
+        emit(Said::Note(format!("{host} did not answer; building here")));
+    }
     answered
 }
 
