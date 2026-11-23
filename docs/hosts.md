@@ -124,8 +124,10 @@ bring back what it built. Nothing of this needs the host service: it is the pers
   spelling.
 - **One build per folder and host at a time**, held by a lock file under `builds/` in the config
   directory: *A build of <project> is already running on <host>*. A lock file that cannot be made
-  or locked fails the build, naming it, rather than being taken for a build already running.
-- **A stopped build, or one out of time, ends its command on the host** before the folder's lock is let go, so the
+  or locked fails the build, naming it, rather than being taken for a build already running:
+  a person's `--build` as much as a routed one.
+- **A stopped build, or one out of time, ends its command on the host**, a person's `--build`
+  stopped at its terminal as much as a routed one its agent dropped, before the folder's lock is let go, so the
   next build never checks out under a command still writing: the group or the id in
   `.git/onehand-route-pid` is sent TERM, then KILL after five seconds, over a connection of its
   own (`Shell::stop`). A host without `setsid` loses only the command itself, not what it started.
@@ -205,7 +207,8 @@ and one line saying where it ran.
   neither needs a session opened again.
 - **Only from a Linux machine to a Linux host** (`routable_hosts`,
   `crates/core/src/host/route.rs`): another system compiles other `cfg` code, so its errors and
-  tests would not be this machine's. A host nobody declared is taken for Linux. A project whose
+  tests would not be this machine's. A host nobody declared is taken for Linux, as `--build`
+  takes it. A project whose
   sessions run on a host, or that is offloaded, routes nothing: its agents build there already.
 
 ### The shim
@@ -215,8 +218,9 @@ and one line saying where it ran.
   `exec '<onehand>' --route '<socket>' '<shim folder>' <program> "$@"`. They name the instance's
   own binary and socket, so a `make dev` build and the installed one never route through each
   other. The binary is named as its file is, never with the ` (deleted)` Linux adds once a newer
-  build replaced it; a shim whose binary is not there takes its folder off `PATH` and runs the
-  real program here. They are written at every agent start from the project files on disk,
+  build replaced it; a shim whose binary is not there (that build removed or moved) takes its
+  folder off `PATH` and runs the real program here itself, asking nothing, by design: there is no
+  onehand of its own left to ask. They are written at every agent start from the project files on disk,
   and again at every change to any project's routed commands (`Effect::Shims`,
   `refresh_blocking`), so an agent already running with the folder on its `PATH` reaches a new
   program at once; a shim for a program no longer named is removed, and only a plain program
