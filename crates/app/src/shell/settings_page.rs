@@ -33,6 +33,9 @@ impl Shell {
             self.settings_from = self.shown_page(cx);
         }
         self.held_commands.clear();
+        // The Projects page draws each project's check command field, made
+        // here since a page cannot make one while it draws.
+        self.make_check_inputs(window, cx);
         self.docks_aside(window, cx);
         let view: gpui::AnyView = self.settings_view.clone().into();
         self.chat.update(cx, |pane, cx| {
@@ -75,6 +78,25 @@ impl Shell {
 
     pub fn settings_page(&self) -> SettingsPage {
         self.settings_page
+    }
+
+    /// The project the Projects page shows: the one picked while the window
+    /// still offers it, else the first it offers.
+    pub(crate) fn settings_project(&self, _cx: &App) -> Option<std::path::PathBuf> {
+        let offered = crate::settings::offered_projects(&self.window.workspace.roots);
+        crate::settings::shown_project(self.settings_project.as_deref(), &offered)
+    }
+
+    /// Show `root` on the Projects page.
+    pub(crate) fn pick_settings_project(
+        &mut self,
+        root: std::path::PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.make_check_inputs(window, cx);
+        self.settings_project = Some(root);
+        cx.notify();
     }
 
     pub fn show_settings_page(&mut self, page: SettingsPage, cx: &mut Context<Self>) {

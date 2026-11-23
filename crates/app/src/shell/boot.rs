@@ -478,6 +478,7 @@ impl Shell {
             agent_form: false,
             host_draft: HostDraft::new(window, cx),
             settings_page: SettingsPage::default(),
+            settings_project: None,
             settings_focus: cx.focus_handle(),
             keymap_editor: cx.new(|cx| crate::keymap::Editor::new(window, cx)),
             settings_view: {

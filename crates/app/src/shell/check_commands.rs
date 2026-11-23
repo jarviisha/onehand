@@ -7,6 +7,14 @@ use gpui::{AppContext as _, BorrowAppContext as _, Context, Window};
 use gpui_component::input::{InputEvent, InputState};
 
 impl Shell {
+    /// The check command field of the project at `root`, once made.
+    pub(crate) fn check_input(
+        &self,
+        root: &std::path::Path,
+    ) -> Option<gpui::Entity<gpui_component::input::InputState>> {
+        self.check_inputs.get(root).cloned()
+    }
+
     /// Hand the project page the check command field of `root`, made first
     /// if it is not yet; none for a project on a host (`None`), where no
     /// check can run.
@@ -26,7 +34,7 @@ impl Shell {
     /// A check command field for every project that has none yet. Each edit
     /// is written to its project and saved, debounced, as the workspace name
     /// is: there is no Save button beside it.
-    fn make_check_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn make_check_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let roots: Vec<_> = self
             .window
             .workspace

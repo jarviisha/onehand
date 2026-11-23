@@ -17,12 +17,15 @@ use onehand_core::config::{AgentSpec, Preset};
 mod agents;
 pub(crate) mod hosts;
 mod pages;
+mod projects;
 use agents::agents_page;
 pub use agents::draft_after_promote;
 pub(crate) use agents::kind_about;
 pub use hosts::HostDraft;
 use hosts::hosts_page;
 use pages::{appearance_page, connections_page, workspace_page};
+use projects::projects_page;
+pub(crate) use projects::{offered as offered_projects, shown as shown_project};
 
 /// The add/edit form's fields. `editing` is `Some(i)` when an existing agent is
 /// being changed and `None` when a new one is being added, so one form serves
@@ -387,6 +390,8 @@ pub enum SettingsPage {
     /// The machines projects run on and build on, declared once for every
     /// workspace, beside the agents that run on them.
     Hosts,
+    /// Each project's own settings, one project at a time.
+    Projects,
     /// The services outside the checkout, and what reaches onehand from
     /// outside it: a page of its own, since more of them are coming and each
     /// is used by more than one feature. Named for what it holds --
@@ -396,11 +401,12 @@ pub enum SettingsPage {
 }
 
 impl SettingsPage {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Appearance,
         Self::Workspace,
         Self::Agents,
         Self::Hosts,
+        Self::Projects,
         Self::Connections,
         Self::Shortcuts,
     ];
@@ -414,6 +420,7 @@ impl SettingsPage {
             Self::Workspace => "Workspace",
             Self::Agents => "Agents",
             Self::Hosts => "Hosts",
+            Self::Projects => "Projects",
             Self::Connections => "Connections",
             Self::Shortcuts => "Shortcuts",
         }
@@ -426,6 +433,7 @@ impl SettingsPage {
             Self::Workspace => Icon::new(IconName::FolderClosed),
             Self::Agents => Icon::new(IconName::Bot),
             Self::Hosts => Icon::new(crate::icons::Icon::Server),
+            Self::Projects => Icon::new(IconName::Folder),
             Self::Connections => Icon::new(IconName::Network),
             Self::Shortcuts => Icon::new(crate::icons::Icon::Keyboard),
         }
@@ -527,6 +535,7 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         SettingsPage::Workspace => workspace_page(&handle, cx),
         SettingsPage::Agents => agents_page(&handle, cx),
         SettingsPage::Hosts => hosts_page(&handle, cx),
+        SettingsPage::Projects => projects_page(&handle, cx),
         SettingsPage::Connections => connections_page(cx),
         SettingsPage::Shortcuts => handle.read(cx).keymap_editor().into_any_element(),
     };
