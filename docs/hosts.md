@@ -189,7 +189,9 @@ and one line saying where it ran.
   (`RoutedCommand::matches`). A project routes at most 20, and one set of words once. They are
   changed through the projects' drive (`ProjectsDrive::put_route`, `remove_route`,
   `crates/core/src/project/drive/routes.rs`), which refuses *<project> already routes <words>*,
-  *<project> routes at most 20 commands*, and any for a project whose sessions run on a host.
+  *<project> routes at most 20 commands*, and any for a project whose sessions run on a host. A
+  change names the command it replaces by its words, so one removed meanwhile is refused, *<words>
+  was removed meanwhile*, never put in another's place.
 - **The project's pick** is the build host its routed commands go to, or none for *This
   machine*, kept as `builds_on` in its project file and changed through the same drive
   (`ProjectsDrive::pick_build_host`), which refuses a host the project does not build on,

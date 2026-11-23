@@ -115,8 +115,8 @@ pub struct Project {
     /// The commands an agent's build runs on the build host.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub routes: Vec<RoutedCommand>,
-    /// The host the routed commands run on, among `builds`; none for the
-    /// first of them.
+    /// The host the routed commands run on, among `builds`; none for this
+    /// machine.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub builds_on: Option<HostName>,
     /// The folder new worktrees go in; none for beside the repository.

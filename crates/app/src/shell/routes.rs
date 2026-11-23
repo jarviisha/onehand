@@ -13,8 +13,9 @@ use std::path::{Path, PathBuf};
 pub(crate) struct RouteDraft {
     pub(crate) root: PathBuf,
     pub(crate) label: String,
-    /// The command being changed, by its place; none for one being added.
-    pub(crate) editing: Option<usize>,
+    /// The command being changed, as it was when the form opened; none for
+    /// one being added.
+    pub(crate) editing: Option<RoutedCommand>,
     pub(crate) words: Entity<InputState>,
     /// One path a line.
     pub(crate) artifacts: Entity<TextareaState>,
@@ -143,7 +144,7 @@ impl Shell {
         self.route_draft = Some(RouteDraft {
             root,
             label,
-            editing,
+            editing: held,
             words,
             artifacts,
             error: None,
@@ -179,7 +180,7 @@ impl Shell {
         let Some(draft) = self.route_draft.as_ref() else {
             return;
         };
-        let (root, editing) = (draft.root.clone(), draft.editing);
+        let (root, editing) = (draft.root.clone(), draft.editing.clone());
         let read = RoutedCommand::parse(
             &draft.words.read(cx).value(),
             &draft.artifacts.read(cx).value(),
@@ -191,7 +192,7 @@ impl Shell {
         // stays.
         let changed = read.and_then(|route| {
             cx.update_global::<crate::state::Shared, _>(|shared, _| {
-                shared.projects.put_route(&id, route, editing)
+                shared.projects.put_route(&id, route, editing.as_ref())
             })
         });
         match changed {

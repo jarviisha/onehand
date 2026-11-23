@@ -75,5 +75,21 @@ fn the_form_adds_a_route_and_says_what_refuses_one(cx: &mut gpui::TestAppContext
     });
     assert!(said.is_some_and(|why| why.contains("already routes")));
     assert_eq!(typed, "cargo build");
+    // A form opened on a command removed before its *Save* says so.
+    cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| {
+            shell.cancel_route(cx);
+            shell.open_route_form(root.clone(), Some(0), window, cx);
+        })
+    });
+    let id = project.id.clone();
+    cx.update(|_, cx| {
+        let route = onehand_core::workspace::RoutedCommand::parse("cargo build", "").unwrap();
+        let fx = cx.update_global::<Shared, _>(|shared, _| shared.projects.remove_route(&id, &route));
+        crate::projects::carry(fx, cx);
+    });
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.save_route(window, cx)));
+    let said = cx.update(|_, cx| shell.read(cx).route_draft().and_then(|d| d.error.clone()));
+    assert_eq!(said.as_deref(), Some("cargo build was removed meanwhile"));
     let _ = std::fs::remove_dir_all(dir);
 }

@@ -520,7 +520,28 @@ fn put_route_refuses_the_same_words_twice() {
             .unwrap(),
         "a already routes cargo build"
     );
-    assert!(d.put_route(&p.id, route("cargo build"), Some(0)).is_ok());
+    assert!(d.put_route(&p.id, route("cargo build"), Some(&route("cargo build"))).is_ok());
+}
+
+/// A change is to the command the form was opened on, wherever it now
+/// stands; one removed meanwhile is refused, not put in another's place.
+#[test]
+fn put_route_replaces_by_words() {
+    let (mut d, p) = drive();
+    let _ = d.put_route(&p.id, route("cargo build"), None).unwrap();
+    let _ = d.put_route(&p.id, route("cargo test"), None).unwrap();
+    let _ = d.remove_route(&p.id, &route("cargo build"));
+    assert_eq!(
+        d.put_route(&p.id, route("cargo check"), Some(&route("cargo build")))
+            .err()
+            .unwrap(),
+        "cargo build was removed meanwhile"
+    );
+    let _ = d
+        .put_route(&p.id, route("cargo nextest"), Some(&route("cargo test")))
+        .unwrap();
+    let words: Vec<_> = d.get(&p.id).unwrap().routes.iter().map(|r| r.words.clone()).collect();
+    assert_eq!(words, ["cargo nextest"]);
 }
 
 #[test]

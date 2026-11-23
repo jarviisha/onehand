@@ -8,16 +8,17 @@ use crate::workspace::{HostName, RoutedCommand};
 const MOST_ROUTES: usize = 20;
 
 impl ProjectsDrive {
-    /// Make `route` one of project `id`'s routed commands: in place of the
-    /// one at `replacing`, or added at the end. Refused, in words, for a
-    /// project whose sessions run on a host, which builds there already, for
-    /// words already routed, and past the most a project routes. Written now;
-    /// unchanged, nothing happens.
+    /// Make `route` one of project `id`'s routed commands: in place of
+    /// `replacing`, found by its words wherever it now stands, or added at
+    /// the end. Refused, in words, for a project whose sessions run on a
+    /// host, which builds there already, for a `replacing` removed
+    /// meanwhile, for words already routed, and past the most a project
+    /// routes. Written now; unchanged, nothing happens.
     pub fn put_route(
         &mut self,
         id: &ProjectId,
         route: RoutedCommand,
-        replacing: Option<usize>,
+        replacing: Option<&RoutedCommand>,
     ) -> Result<Vec<Effect>, String> {
         let Some(project) = self.projects.get(id) else {
             return Ok(Vec::new());
@@ -28,6 +29,13 @@ impl ProjectsDrive {
                 project.name
             ));
         }
+        let replacing = match replacing {
+            Some(held) => match project.routes.iter().position(|r| r.words == held.words) {
+                Some(at) => Some(at),
+                None => return Err(format!("{} was removed meanwhile", held.words)),
+            },
+            None => None,
+        };
         let taken = project
             .routes
             .iter()
@@ -37,7 +45,7 @@ impl ProjectsDrive {
             return Err(format!("{} already routes {}", project.name, route.words));
         }
         let mut routes = project.routes.clone();
-        match replacing.filter(|at| *at < routes.len()) {
+        match replacing {
             Some(at) => routes[at] = route,
             None if routes.len() >= MOST_ROUTES => {
                 return Err(format!(
