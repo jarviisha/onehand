@@ -277,6 +277,8 @@ pub struct ChatPane {
     empty: Option<EmptyProject>,
     /// What each project's page has written and picked, by its folder.
     page_drafts: HashMap<std::path::PathBuf, page_draft::PageDraft>,
+    /// Each page's project files and folders for `@`, once scanned.
+    page_files: HashMap<std::path::PathBuf, page_draft::PageFiles>,
     /// The branch a new worktree is cut on, written on a project's page.
     page_branch: Entity<gpui_component::input::InputState>,
     /// The workspace page or the Tasks page, while one is what the pane
@@ -446,6 +448,7 @@ impl ChatPane {
                 handle: cx.entity().downgrade(),
                 empty: None,
                 page_drafts: HashMap::new(),
+                page_files: HashMap::new(),
                 page_branch,
                 page: None,
                 archives: None,

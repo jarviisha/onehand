@@ -349,7 +349,8 @@ room and leaves the terminal as it is.
 - A project's page, reached by its row or with no session open, shows, from the top: a head (the project's name, its path and git line
   under it, *Run check* (spinning while a check runs) at the end); then *What are we building?*,
   semibold and centred, over the page's composer: an edged card as the session's, its field, then
-  `+` (*Attach files*, the native picker), the agent chip (*Agent*, each configured agent, the one picked ticked; the first while none is
+  `+` (a menu: *Attach files…*, the native picker; *Mention a file* and *Run a slash command*,
+  which type `@` and `/` from code), the agent chip (*Agent*, each configured agent, the one picked ticked; the first while none is
   picked or the one picked is gone), then what that agent offered when a session of it last
   came up: its model and effort as pickers headed by the group's own name, its fast switch as the
   session's bolt, its mode headed *Mode*, each starting on what was then in force; *Agent's
@@ -366,7 +367,12 @@ room and leaves the terminal as it is.
   on a repository whose sessions run here, *New worktree…*; picked, a *Branch name* field stands
   beside the chip and takes the caret, its rule's refusal said under it in the danger ink as it
   is typed. A file dropped on the card or pasted into it is staged, as the picker stages one, in
-  the session's tray over the card, and goes with the first prompt; a cut tray counts what it left
+  the session's tray over the card, and goes with the first prompt; `@` lists the project's files
+  and folders (read again each time the page shows; none on a host) and `/` the commands its
+  agent last offered, in the session's own list floated over the card (it hangs from the card's
+  top, as wide, and closes on a press elsewhere), walked and taken with the same
+  keys, Enter taking a highlighted row before it sends; the session's own rows of `/` (its mode,
+  its options) are not offered on the page; a cut tray counts what it left
   out (*N more not shown*) where a session's opens *Show all*, and while the page is locked its
   plates cannot be removed. A first prompt the agent could not take, or held for an agent that
   never came up, comes back with its files into that session's composer. What is written, staged and

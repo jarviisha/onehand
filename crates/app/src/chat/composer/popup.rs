@@ -1,13 +1,13 @@
+use super::Lists;
 use super::complete::picker_rows;
 use super::presentation::Row;
 use super::rows::{candidate_row, choice_row};
 use super::{Composer, Overlay, highlight};
-use crate::chat::session::ChatSession;
 use crate::tokens::{CONTROL_H, ROW_H};
 use gpui::IntoElement as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, Context, Entity, InteractiveElement, ParentElement, Rems, SharedString,
+    App, Context, InteractiveElement, ParentElement, Rems, SharedString,
     StatefulInteractiveElement, Styled, div, rems,
 };
 use gpui_component::scroll::ScrollbarMode;
@@ -174,9 +174,9 @@ impl Composer {
     /// *outside* the box the transcript's bottom clearance is measured from:
     /// measured, that clearance would grow by the popup's height the moment one
     /// opened, and every `@` typed would shove the conversation up.
-    pub fn detached_popup(
+    pub(in crate::chat) fn detached_popup(
         &mut self,
-        session: &Entity<ChatSession>,
+        lists: &Lists,
         room: gpui::Pixels,
         rem: gpui::Pixels,
         cx: &mut Context<Self>,
@@ -187,7 +187,7 @@ impl Composer {
         if !matches!(anchor(&overlay), Anchor::Span) && self.anchor_of(&overlay).is_some() {
             return None;
         }
-        let popup = self.popup(session, room, rem, cx)?;
+        let popup = self.popup(lists, room, rem, cx)?;
         Some(div().w_full().child(popup))
     }
 
@@ -195,9 +195,58 @@ impl Composer {
     /// just over the control's top, starting at its left edge (the mode's,
     /// at the strip's right end, ending at its right). Floated above
     /// everything and kept inside the window.
-    pub fn anchored_menu(
+    /// The `@` and `/` list of a project's page, floated over its card: the
+    /// page scrolls, and a list drawn inside it would be cut at its top. It
+    /// hangs from the card's top edge, as wide as the card, and has the room
+    /// between the card and the top of the window, less `above`, the pane's
+    /// header, to grow into.
+    pub(in crate::chat) fn page_popup(
         &mut self,
-        session: &Entity<ChatSession>,
+        lists: &Lists,
+        above: gpui::Pixels,
+        rem: gpui::Pixels,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        if self.overlay != Some(Overlay::Completion) {
+            return None;
+        }
+        let on = self.anchor_of(&Overlay::Completion)?;
+        let gap = MENU_GAP.to_pixels(rem);
+        let room = popup_room(on.top(), above + gap, rem);
+        let popup = self.popup(lists, room, rem, cx)?;
+        let at = gpui::point(on.left(), on.top() - gap);
+        let menu_bounds = self.menu_bounds.clone();
+        Some(
+            gpui::deferred(
+                gpui::anchored()
+                    .position(at)
+                    .anchor(gpui::Anchor::BottomLeft)
+                    .snap_to_window_with_margin(gap)
+                    .child(
+                        div().w(on.size.width).occlude().child(popup).child(
+                            gpui::canvas(
+                                // Where it ends up, worked out from the point it
+                                // hangs from, as a menu's is: a press on it is
+                                // not a press outside the card.
+                                move |bounds, _, _| {
+                                    let size = bounds.size;
+                                    let origin = gpui::point(at.x, at.y - size.height);
+                                    menu_bounds.set(Some(gpui::Bounds { origin, size }))
+                                },
+                                |_, _, _, _| {},
+                            )
+                            .absolute()
+                            .size_full(),
+                        ),
+                    ),
+            )
+            .into_any_element(),
+        )
+    }
+
+    pub(in crate::chat) fn anchored_menu(
+        &mut self,
+        lists: &Lists,
         room: gpui::Pixels,
         rem: gpui::Pixels,
         cx: &mut Context<Self>,
@@ -222,7 +271,7 @@ impl Composer {
                 true,
             ),
         };
-        let popup = self.popup(session, room, rem, cx)?;
+        let popup = self.popup(lists, room, rem, cx)?;
         let menu_bounds = self.menu_bounds.clone();
         Some(
             gpui::deferred(
@@ -313,7 +362,7 @@ impl Composer {
     /// The open completion, settings, menu or attachment surface.
     fn popup(
         &mut self,
-        session: &Entity<ChatSession>,
+        lists: &Lists,
         room: gpui::Pixels,
         rem: gpui::Pixels,
         cx: &mut Context<Self>,
@@ -328,11 +377,14 @@ impl Composer {
         let mut capped = 0usize;
         let rows: Vec<Row> = match &overlay {
             Overlay::Completion => {
-                let (rows, held) = self.matches(session, cx);
+                let (rows, held) = self.matches(lists, cx);
                 capped = held;
                 rows
             }
-            picker => picker_rows(picker, session, cx).unwrap_or_default(),
+            picker => lists
+                .session()
+                .and_then(|session| picker_rows(picker, session, cx))
+                .unwrap_or_default(),
         };
         // A trigger that matches nothing still has to say so: the popup is the
         // only thing on screen confirming the `@` or `/` was understood. A
@@ -346,12 +398,20 @@ impl Composer {
         // the agent once it connects. Until the pool is in, the popup is not
         // measured, so it grows out of a line saying it is still looking rather
         // than collapsing from a guess.
-        let pending = self.trigger.as_ref().is_some_and(|trigger| {
-            let session = session.read(cx);
-            match trigger.kind {
-                TriggerKind::File => !session.files_scanned,
-                TriggerKind::Command => session.chat().commands.is_empty(),
+        let pending = self.trigger.as_ref().is_some_and(|trigger| match lists {
+            Lists::Session(session) => {
+                let session = session.read(cx);
+                match trigger.kind {
+                    TriggerKind::File => !session.files_scanned,
+                    TriggerKind::Command => session.chat().commands.is_empty(),
+                }
             }
+            Lists::Page(page) => match trigger.kind {
+                TriggerKind::File => !page.scanned,
+                // A page's commands are what its agent last said; none is
+                // all there will be until a session of it comes up.
+                TriggerKind::Command => false,
+            },
         });
         // Measured once, on the frame the popup opens, against an empty query,
         // and held until it closes: the list never moves under the hand aiming
@@ -363,7 +423,7 @@ impl Composer {
         // three-row menu open at the height of every slash command.
         if self.opened_rows.is_none() && !pending {
             self.opened_rows = Some(match completion {
-                true => self.shape(session, cx),
+                true => self.shape(lists, cx),
                 false => (0, 0),
             });
         }
@@ -417,14 +477,14 @@ impl Composer {
                         // keys can scroll it.
                         .track_scroll(&self.rows_scroll)
                         .children(rows.into_iter().enumerate().map(|(i, row)| {
-                            let session = session.clone();
+                            let lists = lists.clone();
                             let pick = row.pick.clone();
                             let heading = row.group.clone();
                             // A click takes the row; the highlight moves first,
                             // so what was clicked is what gets taken.
                             let take = cx.listener(move |composer: &mut Self, _, window, cx| {
                                 composer.select(i, cx);
-                                composer.apply_pick(&pick, &session, window, cx);
+                                composer.apply_pick(&pick, &lists, window, cx);
                             });
                             let highlighted = Some(i) == selected;
                             let body = match completion {
