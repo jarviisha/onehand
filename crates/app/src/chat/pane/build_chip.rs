@@ -11,33 +11,27 @@ use crate::state::Shared;
 use gpui::{AnyElement, App, BorrowAppContext as _, Context, IntoElement as _, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::button::{ButtonCustomVariant, ButtonVariants as _};
-use onehand_core::config::HostOs;
-use onehand_core::host::route::drive::{RouteEffect, Standing, route_drive, write_switch_blocking};
+use onehand_core::host::route::drive::{RouteEffect, route_drive, write_switch_blocking};
+use onehand_core::host::route::{Builds, builds, routable_hosts};
 use onehand_core::project::Project;
 use onehand_core::workspace::HostName;
 
-/// The chip for `project`'s head; none for a project that builds nowhere
-/// but here: one whose sessions run on a host, which builds there already,
-/// or one with no build host of this machine's system.
+/// The chip for `project`'s head; none for a project with no build host a
+/// command of it can be routed to.
 pub(super) fn build_chip(project: &Project, cx: &mut Context<ChatPane>) -> Option<AnyElement> {
-    if project.host.is_some() || project.offload.is_some() {
-        return None;
-    }
-    let hosts = same_system(project, cx);
+    let declared = &Shared::global(cx).settings.hosts;
+    let hosts = routable_hosts(project, declared, std::env::consts::OS);
     if hosts.is_empty() {
         return None;
     }
-    // A pick of a host that builds nothing from here reads as no pick, as
-    // the route decision takes it.
-    let picked = project.builds_on.clone().filter(|on| hosts.contains(on));
-    let (on, standing) = {
+    let (on, now) = {
         let drive = route_drive();
-        (
-            drive.hosts_on(),
-            picked.as_ref().and_then(|host| drive.standing(host)),
-        )
+        let now = builds(project, &drive, declared, std::env::consts::OS);
+        (drive.hosts_on(), now)
     };
-    let (label, warn) = chip_label(picked.as_ref(), on, standing);
+    // The row checked is the pick itself, while the switch is off too.
+    let picked = project.builds_on.clone().filter(|on| hosts.contains(on));
+    let (label, warn) = chip_label(&now);
     let mut trigger = onehand_ui::picker(
         "page-builds-trigger",
         label,
@@ -84,35 +78,14 @@ pub(super) fn build_chip(project: &Project, cx: &mut Context<ChatPane>) -> Optio
     )
 }
 
-/// What the chip reads, and whether in the warning ink: where builds go now,
-/// which is here while the switch is off or the picked host did not answer.
-fn chip_label(picked: Option<&HostName>, on: bool, standing: Option<Standing>) -> (String, bool) {
-    match (picked, on, standing) {
-        (None, _, _) => ("Builds: This machine".to_string(), false),
-        (Some(_), false, _) => ("Builds: here (hosts off)".to_string(), false),
-        (Some(host), true, Some(Standing::NotAnswering)) => {
-            (format!("Builds: here ({host} not answering)"), true)
-        }
-        (Some(host), true, Some(Standing::Reached) | None) => (format!("Builds: {host}"), false),
+/// What the chip reads, and whether in the warning ink.
+fn chip_label(now: &Builds) -> (String, bool) {
+    match now {
+        Builds::Here => ("Builds: This machine".to_string(), false),
+        Builds::On(host) => (format!("Builds: {host}"), false),
+        Builds::HostsOff => ("Builds: here (hosts off)".to_string(), false),
+        Builds::NotAnswering(host) => (format!("Builds: here ({host} not answering)"), true),
     }
-}
-
-/// The build hosts of `project` a routed command can go to from here: Linux
-/// ones, a host nobody declared taken for one, from a Linux machine alone.
-fn same_system(project: &Project, cx: &App) -> Vec<HostName> {
-    if std::env::consts::OS != "linux" {
-        return Vec::new();
-    }
-    let declared = &Shared::global(cx).settings.hosts;
-    project
-        .builds
-        .iter()
-        .map(|entry| entry.host.clone())
-        .filter(|host| {
-            onehand_core::config::declared(declared, &host.0)
-                .is_none_or(|spec| spec.os == HostOs::Linux)
-        })
-        .collect()
 }
 
 /// Make `host` where project `id` builds, or this machine; a refusal said in
@@ -135,7 +108,7 @@ fn pick(
 /// Turn builds on hosts on or off for the whole machine: shown at once, the
 /// flag file written off the UI thread, and a write that fails puts the
 /// switch back and says why.
-pub(crate) fn set_host_builds(on: bool, window: &mut Window, cx: &mut App) {
+fn set_host_builds(on: bool, window: &mut Window, cx: &mut App) {
     let fx = route_drive().set_hosts_on(on);
     cx.refresh_windows();
     for effect in fx {
@@ -153,7 +126,12 @@ pub(crate) fn set_host_builds(on: bool, window: &mut Window, cx: &mut App) {
                         let _ = cx.update(|window, cx| {
                             // The file is as it was, so the drive goes back
                             // to it with nothing more to write.
-                            let _ = route_drive().set_hosts_on(!on);
+                            let mut drive = route_drive();
+                            // Unless the switch was turned again meanwhile.
+                            if drive.hosts_on() == on {
+                                let _ = drive.set_hosts_on(!on);
+                            }
+                            drop(drive);
                             cx.refresh_windows();
                             window.push_notification(
                                 onehand_ui::toast::failed("Changing builds on hosts", why),

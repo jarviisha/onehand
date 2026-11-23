@@ -131,3 +131,58 @@ fn args_keep_their_words() {
     words.extend(args.iter().map(|a| a.to_string()));
     assert_eq!(r.command, command_line(&words, &HostOs::Linux).unwrap());
 }
+
+fn route_drive_in(n: &str, on: bool) -> RouteDrive {
+    let d = std::env::temp_dir().join(format!("onehand-builds-{n}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    let mut drive = RouteDrive::load(&d);
+    let _ = drive.set_hosts_on(on);
+    drive
+}
+
+#[test]
+fn routable_hosts_are_linux_ones_from_linux() {
+    let mut p = project();
+    p.builds.push(BuildHost {
+        host: HostName("win".into()),
+        artifacts: vec![],
+        into: None,
+    });
+    let declared = [HostSpec {
+        name: HostName("win".into()),
+        os: HostOs::Windows,
+        arch: "x86_64".into(),
+    }];
+    assert_eq!(
+        routable_hosts(&p, &declared, "linux"),
+        vec![HostName("100-52".into())]
+    );
+    assert!(routable_hosts(&p, &declared, "macos").is_empty());
+    p.host = Some(HostName("h".into()));
+    assert!(routable_hosts(&p, &declared, "linux").is_empty());
+}
+
+#[test]
+fn builds_says_where_the_next_routed_command_goes() {
+    let host = HostName("100-52".into());
+    let on = route_drive_in("on", true);
+    assert_eq!(
+        builds(&project(), &on, &[], "linux"),
+        Builds::On(host.clone())
+    );
+    let mut none = project();
+    none.builds_on = None;
+    assert_eq!(builds(&none, &on, &[], "linux"), Builds::Here);
+    // A pick it cannot route to reads as none.
+    assert_eq!(builds(&project(), &on, &[], "macos"), Builds::Here);
+    let off = route_drive_in("off", false);
+    assert_eq!(builds(&project(), &off, &[], "linux"), Builds::HostsOff);
+    let mut down = route_drive_in("down", true);
+    down.reached(&host, false);
+    assert_eq!(
+        builds(&project(), &down, &[], "linux"),
+        Builds::NotAnswering(host.clone())
+    );
+    down.reached(&host, true);
+    assert_eq!(builds(&project(), &down, &[], "linux"), Builds::On(host));
+}
