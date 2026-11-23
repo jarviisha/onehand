@@ -72,6 +72,21 @@ pub enum StartIn {
     NewWorktree,
 }
 
+/// What a project's page sends.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PageSend {
+    /// The project's folder.
+    pub root: PathBuf,
+    /// The first prompt.
+    pub text: String,
+    /// The agent to run it.
+    pub agent: Option<gpui::SharedString>,
+    /// Where the session runs.
+    pub start: StartIn,
+    /// The new worktree's branch, when one is to be cut.
+    pub branch: Option<String>,
+}
+
 /// What the pane asks the shell for. Kept tiny on purpose: the chat's job is
 /// the conversation, and routing a file into the Workbench is the shell's.
 pub enum ChatPaneEvent {
@@ -166,13 +181,7 @@ pub enum ChatPaneEvent {
     /// Start a session in the project at `root` from its page: `text` its
     /// first prompt, run by `agent`, in the place `start` names; `branch` the
     /// new worktree's, when one is to be cut.
-    StartFromPage {
-        root: PathBuf,
-        text: String,
-        agent: Option<gpui::SharedString>,
-        start: StartIn,
-        branch: Option<String>,
-    },
+    StartFromPage(PageSend),
     /// Open Settings on its Agents page — the no-agent state's way to where an
     /// agent is set up. Settings is the shell's, as every page is.
     OpenAgentSettings,

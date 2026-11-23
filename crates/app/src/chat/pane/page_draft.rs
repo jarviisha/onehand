@@ -135,13 +135,13 @@ impl ChatPane {
         kept.failure = None;
         let start = kept.start.clone();
         let branch = (start == StartIn::NewWorktree).then_some(branch);
-        cx.emit(ChatPaneEvent::StartFromPage {
+        cx.emit(ChatPaneEvent::StartFromPage(super::PageSend {
             root,
             text,
             agent,
             start,
             branch,
-        });
+        }));
     }
 
     /// Why Send does nothing yet on the page on screen, if it does not.
@@ -370,5 +370,25 @@ impl ChatPane {
     /// Press Send.
     pub(crate) fn press_send(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.submit(window, cx);
+    }
+}
+
+#[cfg(test)]
+impl ChatPane {
+    /// Write `branch` into the page's branch field.
+    pub(crate) fn type_branch(
+        &mut self,
+        branch: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.page_branch.update(cx, |input, cx| {
+            input.set_value(branch.to_string(), window, cx)
+        });
+    }
+
+    /// Why the last send from `root`'s page started nothing.
+    pub(crate) fn page_failure(&self, root: &Path) -> Option<String> {
+        self.page_drafts.get(root)?.failure.clone()
     }
 }

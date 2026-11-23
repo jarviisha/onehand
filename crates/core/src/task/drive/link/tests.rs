@@ -129,7 +129,6 @@ impl Pair {
                 | SessionEffect::SendCode { .. }
                 | SessionEffect::PromptAgain
                 | SessionEffect::Unsent(_)
-                | SessionEffect::Unsent(_)
                 | SessionEffect::Request(_)
                 | SessionEffect::SaveTitle { .. }
                 | SessionEffect::Look(_)

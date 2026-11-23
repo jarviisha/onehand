@@ -39,6 +39,7 @@ mod issue_work;
 mod issues_page;
 mod off_screen;
 mod offload;
+mod page_start;
 mod pages;
 mod presentation;
 mod render;
@@ -244,6 +245,8 @@ pub struct Shell {
     settings_page: SettingsPage,
     /// The project Settings' Projects page was last pointed at, by folder.
     settings_project: Option<std::path::PathBuf>,
+    /// The projects whose page is starting a session it sent, by folder.
+    page_starting: std::collections::HashSet<std::path::PathBuf>,
     /// Held by Settings' nav and focused when it opens.
     settings_focus: gpui::FocusHandle,
     keymap_editor: Entity<crate::keymap::Editor>,

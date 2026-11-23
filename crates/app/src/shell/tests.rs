@@ -561,12 +561,9 @@ fn send_on_the_page_asks_for_a_session_with_what_was_picked(cx: &mut gpui::TestA
     let into = heard.clone();
     let _keep = cx.update(|_, cx| {
         cx.subscribe(&pane, move |_, event: &ChatPaneEvent, _| {
-            if let ChatPaneEvent::StartFromPage {
-                root, text, start, ..
-            } = event
-            {
+            if let ChatPaneEvent::StartFromPage(send) = event {
                 into.borrow_mut()
-                    .push((root.clone(), text.clone(), start.clone()));
+                    .push((send.root.clone(), send.text.clone(), send.start.clone()));
             }
         })
     });
@@ -582,5 +579,69 @@ fn send_on_the_page_asks_for_a_session_with_what_was_picked(cx: &mut gpui::TestA
         heard.borrow().as_slice(),
         [(a.clone(), "go".to_string(), StartIn::Folder(elsewhere))]
     );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Sending from a page starts the session in the project's folder, the words
+/// its first prompt; an agent that never comes up puts them back where the
+/// person writes.
+#[gpui::test]
+fn sending_from_the_page_starts_a_session_holding_the_prompt(cx: &mut gpui::TestAppContext) {
+    let (shell, cx, dir, a, _) = two_pages(cx, "page-start");
+    show_page_of(&shell, &a, cx);
+    let pane = cx.update(|_, cx| shell.read(cx).chat.clone());
+    cx.update(|window, cx| {
+        pane.update(cx, |pane, cx| {
+            pane.type_in_composer("go", window, cx);
+            pane.press_send(window, cx);
+        })
+    });
+    cx.run_until_parked();
+    let (sessions, shown) = cx.update(|_, cx| {
+        let shell = shell.read(cx);
+        let idx = shell.window.workspace.local_index(&a).unwrap();
+        let row = &shell.window.workspace.roots[idx];
+        (
+            row.sessions
+                .iter()
+                .map(|s| s.folder.clone())
+                .collect::<Vec<_>>(),
+            shell.active_session_uid(),
+        )
+    });
+    assert_eq!(sessions, std::slice::from_ref(&a));
+    assert!(shown.is_some(), "the session is shown");
+    assert_eq!(
+        cx.update(|_, cx| pane.read(cx).composer_text(cx)),
+        "go",
+        "an agent that never came up hands the words back"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A worktree git cannot cut leaves the page as it was, saying why.
+#[gpui::test]
+fn a_worktree_that_cannot_be_made_keeps_the_page(cx: &mut gpui::TestAppContext) {
+    use crate::chat::pane::StartIn;
+    let (shell, cx, dir, a, _) = two_pages(cx, "page-cut-fails");
+    show_page_of(&shell, &a, cx);
+    let pane = cx.update(|_, cx| shell.read(cx).chat.clone());
+    cx.update(|window, cx| {
+        pane.update(cx, |pane, cx| {
+            pane.set_page_start(StartIn::NewWorktree, None, window, cx);
+            pane.type_branch("feat", window, cx);
+            pane.type_in_composer("go", window, cx);
+            pane.press_send(window, cx);
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let shell = shell.read(cx);
+        let idx = shell.window.workspace.local_index(&a).unwrap();
+        assert!(shell.window.workspace.roots[idx].sessions.is_empty());
+        let pane = pane.read(cx);
+        assert_eq!(pane.composer_text(cx), "go");
+        assert!(pane.page_failure(&a).is_some(), "the page says why");
+    });
     let _ = std::fs::remove_dir_all(dir);
 }

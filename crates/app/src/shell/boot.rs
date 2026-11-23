@@ -152,7 +152,7 @@ impl Shell {
                         shell.sync_agent_started(cx);
                     }
                     E::PageChanged => shell.prune_host_waits(cx),
-                    E::StartFromPage { .. } => {}
+                    E::StartFromPage(send) => shell.start_from_page(send.clone(), window, cx),
                     E::ShowSession(uid) => shell.show_session(*uid, window, cx),
                     // Every one of these acts on the selected project, because
                     // the page that offers them is only drawn for it.
@@ -466,6 +466,7 @@ impl Shell {
             host_draft: HostDraft::new(window, cx),
             settings_page: SettingsPage::default(),
             settings_project: None,
+            page_starting: Default::default(),
             settings_focus: cx.focus_handle(),
             keymap_editor: cx.new(|cx| crate::keymap::Editor::new(window, cx)),
             settings_view: {
