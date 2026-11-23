@@ -20,6 +20,10 @@ struct Ask {
     picks: Vec<(String, String)>,
     staged: Vec<onehand_core::attachment::StagedAttachment>,
     cards: onehand_core::chat::Cards,
+    /// The past conversation to hand over first, when there is one.
+    continuing: Option<crate::chat::pane::Continuing>,
+    /// The title of the conversation it continues, once handed over.
+    continued: Option<String>,
 }
 
 impl Shell {
@@ -62,6 +66,7 @@ impl Shell {
             picks,
             staged,
             cards,
+            continuing,
         } = send;
         // The page on screen is the active project's; a send from one the
         // person has since left is not taken.
@@ -83,6 +88,8 @@ impl Shell {
                         picks,
                         staged,
                         cards,
+                        continuing: continuing.clone(),
+                        continued: None,
                     };
                     self.start_unshown(root, folder, ask, window, cx)
                 }
@@ -109,6 +116,8 @@ impl Shell {
                             picks,
                             staged,
                             cards,
+                            continuing: None,
+                            continued: None,
                         },
                         window,
                         cx,
@@ -122,6 +131,8 @@ impl Shell {
                     picks,
                     staged,
                     cards,
+                    continuing: continuing.clone(),
+                    continued: None,
                 };
                 self.start_unshown(root, folder, ask, window, cx)
             }
@@ -136,6 +147,8 @@ impl Shell {
                         picks,
                         staged,
                         cards,
+                        continuing: continuing.clone(),
+                        continued: None,
                     },
                     window,
                     cx,
@@ -211,16 +224,52 @@ impl Shell {
         &mut self,
         root: PathBuf,
         folder: PathBuf,
-        ask: Ask,
+        mut ask: Ask,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A past conversation is written where the session can read it
+        // first, off the UI loop, and its words then point the agent at it.
+        if let Some(carried) = ask.continuing.take() {
+            self.chat.update(cx, |pane, cx| {
+                pane.page_busy(&root, Some(format!("Writing out “{}”…", carried.title)), cx)
+            });
+            cx.spawn_in(window, async move |shell, cx| {
+                let at = folder.clone();
+                let kept = carried.dir.clone();
+                let written = cx
+                    .background_executor()
+                    .spawn(async move { onehand_core::chat::handoff::write_blocking(&kept, &at) })
+                    .await;
+                let _ = shell.update_in(cx, |shell: &mut Self, window, cx| match written {
+                    Ok(file) => {
+                        ask.text = onehand_core::chat::handoff::lead_in(
+                            &ask.text,
+                            &file,
+                            &carried.title,
+                            carried.summarise,
+                        );
+                        ask.continued = Some(carried.title);
+                        shell.start_unshown(root, folder, ask, window, cx);
+                    }
+                    Err(why) => shell.page_gave_up(
+                        &root,
+                        format!("The earlier conversation could not be written out: {why}"),
+                        cx,
+                    ),
+                });
+            })
+            .detach();
+            return;
+        }
         let Ask {
             agent,
             text,
             picks,
             staged,
             cards,
+            continued,
+            ..
         } = ask;
         let Some(spec) = Shared::global(cx)
             .settings
@@ -254,6 +303,9 @@ impl Shell {
         session.update(cx, |session, cx| {
             session.drive(cx, |chat, _| {
                 chat.arm_start_picks(picks);
+                if let Some(title) = continued {
+                    chat.continues(title);
+                }
                 ((), chat.set_cards(cards))
             });
             session.prompt_when_up(&text, &staged, Origin::Person, cx)

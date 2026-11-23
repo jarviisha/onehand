@@ -11,6 +11,7 @@ pub mod activity;
 pub mod attention;
 pub mod drive;
 mod export;
+pub mod handoff;
 pub mod model;
 pub mod steps;
 pub mod store;

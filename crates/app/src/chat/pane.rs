@@ -49,7 +49,8 @@ mod turns;
 mod unshown;
 mod worker_band;
 pub use events::{
-    ChatPaneEvent, PageSend, ProjectAction, Restart, SessionSignal, StartIn, WorktreeAct,
+    ChatPaneEvent, Continuing, PageSend, ProjectAction, Restart, SessionSignal, StartIn,
+    WorktreeAct,
 };
 use header::Archives;
 pub use pages::PageKind;

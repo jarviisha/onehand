@@ -263,12 +263,19 @@ impl Chat {
                 })
                 .collect(),
             cards: self.cards,
+            continued: self.continued.clone(),
         }
+    }
+
+    /// Record that this conversation continues the one called `title`.
+    pub(crate) fn continues(&mut self, title: String) {
+        self.continued = Some(title);
     }
 
     /// Take the level a saved conversation answered its cards at.
     pub(super) fn take_prefs_cards(&mut self, prefs: &Prefs) {
         self.cards = prefs.cards;
+        self.continued = prefs.continued.clone();
     }
 
     /// A title derived from the conversation's **first user prompt** — its first

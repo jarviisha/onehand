@@ -321,6 +321,12 @@ default, which only a session the person sends from its page starts on; every ot
 on *Manual*, and each session's own level is kept with its conversation.
 _Avoid_: approval (a workflow step's), auto-approve
 
+**Continue in a new session**:
+Carrying a past conversation into a new session, with its agent or another: the conversation is
+written as a *hand-off* file the new session's agent is pointed at in its first prompt. Not the
+*Continue* of a turn the agent ended at its limit, nor a workflow approval's *Continue*.
+_Avoid_: resume (which reopens the same conversation with its own agent)
+
 **Permission bypass**:
 A host project's switch, on by default and drawn as its page's *Cards* chip at *Bypass*, under which the host service answers every card its
 sessions park: a permission is allowed, and a question is told to decide on its own and say what

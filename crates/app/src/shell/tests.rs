@@ -1017,3 +1017,50 @@ fn the_page_sends_its_projects_cards(cx: &mut gpui::TestAppContext) {
     assert_eq!(heard.get(), Some(Cards::AllowEdits));
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A past conversation carried onto the page goes with its send, on its own
+/// agent unless another is picked.
+#[gpui::test]
+fn the_page_sends_what_it_continues(cx: &mut gpui::TestAppContext) {
+    use crate::chat::pane::ChatPaneEvent;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let (shell, cx, dir, a, _) = two_pages(cx, "page-continues");
+    show_page_of(&shell, &a, cx);
+    let pane = cx.update(|_, cx| shell.read(cx).chat.clone());
+    let meta = onehand_core::chat::ConvMeta {
+        dir: dir.join("kept"),
+        session_id: "s1".into(),
+        root: a.clone(),
+        agent: "nowhere".into(),
+        updated: 0,
+        title: "Parser work".into(),
+        item_count: 3,
+        continued: None,
+    };
+    type Heard = Vec<(Option<String>, Option<String>)>;
+    let heard: Rc<RefCell<Heard>> = Rc::default();
+    let into = heard.clone();
+    let _keep = cx.update(|_, cx| {
+        cx.subscribe(&pane, move |_, event: &ChatPaneEvent, _| {
+            if let ChatPaneEvent::StartFromPage(send) = event {
+                into.borrow_mut().push((
+                    send.continuing.as_ref().map(|c| c.title.clone()),
+                    send.agent.as_ref().map(ToString::to_string),
+                ));
+            }
+        })
+    });
+    cx.update(|window, cx| {
+        pane.update(cx, |pane, cx| {
+            pane.press_continue(&meta, window, cx);
+            pane.type_in_composer("go on", window, cx);
+            pane.press_send(window, cx);
+        })
+    });
+    assert_eq!(
+        heard.borrow().as_slice(),
+        [(Some("Parser work".to_string()), Some("nowhere".to_string()))]
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

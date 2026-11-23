@@ -193,6 +193,7 @@ mod tests {
             updated: 0,
             title: "a past conversation".to_string(),
             item_count: 4,
+            continued: None,
         }
     }
 

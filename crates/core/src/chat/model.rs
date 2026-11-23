@@ -211,6 +211,8 @@ pub struct Chat {
     start_picks: Vec<(String, String)>,
     /// What this session answers of its cards by itself.
     cards: card_level::Cards,
+    /// The conversation this one continued, by its title.
+    continued: Option<String>,
     /// Files staged with 📎 to send with the next prompt.
     /// Live terminals (ACP terminal extension), keyed by terminalId.
     pub terminals: HashMap<String, TermView>,

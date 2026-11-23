@@ -12,7 +12,9 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, Context, IntoElement, ParentElement, SharedString, Styled, Window, div,
 };
+use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, StyledExt};
+use onehand_ui::ShortIcon as _;
 use std::path::{Path, PathBuf};
 
 /// A page's project files and folders for `@`, scanned off the UI loop.
@@ -41,6 +43,8 @@ pub(super) struct PageDraft {
     busy: Option<String>,
     /// Why the last send did not start a session.
     failure: Option<String>,
+    /// The past conversation the session is to continue.
+    continuing: Option<super::Continuing>,
 }
 
 impl ChatPane {
@@ -216,6 +220,10 @@ impl ChatPane {
         let text = self.composer.read(cx).text(cx);
         let staged = self.composer.read(cx).attachments.clone();
         let cards = self.page_cards(&root, cx);
+        let continuing = self
+            .page_drafts
+            .get(&root)
+            .and_then(|kept| kept.continuing.clone());
         let branch = self.page_branch.read(cx).value().trim().to_string();
         let agent = self.page_agent(&root, cx);
         let kept = self.page_drafts.entry(root.clone()).or_default();
@@ -233,6 +241,7 @@ impl ChatPane {
             picks,
             staged,
             cards,
+            continuing,
         }));
     }
 
@@ -242,6 +251,85 @@ impl ChatPane {
         self.page_drafts
             .get(root)
             .is_some_and(|kept| kept.busy.is_some())
+    }
+
+    /// Carry the past conversation `meta` into the session the page on screen
+    /// sends: on its composer, its agent picked, the caret in its field.
+    pub(super) fn continue_on_page(
+        &mut self,
+        meta: &onehand_core::chat::ConvMeta,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(root) = self.page_root() else {
+            return;
+        };
+        let kept = self.page_drafts.entry(root).or_default();
+        if kept.agent.as_deref() != Some(meta.agent.as_str()) {
+            kept.picks.clear();
+        }
+        kept.agent = Some(meta.agent.clone().into());
+        kept.continuing = Some(super::Continuing {
+            dir: meta.dir.clone(),
+            title: meta.title.clone(),
+            summarise: false,
+        });
+        self.composer
+            .read(cx)
+            .state
+            .focus_handle(cx)
+            .focus(window, cx);
+        cx.notify();
+    }
+
+    /// The chip over the page's card for the conversation it continues:
+    /// its title, *Summarise first* and the way to drop it.
+    fn continuing_chip(&self, root: &Path, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let carried = self.page_drafts.get(root)?.continuing.clone()?;
+        let (toggle_at, drop_at) = (root.to_path_buf(), root.to_path_buf());
+        Some(
+            div()
+                .h_flex()
+                .items_center()
+                .gap_3()
+                .w_full()
+                .text_xs()
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(format!("Continues “{}”", carried.title)),
+                )
+                .child(
+                    onehand_ui::toggle("page-summarise", carried.summarise)
+                        .label("Summarise first")
+                        .on_click(cx.listener(move |pane: &mut Self, on: &bool, _, cx| {
+                            if let Some(carried) = pane
+                                .page_drafts
+                                .get_mut(&toggle_at)
+                                .and_then(|kept| kept.continuing.as_mut())
+                            {
+                                carried.summarise = *on;
+                            }
+                            cx.notify();
+                        })),
+                )
+                .child(
+                    crate::controls::action("page-continuing-drop")
+                        .short_icon()
+                        .ghost()
+                        .icon(gpui_component::Icon::new(gpui_component::IconName::Close))
+                        .tooltip("Start fresh instead")
+                        .on_click(cx.listener(move |pane: &mut Self, _, _, cx| {
+                            if let Some(kept) = pane.page_drafts.get_mut(&drop_at) {
+                                kept.continuing = None;
+                            }
+                            cx.notify();
+                        })),
+                )
+                .into_any_element(),
+        )
     }
 
     /// What is picked on `root`'s page of its agent's offer.
@@ -389,6 +477,7 @@ impl ChatPane {
                     .font_semibold()
                     .child(super::greeting::GREETING),
             )
+            .children(self.continuing_chip(root, cx))
             // What is staged rests over the card, as on a session's.
             .children(
                 self.composer
@@ -604,5 +693,18 @@ impl ChatPane {
     /// Press Enter in the composer.
     pub(crate) fn press_enter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.enter(window, cx);
+    }
+}
+
+#[cfg(test)]
+impl ChatPane {
+    /// Carry `meta` onto the page, as its row's *Continue* does.
+    pub(crate) fn press_continue(
+        &mut self,
+        meta: &onehand_core::chat::ConvMeta,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.continue_on_page(meta, window, cx);
     }
 }
