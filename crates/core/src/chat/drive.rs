@@ -271,6 +271,8 @@ pub enum Next {
 #[derive(Debug, Clone)]
 struct Held {
     text: String,
+    /// What was staged to go with it.
+    staged: Vec<StagedAttachment>,
     origin: Origin,
 }
 
@@ -433,6 +435,7 @@ impl SessionDrive {
     pub fn prompt_when_up(
         &mut self,
         text: &str,
+        staged: &[StagedAttachment],
         origin: Origin,
         now: Now,
     ) -> (Intake, Vec<Effect>) {
@@ -441,6 +444,7 @@ impl SessionDrive {
             Link::Connected => self.prompt_held(
                 Held {
                     text: text.to_string(),
+                    staged: staged.to_vec(),
                     origin,
                 },
                 now,
@@ -448,6 +452,7 @@ impl SessionDrive {
             Link::Connecting => {
                 self.held = Some(Held {
                     text: text.to_string(),
+                    staged: staged.to_vec(),
                     origin,
                 });
                 (Intake::Held, Vec::new())
@@ -468,7 +473,7 @@ impl SessionDrive {
                 Vec::new(),
             );
         }
-        self.prompt(&held.text, &[], held.origin, Code::Here, now)
+        self.prompt(&held.text, &held.staged, held.origin, Code::Here, now)
     }
 
     /// Send the last prompt again, after a turn that failed, as a person's.
