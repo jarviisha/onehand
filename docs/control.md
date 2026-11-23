@@ -71,8 +71,9 @@ the command printed or `{"note":"…"}` for onehand's own, then the answer:
 `{"jsonrpc":"2.0","id":1,"result":{"exit":<code>}}` for a command that ran on the host, or
 `{"result":{"run":"here","fell_back":<bool>}}` for one the shim runs itself, `fell_back` when it
 was meant for a host that did not answer. A connection that drops before the answer stops the
-build. Each run that ends tells the app (`Incoming::Routed`), which redraws its windows, so the
-project page reads how the host answered.
+build. Each run that ends, and each host's answer that changes its standing while the run goes
+on, tells the app (`Incoming::Routed`), which redraws its windows, so the project page reads how
+the host answered during a long build too.
 
 ## The MCP conversation
 

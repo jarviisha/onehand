@@ -6,6 +6,7 @@ use std::cell::RefCell;
 use std::io::{BufRead as _, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
+use std::time::Instant;
 
 use serde_json::{json, Value};
 
@@ -55,14 +56,19 @@ pub enum Said {
     Out(String),
     /// What onehand says of its own.
     Note(String),
+    /// A host's standing changed: the front end's to hear, nothing the
+    /// shim is told.
+    Reached,
 }
 
-pub fn said_line(said: &Said) -> String {
+/// The line `said` is for the shim; none for what is not its.
+pub fn said_line(said: &Said) -> Option<String> {
     let params = match said {
         Said::Out(line) => json!({"out": line}),
         Said::Note(note) => json!({"note": note}),
+        Said::Reached => return None,
     };
-    json!({"jsonrpc": "2.0", "method": LINE, "params": params}).to_string()
+    Some(json!({"jsonrpc": "2.0", "method": LINE, "params": params}).to_string())
 }
 
 /// How a routed run ended.
@@ -100,9 +106,15 @@ pub fn serve_blocking(ask: &Ask, emit: &mut dyn FnMut(Said), cancel: &AtomicBool
     };
     let host = &routed.host;
     emit(Said::Note(format!("running on {host}")));
-    // Only Linux hosts are routed to.
-    let answered = reachable_blocking(host, &HostOs::Linux);
-    route_drive().reached(host, answered);
+    // A host that just did not answer is not asked again yet. Only Linux
+    // hosts are routed to.
+    let answered = !route_drive().recently_down(host, Instant::now()) && {
+        let answered = reachable_blocking(host, &HostOs::Linux);
+        if route_drive().reached(host, answered) {
+            emit(Said::Reached);
+        }
+        answered
+    };
     if !answered {
         emit(Said::Note(format!("{host} did not answer; building here")));
         return RouteEnd::Here { fell_back: true };
@@ -136,7 +148,7 @@ pub fn serve_blocking(ask: &Ask, emit: &mut dyn FnMut(Said), cancel: &AtomicBool
 
 /// Why a shim's call never reached its end.
 #[derive(Debug, PartialEq, Eq)]
-pub enum Unreached {
+pub(crate) enum Unreached {
     /// Connecting to the socket was refused permission: the agent's
     /// sandbox forbids it.
     Blocked,
@@ -147,7 +159,7 @@ pub enum Unreached {
 /// Hand `program` with `args`, from `cwd`, to the onehand on `socket`,
 /// printing the command's lines on `out` and onehand's notes on `err` as
 /// they come, and answer how it ended.
-pub fn client_blocking(
+pub(crate) fn client_blocking(
     socket: &Path,
     program: &str,
     args: &[String],

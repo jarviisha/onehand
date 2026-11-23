@@ -49,3 +49,19 @@ fn standing_follows_the_last_run() {
     r.reached(&h, true);
     assert_eq!(r.standing(&h), Some(Standing::Reached));
 }
+
+#[test]
+fn a_host_down_is_not_asked_again_for_a_while() {
+    let mut r = RouteDrive::load(&dir("down"));
+    let h = HostName("h".into());
+    let t = std::time::Instant::now();
+    let later = |s| t + std::time::Duration::from_secs(s);
+    assert!(!r.recently_down(&h, t));
+    assert!(r.reached_at(&h, false, t), "a change");
+    assert!(r.recently_down(&h, later(29)));
+    assert!(!r.recently_down(&h, later(30)));
+    assert!(!r.reached_at(&h, false, later(31)), "no change");
+    assert!(r.recently_down(&h, later(40)));
+    assert!(r.reached_at(&h, true, later(70)));
+    assert!(!r.recently_down(&h, later(71)));
+}

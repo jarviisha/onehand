@@ -247,7 +247,9 @@ nothing:
    it answers at all (`reachable_blocking`: `ssh -o BatchMode=yes -o ConnectTimeout=5 <host>
    true`), before any snapshot; only ssh's own failure, exit 255, is a host that did not answer.
    Such a host is a fall-back, not a failure: *<host> did not answer; building here*, and the
-   page's chip says so until a routed run reaches it again.
+   page's chip says so until a routed run reaches it again. For 30 seconds after it did not
+   answer it is not asked again: a routed command falls back at once, with the same line
+   (`RouteDrive::recently_down`).
 5. The build is the five steps of a build on a host, with two differences (`Job::fresh_only`,
    `Job::wait`):
    - **It waits its turn.** A build already running in that folder on that host is waited for,

@@ -24,16 +24,17 @@ fn route_ask_reads_only_route_lines() {
 #[test]
 fn lines_and_ends_are_json_rpc() {
     let parse = |s: String| serde_json::from_str::<Value>(&s).unwrap();
-    let out = parse(said_line(&Said::Out("hi".into())));
+    let out = parse(said_line(&Said::Out("hi".into())).unwrap());
     assert_eq!(out["jsonrpc"], "2.0");
     assert_eq!(out["method"], "onehand/line");
     assert_eq!(out["params"]["out"], "hi");
-    let note = parse(said_line(&Said::Note("n".into())));
+    let note = parse(said_line(&Said::Note("n".into())).unwrap());
     assert_eq!(note["params"]["note"], "n");
     let here = parse(end_line(&RouteEnd::Here { fell_back: true }));
     assert_eq!(here["id"], 1);
     assert_eq!(here["result"]["run"], "here");
     assert_eq!(here["result"]["fell_back"], true);
+    assert_eq!(said_line(&Said::Reached), None);
     let exit = parse(end_line(&RouteEnd::Exit(3)));
     assert_eq!(exit["result"]["exit"], 3);
 }
@@ -49,9 +50,9 @@ fn client_prints_lines_and_returns_the_exit() {
             .read_line(&mut first)
             .unwrap();
         for line in [
-            said_line(&Said::Out("one".into())),
-            said_line(&Said::Note("waiting".into())),
-            said_line(&Said::Out("two".into())),
+            said_line(&Said::Out("one".into())).unwrap(),
+            said_line(&Said::Note("waiting".into())).unwrap(),
+            said_line(&Said::Out("two".into())).unwrap(),
             end_line(&RouteEnd::Exit(3)),
         ] {
             writeln!(stream, "{line}").unwrap();

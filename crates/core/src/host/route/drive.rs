@@ -5,12 +5,18 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::{LazyLock, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
 use crate::workspace::HostName;
 
+/// How long a host that did not answer is taken as down without asking
+/// again: a burst of routed commands then falls back at once, not after
+/// ssh's wait each.
+const DOWN_FOR: Duration = Duration::from_secs(30);
+
 /// How a host answered the last routed run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Standing {
+pub(crate) enum Standing {
     Reached,
     NotAnswering,
 }
@@ -24,7 +30,8 @@ pub enum RouteEffect {
 #[derive(Debug)]
 pub struct RouteDrive {
     hosts_on: bool,
-    standing: BTreeMap<HostName, Standing>,
+    /// Each host's standing, and when it was last set.
+    standing: BTreeMap<HostName, (Standing, Instant)>,
 }
 
 fn flag(dir: &Path) -> std::path::PathBuf {
@@ -46,7 +53,7 @@ pub fn write_switch_blocking(dir: &Path, on: bool) -> std::io::Result<()> {
 }
 
 impl RouteDrive {
-    pub fn load(dir: &Path) -> Self {
+    pub(crate) fn load(dir: &Path) -> Self {
         Self {
             hosts_on: !flag(dir).exists(),
             standing: BTreeMap::new(),
@@ -57,8 +64,14 @@ impl RouteDrive {
         self.hosts_on
     }
 
-    pub fn standing(&self, host: &HostName) -> Option<Standing> {
-        self.standing.get(host).copied()
+    pub(crate) fn standing(&self, host: &HostName) -> Option<Standing> {
+        self.standing.get(host).map(|(s, _)| *s)
+    }
+
+    /// Whether `host` did not answer a routed run less than [`DOWN_FOR`]
+    /// before `now`.
+    pub(crate) fn recently_down(&self, host: &HostName, now: Instant) -> bool {
+        matches!(self.standing.get(host), Some((Standing::NotAnswering, at)) if now.duration_since(*at) < DOWN_FOR)
     }
 
     #[must_use]
@@ -70,13 +83,19 @@ impl RouteDrive {
         vec![RouteEffect::WriteSwitch(on)]
     }
 
-    pub(crate) fn reached(&mut self, host: &HostName, answered: bool) {
+    /// Record how `host` answered; whether its standing changed.
+    pub(crate) fn reached(&mut self, host: &HostName, answered: bool) -> bool {
+        self.reached_at(host, answered, Instant::now())
+    }
+
+    pub(crate) fn reached_at(&mut self, host: &HostName, answered: bool, now: Instant) -> bool {
         let s = if answered {
             Standing::Reached
         } else {
             Standing::NotAnswering
         };
-        self.standing.insert(host.clone(), s);
+        let had = self.standing.insert(host.clone(), (s, now));
+        had.map(|(had, _)| had) != Some(s)
     }
 }
 

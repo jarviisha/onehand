@@ -4,7 +4,7 @@
 //!
 //! The pick is the projects' drive's; the switch and each host's standing
 //! are the route drive's, read again on every render, since a routed run
-//! refreshes the windows when it ends.
+//! refreshes the windows when it ends and when a host's standing changes.
 
 use super::ChatPane;
 use crate::state::Shared;

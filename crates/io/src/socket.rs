@@ -36,7 +36,7 @@ pub enum Incoming {
     Open(Forwarded),
     /// A tool's call, who made it, and where its answer goes.
     Call(Peer, Call, oneshot::Sender<Result<String, String>>),
-    /// A routed run ended: what each host last did may have changed.
+    /// A routed run ended, or a host's standing changed during one.
     Routed,
 }
 
@@ -144,12 +144,18 @@ async fn serve_route<F>(
     });
     let (said, mut lines) = unbounded::<String>();
     let run = tokio::task::spawn_blocking({
-        let cancel = cancel.clone();
+        let (cancel, tx) = (cancel.clone(), tx.clone());
         move || {
             let end = serve(
                 &ask,
-                &mut |s| {
-                    let _ = said.unbounded_send(route::said_line(&s));
+                &mut |s| match route::said_line(&s) {
+                    Some(line) => {
+                        let _ = said.unbounded_send(line);
+                    }
+                    // The chip shows a host's standing during a long build.
+                    None => {
+                        let _ = tx.unbounded_send(Incoming::Routed);
+                    }
                 },
                 &cancel,
             );
