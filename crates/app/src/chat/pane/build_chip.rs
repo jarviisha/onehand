@@ -120,6 +120,11 @@ fn pick(
 /// switch back and says why.
 fn set_host_builds(on: bool, window: &mut Window, cx: &mut App) {
     let fx = route_drive().set_hosts_on(on);
+    carry(fx, window, cx);
+}
+
+/// Carry what the route drive answered.
+fn carry(fx: Vec<RouteEffect>, window: &mut Window, cx: &mut App) {
     cx.refresh_windows();
     for effect in fx {
         match effect {
@@ -134,15 +139,8 @@ fn set_host_builds(on: bool, window: &mut Window, cx: &mut App) {
                             return;
                         };
                         let _ = cx.update(|window, cx| {
-                            // The file is as it was, so the drive goes back
-                            // to it with nothing more to write.
-                            let mut drive = route_drive();
-                            // Unless the switch was turned again meanwhile.
-                            if drive.hosts_on() == on {
-                                let _ = drive.set_hosts_on(!on);
-                            }
-                            drop(drive);
-                            cx.refresh_windows();
+                            let fx = route_drive().write_failed(on);
+                            carry(fx, window, cx);
                             window.push_notification(
                                 onehand_ui::toast::failed("Changing builds on hosts", why),
                                 cx,

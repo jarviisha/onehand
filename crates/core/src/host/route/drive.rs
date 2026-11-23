@@ -83,6 +83,17 @@ impl RouteDrive {
         vec![RouteEffect::WriteSwitch(on)]
     }
 
+    /// The write of the switch to `on` failed: the file is as it was, so
+    /// the switch goes back to it, unless it was turned again meanwhile.
+    /// Nothing is written either way.
+    #[must_use]
+    pub fn write_failed(&mut self, on: bool) -> Vec<RouteEffect> {
+        if self.hosts_on == on {
+            self.hosts_on = !on;
+        }
+        Vec::new()
+    }
+
     /// Record how `host` answered; whether its standing changed.
     pub(crate) fn reached(&mut self, host: &HostName, answered: bool) -> bool {
         self.reached_at(host, answered, Instant::now())

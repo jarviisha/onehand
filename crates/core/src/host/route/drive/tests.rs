@@ -65,3 +65,20 @@ fn a_host_down_is_not_asked_again_for_a_while() {
     assert!(r.reached_at(&h, true, later(70)));
     assert!(!r.recently_down(&h, later(71)));
 }
+
+/// A failed write puts the switch back as the file still has it, writing
+/// nothing; unless the switch was turned again meanwhile.
+#[test]
+fn a_failed_write_puts_the_switch_back() {
+    let mut r = RouteDrive::load(&dir("failed"));
+    let _ = r.set_hosts_on(false);
+    assert!(r.write_failed(false).is_empty());
+    assert!(r.hosts_on());
+    let _ = r.set_hosts_on(false);
+    let _ = r.set_hosts_on(true);
+    assert!(r.write_failed(false).is_empty());
+    assert!(r.hosts_on());
+    let _ = r.set_hosts_on(false);
+    assert!(r.write_failed(true).is_empty());
+    assert!(!r.hosts_on());
+}
