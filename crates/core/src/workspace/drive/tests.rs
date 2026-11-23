@@ -1416,3 +1416,22 @@ fn showing_a_project_page_selects_the_root_and_no_session() {
     assert_eq!(drive.active_uid(), None);
     assert_eq!(drive.roots[b].sessions.len(), 1, "the session stays open");
 }
+
+/// A session added to a row by its place, a host's row included, selects
+/// nothing and leaves the page on screen as it was.
+#[test]
+fn a_session_added_to_a_row_unshown_moves_nothing() {
+    let mut drive = bound();
+    drive.open_host_project(&at_on("box", "/srv/app"));
+    let host = drive
+        .roots
+        .iter()
+        .position(|row| row.host.is_some())
+        .expect("the host's row");
+    drive.show_project_page(host);
+    let added = drive.add_session_unshown(host, spec(), 41);
+    assert_eq!(added, Some(host));
+    assert_eq!(drive.active_root, host);
+    assert_eq!(drive.active_uid(), None, "its page stays");
+    assert_eq!(drive.locate(41), Some((host, 0)));
+}

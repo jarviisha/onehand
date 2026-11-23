@@ -249,6 +249,13 @@ impl WorkspaceDrive {
         (added, fx)
     }
 
+    /// Add session `uid` of `spec` to the row at `root`, in its own folder,
+    /// selecting nothing: a session a project's page starts off screen, on a
+    /// host's row as on one here. `None` with no such row.
+    pub fn add_session_unshown(&mut self, root: usize, spec: AgentSpec, uid: u64) -> Option<usize> {
+        self.workspace.add_session_at_row(root, spec, uid)
+    }
+
     /// Add session `uid` of `spec` for a run or a worker in `dir`, selecting
     /// nothing: on the row holding `dir` when the window has one, else on
     /// `project`'s row, the project `dir` is a folder of, added for the work

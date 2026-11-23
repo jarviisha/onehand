@@ -183,7 +183,7 @@ impl Shell {
             .add_run_session(&dir, spec.clone(), uid, project.as_ref())?;
         let folder = self.window.workspace.folder_of(uid)?;
         let session = self.chat.update(cx, |pane, cx| {
-            pane.open_unshown(uid, folder, &spec, dirs, cx)
+            pane.open_unshown(uid, folder, None, &spec, dirs, cx)
         });
         self.refresh_git(cx);
         cx.notify();

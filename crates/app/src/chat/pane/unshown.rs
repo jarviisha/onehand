@@ -24,6 +24,7 @@ impl ChatPane {
         &mut self,
         uid: u64,
         root: PathBuf,
+        host: Option<crate::chat::conversation::HostAt>,
         spec: &AgentSpec,
         dirs: Vec<PathBuf>,
         cx: &mut Context<Self>,
@@ -31,6 +32,7 @@ impl ChatPane {
         if let Entry::Vacant(slot) = self.conversations.entry(uid) {
             slot.insert(Conversation {
                 dirs,
+                host,
                 ..Conversation::opening(root, spec.clone())
             });
             self.connect(uid, None, cx);

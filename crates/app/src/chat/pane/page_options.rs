@@ -221,7 +221,7 @@ impl ChatPane {
                 let cost = (level == Cards::Bypass).then(|| host_cost(host));
                 (
                     level,
-                    &HOST_CARDS[..],
+                    &Cards::ON_A_HOST[..],
                     format!("Cards, this folder on {host}"),
                     cost,
                 )
@@ -270,16 +270,9 @@ impl ChatPane {
     }
 }
 
-/// What a host offers of *Cards*: its switch is on or off, so the folder's
-/// cards all wait or are all answered.
-const HOST_CARDS: [Cards; 2] = [Cards::Manual, Cards::Bypass];
-
 /// The host's switch for a folder as a level; none until the host has said.
 pub(super) fn host_cards(bypass: Option<bool>) -> Option<Cards> {
-    bypass.map(|on| match on {
-        true => Cards::Bypass,
-        false => Cards::Manual,
-    })
+    bypass.map(Cards::of_host_switch)
 }
 
 /// What the host answering a folder's cards costs.

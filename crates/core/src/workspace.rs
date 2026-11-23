@@ -19,6 +19,7 @@ pub(crate) use build_host::inside_refusal;
 pub use build_host::BuildHost;
 pub mod drive;
 mod migrate;
+pub mod page_starts;
 mod root;
 use crate::config::{AgentSpec, PanelLayout, WorkspaceConfig};
 pub use drive::WorkspaceDrive;
@@ -665,6 +666,25 @@ impl Workspace {
             root.active_session = Some(0);
         }
         root.sessions.push(Session::new(spec, uid, path));
+        Some(idx)
+    }
+
+    /// Add a session of `spec` to the row at `idx`, in its own folder,
+    /// **selecting nothing**, as [`Self::add_session_quietly`] does for a
+    /// folder here; a host's row is reached by its place.
+    pub(crate) fn add_session_at_row(
+        &mut self,
+        idx: usize,
+        spec: AgentSpec,
+        uid: u64,
+    ) -> Option<usize> {
+        let shown = idx == self.active_root;
+        let root = self.roots.get_mut(idx)?;
+        if root.sessions.is_empty() && !shown {
+            root.active_session = Some(0);
+        }
+        let folder = root.path.clone();
+        root.sessions.push(Session::new(spec, uid, folder));
         Some(idx)
     }
 

@@ -24,7 +24,7 @@ use onehand_ui::ShortIcon as _;
 /// The ring a file dragged over the card draws, in pixels as a hairline is. A
 /// shadow rather than a border, so the card does not shift by its width while
 /// the file is held over it.
-const DROP_RING_PX: f32 = 1.;
+pub(super) const DROP_RING_PX: f32 = 1.;
 /// Below this the strip under the card takes two lines, the branch over the
 /// mode, rather than one squeezing the other. Measured on the stack, not the
 /// window.

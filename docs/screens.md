@@ -246,7 +246,8 @@ machine, *Cards*: its shield mark, muted at *Manual* and in the warning ink othe
 level's name; its menu (*Cards, this session only*) lists *Manual*, *Allow edits* and *Bypass*,
 each with what it does, opens above the chip and changes this session alone; a level other than
 *Manual* says its cost under the strip in the warning ink. *Allow edits* allows only a read or an
-edit whose paths are all named, inside the session's folder, and outside its `.git` and an
+edit whose paths are all named and land, links followed, inside the session's folder (a link to
+something not made yet is refused), and outside its `.git` and an
 agent's settings folder (`.claude`, `.codex`, `.gemini`); anything else waits. A card answered so
 is drawn answered and raises no notice. The `+` menu ends on *Agent controls
 onehand* under a heading of its own, *This session*, checked while on. Each chip's
@@ -400,7 +401,7 @@ room and leaves the terminal as it is.
   says *Starting <agent>…*, the words locked, until the agent is up, then shows the session if the
   person still stands on the page (else it waits on the rail as any session does) and empties the
   draft. An agent that never comes up leaves no session: the page says why under the card, the
-  words kept. A host project's session is shown at once, as a host session always is. Then, in one column at every width, the box *Past
+  words kept, a host's or an offloaded project's session as one here, over the host's attach. Then, in one column at every width, the box *Past
   conversations* with its count, its rows the overview's (age, title, then items and agent at the
   edge, led by *Continued from <title>* for one that continued another, then a `⋯` on hover
   holding *Resume*, on a page whose sessions run here *Continue in a new session…*, and
