@@ -1,6 +1,8 @@
 //! Whether an agent's command goes to its project's build host: a pure
 //! decision over the project found for the folder and what the machine is.
 
+pub mod drive;
+
 use std::path::PathBuf;
 
 use super::build::cli::{command_line, Found};
