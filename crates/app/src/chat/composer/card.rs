@@ -493,7 +493,7 @@ fn meter_view(index: usize, meter: Meter, cx: &App) -> impl IntoElement + use<> 
 }
 
 /// Fast mode's mark: the muted ink at rest, the warning ink while fast.
-fn bolt(lit: bool, cx: &App) -> Icon {
+pub(in crate::chat) fn bolt(lit: bool, cx: &App) -> Icon {
     Icon::new(crate::icons::Icon::Zap)
         .small()
         .text_color(match lit {

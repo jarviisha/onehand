@@ -175,7 +175,10 @@ impl Chat {
         // would answer the same on every chunk that arrives while the card is
         // up. An elicitation that cannot be drawn never reaches here -- the
         // client declines those where they arrive rather than parking them.
-        let offer_changed = matches!(event, AcpEvent::Modes { .. } | AcpEvent::ConfigOptions(_));
+        let offer_changed = matches!(
+            event,
+            AcpEvent::Modes { .. } | AcpEvent::ConfigOptions(_) | AcpEvent::AvailableCommands(_)
+        );
         let mut pick_refused = None;
         let mut stop_refused = None;
         let cycle_ended = matches!(&event, AcpEvent::Usage(usage) if usage.cycle_end);
@@ -265,9 +268,11 @@ impl Chat {
                 // already in place to diff against.
                 if resumed {
                     self.reapply_prefs();
+                    self.start_picks.clear();
                 } else {
                     self.pending_mode = None;
                     self.pending_config.clear();
+                    self.apply_start_picks();
                 }
             }
             AcpEvent::SessionId(id) => self.session_id = Some(id),

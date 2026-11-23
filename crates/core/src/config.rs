@@ -17,6 +17,8 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 mod agent;
+mod agent_facts;
+pub use agent_facts::{AgentFacts, FactsFile};
 pub mod drive;
 pub mod recents;
 pub use agent::{

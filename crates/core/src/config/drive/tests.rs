@@ -419,3 +419,26 @@ mod hosts {
         assert!(cfg.hosts.is_empty());
     }
 }
+
+/// What an agent offered is kept by its name, and only a change asks for the
+/// file to be written.
+#[test]
+fn saw_facts_writes_only_what_changed() {
+    let mut drive = drive();
+    let facts = crate::config::AgentFacts {
+        current_mode: Some("plan".into()),
+        ..Default::default()
+    };
+    let written = drive.saw_facts("a".into(), facts.clone());
+    assert_eq!(
+        written.as_ref().map(|all| all.agents.get("a")),
+        Some(Some(&facts))
+    );
+    assert_eq!(
+        drive.saw_facts("a".into(), facts.clone()),
+        None,
+        "no change"
+    );
+    assert_eq!(drive.facts_of("a"), Some(&facts));
+    assert_eq!(drive.facts_of("b"), None);
+}

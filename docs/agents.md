@@ -79,6 +79,17 @@ env = { SOME_VAR = "x" }
   only the newer build knows is lost when the agent list is saved. With no `name` it is called,
   and saved, by its id.
 
+## What each agent offered
+
+What a session of each agent offers when it comes up, and whenever that changes (its modes, its
+config groups with the values then in force, its `/` commands), is kept by the agent's name in
+`agents-seen.toml` in the config directory (`config::FactsFile`, `SettingsDrive::saw_facts`),
+written whole, in order with the settings' other writes, and read at launch; one that does not
+parse is kept as `agents-seen.toml.bad`. A project's page offers the model, effort, fast switch
+and mode from it before any session of the agent runs. Nothing here is written by hand or
+shipped: an agent that changes what it offers is read again at its next session. An agent renamed
+in Settings starts with nothing kept under its new name.
+
 ## First launch
 
 When no config file is read, or the file names no `agents`, the list is the built-in agents

@@ -3717,3 +3717,85 @@ fn a_card_is_worded_and_counted_by_core() {
         [(Standing::Running, 1), (Standing::Stopped, 1)]
     );
 }
+
+/// Picks armed for a fresh session are set as it connects, the model
+/// included: a fresh session has no transcript to read one from.
+#[test]
+fn start_picks_are_set_when_a_fresh_session_connects() {
+    let (mut chat, _rx) = chat_with_tx();
+    chat.arm_start_picks(vec![
+        ("effort".into(), "high".into()),
+        ("mode".into(), "plan".into()),
+    ]);
+    chat.apply(AcpEvent::Connected {
+        tx: chat.tx.clone().unwrap(),
+        resumed: false,
+        forkable: false,
+    });
+    let mut sent = Vec::new();
+    while let Ok(req) = recv(&mut chat) {
+        sent.push(req);
+    }
+    assert!(sent
+        .iter()
+        .any(|r| matches!(r, AcpRequest::SetMode(m) if m == "plan")));
+    assert!(sent.iter().any(|r| matches!(
+        r,
+        AcpRequest::SetConfigOption { config_id, value } if config_id == "effort" && value == "high"
+    )));
+}
+
+/// A pick the agent no longer offers is not sent, and the session says so.
+#[test]
+fn a_start_pick_no_longer_offered_is_said_and_skipped() {
+    let (mut chat, _rx) = chat_with_tx();
+    chat.arm_start_picks(vec![("effort".into(), "gone".into())]);
+    chat.apply(AcpEvent::Connected {
+        tx: chat.tx.clone().unwrap(),
+        resumed: false,
+        forkable: false,
+    });
+    assert!(recv(&mut chat).is_err());
+    assert_eq!(
+        notices(&chat),
+        ["Effort gone is no longer offered; the session runs on the agent's default"]
+    );
+}
+
+/// A resumed session keeps its own settings; picks for a fresh one go unused.
+#[test]
+fn a_resumed_session_ignores_start_picks() {
+    let (mut chat, _rx) = chat_with_tx();
+    chat.arm_start_picks(vec![("effort".into(), "high".into())]);
+    chat.apply(AcpEvent::Connected {
+        tx: chat.tx.clone().unwrap(),
+        resumed: true,
+        forkable: false,
+    });
+    assert!(
+        !std::iter::from_fn(|| recv(&mut chat).ok()).any(|r| matches!(
+            r,
+            AcpRequest::SetConfigOption { config_id, .. } if config_id == "effort"
+        ))
+    );
+}
+
+/// The model goes first: what else the agent offers may follow it.
+#[test]
+fn a_start_pick_of_the_model_goes_first() {
+    let (mut chat, _rx) = chat_with_tx();
+    chat.arm_start_picks(vec![
+        ("effort".into(), "high".into()),
+        ("model".into(), "opus".into()),
+    ]);
+    chat.apply(AcpEvent::Connected {
+        tx: chat.tx.clone().unwrap(),
+        resumed: false,
+        forkable: false,
+    });
+    let first = std::iter::from_fn(|| recv(&mut chat).ok()).find_map(|r| match r {
+        AcpRequest::SetConfigOption { config_id, .. } => Some(config_id),
+        _ => None,
+    });
+    assert_eq!(first.as_deref(), Some("model"));
+}

@@ -23,6 +23,12 @@ impl SessionDrive {
         (now, self.sent(Vec::new()))
     }
 
+    /// Arm `picks`, by group (`mode` for the mode), to be set once this
+    /// session connects fresh, before a held prompt goes.
+    pub fn arm_start_picks(&mut self, picks: Vec<(String, String)>) {
+        self.chat.arm_start_picks(picks);
+    }
+
     /// Set the agent's config option `id` (a model, an effort) to `value`.
     pub fn set_config_option(&mut self, id: &str, value: &str) -> Vec<Effect> {
         self.chat.set_config_option(id, value);

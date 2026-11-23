@@ -41,7 +41,7 @@ mod complete;
 mod page_card;
 mod popup;
 mod rows;
-pub(in crate::chat) use card::{COMPOSER_SPLIT, status_chip};
+pub(in crate::chat) use card::{COMPOSER_SPLIT, bolt, status_chip};
 pub(in crate::chat) use popup::POPUP_STACK_PEEK;
 pub use popup::popup_room;
 pub(crate) use popup::popup_surface;

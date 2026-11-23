@@ -19,6 +19,8 @@ use std::path::{Path, PathBuf};
 pub(super) struct PageDraft {
     text: Draft,
     agent: Option<SharedString>,
+    /// What is picked of the agent's offer, by group (`mode` for the mode).
+    picks: Vec<(String, String)>,
     start: StartIn,
     branch: String,
     /// What is under way for it: a worktree being made.
@@ -134,6 +136,8 @@ impl ChatPane {
         let kept = self.page_drafts.entry(root.clone()).or_default();
         kept.failure = None;
         let start = kept.start.clone();
+        // What the chips show is what the session gets.
+        let picks = self.page_shown_picks(&root, agent.as_deref().unwrap_or_default(), cx);
         let branch = (start == StartIn::NewWorktree).then_some(branch);
         cx.emit(ChatPaneEvent::StartFromPage(super::PageSend {
             root,
@@ -141,6 +145,7 @@ impl ChatPane {
             agent,
             start,
             branch,
+            picks,
         }));
     }
 
@@ -150,6 +155,28 @@ impl ChatPane {
         self.page_drafts
             .get(root)
             .is_some_and(|kept| kept.busy.is_some())
+    }
+
+    /// What is picked on `root`'s page of its agent's offer.
+    pub(super) fn page_picks(&self, root: &Path) -> Vec<(String, String)> {
+        self.page_drafts
+            .get(root)
+            .map(|kept| kept.picks.clone())
+            .unwrap_or_default()
+    }
+
+    /// Pick `value` of group `group` on `root`'s page.
+    pub(crate) fn pick_on_page(
+        &mut self,
+        root: &Path,
+        group: &str,
+        value: String,
+        cx: &mut Context<Self>,
+    ) {
+        let kept = self.page_drafts.entry(root.to_path_buf()).or_default();
+        kept.picks.retain(|(g, _)| g != group);
+        kept.picks.push((group.to_string(), value));
+        cx.notify();
     }
 
     /// Why Send does nothing yet on the page on screen, if it does not.
@@ -195,7 +222,15 @@ impl ChatPane {
     ) -> AnyElement {
         let refuses = self.page_refuses(cx);
         let locked = self.page_locked(root);
-        let agent = self.agent_chip(root, cx);
+        let name = self.page_agent(root, cx).unwrap_or_default();
+        let agent = div()
+            .h_flex()
+            .items_center()
+            .gap_2()
+            .min_w_0()
+            .child(self.agent_chip(root, cx))
+            .children(self.page_options(root, &name, cx))
+            .into_any_element();
         let card = self.composer.update(cx, |composer, cx| {
             composer.page_card(agent, refuses, locked, cx)
         });
@@ -271,8 +306,12 @@ impl ChatPane {
                             .checked(name == picked)
                             .on_click(move |_, _, cx: &mut App| {
                                 let _ = pane.update(cx, |pane: &mut Self, cx| {
-                                    pane.page_drafts.entry(at.clone()).or_default().agent =
-                                        Some(name.clone());
+                                    let kept = pane.page_drafts.entry(at.clone()).or_default();
+                                    // Another agent offers its own choices.
+                                    if kept.agent.as_ref() != Some(&name) {
+                                        kept.picks.clear();
+                                    }
+                                    kept.agent = Some(name.clone());
                                     cx.notify();
                                 });
                             }),

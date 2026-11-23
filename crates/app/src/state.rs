@@ -26,6 +26,8 @@ pub struct Shared {
     pub on_machine: Vec<onehand_core::config::Preset>,
     /// Where `persist_agents` writes back to — the file the config came from.
     pub config_path: PathBuf,
+    /// Where what each agent offered is kept: a file of its own in a test.
+    pub facts_path: PathBuf,
     pub keymap: std::collections::BTreeMap<String, Vec<String>>,
     /// The monospace family the boot-time scan settled on, if it found one.
     ///
@@ -77,7 +79,8 @@ impl Global for Shared {}
 
 impl Shared {
     pub fn from_config(cfg: AppConfig, config_path: PathBuf) -> Self {
-        Self::with_recents(cfg, config_path, RecentsDrive::load())
+        let facts = onehand_core::config::FactsFile::path();
+        Self::with_recents(cfg, config_path, RecentsDrive::load(), facts)
     }
 
     /// The process's state for a test: the default config and no recents,
@@ -87,22 +90,30 @@ impl Shared {
         let dir = std::env::temp_dir().join("onehand-test-config.toml");
         let recents =
             std::env::temp_dir().join(format!("onehand-test-state-{}.toml", std::process::id()));
+        let facts =
+            std::env::temp_dir().join(format!("onehand-test-facts-{}.toml", std::process::id()));
         Self::with_recents(
             AppConfig::default(),
             dir,
             RecentsDrive::new(Default::default(), recents, Vec::new()),
+            facts,
         )
     }
 
-    fn with_recents(cfg: AppConfig, config_path: PathBuf, recents: RecentsDrive) -> Self {
+    fn with_recents(
+        cfg: AppConfig,
+        config_path: PathBuf,
+        recents: RecentsDrive,
+        facts_path: PathBuf,
+    ) -> Self {
+        let mut settings =
+            onehand_core::config::drive::SettingsDrive::new(cfg.agents, cfg.appearance, cfg.hosts);
+        settings.know_facts(onehand_core::config::FactsFile::load_from(&facts_path));
         Self {
-            settings: onehand_core::config::drive::SettingsDrive::new(
-                cfg.agents,
-                cfg.appearance,
-                cfg.hosts,
-            ),
+            settings,
             on_machine: onehand_core::config::on_machine(std::env::var_os("PATH").as_deref()),
             config_path,
+            facts_path,
             keymap: cfg.keymap,
             mono_family: None,
             writer: onehand_core::saving::OrderedWriter::spawn("onehand-settings"),
@@ -155,5 +166,17 @@ impl WorkspaceWindow {
     /// `root`'s `git status`, as the last sweep read it.
     pub(crate) fn git_of(&self, root: &ProjectRoot) -> Option<&GitStatus> {
         self.workspace.git_of(root)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// A test keeps what agents offered in a file of its own, never in the
+    /// data root a run of onehand that started it points at.
+    #[test]
+    fn a_test_keeps_agent_facts_apart() {
+        let shared = super::Shared::for_test();
+        assert_ne!(shared.facts_path, onehand_core::config::FactsFile::path());
+        assert!(shared.facts_path.starts_with(std::env::temp_dir()));
     }
 }

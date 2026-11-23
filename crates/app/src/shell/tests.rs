@@ -698,3 +698,128 @@ fn the_page_locks_while_a_worktree_is_cut(cx: &mut gpui::TestAppContext) {
     assert!(cx.update(|_, cx| pane.read(cx).page_locked(&a)));
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// What is picked on a page of its agent's offer goes with the send.
+#[gpui::test]
+fn a_page_pick_goes_with_the_send(cx: &mut gpui::TestAppContext) {
+    use crate::chat::pane::ChatPaneEvent;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let (shell, cx, dir, a, _) = two_pages(cx, "page-picks");
+    let choice = |value: &str| onehand_core::acp::ConfigChoice {
+        value: value.into(),
+        name: value.into(),
+        description: None,
+    };
+    let facts = onehand_core::config::AgentFacts {
+        modes: ["default", "plan"]
+            .map(|id| onehand_core::acp::Mode {
+                id: id.into(),
+                name: id.into(),
+            })
+            .to_vec(),
+        current_mode: Some("default".into()),
+        options: vec![onehand_core::acp::ConfigOption {
+            id: "model".into(),
+            name: "Model".into(),
+            category: Some("model".into()),
+            current: Some("opus".into()),
+            choices: vec![choice("opus"), choice("sonnet")],
+        }],
+        commands: Vec::new(),
+    };
+    cx.update(|_, cx| {
+        gpui::BorrowAppContext::update_global::<crate::state::Shared, _>(cx, |shared, _| {
+            let _ = shared.settings.saw_facts("nowhere".into(), facts);
+        })
+    });
+    show_page_of(&shell, &a, cx);
+    let pane = cx.update(|_, cx| shell.read(cx).chat.clone());
+    type Picks = Vec<(String, String)>;
+    let heard: Rc<RefCell<Vec<Picks>>> = Rc::default();
+    let into = heard.clone();
+    let _keep = cx.update(|_, cx| {
+        cx.subscribe(&pane, move |_, event: &ChatPaneEvent, _| {
+            if let ChatPaneEvent::StartFromPage(send) = event {
+                into.borrow_mut().push(send.picks.clone());
+            }
+        })
+    });
+    cx.update(|window, cx| {
+        pane.update(cx, |pane, cx| {
+            pane.pick_on_page(&a, "model", "opus".into(), cx);
+            pane.pick_on_page(&a, "model", "sonnet".into(), cx);
+            pane.pick_on_page(&a, "mode", "plan".into(), cx);
+            pane.type_in_composer("go", window, cx);
+            pane.press_send(window, cx);
+        })
+    });
+    assert_eq!(
+        heard.borrow().as_slice(),
+        [vec![
+            ("model".to_string(), "sonnet".to_string()),
+            ("mode".to_string(), "plan".to_string())
+        ]]
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// What a chip shows is what the session gets: a value the agent last had in
+/// force goes with the send though nobody picked it.
+#[gpui::test]
+fn what_a_chip_shows_goes_with_the_send(cx: &mut gpui::TestAppContext) {
+    use crate::chat::pane::ChatPaneEvent;
+    use crate::state::Shared;
+    use gpui::BorrowAppContext as _;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let (shell, cx, dir, a, _) = two_pages(cx, "page-shown-picks");
+    let facts = onehand_core::config::AgentFacts {
+        modes: vec![onehand_core::acp::Mode {
+            id: "plan".into(),
+            name: "Plan".into(),
+        }],
+        current_mode: Some("plan".into()),
+        options: vec![onehand_core::acp::ConfigOption {
+            id: "model".into(),
+            name: "Model".into(),
+            category: Some("model".into()),
+            current: Some("opus[1m]".into()),
+            choices: vec![onehand_core::acp::ConfigChoice {
+                value: "opus".into(),
+                name: "Opus".into(),
+                description: None,
+            }],
+        }],
+        commands: Vec::new(),
+    };
+    cx.update(|_, cx| {
+        cx.update_global::<Shared, _>(|shared, _| {
+            let _ = shared.settings.saw_facts("nowhere".into(), facts);
+        })
+    });
+    show_page_of(&shell, &a, cx);
+    let pane = cx.update(|_, cx| shell.read(cx).chat.clone());
+    type Picks = Vec<(String, String)>;
+    let heard: Rc<RefCell<Vec<Picks>>> = Rc::default();
+    let into = heard.clone();
+    let _keep = cx.update(|_, cx| {
+        cx.subscribe(&pane, move |_, event: &ChatPaneEvent, _| {
+            if let ChatPaneEvent::StartFromPage(send) = event {
+                into.borrow_mut().push(send.picks.clone());
+            }
+        })
+    });
+    cx.update(|window, cx| {
+        pane.update(cx, |pane, cx| {
+            pane.type_in_composer("go", window, cx);
+            pane.press_send(window, cx);
+        })
+    });
+    // The alias the agent had in force is no choice of its own: not sent.
+    assert_eq!(
+        heard.borrow().as_slice(),
+        [vec![("mode".to_string(), "plan".to_string())]]
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

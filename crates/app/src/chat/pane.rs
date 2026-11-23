@@ -37,6 +37,7 @@ mod lead_strip;
 mod offload_send;
 mod overlay;
 mod page_draft;
+mod page_options;
 mod pages;
 mod project_page;
 mod resume_picker;
