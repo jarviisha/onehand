@@ -235,9 +235,9 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
     let page = shell.page_shown(cx);
     let shown = workspace
         .active_root()
-        .and_then(|root| Some((workspace.active_root, root.active_session?)))
+        .and_then(|root| root.active_session.map(|s| (workspace.active_root, s)))
         .filter(|_| !page);
-    // A project with no session shows its own page, which its row marks.
+    // A project's page, with or without sessions open, is marked on its row.
     let project_page = workspace
         .active_root()
         .filter(|root| !page && root.active_session().is_none())
@@ -609,10 +609,22 @@ impl Shell {
             Some(Cursor::Session(uid)) => Some(*uid),
             Some(Cursor::Project(_)) | None => self.active_session_uid(),
         };
-        let next = match from.and_then(|uid| order.iter().position(|o| o.2 == uid)) {
-            Some(at) if forward => order.get(at + 1).or(order.last()),
-            Some(at) => order.get(at.saturating_sub(1)),
-            None => order.first(),
+        // From a project's page, the steps start at that project: forward to
+        // its first session, back to the one above it.
+        let page = self.workspace_window().workspace.active_root;
+        let page_at = from
+            .is_none()
+            .then(|| order.iter().position(|o| o.0 == page))
+            .flatten();
+        let next = match (
+            from.and_then(|uid| order.iter().position(|o| o.2 == uid)),
+            page_at,
+        ) {
+            (Some(at), _) if forward => order.get(at + 1).or(order.last()),
+            (Some(at), _) => order.get(at.saturating_sub(1)),
+            (None, Some(at)) if forward => order.get(at),
+            (None, Some(at)) => order.get(at.saturating_sub(1)),
+            (None, None) => order.first(),
         };
         if let Some(&(root, session, _)) = next {
             self.rail_open_session(root, session, true, window, cx);

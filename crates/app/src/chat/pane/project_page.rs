@@ -1,6 +1,5 @@
 use super::header::Archives;
 use super::{ChatPane, ChatPaneEvent, ProjectFacts, rel_time};
-use crate::chat::conversation::Conversation;
 use crate::controls::Short as _;
 use crate::controls::text_input;
 use crate::page_parts::{count_of, page_card, page_head, ruled};
@@ -301,29 +300,14 @@ impl ChatPane {
 
     /// Delete an archived conversation, the question already answered.
     ///
-    /// Offered on the project page and nowhere else, and that is the guard
-    /// doing most of the work rather than a rule anybody has to remember: the
-    /// page is what shows when the selected project has **no session on it**,
-    /// so the conversations listed there are the ones nothing is writing to.
-    /// A live conversation deleted underneath its own session would not even
+    /// Offered on the project page and nowhere else. The page can show while
+    /// the project's sessions run, so a conversation listed there may be open
+    /// in one, here or in another window, and the check below refuses it: a
+    /// live conversation deleted underneath its own session would not even
     /// stay deleted -- the session's next turn writes the file again, holding
     /// only what came after, because its mark says the rest is already on disk.
-    /// A session in another *window* is the case the page's own shape does not
-    /// cover, so the check below covers it.
     fn delete_conversation(&mut self, dir: PathBuf, cx: &mut Context<Self>) {
-        let store = onehand_core::chat::conversations_dir();
-        let live = self
-            .conversations
-            .values()
-            .filter_map(Conversation::session)
-            .any(|session| {
-                session
-                    .read(cx)
-                    .chat()
-                    .session_id
-                    .as_deref()
-                    .is_some_and(|sid| onehand_core::chat::conv_dir(&store, sid) == dir)
-            });
+        let live = crate::chat::is_open(&self.open_everywhere(cx), &dir);
         if live {
             cx.emit(ChatPaneEvent::ConversationNotDeleted(
                 "it is open in a session".to_string(),
@@ -360,7 +344,7 @@ impl ChatPane {
     }
 
     /// The project page: what the centre of the window shows while the selected
-    /// project has no conversation on it.
+    /// project has no conversation on screen, whether or not its sessions run.
     ///
     /// This is the state every freshly added project starts in, and the state a
     /// project returns to when its last session is closed -- so it is the first

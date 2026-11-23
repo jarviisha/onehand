@@ -259,9 +259,9 @@ impl Shell {
             // one is thrown away with it.
             self.sync_project_facts(cx);
             self.show_check_input(local.as_deref(), window, cx);
-            // Nothing is running on this project and the page now on screen is
+            // The page now on screen, whether or not sessions run beside it, is
             // a list of past conversations over a *New session* button, so the
-            // next thing asked of it is almost certainly a session. Start the
+            // next thing asked of it is very likely a session. Start the
             // agent against this root now: bringing one up costs seconds that
             // are entirely the adapter's and the SDK's, and spending them while
             // the user reads the page is spending them for free.

@@ -99,8 +99,7 @@ pub enum ChatPaneEvent {
     /// One variant carrying an action rather than five of its own, because they
     /// are one sentence with a word swapped: do this to the *selected* project.
     /// The shell answers every one of them by reaching for the same root, and
-    /// the page that offers them is only ever drawn for that root — it is what
-    /// shows when the selected project has nothing running in it.
+    /// the page that offers them is only ever drawn for that root.
     Project(ProjectAction),
     /// Rename the conversation showing.
     ///

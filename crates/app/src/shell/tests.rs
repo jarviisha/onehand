@@ -323,3 +323,88 @@ fn a_project_row_shows_its_page_over_open_sessions(cx: &mut gpui::TestAppContext
     });
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Ctrl+Tab from a project's page lands on its most recent session, even
+/// when it is the only one: the page is not one of the sessions cycled.
+#[gpui::test]
+fn cycling_from_the_page_lands_on_the_latest_session(cx: &mut gpui::TestAppContext) {
+    use std::path::PathBuf;
+    let spec = crate::shell::rig::nowhere();
+    let dir = crate::shell::rig::folder("cycle-from-page");
+    let (_, shell, cx) = crate::shell::rig::shell(cx, dir.join("tasks"), vec![spec.clone()]);
+    let add = |uid: u64, cx: &mut gpui::VisualTestContext| {
+        cx.update(|window, cx| {
+            shell.update(cx, |shell, cx| {
+                let (added, fx) = shell.window.workspace.add_session_at(
+                    Some(spec.clone()),
+                    uid,
+                    PathBuf::from("/tmp"),
+                );
+                added.expect("added");
+                shell.carry_workspace(fx, window, cx);
+            })
+        });
+        cx.run_until_parked();
+    };
+    let page_then_cycle = |forward: bool, cx: &mut gpui::VisualTestContext| {
+        cx.update(|window, cx| {
+            shell.update(cx, |shell, cx| {
+                shell.show_project_page(0, window, cx);
+                shell.cycle_session(forward, window, cx);
+            })
+        });
+        cx.run_until_parked();
+        cx.update(|_, cx| shell.read(cx).active_session_uid())
+    };
+    add(71, cx);
+    assert_eq!(page_then_cycle(true, cx), Some(71), "the only session");
+    add(72, cx);
+    assert_eq!(page_then_cycle(true, cx), Some(72), "forward: the latest");
+    assert_eq!(page_then_cycle(false, cx), Some(71), "backward: the oldest");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Stepping through the rail from a project's page starts at that project:
+/// forward to its first session, not the rail's.
+#[gpui::test]
+fn stepping_from_a_page_starts_at_its_project(cx: &mut gpui::TestAppContext) {
+    let spec = crate::shell::rig::nowhere();
+    let dir = crate::shell::rig::folder("step-from-page");
+    let (_, shell, cx) = crate::shell::rig::shell(cx, dir.join("tasks"), vec![spec.clone()]);
+    let other = dir.join("b");
+    std::fs::create_dir_all(&other).unwrap();
+    cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| {
+            let (added, fx) =
+                shell
+                    .window
+                    .workspace
+                    .add_session_at(Some(spec.clone()), 91, "/tmp".into());
+            added.expect("added");
+            shell.carry_workspace(fx, window, cx);
+            let fx = shell.window.workspace.open_project(other.clone(), None);
+            shell.carry_workspace(fx, window, cx);
+            let (added, fx) =
+                shell
+                    .window
+                    .workspace
+                    .add_session_at(Some(spec.clone()), 92, other.clone());
+            added.expect("added");
+            shell.carry_workspace(fx, window, cx);
+        })
+    });
+    cx.run_until_parked();
+    let b = cx.update(|_, cx| shell.read(cx).window.workspace.active_root);
+    cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| {
+            shell.show_project_page(b, window, cx);
+            shell.rail_step(true, window, cx);
+        })
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|_, cx| shell.read(cx).active_session_uid()),
+        Some(92)
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

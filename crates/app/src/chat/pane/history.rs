@@ -282,6 +282,19 @@ impl ChatPane {
         live.chain(resuming).collect()
     }
 
+    /// The session of this pane that has the conversation kept in `dir` open.
+    pub(crate) fn holding(&self, dir: &Path, cx: &App) -> Option<u64> {
+        let open: Vec<(u64, String)> = self
+            .conversations
+            .iter()
+            .filter_map(|(uid, conv)| {
+                let id = conv.session()?.read(cx).chat().session_id.clone()?;
+                Some((*uid, id))
+            })
+            .collect();
+        held_by(&open, dir)
+    }
+
     /// The conversations a session of any window has open, by their ids.
     pub(super) fn open_everywhere(&self, cx: &Context<Self>) -> Vec<String> {
         self.open_ids(cx)
@@ -312,6 +325,15 @@ fn open_elsewhere(skip: gpui::EntityId, cx: &App) -> Vec<String> {
         .filter(|pane| pane.entity_id() != skip)
         .flat_map(|pane| pane.read(cx).open_ids(cx))
         .collect()
+}
+
+/// Which of `open`, sessions with the ids of their conversations, holds the
+/// one kept in `dir`.
+pub(super) fn held_by(open: &[(u64, String)], dir: &Path) -> Option<u64> {
+    let store = onehand_core::chat::conversations_dir();
+    open.iter()
+        .find(|(_, id)| onehand_core::chat::conv_dir(&store, id) == dir)
+        .map(|(uid, _)| *uid)
 }
 
 /// Whether one of `open`, conversations by their ids, is the one kept in
