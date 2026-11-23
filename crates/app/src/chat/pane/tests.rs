@@ -247,7 +247,7 @@ mod lifecycle {
 
     fn open(pane: &Entity<ChatPane>, uid: u64, cx: &mut VisualTestContext) {
         pane.update(cx, |pane, cx| {
-            pane.open_unshown(uid, PathBuf::from("/tmp"), &nowhere(), Vec::new(), cx);
+            pane.open_unshown(uid, PathBuf::from("/tmp"), None, &nowhere(), Vec::new(), cx);
         });
     }
 

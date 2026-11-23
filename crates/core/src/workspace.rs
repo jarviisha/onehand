@@ -668,6 +668,25 @@ impl Workspace {
         Some(idx)
     }
 
+    /// Add a session of `spec` to the row at `idx`, in its own folder,
+    /// **selecting nothing**, as [`Self::add_session_quietly`] does for a
+    /// folder here; a host's row is reached by its place.
+    pub(crate) fn add_session_at_row(
+        &mut self,
+        idx: usize,
+        spec: AgentSpec,
+        uid: u64,
+    ) -> Option<usize> {
+        let shown = idx == self.active_root;
+        let root = self.roots.get_mut(idx)?;
+        if root.sessions.is_empty() && !shown {
+            root.active_session = Some(0);
+        }
+        let folder = root.path.clone();
+        root.sessions.push(Session::new(spec, uid, folder));
+        Some(idx)
+    }
+
     /// Spawn a new session on the active root from `spec`, making it active.
     /// Returns `(root_idx, session_idx)`, or `None` if there is no active root.
     #[cfg(test)]

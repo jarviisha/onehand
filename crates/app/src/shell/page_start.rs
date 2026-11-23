@@ -24,6 +24,8 @@ struct Ask {
     continuing: Option<crate::chat::pane::Continuing>,
     /// The title of the conversation it continues, once handed over.
     continued: Option<String>,
+    /// Whether the page's project is a host's row.
+    on_host: bool,
 }
 
 impl Shell {
@@ -79,80 +81,29 @@ impl Shell {
         if !self.page_starting.insert(root.clone()) {
             return;
         }
+        // A host's row is told from a row here on the same path by its host.
+        let on_host = self.window.workspace.roots[idx].host.is_some();
+        let ask = Ask {
+            agent,
+            text,
+            picks,
+            staged,
+            cards,
+            continuing,
+            continued: None,
+            on_host,
+        };
         match start {
-            StartIn::Project => match self.local_root(idx).map(PathBuf::from) {
-                Some(folder) => {
-                    let ask = Ask {
-                        agent,
-                        text,
-                        picks,
-                        staged,
-                        cards,
-                        continuing: continuing.clone(),
-                        continued: None,
-                    };
-                    self.start_unshown(root, folder, ask, window, cx)
-                }
-                // A host's folder: its session opens there and is shown at
-                // once, as a host session always is.
-                None => {
-                    let spec = Shared::global(cx)
-                        .settings
-                        .agents
-                        .get(agent_index(agent, cx))
-                        .cloned();
-                    let uid = self.add_by(
-                        |workspace, uid| workspace.add_session_in(idx, spec, uid),
-                        window,
-                        cx,
-                        |_, _| {},
-                    );
-                    self.page_session_shown(
-                        root,
-                        uid,
-                        Ask {
-                            agent: None,
-                            text,
-                            picks,
-                            staged,
-                            cards,
-                            continuing: None,
-                            continued: None,
-                        },
-                        window,
-                        cx,
-                    );
-                }
-            },
-            StartIn::Folder(folder) => {
-                let ask = Ask {
-                    agent,
-                    text,
-                    picks,
-                    staged,
-                    cards,
-                    continuing: continuing.clone(),
-                    continued: None,
-                };
+            // The row's own folder: a host's runs there, an offloaded one's
+            // in its mirror, as the session's start finds.
+            StartIn::Project => {
+                let folder = self.window.workspace.roots[idx].path.clone();
                 self.start_unshown(root, folder, ask, window, cx)
             }
+            StartIn::Folder(folder) => self.start_unshown(root, folder, ask, window, cx),
             StartIn::NewWorktree => {
                 let branch = branch.unwrap_or_default();
-                self.cut_for_page(
-                    root,
-                    branch,
-                    Ask {
-                        agent,
-                        text,
-                        picks,
-                        staged,
-                        cards,
-                        continuing: continuing.clone(),
-                        continued: None,
-                    },
-                    window,
-                    cx,
-                );
+                self.cut_for_page(root, branch, ask, window, cx);
             }
         }
     }
@@ -269,6 +220,7 @@ impl Shell {
             staged,
             cards,
             continued,
+            on_host,
             ..
         } = ask;
         let Some(spec) = Shared::global(cx)
@@ -281,14 +233,35 @@ impl Shell {
             return;
         };
         let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
-        let project = crate::projects::of(&folder, cx);
-        let added =
-            self.window
-                .workspace
-                .add_run_session(&folder, spec.clone(), uid, project.as_ref());
+        let row = self
+            .window
+            .workspace
+            .roots
+            .iter()
+            .position(|row| row.path == root && row.host.is_some() == on_host);
+        // Where the session runs: a host's folder, or an offloaded folder's
+        // mirror, over the host's attach; else here.
+        let on = row.and_then(|row| {
+            self.window.workspace.roots[row]
+                .host_of(&folder)
+                .map(|(host, cwd)| (host.clone(), cwd.to_path_buf()))
+        });
+        let added = match on_host {
+            true => row.and_then(|row| {
+                self.window
+                    .workspace
+                    .add_session_unshown(row, spec.clone(), uid)
+            }),
+            false => {
+                let project = crate::projects::of(&folder, cx);
+                self.window
+                    .workspace
+                    .add_run_session(&folder, spec.clone(), uid, project.as_ref())
+            }
+        };
         let session = added.and_then(|_| {
             self.chat.update(cx, |pane, cx| {
-                pane.open_unshown(uid, folder, &spec, Vec::new(), cx)
+                pane.open_unshown(uid, folder, on, &spec, Vec::new(), cx)
             })
         });
         let Some(session) = session else {
@@ -371,42 +344,5 @@ impl Shell {
         self.page_starting.remove(root);
         self.chat
             .update(cx, |pane, cx| pane.page_failed(root, why, cx));
-    }
-
-    /// The session `uid` made and shown for the page of `root`, a host's: its
-    /// words go to it as its first prompt once its agent is up, and leave
-    /// the page.
-    fn page_session_shown(
-        &mut self,
-        root: PathBuf,
-        uid: Option<u64>,
-        ask: Ask,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.page_starting.remove(&root);
-        let session = uid.and_then(|uid| self.chat.read(cx).session_entity(uid));
-        let Some(session) = session else {
-            self.chat.update(cx, |pane, cx| {
-                pane.page_failed(&root, "The session could not be started".to_string(), cx)
-            });
-            return;
-        };
-        let Ask {
-            text,
-            picks,
-            staged,
-            cards,
-            ..
-        } = ask;
-        session.update(cx, |session, cx| {
-            session.drive(cx, |chat, _| {
-                chat.arm_start_picks(picks);
-                ((), chat.set_cards(cards))
-            });
-            session.prompt_when_up(&text, &staged, Origin::Person, cx)
-        });
-        self.chat
-            .update(cx, |pane, cx| pane.page_sent(&root, window, cx));
     }
 }
