@@ -400,7 +400,7 @@ room and leaves the terminal as it is.
   says *Starting <agent>…*, the words locked, until the agent is up, then shows the session if the
   person still stands on the page (else it waits on the rail as any session does) and empties the
   draft. An agent that never comes up leaves no session: the page says why under the card, the
-  words kept. A host project's session is shown at once, as a host session always is. Then, in one column at every width, the box *Past
+  words kept, a host's or an offloaded project's session as one here, over the host's attach. Then, in one column at every width, the box *Past
   conversations* with its count, its rows the overview's (age, title, then items and agent at the
   edge, led by *Continued from <title>* for one that continued another, then a `⋯` on hover
   holding *Resume*, on a page whose sessions run here *Continue in a new session…*, and

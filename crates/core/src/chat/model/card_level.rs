@@ -27,6 +27,18 @@ pub enum Cards {
 impl Cards {
     pub const ALL: [Self; 3] = [Self::Manual, Self::AllowEdits, Self::Bypass];
 
+    /// What a host offers: its switch is on or off for a folder, so the
+    /// folder's cards all wait or are all answered.
+    pub const ON_A_HOST: [Self; 2] = [Self::Manual, Self::Bypass];
+
+    /// A host's switch for a folder, `on`, as a level.
+    pub fn of_host_switch(on: bool) -> Self {
+        match on {
+            true => Self::Bypass,
+            false => Self::Manual,
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Self::Manual => "Manual",

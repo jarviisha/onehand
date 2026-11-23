@@ -113,7 +113,7 @@ impl Composer {
                         color: drop_ring,
                         offset: gpui::point(gpui::px(0.), gpui::px(0.)),
                         blur_radius: gpui::px(0.),
-                        spread_radius: gpui::px(1.),
+                        spread_radius: gpui::px(super::card::DROP_RING_PX),
                         inset: false,
                     });
                     card.shadow(shadows)
