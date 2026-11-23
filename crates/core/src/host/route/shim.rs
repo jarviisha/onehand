@@ -123,19 +123,9 @@ pub(crate) fn real_program(
     (!in_shims).then_some(found)
 }
 
-/// A program a shim can stand for: a bare name, nothing a shell would read
-/// as more than one word.
-fn shimmable(program: &str) -> bool {
-    !program.is_empty()
-        && !program.starts_with('.')
-        && program
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || "-_.+".contains(c))
-}
-
 /// One executable shim in `dir` per program, handing it to `exe --route`
 /// on `socket` with `dir` itself; a shim for a program no longer named is
-/// removed.
+/// removed. Only a program a routed command may name gets one.
 pub(crate) fn write_shims_blocking(
     dir: &Path,
     exe: &Path,
@@ -149,7 +139,10 @@ pub(crate) fn write_shims_blocking(
         word(socket).map_err(std::io::Error::other)?,
         word(dir).map_err(std::io::Error::other)?,
     );
-    let programs: Vec<&String> = programs.iter().filter(|p| shimmable(p)).collect();
+    let programs: Vec<&String> = programs
+        .iter()
+        .filter(|p| crate::workspace::plain_program(p))
+        .collect();
     for entry in std::fs::read_dir(dir)?.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         // Kept: a shim still named, or one on its way in.

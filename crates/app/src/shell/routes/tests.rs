@@ -1,16 +1,3 @@
-use super::suggested;
-
-#[test]
-fn a_folder_suggests_the_builds_its_top_names() {
-    assert_eq!(
-        suggested(["Cargo.toml", "src"]),
-        ["cargo build", "cargo test", "cargo clippy"]
-    );
-    assert_eq!(suggested(["App.sln"]), ["dotnet build", "dotnet test"]);
-    assert_eq!(suggested(["app.csproj"]), ["dotnet build", "dotnet test"]);
-    assert!(suggested(["README.md", "cargo.toml.bak"]).is_empty());
-}
-
 /// *Add* routes what the form names; the same words again are refused in
 /// the form, which stays with what was typed.
 #[gpui::test]

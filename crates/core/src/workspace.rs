@@ -17,6 +17,7 @@ use crate::project::Projects;
 mod build_host;
 pub(crate) use build_host::inside_refusal;
 pub use build_host::BuildHost;
+pub(crate) use routed::plain_program;
 mod routed;
 pub use routed::RoutedCommand;
 pub mod drive;

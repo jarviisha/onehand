@@ -72,6 +72,24 @@ fn shims_are_written_and_pruned() {
     );
 }
 
+/// A shim is written for exactly the programs a routed command may name.
+#[test]
+fn shims_only_for_plain_program_names() {
+    let dir = scratch("plain").join("route-shims");
+    let programs = ["cargo", "g++", "-x", ".hidden", "cargo-nextest"].map(String::from);
+    write_shims_blocking(&dir, Path::new("/o"), Path::new("/s.sock"), &programs).unwrap();
+    let mut names: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["cargo", "cargo-nextest"]);
+    for program in programs {
+        let routable = crate::workspace::RoutedCommand::parse(&program, "").is_ok();
+        assert_eq!(routable, names.contains(&program), "{program}");
+    }
+}
+
 #[test]
 fn shim_quotes_paths_with_spaces() {
     let dir = scratch("spaces").join("route-shims");

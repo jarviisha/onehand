@@ -25,11 +25,7 @@ impl RoutedCommand {
         if program.is_empty() {
             return Err("Name the command".into());
         }
-        let plain = program
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-            && !program.starts_with(['.', '-']);
-        if !plain {
+        if !plain_program(program) {
             return Err(format!("{program} must be a program's name, not a path"));
         }
         let artifacts = artifacts
@@ -42,6 +38,33 @@ impl RoutedCommand {
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self { words, artifacts })
+    }
+
+    /// The artifacts as the form's field holds them, one path a line:
+    /// what `parse` reads back as these.
+    pub fn artifacts_lines(&self) -> String {
+        self.artifacts
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// The commands a folder holding `top_names` at its top suggests
+    /// routing: a Rust workspace's and a .NET solution's builds.
+    pub fn suggested(top_names: &[String]) -> Vec<&'static str> {
+        let cargo = top_names.iter().any(|name| name == "Cargo.toml");
+        let dotnet = top_names
+            .iter()
+            .any(|name| name.ends_with(".sln") || name.ends_with(".csproj"));
+        let mut found = Vec::new();
+        if cargo {
+            found.extend(["cargo build", "cargo test", "cargo clippy"]);
+        }
+        if dotnet {
+            found.extend(["dotnet build", "dotnet test"]);
+        }
+        found
     }
 
     /// The program's name.
@@ -61,6 +84,17 @@ impl RoutedCommand {
             .skip(1)
             .all(|word| rest.next().is_some_and(|a| a == word))
     }
+}
+
+/// Whether `program` is a plain program name: ASCII letters, digits, `.`,
+/// `_` and `-`, starting with neither `.` nor `-`. Nothing a shell reads as
+/// more than one word, nor a path, nor an option.
+pub(crate) fn plain_program(program: &str) -> bool {
+    !program.is_empty()
+        && !program.starts_with(['.', '-'])
+        && program
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
 
 #[cfg(test)]

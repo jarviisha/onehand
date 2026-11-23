@@ -23,23 +23,6 @@ pub(crate) struct RouteDraft {
     pub(crate) error: Option<String>,
 }
 
-/// The commands a folder holding `names` at its top suggests routing.
-fn suggested<'a>(names: impl IntoIterator<Item = &'a str>) -> Vec<&'static str> {
-    let (mut cargo, mut dotnet) = (false, false);
-    for name in names {
-        cargo |= name == "Cargo.toml";
-        dotnet |= name.ends_with(".sln") || name.ends_with(".csproj");
-    }
-    let mut found = Vec::new();
-    if cargo {
-        found.extend(["cargo build", "cargo test", "cargo clippy"]);
-    }
-    if dotnet {
-        found.extend(["dotnet build", "dotnet test"]);
-    }
-    found
-}
-
 /// What the folder at `root` suggests, read from its top; blocking.
 fn suggested_in(root: &Path) -> Vec<&'static str> {
     let Ok(entries) = std::fs::read_dir(root) else {
@@ -49,7 +32,7 @@ fn suggested_in(root: &Path) -> Vec<&'static str> {
         .filter_map(Result::ok)
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
         .collect();
-    suggested(names.iter().map(String::as_str))
+    RoutedCommand::suggested(&names)
 }
 
 impl Shell {
@@ -122,15 +105,7 @@ impl Shell {
             .map(|at| self.window.workspace.roots[at].label.clone())
             .unwrap_or_default();
         let (words, artifacts) = match &held {
-            Some(route) => (
-                route.words.clone(),
-                route
-                    .artifacts
-                    .iter()
-                    .map(|path| path.display().to_string())
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-            ),
+            Some(route) => (route.words.clone(), route.artifacts_lines()),
             None => Default::default(),
         };
         self.remember_focus(window, cx);

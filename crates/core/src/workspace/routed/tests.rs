@@ -78,3 +78,31 @@ fn project_file_round_trips_routes_and_pick() {
         "{text}"
     );
 }
+
+#[test]
+fn artifacts_lines_reads_back_as_the_artifacts() {
+    let r = RoutedCommand::parse("cargo build", "target/a\n\n target/b ").unwrap();
+    assert_eq!(r.artifacts_lines(), "target/a\ntarget/b");
+    assert_eq!(
+        RoutedCommand::parse("cargo build", &r.artifacts_lines()),
+        Ok(r)
+    );
+}
+
+#[test]
+fn a_folder_suggests_the_builds_its_top_names() {
+    let names = |n: &[&str]| n.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+    assert_eq!(
+        RoutedCommand::suggested(&names(&["Cargo.toml", "src"])),
+        ["cargo build", "cargo test", "cargo clippy"]
+    );
+    assert_eq!(
+        RoutedCommand::suggested(&names(&["App.sln"])),
+        ["dotnet build", "dotnet test"]
+    );
+    assert_eq!(
+        RoutedCommand::suggested(&names(&["app.csproj"])),
+        ["dotnet build", "dotnet test"]
+    );
+    assert!(RoutedCommand::suggested(&names(&["README.md", "cargo.toml.bak"])).is_empty());
+}
