@@ -520,7 +520,9 @@ fn put_route_refuses_the_same_words_twice() {
             .unwrap(),
         "a already routes cargo build"
     );
-    assert!(d.put_route(&p.id, route("cargo build"), Some(&route("cargo build"))).is_ok());
+    assert!(d
+        .put_route(&p.id, route("cargo build"), Some(&route("cargo build")))
+        .is_ok());
 }
 
 /// A change is to the command the form was opened on, wherever it now
@@ -540,7 +542,13 @@ fn put_route_replaces_by_words() {
     let _ = d
         .put_route(&p.id, route("cargo nextest"), Some(&route("cargo test")))
         .unwrap();
-    let words: Vec<_> = d.get(&p.id).unwrap().routes.iter().map(|r| r.words.clone()).collect();
+    let words: Vec<_> = d
+        .get(&p.id)
+        .unwrap()
+        .routes
+        .iter()
+        .map(|r| r.words.clone())
+        .collect();
     assert_eq!(words, ["cargo nextest"]);
 }
 

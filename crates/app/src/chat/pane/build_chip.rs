@@ -74,7 +74,9 @@ pub(super) fn build_chip(project: &Project, cx: &mut Context<ChatPane>) -> Optio
                 );
             }
             if more > 0 {
-                menu = menu.item(crate::controls::menu_label(format!("{more} more not shown")));
+                menu = menu.item(crate::controls::menu_label(format!(
+                    "{more} more not shown"
+                )));
             }
             menu.separator().item(
                 crate::controls::menu_item("Build on hosts")

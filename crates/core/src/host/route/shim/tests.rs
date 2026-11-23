@@ -141,8 +141,8 @@ fn a_shim_without_its_onehand_runs_the_real_program() {
     std::fs::set_permissions(real.join(program), std::fs::Permissions::from_mode(0o755)).unwrap();
     let gone = root.join("no-onehand-here");
     write_shims_blocking(&shims, &gone, Path::new("/s.sock"), &[program.into()]).unwrap();
-    let path = std::env::join_paths([&shims, &real, Path::new("/usr/bin"), Path::new("/bin")])
-        .unwrap();
+    let path =
+        std::env::join_paths([&shims, &real, Path::new("/usr/bin"), Path::new("/bin")]).unwrap();
     // Bounded, as a shim that found itself again would never end.
     let status = std::process::Command::new("timeout")
         .args(["10"])
@@ -160,5 +160,8 @@ fn a_replaced_binary_is_named_as_its_file() {
         live_exe(PathBuf::from("/t/onehand (deleted)")),
         PathBuf::from("/t/onehand")
     );
-    assert_eq!(live_exe(PathBuf::from("/t/onehand")), PathBuf::from("/t/onehand"));
+    assert_eq!(
+        live_exe(PathBuf::from("/t/onehand")),
+        PathBuf::from("/t/onehand")
+    );
 }

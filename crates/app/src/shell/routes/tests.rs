@@ -85,7 +85,8 @@ fn the_form_adds_a_route_and_says_what_refuses_one(cx: &mut gpui::TestAppContext
     let id = project.id.clone();
     cx.update(|_, cx| {
         let route = onehand_core::workspace::RoutedCommand::parse("cargo build", "").unwrap();
-        let fx = cx.update_global::<Shared, _>(|shared, _| shared.projects.remove_route(&id, &route));
+        let fx =
+            cx.update_global::<Shared, _>(|shared, _| shared.projects.remove_route(&id, &route));
         crate::projects::carry(fx, cx);
     });
     cx.update(|window, cx| shell.update(cx, |shell, cx| shell.save_route(window, cx)));
