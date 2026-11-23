@@ -14,6 +14,7 @@ mod failure;
 pub mod journal;
 pub mod offload;
 pub mod probe;
+pub mod route;
 pub mod session;
 mod ssh;
 pub mod sshconf;

@@ -16,7 +16,7 @@
 //! Blocking throughout; a front end runs it off its UI.
 
 pub mod cli;
-mod shell;
+pub(crate) mod shell;
 
 use std::io::{BufRead as _, BufReader};
 use std::path::{Path, PathBuf};

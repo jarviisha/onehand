@@ -51,7 +51,6 @@ impl RoutedCommand {
 
     /// Whether `program args` is this command: the same program, and after
     /// any leading options (`-q`, `+nightly`) the same next words.
-    #[allow(dead_code)] // ponytail: the decision that calls it lands in a later step; drop this then
     pub(crate) fn matches(&self, program: &str, args: &[String]) -> bool {
         if self.program() != program {
             return false;
