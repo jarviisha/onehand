@@ -195,6 +195,55 @@ impl Composer {
     /// just over the control's top, starting at its left edge (the mode's,
     /// at the strip's right end, ending at its right). Floated above
     /// everything and kept inside the window.
+    /// The `@` and `/` list of a project's page, floated over its card: the
+    /// page scrolls, and a list drawn inside it would be cut at its top. It
+    /// hangs from the card's top edge, as wide as the card, and has the room
+    /// between the card and the top of the window, less `above`, the pane's
+    /// header, to grow into.
+    pub(in crate::chat) fn page_popup(
+        &mut self,
+        lists: &Lists,
+        above: gpui::Pixels,
+        rem: gpui::Pixels,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        if self.overlay != Some(Overlay::Completion) {
+            return None;
+        }
+        let on = self.anchor_of(&Overlay::Completion)?;
+        let gap = MENU_GAP.to_pixels(rem);
+        let room = popup_room(on.top(), above + gap, rem);
+        let popup = self.popup(lists, room, rem, cx)?;
+        let at = gpui::point(on.left(), on.top() - gap);
+        let menu_bounds = self.menu_bounds.clone();
+        Some(
+            gpui::deferred(
+                gpui::anchored()
+                    .position(at)
+                    .anchor(gpui::Anchor::BottomLeft)
+                    .snap_to_window_with_margin(gap)
+                    .child(
+                        div().w(on.size.width).occlude().child(popup).child(
+                            gpui::canvas(
+                                // Where it ends up, worked out from the point it
+                                // hangs from, as a menu's is: a press on it is
+                                // not a press outside the card.
+                                move |bounds, _, _| {
+                                    let size = bounds.size;
+                                    let origin = gpui::point(at.x, at.y - size.height);
+                                    menu_bounds.set(Some(gpui::Bounds { origin, size }))
+                                },
+                                |_, _, _, _| {},
+                            )
+                            .absolute()
+                            .size_full(),
+                        ),
+                    ),
+            )
+            .into_any_element(),
+        )
+    }
+
     pub(in crate::chat) fn anchored_menu(
         &mut self,
         lists: &Lists,

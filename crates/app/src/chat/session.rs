@@ -126,7 +126,7 @@ fn sniff_image_format(bytes: &[u8]) -> Option<gpui::ImageFormat> {
 
 /// Files offered to `@`-mention completion: a monorepo has more paths than any
 /// popup can be useful about.
-const MAX_MENTION_FILES: usize = 5000;
+pub(in crate::chat) const MAX_MENTION_FILES: usize = 5000;
 
 pub enum ChatEvent {
     /// What the session's drive tells whatever watches it: content landed, a

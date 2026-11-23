@@ -29,3 +29,12 @@ list's keys while it is open.
    page's card. Test: `a_slash_on_the_page_offers_its_agents_commands` (facts with a command,
    type `/re`, the composer's matches hold it); `an_at_on_the_page_offers_its_files` (a file in
    the project, type `@no`, after the scan the matches hold it). Docs: `docs/screens.md`.
+
+## After review
+
+- The page's list floats out of the page's scroll (`Composer::page_popup`, a deferred anchored
+  box hanging from the card's measured top), so its top is never cut; a press elsewhere closes it.
+- The page's `+` is a menu: *Attach files…*, *Mention a file*, *Run a slash command* (typed from
+  code, for an input method that swallows the character).
+- A page's file scans are numbered; an older one landing late is dropped.
+- A session's `/` no longer reads the transcript's touched files; only `@` does, as before.

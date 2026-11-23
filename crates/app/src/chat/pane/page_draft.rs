@@ -21,10 +21,12 @@ pub(super) struct PageFiles {
     files: std::rc::Rc<Vec<String>>,
     folders: std::rc::Rc<Vec<(String, usize)>>,
     scanned: bool,
+    /// The latest scan asked for: an older one landing after it is dropped.
+    asked: u64,
 }
 
 /// How many files a page offers `@`, as a session does.
-const PAGE_MENTION_FILES: usize = 5000;
+const PAGE_MENTION_FILES: usize = crate::chat::session::MAX_MENTION_FILES;
 
 /// A project page's draft, kept while the person is elsewhere.
 #[derive(Default)]
@@ -76,7 +78,9 @@ impl ChatPane {
             self.page_files.insert(root.to_path_buf(), none);
             return;
         }
-        self.page_files.entry(root.to_path_buf()).or_default();
+        let kept = self.page_files.entry(root.to_path_buf()).or_default();
+        kept.asked += 1;
+        let asked = kept.asked;
         let at = root.to_path_buf();
         cx.spawn(async move |pane, cx| {
             let scan_root = at.clone();
@@ -87,15 +91,16 @@ impl ChatPane {
                 })
                 .await;
             let _ = pane.update(cx, |pane: &mut Self, cx| {
-                let folders = onehand_core::completion::folders(&files);
-                pane.page_files.insert(
-                    at,
-                    PageFiles {
-                        files: std::rc::Rc::new(files),
-                        folders: std::rc::Rc::new(folders),
-                        scanned: true,
-                    },
-                );
+                let Some(kept) = pane
+                    .page_files
+                    .get_mut(&at)
+                    .filter(|kept| kept.asked == asked)
+                else {
+                    return;
+                };
+                kept.folders = std::rc::Rc::new(onehand_core::completion::folders(&files));
+                kept.files = std::rc::Rc::new(files);
+                kept.scanned = true;
                 cx.notify();
             });
         })
@@ -301,6 +306,7 @@ impl ChatPane {
         root: &Path,
         worktrees: &[(PathBuf, String)],
         splits: bool,
+        window: &Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let refuses = self.page_refuses(cx);
@@ -315,30 +321,35 @@ impl ChatPane {
             .children(self.page_options(root, &name, cx))
             .into_any_element();
         let lists = self.page_lists(root, &name, cx);
-        // The `@` and `/` list opens over the card, as over a session's; the
-        // page's room is its pane's, so it stands at the list's own cap.
-        let rem = gpui::px(16.) * self.zoom.factor();
-        let room = crate::chat::composer::popup_room(gpui::px(f32::MAX / 4.), gpui::px(0.), rem);
+        // The `@` and `/` list floats over the card, out of the page's scroll,
+        // with the room above the card to grow into.
+        let rem = window.rem_size() * self.zoom.factor();
+        let above = crate::tokens::CONTROL_H.to_pixels(rem) * 2.;
         let popup = self.composer.update(cx, |composer, cx| {
-            composer.detached_popup(&lists, room, rem, cx)
+            composer.page_popup(&lists, above, rem, cx)
         });
         let card = self.composer.update(cx, |composer, cx| {
             composer.page_card(agent, refuses, locked, lists, cx)
         });
         let card = div()
-            .relative()
             .w_full()
+            // A press anywhere but the card or its list closes the list, as
+            // on a session's.
+            .on_mouse_down_out(cx.listener(
+                |pane: &mut Self, event: &gpui::MouseDownEvent, _, cx| {
+                    let composer = pane.composer.read(cx);
+                    let on_list = composer
+                        .menu_bounds
+                        .get()
+                        .is_some_and(|bounds| bounds.contains(&event.position));
+                    if composer.overlay_open() && !on_list {
+                        pane.composer
+                            .update(cx, |composer, cx| composer.close_overlay(cx));
+                    }
+                },
+            ))
             .child(card)
-            .children(popup.map(|popup| {
-                div()
-                    .absolute()
-                    .bottom(gpui::relative(1.))
-                    .left_0()
-                    .right_0()
-                    .pb_1()
-                    .occlude()
-                    .child(popup)
-            }));
+            .children(popup);
         let kept = self.page_drafts.get(root);
         let start = kept.map(|kept| kept.start.clone()).unwrap_or_default();
         let busy = kept.and_then(|kept| kept.busy.clone());
@@ -577,5 +588,13 @@ impl ChatPane {
             return Vec::new();
         };
         self.composer.read(cx).match_labels(&lists, cx)
+    }
+}
+
+#[cfg(test)]
+impl ChatPane {
+    /// Press Enter in the composer.
+    pub(crate) fn press_enter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.enter(window, cx);
     }
 }

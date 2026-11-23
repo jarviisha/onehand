@@ -349,7 +349,7 @@ impl ChatPane {
     /// the history, then what the project needs and is set to, so
     /// what belongs together reads as one object rather than as text loose on
     /// the page.
-    pub(super) fn project_home(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+    pub(super) fn project_home(&self, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
         // Ahead of whether there is a project: with no agent nothing can be
         // started anywhere, and that is the first thing to put right.
         if crate::state::Shared::global(cx).settings.agents.is_empty() {
@@ -414,7 +414,8 @@ impl ChatPane {
             None => &project.on_disk,
             Some(_) => &[],
         };
-        let composer = self.page_composer(&project.path, worktrees, project.facts.is_repo, cx);
+        let composer =
+            self.page_composer(&project.path, worktrees, project.facts.is_repo, window, cx);
         // The head: the project named as every page is, over where it
         // is, and what it can start at the end.
         let head = page_head(

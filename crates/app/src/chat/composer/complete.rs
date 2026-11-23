@@ -413,25 +413,24 @@ impl Composer {
             return (Vec::new(), 0);
         };
         // What each list reads, from the session or the page.
-        let (files, folders, artifacts, commands) = match lists {
+        let (files, folders, chat, commands) = match lists {
             Lists::Session(entity) => {
                 let session = entity.read(cx);
                 (
                     &session.files[..],
                     &session.folders[..],
-                    session.chat().artifacts(MAX_ARTIFACT_SCAN),
+                    Some(&**session.chat()),
                     &session.chat().commands[..],
                 )
             }
-            Lists::Page(page) => (
-                &page.files[..],
-                &page.folders[..],
-                Vec::new(),
-                &page.commands[..],
-            ),
+            Lists::Page(page) => (&page.files[..], &page.folders[..], None, &page.commands[..]),
         };
         match trigger.kind {
             TriggerKind::File => {
+                // Only a session has a transcript to have touched files in.
+                let artifacts = chat
+                    .map(|chat| chat.artifacts(MAX_ARTIFACT_SCAN))
+                    .unwrap_or_default();
                 let (found, held) =
                     completion::mentions(files, folders, &artifacts, query, MAX_COMPLETION_ROWS);
                 // The heading is carried by the first row of each run rather

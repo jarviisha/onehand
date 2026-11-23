@@ -1,7 +1,6 @@
-//! The card a project's page writes in: the field, the agent the session
-//! will run, and Send. No session stands behind it yet, so nothing here reads
-//! one: what the agent offers, `@` and `/`, and what is staged come once the
-//! session is made.
+//! The card a project's page writes in: the field, `+`, the agent the
+//! session will run, and Send. No session stands behind it yet: `@` and `/`
+//! complete against what the page keeps of its project and its agent.
 
 use super::{Composer, ComposerEvent};
 use crate::controls::Refuses as _;
@@ -42,20 +41,59 @@ impl Composer {
                     cx.emit(ComposerEvent::SendPressed);
                 })),
         };
-        // One thing goes into the prompt from a control here: files, through
-        // the picker. A mention and a command come with the session.
-        let add = super::attachments::chip("page-add", false, cx)
-            .child(Icon::new(crate::icons::Icon::PlusLight).small())
-            .accessibility_label("Attach files")
-            .tooltip("Attach files")
-            .on_click(cx.listener(|composer: &mut Self, _, _, cx| composer.attach(cx)));
+        // What goes into the prompt from a control: files through the picker,
+        // and `@` and `/` typed from code, which a keyboard whose input method
+        // swallows the character still reaches.
+        let me = cx.entity().downgrade();
+        let add = onehand_ui::menu_below(
+            "page-add",
+            super::attachments::chip("page-add-trigger", false, cx)
+                .child(Icon::new(crate::icons::Icon::PlusLight).small())
+                .accessibility_label("Attach a file, mention one or run a slash command")
+                .tooltip("Attach a file, mention one or run a slash command"),
+            move |menu, _, _| {
+                let act = |what: fn(&mut Composer, &mut gpui::Window, &mut Context<Composer>)| {
+                    let me = me.clone();
+                    move |_: &gpui::ClickEvent, window: &mut gpui::Window, cx: &mut gpui::App| {
+                        let _ = me.update(cx, |composer, cx| what(composer, window, cx));
+                    }
+                };
+                menu.item(
+                    crate::controls::menu_item("Attach files…")
+                        .on_click(act(|composer, _, cx| composer.attach(cx))),
+                )
+                .item(crate::controls::menu_item("Mention a file").on_click(act(
+                    |composer, window, cx| composer.insert_trigger('@', window, cx),
+                )))
+                .item(
+                    crate::controls::menu_item("Run a slash command").on_click(act(
+                        |composer, window, cx| composer.insert_trigger('/', window, cx),
+                    )),
+                )
+            },
+        );
         let lift = crate::theme::composer_lift(cx);
         let drop_ring = cx.theme().ring;
+        let anchors = self.anchors.clone();
         div()
+            .relative()
             .v_flex()
             .gap_1()
             .w_full()
             .p_1p5()
+            // Where the card is, which the page's `@` and `/` list hangs from.
+            .child(
+                gpui::canvas(
+                    move |bounds, _, _| {
+                        let mut anchors = anchors.borrow_mut();
+                        anchors.retain(|(o, _)| *o != super::Overlay::Completion);
+                        anchors.push((super::Overlay::Completion, bounds));
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            )
             .bg(crate::theme::raised(cx))
             .border_1()
             .border_color(cx.theme().input)

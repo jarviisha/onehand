@@ -929,3 +929,46 @@ fn an_at_on_the_page_offers_its_files(cx: &mut gpui::TestAppContext) {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Enter on a page with its list open takes the highlighted row, and sends
+/// nothing.
+#[gpui::test]
+fn enter_on_the_page_takes_the_highlighted_row(cx: &mut gpui::TestAppContext) {
+    use crate::chat::pane::ChatPaneEvent;
+    use std::cell::Cell;
+    use std::rc::Rc;
+    let (shell, cx, dir, a, _) = two_pages(cx, "page-enter-takes");
+    let facts = onehand_core::config::AgentFacts {
+        commands: vec![onehand_core::acp::SlashCommand {
+            name: "review".into(),
+            description: "Review the diff".into(),
+        }],
+        ..Default::default()
+    };
+    cx.update(|_, cx| {
+        gpui::BorrowAppContext::update_global::<crate::state::Shared, _>(cx, |shared, _| {
+            let _ = shared.settings.saw_facts("nowhere".into(), facts);
+        })
+    });
+    show_page_of(&shell, &a, cx);
+    let pane = cx.update(|_, cx| shell.read(cx).chat.clone());
+    let sent = Rc::new(Cell::new(false));
+    let into = sent.clone();
+    let _keep = cx.update(|_, cx| {
+        cx.subscribe(&pane, move |_, event: &ChatPaneEvent, _| {
+            if let ChatPaneEvent::StartFromPage(_) = event {
+                into.set(true);
+            }
+        })
+    });
+    cx.update(|window, cx| {
+        pane.update(cx, |pane, cx| {
+            pane.type_in_composer("/rev", window, cx);
+            pane.press_enter(window, cx);
+        })
+    });
+    assert!(!sent.get(), "the row was taken, nothing sent");
+    let text = cx.update(|_, cx| pane.read(cx).composer_text(cx));
+    assert!(text.starts_with("/review"), "{text:?}");
+    let _ = std::fs::remove_dir_all(dir);
+}
