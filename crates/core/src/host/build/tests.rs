@@ -634,6 +634,93 @@ fn cancel_stops_a_running_command() {
     assert!(matches!(lock(&top, "local"), Ok(Some(_))));
 }
 
+/// The run line as this machine's `sh` runs it in `top`, `hi` on its stdin
+/// and `path` its `PATH`: what it printed, its exit code, and the id it
+/// wrote for a stop.
+fn run_line(top: &Path, command: &str, path: &std::ffi::OsStr) -> (String, Option<i32>, String) {
+    use std::io::Write as _;
+    let head = git(top, &["rev-parse", "HEAD"]);
+    let line = shell::Shell::Posix
+        .run(
+            &top.display().to_string(),
+            &head,
+            Path::new(""),
+            command,
+            None,
+        )
+        .expect("a line");
+    // Named whole: `PATH` may hold none of it.
+    let mut sh = Command::new("/bin/sh")
+        .arg("-c")
+        .arg(line)
+        .env("PATH", path)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("sh runs");
+    sh.stdin
+        .take()
+        .expect("piped")
+        .write_all(b"hi\n")
+        .expect("fed");
+    let out = sh.wait_with_output().expect("ran");
+    let pid = std::fs::read_to_string(top.join(RUN_PID)).expect("an id written");
+    (
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        out.status.code(),
+        pid.trim().to_string(),
+    )
+}
+
+/// SIGINT and SIGQUIT are left as they are, not ignored as a job run in
+/// the background of a shell would have them.
+const READS_AND_CHECKS: &str = "read x; echo got=$x; grep SigIgn /proc/self/status; exit 3";
+
+fn interrupts_ignored(out: &str) -> bool {
+    let mask = out
+        .lines()
+        .find_map(|l| l.strip_prefix("SigIgn:"))
+        .expect("the mask");
+    u64::from_str_radix(mask.trim(), 16).expect("hex") & 0b110 != 0
+}
+
+#[test]
+fn the_command_runs_in_its_own_group_with_stdin_and_its_exit_code() {
+    let scratch = Scratch::new("work");
+    let top = repo(&scratch, "proj");
+    let (out, code, pid) = run_line(&top, READS_AND_CHECKS, &std::env::var_os("PATH").unwrap());
+    assert!(out.contains("got=hi"), "{out}");
+    assert_eq!(code, Some(3));
+    assert!(!interrupts_ignored(&out), "{out}");
+    // A group: stopped whole, with all the command started.
+    assert!(
+        pid.starts_with('-') && pid[1..].parse::<u32>().is_ok(),
+        "{pid}"
+    );
+}
+
+#[test]
+fn a_host_without_setsid_runs_the_command_as_before_and_writes_its_pid() {
+    let scratch = Scratch::new("work");
+    let top = repo(&scratch, "proj");
+    // Only what the line needs besides setsid.
+    let bin = scratch.0.join("bin");
+    std::fs::create_dir_all(&bin).expect("bin");
+    for tool in ["git", "rm", "touch", "grep", "cat"] {
+        let found = Command::new("sh")
+            .args(["-c", &format!("command -v {tool}")])
+            .output()
+            .expect("sh");
+        let found = String::from_utf8_lossy(&found.stdout).trim().to_string();
+        std::os::unix::fs::symlink(found, bin.join(tool)).expect("linked");
+    }
+    let (out, code, pid) = run_line(&top, READS_AND_CHECKS, bin.as_os_str());
+    assert!(out.contains("got=hi"), "{out}");
+    assert_eq!(code, Some(3));
+    assert!(!interrupts_ignored(&out), "{out}");
+    assert!(pid.parse::<u32>().is_ok(), "{pid}");
+}
+
 #[test]
 fn a_lock_that_cannot_be_made_is_an_error_not_a_build_running() {
     let scratch = Scratch::new("locks");
@@ -1275,11 +1362,11 @@ mod shells {
     }
 
     #[test]
-    fn a_stopped_run_is_ended_by_its_group_on_posix_only() {
+    fn a_stopped_run_is_ended_by_what_it_wrote_on_posix_only() {
         assert_eq!(
             Shell::Posix.stop(DIR).as_deref(),
             Some(
-                r#"cd '.onehand-build/lap/my_proj-abc' && p=$(cat .git/onehand-route-pid 2>/dev/null) && test -n "$p" && { kill -TERM -"$p" 2>/dev/null; i=0; while kill -0 -"$p" 2>/dev/null && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done; kill -KILL -"$p" 2>/dev/null; rm -f .git/onehand-route-pid; }; true"#
+                r#"cd '.onehand-build/lap/my_proj-abc' && p=$(cat .git/onehand-route-pid 2>/dev/null) && test -n "$p" && { kill -TERM "$p" 2>/dev/null; i=0; while kill -0 "$p" 2>/dev/null && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done; kill -KILL "$p" 2>/dev/null; rm -f .git/onehand-route-pid; }; true"#
             )
         );
         assert_eq!(Shell::Cmd.stop(DIR), None);
@@ -1298,7 +1385,7 @@ mod shells {
                 .run(DIR, SHA, Path::new("sub dir"), "it's", None)
                 .as_deref(),
             Ok(
-                r#"cd '.onehand-build/lap/my_proj-abc' && r=$PWD && rm -f .git/onehand-route-pid && git checkout -q -f --detach 2ab98d7259af09c62a806ff487818d931abf3b7e && cd 'sub dir' && echo __ONEHAND_BUILD__ && { setsid "${SHELL:-/bin/sh}" -lc 'it'\''s' 2>&1 & echo $! > "$r/.git/onehand-route-pid"; wait $!; }"#
+                r#"cd '.onehand-build/lap/my_proj-abc' && r=$PWD && rm -f .git/onehand-route-pid && git checkout -q -f --detach 2ab98d7259af09c62a806ff487818d931abf3b7e && cd 'sub dir' && echo __ONEHAND_BUILD__ && if command -v setsid >/dev/null 2>&1; then (exec setsid sh -c 'echo "-$$" > "$1"; exec "${SHELL:-/bin/sh}" -lc "$2"' onehand "$r/.git/onehand-route-pid" 'it'\''s') 2>&1; exit $?; else echo $$ > "$r/.git/onehand-route-pid"; exec "${SHELL:-/bin/sh}" -lc 'it'\''s' 2>&1; fi"#
             )
         );
         assert_eq!(

@@ -90,9 +90,16 @@ impl Shell {
     ///
     /// The command is the person's own line for that shell: run by the login
     /// shell on a POSIX host, so a toolchain a profile puts on `PATH` is
-    /// found, in a session of its own whose id is written to [`RUN_PID`], so
-    /// a stopped run can end it and all it started ([`Shell::stop`]), and by a `cmd.exe` of its own on Windows, so the whole line's
+    /// found, and by a `cmd.exe` of its own on Windows, so the whole line's
     /// stderr is folded in, not its last command's.
+    ///
+    /// On a POSIX host the command runs in a session of its own, in the
+    /// foreground so it keeps its stdin and its signals, and what a stop is
+    /// to end is written to [`RUN_PID`] ([`Shell::stop`]): the group, as
+    /// `-<id>`, or, on a host with no `setsid`, the command's own id. The
+    /// subshell around `setsid` makes sure it is no group's leader, which it
+    /// would fork away from, and the `exit` after it that no shell runs it
+    /// in its own process instead.
     ///
     /// **On Windows the line is read twice**, by the `cmd.exe` ssh starts and
     /// by the one that runs the command, and quotes there toggle rather than
@@ -121,12 +128,17 @@ impl Shell {
             false => format!("cd {} && ", self.word(&within.display().to_string())?),
         };
         Ok(match self {
-            Self::Posix => format!(
-                "cd {dir} && r=$PWD && rm -f {RUN_PID} && git checkout -q -f --detach {sha} && \
-                 {touch}{within}echo {MARK} && {{ setsid \"${{SHELL:-/bin/sh}}\" -lc {} 2>&1 & \
-                 echo $! > \"$r/{RUN_PID}\"; wait $!; }}",
-                self.word(command)?
-            ),
+            Self::Posix => {
+                let command = self.word(command)?;
+                let grouped =
+                    self.word(r#"echo "-$$" > "$1"; exec "${SHELL:-/bin/sh}" -lc "$2""#)?;
+                format!(
+                    "cd {dir} && r=$PWD && rm -f {RUN_PID} && git checkout -q -f --detach {sha} && \
+                     {touch}{within}echo {MARK} && if command -v setsid >/dev/null 2>&1; then \
+                     (exec setsid sh -c {grouped} onehand \"$r/{RUN_PID}\" {command}) 2>&1; exit $?; \
+                     else echo $$ > \"$r/{RUN_PID}\"; exec \"${{SHELL:-/bin/sh}}\" -lc {command} 2>&1; fi"
+                )
+            }
             Self::Cmd => format!(
                 "cd /d {dir} && git checkout -q -f --detach {sha} && {within}echo {MARK} && \
                  cmd /d /s /c ^\"{}^\" 2>&1",
@@ -183,16 +195,16 @@ impl Shell {
         }
     }
 
-    /// In `dir`, end the command a stopped [`Shell::run`] left running, and
-    /// all it started: the group whose id it wrote, sent TERM, given five
-    /// seconds, then KILL. `None` for `cmd.exe`, which has no such group.
+    /// In `dir`, end the command a stopped [`Shell::run`] left running: what
+    /// it wrote, its group or itself, sent TERM, given five seconds, then
+    /// KILL. `None` for `cmd.exe`, which writes nothing to end.
     pub(crate) fn stop(self, dir: &str) -> Option<String> {
         match self {
             Self::Posix => Some(format!(
                 "cd {} && p=$(cat {RUN_PID} 2>/dev/null) && test -n \"$p\" && {{ \
-                 kill -TERM -\"$p\" 2>/dev/null; i=0; \
-                 while kill -0 -\"$p\" 2>/dev/null && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done; \
-                 kill -KILL -\"$p\" 2>/dev/null; rm -f {RUN_PID}; }}; true",
+                 kill -TERM \"$p\" 2>/dev/null; i=0; \
+                 while kill -0 \"$p\" 2>/dev/null && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done; \
+                 kill -KILL \"$p\" 2>/dev/null; rm -f {RUN_PID}; }}; true",
                 self.word(dir).expect("any text")
             )),
             Self::Cmd => None,
