@@ -181,8 +181,8 @@ impl ChatPane {
 
 impl ChatPane {
     /// The level a session sent from `root`'s page answers its cards at: the
-    /// project's default, *Manual* on a host's page until its chip is the
-    /// host's own.
+    /// project's default; *Manual* on a host's page, whose host answers the
+    /// folder's cards itself (its chip is the host's switch).
     pub(super) fn page_cards(&self, root: &Path, cx: &App) -> onehand_core::chat::Cards {
         let here = self
             .empty
@@ -285,8 +285,8 @@ pub(super) fn host_cards(bypass: Option<bool>) -> Option<Cards> {
 /// What the host answering a folder's cards costs.
 pub(super) fn host_cost(host: &onehand_core::workspace::HostName) -> String {
     format!(
-        "The host answers every card while nobody watches: an agent can do anything the host's \
-         user can on {host}, git push and deleting files included"
+        "The host answers every card itself: an agent can do anything the host's user can on \
+         {host}, git push and deleting files included"
     )
 }
 

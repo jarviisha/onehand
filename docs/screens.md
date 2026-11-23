@@ -437,10 +437,10 @@ room and leaves the terminal as it is.
   trying again* while that is so), the failure's words under it in the muted ink, and *Try again*
   (secondary) beside them; with nothing kept for the folder the box says *No sessions kept on this
   machine for this folder*. Its composer's *Cards* chip, once the host has said it over a live
-  attach, is the host's switch for the folder: *Cards, this folder on <host>*, *Manual* (cards wait
-  for you) or *Bypass*, and while *Bypass* the strip's cost line reads *The host answers every card
-  while nobody watches: an agent can do anything the host's user can on <host>, git push and
-  deleting files included*. The rail marks it neither on nor off.
+  attach, is the host's switch for the folder: *Cards, this folder on <host>*, its two rows
+  *Manual* and *Bypass* each with its line as on this machine, and while *Bypass* the strip's cost
+  line reads *The host answers every card itself: an agent can do anything the host's user can on
+  <host>, git push and deleting files included*. The rail marks it neither on nor off.
 - An offloaded project shows a local project's head, its path this machine's, with *Refresh*
   in it; its composer's *Start in* offers its folder alone; under it *Sessions on <host>* as on a host project, for the sessions in
   its mirror; then *Past conversations*, those it had here before it went, which open readable;

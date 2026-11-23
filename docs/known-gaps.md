@@ -315,8 +315,8 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   read POSIX words (fish, tcsh): its check fails saying so.
 - **The laptop's copies are never pruned.** A copy of a session the host has long since dropped,
   or of a project removed here, stays under `hosts/` until a person deletes it.
-- **The permission bypass is changed only while the host is attached:** the page draws no switch
-  until the host has said where it stands. A permission card offering no grant waits for a person
+- **The permission bypass is changed only while the host is attached:** the page draws no *Cards*
+  chip until the host has said where it stands, and says nothing of why it is missing. A permission card offering no grant waits for a person
   even with the switch on.
 - **A host whose data directory was wiped can reuse a session id.** A session's copy is matched to
   the host's journal by length alone, so the new one's lines after the old copy's last seq would
