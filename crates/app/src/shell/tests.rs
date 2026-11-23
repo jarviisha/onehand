@@ -883,3 +883,49 @@ fn a_page_with_an_unreadable_file_does_not_send(cx: &mut gpui::TestAppContext) {
     assert_eq!(cx.update(|_, cx| pane.read(cx).composer_text(cx)), "go");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// `/` on a page offers the commands its agent last said.
+#[gpui::test]
+fn a_slash_on_the_page_offers_its_agents_commands(cx: &mut gpui::TestAppContext) {
+    let (shell, cx, dir, a, _) = two_pages(cx, "page-slash");
+    let facts = onehand_core::config::AgentFacts {
+        commands: vec![onehand_core::acp::SlashCommand {
+            name: "review".into(),
+            description: "Review the diff".into(),
+        }],
+        ..Default::default()
+    };
+    cx.update(|_, cx| {
+        gpui::BorrowAppContext::update_global::<crate::state::Shared, _>(cx, |shared, _| {
+            let _ = shared.settings.saw_facts("nowhere".into(), facts);
+        })
+    });
+    show_page_of(&shell, &a, cx);
+    let pane = cx.update(|_, cx| shell.read(cx).chat.clone());
+    cx.update(|window, cx| pane.update(cx, |pane, cx| pane.type_in_composer("/re", window, cx)));
+    cx.run_until_parked();
+    let offered = cx.update(|_, cx| pane.read(cx).page_matches(cx));
+    assert!(
+        offered.iter().any(|label| label.contains("review")),
+        "{offered:?}"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// `@` on a page offers its project's files, once they are read.
+#[gpui::test]
+fn an_at_on_the_page_offers_its_files(cx: &mut gpui::TestAppContext) {
+    let (shell, cx, dir, a, _) = two_pages(cx, "page-at");
+    std::fs::write(a.join("notes.md"), "n").unwrap();
+    show_page_of(&shell, &a, cx);
+    cx.run_until_parked();
+    let pane = cx.update(|_, cx| shell.read(cx).chat.clone());
+    cx.update(|window, cx| pane.update(cx, |pane, cx| pane.type_in_composer("@no", window, cx)));
+    cx.run_until_parked();
+    let offered = cx.update(|_, cx| pane.read(cx).page_matches(cx));
+    assert!(
+        offered.iter().any(|label| label.contains("notes.md")),
+        "{offered:?}"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

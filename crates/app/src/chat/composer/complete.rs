@@ -170,8 +170,8 @@ impl Lists {
 /// offered.
 #[derive(Clone, Debug, Default)]
 pub(in crate::chat) struct PageLists {
-    pub(in crate::chat) files: Vec<String>,
-    pub(in crate::chat) folders: Vec<(String, usize)>,
+    pub(in crate::chat) files: std::rc::Rc<Vec<String>>,
+    pub(in crate::chat) folders: std::rc::Rc<Vec<(String, usize)>>,
     pub(in crate::chat) scanned: bool,
     pub(in crate::chat) commands: Vec<onehand_core::acp::SlashCommand>,
 }
@@ -662,5 +662,29 @@ impl Composer {
         }
         self.selected = row;
         cx.notify();
+    }
+}
+
+#[cfg(test)]
+impl Composer {
+    /// Write `text` as typing it would, the caret at its end.
+    pub(in crate::chat) fn typed(
+        &mut self,
+        text: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let end = text.len();
+        self.state.update(cx, |state, cx| {
+            state.set_value(text.to_string(), window, cx);
+            state.set_selected_range(end..end, cx);
+        });
+        self.retrigger(text, end, cx);
+    }
+
+    /// The labels of what the open list offers.
+    pub(in crate::chat) fn match_labels(&self, lists: &Lists, cx: &App) -> Vec<String> {
+        let rows = self.matches(lists, cx).0;
+        rows.into_iter().map(|row| row.label.to_string()).collect()
     }
 }

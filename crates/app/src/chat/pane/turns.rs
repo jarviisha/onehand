@@ -11,6 +11,15 @@ impl ChatPane {
     /// What Enter does, which depends on whether the popup is open.
     pub(super) fn enter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(session) = self.session() else {
+            // A highlighted row of the page's list is taken before it sends.
+            if let Some(lists) = self.page_lists_on_screen(cx) {
+                let accepted = self
+                    .composer
+                    .update(cx, |composer, cx| composer.commit(&lists, window, cx));
+                if accepted {
+                    return;
+                }
+            }
             self.submit_page(cx);
             return;
         };

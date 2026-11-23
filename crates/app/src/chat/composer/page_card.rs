@@ -25,8 +25,10 @@ impl Composer {
         agent: AnyElement,
         refuses: Option<SharedString>,
         locked: bool,
+        lists: super::Lists,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
+        let (step_down, step_up, take_row) = (lists.clone(), lists.clone(), lists);
         let send = crate::controls::action("page-send")
             .primary()
             .short_icon()
@@ -91,6 +93,29 @@ impl Composer {
                             .state
                             .update(cx, |state, cx| state.focus(window, cx));
                     }))
+                    // The `@` and `/` lists take the arrows and Tab while one
+                    // is open, as on a session's card.
+                    .when(self.overlay_open(), |field| {
+                        field.key_context("ChatComposer")
+                    })
+                    .on_action(cx.listener(
+                        move |composer: &mut Self, _: &crate::shell::CompletionNext, _, cx| {
+                            composer.step(1, &step_down, cx);
+                        },
+                    ))
+                    .on_action(cx.listener(
+                        move |composer: &mut Self, _: &crate::shell::CompletionPrev, _, cx| {
+                            composer.step(-1, &step_up, cx);
+                        },
+                    ))
+                    .on_action(cx.listener(
+                        move |composer: &mut Self,
+                              _: &crate::shell::CompletionAccept,
+                              window,
+                              cx| {
+                            composer.commit(&take_row, window, cx);
+                        },
+                    ))
                     .child(
                         text_area(&self.state, cx)
                             .bg(cx.theme().transparent)

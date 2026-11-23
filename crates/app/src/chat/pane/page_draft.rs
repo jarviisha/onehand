@@ -7,12 +7,24 @@ use super::{ChatPane, ChatPaneEvent, StartIn};
 use crate::chat::composer::Draft;
 use crate::controls::text_input;
 use gpui::Focusable as _;
+use gpui::InteractiveElement as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, Context, IntoElement, ParentElement, SharedString, Styled, Window, div,
 };
 use gpui_component::{ActiveTheme, StyledExt};
 use std::path::{Path, PathBuf};
+
+/// A page's project files and folders for `@`, scanned off the UI loop.
+#[derive(Clone, Default)]
+pub(super) struct PageFiles {
+    files: std::rc::Rc<Vec<String>>,
+    folders: std::rc::Rc<Vec<(String, usize)>>,
+    scanned: bool,
+}
+
+/// How many files a page offers `@`, as a session does.
+const PAGE_MENTION_FILES: usize = 5000;
 
 /// A project page's draft, kept while the person is elsewhere.
 #[derive(Default)]
@@ -48,11 +60,77 @@ impl ChatPane {
         kept.branch = branch;
     }
 
+    /// Scan `root`'s files for the page's `@` each time its page shows, off
+    /// the UI loop, what was read before offered meanwhile; a folder on a
+    /// host offers none, as a host session does not.
+    fn scan_page_files(&mut self, root: &Path, cx: &mut Context<Self>) {
+        let here = self
+            .empty
+            .as_ref()
+            .is_some_and(|project| project.host.is_none());
+        if !here {
+            let none = PageFiles {
+                scanned: true,
+                ..PageFiles::default()
+            };
+            self.page_files.insert(root.to_path_buf(), none);
+            return;
+        }
+        self.page_files.entry(root.to_path_buf()).or_default();
+        let at = root.to_path_buf();
+        cx.spawn(async move |pane, cx| {
+            let scan_root = at.clone();
+            let files = cx
+                .background_executor()
+                .spawn(async move {
+                    onehand_core::completion::scan_files(&scan_root, PAGE_MENTION_FILES)
+                })
+                .await;
+            let _ = pane.update(cx, |pane: &mut Self, cx| {
+                let folders = onehand_core::completion::folders(&files);
+                pane.page_files.insert(
+                    at,
+                    PageFiles {
+                        files: std::rc::Rc::new(files),
+                        folders: std::rc::Rc::new(folders),
+                        scanned: true,
+                    },
+                );
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// What `root`'s page completes against for `agent`.
+    fn page_lists(&self, root: &Path, agent: &str, cx: &App) -> crate::chat::composer::Lists {
+        let files = self.page_files.get(root).cloned().unwrap_or_default();
+        let commands = crate::state::Shared::global(cx)
+            .settings
+            .facts_of(agent)
+            .map(|facts| facts.commands.clone())
+            .unwrap_or_default();
+        crate::chat::composer::Lists::Page(std::rc::Rc::new(crate::chat::composer::PageLists {
+            files: files.files,
+            folders: files.folders,
+            scanned: files.scanned,
+            commands,
+        }))
+    }
+
+    /// What the page on screen completes against, if a page is on screen.
+    pub(super) fn page_lists_on_screen(&self, cx: &App) -> Option<crate::chat::composer::Lists> {
+        let root = self.page_root()?;
+        let agent = self.page_agent(&root, cx).unwrap_or_default();
+        Some(self.page_lists(&root, &agent, cx))
+    }
+
     /// Give the page now on screen what it had written.
     pub(super) fn restore_page_draft(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(root) = self.page_root() else {
             return;
         };
+        self.scan_page_files(&root, cx);
         let (text, branch) = match self.page_drafts.get_mut(&root) {
             Some(kept) => (std::mem::take(&mut kept.text), kept.branch.clone()),
             None => (Draft::default(), String::new()),
@@ -236,9 +314,31 @@ impl ChatPane {
             .child(self.agent_chip(root, cx))
             .children(self.page_options(root, &name, cx))
             .into_any_element();
-        let card = self.composer.update(cx, |composer, cx| {
-            composer.page_card(agent, refuses, locked, cx)
+        let lists = self.page_lists(root, &name, cx);
+        // The `@` and `/` list opens over the card, as over a session's; the
+        // page's room is its pane's, so it stands at the list's own cap.
+        let rem = gpui::px(16.) * self.zoom.factor();
+        let room = crate::chat::composer::popup_room(gpui::px(f32::MAX / 4.), gpui::px(0.), rem);
+        let popup = self.composer.update(cx, |composer, cx| {
+            composer.detached_popup(&lists, room, rem, cx)
         });
+        let card = self.composer.update(cx, |composer, cx| {
+            composer.page_card(agent, refuses, locked, lists, cx)
+        });
+        let card = div()
+            .relative()
+            .w_full()
+            .child(card)
+            .children(popup.map(|popup| {
+                div()
+                    .absolute()
+                    .bottom(gpui::relative(1.))
+                    .left_0()
+                    .right_0()
+                    .pb_1()
+                    .occlude()
+                    .child(popup)
+            }));
         let kept = self.page_drafts.get(root);
         let start = kept.map(|kept| kept.start.clone()).unwrap_or_default();
         let busy = kept.and_then(|kept| kept.busy.clone());
@@ -414,10 +514,8 @@ impl ChatPane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let state = self.composer.read(cx).state.clone();
-        state.update(cx, |state, cx| {
-            state.set_value(text.to_string(), window, cx)
-        });
+        self.composer
+            .update(cx, |composer, cx| composer.typed(text, window, cx));
     }
 
     /// What the composer holds.
@@ -468,5 +566,16 @@ impl ChatPane {
     pub(crate) fn stage_on_page(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         self.composer
             .update(cx, |composer, cx| composer.stage_picked(path, cx));
+    }
+}
+
+#[cfg(test)]
+impl ChatPane {
+    /// The labels the page's open list offers.
+    pub(crate) fn page_matches(&self, cx: &App) -> Vec<String> {
+        let Some(lists) = self.page_lists_on_screen(cx) else {
+            return Vec::new();
+        };
+        self.composer.read(cx).match_labels(&lists, cx)
     }
 }

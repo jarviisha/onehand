@@ -366,7 +366,11 @@ room and leaves the terminal as it is.
   on a repository whose sessions run here, *New worktree…*; picked, a *Branch name* field stands
   beside the chip and takes the caret, its rule's refusal said under it in the danger ink as it
   is typed. A file dropped on the card or pasted into it is staged, as the picker stages one, in
-  the session's tray over the card, and goes with the first prompt; a cut tray counts what it left
+  the session's tray over the card, and goes with the first prompt; `@` lists the project's files
+  and folders (read again each time the page shows; none on a host) and `/` the commands its
+  agent last offered, in the session's own list over the card, walked and taken with the same
+  keys, Enter taking a highlighted row before it sends; the session's own rows of `/` (its mode,
+  its options) are not offered on the page; a cut tray counts what it left
   out (*N more not shown*) where a session's opens *Show all*, and while the page is locked its
   plates cannot be removed. A first prompt the agent could not take, or held for an agent that
   never came up, comes back with its files into that session's composer. What is written, staged and
