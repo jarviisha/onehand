@@ -40,6 +40,7 @@ pub(super) fn project_menu(
         asks: _,
         offload,
         renames,
+        settings,
     }: ProjectFacts,
     asks: bool,
     shell: WeakEntity<Shell>,
@@ -48,6 +49,7 @@ pub(super) fn project_menu(
         let danger = crate::theme::status_ink(cx).danger;
         let away = shell.clone();
         let rename = shell.clone();
+        let open_settings = shell.clone();
         let (pin, start, split, terminal, copy, refresh, remove) = (
             shell.clone(),
             shell.clone(),
@@ -124,6 +126,17 @@ pub(super) fn project_menu(
                 .ok();
             },
         ))
+        .when(settings, |menu| {
+            menu.item(crate::controls::menu_item("Project settings…").on_click(
+                move |_, window, cx: &mut App| {
+                    open_settings
+                        .update(cx, |shell: &mut Shell, cx| {
+                            shell.project_settings_of(root_idx, window, cx);
+                        })
+                        .ok();
+                },
+            ))
+        })
         // A host's status is read over its attach, as the sweep does.
         .item(crate::controls::menu_item("Refresh Git status").on_click(
             move |_, _, cx: &mut App| {

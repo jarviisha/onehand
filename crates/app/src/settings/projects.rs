@@ -44,7 +44,7 @@ pub(crate) fn shown(picked: Option<&Path>, offered: &[(PathBuf, String)]) -> Opt
 
 /// What a build host's row says under its name: the paths a build brings
 /// back, and the folder they land under when it names one.
-pub(crate) fn build_host_line(entry: &BuildHost) -> String {
+pub(super) fn build_host_line(entry: &BuildHost) -> String {
     if entry.artifacts.is_empty() {
         return "Brings nothing back".into();
     }

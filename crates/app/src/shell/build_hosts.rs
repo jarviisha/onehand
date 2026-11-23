@@ -27,20 +27,6 @@ impl Shell {
         self.build_host_draft.as_ref()
     }
 
-    /// The project on screen, when its folder is on this machine.
-    pub(super) fn build_root(&self) -> Option<PathBuf> {
-        self.local_root(self.window.workspace.active_root)
-            .map(Path::to_path_buf)
-    }
-
-    /// Hand the project page the build hosts of `root`: none for a project
-    /// that is not on this machine, which has none.
-    pub(super) fn show_build_hosts(&mut self, root: Option<&Path>, cx: &mut Context<Self>) {
-        let builds = root.map(|root| self.builds_of(root)).unwrap_or_default();
-        self.chat
-            .update(cx, |pane, cx| pane.set_build_hosts(builds, cx));
-    }
-
     /// `root` when it is one of the window's projects on this machine.
     fn named_build_root(&self, root: PathBuf) -> Option<PathBuf> {
         self.local_root(self.root_index(&root)?)

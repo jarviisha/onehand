@@ -335,3 +335,24 @@ fn the_shown_project_falls_back_when_it_leaves() {
     assert_eq!(shown(None), Some(PathBuf::from("/a")));
     assert_eq!(super::projects::shown(None, &[]), None);
 }
+
+#[test]
+fn a_build_host_row_says_what_comes_back_and_where_it_lands() {
+    use onehand_core::workspace::{BuildHost, HostName};
+    let entry = |artifacts: &[&str], into: Option<&str>| BuildHost {
+        host: HostName("build01".into()),
+        artifacts: artifacts.iter().map(Into::into).collect(),
+        into: into.map(Into::into),
+    };
+    let line = super::projects::build_host_line;
+    assert_eq!(
+        line(&entry(&["target/release/onehand", "dist"], None)),
+        "target/release/onehand, dist"
+    );
+    assert_eq!(
+        line(&entry(&["bin/Release"], Some("out/windows"))),
+        "bin/Release, into out/windows"
+    );
+    assert_eq!(line(&entry(&[], None)), "Brings nothing back");
+    assert_eq!(line(&entry(&[], Some("out"))), "Brings nothing back");
+}

@@ -217,11 +217,6 @@ pub(super) fn worktrees_box(
             .into_any_element()
         })
         .collect();
-    let parent = match &project.worktree_parent {
-        Some(parent) => super::host::place(None, parent, std::env::home_dir().as_deref()),
-        None => "Beside the repository".to_string(),
-    };
-    let set = project.worktree_parent.is_some();
     let recorded = project.worktrees.len();
     page_card("Worktrees", Some(recorded), None, cx)
         .children(note.map(said))
@@ -244,32 +239,6 @@ pub(super) fn worktrees_box(
                     })),
             ),
         )
-        .child(onehand_ui::field(
-            "Worktree folder",
-            Some("Where new worktrees of this project go".into_any_element()),
-            div()
-                .h_flex()
-                .items_center()
-                .gap_2()
-                .child(div().min_w_0().truncate().child(parent))
-                .child(
-                    crate::controls::action("worktree-folder")
-                        .short()
-                        .secondary()
-                        .label("Change…")
-                        .on_click(cx.listener(emit(WorktreeAct::PickFolder))),
-                )
-                .when(set, |row| {
-                    row.child(
-                        crate::controls::action("worktree-folder-beside")
-                            .short()
-                            .secondary()
-                            .label("Beside the repository")
-                            .on_click(cx.listener(emit(WorktreeAct::ClearFolder))),
-                    )
-                }),
-            cx,
-        ))
 }
 
 impl ChatPane {

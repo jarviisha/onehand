@@ -380,7 +380,7 @@ another thing, under *Builds on a host*. Every attach opens by exchanging servic
   folder; `crates/app/src/chat/pane/project_page/host.rs`), newest first, capped at 50
   (`HOST_SESSIONS_CAP`), read each time the page shows and on its *Refresh*. A press attaches the
   session in the chat pane, or shows the session already watching it. The page's head names the
-  folder `<host>:<path>`, and it has no *Settings* box of this machine's (its check command and build hosts); what the page draws is in [screens.md](screens.md#pages-without-a-session). A host
+  folder `<host>:<path>`, and Settings' *Projects* does not list it (no check command or build hosts); what the page draws is in [screens.md](screens.md#pages-without-a-session). A host
   that cannot be attached shows the list kept from the last read instead (*The laptop's copy*),
   said as not connected, with the why and *Try again*.
 - **Shown in the chat pane through the same code as a local session**
@@ -580,8 +580,8 @@ and a watch need only fetch what the copy lacks (`crates/core/src/host/copy.rs`)
 Refused or left out, each in one place:
 
 - **Markdown, Neovim, Issues and Plugins** are not offered in the Workbench on a host project.
-- **Worktrees and the check command** are not offered: *New worktree…*, *Run check* and the
-  *Check command* field are absent.
+- **Worktrees and the check command** are not offered: *New worktree…* and *Run check* are
+  absent, and Settings' *Projects* does not list the project.
 - **The Tasks, Issues, Workflows and Schedules pages** leave it out, and starting a workflow on it
   is a warning toast, *<project> runs its sessions on a host; workflows do not run there yet*. The workspace
   overview keeps it: its tile reads *On <host>*, then its git status when it has one, counts its

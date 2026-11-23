@@ -258,7 +258,6 @@ impl Shell {
             // for the project being arrived at, so anything pushed into the old
             // one is thrown away with it.
             self.sync_project_facts(cx);
-            self.show_check_input(local.as_deref(), window, cx);
             // The page now on screen, whether or not sessions run beside it, is
             // a list of past conversations over a *New session* button, so the
             // next thing asked of it is very likely a session. Start the

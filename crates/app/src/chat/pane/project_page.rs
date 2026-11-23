@@ -1,7 +1,6 @@
 use super::header::Archives;
 use super::{ChatPane, ChatPaneEvent, ProjectFacts, rel_time};
 use crate::controls::Short as _;
-use crate::controls::text_input;
 use crate::page_parts::{count_of, page_card, page_head, ruled};
 use crate::tokens::PAGE_PROSE;
 use gpui::{
@@ -12,11 +11,9 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::chat::ConvMeta;
-use onehand_ui::Tall as _;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-mod build_hosts;
 mod host;
 mod offload_box;
 mod start;
@@ -68,12 +65,6 @@ pub(super) struct EmptyProject {
     /// changes — a menu still offering *Pin to top* on a project pinned a
     /// second ago is worse than one that does not offer it at all.
     pub(super) facts: ProjectFacts,
-    /// Its check command field, the shell's: `None` for a run's own
-    /// worktree, which keeps none.
-    pub(super) check_input: Option<gpui::Entity<gpui_component::input::InputState>>,
-    /// The hosts it builds on, the workspace's: pushed by the shell with the
-    /// field above, and again whenever they change.
-    pub(super) builds: Vec<onehand_core::workspace::BuildHost>,
     /// git's list of the project's worktrees, as its rows; `None` while it is
     /// read.
     pub(super) worktrees: Option<worktrees_box::Read>,
@@ -560,21 +551,6 @@ impl ChatPane {
         ))
         .children((hidden > 0).then(|| muted_line(format!("{hidden} more"))));
 
-        // What the project is set to: its check command, the shell's field.
-        let settings = project.check_input.clone().map(|input| {
-            let builds = build_hosts::build_hosts_group(&project.builds, cx);
-            page_card("Settings", None, None, cx)
-                .child(onehand_ui::field(
-                    "Check command",
-                    Some(
-                        "What Run check and a command step naming none run here".into_any_element(),
-                    ),
-                    text_input(&input, cx).tall(),
-                    cx,
-                ))
-                .child(builds)
-        });
-
         // One column at every width: the history leads, and what the project
         // needs and is set to follows under it, so the page reads top to
         // bottom however wide the pane is.
@@ -600,7 +576,6 @@ impl ChatPane {
                     .then(|| offload_box::offload_box(&project.path, cx))
                     .flatten(),
             )
-            .children(settings)
             .children(
                 project
                     .host

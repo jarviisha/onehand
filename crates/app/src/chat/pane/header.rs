@@ -554,6 +554,7 @@ fn project_menu(
         asks,
         offload,
         renames,
+        settings,
     }: ProjectFacts,
     pane: Entity<ChatPane>,
 ) -> impl Fn(
@@ -597,6 +598,12 @@ fn project_menu(
             crate::controls::menu_item("Copy project path")
                 .on_click(act(ProjectAction::CopyPath, pane.clone())),
         )
+        .when(settings, |menu| {
+            menu.item(
+                crate::controls::menu_item("Project settings…")
+                    .on_click(act(ProjectAction::Settings, pane.clone())),
+            )
+        })
         // A host's status is read over its attach, as the sweep does.
         .item(
             crate::controls::menu_item("Refresh Git status")

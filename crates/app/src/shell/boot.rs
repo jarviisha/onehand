@@ -164,6 +164,7 @@ impl Shell {
                             P::Worktree => shell.begin_worktree(root_idx, window, cx),
                             P::RenameBranch => shell.begin_branch_rename(window, cx),
                             P::CopyPath => shell.copy_root_path(root_idx, window, cx),
+                            P::Settings => shell.project_settings_of(root_idx, window, cx),
                             P::RefreshGit => shell.refresh_git(cx),
                             P::Offload => shell.begin_offload(root_idx, window, cx),
                             P::RunHere => shell.run_here_again(root_idx, window, cx),
@@ -261,21 +262,6 @@ impl Shell {
                     E::TakeHostCode(path) => shell.ask_take_host_code(path.clone(), window, cx),
                     E::UpdateHost(path) => shell.update_host_from_laptop(path.clone(), cx),
                     E::RunCheck => shell.run_check(window, cx),
-                    E::AddBuildHost => {
-                        if let Some(root) = shell.build_root() {
-                            shell.open_build_host_form(root, None, window, cx);
-                        }
-                    }
-                    E::EditBuildHost(at) => {
-                        if let Some(root) = shell.build_root() {
-                            shell.open_build_host_form(root, Some(*at), window, cx);
-                        }
-                    }
-                    E::RemoveBuildHost(at) => {
-                        if let Some(root) = shell.build_root() {
-                            shell.confirm_remove_build_host(root, *at, window, cx);
-                        }
-                    }
                 }
                 // A finished turn also changes what the rail's session dots
                 // say, and the rail is drawn from a query rather than from

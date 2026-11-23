@@ -99,6 +99,30 @@ impl Shell {
         cx.notify();
     }
 
+    /// Open Settings on its Projects page, showing the project at `root`.
+    pub(crate) fn show_project_settings(
+        &mut self,
+        root: std::path::PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.pick_settings_project(root, window, cx);
+        self.settings_page = SettingsPage::Projects;
+        self.open_settings(window, cx);
+    }
+
+    /// [`Self::show_project_settings`] for the project at row `root_idx`.
+    pub(crate) fn project_settings_of(
+        &mut self,
+        root_idx: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(root) = self.local_root(root_idx).map(std::path::Path::to_path_buf) {
+            self.show_project_settings(root, window, cx);
+        }
+    }
+
     pub fn show_settings_page(&mut self, page: SettingsPage, cx: &mut Context<Self>) {
         self.settings_page = page;
         cx.notify();

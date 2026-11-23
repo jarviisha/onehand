@@ -1,6 +1,6 @@
 //! Each project's check command field, as the shell keeps it: made for every
 //! project that has none yet, written to its project and saved as it is
-//! typed, and drawn on the project's page beside *Run check*.
+//! typed, and drawn on Settings' Projects page.
 
 use super::Shell;
 use gpui::{AppContext as _, BorrowAppContext as _, Context, Window};
@@ -13,22 +13,6 @@ impl Shell {
         root: &std::path::Path,
     ) -> Option<gpui::Entity<gpui_component::input::InputState>> {
         self.check_inputs.get(root).cloned()
-    }
-
-    /// Hand the project page the check command field of `root`, made first
-    /// if it is not yet; none for a project on a host (`None`), where no
-    /// check can run.
-    pub(super) fn show_check_input(
-        &mut self,
-        root: Option<&std::path::Path>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.make_check_inputs(window, cx);
-        let input = root.and_then(|root| self.check_inputs.get(root).cloned());
-        self.chat
-            .update(cx, |pane, cx| pane.set_check_input(input, cx));
-        self.show_build_hosts(root, cx);
     }
 
     /// A check command field for every project that has none yet. Each edit

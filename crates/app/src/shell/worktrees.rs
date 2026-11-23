@@ -47,16 +47,6 @@ impl Shell {
                     crate::projects::forget_worktree(&root, &folder, cx);
                 }
             }
-            WorktreeAct::PickFolder => {
-                if let Some(root) = self.project_here() {
-                    self.pick_worktree_folder(root, cx);
-                }
-            }
-            WorktreeAct::ClearFolder => {
-                if let Some(root) = self.project_here() {
-                    self.clear_worktree_folder(root, cx);
-                }
-            }
         }
     }
 

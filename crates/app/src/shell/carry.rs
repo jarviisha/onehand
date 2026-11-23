@@ -177,9 +177,6 @@ impl Shell {
                 input.update(cx, |input, cx| input.set_value(check, window, cx));
             }
         }
-        if let Some(on_screen) = self.build_root().filter(|root| folders.contains(root)) {
-            self.show_build_hosts(Some(&on_screen), cx);
-        }
         // The pages naming projects (its own, the workspace's, Tasks,
         // Schedules) take its name as they take a branch read anew.
         self.git_read(cx);

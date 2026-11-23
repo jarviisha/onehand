@@ -35,6 +35,8 @@ pub enum ProjectAction {
     RenameBranch,
     CopyPath,
     RefreshGit,
+    /// Open Settings on its Projects page, on this project.
+    Settings,
     /// Run its new sessions on a host, on a copy of its folder there.
     Offload,
     /// Run an offloaded project's new sessions here again.
@@ -56,10 +58,6 @@ pub enum WorktreeAct {
     Add(onehand_core::worktree::Listed),
     /// Forget this missing worktree.
     Forget(PathBuf),
-    /// Choose the folder new worktrees go in.
-    PickFolder,
-    /// Put new worktrees beside the repository again.
-    ClearFolder,
 }
 
 /// What the pane asks the shell for. Kept tiny on purpose: the chat's job is
@@ -211,12 +209,6 @@ pub enum ChatPaneEvent {
     StopWorkflow(u64),
     /// Run the check command of the project on screen, as a task.
     RunCheck,
-    /// Open the form that adds a build host to the project on screen.
-    AddBuildHost,
-    /// Open the form on the project's build host at this place.
-    EditBuildHost(usize),
-    /// Ask before the project's build host at this place is removed.
-    RemoveBuildHost(usize),
     /// What the project page's *Worktrees* asks.
     Worktree(WorktreeAct),
     /// `host` runs another build of the host service, with sessions

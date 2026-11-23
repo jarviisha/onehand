@@ -436,3 +436,40 @@ fn the_build_host_form_is_for_the_project_it_was_opened_on(cx: &mut gpui::TestAp
     assert_eq!(root, Some(first));
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// *Project settings…* opens Settings on its Projects page, on the project it
+/// was asked from, whichever is on screen.
+#[gpui::test]
+fn project_settings_opens_settings_on_that_project(cx: &mut gpui::TestAppContext) {
+    let dir = crate::shell::rig::folder("project-settings");
+    let (_, shell, cx) = crate::shell::rig::shell(cx, dir.join("tasks"), Vec::new());
+    let (first, second) = (dir.join("first"), dir.join("second"));
+    for folder in [&first, &second] {
+        std::fs::create_dir_all(folder).unwrap();
+    }
+    let (first, second) = (
+        std::fs::canonicalize(first).unwrap(),
+        std::fs::canonicalize(second).unwrap(),
+    );
+    for at in [second.clone(), first.clone()] {
+        cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
+    }
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| {
+            shell.show_project_settings(second.clone(), window, cx)
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let shell = shell.read(cx);
+        assert!(shell.settings_shown(cx));
+        assert_eq!(
+            shell.settings_page(),
+            crate::settings::SettingsPage::Projects
+        );
+        assert_eq!(shell.settings_project(cx), Some(second.clone()));
+        assert!(shell.check_input(&second).is_some(), "its field is made");
+    });
+    let _ = std::fs::remove_dir_all(dir);
+}

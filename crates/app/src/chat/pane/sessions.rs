@@ -599,8 +599,6 @@ impl ChatPane {
                 // repository, no switch offered" is what a menu drawn in that
                 // moment can honestly say.
                 facts: ProjectFacts::default(),
-                check_input: None,
-                builds: Vec::new(),
                 worktrees: None,
                 worktree_sessions: Default::default(),
                 recorded: None,
