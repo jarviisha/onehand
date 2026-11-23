@@ -89,12 +89,15 @@ fn build(
         entry: host,
         os: crate::config::HostOs::Linux,
         command,
+        fresh_only: false,
+        wait: false,
     };
     let built = build_in(
         &job,
         &home.0,
         "laptop",
         &mut |line| lines.push(line.to_string()),
+        &mut |_| {},
         &AtomicBool::new(false),
     );
     (built, lines)
@@ -444,8 +447,10 @@ fn a_stopped_build_ends_and_says_no_exit() {
             entry: &host,
             os: crate::config::HostOs::Linux,
             command: "sleep 30",
+            fresh_only: false,
+            wait: false,
         };
-        build_in(&job, &home.0, "laptop", &mut |_| {}, &cancel)
+        build_in(&job, &home.0, "laptop", &mut |_| {}, &mut |_| {}, &cancel)
     });
     assert!(started.elapsed() < std::time::Duration::from_secs(10));
     assert_eq!(
@@ -456,6 +461,173 @@ fn a_stopped_build_ends_and_says_no_exit() {
             hint: None
         })
     );
+}
+
+/// A routed build of `top` on the host `local`: the outcome and what onehand
+/// said of its own.
+fn routed(
+    home: &Scratch,
+    top: &Path,
+    host: &BuildHost,
+    command: &str,
+    wait: bool,
+    cancel: &AtomicBool,
+) -> (Result<Built, String>, Vec<String>) {
+    let mut notes = Vec::new();
+    let job = Job {
+        top,
+        within: Path::new(""),
+        entry: host,
+        os: crate::config::HostOs::Linux,
+        command,
+        fresh_only: true,
+        wait,
+    };
+    let built = build_in(
+        &job,
+        &home.0,
+        "laptop",
+        &mut |_| {},
+        &mut |note| notes.push(note.to_string()),
+        cancel,
+    );
+    (built, notes)
+}
+
+#[test]
+fn fresh_only_brings_back_what_the_run_wrote() {
+    let (home, scratch) = (Scratch::new("home"), Scratch::new("work"));
+    let top = repo(&scratch, "proj");
+    let host = on_local(&["target/a", "target/b"], None);
+    let never = AtomicBool::new(false);
+    // `b` is on the host from before, and here as it was.
+    let (built, _) = build(
+        &home,
+        &top,
+        "",
+        &on_local(&[], None),
+        "mkdir -p target && echo old > target/b",
+    );
+    assert_eq!(built.map(|b| b.exit), Ok(Some(0)));
+    write(&top, "target/b", "here\n");
+    let (built, _) = routed(&home, &top, &host, "echo a > target/a", false, &never);
+    assert_eq!(
+        built,
+        Ok(Built {
+            exit: Some(0),
+            brought: vec![PathBuf::from("target/a")],
+            hint: None
+        })
+    );
+    assert_eq!(
+        std::fs::read_to_string(top.join("target/a")).unwrap(),
+        "a\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(top.join("target/b")).unwrap(),
+        "here\n"
+    );
+}
+
+#[test]
+fn fresh_only_with_nothing_written_is_not_a_failure() {
+    let (home, scratch) = (Scratch::new("home"), Scratch::new("work"));
+    let top = repo(&scratch, "proj");
+    let host = on_local(&["target/a"], None);
+    let (built, _) = routed(&home, &top, &host, "true", false, &AtomicBool::new(false));
+    assert_eq!(
+        built,
+        Ok(Built {
+            exit: Some(0),
+            brought: Vec::new(),
+            hint: None
+        })
+    );
+}
+
+#[test]
+fn fresh_only_ignores_an_artifact_left_from_an_earlier_run() {
+    let (home, scratch) = (Scratch::new("home"), Scratch::new("work"));
+    let top = repo(&scratch, "proj");
+    let host = on_local(&["target/a"], None);
+    let never = AtomicBool::new(false);
+    let (built, _) = routed(
+        &home,
+        &top,
+        &host,
+        "mkdir -p target && echo a > target/a",
+        false,
+        &never,
+    );
+    assert_eq!(
+        built.map(|b| b.brought),
+        Ok(vec![PathBuf::from("target/a")])
+    );
+    let (built, _) = routed(&home, &top, &host, "true", false, &never);
+    assert_eq!(built.map(|b| b.brought), Ok(Vec::new()));
+}
+
+#[test]
+fn waiting_job_waits_for_the_lock() {
+    let (home, scratch) = (Scratch::new("home"), Scratch::new("work"));
+    let top = repo(&scratch, "proj");
+    let host = on_local(&[], None);
+    let never = AtomicBool::new(false);
+    let held = lock(&top, "local").expect("the lock");
+    let (refused, _) = routed(&home, &top, &host, "true", false, &never);
+    assert_eq!(
+        refused,
+        Err("A build of proj is already running on local".to_string())
+    );
+    std::thread::scope(|scope| {
+        scope.spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            drop(held);
+        });
+        let (built, notes) = routed(&home, &top, &host, "true", true, &never);
+        assert_eq!(built.map(|b| b.exit), Ok(Some(0)));
+        assert_eq!(notes, ["waiting for the build already running on local"]);
+    });
+}
+
+#[test]
+fn cancel_stops_a_running_command() {
+    let (home, scratch) = (Scratch::new("home"), Scratch::new("work"));
+    let top = repo(&scratch, "proj");
+    let host = on_local(&["target/a"], None);
+    let cancel = AtomicBool::new(false);
+    let started = std::time::Instant::now();
+    let built = std::thread::scope(|scope| {
+        scope.spawn(|| {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            cancel.store(true, Ordering::Relaxed);
+        });
+        routed(&home, &top, &host, "sleep 30", false, &cancel).0
+    });
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    assert_eq!(built.map(|b| b.exit), Ok(None));
+    // The folder's lock went with it.
+    assert!(lock(&top, "local").is_some());
+}
+
+#[test]
+fn a_windows_host_cannot_bring_back_only_what_a_run_wrote() {
+    assert_eq!(
+        shell::Shell::Cmd.send_fresh("d", &[PathBuf::from("a")], ROUTE_MARK),
+        Err("routed commands build on Linux hosts only".to_string())
+    );
+}
+
+#[test]
+fn this_machine_answers_and_a_dead_host_does_not() {
+    assert!(reachable_blocking(
+        &HostName("local".into()),
+        &crate::config::HostOs::Linux
+    ));
+    assert!(!reachable_blocking(
+        &HostName("nobody@127.0.0.1 -p 1".into()),
+        &crate::config::HostOs::Linux
+    ));
 }
 
 mod cli {
@@ -613,7 +785,16 @@ mod cli {
                 &[command.to_string()],
                 &mut out,
                 &mut err,
-                |job, line| build_in(job, &home.0, "laptop", line, &AtomicBool::new(false)),
+                |job, line| {
+                    build_in(
+                        job,
+                        &home.0,
+                        "laptop",
+                        line,
+                        &mut |_| {},
+                        &AtomicBool::new(false),
+                    )
+                },
             );
             (
                 code,
@@ -877,7 +1058,9 @@ mod shells {
             );
         }
         // And so does every line built from such a word.
-        assert!(Shell::Cmd.run(DIR, SHA, Path::new("50%"), "dir").is_err());
+        assert!(Shell::Cmd
+            .run(DIR, SHA, Path::new("50%"), "dir", None)
+            .is_err());
         assert!(Shell::Cmd.send(DIR, &[PathBuf::from("a\"b")]).is_err());
         assert_eq!(Shell::Posix.word("100%").as_deref(), Ok("'100%'"));
     }
@@ -893,11 +1076,11 @@ mod shells {
     #[test]
     fn cmd_run_is_the_line_checked_by_hand() {
         assert_eq!(
-            Shell::Cmd.run(DIR, SHA, Path::new("sub dir"), "dotnet build && dir").as_deref(),
+            Shell::Cmd.run(DIR, SHA, Path::new("sub dir"), "dotnet build && dir", None).as_deref(),
             Ok("cd /d \".onehand-build/lap/my_proj-abc\" && git checkout -q -f --detach 2ab98d7259af09c62a806ff487818d931abf3b7e && cd \"sub dir\" && echo __ONEHAND_BUILD__ && cmd /d /s /c ^\"dotnet build ^&^& dir^\" 2>&1")
         );
         let top = Shell::Cmd
-            .run(DIR, SHA, Path::new(""), "dir")
+            .run(DIR, SHA, Path::new(""), "dir", None)
             .expect("a line");
         assert!(!top.contains("cd \"\""), "{top}");
     }
@@ -913,6 +1096,7 @@ mod shells {
                 SHA,
                 Path::new(""),
                 r#"findstr "a|b" f.txt & echo (x) > o^ut"#,
+                None,
             )
             .expect("a line");
         assert!(
@@ -1065,7 +1249,7 @@ mod shells {
         );
         assert_eq!(
             Shell::Posix
-                .run(DIR, SHA, Path::new("sub dir"), "it's")
+                .run(DIR, SHA, Path::new("sub dir"), "it's", None)
                 .as_deref(),
             Ok(
                 r#"cd '.onehand-build/lap/my_proj-abc' && git checkout -q -f --detach 2ab98d7259af09c62a806ff487818d931abf3b7e && cd 'sub dir' && echo __ONEHAND_BUILD__ && exec "${SHELL:-/bin/sh}" -lc 'it'\''s' 2>&1"#

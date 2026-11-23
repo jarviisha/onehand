@@ -192,6 +192,8 @@ pub(crate) fn run_with(
         entry: &asked.entry,
         os: asked.os.clone(),
         command: &command,
+        fresh_only: false,
+        wait: false,
     };
     // An interrupt at the terminal reaches this process and its ssh alike.
     let built = build(&job, &mut |line| {

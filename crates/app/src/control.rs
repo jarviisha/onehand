@@ -394,6 +394,8 @@ fn perform_now(
                             entry: &entry,
                             os,
                             command: &command,
+                            fresh_only: false,
+                            wait: false,
                         };
                         // The tools have no way to call a build off: its own
                         // limit ends it.

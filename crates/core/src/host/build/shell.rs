@@ -18,6 +18,10 @@ pub(crate) enum Shell {
     Cmd,
 }
 
+/// Why a routed command, which brings back only what its run wrote, does not
+/// build on a Windows host: nothing there marks when the run began.
+const ROUTED_ON_LINUX: &str = "routed commands build on Linux hosts only";
+
 /// The exit code a POSIX shell gives a command it could not find.
 const POSIX_NOT_FOUND: i32 = 127;
 
@@ -94,13 +98,22 @@ impl Shell {
     /// nest: a `|` inside the command's own quotes would be a pipe to the
     /// first. So every character the first would act on is escaped
     /// ([`for_outer_cmd`]), and the second is handed the line as written.
+    ///
+    /// With `mark`, the file of that name in `dir` is touched just before
+    /// the command, so what it writes is what is newer.
     pub(crate) fn run(
         self,
         dir: &str,
         sha: &str,
         within: &Path,
         command: &str,
+        mark: Option<&str>,
     ) -> Result<String, String> {
+        let touch = match (self, mark) {
+            (_, None) => String::new(),
+            (Self::Posix, Some(mark)) => format!("touch {} && ", self.word(mark)?),
+            (Self::Cmd, Some(_)) => return Err(ROUTED_ON_LINUX.to_string()),
+        };
         let dir = self.word(dir)?;
         let within = match within.as_os_str().is_empty() {
             true => String::new(),
@@ -108,7 +121,7 @@ impl Shell {
         };
         Ok(match self {
             Self::Posix => format!(
-                "cd {dir} && git checkout -q -f --detach {sha} && {within}echo {MARK} && \
+                "cd {dir} && git checkout -q -f --detach {sha} && {touch}{within}echo {MARK} && \
                  exec \"${{SHELL:-/bin/sh}}\" -lc {} 2>&1",
                 self.word(command)?
             ),
@@ -139,6 +152,33 @@ impl Shell {
                  && tar -cf - -- {paths}"
             ),
         })
+    }
+
+    /// In `dir`, name on stdout each of `paths` holding something newer
+    /// than the file `mark`, each ended by a NUL and the list by an empty
+    /// one, then send those as a tar. A path not there is simply not named.
+    pub(crate) fn send_fresh(
+        self,
+        dir: &str,
+        paths: &[PathBuf],
+        mark: &str,
+    ) -> Result<String, String> {
+        let dir = self.word(dir)?;
+        let mark = self.word(mark)?;
+        let paths = paths
+            .iter()
+            .map(|path| self.word(&path.display().to_string()))
+            .collect::<Result<Vec<_>, _>>()?
+            .join(" ");
+        match self {
+            Self::Posix => Ok(format!(
+                "cd {dir} || exit 1; set --; for p in {paths}; do \
+                 test -n \"$(find \"./$p\" -newer {mark} -print -quit 2>/dev/null)\" && \
+                 set -- \"$@\" \"$p\"; done; for p in \"$@\"; do printf '%s\\0' \"$p\"; done; \
+                 printf '\\0'; test $# -eq 0 || exec tar -cf - -- \"$@\""
+            )),
+            Self::Cmd => Err(ROUTED_ON_LINUX.to_string()),
+        }
     }
 
     /// The line as ssh is given it. A POSIX host's goes to `sh`, whole: the
