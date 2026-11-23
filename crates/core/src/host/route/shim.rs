@@ -18,22 +18,25 @@ const ROUTED_HERE: &str = "ONEHAND_ROUTED_HERE";
 const NOT_FOUND: i32 = 127;
 
 /// The folder the shims are written to.
-pub fn shim_dir(config: &Path) -> PathBuf {
+pub(crate) fn shim_dir(config: &Path) -> PathBuf {
     config.join("route-shims")
 }
 
-/// The whole of `onehand --route <socket> <program> <args…>`: the command
-/// built where onehand decides, and its exit code. Returns only when the
-/// command did not run here; running here replaces this process.
-pub fn route_main(socket: &Path, program: &str, args: &[String]) -> i32 {
-    let config = crate::config::config_dir();
+/// The whole of `onehand --route <socket> <shims> <program> <args…>`: the
+/// command built where onehand decides, and its exit code. Returns only when
+/// the command did not run here; running here replaces this process.
+///
+/// `shims` is the folder the calling shim lives in, named by the shim
+/// itself: the agent's environment may not lead to the config folder
+/// onehand wrote it in, and the real program is looked for outside it.
+pub fn route_main(socket: &Path, shims: &Path, program: &str, args: &[String]) -> i32 {
     route_in(
         socket,
         program,
         args,
         std::env::var_os(ROUTED_HERE).is_some(),
         std::env::var_os("PATH").as_deref(),
-        &shim_dir(&config),
+        shims,
     )
 }
 
@@ -100,19 +103,24 @@ fn run_here(
 }
 
 /// The first executable `program` on `path` outside the shim folder.
+/// `None` too when what is found is a shim still, reached through a link:
+/// running it would call itself for ever.
 pub(crate) fn real_program(
     program: &str,
     path: Option<&OsStr>,
     shim_dir: &Path,
 ) -> Option<PathBuf> {
     let shims = shim_dir.canonicalize().ok();
-    std::env::split_paths(path?)
+    let found = std::env::split_paths(path?)
         .filter(|dir| shims.is_none() || dir.canonicalize().ok() != shims)
         .map(|dir| dir.join(program))
         .find(|file| {
             std::fs::metadata(file)
                 .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
-        })
+        })?;
+    let target = found.canonicalize().ok();
+    let in_shims = shims.is_some() && target.as_deref().and_then(Path::parent) == shims.as_deref();
+    (!in_shims).then_some(found)
 }
 
 /// A program a shim can stand for: a bare name, nothing a shell would read
@@ -126,8 +134,9 @@ fn shimmable(program: &str) -> bool {
 }
 
 /// One executable shim in `dir` per program, handing it to `exe --route`
-/// on `socket`; a shim for a program no longer named is removed.
-pub fn write_shims_blocking(
+/// on `socket` with `dir` itself; a shim for a program no longer named is
+/// removed.
+pub(crate) fn write_shims_blocking(
     dir: &Path,
     exe: &Path,
     socket: &Path,
@@ -135,9 +144,10 @@ pub fn write_shims_blocking(
 ) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
     let word = |path: &Path| Shell::Posix.word(&path.to_string_lossy());
-    let (exe, socket) = (
+    let (exe, socket, shims) = (
         word(exe).map_err(std::io::Error::other)?,
         word(socket).map_err(std::io::Error::other)?,
+        word(dir).map_err(std::io::Error::other)?,
     );
     let programs: Vec<&String> = programs.iter().filter(|p| shimmable(p)).collect();
     for entry in std::fs::read_dir(dir)?.flatten() {
@@ -149,7 +159,7 @@ pub fn write_shims_blocking(
         }
     }
     for program in programs {
-        let text = format!("#!/bin/sh\nexec {exe} --route {socket} {program} \"$@\"\n");
+        let text = format!("#!/bin/sh\nexec {exe} --route {socket} {shims} {program} \"$@\"\n");
         let file = dir.join(program);
         if std::fs::read_to_string(&file).is_ok_and(|had| had == text) {
             continue;
@@ -162,10 +172,10 @@ pub fn write_shims_blocking(
     Ok(())
 }
 
-/// The PATH an agent starts with: the shim folder first, then the one this
-/// process inherited; `None` when no project routes a command, or the shims
-/// could not be written. Blocking: it reads every project file.
-pub fn agent_path_blocking() -> Option<OsString> {
+/// The PATH an agent starts with: the shim folder first, then `base`, the
+/// PATH it would have had; `None` when no project routes a command, or the
+/// shims could not be written. Blocking: it reads every project file.
+pub fn agent_path_blocking(base: Option<&OsStr>) -> Option<OsString> {
     let config = crate::config::config_dir();
     let (projects, _) =
         crate::project::file::load_all_blocking(&crate::config::projects_in(&config));
@@ -182,11 +192,17 @@ pub fn agent_path_blocking() -> Option<OsString> {
     let exe = std::env::current_exe().ok()?;
     let socket = crate::instance::socket_path(&config);
     write_shims_blocking(&dir, &exe, &socket, &programs).ok()?;
-    let inherited = std::env::var_os("PATH").unwrap_or_default();
-    let mut path = OsString::from(dir);
-    path.push(":");
-    path.push(inherited);
-    Some(path)
+    Some(agent_path(&dir, base))
+}
+
+/// `shims` first, then `base`.
+fn agent_path(shims: &Path, base: Option<&OsStr>) -> OsString {
+    let mut path = OsString::from(shims);
+    if let Some(base) = base.filter(|b| !b.is_empty()) {
+        path.push(":");
+        path.push(base);
+    }
+    path
 }
 
 #[cfg(test)]

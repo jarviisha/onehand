@@ -286,15 +286,27 @@ impl<P: Pass> AcpRuntime<P> {
             // The shims first on the agent's PATH and its terminals', so a
             // build command it runs reaches onehand. Only here, on this
             // machine: an agent on a host builds where it is.
-            let path = tokio::task::spawn_blocking(route::shim::agent_path_blocking)
-                .await
-                .ok()
-                .flatten();
+            // In front of the PATH the agent's own settings give it, or else
+            // of onehand's.
+            let own = launch.env.iter().rposition(|(k, _)| k == "PATH");
+            let base = match own {
+                Some(at) => Some(std::ffi::OsString::from(&launch.env[at].1)),
+                None => std::env::var_os("PATH"),
+            };
+            let path = tokio::task::spawn_blocking(move || {
+                route::shim::agent_path_blocking(base.as_deref())
+            })
+            .await
+            .ok()
+            .flatten();
             let mut term_env = Vec::new();
             if let Some(path) = path {
-                let path = ("PATH".to_string(), path.to_string_lossy().into_owned());
-                launch.env.push(path.clone());
-                term_env.push(path);
+                let path = path.to_string_lossy().into_owned();
+                match own {
+                    Some(at) => launch.env[at].1 = path.clone(),
+                    None => launch.env.push(("PATH".to_string(), path.clone())),
+                }
+                term_env.push(("PATH".to_string(), path));
             }
             let opts = acp::SessionOpts {
                 cwd,

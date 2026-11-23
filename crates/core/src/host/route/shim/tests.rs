@@ -61,7 +61,10 @@ fn shims_are_written_and_pruned() {
     assert_eq!(mode & 0o777, 0o755);
     assert_eq!(
         std::fs::read_to_string(&cargo).unwrap(),
-        "#!/bin/sh\nexec '/opt/onehand' --route '/run/onehand.sock' cargo \"$@\"\n"
+        format!(
+            "#!/bin/sh\nexec '/opt/onehand' --route '/run/onehand.sock' '{}' cargo \"$@\"\n",
+            dir.display()
+        )
     );
 }
 
@@ -77,4 +80,47 @@ fn shim_quotes_paths_with_spaces() {
 #[test]
 fn shim_dir_is_in_the_config_folder() {
     assert_eq!(shim_dir(Path::new("/c")), PathBuf::from("/c/route-shims"));
+}
+
+/// The folder `--route` skips is the one its shim names, whatever the
+/// config folder of the process is: a shim alone on PATH is never run as
+/// the real program, which would call itself for ever.
+#[test]
+fn a_shim_never_runs_itself() {
+    let root = scratch("itself");
+    let shim = root.join("elsewhere-shims");
+    std::fs::create_dir_all(&shim).unwrap();
+    executable(&shim.join("cargo"));
+    assert_ne!(shim, shim_dir(&crate::config::config_dir()));
+    let path = std::env::join_paths([&shim]).unwrap();
+    let code = route_in(
+        Path::new("/nonexistent.sock"),
+        "cargo",
+        &[],
+        true,
+        Some(&path),
+        &shim,
+    );
+    assert_eq!(code, 127);
+}
+
+/// A link elsewhere on PATH to a shim is the shim still.
+#[test]
+fn a_link_to_a_shim_is_not_the_real_program() {
+    let root = scratch("link");
+    let (shim, other) = (root.join("shim"), root.join("other"));
+    for dir in [&shim, &other] {
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    executable(&shim.join("cargo"));
+    std::os::unix::fs::symlink(shim.join("cargo"), other.join("cargo")).unwrap();
+    let path = std::env::join_paths([&other]).unwrap();
+    assert_eq!(real_program("cargo", Some(&path), &shim), None);
+}
+
+#[test]
+fn an_agent_path_leads_with_the_shims() {
+    let path = agent_path(Path::new("/s"), Some(OsStr::new("/a:/b")));
+    assert_eq!(path, OsString::from("/s:/a:/b"));
+    assert_eq!(agent_path(Path::new("/s"), None), OsString::from("/s"));
 }
