@@ -286,11 +286,12 @@ fn moving_a_session_carries_the_active_index_with_it() {
     ws.move_session(0, 2, 0);
     let uids: Vec<_> = ws.roots[0].sessions.iter().map(|s| s.uid).collect();
     assert_eq!(uids, [3, 1, 2]);
-    assert_eq!(ws.roots[0].active_session, 1);
+    assert_eq!(ws.roots[0].active_session, Some(1));
 
     ws.move_session(0, 1, 2);
     assert_eq!(
-        ws.roots[0].active_session, 2,
+        ws.roots[0].active_session,
+        Some(2),
         "the moved one is the active one"
     );
 }
@@ -471,12 +472,12 @@ fn add_and_close_session_tracks_active() {
     let mut ws = Workspace::seeded("/a");
     ws.add_session(spec("one"), 1);
     ws.add_session(spec("two"), 2);
-    assert_eq!(ws.active_root().unwrap().active_session, 1);
+    assert_eq!(ws.active_root().unwrap().active_session, Some(1));
     ws.close_session(0, 1);
-    assert_eq!(ws.active_root().unwrap().active_session, 0);
+    assert_eq!(ws.active_root().unwrap().active_session, Some(0));
     ws.close_session(0, 0);
     assert!(ws.active_root().unwrap().sessions.is_empty());
-    assert_eq!(ws.active_root().unwrap().active_session, 0);
+    assert_eq!(ws.active_root().unwrap().active_session, None);
 }
 
 #[test]
@@ -687,7 +688,7 @@ fn a_session_added_quietly_finds_only_a_local_root() {
         Some(local)
     );
     assert_eq!(ws.active_root, 0, "nothing selected");
-    assert_eq!(ws.roots[local].active_session, 0);
+    assert_eq!(ws.roots[local].active_session, Some(0));
 }
 
 #[test]
@@ -698,7 +699,7 @@ fn closing_a_session_below_the_one_shown_keeps_it_shown() {
     }
     ws.close_session(0, 0);
     let root = ws.active_root().unwrap();
-    assert_eq!(root.active_session, 1);
+    assert_eq!(root.active_session, Some(1));
     assert_eq!(root.sessions[1].uid, 3);
 }
 
@@ -711,7 +712,7 @@ fn a_session_out_of_range_is_neither_closed_nor_selected() {
     ws.select_session(5);
     let root = ws.active_root().unwrap();
     assert_eq!(root.sessions.len(), 1);
-    assert_eq!(root.active_session, 0);
+    assert_eq!(root.active_session, Some(0));
 }
 
 /// An order is kept by host and path, so a local and a host root on one path
@@ -1209,4 +1210,75 @@ fn a_folder_is_named_by_the_project_whose_row_holds_it() {
     ws.roots[0] = ProjectRoot::of(&p);
     assert_eq!(ws.label_of_folder(Path::new("/a-x")), Some("Alpha"));
     assert_eq!(ws.label_of_folder(Path::new("/nowhere")), None);
+}
+
+/// The project's page can be on screen while its sessions stay open.
+#[test]
+fn the_page_is_shown_with_sessions_open() {
+    let mut ws = Workspace::seeded("/a");
+    ws.add_session(spec("one"), 1);
+    ws.add_session(spec("two"), 2);
+    ws.show_page();
+    let root = ws.active_root().unwrap();
+    assert_eq!(root.active_session, None);
+    assert!(root.active_session().is_none());
+    assert_eq!(root.sessions.len(), 2);
+}
+
+#[test]
+fn closing_a_session_under_the_page_keeps_the_page() {
+    let mut ws = Workspace::seeded("/a");
+    ws.add_session(spec("one"), 1);
+    ws.add_session(spec("two"), 2);
+    ws.show_page();
+    ws.close_session(0, 0);
+    assert_eq!(ws.roots[0].active_session, None);
+    assert_eq!(ws.roots[0].sessions.len(), 1);
+}
+
+#[test]
+fn closing_the_session_on_screen_shows_a_neighbour() {
+    let mut ws = Workspace::seeded("/a");
+    for uid in 1..=3 {
+        ws.add_session(spec("s"), uid);
+    }
+    ws.select_session(1);
+    ws.close_session(0, 1);
+    assert_eq!(ws.roots[0].active_session, Some(1));
+    ws.close_session(0, 1);
+    assert_eq!(ws.roots[0].active_session, Some(0));
+    ws.close_session(0, 0);
+    assert_eq!(
+        ws.roots[0].active_session, None,
+        "the last one closed shows the page"
+    );
+}
+
+#[test]
+fn moving_sessions_under_the_page_keeps_the_page() {
+    let mut ws = Workspace::seeded("/a");
+    ws.add_session(spec("one"), 1);
+    ws.add_session(spec("two"), 2);
+    ws.show_page();
+    ws.move_session(0, 0, 1);
+    assert_eq!(ws.roots[0].active_session, None);
+}
+
+/// A session added quietly to a project with none, while another project is
+/// on screen, is what that project shows when it is next reached; added to
+/// the project whose page is on screen, it leaves the page there.
+#[test]
+fn a_quiet_session_is_shown_later_but_never_moves_the_page() {
+    let mut ws = Workspace::seeded("/a");
+    let p = ws.add_root("/p");
+    ws.select_root(0);
+    ws.add_session_quietly(Path::new("/p"), spec("one"), 1);
+    assert_eq!(ws.roots[p].active_session, Some(0));
+    ws.select_root(p);
+    ws.add_session_quietly(Path::new("/p"), spec("two"), 2);
+    assert_eq!(ws.roots[p].active_session, Some(0));
+    let q = ws.add_root("/q");
+    ws.add_session_quietly(Path::new("/q"), spec("three"), 3);
+    assert_eq!(ws.active_root, q);
+    assert_eq!(ws.roots[q].active_session, None, "the page on screen stays");
 }

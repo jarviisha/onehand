@@ -1397,3 +1397,22 @@ fn a_rows_worktrees_on_disk_are_those_git_was_read_in() {
         .collect();
     assert_eq!(on, ["x"]);
 }
+
+#[test]
+fn showing_a_project_page_selects_the_root_and_no_session() {
+    let mut drive = bound();
+    drive.open_project("/code/a".into(), None);
+    drive.open_project("/code/b".into(), None);
+    tree(&mut drive).add_session_at(spec(), 7, PathBuf::from("/code/b"));
+    assert_eq!(drive.active_uid(), Some(7));
+    let (b, _) = drive.locate(7).unwrap();
+    let a = drive.local_index(Path::new("/code/a")).unwrap();
+    let fx = drive.show_project_page(a);
+    assert!(matches!(fx.as_slice(), [Effect::Show, Effect::Changed]));
+    assert_eq!(drive.active_root, a);
+    let fx = drive.show_project_page(b);
+    assert!(matches!(fx.as_slice(), [Effect::Show, Effect::Changed]));
+    assert_eq!(drive.active_root, b);
+    assert_eq!(drive.active_uid(), None);
+    assert_eq!(drive.roots[b].sessions.len(), 1, "the session stays open");
+}

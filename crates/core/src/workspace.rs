@@ -515,12 +515,12 @@ impl Workspace {
         root.sessions.insert(to, session);
         // The session on screen has to stay the session on screen: the index
         // moved, and it is the index that says which one is showing.
-        root.active_session = match root.active_session {
+        root.active_session = root.active_session.map(|active| match active {
             active if active == from => to,
             active if from < active && active <= to => active - 1,
             active if to <= active && active < from => active + 1,
             active => active,
-        };
+        });
     }
 
     pub fn active_root(&self) -> Option<&ProjectRoot> {
@@ -631,6 +631,7 @@ impl Workspace {
         };
         root.transient = true;
         root.sessions.push(Session::new(spec, uid, path));
+        root.active_session = Some(0);
         self.roots.push(root);
         Some(self.roots.len() - 1)
     }
@@ -656,7 +657,14 @@ impl Workspace {
             .roots
             .iter()
             .position(|r| r.host.is_none() && r.holds(&path))?;
-        self.roots[idx].sessions.push(Session::new(spec, uid, path));
+        let shown = idx == self.active_root;
+        let root = &mut self.roots[idx];
+        // A row with nothing on it shows what it now holds when it is next
+        // reached -- unless it is on screen, where its page stays.
+        if root.sessions.is_empty() && !shown {
+            root.active_session = Some(0);
+        }
+        root.sessions.push(Session::new(spec, uid, path));
         Some(idx)
     }
 
@@ -680,11 +688,13 @@ impl Workspace {
         let ri = self.active_root;
         let root = self.roots.get_mut(ri)?;
         root.sessions.push(Session::new(spec, uid, folder));
-        root.active_session = root.sessions.len() - 1;
+        root.active_session = Some(root.sessions.len() - 1);
         Some((ri, root.sessions.len() - 1))
     }
 
-    /// Close a session on a given root, keeping `active_session` valid.
+    /// Close a session on a given root, keeping `active_session` valid: the
+    /// session on screen closing shows a neighbour, the last one the page,
+    /// and with the page on screen the page stays.
     pub(crate) fn close_session(&mut self, root_idx: usize, session_idx: usize) {
         let Some(root) = self.roots.get_mut(root_idx) else {
             return;
@@ -693,20 +703,32 @@ impl Workspace {
             return;
         }
         root.sessions.remove(session_idx);
-        if root.sessions.is_empty() {
-            root.active_session = 0;
-        } else if root.active_session >= root.sessions.len() {
-            root.active_session = root.sessions.len() - 1;
-        } else if session_idx < root.active_session {
-            root.active_session -= 1;
-        }
+        let Some(active) = root.active_session else {
+            return;
+        };
+        root.active_session = if root.sessions.is_empty() {
+            None
+        } else if active >= root.sessions.len() {
+            Some(root.sessions.len() - 1)
+        } else if session_idx < active {
+            Some(active - 1)
+        } else {
+            Some(active)
+        };
     }
 
     pub(crate) fn select_session(&mut self, idx: usize) {
         if let Some(root) = self.active_root_mut() {
             if idx < root.sessions.len() {
-                root.active_session = idx;
+                root.active_session = Some(idx);
             }
+        }
+    }
+
+    /// Put the active project's page on screen, its sessions left open.
+    pub(crate) fn show_page(&mut self) {
+        if let Some(root) = self.active_root_mut() {
+            root.active_session = None;
         }
     }
 }

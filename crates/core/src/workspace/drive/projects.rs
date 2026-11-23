@@ -242,7 +242,10 @@ impl WorkspaceDrive {
                 target.sessions.extend(sessions);
                 target.pinned |= pinned;
                 if shown && moved {
-                    target.active_session = first + active;
+                    // The bare row's page on screen stays the page.
+                    target.active_session = active.map(|active| first + active);
+                } else if first == 0 && moved && ws.active_root != into {
+                    target.active_session = Some(0);
                 }
                 ws.remove_root(bare);
                 if shown {
