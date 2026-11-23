@@ -31,7 +31,9 @@ pub struct ProjectRoot {
     /// session may run in.
     pub worktrees: Vec<RowFolder>,
     pub sessions: Vec<Session>,
-    pub active_session: usize,
+    /// The session on screen when this row is reached, or none: the
+    /// project's own page, which can be on screen while its sessions run.
+    pub active_session: Option<usize>,
     /// Whether this root is held at the top of the list.
     ///
     /// A *display* fact, not a structural one: `roots` keeps its own order and
@@ -129,7 +131,7 @@ impl ProjectRoot {
             project: None,
             worktrees: Vec::new(),
             sessions: Vec::new(),
-            active_session: 0,
+            active_session: None,
             pinned: false,
             transient: false,
             check: None,
@@ -269,9 +271,10 @@ impl ProjectRoot {
         self.host.is_none() && self.offload.is_none()
     }
 
-    /// Read the active session, if any. Index is kept in-bounds by mutators.
+    /// Read the session on screen, if any: none while the project's page is.
+    /// The index is kept in bounds by mutators.
     pub fn active_session(&self) -> Option<&Session> {
-        self.sessions.get(self.active_session)
+        self.active_session.and_then(|i| self.sessions.get(i))
     }
 
     /// The folder the window's panels show for this row: its session on

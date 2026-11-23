@@ -88,8 +88,8 @@ or *Rename* renaming, refused while the name is blank; the folder keeps its own 
 starts a session in the project's own folder; a worktree split off it opens with a session in that
 worktree, shown.
 Narrowed, the name keeps a minimum and the branch, or the host, gives way first. Its chevron alone
-folds it (not during a search); the rest of the row shows the project's last session, or its page,
-which then fills the row. `+` and `⋯` show on hover and on the keyboard's row, over the end of its
+folds it (not during a search); the rest of the row shows the project's page, which then fills the
+row, over whatever sessions it has open: they run on, and a session's own row shows it. `+` and `⋯` show on hover and on the keyboard's row, over the end of its
 meta, which fades into them; right-click opens the same menu. A session row, indented under its project: its state mark, title and `⋯` (on hover, on
 the keyboard's row, always on the one shown), and under them `state · agent · age` (a session in a
 worktree of its project carries the branch mark and the branch's name after the state, in the meta
@@ -345,7 +345,7 @@ room and leaves the terminal as it is.
   this machine* with *Add* (secondary) when it is installed, or how to install it (its command in
   the code face), *Then restart onehand, or add another agent in the settings*, and
   *Open the agent settings* (secondary), which opens Settings on Agents.
-- A project with no session shows, from the top: a head (the project's name, its path and git line
+- A project's page, reached by its row or with no session open, shows, from the top: a head (the project's name, its path and git line
   under it, *Run check* (spinning while a check runs) and *New session* (primary, with a caret
   under *Start in* an *In <branch>* per recorded worktree on disk, capped at 20 with *N more not
   shown*, then, while more than one agent
@@ -372,11 +372,7 @@ room and leaves the terminal as it is.
   refuses while the checkout has uncommitted files, something of onehand's (a session, a shell,
   an unsaved file) or a process uses it, another project has a folder in it, or a task keeps it as
   its worktree, listing each; judged again when answered, a toast says
-  what was removed and what was kept. Under that the box *Tasks* (how many need attention, run or wait, each opening the Tasks page
-  narrowed to the project; *Nothing running here* at zero); then the box *Schedules* (the
-  project's schedules by name with when each runs next, or *off*, each opening the Schedules page
-  narrowed to the project; *No schedules here* at none; capped at five; reading and a failed read
-  said as on the page); then the box *Settings*
+  what was removed and what was kept. Under that the box *Settings*
   (its *Check command* field, then *Build hosts*: one row per host the project builds on, at most
   20, its name over what a build brings back and, when it names one, the folder that lands
   under, *target/release/app, into out/linux*, or *Brings nothing back*; an edit mark and
@@ -423,8 +419,7 @@ room and leaves the terminal as it is.
   shown*), then *Check again* and *Take the host's code…* (both secondary, refusing while the
   code moves; *Check again* spins while it checks). *Take the host's code…* asks *Take <host>'s
   code over these changes?*, naming the backup folder, and toasts where the backup is; then
-  *Settings* with the host's switch, as on a host project. No *Tasks*,
-  *Schedules* or check command. On a branch the box *On <host>* reads instead *Sessions on <host>
+  *Settings* with the host's switch, as on a host project. No check command. On a branch the box *On <host>* reads instead *Sessions on <host>
   work on onehand/<host>; this folder stays yours*, then, once counted, *onehand/<host> has N
   commits this branch does not* (or *has nothing this branch does not*), a failure in the danger
   ink, *Update host from laptop* (secondary, spinning while it runs, refusing while the branch is

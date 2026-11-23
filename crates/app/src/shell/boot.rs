@@ -154,8 +154,7 @@ impl Shell {
                     E::PageChanged => shell.prune_host_waits(cx),
                     E::ShowSession(uid) => shell.show_session(*uid, window, cx),
                     // Every one of these acts on the selected project, because
-                    // the page that offers them is what shows when the selected
-                    // project has nothing running in it.
+                    // the page that offers them is only drawn for it.
                     E::Project(action) => {
                         use crate::chat::pane::ProjectAction as P;
                         let root_idx = shell.window.workspace.active_root;
@@ -256,8 +255,6 @@ impl Shell {
                         let uid = *uid;
                         cx.defer(move |cx| crate::task::stop(uid, cx));
                     }
-                    E::ShowTasks(filter) => shell.show_tasks(filter.clone(), window, cx),
-                    E::ShowSchedules(only) => shell.show_schedules(only.clone(), window, cx),
                     E::HostBusy { uid, host } => shell.host_busy(*uid, host.clone(), window, cx),
                     E::HostLost { uid, host } => shell.host_lost(*uid, host.clone(), window, cx),
                     E::RestartHost(host) => shell.ask_restart_host(host.clone(), window, cx),

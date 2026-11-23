@@ -472,3 +472,14 @@ fn a_past_conversation_resumes_where_it_ran() {
         ChatPaneEvent::OpenConversation(id) if id == "s"
     ));
 }
+
+/// A conversation open in a session of this window is found by its folder,
+/// so pressing it on the project's page shows that session.
+#[test]
+fn an_open_conversation_is_found_by_its_folder() {
+    let store = onehand_core::chat::conversations_dir();
+    let dir = onehand_core::chat::conv_dir(&store, "abc");
+    let open = [(5, "xyz".to_string()), (9, "abc".to_string())];
+    assert_eq!(super::history::held_by(&open, &dir), Some(9));
+    assert_eq!(super::history::held_by(&open[..1], &dir), None);
+}

@@ -1,13 +1,11 @@
 use super::header::Archives;
 use super::{ChatPane, ChatPaneEvent, ProjectFacts, rel_time};
-use crate::chat::conversation::Conversation;
 use crate::controls::Short as _;
 use crate::controls::text_input;
 use crate::page_parts::{count_of, page_card, page_head, ruled};
 use crate::tokens::PAGE_PROSE;
-use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, Context, Div, FocusHandle, InteractiveElement, IntoElement, ParentElement, SharedString,
+    App, Context, FocusHandle, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
@@ -21,10 +19,8 @@ use std::rc::Rc;
 mod build_hosts;
 mod host;
 mod offload_box;
-mod schedules_box;
 mod start;
 mod worktrees_box;
-use schedules_box::schedules_box;
 
 /// How many past conversations the project page lists.
 ///
@@ -304,29 +300,14 @@ impl ChatPane {
 
     /// Delete an archived conversation, the question already answered.
     ///
-    /// Offered on the project page and nowhere else, and that is the guard
-    /// doing most of the work rather than a rule anybody has to remember: the
-    /// page is what shows when the selected project has **no session on it**,
-    /// so the conversations listed there are the ones nothing is writing to.
-    /// A live conversation deleted underneath its own session would not even
+    /// Offered on the project page and nowhere else. The page can show while
+    /// the project's sessions run, so a conversation listed there may be open
+    /// in one, here or in another window, and the check below refuses it: a
+    /// live conversation deleted underneath its own session would not even
     /// stay deleted -- the session's next turn writes the file again, holding
     /// only what came after, because its mark says the rest is already on disk.
-    /// A session in another *window* is the case the page's own shape does not
-    /// cover, so the check below covers it.
     fn delete_conversation(&mut self, dir: PathBuf, cx: &mut Context<Self>) {
-        let store = onehand_core::chat::conversations_dir();
-        let live = self
-            .conversations
-            .values()
-            .filter_map(Conversation::session)
-            .any(|session| {
-                session
-                    .read(cx)
-                    .chat()
-                    .session_id
-                    .as_deref()
-                    .is_some_and(|sid| onehand_core::chat::conv_dir(&store, sid) == dir)
-            });
+        let live = crate::chat::is_open(&self.open_everywhere(cx), &dir);
         if live {
             cx.emit(ChatPaneEvent::ConversationNotDeleted(
                 "it is open in a session".to_string(),
@@ -363,7 +344,7 @@ impl ChatPane {
     }
 
     /// The project page: what the centre of the window shows while the selected
-    /// project has no conversation on it.
+    /// project has no conversation on screen, whether or not its sessions run.
     ///
     /// This is the state every freshly added project starts in, and the state a
     /// project returns to when its last session is closed -- so it is the first
@@ -579,11 +560,6 @@ impl ChatPane {
         ))
         .children((hidden > 0).then(|| muted_line(format!("{hidden} more"))));
 
-        // Tasks and schedules are this machine's, found by a folder here: a
-        // folder on a host has none, and one here of the same path is not it.
-        let local = project.host.is_none();
-        let tasks = local.then(|| tasks_box(&project.path, cx));
-        let schedules = local.then(|| schedules_box(&project.path, cx));
         // What the project is set to: its check command, the shell's field.
         let settings = project.check_input.clone().map(|input| {
             let builds = build_hosts::build_hosts_group(&project.builds, cx);
@@ -624,8 +600,6 @@ impl ChatPane {
                     .then(|| offload_box::offload_box(&project.path, cx))
                     .flatten(),
             )
-            .children(tasks)
-            .children(schedules)
             .children(settings)
             .children(
                 project
@@ -730,63 +704,4 @@ fn no_agent(cx: &mut Context<ChatPane>) -> gpui::AnyElement {
                 })),
         )
         .into_any_element()
-}
-
-/// What the tasks of the project at `root` need, run or wait on, a row each
-/// leading to the Tasks page narrowed to it.
-fn tasks_box(root: &Path, cx: &mut Context<ChatPane>) -> Div {
-    use onehand_core::task::Section;
-    let (mut attention, mut running, mut queued) = (0, 0, 0);
-    for row in crate::task::rows(&[root.to_path_buf()], cx) {
-        match row.group.section() {
-            Section::NeedsAttention => attention += 1,
-            Section::Running => running += 1,
-            Section::Queued => queued += 1,
-            Section::Finished => {}
-        }
-    }
-    let warning = crate::theme::status_ink(cx).warning;
-    let muted = cx.theme().muted_foreground;
-    let lines = [
-        ("Need attention", attention, Some(warning)),
-        ("Running", running, None),
-        ("Queued", queued, None),
-    ];
-    let total = attention + running + queued;
-    let root = root.to_path_buf();
-    page_card("Tasks", Some(total), None, cx)
-        .when(total == 0, |tasks| {
-            tasks.child(
-                div()
-                    .text_xs()
-                    .text_color(muted)
-                    .child("Nothing running here"),
-            )
-        })
-        .children(
-            lines
-                .into_iter()
-                .enumerate()
-                .filter(|(_, (_, n, _))| *n > 0)
-                .map(|(i, (label, n, ink))| {
-                    let root = root.clone();
-                    onehand_ui::row(false, cx)
-                        .id(("project-tasks", i))
-                        .h_flex()
-                        .items_center()
-                        .justify_between()
-                        .when_some(ink, |row, ink| row.text_color(ink))
-                        .child(label)
-                        .child(div().text_xs().child(n.to_string()))
-                        .tooltip(onehand_ui::tip(|window, cx| {
-                            gpui_component::tooltip::Tooltip::new(
-                                "Show these tasks on the Tasks page",
-                            )
-                            .build(window, cx)
-                        }))
-                        .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
-                            cx.emit(ChatPaneEvent::ShowTasks(Some(root.clone())));
-                        }))
-                }),
-        )
 }

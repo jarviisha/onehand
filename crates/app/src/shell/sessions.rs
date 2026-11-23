@@ -193,7 +193,7 @@ impl Shell {
             .window
             .workspace
             .active_root()
-            .map(|root| root.active_session)
+            .and_then(|root| root.active_session)
         else {
             return;
         };
@@ -333,12 +333,20 @@ impl Shell {
     ) {
         if self.tab_cycle.is_none() {
             let order = self.mru_order();
-            if order.len() < 2 {
+            // From the project's page no session is on screen, so the first
+            // press lands on the latest (or, backward, the oldest) rather than
+            // stepping past it, and a project of one session is reached too.
+            let page = self.active_session_uid().is_none();
+            if order.len() < if page { 1 } else { 2 } {
                 return;
             }
+            let pos = match (page, forward) {
+                (true, true) => order.len() - 1,
+                (true, false) | (false, _) => 0,
+            };
             self.tab_cycle = Some(TabCycle {
                 order,
-                pos: 0,
+                pos,
                 modifiers: window.modifiers(),
             });
         }
@@ -545,6 +553,15 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<u64> {
+        // A conversation open in a session here, pressed on its project's
+        // page, is that session to go back to rather than a second to refuse.
+        let held = resume
+            .as_deref()
+            .and_then(|dir| self.chat.read(cx).holding(dir, cx));
+        if let Some(uid) = held {
+            self.show_session(uid, window, cx);
+            return None;
+        }
         if resume
             .as_deref()
             .is_some_and(|dir| self.refuse_open_twice(dir, window, cx))

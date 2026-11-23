@@ -108,6 +108,13 @@ impl Shell {
         self.carry_workspace(fx, window, cx);
     }
 
+    /// Select a root and show its page, its sessions left open: what a
+    /// press on the project itself asks for, from the rail or the overview.
+    pub fn show_project_page(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let fx = self.window.workspace.show_project_page(idx);
+        self.carry_workspace(fx, window, cx);
+    }
+
     /// Select root *and* session in one touch, mirroring
     /// `Message::SelectRootSession`. The rail is session-first: a session row
     /// is the switcher, so it must not take two clicks to reach.
@@ -252,9 +259,9 @@ impl Shell {
             // one is thrown away with it.
             self.sync_project_facts(cx);
             self.show_check_input(local.as_deref(), window, cx);
-            // Nothing is running on this project and the page now on screen is
+            // The page now on screen, whether or not sessions run beside it, is
             // a list of past conversations over a *New session* button, so the
-            // next thing asked of it is almost certainly a session. Start the
+            // next thing asked of it is very likely a session. Start the
             // agent against this root now: bringing one up costs seconds that
             // are entirely the adapter's and the SDK's, and spending them while
             // the user reads the page is spending them for free.
@@ -633,7 +640,7 @@ impl Shell {
                     .iter()
                     .position(|r| r.on_host() == host.as_ref() && &r.path == root);
                 if let Some(idx) = at {
-                    self.select_root(idx, window, cx);
+                    self.show_project_page(idx, window, cx);
                 }
             }
             // Its project made the active one first, since a session

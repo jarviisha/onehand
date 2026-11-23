@@ -394,6 +394,14 @@ impl WorkspaceDrive {
         vec![Effect::Show, Effect::Changed]
     }
 
+    /// Select project `root` and show its page, its sessions left open.
+    #[must_use = "its effects are to be carried"]
+    pub fn show_project_page(&mut self, root: usize) -> Vec<Effect> {
+        self.workspace.select_root(root);
+        self.workspace.show_page();
+        vec![Effect::Show, Effect::Changed]
+    }
+
     /// Select project `root` and its session `session` in one touch.
     #[must_use = "its effects are to be carried"]
     pub fn select_project_session(&mut self, root: usize, session: usize) -> Vec<Effect> {

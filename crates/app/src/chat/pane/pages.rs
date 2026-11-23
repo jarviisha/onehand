@@ -120,6 +120,12 @@ impl ChatPane {
         }
     }
 
+    /// Whether a project's own page is what the pane shows.
+    #[cfg(test)]
+    pub fn project_page_shown(&self) -> bool {
+        self.empty.is_some() && self.page.is_none()
+    }
+
     /// Whether a page about more than one project is what the pane shows.
     pub fn showing_page(&self) -> bool {
         self.page.is_some()
