@@ -380,8 +380,7 @@ another thing, under *Builds on a host*. Every attach opens by exchanging servic
   folder; `crates/app/src/chat/pane/project_page/host.rs`), newest first, capped at 50
   (`HOST_SESSIONS_CAP`), read each time the page shows and on its *Refresh*. A press attaches the
   session in the chat pane, or shows the session already watching it. The page's head names the
-  folder `<host>:<path>`, and it has no *Tasks*, *Schedules* or *Settings* box, which are this
-  machine's; what the page draws is in [screens.md](screens.md#pages-without-a-session). A host
+  folder `<host>:<path>`, and it has no *Settings* box of this machine's (its check command and build hosts); what the page draws is in [screens.md](screens.md#pages-without-a-session). A host
   that cannot be attached shows the list kept from the last read instead (*The laptop's copy*),
   said as not connected, with the why and *Try again*.
 - **Shown in the chat pane through the same code as a local session**

@@ -210,10 +210,6 @@ pub enum ChatPaneEvent {
     },
     /// Stop the run on session `uid`.
     StopWorkflow(u64),
-    /// Show the Tasks page, narrowed to one project or not.
-    ShowTasks(Option<PathBuf>),
-    /// Show the Schedules page, narrowed to one project or not.
-    ShowSchedules(Option<PathBuf>),
     /// Run the check command of the project on screen, as a task.
     RunCheck,
     /// Open the form that adds a build host to the project on screen.

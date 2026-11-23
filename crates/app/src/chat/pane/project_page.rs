@@ -5,9 +5,8 @@ use crate::controls::Short as _;
 use crate::controls::text_input;
 use crate::page_parts::{count_of, page_card, page_head, ruled};
 use crate::tokens::PAGE_PROSE;
-use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, Context, Div, FocusHandle, InteractiveElement, IntoElement, ParentElement, SharedString,
+    App, Context, FocusHandle, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
@@ -21,10 +20,8 @@ use std::rc::Rc;
 mod build_hosts;
 mod host;
 mod offload_box;
-mod schedules_box;
 mod start;
 mod worktrees_box;
-use schedules_box::schedules_box;
 
 /// How many past conversations the project page lists.
 ///
@@ -579,11 +576,6 @@ impl ChatPane {
         ))
         .children((hidden > 0).then(|| muted_line(format!("{hidden} more"))));
 
-        // Tasks and schedules are this machine's, found by a folder here: a
-        // folder on a host has none, and one here of the same path is not it.
-        let local = project.host.is_none();
-        let tasks = local.then(|| tasks_box(&project.path, cx));
-        let schedules = local.then(|| schedules_box(&project.path, cx));
         // What the project is set to: its check command, the shell's field.
         let settings = project.check_input.clone().map(|input| {
             let builds = build_hosts::build_hosts_group(&project.builds, cx);
@@ -624,8 +616,6 @@ impl ChatPane {
                     .then(|| offload_box::offload_box(&project.path, cx))
                     .flatten(),
             )
-            .children(tasks)
-            .children(schedules)
             .children(settings)
             .children(
                 project
@@ -730,63 +720,4 @@ fn no_agent(cx: &mut Context<ChatPane>) -> gpui::AnyElement {
                 })),
         )
         .into_any_element()
-}
-
-/// What the tasks of the project at `root` need, run or wait on, a row each
-/// leading to the Tasks page narrowed to it.
-fn tasks_box(root: &Path, cx: &mut Context<ChatPane>) -> Div {
-    use onehand_core::task::Section;
-    let (mut attention, mut running, mut queued) = (0, 0, 0);
-    for row in crate::task::rows(&[root.to_path_buf()], cx) {
-        match row.group.section() {
-            Section::NeedsAttention => attention += 1,
-            Section::Running => running += 1,
-            Section::Queued => queued += 1,
-            Section::Finished => {}
-        }
-    }
-    let warning = crate::theme::status_ink(cx).warning;
-    let muted = cx.theme().muted_foreground;
-    let lines = [
-        ("Need attention", attention, Some(warning)),
-        ("Running", running, None),
-        ("Queued", queued, None),
-    ];
-    let total = attention + running + queued;
-    let root = root.to_path_buf();
-    page_card("Tasks", Some(total), None, cx)
-        .when(total == 0, |tasks| {
-            tasks.child(
-                div()
-                    .text_xs()
-                    .text_color(muted)
-                    .child("Nothing running here"),
-            )
-        })
-        .children(
-            lines
-                .into_iter()
-                .enumerate()
-                .filter(|(_, (_, n, _))| *n > 0)
-                .map(|(i, (label, n, ink))| {
-                    let root = root.clone();
-                    onehand_ui::row(false, cx)
-                        .id(("project-tasks", i))
-                        .h_flex()
-                        .items_center()
-                        .justify_between()
-                        .when_some(ink, |row, ink| row.text_color(ink))
-                        .child(label)
-                        .child(div().text_xs().child(n.to_string()))
-                        .tooltip(onehand_ui::tip(|window, cx| {
-                            gpui_component::tooltip::Tooltip::new(
-                                "Show these tasks on the Tasks page",
-                            )
-                            .build(window, cx)
-                        }))
-                        .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
-                            cx.emit(ChatPaneEvent::ShowTasks(Some(root.clone())));
-                        }))
-                }),
-        )
 }

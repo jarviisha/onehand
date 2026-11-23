@@ -354,8 +354,8 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   listed on the project's page and attachable again. Cancelling an open needs a call the host
   service does not take yet.
 - **The rows of the host's sessions on a host or offloaded project's page take no keyboard
-  focus**, as the rows of a local project page's Tasks and Schedules boxes do not; they are
-  reached by pointer only. Making each box row a tab stop with `Enter` opening it would fix all three.
+  focus**; they are reached by pointer only. Making each row a tab stop with `Enter` opening it
+  would fix it.
 - **A clone running past 15 minutes reads as failed on the laptop while git may go on.** The
   laptop gives up waiting after `CLONE_WAIT`, but the host service sets no deadline of its own on
   `git clone`, so the clone can finish there, leaving the folder, which the form's next *Clone*
