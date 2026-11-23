@@ -128,6 +128,8 @@ impl Pair {
                 | SessionEffect::Disarm
                 | SessionEffect::SendCode { .. }
                 | SessionEffect::PromptAgain
+                | SessionEffect::Unsent(_)
+                | SessionEffect::Unsent(_)
                 | SessionEffect::Request(_)
                 | SessionEffect::SaveTitle { .. }
                 | SessionEffect::Look(_)
@@ -156,6 +158,7 @@ fn send(session: &SessionDrive, fx: Vec<SessionEffect>) {
             | SessionEffect::Disarm
             | SessionEffect::SendCode { .. }
             | SessionEffect::PromptAgain
+            | SessionEffect::Unsent(_)
             | SessionEffect::SaveTitle { .. }
             | SessionEffect::Look(_)
             | SessionEffect::Tell { .. } => {}
@@ -201,6 +204,7 @@ fn session_name(e: &SessionEffect) -> &'static str {
         SessionEffect::Disarm => "Disarm",
         SessionEffect::SendCode { .. } => "SendCode",
         SessionEffect::PromptAgain => "PromptAgain",
+        SessionEffect::Unsent(_) => "Unsent",
         SessionEffect::Request(_) => "Request",
         SessionEffect::SaveTitle { .. } => "SaveTitle",
         SessionEffect::Look(_) => "Look",

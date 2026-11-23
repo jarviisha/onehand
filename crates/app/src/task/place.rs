@@ -394,6 +394,7 @@ fn watch_drain(
             | ChatEvent::HostBusy
             | ChatEvent::RestartHost(_)
             | ChatEvent::Look(_)
+            | ChatEvent::Unsent(_)
             | ChatEvent::OpenSubagent(_) => {}
         }
     });

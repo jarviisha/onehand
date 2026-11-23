@@ -94,6 +94,14 @@ pub struct Draft {
 }
 
 impl Draft {
+    /// Put `words` ahead of what is written, a blank line between.
+    pub fn put_first(&mut self, words: &str) {
+        self.text = match self.text.trim().is_empty() {
+            true => words.to_string(),
+            false => format!("{words}\n\n{}", self.text),
+        };
+    }
+
     /// Nothing typed and nothing staged, so there is nothing to set aside.
     pub fn is_empty(&self) -> bool {
         self.text.is_empty() && self.attachments.is_empty()
