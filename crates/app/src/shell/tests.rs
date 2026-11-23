@@ -585,11 +585,10 @@ fn send_on_the_page_asks_for_a_session_with_what_was_picked(cx: &mut gpui::TestA
     let _ = std::fs::remove_dir_all(dir);
 }
 
-/// Sending from a page starts the session in the project's folder, the words
-/// its first prompt; an agent that never comes up puts them back where the
-/// person writes.
+/// Sending from a page starts its session off screen; an agent that never
+/// comes up leaves no session behind, and the page says why, its words kept.
 #[gpui::test]
-fn sending_from_the_page_starts_a_session_holding_the_prompt(cx: &mut gpui::TestAppContext) {
+fn an_agent_that_never_comes_up_leaves_the_page_saying_why(cx: &mut gpui::TestAppContext) {
     let (shell, cx, dir, a, _) = two_pages(cx, "page-start");
     show_page_of(&shell, &a, cx);
     let pane = cx.update(|_, cx| shell.read(cx).chat.clone());
@@ -600,25 +599,19 @@ fn sending_from_the_page_starts_a_session_holding_the_prompt(cx: &mut gpui::Test
         })
     });
     cx.run_until_parked();
-    let (sessions, shown) = cx.update(|_, cx| {
+    cx.update(|_, cx| {
         let shell = shell.read(cx);
         let idx = shell.window.workspace.local_index(&a).unwrap();
-        let row = &shell.window.workspace.roots[idx];
-        (
-            row.sessions
-                .iter()
-                .map(|s| s.folder.clone())
-                .collect::<Vec<_>>(),
-            shell.active_session_uid(),
-        )
+        assert!(
+            shell.window.workspace.roots[idx].sessions.is_empty(),
+            "none left"
+        );
+        assert_eq!(shell.active_session_uid(), None, "the page stays");
+        let pane = pane.read(cx);
+        assert_eq!(pane.composer_text(cx), "go");
+        assert!(pane.page_failure(&a).is_some(), "the page says why");
+        assert!(!pane.page_locked(&a), "and takes words again");
     });
-    assert_eq!(sessions, std::slice::from_ref(&a));
-    assert!(shown.is_some(), "the session is shown");
-    assert_eq!(
-        cx.update(|_, cx| pane.read(cx).composer_text(cx)),
-        "go",
-        "an agent that never came up hands the words back"
-    );
     let _ = std::fs::remove_dir_all(dir);
 }
 

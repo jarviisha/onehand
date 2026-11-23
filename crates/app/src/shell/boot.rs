@@ -467,6 +467,7 @@ impl Shell {
             settings_page: SettingsPage::default(),
             settings_project: None,
             page_starting: Default::default(),
+            page_waits: Default::default(),
             settings_focus: cx.focus_handle(),
             keymap_editor: cx.new(|cx| crate::keymap::Editor::new(window, cx)),
             settings_view: {

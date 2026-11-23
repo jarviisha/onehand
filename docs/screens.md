@@ -359,9 +359,12 @@ room and leaves the terminal as it is.
   beside the chip and takes the caret, its rule's refusal said under it in the danger ink as it
   is typed. What is written and picked is kept per project while the person is elsewhere. Send
   cuts the worktree first when one is asked for (*Making worktree <branch>…* meanwhile; a
-  failure stays under the card in the danger ink, the words kept), then makes the session in
-  the place picked, run by the agent picked, and shows it; the words are its first prompt, held
-  until the agent is up, and come back to its composer if the agent never comes up. Then, in one column at every width, the box *Past
+  failure stays under the card in the danger ink, the words kept), then starts the session in
+  the place picked, run by the agent picked, off screen, the words its first prompt: the page
+  says *Starting <agent>…*, the words locked, until the agent is up, then shows the session if the
+  person still stands on the page (else it waits on the rail as any session does) and empties the
+  draft. An agent that never comes up leaves no session: the page says why under the card, the
+  words kept. A host project's session is shown at once, as a host session always is. Then, in one column at every width, the box *Past
   conversations* with its count, its rows the overview's (age, title, then items and agent at the
   edge, then a `⋯` on hover holding *Resume* and *Delete…*, the same on a right-click), capped, its wait and empty lines inside it:
   every one of the project, in whichever of its folders it ran, and one that ran in a folder it

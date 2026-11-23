@@ -29,7 +29,7 @@ pub(super) struct PageDraft {
 
 impl ChatPane {
     /// The project whose page is on screen, by its folder.
-    pub(super) fn page_root(&self) -> Option<PathBuf> {
+    pub(crate) fn page_root(&self) -> Option<PathBuf> {
         (self.active.is_none() && self.page.is_none())
             .then(|| self.empty.as_ref().map(|project| project.path.clone()))
             .flatten()

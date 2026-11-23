@@ -247,6 +247,9 @@ pub struct Shell {
     settings_project: Option<std::path::PathBuf>,
     /// The projects whose page is starting a session it sent, by folder.
     page_starting: std::collections::HashSet<std::path::PathBuf>,
+    /// The sessions a page started off screen, waiting on their agent, with
+    /// the page's project, by uid.
+    page_waits: std::collections::HashMap<u64, (std::path::PathBuf, gpui::Subscription)>,
     /// Held by Settings' nav and focused when it opens.
     settings_focus: gpui::FocusHandle,
     keymap_editor: Entity<crate::keymap::Editor>,
