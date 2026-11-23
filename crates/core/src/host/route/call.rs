@@ -3,7 +3,7 @@
 //! host there, its lines streamed back as they come.
 
 use std::cell::RefCell;
-use std::io::{BufRead as _, Write};
+use std::io::{BufRead as _, Read as _, Write};
 use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -20,6 +20,14 @@ use crate::workspace::HostName;
 
 const METHOD: &str = "onehand/route";
 const LINE: &str = "onehand/line";
+
+/// The longest line either side of a routed run sends: past it the reader
+/// drops the run rather than hold the line in memory.
+pub const LINE_CAP: usize = 64 * 1024;
+
+/// The most of a command's line one `out` line holds, leaving the rest of
+/// [`LINE_CAP`] for the JSON around it and its escapes.
+const OUT_CHUNK: usize = 48 * 1024;
 
 /// The line a shim sends: run `program` with `args` from `cwd`, made
 /// absolute because the process reading it has a working folder of its own.
@@ -63,14 +71,36 @@ pub enum Said {
     Reached,
 }
 
-/// The line `said` is for the shim; none for what is not its.
-pub fn said_line(said: &Said) -> Option<String> {
-    let params = match said {
-        Said::Out(line) => json!({"out": line}),
-        Said::Note(note) => json!({"note": note}),
-        Said::Reached => return None,
+/// The lines `said` is for the shim, a long one cut into several of at
+/// most [`OUT_CHUNK`] bytes each; none for what is not the shim's.
+pub fn said_lines(said: &Said) -> Vec<String> {
+    let (key, text) = match said {
+        Said::Out(line) => ("out", line),
+        Said::Note(note) => ("note", note),
+        Said::Reached => return Vec::new(),
     };
-    Some(json!({"jsonrpc": "2.0", "method": LINE, "params": params}).to_string())
+    chunks(text)
+        .map(|chunk| json!({"jsonrpc": "2.0", "method": LINE, "params": {key: chunk}}).to_string())
+        .collect()
+}
+
+/// `text` in pieces of at most [`OUT_CHUNK`] bytes, cut between characters;
+/// an empty one is one empty piece.
+fn chunks(mut text: &str) -> impl Iterator<Item = &str> {
+    let mut first = true;
+    std::iter::from_fn(move || {
+        if text.is_empty() && !std::mem::take(&mut first) {
+            return None;
+        }
+        first = false;
+        let mut at = text.len().min(OUT_CHUNK);
+        while !text.is_char_boundary(at) {
+            at -= 1;
+        }
+        let (piece, rest) = text.split_at(at);
+        text = rest;
+        Some(piece)
+    })
 }
 
 /// How a routed run ended.
@@ -189,8 +219,24 @@ pub(crate) fn client_blocking(
         }
     })?;
     writeln!(stream, "{}", route_request(program, args, cwd)).map_err(gone)?;
-    for line in std::io::BufReader::new(&stream).lines() {
-        let msg: Value = match serde_json::from_str(&line.map_err(gone)?) {
+    let mut reader = std::io::BufReader::new(&stream);
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        let read = (&mut reader)
+            .take(LINE_CAP as u64)
+            .read_until(b'\n', &mut line)
+            .map_err(gone)?;
+        if read == 0 {
+            break;
+        }
+        if line.last() != Some(&b'\n') && line.len() >= LINE_CAP {
+            return Err(Unreached::Gone(format!(
+                "a line from onehand passed {} KiB",
+                LINE_CAP / 1024
+            )));
+        }
+        let msg: Value = match serde_json::from_slice(&line) {
             Ok(msg) => msg,
             Err(_) => continue,
         };

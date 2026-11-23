@@ -9,7 +9,7 @@
 //! every message ([`Front::standing`]), since it is the front end's drive
 //! that knows.
 
-use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
+use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, channel, unbounded};
 use futures::channel::oneshot;
 use onehand_core::control::{self, Call, Conn, Handled, Peer, Standing};
 use onehand_core::host::route::Ask;
@@ -26,6 +26,10 @@ use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 /// line may be: past either it is dropped, not waited on.
 const LINE_WAIT: Duration = Duration::from_secs(5);
 const LINE_CAP: u64 = 64 * 1024;
+
+/// How many lines of a routed run wait to be written to its client before
+/// the run waits for it.
+const ROUTE_BACKLOG: usize = 256;
 
 /// Said when a call's answer cannot come, because the app is going.
 const CLOSING: &str = "onehand is closing";
@@ -131,7 +135,7 @@ async fn serve_route<F>(
 ) where
     F: FnOnce(&Ask, &mut dyn FnMut(Said), &AtomicBool) -> RouteEnd + Send + 'static,
 {
-    use futures::StreamExt as _;
+    use futures::{SinkExt as _, StreamExt as _};
     let cancel = Arc::new(AtomicBool::new(false));
     // The client says nothing after its first line: its end is its hanging up.
     let watch = tokio::spawn({
@@ -142,24 +146,29 @@ async fn serve_route<F>(
             cancel.store(true, Ordering::Relaxed);
         }
     });
-    let (said, mut lines) = unbounded::<String>();
+    // Bounded: a run printing faster than its client reads waits for it.
+    let (mut said, mut lines) = channel::<String>(ROUTE_BACKLOG);
     let run = tokio::task::spawn_blocking({
         let (cancel, tx) = (cancel.clone(), tx.clone());
         move || {
             let end = serve(
                 &ask,
-                &mut |s| match route::said_line(&s) {
-                    Some(line) => {
-                        let _ = said.unbounded_send(line);
-                    }
+                &mut |s| match s {
                     // The chip shows a host's standing during a long build.
-                    None => {
+                    Said::Reached => {
                         let _ = tx.unbounded_send(Incoming::Routed);
+                    }
+                    Said::Out(_) | Said::Note(_) => {
+                        for line in route::said_lines(&s) {
+                            // Fails only once the client is gone, which
+                            // cancels the run.
+                            let _ = futures::executor::block_on(said.send(line));
+                        }
                     }
                 },
                 &cancel,
             );
-            let _ = said.unbounded_send(route::end_line(&end));
+            let _ = futures::executor::block_on(said.send(route::end_line(&end)));
         }
     });
     while let Some(line) = lines.next().await {
@@ -172,6 +181,8 @@ async fn serve_route<F>(
             break;
         }
     }
+    // A run waiting on a full channel is let go, to see it was cancelled.
+    drop(lines);
     let _ = run.await;
     watch.abort();
     let _ = tx.unbounded_send(Incoming::Routed);

@@ -27,17 +27,17 @@ fn route_ask_reads_only_route_lines() {
 #[test]
 fn lines_and_ends_are_json_rpc() {
     let parse = |s: String| serde_json::from_str::<Value>(&s).unwrap();
-    let out = parse(said_line(&Said::Out("hi".into())).unwrap());
+    let out = parse(said_lines(&Said::Out("hi".into())).remove(0));
     assert_eq!(out["jsonrpc"], "2.0");
     assert_eq!(out["method"], "onehand/line");
     assert_eq!(out["params"]["out"], "hi");
-    let note = parse(said_line(&Said::Note("n".into())).unwrap());
+    let note = parse(said_lines(&Said::Note("n".into())).remove(0));
     assert_eq!(note["params"]["note"], "n");
     let here = parse(end_line(&RouteEnd::Here { settled: true }));
     assert_eq!(here["id"], 1);
     assert_eq!(here["result"]["run"], "here");
     assert_eq!(here["result"]["settled"], true);
-    assert_eq!(said_line(&Said::Reached), None);
+    assert!(said_lines(&Said::Reached).is_empty());
     let exit = parse(end_line(&RouteEnd::Exit(3)));
     assert_eq!(exit["result"]["exit"], 3);
 }
@@ -53,9 +53,9 @@ fn client_prints_lines_and_returns_the_exit() {
             .read_line(&mut first)
             .unwrap();
         for line in [
-            said_line(&Said::Out("one".into())).unwrap(),
-            said_line(&Said::Note("waiting".into())).unwrap(),
-            said_line(&Said::Out("two".into())).unwrap(),
+            said_lines(&Said::Out("one".into())).remove(0),
+            said_lines(&Said::Note("waiting".into())).remove(0),
+            said_lines(&Said::Out("two".into())).remove(0),
             end_line(&RouteEnd::Exit(3)),
         ] {
             writeln!(stream, "{line}").unwrap();
@@ -196,4 +196,45 @@ fn a_host_just_down_is_not_asked() {
     );
     assert!(!took);
     assert_eq!(notes, ["h did not answer; building here"]);
+}
+
+/// A command's line too long for the socket goes as several, each under
+/// the line cap, and reads back as the whole.
+#[test]
+fn a_long_out_line_is_split() {
+    let long = "é".repeat(40 * 1024);
+    let lines = said_lines(&Said::Out(long.clone()));
+    assert!(lines.len() > 1);
+    let mut back = String::new();
+    for line in &lines {
+        assert!(line.len() < LINE_CAP, "{}", line.len());
+        let msg: Value = serde_json::from_str(line).unwrap();
+        back.push_str(msg["params"]["out"].as_str().unwrap());
+    }
+    assert_eq!(back, long);
+}
+
+/// A reply line past the cap is refused, not held in memory.
+#[test]
+fn client_refuses_a_line_past_the_cap() {
+    let path = socket_path("cap");
+    let listener = UnixListener::bind(&path).unwrap();
+    let served = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut first = String::new();
+        std::io::BufReader::new(&stream)
+            .read_line(&mut first)
+            .unwrap();
+        let _ = writeln!(stream, "{}", "x".repeat(LINE_CAP + 10));
+    });
+    let end = client_blocking(
+        &path,
+        "cargo",
+        &[],
+        Path::new("/p"),
+        &mut Vec::new(),
+        &mut Vec::new(),
+    );
+    assert!(matches!(end, Err(Unreached::Gone(_))), "{end:?}");
+    served.join().unwrap();
 }

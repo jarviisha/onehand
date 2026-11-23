@@ -72,7 +72,10 @@ the command printed or `{"note":"…"}` for onehand's own, then the answer:
 `{"result":{"run":"here","settled":<bool>}}` for one the shim runs itself, `settled` when a
 command it starts in turn runs here too without asking: builds on hosts are off, or the host it
 was meant for did not answer. A connection that drops before the answer stops the
-build. Each run that ends, and each host's answer that changes its standing while the run goes
+build. No line passes 64 KiB either way (`LINE_CAP`): a line the command printed longer than
+48 KiB goes as several `out` lines, and the shim takes a longer reply line as onehand gone. The
+process holds at most 256 lines the shim has yet to read (`ROUTE_BACKLOG`); past them the run
+waits for the shim. Each run that ends, and each host's answer that changes its standing while the run goes
 on, tells the app (`Incoming::Routed`), which redraws its windows, so the project page reads how
 the host answered during a long build too.
 
