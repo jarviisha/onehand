@@ -47,10 +47,14 @@ impl Shell {
                     crate::projects::forget_worktree(&root, &folder, cx);
                 }
             }
-            WorktreeAct::PickFolder => self.pick_worktree_folder(cx),
+            WorktreeAct::PickFolder => {
+                if let Some(root) = self.project_here() {
+                    self.pick_worktree_folder(root, cx);
+                }
+            }
             WorktreeAct::ClearFolder => {
                 if let Some(root) = self.project_here() {
-                    crate::projects::set_worktree_parent(&root, None, cx);
+                    self.clear_worktree_folder(root, cx);
                 }
             }
         }
@@ -75,11 +79,8 @@ impl Shell {
             .and_then(|root| root.local_path().map(Path::to_path_buf))
     }
 
-    /// Choose the folder the project on screen's new worktrees go in.
-    fn pick_worktree_folder(&mut self, cx: &mut Context<Self>) {
-        let Some(root) = self.project_here() else {
-            return;
-        };
+    /// Choose the folder the new worktrees of the project at `root` go in.
+    pub(crate) fn pick_worktree_folder(&mut self, root: PathBuf, cx: &mut Context<Self>) {
         cx.spawn(async move |_, cx| {
             let Some(dir) = super::storage::pick_folder(cx).await else {
                 return;
@@ -87,6 +88,11 @@ impl Shell {
             cx.update(|cx| crate::projects::set_worktree_parent(&root, Some(dir), cx));
         })
         .detach();
+    }
+
+    /// Put the new worktrees of the project at `root` beside its repository.
+    pub(crate) fn clear_worktree_folder(&mut self, root: PathBuf, cx: &mut Context<Self>) {
+        crate::projects::set_worktree_parent(&root, None, cx);
     }
 
     /// Judge removing the worktree at `folder` of the project on screen, off

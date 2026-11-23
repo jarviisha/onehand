@@ -408,3 +408,31 @@ fn stepping_from_a_page_starts_at_its_project(cx: &mut gpui::TestAppContext) {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// The build host form opened for a project is that project's, whichever
+/// one is on screen.
+#[gpui::test]
+fn the_build_host_form_is_for_the_project_it_was_opened_on(cx: &mut gpui::TestAppContext) {
+    let dir = crate::shell::rig::folder("build-form-root");
+    let (_, shell, cx) = crate::shell::rig::shell(cx, dir.join("tasks"), Vec::new());
+    let (first, second) = (dir.join("first"), dir.join("second"));
+    for folder in [&first, &second] {
+        std::fs::create_dir_all(folder).unwrap();
+    }
+    let (first, second) = (
+        std::fs::canonicalize(first).unwrap(),
+        std::fs::canonicalize(second).unwrap(),
+    );
+    for at in [first.clone(), second.clone()] {
+        cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
+    }
+    cx.run_until_parked();
+    let root = cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| {
+            shell.open_build_host_form(first.clone(), None, window, cx);
+            shell.build_host_draft().map(|draft| draft.root.clone())
+        })
+    });
+    assert_eq!(root, Some(first));
+    let _ = std::fs::remove_dir_all(dir);
+}

@@ -41,15 +41,23 @@ impl Shell {
             .update(cx, |pane, cx| pane.set_build_hosts(builds, cx));
     }
 
-    /// Open the form on the project on screen: on its build host at
+    /// `root` when it is one of the window's projects on this machine.
+    fn named_build_root(&self, root: PathBuf) -> Option<PathBuf> {
+        self.local_root(self.root_index(&root)?)
+            .filter(|own| *own == root)
+            .map(Path::to_path_buf)
+    }
+
+    /// Open the form on the project at `root`: on its build host at
     /// `editing`, or empty to add one.
     pub(crate) fn open_build_host_form(
         &mut self,
+        root: PathBuf,
         editing: Option<usize>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(root) = self.build_root() else {
+        let Some(root) = self.named_build_root(root) else {
             return;
         };
         if self.build_host_draft.is_some() {
@@ -164,14 +172,15 @@ impl Shell {
         }
     }
 
-    /// Ask before the build host at `at` of the project on screen goes.
+    /// Ask before the build host at `at` of the project at `root` goes.
     pub(crate) fn confirm_remove_build_host(
         &mut self,
+        root: PathBuf,
         at: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(root) = self.build_root() else {
+        let Some(root) = self.named_build_root(root) else {
             return;
         };
         let Some(entry) = self.builds_of(&root).get(at).cloned() else {

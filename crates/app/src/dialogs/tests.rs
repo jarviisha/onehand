@@ -58,7 +58,7 @@ fn enter_in_a_dialogs_field_presses_its_primary(cx: &mut gpui::TestAppContext) {
     cx.run_until_parked();
     cx.update(|window, cx| {
         shell.update(cx, |shell, cx| {
-            shell.open_build_host_form(None, window, cx);
+            shell.open_build_host_form(root.clone(), None, window, cx);
             let host = shell.build_host_draft().expect("the form").host.clone();
             host.update(cx, |input, cx| input.set_value("win", window, cx));
         })
@@ -179,7 +179,7 @@ fn enter_on_a_refused_entry_keeps_the_form_and_what_was_typed(cx: &mut gpui::Tes
     cx.run_until_parked();
     cx.update(|window, cx| {
         shell.update(cx, |shell, cx| {
-            shell.open_build_host_form(None, window, cx);
+            shell.open_build_host_form(root.clone(), None, window, cx);
             let draft = shell.build_host_draft().expect("the form");
             let into = draft.into.clone();
             // A host left blank, and a folder that names nothing inside the
