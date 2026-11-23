@@ -85,6 +85,8 @@ pub struct PageSend {
     pub start: StartIn,
     /// The new worktree's branch, when one is to be cut.
     pub branch: Option<String>,
+    /// What was picked of the agent's offer, by group (`mode` for the mode).
+    pub picks: Vec<(String, String)>,
 }
 
 /// What the pane asks the shell for. Kept tiny on purpose: the chat's job is

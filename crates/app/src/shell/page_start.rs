@@ -12,6 +12,14 @@ use onehand_core::chat::drive::Origin;
 use onehand_core::worktree;
 use std::path::PathBuf;
 
+/// What a page asked of the session it sends: the agent to run it, its first
+/// prompt and what was picked of the agent's offer.
+struct Ask {
+    agent: Option<SharedString>,
+    text: String,
+    picks: Vec<(String, String)>,
+}
+
 impl Shell {
     /// Show the page of the project at row `idx`, ready to write: to start in
     /// `folder` when it names one of its others, run by `agent` when one is
@@ -49,6 +57,7 @@ impl Shell {
             agent,
             start,
             branch,
+            picks,
         } = send;
         // The page on screen is the active project's; a send from one the
         // person has since left is not taken.
@@ -63,7 +72,10 @@ impl Shell {
         }
         match start {
             StartIn::Project => match self.local_root(idx).map(PathBuf::from) {
-                Some(folder) => self.start_unshown(root, folder, agent, text, window, cx),
+                Some(folder) => {
+                    let ask = Ask { agent, text, picks };
+                    self.start_unshown(root, folder, ask, window, cx)
+                }
                 // A host's folder: its session opens there and is shown at
                 // once, as a host session always is.
                 None => {
@@ -81,10 +93,13 @@ impl Shell {
                     self.page_session_shown(root, uid, text, window, cx);
                 }
             },
-            StartIn::Folder(folder) => self.start_unshown(root, folder, agent, text, window, cx),
+            StartIn::Folder(folder) => {
+                let ask = Ask { agent, text, picks };
+                self.start_unshown(root, folder, ask, window, cx)
+            }
             StartIn::NewWorktree => {
                 let branch = branch.unwrap_or_default();
-                self.cut_for_page(root, branch, agent, text, window, cx);
+                self.cut_for_page(root, branch, Ask { agent, text, picks }, window, cx);
             }
         }
     }
@@ -94,8 +109,7 @@ impl Shell {
         &mut self,
         root: PathBuf,
         branch: String,
-        agent: Option<SharedString>,
-        text: String,
+        ask: Ask,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -131,7 +145,7 @@ impl Shell {
             let _ = shell.update_in(cx, |shell: &mut Self, window, cx| match made {
                 Ok((dir, from)) => {
                     match shell.record_split(&root, dir.clone(), branch, from, window, cx) {
-                        Some(_) => shell.start_unshown(root, dir, agent, text, window, cx),
+                        Some(_) => shell.start_unshown(root, dir, ask, window, cx),
                         None => shell.page_gave_up(
                             &root,
                             format!(
@@ -157,11 +171,11 @@ impl Shell {
         &mut self,
         root: PathBuf,
         folder: PathBuf,
-        agent: Option<SharedString>,
-        text: String,
+        ask: Ask,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let Ask { agent, text, picks } = ask;
         let Some(spec) = Shared::global(cx)
             .settings
             .agents
@@ -189,7 +203,13 @@ impl Shell {
         self.chat.update(cx, |pane, cx| {
             pane.page_busy(&root, Some(format!("Starting {}…", spec.name)), cx)
         });
+        // Armed before the words, so what was picked is in force when the
+        // agent reads them.
         session.update(cx, |session, cx| {
+            session.drive(cx, |chat, _| {
+                chat.arm_start_picks(picks);
+                ((), Vec::new())
+            });
             session.prompt_when_up(&text, Origin::Person, cx)
         });
         let wait = cx.observe_in(

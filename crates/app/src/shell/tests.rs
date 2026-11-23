@@ -698,3 +698,41 @@ fn the_page_locks_while_a_worktree_is_cut(cx: &mut gpui::TestAppContext) {
     assert!(cx.update(|_, cx| pane.read(cx).page_locked(&a)));
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// What is picked on a page of its agent's offer goes with the send.
+#[gpui::test]
+fn a_page_pick_goes_with_the_send(cx: &mut gpui::TestAppContext) {
+    use crate::chat::pane::ChatPaneEvent;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let (shell, cx, dir, a, _) = two_pages(cx, "page-picks");
+    show_page_of(&shell, &a, cx);
+    let pane = cx.update(|_, cx| shell.read(cx).chat.clone());
+    type Picks = Vec<(String, String)>;
+    let heard: Rc<RefCell<Vec<Picks>>> = Rc::default();
+    let into = heard.clone();
+    let _keep = cx.update(|_, cx| {
+        cx.subscribe(&pane, move |_, event: &ChatPaneEvent, _| {
+            if let ChatPaneEvent::StartFromPage(send) = event {
+                into.borrow_mut().push(send.picks.clone());
+            }
+        })
+    });
+    cx.update(|window, cx| {
+        pane.update(cx, |pane, cx| {
+            pane.pick_on_page(&a, "model", "opus".into(), cx);
+            pane.pick_on_page(&a, "model", "sonnet".into(), cx);
+            pane.pick_on_page(&a, "mode", "plan".into(), cx);
+            pane.type_in_composer("go", window, cx);
+            pane.press_send(window, cx);
+        })
+    });
+    assert_eq!(
+        heard.borrow().as_slice(),
+        [vec![
+            ("model".to_string(), "sonnet".to_string()),
+            ("mode".to_string(), "plan".to_string())
+        ]]
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
