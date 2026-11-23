@@ -111,12 +111,26 @@ impl ProjectsDrive {
             return Vec::new();
         }
         let before = std::mem::replace(&mut project.routes, routes.clone());
-        self.change(
+        let mut fx = self.change(
             id,
             Thing::Routes,
             Value::Routes(before),
             Value::Routes(routes),
             false,
-        )
+        );
+        fx.push(self.shims());
+        fx
+    }
+
+    /// The shims for every program any project routes, once each.
+    pub(super) fn shims(&self) -> Effect {
+        let mut programs: Vec<String> = self
+            .projects
+            .iter()
+            .flat_map(|project| project.routes.iter().map(|r| r.program().to_string()))
+            .collect();
+        programs.sort();
+        programs.dedup();
+        Effect::Shims(programs)
     }
 }

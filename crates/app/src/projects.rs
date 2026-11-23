@@ -60,6 +60,21 @@ pub(crate) fn carry(fx: Vec<Effect>, cx: &mut App) {
                 .detach();
             }
             Effect::Changed(id) => tell(&id, cx),
+            // In the writes' order, so the last change's list is the one left.
+            Effect::Shims(programs) => {
+                let written = Shared::global(cx).writer.write(move || {
+                    onehand_core::host::route::shim::refresh_blocking(&programs)
+                        .map_err(|why| why.to_string())
+                });
+                cx.spawn(async move |_| {
+                    // An agent started later writes them again; nothing more
+                    // to do here than say it.
+                    if let Err(why) = written.await {
+                        eprintln!("onehand: writing the route shims: {why}");
+                    }
+                })
+                .detach();
+            }
             Effect::Signal(Signal::SaveFailed { id, name, why }) => {
                 let what = format!("Saving {name}");
                 for_each_holding(&id, cx, move |_, window, cx| {
@@ -380,7 +395,8 @@ pub(crate) fn worktree_removal(
             Effect::Signal(Signal::SaveFailed { .. })
             | Effect::Write(_)
             | Effect::Arm { .. }
-            | Effect::Changed(_) => None,
+            | Effect::Changed(_)
+            | Effect::Shims(_) => None,
         })
         .collect();
     carry(fx, cx);

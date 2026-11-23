@@ -117,6 +117,10 @@ pub enum Effect {
     /// The project changed: tell every window holding it.
     Changed(ProjectId),
     Signal(Signal),
+    /// The routed commands changed: write the shims for these programs,
+    /// every one any project routes, so an agent already running reaches a
+    /// new one at once (`host::route::shim::refresh_blocking`).
+    Shims(Vec<String>),
 }
 
 /// What the front end reports back.
@@ -642,6 +646,7 @@ impl ProjectsDrive {
                 let Some((why, back)) = saves.landed(pending, result) else {
                     return Vec::new();
                 };
+                let routes_back = back.iter().any(|v| matches!(v, Value::Routes(_)));
                 for value in back {
                     self.put(&id, value);
                 }
@@ -650,10 +655,14 @@ impl ProjectsDrive {
                     .get(&id)
                     .map(|project| project.name.clone())
                     .unwrap_or_default();
-                vec![
+                let mut fx = vec![
                     Effect::Changed(id.clone()),
                     Effect::Signal(Signal::SaveFailed { id, name, why }),
-                ]
+                ];
+                if routes_back {
+                    fx.push(self.shims());
+                }
+                fx
             }
             Input::Elapsed { token } => {
                 if self.soon != Some(token) {

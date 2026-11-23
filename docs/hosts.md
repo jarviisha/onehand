@@ -216,8 +216,11 @@ and one line saying where it ran.
   own binary and socket, so a `make dev` build and the installed one never route through each
   other. The binary is named as its file is, never with the ` (deleted)` Linux adds once a newer
   build replaced it; a shim whose binary is not there takes its folder off `PATH` and runs the
-  real program here. They are written again at every agent start from the project files on disk, a shim for a
-  program no longer named removed; only a plain program name gets one. With no routed command in
+  real program here. They are written at every agent start from the project files on disk,
+  and again at every change to any project's routed commands (`Effect::Shims`,
+  `refresh_blocking`), so an agent already running with the folder on its `PATH` reaches a new
+  program at once; a shim for a program no longer named is removed, and only a plain program
+  name gets one (`plain_program`). With no routed command in
   any project nothing is written and the agent's `PATH` is left alone.
 - **The shim folder is put first on the agent's `PATH`** and on that of every terminal it asks
   for over ACP (`crates/io/src/acp.rs`, `SessionOpts.term_env`), in front of the `PATH` the

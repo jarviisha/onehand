@@ -30,7 +30,7 @@ fn write_of(fx: Vec<Effect>) -> Box<ProjectWrite> {
     fx.into_iter()
         .find_map(|e| match e {
             Effect::Write(w) => Some(w),
-            Effect::Arm { .. } | Effect::Changed(_) | Effect::Signal(_) => None,
+            Effect::Arm { .. } | Effect::Changed(_) | Effect::Signal(_) | Effect::Shims(_) => None,
         })
         .expect("a write")
 }
@@ -151,7 +151,8 @@ fn a_failed_write_puts_the_name_back_and_says_so_once() {
             )
             | Effect::Write(_)
             | Effect::Arm { .. }
-            | Effect::Changed(_) => None,
+            | Effect::Changed(_)
+            | Effect::Shims(_) => None,
         })
         .collect();
     assert_eq!(said, vec![("a", "disk full")]);
@@ -190,7 +191,7 @@ fn a_burst_is_written_once_things_are_still() {
     let token = |fx: &[Effect]| {
         fx.iter().find_map(|e| match e {
             Effect::Arm { token, .. } => Some(*token),
-            Effect::Write(_) | Effect::Changed(_) | Effect::Signal(_) => None,
+            Effect::Write(_) | Effect::Changed(_) | Effect::Signal(_) | Effect::Shims(_) => None,
         })
     };
     let (old, new) = (token(&first).unwrap(), token(&second).unwrap());
@@ -605,10 +606,41 @@ fn a_failed_write_puts_the_routes_and_the_pick_back() {
     let (mut d, p) = drive();
     let _ = d.put_build_host(&p.id, builds_on("100-52"), None).unwrap();
     let w = write_of(d.put_route(&p.id, route("cargo build"), None).unwrap());
-    let _ = d.handle(Input::Written {
+    let fx = d.handle(Input::Written {
         id: p.id.clone(),
         pending: w.pending,
         result: Err("read-only".into()),
     });
     assert!(d.get(&p.id).unwrap().routes.is_empty());
+    // The shims follow the routes back.
+    assert!(shims(&fx).is_some_and(|p| p.is_empty()));
+}
+
+/// The programs the last `Effect::Shims` of `fx` names.
+fn shims(fx: &[Effect]) -> Option<Vec<String>> {
+    fx.iter().rev().find_map(|e| match e {
+        Effect::Shims(programs) => Some(programs.clone()),
+        Effect::Write(_) | Effect::Arm { .. } | Effect::Changed(_) | Effect::Signal(_) => None,
+    })
+}
+
+/// Every change to the routes answers the shims for every program every
+/// project routes, once each, so a running agent reaches a new one at once.
+#[test]
+fn a_route_change_rewrites_the_shims() {
+    let p = Project::new(ProjectId::mint(1), None, "/code/a".into());
+    let other = Project::new(ProjectId::mint(2), None, "/code/b".into());
+    let mut d = ProjectsDrive::new(
+        Projects::from_iter([p.clone(), other.clone()]),
+        "/data/projects".into(),
+    );
+    let _ = d.put_route(&other.id, route("dotnet build"), None).unwrap();
+    let fx = d.put_route(&p.id, route("cargo build"), None).unwrap();
+    assert_eq!(shims(&fx), Some(vec!["cargo".into(), "dotnet".into()]));
+    let fx = d.put_route(&p.id, route("cargo test"), None).unwrap();
+    assert_eq!(shims(&fx), Some(vec!["cargo".into(), "dotnet".into()]));
+    let _ = d.remove_route(&p.id, &route("cargo build"));
+    let fx = d.remove_route(&p.id, &route("cargo test"));
+    assert_eq!(shims(&fx), Some(vec!["dotnet".into()]));
+    assert_eq!(shims(&d.remove_route(&p.id, &route("cargo test"))), None);
 }

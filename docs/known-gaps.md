@@ -291,9 +291,10 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
 - **A stopped build's command may leave something running on the host.** On a host without
   `setsid` only the command itself is ended, not what it started; a stop during the checkout, before
   the command starts, ends nothing; on a Windows host nothing is ended. Nothing lists what was left.
-- **A routed command naming a new program reaches only agents started after it.** The shims and
-  the agent's `PATH` are set as the agent starts; a new command of a program already shimmed is
-  routed at once in running agents, since the project file is read at every command.
+- **An agent started while no project routed anything never reaches a routed command.** Its
+  `PATH` is set as it starts, and with nothing routed the shim folder is left off it. An agent
+  started with the folder on its `PATH` reaches a new program at once: every change to the routed
+  commands writes the folder again.
 - **A shell profile that puts a toolchain's folder first again defeats the shim.** A file the
   agent's shell tool reads, holding `export PATH="$HOME/.cargo/bin:$PATH"`, puts the real program
   ahead of the shim, and nothing is routed for that agent.

@@ -193,11 +193,21 @@ pub fn agent_path_blocking(base: Option<&OsStr>) -> Option<OsString> {
     if programs.is_empty() {
         return None;
     }
-    let dir = shim_dir(&config);
-    let exe = live_exe(std::env::current_exe().ok()?);
-    let socket = crate::instance::socket_path(&config);
-    write_shims_blocking(&dir, &exe, &socket, &programs).ok()?;
+    let dir = refresh_blocking(&programs).ok()?;
     Some(agent_path(&dir, base))
+}
+
+/// Write the shim folder for `programs`, every one any project routes, a
+/// shim for any other removed; the folder. Carries out the projects'
+/// `Effect::Shims`, so an agent already running with the folder on its
+/// PATH reaches a program routed since it started.
+pub fn refresh_blocking(programs: &[String]) -> std::io::Result<PathBuf> {
+    let config = crate::config::config_dir();
+    let dir = shim_dir(&config);
+    let exe = live_exe(std::env::current_exe()?);
+    let socket = crate::instance::socket_path(&config);
+    write_shims_blocking(&dir, &exe, &socket, programs)?;
+    Ok(dir)
 }
 
 /// `exe` as its file is named: Linux names a running binary whose file was
