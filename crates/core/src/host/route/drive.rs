@@ -70,8 +70,6 @@ impl RouteDrive {
         vec![RouteEffect::WriteSwitch(on)]
     }
 
-    // The app reads this once routed runs report back.
-    #[allow(dead_code)]
     pub(crate) fn reached(&mut self, host: &HostName, answered: bool) {
         let s = if answered {
             Standing::Reached

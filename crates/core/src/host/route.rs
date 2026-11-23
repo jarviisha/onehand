@@ -1,6 +1,7 @@
 //! Whether an agent's command goes to its project's build host: a pure
 //! decision over the project found for the folder and what the machine is.
 
+pub mod call;
 pub mod drive;
 
 use std::path::PathBuf;
@@ -9,20 +10,15 @@ use super::build::cli::{command_line, Found};
 use crate::config::{HostOs, HostSpec};
 use crate::workspace::{BuildHost, HostName};
 
-// The socket call that asks for a decision uses everything here; until it
-// lands the items read as unused.
-
 /// A command an agent asked to run, and the folder it asked from.
-#[allow(dead_code)]
 #[derive(Debug)]
-pub(crate) struct Ask {
+pub struct Ask {
     pub program: String,
     pub args: Vec<String>,
     pub cwd: PathBuf,
 }
 
 /// Where the command runs.
-#[allow(dead_code)]
 #[derive(Debug)]
 pub(crate) enum Decision {
     /// On this machine, as the agent asked.
@@ -31,7 +27,6 @@ pub(crate) enum Decision {
 }
 
 /// A command handed to the build host.
-#[allow(dead_code)]
 #[derive(Debug)]
 pub(crate) struct Routed {
     pub host: HostName,
@@ -45,7 +40,6 @@ pub(crate) struct Routed {
 
 /// Where `ask` runs, given the project found for its folder. Anything short
 /// of a clear route, and anything the host cannot take, stays here.
-#[allow(dead_code)]
 pub(crate) fn decide(
     found: Result<Found, String>,
     hosts_on: bool,

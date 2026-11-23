@@ -204,8 +204,17 @@ pub(crate) fn run_with(
         Ok(built) => built,
         Err(why) => return refuse(why),
     };
+    told(built, &mut |note| {
+        let _ = writeln!(err, "onehand: {note}");
+    })
+}
+
+/// What onehand says of a build that ran, each a note for `note`, and the
+/// exit code it comes to: the command's own, or [`STOPPED`] for one that
+/// did not finish.
+pub(crate) fn told(built: Built, note: &mut dyn FnMut(&str)) -> i32 {
     if let Some(hint) = &built.hint {
-        let _ = writeln!(err, "onehand: {hint}");
+        note(hint);
     }
     if !built.brought.is_empty() {
         let brought: Vec<String> = built
@@ -213,12 +222,12 @@ pub(crate) fn run_with(
             .iter()
             .map(|path| path.display().to_string())
             .collect();
-        let _ = writeln!(err, "onehand: brought back {}", brought.join(", "));
+        note(&format!("brought back {}", brought.join(", ")));
     }
     match built.exit {
         Some(code) => code,
         None => {
-            let _ = writeln!(err, "onehand: the build did not finish");
+            note("the build did not finish");
             STOPPED
         }
     }
