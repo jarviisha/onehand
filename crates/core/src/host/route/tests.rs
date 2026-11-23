@@ -31,9 +31,23 @@ fn ask(args: &[&str]) -> Ask {
     }
 }
 
+fn linux(declared: &[HostSpec]) -> Machine<'_> {
+    Machine {
+        declared,
+        os: HostOs::Linux,
+    }
+}
+
+fn mac() -> Machine<'static> {
+    Machine {
+        declared: &[],
+        os: HostOs::Other("macos".into()),
+    }
+}
+
 fn here(found: Result<Found, String>) -> bool {
     matches!(
-        decide(found, true, "linux", &[], &ask(&["build"])),
+        decide(found, true, &linux(&[]), &ask(&["build"])),
         Decision::Here
     )
 }
@@ -52,7 +66,7 @@ fn here_without_a_pick() {
 
 #[test]
 fn here_when_hosts_are_off() {
-    let d = decide(found(project()), false, "linux", &[], &ask(&["build"]));
+    let d = decide(found(project()), false, &linux(&[]), &ask(&["build"]));
     assert!(matches!(d, Decision::Here));
 }
 
@@ -83,7 +97,7 @@ fn here_when_the_pick_is_no_longer_a_build_host() {
 
 #[test]
 fn here_when_no_route_matches() {
-    let d = decide(found(project()), true, "linux", &[], &ask(&["test"]));
+    let d = decide(found(project()), true, &linux(&[]), &ask(&["test"]));
     assert!(matches!(d, Decision::Here));
 }
 
@@ -94,13 +108,13 @@ fn here_for_a_windows_host() {
         os: HostOs::Windows,
         arch: "x86_64".into(),
     }];
-    let d = decide(found(project()), true, "linux", &declared, &ask(&["build"]));
+    let d = decide(found(project()), true, &linux(&declared), &ask(&["build"]));
     assert!(matches!(d, Decision::Here));
 }
 
 #[test]
 fn here_from_a_mac() {
-    let d = decide(found(project()), true, "macos", &[], &ask(&["build"]));
+    let d = decide(found(project()), true, &mac(), &ask(&["build"]));
     assert!(matches!(d, Decision::Here));
 }
 
@@ -109,8 +123,7 @@ fn host_for_a_matching_route() {
     let d = decide(
         found(project()),
         true,
-        "linux",
-        &[],
+        &linux(&[]),
         &ask(&["build", "-p", "x"]),
     );
     let Decision::Host(r) = d else { panic!("host") };
@@ -124,7 +137,7 @@ fn host_for_a_matching_route() {
 #[test]
 fn args_keep_their_words() {
     let args = ["build", "--", "a b", "it's"];
-    let Decision::Host(r) = decide(found(project()), true, "linux", &[], &ask(&args)) else {
+    let Decision::Host(r) = decide(found(project()), true, &linux(&[]), &ask(&args)) else {
         panic!("host")
     };
     let mut words = vec!["cargo".to_string()];
@@ -154,12 +167,19 @@ fn routable_hosts_are_linux_ones_from_linux() {
         arch: "x86_64".into(),
     }];
     assert_eq!(
-        routable_hosts(&p, &declared, "linux"),
+        routable_hosts(&p, &linux(&declared)),
         vec![HostName("100-52".into())]
     );
-    assert!(routable_hosts(&p, &declared, "macos").is_empty());
+    assert!(routable_hosts(
+        &p,
+        &Machine {
+            declared: &declared,
+            os: HostOs::Other("macos".into())
+        }
+    )
+    .is_empty());
     p.host = Some(HostName("h".into()));
-    assert!(routable_hosts(&p, &declared, "linux").is_empty());
+    assert!(routable_hosts(&p, &linux(&declared)).is_empty());
 }
 
 #[test]
@@ -167,22 +187,22 @@ fn builds_says_where_the_next_routed_command_goes() {
     let host = HostName("100-52".into());
     let on = route_drive_in("on", true);
     assert_eq!(
-        builds(&project(), &on, &[], "linux"),
+        builds(&project(), &on, &linux(&[])),
         Builds::On(host.clone())
     );
     let mut none = project();
     none.builds_on = None;
-    assert_eq!(builds(&none, &on, &[], "linux"), Builds::Here);
+    assert_eq!(builds(&none, &on, &linux(&[])), Builds::Here);
     // A pick it cannot route to reads as none.
-    assert_eq!(builds(&project(), &on, &[], "macos"), Builds::Here);
+    assert_eq!(builds(&project(), &on, &mac()), Builds::Here);
     let off = route_drive_in("off", false);
-    assert_eq!(builds(&project(), &off, &[], "linux"), Builds::HostsOff);
+    assert_eq!(builds(&project(), &off, &linux(&[])), Builds::HostsOff);
     let mut down = route_drive_in("down", true);
     down.reached(&host, false);
     assert_eq!(
-        builds(&project(), &down, &[], "linux"),
+        builds(&project(), &down, &linux(&[])),
         Builds::NotAnswering(host.clone())
     );
     down.reached(&host, true);
-    assert_eq!(builds(&project(), &down, &[], "linux"), Builds::On(host));
+    assert_eq!(builds(&project(), &down, &linux(&[])), Builds::On(host));
 }

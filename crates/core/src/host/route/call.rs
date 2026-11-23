@@ -11,7 +11,7 @@ use std::time::Instant;
 use serde_json::{json, Value};
 
 use super::drive::route_drive;
-use super::{decide, Ask, Decision};
+use super::{decide, Ask, Decision, Machine};
 use crate::config::HostOs;
 use crate::host::build::cli::{project_of_blocking, told};
 use crate::host::build::{build_cancellable, reachable_blocking, Job};
@@ -100,7 +100,7 @@ pub fn serve_blocking(ask: &Ask, emit: &mut dyn FnMut(Said), cancel: &AtomicBool
     let found = project_of_blocking(&crate::config::config_dir(), &ask.cwd);
     let declared = crate::config::AppConfig::load_resolved().0.hosts;
     let hosts_on = route_drive().hosts_on();
-    let routed = match decide(found, hosts_on, std::env::consts::OS, &declared, ask) {
+    let routed = match decide(found, hosts_on, &Machine::this(&declared), ask) {
         Decision::Here => return here,
         Decision::Host(routed) => routed,
     };
@@ -109,7 +109,7 @@ pub fn serve_blocking(ask: &Ask, emit: &mut dyn FnMut(Said), cancel: &AtomicBool
     // A host that just did not answer is not asked again yet. Only Linux
     // hosts are routed to.
     let answered = !route_drive().recently_down(host, Instant::now()) && {
-        let answered = reachable_blocking(host, &HostOs::Linux);
+        let answered = reachable_blocking(host);
         if route_drive().reached(host, answered) {
             emit(Said::Reached);
         }

@@ -105,7 +105,7 @@ pub(crate) fn build_cancellable(
 
 /// Whether `host` answers ssh at all: `false` only when ssh could not
 /// reach it, whatever the line it ran came to. This machine always does.
-pub(crate) fn reachable_blocking(host: &HostName, _os: &HostOs) -> bool {
+pub(crate) fn reachable_blocking(host: &HostName) -> bool {
     let addr = host.addr();
     if addr.local {
         return true;

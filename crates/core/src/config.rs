@@ -31,7 +31,8 @@ pub(crate) use agent::{default_agents, found_agents, look_key};
 mod document;
 mod host;
 pub use host::{
-    add_refusal, builds_only, declared, listed, removal_refusal, HostEdit, HostOs, HostSpec,
+    add_refusal, builds_only, declared, listed, removal_refusal, this_machine_os, HostEdit, HostOs,
+    HostSpec,
 };
 
 mod font;

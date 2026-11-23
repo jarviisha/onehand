@@ -745,14 +745,10 @@ fn a_windows_host_cannot_bring_back_only_what_a_run_wrote() {
 
 #[test]
 fn this_machine_answers_and_a_dead_host_does_not() {
-    assert!(reachable_blocking(
-        &HostName("local".into()),
-        &crate::config::HostOs::Linux
-    ));
-    assert!(!reachable_blocking(
-        &HostName("nobody@127.0.0.1 -p 1".into()),
-        &crate::config::HostOs::Linux
-    ));
+    assert!(reachable_blocking(&HostName("local".into())));
+    assert!(!reachable_blocking(&HostName(
+        "nobody@127.0.0.1 -p 1".into()
+    )));
 }
 
 mod cli {

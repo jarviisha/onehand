@@ -12,7 +12,7 @@ use gpui::{AnyElement, App, BorrowAppContext as _, Context, IntoElement as _, Wi
 use gpui_component::WindowExt as _;
 use gpui_component::button::{ButtonCustomVariant, ButtonVariants as _};
 use onehand_core::host::route::drive::{RouteEffect, route_drive, write_switch_blocking};
-use onehand_core::host::route::{Builds, builds, routable_hosts};
+use onehand_core::host::route::{Builds, Machine, builds, routable_hosts};
 use onehand_core::project::Project;
 use onehand_core::workspace::HostName;
 
@@ -23,14 +23,14 @@ const HOSTS_SHOWN: usize = crate::settings::BUILD_HOSTS_SHOWN;
 /// The chip for `project`'s head; none for a project with no build host a
 /// command of it can be routed to.
 pub(super) fn build_chip(project: &Project, cx: &mut Context<ChatPane>) -> Option<AnyElement> {
-    let declared = &Shared::global(cx).settings.hosts;
-    let hosts = routable_hosts(project, declared, std::env::consts::OS);
+    let machine = Machine::this(&Shared::global(cx).settings.hosts);
+    let hosts = routable_hosts(project, &machine);
     if hosts.is_empty() {
         return None;
     }
     let (on, now) = {
         let drive = route_drive();
-        let now = builds(project, &drive, declared, std::env::consts::OS);
+        let now = builds(project, &drive, &machine);
         (drive.hosts_on(), now)
     };
     // The row checked is the pick itself, while the switch is off too.

@@ -41,13 +41,30 @@ pub(crate) struct Routed {
     pub command: String,
 }
 
+/// The machine a command is asked from: its system, and the hosts it
+/// declared.
+#[derive(Debug)]
+pub struct Machine<'a> {
+    pub declared: &'a [HostSpec],
+    pub os: HostOs,
+}
+
+impl<'a> Machine<'a> {
+    /// The machine onehand runs on, with the hosts it declared.
+    pub fn this(declared: &'a [HostSpec]) -> Self {
+        Self {
+            declared,
+            os: crate::config::this_machine_os(),
+        }
+    }
+}
+
 /// Where `ask` runs, given the project found for its folder. Anything short
 /// of a clear route, and anything the host cannot take, stays here.
 pub(crate) fn decide(
     found: Result<Found, String>,
     hosts_on: bool,
-    laptop_os: &str,
-    declared: &[HostSpec],
+    machine: &Machine,
     ask: &Ask,
 ) -> Decision {
     let Ok(Found {
@@ -61,7 +78,7 @@ pub(crate) fn decide(
     if !hosts_on {
         return Decision::Here;
     }
-    let Some(host) = picked(&project, declared, laptop_os) else {
+    let Some(host) = picked(&project, machine) else {
         return Decision::Here;
     };
     let Some(route) = project
@@ -94,8 +111,8 @@ pub(crate) fn decide(
 /// host (one nobody declared is taken for one) from a Linux machine alone,
 /// and none for a project whose sessions run on a host, which builds there
 /// already.
-pub fn routable_hosts(project: &Project, declared: &[HostSpec], laptop_os: &str) -> Vec<HostName> {
-    if project.host.is_some() || project.offload.is_some() || laptop_os != "linux" {
+pub fn routable_hosts(project: &Project, machine: &Machine) -> Vec<HostName> {
+    if project.host.is_some() || project.offload.is_some() || machine.os != HostOs::Linux {
         return Vec::new();
     }
     project
@@ -103,18 +120,19 @@ pub fn routable_hosts(project: &Project, declared: &[HostSpec], laptop_os: &str)
         .iter()
         .map(|entry| entry.host.clone())
         .filter(|host| {
-            crate::config::declared(declared, &host.0).is_none_or(|spec| spec.os == HostOs::Linux)
+            crate::config::declared(machine.declared, &host.0)
+                .is_none_or(|spec| spec.os == HostOs::Linux)
         })
         .collect()
 }
 
 /// The project's pick, while it is one of its routable hosts; any other
 /// pick is taken as none.
-fn picked(project: &Project, declared: &[HostSpec], laptop_os: &str) -> Option<HostName> {
+fn picked(project: &Project, machine: &Machine) -> Option<HostName> {
     project
         .builds_on
         .clone()
-        .filter(|on| routable_hosts(project, declared, laptop_os).contains(on))
+        .filter(|on| routable_hosts(project, machine).contains(on))
 }
 
 /// Where the project's next routed command goes.
@@ -131,13 +149,8 @@ pub enum Builds {
 
 /// Where `project`'s next routed command goes, as the switch and the picked
 /// host's standing stand now.
-pub fn builds(
-    project: &Project,
-    drive: &RouteDrive,
-    declared: &[HostSpec],
-    laptop_os: &str,
-) -> Builds {
-    let Some(host) = picked(project, declared, laptop_os) else {
+pub fn builds(project: &Project, drive: &RouteDrive, machine: &Machine) -> Builds {
+    let Some(host) = picked(project, machine) else {
         return Builds::Here;
     };
     if !drive.hosts_on() {
