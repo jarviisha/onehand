@@ -19,6 +19,7 @@ struct Ask {
     text: String,
     picks: Vec<(String, String)>,
     staged: Vec<onehand_core::attachment::StagedAttachment>,
+    cards: onehand_core::chat::Cards,
 }
 
 impl Shell {
@@ -60,6 +61,7 @@ impl Shell {
             branch,
             picks,
             staged,
+            cards,
         } = send;
         // The page on screen is the active project's; a send from one the
         // person has since left is not taken.
@@ -80,6 +82,7 @@ impl Shell {
                         text,
                         picks,
                         staged,
+                        cards,
                     };
                     self.start_unshown(root, folder, ask, window, cx)
                 }
@@ -105,6 +108,7 @@ impl Shell {
                             text,
                             picks,
                             staged,
+                            cards,
                         },
                         window,
                         cx,
@@ -117,6 +121,7 @@ impl Shell {
                     text,
                     picks,
                     staged,
+                    cards,
                 };
                 self.start_unshown(root, folder, ask, window, cx)
             }
@@ -130,6 +135,7 @@ impl Shell {
                         text,
                         picks,
                         staged,
+                        cards,
                     },
                     window,
                     cx,
@@ -214,6 +220,7 @@ impl Shell {
             text,
             picks,
             staged,
+            cards,
         } = ask;
         let Some(spec) = Shared::global(cx)
             .settings
@@ -247,7 +254,7 @@ impl Shell {
         session.update(cx, |session, cx| {
             session.drive(cx, |chat, _| {
                 chat.arm_start_picks(picks);
-                ((), Vec::new())
+                ((), chat.set_cards(cards))
             });
             session.prompt_when_up(&text, &staged, Origin::Person, cx)
         });
@@ -337,12 +344,13 @@ impl Shell {
             text,
             picks,
             staged,
+            cards,
             ..
         } = ask;
         session.update(cx, |session, cx| {
             session.drive(cx, |chat, _| {
                 chat.arm_start_picks(picks);
-                ((), Vec::new())
+                ((), chat.set_cards(cards))
             });
             session.prompt_when_up(&text, &staged, Origin::Person, cx)
         });

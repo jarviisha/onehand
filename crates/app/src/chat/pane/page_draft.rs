@@ -215,6 +215,7 @@ impl ChatPane {
         }
         let text = self.composer.read(cx).text(cx);
         let staged = self.composer.read(cx).attachments.clone();
+        let cards = self.page_cards(&root, cx);
         let branch = self.page_branch.read(cx).value().trim().to_string();
         let agent = self.page_agent(&root, cx);
         let kept = self.page_drafts.entry(root.clone()).or_default();
@@ -231,6 +232,7 @@ impl ChatPane {
             branch,
             picks,
             staged,
+            cards,
         }));
     }
 
@@ -373,6 +375,8 @@ impl ChatPane {
                         .child(text_input(&self.page_branch, cx).disabled(locked)),
                 )
             });
+        let (cards, cost) = self.page_cards_chip(root, cx).unzip();
+        let strip = strip.child(div().flex_1()).children(cards);
         div()
             .v_flex()
             .gap_2()
@@ -392,6 +396,10 @@ impl ChatPane {
             )
             .child(card)
             .child(strip)
+            .children(
+                cost.flatten()
+                    .map(|cost| div().text_xs().text_color(ink.warning).child(cost)),
+            )
             .children(invalid.map(|why| div().text_xs().text_color(ink.danger).child(why)))
             .children(busy.map(|busy| div().text_xs().text_color(muted).child(busy)))
             .children(failure.map(|why| div().text_xs().text_color(ink.danger).child(why)))

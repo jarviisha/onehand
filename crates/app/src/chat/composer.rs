@@ -36,6 +36,7 @@ mod presentation;
 
 mod attachments;
 mod card;
+mod cards_chip;
 mod complete;
 mod page_card;
 mod popup;

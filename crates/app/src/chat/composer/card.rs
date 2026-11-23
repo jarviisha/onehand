@@ -327,6 +327,7 @@ impl Composer {
         });
         let branch = branch.map(|chip| self.opens_menu(Overlay::Branch, chip));
         let control = control_chip(session, cx);
+        let cards = super::cards_chip::cards_chip(session, cx);
         let meters: Vec<_> = {
             let chat = &session.read(cx).chat();
             [chat.context_meter(), chat.limit_meter()]
@@ -336,7 +337,12 @@ impl Composer {
         .enumerate()
         .map(|(i, meter)| meter_view(i, meter, cx))
         .collect();
-        if branch.is_none() && mode.is_none() && control.is_none() && meters.is_empty() {
+        if branch.is_none()
+            && mode.is_none()
+            && control.is_none()
+            && cards.is_none()
+            && meters.is_empty()
+        {
             return None;
         }
         let strip = match narrow {
@@ -361,7 +367,9 @@ impl Composer {
                         // Left of the mode: standing state about the session
                         // beside the one setting it runs under.
                         .children(meters)
-                        .children(mode),
+                        .children(mode)
+                        // Last, at the strip's end, as on a project's page.
+                        .children(cards),
                 ),
         )
     }
@@ -399,7 +407,7 @@ pub(in crate::chat) fn status_chip(
 
 /// A chip's words, in the chip's own ink and size, giving way with an ellipsis
 /// rather than pushing the chip's caret out of its box.
-fn chip_text(text: impl Into<SharedString>) -> gpui::Div {
+pub(super) fn chip_text(text: impl Into<SharedString>) -> gpui::Div {
     div().min_w_0().truncate().child(text.into())
 }
 

@@ -241,7 +241,10 @@ ink from 80%, danger when refused, a full ring when a refused limit has no figur
 agent that reports neither (the limit's also while it is reported with no figure and nothing
 wrong); while the
 session's agent may use onehand's tools, *Controls onehand* stands before the mode, its bot mark
-in the warning ink, and pressing it switches that off. The `+` menu ends on *Agent controls
+in the warning ink, and pressing it switches that off. At the strip's end, on a session of this
+machine, *Cards*: its shield mark, muted at *Manual* and in the warning ink otherwise, and the
+level's name; its menu (*Cards, this session only*) lists *Manual*, *Allow edits* and *Bypass*,
+each with what it does, and changes this session alone; its tooltip says what the level costs. The `+` menu ends on *Agent controls
 onehand* under a heading of its own, *This session*, checked while on. Each chip's
 menu opens just above it, without its tooltip. Above the card, top down: one surface on the card's
 fill, edge and lift holding a reconnect and the queue as lines, then the staged files as one row
@@ -366,7 +369,9 @@ room and leaves the terminal as it is.
   lists *Project folder*, each recorded worktree on disk (capped at 20, *N more not shown*) and,
   on a repository whose sessions run here, *New worktree…*; picked, a *Branch name* field stands
   beside the chip and takes the caret, its rule's refusal said under it in the danger ink as it
-  is typed. A file dropped on the card or pasted into it is staged, as the picker stages one, in
+  is typed. At the strip's end, on a project on this machine, *Cards: <level>*, its menu (*Cards,
+  this project's default*) setting the level a session sent from the page starts on; a level
+  other than *Manual* says its cost under the strip in the warning ink. A file dropped on the card or pasted into it is staged, as the picker stages one, in
   the session's tray over the card, and goes with the first prompt; `@` lists the project's files
   and folders (read again each time the page shows; none on a host) and `/` the commands its
   agent last offered, in the session's own list floated over the card (it hangs from the card's
