@@ -364,21 +364,13 @@ room and leaves the terminal as it is.
   worktrees could not be read: <why>* when it fails, the recorded rows drawn either way (a folder
   outside git that records none shows no box); an offloaded project folder's box is as a local
   one's, its worktrees running here or on their own; then *New
-  worktree…* (refused on a folder that is no repository whose sessions run here) and the field
-  *Worktree folder*: the folder new worktrees go in, or *Beside the repository*, with *Change…*
-  and, while one is set, *Beside the repository*. *Remove worktree…* asks *Remove worktree <branch>?*,
+  worktree…* (refused on a folder that is no repository whose sessions run here). *Remove worktree…* asks *Remove worktree <branch>?*,
   saying the folder is deleted and whether its branch goes with it (merged, unless git keeps it)
   or is kept, and
   refuses while the checkout has uncommitted files, something of onehand's (a session, a shell,
   an unsaved file) or a process uses it, another project has a folder in it, or a task keeps it as
   its worktree, listing each; judged again when answered, a toast says
-  what was removed and what was kept. Under that the box *Settings*
-  (its *Check command* field, then *Build hosts*: one row per host the project builds on, at most
-  20, its name over what a build brings back and, when it names one, the folder that lands
-  under, *target/release/app, into out/linux*, or *Brings nothing back*; an edit mark and
-  *Remove…*, which asks *Stop building on <host>?*; *No build hosts* with none; then *Add build
-  host…*. The form is a dialog, *Host* with the menu of declared hosts, *Artifacts*, one path a
-  line, and *Into*; *Cancel*, then *Add* or *Save*, and what refuses it is said in the form).
+  what was removed and what was kept. What the project is set to is in Settings' *Projects*.
   The page scrolls as one.
 - A project on a host shows the same head, its path written `<host>:<path>` (never shortened to
   `~/`), its git line once read over a live attach (none while a local project on the same path
@@ -529,12 +521,25 @@ room and leaves the terminal as it is.
 ## Settings
 
 Settings is a page named in its own head, as the workspace pages are, over a nav column with
-Appearance, Workspace, Agents, Hosts, Connections and Shortcuts (rows as the rail's page rows, a
+Appearance, Workspace, Agents, Hosts, Projects, Connections and Shortcuts (rows as the rail's page rows, a
 step under a list row), and beside
 it the sub-page, untitled (its nav row names it), opening on its scope as a badge and a hint, its
 groups in the library's setting-page shape: each a box with an edge, its semibold heading and the
 line about it at the top inside. Every button there is secondary:
-Settings holds no primary. Under the Agents page's rows, each built-in agent installed on the
+Settings holds no primary. The Projects page, its scope *Project*, shows one project of the
+window whose sessions run here, a worker's row aside: *Project*, a menu of them (capped at 50,
+*N more not shown*), the one last picked while the window still has it, else the first; then one
+box with its *Check command* field, *Build hosts* (one row per host the project builds on, at
+most 20, its name over what a build brings back and, when it names one, the folder that lands
+under, *target/release/app, into out/linux*, or *Brings nothing back*; an edit mark and
+*Remove…*, which asks *Stop building on <host>?*; *No build hosts* with none; then *Add build
+host…*: a dialog, *Host* with the menu of declared hosts, *Artifacts*, one path a line, and
+*Into*; *Cancel*, then *Add* or *Save*, and what refuses it is said in the form) and *Worktree
+folder* (the folder new worktrees go in, or *Beside the repository*, with *Change…* and, while
+one is set, *Beside the repository*). With no such project it says *No project here runs on
+this machine*. A project's dots menu, on the rail and over its page, offers *Project
+settings…* after *Copy project path* for such a project, opening this page on it. Under the
+Agents page's rows, each built-in agent installed on the
 machine with no entry of its own gets a line, *<agent> is on this machine*, with *Add* at its end,
 then *Add agent…*; the first row carries the *Default* badge. *Add agent…* and a row's edit mark
 open the agent form as a dialog (*Kind*, *Name*, *Command* and *Arguments* for another agent,

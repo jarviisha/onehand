@@ -290,7 +290,7 @@ impl Render for Shell {
                     .is_some()
                     .then(|| crate::dialogs::offload(self, window, cx)),
             )
-            // And the build host form, opened from a project's page.
+            // And the build host form, opened from Settings' Projects page.
             .children(
                 self.build_host_draft
                     .is_some()

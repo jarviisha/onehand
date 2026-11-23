@@ -43,6 +43,9 @@ impl Shell {
                     self.sync_project_facts(cx);
                     // A row came, left or found its project.
                     self.tell_issue_files(cx);
+                    // Settings' Projects page may show one that came, and a
+                    // page cannot make its check field while it draws.
+                    self.make_check_inputs(window, cx);
                     cx.notify();
                 }
                 Effect::Put(value) => self.put_back(value, window, cx),
@@ -157,8 +160,7 @@ impl Shell {
             self.show_active_session(window, cx);
         }
         // What is drawn from the project outside the tree: a check field of
-        // another of its folders, or one a failed write put back, and the
-        // page's build hosts, which it draws from what it was last handed.
+        // another of its folders, or one a failed write put back.
         let check = project.check.clone().unwrap_or_default();
         let folders: Vec<PathBuf> = self
             .window
@@ -176,9 +178,6 @@ impl Shell {
                 let check = check.clone();
                 input.update(cx, |input, cx| input.set_value(check, window, cx));
             }
-        }
-        if let Some(on_screen) = self.build_root().filter(|root| folders.contains(root)) {
-            self.show_build_hosts(Some(&on_screen), cx);
         }
         // The pages naming projects (its own, the workspace's, Tasks,
         // Schedules) take its name as they take a branch read anew.

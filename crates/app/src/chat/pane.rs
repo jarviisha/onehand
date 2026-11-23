@@ -194,6 +194,9 @@ pub struct ProjectFacts {
     /// It is its project's own folder, which has the project's name: a
     /// worktree's row is named for its folder, and renames nothing.
     pub renames: bool,
+    /// It has settings of its own, kept in Settings: a project whose sessions
+    /// run here, a worker's row aside.
+    pub settings: bool,
 }
 
 impl ProjectFacts {
@@ -211,6 +214,7 @@ impl ProjectFacts {
             check: local && root.check.is_some(),
             asks: false,
             renames: root.project.is_some(),
+            settings: local && !root.transient,
             offload: match (&root.host, &root.offload) {
                 _ if root.transient => None,
                 (Some(_), _) => None,
@@ -544,38 +548,6 @@ impl ChatPane {
         }
         project.facts = facts;
         cx.notify();
-    }
-
-    /// Told by the shell which field edits the project's check command.
-    pub fn set_check_input(
-        &mut self,
-        input: Option<Entity<gpui_component::input::InputState>>,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(project) = self.empty.as_mut() else {
-            return;
-        };
-        if project.check_input.as_ref().map(Entity::entity_id)
-            != input.as_ref().map(Entity::entity_id)
-        {
-            project.check_input = input;
-            cx.notify();
-        }
-    }
-
-    /// Told by the shell which hosts the project on screen builds on.
-    pub fn set_build_hosts(
-        &mut self,
-        builds: Vec<onehand_core::workspace::BuildHost>,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(project) = self.empty.as_mut() else {
-            return;
-        };
-        if project.builds != builds {
-            project.builds = builds;
-            cx.notify();
-        }
     }
 
     pub fn set_git(&mut self, line: Option<SharedString>, cx: &mut Context<Self>) {

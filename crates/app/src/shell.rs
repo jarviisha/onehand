@@ -242,6 +242,8 @@ pub struct Shell {
     /// one where the appearance, the thing most likely to be looked for, is a
     /// page away.
     settings_page: SettingsPage,
+    /// The project Settings' Projects page was last pointed at, by folder.
+    settings_project: Option<std::path::PathBuf>,
     /// Held by Settings' nav and focused when it opens.
     settings_focus: gpui::FocusHandle,
     keymap_editor: Entity<crate::keymap::Editor>,

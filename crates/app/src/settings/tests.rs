@@ -301,3 +301,58 @@ mod hosts {
         assert_eq!(lines.users.as_deref(), Some("Used by api, web"));
     }
 }
+
+fn root(path: &str) -> onehand_core::workspace::ProjectRoot {
+    let mut root = onehand_core::workspace::ProjectRoot::new(path);
+    root.label = path.trim_start_matches('/').to_string();
+    root
+}
+
+/// Only a project whose sessions run here has a check command, build hosts
+/// or worktrees, so only such a project is offered; a worker's row is not one
+/// the person keeps.
+#[test]
+fn the_projects_section_offers_only_projects_that_run_here() {
+    let mut on_host = root("/srv/app");
+    on_host.host = Some(onehand_core::workspace::HostName("box".into()));
+    let mut worker = root("/w");
+    worker.transient = true;
+    let offered = super::projects::offered(&[root("/a"), on_host, worker, root("/b")]);
+    let paths: Vec<_> = offered.iter().map(|(path, _)| path.clone()).collect();
+    assert_eq!(paths, [std::path::PathBuf::from("/a"), "/b".into()]);
+    assert_eq!(offered[0].1, "a");
+}
+
+/// The project Settings shows is the one picked while it is offered, else
+/// the first offered, else none.
+#[test]
+fn the_shown_project_falls_back_when_it_leaves() {
+    use std::path::{Path, PathBuf};
+    let offered = super::projects::offered(&[root("/a"), root("/b")]);
+    let shown = |picked: Option<&str>| super::projects::shown(picked.map(Path::new), &offered);
+    assert_eq!(shown(Some("/b")), Some(PathBuf::from("/b")));
+    assert_eq!(shown(Some("/gone")), Some(PathBuf::from("/a")));
+    assert_eq!(shown(None), Some(PathBuf::from("/a")));
+    assert_eq!(super::projects::shown(None, &[]), None);
+}
+
+#[test]
+fn a_build_host_row_says_what_comes_back_and_where_it_lands() {
+    use onehand_core::workspace::{BuildHost, HostName};
+    let entry = |artifacts: &[&str], into: Option<&str>| BuildHost {
+        host: HostName("build01".into()),
+        artifacts: artifacts.iter().map(Into::into).collect(),
+        into: into.map(Into::into),
+    };
+    let line = super::projects::build_host_line;
+    assert_eq!(
+        line(&entry(&["target/release/onehand", "dist"], None)),
+        "target/release/onehand, dist"
+    );
+    assert_eq!(
+        line(&entry(&["bin/Release"], Some("out/windows"))),
+        "bin/Release, into out/windows"
+    );
+    assert_eq!(line(&entry(&[], None)), "Brings nothing back");
+    assert_eq!(line(&entry(&[], Some("out"))), "Brings nothing back");
+}

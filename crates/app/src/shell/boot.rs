@@ -164,6 +164,7 @@ impl Shell {
                             P::Worktree => shell.begin_worktree(root_idx, window, cx),
                             P::RenameBranch => shell.begin_branch_rename(window, cx),
                             P::CopyPath => shell.copy_root_path(root_idx, window, cx),
+                            P::Settings => shell.project_settings_of(root_idx, window, cx),
                             P::RefreshGit => shell.refresh_git(cx),
                             P::Offload => shell.begin_offload(root_idx, window, cx),
                             P::RunHere => shell.run_here_again(root_idx, window, cx),
@@ -261,9 +262,6 @@ impl Shell {
                     E::TakeHostCode(path) => shell.ask_take_host_code(path.clone(), window, cx),
                     E::UpdateHost(path) => shell.update_host_from_laptop(path.clone(), cx),
                     E::RunCheck => shell.run_check(window, cx),
-                    E::AddBuildHost => shell.open_build_host_form(None, window, cx),
-                    E::EditBuildHost(at) => shell.open_build_host_form(Some(*at), window, cx),
-                    E::RemoveBuildHost(at) => shell.confirm_remove_build_host(*at, window, cx),
                 }
                 // A finished turn also changes what the rail's session dots
                 // say, and the rail is drawn from a query rather than from
@@ -466,6 +464,7 @@ impl Shell {
             agent_form: false,
             host_draft: HostDraft::new(window, cx),
             settings_page: SettingsPage::default(),
+            settings_project: None,
             settings_focus: cx.focus_handle(),
             keymap_editor: cx.new(|cx| crate::keymap::Editor::new(window, cx)),
             settings_view: {
