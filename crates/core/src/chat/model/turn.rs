@@ -50,6 +50,24 @@ pub struct QueuedPrompt {
     pub attachments: Vec<StagedAttachment>,
 }
 
+/// What is wrong with a prompt as written, before any agent is asked:
+/// nothing in it, or a staged file that cannot be read. One rule for a
+/// session's Send and for a page's, which has no session yet.
+pub fn draft_blocker(text: &str, staged: &[StagedAttachment]) -> Option<SubmitBlock> {
+    // Named, because "one of your attachments" sends the user looking
+    // through the whole tray for the one with the red edge.
+    if let Some(bad) = staged
+        .iter()
+        .find(|a| matches!(a.delivery, AttachmentDelivery::Unavailable))
+    {
+        return Some(SubmitBlock::UnreadableAttachment(bad.name.clone()));
+    }
+    if text.trim().is_empty() && staged.is_empty() {
+        return Some(SubmitBlock::Empty);
+    }
+    None
+}
+
 impl Chat {
     /// Every still-pending (unresolved) permission with its live-items index,
     /// in transcript order. Rendered as a slide-up prompt above the composer
@@ -379,16 +397,8 @@ impl Chat {
     /// is what queueing is *for*, while an unreadable attachment is no more
     /// sendable in a minute than it is now.
     fn prompt_blocker(&self, text: &str, staged: &[StagedAttachment]) -> Option<SubmitBlock> {
-        // Named, because "one of your attachments" sends the user looking
-        // through the whole tray for the one with the red edge.
-        if let Some(bad) = staged
-            .iter()
-            .find(|a| matches!(a.delivery, AttachmentDelivery::Unavailable))
-        {
-            return Some(SubmitBlock::UnreadableAttachment(bad.name.clone()));
-        }
-        if text.trim().is_empty() && staged.is_empty() {
-            return Some(SubmitBlock::Empty);
+        if let Some(block) = draft_blocker(text, staged) {
+            return Some(block);
         }
         if self.tx.is_none() {
             return Some(SubmitBlock::NotConnected);

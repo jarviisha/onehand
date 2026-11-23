@@ -127,14 +127,20 @@ impl ChatPane {
         }
     }
 
-    /// Put back `text`, a prompt of `uid`'s that never went, where it is
-    /// written: ahead of whatever was typed since, so nothing is lost.
-    pub(super) fn unsent(&mut self, uid: u64, text: String, cx: &mut Context<Self>) {
+    /// Put back `back`, a prompt of `uid`'s that never went, where it is
+    /// written: its words ahead of whatever was typed since, its files with
+    /// what is staged, so nothing is lost.
+    pub(super) fn unsent(
+        &mut self,
+        uid: u64,
+        back: onehand_core::chat::QueuedPrompt,
+        cx: &mut Context<Self>,
+    ) {
         if self.active != Some(uid) {
             if let Some(conv) = self.conversations.get_mut(&uid) {
                 conv.draft
                     .get_or_insert_with(crate::chat::composer::Draft::default)
-                    .put_first(&text);
+                    .put_first(back);
             }
             return;
         }
@@ -146,7 +152,7 @@ impl ChatPane {
             let _ = at.update(cx, |_, window, cx| {
                 composer.update(cx, |composer, cx| {
                     let mut draft = composer.take_draft(window, cx);
-                    draft.put_first(&text);
+                    draft.put_first(back);
                     composer.restore_draft(draft, window, cx);
                 });
             });
@@ -379,7 +385,7 @@ impl ChatPane {
                         cx.notify();
                     }
                     ChatEvent::Look(what) => pane.look(uid, *what, &agent, &root_label, cx),
-                    ChatEvent::Unsent(text) => pane.unsent(uid, text.clone(), cx),
+                    ChatEvent::Unsent(back) => pane.unsent(uid, back.clone(), cx),
                     // Re-emitted rather than acted on: the transcript says what
                     // was asked for, and where a file goes is the shell's call.
                     // Matched exhaustively so a new variant cannot be added and

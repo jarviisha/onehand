@@ -664,7 +664,40 @@ fn a_persons_held_prompt_comes_back_when_the_agent_never_comes_up() {
     assert!(sent(&mut rx).is_none());
     assert!(
         fx.iter()
-            .any(|effect| matches!(effect, Effect::Unsent(text) if text == "hi")),
+            .any(|effect| matches!(effect, Effect::Unsent(back) if back.text == "hi")),
+        "{:?}",
+        names(&fx)
+    );
+}
+
+/// A person's held prompt the agent cannot take (a staged file that cannot
+/// be read) comes back with its files, rather than going nowhere.
+#[test]
+fn a_persons_held_prompt_with_an_unreadable_file_comes_back() {
+    let (mut drive, tx, mut rx) = connecting();
+    let gone = std::env::temp_dir().join("onehand-held-never-there");
+    let staged = [crate::attachment::StagedAttachment::inspect(
+        gone,
+        crate::attachment::AttachmentSource::Picker,
+    )];
+    let out = drive
+        .drive
+        .prompt_when_up("look", &staged, Origin::Person, now());
+    drive.take(&out.1);
+    let fx = feed(
+        &mut drive,
+        AcpEvent::Connected {
+            tx,
+            resumed: false,
+            forkable: false,
+        },
+    );
+    assert!(sent(&mut rx).is_none());
+    assert!(
+        fx.iter().any(|effect| matches!(
+            effect,
+            Effect::Unsent(back) if back.text == "look" && back.attachments.len() == 1
+        )),
         "{:?}",
         names(&fx)
     );

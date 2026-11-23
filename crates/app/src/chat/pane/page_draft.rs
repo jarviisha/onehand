@@ -189,8 +189,10 @@ impl ChatPane {
             return Some(busy.into());
         }
         let composer = self.composer.read(cx);
-        if composer.text(cx).trim().is_empty() && composer.attachments.is_empty() {
-            return Some("Write a prompt first".into());
+        if let Some(block) =
+            onehand_core::chat::draft_blocker(&composer.text(cx), &composer.attachments)
+        {
+            return Some(block.hint().into());
         }
         if kept.is_some_and(|kept| kept.start == StartIn::NewWorktree) {
             let branch = self.page_branch.read(cx).value();
@@ -273,7 +275,10 @@ impl ChatPane {
                     .child(super::greeting::GREETING),
             )
             // What is staged rests over the card, as on a session's.
-            .children(self.composer.update(cx, |composer, cx| composer.tray(cx)))
+            .children(
+                self.composer
+                    .update(cx, |composer, cx| composer.page_tray(locked, cx)),
+            )
             .child(card)
             .child(strip)
             .children(invalid.map(|why| div().text_xs().text_color(ink.danger).child(why)))

@@ -852,3 +852,34 @@ fn a_file_staged_on_a_page_goes_with_the_send(cx: &mut gpui::TestAppContext) {
     assert_eq!(heard.borrow().as_slice(), [1]);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A page whose tray holds a file that cannot be read does not send, as a
+/// session's Send does not.
+#[gpui::test]
+fn a_page_with_an_unreadable_file_does_not_send(cx: &mut gpui::TestAppContext) {
+    use crate::chat::pane::ChatPaneEvent;
+    use std::cell::Cell;
+    use std::rc::Rc;
+    let (shell, cx, dir, a, _) = two_pages(cx, "page-unreadable");
+    show_page_of(&shell, &a, cx);
+    let pane = cx.update(|_, cx| shell.read(cx).chat.clone());
+    let sent = Rc::new(Cell::new(false));
+    let into = sent.clone();
+    let _keep = cx.update(|_, cx| {
+        cx.subscribe(&pane, move |_, event: &ChatPaneEvent, _| {
+            if let ChatPaneEvent::StartFromPage(_) = event {
+                into.set(true);
+            }
+        })
+    });
+    cx.update(|window, cx| {
+        pane.update(cx, |pane, cx| {
+            pane.stage_on_page(dir.join("never-there"), cx);
+            pane.type_in_composer("go", window, cx);
+            pane.press_send(window, cx);
+        })
+    });
+    assert!(!sent.get());
+    assert_eq!(cx.update(|_, cx| pane.read(cx).composer_text(cx)), "go");
+    let _ = std::fs::remove_dir_all(dir);
+}

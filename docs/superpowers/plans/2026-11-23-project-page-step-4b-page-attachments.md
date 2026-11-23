@@ -18,3 +18,10 @@ they need the composer's lists taken off the session first).
    written *or staged*; `PageSend.staged` → the shell's `Ask` → `prompt_when_up`. What is staged
    is set aside per project with the words (the composer's `Draft` already holds both). Test
    `a_file_staged_on_a_page_goes_with_the_send`. Docs: `docs/screens.md`.
+
+## After review
+
+- A staged file that cannot be read refuses the page's Send (`chat::draft_blocker`, one rule with
+  a session's); a person's held prompt the agent refuses comes back as `Effect::Unsent`, which now
+  carries its files.
+- The page's tray (`Composer::page_tray`): no removal while locked; no *Show all*, a count instead.

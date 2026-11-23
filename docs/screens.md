@@ -358,14 +358,18 @@ room and leaves the terminal as it is.
   agent comes up, the model first, before its first prompt; a pick the agent no longer offers is
   not sent, and the session says *<group> <value> is no longer offered; the session runs on the
   agent's default*. Picking another agent drops what was picked. Then Send, the page's one primary, refused while nothing is
-  written or staged (*Write a prompt first*), while the branch below fails its rule, and while a worktree is
+  written or staged (*Write a prompt first*), while a staged file cannot be read (*<file> could not
+  be read — remove it*), while the branch below fails its rule, and while a worktree is
   being made; Enter sends, Shift+Enter a newline. Under the card, *Start in*: a chip naming
   where the session runs, *Project folder*, a worktree's branch or *New worktree*, whose menu
   lists *Project folder*, each recorded worktree on disk (capped at 20, *N more not shown*) and,
   on a repository whose sessions run here, *New worktree…*; picked, a *Branch name* field stands
   beside the chip and takes the caret, its rule's refusal said under it in the danger ink as it
   is typed. A file dropped on the card or pasted into it is staged, as the picker stages one, in
-  the session's tray over the card, and goes with the first prompt. What is written, staged and
+  the session's tray over the card, and goes with the first prompt; a cut tray counts what it left
+  out (*N more not shown*) where a session's opens *Show all*, and while the page is locked its
+  plates cannot be removed. A first prompt the agent could not take, or held for an agent that
+  never came up, comes back with its files into that session's composer. What is written, staged and
   picked is kept per project while the person is elsewhere. Send
   cuts the worktree first when one is asked for (*Making worktree <branch>…* meanwhile; a
   failure stays under the card in the danger ink, the words kept), then starts the session in

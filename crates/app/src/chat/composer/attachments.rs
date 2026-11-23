@@ -171,6 +171,28 @@ impl Composer {
     /// before it goes rather than after. The tray rests above the composer
     /// card, not in it, so staging a file never moves the field being typed in.
     pub(in crate::chat) fn tray(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        self.tray_as(true, true, cx)
+    }
+
+    /// The tray on a project's page: no list of every file to open there, so
+    /// a cut row counts what it left out; and no removal while what was sent
+    /// is being started, since the files went with it.
+    pub(in crate::chat) fn page_tray(
+        &self,
+        locked: bool,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        self.tray_as(!locked, false, cx)
+    }
+
+    /// The tray, its plates `removable` or not, a cut row ending on *Show
+    /// all* where it `lists_all`, else on how many it left out.
+    fn tray_as(
+        &self,
+        removable: bool,
+        lists_all: bool,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
         if self.attachments.is_empty() {
             return None;
         }
@@ -262,7 +284,9 @@ impl Composer {
                             unavailable.then_some("unreadable"),
                             cx,
                         )
-                        .child(div().absolute().top_0().right_0().p_0p5().child(unstage));
+                        .when(removable, |plate| {
+                            plate.child(div().absolute().top_0().right_0().p_0p5().child(unstage))
+                        });
                         // A picture opens whole; a text file opens in the
                         // Workbench; anything else only names itself.
                         match (picture, openable(a)) {
@@ -334,7 +358,17 @@ impl Composer {
                             )
                         }),
                 )
-                .when(cut, |tray| {
+                .when(cut && !lists_all, |tray| {
+                    let left = self.attachments.len().saturating_sub(MAX_TRAY_CHIPS);
+                    tray.children((left > 0).then(|| {
+                        div()
+                            .flex_none()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(format!("{left} more not shown"))
+                    }))
+                })
+                .when(cut && lists_all, |tray| {
                     tray.child(
                         crate::controls::action("all-attachments")
                             .quiet(cx)

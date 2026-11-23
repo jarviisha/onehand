@@ -153,7 +153,7 @@ pub enum ChatEvent {
     Look(onehand_core::chat::Away),
     /// A person's prompt held for an agent that never came up: put it back
     /// where they write.
-    Unsent(String),
+    Unsent(onehand_core::chat::QueuedPrompt),
     /// Show the subagent whose card this key names, in the float beside the
     /// conversation. Where it goes is the pane's to decide.
     OpenSubagent(u64),
@@ -739,7 +739,7 @@ impl ChatSession {
                     .detach();
                 }
                 Effect::Look(what) => cx.emit(ChatEvent::Look(what)),
-                Effect::Unsent(text) => cx.emit(ChatEvent::Unsent(text)),
+                Effect::Unsent(back) => cx.emit(ChatEvent::Unsent(back)),
                 Effect::SendCode { .. } | Effect::PromptAgain | Effect::Tell { .. } => {
                     left.push(effect)
                 }
