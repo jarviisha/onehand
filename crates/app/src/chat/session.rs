@@ -656,7 +656,7 @@ impl ChatSession {
                     // Kept for a project's page, the whole file each time, in
                     // order with the other settings' writes.
                     if let Some(file) = changed {
-                        let path = onehand_core::config::FactsFile::path();
+                        let path = Shared::global(cx).facts_path.clone();
                         let written = Shared::global(cx)
                             .writer
                             .write(move || file.save_to(&path).map_err(|e| e.to_string()));

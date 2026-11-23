@@ -80,6 +80,46 @@ impl ChatPane {
         chips
     }
 
+    /// What the chips for `agent` on `root`'s page show, as picks: each
+    /// group's value picked here, else the one the agent last had in force,
+    /// where it is one of its choices. The model first, since what else is
+    /// offered may follow it.
+    pub(super) fn page_shown_picks(
+        &self,
+        root: &Path,
+        agent: &str,
+        cx: &App,
+    ) -> Vec<(String, String)> {
+        let Some(facts) = crate::state::Shared::global(cx).settings.facts_of(agent) else {
+            return Vec::new();
+        };
+        let picks = self.page_picks(root);
+        let picked = |id: &str| picks.iter().find(|(g, _)| g == id).map(|(_, v)| v.clone());
+        let mut shown: Vec<(String, String)> = Vec::new();
+        for option in &facts.options {
+            let role = option.role();
+            if role.is_none() {
+                continue;
+            }
+            let value = picked(&option.id).or_else(|| option.current.clone());
+            let offered = value.filter(|value| option.choices.iter().any(|c| &c.value == value));
+            if let Some(value) = offered {
+                let pick = (option.id.clone(), value);
+                match role {
+                    Some(Role::Model) => shown.insert(0, pick),
+                    Some(Role::Effort | Role::Fast) | None => shown.push(pick),
+                }
+            }
+        }
+        let mode = picked(MODE_SELECTOR)
+            .or_else(|| facts.current_mode.clone())
+            .filter(|mode| facts.modes.iter().any(|m| &m.id == mode));
+        if let Some(mode) = mode {
+            shown.push((MODE_SELECTOR.to_string(), mode));
+        }
+        shown
+    }
+
     /// A picker over one group's choices.
     fn group_chip(&self, root: &Path, group: Group, cx: &mut Context<Self>) -> AnyElement {
         let label = group

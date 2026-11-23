@@ -364,13 +364,6 @@ impl Chat {
             .collect()
     }
 
-    /// What the agent offers right now: its modes, and each config option's
-    /// choice values, by id.
-    ///
-    /// For a workflow step planning its next pick against what the session
-    /// actually advertises -- the protocol-shaped [`Chat::modes`] /
-    /// [`Chat::config_options`] are no use to a caller outside the chat that
-    /// just wants the ids.
     /// What the agent offers, as a project's page keeps it for the agent's
     /// next session: its modes, its config groups as they stand, its `/`
     /// commands.
@@ -383,6 +376,13 @@ impl Chat {
         }
     }
 
+    /// What the agent offers right now: its modes, and each config option's
+    /// choice values, by id.
+    ///
+    /// For a workflow step planning its next pick against what the session
+    /// actually advertises -- the protocol-shaped [`Chat::modes`] /
+    /// [`Chat::config_options`] are no use to a caller outside the chat that
+    /// just wants the ids.
     pub fn offer(&self) -> Offer {
         Offer {
             modes: self.modes.iter().map(|m| m.id.clone()).collect(),
@@ -572,7 +572,15 @@ impl Chat {
     /// Set the picks armed for a fresh session, the model included. One the
     /// agent no longer offers is not sent, and the session says so.
     pub(super) fn apply_start_picks(&mut self) {
-        for (group, value) in std::mem::take(&mut self.start_picks) {
+        let mut picks = std::mem::take(&mut self.start_picks);
+        // The model first: what else the agent offers may follow it.
+        let is_model = |group: &str| {
+            self.config_options
+                .iter()
+                .any(|o| o.id == group && o.role() == Some(crate::acp::Role::Model))
+        };
+        picks.sort_by_key(|(group, _)| !is_model(group));
+        for (group, value) in picks {
             if group == super::MODE_SELECTOR {
                 match self.modes.iter().any(|m| m.id == value) {
                     true if self.current_mode.as_deref() != Some(value.as_str()) => {

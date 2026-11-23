@@ -362,8 +362,6 @@ impl SettingsDrive {
         }
     }
 
-    /// `spec` came up offering `offer`: what was learned of it before is
-    /// replaced.
     /// Take what the file kept of each agent, read at launch.
     pub fn know_facts(&mut self, file: super::FactsFile) {
         self.settings.facts = file;
@@ -390,6 +388,8 @@ impl SettingsDrive {
         Some(self.settings.facts.clone())
     }
 
+    /// `spec` came up offering `offer`: what was learned of it before is
+    /// replaced.
     pub fn saw_offer(&mut self, spec: AgentSpec, offer: Offer) {
         self.settings.offers_seen.retain(|(seen, _)| *seen != spec);
         self.settings.offers_seen.push((spec, offer));

@@ -90,7 +90,17 @@ impl Shell {
                         cx,
                         |_, _| {},
                     );
-                    self.page_session_shown(root, uid, text, window, cx);
+                    self.page_session_shown(
+                        root,
+                        uid,
+                        Ask {
+                            agent: None,
+                            text,
+                            picks,
+                        },
+                        window,
+                        cx,
+                    );
                 }
             },
             StartIn::Folder(folder) => {
@@ -282,7 +292,7 @@ impl Shell {
         &mut self,
         root: PathBuf,
         uid: Option<u64>,
-        text: String,
+        ask: Ask,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -294,7 +304,12 @@ impl Shell {
             });
             return;
         };
+        let Ask { text, picks, .. } = ask;
         session.update(cx, |session, cx| {
+            session.drive(cx, |chat, _| {
+                chat.arm_start_picks(picks);
+                ((), Vec::new())
+            });
             session.prompt_when_up(&text, Origin::Person, cx)
         });
         self.chat

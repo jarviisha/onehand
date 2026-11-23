@@ -3779,3 +3779,23 @@ fn a_resumed_session_ignores_start_picks() {
         ))
     );
 }
+
+/// The model goes first: what else the agent offers may follow it.
+#[test]
+fn a_start_pick_of_the_model_goes_first() {
+    let (mut chat, _rx) = chat_with_tx();
+    chat.arm_start_picks(vec![
+        ("effort".into(), "high".into()),
+        ("model".into(), "opus".into()),
+    ]);
+    chat.apply(AcpEvent::Connected {
+        tx: chat.tx.clone().unwrap(),
+        resumed: false,
+        forkable: false,
+    });
+    let first = std::iter::from_fn(|| recv(&mut chat).ok()).find_map(|r| match r {
+        AcpRequest::SetConfigOption { config_id, .. } => Some(config_id),
+        _ => None,
+    });
+    assert_eq!(first.as_deref(), Some("model"));
+}

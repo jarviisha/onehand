@@ -136,7 +136,8 @@ impl ChatPane {
         let kept = self.page_drafts.entry(root.clone()).or_default();
         kept.failure = None;
         let start = kept.start.clone();
-        let picks = kept.picks.clone();
+        // What the chips show is what the session gets.
+        let picks = self.page_shown_picks(&root, agent.as_deref().unwrap_or_default(), cx);
         let branch = (start == StartIn::NewWorktree).then_some(branch);
         cx.emit(ChatPaneEvent::StartFromPage(super::PageSend {
             root,

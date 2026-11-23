@@ -353,8 +353,9 @@ room and leaves the terminal as it is.
   picked or the one picked is gone), then what that agent offered when a session of it last
   came up: its model and effort as pickers headed by the group's own name, its fast switch as the
   session's bolt, its mode headed *Mode*, each starting on what was then in force; *Agent's
-  default*, muted, while no session of it has come up. What is picked there is set on the
-  session as its agent comes up, before its first prompt; a pick the agent no longer offers is
+  default*, muted, while no session of it has come up. What the chips show (picked there, or
+  what was last in force where the agent still lists it as a choice) is set on the session as its
+  agent comes up, the model first, before its first prompt; a pick the agent no longer offers is
   not sent, and the session says *<group> <value> is no longer offered; the session runs on the
   agent's default*. Picking another agent drops what was picked. Then Send, the page's one primary, refused while nothing is
   written (*Write a prompt first*), while the branch below fails its rule, and while a worktree is
