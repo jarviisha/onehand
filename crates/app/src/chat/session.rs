@@ -874,12 +874,13 @@ impl ChatSession {
     pub(crate) fn prompt_when_up(
         &mut self,
         text: &str,
+        staged: &[onehand_core::attachment::StagedAttachment],
         origin: Origin,
         cx: &mut Context<Self>,
     ) -> Intake {
-        let (intake, fx) = self
-            .chat
-            .prompt_when_up(text, origin, onehand_core::Now::read());
+        let (intake, fx) =
+            self.chat
+                .prompt_when_up(text, staged, origin, onehand_core::Now::read());
         self.carry(fx, cx);
         cx.notify();
         intake

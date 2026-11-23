@@ -66,7 +66,7 @@ pub(super) fn open_plain(
         // As a person would after watching it connect; dropped if it never
         // comes up.
         session.update(cx, |session, cx| {
-            session.prompt_when_up(&prompt, Origin::Tools, cx)
+            session.prompt_when_up(&prompt, &[], Origin::Tools, cx)
         });
     }
     Ok(format!(

@@ -823,3 +823,32 @@ fn what_a_chip_shows_goes_with_the_send(cx: &mut gpui::TestAppContext) {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A file staged on a page stays with that page, and goes with the send,
+/// words or none.
+#[gpui::test]
+fn a_file_staged_on_a_page_goes_with_the_send(cx: &mut gpui::TestAppContext) {
+    use crate::chat::pane::ChatPaneEvent;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let (shell, cx, dir, a, b) = two_pages(cx, "page-staged");
+    let file = dir.join("notes.txt");
+    std::fs::write(&file, "notes").unwrap();
+    show_page_of(&shell, &a, cx);
+    let pane = cx.update(|_, cx| shell.read(cx).chat.clone());
+    cx.update(|_, cx| pane.update(cx, |pane, cx| pane.stage_on_page(file.clone(), cx)));
+    show_page_of(&shell, &b, cx);
+    show_page_of(&shell, &a, cx);
+    let heard: Rc<RefCell<Vec<usize>>> = Rc::default();
+    let into = heard.clone();
+    let _keep = cx.update(|_, cx| {
+        cx.subscribe(&pane, move |_, event: &ChatPaneEvent, _| {
+            if let ChatPaneEvent::StartFromPage(send) = event {
+                into.borrow_mut().push(send.staged.len());
+            }
+        })
+    });
+    cx.update(|window, cx| pane.update(cx, |pane, cx| pane.press_send(window, cx)));
+    assert_eq!(heard.borrow().as_slice(), [1]);
+    let _ = std::fs::remove_dir_all(dir);
+}

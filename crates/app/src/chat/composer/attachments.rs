@@ -497,3 +497,15 @@ pub(in crate::chat) fn chip(id: impl Into<gpui::ElementId>, open: bool, cx: &App
         .gap_1()
         .flex_none()
 }
+
+#[cfg(test)]
+impl Composer {
+    /// Stage `path`, as the picker would.
+    pub(in crate::chat) fn stage_picked(
+        &mut self,
+        path: std::path::PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        self.stage(vec![path], AttachmentSource::Picker, cx);
+    }
+}

@@ -349,7 +349,7 @@ room and leaves the terminal as it is.
 - A project's page, reached by its row or with no session open, shows, from the top: a head (the project's name, its path and git line
   under it, *Run check* (spinning while a check runs) at the end); then *What are we building?*,
   semibold and centred, over the page's composer: an edged card as the session's, its field, then
-  the agent chip (*Agent*, each configured agent, the one picked ticked; the first while none is
+  `+` (*Attach files*, the native picker), the agent chip (*Agent*, each configured agent, the one picked ticked; the first while none is
   picked or the one picked is gone), then what that agent offered when a session of it last
   came up: its model and effort as pickers headed by the group's own name, its fast switch as the
   session's bolt, its mode headed *Mode*, each starting on what was then in force; *Agent's
@@ -358,13 +358,15 @@ room and leaves the terminal as it is.
   agent comes up, the model first, before its first prompt; a pick the agent no longer offers is
   not sent, and the session says *<group> <value> is no longer offered; the session runs on the
   agent's default*. Picking another agent drops what was picked. Then Send, the page's one primary, refused while nothing is
-  written (*Write a prompt first*), while the branch below fails its rule, and while a worktree is
+  written or staged (*Write a prompt first*), while the branch below fails its rule, and while a worktree is
   being made; Enter sends, Shift+Enter a newline. Under the card, *Start in*: a chip naming
   where the session runs, *Project folder*, a worktree's branch or *New worktree*, whose menu
   lists *Project folder*, each recorded worktree on disk (capped at 20, *N more not shown*) and,
   on a repository whose sessions run here, *New worktree…*; picked, a *Branch name* field stands
   beside the chip and takes the caret, its rule's refusal said under it in the danger ink as it
-  is typed. What is written and picked is kept per project while the person is elsewhere. Send
+  is typed. A file dropped on the card or pasted into it is staged, as the picker stages one, in
+  the session's tray over the card, and goes with the first prompt. What is written, staged and
+  picked is kept per project while the person is elsewhere. Send
   cuts the worktree first when one is asked for (*Making worktree <branch>…* meanwhile; a
   failure stays under the card in the danger ink, the words kept), then starts the session in
   the place picked, run by the agent picked, off screen, the words its first prompt: the page
