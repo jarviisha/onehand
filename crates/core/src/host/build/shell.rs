@@ -96,10 +96,11 @@ impl Shell {
     /// On a POSIX host the command runs in a session of its own, in the
     /// foreground so it keeps its stdin and its signals, and what a stop is
     /// to end is written to [`RUN_PID`] ([`Shell::stop`]): the group, as
-    /// `-<id>`, or, on a host with no `setsid`, the command's own id. The
-    /// subshell around `setsid` makes sure it is no group's leader, which it
-    /// would fork away from, and the `exit` after it that no shell runs it
-    /// in its own process instead.
+    /// `-<id>`, or, on a host with no `setsid`, the command's own id, and
+    /// removed once a command under `setsid` ends. The subshell around
+    /// `setsid` keeps it from being a group's leader, which it would fork
+    /// away from. What follows the subshell keeps a shell from running the
+    /// subshell in place, as it may its last command.
     ///
     /// **On Windows the line is read twice**, by the `cmd.exe` ssh starts and
     /// by the one that runs the command, and quotes there toggle rather than
@@ -135,7 +136,7 @@ impl Shell {
                 format!(
                     "cd {dir} && r=$PWD && rm -f {RUN_PID} && git checkout -q -f --detach {sha} && \
                      {touch}{within}echo {MARK} && if command -v setsid >/dev/null 2>&1; then \
-                     (exec setsid sh -c {grouped} onehand \"$r/{RUN_PID}\" {command}) 2>&1; exit $?; \
+                     (exec setsid sh -c {grouped} onehand \"$r/{RUN_PID}\" {command}) 2>&1; s=$?; rm -f \"$r/{RUN_PID}\"; exit $s; \
                      else echo $$ > \"$r/{RUN_PID}\"; exec \"${{SHELL:-/bin/sh}}\" -lc {command} 2>&1; fi"
                 )
             }

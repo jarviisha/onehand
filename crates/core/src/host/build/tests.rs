@@ -636,8 +636,9 @@ fn cancel_stops_a_running_command() {
 
 /// The run line as this machine's `sh` runs it in `top`, `hi` on its stdin
 /// and `path` its `PATH`: what it printed, its exit code, and the id it
-/// wrote for a stop.
+/// wrote for a stop, as the command saw it.
 fn run_line(top: &Path, command: &str, path: &std::ffi::OsStr) -> (String, Option<i32>, String) {
+    let command = format!("cat {RUN_PID} > .git/pid-seen; {command}");
     use std::io::Write as _;
     let head = git(top, &["rev-parse", "HEAD"]);
     let line = shell::Shell::Posix
@@ -645,7 +646,7 @@ fn run_line(top: &Path, command: &str, path: &std::ffi::OsStr) -> (String, Optio
             &top.display().to_string(),
             &head,
             Path::new(""),
-            command,
+            &command,
             None,
         )
         .expect("a line");
@@ -664,7 +665,7 @@ fn run_line(top: &Path, command: &str, path: &std::ffi::OsStr) -> (String, Optio
         .write_all(b"hi\n")
         .expect("fed");
     let out = sh.wait_with_output().expect("ran");
-    let pid = std::fs::read_to_string(top.join(RUN_PID)).expect("an id written");
+    let pid = std::fs::read_to_string(top.join(".git/pid-seen")).expect("an id written");
     (
         String::from_utf8_lossy(&out.stdout).into_owned(),
         out.status.code(),
@@ -697,6 +698,8 @@ fn the_command_runs_in_its_own_group_with_stdin_and_its_exit_code() {
         pid.starts_with('-') && pid[1..].parse::<u32>().is_ok(),
         "{pid}"
     );
+    // Gone once the command ends, so a stop after it ends nothing.
+    assert!(!top.join(RUN_PID).exists());
 }
 
 #[test]
@@ -1385,7 +1388,7 @@ mod shells {
                 .run(DIR, SHA, Path::new("sub dir"), "it's", None)
                 .as_deref(),
             Ok(
-                r#"cd '.onehand-build/lap/my_proj-abc' && r=$PWD && rm -f .git/onehand-route-pid && git checkout -q -f --detach 2ab98d7259af09c62a806ff487818d931abf3b7e && cd 'sub dir' && echo __ONEHAND_BUILD__ && if command -v setsid >/dev/null 2>&1; then (exec setsid sh -c 'echo "-$$" > "$1"; exec "${SHELL:-/bin/sh}" -lc "$2"' onehand "$r/.git/onehand-route-pid" 'it'\''s') 2>&1; exit $?; else echo $$ > "$r/.git/onehand-route-pid"; exec "${SHELL:-/bin/sh}" -lc 'it'\''s' 2>&1; fi"#
+                r#"cd '.onehand-build/lap/my_proj-abc' && r=$PWD && rm -f .git/onehand-route-pid && git checkout -q -f --detach 2ab98d7259af09c62a806ff487818d931abf3b7e && cd 'sub dir' && echo __ONEHAND_BUILD__ && if command -v setsid >/dev/null 2>&1; then (exec setsid sh -c 'echo "-$$" > "$1"; exec "${SHELL:-/bin/sh}" -lc "$2"' onehand "$r/.git/onehand-route-pid" 'it'\''s') 2>&1; s=$?; rm -f "$r/.git/onehand-route-pid"; exit $s; else echo $$ > "$r/.git/onehand-route-pid"; exec "${SHELL:-/bin/sh}" -lc 'it'\''s' 2>&1; fi"#
             )
         );
         assert_eq!(

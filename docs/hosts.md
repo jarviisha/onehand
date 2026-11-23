@@ -106,8 +106,8 @@ bring back what it built. Nothing of this needs the host service: it is the pers
      it prints, stderr with stdout, is handed over as it comes. It is given two hours
      (`BUILD_LIMIT`). On a POSIX host with `setsid` it runs in a session of its own, still in the
      foreground, and its process group is written to `.git/onehand-route-pid` in the host's
-     folder (`Shell::run`); without `setsid` it runs as before and the file holds the command's
-     own id.
+     folder (`Shell::run`), and removed when the command ends; without `setsid` it runs as before
+     and the file holds the command's own id.
   5. **The artifacts come back** only when the command exits 0, all of them or none: one the
      build did not make fails the build, *<path> was not built on <host>*, before anything is
      written here. What comes back writes over what is here. Only the paths named are unpacked,
