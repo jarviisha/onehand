@@ -28,6 +28,7 @@ mod branch;
 mod build_host;
 mod host_project;
 mod offload;
+mod route;
 mod rows;
 
 pub use agent::agent_form;
@@ -42,6 +43,7 @@ pub(crate) use host_project::{
 
 pub(crate) use build_host::build_host;
 pub(crate) use offload::offload;
+pub(crate) use route::route;
 pub(crate) use rows::{issue_row, page_row};
 
 /// How tall a form's details field stands: a paragraph in view.

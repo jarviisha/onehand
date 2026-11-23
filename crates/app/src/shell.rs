@@ -23,6 +23,7 @@ mod check_commands;
 mod cleanup;
 mod confirm;
 mod conversation;
+mod routes;
 pub(crate) use confirm::{Confirm, confirm_on};
 mod dock_rules;
 mod dock_skin;
@@ -294,6 +295,10 @@ pub struct Shell {
     offload_draft: Option<offload::OffloadDraft>,
     /// The form that adds or changes one of a project's build hosts.
     build_host_draft: Option<build_hosts::BuildHostDraft>,
+    /// The form that adds or changes one of a project's routed commands.
+    route_draft: Option<routes::RouteDraft>,
+    /// The commands each project folder suggests routing, read once a folder.
+    route_suggestions: HashMap<PathBuf, Vec<&'static str>>,
     /// The folders of this window's offloaded projects whose writers are
     /// off, with the line said under them, as last told to the docks.
     offload_locks: HashMap<PathBuf, String>,
