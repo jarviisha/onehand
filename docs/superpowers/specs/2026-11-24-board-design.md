@@ -151,20 +151,14 @@ own issues, not a new kind of item.
 
 ### To do and pulling
 
-- **Moving an issue to To do makes the task** (brief from the issue, the board's workflow, place
-  per the workflow), and puts it last in To do. The person can reorder To do and move a task back
-  to the Backlog while it has not started, which removes the task and leaves the issue.
-- **To do is a queue the engine pulls from, in the person's order:** the first task in To do
-  starts once its first step has room under its limit (and, as today, once its place is free).
-  It is a new reason a task waits, beside its place; whether it is the existing *Queued* state
-  with a new reason and an order, or a state of its own, is the builder's call, kept consistent
-  with `docs/tasks.md`'s life of a task.
-- **What keeps a task in To do.** A board task's worktree is its own, so its place is always free
-  (`task/queue.rs` keys the queue by place) and the place alone would start every task at once.
-  To do waits instead on the board's team size, and from step 4 on room at the first step too
-  (see *Decided with the person after the review*).
-- **A task in To do is kept but does not ask for its place.** `task::submit` keeps a task and asks
-  for its place at once (`docs/tasks.md`); To do needs a kept-not-asking path.
+- **To do is a list of issue numbers** on the project's board settings (`project.toml`), first
+  pulled first. The person can reorder it and move an issue back to the Backlog.
+- **The task is made when the issue is pulled**, through the off-screen start (brief from the
+  issue, the board's workflow, place per the workflow), so To do items are not tasks and are not
+  on the Tasks page. A refused pull puts the issue back in the Backlog with a toast.
+- **To do is a queue the engine pulls from, in the person's order:** the first issue in To do is
+  pulled once the board's team has room (and, from step 4 on, the first step has room under its
+  limit).
 - **Pulled tasks start off screen**, through the path schedules and tools use
   (`start_off_screen`), not in a window: the person moved the issue long before, and the project
   may be open in several windows. Pulling happens while onehand is open (my call).

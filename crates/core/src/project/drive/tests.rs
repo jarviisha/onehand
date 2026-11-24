@@ -644,3 +644,91 @@ fn a_route_change_rewrites_the_shims() {
     assert_eq!(shims(&fx), Some(vec!["dotnet".into()]));
     assert_eq!(shims(&d.remove_route(&p.id, &route("cargo test"))), None);
 }
+
+fn board(todo: Vec<u64>) -> crate::project::Board {
+    crate::project::Board {
+        workflow: "mine".into(),
+        team: 3,
+        todo,
+    }
+}
+
+/// A drive whose project has a board holding `todo`.
+fn drive_with_todo(todo: Vec<u64>) -> (ProjectsDrive, Project) {
+    let (mut d, p) = drive();
+    let _ = d.set_board(&p.id, Some(board(todo)));
+    (d, p)
+}
+
+fn todo_of(d: &ProjectsDrive, p: &Project) -> Vec<u64> {
+    d.get(&p.id).unwrap().board().unwrap().todo.clone()
+}
+
+#[test]
+fn board_round_trips_through_toml() {
+    let dir = std::env::temp_dir().join(format!("onehand-board-{}", std::process::id()));
+    let mut p = Project::new(ProjectId::mint(1), None, "/code/a".into());
+    crate::project::file::save_to(&p, &dir).unwrap();
+    let text = std::fs::read_to_string(dir.join(crate::project::file::FILE)).unwrap();
+    assert!(!text.contains("board"));
+    p.board = Some(board(vec![4, 9]));
+    crate::project::file::save_to(&p, &dir).unwrap();
+    match crate::project::file::load_from(&dir) {
+        crate::project::file::ProjectLoad::Found(loaded) => assert_eq!(*loaded, p),
+        _ => panic!("the project loads"),
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn add_todo_appends_once() {
+    let (mut d, p) = drive_with_todo(Vec::new());
+    let _ = d.add_todo(&p.id, 4);
+    assert!(d.add_todo(&p.id, 4).is_empty());
+    assert_eq!(todo_of(&d, &p), vec![4]);
+}
+
+#[test]
+fn move_todo_swaps_neighbours() {
+    let (mut d, p) = drive_with_todo(vec![4, 9, 2]);
+    let _ = d.move_todo(&p.id, 2, true);
+    assert_eq!(todo_of(&d, &p), vec![4, 2, 9]);
+    assert!(d.move_todo(&p.id, 4, true).is_empty());
+    assert_eq!(todo_of(&d, &p), vec![4, 2, 9]);
+}
+
+#[test]
+fn take_todo_removes_only_named() {
+    let (mut d, p) = drive_with_todo(vec![4, 9, 2]);
+    let _ = d.take_todo(&p.id, &[9]);
+    assert_eq!(todo_of(&d, &p), vec![4, 2]);
+}
+
+#[test]
+fn set_team_clamps() {
+    let (mut d, p) = drive_with_todo(Vec::new());
+    let _ = d.set_team(&p.id, 0);
+    assert_eq!(d.get(&p.id).unwrap().board().unwrap().team, 1);
+    let _ = d.set_team(&p.id, 12);
+    assert_eq!(d.get(&p.id).unwrap().board().unwrap().team, 8);
+}
+
+#[test]
+fn a_project_without_a_board_ignores_todo_changes() {
+    let (mut d, p) = drive();
+    assert!(d.add_todo(&p.id, 4).is_empty());
+    assert!(d.set_team(&p.id, 3).is_empty());
+    assert!(d.get(&p.id).unwrap().board().is_none());
+}
+
+#[test]
+fn failed_write_puts_board_back() {
+    let (mut d, p) = drive();
+    let w = write_of(d.set_board(&p.id, Some(board(vec![4]))));
+    let _ = d.handle(Input::Written {
+        id: p.id.clone(),
+        pending: w.pending,
+        result: Err("disk full".into()),
+    });
+    assert!(d.get(&p.id).unwrap().board().is_none());
+}
