@@ -93,7 +93,10 @@ fn usable_refuses_checkout_and_missing() {
     assert!(usable(Some(&template(Place::Worktree))).is_ok());
     assert!(usable(None).unwrap_err().contains("gone"));
     let why = usable(Some(&template(Place::Checkout))).unwrap_err();
-    assert!(why.starts_with("A board needs a workflow that works on a worktree"));
+    assert_eq!(
+        why,
+        "A board needs a workflow that works on a worktree: Implement on a branch works in the checkout."
+    );
 }
 
 fn task(id: &str, project: &str, step: usize, outcome: Option<Outcome>) -> Task {
@@ -129,20 +132,17 @@ fn ids(tasks: &[&Task]) -> Vec<String> {
 #[test]
 fn columns_place_by_current_step() {
     let template = template(Place::Worktree);
+    let mut lost = template.clone();
+    lost.steps[0].id = "gone".into();
+    let mut at_lost = task("5", "p", 0, None);
+    at_lost.runs[0].template = lost;
     let all = [
         task("1", "p", 0, None),
         task("2", "p", 1, None),
         task("3", "p", 1, Some(Outcome::Done)),
         task("4", "p", 0, Some(Outcome::Stopped(Stop::ByPerson))),
-        task("5", "p", 99, None),
+        at_lost,
     ];
-    // Task 5's run is at a step the template does not have: build it by
-    // pointing the run at a template with other steps.
-    let mut all = all;
-    let mut lost = template.clone();
-    lost.steps[0].id = "gone".into();
-    all[4].runs[0].template = lost;
-    all[4].runs[0].step = 0;
     let working = |id: &str| (id == "1" || id == "2" || id == "5").then_some(Working::Running);
     let got = columns(&template, all.iter(), &working);
     assert_eq!(got.steps.len(), template.steps.len() + 1);
@@ -152,6 +152,43 @@ fn columns_place_by_current_step() {
     let last = got.steps.last().unwrap();
     assert_eq!((last.step.as_str(), last.label.as_str()), ("gone", "gone"));
     assert_eq!(ids(&last.tasks), ["5"]);
+}
+
+#[test]
+fn columns_order_done_newest_first() {
+    let template = template(Place::Worktree);
+    let all = [
+        task("1000000000000", "p", 0, Some(Outcome::Done)),
+        task("2000000000000", "p", 0, Some(Outcome::Done)),
+    ];
+    let got = columns(&template, all.iter(), &|_| None);
+    assert_eq!(ids(&got.done), ["2000000000000", "1000000000000"]);
+}
+
+#[test]
+fn columns_leave_out_dismissed_and_taken_over() {
+    let template = template(Place::Worktree);
+    let mut dismissed = task("1", "p", 0, Some(Outcome::Failed("x".into())));
+    dismissed.dismissed = true;
+    let all = [
+        dismissed,
+        task("2", "p", 0, Some(Outcome::Stopped(Stop::TakenOver))),
+    ];
+    let got = columns(&template, all.iter(), &|_| None);
+    assert!(got.steps.iter().all(|c| c.tasks.is_empty()));
+    assert!(got.done.is_empty());
+}
+
+#[test]
+fn columns_keep_needs_attention_in_their_step() {
+    let template = template(Place::Worktree);
+    let all = [
+        task("1", "p", 1, Some(Outcome::Failed("x".into()))),
+        task("2", "p", 0, None),
+    ];
+    let got = columns(&template, all.iter(), &|_| None);
+    assert_eq!(ids(&got.steps[0].tasks), ["2"]);
+    assert_eq!(ids(&got.steps[1].tasks), ["1"]);
 }
 
 #[test]

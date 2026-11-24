@@ -453,32 +453,38 @@ fn a_schedules_finished_task_closes_its_session_and_says_so() {
 /// it was done.
 #[test]
 fn board_task_end_signals_board_ended() {
-    let project: crate::project::ProjectId = serde_json::from_str("\"p1\"").unwrap();
-    let mut tasks = TasksDrive::default();
-    tasks.add(Task {
-        origin: Some(Origin::Board {
-            project: project.clone(),
-            issue: 7,
-        }),
-        ..titled("1", "Issue", "/a")
-    });
-    ask(&mut tasks, "1", "/a");
-    let mut run = tasks.task("1").unwrap().runs[0].clone();
-    run.outcome = Some(Outcome::Done);
-    tasks.run_ended("1", run, usize::MAX, false, Some(7), WINDOW);
-    let fx = tasks.handle(Input::Free {
-        task: "1".into(),
-        from: usize::MAX,
-    });
-    assert!(
-        has(&fx, |e| *e
-            == Effect::Signal(Signal::BoardEnded {
+    for (outcome, done) in [
+        (Outcome::Done, true),
+        (Outcome::Failed("no".into()), false),
+        (Outcome::Stopped(Stop::ByPerson), false),
+    ] {
+        let project: crate::project::ProjectId = serde_json::from_str("\"p1\"").unwrap();
+        let mut tasks = TasksDrive::default();
+        tasks.add(Task {
+            origin: Some(Origin::Board {
                 project: project.clone(),
                 issue: 7,
-                done: true
-            })),
-        "{fx:?}"
-    );
+            }),
+            ..titled("1", "Issue", "/a")
+        });
+        ask(&mut tasks, "1", "/a");
+        let mut run = tasks.task("1").unwrap().runs[0].clone();
+        run.outcome = Some(outcome);
+        tasks.run_ended("1", run, usize::MAX, false, Some(7), WINDOW);
+        let fx = tasks.handle(Input::Free {
+            task: "1".into(),
+            from: usize::MAX,
+        });
+        assert!(
+            has(&fx, |e| *e
+                == Effect::Signal(Signal::BoardEnded {
+                    project: project.clone(),
+                    issue: 7,
+                    done
+                })),
+            "{fx:?}"
+        );
+    }
 }
 
 /// A run that cannot start ends failed when nobody is watching it, a

@@ -125,8 +125,10 @@ pub fn columns<'a>(
             Some(Working::Queued | Working::Running | Working::Waiting) => None,
             None => task.outcome(),
         };
+        if task.dismissed() {
+            continue;
+        }
         match ended {
-            _ if task.dismissed() => continue,
             Some(Outcome::Done) => {
                 done.push(task);
                 continue;
