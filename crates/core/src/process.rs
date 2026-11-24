@@ -92,6 +92,10 @@ pub fn output_until(
     let out = drain(child.stdout.take().expect("stdout was piped"));
     let err = drain(child.stderr.take().expect("stderr was piped"));
     let deadline = Instant::now() + limit;
+    // From a millisecond, doubling to a twentieth of a second: most commands
+    // run here (git asked one thing) end in a few milliseconds, and a first
+    // look only after 50ms made each of them cost that much.
+    let mut wait = Duration::from_millis(1);
     let status = loop {
         match child.try_wait().map_err(Failure::Unstarted)? {
             Some(status) => break status,
@@ -103,7 +107,10 @@ pub fn output_until(
                 stop(&mut child);
                 return Err(Failure::Cancelled);
             }
-            None => std::thread::sleep(Duration::from_millis(50)),
+            None => {
+                std::thread::sleep(wait);
+                wait = (wait * 2).min(Duration::from_millis(50));
+            }
         }
     };
     // Whatever the child left running is ended too, so a pipe it was holding
