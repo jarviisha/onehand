@@ -72,7 +72,10 @@ impl WorkspaceDrive {
         };
         let (idx, mut fx) = match self.local_index(&saved.root) {
             Some(idx) => (idx, Vec::new()),
-            None if saved.there => self.keep_project(saved.root.clone(), project),
+            None if saved.there => match self.keep_project(saved.root.clone(), project) {
+                (Ok(idx), fx) => (idx, fx),
+                (Err(_), fx) => return fx,
+            },
             None => return vec![Effect::Signal(Signal::FolderGone(saved.root))],
         };
         fx.extend(self.select_project(idx));

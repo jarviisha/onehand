@@ -109,6 +109,12 @@ pub enum Refusal {
     NotHere,
     /// The project has no check command to run.
     NoCheck,
+    /// A project of the window on another machine, this one or a host, has
+    /// the folder already. What a window keeps for a project (its fold, its
+    /// terminal, its git status, its open files) is filed by folder, so the
+    /// two would share it, and removing one would drop the other's unsaved
+    /// files.
+    FolderTaken,
 }
 
 /// A project that has left the window, on this machine or on `host`.

@@ -90,9 +90,13 @@ fn the_overview_keeps_a_host_project_and_the_other_pages_do_not() {
     );
     ws.roots[0] = onehand_core::workspace::ProjectRoot::of(&here);
     // A status for the local folder, which the host's of the same path must
-    // never show.
+    // never show. A window refuses the two now; a file written before that
+    // holds both.
+    ws.roots
+        .push(onehand_core::workspace::ProjectRoot::of(&on_host(
+            "vps", "/srv/app",
+        )));
     let mut drive = onehand_core::workspace::WorkspaceDrive::new(ws);
-    let _ = drive.open_host_project(&on_host("vps", "/srv/app"));
     swept(
         &mut drive,
         vec![(PathBuf::from("/srv/app"), status("main"))],
@@ -114,8 +118,13 @@ fn the_overview_keeps_a_host_project_and_the_other_pages_do_not() {
 fn a_host_root_reads_its_git_status_unless_a_local_root_has_its_path() {
     use onehand_core::workspace::Workspace;
     use std::path::PathBuf;
-    let mut drive = onehand_core::workspace::WorkspaceDrive::new(Workspace::seeded("/srv/app"));
-    let _ = drive.open_host_project(&on_host("vps", "/srv/app"));
+    let mut ws = Workspace::seeded("/srv/app");
+    // A window refuses the two now; a file written before that holds both.
+    ws.roots
+        .push(onehand_core::workspace::ProjectRoot::of(&on_host(
+            "vps", "/srv/app",
+        )));
+    let mut drive = onehand_core::workspace::WorkspaceDrive::new(ws);
     let _ = drive.open_host_project(&on_host("vps", "/srv/other"));
     swept(
         &mut drive,

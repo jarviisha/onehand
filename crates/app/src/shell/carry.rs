@@ -20,6 +20,9 @@ pub(super) fn refused(why: Refusal) -> &'static str {
         Refusal::ProjectGone => PROJECT_GONE,
         Refusal::NotHere => "That runs on a project on this machine",
         Refusal::NoCheck => "This project has no check command to run",
+        Refusal::FolderTaken => {
+            "A project on another machine has this folder in this window; open it in another window"
+        }
     }
 }
 

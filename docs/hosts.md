@@ -508,8 +508,10 @@ another thing, under *Builds on a host*. Every attach opens by exchanging servic
   `<host>:<path>` (`host_path`, `parse_root_key`, `crates/core/src/workspace.rs`). A file written by
   an earlier build, one string per project in `roots`, still reads: an entry that is not absolute and
   has a host before its first `:/` is a host root, so a host named by an IPv6 address (`fe80::1`,
-  `user@[fe80::1]`) keeps its colons. A local and a host folder on one path are two projects that
-  both survive a reload. Restarting onehand shows the project again;
+  `user@[fe80::1]`) keeps its colons. A window refuses a project whose folder a project of
+  another machine in it has (`Refusal::FolderTaken`): what a window keeps for a project (its fold,
+  its terminal, its git status, its open files) is filed by folder. A file written before that, holding a
+  local and a host folder on one path, still reads them as two projects. Restarting onehand shows the project again;
   it attaches when it is shown, as a session connects lazily.
 
 ## Sessions
