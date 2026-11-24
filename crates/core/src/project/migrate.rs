@@ -28,7 +28,7 @@ use crate::config::{
 };
 use crate::workspace::{stem_for, HostName, OFFLOAD};
 use crate::worktree::current_branch_blocking;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -177,10 +177,13 @@ pub(crate) fn migrate_projects_in(config: &Path, seed: u64) -> Vec<String> {
 /// started from. Only the id is written: history records no worktree. One
 /// nothing resolves is left as it is.
 ///
-/// ponytail: every `meta.json` is read at every launch, and one nothing
-/// resolves costs the same each time (git for its folder, and for each local
-/// project once per launch; every task file when its folder is gone); if that
-/// ever shows at start, keep a mark of the roots tried and pass over them.
+/// Each folder is looked up once per launch, however many conversations
+/// share it: a few hundred conversations kept from folders no project holds
+/// asked git once each, and held the first window back by seconds.
+///
+/// ponytail: every `meta.json` is still read at every launch, and a folder
+/// nothing resolves still costs one git call per launch; if that shows at
+/// start, keep a mark of the roots tried on disk and pass over them.
 fn stamp_conversations(config: &Path, projects: &Projects, problems: &mut Vec<String>) {
     let Ok(entries) = fs::read_dir(config.join("conversations")) else {
         return;
@@ -188,6 +191,7 @@ fn stamp_conversations(config: &Path, projects: &Projects, problems: &mut Vec<St
     // Asked once, and only when a conversation needs it.
     let mut keys: Option<Vec<(ProjectId, (PathBuf, PathBuf))>> = None;
     let mut runs: Option<Vec<(PathBuf, PathBuf)>> = None;
+    let mut looked: HashMap<PathBuf, Option<ProjectId>> = HashMap::new();
     for dir in entries.flatten().map(|entry| entry.path()) {
         let file = dir.join("meta.json");
         let Ok(bytes) = fs::read(&file) else {
@@ -210,23 +214,29 @@ fn stamp_conversations(config: &Path, projects: &Projects, problems: &mut Vec<St
         else {
             continue;
         };
-        let found = projects
-            .find(None, &root)
-            .map(|(project, _)| project.id.clone())
-            .or_else(|| {
-                let (common, sub, _) = repo_key_blocking(&root)?;
-                let keys = keys.get_or_insert_with(|| repo_keys(projects));
-                keys.iter()
-                    .find(|(_, key)| key.0 == common && key.1 == sub)
-                    .map(|(id, _)| id.clone())
-            })
-            .or_else(|| {
-                let runs = runs.get_or_insert_with(|| task_places(config));
-                let (_, repo) = runs.iter().find(|(dir, _)| *dir == root)?;
-                projects
-                    .find(None, repo)
-                    .map(|(project, _)| project.id.clone())
-            });
+        let found = if let Some(found) = looked.get(&root) {
+            found.clone()
+        } else {
+            let found = projects
+                .find(None, &root)
+                .map(|(project, _)| project.id.clone())
+                .or_else(|| {
+                    let (common, sub, _) = repo_key_blocking(&root)?;
+                    let keys = keys.get_or_insert_with(|| repo_keys(projects));
+                    keys.iter()
+                        .find(|(_, key)| key.0 == common && key.1 == sub)
+                        .map(|(id, _)| id.clone())
+                })
+                .or_else(|| {
+                    let runs = runs.get_or_insert_with(|| task_places(config));
+                    let (_, repo) = runs.iter().find(|(dir, _)| *dir == root)?;
+                    projects
+                        .find(None, repo)
+                        .map(|(project, _)| project.id.clone())
+                });
+            looked.insert(root.clone(), found.clone());
+            found
+        };
         // Only a project written: one this run could not write gets a new
         // id at the next, and a conversation named for this one would then
         // never be found again.
