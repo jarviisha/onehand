@@ -121,17 +121,8 @@ fn a_tools_issue_is_written_once_and_not_again_while_open(cx: &mut TestAppContex
         title: title.into(),
         body: "on open".into(),
     };
-    let ask = |call: Call, cx: &mut gpui::VisualTestContext| {
-        let (answer, heard) = oneshot::channel();
-        cx.update(|_, cx| perform(Peer::Outside, call, answer, cx));
-        for _ in 0..100 {
-            cx.run_until_parked();
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        futures::executor::block_on(heard).unwrap()
-    };
     assert_eq!(
-        ask(call("Crash"), cx),
+        ask(Peer::Outside, call("Crash"), cx),
         Ok("Wrote issue #1: Crash".to_string())
     );
     // The workspace page, which reads the file itself, is told.
@@ -151,7 +142,7 @@ fn a_tools_issue_is_written_once_and_not_again_while_open(cx: &mut TestAppContex
         .collect();
     assert_eq!(titles, ["Crash"]);
     assert_eq!(
-        ask(call(" crash "), cx),
+        ask(Peer::Outside, call(" crash "), cx),
         Ok("Issue #1 is already open with that title".to_string())
     );
     let kept = onehand_core::issues::load_blocking(&file).unwrap();
@@ -159,13 +150,17 @@ fn a_tools_issue_is_written_once_and_not_again_while_open(cx: &mut TestAppContex
     let _ = std::fs::remove_dir_all(dir);
 }
 
-/// Ask `call` of the tools as `peer`, and read the answer once everything
+/// Ask `call` of the tools as `peer`, and return its answer once everything
 /// it started has landed.
 fn ask(peer: Peer, call: Call, cx: &mut gpui::VisualTestContext) -> Result<String, String> {
     let (tx, rx) = oneshot::channel();
     cx.update(|_, cx| perform(peer, call, tx, cx));
+    // Some answers wait on a write landing on a thread of its own and are
+    // then sent from a foreground task: waiting keeps the test's executor
+    // running, where a bare `block_on` would starve the task that answers.
+    let answer = cx.foreground_executor().block_test(rx).expect("answered");
     cx.run_until_parked();
-    futures::executor::block_on(rx).expect("answered")
+    answer
 }
 
 /// An outside program's call lands in the window in front, and is refused
