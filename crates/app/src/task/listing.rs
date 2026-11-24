@@ -76,6 +76,7 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
                 let workflow = run.map_or_else(String::new, |run| run.template.name.clone());
                 match &task.origin() {
                     Some(Origin::Schedule { name, .. }) => format!("{name} · {workflow}"),
+                    Some(Origin::Board { .. }) => format!("from the board · {workflow}"),
                     Some(Origin::Tool) => format!("by a tool · {workflow}"),
                     None => workflow,
                 }

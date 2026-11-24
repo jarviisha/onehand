@@ -354,6 +354,18 @@ impl Issues {
         self.revision
     }
 
+    /// Whether a brief can be made from `issue`: it is open, and either was
+    /// written here or is kept in step with `forge`, since an issue brought
+    /// in from a forge no longer in step may have been written by anybody.
+    pub(crate) fn workable(
+        &self,
+        issue: &LocalIssue,
+        forge: Option<&'static dyn crate::connector::Connector>,
+    ) -> bool {
+        let synced = forge.is_some_and(|forge| self.in_step_with(forge.name()));
+        issue.open && (synced || issue.written_here())
+    }
+
     /// Whether these issues are kept in step with the connector named `name`.
     pub fn in_step_with(&self, name: &str) -> bool {
         self.synced_with() == Some(name)
@@ -819,7 +831,7 @@ pub fn supervised_brief_blocking(
     let synced = forge.filter(|forge| kept.in_step_with(forge.name()));
     let issue = kept
         .get(number)
-        .filter(|issue| issue.open && (synced.is_some() || issue.written_here()))
+        .filter(|issue| kept.workable(issue, forge))
         .ok_or_else(|| {
             format!(
                 "issue {number} cannot be worked: there is none open, or it was brought in \

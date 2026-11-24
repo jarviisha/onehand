@@ -85,7 +85,7 @@ impl<W: Copy> TasksDrive<W> {
     ) -> Vec<Effect<W>> {
         let mut fx = Vec::new();
         let unwatched = self.task(id).is_some_and(|task| match task.origin {
-            Some(Origin::Schedule { .. }) => true,
+            Some(Origin::Schedule { .. } | Origin::Board { .. }) => true,
             Some(Origin::Tool) | None => false,
         });
         match unwatched {
@@ -142,6 +142,14 @@ impl<W: Copy> TasksDrive<W> {
                     fx.push(Effect::Signal(Signal::ScheduleEnded {
                         name: name.clone(),
                         said,
+                    }));
+                }
+                Some(Origin::Board { project, issue }) => {
+                    let done = matches!(task.outcome(), Some(Outcome::Done));
+                    fx.push(Effect::Signal(Signal::BoardEnded {
+                        project: project.clone(),
+                        issue: *issue,
+                        done,
                     }));
                 }
                 Some(Origin::Tool) | None => {}
