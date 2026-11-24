@@ -727,7 +727,10 @@ pub(super) fn pill(label: impl Into<SharedString>, cx: &App) -> Tag {
         // The shape and the edge `badge` gives every other one.
         .rounded_full()
         .py_1()
-        .flex_none()
+        // Shrinks with the row, never below nothing: a long answer (an
+        // unattended session's whole sentence) is cut, not pushed out of the
+        // box. Flex shares the cut by width, so a short badge keeps its words.
+        .min_w_0()
         .whitespace_nowrap()
         .overflow_hidden()
         .child(div().min_w_0().truncate().child(label.into()))

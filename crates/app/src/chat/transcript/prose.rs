@@ -175,9 +175,12 @@ pub(super) fn prose_style(window: &Window, cx: &App) -> TextViewStyle {
                 .text_size(crate::tokens::CODE_TEXT)
                 .line_height(relative(LEADING)),
         )
-        // A cell's sides stay the renderer's: it measures each column with
-        // that padding, so a wider one breaks a short word ("change / d").
-        .table_cell(StyleRefinement::default().py_1p5())
+        // A cell's sides are the renderer's own `px_3`, but written here: left
+        // unset, it measures each column with that padding in fixed pixels
+        // while drawing it in rems, so in a zoomed pane the cell is a few
+        // pixels short and its widest text breaks ("8 / nhân"). Set, it is
+        // measured at the rem size it is drawn at.
+        .table_cell(StyleRefinement::default().py_1p5().px_3())
         .table(sideways());
     style.heading_base_font_size = window.rem_size() * TEXT.0;
     style
