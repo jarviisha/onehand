@@ -324,6 +324,10 @@ minor bump may break any of them.
 
 ### Fixed
 
+- A table in a zoomed conversation no longer breaks the widest words of each column onto two
+  lines while it has room to spare.
+- A long answer in the badge of a settled question or permission is cut short inside its box
+  instead of running out of it.
 - onehand opens in well under a second again with many old conversations kept. Every start asked
   git once per conversation whose folder no project holds, each call taking at least a twentieth
   of a second, and held the first window back by ten seconds or more.
