@@ -676,10 +676,10 @@ fn sender(from: Option<&TgUser>, chat: &TgChat) -> (String, String) {
         return (String::new(), String::new());
     };
     let mut who = from.label();
-    if let Some(title) = chat.title.as_deref().filter(|t| !t.trim().is_empty()) {
-        if from.id != chat.id {
-            who = format!("{who} in {}", title.trim());
-        }
+    if let Some(title) = chat.title.as_deref().filter(|t| !t.trim().is_empty())
+        && from.id != chat.id
+    {
+        who = format!("{who} in {}", title.trim());
     }
     (from.id.to_string(), who)
 }

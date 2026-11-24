@@ -57,12 +57,6 @@ pub struct Shared {
     /// message belongs to no window in particular and has to find one, which is
     /// what `crate::windows` is for.
     pub remote: crate::remote::RemoteBridge,
-    /// The task feeding [`Self::remote`]'s events into the app.
-    ///
-    /// Held rather than detached, for the reason every held task here is: it
-    /// owns the receiving end, and dropping that is what tells the channel
-    /// nobody is listening.
-    pub _remote_pump: Option<gpui::Task<()>>,
     /// The one thread every settings file is written on: off the UI thread,
     /// and in the order the changes were made.
     pub writer: onehand_core::saving::OrderedWriter,
@@ -133,7 +127,6 @@ impl Shared {
             // means reading a credential and spawning a poll, and neither of
             // those is something a constructor should be able to fail at.
             remote: crate::remote::RemoteBridge::off(),
-            _remote_pump: None,
             #[cfg(test)]
             canned: std::collections::VecDeque::new(),
         }

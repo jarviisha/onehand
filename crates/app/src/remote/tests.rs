@@ -7,6 +7,7 @@ use super::*;
 use futures::StreamExt as _;
 use gpui::TestAppContext;
 use onehand_core::chat::Away;
+use onehand_core::remote::BridgeState;
 use onehand_core::remote::types::{RemoteChannel, ReqRx};
 use std::pin::Pin;
 use std::sync::mpsc;
@@ -38,16 +39,26 @@ impl RemoteChannel for Fake {
 /// what the channel is asked.
 fn bridge(cx: &mut TestAppContext) -> mpsc::Receiver<RemoteRequest> {
     cx.executor().allow_parking();
-    let (tx, rx) = mpsc::channel();
-    let (channel, _events) = Channel::start(Box::new(Fake(tx))).unwrap();
     cx.update(|cx| {
         let mut shared = Shared::for_test();
-        shared.remote = RemoteBridge {
-            drive: RemoteDrive::new(vec!["7".into()]),
-            channel: Some(channel),
-        };
+        let mut drive = RemoteDrive::new(vec!["7".into()], true);
+        drive.start();
+        shared.remote.drive = drive;
         cx.set_global(shared);
+        feed(
+            Input::Connected {
+                name: "@bot".into(),
+            },
+            cx,
+        );
     });
+    fake(cx)
+}
+
+/// Put a fresh fake channel in place of whatever runs, and what it is asked.
+fn fake(cx: &mut TestAppContext) -> mpsc::Receiver<RemoteRequest> {
+    let (tx, rx) = mpsc::channel();
+    cx.update(|cx| connect_with(Box::new(Fake(tx)), cx));
     rx
 }
 
@@ -132,6 +143,13 @@ fn a_channel_that_ended_tells_nobody_more(cx: &mut TestAppContext) {
     cx.update(|cx| receive(RemoteEvent::Disconnected("token refused".into()), cx));
     assert!(!cx.update(|cx| is_away(cx)));
     assert!(cx.update(|cx| Shared::global(cx).remote.channel.is_none()));
+    assert!(cx.update(|cx| Shared::global(cx).remote.pump.is_none()));
+    assert_eq!(
+        cx.update(|cx| Shared::global(cx).remote.drive.state().clone()),
+        BridgeState::Stopped {
+            why: "token refused".into()
+        }
+    );
     let origin = Origin {
         uid: 1,
         agent: "a".into(),
@@ -140,4 +158,18 @@ fn a_channel_that_ended_tells_nobody_more(cx: &mut TestAppContext) {
     };
     cx.update(|cx| announce(&origin, Announcement::plain(Away::TurnEnded), cx));
     assert!(said(&rx).is_empty());
+}
+
+/// A channel put in place of another lets the old one go: its requests stop
+/// being read, and what is said goes to the new one alone.
+#[gpui::test]
+fn a_restart_drops_the_old_pump(cx: &mut TestAppContext) {
+    let old = bridge(cx);
+    let new = fake(cx);
+    assert_eq!(
+        old.recv_timeout(Duration::from_secs(2)),
+        Err(mpsc::RecvTimeoutError::Disconnected)
+    );
+    cx.update(|cx| receive(line("/sessions"), cx));
+    assert_eq!(said(&new), ["No sessions are open."]);
 }
