@@ -38,5 +38,5 @@ pub use command::{Aim, RemoteCommand, HELP};
 pub use drive::{Effect, Handled, Input, RemoteDrive, Stopped};
 pub use press::Press;
 pub use types::{
-    Button, ChatId, Outbound, RemoteChannel, RemoteEvent, RemoteRequest, ReqRx, ReqTx,
+    Button, ChatId, Outbound, RemoteChannel, RemoteEvent, RemoteRequest, ReqRx, ReqTx, TokenSource,
 };

@@ -69,7 +69,7 @@ pub fn boot(cfg: &RemoteConfig, cx: &mut App) {
         );
         return;
     }
-    let Some(token) = secret::telegram_token(tg) else {
+    let (_, Some(token)) = secret::token_source(tg) else {
         eprintln!(
             "onehand: the Telegram bridge is enabled but no bot token was found. \
              Set ${} or put the token in {}.",
@@ -120,17 +120,21 @@ fn receive(event: RemoteEvent, cx: &mut App) {
             eprintln!("onehand: the remote bridge is up as {name}");
             return;
         }
+        RemoteEvent::Retrying(_) => return,
         RemoteEvent::Disconnected(why) => {
             eprintln!("onehand: the remote bridge stopped: {why}");
             Input::Disconnected
         }
-        RemoteEvent::Message { chat, from, text } => Input::Message { chat, from, text },
-        RemoteEvent::Unreadable { chat, from } => Input::Unreadable { chat, from },
+        RemoteEvent::Message {
+            chat, from, text, ..
+        } => Input::Message { chat, from, text },
+        RemoteEvent::Unreadable { chat, from, .. } => Input::Unreadable { chat, from },
         RemoteEvent::Pressed {
             chat,
             from,
             press_id,
             data,
+            ..
         } => Input::Pressed {
             chat,
             from,

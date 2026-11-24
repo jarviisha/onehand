@@ -64,6 +64,7 @@ fn said(rx: &mpsc::Receiver<RemoteRequest>) -> Vec<String> {
 
 fn line(text: &str) -> RemoteEvent {
     RemoteEvent::Message {
+        who: String::new(),
         chat: "7".into(),
         from: "7".into(),
         text: text.into(),
@@ -77,6 +78,7 @@ fn a_line_is_answered_once_and_a_stranger_hears_nothing(cx: &mut TestAppContext)
     cx.update(|cx| {
         receive(
             RemoteEvent::Message {
+                who: String::new(),
                 chat: "9".into(),
                 from: "9".into(),
                 text: "/sessions".into(),
