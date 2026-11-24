@@ -313,13 +313,21 @@ fn restart_now(host: &HostName, cx: &mut Context<ChatPane>) -> gpui_component::b
 
 /// The box of the host's sessions in `cwd`, each row attaching to its
 /// session.
+/// The focus handles for a host's listed sessions, one per row the page can
+/// list.
+pub(in crate::chat::pane) fn focus_rows(cx: &mut gpui::App) -> Vec<gpui::FocusHandle> {
+    (0..HOST_SESSIONS_CAP)
+        .map(|_| cx.focus_handle().tab_stop(true))
+        .collect()
+}
+
 pub(super) fn host_sessions(
     host: &HostName,
-    cwd: &Path,
-    listed: &Listed,
-    listing: bool,
+    project: &super::EmptyProject,
     cx: &mut Context<ChatPane>,
 ) -> Div {
+    let (cwd, listed, listing) = (project.cwd(), &project.listed, project.listing);
+    let ring = cx.theme().ring;
     let muted = cx.theme().muted_foreground;
     let line = || div().text_xs().text_color(muted);
     // What the host listed, or what this machine kept of it while away.
@@ -458,6 +466,7 @@ pub(super) fn host_sessions(
             }
             let acts: Rc<[onehand_ui::RowAct]> = acts.into();
             let menu_acts = acts.clone();
+            let focus = project.host_rows.get(i);
             onehand_ui::row(false, cx)
                 .id(("host-session", i))
                 .h_flex()
@@ -466,6 +475,12 @@ pub(super) fn host_sessions(
                 .w_full()
                 .rounded_none()
                 .group(group.clone())
+                // A tab stop, `Enter` attaching as a press does, ringed for
+                // the keyboard only.
+                .when_some(focus, |row, focus| row.track_focus(focus))
+                .border_1()
+                .border_color(gpui::transparent_black())
+                .focus_visible(|row| row.border_color(ring))
                 .child(div().flex_1().min_w_0().truncate().child(agent.clone()))
                 .child(
                     div()
@@ -492,16 +507,19 @@ pub(super) fn host_sessions(
                 .child(
                     div()
                         .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                        .child(onehand_ui::hover_slot(
-                            group,
-                            false,
-                            onehand_ui::row_more(
-                                format!("host-session-more-{i}"),
-                                "Session actions",
-                                acts,
-                                cx,
-                            ),
-                        )),
+                        .child(
+                            onehand_ui::hover_slot(
+                                group,
+                                false,
+                                onehand_ui::row_more(
+                                    format!("host-session-more-{i}"),
+                                    "Session actions",
+                                    acts,
+                                    cx,
+                                ),
+                            )
+                            .when_some(focus, |slot, focus| slot.focus(focus)),
+                        ),
                 )
                 .context_menu(move |menu, _, cx| onehand_ui::row_menu_items(menu, &menu_acts, cx))
                 .into_any_element()

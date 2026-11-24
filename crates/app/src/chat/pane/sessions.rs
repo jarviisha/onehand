@@ -619,6 +619,10 @@ impl ChatPane {
                 .filter(|(_, cwd)| *cwd != path)
                 .map(|(_, cwd)| cwd.clone());
             let host = on.map(|(host, _)| host);
+            let host_rows = match host {
+                Some(_) => super::project_page::host_rows(cx),
+                None => Vec::new(),
+            };
             EmptyProject {
                 label,
                 // A folder on a host keeps none of its conversations here; the
@@ -643,6 +647,7 @@ impl ChatPane {
                 worktrees_asked: 0,
                 on_disk: Vec::new(),
                 rows: super::project_page::home_rows(cx),
+                host_rows,
             }
         });
         self.put_project_page(page, cx);

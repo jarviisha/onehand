@@ -45,6 +45,10 @@ pub(crate) struct HostProjectDraft {
     pub(crate) aliases: Vec<String>,
     /// The folder list under *Folder*, once *Browse* is pressed.
     pub(crate) browse: Option<Browse>,
+    /// One focus handle per row the folder list can hold, `..` first, by
+    /// place: each row is a tab stop, so the keyboard walks the host's
+    /// folders with `Enter` as the pointer does.
+    pub(crate) rows: Vec<gpui::FocusHandle>,
     /// The listing under way; a newer one replaces it, dropping it, so only
     /// the newest lands.
     _browsing: Option<Task<()>>,
@@ -177,6 +181,9 @@ impl Shell {
             waiting: None,
             aliases: Vec::new(),
             browse: None,
+            rows: (0..=crate::dialogs::BROWSE_CAP)
+                .map(|_| cx.focus_handle().tab_stop(true))
+                .collect(),
             _browsing: None,
             _aliases: aliases,
             _typing: typing,
