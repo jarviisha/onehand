@@ -102,8 +102,9 @@ impl RemoteDrive {
         if on {
             return self.start();
         }
+        // A look under way still lands, for where the token is; it starts
+        // nothing now.
         let live = self.live();
-        self.looking = false;
         self.away = false;
         self.state = BridgeState::Off;
         self.ignored.clear();

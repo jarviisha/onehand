@@ -28,13 +28,16 @@ impl Shell {
 
     /// Allow the chat typed in the field; the field empties.
     pub(crate) fn add_telegram_chat(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let typed = self.telegram_draft.chat.read(cx).value().trim().to_string();
+        let typed = self.telegram_draft.chat.read(cx).value().to_string();
         let before = allowed(cx);
         if onehand_core::config::chat_refusal(&typed, &before).is_some() {
             return;
         }
+        let Some(id) = onehand_core::config::chat_id(&typed) else {
+            return;
+        };
         let mut after = before.clone();
-        after.push(typed);
+        after.push(id);
         set_chats(before, after, window, cx);
         self.telegram_draft
             .chat
@@ -66,7 +69,7 @@ impl Shell {
     }
 
     /// Save the token typed in the field; the field empties.
-    pub(crate) fn save_telegram_token(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn save_telegram_token(&mut self, _: &mut Window, cx: &mut Context<Self>) {
         let token = self
             .telegram_draft
             .token
@@ -77,11 +80,16 @@ impl Shell {
         if token.is_empty() {
             return;
         }
+        crate::remote::save_token(token, cx);
+        cx.notify();
+    }
+
+    /// The token was written: its field empties and the saved one shows.
+    pub(crate) fn telegram_token_saved(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.telegram_draft
             .token
             .update(cx, |field, cx| field.set_value("", window, cx));
         self.telegram_draft.replacing = false;
-        crate::remote::save_token(token, cx);
         cx.notify();
     }
 

@@ -164,14 +164,19 @@ pub struct TelegramConfig {
 /// id, or it is one already allowed. Telegram numbers its chats, a group's
 /// below zero.
 pub fn chat_refusal(typed: &str, allowed: &[String]) -> Option<String> {
-    let id = typed.trim();
-    if id.parse::<i64>().is_err() {
+    let Some(id) = chat_id(typed) else {
         return Some("A chat id is a number".into());
-    }
+    };
     allowed
         .iter()
         .any(|listed| listed.trim() == id)
         .then(|| format!("{id} is already allowed"))
+}
+
+/// What was typed as a chat id, as Telegram writes it: `+0123` is chat
+/// `123`, and a list keeping it as typed would never match the chat.
+pub fn chat_id(typed: &str) -> Option<String> {
+    typed.trim().parse::<i64>().ok().map(|id| id.to_string())
 }
 
 /// `[control]` — who may use onehand's tools from outside a window.

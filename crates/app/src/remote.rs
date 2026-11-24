@@ -87,6 +87,7 @@ pub fn boot(cfg: &RemoteConfig, cx: &mut App) {
 /// Look the token up off the UI thread, and tell the drive what was found.
 fn look(cx: &mut App) {
     let tg = Shared::global(cx).remote.telegram.clone();
+    let on = Shared::global(cx).remote.drive.on();
     let tg_env = tg
         .token_env
         .clone()
@@ -97,7 +98,7 @@ fn look(cx: &mut App) {
             .spawn(async move { secret::token_source(&tg) })
             .await;
         // Said on stderr too, for whoever launched onehand from a terminal.
-        if token.is_none() {
+        if on && token.is_none() {
             eprintln!(
                 "onehand: the Telegram bridge is on but no bot token was found. \
                  Set ${} or put the token in {}.",
@@ -152,7 +153,19 @@ fn write_token(token: Option<String>, cx: &mut App) {
                 .map_err(|e| e.to_string())
             })
             .await;
-        cx.update(|cx| feed(Input::TokenWritten(result), cx));
+        let saved = result.is_ok();
+        cx.update(|cx| {
+            feed(Input::TokenWritten(result), cx);
+            // What was typed stays in its field until it is written: a write
+            // that failed leaves it there to try again.
+            if saved {
+                for (handle, _) in crate::windows::live(cx) {
+                    crate::windows::later(handle, cx, |shell, window, cx| {
+                        shell.telegram_token_saved(window, cx)
+                    });
+                }
+            }
+        });
     })
     .detach();
 }

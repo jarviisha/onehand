@@ -270,7 +270,7 @@ impl RemoteDrive {
         }
     }
 
-    /// Start the bridge if it is switched on: look the token up first.
+    /// Look the token up, and start the bridge with it if it is switched on.
     ///
     /// **A running channel goes first**: what it still had to say would
     /// otherwise land on the start that replaced it.
@@ -281,14 +281,13 @@ impl RemoteDrive {
             self.away = false;
         }
         self.ignored.clear();
-        if !self.on {
-            self.state = BridgeState::Off;
-            self.looking = false;
-            return fx;
-        }
-        self.state = BridgeState::Connecting { retrying: None };
+        // Looked for even when off: where the token is, is shown either way.
         self.looking = true;
         fx.push(Effect::Start);
+        self.state = match self.on {
+            true => BridgeState::Connecting { retrying: None },
+            false => BridgeState::Off,
+        };
         fx
     }
 
@@ -395,10 +394,13 @@ impl RemoteDrive {
             // A look that lands after the switch went off, or after a newer
             // start, finds a bridge no longer waiting on it.
             Input::Looked { source, token } => {
-                if !self.on || !std::mem::take(&mut self.looking) {
+                if !std::mem::take(&mut self.looking) {
                     return Vec::new();
                 }
                 self.source = Some(source);
+                if !self.on {
+                    return Vec::new();
+                }
                 match token {
                     Some(token) => vec![Effect::Connect(token)],
                     None => {

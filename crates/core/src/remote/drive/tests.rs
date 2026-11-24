@@ -352,7 +352,28 @@ fn an_archive_is_scanned_then_opened() {
 #[test]
 fn a_bridge_switched_off_starts_nothing() {
     let mut drive = RemoteDrive::new(vec![], false);
-    assert!(drive.start().is_empty());
+    // It still looks: Settings says where the token is, on or off.
+    assert_eq!(shown(&drive.start()), ["Start"]);
+    assert!(drive.handle(looked(Some("t")), &[]).is_empty());
+    assert_eq!(drive.state(), &BridgeState::Off);
+}
+
+/// Switched off, the bridge still learns where its token is, so the page
+/// shows a saved token rather than a field over it.
+#[test]
+fn off_still_learns_where_the_token_is() {
+    let mut drive = RemoteDrive::new(vec![], false);
+    drive.start();
+    drive.handle(looked(Some("t")), &[]);
+    assert_eq!(drive.source(), Some(&TokenSource::File("/tg".into())));
+    // Removed while off: looked for again, and found missing.
+    assert_eq!(shown(&drive.remove_token()), ["WriteToken removed"]);
+    assert_eq!(
+        shown(&drive.handle(Input::TokenWritten(Ok(())), &[])),
+        ["Start"]
+    );
+    drive.handle(looked(None), &[]);
+    assert_eq!(drive.source(), Some(&TokenSource::Missing));
     assert_eq!(drive.state(), &BridgeState::Off);
 }
 

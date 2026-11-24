@@ -501,3 +501,16 @@ fn a_chat_id_is_a_number_not_yet_allowed() {
     );
     assert_eq!(chat_refusal("-1001", &[]), None);
 }
+
+/// Telegram writes its ids plainly, so one typed with a sign or zeros is
+/// the same chat and kept as Telegram writes it.
+#[test]
+fn a_chat_id_is_kept_as_telegram_writes_it() {
+    assert_eq!(chat_id("+0123").as_deref(), Some("123"));
+    assert_eq!(chat_id(" -1001 ").as_deref(), Some("-1001"));
+    assert_eq!(chat_id("x"), None);
+    assert_eq!(
+        chat_refusal("+7", &["7".to_string()]).as_deref(),
+        Some("7 is already allowed")
+    );
+}
