@@ -324,8 +324,13 @@ minor bump may break any of them.
 
 ### Remote bridge
 
-- The Telegram bridge starts even with no chat on `allowed_chats`, and answers nobody until one
-  is listed; a chat not on the list is still answered with nothing at all.
+- The Telegram bridge is set up and watched from Settings ▸ Connections: switched on and off, its
+  bot token saved (to `telegram.token`, owner-only, never to `onehand.toml`), replaced or removed,
+  its allowed chats added and removed, all in force at once. The page says what the bridge is
+  doing (connecting and why it is retrying, connected as which bot, stopped and why, with *Try
+  again*) where it used to say so only on stderr.
+- The bridge starts even with no chat on `allowed_chats`, answering nobody; the chats that write
+  to it unanswered are listed in Settings with who wrote, and *Allow* lets one in.
 
 ### Fixed
 

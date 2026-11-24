@@ -95,3 +95,17 @@ fn a_secret_write_replaces_whole() {
     assert!(!file.exists());
     remove_secret(&file).unwrap();
 }
+
+/// A file a person left readable by all comes back owner-only.
+#[cfg(unix)]
+#[test]
+fn a_shared_secret_file_is_narrowed() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let file = scratch("narrow");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "old").unwrap();
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+    write_secret(&file, "new").unwrap();
+    let mode = std::fs::metadata(&file).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o600);
+}

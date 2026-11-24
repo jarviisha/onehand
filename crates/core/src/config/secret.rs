@@ -1,6 +1,7 @@
-//! Reading a credential: a bearer secret such as a bot token, which never
-//! sits in `onehand.toml` — settings write into that file and people paste it
-//! into reports — and is read rather than ever written.
+//! A credential: a bearer secret such as a bot token, which never sits in
+//! `onehand.toml` — settings write into that file and people paste it into
+//! reports. It is read from where the person put it, and written only to its
+//! own file, owner-only, when the person saves it from Settings.
 //!
 //! Two sources, tried in order, and the second exists because the first cannot
 //! cover how the app is actually started:
@@ -10,14 +11,14 @@
 //!    profile that is not in a repository, a password manager's shim.
 //! 2. **A file of its own**, holding the secret and nothing else. A desktop app
 //!    is usually launched by clicking an icon, with no shell in that path to
-//!    have set a variable in. A separate file is never rewritten, never quoted
-//!    into a bug report, and its permissions can be checked, which is the one
-//!    thing this module then does.
+//!    have set a variable in. A separate file is rewritten only by a save of
+//!    the secret itself, never quoted into a bug report, and its permissions
+//!    can be checked, which this module then does.
 //!
 //! The trade is stated rather than hidden: in case 2 the secret still sits in
 //! plaintext on the disk, and this is not a keyring. What it buys is that the
 //! plaintext is in exactly one file, that file's only content is the secret,
-//! and the app reads it without ever being in a position to copy it elsewhere.
+//! and the app never copies it anywhere else.
 
 use std::path::Path;
 
@@ -34,36 +35,34 @@ pub fn secret(env_var: &str, file: &Path) -> Option<String> {
 /// Write `value` to `file` as a secret: owner-only from its first byte,
 /// trimmed, ending in a newline, and whole or not at all.
 ///
-/// Written to a file beside it and renamed over it, so a write cut short
-/// leaves the old secret rather than half of a new one.
+/// Whole through the one atomic write, which stages the new text under the
+/// file's own permissions; so the file is made owner-only first, empty if it
+/// is new, and the secret never sits anywhere more readable than that.
 pub fn write_secret(file: &Path, value: &str) -> std::io::Result<()> {
     if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let mut name = file.as_os_str().to_owned();
-    name.push(".tmp");
-    let temp = std::path::PathBuf::from(name);
-    let _ = std::fs::remove_file(&temp);
-    let mut open = std::fs::OpenOptions::new();
-    open.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt as _;
-        open.mode(0o600);
-    }
-    let written = (|| {
-        use std::io::Write as _;
-        let mut out = open.open(&temp)?;
-        out.write_all(format!("{}\n", value.trim()).as_bytes())?;
-        out.sync_all()
-    })();
-    match written.and_then(|()| std::fs::rename(&temp, file)) {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            let _ = std::fs::remove_file(&temp);
-            Err(e)
-        }
-    }
+    owner_only(file)?;
+    crate::config::write_atomic(file, &format!("{}\n", value.trim()))
+}
+
+/// Make `file` readable by its owner alone, creating it empty if it is not
+/// there.
+#[cfg(unix)]
+fn owner_only(file: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .open(file)?;
+    std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o600))
+}
+
+#[cfg(not(unix))]
+fn owner_only(_: &Path) -> std::io::Result<()> {
+    Ok(())
 }
 
 /// Remove the secret in `file`; one that is not there is already removed.

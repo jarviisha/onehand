@@ -137,7 +137,7 @@ pub struct RemoteConfig {
 }
 
 /// `[remote.telegram]` — everything about the Telegram bridge **except the
-/// token**, which deliberately has no key here at all. See [`token_sources`].
+/// token**, which deliberately has no key here at all. See [`secret()`].
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TelegramConfig {
@@ -156,7 +156,7 @@ pub struct TelegramConfig {
     /// strings — Telegram numbers its chats, the next channel will not.
     pub allowed_chats: Vec<String>,
     /// The environment variable the bot token is read from, when the default
-    /// name does not suit. See [`token_sources`].
+    /// name does not suit. See [`secret()`].
     pub token_env: Option<String>,
 }
 

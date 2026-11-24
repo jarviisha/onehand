@@ -640,7 +640,17 @@ the press and the line under it says *Checking <host>…*, then, should the chec
 not added: …* in the danger ink.
 The Connections page lists each connector and who it acts as, with *Check again*, then an
 *Outside control* group: what a program may and may never do, the socket's path in mono, and one
-switch.
+switch; then a *Telegram* group: its switch, *Let a Telegram bot reach onehand*; what the bridge
+is doing (*Off*, *No bot token*, *Connecting…* and, while it retries, why, *Connected as
+<bot>*, or *Stopped: …* with *Try again*), in the muted ink at rest and the warning ink when it
+needs the person; *Token*: *Read from $<variable>* when the environment holds it, else *Saved in*
+its file's path in mono with *Replace…* and *Remove…* (asking *Remove the bot token?*), else a
+masked field and *Save*, and a write that failed said under it; *Allowed chats*, at most 50 and
+*N more not shown*, a group's id marked *(group)*, each with *Remove*, or *No chat is allowed yet;
+the bot answers nobody*, then a field and *Add*, which refuses with *A chat id is a number* or
+*<id> is already allowed*; and, while any chat wrote and was ignored, *Ignored: messaged the bot
+and got no answer*, the last five, each *<who> · <chat id>* with *Allow*, which lists a group's
+sender with it.
 The Shortcuts page lists the window's commands first, then a group for each place the rest work
 in (the rail's list, a page, a card, the composer), in the keymap's order, and last the terminal's
 fixed keys; a group says where its commands work, and a row says so only where it differs.
