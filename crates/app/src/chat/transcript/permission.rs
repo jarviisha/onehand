@@ -340,7 +340,9 @@ fn permission_footer(
                     && !(keyed && option.weight() != PermissionWeight::AllowAlways),
                 |b| b.tooltip(name.clone()),
             )
-            // Its key beside its words, always in sight.
+            // Its key beside its words, always in sight; the words are
+            // children, so they are named for a screen reader too.
+            .accessibility_label(name.clone())
             .child(super::ask::labelled_owned(
                 label,
                 keyed.then_some(match option.weight() {
