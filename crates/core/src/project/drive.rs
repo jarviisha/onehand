@@ -151,6 +151,9 @@ pub struct ProjectsDrive {
     /// The worktrees a removal is judging or removing, so a second press on
     /// one is not taken.
     removing: std::collections::HashSet<PathBuf>,
+    /// Each board's issues taken out of To do to start whose task has not
+    /// landed yet. Never written: a start cut off by an exit is just gone.
+    starting: HashMap<ProjectId, BTreeSet<u64>>,
 }
 
 impl Deref for ProjectsDrive {
@@ -171,6 +174,7 @@ impl ProjectsDrive {
             soon: None,
             minted: 0,
             removing: Default::default(),
+            starting: HashMap::new(),
         }
     }
 

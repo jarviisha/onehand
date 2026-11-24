@@ -5,7 +5,7 @@
 
 use crate::state::Shared;
 use crate::task::Placed;
-use gpui::{App, BorrowAppContext as _, Global};
+use gpui::{App, BorrowAppContext as _};
 use gpui_component::WindowExt as _;
 use onehand_core::board;
 use onehand_core::connector::Connector;
@@ -13,16 +13,7 @@ use onehand_core::issues::Issues;
 use onehand_core::issues::drive::Change;
 use onehand_core::project::ProjectId;
 use onehand_core::task::{Grant, Origin, Starting};
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-
-/// Board starts taken out of To do whose task has not landed yet, by
-/// project: counted as running, so a second look before the first lands
-/// does not give the team more than it has room for.
-#[derive(Default)]
-struct Pulling(HashMap<ProjectId, usize>);
-
-impl Global for Pulling {}
 
 /// Look at every board's To do, once the tasks and the workflows are read.
 pub(crate) fn pull_all(cx: &mut App) {
@@ -155,24 +146,18 @@ fn pull_read(
     if board::usable(Some(&template)).is_err() {
         return;
     }
-    let landing = cx
-        .try_global::<Pulling>()
-        .and_then(|p| p.0.get(project).copied())
-        .unwrap_or(0);
-    let running = crate::task::board_running(project, cx) + landing;
+    let running = crate::task::board_running(project, cx);
     let open = |n| kept.get(n).is_some_and(|issue| kept.workable(issue, forge));
-    let pull = board::pull(&board, running, &open);
-    let taken: Vec<u64> = pull.gone.iter().chain(&pull.start).copied().collect();
-    if taken.is_empty() {
+    let Some(pull) = Shared::global(cx).projects.pull(project, running, &open) else {
         return;
-    }
-    let fx = cx.update_global::<Shared, _>(|shared, _| shared.projects.take_todo(project, &taken));
+    };
+    let fx = cx.update_global::<Shared, _>(|shared, _| {
+        let mut fx = shared.projects.take_todo(project, &pull.gone);
+        fx.extend(shared.projects.start_todo(project, &pull.start));
+        fx
+    });
     crate::projects::carry(fx, cx);
     for issue in pull.start {
-        *cx.default_global::<Pulling>()
-            .0
-            .entry(project.clone())
-            .or_default() += 1;
         let project = project.clone();
         let (root, template, shell) = (root.to_path_buf(), template.clone(), shell.clone());
         cx.spawn(async move |cx| {
@@ -203,18 +188,21 @@ fn pull_read(
             }
             .await;
             cx.update(|cx| {
-                cx.update_global::<Pulling, _>(|p, _| {
-                    if let Some(n) = p.0.get_mut(&project) {
-                        *n = n.saturating_sub(1);
+                cx.update_global::<Shared, _>(|shared, _| shared.projects.landed(&project, issue));
+                match started {
+                    // Its task now counts itself, and any place left over
+                    // from counting it twice meanwhile is filled.
+                    Ok(()) => pull_now(&project, cx),
+                    // Out of To do with no task on it, the issue is back in
+                    // the Backlog. Nothing is pulled in its place, so a
+                    // reason every issue shares is said once, not per issue.
+                    Err(why) => {
+                        let note = crate::toast::warning(format!(
+                            "Could not start #{issue} from the board: {why}"
+                        ));
+                        let _ =
+                            window.update(cx, |_, window, cx| window.push_notification(note, cx));
                     }
-                });
-                // Out of To do with no task on it, the issue is back in the
-                // Backlog; it is not tried again.
-                if let Err(why) = started {
-                    let note = crate::toast::warning(format!(
-                        "Could not start #{issue} from the board: {why}"
-                    ));
-                    let _ = window.update(cx, |_, window, cx| window.push_notification(note, cx));
                 }
             });
         })

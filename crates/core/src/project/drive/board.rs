@@ -2,6 +2,7 @@
 
 use super::{Effect, ProjectsDrive, Thing, Value};
 use crate::project::{Board, ProjectId};
+use std::collections::BTreeSet;
 
 impl ProjectsDrive {
     /// Give project `id` a board, or take it away with none. Written now;
@@ -57,6 +58,46 @@ impl ProjectsDrive {
     #[must_use = "its effects are to be carried"]
     pub fn take_todo(&mut self, id: &ProjectId, issues: &[u64]) -> Vec<Effect> {
         self.edit_todo(id, |todo| todo.retain(|n| !issues.contains(n)))
+    }
+
+    /// Take each of `issues` out of project `id`'s To do to start them:
+    /// counted as running until each [`Self::landed`].
+    #[must_use = "its effects are to be carried"]
+    pub fn start_todo(&mut self, id: &ProjectId, issues: &[u64]) -> Vec<Effect> {
+        let fx = self.take_todo(id, issues);
+        if issues.is_empty() {
+            return fx;
+        }
+        self.starting
+            .entry(id.clone())
+            .or_default()
+            .extend(issues.iter().copied());
+        fx
+    }
+
+    /// The start of `issue` of project `id`'s board landed, as a task or a
+    /// refusal: it is no longer counted as starting.
+    pub fn landed(&mut self, id: &ProjectId, issue: u64) {
+        if let Some(starting) = self.starting.get_mut(id) {
+            starting.remove(&issue);
+            if starting.is_empty() {
+                self.starting.remove(id);
+            }
+        }
+    }
+
+    /// Which of project `id`'s To do to start while `running` of its board
+    /// tasks work, its starts on their way counted with them; none without
+    /// a board.
+    pub fn pull(
+        &self,
+        id: &ProjectId,
+        running: usize,
+        open: &dyn Fn(u64) -> bool,
+    ) -> Option<crate::board::Pull> {
+        let board = self.projects.get(id)?.board()?;
+        let starting = self.starting.get(id).map_or(0, BTreeSet::len);
+        Some(crate::board::pull(board, running + starting, open))
     }
 
     fn edit_todo(&mut self, id: &ProjectId, edit: impl FnOnce(&mut Vec<u64>)) -> Vec<Effect> {
