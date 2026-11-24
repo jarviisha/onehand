@@ -186,8 +186,8 @@ async fn run(bot: Telegram, requests: ReqRx, out: &mut EventTx<RemoteEvent>) -> 
     // The handshake, and the one call whose refusal is worth ending on: a token
     // the far side rejects is rejected identically every time, so retrying it is
     // a loop that never terminates and never says why.
-    let name = greet(&client, &bot).await?;
-    out.send(RemoteEvent::Connected { name })
+    let name = greet(&client, &bot, out).await?;
+    out.send(RemoteEvent::Connected { name: name.clone() })
         .await
         .map_err(|_| "nobody is listening to the bridge".to_string())?;
 
@@ -196,7 +196,7 @@ async fn run(bot: Telegram, requests: ReqRx, out: &mut EventTx<RemoteEvent>) -> 
     // the other branch once one has *finished*, and both of these run until the
     // bridge is over -- and it keeps everything owned by the stream, so dropping
     // the stream still ends both.
-    let poller = poll_forever(&client, &bot, out);
+    let poller = poll_forever(&client, &bot, &name, out);
     let sender = send_forever(&client, &bot, requests);
     tokio::pin!(poller, sender);
     tokio::select! {
@@ -214,7 +214,11 @@ async fn run(bot: Telegram, requests: ReqRx, out: &mut EventTx<RemoteEvent>) -> 
 /// VPN that has not connected, or on a captive portal, has no bridge at all
 /// until somebody notices and restarts it. That is the machine deciding it is
 /// offline for the day because of the second it was asked.
-async fn greet(client: &reqwest::Client, bot: &Telegram) -> Result<String, String> {
+async fn greet(
+    client: &reqwest::Client,
+    bot: &Telegram,
+    out: &mut EventTx<RemoteEvent>,
+) -> Result<String, String> {
     let mut backoff = BACKOFF_MIN;
     loop {
         match call::<Me>(client, bot, "getMe", &json!({}))
@@ -238,6 +242,7 @@ async fn greet(client: &reqwest::Client, bot: &Telegram) -> Result<String, Strin
                     "onehand: cannot reach Telegram yet ({}); retrying in {backoff:?}",
                     trouble.reason()
                 );
+                retrying(out, trouble.reason()).await;
                 tokio::time::sleep(backoff).await;
                 backoff = (backoff * 2).min(BACKOFF_MAX);
             }
@@ -245,10 +250,17 @@ async fn greet(client: &reqwest::Client, bot: &Telegram) -> Result<String, Strin
     }
 }
 
+/// Say why the channel is trying again. Only news: if nobody is listening,
+/// the poll finds out on its own.
+async fn retrying(out: &mut EventTx<RemoteEvent>, why: &str) {
+    let _ = out.send(RemoteEvent::Retrying(why.to_string())).await;
+}
+
 /// Poll until the token stops working, widening the gap after every failure.
 async fn poll_forever(
     client: &reqwest::Client,
     bot: &Telegram,
+    name: &str,
     out: &mut EventTx<RemoteEvent>,
 ) -> Result<(), String> {
     // The far side replays an update until it is acknowledged, and the
@@ -266,6 +278,7 @@ async fn poll_forever(
     let mut offset: i64 = -1;
     let mut primed = false;
     let mut backoff = BACKOFF_MIN;
+    let mut failing = false;
 
     loop {
         let body = json!({
@@ -287,6 +300,8 @@ async fn poll_forever(
             Err(Trouble::Fatal(why)) => return Err(why),
             Err(Trouble::Transient(why)) => {
                 eprintln!("onehand: Telegram poll failed ({why}); retrying in {backoff:?}");
+                retrying(out, &why).await;
+                failing = true;
                 tokio::time::sleep(backoff).await;
                 backoff = (backoff * 2).min(BACKOFF_MAX);
                 continue;
@@ -298,6 +313,15 @@ async fn poll_forever(
         };
 
         backoff = BACKOFF_MIN;
+        // Back after failing: said once, so whoever was told it was retrying
+        // hears that it is through.
+        if std::mem::take(&mut failing) {
+            let _ = out
+                .send(RemoteEvent::Connected {
+                    name: name.to_string(),
+                })
+                .await;
+        }
         for update in updates {
             offset = offset.max(update.update_id + 1);
             let Some(event) = update.into_event() else {
@@ -605,13 +629,59 @@ struct Update {
 struct TgMessage {
     chat: TgChat,
     /// Who wrote it: absent on a channel post or a message sent as a chat.
-    from: Option<TgChat>,
+    from: Option<TgUser>,
     text: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct TgChat {
     id: i64,
+    /// A group's name; a chat of one has none.
+    title: Option<String>,
+}
+
+/// A sender. Every name optional, so one odd update cannot fail the batch it
+/// arrived in.
+#[derive(Deserialize)]
+struct TgUser {
+    id: i64,
+    first_name: Option<String>,
+    last_name: Option<String>,
+    username: Option<String>,
+}
+
+impl TgUser {
+    /// How a person would recognise this sender: *First Last (@user)*, with
+    /// whatever parts the far side left out dropped.
+    fn label(&self) -> String {
+        let name = [&self.first_name, &self.last_name]
+            .into_iter()
+            .flatten()
+            .map(|part| part.trim())
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        match (name.is_empty(), &self.username) {
+            (_, None) => name,
+            (true, Some(user)) => format!("@{user}"),
+            (false, Some(user)) => format!("{name} (@{user})"),
+        }
+    }
+}
+
+/// The sender's id and label, the group's name added in a group: both empty
+/// when nobody is named.
+fn sender(from: Option<&TgUser>, chat: &TgChat) -> (String, String) {
+    let Some(from) = from else {
+        return (String::new(), String::new());
+    };
+    let mut who = from.label();
+    if let Some(title) = chat.title.as_deref().filter(|t| !t.trim().is_empty())
+        && from.id != chat.id
+    {
+        who = format!("{who} in {}", title.trim());
+    }
+    (from.id.to_string(), who)
 }
 
 #[derive(Deserialize)]
@@ -620,7 +690,7 @@ struct TgCallback {
     /// Who pressed, which is not who wrote the message pressed on: that was
     /// the bot. Optional only so one odd update cannot fail the whole batch it
     /// arrived in; a press with no presser is refused as a stranger's.
-    from: Option<TgChat>,
+    from: Option<TgUser>,
     data: Option<String>,
     message: Option<TgMessage>,
 }
@@ -637,30 +707,31 @@ impl Update {
     /// crashed.
     fn into_event(self) -> Option<RemoteEvent> {
         if let Some(press) = self.callback_query {
-            let chat = press.message?.chat.id.to_string();
+            let message = press.message?;
+            let (from, who) = sender(press.from.as_ref(), &message.chat);
             return Some(RemoteEvent::Pressed {
-                chat,
-                from: press
-                    .from
-                    .map(|from| from.id.to_string())
-                    .unwrap_or_default(),
+                chat: message.chat.id.to_string(),
+                from,
+                who,
                 press_id: press.id,
                 data: press.data?,
             });
         }
         let message = self.message?;
         let chat = message.chat.id.to_string();
-        let from = message
-            .from
-            .map(|from| from.id.to_string())
-            .unwrap_or_default();
+        let (from, who) = sender(message.from.as_ref(), &message.chat);
         // A caption is not read as the message either. It is the text *beside* a
         // photo, so taking it alone would hand the agent "fix this" with nothing
         // to look at — a prompt about a picture that never travelled, which is a
         // worse answer than saying the picture did not travel.
         Some(match message.text {
-            Some(text) => RemoteEvent::Message { chat, from, text },
-            None => RemoteEvent::Unreadable { chat, from },
+            Some(text) => RemoteEvent::Message {
+                chat,
+                from,
+                who,
+                text,
+            },
+            None => RemoteEvent::Unreadable { chat, from, who },
         })
     }
 }
@@ -794,6 +865,7 @@ mod tests {
             Some(RemoteEvent::Message {
                 chat: "-100123".to_string(),
                 from: "42".to_string(),
+                who: String::new(),
                 text: "hello".to_string(),
             })
         );
@@ -809,9 +881,48 @@ mod tests {
             Some(RemoteEvent::Pressed {
                 chat: "77".to_string(),
                 from: "5".to_string(),
+                who: String::new(),
                 press_id: "cb1".to_string(),
                 data: "p:3:0".to_string(),
             })
+        );
+    }
+
+    /// Who wrote is carried as a person would recognise them, so a stranger
+    /// can be told from the owner before anyone is let in.
+    #[test]
+    fn a_message_says_who_wrote_it() {
+        let event = parse_update(
+            r#"{"update_id":1,"message":{"chat":{"id":42},"text":"hi",
+                "from":{"id":42,"first_name":"Minh","last_name":"Tran","username":"minhtran"}}}"#,
+        );
+        assert!(
+            matches!(&event, Some(RemoteEvent::Message { who, .. }) if who == "Minh Tran (@minhtran)"),
+            "got {event:?}"
+        );
+    }
+
+    #[test]
+    fn a_group_message_names_the_group_too() {
+        let event = parse_update(
+            r#"{"update_id":1,"message":{"chat":{"id":-100,"title":"Ops"},
+                "from":{"id":5,"first_name":"Minh"},"text":"hi"}}"#,
+        );
+        assert!(
+            matches!(&event, Some(RemoteEvent::Message { who, .. }) if who == "Minh in Ops"),
+            "got {event:?}"
+        );
+    }
+
+    #[test]
+    fn a_press_names_who_pressed() {
+        let event = parse_update(
+            r#"{"update_id":9,"callback_query":{"id":"c","data":"d","from":{"id":5,"username":"x"},
+                "message":{"chat":{"id":5}}}}"#,
+        );
+        assert!(
+            matches!(&event, Some(RemoteEvent::Pressed { who, .. }) if who == "@x"),
+            "got {event:?}"
         );
     }
 
@@ -832,6 +943,7 @@ mod tests {
                 Some(RemoteEvent::Unreadable {
                     chat: "1".to_string(),
                     from: String::new(),
+                    who: String::new(),
                 }),
                 "for {update}"
             );

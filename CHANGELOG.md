@@ -322,6 +322,11 @@ minor bump may break any of them.
   session's agent as for an outside program, so asking an agent for a new session no longer
   gives a worker refused on its own folder.
 
+### Remote bridge
+
+- The Telegram bridge starts even with no chat on `allowed_chats`, and answers nobody until one
+  is listed; a chat not on the list is still answered with nothing at all.
+
 ### Fixed
 
 - A table in a zoomed conversation no longer breaks the widest words of each column onto two

@@ -16,7 +16,8 @@
 //! the variable `token_env` names) first, then [`token_file`].
 
 use onehand_core::config::{TelegramConfig, config_dir};
-use std::path::PathBuf;
+use onehand_core::remote::TokenSource;
+use std::path::{Path, PathBuf};
 
 /// The environment variable a Telegram token is read from unless the config
 /// names another.
@@ -27,11 +28,59 @@ pub fn token_file() -> PathBuf {
     config_dir().join("telegram.token")
 }
 
-/// The token, from whichever source has one.
+/// The token, and where it was found.
 ///
-/// `None` means the bridge cannot start, which the caller reports once rather
-/// than retrying: a missing credential is not a condition that clears itself.
-pub fn telegram_token(cfg: &TelegramConfig) -> Option<String> {
+/// `None` means the bridge cannot start, which is said rather than retried: a
+/// missing credential is not a condition that clears itself. **Never the
+/// token's value in the source**: an environment variable is named, not read
+/// back.
+pub fn token_source(cfg: &TelegramConfig) -> (TokenSource, Option<String>) {
+    source_at(cfg, &token_file())
+}
+
+fn source_at(cfg: &TelegramConfig, file: &Path) -> (TokenSource, Option<String>) {
     let env_name = cfg.token_env.as_deref().unwrap_or(DEFAULT_TOKEN_ENV);
-    onehand_core::config::secret(env_name, &token_file())
+    let from_env = std::env::var(env_name)
+        .ok()
+        .filter(|value| !value.trim().is_empty());
+    // One rule for what counts as a token, the same as every credential's.
+    let token = onehand_core::config::secret(env_name, file);
+    let source = match (&token, from_env) {
+        (None, _) => TokenSource::Missing,
+        (Some(_), Some(_)) => TokenSource::Env(env_name.to_string()),
+        (Some(_), None) => TokenSource::File(file.to_path_buf()),
+    };
+    (source, token)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg(env: &str) -> TelegramConfig {
+        TelegramConfig {
+            token_env: Some(env.into()),
+            ..TelegramConfig::default()
+        }
+    }
+
+    /// A file ending in the newline every editor adds is still a token, and is
+    /// said to come from that file.
+    #[test]
+    fn a_token_in_the_file_is_found_there() {
+        let file = std::env::temp_dir().join(format!("onehand-tg-{}", std::process::id()));
+        std::fs::write(&file, "tok\n").unwrap();
+        let found = source_at(&cfg("ONEHAND_TEST_TG_UNSET_A"), &file);
+        std::fs::remove_file(&file).unwrap();
+        assert_eq!(found, (TokenSource::File(file), Some("tok".into())));
+    }
+
+    #[test]
+    fn no_token_anywhere_is_missing() {
+        let file = std::env::temp_dir().join("onehand-tg-never-written");
+        assert_eq!(
+            source_at(&cfg("ONEHAND_TEST_TG_UNSET_B"), &file),
+            (TokenSource::Missing, None)
+        );
+    }
 }

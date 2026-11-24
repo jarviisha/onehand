@@ -1,6 +1,6 @@
 use super::*;
 use crate::chat::Away;
-use crate::remote::{Announcement, Origin};
+use crate::remote::{Announcement, Origin, TokenSource};
 
 fn session(uid: u64, here: bool) -> RemoteSession {
     RemoteSession {
@@ -17,6 +17,7 @@ fn line(text: &str) -> Input {
     Input::Message {
         chat: "7".into(),
         from: "7".into(),
+        who: String::new(),
         text: text.into(),
     }
 }
@@ -28,6 +29,8 @@ fn sent(fx: &[Effect]) -> Vec<String> {
             Effect::Send(out) => Some(out.text.clone()),
             Effect::Ack { .. }
             | Effect::ShutDown
+            | Effect::Start
+            | Effect::Connect(_)
             | Effect::Away(_)
             | Effect::Prompt { .. }
             | Effect::Stop { .. }
@@ -46,6 +49,8 @@ fn shown(fx: &[Effect]) -> Vec<String> {
             Effect::Send(_) => "Send".into(),
             Effect::Ack { text, .. } => format!("Ack {text}"),
             Effect::ShutDown => "ShutDown".into(),
+            Effect::Start => "Start".into(),
+            Effect::Connect(token) => format!("Connect {token}"),
             Effect::Away(on) => format!("Away {on}"),
             Effect::Prompt { uid, text, .. } => format!("Prompt {uid} {text}"),
             Effect::Stop { uid, .. } => format!("Stop {uid}"),
@@ -57,8 +62,37 @@ fn shown(fx: &[Effect]) -> Vec<String> {
         .collect()
 }
 
+/// A bridge for chat `7` whose channel is up.
 fn bridge() -> RemoteDrive {
-    RemoteDrive::new(vec!["7".into()])
+    let mut drive = RemoteDrive::new(vec!["7".into()], true);
+    drive.start();
+    drive.handle(looked(Some("t")), &[]);
+    drive.handle(
+        Input::Connected {
+            name: "@bot".into(),
+        },
+        &[],
+    );
+    drive
+}
+
+fn looked(token: Option<&str>) -> Input {
+    Input::Looked {
+        source: match token {
+            Some(_) => TokenSource::File("/tg".into()),
+            None => TokenSource::Missing,
+        },
+        token: token.map(str::to_string),
+    }
+}
+
+fn stranger(chat: &str, from: &str, who: &str) -> Input {
+    Input::Message {
+        chat: chat.into(),
+        from: from.into(),
+        who: who.into(),
+        text: "hi".into(),
+    }
 }
 
 /// A chat off the list hears nothing at all, whatever it sends.
@@ -70,15 +104,18 @@ fn a_stranger_hears_nothing() {
         Input::Message {
             chat: "9".into(),
             from: "9".into(),
+            who: String::new(),
             text: "/sessions".into(),
         },
         Input::Unreadable {
             chat: "9".into(),
             from: "9".into(),
+            who: String::new(),
         },
         Input::Pressed {
             chat: "9".into(),
             from: "9".into(),
+            who: String::new(),
             press_id: "p".into(),
             data: "x".into(),
         },
@@ -146,6 +183,7 @@ fn a_session_not_running_here_is_out_of_reach() {
         Input::Pressed {
             chat: "7".into(),
             from: "7".into(),
+            who: String::new(),
             press_id: "p".into(),
             data: press.encode(),
         },
@@ -209,6 +247,7 @@ fn a_press_is_acknowledged_and_said() {
         Input::Pressed {
             chat: "7".into(),
             from: "7".into(),
+            who: String::new(),
             press_id: "p".into(),
             data: press.encode(),
         },
@@ -230,6 +269,7 @@ fn a_press_is_acknowledged_and_said() {
         Input::Pressed {
             chat: "7".into(),
             from: "7".into(),
+            who: String::new(),
             press_id: "q".into(),
             data: "garbage".into(),
         },
@@ -256,7 +296,7 @@ fn away_goes_with_the_channel() {
     };
     let news = Announcement::plain(Away::TurnEnded);
     assert_eq!(drive.announce(&origin, &news).len(), 1);
-    let fx = drive.handle(Input::Disconnected, &open);
+    let fx = drive.handle(Input::Disconnected("token refused".into()), &open);
     assert_eq!(shown(&fx), ["ShutDown"]);
     assert!(!drive.away());
     assert!(drive.announce(&origin, &news).is_empty());
@@ -302,4 +342,168 @@ fn an_archive_is_scanned_then_opened() {
         ["Opened repo — fix it as session 4, and pointed this chat at it."]
     );
     assert_eq!(drive.bound("7"), Some(4));
+}
+
+#[test]
+fn a_bridge_switched_off_starts_nothing() {
+    let mut drive = RemoteDrive::new(vec![], false);
+    assert!(drive.start().is_empty());
+    assert_eq!(drive.state(), &BridgeState::Off);
+}
+
+#[test]
+fn a_bridge_on_looks_for_its_token() {
+    let mut drive = RemoteDrive::new(vec![], true);
+    assert_eq!(shown(&drive.start()), ["Start"]);
+    assert_eq!(drive.state(), &BridgeState::Connecting { retrying: None });
+}
+
+#[test]
+fn no_token_is_said_and_nothing_starts() {
+    let mut drive = RemoteDrive::new(vec!["7".into()], true);
+    drive.start();
+    assert!(drive.handle(looked(None), &[]).is_empty());
+    assert_eq!(drive.state(), &BridgeState::NoToken);
+    assert_eq!(drive.source(), Some(&TokenSource::Missing));
+}
+
+/// **An empty list still connects**: it answers nobody, and the chats it
+/// ignores are how somebody setting it up finds their own.
+#[test]
+fn an_empty_list_still_connects() {
+    let mut drive = RemoteDrive::new(vec![], true);
+    drive.start();
+    assert_eq!(shown(&drive.handle(looked(Some("t")), &[])), ["Connect t"]);
+    assert_eq!(drive.source(), Some(&TokenSource::File("/tg".into())));
+}
+
+/// Switched off while the token was being read: what the read found starts
+/// nothing.
+#[test]
+fn a_look_that_lands_after_off_starts_nothing() {
+    let mut drive = RemoteDrive::new(vec![], false);
+    drive.start();
+    assert!(drive.handle(looked(Some("t")), &[]).is_empty());
+    assert_eq!(drive.state(), &BridgeState::Off);
+}
+
+#[test]
+fn connected_again_clears_the_retry() {
+    let mut drive = bridge();
+    assert_eq!(
+        drive.state(),
+        &BridgeState::Connected {
+            name: "@bot".into()
+        }
+    );
+    drive.handle(Input::Retrying("no network".into()), &[]);
+    assert_eq!(
+        drive.state(),
+        &BridgeState::Connecting {
+            retrying: Some("no network".into())
+        }
+    );
+    drive.handle(
+        Input::Connected {
+            name: "@bot".into(),
+        },
+        &[],
+    );
+    assert_eq!(
+        drive.state(),
+        &BridgeState::Connected {
+            name: "@bot".into()
+        }
+    );
+}
+
+#[test]
+fn a_refusal_stops_with_its_reason() {
+    let mut drive = bridge();
+    let fx = drive.handle(Input::Disconnected("token refused".into()), &[]);
+    assert_eq!(shown(&fx), ["ShutDown"]);
+    assert_eq!(
+        drive.state(),
+        &BridgeState::Stopped {
+            why: "token refused".into()
+        }
+    );
+}
+
+#[test]
+fn a_stranger_is_remembered_and_not_answered() {
+    let mut drive = bridge();
+    assert!(drive.handle(stranger("9", "9", "Minh"), &[]).is_empty());
+    let pressed = Input::Pressed {
+        chat: "-5".into(),
+        from: "6".into(),
+        who: "An in Ops".into(),
+        press_id: "p".into(),
+        data: "d".into(),
+    };
+    assert!(drive.handle(pressed, &[]).is_empty());
+    assert_eq!(
+        drive.ignored(),
+        [
+            Ignored {
+                chat: "-5".into(),
+                from: "6".into(),
+                who: "An in Ops".into()
+            },
+            Ignored {
+                chat: "9".into(),
+                from: "9".into(),
+                who: "Minh".into()
+            },
+        ]
+    );
+}
+
+#[test]
+fn one_stranger_is_one_row() {
+    let mut drive = bridge();
+    drive.handle(stranger("9", "9", "Minh"), &[]);
+    drive.handle(stranger("8", "8", "An"), &[]);
+    for _ in 0..10 {
+        drive.handle(stranger("9", "9", "Minh"), &[]);
+    }
+    let chats: Vec<_> = drive.ignored().iter().map(|i| i.chat.as_str()).collect();
+    assert_eq!(chats, ["9", "8"]);
+}
+
+#[test]
+fn the_ignored_list_keeps_the_newest_five() {
+    let mut drive = bridge();
+    for id in 1..=7 {
+        drive.handle(stranger(&format!("{id}0"), &format!("{id}0"), ""), &[]);
+    }
+    let chats: Vec<_> = drive.ignored().iter().map(|i| i.chat.as_str()).collect();
+    assert_eq!(chats, ["70", "60", "50", "40", "30"]);
+    assert_eq!(IGNORED_CAP, 5);
+}
+
+#[test]
+fn a_restart_forgets_who_was_ignored() {
+    let mut drive = bridge();
+    drive.handle(stranger("9", "9", "Minh"), &[]);
+    drive.start();
+    assert!(drive.ignored().is_empty());
+}
+
+/// Starting again lets the running channel go first, so nothing it still
+/// says can land on the start that replaced it.
+#[test]
+fn a_restart_lets_the_running_channel_go_first() {
+    let mut drive = bridge();
+    assert_eq!(shown(&drive.start()), ["ShutDown", "Start"]);
+}
+
+/// A look a newer start overtook says nothing about where the token is.
+#[test]
+fn a_stale_look_leaves_the_source_alone() {
+    let mut drive = RemoteDrive::new(vec![], true);
+    drive.start();
+    drive.handle(looked(Some("t")), &[]);
+    drive.handle(looked(None), &[]);
+    assert_eq!(drive.source(), Some(&TokenSource::File("/tg".into())));
 }

@@ -2,8 +2,9 @@
 //! it asks of a session, and what is said back.
 //!
 //! **Decided here, carried out elsewhere.** A [`RemoteDrive`] owns what the
-//! bridge remembers of its chats ([`Chats`]) and whether the person said they
-//! are away. It is told what the channel reported and what came of what it
+//! bridge remembers of its chats ([`Chats`]), whether the person said they
+//! are away, what the bridge is doing ([`BridgeState`]) and the strangers it
+//! ignored ([`Ignored`]). It is told what the channel reported and what came of what it
 //! asked for ([`Input`]), each with the sessions open across every window,
 //! and answers with [`Effect`]s: a message to send, a press to acknowledge, a
 //! session to prompt, stop, read or answer, an archive to scan or reopen. What
@@ -24,7 +25,7 @@
 use super::chats::{ArchiveRow, Chats, RemoteSession};
 use super::command::{self, RemoteCommand, HELP};
 use super::press::Press;
-use super::types::{Button, ChatId, Outbound};
+use super::types::{Button, ChatId, Outbound, TokenSource};
 use crate::chat::first_line_trunc;
 
 /// How much of a taken-back prompt is quoted back at whoever wrote it: enough
@@ -33,23 +34,38 @@ const QUOTED_PROMPT_MAX: usize = 120;
 
 /// What the channel reported, and what came of what the drive asked for.
 pub enum Input {
-    /// Someone wrote to the bot.
+    /// Someone wrote to the bot; `who` is how the far side names them.
     Message {
         chat: ChatId,
         from: ChatId,
+        who: String,
         text: String,
     },
     /// Something arrived that this build cannot read.
-    Unreadable { chat: ChatId, from: ChatId },
+    Unreadable {
+        chat: ChatId,
+        from: ChatId,
+        who: String,
+    },
     /// A button was pressed; `data` is what it carried.
     Pressed {
         chat: ChatId,
         from: ChatId,
+        who: String,
         press_id: String,
         data: String,
     },
-    /// The channel is not coming back.
-    Disconnected,
+    /// What [`Effect::Start`] found: where the token is, and the token.
+    Looked {
+        source: TokenSource,
+        token: Option<String>,
+    },
+    /// The channel is up, as the bot called `name`.
+    Connected { name: String },
+    /// The channel cannot reach the far side yet, for this reason.
+    Retrying(String),
+    /// The channel is not coming back, for this reason.
+    Disconnected(String),
     /// The prompt [`Effect::Prompt`] sent to `uid`, or `None` when no window
     /// holds it any more.
     Prompted {
@@ -106,6 +122,10 @@ pub enum Effect {
     /// Stop using the channel: it is not coming back. Away went with it, so
     /// whatever decides what is told reads [`RemoteDrive::away`] again.
     ShutDown,
+    /// Find the token, off the UI thread; answered by [`Input::Looked`].
+    Start,
+    /// Start a channel with this token, in place of any that runs.
+    Connect(String),
     /// The person said they are away, or back: whatever decides what is told
     /// reads [`RemoteDrive::away`] again. Back, the conversation in the window
     /// in front is read.
@@ -159,6 +179,36 @@ pub enum Stopped {
     Cancelled { taken_back: Option<String> },
 }
 
+/// What the bridge is doing, as its channel last said.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BridgeState {
+    /// Switched off.
+    Off,
+    /// Switched on, and no source holds a token.
+    NoToken,
+    /// Started and not through yet; `retrying` says why, once a try failed.
+    Connecting { retrying: Option<String> },
+    /// Through, as the bot named `name`.
+    Connected { name: String },
+    /// Refused in a way trying again cannot fix, for this reason.
+    Stopped { why: String },
+}
+
+/// A chat whose message or press was refused: who, so a person can tell
+/// whether it was them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ignored {
+    pub chat: ChatId,
+    pub from: ChatId,
+    /// How the far side names the sender; empty when it named nobody.
+    pub who: String,
+}
+
+/// How many ignored chats are kept: enough to find the one being set up
+/// among a stray or two, few enough that a bot found by strangers stays a
+/// short list.
+pub const IGNORED_CAP: usize = 5;
+
 /// The remote bridge's drive. See the module header.
 pub struct RemoteDrive {
     chats: Chats,
@@ -169,9 +219,16 @@ pub struct RemoteDrive {
     /// launch that came up believing the person was elsewhere would message
     /// them about every turn while they sat in front of it.
     away: bool,
-    /// A channel is running. A bridge that is off, or whose channel stopped,
-    /// tells nobody anything.
-    live: bool,
+    /// Whether the bridge is switched on.
+    on: bool,
+    state: BridgeState,
+    /// Where the token was last found; `None` until it was looked for.
+    source: Option<TokenSource>,
+    /// A start is waiting on its look: only the first answer counts.
+    looking: bool,
+    /// Newest first, at most [`IGNORED_CAP`]. In memory only, and emptied at
+    /// every start: it is for finding a chat while setting the bridge up.
+    ignored: Vec<Ignored>,
 }
 
 impl std::ops::Deref for RemoteDrive {
@@ -184,20 +241,75 @@ impl std::ops::Deref for RemoteDrive {
 impl RemoteDrive {
     /// A bridge with no channel behind it, the ordinary state.
     pub fn off() -> Self {
-        Self {
-            chats: Chats::new(Vec::new()),
-            away: false,
-            live: false,
-        }
+        Self::new(Vec::new(), false)
     }
 
-    /// A bridge whose channel is running, for the chats on `allowed`.
-    pub fn new(allowed: Vec<ChatId>) -> Self {
+    /// A bridge for the chats on `allowed`, switched `on` or not, that has
+    /// not started: [`Self::start`] does.
+    pub fn new(allowed: Vec<ChatId>, on: bool) -> Self {
         Self {
             chats: Chats::new(allowed),
             away: false,
-            live: true,
+            on,
+            state: BridgeState::Off,
+            source: None,
+            looking: false,
+            ignored: Vec::new(),
         }
+    }
+
+    /// Start the bridge if it is switched on: look the token up first.
+    ///
+    /// **A running channel goes first**: what it still had to say would
+    /// otherwise land on the start that replaced it.
+    pub fn start(&mut self) -> Vec<Effect> {
+        let mut fx = Vec::new();
+        if self.live() {
+            fx.push(Effect::ShutDown);
+            self.away = false;
+        }
+        self.ignored.clear();
+        if !self.on {
+            self.state = BridgeState::Off;
+            self.looking = false;
+            return fx;
+        }
+        self.state = BridgeState::Connecting { retrying: None };
+        self.looking = true;
+        fx.push(Effect::Start);
+        fx
+    }
+
+    /// What the bridge is doing.
+    pub fn state(&self) -> &BridgeState {
+        &self.state
+    }
+
+    /// Where the token was found, once it was looked for.
+    pub fn source(&self) -> Option<&TokenSource> {
+        self.source.as_ref()
+    }
+
+    /// The chats refused since the bridge started, newest first.
+    pub fn ignored(&self) -> &[Ignored] {
+        &self.ignored
+    }
+
+    /// A channel is running: a bridge that is off, or whose channel stopped,
+    /// tells nobody anything.
+    fn live(&self) -> bool {
+        matches!(
+            self.state,
+            BridgeState::Connecting { .. } | BridgeState::Connected { .. }
+        )
+    }
+
+    /// Remember a refused chat, once per chat and sender, newest first.
+    fn ignore(&mut self, chat: ChatId, from: ChatId, who: String) {
+        self.ignored
+            .retain(|seen| !(seen.chat == chat && seen.from == from));
+        self.ignored.insert(0, Ignored { chat, from, who });
+        self.ignored.truncate(IGNORED_CAP);
     }
 
     /// Whether the person has said they are away.
@@ -215,12 +327,12 @@ impl RemoteDrive {
             // on the list is answered with nothing at all. A refusal would
             // confirm that the bot is real, running, and has a list to get
             // onto.
-            Input::Message { chat, from, text } if self.chats.allows(&chat, &from) => {
-                self.answer(chat, &text, open)
-            }
+            Input::Message {
+                chat, from, text, ..
+            } if self.chats.allows(&chat, &from) => self.answer(chat, &text, open),
             // Somebody allowed is owed an answer even when it is no: silence is
             // indistinguishable from a bridge that stopped.
-            Input::Unreadable { chat, from } if self.chats.allows(&chat, &from) => {
+            Input::Unreadable { chat, from, .. } if self.chats.allows(&chat, &from) => {
                 vec![Effect::Send(Outbound::text(
                     chat,
                     "I can only read text — an image or a voice note doesn't travel. \
@@ -234,6 +346,7 @@ impl RemoteDrive {
                 from,
                 press_id,
                 data,
+                ..
             } if self.chats.allows(&chat, &from) => match Press::decode(&data) {
                 Some(press) if open.iter().any(|s| s.uid == press.uid()) => {
                     vec![Effect::Press {
@@ -255,9 +368,49 @@ impl RemoteDrive {
                     "That button is from an older message.".into(),
                 ),
             },
-            Input::Message { .. } | Input::Unreadable { .. } | Input::Pressed { .. } => Vec::new(),
-            Input::Disconnected => {
-                self.live = false;
+            // Remembered for the person setting the bridge up, and still
+            // never answered.
+            Input::Message {
+                chat, from, who, ..
+            }
+            | Input::Unreadable { chat, from, who }
+            | Input::Pressed {
+                chat, from, who, ..
+            } => {
+                self.ignore(chat, from, who);
+                Vec::new()
+            }
+            // A look that lands after the switch went off, or after a newer
+            // start, finds a bridge no longer waiting on it.
+            Input::Looked { source, token } => {
+                if !self.on || !std::mem::take(&mut self.looking) {
+                    return Vec::new();
+                }
+                self.source = Some(source);
+                match token {
+                    Some(token) => vec![Effect::Connect(token)],
+                    None => {
+                        self.state = BridgeState::NoToken;
+                        Vec::new()
+                    }
+                }
+            }
+            Input::Connected { name } => {
+                if self.live() {
+                    self.state = BridgeState::Connected { name };
+                }
+                Vec::new()
+            }
+            Input::Retrying(why) => {
+                if self.live() {
+                    self.state = BridgeState::Connecting {
+                        retrying: Some(why),
+                    };
+                }
+                Vec::new()
+            }
+            Input::Disconnected(why) => {
+                self.state = BridgeState::Stopped { why };
                 // **Away goes with it.** The only way out of it, `/here`,
                 // arrives over the channel that just died; left set, every
                 // window would go on being treated as unwatched.
@@ -345,7 +498,7 @@ impl RemoteDrive {
     /// drive's. A session that does not run here has none: no chat can follow
     /// a session it is never listed.
     pub fn announce(&self, origin: &super::Origin, what: &super::Announcement) -> Vec<Effect> {
-        if !self.live {
+        if !self.live() {
             return Vec::new();
         }
         self.chats

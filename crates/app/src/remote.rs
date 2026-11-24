@@ -18,19 +18,28 @@
 
 use crate::chat::session::ChatSession;
 use crate::state::Shared;
+use gpui::Task;
 use gpui::{App, BorrowAppContext as _, Entity};
-use onehand_core::config::RemoteConfig;
-use onehand_core::remote::types::{RemoteEvent, RemoteRequest};
+use onehand_core::config::{RemoteConfig, TelegramConfig};
+use onehand_core::remote::types::{RemoteChannel, RemoteEvent, RemoteRequest};
 use onehand_core::remote::{Effect, Input, RemoteDrive, link};
 use onehand_io::remote::Channel;
 use onehand_telegram::secret;
 
 pub use onehand_core::remote::{Announcement, Origin, RemoteSession};
 
-/// The process-wide bridge: its drive, and the channel when one runs.
+/// The process-wide bridge: its drive, the channel when one runs, and the
+/// pump carrying that channel's events, which goes with it.
 pub struct RemoteBridge {
     pub drive: RemoteDrive,
+    /// What the bridge was set up with, read again at every start: the
+    /// token's variable can be renamed.
+    telegram: TelegramConfig,
     channel: Option<Channel>,
+    /// Held rather than detached: the pump keeps the receiver alive, and a
+    /// dropped receiver is what tells the channel nobody listens. Dropped
+    /// with its channel, so a replaced channel's late events reach nobody.
+    pump: Option<Task<()>>,
 }
 
 impl RemoteBridge {
@@ -38,7 +47,9 @@ impl RemoteBridge {
     pub fn off() -> Self {
         Self {
             drive: RemoteDrive::off(),
+            telegram: TelegramConfig::default(),
             channel: None,
+            pump: None,
         }
     }
 
@@ -47,62 +58,83 @@ impl RemoteBridge {
             channel.send(request);
         }
     }
+
+    /// Let the channel go, and its pump with it.
+    fn stop(&mut self) {
+        self.pump = None;
+        if let Some(channel) = self.channel.take() {
+            channel.shut_down();
+        }
+    }
 }
 
-/// Start whatever channel `cfg` asks for and pump its events into the drive.
+/// Set the bridge up as `cfg` says, and start it if it is switched on.
 ///
-/// Everything here fails by not starting, loudly on stderr and never fatally: a
-/// missing token or a channel switched off is the ordinary case, and an app that
-/// refused to open a window over a chat bridge would be trading the whole
-/// product for one of its conveniences.
+/// Nothing here is fatal: a missing token or a channel switched off is the
+/// ordinary case, and the bridge's state says which, where Settings shows it;
+/// an app that refused to open a window over a chat bridge would be trading
+/// the whole product for one of its conveniences.
 pub fn boot(cfg: &RemoteConfig, cx: &mut App) {
-    let tg = &cfg.telegram;
-    if !tg.enabled {
-        return;
-    }
-    // Said out loud, because both of these look identical from the outside --
-    // the bridge is on in the config and nothing ever arrives.
-    if tg.allowed_chats.is_empty() {
-        eprintln!(
-            "onehand: the Telegram bridge is enabled but no chat is allowed, \
-             so it would answer nobody. Set remote.telegram.allowed_chats."
-        );
-        return;
-    }
-    let Some(token) = secret::telegram_token(tg) else {
-        eprintln!(
-            "onehand: the Telegram bridge is enabled but no bot token was found. \
-             Set ${} or put the token in {}.",
-            tg.token_env.as_deref().unwrap_or(secret::DEFAULT_TOKEN_ENV),
-            secret::token_file().display()
-        );
-        return;
-    };
+    let tg = cfg.telegram.clone();
+    let fx = cx.update_global::<Shared, _>(|shared, _| {
+        shared.remote.drive = RemoteDrive::new(tg.allowed_chats.clone(), tg.enabled);
+        shared.remote.telegram = tg;
+        shared.remote.drive.start()
+    });
+    carry(fx, cx);
+}
+
+/// Look the token up off the UI thread, and tell the drive what was found.
+fn look(cx: &mut App) {
+    let tg = Shared::global(cx).remote.telegram.clone();
+    let tg_env = tg
+        .token_env
+        .clone()
+        .unwrap_or_else(|| secret::DEFAULT_TOKEN_ENV.to_string());
+    cx.spawn(async move |cx| {
+        let (source, token) = cx
+            .background_executor()
+            .spawn(async move { secret::token_source(&tg) })
+            .await;
+        // Said on stderr too, for whoever launched onehand from a terminal.
+        if token.is_none() {
+            eprintln!(
+                "onehand: the Telegram bridge is on but no bot token was found. \
+                 Set ${} or put the token in {}.",
+                tg_env,
+                secret::token_file().display()
+            );
+        }
+        cx.update(|cx| feed(Input::Looked { source, token }, cx));
+    })
+    .detach();
+}
+
+/// Start the channel for `token`, in place of any that runs.
+fn connect(token: String, cx: &mut App) {
     // A channel missing here means the composition root changed; the app is
     // still usable without a phone attached to it.
     let Some(factory) = crate::features::remote_channel(onehand_telegram::CHANNEL_ID) else {
-        eprintln!(
-            "onehand: the Telegram bridge is enabled but no channel is registered under `{}`.",
+        let why = format!(
+            "no channel is registered under `{}`",
             onehand_telegram::CHANNEL_ID
         );
+        feed(Input::Disconnected(why), cx);
         return;
     };
-    let (channel, events) = match Channel::start(factory(token)) {
+    connect_with(factory(token), cx);
+}
+
+/// Start `channel` in place of any that runs, and pump its events.
+fn connect_with(channel: Box<dyn RemoteChannel>, cx: &mut App) {
+    cx.update_global::<Shared, _>(|shared, _| shared.remote.stop());
+    let (channel, events) = match Channel::start(channel) {
         Ok(started) => started,
         Err(e) => {
-            eprintln!("onehand: could not start the remote bridge: {e}");
+            feed(Input::Disconnected(format!("could not start: {e}")), cx);
             return;
         }
     };
-    let allowed = tg.allowed_chats.clone();
-    cx.update_global::<Shared, _>(|shared, _| {
-        shared.remote = RemoteBridge {
-            drive: RemoteDrive::new(allowed),
-            channel: Some(channel),
-        };
-    });
-    // Held on the global rather than detached: the pump keeps the receiver
-    // alive, and a dropped receiver is what tells the channel nobody listens.
     let pump = cx.spawn(async move |cx| {
         use futures::StreamExt as _;
         let mut events = events;
@@ -110,7 +142,10 @@ pub fn boot(cfg: &RemoteConfig, cx: &mut App) {
             cx.update(|cx| receive(event, cx));
         }
     });
-    cx.update_global::<Shared, _>(|shared, _| shared._remote_pump = Some(pump));
+    cx.update_global::<Shared, _>(|shared, _| {
+        shared.remote.channel = Some(channel);
+        shared.remote.pump = Some(pump);
+    });
 }
 
 /// One event from the channel, on the UI thread.
@@ -118,22 +153,35 @@ fn receive(event: RemoteEvent, cx: &mut App) {
     let input = match event {
         RemoteEvent::Connected { name } => {
             eprintln!("onehand: the remote bridge is up as {name}");
-            return;
+            Input::Connected { name }
         }
+        RemoteEvent::Retrying(why) => Input::Retrying(why),
         RemoteEvent::Disconnected(why) => {
             eprintln!("onehand: the remote bridge stopped: {why}");
-            Input::Disconnected
+            Input::Disconnected(why)
         }
-        RemoteEvent::Message { chat, from, text } => Input::Message { chat, from, text },
-        RemoteEvent::Unreadable { chat, from } => Input::Unreadable { chat, from },
+        RemoteEvent::Message {
+            chat,
+            from,
+            who,
+            text,
+        } => Input::Message {
+            chat,
+            from,
+            who,
+            text,
+        },
+        RemoteEvent::Unreadable { chat, from, who } => Input::Unreadable { chat, from, who },
         RemoteEvent::Pressed {
             chat,
             from,
+            who,
             press_id,
             data,
         } => Input::Pressed {
             chat,
             from,
+            who,
             press_id,
             data,
         },
@@ -147,6 +195,8 @@ fn feed(input: Input, cx: &mut App) {
     let open = sessions(cx);
     let fx = cx.update_global::<Shared, _>(|shared, _| shared.remote.drive.handle(input, &open));
     carry(fx, cx);
+    // What the bridge is doing is drawn in Settings, and away in every window.
+    cx.refresh_windows();
 }
 
 /// Carry out the drive's effects, in order, each once.
@@ -162,13 +212,10 @@ fn carry(fx: Vec<Effect>, cx: &mut App) {
                 text: Some(text),
             }),
             Effect::ShutDown => {
-                let channel =
-                    cx.update_global::<Shared, _>(|shared, _| shared.remote.channel.take());
-                if let Some(channel) = channel {
-                    channel.shut_down();
-                }
-                cx.refresh_windows();
+                cx.update_global::<Shared, _>(|shared, _| shared.remote.stop());
             }
+            Effect::Start => look(cx),
+            Effect::Connect(token) => connect(token, cx),
             Effect::Away(away) => back_or_away(away, cx),
             Effect::Prompt { chat, uid, text } => {
                 let handled = on_session(uid, cx, |session, cx| {

@@ -88,9 +88,14 @@ pub enum RemoteEvent {
     Connected { name: String },
     /// Someone wrote to the bot. `from` is who: in a chat of one, the chat
     /// itself; in a group, the member who wrote.
+    ///
+    /// `who` is how the far side names the sender, for a person to tell one
+    /// stranger from another; empty when it names nobody. **Shown, never
+    /// trusted**: who may reach the app is decided by the ids alone.
     Message {
         chat: ChatId,
         from: ChatId,
+        who: String,
         text: String,
     },
     /// Something arrived from a chat that this build cannot read — a photo, a
@@ -103,7 +108,11 @@ pub enum RemoteEvent {
     /// screenshot, nothing came back, and there is no way from the outside to
     /// tell that apart from a crashed process. What the app says is the app's
     /// business; that it must say *something* is this variant.
-    Unreadable { chat: ChatId, from: ChatId },
+    Unreadable {
+        chat: ChatId,
+        from: ChatId,
+        who: String,
+    },
     /// Someone pressed a button on a message the app sent.
     ///
     /// `data` is what [`Button::data`] carried; `press_id` is what an
@@ -111,6 +120,7 @@ pub enum RemoteEvent {
     Pressed {
         chat: ChatId,
         from: ChatId,
+        who: String,
         press_id: String,
         data: String,
     },
@@ -123,6 +133,21 @@ pub enum RemoteEvent {
     /// at the keyboard to come back, which is the one thing it exists to avoid
     /// needing.
     Disconnected(String),
+    /// The channel cannot reach the far side yet and is trying again, for this
+    /// reason. **News, not an ending**: the next answer that gets through
+    /// reports [`RemoteEvent::Connected`] again.
+    Retrying(String),
+}
+
+/// Where a channel's credential was found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TokenSource {
+    /// The environment variable of this name; never its value.
+    Env(String),
+    /// This file.
+    File(std::path::PathBuf),
+    /// Nowhere.
+    Missing,
 }
 
 /// One way of reaching a device outside the app.
