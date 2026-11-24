@@ -483,3 +483,21 @@ fn a_root_of_its_own_never_reads_the_working_directorys_config() {
     );
     assert_eq!(search_order(true, global), [global.to_path_buf()]);
 }
+
+#[test]
+fn a_chat_id_is_a_number_not_yet_allowed() {
+    let allowed = vec!["7".to_string()];
+    assert_eq!(
+        chat_refusal("", &allowed).as_deref(),
+        Some("A chat id is a number")
+    );
+    assert_eq!(
+        chat_refusal("abc", &allowed).as_deref(),
+        Some("A chat id is a number")
+    );
+    assert_eq!(
+        chat_refusal(" 7 ", &allowed).as_deref(),
+        Some("7 is already allowed")
+    );
+    assert_eq!(chat_refusal("-1001", &[]), None);
+}

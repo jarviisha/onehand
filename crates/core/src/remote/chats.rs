@@ -179,6 +179,22 @@ impl Chats {
         }
     }
 
+    /// The chats allowed to reach the app.
+    pub fn allowed(&self) -> &[ChatId] {
+        &self.allowed
+    }
+
+    /// Allow exactly `allowed`, trimmed as [`Self::new`] trims it. A chat
+    /// taken off forgets what it pointed at and followed: allowed back later,
+    /// it starts from nothing, as a chat new to the list does.
+    pub(crate) fn set_allowed(&mut self, allowed: Vec<ChatId>) {
+        self.allowed = Self::new(allowed).allowed;
+        let listed = |chat: &ChatId| self.allowed.contains(chat);
+        self.pointed.retain(|chat, _| listed(chat));
+        self.followed.retain(|chat, _| listed(chat));
+        self.archives.retain(|chat, _| listed(chat));
+    }
+
     /// Keep the archive listing `chat` is about to be sent.
     ///
     /// Replaced whole rather than added to, so it is one page per chat and not a

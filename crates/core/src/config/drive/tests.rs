@@ -442,3 +442,36 @@ fn saw_facts_writes_only_what_changed() {
     assert_eq!(drive.facts_of("a"), Some(&facts));
     assert_eq!(drive.facts_of("b"), None);
 }
+
+/// The Telegram switch is shown at once and put back when its write fails.
+#[test]
+fn a_failed_write_puts_the_switch_back() {
+    let mut drive = drive();
+    assert!(drive.set_telegram_on(true, true).is_empty());
+    let fx = drive.set_telegram_on(false, true);
+    assert_eq!(shown(&fx), [Value::TelegramOn(true)]);
+    let fx = written(&mut drive, fx, Err("disk full".into()));
+    assert_eq!(shown(&fx), [Value::TelegramOn(false)]);
+    assert_eq!(failed(&fx), ["Saving the Telegram switch"]);
+}
+
+#[test]
+fn a_failed_write_puts_the_chats_back() {
+    let mut drive = drive();
+    let before = vec!["7".to_string()];
+    let after = vec!["7".to_string(), "9".to_string()];
+    let fx = drive.set_telegram_chats(before.clone(), after.clone());
+    assert_eq!(shown(&fx), [Value::TelegramChats(after)]);
+    let fx = written(&mut drive, fx, Err("disk full".into()));
+    assert_eq!(shown(&fx), [Value::TelegramChats(before)]);
+    assert_eq!(failed(&fx), ["Saving the allowed chats"]);
+}
+
+#[test]
+fn the_telegram_edits_write_the_remote_section() {
+    let mut cfg = AppConfig::default();
+    Edit::TelegramOn(true).apply(&mut cfg);
+    Edit::TelegramChats(vec!["7".into()]).apply(&mut cfg);
+    assert!(cfg.remote.telegram.enabled);
+    assert_eq!(cfg.remote.telegram.allowed_chats, ["7"]);
+}

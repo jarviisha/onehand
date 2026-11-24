@@ -62,3 +62,36 @@ fn a_secret_is_read_from_its_file_when_the_variable_is_unset() {
     assert_eq!(secret(&var, &file).as_deref(), Some("s3cret"));
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+fn scratch(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("onehand-secret-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    dir.join("nested").join("token")
+}
+
+/// Owner-only from the first byte, trimmed, ending in a newline.
+#[cfg(unix)]
+#[test]
+fn a_secret_is_written_owner_only() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let file = scratch("mode");
+    write_secret(&file, " tok ").unwrap();
+    let mode = std::fs::metadata(&file).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o600);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "tok\n");
+}
+
+/// A write replaces the old file whole and leaves nothing beside it; a
+/// removal of nothing is not a failure.
+#[test]
+fn a_secret_write_replaces_whole() {
+    let file = scratch("replace");
+    write_secret(&file, "old").unwrap();
+    write_secret(&file, "new").unwrap();
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "new\n");
+    let entries = std::fs::read_dir(file.parent().unwrap()).unwrap().count();
+    assert_eq!(entries, 1);
+    remove_secret(&file).unwrap();
+    assert!(!file.exists());
+    remove_secret(&file).unwrap();
+}

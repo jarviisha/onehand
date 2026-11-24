@@ -31,6 +31,49 @@ pub fn secret(env_var: &str, file: &Path) -> Option<String> {
     pick(from_env.as_deref(), from_file.as_deref())
 }
 
+/// Write `value` to `file` as a secret: owner-only from its first byte,
+/// trimmed, ending in a newline, and whole or not at all.
+///
+/// Written to a file beside it and renamed over it, so a write cut short
+/// leaves the old secret rather than half of a new one.
+pub fn write_secret(file: &Path, value: &str) -> std::io::Result<()> {
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let mut name = file.as_os_str().to_owned();
+    name.push(".tmp");
+    let temp = std::path::PathBuf::from(name);
+    let _ = std::fs::remove_file(&temp);
+    let mut open = std::fs::OpenOptions::new();
+    open.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        open.mode(0o600);
+    }
+    let written = (|| {
+        use std::io::Write as _;
+        let mut out = open.open(&temp)?;
+        out.write_all(format!("{}\n", value.trim()).as_bytes())?;
+        out.sync_all()
+    })();
+    match written.and_then(|()| std::fs::rename(&temp, file)) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&temp);
+            Err(e)
+        }
+    }
+}
+
+/// Remove the secret in `file`; one that is not there is already removed.
+pub fn remove_secret(file: &Path) -> std::io::Result<()> {
+    match std::fs::remove_file(file) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
+}
+
 /// Which of the two sources answers, and what counts as an answer.
 ///
 /// Split out from the reading so the rule is testable without a filesystem or a

@@ -22,6 +22,10 @@
 //! once had four answers to "this session has closed". A press carries its own
 //! session and never went through a binding, so it is not reconciled.
 
+mod bridge;
+
+pub use bridge::TokenWrite;
+
 use super::chats::{ArchiveRow, Chats, RemoteSession};
 use super::command::{self, RemoteCommand, HELP};
 use super::press::Press;
@@ -66,6 +70,8 @@ pub enum Input {
     Retrying(String),
     /// The channel is not coming back, for this reason.
     Disconnected(String),
+    /// What [`Effect::WriteToken`] came to.
+    TokenWritten(Result<(), String>),
     /// The prompt [`Effect::Prompt`] sent to `uid`, or `None` when no window
     /// holds it any more.
     Prompted {
@@ -126,6 +132,9 @@ pub enum Effect {
     Start,
     /// Start a channel with this token, in place of any that runs.
     Connect(String),
+    /// Write this token as the bridge's own, or remove it, off the UI
+    /// thread; answered by [`Input::TokenWritten`].
+    WriteToken(Option<String>),
     /// The person said they are away, or back: whatever decides what is told
     /// reads [`RemoteDrive::away`] again. Back, the conversation in the window
     /// in front is read.
@@ -226,6 +235,8 @@ pub struct RemoteDrive {
     source: Option<TokenSource>,
     /// A start is waiting on its look: only the first answer counts.
     looking: bool,
+    /// The token's write, while it runs or once it failed.
+    token_write: Option<TokenWrite>,
     /// Newest first, at most [`IGNORED_CAP`]. In memory only, and emptied at
     /// every start: it is for finding a chat while setting the bridge up.
     ignored: Vec<Ignored>,
@@ -254,6 +265,7 @@ impl RemoteDrive {
             state: BridgeState::Off,
             source: None,
             looking: false,
+            token_write: None,
             ignored: Vec::new(),
         }
     }
@@ -409,6 +421,7 @@ impl RemoteDrive {
                 }
                 Vec::new()
             }
+            Input::TokenWritten(result) => self.token_written(result),
             Input::Disconnected(why) => {
                 self.state = BridgeState::Stopped { why };
                 // **Away goes with it.** The only way out of it, `/here`,

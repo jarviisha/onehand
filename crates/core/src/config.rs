@@ -39,7 +39,7 @@ mod font;
 pub use font::{resolve_monospace, FontConfig};
 
 mod secret;
-pub use secret::secret;
+pub use secret::{remove_secret, secret, write_secret};
 
 mod state;
 pub use state::AppState;
@@ -158,6 +158,20 @@ pub struct TelegramConfig {
     /// The environment variable the bot token is read from, when the default
     /// name does not suit. See [`token_sources`].
     pub token_env: Option<String>,
+}
+
+/// Why what was typed cannot be added to the allowed chats: it is not a chat
+/// id, or it is one already allowed. Telegram numbers its chats, a group's
+/// below zero.
+pub fn chat_refusal(typed: &str, allowed: &[String]) -> Option<String> {
+    let id = typed.trim();
+    if id.parse::<i64>().is_err() {
+        return Some("A chat id is a number".into());
+    }
+    allowed
+        .iter()
+        .any(|listed| listed.trim() == id)
+        .then(|| format!("{id} is already allowed"))
 }
 
 /// `[control]` — who may use onehand's tools from outside a window.
