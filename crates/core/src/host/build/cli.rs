@@ -6,8 +6,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use super::shell::Shell;
-use super::{build_blocking, Built, Job};
+use super::{build_blocking, AskedBy, Built, Job};
 use crate::config::{HostOs, HostSpec};
+use crate::project::Project;
 use crate::workspace::BuildHost;
 use crate::worktree::worker::repo_of_blocking;
 
@@ -67,15 +68,19 @@ pub fn entry_for(
     Ok((entry.clone(), os_of(host, declared)?))
 }
 
+/// The project a folder belongs to, and where in it the folder stands.
+#[derive(Debug)]
+pub(crate) struct Found {
+    pub project: Project,
+    /// The working folder's top: the project's own, or a worktree of it.
+    pub top: PathBuf,
+    /// Where under `top` the folder stands.
+    pub within: PathBuf,
+}
+
 /// Find the project `cwd` belongs to, as its own folder or a worktree of it,
-/// among the projects kept under the config root `root`, and its entry for
-/// `host`.
-pub(crate) fn asked_blocking(
-    root: &Path,
-    declared: &[HostSpec],
-    cwd: &Path,
-    host: &str,
-) -> Result<Asked, String> {
+/// among the projects kept under the config root `root`.
+pub(crate) fn project_of_blocking(root: &Path, cwd: &Path) -> Result<Found, String> {
     let repo = repo_of_blocking(cwd)?
         .ok_or_else(|| format!("{} is not inside a git working tree", cwd.display()))?;
     // The checkout every worktree of the repository hangs off.
@@ -85,7 +90,7 @@ pub(crate) fn asked_blocking(
     };
     let (projects, _) = crate::project::file::load_all_blocking(&crate::config::projects_in(root));
     let is_here = |path: &Path| path == repo.top || path == main;
-    let Some(found) = projects.iter().find(|project| {
+    let Some(project) = projects.iter().find(|project| {
         project.host.is_none()
             && (is_here(&project.path) || project.worktrees.iter().any(|w| is_here(&w.path)))
     }) else {
@@ -94,15 +99,33 @@ pub(crate) fn asked_blocking(
             repo.top.display()
         ));
     };
-    let (project, builds) = (found.name.clone(), found.builds.clone());
-    let (entry, os) = entry_for(&project, &builds, host, declared)?;
     let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
     let within = cwd
         .strip_prefix(&repo.top)
         .map(Path::to_path_buf)
         .unwrap_or_default();
-    Ok(Asked {
+    Ok(Found {
+        project: project.clone(),
         top: repo.top,
+        within,
+    })
+}
+
+/// Find the project `cwd` belongs to and its entry for `host`.
+pub(crate) fn asked_blocking(
+    root: &Path,
+    declared: &[HostSpec],
+    cwd: &Path,
+    host: &str,
+) -> Result<Asked, String> {
+    let Found {
+        project,
+        top,
+        within,
+    } = project_of_blocking(root, cwd)?;
+    let (entry, os) = entry_for(&project.name, &project.builds, host, declared)?;
+    Ok(Asked {
+        top,
         within,
         entry,
         os,
@@ -169,6 +192,7 @@ pub(crate) fn run_with(
         entry: &asked.entry,
         os: asked.os.clone(),
         command: &command,
+        asked_by: AskedBy::Person,
     };
     // An interrupt at the terminal reaches this process and its ssh alike.
     let built = build(&job, &mut |line| {
@@ -179,8 +203,17 @@ pub(crate) fn run_with(
         Ok(built) => built,
         Err(why) => return refuse(why),
     };
+    told(built, &mut |note| {
+        let _ = writeln!(err, "onehand: {note}");
+    })
+}
+
+/// What onehand says of a build that ran, each a note for `note`, and the
+/// exit code it comes to: the command's own, or [`STOPPED`] for one that
+/// did not finish.
+pub(crate) fn told(built: Built, note: &mut dyn FnMut(&str)) -> i32 {
     if let Some(hint) = &built.hint {
-        let _ = writeln!(err, "onehand: {hint}");
+        note(hint);
     }
     if !built.brought.is_empty() {
         let brought: Vec<String> = built
@@ -188,12 +221,12 @@ pub(crate) fn run_with(
             .iter()
             .map(|path| path.display().to_string())
             .collect();
-        let _ = writeln!(err, "onehand: brought back {}", brought.join(", "));
+        note(&format!("brought back {}", brought.join(", ")));
     }
     match built.exit {
         Some(code) => code,
         None => {
-            let _ = writeln!(err, "onehand: the build did not finish");
+            note("the build did not finish");
             STOPPED
         }
     }

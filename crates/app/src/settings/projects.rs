@@ -1,10 +1,13 @@
 //! The Projects page: one project of the window at a time, its check
-//! command, the hosts it builds on and where its new worktrees go.
+//! command, the hosts it builds on, the commands it routes there and where
+//! its new worktrees go.
 //!
 //! **Here and not on the project's page.** The page is where work on a
 //! project starts and is found again; what the project is *set to* changes
 //! rarely, and kept beside the work it pushed the work down a screen. Here it
 //! is one menu away from any project, whatever is on screen.
+
+mod routes;
 
 use super::{about, list_row, list_rows, page_head, section};
 use crate::controls::Named as _;
@@ -19,10 +22,12 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, Icon, StyledExt};
 use onehand_core::workspace::{BuildHost, ProjectRoot};
 use onehand_ui::{Short as _, ShortIcon as _, Tall as _};
+#[cfg(test)]
+pub(super) use routes::route_line;
 use std::path::{Path, PathBuf};
 
 /// How many build hosts the page lists before it says how many it left out.
-const BUILD_HOSTS_SHOWN: usize = 20;
+pub(crate) const BUILD_HOSTS_SHOWN: usize = 20;
 
 /// The projects of `roots` this page is about, by folder and name: those
 /// whose sessions run on this machine, a worker's row left out.
@@ -86,6 +91,7 @@ pub(super) fn projects_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let builds = at
         .map(|at| roots[at].build_hosts().to_vec())
         .unwrap_or_default();
+    let routes = shell.routes_of(&root, cx);
     let check = shell.check_input(&root);
     let parent = crate::projects::worktree_parent(&root, cx);
     page.child(section(None, None, cx).child(onehand_ui::field(
@@ -105,6 +111,7 @@ pub(super) fn projects_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                 )
             }))
             .child(build_hosts(handle, &root, &builds, cx))
+            .child(routes::routed_commands(handle, &root, &routes, cx))
             .child(worktree_folder(handle, &root, parent.as_deref(), cx)),
     )
     .into_any_element()

@@ -1,7 +1,7 @@
 use super::Removal;
 use super::*;
 use crate::project::{Folder, MadeBy, Placement, Project, ProjectId, Projects, Worktree};
-use crate::workspace::{BuildHost, HostName, Offloaded};
+use crate::workspace::{BuildHost, HostName, Offloaded, RoutedCommand};
 use std::path::Path;
 
 /// A drive over one project, `a`, at `/code/a`.
@@ -30,7 +30,7 @@ fn write_of(fx: Vec<Effect>) -> Box<ProjectWrite> {
     fx.into_iter()
         .find_map(|e| match e {
             Effect::Write(w) => Some(w),
-            Effect::Arm { .. } | Effect::Changed(_) | Effect::Signal(_) => None,
+            Effect::Arm { .. } | Effect::Changed(_) | Effect::Signal(_) | Effect::Shims(_) => None,
         })
         .expect("a write")
 }
@@ -151,7 +151,8 @@ fn a_failed_write_puts_the_name_back_and_says_so_once() {
             )
             | Effect::Write(_)
             | Effect::Arm { .. }
-            | Effect::Changed(_) => None,
+            | Effect::Changed(_)
+            | Effect::Shims(_) => None,
         })
         .collect();
     assert_eq!(said, vec![("a", "disk full")]);
@@ -190,7 +191,7 @@ fn a_burst_is_written_once_things_are_still() {
     let token = |fx: &[Effect]| {
         fx.iter().find_map(|e| match e {
             Effect::Arm { token, .. } => Some(*token),
-            Effect::Write(_) | Effect::Changed(_) | Effect::Signal(_) => None,
+            Effect::Write(_) | Effect::Changed(_) | Effect::Signal(_) | Effect::Shims(_) => None,
         })
     };
     let (old, new) = (token(&first).unwrap(), token(&second).unwrap());
@@ -486,4 +487,160 @@ fn a_projects_cards_default_is_kept() {
     assert!(d
         .set_cards(&p.id, crate::chat::Cards::AllowEdits)
         .is_empty());
+}
+
+// Routed commands and the picked build host.
+
+fn route(words: &str) -> RoutedCommand {
+    RoutedCommand::parse(words, "").unwrap()
+}
+
+#[test]
+fn put_route_refuses_a_host_project() {
+    let p = Project::new(
+        ProjectId::mint(2),
+        Some(HostName("vps".into())),
+        "/code/a".into(),
+    );
+    let mut d = ProjectsDrive::new(Projects::from_iter([p.clone()]), "/data/projects".into());
+    assert_eq!(
+        d.put_route(&p.id, route("cargo build"), None)
+            .err()
+            .unwrap(),
+        "a runs its sessions on a host; it builds there already"
+    );
+}
+
+#[test]
+fn put_route_refuses_the_same_words_twice() {
+    let (mut d, p) = drive();
+    assert!(d.put_route(&p.id, route("cargo build"), None).is_ok());
+    assert_eq!(
+        d.put_route(&p.id, route("cargo build"), None)
+            .err()
+            .unwrap(),
+        "a already routes cargo build"
+    );
+    assert!(d
+        .put_route(&p.id, route("cargo build"), Some(&route("cargo build")))
+        .is_ok());
+}
+
+/// A change is to the command the form was opened on, wherever it now
+/// stands; one removed meanwhile is refused, not put in another's place.
+#[test]
+fn put_route_replaces_by_words() {
+    let (mut d, p) = drive();
+    let _ = d.put_route(&p.id, route("cargo build"), None).unwrap();
+    let _ = d.put_route(&p.id, route("cargo test"), None).unwrap();
+    let _ = d.remove_route(&p.id, &route("cargo build"));
+    assert_eq!(
+        d.put_route(&p.id, route("cargo check"), Some(&route("cargo build")))
+            .err()
+            .unwrap(),
+        "cargo build was removed meanwhile"
+    );
+    let _ = d
+        .put_route(&p.id, route("cargo nextest"), Some(&route("cargo test")))
+        .unwrap();
+    let words: Vec<_> = d
+        .get(&p.id)
+        .unwrap()
+        .routes
+        .iter()
+        .map(|r| r.words.clone())
+        .collect();
+    assert_eq!(words, ["cargo nextest"]);
+}
+
+#[test]
+fn at_most_twenty_routes() {
+    let (mut d, p) = drive();
+    for n in 0..20 {
+        d.put_route(&p.id, route(&format!("tool{n}")), None)
+            .unwrap();
+    }
+    assert_eq!(
+        d.put_route(&p.id, route("tool20"), None).err().unwrap(),
+        "a routes at most 20 commands"
+    );
+}
+
+#[test]
+fn pick_must_be_a_build_host() {
+    let (mut d, p) = drive();
+    assert_eq!(
+        d.pick_build_host(&p.id, Some(HostName("nope".into())))
+            .err()
+            .unwrap(),
+        "a does not build on nope"
+    );
+    let _ = d.put_build_host(&p.id, builds_on("100-52"), None).unwrap();
+    let fx = d
+        .pick_build_host(&p.id, Some(HostName("100-52".into())))
+        .unwrap();
+    assert!(matches!(&fx[..], [Effect::Write(_), Effect::Changed(_)]));
+    assert_eq!(
+        d.get(&p.id).unwrap().builds_on,
+        Some(HostName("100-52".into()))
+    );
+    let _ = d.pick_build_host(&p.id, None).unwrap();
+    assert_eq!(d.get(&p.id).unwrap().builds_on, None);
+}
+
+#[test]
+fn removing_the_picked_build_host_clears_the_pick() {
+    let (mut d, p) = drive();
+    let _ = d.put_build_host(&p.id, builds_on("100-52"), None).unwrap();
+    let _ = d
+        .pick_build_host(&p.id, Some(HostName("100-52".into())))
+        .unwrap();
+    let w = write_of(d.remove_build_host(&p.id, &builds_on("100-52")));
+    assert_eq!(w.project.builds_on, None);
+    assert!(w.project.builds.is_empty());
+    assert_eq!(d.get(&p.id).unwrap().builds_on, None);
+}
+
+#[test]
+fn a_failed_write_puts_the_routes_and_the_pick_back() {
+    let (mut d, p) = drive();
+    let _ = d.put_build_host(&p.id, builds_on("100-52"), None).unwrap();
+    let w = write_of(d.put_route(&p.id, route("cargo build"), None).unwrap());
+    let fx = d.handle(Input::Written {
+        id: p.id.clone(),
+        pending: w.pending,
+        result: Err("read-only".into()),
+    });
+    assert!(d.get(&p.id).unwrap().routes.is_empty());
+    // The shims follow the routes back.
+    assert!(shims(&fx).is_some_and(|p| p.is_empty()));
+}
+
+/// The programs the last `Effect::Shims` of `fx` names.
+fn shims(fx: &[Effect]) -> Option<Vec<String>> {
+    fx.iter().rev().find_map(|e| match e {
+        Effect::Shims(programs) => Some(programs.clone()),
+        Effect::Write(_) | Effect::Arm { .. } | Effect::Changed(_) | Effect::Signal(_) => None,
+    })
+}
+
+/// Every change to the routes answers the shims for every program every
+/// project routes, once each, so a running agent reaches a new one at once.
+#[test]
+fn a_route_change_rewrites_the_shims() {
+    let p = Project::new(ProjectId::mint(1), None, "/code/a".into());
+    let other = Project::new(ProjectId::mint(2), None, "/code/b".into());
+    let mut d = ProjectsDrive::new(
+        Projects::from_iter([p.clone(), other.clone()]),
+        "/data/projects".into(),
+    );
+    let _ = d.put_route(&other.id, route("dotnet build"), None).unwrap();
+    let fx = d.put_route(&p.id, route("cargo build"), None).unwrap();
+    assert_eq!(shims(&fx), Some(vec!["cargo".into(), "dotnet".into()]));
+    let fx = d.put_route(&p.id, route("cargo test"), None).unwrap();
+    assert_eq!(shims(&fx), Some(vec!["cargo".into(), "dotnet".into()]));
+    let _ = d.remove_route(&p.id, &route("cargo build"));
+    let fx = d.remove_route(&p.id, &route("cargo test"));
+    assert_eq!(shims(&fx), Some(vec!["dotnet".into()]));
+    assert_eq!(shims(&d.remove_route(&p.id, &route("cargo test"))), None);
 }

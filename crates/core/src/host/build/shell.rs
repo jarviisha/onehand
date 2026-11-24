@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::MARK;
+use super::{MARK, RUN_PID};
 use crate::config::HostOs;
 use crate::host::ssh::CMD_NOT_FOUND;
 
@@ -17,6 +17,10 @@ pub(crate) enum Shell {
     /// Windows' `cmd.exe`, the shell its OpenSSH starts unless changed.
     Cmd,
 }
+
+/// Why a routed command, which brings back only what its run wrote, does not
+/// build on a Windows host: nothing there marks when the run began.
+const ROUTED_ON_LINUX: &str = "routed commands build on Linux hosts only";
 
 /// The exit code a POSIX shell gives a command it could not find.
 const POSIX_NOT_FOUND: i32 = 127;
@@ -89,29 +93,53 @@ impl Shell {
     /// found, and by a `cmd.exe` of its own on Windows, so the whole line's
     /// stderr is folded in, not its last command's.
     ///
+    /// On a POSIX host the command runs in a session of its own, in the
+    /// foreground so it keeps its stdin and its signals, and what a stop is
+    /// to end is written to [`RUN_PID`] ([`Shell::stop`]): the group, as
+    /// `-<id>`, or, on a host with no `setsid`, the command's own id, and
+    /// removed once a command under `setsid` ends. The subshell around
+    /// `setsid` keeps it from being a group's leader, which it would fork
+    /// away from. What follows the subshell keeps a shell from running the
+    /// subshell in place, as it may its last command.
+    ///
     /// **On Windows the line is read twice**, by the `cmd.exe` ssh starts and
     /// by the one that runs the command, and quotes there toggle rather than
     /// nest: a `|` inside the command's own quotes would be a pipe to the
     /// first. So every character the first would act on is escaped
     /// ([`for_outer_cmd`]), and the second is handed the line as written.
+    ///
+    /// With `mark`, the file of that name in `dir` is touched just before
+    /// the command, so what it writes is what is newer.
     pub(crate) fn run(
         self,
         dir: &str,
         sha: &str,
         within: &Path,
         command: &str,
+        mark: Option<&str>,
     ) -> Result<String, String> {
+        let touch = match (self, mark) {
+            (_, None) => String::new(),
+            (Self::Posix, Some(mark)) => format!("touch {} && ", self.word(mark)?),
+            (Self::Cmd, Some(_)) => return Err(ROUTED_ON_LINUX.to_string()),
+        };
         let dir = self.word(dir)?;
         let within = match within.as_os_str().is_empty() {
             true => String::new(),
             false => format!("cd {} && ", self.word(&within.display().to_string())?),
         };
         Ok(match self {
-            Self::Posix => format!(
-                "cd {dir} && git checkout -q -f --detach {sha} && {within}echo {MARK} && \
-                 exec \"${{SHELL:-/bin/sh}}\" -lc {} 2>&1",
-                self.word(command)?
-            ),
+            Self::Posix => {
+                let command = self.word(command)?;
+                let grouped =
+                    self.word(r#"echo "-$$" > "$1"; exec "${SHELL:-/bin/sh}" -lc "$2""#)?;
+                format!(
+                    "cd {dir} && r=$PWD && rm -f {RUN_PID} && git checkout -q -f --detach {sha} && \
+                     {touch}{within}echo {MARK} && if command -v setsid >/dev/null 2>&1; then \
+                     (exec setsid sh -c {grouped} onehand \"$r/{RUN_PID}\" {command}) 2>&1; s=$?; rm -f \"$r/{RUN_PID}\"; exit $s; \
+                     else echo $$ > \"$r/{RUN_PID}\"; exec \"${{SHELL:-/bin/sh}}\" -lc {command} 2>&1; fi"
+                )
+            }
             Self::Cmd => format!(
                 "cd /d {dir} && git checkout -q -f --detach {sha} && {within}echo {MARK} && \
                  cmd /d /s /c ^\"{}^\" 2>&1",
@@ -139,6 +167,49 @@ impl Shell {
                  && tar -cf - -- {paths}"
             ),
         })
+    }
+
+    /// In `dir`, name on stdout each of `paths` holding something newer
+    /// than the file `mark`, each ended by a NUL and the list by an empty
+    /// one, then send those as a tar. A path not there is simply not named.
+    pub(crate) fn send_fresh(
+        self,
+        dir: &str,
+        paths: &[PathBuf],
+        mark: &str,
+    ) -> Result<String, String> {
+        let dir = self.word(dir)?;
+        let mark = self.word(mark)?;
+        let paths = paths
+            .iter()
+            .map(|path| self.word(&path.display().to_string()))
+            .collect::<Result<Vec<_>, _>>()?
+            .join(" ");
+        match self {
+            Self::Posix => Ok(format!(
+                "cd {dir} || exit 1; set --; for p in {paths}; do \
+                 test -n \"$(find \"./$p\" -newer {mark} -print -quit 2>/dev/null)\" && \
+                 set -- \"$@\" \"$p\"; done; for p in \"$@\"; do printf '%s\\0' \"$p\"; done; \
+                 printf '\\0'; test $# -eq 0 || exec tar -cf - -- \"$@\""
+            )),
+            Self::Cmd => Err(ROUTED_ON_LINUX.to_string()),
+        }
+    }
+
+    /// In `dir`, end the command a stopped [`Shell::run`] left running: what
+    /// it wrote, its group or itself, sent TERM, given five seconds, then
+    /// KILL. `None` for `cmd.exe`, which writes nothing to end.
+    pub(crate) fn stop(self, dir: &str) -> Option<String> {
+        match self {
+            Self::Posix => Some(format!(
+                "cd {} && p=$(cat {RUN_PID} 2>/dev/null) && test -n \"$p\" && {{ \
+                 kill -TERM \"$p\" 2>/dev/null; i=0; \
+                 while kill -0 \"$p\" 2>/dev/null && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done; \
+                 kill -KILL \"$p\" 2>/dev/null; rm -f {RUN_PID}; }}; true",
+                self.word(dir).expect("any text")
+            )),
+            Self::Cmd => None,
+        }
     }
 
     /// The line as ssh is given it. A POSIX host's goes to `sh`, whole: the

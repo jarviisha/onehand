@@ -72,6 +72,12 @@ pub const COMMANDS: &[Command] = &[
     ),
     command!("show_tasks", "Show the Tasks page", [], ShowTasks),
     command!(
+        "toggle_host_builds",
+        "Toggle builds on hosts",
+        [],
+        ToggleHostBuilds
+    ),
+    command!(
         "show_schedules",
         "Show the Schedules page",
         [],

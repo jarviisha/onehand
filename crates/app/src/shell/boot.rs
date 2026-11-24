@@ -490,6 +490,8 @@ impl Shell {
             host_listening: Default::default(),
             offload_draft: None,
             build_host_draft: None,
+            route_draft: None,
+            route_suggestions: HashMap::new(),
             offload_locks: HashMap::new(),
             dialog_return: None,
             check_inputs: HashMap::new(),

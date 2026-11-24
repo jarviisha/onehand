@@ -16,7 +16,7 @@
 //! **Which worktrees exist is git's.** A project records the ones it knows
 //! about (where they came from, who cut them); git is asked what is on disk.
 
-use crate::workspace::{label_for, BuildHost, HostName, Offloaded};
+use crate::workspace::{label_for, BuildHost, HostName, Offloaded, RoutedCommand};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -112,6 +112,13 @@ pub struct Project {
     /// The hosts it builds on, and what comes back from each.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub builds: Vec<BuildHost>,
+    /// The commands an agent's build runs on the build host.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub routes: Vec<RoutedCommand>,
+    /// The host the routed commands run on, among `builds`; none for this
+    /// machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub builds_on: Option<HostName>,
     /// The folder new worktrees go in; none for beside the repository.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree_parent: Option<PathBuf>,
@@ -147,6 +154,8 @@ impl Project {
             offload: None,
             check: None,
             builds: Vec::new(),
+            routes: Vec::new(),
+            builds_on: None,
             worktree_parent: None,
             worktrees: Vec::new(),
             cards: crate::chat::Cards::Manual,

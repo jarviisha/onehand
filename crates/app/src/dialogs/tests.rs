@@ -105,6 +105,7 @@ fn every_shell_dialog_says_what_enter_does() {
         ("dialogs/build_host.rs", include_str!("build_host.rs")),
         ("dialogs/host_project.rs", include_str!("host_project.rs")),
         ("dialogs/offload.rs", include_str!("offload.rs")),
+        ("dialogs/route.rs", include_str!("route.rs")),
     ] {
         let dialogs = text.matches(&built).count() - text.matches(&empty).count();
         let enters = text.matches(&said).count() - text.matches(&defined).count();

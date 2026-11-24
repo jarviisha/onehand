@@ -17,7 +17,7 @@
 
 use super::{MadeBy, Placement, Project, ProjectId, Projects, Worktree};
 use crate::saving::{Pending, Saves};
-use crate::workspace::{BuildHost, HostName, Offloaded};
+use crate::workspace::{BuildHost, HostName, Offloaded, RoutedCommand};
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -34,6 +34,8 @@ pub enum Thing {
     Check,
     Cards,
     Builds,
+    Routes,
+    BuildsOn,
     Worktrees,
     WorktreeParent,
     /// The offload of one folder of the project, by its path here.
@@ -47,6 +49,8 @@ pub enum Value {
     Check(Option<String>),
     Cards(crate::chat::Cards),
     Builds(Vec<BuildHost>),
+    Routes(Vec<RoutedCommand>),
+    BuildsOn(Option<HostName>),
     Worktrees(Vec<Worktree>),
     WorktreeParent(Option<PathBuf>),
     Offload {
@@ -113,6 +117,10 @@ pub enum Effect {
     /// The project changed: tell every window holding it.
     Changed(ProjectId),
     Signal(Signal),
+    /// The routed commands changed: write the shims for these programs,
+    /// every one any project routes, so an agent already running reaches a
+    /// new one at once (`host::route::shim::refresh_blocking`).
+    Shims(Vec<String>),
 }
 
 /// What the front end reports back.
@@ -469,12 +477,25 @@ impl ProjectsDrive {
         let Some(project) = self.projects.get(id) else {
             return Vec::new();
         };
-        let builds = project
+        let builds: Vec<BuildHost> = project
             .builds
             .iter()
             .filter(|held| *held != entry)
             .cloned()
             .collect();
+        if project.builds == builds {
+            return Vec::new();
+        }
+        // The pick goes with its host, in the same write.
+        if project.builds_on.as_ref() == Some(&entry.host) {
+            let project = self.projects.get_mut(id).expect("just read");
+            let before = project.builds_on.take();
+            self.saves.entry(id.clone()).or_default().change(
+                Thing::BuildsOn,
+                Value::BuildsOn(before),
+                Value::BuildsOn(None),
+            );
+        }
         self.set_builds(id, builds)
     }
 
@@ -625,6 +646,7 @@ impl ProjectsDrive {
                 let Some((why, back)) = saves.landed(pending, result) else {
                     return Vec::new();
                 };
+                let routes_back = back.iter().any(|v| matches!(v, Value::Routes(_)));
                 for value in back {
                     self.put(&id, value);
                 }
@@ -633,10 +655,14 @@ impl ProjectsDrive {
                     .get(&id)
                     .map(|project| project.name.clone())
                     .unwrap_or_default();
-                vec![
+                let mut fx = vec![
                     Effect::Changed(id.clone()),
                     Effect::Signal(Signal::SaveFailed { id, name, why }),
-                ]
+                ];
+                if routes_back {
+                    fx.push(self.shims());
+                }
+                fx
             }
             Input::Elapsed { token } => {
                 if self.soon != Some(token) {
@@ -666,6 +692,16 @@ impl ProjectsDrive {
             Value::Builds(builds) => {
                 if let Some(project) = self.projects.get_mut(id) {
                     project.builds = builds;
+                }
+            }
+            Value::Routes(routes) => {
+                if let Some(project) = self.projects.get_mut(id) {
+                    project.routes = routes;
+                }
+            }
+            Value::BuildsOn(host) => {
+                if let Some(project) = self.projects.get_mut(id) {
+                    project.builds_on = host;
                 }
             }
             Value::Cards(cards) => {
@@ -742,6 +778,9 @@ impl ProjectsDrive {
         })))
     }
 }
+
+mod routes;
+pub use routes::MOST_ROUTES;
 
 #[cfg(test)]
 mod tests;

@@ -598,7 +598,15 @@ fn an_agent_that_never_comes_up_leaves_the_page_saying_why(cx: &mut gpui::TestAp
             pane.press_send(window, cx);
         })
     });
-    cx.run_until_parked();
+    // The agent's start runs on the runtime's own threads, which a parked
+    // executor does not wait for: the page's failure is what ends the wait.
+    for _ in 0..500 {
+        cx.run_until_parked();
+        if cx.update(|_, cx| pane.read(cx).page_failure(&a).is_some()) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
     cx.update(|_, cx| {
         let shell = shell.read(cx);
         let idx = shell.window.workspace.local_index(&a).unwrap();

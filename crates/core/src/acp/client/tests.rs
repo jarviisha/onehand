@@ -26,6 +26,7 @@ fn connect(
             opening,
             mcp_servers: Vec::new(),
             dirs: Vec::new(),
+            term_env: Vec::new(),
         },
     )
 }
@@ -114,6 +115,7 @@ fn client_with(
                 opening,
                 mcp_servers: vec![json!({"name": "onehand"})],
                 dirs,
+                term_env: Vec::new(),
             },
         );
         futures::pin_mut!(stream);
@@ -1056,6 +1058,7 @@ async fn the_last_answer_before_an_exit_is_not_lost() {
                 opening: Opening::Fresh,
                 mcp_servers: Vec::new(),
                 dirs: Vec::new(),
+                term_env: Vec::new(),
             },
         );
         futures::pin_mut!(stream);

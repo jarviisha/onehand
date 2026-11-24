@@ -36,6 +36,7 @@ impl Shell {
         // The Projects page draws each project's check command field, made
         // here since a page cannot make one while it draws.
         self.make_check_inputs(window, cx);
+        self.read_route_suggestions(cx);
         self.docks_aside(window, cx);
         let view: gpui::AnyView = self.settings_view.clone().into();
         self.chat.update(cx, |pane, cx| {
@@ -96,6 +97,7 @@ impl Shell {
     ) {
         self.make_check_inputs(window, cx);
         self.settings_project = Some(root);
+        self.read_route_suggestions(cx);
         cx.notify();
     }
 

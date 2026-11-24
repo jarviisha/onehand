@@ -89,12 +89,14 @@ fn build(
         entry: host,
         os: crate::config::HostOs::Linux,
         command,
+        asked_by: AskedBy::Person,
     };
     let built = build_in(
         &job,
         &home.0,
         "laptop",
         &mut |line| lines.push(line.to_string()),
+        &mut |_| {},
         &AtomicBool::new(false),
     );
     (built, lines)
@@ -444,8 +446,9 @@ fn a_stopped_build_ends_and_says_no_exit() {
             entry: &host,
             os: crate::config::HostOs::Linux,
             command: "sleep 30",
+            asked_by: AskedBy::Person,
         };
-        build_in(&job, &home.0, "laptop", &mut |_| {}, &cancel)
+        build_in(&job, &home.0, "laptop", &mut |_| {}, &mut |_| {}, &cancel)
     });
     assert!(started.elapsed() < std::time::Duration::from_secs(10));
     assert_eq!(
@@ -456,6 +459,315 @@ fn a_stopped_build_ends_and_says_no_exit() {
             hint: None
         })
     );
+}
+
+/// A routed build of `top` on the host `local`: the outcome and what onehand
+/// said of its own.
+fn routed(
+    home: &Scratch,
+    top: &Path,
+    host: &BuildHost,
+    command: &str,
+    asked_by: AskedBy,
+    cancel: &AtomicBool,
+) -> (Result<Built, String>, Vec<String>) {
+    let mut notes = Vec::new();
+    let job = Job {
+        top,
+        within: Path::new(""),
+        entry: host,
+        os: crate::config::HostOs::Linux,
+        command,
+        asked_by,
+    };
+    let built = build_in(
+        &job,
+        &home.0,
+        "laptop",
+        &mut |_| {},
+        &mut |told| match told {
+            Told::Note(note) => notes.push(note.to_string()),
+            Told::Running => notes.push("running".to_string()),
+        },
+        cancel,
+    );
+    (built, notes)
+}
+
+#[test]
+fn routed_brings_back_what_the_run_wrote() {
+    let (home, scratch) = (Scratch::new("home"), Scratch::new("work"));
+    let top = repo(&scratch, "proj");
+    let host = on_local(&["target/a", "target/b"], None);
+    let never = AtomicBool::new(false);
+    // `b` is on the host from before, and here as it was.
+    let (built, _) = build(
+        &home,
+        &top,
+        "",
+        &on_local(&[], None),
+        "mkdir -p target && echo old > target/b",
+    );
+    assert_eq!(built.map(|b| b.exit), Ok(Some(0)));
+    write(&top, "target/b", "here\n");
+    let (built, _) = routed(
+        &home,
+        &top,
+        &host,
+        "echo a > target/a",
+        AskedBy::Route,
+        &never,
+    );
+    assert_eq!(
+        built,
+        Ok(Built {
+            exit: Some(0),
+            brought: vec![PathBuf::from("target/a")],
+            hint: None
+        })
+    );
+    assert_eq!(
+        std::fs::read_to_string(top.join("target/a")).unwrap(),
+        "a\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(top.join("target/b")).unwrap(),
+        "here\n"
+    );
+}
+
+#[test]
+fn routed_with_nothing_written_is_not_a_failure() {
+    let (home, scratch) = (Scratch::new("home"), Scratch::new("work"));
+    let top = repo(&scratch, "proj");
+    let host = on_local(&["target/a"], None);
+    let (built, _) = routed(
+        &home,
+        &top,
+        &host,
+        "true",
+        AskedBy::Route,
+        &AtomicBool::new(false),
+    );
+    assert_eq!(
+        built,
+        Ok(Built {
+            exit: Some(0),
+            brought: Vec::new(),
+            hint: None
+        })
+    );
+}
+
+#[test]
+fn routed_ignores_an_artifact_left_from_an_earlier_run() {
+    let (home, scratch) = (Scratch::new("home"), Scratch::new("work"));
+    let top = repo(&scratch, "proj");
+    let host = on_local(&["target/a"], None);
+    let never = AtomicBool::new(false);
+    let (built, _) = routed(
+        &home,
+        &top,
+        &host,
+        "mkdir -p target && echo a > target/a",
+        AskedBy::Route,
+        &never,
+    );
+    assert_eq!(
+        built.map(|b| b.brought),
+        Ok(vec![PathBuf::from("target/a")])
+    );
+    let (built, _) = routed(&home, &top, &host, "true", AskedBy::Route, &never);
+    assert_eq!(built.map(|b| b.brought), Ok(Vec::new()));
+}
+
+#[test]
+fn waiting_job_waits_for_the_lock() {
+    let (home, scratch) = (Scratch::new("home"), Scratch::new("work"));
+    let top = repo(&scratch, "proj");
+    let host = on_local(&[], None);
+    let never = AtomicBool::new(false);
+    let held = lock(&top, "local").expect("no error").expect("the lock");
+    let (refused, said) = routed(&home, &top, &host, "true", AskedBy::Person, &never);
+    assert!(said.is_empty(), "{said:?}");
+    assert_eq!(
+        refused,
+        Err("A build of proj is already running on local".to_string())
+    );
+    std::thread::scope(|scope| {
+        scope.spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            drop(held);
+        });
+        let (built, notes) = routed(&home, &top, &host, "true", AskedBy::Route, &never);
+        assert_eq!(built.map(|b| b.exit), Ok(Some(0)));
+        // Running only once the lock is taken and the code checked out.
+        assert_eq!(
+            notes,
+            ["waiting for the build already running on local", "running"]
+        );
+    });
+}
+
+#[test]
+fn cancel_stops_a_running_command() {
+    let (home, scratch) = (Scratch::new("home"), Scratch::new("work"));
+    let top = repo(&scratch, "proj");
+    let host = on_local(&["target/a"], None);
+    let cancel = AtomicBool::new(false);
+    let pid_file = scratch.0.join("sleep.pid");
+    let command = format!(
+        // A grandchild, as a command's own tools are: killing the shell that
+        // started it does not end it.
+        "sleep 30 & echo $! > {}; wait",
+        shell::Shell::Posix
+            .word(&pid_file.display().to_string())
+            .unwrap()
+    );
+    let started = std::time::Instant::now();
+    let built = std::thread::scope(|scope| {
+        scope.spawn(|| {
+            // Stopped once the command runs, not while the code is checked out.
+            while !pid_file.exists() && started.elapsed().as_secs() < 5 {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            cancel.store(true, Ordering::Relaxed);
+        });
+        routed(&home, &top, &host, &command, AskedBy::Route, &cancel).0
+    });
+    assert!(started.elapsed() < std::time::Duration::from_secs(10));
+    assert_eq!(built.map(|b| b.exit), Ok(None));
+    // The command on the host is gone, not left running: at most a zombie
+    // its new parent has yet to reap.
+    let pid = std::fs::read_to_string(&pid_file).expect("the command ran");
+    let stat = Path::new("/proc").join(pid.trim()).join("stat");
+    let alive = || {
+        std::fs::read_to_string(&stat).is_ok_and(|stat| {
+            stat.rsplit_once(") ")
+                .is_some_and(|(_, rest)| !rest.starts_with('Z'))
+        })
+    };
+    assert!(!alive(), "the sleep {} is still running", pid.trim());
+    // The folder's lock went with it.
+    assert!(matches!(lock(&top, "local"), Ok(Some(_))));
+}
+
+/// The run line as this machine's `sh` runs it in `top`, `hi` on its stdin
+/// and `path` its `PATH`: what it printed, its exit code, and the id it
+/// wrote for a stop, as the command saw it.
+fn run_line(top: &Path, command: &str, path: &std::ffi::OsStr) -> (String, Option<i32>, String) {
+    let command = format!("cat {RUN_PID} > .git/pid-seen; {command}");
+    use std::io::Write as _;
+    let head = git(top, &["rev-parse", "HEAD"]);
+    let line = shell::Shell::Posix
+        .run(
+            &top.display().to_string(),
+            &head,
+            Path::new(""),
+            &command,
+            None,
+        )
+        .expect("a line");
+    // Named whole: `PATH` may hold none of it.
+    let mut sh = Command::new("/bin/sh")
+        .arg("-c")
+        .arg(line)
+        .env("PATH", path)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("sh runs");
+    sh.stdin
+        .take()
+        .expect("piped")
+        .write_all(b"hi\n")
+        .expect("fed");
+    let out = sh.wait_with_output().expect("ran");
+    let pid = std::fs::read_to_string(top.join(".git/pid-seen")).expect("an id written");
+    (
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        out.status.code(),
+        pid.trim().to_string(),
+    )
+}
+
+/// SIGINT and SIGQUIT are left as they are, not ignored as a job run in
+/// the background of a shell would have them.
+const READS_AND_CHECKS: &str = "read x; echo got=$x; grep SigIgn /proc/self/status; exit 3";
+
+fn interrupts_ignored(out: &str) -> bool {
+    let mask = out
+        .lines()
+        .find_map(|l| l.strip_prefix("SigIgn:"))
+        .expect("the mask");
+    u64::from_str_radix(mask.trim(), 16).expect("hex") & 0b110 != 0
+}
+
+#[test]
+fn the_command_runs_in_its_own_group_with_stdin_and_its_exit_code() {
+    let scratch = Scratch::new("work");
+    let top = repo(&scratch, "proj");
+    let (out, code, pid) = run_line(&top, READS_AND_CHECKS, &std::env::var_os("PATH").unwrap());
+    assert!(out.contains("got=hi"), "{out}");
+    assert_eq!(code, Some(3));
+    assert!(!interrupts_ignored(&out), "{out}");
+    // A group: stopped whole, with all the command started.
+    assert!(
+        pid.starts_with('-') && pid[1..].parse::<u32>().is_ok(),
+        "{pid}"
+    );
+    // Gone once the command ends, so a stop after it ends nothing.
+    assert!(!top.join(RUN_PID).exists());
+}
+
+#[test]
+fn a_host_without_setsid_runs_the_command_as_before_and_writes_its_pid() {
+    let scratch = Scratch::new("work");
+    let top = repo(&scratch, "proj");
+    // Only what the line needs besides setsid.
+    let bin = scratch.0.join("bin");
+    std::fs::create_dir_all(&bin).expect("bin");
+    for tool in ["git", "rm", "touch", "grep", "cat"] {
+        let found = Command::new("sh")
+            .args(["-c", &format!("command -v {tool}")])
+            .output()
+            .expect("sh");
+        let found = String::from_utf8_lossy(&found.stdout).trim().to_string();
+        std::os::unix::fs::symlink(found, bin.join(tool)).expect("linked");
+    }
+    let (out, code, pid) = run_line(&top, READS_AND_CHECKS, bin.as_os_str());
+    assert!(out.contains("got=hi"), "{out}");
+    assert_eq!(code, Some(3));
+    assert!(!interrupts_ignored(&out), "{out}");
+    assert!(pid.parse::<u32>().is_ok(), "{pid}");
+}
+
+#[test]
+fn a_lock_that_cannot_be_made_is_an_error_not_a_build_running() {
+    let scratch = Scratch::new("locks");
+    write(&scratch.0, "file", "not a folder\n");
+    let under_a_file = scratch.0.join("file").join("builds");
+    match lock_in(&under_a_file, Path::new("/work/proj"), "local") {
+        Err(why) => assert!(why.contains(&under_a_file.display().to_string()), "{why}"),
+        Ok(_) => panic!("a lock under a file"),
+    }
+}
+
+#[test]
+fn a_windows_host_cannot_bring_back_only_what_a_run_wrote() {
+    assert_eq!(
+        shell::Shell::Cmd.send_fresh("d", &[PathBuf::from("a")], ROUTE_MARK),
+        Err("routed commands build on Linux hosts only".to_string())
+    );
+}
+
+#[test]
+fn this_machine_answers_and_a_dead_host_does_not() {
+    assert!(reachable_blocking(&HostName("local".into())));
+    assert!(!reachable_blocking(&HostName(
+        "nobody@127.0.0.1 -p 1".into()
+    )));
 }
 
 mod cli {
@@ -613,7 +925,16 @@ mod cli {
                 &[command.to_string()],
                 &mut out,
                 &mut err,
-                |job, line| build_in(job, &home.0, "laptop", line, &AtomicBool::new(false)),
+                |job, line| {
+                    build_in(
+                        job,
+                        &home.0,
+                        "laptop",
+                        line,
+                        &mut |_| {},
+                        &AtomicBool::new(false),
+                    )
+                },
             );
             (
                 code,
@@ -877,7 +1198,9 @@ mod shells {
             );
         }
         // And so does every line built from such a word.
-        assert!(Shell::Cmd.run(DIR, SHA, Path::new("50%"), "dir").is_err());
+        assert!(Shell::Cmd
+            .run(DIR, SHA, Path::new("50%"), "dir", None)
+            .is_err());
         assert!(Shell::Cmd.send(DIR, &[PathBuf::from("a\"b")]).is_err());
         assert_eq!(Shell::Posix.word("100%").as_deref(), Ok("'100%'"));
     }
@@ -893,11 +1216,11 @@ mod shells {
     #[test]
     fn cmd_run_is_the_line_checked_by_hand() {
         assert_eq!(
-            Shell::Cmd.run(DIR, SHA, Path::new("sub dir"), "dotnet build && dir").as_deref(),
+            Shell::Cmd.run(DIR, SHA, Path::new("sub dir"), "dotnet build && dir", None).as_deref(),
             Ok("cd /d \".onehand-build/lap/my_proj-abc\" && git checkout -q -f --detach 2ab98d7259af09c62a806ff487818d931abf3b7e && cd \"sub dir\" && echo __ONEHAND_BUILD__ && cmd /d /s /c ^\"dotnet build ^&^& dir^\" 2>&1")
         );
         let top = Shell::Cmd
-            .run(DIR, SHA, Path::new(""), "dir")
+            .run(DIR, SHA, Path::new(""), "dir", None)
             .expect("a line");
         assert!(!top.contains("cd \"\""), "{top}");
     }
@@ -913,6 +1236,7 @@ mod shells {
                 SHA,
                 Path::new(""),
                 r#"findstr "a|b" f.txt & echo (x) > o^ut"#,
+                None,
             )
             .expect("a line");
         assert!(
@@ -1056,6 +1380,17 @@ mod shells {
     }
 
     #[test]
+    fn a_stopped_run_is_ended_by_what_it_wrote_on_posix_only() {
+        assert_eq!(
+            Shell::Posix.stop(DIR).as_deref(),
+            Some(
+                r#"cd '.onehand-build/lap/my_proj-abc' && p=$(cat .git/onehand-route-pid 2>/dev/null) && test -n "$p" && { kill -TERM "$p" 2>/dev/null; i=0; while kill -0 "$p" 2>/dev/null && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done; kill -KILL "$p" 2>/dev/null; rm -f .git/onehand-route-pid; }; true"#
+            )
+        );
+        assert_eq!(Shell::Cmd.stop(DIR), None);
+    }
+
+    #[test]
     fn posix_scripts_are_what_they_were() {
         assert_eq!(
             Shell::Posix.init(DIR).as_deref(),
@@ -1065,10 +1400,10 @@ mod shells {
         );
         assert_eq!(
             Shell::Posix
-                .run(DIR, SHA, Path::new("sub dir"), "it's")
+                .run(DIR, SHA, Path::new("sub dir"), "it's", None)
                 .as_deref(),
             Ok(
-                r#"cd '.onehand-build/lap/my_proj-abc' && git checkout -q -f --detach 2ab98d7259af09c62a806ff487818d931abf3b7e && cd 'sub dir' && echo __ONEHAND_BUILD__ && exec "${SHELL:-/bin/sh}" -lc 'it'\''s' 2>&1"#
+                r#"cd '.onehand-build/lap/my_proj-abc' && r=$PWD && rm -f .git/onehand-route-pid && git checkout -q -f --detach 2ab98d7259af09c62a806ff487818d931abf3b7e && cd 'sub dir' && echo __ONEHAND_BUILD__ && if command -v setsid >/dev/null 2>&1; then (exec setsid sh -c 'echo "-$$" > "$1"; exec "${SHELL:-/bin/sh}" -lc "$2"' onehand "$r/.git/onehand-route-pid" 'it'\''s') 2>&1; s=$?; rm -f "$r/.git/onehand-route-pid"; exit $s; else echo $$ > "$r/.git/onehand-route-pid"; exec "${SHELL:-/bin/sh}" -lc 'it'\''s' 2>&1; fi"#
             )
         );
         assert_eq!(
@@ -1078,4 +1413,30 @@ mod shells {
             )
         );
     }
+}
+
+/// A command printing far faster than its lines are taken fills what is
+/// held, and a stop then still ends the run at once.
+#[test]
+fn a_stop_with_the_lines_held_full_ends_at_once() {
+    let mut command = Command::new("sh");
+    command.args(["-c", &format!("echo {MARK}; yes")]);
+    let cancel = AtomicBool::new(false);
+    let started = std::time::Instant::now();
+    let mut taken = 0;
+    let ran = run_streaming(
+        command,
+        &HostName("local".into()).addr(),
+        &mut |_| {
+            taken += 1;
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            if taken == 300 {
+                cancel.store(true, Ordering::Relaxed);
+            }
+        },
+        &mut || {},
+        &cancel,
+    );
+    assert!(matches!(ran, Ok(Ran::Stopped)));
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
 }

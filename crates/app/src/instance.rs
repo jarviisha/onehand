@@ -118,6 +118,7 @@ fn carry(incoming: Incoming, cx: &mut App) {
     match incoming {
         Incoming::Open(forwarded) => open_forwarded(forwarded, cx),
         Incoming::Call(peer, call, answer) => crate::control::perform(peer, call, answer, cx),
+        Incoming::Routed => cx.refresh_windows(),
     }
 }
 

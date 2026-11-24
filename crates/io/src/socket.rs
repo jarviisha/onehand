@@ -9,11 +9,14 @@
 //! every message ([`Front::standing`]), since it is the front end's drive
 //! that knows.
 
-use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
+use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, channel, unbounded};
 use futures::channel::oneshot;
 use onehand_core::control::{self, Call, Conn, Handled, Peer, Standing};
+use onehand_core::host::route::Ask;
+use onehand_core::host::route::call::{self as route, RouteEnd, Said};
 use onehand_core::instance::{self, Forwarded};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _, BufReader};
 use tokio::net::UnixListener;
@@ -24,6 +27,10 @@ use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 const LINE_WAIT: Duration = Duration::from_secs(5);
 const LINE_CAP: u64 = 64 * 1024;
 
+/// How many lines of a routed run wait to be written to its client before
+/// the run waits for it.
+const ROUTE_BACKLOG: usize = 256;
+
 /// Said when a call's answer cannot come, because the app is going.
 const CLOSING: &str = "onehand is closing";
 
@@ -33,6 +40,8 @@ pub enum Incoming {
     Open(Forwarded),
     /// A tool's call, who made it, and where its answer goes.
     Call(Peer, Call, oneshot::Sender<Result<String, String>>),
+    /// A routed run ended, or a host's standing changed during one.
+    Routed,
 }
 
 /// Where what a session's connection is told unasked goes, by its token.
@@ -76,7 +85,8 @@ impl Socket {
     }
 }
 
-/// Answer every connection. One whose first line is a second launch's open
+/// Answer every connection. One whose first line is a shim's route is
+/// served until its run ends; one whose first line is a second launch's open
 /// is answered and closed; any other is an MCP conversation, carried on
 /// until the client hangs up. What a line asks for goes to the front end
 /// before the answer goes back, so a second launch that hears yes has been
@@ -100,6 +110,9 @@ async fn accept(listener: UnixListener, tx: UnboundedSender<Incoming>, front: Fr
             let Ok(Some(first)) = first else {
                 return;
             };
+            if let Some(ask) = route::route_ask(&first) {
+                return serve_route(ask, reader, write, tx, route::serve_blocking).await;
+            }
             let Some((reply, forwarded)) = instance::open(&first) else {
                 return converse(first, reader, write, tx, front).await;
             };
@@ -109,6 +122,70 @@ async fn accept(listener: UnixListener, tx: UnboundedSender<Incoming>, front: Fr
             let _ = write.write_all(format!("{reply}\n").as_bytes()).await;
         });
     }
+}
+
+/// Serve one routed run with `serve`, off the runtime's threads: what it
+/// says is written back line by line, and the client hanging up stops it.
+async fn serve_route<F>(
+    ask: Ask,
+    mut reader: BufReader<OwnedReadHalf>,
+    mut writer: OwnedWriteHalf,
+    tx: UnboundedSender<Incoming>,
+    serve: F,
+) where
+    F: FnOnce(&Ask, &mut dyn FnMut(Said), &AtomicBool) -> RouteEnd + Send + 'static,
+{
+    use futures::{SinkExt as _, StreamExt as _};
+    let cancel = Arc::new(AtomicBool::new(false));
+    // The client says nothing after its first line: its end is its hanging up.
+    let watch = tokio::spawn({
+        let cancel = cancel.clone();
+        async move {
+            let mut buf = [0u8; 256];
+            while let Ok(1..) = reader.read(&mut buf).await {}
+            cancel.store(true, Ordering::Relaxed);
+        }
+    });
+    // Bounded: a run printing faster than its client reads waits for it.
+    let (mut said, mut lines) = channel::<String>(ROUTE_BACKLOG);
+    let run = tokio::task::spawn_blocking({
+        let (cancel, tx) = (cancel.clone(), tx.clone());
+        move || {
+            let end = serve(
+                &ask,
+                &mut |s| match s {
+                    // The chip shows a host's standing during a long build.
+                    Said::Reached => {
+                        let _ = tx.unbounded_send(Incoming::Routed);
+                    }
+                    Said::Out(_) | Said::Note(_) | Said::Started(_) => {
+                        for line in route::said_lines(&s) {
+                            // Fails only once the client is gone, which
+                            // cancels the run.
+                            let _ = futures::executor::block_on(said.send(line));
+                        }
+                    }
+                },
+                &cancel,
+            );
+            let _ = futures::executor::block_on(said.send(route::end_line(&end)));
+        }
+    });
+    while let Some(line) = lines.next().await {
+        if writer
+            .write_all(format!("{line}\n").as_bytes())
+            .await
+            .is_err()
+        {
+            cancel.store(true, Ordering::Relaxed);
+            break;
+        }
+    }
+    // A run waiting on a full channel is let go, to see it was cancelled.
+    drop(lines);
+    let _ = run.await;
+    watch.abort();
+    let _ = tx.unbounded_send(Incoming::Routed);
 }
 
 /// The next line `reader` holds, or `None` at its end, on a read error, or
@@ -187,3 +264,6 @@ async fn converse(
     // lets the socket go, so the proxy on the other end hears it close.
     out.close_channel();
 }
+
+#[cfg(test)]
+mod tests;

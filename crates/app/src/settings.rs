@@ -25,7 +25,7 @@ pub use hosts::HostDraft;
 use hosts::hosts_page;
 use pages::{appearance_page, connections_page, workspace_page};
 use projects::projects_page;
-pub(crate) use projects::{offered as offered_projects, shown as shown_project};
+pub(crate) use projects::{BUILD_HOSTS_SHOWN, offered as offered_projects, shown as shown_project};
 
 /// The add/edit form's fields. `editing` is `Some(i)` when an existing agent is
 /// being changed and `None` when a new one is being added, so one form serves

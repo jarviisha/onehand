@@ -200,6 +200,9 @@ impl Render for Shell {
                     shell.show_schedules(None, window, cx);
                 }),
             )
+            .on_action(|_: &crate::shell::ToggleHostBuilds, window, cx| {
+                crate::chat::pane::toggle_host_builds(window, cx);
+            })
             .on_action(
                 cx.listener(|shell: &mut Self, _: &ToggleMaximize, window, cx| {
                     shell.toggle_maximize(window, cx);
@@ -292,6 +295,12 @@ impl Render for Shell {
                     .is_some()
                     .then(|| crate::dialogs::build_host(self, window, cx)),
             )
+            // And the routed command form, opened from the same page.
+            .children(
+                self.route_draft
+                    .is_some()
+                    .then(|| crate::dialogs::route(self, window, cx)),
+            )
             // And the agent form, opened from Settings' rows, rebuilt every
             // frame.
             .children(
@@ -364,6 +373,7 @@ impl Shell {
             || self.host_project.is_some()
             || self.offload_draft.is_some()
             || self.build_host_draft.is_some()
+            || self.route_draft.is_some()
             || self.workflow_launcher.is_some()
             || self.agent_form
     }

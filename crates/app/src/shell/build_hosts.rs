@@ -28,7 +28,7 @@ impl Shell {
     }
 
     /// `root` when it is one of the window's projects on this machine.
-    fn named_build_root(&self, root: PathBuf) -> Option<PathBuf> {
+    pub(super) fn named_build_root(&self, root: PathBuf) -> Option<PathBuf> {
         self.local_root(self.root_index(&root)?)
             .filter(|own| *own == root)
             .map(Path::to_path_buf)

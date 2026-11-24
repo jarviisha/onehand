@@ -16,9 +16,9 @@
 //! Blocking throughout; a front end runs it off its UI.
 
 pub mod cli;
-mod shell;
+pub(crate) mod shell;
 
-use std::io::{BufRead as _, BufReader};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -40,6 +40,14 @@ pub(crate) const BUILD_LIMIT: Duration = Duration::from_secs(2 * 60 * 60);
 /// is about to run: what comes before it is not the command's.
 pub(super) const MARK: &str = "__ONEHAND_BUILD__";
 
+/// The file in the host's folder a routed run touches just before its
+/// command, so what it wrote is what is newer.
+pub(super) const ROUTE_MARK: &str = ".git/onehand-route-mark";
+
+/// The file in the host's folder the command's process group id is kept
+/// in while it runs on a POSIX host.
+pub(super) const RUN_PID: &str = ".git/onehand-route-pid";
+
 /// The ref the snapshot is pushed to on the host.
 const SNAP_REF: &str = "refs/onehand/snap";
 
@@ -55,6 +63,19 @@ pub struct Job<'a> {
     /// steps are spelled for.
     pub os: HostOs,
     pub command: &'a str,
+    pub asked_by: AskedBy,
+}
+
+/// Who asked for a build, which says how it runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AskedBy {
+    /// A person or a tool: a build of the folder already running on the
+    /// host is refused, and every artifact named comes back.
+    Person,
+    /// An agent's routed command: it waits for the folder's build already
+    /// running on the host, and brings back only the artifacts this run
+    /// wrote, none written no failure.
+    Route,
 }
 
 /// What a build came to.
@@ -73,10 +94,49 @@ pub struct Built {
 /// that failed, in words naming the host; the command's own failure is `Ok`
 /// with its exit code.
 pub fn build_blocking(job: &Job<'_>, line: &mut dyn FnMut(&str)) -> Result<Built, String> {
-    let home = dirs::home_dir().ok_or("This machine has no home folder to build in")?;
     // Nothing sets it: whoever asked ends the build by ending this.
-    let never = AtomicBool::new(false);
-    build_in(job, &home, super::client::laptop(), line, &never)
+    build_cancellable(job, line, &mut |_| {}, &AtomicBool::new(false))
+}
+
+/// What a build says of its own while it runs, beside the command's lines.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Told<'a> {
+    /// Words for whoever asked: that it waits its turn.
+    Note(&'a str),
+    /// The code is checked out and the command is about to run on the host:
+    /// past here, something has run there.
+    Running,
+}
+
+/// [`build_blocking`], stopped when `cancel` is set, handing `told` what
+/// onehand says of its own while it runs.
+pub(crate) fn build_cancellable(
+    job: &Job<'_>,
+    line: &mut dyn FnMut(&str),
+    told: &mut dyn FnMut(Told),
+    cancel: &AtomicBool,
+) -> Result<Built, String> {
+    let home = dirs::home_dir().ok_or("This machine has no home folder to build in")?;
+    build_in(job, &home, super::client::laptop(), line, told, cancel)
+}
+
+/// Whether `host` answers ssh at all: `false` only when ssh could not
+/// reach it, whatever the line it ran came to. This machine always does.
+pub(crate) fn reachable_blocking(host: &HostName) -> bool {
+    let addr = host.addr();
+    if addr.local {
+        return true;
+    }
+    Command::new("ssh")
+        .args(super::client::SSH_OPTS)
+        .args(["-o", "ConnectTimeout=5", "--"])
+        .arg(&addr.ssh)
+        .arg("true")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.code() != Some(255))
 }
 
 /// [`build_blocking`], with the folder the host `local` builds under, the
@@ -86,6 +146,7 @@ fn build_in(
     local_home: &Path,
     laptop: &str,
     line: &mut dyn FnMut(&str),
+    told: &mut dyn FnMut(Told),
     cancel: &AtomicBool,
 ) -> Result<Built, String> {
     let host = &job.entry.host;
@@ -98,18 +159,46 @@ fn build_in(
     {
         return Err(why);
     }
-    let _held = lock(job.top, &host.0).ok_or_else(|| {
-        format!(
-            "A build of {} is already running on {host}",
-            folder_name(job.top)
-        )
-    })?;
+    let _held = match lock(job.top, &host.0)? {
+        Some(held) => held,
+        None if job.asked_by == AskedBy::Route => {
+            told(Told::Note(&format!(
+                "waiting for the build already running on {host}"
+            )));
+            let started = Instant::now();
+            loop {
+                if cancel.load(Ordering::Relaxed) {
+                    return Ok(Built {
+                        exit: None,
+                        brought: Vec::new(),
+                        hint: None,
+                    });
+                }
+                if started.elapsed() >= BUILD_LIMIT {
+                    return Err(format!(
+                        "The build of {} already running on {host} did not end in time",
+                        folder_name(job.top)
+                    ));
+                }
+                std::thread::sleep(Duration::from_millis(100));
+                if let Some(held) = lock(job.top, &host.0)? {
+                    break held;
+                }
+            }
+        }
+        None => {
+            return Err(format!(
+                "A build of {} is already running on {host}",
+                folder_name(job.top)
+            ));
+        }
+    };
     refuse_unfit(job.top)?;
     let snapshot = crate::task::marks::pin_blocking(job.top, &[])?;
     let place = Place::of(host, &job.os, &host_dir(laptop, job.top), local_home);
 
     place.receive(job.top, &snapshot)?;
-    let (exit, hint) = place.run(job, &snapshot, line, cancel)?;
+    let (exit, hint) = place.run(job, &snapshot, line, told, cancel)?;
     let brought = match exit {
         Some(0) => place.send_back(job)?,
         Some(_) | None => Vec::new(),
@@ -226,12 +315,17 @@ impl<'a> Place<'a> {
         job: &Job<'_>,
         snapshot: &str,
         line: &mut dyn FnMut(&str),
+        told: &mut dyn FnMut(Told),
         cancel: &AtomicBool,
     ) -> Result<(Option<i32>, Option<String>), String> {
         let host = self.host;
+        let mark = match job.asked_by {
+            AskedBy::Route => Some(ROUTE_MARK),
+            AskedBy::Person => None,
+        };
         let script = self
             .shell
-            .run(&self.dir, snapshot, job.within, job.command)?;
+            .run(&self.dir, snapshot, job.within, job.command, mark)?;
         // The last lines printed are kept: they are where a shell says a
         // program was not there, and which.
         let mut last: Vec<String> = Vec::new();
@@ -247,11 +341,20 @@ impl<'a> Place<'a> {
                 }
                 line(text);
             },
+            &mut || told(Told::Running),
             cancel,
         )?;
         let exit = match ran {
             Ran::Exited(code) => Some(code),
-            Ran::Stopped => None,
+            Ran::Stopped => {
+                // Ended on the host before the folder is let go, so the next
+                // build never checks out under a command still writing. ssh
+                // going does not end it there.
+                if let Some(stop) = self.shell.stop(&self.dir) {
+                    let _ = self.ask(&stop);
+                }
+                None
+            }
             Ran::NeverStarted(why) => {
                 return Err(format!("{host} could not check the code out: {why}"));
             }
@@ -265,30 +368,54 @@ impl<'a> Place<'a> {
 
     /// Bring the job's artifacts back from the host, into the working folder
     /// or the folder under it the entry names. All of them or none: one the
-    /// build did not make fails the lot before anything is written here.
+    /// build did not make fails the lot before anything is written here. A
+    /// job that wants only what its run wrote gets those, and no failure for
+    /// the rest.
     fn send_back(&self, job: &Job<'_>) -> Result<Vec<PathBuf>, String> {
         let host = self.host;
         let entry = job.entry;
         if entry.artifacts.is_empty() {
             return Ok(Vec::new());
         }
-        let script = self.shell.send(&self.dir, &entry.artifacts)?;
+        let script = match job.asked_by {
+            AskedBy::Route => self
+                .shell
+                .send_fresh(&self.dir, &entry.artifacts, ROUTE_MARK)?,
+            AskedBy::Person => self.shell.send(&self.dir, &entry.artifacts)?,
+        };
         let into = match &entry.into {
             Some(into) => job.top.join(into),
             None => job.top.to_path_buf(),
         };
-        std::fs::create_dir_all(&into).map_err(|e| format!("{}: {e}", into.display()))?;
         let mut sent = self
             .on_host(&script)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| format!("ssh: {e}"))?;
-        let unpacked = unpack(&into, &entry.artifacts)
-            .stdin(Stdio::from(sent.stdout.take().expect("piped")))
-            .stderr(Stdio::piped())
-            .output()
-            .map_err(|e| format!("tar: {e}"))?;
+        let mut out = BufReader::new(sent.stdout.take().expect("piped"));
+        let paths = match job.asked_by {
+            AskedBy::Route => fresh_named(&mut out, &entry.artifacts),
+            AskedBy::Person => entry.artifacts.clone(),
+        };
+        let unpacked = match paths.is_empty() {
+            true => None,
+            false => {
+                std::fs::create_dir_all(&into).map_err(|e| format!("{}: {e}", into.display()))?;
+                let mut tar = unpack(&into, &paths)
+                    .stdin(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                    .map_err(|e| format!("tar: {e}"))?;
+                // A tar that gave up has said why; what it was still being
+                // fed is of no use.
+                let _ = std::io::copy(&mut out, &mut tar.stdin.take().expect("piped"));
+                Some(tar.wait_with_output().map_err(|e| format!("tar: {e}"))?)
+            }
+        };
+        // Closed before the wait, so a host still sending to a tar that gave
+        // up is not left writing to nobody.
+        drop(out);
         let sent = sent.wait_with_output().map_err(|e| format!("ssh: {e}"))?;
         ssh::unreached(&self.addr, &sent.status, &sent.stderr)?;
         match sent.status.code() {
@@ -306,20 +433,36 @@ impl<'a> Place<'a> {
                 ));
             }
         }
-        if !unpacked.status.success() {
+        if let Some(unpacked) = unpacked.filter(|unpacked| !unpacked.status.success()) {
             return Err(format!(
                 "What {host} built could not be written here: {}",
                 said(&unpacked.stderr)
             ));
         }
-        Ok(entry
-            .artifacts
+        Ok(paths
             .iter()
             .map(|path| match &entry.into {
                 Some(into) => into.join(path),
                 None => path.clone(),
             })
             .collect())
+    }
+}
+
+/// The paths a host's [`Shell::send_fresh`] names before its tar, each ended
+/// by a NUL and the list by an empty one; kept only where they are among
+/// those `asked`, since what a host says is the host's to choose.
+fn fresh_named(out: &mut impl BufRead, asked: &[PathBuf]) -> Vec<PathBuf> {
+    let mut named = Vec::new();
+    loop {
+        let mut word = Vec::new();
+        if out.read_until(0, &mut word).is_err() || word.pop() != Some(0) || word.is_empty() {
+            return named;
+        }
+        let path = PathBuf::from(String::from_utf8_lossy(&word).into_owned());
+        if asked.contains(&path) {
+            named.push(path);
+        }
     }
 }
 
@@ -435,17 +578,27 @@ impl Drop for Held {
 
 /// The lock that keeps a folder to one build on a host at a time; `None`
 /// while another holds it.
-fn lock(top: &Path, host: &str) -> Option<Held> {
-    let dir = crate::config::config_dir().join("builds");
-    std::fs::create_dir_all(&dir).ok()?;
+fn lock(top: &Path, host: &str) -> Result<Option<Held>, String> {
+    lock_in(&crate::config::config_dir().join("builds"), top, host)
+}
+
+/// [`lock`], its file kept in `dir`. A file that cannot be made or locked
+/// is an error naming it, never taken for a build already running.
+fn lock_in(dir: &Path, top: &Path, host: &str) -> Result<Option<Held>, String> {
     let key = format!("{}\0{host}", top.display());
     let path = dir.join(format!(
         "{:016x}.lock",
         crate::chat::store::fnv1a(key.as_bytes())
     ));
-    let file = std::fs::File::create(path).ok()?;
-    file.try_lock().ok()?;
-    Some(Held(file))
+    let failed =
+        |e: std::io::Error| format!("The build lock {} could not be taken: {e}", path.display());
+    std::fs::create_dir_all(dir).map_err(failed)?;
+    let file = std::fs::File::create(&path).map_err(failed)?;
+    match file.try_lock() {
+        Ok(()) => Ok(Some(Held(file))),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+        Err(std::fs::TryLockError::Error(e)) => Err(failed(e)),
+    }
 }
 
 /// Refuse a folder a snapshot cannot carry whole: one that is not a working
@@ -505,15 +658,22 @@ enum Ran {
     NeverStarted(String),
 }
 
+/// How many of the command's lines wait to be handed on before the host's
+/// output waits for them: a caller slower than the command holds back ssh's
+/// pipe, not this process's memory.
+const LINES_HELD: usize = 256;
+
 /// Run `script`, handing `line` each line printed after [`MARK`], until it
-/// ends, `cancel` is set or [`BUILD_LIMIT`] passes.
+/// ends, `cancel` is set or [`BUILD_LIMIT`] passes; `running` is called as
+/// [`MARK`] comes.
 ///
-/// A stopped run kills its ssh. Whether the command on the host dies with it
-/// is the host's to say: nothing here can reach it once the connection goes.
+/// A stopped run kills its ssh, which does not end the command on the host:
+/// its caller does that, over a connection of its own.
 fn run_streaming(
     mut on_host: Command,
     addr: &HostAddr,
     line: &mut dyn FnMut(&str),
+    running_now: &mut dyn FnMut(),
     cancel: &AtomicBool,
 ) -> Result<Ran, String> {
     let mut child = on_host
@@ -522,9 +682,10 @@ fn run_streaming(
         .spawn()
         .map_err(|e| format!("ssh: {e}"))?;
     let stdout = child.stdout.take().expect("piped");
-    let (tx, rx) = mpsc::channel::<String>();
+    let (tx, rx) = mpsc::sync_channel::<String>(LINES_HELD);
     // Never joined: a command that outlives a stopped run keeps the pipe
-    // open, and the reader ends with it.
+    // open, and the reader ends with it, or at its next line once this has
+    // gone.
     std::thread::spawn(move || {
         for text in BufReader::new(stdout).split(b'\n').map_while(Result::ok) {
             let text = String::from_utf8_lossy(&text)
@@ -539,7 +700,12 @@ fn run_streaming(
     let mut running = false;
     let mut take = |text: String, running: &mut bool| match *running {
         true => line(&text),
-        false => *running = text.trim() == MARK,
+        false => {
+            *running = text.trim() == MARK;
+            if *running {
+                running_now();
+            }
+        }
     };
     let status = loop {
         match rx.recv_timeout(Duration::from_millis(50)) {

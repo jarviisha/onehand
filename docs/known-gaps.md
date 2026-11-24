@@ -288,8 +288,22 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
 - **A folder or artifact whose name holds `%` or `"` cannot be built on a Windows host.**
 - **A build on a Windows host takes a few seconds more than its command,** each step starting a
   shell there and the push a PowerShell.
-- **A stopped build's command may run on.** Stopping kills the ssh that carried it; whether the
-  command on the host dies with it is the host's to say. Nothing lists or ends what was left.
+- **A stopped build's command may leave something running on the host.** On a host without
+  `setsid` only the command itself is ended, not what it started; a stop during the checkout, before
+  the command starts, ends nothing; on a Windows host nothing is ended. Nothing lists what was left.
+- **An agent started while no project routed anything never reaches a routed command.** Its
+  `PATH` is set as it starts, and with nothing routed the shim folder is left off it. An agent
+  started with the folder on its `PATH` reaches a new program at once: every change to the routed
+  commands writes the folder again.
+- **A shell profile that puts a toolchain's folder first again defeats the shim.** A file the
+  agent's shell tool reads, holding `export PATH="$HOME/.cargo/bin:$PATH"`, puts the real program
+  ahead of the shim, and nothing is routed for that agent.
+- **A routed build leaves the local build cache as it was,** so the next local `cargo run`
+  rebuilds here what the host built.
+- **Routed builds go from a Linux machine to a Linux host only.** The shim is POSIX `sh`, and
+  another system would compile other code for the same project.
+- **Settings' suggested routed commands are read once per folder per launch,** so a `Cargo.toml`
+  added later is not offered until onehand starts again.
 - **`build_on_host` builds the project's own folder,** never a worktree: an agent in a worktree
   of its own runs `onehand --build` from its shell. Its answer carries the last 200 lines, not
   the lines as they come, and no tool can stop a build once asked.

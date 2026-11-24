@@ -15,6 +15,14 @@ pub enum HostOs {
     Other(String),
 }
 
+/// The system onehand itself runs on: Linux, or any other by its name.
+pub fn this_machine_os() -> HostOs {
+    match std::env::consts::OS {
+        "linux" => HostOs::Linux,
+        os => HostOs::Other(os.to_string()),
+    }
+}
+
 /// Read whatever its case, since a person writing the file by hand writes
 /// the name as the page shows it.
 impl From<String> for HostOs {

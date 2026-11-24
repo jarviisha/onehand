@@ -356,3 +356,18 @@ fn a_build_host_row_says_what_comes_back_and_where_it_lands() {
     assert_eq!(line(&entry(&[], None)), "Brings nothing back");
     assert_eq!(line(&entry(&[], Some("out"))), "Brings nothing back");
 }
+
+#[test]
+fn a_routed_command_row_says_what_comes_back() {
+    use onehand_core::workspace::RoutedCommand;
+    let route = |artifacts: &[&str]| RoutedCommand {
+        words: "cargo build".into(),
+        artifacts: artifacts.iter().map(Into::into).collect(),
+    };
+    let line = super::projects::route_line;
+    assert_eq!(
+        line(&route(&["target/debug/app", "dist"])),
+        "target/debug/app, dist"
+    );
+    assert_eq!(line(&route(&[])), "Brings nothing back");
+}
