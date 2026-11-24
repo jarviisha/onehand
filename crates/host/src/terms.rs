@@ -104,6 +104,10 @@ impl Terms {
         if let Some(path) = path {
             command.env("PATH", path);
         }
+        // A test's shell is killed mid-session; an empty HISTFILE keeps it from
+        // saving the commands it was typed into the developer's own history.
+        #[cfg(test)]
+        command.env("HISTFILE", "");
         let child = pty
             .slave
             .spawn_command(command)
