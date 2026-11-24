@@ -357,7 +357,7 @@ impl Issues {
     /// Whether a brief can be made from `issue`: it is open, and either was
     /// written here or is kept in step with `forge`, since an issue brought
     /// in from a forge no longer in step may have been written by anybody.
-    pub(crate) fn workable(
+    pub fn workable(
         &self,
         issue: &LocalIssue,
         forge: Option<&'static dyn crate::connector::Connector>,

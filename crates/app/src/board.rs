@@ -1,0 +1,223 @@
+//! The board's carrier: a project's To do started in order as its team has
+//! room, and the issue a board task finished closed. Which issues to start,
+//! drop or close is `onehand_core::board`'s to say; this reads the issues
+//! off the UI thread and carries out the answer.
+
+use crate::state::Shared;
+use crate::task::Placed;
+use gpui::{App, BorrowAppContext as _, Global};
+use gpui_component::WindowExt as _;
+use onehand_core::board;
+use onehand_core::connector::Connector;
+use onehand_core::issues::Issues;
+use onehand_core::issues::drive::Change;
+use onehand_core::project::ProjectId;
+use onehand_core::task::{Grant, Origin, Starting};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
+/// Board starts taken out of To do whose task has not landed yet, by
+/// project: counted as running, so a second look before the first lands
+/// does not give the team more than it has room for.
+#[derive(Default)]
+struct Pulling(HashMap<ProjectId, usize>);
+
+impl Global for Pulling {}
+
+/// Look at every board's To do, once the tasks and the workflows are read.
+pub(crate) fn pull_all(cx: &mut App) {
+    let boards: Vec<ProjectId> = Shared::global(cx)
+        .projects
+        .iter()
+        .filter(|project| project.board().is_some())
+        .map(|project| project.id.clone())
+        .collect();
+    for project in &boards {
+        pull_now(project, cx);
+    }
+}
+
+/// Start as many of `project`'s To do as its team has room for, first
+/// first, and drop from To do what can no longer be worked.
+pub(crate) fn pull_now(project: &ProjectId, cx: &mut App) {
+    let Some((root, file)) = local(project, cx) else {
+        return;
+    };
+    let project = project.clone();
+    cx.spawn(async move |cx| {
+        let at = root.clone();
+        let read = cx
+            .background_executor()
+            .spawn(async move { read_blocking(&file, &at) })
+            .await;
+        // Unread, To do stays as it is until the next look.
+        if let Ok((kept, forge)) = read {
+            cx.update(|cx| pull_read(&project, &root, &kept, forge, cx));
+        }
+    })
+    .detach();
+}
+
+/// A board task of `project` on `issue` ended, `done` or not: a finished
+/// one closes an issue the project's own tracker keeps, and the team has
+/// room for the next.
+pub(crate) fn ended(project: &ProjectId, issue: u64, done: bool, cx: &mut App) {
+    if done && let Some((root, file)) = local(project, cx) {
+        cx.spawn(async move |cx| {
+            let (at, read) = (root.clone(), file.clone());
+            let close = cx
+                .background_executor()
+                .spawn(async move {
+                    let (kept, forge) = read_blocking(&read, &at)?;
+                    let synced = forge.is_some_and(|forge| kept.in_step_with(forge.name()));
+                    let issue = kept.get(issue).ok_or("no such issue")?;
+                    Ok::<_, String>(board::after_end(issue, synced, done))
+                })
+                .await;
+            if close == Ok(true) {
+                cx.update(|cx| close_issue(&root, file, issue, cx));
+            }
+        })
+        .detach();
+    }
+    pull_now(project, cx);
+}
+
+fn close_issue(root: &Path, file: PathBuf, number: u64, cx: &mut App) {
+    let change = Change::SetOpen {
+        number,
+        open: false,
+    };
+    let answer = move |written: Result<_, String>, _: &mut App| {
+        if let Err(why) = written {
+            eprintln!("onehand: the board's issue #{number} was not closed: {why}");
+        }
+    };
+    onehand_issues::write(
+        root,
+        file,
+        change,
+        crate::features::connectors(),
+        answer,
+        cx,
+    );
+}
+
+/// Where local project `project` is and where it keeps its issues; none
+/// for one on a host, whose issues are not kept here.
+fn local(project: &ProjectId, cx: &App) -> Option<(PathBuf, PathBuf)> {
+    let project = Shared::global(cx).projects.get(project)?;
+    project.host.is_none().then(|| {
+        let file = onehand_core::project::file::issues_file(&project.id);
+        (project.path.clone(), file)
+    })
+}
+
+/// The issues in `file`, and the forge serving `root` if any. Blocking.
+fn read_blocking(
+    file: &Path,
+    root: &Path,
+) -> Result<(Issues, Option<&'static dyn Connector>), String> {
+    let kept = onehand_core::issues::load_blocking(file)?;
+    let all = crate::features::connectors();
+    let forge = onehand_core::connector::serving(all, root)
+        .ok()
+        .map(|at| all[at]);
+    Ok((kept, forge))
+}
+
+/// The pull of `project` at `root`, over the issues as they were just read.
+fn pull_read(
+    project: &ProjectId,
+    root: &Path,
+    kept: &Issues,
+    forge: Option<&'static dyn Connector>,
+    cx: &mut App,
+) {
+    let Some(board) = Shared::global(cx)
+        .projects
+        .get(project)
+        .and_then(|p| p.board())
+        .cloned()
+    else {
+        return;
+    };
+    // ponytail: with no window holding the project nothing is pulled until
+    // To do or the team changes, a board task ends or the app starts again;
+    // pull when a window opens on the project if that proves too late.
+    let Some((window, shell)) = crate::windows::holding_root(root, cx).into_iter().next() else {
+        return;
+    };
+    // An unusable workflow is said on the board's page; nothing starts.
+    let Ok(template) = crate::control::template(&board.workflow, cx) else {
+        return;
+    };
+    if board::usable(Some(&template)).is_err() {
+        return;
+    }
+    let landing = cx
+        .try_global::<Pulling>()
+        .and_then(|p| p.0.get(project).copied())
+        .unwrap_or(0);
+    let running = crate::task::board_running(project, cx) + landing;
+    let open = |n| kept.get(n).is_some_and(|issue| kept.workable(issue, forge));
+    let pull = board::pull(&board, running, &open);
+    let taken: Vec<u64> = pull.gone.iter().chain(&pull.start).copied().collect();
+    if taken.is_empty() {
+        return;
+    }
+    let fx = cx.update_global::<Shared, _>(|shared, _| shared.projects.take_todo(project, &taken));
+    crate::projects::carry(fx, cx);
+    for issue in pull.start {
+        *cx.default_global::<Pulling>()
+            .0
+            .entry(project.clone())
+            .or_default() += 1;
+        let project = project.clone();
+        let (root, template, shell) = (root.to_path_buf(), template.clone(), shell.clone());
+        cx.spawn(async move |cx| {
+            let started = async {
+                let file = Some(onehand_core::project::file::issues_file(&project));
+                let brief = cx
+                    .background_executor()
+                    .spawn(async move {
+                        onehand_core::issues::supervised_brief_blocking(file, forge, issue)
+                    })
+                    .await?;
+                let starting = Starting {
+                    project: root,
+                    template,
+                    brief,
+                    origin: Origin::Board {
+                        project: project.clone(),
+                        issue,
+                    },
+                    grant: Grant::default(),
+                    agent: None,
+                    mode: None,
+                };
+                match crate::control::start_task(window, shell, starting, cx).await? {
+                    (_, Placed::Started | Placed::Queued(_)) => Ok(()),
+                    (_, Placed::Refused(why)) => Err(why),
+                }
+            }
+            .await;
+            cx.update(|cx| {
+                cx.update_global::<Pulling, _>(|p, _| {
+                    if let Some(n) = p.0.get_mut(&project) {
+                        *n = n.saturating_sub(1);
+                    }
+                });
+                // Out of To do with no task on it, the issue is back in the
+                // Backlog; it is not tried again.
+                if let Err(why) = started {
+                    let note = crate::toast::warning(format!(
+                        "Could not start #{issue} from the board: {why}"
+                    ));
+                    let _ = window.update(cx, |_, window, cx| window.push_notification(note, cx));
+                }
+            });
+        })
+        .detach();
+    }
+}

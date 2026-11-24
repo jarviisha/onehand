@@ -16,6 +16,7 @@
 mod accounts;
 mod agent_check;
 pub mod assets;
+mod board;
 mod chat;
 mod control;
 mod controls;

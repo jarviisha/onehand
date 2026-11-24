@@ -8,7 +8,7 @@ use onehand_core::workflow::{Brief, Template};
 use std::path::PathBuf;
 
 /// The library's workflow whose id is `id`, read.
-pub(super) fn template(id: &str, cx: &App) -> Result<Template, String> {
+pub(crate) fn template(id: &str, cx: &App) -> Result<Template, String> {
     let entries = crate::workflow::templates(cx);
     let entry = entries
         .iter()

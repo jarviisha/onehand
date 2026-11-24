@@ -202,3 +202,22 @@ fn cut_off_task_not_counted() {
     let working = |id: &str| (id == "1" || id == "3").then_some(Working::Queued);
     assert_eq!(running(tasks.iter(), &project, &working), 1);
 }
+
+#[test]
+fn done_closes_only_local_issue() {
+    let kept = issues(
+        r#"{"next":3,"issues":[
+        {"number":1,"title":"open"},{"number":2,"title":"closed","open":false}]}"#,
+    );
+    let open = kept.get(1).unwrap();
+    assert!(after_end(open, false, true));
+    assert!(
+        !after_end(open, true, true),
+        "the forge closes a synced issue"
+    );
+    assert!(
+        !after_end(open, false, false),
+        "a task that did not finish leaves it open"
+    );
+    assert!(!after_end(kept.get(2).unwrap(), false, true));
+}

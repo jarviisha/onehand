@@ -116,3 +116,11 @@ pub(crate) fn removed(roots: &[PathBuf], cx: &App) -> usize {
 pub(crate) fn is_working(id: &str, cx: &App) -> bool {
     cx.try_global::<Tasks>().is_some_and(|t| t.busy(id))
 }
+
+/// How many of `project`'s board tasks are queued, running or waiting on a
+/// person.
+pub(crate) fn board_running(project: &onehand_core::project::ProjectId, cx: &App) -> usize {
+    cx.try_global::<Tasks>().map_or(0, |t| {
+        onehand_core::board::running(t.tasks().iter(), project, &|id| t.working(id))
+    })
+}

@@ -194,6 +194,9 @@ pub(crate) fn boot(cx: &mut App) {
                 })
                 .collect();
             with_drive(cx, |d| ((), d.loaded(tasks)));
+            // A board task cut off by the last exit is not counted, so its
+            // team has room again.
+            crate::board::pull_all(cx);
         });
     })
     .detach();

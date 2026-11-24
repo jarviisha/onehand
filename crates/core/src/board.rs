@@ -72,6 +72,13 @@ pub fn pull(board: &Board, running: usize, open: &dyn Fn(u64) -> bool) -> Pull {
     pull
 }
 
+/// Whether a board task's end closes its issue: it finished, and the issue
+/// is open and the project's own, since one kept in step with a forge is
+/// closed there, by what merges its work.
+pub fn after_end(issue: &LocalIssue, synced: bool, done: bool) -> bool {
+    done && !synced && issue.open()
+}
+
 /// How many of `project`'s board tasks work: those the app says are doing
 /// something. One cut off by a restart is not.
 pub fn running<'a>(
