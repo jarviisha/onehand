@@ -1,8 +1,9 @@
 //! Binding a workflow as a project's board, and the size of its team, from
 //! Settings' Projects page.
 
+use super::Confirm;
 use super::Shell;
-use gpui::{BorrowAppContext as _, Context};
+use gpui::{BorrowAppContext as _, Context, Window};
 use onehand_core::project::Board;
 use std::path::{Path, PathBuf};
 
@@ -26,12 +27,52 @@ impl Shell {
         &mut self,
         root: PathBuf,
         workflow: Option<String>,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.board_refused = None;
         let Some(id) = self.project_of_row(&root) else {
             return;
         };
+        // Its To do goes with it and cannot be had back: asked first.
+        let name = crate::state::Shared::global(cx)
+            .projects
+            .get(&id)
+            .filter(|project| project.board().is_some_and(|board| !board.todo.is_empty()))
+            .map(|project| project.name.clone());
+        if workflow.is_none()
+            && let Some(name) = name
+        {
+            let ask = Confirm {
+                id: "remove-board",
+                title: format!("Remove the board from {}?", name).into(),
+                description: "Its To do list goes; the issues stay open, in no list. Tasks \
+                              already started run on."
+                    .into(),
+                act: "Remove",
+                ..Default::default()
+            };
+            self.confirm(ask, window, cx, move |shell, window, cx| {
+                shell.unbind_board(root.clone(), window, cx)
+            });
+            return;
+        }
+        self.unbind_or_bind(root, id, workflow, cx);
+    }
+
+    fn unbind_board(&mut self, root: PathBuf, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(id) = self.project_of_row(&root) {
+            self.unbind_or_bind(root, id, None, cx);
+        }
+    }
+
+    fn unbind_or_bind(
+        &mut self,
+        root: PathBuf,
+        id: onehand_core::project::ProjectId,
+        workflow: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
         let board = match workflow {
             None => None,
             Some(workflow) => {

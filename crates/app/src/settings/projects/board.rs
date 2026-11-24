@@ -55,9 +55,9 @@ pub(super) fn board_section(handle: &Entity<Shell>, root: &Path, cx: &App) -> An
                     let (handle, root) = (handle.clone(), root.clone());
                     move |workflow: Option<String>| {
                         let (handle, root) = (handle.clone(), root.clone());
-                        move |_: &_, _: &mut Window, cx: &mut App| {
+                        move |_: &_, window: &mut Window, cx: &mut App| {
                             handle.update(cx, |shell, cx| {
-                                shell.bind_board(root.clone(), workflow.clone(), cx);
+                                shell.bind_board(root.clone(), workflow.clone(), window, cx);
                             });
                         }
                     }
@@ -123,7 +123,7 @@ fn team_field(handle: &Entity<Shell>, root: &Path, team: u8, cx: &App) -> gpui::
     onehand_ui::field(
         "Team",
         Some(
-            format!("Running tasks finish; no more start until fewer than {team} run.")
+            format!("Tasks working at once. Lowering it stops none: no more start until fewer than {team} run.")
                 .into_any_element(),
         ),
         onehand_ui::choice_track(segments, cx),
