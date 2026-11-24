@@ -302,14 +302,7 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .gap_3()
         .when(!rows.is_empty(), |list| list.child(list_rows(rows, cx)))
         .children(offered)
-        .when(more > 0, |list| {
-            list.child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(format!("{more} more not shown")),
-            )
-        })
+        .children(super::more_not_shown(more, cx))
         .when(specs.is_empty(), |list| {
             list.child(
                 div()

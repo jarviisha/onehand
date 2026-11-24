@@ -239,8 +239,8 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 - **Transcripts:** `items.jsonl` is append-only and written at every turn end. A rename writes
   metadata only (`Chat::flush_meta`).
 - **Telegram token:** never in `onehand.toml`, which settings write into and people paste into reports. It comes from
-  `$ONEHAND_TELEGRAM_TOKEN` (renamed by `token_env`) or `<config_dir>/onehand/telegram.token`. A chat not on
-  `allowed_chats` gets no reply at all.
+  `$ONEHAND_TELEGRAM_TOKEN` (renamed by `token_env`) or `<config_dir>/onehand/telegram.token`, the one file
+  Settings writes it to, owner-only (0600), and never shows it back. A chat not on `allowed_chats` gets no reply at all.
 
 ## Gotchas (one line each; full reasons in docs/rules-and-gotchas.md)
 

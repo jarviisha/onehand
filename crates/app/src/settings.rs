@@ -18,6 +18,7 @@ mod agents;
 pub(crate) mod hosts;
 mod pages;
 mod projects;
+mod telegram;
 use agents::agents_page;
 pub use agents::draft_after_promote;
 pub(crate) use agents::kind_about;
@@ -26,6 +27,7 @@ use hosts::hosts_page;
 use pages::{appearance_page, connections_page, workspace_page};
 use projects::projects_page;
 pub(crate) use projects::{BUILD_HOSTS_SHOWN, offered as offered_projects, shown as shown_project};
+pub use telegram::TelegramDraft;
 
 /// The add/edit form's fields. `editing` is `Some(i)` when an existing agent is
 /// being changed and `None` when a new one is being added, so one form serves
@@ -361,6 +363,17 @@ pub(crate) fn list_row(
 /// command line read in words, not letters.
 const LIST_ROW_WORDS: gpui::Rems = gpui::rems(12.);
 
+/// The line under a capped list saying how many it left out; nothing when
+/// the cap did not bite.
+pub(crate) fn more_not_shown(more: usize, cx: &App) -> Option<Div> {
+    (more > 0).then(|| {
+        div()
+            .text_xs()
+            .text_color(cx.theme().muted_foreground)
+            .child(format!("{more} more not shown"))
+    })
+}
+
 /// A run of [`list_row`]s, a hairline between each two, as a page's box parts
 /// its rows: the entries of one list read as one list, not as loose lines.
 pub(crate) fn list_rows(rows: impl IntoIterator<Item = AnyElement>, cx: &App) -> Div {
@@ -536,7 +549,7 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         SettingsPage::Agents => agents_page(&handle, cx),
         SettingsPage::Hosts => hosts_page(&handle, cx),
         SettingsPage::Projects => projects_page(&handle, cx),
-        SettingsPage::Connections => connections_page(cx),
+        SettingsPage::Connections => connections_page(&handle, cx),
         SettingsPage::Shortcuts => handle.read(cx).keymap_editor().into_any_element(),
     };
 

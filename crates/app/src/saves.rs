@@ -87,6 +87,9 @@ pub(crate) fn carry_settings(fx: Vec<Effect>, window: &mut Window, cx: &mut App)
                 onehand_core::control::link::shown(&mut crate::control::drive(), &value);
                 cx.refresh_windows();
             }
+            Effect::Show(value @ (Value::TelegramOn(_) | Value::TelegramChats(_))) => {
+                crate::remote::shown(&value, cx)
+            }
             Effect::Show(Value::Agents | Value::Hosts) => {}
             Effect::Write { pending, edit } => {
                 let written = write_edit(&edit, cx);

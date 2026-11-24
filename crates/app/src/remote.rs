@@ -87,6 +87,7 @@ pub fn boot(cfg: &RemoteConfig, cx: &mut App) {
 /// Look the token up off the UI thread, and tell the drive what was found.
 fn look(cx: &mut App) {
     let tg = Shared::global(cx).remote.telegram.clone();
+    let on = Shared::global(cx).remote.drive.on();
     let tg_env = tg
         .token_env
         .clone()
@@ -97,7 +98,7 @@ fn look(cx: &mut App) {
             .spawn(async move { secret::token_source(&tg) })
             .await;
         // Said on stderr too, for whoever launched onehand from a terminal.
-        if token.is_none() {
+        if on && token.is_none() {
             eprintln!(
                 "onehand: the Telegram bridge is on but no bot token was found. \
                  Set ${} or put the token in {}.",
@@ -106,6 +107,60 @@ fn look(cx: &mut App) {
             );
         }
         cx.update(|cx| feed(Input::Looked { source, token }, cx));
+    })
+    .detach();
+}
+
+/// Put `value`, shown by the settings' drive, in force on the bridge.
+pub(crate) fn shown(value: &onehand_core::config::drive::Value, cx: &mut App) {
+    ask(cx, |drive| drive.shown(value));
+}
+
+/// Start a stopped bridge again.
+pub(crate) fn retry(cx: &mut App) {
+    ask(cx, RemoteDrive::start);
+}
+
+/// Save `token` as the bridge's own, or remove it with `None`.
+pub(crate) fn write_token_asked(token: Option<String>, cx: &mut App) {
+    ask(cx, |drive| drive.write_token(token));
+}
+
+/// Ask the drive something from Settings, carry out its answer, and redraw
+/// the page that asked.
+fn ask(cx: &mut App, asked: impl FnOnce(&mut RemoteDrive) -> Vec<Effect>) {
+    let fx = cx.update_global::<Shared, _>(|shared, _| asked(&mut shared.remote.drive));
+    carry(fx, cx);
+    cx.refresh_windows();
+}
+
+/// Write the token to its own file, or remove it, off the UI thread.
+fn write_token(token: Option<String>, cx: &mut App) {
+    cx.spawn(async move |cx| {
+        let result = cx
+            .background_executor()
+            .spawn(async move {
+                let file = secret::token_file();
+                match token {
+                    Some(token) => onehand_core::config::write_secret(&file, &token),
+                    None => onehand_core::config::remove_secret(&file),
+                }
+                .map_err(|e| e.to_string())
+            })
+            .await;
+        let saved = result.is_ok();
+        cx.update(|cx| {
+            feed(Input::TokenWritten(result), cx);
+            // What was typed stays in its field until it is written: a write
+            // that failed leaves it there to try again.
+            if saved {
+                for (handle, _) in crate::windows::live(cx) {
+                    crate::windows::later(handle, cx, |shell, window, cx| {
+                        shell.show_saved_telegram_token(window, cx)
+                    });
+                }
+            }
+        });
     })
     .detach();
 }
@@ -216,6 +271,7 @@ fn carry(fx: Vec<Effect>, cx: &mut App) {
             }
             Effect::Start => look(cx),
             Effect::Connect(token) => connect(token, cx),
+            Effect::WriteToken(token) => write_token(token, cx),
             Effect::Away(away) => back_or_away(away, cx),
             Effect::Prompt { chat, uid, text } => {
                 let handled = on_session(uid, cx, |session, cx| {

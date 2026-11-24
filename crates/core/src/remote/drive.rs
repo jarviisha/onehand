@@ -22,6 +22,10 @@
 //! once had four answers to "this session has closed". A press carries its own
 //! session and never went through a binding, so it is not reconciled.
 
+mod bridge;
+
+pub use bridge::TokenWrite;
+
 use super::chats::{ArchiveRow, Chats, RemoteSession};
 use super::command::{self, RemoteCommand, HELP};
 use super::press::Press;
@@ -66,6 +70,8 @@ pub enum Input {
     Retrying(String),
     /// The channel is not coming back, for this reason.
     Disconnected(String),
+    /// What [`Effect::WriteToken`] came to.
+    TokenWritten(Result<(), String>),
     /// The prompt [`Effect::Prompt`] sent to `uid`, or `None` when no window
     /// holds it any more.
     Prompted {
@@ -126,6 +132,9 @@ pub enum Effect {
     Start,
     /// Start a channel with this token, in place of any that runs.
     Connect(String),
+    /// Write this token as the bridge's own, or remove it, off the UI
+    /// thread; answered by [`Input::TokenWritten`].
+    WriteToken(Option<String>),
     /// The person said they are away, or back: whatever decides what is told
     /// reads [`RemoteDrive::away`] again. Back, the conversation in the window
     /// in front is read.
@@ -226,9 +235,13 @@ pub struct RemoteDrive {
     source: Option<TokenSource>,
     /// A start is waiting on its look: only the first answer counts.
     looking: bool,
+    /// The token's write, while it runs or once it failed.
+    token_write: Option<TokenWrite>,
     /// Newest first, at most [`IGNORED_CAP`]. In memory only, and emptied at
     /// every start: it is for finding a chat while setting the bridge up.
     ignored: Vec<Ignored>,
+    /// How many strangers fell off the end of [`Self::ignored`].
+    ignored_dropped: usize,
 }
 
 impl std::ops::Deref for RemoteDrive {
@@ -254,11 +267,13 @@ impl RemoteDrive {
             state: BridgeState::Off,
             source: None,
             looking: false,
+            token_write: None,
             ignored: Vec::new(),
+            ignored_dropped: 0,
         }
     }
 
-    /// Start the bridge if it is switched on: look the token up first.
+    /// Look the token up, and start the bridge with it if it is switched on.
     ///
     /// **A running channel goes first**: what it still had to say would
     /// otherwise land on the start that replaced it.
@@ -268,15 +283,14 @@ impl RemoteDrive {
             fx.push(Effect::ShutDown);
             self.away = false;
         }
-        self.ignored.clear();
-        if !self.on {
-            self.state = BridgeState::Off;
-            self.looking = false;
-            return fx;
-        }
-        self.state = BridgeState::Connecting { retrying: None };
+        self.forget_ignored();
+        // Looked for even when off: where the token is, is shown either way.
         self.looking = true;
         fx.push(Effect::Start);
+        self.state = match self.on {
+            true => BridgeState::Connecting { retrying: None },
+            false => BridgeState::Off,
+        };
         fx
     }
 
@@ -295,6 +309,16 @@ impl RemoteDrive {
         &self.ignored
     }
 
+    /// How many refused chats were let go to keep [`Self::ignored`] short.
+    pub fn ignored_dropped(&self) -> usize {
+        self.ignored_dropped
+    }
+
+    fn forget_ignored(&mut self) {
+        self.ignored.clear();
+        self.ignored_dropped = 0;
+    }
+
     /// A channel is running: a bridge that is off, or whose channel stopped,
     /// tells nobody anything.
     fn live(&self) -> bool {
@@ -309,7 +333,10 @@ impl RemoteDrive {
         self.ignored
             .retain(|seen| !(seen.chat == chat && seen.from == from));
         self.ignored.insert(0, Ignored { chat, from, who });
-        self.ignored.truncate(IGNORED_CAP);
+        if self.ignored.len() > IGNORED_CAP {
+            self.ignored.truncate(IGNORED_CAP);
+            self.ignored_dropped += 1;
+        }
     }
 
     /// Whether the person has said they are away.
@@ -383,10 +410,13 @@ impl RemoteDrive {
             // A look that lands after the switch went off, or after a newer
             // start, finds a bridge no longer waiting on it.
             Input::Looked { source, token } => {
-                if !self.on || !std::mem::take(&mut self.looking) {
+                if !std::mem::take(&mut self.looking) {
                     return Vec::new();
                 }
                 self.source = Some(source);
+                if !self.on {
+                    return Vec::new();
+                }
                 match token {
                     Some(token) => vec![Effect::Connect(token)],
                     None => {
@@ -409,8 +439,11 @@ impl RemoteDrive {
                 }
                 Vec::new()
             }
+            Input::TokenWritten(result) => self.token_written(result),
             Input::Disconnected(why) => {
                 self.state = BridgeState::Stopped { why };
+                // Nothing allowed now would hear back.
+                self.forget_ignored();
                 // **Away goes with it.** The only way out of it, `/here`,
                 // arrives over the channel that just died; left set, every
                 // window would go on being treated as unwatched.

@@ -40,6 +40,10 @@ pub enum Setting {
     /// Whether a program outside onehand may use the tools.
     Outside,
     Hosts,
+    /// Whether the Telegram bridge is switched on.
+    TelegramOn,
+    /// The chats allowed to reach it.
+    TelegramChats,
 }
 
 /// A setting's value, as it is put in force.
@@ -47,6 +51,8 @@ pub enum Setting {
 pub enum Value {
     Appearance(Appearance),
     Outside(bool),
+    TelegramOn(bool),
+    TelegramChats(Vec<String>),
     /// The agent list, which is never put back.
     Agents,
     /// The declared hosts, never put back either: a failed write is said
@@ -61,6 +67,8 @@ pub enum Edit {
     Agents(Box<AgentEdit>),
     Outside(bool),
     Hosts(HostEdit),
+    TelegramOn(bool),
+    TelegramChats(Vec<String>),
 }
 
 impl Edit {
@@ -71,6 +79,8 @@ impl Edit {
             Self::Agents(edit) => edit.apply(&mut cfg.agents),
             Self::Outside(on) => cfg.control.outside = *on,
             Self::Hosts(edit) => edit.apply(&mut cfg.hosts),
+            Self::TelegramOn(on) => cfg.remote.telegram.enabled = *on,
+            Self::TelegramChats(chats) => cfg.remote.telegram.allowed_chats = chats.clone(),
         }
     }
 
@@ -81,6 +91,8 @@ impl Edit {
             Self::Agents(_) => "Saving the agents",
             Self::Outside(_) => "Saving outside control",
             Self::Hosts(_) => "Saving the hosts",
+            Self::TelegramOn(_) => "Saving the Telegram switch",
+            Self::TelegramChats(_) => "Saving the allowed chats",
         }
     }
 }
@@ -291,17 +303,46 @@ impl SettingsDrive {
     /// Hold outside control `on` at once, from `before`, then write it.
     /// Whether it is held is the tools' drive's to keep; this keeps its save.
     pub fn set_outside(&mut self, before: bool, on: bool) -> Vec<Effect> {
-        if before == on {
+        self.held(
+            Setting::Outside,
+            Value::Outside(before),
+            Value::Outside(on),
+            Edit::Outside(on),
+        )
+    }
+
+    /// Hold the Telegram bridge `on` at once, from `before`, then write it.
+    /// Whether it runs is the bridge's drive's to keep; this keeps its save.
+    pub fn set_telegram_on(&mut self, before: bool, on: bool) -> Vec<Effect> {
+        self.held(
+            Setting::TelegramOn,
+            Value::TelegramOn(before),
+            Value::TelegramOn(on),
+            Edit::TelegramOn(on),
+        )
+    }
+
+    /// Hold the chats allowed to reach the bridge at once, from `before`,
+    /// then write them.
+    pub fn set_telegram_chats(&mut self, before: Vec<String>, after: Vec<String>) -> Vec<Effect> {
+        let edit = Edit::TelegramChats(after.clone());
+        self.held(
+            Setting::TelegramChats,
+            Value::TelegramChats(before),
+            Value::TelegramChats(after),
+            edit,
+        )
+    }
+
+    /// A setting another drive holds: shown at once from `before`, then
+    /// written; nothing when it does not change.
+    fn held(&mut self, key: Setting, before: Value, after: Value, edit: Edit) -> Vec<Effect> {
+        if before == after {
             return Vec::new();
         }
         vec![
-            Effect::Show(Value::Outside(on)),
-            self.write(
-                Setting::Outside,
-                Value::Outside(before),
-                Value::Outside(on),
-                Edit::Outside(on),
-            ),
+            Effect::Show(after.clone()),
+            self.write(key, before, after, edit),
         ]
     }
 
@@ -436,7 +477,7 @@ impl SettingsDrive {
                 for value in back {
                     match &value {
                         Value::Appearance(choice) => self.settings.appearance = *choice,
-                        Value::Outside(_) => {}
+                        Value::Outside(_) | Value::TelegramOn(_) | Value::TelegramChats(_) => {}
                         Value::Agents | Value::Hosts => continue,
                     }
                     fx.push(Effect::Show(value));

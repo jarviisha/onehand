@@ -31,6 +31,7 @@ fn sent(fx: &[Effect]) -> Vec<String> {
             | Effect::ShutDown
             | Effect::Start
             | Effect::Connect(_)
+            | Effect::WriteToken(_)
             | Effect::Away(_)
             | Effect::Prompt { .. }
             | Effect::Stop { .. }
@@ -51,6 +52,10 @@ fn shown(fx: &[Effect]) -> Vec<String> {
             Effect::ShutDown => "ShutDown".into(),
             Effect::Start => "Start".into(),
             Effect::Connect(token) => format!("Connect {token}"),
+            Effect::WriteToken(token) => match token {
+                Some(_) => "WriteToken saved".into(),
+                None => "WriteToken removed".into(),
+            },
             Effect::Away(on) => format!("Away {on}"),
             Effect::Prompt { uid, text, .. } => format!("Prompt {uid} {text}"),
             Effect::Stop { uid, .. } => format!("Stop {uid}"),
@@ -347,7 +352,28 @@ fn an_archive_is_scanned_then_opened() {
 #[test]
 fn a_bridge_switched_off_starts_nothing() {
     let mut drive = RemoteDrive::new(vec![], false);
-    assert!(drive.start().is_empty());
+    // It still looks: Settings says where the token is, on or off.
+    assert_eq!(shown(&drive.start()), ["Start"]);
+    assert!(drive.handle(looked(Some("t")), &[]).is_empty());
+    assert_eq!(drive.state(), &BridgeState::Off);
+}
+
+/// Switched off, the bridge still learns where its token is, so the page
+/// shows a saved token rather than a field over it.
+#[test]
+fn off_still_learns_where_the_token_is() {
+    let mut drive = RemoteDrive::new(vec![], false);
+    drive.start();
+    drive.handle(looked(Some("t")), &[]);
+    assert_eq!(drive.source(), Some(&TokenSource::File("/tg".into())));
+    // Removed while off: looked for again, and found missing.
+    assert_eq!(shown(&drive.write_token(None)), ["WriteToken removed"]);
+    assert_eq!(
+        shown(&drive.handle(Input::TokenWritten(Ok(())), &[])),
+        ["Start"]
+    );
+    drive.handle(looked(None), &[]);
+    assert_eq!(drive.source(), Some(&TokenSource::Missing));
     assert_eq!(drive.state(), &BridgeState::Off);
 }
 
@@ -506,4 +532,134 @@ fn a_stale_look_leaves_the_source_alone() {
     drive.handle(looked(Some("t")), &[]);
     drive.handle(looked(None), &[]);
     assert_eq!(drive.source(), Some(&TokenSource::File("/tg".into())));
+}
+
+fn switched(on: bool) -> crate::config::drive::Value {
+    crate::config::drive::Value::TelegramOn(on)
+}
+
+#[test]
+fn off_while_looking_starts_nothing() {
+    let mut drive = RemoteDrive::new(vec![], true);
+    drive.start();
+    // Nothing runs yet, so letting it go is letting nothing go.
+    assert_eq!(shown(&drive.shown(&switched(false))), ["ShutDown"]);
+    assert!(drive.handle(looked(Some("t")), &[]).is_empty());
+    assert_eq!(drive.state(), &BridgeState::Off);
+}
+
+#[test]
+fn switching_off_a_live_bridge_shuts_it_down() {
+    let mut drive = bridge();
+    drive.handle(line("/away"), &[]);
+    assert_eq!(shown(&drive.shown(&switched(false))), ["ShutDown"]);
+    assert_eq!(drive.state(), &BridgeState::Off);
+    assert!(!drive.away());
+    assert!(!drive.on());
+}
+
+#[test]
+fn switching_on_looks_for_the_token() {
+    let mut drive = RemoteDrive::new(vec![], false);
+    assert_eq!(shown(&drive.shown(&switched(true))), ["Start"]);
+    assert!(drive.on());
+}
+
+#[test]
+fn a_chat_taken_off_loses_what_it_followed() {
+    let mut drive = bridge();
+    let open = [session(1, true)];
+    drive.handle(line("/use 1"), &open);
+    assert_eq!(drive.bound("7"), Some(1));
+    let fx = drive.shown(&crate::config::drive::Value::TelegramChats(vec![]));
+    assert!(fx.is_empty());
+    assert_eq!(drive.bound("7"), None);
+    assert!(drive.allowed().is_empty());
+    let origin = Origin {
+        uid: 1,
+        agent: "agent".into(),
+        project: "p".into(),
+        conversation: None,
+    };
+    assert!(drive
+        .announce(&origin, &Announcement::plain(Away::TurnEnded))
+        .is_empty());
+}
+
+#[test]
+fn allowing_a_group_member_lists_both() {
+    let drive = bridge();
+    let group = Ignored {
+        chat: "-5".into(),
+        from: "6".into(),
+        who: String::new(),
+    };
+    assert_eq!(drive.allowing(&group), ["7", "-5", "6"]);
+    let alone = Ignored {
+        chat: "9".into(),
+        from: "9".into(),
+        who: String::new(),
+    };
+    assert_eq!(drive.allowing(&alone), ["7", "9"]);
+}
+
+#[test]
+fn an_allowed_chat_leaves_the_ignored_list() {
+    let mut drive = bridge();
+    drive.handle(stranger("9", "9", "Minh"), &[]);
+    drive.shown(&crate::config::drive::Value::TelegramChats(vec![
+        "7".into(),
+        "9".into(),
+    ]));
+    assert!(drive.ignored().is_empty());
+}
+
+#[test]
+fn a_token_saved_starts_again() {
+    let mut drive = bridge();
+    assert_eq!(
+        shown(&drive.write_token(Some("t".into()))),
+        ["WriteToken saved"]
+    );
+    assert_eq!(drive.token_write(), Some(&TokenWrite::Writing));
+    assert!(drive.write_token(Some("u".into())).is_empty());
+    assert!(drive.write_token(None).is_empty());
+    let fx = drive.handle(Input::TokenWritten(Ok(())), &[]);
+    assert_eq!(shown(&fx), ["ShutDown", "Start"]);
+    assert_eq!(drive.token_write(), None);
+}
+
+#[test]
+fn a_token_write_that_fails_is_said() {
+    let mut drive = RemoteDrive::new(vec![], true);
+    assert_eq!(shown(&drive.write_token(None)), ["WriteToken removed"]);
+    let fx = drive.handle(Input::TokenWritten(Err("disk full".into())), &[]);
+    assert!(fx.is_empty());
+    assert_eq!(
+        drive.token_write(),
+        Some(&TokenWrite::Failed("disk full".into()))
+    );
+}
+
+/// A stopped bridge lets go of the chats it ignored: nothing it could allow
+/// now would hear back.
+#[test]
+fn a_stopped_bridge_forgets_who_it_ignored() {
+    let mut drive = bridge();
+    drive.handle(stranger("9", "9", "Minh"), &[]);
+    drive.handle(Input::Disconnected("token refused".into()), &[]);
+    assert!(drive.ignored().is_empty());
+}
+
+/// Strangers past the cap are counted, so the page can say so.
+#[test]
+fn strangers_past_the_cap_are_counted() {
+    let mut drive = bridge();
+    for id in 1..=7 {
+        drive.handle(stranger(&format!("{id}0"), &format!("{id}0"), ""), &[]);
+    }
+    drive.handle(stranger("70", "70", ""), &[]);
+    assert_eq!(drive.ignored_dropped(), 2);
+    drive.start();
+    assert_eq!(drive.ignored_dropped(), 0);
 }
