@@ -150,7 +150,7 @@ fn a_tools_issue_is_written_once_and_not_again_while_open(cx: &mut TestAppContex
     let _ = std::fs::remove_dir_all(dir);
 }
 
-/// Ask `call` of the tools as `peer`, and read the answer once everything
+/// Ask `call` of the tools as `peer`, and return its answer once everything
 /// it started has landed.
 fn ask(peer: Peer, call: Call, cx: &mut gpui::VisualTestContext) -> Result<String, String> {
     let (tx, rx) = oneshot::channel();

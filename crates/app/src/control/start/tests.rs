@@ -55,7 +55,7 @@ fn a_start_off_screen_is_refused_by_what_blocks_the_launcher(cx: &mut TestAppCon
         cx.spawn(async move |cx| start_task(window, shell, starting(root, Origin::Tool), cx).await)
     });
     cx.run_until_parked();
-    let refused = match futures::executor::block_on(start) {
+    let refused = match cx.foreground_executor().block_test(start) {
         Ok((_, Placed::Refused(why))) | Err(why) => why,
         Ok((_, placed)) => panic!("{placed:?}"),
     };
@@ -93,7 +93,7 @@ fn a_start_off_screen_is_kept_quietly_and_says_where_it_landed(cx: &mut TestAppC
         cx.spawn(async move |cx| start_task(window, shell, given, cx).await)
     });
     cx.run_until_parked();
-    let (id, placed) = futures::executor::block_on(start).expect("started");
+    let (id, placed) = cx.foreground_executor().block_test(start).expect("started");
     assert!(matches!(placed, Placed::Started), "{placed:?}");
     let task = cx
         .update(|_, cx| crate::task::task(&id, cx))
