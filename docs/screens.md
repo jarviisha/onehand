@@ -609,7 +609,11 @@ commands* with none; then *Add routed command…*: a dialog, *Add a routed comma
 project's folder offers and it does not route yet, each a link that fills *Command* (`Cargo.toml`
 offers *cargo build*, *cargo test* and *cargo clippy*; a `*.sln` or `*.csproj`, *dotnet build* and
 *dotnet test*); *Command*, *Artifacts*, one path a line; *Cancel*, then *Add* or *Save*, and what
-refuses it, the drive's words included, is said in the form. With no such project it
+refuses it, the drive's words included, is said in the form. A second box, *Board*: *Workflow*, a
+menu of *No board* and the library's workflows (capped as the Tasks page's menus are, *N more not
+shown*), a workflow a board cannot run refused with its reason under the menu and nothing bound;
+and, once one is bound, *Team*, a track of 1 to 8 with *Running tasks finish; no more start until
+fewer than N run.* under its title. With no such project it
 says *No project here runs on this machine*. A project's dots menu, on the rail and over its page, offers *Project
 settings…* after *Copy project path* for such a project, opening this page on it. Under the
 Agents page's rows, each built-in agent installed on the

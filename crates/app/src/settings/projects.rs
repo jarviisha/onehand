@@ -7,6 +7,7 @@
 //! rarely, and kept beside the work it pushed the work down a screen. Here it
 //! is one menu away from any project, whatever is on screen.
 
+mod board;
 mod routes;
 
 use super::{about, list_row, list_rows, page_head, section};
@@ -114,6 +115,7 @@ pub(super) fn projects_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             .child(routes::routed_commands(handle, &root, &routes, cx))
             .child(worktree_folder(handle, &root, parent.as_deref(), cx)),
     )
+    .child(board::board_section(handle, &root, cx))
     .into_any_element()
 }
 

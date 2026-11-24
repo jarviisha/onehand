@@ -495,6 +495,7 @@ impl Shell {
             offload_locks: HashMap::new(),
             dialog_return: None,
             check_inputs: HashMap::new(),
+            board_refused: None,
             workflow_launcher: None,
             branch_input,
             worktree_branch,
