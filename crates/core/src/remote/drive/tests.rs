@@ -489,3 +489,21 @@ fn a_restart_forgets_who_was_ignored() {
     drive.start();
     assert!(drive.ignored().is_empty());
 }
+
+/// Starting again lets the running channel go first, so nothing it still
+/// says can land on the start that replaced it.
+#[test]
+fn a_restart_lets_the_running_channel_go_first() {
+    let mut drive = bridge();
+    assert_eq!(shown(&drive.start()), ["ShutDown", "Start"]);
+}
+
+/// A look a newer start overtook says nothing about where the token is.
+#[test]
+fn a_stale_look_leaves_the_source_alone() {
+    let mut drive = RemoteDrive::new(vec![], true);
+    drive.start();
+    drive.handle(looked(Some("t")), &[]);
+    drive.handle(looked(None), &[]);
+    assert_eq!(drive.source(), Some(&TokenSource::File("/tg".into())));
+}

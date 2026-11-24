@@ -224,6 +224,8 @@ pub struct RemoteDrive {
     state: BridgeState,
     /// Where the token was last found; `None` until it was looked for.
     source: Option<TokenSource>,
+    /// A start is waiting on its look: only the first answer counts.
+    looking: bool,
     /// Newest first, at most [`IGNORED_CAP`]. In memory only, and emptied at
     /// every start: it is for finding a chat while setting the bridge up.
     ignored: Vec<Ignored>,
@@ -251,19 +253,31 @@ impl RemoteDrive {
             on,
             state: BridgeState::Off,
             source: None,
+            looking: false,
             ignored: Vec::new(),
         }
     }
 
     /// Start the bridge if it is switched on: look the token up first.
+    ///
+    /// **A running channel goes first**: what it still had to say would
+    /// otherwise land on the start that replaced it.
     pub fn start(&mut self) -> Vec<Effect> {
+        let mut fx = Vec::new();
+        if self.live() {
+            fx.push(Effect::ShutDown);
+            self.away = false;
+        }
         self.ignored.clear();
         if !self.on {
             self.state = BridgeState::Off;
-            return Vec::new();
+            self.looking = false;
+            return fx;
         }
         self.state = BridgeState::Connecting { retrying: None };
-        vec![Effect::Start]
+        self.looking = true;
+        fx.push(Effect::Start);
+        fx
     }
 
     /// What the bridge is doing.
@@ -369,10 +383,10 @@ impl RemoteDrive {
             // A look that lands after the switch went off, or after a newer
             // start, finds a bridge no longer waiting on it.
             Input::Looked { source, token } => {
-                self.source = Some(source);
-                if !self.on || self.state != (BridgeState::Connecting { retrying: None }) {
+                if !self.on || !std::mem::take(&mut self.looking) {
                     return Vec::new();
                 }
+                self.source = Some(source);
                 match token {
                     Some(token) => vec![Effect::Connect(token)],
                     None => {
