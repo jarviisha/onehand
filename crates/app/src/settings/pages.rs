@@ -144,7 +144,7 @@ pub(super) fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
 ///
 /// A list of rows, since the list is meant to grow and a connection is a fact
 /// about the machine rather than about any one feature.
-pub(super) fn connections_page(cx: &App) -> AnyElement {
+pub(super) fn connections_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let muted = cx.theme().muted_foreground;
     let ink = crate::theme::status_ink(cx);
     let checking = crate::accounts::checking(cx);
@@ -212,6 +212,7 @@ pub(super) fn connections_page(cx: &App) -> AnyElement {
                 ),
         )
         .child(outside_section(cx))
+        .child(super::telegram::telegram_section(handle, cx))
         .into_any_element()
 }
 

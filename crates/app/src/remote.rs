@@ -110,6 +110,53 @@ fn look(cx: &mut App) {
     .detach();
 }
 
+/// Put `value`, shown by the settings' drive, in force on the bridge.
+pub(crate) fn shown(value: &onehand_core::config::drive::Value, cx: &mut App) {
+    let fx = cx.update_global::<Shared, _>(|shared, _| shared.remote.drive.shown(value));
+    carry(fx, cx);
+    cx.refresh_windows();
+}
+
+/// Start a stopped bridge again.
+pub(crate) fn retry(cx: &mut App) {
+    let fx = cx.update_global::<Shared, _>(|shared, _| shared.remote.drive.retry());
+    carry(fx, cx);
+    cx.refresh_windows();
+}
+
+/// Save `token` as the bridge's own.
+pub(crate) fn save_token(token: String, cx: &mut App) {
+    let fx = cx.update_global::<Shared, _>(|shared, _| shared.remote.drive.save_token(token));
+    carry(fx, cx);
+    cx.refresh_windows();
+}
+
+/// Remove the bridge's own token.
+pub(crate) fn remove_token(cx: &mut App) {
+    let fx = cx.update_global::<Shared, _>(|shared, _| shared.remote.drive.remove_token());
+    carry(fx, cx);
+    cx.refresh_windows();
+}
+
+/// Write the token to its own file, or remove it, off the UI thread.
+fn write_token(token: Option<String>, cx: &mut App) {
+    cx.spawn(async move |cx| {
+        let result = cx
+            .background_executor()
+            .spawn(async move {
+                let file = secret::token_file();
+                match token {
+                    Some(token) => onehand_core::config::write_secret(&file, &token),
+                    None => onehand_core::config::remove_secret(&file),
+                }
+                .map_err(|e| e.to_string())
+            })
+            .await;
+        cx.update(|cx| feed(Input::TokenWritten(result), cx));
+    })
+    .detach();
+}
+
 /// Start the channel for `token`, in place of any that runs.
 fn connect(token: String, cx: &mut App) {
     // A channel missing here means the composition root changed; the app is
@@ -216,6 +263,7 @@ fn carry(fx: Vec<Effect>, cx: &mut App) {
             }
             Effect::Start => look(cx),
             Effect::Connect(token) => connect(token, cx),
+            Effect::WriteToken(token) => write_token(token, cx),
             Effect::Away(away) => back_or_away(away, cx),
             Effect::Prompt { chat, uid, text } => {
                 let handled = on_session(uid, cx, |session, cx| {
