@@ -303,51 +303,46 @@ impl SettingsDrive {
     /// Hold outside control `on` at once, from `before`, then write it.
     /// Whether it is held is the tools' drive's to keep; this keeps its save.
     pub fn set_outside(&mut self, before: bool, on: bool) -> Vec<Effect> {
-        if before == on {
-            return Vec::new();
-        }
-        vec![
-            Effect::Show(Value::Outside(on)),
-            self.write(
-                Setting::Outside,
-                Value::Outside(before),
-                Value::Outside(on),
-                Edit::Outside(on),
-            ),
-        ]
+        self.held(
+            Setting::Outside,
+            Value::Outside(before),
+            Value::Outside(on),
+            Edit::Outside(on),
+        )
     }
 
     /// Hold the Telegram bridge `on` at once, from `before`, then write it.
     /// Whether it runs is the bridge's drive's to keep; this keeps its save.
     pub fn set_telegram_on(&mut self, before: bool, on: bool) -> Vec<Effect> {
-        if before == on {
-            return Vec::new();
-        }
-        vec![
-            Effect::Show(Value::TelegramOn(on)),
-            self.write(
-                Setting::TelegramOn,
-                Value::TelegramOn(before),
-                Value::TelegramOn(on),
-                Edit::TelegramOn(on),
-            ),
-        ]
+        self.held(
+            Setting::TelegramOn,
+            Value::TelegramOn(before),
+            Value::TelegramOn(on),
+            Edit::TelegramOn(on),
+        )
     }
 
     /// Hold the chats allowed to reach the bridge at once, from `before`,
     /// then write them.
     pub fn set_telegram_chats(&mut self, before: Vec<String>, after: Vec<String>) -> Vec<Effect> {
+        let edit = Edit::TelegramChats(after.clone());
+        self.held(
+            Setting::TelegramChats,
+            Value::TelegramChats(before),
+            Value::TelegramChats(after),
+            edit,
+        )
+    }
+
+    /// A setting another drive holds: shown at once from `before`, then
+    /// written; nothing when it does not change.
+    fn held(&mut self, key: Setting, before: Value, after: Value, edit: Edit) -> Vec<Effect> {
         if before == after {
             return Vec::new();
         }
         vec![
-            Effect::Show(Value::TelegramChats(after.clone())),
-            self.write(
-                Setting::TelegramChats,
-                Value::TelegramChats(before),
-                Value::TelegramChats(after.clone()),
-                Edit::TelegramChats(after),
-            ),
+            Effect::Show(after.clone()),
+            self.write(key, before, after, edit),
         ]
     }
 

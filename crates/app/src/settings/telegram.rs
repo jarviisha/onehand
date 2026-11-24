@@ -176,15 +176,15 @@ fn token_row(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                         }),
                 )
                 .child(
-                    crate::controls::action("telegram-token-remove")
+                    crate::controls::action("telegram-token-delete")
                         .secondary()
                         .short()
                         .text_color(ink.danger)
-                        .label("Remove…")
+                        .label("Delete…")
                         .loading(writing)
                         .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                             remove.update(cx, |shell, cx| {
-                                shell.confirm_remove_telegram_token(window, cx)
+                                shell.confirm_delete_telegram_token(window, cx)
                             });
                         }),
                 )
@@ -195,6 +195,17 @@ fn token_row(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         Some(TokenSource::File(_) | TokenSource::Missing) | None => {
             let empty = draft.token.read(cx).value().trim().is_empty();
             let save = handle.clone();
+            // Replacing a saved one can be given up, back to the saved one.
+            let cancel = draft.replacing.then(|| {
+                let keep = handle.clone();
+                crate::controls::action("telegram-token-cancel")
+                    .tall()
+                    .secondary()
+                    .label("Cancel")
+                    .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                        keep.update(cx, |shell, cx| shell.show_saved_telegram_token(window, cx));
+                    })
+            });
             div()
                 .h_flex()
                 .gap_2()
@@ -215,20 +226,16 @@ fn token_row(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                             save.update(cx, |shell, cx| shell.save_telegram_token(window, cx));
                         }),
                 )
+                .children(cancel)
                 .into_any_element()
         }
     };
     div()
         .v_flex()
         .gap_1()
-        .child(
-            div()
-                .text_size(crate::tokens::CHROME_TEXT)
-                .font_semibold()
-                .child("Token"),
-        )
+        .child(sub_head("Token"))
         .child(body)
-        .children(failed.map(|why| div().text_xs().text_color(ink.danger).child(why)))
+        .children(failed.map(|why| div().text_xs().text_color(ink.warning).child(why)))
         .into_any_element()
 }
 
@@ -248,7 +255,7 @@ fn chats(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             let (remove, id) = (handle.clone(), id.clone());
             // Telegram numbers groups below zero, and a group admits only the
             // members listed too: saying which is which explains the list.
-            let title = match id.starts_with('-') {
+            let title = match onehand_core::config::is_group_chat(&id) {
                 true => format!("{id} (group)"),
                 false => id.clone(),
             };
@@ -274,12 +281,7 @@ fn chats(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     div()
         .v_flex()
         .gap_2()
-        .child(
-            div()
-                .text_size(crate::tokens::CHROME_TEXT)
-                .font_semibold()
-                .child("Allowed chats"),
-        )
+        .child(sub_head("Allowed chats"))
         .when(rows.is_empty(), |list| {
             list.child(
                 div()
@@ -289,14 +291,7 @@ fn chats(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             )
         })
         .when(!rows.is_empty(), |list| list.child(list_rows(rows, cx)))
-        .when(more > 0, |list| {
-            list.child(
-                div()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(format!("{more} more not shown")),
-            )
-        })
+        .children(super::more_not_shown(more, cx))
         .child(
             div()
                 .h_flex()
@@ -324,10 +319,12 @@ fn chats(handle: &Entity<Shell>, cx: &App) -> AnyElement {
 /// The chats that wrote and got no answer, each with *Allow*; nothing when
 /// none did.
 fn ignored(handle: &Entity<Shell>, cx: &App) -> Option<AnyElement> {
-    let rows = crate::state::Shared::global(cx).remote.drive.ignored();
+    let drive = &crate::state::Shared::global(cx).remote.drive;
+    let (rows, dropped) = (drive.ignored(), drive.ignored_dropped());
     if rows.is_empty() {
         return None;
     }
+    let muted = cx.theme().muted_foreground;
     let rows = rows
         .iter()
         .enumerate()
@@ -337,9 +334,18 @@ fn ignored(handle: &Entity<Shell>, cx: &App) -> Option<AnyElement> {
                 true => row.chat.clone(),
                 false => format!("{} · {}", row.who, row.chat),
             };
+            // In a group *Allow* lets the sender in too, which the row says,
+            // since that also lets them reach the bot on their own.
+            let about = (row.from != row.chat && !row.from.is_empty()).then(|| {
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(format!("Allow lets member {} in too", row.from))
+                    .into_any_element()
+            });
             list_row(
                 title,
-                None,
+                about,
                 crate::controls::action(("telegram-allow", idx))
                     .secondary()
                     .short()
@@ -357,13 +363,25 @@ fn ignored(handle: &Entity<Shell>, cx: &App) -> Option<AnyElement> {
         div()
             .v_flex()
             .gap_2()
-            .child(
-                div()
-                    .text_size(crate::tokens::CHROME_TEXT)
-                    .font_semibold()
-                    .child("Ignored: messaged the bot and got no answer"),
-            )
+            .child(sub_head("Ignored: messaged the bot and got no answer"))
             .child(list_rows(rows, cx))
+            // Not kept, rather than not shown: the bridge let them go.
+            .when(dropped > 0, |list| {
+                list.child(
+                    div()
+                        .text_xs()
+                        .text_color(muted)
+                        .child(format!("{dropped} older not kept")),
+                )
+            })
             .into_any_element(),
     )
+}
+
+/// A heading inside the group, over what it names.
+fn sub_head(text: &'static str) -> impl IntoElement {
+    div()
+        .text_size(crate::tokens::CHROME_TEXT)
+        .font_semibold()
+        .child(text)
 }

@@ -1,5 +1,6 @@
 //! What Settings asks of the bridge: switched on or off, the chats it allows,
-//! a token saved or removed, a stopped bridge tried again. Each is the
+//! a token saved or removed. A stopped bridge is tried again by
+//! [`RemoteDrive::start`]. Each is the
 //! bridge's drive's, carried out like everything else it answers.
 
 use super::{BridgeState, Effect, Ignored, RemoteDrive};
@@ -50,28 +51,15 @@ impl RemoteDrive {
         out
     }
 
-    /// Start a stopped bridge again, as it was set up.
-    pub fn retry(&mut self) -> Vec<Effect> {
-        self.start()
-    }
-
-    /// Save `token` as the bridge's own; it starts again once written.
-    pub fn save_token(&mut self, token: String) -> Vec<Effect> {
-        self.write_token(Some(token))
-    }
-
-    /// Remove the bridge's own token; it starts again, and finds none.
-    pub fn remove_token(&mut self) -> Vec<Effect> {
-        self.write_token(None)
-    }
-
     /// The token's write, while it runs or once it failed.
     pub fn token_write(&self) -> Option<&TokenWrite> {
         self.token_write.as_ref()
     }
 
-    /// One write at a time: a second press while one runs is the same press.
-    fn write_token(&mut self, token: Option<String>) -> Vec<Effect> {
+    /// Save `token` as the bridge's own, or remove it with `None`; the bridge
+    /// starts again once written. One write at a time: a second press while
+    /// one runs is the same press.
+    pub fn write_token(&mut self, token: Option<String>) -> Vec<Effect> {
         if self.token_write == Some(TokenWrite::Writing) {
             return Vec::new();
         }
@@ -107,7 +95,7 @@ impl RemoteDrive {
         let live = self.live();
         self.away = false;
         self.state = BridgeState::Off;
-        self.ignored.clear();
+        self.forget_ignored();
         if live {
             vec![Effect::ShutDown]
         } else {

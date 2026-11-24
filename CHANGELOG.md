@@ -328,7 +328,8 @@ minor bump may break any of them.
   bot token saved (to `telegram.token`, owner-only, never to `onehand.toml`), replaced or removed,
   its allowed chats added and removed, all in force at once. The page says what the bridge is
   doing (connecting and why it is retrying, connected as which bot, stopped and why, with *Try
-  again*) where it used to say so only on stderr.
+  again*) where it used to say so only on stderr. A new token keeps what each chat pointed at and
+  followed.
 - The bridge starts even with no chat on `allowed_chats`, answering nobody; the chats that write
   to it unanswered are listed in Settings with who wrote, and *Allow* lets one in.
 

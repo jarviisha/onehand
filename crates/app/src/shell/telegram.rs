@@ -80,12 +80,17 @@ impl Shell {
         if token.is_empty() {
             return;
         }
-        crate::remote::save_token(token, cx);
+        crate::remote::write_token_asked(Some(token), cx);
         cx.notify();
     }
 
-    /// The token was written: its field empties and the saved one shows.
-    pub(crate) fn telegram_token_saved(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// The saved token in view, its field emptied: once a token is written,
+    /// and when a replacement is given up.
+    pub(crate) fn show_saved_telegram_token(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.telegram_draft
             .token
             .update(cx, |field, cx| field.set_value("", window, cx));
@@ -99,20 +104,22 @@ impl Shell {
         cx.notify();
     }
 
-    /// Ask, then remove the saved token.
-    pub(crate) fn confirm_remove_telegram_token(
+    /// Ask, then delete the saved token's file.
+    pub(crate) fn confirm_delete_telegram_token(
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let ask = Confirm {
-            id: "remove-telegram-token",
-            title: "Remove the bot token?".into(),
-            description: "The bridge stops until another is saved.".into(),
-            act: "Remove",
+            id: "delete-telegram-token",
+            title: "Delete the bot token?".into(),
+            description: "Its file goes, and the bridge stops until another is saved.".into(),
+            act: "Delete",
             ..Default::default()
         };
-        self.confirm(ask, window, cx, |_, _, cx| crate::remote::remove_token(cx));
+        self.confirm(ask, window, cx, |_, _, cx| {
+            crate::remote::write_token_asked(None, cx)
+        });
     }
 }
 

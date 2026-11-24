@@ -361,14 +361,7 @@ pub(super) fn hosts_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let list = section(None, None, cx)
         .gap_3()
         .when(!rows.is_empty(), |list| list.child(list_rows(rows, cx)))
-        .when(more > 0, |list| {
-            list.child(
-                div()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(format!("{more} more not shown")),
-            )
-        })
+        .children(super::more_not_shown(more, cx))
         .when(all.is_empty(), |list| {
             list.child(
                 div()

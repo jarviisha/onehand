@@ -363,6 +363,17 @@ pub(crate) fn list_row(
 /// command line read in words, not letters.
 const LIST_ROW_WORDS: gpui::Rems = gpui::rems(12.);
 
+/// The line under a capped list saying how many it left out; nothing when
+/// the cap did not bite.
+pub(crate) fn more_not_shown(more: usize, cx: &App) -> Option<Div> {
+    (more > 0).then(|| {
+        div()
+            .text_xs()
+            .text_color(cx.theme().muted_foreground)
+            .child(format!("{more} more not shown"))
+    })
+}
+
 /// A run of [`list_row`]s, a hairline between each two, as a page's box parts
 /// its rows: the entries of one list read as one list, not as loose lines.
 pub(crate) fn list_rows(rows: impl IntoIterator<Item = AnyElement>, cx: &App) -> Div {

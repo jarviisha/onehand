@@ -514,3 +514,10 @@ fn a_chat_id_is_kept_as_telegram_writes_it() {
         Some("7 is already allowed")
     );
 }
+
+/// Telegram numbers a group below zero.
+#[test]
+fn a_negative_chat_is_a_group() {
+    assert!(is_group_chat("-1001"));
+    assert!(!is_group_chat("42"));
+}

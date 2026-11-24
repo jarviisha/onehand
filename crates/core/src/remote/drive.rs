@@ -240,6 +240,8 @@ pub struct RemoteDrive {
     /// Newest first, at most [`IGNORED_CAP`]. In memory only, and emptied at
     /// every start: it is for finding a chat while setting the bridge up.
     ignored: Vec<Ignored>,
+    /// How many strangers fell off the end of [`Self::ignored`].
+    ignored_dropped: usize,
 }
 
 impl std::ops::Deref for RemoteDrive {
@@ -267,6 +269,7 @@ impl RemoteDrive {
             looking: false,
             token_write: None,
             ignored: Vec::new(),
+            ignored_dropped: 0,
         }
     }
 
@@ -280,7 +283,7 @@ impl RemoteDrive {
             fx.push(Effect::ShutDown);
             self.away = false;
         }
-        self.ignored.clear();
+        self.forget_ignored();
         // Looked for even when off: where the token is, is shown either way.
         self.looking = true;
         fx.push(Effect::Start);
@@ -306,6 +309,16 @@ impl RemoteDrive {
         &self.ignored
     }
 
+    /// How many refused chats were let go to keep [`Self::ignored`] short.
+    pub fn ignored_dropped(&self) -> usize {
+        self.ignored_dropped
+    }
+
+    fn forget_ignored(&mut self) {
+        self.ignored.clear();
+        self.ignored_dropped = 0;
+    }
+
     /// A channel is running: a bridge that is off, or whose channel stopped,
     /// tells nobody anything.
     fn live(&self) -> bool {
@@ -320,7 +333,10 @@ impl RemoteDrive {
         self.ignored
             .retain(|seen| !(seen.chat == chat && seen.from == from));
         self.ignored.insert(0, Ignored { chat, from, who });
-        self.ignored.truncate(IGNORED_CAP);
+        if self.ignored.len() > IGNORED_CAP {
+            self.ignored.truncate(IGNORED_CAP);
+            self.ignored_dropped += 1;
+        }
     }
 
     /// Whether the person has said they are away.
@@ -426,6 +442,8 @@ impl RemoteDrive {
             Input::TokenWritten(result) => self.token_written(result),
             Input::Disconnected(why) => {
                 self.state = BridgeState::Stopped { why };
+                // Nothing allowed now would hear back.
+                self.forget_ignored();
                 // **Away goes with it.** The only way out of it, `/here`,
                 // arrives over the channel that just died; left set, every
                 // window would go on being treated as unwatched.

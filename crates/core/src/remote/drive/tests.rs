@@ -367,7 +367,7 @@ fn off_still_learns_where_the_token_is() {
     drive.handle(looked(Some("t")), &[]);
     assert_eq!(drive.source(), Some(&TokenSource::File("/tg".into())));
     // Removed while off: looked for again, and found missing.
-    assert_eq!(shown(&drive.remove_token()), ["WriteToken removed"]);
+    assert_eq!(shown(&drive.write_token(None)), ["WriteToken removed"]);
     assert_eq!(
         shown(&drive.handle(Input::TokenWritten(Ok(())), &[])),
         ["Start"]
@@ -617,10 +617,13 @@ fn an_allowed_chat_leaves_the_ignored_list() {
 #[test]
 fn a_token_saved_starts_again() {
     let mut drive = bridge();
-    assert_eq!(shown(&drive.save_token("t".into())), ["WriteToken saved"]);
+    assert_eq!(
+        shown(&drive.write_token(Some("t".into()))),
+        ["WriteToken saved"]
+    );
     assert_eq!(drive.token_write(), Some(&TokenWrite::Writing));
-    assert!(drive.save_token("u".into()).is_empty());
-    assert!(drive.remove_token().is_empty());
+    assert!(drive.write_token(Some("u".into())).is_empty());
+    assert!(drive.write_token(None).is_empty());
     let fx = drive.handle(Input::TokenWritten(Ok(())), &[]);
     assert_eq!(shown(&fx), ["ShutDown", "Start"]);
     assert_eq!(drive.token_write(), None);
@@ -629,11 +632,34 @@ fn a_token_saved_starts_again() {
 #[test]
 fn a_token_write_that_fails_is_said() {
     let mut drive = RemoteDrive::new(vec![], true);
-    assert_eq!(shown(&drive.remove_token()), ["WriteToken removed"]);
+    assert_eq!(shown(&drive.write_token(None)), ["WriteToken removed"]);
     let fx = drive.handle(Input::TokenWritten(Err("disk full".into())), &[]);
     assert!(fx.is_empty());
     assert_eq!(
         drive.token_write(),
         Some(&TokenWrite::Failed("disk full".into()))
     );
+}
+
+/// A stopped bridge lets go of the chats it ignored: nothing it could allow
+/// now would hear back.
+#[test]
+fn a_stopped_bridge_forgets_who_it_ignored() {
+    let mut drive = bridge();
+    drive.handle(stranger("9", "9", "Minh"), &[]);
+    drive.handle(Input::Disconnected("token refused".into()), &[]);
+    assert!(drive.ignored().is_empty());
+}
+
+/// Strangers past the cap are counted, so the page can say so.
+#[test]
+fn strangers_past_the_cap_are_counted() {
+    let mut drive = bridge();
+    for id in 1..=7 {
+        drive.handle(stranger(&format!("{id}0"), &format!("{id}0"), ""), &[]);
+    }
+    drive.handle(stranger("70", "70", ""), &[]);
+    assert_eq!(drive.ignored_dropped(), 2);
+    drive.start();
+    assert_eq!(drive.ignored_dropped(), 0);
 }

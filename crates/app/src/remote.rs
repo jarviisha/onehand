@@ -113,28 +113,23 @@ fn look(cx: &mut App) {
 
 /// Put `value`, shown by the settings' drive, in force on the bridge.
 pub(crate) fn shown(value: &onehand_core::config::drive::Value, cx: &mut App) {
-    let fx = cx.update_global::<Shared, _>(|shared, _| shared.remote.drive.shown(value));
-    carry(fx, cx);
-    cx.refresh_windows();
+    ask(cx, |drive| drive.shown(value));
 }
 
 /// Start a stopped bridge again.
 pub(crate) fn retry(cx: &mut App) {
-    let fx = cx.update_global::<Shared, _>(|shared, _| shared.remote.drive.retry());
-    carry(fx, cx);
-    cx.refresh_windows();
+    ask(cx, RemoteDrive::start);
 }
 
-/// Save `token` as the bridge's own.
-pub(crate) fn save_token(token: String, cx: &mut App) {
-    let fx = cx.update_global::<Shared, _>(|shared, _| shared.remote.drive.save_token(token));
-    carry(fx, cx);
-    cx.refresh_windows();
+/// Save `token` as the bridge's own, or remove it with `None`.
+pub(crate) fn write_token_asked(token: Option<String>, cx: &mut App) {
+    ask(cx, |drive| drive.write_token(token));
 }
 
-/// Remove the bridge's own token.
-pub(crate) fn remove_token(cx: &mut App) {
-    let fx = cx.update_global::<Shared, _>(|shared, _| shared.remote.drive.remove_token());
+/// Ask the drive something from Settings, carry out its answer, and redraw
+/// the page that asked.
+fn ask(cx: &mut App, asked: impl FnOnce(&mut RemoteDrive) -> Vec<Effect>) {
+    let fx = cx.update_global::<Shared, _>(|shared, _| asked(&mut shared.remote.drive));
     carry(fx, cx);
     cx.refresh_windows();
 }
@@ -161,7 +156,7 @@ fn write_token(token: Option<String>, cx: &mut App) {
             if saved {
                 for (handle, _) in crate::windows::live(cx) {
                     crate::windows::later(handle, cx, |shell, window, cx| {
-                        shell.telegram_token_saved(window, cx)
+                        shell.show_saved_telegram_token(window, cx)
                     });
                 }
             }

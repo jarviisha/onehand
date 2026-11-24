@@ -173,6 +173,12 @@ pub fn chat_refusal(typed: &str, allowed: &[String]) -> Option<String> {
         .then(|| format!("{id} is already allowed"))
 }
 
+/// Whether `id` is a group: Telegram numbers groups below zero, and a group
+/// admits only the members listed too.
+pub fn is_group_chat(id: &str) -> bool {
+    id.trim().starts_with('-')
+}
+
 /// What was typed as a chat id, as Telegram writes it: `+0123` is chat
 /// `123`, and a list keeping it as typed would never match the chat.
 pub fn chat_id(typed: &str) -> Option<String> {
