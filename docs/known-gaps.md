@@ -43,11 +43,6 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   folders above it.
 - **Dragging a rail row has no edge autoscroll**, and the keyboard's row in the rail is not
   scrolled into view. A project past the bottom of a full rail has to be scrolled to first.
-- **A button whose words are its children is announced as nothing.** The library names a button by
-  its `.label` alone, so the composer's model, effort, mode and branch chips, `tab_select`'s tabs,
-  and an ask card's *Skip* read on screen and say nothing to a screen
-  reader. Icon-only buttons are named through `named`; these need an `accessibility_label` with
-  the words they draw, or a label in place of their children.
 - **A session's age on the rail starts again at every launch.** It counts from when the session
   took its present state, and that moment is kept in memory only: an archive records when a
   conversation last changed, not when it last changed state.

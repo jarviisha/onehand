@@ -315,6 +315,7 @@ impl Composer {
             chip("branch", branch_open, cx)
                 .flex_shrink_1()
                 .min_w_0()
+                .accessibility_label(format!("Branch: {line}"))
                 .child(Icon::new(crate::icons::Icon::GitBranch).small())
                 .child(chip_text(line))
                 .dropdown_caret(true)
@@ -433,6 +434,7 @@ fn mode_action_chip(
         .max_w(OPTION_MAX_W)
         .flex_shrink_1()
         .min_w_0()
+        .accessibility_label(format!("Mode: {label}"))
         .child(Icon::new(crate::icons::Icon::Shield).small())
         .child(chip_text(label))
         .dropdown_caret(true)
@@ -532,7 +534,9 @@ fn option_action(
         .flex_shrink_1()
         .min_w_0()
         // Children and not the button's `label`, which the library boxes
-        // `flex_none`: against the cap it would push the caret past the clip.
+        // `flex_none`: against the cap it would push the caret past the clip,
+        // so the words are named for a screen reader here.
+        .accessibility_label(format!("Model: {label}"))
         .child(chip_text(label))
         .dropdown_caret(true)
         .when(!open, |chip| {
@@ -554,6 +558,7 @@ fn effort_chip(
     let session = session.clone();
     chip("effort-selector", open, cx)
         .flex_none()
+        .accessibility_label(format!("Effort: {label}"))
         .child(div().text_color(crate::theme::meta_ink(cx)).child(label))
         .dropdown_caret(true)
         .when(!open, |chip| {
