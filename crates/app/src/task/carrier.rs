@@ -490,6 +490,10 @@ fn perform(id: &str, effects: Vec<Effect>, cx: &mut App) {
                 agent,
                 name: _,
             } => open_session(id, lane, agent, cx),
+            // ponytail: room at a limited step is not carried yet, so a run
+            // of a hand-written limited workflow waits there until stopped;
+            // no workflow that ships has a limit.
+            Effect::AskRoom { .. } | Effect::LeaveRoom => {}
         }
     }
 }

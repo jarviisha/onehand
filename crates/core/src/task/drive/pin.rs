@@ -48,6 +48,7 @@ impl RunDrive {
         now: Now,
         fx: &mut Vec<Effect>,
     ) {
+        self.left_room(fx);
         if ends_run(&action) || action == Action::Idle {
             return self.carry_out(action, chat, now, fx);
         }

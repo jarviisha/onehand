@@ -40,6 +40,7 @@ mod forge;
 mod lanes;
 pub mod link;
 mod pin;
+mod room;
 mod settings;
 mod signals;
 mod steps;
@@ -112,6 +113,8 @@ pub struct RunDrive {
     /// A write of the run failed and was said; nothing more is said until
     /// one lands.
     save_failed: bool,
+    /// The step the run was given room at, while it holds it.
+    room: Option<usize>,
     /// The run has finished: nothing more is done.
     over: bool,
     /// The run never had a session: a check, which only runs a command.
@@ -159,6 +162,7 @@ impl RunDrive {
             forging: None,
             stopping: None,
             save_failed: false,
+            room: None,
             over: false,
             sessionless: chat.is_none(),
         };
@@ -419,6 +423,7 @@ impl RunDrive {
                     fx.push(Effect::Signal(Signal::SaveFailed(why)));
                 }
             }
+            Input::RoomGiven => self.room_given(chat, now, &mut fx),
             // The run's timeout: when it has run out, look again, since time
             // spent waiting on a person did not count; end the run once
             // nothing is left.
@@ -514,6 +519,7 @@ impl RunDrive {
             | Input::NoForge(_)
             | Input::Elapsed(_)
             | Input::Saved(_)
+            | Input::RoomGiven
             | Input::LaneOpened { .. }
             | Input::LaneAppended { .. }
             | Input::LaneGone { .. } => {}

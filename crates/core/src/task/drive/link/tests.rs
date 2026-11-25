@@ -186,6 +186,8 @@ fn name(e: &Effect) -> &'static str {
         Effect::Signal(_) => "Signal",
         Effect::Finish { .. } => "Finish",
         Effect::OpenSession { .. } => "OpenSession",
+        Effect::AskRoom { .. } => "AskRoom",
+        Effect::LeaveRoom => "LeaveRoom",
     }
 }
 

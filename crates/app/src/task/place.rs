@@ -251,6 +251,9 @@ pub(super) fn perform(
             }),
             Effect::Signal(signal) => say(signal, cx),
             Effect::Refresh => cx.refresh_windows(),
+            // ponytail: room at a limited step is not carried yet; no
+            // workflow that ships has a limit, so none is asked for.
+            Effect::GiveRoom { .. } => {}
         }
     }
 }

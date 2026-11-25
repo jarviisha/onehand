@@ -2504,3 +2504,52 @@ fn a_zero_limit_is_a_problem() {
         "{all:?}"
     );
 }
+
+/// The checkout template with its implement step limited to one run.
+fn limited_implement() -> Template {
+    let mut template = checkout();
+    template.steps[2].limit = Some(1);
+    template
+}
+
+#[test]
+fn resume_at_a_limited_step_waits_for_room() {
+    let mut run = at_approval();
+    run.template = limited_implement();
+    assert_eq!(approve(&mut run), Action::AwaitRoom);
+    assert!(run.awaiting_room());
+    assert_eq!(run.current().map(|s| s.id.as_str()), Some("implement"));
+    assert!(
+        run.visits.iter().all(|v| v.ended_at.is_some()),
+        "no visit open"
+    );
+    assert_eq!(run.room_given(0), Action::Measure);
+    assert_eq!(
+        run.visits.last().map(|v| v.step.as_str()),
+        Some("implement")
+    );
+    prompt_of(run.measured(mark("a", "d0"), 0));
+
+    // After a restart it asks for room again before its step goes on, and
+    // then takes it up from the mark it kept.
+    let mut back: Run = serde_json::from_str(&serde_json::to_string(&run).unwrap()).unwrap();
+    assert_eq!(back.resume(0), Action::AwaitRoom);
+    assert!(
+        back.visits.iter().all(|v| v.ended_at.is_some()),
+        "no visit open"
+    );
+    assert!(prompt_of(back.room_given(0)).contains("This step is the change"));
+    assert!(back.visits.last().is_some_and(|v| v.ended_at.is_none()));
+    assert_eq!(back.room_given(0), Action::Idle);
+}
+
+#[test]
+fn a_workflow_without_an_id_is_never_limited() {
+    let mut template = limited_implement();
+    template.steps[0].limit = Some(1);
+    let (_, first) = begin("1".into(), template.clone(), brief(), setup(None));
+    assert_eq!(first, Action::AwaitRoom);
+    template.id = String::new();
+    let (_, first) = begin("1".into(), template, brief(), setup(None));
+    assert_eq!(first, Action::Measure);
+}

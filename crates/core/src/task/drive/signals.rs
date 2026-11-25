@@ -58,6 +58,8 @@ pub enum Input {
     Elapsed(Timer),
     /// The run's write landed, or why it did not.
     Saved(Result<(), String>),
+    /// The run has room at the full step it waits before.
+    RoomGiven,
     /// The session [`Effect::OpenSession`] asked for is open and bound to
     /// `lane`, or why it did not start.
     LaneOpened {
@@ -187,6 +189,19 @@ pub enum Effect {
     SessionChanged,
     /// Tell this, as the front end words it.
     Signal(Signal),
+    /// The run waits before a full step: ask for room there for its task,
+    /// `limit` runs at most holding it, and report [`Input::RoomGiven`] when
+    /// it has some.
+    ///
+    /// Awaited: the run waits for nothing else. A run that ends meanwhile
+    /// gives up its turn for room with the rest of what it held.
+    AskRoom {
+        key: crate::task::rooms::RoomKey,
+        limit: u32,
+    },
+    /// The run has left the step it held room at, for another step or for
+    /// good: give that room up. Not answered.
+    LeaveRoom,
     /// The run is over, as `outcome`: keep it and let its place go.
     Finish { outcome: Outcome },
     /// Open a session of `agent` named `name`, unshown, for `lane`, and

@@ -5,4 +5,5 @@
 
 pub(crate) mod harness;
 mod lanes;
+mod rooms;
 mod schedule;

@@ -23,6 +23,7 @@
 //! held beside this one; [`link`] joins them.
 
 use super::queue::Queue;
+use super::rooms::{RoomKey, Rooms};
 use super::work::Act;
 use super::{history, Task, Working};
 use crate::workflow::{Run, Template, WithCurrent};
@@ -250,6 +251,9 @@ pub enum Effect<W> {
     /// Close sessions `uids`, in `window`: every session of a finished
     /// schedule's or board's task, let go.
     CloseSession { uids: Vec<u64>, window: W },
+    /// Tell task `task`'s run it has room at the full step it waits before:
+    /// its [`crate::task::drive::Input::RoomGiven`].
+    GiveRoom { task: String },
     /// Tell this.
     Signal(Signal<W>),
     /// What the tasks show changed: draw them again.
@@ -268,6 +272,8 @@ pub struct TasksDrive<W> {
     /// Every task kept, unfinished or history, oldest first.
     tasks: Vec<Task>,
     queue: Queue,
+    /// Room at the limited steps runs are at, and who waits for it.
+    rooms: Rooms,
     /// Where each queued task was asked for, to start it there.
     asked_in: HashMap<String, W>,
     /// Tasks that ended while their session's turn was still going, by the
@@ -293,6 +299,7 @@ impl<W> Default for TasksDrive<W> {
         Self {
             tasks: Vec::new(),
             queue: Queue::default(),
+            rooms: Rooms::default(),
             asked_in: HashMap::new(),
             draining: HashMap::new(),
             dismissing: HashMap::new(),
@@ -339,6 +346,30 @@ impl<W: Copy> TasksDrive<W> {
             (false, true) => Some(Working::Running),
             (false, false) => None,
         }
+    }
+
+    /// Task `id`'s run arrived at a limited step, `key`, which `limit` runs
+    /// may hold at once: it is given room now, or waits in turn.
+    pub fn ask_room(&mut self, task: &str, key: RoomKey, limit: u32) -> Vec<Effect<W>> {
+        let given = self.rooms.ask(task, key, limit);
+        give_room(given)
+    }
+
+    /// Task `id`'s run left the step it held room at: whoever waits there
+    /// next is given it.
+    pub fn leave_room(&mut self, task: &str) -> Vec<Effect<W>> {
+        let given = self.rooms.leave(task);
+        give_room(given)
+    }
+
+    /// The step task `id`'s run waits for room at, by its id, while it waits.
+    pub fn waits_for_room(&self, task: &str) -> Option<&str> {
+        self.rooms.waits(task).map(|key| key.step.as_str())
+    }
+
+    /// How many tasks hold room at `key`, and how many wait for it.
+    pub fn room_at(&self, key: &RoomKey) -> (usize, usize) {
+        self.rooms.at(key)
     }
 
     /// Whether task `id` is running or waiting for its place.
@@ -582,6 +613,19 @@ impl<W: Copy> TasksDrive<W> {
         fx.extend(dropped);
         fx
     }
+}
+
+/// The runs given room, told so; a redraw when any were, since a task that
+/// waited no longer does.
+fn give_room<W>(given: Vec<String>) -> Vec<Effect<W>> {
+    let mut fx: Vec<Effect<W>> = given
+        .into_iter()
+        .map(|task| Effect::GiveRoom { task })
+        .collect();
+    if !fx.is_empty() {
+        fx.push(Effect::Refresh);
+    }
+    fx
 }
 
 #[cfg(test)]

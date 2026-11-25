@@ -15,6 +15,7 @@ pub mod history;
 mod launch;
 pub mod marks;
 pub mod queue;
+pub mod rooms;
 pub mod tasks;
 pub mod work;
 
