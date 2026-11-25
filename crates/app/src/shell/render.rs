@@ -1,6 +1,6 @@
 use super::{
     CloseSession, FocusComposer, NewSession, NextSession, OpenNeovim, OpenSettings, PrevSession,
-    RestartSession, RunWorkflow, SaveFile, ShowSchedules, ShowTasks, ToggleMarkdown,
+    RestartSession, RunWorkflow, SaveFile, ShowBoard, ShowSchedules, ShowTasks, ToggleMarkdown,
     ToggleMaximize, ToggleRail, ToggleTerminal, ToggleWorkbench, ToggleWorkbenchVisibility, ZoomIn,
     ZoomOut, ZoomReset,
 };
@@ -194,6 +194,9 @@ impl Render for Shell {
             )
             .on_action(cx.listener(|shell: &mut Self, _: &ShowTasks, window, cx| {
                 shell.show_tasks(None, window, cx);
+            }))
+            .on_action(cx.listener(|shell: &mut Self, _: &ShowBoard, window, cx| {
+                shell.show_active_board(window, cx);
             }))
             .on_action(
                 cx.listener(|shell: &mut Self, _: &ShowSchedules, window, cx| {

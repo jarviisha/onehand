@@ -424,6 +424,7 @@ impl ChatPane {
             kept.as_ref()
                 .and_then(|kept| build_chip::build_chip(kept, cx))
                 .into_iter()
+                .chain(kept.as_ref().and_then(|kept| board_link(kept, cx)))
                 .chain(project.facts.check.then(|| {
                     crate::controls::action("project-run-check")
                         .short()
@@ -641,6 +642,29 @@ impl ChatPane {
             )
             .into_any_element()
     }
+}
+
+/// The way to `project`'s board, saying what works on it and what waits in
+/// its To do; none for a project with no board.
+fn board_link(
+    project: &onehand_core::project::Project,
+    cx: &mut Context<ChatPane>,
+) -> Option<gpui::AnyElement> {
+    let board = project.board()?;
+    let running = crate::task::board_running(&project.id, cx);
+    let label = format!("Board · {running} running · {} to do", board.todo.len());
+    let id = project.id.clone();
+    Some(
+        crate::controls::action("project-board")
+            .short()
+            .secondary()
+            .label(label)
+            .tooltip("Show the project's board")
+            .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
+                cx.emit(ChatPaneEvent::ShowBoard(id.clone()));
+            }))
+            .into_any_element(),
+    )
 }
 
 /// What the pane shows while no agent is set up: the line saying so, each

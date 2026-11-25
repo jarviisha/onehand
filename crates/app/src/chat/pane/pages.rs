@@ -12,6 +12,8 @@ pub enum PageKind {
     /// The overview: what waits, what works, every project and its issues.
     Workspace,
     Tasks,
+    /// One project's board.
+    Board,
     /// The Issues crate's page.
     Issues,
     Workflows,
@@ -109,6 +111,7 @@ impl ChatPane {
         let holds_fields = match self.shown_page() {
             Some(
                 PageKind::Tasks
+                | PageKind::Board
                 | PageKind::Issues
                 | PageKind::Workflows
                 | PageKind::Schedules

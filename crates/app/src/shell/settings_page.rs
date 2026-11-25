@@ -56,6 +56,10 @@ impl Shell {
         match self.settings_from.take() {
             Some(PageKind::Workspace) => self.show_workspace(window, cx),
             Some(PageKind::Tasks) => self.show_tasks(None, window, cx),
+            Some(PageKind::Board) => match self.board_page.read(cx).project().cloned() {
+                Some(project) => self.show_board(project, window, cx),
+                None => self.show_active_session(window, cx),
+            },
             Some(PageKind::Issues) => self.show_issues(window, cx),
             Some(PageKind::Workflows) => self.show_workflows(window, cx),
             Some(PageKind::Schedules) => self.show_schedules(None, window, cx),

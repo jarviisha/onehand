@@ -31,7 +31,7 @@ pub(crate) type Answer = Box<dyn FnOnce(Result<Applied, String>, &mut App)>;
 
 /// The carrier of one file's drive: it reads, syncs, publishes and writes off
 /// the UI loop as the drive asks, and tells it what came of each.
-pub(super) struct IssuesFile {
+pub(crate) struct IssuesFile {
     drive: FileDrive,
     /// The read in flight, held so that starting another drops it.
     _load: Option<gpui::Task<()>>,

@@ -50,6 +50,10 @@ pub(super) fn project_menu(
         let away = shell.clone();
         let rename = shell.clone();
         let open_settings = shell.clone();
+        let board = shell
+            .upgrade()
+            .and_then(|s| s.read(cx).board_of_row(root_idx, cx));
+        let open_board = shell.clone();
         let (pin, start, split, terminal, copy, refresh, remove) = (
             shell.clone(),
             shell.clone(),
@@ -126,6 +130,17 @@ pub(super) fn project_menu(
                 .ok();
             },
         ))
+        .when_some(board, |menu, board| {
+            menu.item(crate::controls::menu_item("Board").on_click(
+                move |_, window, cx: &mut App| {
+                    open_board
+                        .update(cx, |shell: &mut Shell, cx| {
+                            shell.show_board(board.clone(), window, cx);
+                        })
+                        .ok();
+                },
+            ))
+        })
         .when(settings, |menu| {
             menu.item(crate::controls::menu_item("Project settings…").on_click(
                 move |_, window, cx: &mut App| {

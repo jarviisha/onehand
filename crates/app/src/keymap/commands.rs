@@ -71,6 +71,7 @@ pub const COMMANDS: &[Command] = &[
         RunWorkflow
     ),
     command!("show_tasks", "Show the Tasks page", [], ShowTasks),
+    command!("show_board", "Show the project's board", [], ShowBoard),
     command!(
         "toggle_host_builds",
         "Toggle builds on hosts",

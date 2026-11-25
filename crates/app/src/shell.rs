@@ -93,6 +93,7 @@ gpui::actions!(
         CycleMode,
         RunWorkflow,
         ShowTasks,
+        ShowBoard,
         ShowSchedules,
         ToggleHostBuilds
     ]
@@ -422,6 +423,9 @@ pub struct Shell {
     schedules_page: Entity<crate::schedules_page::SchedulesPage>,
     /// The Tasks page, made once for the same reason.
     tasks_page: Entity<crate::tasks_page::TasksPage>,
+    /// The board page, made once likewise, on whichever project's board
+    /// it last showed.
+    board_page: Entity<crate::board_page::BoardPage>,
     /// The workspace page, made once likewise.
     workspace_page: Entity<crate::workspace_page::WorkspacePage>,
 }

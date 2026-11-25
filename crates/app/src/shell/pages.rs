@@ -54,6 +54,64 @@ impl Shell {
             .update(cx, |page, cx| page.open_task(Some(id), cx));
     }
 
+    /// Show project `project`'s board. Left the way the workspace page is.
+    pub(crate) fn show_board(
+        &mut self,
+        project: onehand_core::project::ProjectId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.docks_aside(window, cx);
+        let view: gpui::AnyView = self.board_page.clone().into();
+        self.chat.update(cx, |pane, cx| {
+            pane.show_page(crate::chat::pane::PageKind::Board, view, window, cx)
+        });
+        self.board_page
+            .update(cx, |page, cx| page.show(project, window, cx));
+        self.sync_agent_started(cx);
+        cx.notify();
+    }
+
+    /// The board of the project at row `root_idx`, if it has one and is on
+    /// this machine.
+    pub(crate) fn board_of_row(
+        &self,
+        root_idx: usize,
+        cx: &App,
+    ) -> Option<onehand_core::project::ProjectId> {
+        let root = self.window.workspace.roots.get(root_idx)?;
+        root.local_path()?;
+        let id = root.project.as_ref()?;
+        let project = crate::state::Shared::global(cx).projects.get(id)?;
+        project.board().map(|_| id.clone())
+    }
+
+    /// Show the board of the project on screen, or say it has none.
+    pub(super) fn show_active_board(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let at = self.window.workspace.active_root;
+        match self.board_of_row(at, cx) {
+            Some(project) => self.show_board(project, window, cx),
+            None => {
+                let note = crate::toast::info("This project has no board");
+                gpui_component::WindowExt::push_notification(window, note, cx);
+            }
+        }
+    }
+
+    /// Answer what the board page asked.
+    pub(super) fn on_board_page(
+        &mut self,
+        event: &crate::board_page::BoardPageEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        use crate::board_page::BoardPageEvent as E;
+        match event {
+            E::OpenTask(id) => self.show_task(id, window, cx),
+            E::ProjectSettings(root) => self.show_project_settings(root.clone(), window, cx),
+        }
+    }
+
     /// Both docks hold one project's things, and a page is about all of
     /// them. Put away, not closed: the terminal's state is filed under its
     /// project and the root on screen let go, so the next arrival is a handover

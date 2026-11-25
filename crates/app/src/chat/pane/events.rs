@@ -258,6 +258,8 @@ pub enum ChatPaneEvent {
     StopWorkflow(u64),
     /// Run the check command of the project on screen, as a task.
     RunCheck,
+    /// Show the board of project `0`.
+    ShowBoard(onehand_core::project::ProjectId),
     /// What the project page's *Worktrees* asks.
     Worktree(WorktreeAct),
     /// `host` runs another build of the host service, with sessions

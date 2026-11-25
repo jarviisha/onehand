@@ -150,6 +150,38 @@ pub fn write(
     view::write_outside(root, file, change, connectors, Box::new(answer), cx);
 }
 
+/// One project's issues as every view of them holds them, for a page that
+/// reads them with no view of its own (a board's Backlog): read on first
+/// hold, and woken by each change that lands, a tool's `create_issue`
+/// included, so it never reads the file again to stay in step.
+pub struct Held(Entity<view::IssuesFile>);
+
+impl Held {
+    /// The issues file `file` of the project at `root`.
+    pub fn new(
+        root: &Path,
+        file: PathBuf,
+        connectors: &'static [&'static dyn Connector],
+        cx: &mut App,
+    ) -> Self {
+        Self(view::held(root, file, connectors, cx))
+    }
+
+    /// What the file holds as last read: none until the first read lands.
+    pub fn kept<'a>(&self, cx: &'a App) -> &'a onehand_core::issues::drive::Kept {
+        self.0.read(cx)
+    }
+
+    /// Call `on` on the observer each time the file changes.
+    pub fn observe<V: 'static>(
+        &self,
+        on: impl Fn(&mut V, &mut gpui::Context<V>) + 'static,
+        cx: &mut gpui::Context<V>,
+    ) -> gpui::Subscription {
+        cx.observe(&self.0, move |this, _, cx| on(this, cx))
+    }
+}
+
 /// What a view of the issues does with a request, the mode's and the page's
 /// alike.
 fn handle(view: &Entity<IssuesView>, request: &Request<'_>, cx: &mut App) -> bool {
