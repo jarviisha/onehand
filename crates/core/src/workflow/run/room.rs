@@ -8,14 +8,9 @@ use super::{Action, Await, Run};
 use crate::workflow::StepKind;
 
 impl Run {
-    /// How many runs may be at the step at `at` at once, when it has a limit
-    /// that counts: a workflow from before ids has no name to count its runs
-    /// by, so none of its steps is limited.
+    /// How many runs may be at the step at `at` at once: its snapshot's.
     pub(crate) fn limit_at(&self, at: usize) -> Option<u32> {
-        if self.template.id.is_empty() {
-            return None;
-        }
-        self.template.steps.get(at)?.limit
+        self.template.limit_at(at)
     }
 
     /// Whether arriving at the step at `at` waits for room: it is limited,

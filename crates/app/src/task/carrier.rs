@@ -490,10 +490,21 @@ fn perform(id: &str, effects: Vec<Effect>, cx: &mut App) {
                 agent,
                 name: _,
             } => open_session(id, lane, agent, cx),
-            // ponytail: room at a limited step is not carried yet, so a run
-            // of a hand-written limited workflow waits there until stopped;
-            // no workflow that ships has a limit.
-            Effect::AskRoom { .. } | Effect::LeaveRoom => {}
+            // Who is given room is the tasks' drive's; it may be this run
+            // itself, told so once this update is over.
+            Effect::AskRoom { key, limit } => {
+                super::with_drive(cx, |t| ((), t.ask_room(id, key, limit)));
+            }
+            Effect::LeaveRoom => {
+                super::with_drive(cx, |t| ((), t.leave_room(id)));
+                // A board's first step may have room for its To do again.
+                let board = cx
+                    .try_global::<Tasks>()
+                    .and_then(|t| t.task(id)?.board_issue().map(|(p, _)| p.clone()));
+                if let Some(project) = board {
+                    cx.defer(move |cx| crate::board::pull_now(&project, cx));
+                }
+            }
         }
     }
 }

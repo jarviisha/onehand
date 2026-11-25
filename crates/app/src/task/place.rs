@@ -251,9 +251,11 @@ pub(super) fn perform(
             }),
             Effect::Signal(signal) => say(signal, cx),
             Effect::Refresh => cx.refresh_windows(),
-            // ponytail: room at a limited step is not carried yet; no
-            // workflow that ships has a limit, so none is asked for.
-            Effect::GiveRoom { .. } => {}
+            // Deferred: the run given room may be the one whose effects
+            // are being carried, its drive not to be entered again inside.
+            Effect::GiveRoom { task } => cx.defer(move |cx| {
+                super::carrier::feed(&task, onehand_core::task::drive::Input::RoomGiven, cx)
+            }),
         }
     }
 }

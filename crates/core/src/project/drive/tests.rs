@@ -718,13 +718,21 @@ fn start_todo_counts_starts_until_they_land() {
     )
     .unwrap();
     let taken = std::collections::HashSet::new();
-    let pull = d.pull(&p.id, 0, &issues, None, &taken).unwrap();
+    let pull = d.pull(&p.id, 0, None, &issues, None, &taken).unwrap();
     assert_eq!(pull.start, [2], "a team of 3 with 2 on their way");
+    let first = d.pull(&p.id, 0, Some((2, 0)), &issues, None, &taken);
+    assert!(
+        first.unwrap().start.is_empty(),
+        "the 2 on their way fill a first step of 2"
+    );
     d.landed(&p.id, 4);
-    assert_eq!(d.pull(&p.id, 1, &issues, None, &taken).unwrap().start, [2]);
+    assert_eq!(
+        d.pull(&p.id, 1, None, &issues, None, &taken).unwrap().start,
+        [2]
+    );
     d.landed(&p.id, 9);
     assert_eq!(
-        d.pull(&p.id, 0, &issues, None, &taken).unwrap().start,
+        d.pull(&p.id, 0, None, &issues, None, &taken).unwrap().start,
         [2, 7]
     );
 }

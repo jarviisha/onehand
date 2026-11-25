@@ -15,6 +15,8 @@ pub(crate) struct Row {
     pub(crate) name: String,
     /// The step it is at while it works, or how it ended.
     pub(crate) at: String,
+    /// It works, but waits for room at a full step before going on there.
+    pub(crate) waits_for_room: bool,
     /// The project it was started from.
     pub(crate) project: PathBuf,
     pub(crate) group: Group,
@@ -70,7 +72,9 @@ fn row_of(t: &Tasks, task: &Task) -> Row {
         .filter(|run| !run.template.is_prompt())
         .and_then(Run::current)
         .map_or_else(String::new, |step| step.label.clone());
+    let waits_for_room = working.is_some() && t.drive.waits_for_room(task.id()).is_some();
     let at = match (working, task.ended_said()) {
+        (Some(_), _) if waits_for_room => format!("Waiting for room at {step}"),
         (Some(_), _) => step,
         (None, None) if step.is_empty() => "cut off".to_string(),
         (None, None) => format!("cut off at {step}"),
@@ -90,6 +94,7 @@ fn row_of(t: &Tasks, task: &Task) -> Row {
             }
         },
         at,
+        waits_for_room,
         project: task.setup().repo.clone(),
         group: task.group(working),
         session: live.and_then(|d| Some((d.uid()?, d.window))),
@@ -139,11 +144,34 @@ pub(crate) fn board_taken(
     })
 }
 
+/// The limit of `template`'s step at `at`, for runs of the project at
+/// `root`, and how many hold room there and wait for it; none when the step
+/// is not limited.
+pub(crate) fn room_at(
+    root: &std::path::Path,
+    template: &onehand_core::workflow::Template,
+    at: usize,
+    cx: &App,
+) -> Option<(u32, usize, usize)> {
+    let limit = template.limit_at(at)?;
+    let key = onehand_core::task::rooms::RoomKey {
+        repo: root.to_path_buf(),
+        workflow: template.id.clone(),
+        step: template.steps[at].id.clone(),
+    };
+    let (holding, waiting) = cx
+        .try_global::<Tasks>()
+        .map_or((0, 0), |t| t.drive.room_at(&key));
+    Some((limit, holding, waiting))
+}
+
 /// Project `project`'s board tasks laid over `template`'s steps, each as
 /// the pages list it.
 pub(crate) struct BoardTasks {
-    /// A column per step, by its label, then any step the workflow lost.
-    pub(crate) steps: Vec<(String, Vec<Row>)>,
+    /// A column per step, by its label, its head, and its rows; then any
+    /// step the workflow lost. A limited step's head says how much of its
+    /// room is held.
+    pub(crate) steps: Vec<(String, String, Vec<Row>)>,
     /// Newest first.
     pub(crate) done: Vec<Row>,
     /// The issues its tasks hold out of the Backlog.
@@ -154,6 +182,7 @@ pub(crate) struct BoardTasks {
 /// places them.
 pub(crate) fn board(
     project: &onehand_core::project::ProjectId,
+    root: &std::path::Path,
     template: &onehand_core::workflow::Template,
     cx: &App,
 ) -> BoardTasks {
@@ -176,7 +205,17 @@ pub(crate) fn board(
         steps: columns
             .steps
             .into_iter()
-            .map(|column| (column.label, rows(column.tasks)))
+            .map(|column| {
+                let at = template.steps.iter().position(|s| s.id == column.step);
+                let room = at.and_then(|at| room_at(root, template, at, cx));
+                let head = match room {
+                    Some((limit, holding, _)) => {
+                        format!("{} · {holding} of {limit}", column.label)
+                    }
+                    None => column.label.clone(),
+                };
+                (column.label, head, rows(column.tasks))
+            })
             .collect(),
         done: rows(columns.done),
         taken: onehand_core::board::taken(of_board(), project, &working),

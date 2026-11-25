@@ -19,6 +19,7 @@ use std::time::Duration;
 
 mod forge;
 mod lanes;
+mod rooms;
 pub(super) use forge::connectors;
 pub(super) use lanes::open_lane;
 

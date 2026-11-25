@@ -55,6 +55,16 @@ fn default_timeout() -> String {
 }
 
 impl Template {
+    /// How many runs may be at the step at `at` at once, when it has a limit
+    /// that counts: a workflow from before ids has no name to count its runs
+    /// by, so none of its steps is limited.
+    pub fn limit_at(&self, at: usize) -> Option<u32> {
+        if self.id.is_empty() {
+            return None;
+        }
+        self.steps.get(at)?.limit
+    }
+
     /// The schema a file of this template must carry: 2 once a step names
     /// its agent, reviews another or carries a limit, else 1, so a file nothing new touches
     /// stays readable by an older onehand.

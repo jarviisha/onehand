@@ -55,18 +55,24 @@ pub struct Pull {
 
 /// Which of `board`'s To do to start while `running` of its tasks work: as
 /// many as the team has room for, and none when the team is full or was
-/// lowered below what runs. An issue closed or no longer in `issues` is
+/// lowered below what runs. When its workflow's first step is limited,
+/// `first` is that limit and how many tasks hold or wait for room there, and
+/// no more start than the step has room for. An issue closed or no longer in `issues` is
 /// dropped. One open but not workable now, as a forge's while the forge is
 /// not found, or one a task of the board still holds (`taken`), stays in
 /// To do for a later look.
 pub fn pull(
     board: &Board,
     running: usize,
+    first: Option<(u32, usize)>,
     issues: &Issues,
     forge: Option<&'static dyn Connector>,
     taken: &HashSet<u64>,
 ) -> Pull {
-    let room = usize::from(board.team).saturating_sub(running);
+    let team = usize::from(board.team).saturating_sub(running);
+    let room = first.map_or(team, |(limit, at)| {
+        team.min((limit as usize).saturating_sub(at))
+    });
     let mut pull = Pull {
         start: Vec::new(),
         gone: Vec::new(),
