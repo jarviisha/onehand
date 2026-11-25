@@ -172,8 +172,8 @@ pub(crate) fn room_at(
     at: usize,
     cx: &App,
 ) -> Option<onehand_core::task::rooms::Room> {
-    // With no tasks kept yet, nobody holds room or waits for it, so no
-    // limit can bite.
+    // With no tasks kept yet there is no room to count: no limit and no
+    // first-step cap apply before the tasks' drive exists.
     cx.try_global::<Tasks>()?.drive.room(root, template, at)
 }
 

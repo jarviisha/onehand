@@ -20,7 +20,7 @@ on this machine. A project on a host has none: its issues are not kept here.
   first when the form there holds changes not saved. *Settings ▸ Projects ▸ Board* has the same
   *Edit workflow* beside its menu. A built-in workflow opens read-only, with its *Duplicate to
   edit*; that duplicate, saved for the first time, becomes that board's workflow, team and To do
-  kept, and a toast says *<project>'s board now uses <copy name>* Only a copy of a built-in
+  kept, and a toast says *<project>'s board now uses <copy name>*. Only a copy of a built-in
   workflow rebinds: one of the person's own is edited in place, and a copy of it leaves the board
   as it is. No other board changes, and the page forgets the board on any save, once another
   workflow is opened, or when the form is closed.

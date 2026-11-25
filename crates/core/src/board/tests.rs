@@ -135,7 +135,7 @@ fn usable_refuses_checkout_and_missing() {
     let why = usable(Some(&template(Place::Checkout))).unwrap_err();
     assert_eq!(
         why,
-        "A board needs a workflow that works on a worktree: Implement on a branch works in the checkout."
+        "A board needs a workflow that works on a worktree: Implement on a branch works in the checkout"
     );
 }
 
