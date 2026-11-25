@@ -63,7 +63,7 @@ pub(super) fn settle(
     now: Now,
     fx: &mut Vec<Effect>,
 ) -> Option<String> {
-    if d.settled == open_visit(d) {
+    if d.here.settled == open_visit(d) {
         return Some(text);
     }
     let picking = Picking {
@@ -81,23 +81,24 @@ pub(super) fn settle(
 pub(super) fn answered(d: &mut RunDrive, chat: &Chat, now: Now, fx: &mut Vec<Effect>) {
     // The run's own mode answered and not refused: nothing more of it.
     if !chat.pick_waiting(MODE_SELECTOR) {
-        d.mode_out = None;
+        d.here.mode_out = None;
     }
     // The visit's own pick answered while another group's is still out (a
     // person's in the composer): a refusal of that one is not the run's.
     let sent = d
+        .here
         .picking
         .as_ref()
         .and_then(|picking| Some(picking.sent.as_ref()?.group().to_string()));
     if sent.is_some_and(|group| !chat.pick_waiting(&group)) {
-        if let Some(picking) = d.picking.as_mut() {
+        if let Some(picking) = d.here.picking.as_mut() {
             picking.sent = None;
         }
     }
     if chat.picks_waiting() {
         return;
     }
-    let Some(picking) = d.picking.take() else {
+    let Some(picking) = d.here.picking.take() else {
         return;
     };
     if let Some(text) = plan(d, picking, chat, now, fx) {
@@ -114,25 +115,26 @@ pub(super) fn refused(d: &mut RunDrive, chat: &Chat, why: &str, now: Now, fx: &m
     // The run's own mode, refused: what is to be fixed is the mode the run
     // was given, not the workflow's steps.
     if let Some(mode) = d
+        .here
         .mode_out
         .clone()
         .filter(|_| !chat.pick_waiting(MODE_SELECTOR))
     {
-        d.mode_out = None;
-        d.picking = None;
+        d.here.mode_out = None;
+        d.here.picking = None;
         let why = format!("the agent refused mode `{mode}`: {why}");
         d.advance(Some(chat), now, fx, move |run| {
             run.failed(why, found_late(About::Mode), now.secs)
         });
         return;
     }
-    let Some(pick) = d.picking.as_ref().and_then(|p| p.sent.clone()) else {
+    let Some(pick) = d.here.picking.as_ref().and_then(|p| p.sent.clone()) else {
         return;
     };
     if chat.pick_waiting(pick.group()) {
         return;
     }
-    d.picking = None;
+    d.here.picking = None;
     let said = match pick {
         Pick::Mode(mode) => format!("the agent refused mode `{mode}`: {why}"),
         Pick::Option { id, value } => format!("the agent refused `{value}` for `{id}`: {why}"),
@@ -156,8 +158,8 @@ fn plan(
     // A pick put in before this one (the run's mode, not yet answered or
     // not yet in the session, or one restored on reconnecting) is answered
     // first, so what is planned against holds.
-    if chat.picks_waiting() || d.mode_out.is_some() {
-        d.picking = Some(picking);
+    if chat.picks_waiting() || d.here.mode_out.is_some() {
+        d.here.picking = Some(picking);
         return None;
     }
     match next(
@@ -174,7 +176,7 @@ fn plan(
             fx.push(Effect::SessionChanged);
             picking.picked.push(pick.group().to_string());
             picking.sent = Some(pick);
-            d.picking = Some(picking);
+            d.here.picking = Some(picking);
             None
         }
         Next::Refused(why) => {
@@ -185,7 +187,7 @@ fn plan(
             let held = chat.held();
             let said = said(&want, &held);
             d.run.ran_with(held);
-            d.settled = open_visit(d);
+            d.here.settled = open_visit(d);
             if !picking.picked.is_empty() {
                 d.asked.push(Asked::Note(said));
             }

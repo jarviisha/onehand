@@ -32,10 +32,12 @@ use crate::chat::{Chat, Link};
 use crate::Now;
 
 use crate::workflow::{Action, ApprovalAt, Failure, Pick, Run, Stop};
+use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 mod budget;
 mod forge;
+mod lanes;
 pub mod link;
 mod pin;
 mod settings;
@@ -43,6 +45,8 @@ mod signals;
 mod steps;
 
 use budget::Budget;
+pub use lanes::Lane;
+use lanes::LaneState;
 use pin::{Answer, Held};
 pub(crate) use signals::Asked;
 pub use signals::{Effect, Input, Signal, Timer};
@@ -64,9 +68,13 @@ pub struct RunDrive {
     held: Option<Vec<(bool, Held)>>,
     /// The action waiting on the pin, with the boundaries it pins from and to.
     waiting: Option<(Action, usize, usize)>,
-    /// How many prompts the run has sent its session: any more, and a person
-    /// is driving.
-    sent: usize,
+    /// The lane the run works in now: every event, command and prompt is
+    /// its session's.
+    lane: Lane,
+    /// What the run keeps of the current lane's session.
+    here: LaneState,
+    /// What it keeps of every other lane it has worked in.
+    away: BTreeMap<Lane, LaneState>,
     /// How many transcript items there were when the run's last prompt went:
     /// the turn's answer is what the agent said after that.
     answer_from: usize,
@@ -75,17 +83,6 @@ pub struct RunDrive {
     sent_at: Option<Instant>,
     /// The turn's answer, kept while its work is read.
     answer: Option<String>,
-    /// A prompt waiting for the agent to come up.
-    pending: Option<String>,
-    /// The agent has been seen up in this session, and the run's mode set.
-    up: bool,
-    /// The visit whose settings were last put in force.
-    settled: Option<u32>,
-    /// The open visit's settings being put in force, holding its prompt.
-    picking: Option<settings::Picking>,
-    /// The run's own mode, picked when the agent came up and not yet
-    /// answered: a refusal of it is the run's mode refused, not a step's.
-    mode_out: Option<String>,
     /// Picks decided and not yet handed to the session, in order.
     picks: Vec<Pick>,
     /// What else the run asked of its session and the link has not made yet,
@@ -98,8 +95,6 @@ pub struct RunDrive {
     budget: Budget,
     /// Working time spent before this session took the run up.
     spent_before: u64,
-    /// The agent parked a card nobody has answered yet.
-    card: bool,
     /// The turn sent ended with the agent still at work beside it: the step
     /// is judged once that work, and the agent's answer to it, are done.
     after_work: bool,
@@ -135,6 +130,7 @@ impl RunDrive {
             .template
             .timeout_limit()
             .saturating_sub(Duration::from_secs(run.spent_secs));
+        let lane = Lane::at(&run);
         let mut drive = Self {
             task,
             spent_before: run.spent_secs,
@@ -142,20 +138,16 @@ impl RunDrive {
             pinned,
             held: None,
             waiting: None,
-            sent: 0,
+            lane,
+            here: LaneState::default(),
+            away: BTreeMap::new(),
             answer_from: 0,
             sent_at: None,
             answer: None,
-            pending: None,
-            up: false,
-            settled: None,
-            picking: None,
-            mode_out: None,
             picks: Vec::new(),
             asked: Vec::new(),
             noted: None,
             budget: Budget::start(limit, now.at),
-            card: false,
             after_work: false,
             command: false,
             forging: None,
@@ -205,19 +197,19 @@ impl RunDrive {
 
     /// The run waits on a person: an approval, or a card the agent parked.
     pub fn waits_on_person(&self) -> bool {
-        self.run.awaiting_approval() || self.card
+        self.run.awaiting_approval() || self.here.card
     }
 
     /// The agent parked a card nobody has answered yet.
     pub fn card(&self) -> bool {
-        self.card
+        self.here.card
     }
 
     /// Whether [`Input::Notified`] could move the run, read without moving
     /// it: a card may have been answered, or the work the step's turn left
     /// running has ended.
     pub fn heeds_notified(&self, chat: &Chat) -> bool {
-        self.card || (self.after_work && !self.step_at_work(chat))
+        self.here.card || (self.after_work && !self.step_at_work(chat))
     }
 
     /// Whether the agent still works on the step: background work started
@@ -237,9 +229,9 @@ impl RunDrive {
     /// picks under way. Anything else the transcript grows by is the reply
     /// streaming in, which a front end should not hand over chunk by chunk.
     pub fn heeds_appended(&self, chat: &Chat) -> bool {
-        (self.pending.is_some() && chat.link == Link::Connected)
-            || chat.prompted_beyond(self.sent)
-            || self.picking.is_some()
+        (self.here.pending.is_some() && chat.link == Link::Connected)
+            || chat.prompted_beyond(self.here.sent)
+            || self.here.picking.is_some()
     }
 
     /// Working time spent on the run, sessions before this one included.
@@ -306,8 +298,8 @@ impl RunDrive {
             | Input::Disconnected
             | Input::PickRefused(_) => self.on_event(input, chat, now, &mut fx),
             Input::Notified => {
-                if self.card && chat.is_some_and(|chat| !chat.awaiting_permission()) {
-                    self.card = false;
+                if self.here.card && chat.is_some_and(|chat| !chat.awaiting_permission()) {
+                    self.here.card = false;
                     self.budget.resume(now.at);
                 }
                 if let Some(chat) = chat.filter(|chat| self.after_work && !self.step_at_work(chat))
@@ -415,17 +407,17 @@ impl RunDrive {
         };
         // A turn ending while a mark is pinned is not the turn the run will send.
         let judge_turn = self.run.awaiting_turn() && self.held.is_none();
-        if self.pending.is_some() && chat.link == Link::Connected {
-            if let Some(text) = self.pending.take() {
+        if self.here.pending.is_some() && chat.link == Link::Connected {
+            if let Some(text) = self.here.pending.take() {
                 self.send(text, chat, now, fx);
             }
             return;
         }
         match input {
             Input::Appended => {
-                if chat.prompted_beyond(self.sent) {
+                if chat.prompted_beyond(self.here.sent) {
                     self.end(Stop::TakenOver, Some(chat), now, fx);
-                } else if self.picking.is_some() {
+                } else if self.here.picking.is_some() {
                     // After the rest of what the same answer emitted, so a
                     // refusal is judged before the next pick is planned.
                     fx.push(Effect::Defer(Input::PicksAnswered));
@@ -450,11 +442,11 @@ impl RunDrive {
             Input::TurnEnded => {}
             // A person answers the card; the clock waits for them.
             Input::AwaitingUser => {
-                self.card = true;
+                self.here.card = true;
                 self.budget.pause(now.at);
             }
             Input::Disconnected => self.end(Stop::LinkLost, Some(chat), now, fx),
-            Input::PickRefused(why) if self.picking.is_some() => {
+            Input::PickRefused(why) if self.here.picking.is_some() => {
                 settings::refused(self, chat, &why, now, fx)
             }
             // Not the run's: a person's own pick in the composer.

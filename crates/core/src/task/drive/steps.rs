@@ -116,10 +116,10 @@ impl RunDrive {
     /// Send `text`, or keep it until the agent is up.
     pub(super) fn send(&mut self, text: String, chat: &Chat, now: Now, fx: &mut Vec<Effect>) {
         if chat.link != Link::Connected {
-            self.pending = Some(text);
+            self.here.pending = Some(text);
             return;
         }
-        if chat.prompted_beyond(self.sent) {
+        if chat.prompted_beyond(self.here.sent) {
             return self.end(Stop::TakenOver, Some(chat), now, fx);
         }
         if !self.came_up(chat, now, fx) {
@@ -128,7 +128,7 @@ impl RunDrive {
         let Some(text) = settings::settle(self, text, chat, now, fx) else {
             return;
         };
-        self.sent += 1;
+        self.here.sent += 1;
         self.answer_from = chat.items.len();
         self.sent_at = Some(now.at);
         self.asked.push(Asked::Prompt { text, at: fx.len() });
@@ -140,7 +140,7 @@ impl RunDrive {
     /// the run, since one left in the mode that asks before every edit would
     /// park at the first.
     fn came_up(&mut self, chat: &Chat, now: Now, fx: &mut Vec<Effect>) -> bool {
-        if std::mem::replace(&mut self.up, true) {
+        if std::mem::replace(&mut self.here.up, true) {
             return true;
         }
         let Some(mode) = self.run.setup.mode.clone() else {
@@ -155,7 +155,7 @@ impl RunDrive {
             return false;
         }
         self.picks.push(Pick::Mode(mode.clone()));
-        self.mode_out = Some(mode.clone());
+        self.here.mode_out = Some(mode.clone());
         self.asked.push(Asked::Note(format!("Mode {mode} set")));
         self.start_settings(chat, Some(mode));
         true
