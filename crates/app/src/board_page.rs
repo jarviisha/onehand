@@ -76,6 +76,9 @@ pub(crate) enum BoardPageEvent {
     /// Open the settings of the project at this folder, where its board is
     /// bound.
     ProjectSettings(PathBuf),
+    /// Open the board's workflow on the Workflows page, its step of this id
+    /// open when one is named.
+    EditWorkflow { step: Option<String> },
 }
 
 impl EventEmitter<BoardPageEvent> for BoardPage {}
@@ -148,19 +151,19 @@ impl BoardPage {
     fn page(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let Some(id) = self.project.clone() else {
             return self.frame(
-                head("Board", String::new(), cx),
+                head("Board", String::new(), None, cx),
                 onehand_ui::hint("No board shown", cx),
             );
         };
         let Some(project) = Shared::global(cx).projects.get(&id).cloned() else {
             return self.frame(
-                head("Board", String::new(), cx),
+                head("Board", String::new(), None, cx),
                 onehand_ui::hint("This project is no longer kept", cx),
             );
         };
         let Some(board) = project.board().cloned() else {
             return self.frame(
-                head("Board", project.name.clone(), cx),
+                head("Board", project.name.clone(), None, cx),
                 onehand_ui::hint("This project has no board", cx),
             );
         };
@@ -179,7 +182,9 @@ impl BoardPage {
             Some(t) => format!("{} · {} · team of {}", project.name, t.name, board.team),
             None => project.name.clone(),
         };
-        let head = head("Board", line, cx);
+        // A workflow that is gone has nothing to open; its refusal says so.
+        let edit = template.is_some().then(|| edit_workflow(cx));
+        let head = head("Board", line, edit, cx);
         let (Some(template), None) = (template, refused.clone()) else {
             let body = refusal(
                 refused.unwrap_or_default(),
@@ -218,7 +223,7 @@ impl BoardPage {
         &mut self,
         id: &ProjectId,
         board: &onehand_core::project::Board,
-        steps: Vec<(String, String, Vec<Row>)>,
+        steps: Vec<(String, String, Vec<Row>, Option<String>)>,
         done: Vec<Row>,
         taken: &HashSet<u64>,
         cx: &mut Context<Self>,
@@ -275,7 +280,7 @@ impl BoardPage {
         // Taking an issue out of To do is the one drop the Backlog takes.
         let backlog = {
             let id = id.clone();
-            column("Backlog", count, drawn, backlog_note, cx)
+            column("Backlog", count, drawn, backlog_note, None, cx)
                 .drag_over::<IssueDrag>(|style, drag, _, cx| match drag.from {
                     Column::Todo => style.bg(cx.theme().list_hover),
                     Column::Backlog => style,
@@ -327,6 +332,7 @@ impl BoardPage {
                 board.todo.len(),
                 drawn,
                 empty.then(|| "Nothing to do; move an issue here from the Backlog".to_string()),
+                None,
                 cx,
             )
             .drag_over::<IssueDrag>(move |style, _, _, cx| match empty {
@@ -340,20 +346,23 @@ impl BoardPage {
         };
 
         let mut columns = vec![backlog, todo];
-        for (label, head, rows) in steps {
-            let col = self.task_column(&label, head, rows, "Nothing at this step", cx);
+        for (label, head, rows, step) in steps {
+            let col = self.task_column(&label, head, rows, step, "Nothing at this step", cx);
             columns.push(col);
         }
-        columns.push(self.task_column("Done", "Done".into(), done, "Nothing done yet", cx));
+        columns.push(self.task_column("Done", "Done".into(), done, None, "Nothing done yet", cx));
         columns
     }
 
-    /// A column of tasks under `head`, its rows told apart from `label`.
+    /// A column of tasks under `head`, its rows told apart from `label`;
+    /// with the id of the workflow's `step` it stands for, a `⋯` in its head
+    /// opens that step.
     fn task_column(
         &mut self,
         label: &str,
         head: String,
         rows: Vec<Row>,
+        step: Option<String>,
         empty: &str,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
@@ -363,11 +372,22 @@ impl BoardPage {
             .take(BOARD_SHOWN)
             .map(|row| self.task_row(label, row, cx))
             .collect();
+        let more = step.map(|step| {
+            let page = cx.entity().downgrade();
+            let key = format!("board-step-{step}-more");
+            let press: onehand_ui::Press = Rc::new(move |_, _, cx| {
+                let step = Some(step.clone());
+                let _ = page.update(cx, |_, cx| cx.emit(BoardPageEvent::EditWorkflow { step }));
+            });
+            onehand_ui::row_more(key, "Step actions", acts([("Edit step", press)]), cx)
+                .into_any_element()
+        });
         column(
             head,
             count,
             drawn,
             (count == 0).then(|| empty.to_string()),
+            more,
             cx,
         )
         .into_any_element()
@@ -406,20 +426,13 @@ impl BoardPage {
             let Some((id, order)) = todo else {
                 return row;
             };
-            // The same test as the drop below, so the row fills only where
-            // a drop would move something.
-            let takes = order.clone();
-            row.drag_over::<IssueDrag>(move |style, drag, _, cx| {
-                match place_before(&takes, drag.issue, number) {
-                    Some(_) => style.bg(cx.theme().list_hover),
-                    None => style,
-                }
-            })
-            .on_drop(move |drag: &IssueDrag, _, cx| {
-                if let Some(at) = place_before(&order, drag.issue, number) {
-                    change_todo(&id, Todo::Place(drag.issue, at), cx);
-                }
-            })
+            // The row under a drag fills, the issue landing just before it.
+            row.drag_over::<IssueDrag>(|style, _, _, cx| style.bg(cx.theme().list_hover))
+                .on_drop(move |drag: &IssueDrag, _, cx| {
+                    if let Some(at) = place_before(&order, drag.issue, number) {
+                        change_todo(&id, Todo::Place(drag.issue, at), cx);
+                    }
+                })
         };
         self.row(key, title, line, acts, None, drags, cx)
     }
@@ -542,26 +555,43 @@ impl Render for BoardPage {
     }
 }
 
-/// The page's head: its name over the project, its workflow and its team.
-fn head(title: &'static str, line: String, cx: &App) -> gpui::AnyElement {
+/// The page's head: its name over the project, its workflow and its team,
+/// and `edit` at its end when there is a workflow to open.
+fn head(
+    title: &'static str,
+    line: String,
+    edit: Option<gpui::AnyElement>,
+    cx: &App,
+) -> gpui::AnyElement {
     let line = (!line.is_empty()).then(|| line.into_any_element());
-    page_head(title, line, Vec::new(), cx).into_any_element()
+    page_head(title, line, edit.into_iter().collect(), cx).into_any_element()
 }
 
-/// A column: a box with its name and count, `rows` capped at
-/// [`BOARD_SHOWN`] (said under them when it bites), and `note` where there
-/// is nothing to list.
+/// *Edit workflow*, opening the board's workflow on the Workflows page.
+fn edit_workflow(cx: &Context<BoardPage>) -> gpui::AnyElement {
+    crate::controls::action("board-edit-workflow")
+        .short()
+        .secondary()
+        .label("Edit workflow")
+        .on_click(cx.listener(|_, _, _, cx| cx.emit(BoardPageEvent::EditWorkflow { step: None })))
+        .into_any_element()
+}
+
+/// A column: a box with its name and count, `control` at its head's end,
+/// `rows` capped at [`BOARD_SHOWN`] (said under them when it bites), and
+/// `note` where there is nothing to list.
 fn column(
     title: impl Into<SharedString>,
     count: usize,
     rows: Vec<gpui::AnyElement>,
     note: Option<String>,
+    control: Option<gpui::AnyElement>,
     cx: &App,
 ) -> gpui::Div {
     let muted = cx.theme().muted_foreground;
     let muted_line = |text: String| div().text_xs().text_color(muted).child(text);
     let hidden = count.saturating_sub(BOARD_SHOWN);
-    page_card(title.into(), Some(count), None, cx)
+    page_card(title.into(), Some(count), control, cx)
         .flex_none()
         .w(COLUMN_W)
         .children(note.map(muted_line))

@@ -72,6 +72,23 @@ impl Shell {
         cx.notify();
     }
 
+    /// Show the Workflows page on the workflow of id `id`, its step `step`
+    /// open if one is named, for the board of `for_board` if it was asked
+    /// for from one.
+    pub(crate) fn show_workflow(
+        &mut self,
+        id: &str,
+        step: Option<&str>,
+        for_board: Option<onehand_core::project::ProjectId>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.show_workflows(window, cx);
+        self.workflows_page.update(cx, |page, cx| {
+            page.open_workflow(id, step, for_board, window, cx)
+        });
+    }
+
     /// The board of the project at row `root_idx`, if it has one and is on
     /// this machine.
     pub(crate) fn board_of_row(
@@ -116,6 +133,19 @@ impl Shell {
         match event {
             E::OpenTask(id) => self.show_task(id, window, cx),
             E::ProjectSettings(root) => self.show_project_settings(root.clone(), window, cx),
+            E::EditWorkflow { step } => {
+                let Some(project) = self.board_page.read(cx).project().cloned() else {
+                    return;
+                };
+                let bound = crate::state::Shared::global(cx)
+                    .projects
+                    .get(&project)
+                    .and_then(|p| p.board())
+                    .map(|board| board.workflow.clone());
+                if let Some(workflow) = bound {
+                    self.show_workflow(&workflow, step.as_deref(), Some(project), window, cx);
+                }
+            }
         }
     }
 

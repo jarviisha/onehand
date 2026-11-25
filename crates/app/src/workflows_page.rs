@@ -12,6 +12,7 @@
 //! launcher the rail and the keymap command open.
 
 mod actions;
+mod board;
 mod draft;
 mod editor;
 mod form;
@@ -50,6 +51,14 @@ pub(crate) enum WorkflowsPageEvent {
     /// Open the launcher on `root` with the workflow of id `workflow`
     /// picked: by id, since the list may be read again before the press.
     Run { workflow: String, root: PathBuf },
+    /// A copy of the workflow of the board of `for_board`, opened from that
+    /// board, was saved as `template` for the first time: the board is to
+    /// run it. The template as written, since the list of them is read
+    /// again only after.
+    Duplicated {
+        for_board: onehand_core::project::ProjectId,
+        template: onehand_core::workflow::Template,
+    },
 }
 
 pub(crate) struct WorkflowsPage {
@@ -59,6 +68,9 @@ pub(crate) struct WorkflowsPage {
     /// The workflow open on the page, by key: the workflows are read again
     /// after every save.
     picked: Option<pick::Pick>,
+    /// The board the workflow open was opened from, while it stays open: a
+    /// copy of it saved takes its place on that board alone.
+    for_board: Option<onehand_core::project::ProjectId>,
     /// The window's projects a run may start on, in rail order, and the one
     /// selected in the rail, which *Run…* offers first.
     projects: Vec<(PathBuf, SharedString)>,
@@ -92,6 +104,7 @@ impl WorkflowsPage {
             focus_handle: cx.focus_handle(),
             draft: None,
             picked: None,
+            for_board: None,
             projects: Vec::new(),
             selected: None,
             writing: false,

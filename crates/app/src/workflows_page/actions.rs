@@ -26,7 +26,7 @@ impl WorkflowsPage {
                 agent: None,
             },
         });
-        self.open_workflow_form(template, None, window, cx);
+        self.open_workflow_form(template, None, None, window, cx);
     }
 
     /// The entry `pick` names, as last read.
@@ -50,7 +50,9 @@ impl WorkflowsPage {
             return;
         };
         template.name = format!("{} copy", template.name);
-        self.open_workflow_form(template, None, window, cx);
+        // A copy of a board's workflow is still for that board.
+        let for_board = self.for_board.clone();
+        self.open_workflow_form(template, None, for_board, window, cx);
     }
 
     /// Ask where to, then write the workflow `pick` names, as saved, to a
@@ -111,7 +113,7 @@ impl WorkflowsPage {
             };
             let _ = page.update_in(cx, |page: &mut Self, window, cx| {
                 match read {
-                    Ok(template) => page.open_workflow_form(template, None, window, cx),
+                    Ok(template) => page.open_workflow_form(template, None, None, window, cx),
                     Err(why) => window
                         .push_notification(crate::toast::failed("Importing the workflow", why), cx),
                 }
@@ -130,7 +132,20 @@ impl WorkflowsPage {
     /// not saved. A shipped workflow opens read-only; one of the person's
     /// own that cannot be read opens no form, only why.
     pub(super) fn pick(&mut self, pick: Pick, window: &mut Window, cx: &mut Context<Self>) {
+        self.pick_then(pick, window, cx, |_, _, _| {});
+    }
+
+    /// Open `pick` as [`Self::pick`] does, then do `then`, at once when it
+    /// is open already; nothing when the person keeps the form instead.
+    pub(super) fn pick_then(
+        &mut self,
+        pick: Pick,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        then: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+    ) {
         if self.picked.as_ref() == Some(&pick) {
+            then(self, window, cx);
             return;
         }
         self.unless_editing(
@@ -148,7 +163,9 @@ impl WorkflowsPage {
                     ))
                 });
                 page.picked = Some(pick.clone());
+                page.for_board = None;
                 page.hold_focus(window, cx);
+                then(page, window, cx);
                 cx.notify();
             },
         );
@@ -163,13 +180,15 @@ impl WorkflowsPage {
         });
     }
 
-    /// Put `template`, a new workflow, in the form, asking first when the
+    /// Put `template`, a new workflow, in the form, for the board of
+    /// `for_board` if it is a copy of that board's, asking first when the
     /// form holds changes not saved: opening another template over them
     /// would throw them away.
     fn open_workflow_form(
         &mut self,
         template: Template,
         file: Option<PathBuf>,
+        for_board: Option<onehand_core::project::ProjectId>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -186,6 +205,7 @@ impl WorkflowsPage {
                     cx,
                 ));
                 page.picked = Some(Pick::New);
+                page.for_board = for_board.clone();
                 page.hold_focus(window, cx);
                 cx.notify();
             },
@@ -282,6 +302,7 @@ impl WorkflowsPage {
     pub(crate) fn clear_workflow_draft(&mut self, cx: &mut Context<Self>) {
         self.draft = None;
         self.picked = None;
+        self.for_board = None;
         cx.notify();
     }
 
@@ -309,6 +330,8 @@ impl WorkflowsPage {
             return;
         }
         let file = draft.file.clone();
+        // A copy's first save, of a board's workflow, binds it to the board.
+        let for_board = file.is_none().then(|| self.for_board.clone()).flatten();
         // Which form this save is for: each form is made anew, with inputs of
         // its own, so its name input says which one it is.
         let form = draft.name.entity_id();
@@ -332,8 +355,15 @@ impl WorkflowsPage {
                             page.draft.as_mut().filter(|d| d.name.entity_id() == form)
                         {
                             draft.file = Some(path.clone());
-                            draft.original = written;
+                            draft.original = written.clone();
                             page.picked = Some(Pick::Own(path));
+                            if let Some(for_board) = for_board {
+                                page.for_board = None;
+                                cx.emit(super::WorkflowsPageEvent::Duplicated {
+                                    for_board,
+                                    template: written,
+                                });
+                            }
                         }
                         crate::toast::report(
                             window,
