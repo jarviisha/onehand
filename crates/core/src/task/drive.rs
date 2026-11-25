@@ -46,8 +46,8 @@ mod signals;
 mod steps;
 
 use budget::Budget;
-pub use lanes::Lane;
 use lanes::LaneState;
+pub use lanes::{Lane, NotOpened};
 use pin::{Answer, Held};
 pub(crate) use signals::Asked;
 pub use signals::{Effect, Input, Signal, Timer};

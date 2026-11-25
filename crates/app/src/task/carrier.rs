@@ -21,7 +21,7 @@ use gpui_component::WindowExt as _;
 use onehand_core::Now;
 use onehand_core::chat::Chat;
 use onehand_core::task::drive::link::{self, Joined, Out};
-use onehand_core::task::drive::{Effect, Input, Lane, RunDrive, Signal, Timer};
+use onehand_core::task::drive::{Effect, Input, Lane, NotOpened, RunDrive, Signal, Timer};
 use onehand_core::task::tasks::{Start, link as tasks_link};
 use onehand_core::task::{Approval, marks};
 use onehand_core::workflow::{Facts, Mark, Run, Verdict, run_command_blocking};
@@ -522,7 +522,14 @@ fn open_session(id: &str, lane: Lane, agent: String, cx: &mut App) {
         if read(&task, cx, |_| ()).is_none() {
             return;
         }
-        let result = open(window, dir, &agent, &grant, cx).map(|(uid, session)| {
+        // An agent gone from the list is the configuration's to answer for;
+        // anything else that kept it from starting is not.
+        let gone = crate::task::facts::lane_spec(&agent, cx).is_err();
+        let opened = open(window, dir, &agent, &grant, cx).map_err(|_| match gone {
+            true => NotOpened::AgentGone,
+            false => NotOpened::Failed,
+        });
+        let result = opened.map(|(uid, session)| {
             let held = Held {
                 uid,
                 session: session.downgrade(),

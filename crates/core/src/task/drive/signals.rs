@@ -6,7 +6,7 @@
 //! the run holds on until it lands. A finished run takes no answer at all:
 //! its carrier lets it go, and what the run kept is the task's.
 
-use super::Lane;
+use super::{Lane, NotOpened};
 use crate::connector::{Check, PullRequest};
 use crate::workflow::{CommandResult, Facts, Mark, Outcome};
 use std::path::PathBuf;
@@ -64,7 +64,7 @@ pub enum Input {
     /// `lane`, or why it did not start.
     LaneOpened {
         lane: Lane,
-        result: Result<(), String>,
+        result: Result<(), NotOpened>,
     },
     /// Something landed in the session of `lane`, which is not the current
     /// one. Given with that lane's session, not the current one's.

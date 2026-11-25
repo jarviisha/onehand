@@ -186,6 +186,11 @@ fn a_missing_step_agent_fails_the_run_when_reached(cx: &mut TestAppContext) {
             "The agent of Review, b, did not start.".into()
         ))
     );
+    assert_eq!(
+        task.runs().last().and_then(|run| run.failure),
+        Some(onehand_core::workflow::Failure::Configuration),
+        "an agent gone from the list is the configuration's"
+    );
     assert!(!holds(&id, cx), "its place let go");
 }
 
