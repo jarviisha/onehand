@@ -19,7 +19,7 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::board::BOARD_SHOWN;
-use onehand_core::project::ProjectId;
+use onehand_core::project::{ProjectId, Toward};
 use onehand_core::task::Section;
 use onehand_ui::RowAct;
 use std::collections::{HashMap, HashSet};
@@ -161,9 +161,7 @@ impl BoardPage {
                 onehand_ui::hint("This project has no board", cx),
             );
         };
-        let template = crate::workflow::templates(cx)
-            .into_iter()
-            .find_map(|entry| entry.template.ok().filter(|t| t.id == board.workflow));
+        let template = crate::control::template(&board.workflow, cx).ok();
         let refused = onehand_core::board::local(&project)
             .and(onehand_core::board::usable(template.as_ref()).map(|_| ()))
             .err();
@@ -212,7 +210,7 @@ impl BoardPage {
         &mut self,
         id: &ProjectId,
         board: &onehand_core::project::Board,
-        steps: Vec<(String, String, Vec<Row>, Option<String>)>,
+        steps: Vec<crate::task::StepColumn>,
         done: Vec<Row>,
         taken: &HashSet<u64>,
         cx: &mut Context<Self>,
@@ -284,7 +282,6 @@ impl BoardPage {
 
         // To do, in the order the team pulls it.
         let last = board.todo.len().saturating_sub(1);
-        let order: Rc<[u64]> = board.todo.iter().copied().collect();
         let drawn = board
             .todo
             .iter()
@@ -293,19 +290,18 @@ impl BoardPage {
             .map(|(at, &n)| {
                 let mut moves = Vec::new();
                 if at > 0 {
-                    moves.push(("Move up", todo_press(id, Todo::Move(n, true))));
+                    moves.push(("Move up", todo_press(id, Todo::Move(n, Toward::Up))));
                 }
                 if at < last {
-                    moves.push(("Move down", todo_press(id, Todo::Move(n, false))));
+                    moves.push(("Move down", todo_press(id, Todo::Move(n, Toward::Down))));
                 }
                 moves.push(("Back to Backlog", todo_press(id, Todo::Drop(n))));
-                let place = (id.clone(), order.clone());
                 self.issue_row(
                     RowKey::Todo(n),
                     n,
                     title_of(at, n),
                     acts(moves),
-                    Some(place),
+                    Some(id.clone()),
                     cx,
                 )
             })
@@ -329,13 +325,19 @@ impl BoardPage {
                 false => style,
             })
             .on_drop(move |drag: &IssueDrag, _, cx| {
-                change_todo(&id, Todo::Place(drag.issue, usize::MAX), cx);
+                change_todo(&id, Todo::Last(drag.issue), cx);
             })
             .into_any_element()
         };
 
         let mut columns = vec![backlog, todo];
-        for (label, head, rows, step) in steps {
+        for crate::task::StepColumn {
+            label,
+            head,
+            rows,
+            step,
+        } in steps
+        {
             let col = self.task_column(&label, head, rows, step, "Nothing at this step", cx);
             columns.push(col);
         }
@@ -384,7 +386,7 @@ impl BoardPage {
 
     /// A row of an issue, in the Backlog or To do: its title over its
     /// number, its acts in its `⋯` and on a right-click, dragged by its
-    /// title. A To do row, given its project and the whole of To do, takes
+    /// title. A To do row, given its project, takes
     /// a dragged issue in just before itself.
     fn issue_row(
         &mut self,
@@ -392,7 +394,7 @@ impl BoardPage {
         number: u64,
         title: String,
         acts: Rc<[RowAct]>,
-        todo: Option<(ProjectId, Rc<[u64]>)>,
+        todo: Option<ProjectId>,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let line = (format!("#{number}"), crate::theme::meta_ink(cx));
@@ -412,15 +414,13 @@ impl BoardPage {
                     cx.new(|_| DragGhost(ghost))
                 },
             );
-            let Some((id, order)) = todo else {
+            let Some(id) = todo else {
                 return row;
             };
             // The row under a drag fills, the issue landing just before it.
             row.drag_over::<IssueDrag>(|style, _, _, cx| style.bg(cx.theme().list_hover))
                 .on_drop(move |drag: &IssueDrag, _, cx| {
-                    if let Some(at) = place_before(&order, drag.issue, number) {
-                        change_todo(&id, Todo::Place(drag.issue, at), cx);
-                    }
+                    change_todo(&id, Todo::Before(drag.issue, number), cx);
                 })
         };
         self.row(key, title, line, acts, None, drags, cx)
@@ -676,12 +676,13 @@ enum Todo {
     /// Put the issue last in To do.
     Add(u64),
     /// Move the issue one place up, or down.
-    Move(u64, bool),
+    Move(u64, Toward),
     /// Put the issue back in the Backlog.
     Drop(u64),
-    /// Put the issue at this place in To do, counted without it; past the
-    /// end, last.
-    Place(u64, usize),
+    /// Put the issue last in To do, or where it was.
+    Last(u64),
+    /// Put the first issue just before the second in To do.
+    Before(u64, u64),
 }
 
 /// A press making `change` to project `id`'s To do.
@@ -696,30 +697,19 @@ fn todo_press(id: &ProjectId, change: Todo) -> onehand_ui::Press {
 fn change_todo(id: &ProjectId, change: Todo, cx: &mut App) {
     let fx = cx.update_global::<Shared, _>(|shared, _| match change {
         Todo::Add(n) => shared.projects.add_todo(id, n),
-        Todo::Move(n, up) => shared.projects.move_todo(id, n, up),
+        Todo::Move(n, toward) => shared.projects.move_todo(id, n, toward),
         Todo::Drop(n) => shared.projects.drop_todo(id, n),
-        Todo::Place(n, at) => shared.projects.place_todo(id, n, at),
+        Todo::Last(n) => shared.projects.place_todo(id, n, usize::MAX),
+        Todo::Before(n, target) => shared.projects.place_todo_before(id, n, target),
     });
     crate::projects::carry(fx, cx);
     crate::board::pull_now(id, cx);
     cx.refresh_windows();
 }
 
-/// Where in `todo` issue `dragged` goes to stand just before `target`: the
-/// target's place once the dragged issue is taken out. None when dropped on
-/// itself, which moves nothing.
-fn place_before(todo: &[u64], dragged: u64, target: u64) -> Option<usize> {
-    if dragged == target {
-        return None;
-    }
-    todo.iter()
-        .filter(|&&n| n != dragged)
-        .position(|&n| n == target)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{place_before, task_line, task_offers};
+    use super::{task_line, task_offers};
     use crate::task::Row;
     use onehand_core::task::Group;
 
@@ -793,19 +783,5 @@ mod tests {
         running.stoppable = true;
         assert_eq!(labels(&running), ["Show task", "Stop"]);
         assert_eq!(labels(&row(Group::Finished, "done", None)), ["Show task"]);
-    }
-
-    #[test]
-    fn a_drop_on_a_row_lands_just_before_it() {
-        let todo = [1, 2, 3, 4];
-        // From below: the target keeps its place.
-        assert_eq!(place_before(&todo, 4, 2), Some(1));
-        // From above: the target moves up one once the issue is out.
-        assert_eq!(place_before(&todo, 1, 3), Some(1));
-        // Onto the row after itself: its own place, which writes nothing.
-        assert_eq!(place_before(&todo, 2, 3), Some(1));
-        // From the Backlog.
-        assert_eq!(place_before(&todo, 9, 1), Some(0));
-        assert_eq!(place_before(&todo, 3, 3), None);
     }
 }

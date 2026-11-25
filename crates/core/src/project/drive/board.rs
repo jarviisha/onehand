@@ -3,7 +3,7 @@
 use super::{Effect, ProjectsDrive, Thing, Value};
 use crate::connector::Connector;
 use crate::issues::Issues;
-use crate::project::{Board, ProjectId};
+use crate::project::{Board, ProjectId, Toward};
 use crate::task::rooms::Room;
 use crate::workflow::Template;
 use std::collections::{BTreeSet, HashSet};
@@ -84,12 +84,15 @@ impl ProjectsDrive {
 
     /// Move `issue` one place up (or down) in project `id`'s To do.
     #[must_use = "its effects are to be carried"]
-    pub fn move_todo(&mut self, id: &ProjectId, issue: u64, up: bool) -> Vec<Effect> {
+    pub fn move_todo(&mut self, id: &ProjectId, issue: u64, toward: Toward) -> Vec<Effect> {
         self.edit_todo(id, |todo| {
             let Some(at) = todo.iter().position(|&n| n == issue) else {
                 return;
             };
-            let to = if up { at.checked_sub(1) } else { Some(at + 1) };
+            let to = match toward {
+                Toward::Up => at.checked_sub(1),
+                Toward::Down => Some(at + 1),
+            };
             if let Some(to) = to.filter(|&to| to < todo.len()) {
                 todo.swap(at, to);
             }
@@ -104,6 +107,20 @@ impl ProjectsDrive {
             todo.retain(|&n| n != issue);
             todo.insert(at.min(todo.len()), issue);
         })
+    }
+
+    /// Put `issue` just before `target` in project `id`'s To do, taking it
+    /// from where it was; dropped on itself, or on an issue not in To do, it
+    /// moves nothing.
+    #[must_use = "its effects are to be carried"]
+    pub fn place_todo_before(&mut self, id: &ProjectId, issue: u64, target: u64) -> Vec<Effect> {
+        let todo = (self.projects.get(id))
+            .and_then(|p| p.board())
+            .map(|b| b.todo.as_slice());
+        match todo.and_then(|todo| place_before(todo, issue, target)) {
+            Some(at) => self.place_todo(id, issue, at),
+            None => Vec::new(),
+        }
     }
 
     /// Take `issue` out of project `id`'s To do.
@@ -219,5 +236,36 @@ impl ProjectsDrive {
             Value::Board(after),
             soon,
         )
+    }
+}
+
+/// Where in `todo` issue `dragged` goes to stand just before `target`: the
+/// target's place once the dragged issue is taken out. None when dropped on
+/// itself, which moves nothing.
+fn place_before(todo: &[u64], dragged: u64, target: u64) -> Option<usize> {
+    if dragged == target {
+        return None;
+    }
+    todo.iter()
+        .filter(|&&n| n != dragged)
+        .position(|&n| n == target)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::place_before;
+
+    #[test]
+    fn a_drop_on_a_row_lands_just_before_it() {
+        let todo = [1, 2, 3, 4];
+        // From below: the target keeps its place.
+        assert_eq!(place_before(&todo, 4, 2), Some(1));
+        // From above: the target moves up one once the issue is out.
+        assert_eq!(place_before(&todo, 1, 3), Some(1));
+        // Onto the row after itself: its own place, which writes nothing.
+        assert_eq!(place_before(&todo, 2, 3), Some(1));
+        // From the Backlog.
+        assert_eq!(place_before(&todo, 9, 1), Some(0));
+        assert_eq!(place_before(&todo, 3, 3), None);
     }
 }

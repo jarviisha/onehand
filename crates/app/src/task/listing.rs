@@ -172,33 +172,34 @@ pub(crate) fn room_at(
     at: usize,
     cx: &App,
 ) -> Option<onehand_core::task::rooms::Room> {
-    let limit = template.limit_at(at)?;
-    let key = onehand_core::task::rooms::RoomKey {
-        repo: root.to_path_buf(),
-        workflow: template.id.clone(),
-        step: template.steps[at].id.clone(),
-    };
-    let (holding, waiting) = cx
-        .try_global::<Tasks>()
-        .map_or((0, 0), |t| t.drive.room_at(&key));
-    Some(onehand_core::task::rooms::Room {
-        limit,
-        holding,
-        waiting,
-    })
+    // With no tasks kept yet, nobody holds room or waits for it.
+    match cx.try_global::<Tasks>() {
+        Some(t) => t.drive.room(root, template, at),
+        None => Tasks::default().drive.room(root, template, at),
+    }
 }
 
 /// Project `project`'s board tasks laid over `template`'s steps, each as
 /// the pages list it.
 pub(crate) struct BoardTasks {
-    /// A column per step, by its label, its head, its rows, and its step's
-    /// id while the workflow still has the step; then any step the workflow
-    /// lost. A limited step's head says how much of its room is held.
-    pub(crate) steps: Vec<(String, String, Vec<Row>, Option<String>)>,
+    /// A column per step; then any step the workflow lost.
+    pub(crate) steps: Vec<StepColumn>,
     /// Newest first.
     pub(crate) done: Vec<Row>,
     /// The issues its tasks hold out of the Backlog.
     pub(crate) taken: std::collections::HashSet<u64>,
+}
+
+/// The column of one step of a board's workflow.
+pub(crate) struct StepColumn {
+    /// The step's label, which tells its rows apart.
+    pub(crate) label: String,
+    /// What its head says: a limited step's says how much of its room is
+    /// held.
+    pub(crate) head: String,
+    pub(crate) rows: Vec<Row>,
+    /// The step's id while the workflow still has the step.
+    pub(crate) step: Option<String>,
 }
 
 /// Project `project`'s board tasks in the columns of `template`, as core
@@ -236,7 +237,12 @@ pub(crate) fn board(
                     None => column.label.clone(),
                 };
                 let step = at.map(|_| column.step.clone());
-                (column.label, head, rows(column.tasks), step)
+                StepColumn {
+                    label: column.label,
+                    head,
+                    rows: rows(column.tasks),
+                    step,
+                }
             })
             .collect(),
         done: rows(columns.done),

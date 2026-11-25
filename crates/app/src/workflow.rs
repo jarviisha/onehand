@@ -26,6 +26,14 @@ pub(crate) fn offer(templates: Vec<Template>, cx: &mut App) {
     cx.update_default_global::<Workflows, _>(|w, _| w.templates = templates);
 }
 
+/// The workflow of id `id` among `entries`, when it is on offer and read.
+pub(crate) fn find<'a>(entries: &'a [Entry], id: &str) -> Option<&'a Template> {
+    entries
+        .iter()
+        .filter_map(|entry| entry.template.as_ref().ok())
+        .find(|template| template.id == id)
+}
+
 /// A template on offer: one onehand ships, or one of the person's own files,
 /// read or why it could not be.
 #[derive(Clone)]

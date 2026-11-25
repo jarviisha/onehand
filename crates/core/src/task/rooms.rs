@@ -3,8 +3,9 @@
 //! arrived. Kept in memory only: a run cut off by a restart asks again when
 //! it is resumed.
 
+use crate::workflow::Template;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// What room is counted by: runs of the same workflow, in the same
 /// repository, at the same step.
@@ -13,6 +14,18 @@ pub struct RoomKey {
     pub repo: PathBuf,
     pub workflow: String,
     pub step: String,
+}
+
+impl RoomKey {
+    /// The room of `template`'s step at `at`, for runs in `repo`; none
+    /// past its steps.
+    pub fn at(repo: &Path, template: &Template, at: usize) -> Option<Self> {
+        Some(Self {
+            repo: repo.to_path_buf(),
+            workflow: template.id.clone(),
+            step: template.steps.get(at)?.id.clone(),
+        })
+    }
 }
 
 /// The room at a limited step: its limit, how many tasks hold room there

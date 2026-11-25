@@ -691,9 +691,9 @@ fn add_todo_appends_once() {
 #[test]
 fn move_todo_swaps_neighbours() {
     let (mut d, p) = drive_with_todo(vec![4, 9, 2]);
-    let _ = d.move_todo(&p.id, 2, true);
+    let _ = d.move_todo(&p.id, 2, crate::project::Toward::Up);
     assert_eq!(todo_of(&d, &p), vec![4, 2, 9]);
-    assert!(d.move_todo(&p.id, 4, true).is_empty());
+    assert!(d.move_todo(&p.id, 4, crate::project::Toward::Up).is_empty());
     assert_eq!(todo_of(&d, &p), vec![4, 2, 9]);
 }
 
@@ -880,4 +880,18 @@ fn pull_counts_the_first_steps_room_and_refuses_an_unusable_workflow() {
     assert!(d
         .pull(&p.id, &checkout, 0, None, &issues, None, &taken)
         .is_none());
+}
+
+#[test]
+fn place_todo_before_lands_just_before_its_target() {
+    let (mut d, p) = drive_with_todo(vec![1, 2, 3, 4]);
+    let _ = d.place_todo_before(&p.id, 4, 2);
+    assert_eq!(todo_of(&d, &p), vec![1, 4, 2, 3]);
+    let _ = d.place_todo_before(&p.id, 9, 1);
+    assert_eq!(todo_of(&d, &p), vec![9, 1, 4, 2, 3], "from the Backlog");
+    assert!(d.place_todo_before(&p.id, 2, 2).is_empty());
+    assert!(
+        d.place_todo_before(&p.id, 2, 7).is_empty(),
+        "no such target"
+    );
 }

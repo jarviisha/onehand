@@ -9,12 +9,9 @@ use std::path::PathBuf;
 
 /// The library's workflow whose id is `id`, read.
 pub(crate) fn template(id: &str, cx: &App) -> Result<Template, String> {
-    let entries = crate::workflow::templates(cx);
-    let entry = entries
-        .iter()
-        .find(|entry| entry.template.as_ref().is_ok_and(|t| t.id == id))
-        .ok_or_else(|| format!("no workflow with id {id}; list_workflows gives them"))?;
-    entry.template.clone()
+    crate::workflow::find(&crate::workflow::templates(cx), id)
+        .cloned()
+        .ok_or_else(|| format!("no workflow with id {id}; list_workflows gives them"))
 }
 
 /// A tool's start, said as the caller reads it.
