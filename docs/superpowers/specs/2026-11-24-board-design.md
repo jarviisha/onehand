@@ -260,7 +260,8 @@ is built, and each updates `docs/workflows.md`, `docs/tasks.md`, `docs/control.m
   where it is, in order, and the board pulls from it again once onehand is open. A task that had
   started follows today's rule: it comes back interrupted under *Needs attention* and waits for
   the person's Resume, since an agent cut off mid-turn is the person's to look at first. A run
-  waiting for room at a step had started, so it comes back interrupted too. To do's order is kept in `project.toml`.
+  waiting for room at a step had started, so it comes back interrupted too. To do's order is kept
+  in `project.toml`.
 
 ## Left to the builder
 

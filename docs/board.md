@@ -48,8 +48,9 @@ on this machine. A project on a host has none: its issues are not kept here.
 - **Done closes the issue** when the project's own tracker keeps it. An issue kept in step with a
   forge is left open: the pull request's merge closes it there (`board::after_end`).
 - **A task a person stopped, took over or dismissed leaves the board**; its issue returns to the
-  Backlog. A task that failed, ran out or timed out stays in its step's column, under *Needs
-  attention*, holding its issue until the person acts on it.
+  Backlog. A task that ended without finishing (failed, ran out, timed out, or lost its agent or
+  session) stays in its step's column, under *Needs attention*, holding its issue until the person
+  acts on it.
 - **A board task's end, like a schedule's, is unwatched:** it fails without a person looking, so
   it says what it came to on the Tasks page and nothing asks for a window.
 - **A done board task closes its session**, as a schedule's does (`Task::closes_session`): nobody
@@ -67,7 +68,9 @@ happens when:
 - a board task ends done, or a person stopped or took it over (`Signal::BoardEnded`, whose
   `pull` core decides). One that ended without finishing pulls nothing: the next would most
   likely end the same way, one after another until To do is empty;
-- the tasks and the workflow library have both been read at boot.
+- the tasks are read at boot, and whenever the workflow library is read: at boot and on every
+  reload after a workflow is saved or deleted, by a person or a tool, since a board's workflow
+  may only now be on offer.
 
 And only while a window holds the project; there is none to start a task from otherwise. Opening
 a window on the project does not pull (see [known-gaps.md](known-gaps.md)).
@@ -84,6 +87,11 @@ are never written.
 - **A board task** is an ordinary task with `Origin::Board { project, issue }`, kept like any
   other. Where it stands comes from its last run and the app's view of whether it works
   (`board::columns`, `board::taken`, `board::running`).
+
+**Changing the workflow** (*No board*, then another workflow, or another picked over it) leaves
+the tasks the old one started as they are: they still hold their issues out of the Backlog, count
+as running against the team, and stand in columns named by their step's id when the new workflow
+has no such step, until they end and a person dismisses them.
 
 **A restart** keeps To do, which only holds numbers, and pulls it again once the tasks and the
 library are read. A task that had started comes back cut off, under *Needs attention*, for the

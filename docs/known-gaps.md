@@ -465,6 +465,11 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   whole-match rule holds; and `connector::memory::Forge`, the forge kept in memory, is
   `cfg(test)`, as nothing outside core needs it.
 - **A board pulls nothing when a window opens on its project.** To do is looked at when it or the
-  team changes, when a board task ends and once at boot, and only while a window holds the project;
-  a project no window held at those moments waits for the next one. Pulling when a window opens
-  means a look from the shell as it is built.
+  team changes, when a board task leaves the board, when the tasks are read at boot and whenever
+  the workflow library is read, and only while a window holds the project; a project no window
+  held at those moments waits for the next one. Pulling when a window opens means a look from the
+  shell as it is built.
+- **A board's old workflow's tasks still count after it is changed.** Bound to another workflow,
+  the board keeps the tasks the old one started: they hold their issues, count against the team
+  and stand in columns named by step ids the new workflow may not have, until they end and are
+  dismissed. Leaving them out would mean keeping the workflow on each task and comparing.
