@@ -56,7 +56,7 @@ impl Lane {
 
     /// The agent the lane's session runs: the step's, or the run's, which is
     /// empty when its setup names none.
-    fn agent(&self, run: &Run) -> String {
+    pub fn agent(&self, run: &Run) -> String {
         let step = match self {
             Self::Run => None,
             Self::Step(id) => run.template.steps.iter().find(|step| &step.id == id),
@@ -181,10 +181,10 @@ impl RunDrive {
             .map(|step| step.label.clone())
             .unwrap_or_default();
         if result.is_err() {
-            let why = format!(
-                "The agent of {label}, {}, did not start.",
-                lane.agent(&self.run)
-            );
+            let why = match lane.agent(&self.run) {
+                agent if agent.is_empty() => format!("The agent of {label} did not start."),
+                agent => format!("The agent of {label}, {agent}, did not start."),
+            };
             return self.advance(chat, now, fx, move |run| {
                 run.failed(why, found_late(About::Agent), now.secs)
             });
@@ -194,6 +194,10 @@ impl RunDrive {
         };
         if !std::mem::replace(&mut self.here.session, true) {
             self.asked.push(Asked::Name(lane.name(&self.run)));
+        }
+        // The step was said in the lane the run left; say it where it works.
+        if self.here.pending.is_some() {
+            self.asked.extend(self.step_said().map(Asked::Note));
         }
         if std::mem::take(&mut self.here.lost) {
             self.asked.push(Asked::Note(format!(

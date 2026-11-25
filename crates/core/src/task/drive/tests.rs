@@ -1481,3 +1481,85 @@ fn a_step_lane_runs_in_its_agents_mode_not_the_runs() {
     let chat = rig.chat_of(&review()).unwrap();
     assert!(!chat.pick_waiting(crate::chat::MODE_SELECTOR));
 }
+
+#[test]
+fn a_run_lane_naming_no_agent_that_will_not_open_says_so_plainly() {
+    let (mut rig, _) = at_review();
+    let fx = rig.open(review());
+    rig.until(fx, |_, _| false);
+    rig.on(Input::LaneGone { lane: Lane::Run });
+    let at = approval_at(&rig);
+    let fx = rig.call(|drive, chat, now| drive.revise(at, "Again.".into(), chat, now));
+    rig.until(fx, |_, fx| asks_for_session(fx));
+    let fx = rig.on(Input::LaneOpened {
+        lane: Lane::Run,
+        result: Err("no agent".into()),
+    });
+    assert_eq!(
+        failed(&fx),
+        Some("The agent of Implement did not start."),
+        "{fx:?}"
+    );
+}
+
+#[test]
+fn a_lane_entered_is_told_its_step() {
+    let (mut rig, _) = at_review();
+    rig.open(review());
+    assert!(
+        rig.notes().contains(&"Step 3 of 4: Review"),
+        "{:?}",
+        rig.asked
+    );
+}
+
+#[test]
+fn a_person_prompting_the_current_lane_takes_the_run_over() {
+    let (mut rig, _) = at_review();
+    let fx = rig.open(review());
+    rig.until(fx, |_, _| false);
+    let chat = rig.chat_of_mut(&review()).unwrap();
+    assert!(chat.submit("Mine now", &[]));
+    let fx = rig.on(Input::LaneAppended { lane: review() });
+    assert_eq!(
+        finished(&fx),
+        Some(&Outcome::Stopped(Stop::TakenOver)),
+        "{fx:?}"
+    );
+}
+
+#[test]
+fn an_input_between_a_switch_and_its_lane_opening_sends_the_prompt_once() {
+    let (mut rig, _) = at_review();
+    let fx = rig.open(review());
+    rig.until(fx, |_, _| false);
+    let at = approval_at(&rig);
+    let fx = rig.call(|drive, chat, now| drive.revise(at, "Again.".into(), chat, now));
+    let fx = rig.until(fx, |_, fx| {
+        has(fx, |e| {
+            matches!(
+                e,
+                Effect::Defer(Input::LaneOpened {
+                    lane: Lane::Run,
+                    ..
+                })
+            )
+        })
+    });
+    assert_eq!(rig.drive.current_lane(), &Lane::Run);
+    assert!(
+        !rig.chat.prompted_beyond(1),
+        "held until the lane is told of"
+    );
+    // Something lands in the run's session before the deferred call: the
+    // prompt may go then, in that session, but only once.
+    rig.on(Input::Appended);
+    rig.on(Input::Notified);
+    assert!(!rig.chat.prompted_beyond(2), "{fx:?}");
+    rig.on(Input::LaneOpened {
+        lane: Lane::Run,
+        result: Ok(()),
+    });
+    assert!(rig.chat.prompted_beyond(1));
+    assert!(!rig.chat.prompted_beyond(2), "sent once");
+}

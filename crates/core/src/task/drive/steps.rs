@@ -105,17 +105,23 @@ impl RunDrive {
     fn announce_step(&mut self) {
         let fresh = self.noted != Some(self.run.step);
         self.noted = Some(self.run.step);
-        let Some(step) = self.run.current() else {
-            return;
-        };
-        if fresh && !self.run.template.is_prompt() {
-            self.asked.push(Asked::Note(format!(
+        if fresh {
+            self.asked.extend(self.step_said().map(Asked::Note));
+        }
+    }
+
+    /// The step the run is in, as the transcript says it; nothing for a
+    /// prompt's run, which has no steps to tell apart.
+    pub(super) fn step_said(&self) -> Option<String> {
+        let step = self.run.current()?;
+        (!self.run.template.is_prompt()).then(|| {
+            format!(
                 "Step {} of {}: {}",
                 self.run.step + 1,
                 self.run.template.steps.len(),
                 step.label
-            )));
-        }
+            )
+        })
     }
 
     /// Send `text`, or keep it until the agent is up.
