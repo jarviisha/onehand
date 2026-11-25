@@ -64,6 +64,11 @@ minor bump may break any of them.
 - A Tasks page lists what needs attention, runs, queues and has finished, opens a task's detail
   with each visit's output and diffs, and offers Resume, Retry (from an earlier step too) and
   Dismiss. A project's check command runs as a task of its own.
+- A project can have a board: bind a workflow with a worktree place in Settings ▸ Projects and
+  set its team size (1–8). The board page shows the project's open issues as the Backlog, an
+  ordered To do, one column per step of the workflow, and Done. Moving an issue to To do lets
+  onehand start it, in order, while fewer than the team size of the board's tasks run; a done
+  task closes its issue. To do is kept through a restart and pulled again.
 - An agent step can name the agent's mode and config options (model, effort, fast…), set before
   each visit's first prompt and recorded on the visit. A value the agent does not offer blocks the
   start, or fails the run at that step; it never runs on something else.
