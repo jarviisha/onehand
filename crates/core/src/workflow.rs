@@ -27,7 +27,7 @@ pub use prompt::first_prompt;
 pub(crate) use run::Transition;
 pub use run::{
     Action, ApprovalAt, Brief, Changed, Current, Failure, Field, Outcome, PrOpened, Run, Setup,
-    StartWhy, Stop, Visit, WithCurrent,
+    StartWhy, Stop, Verdict, Visit, WithCurrent,
 };
 pub(crate) use run::{COMMAND_FAILED, COMMAND_PASSED, FORGE_DONE};
 pub(crate) use settings::option_refused;

@@ -2301,8 +2301,144 @@ fn a_review_is_prompted_and_its_answer_kept() {
     let text = prompt_of(run.measured(mark("a", "d1"), 0));
     assert!(text.contains("Review the change."), "{text}");
     assert_eq!(
-        run.turn_ended(&facts("a", true, 0, "d1"), " Looks right. ", 0),
+        run.reviewed(Some(Verdict::Approve), " Looks right. ", 0),
         Action::RunCommand("make check".into())
     );
     assert_eq!(run.outputs["review"], "Looks right.");
+}
+
+/// A run of [`bare_review`] allowing `misses`, its implement step passed, at
+/// the review's turn.
+fn at_the_review(misses: u32) -> Run {
+    let mut template = bare_review();
+    template.misses = misses;
+    let (mut run, _) = begin("1".into(), template, brief(), setup(Some("make check")));
+    prompt_of(run.measured(mark("a", "d0"), 0));
+    run.turn_ended(&facts("a", false, 0, "d0"), "The plan.", 0);
+    approve(&mut run);
+    implemented(&mut run);
+    run
+}
+
+/// Implement's prompt, and a turn holding its gates: the review is next.
+fn implemented(run: &mut Run) -> String {
+    assert_eq!(run.current().unwrap().id, "implement");
+    let text = prompt_of(run.measured(mark("a", "d0"), 0));
+    assert_eq!(
+        run.turn_ended(&facts("a", true, 0, "d1"), "", 0),
+        Action::Measure
+    );
+    prompt_of(run.measured(mark("a", "d1"), 0));
+    assert_eq!(run.current().unwrap().id, "review");
+    text
+}
+
+#[test]
+fn an_approving_review_goes_on() {
+    let mut run = at_the_review(3);
+    assert_eq!(
+        run.reviewed(Some(Verdict::Approve), "Fine.", 0),
+        Action::RunCommand("make check".into())
+    );
+    assert_eq!(run.misses, 0);
+    assert_eq!(run.outputs["review"], "Fine.");
+    assert!(!run.awaiting_approval(), "a review is not an approval");
+    assert_eq!(run.history.last().unwrap().why, "approved by Review");
+}
+
+#[test]
+fn a_sending_back_review_is_a_miss_and_revisits_on_reject_with_the_note() {
+    let mut run = at_the_review(3);
+    assert_eq!(
+        run.reviewed(
+            Some(Verdict::SendBack("Test the edge.".into())),
+            "Not yet.",
+            0
+        ),
+        Action::Measure
+    );
+    assert_eq!(run.misses, 1);
+    assert_eq!(
+        run.outputs["review"], "Not yet.",
+        "the review's answer is kept"
+    );
+    assert_eq!(run.history.last().unwrap().why, "sent back by Review");
+    let text = implemented(&mut run);
+    assert!(text.contains("Review asked for changes:"), "{text}");
+    assert!(text.contains("> Test the edge."), "{text}");
+    assert!(!text.contains("A person asked"), "{text}");
+    // Once implement passes, the note is done with.
+    assert_eq!(run.revise, None);
+}
+
+#[test]
+fn a_review_without_a_verdict_is_a_miss_and_asks_again() {
+    let mut run = at_the_review(3);
+    let text = prompt_of(run.reviewed(None, "Looks fine.", 0));
+    assert_eq!(
+        text,
+        "End your review by calling review_verdict: approve, or send back with a note."
+    );
+    assert_eq!(run.misses, 1);
+    assert_eq!(run.current().unwrap().id, "review");
+    // A turn ending at a review is judged as one without a verdict.
+    prompt_of(run.turn_ended(&facts("a", true, 0, "d1"), "Fine.", 0));
+    assert_eq!(run.misses, 2);
+    assert_eq!(
+        run.reviewed(Some(Verdict::Approve), "Approved.", 0),
+        Action::RunCommand("make check".into())
+    );
+}
+
+#[test]
+fn reviews_that_never_agree_exhaust_the_run() {
+    let mut run = at_the_review(1);
+    let back = |run: &mut Run| run.reviewed(Some(Verdict::SendBack("Again.".into())), "No.", 0);
+    assert_eq!(back(&mut run), Action::Measure);
+    implemented(&mut run);
+    assert_eq!(
+        back(&mut run),
+        Action::Finish(Outcome::Exhausted {
+            step: "Review".into()
+        })
+    );
+    let mut run = at_the_review(0);
+    assert_eq!(
+        run.reviewed(None, "", 0),
+        Action::Finish(Outcome::Exhausted {
+            step: "Review".into()
+        })
+    );
+}
+
+#[test]
+fn a_verdict_away_from_a_review_changes_nothing() {
+    let mut run = at_approval();
+    assert_eq!(run.reviewed(Some(Verdict::Approve), "", 0), Action::Idle);
+    assert!(run.awaiting_approval());
+}
+
+#[test]
+fn a_persons_revision_still_says_a_person() {
+    // Plan, implement, its review, then a person's approval of implement.
+    let mut template = bare_review();
+    let mut approval = template.steps.remove(1);
+    approval.kind = StepKind::Approval {
+        of: "implement".into(),
+    };
+    template.steps.insert(3, approval);
+    let (mut run, _) = begin("1".into(), template, brief(), setup(Some("make check")));
+    prompt_of(run.measured(mark("a", "d0"), 0));
+    run.turn_ended(&facts("a", false, 0, "d0"), "The plan.", 0);
+    implemented(&mut run);
+    run.reviewed(Some(Verdict::SendBack("Test it.".into())), "", 0);
+    implemented(&mut run);
+    assert_eq!(
+        run.reviewed(Some(Verdict::Approve), "", 0),
+        Action::AwaitApproval
+    );
+    assert_eq!(revise(&mut run, "Smaller."), Action::Measure);
+    let text = prompt_of(run.measured(mark("a", "d1"), 0));
+    assert!(text.contains("A person asked for changes:"), "{text}");
+    assert!(!text.contains("Review asked"), "{text}");
 }

@@ -1583,3 +1583,119 @@ fn an_input_between_a_switch_and_its_lane_opening_sends_the_prompt_once() {
     assert!(rig.chat.prompted_beyond(1));
     assert!(!rig.chat.prompted_beyond(2), "sent once");
 }
+
+/// Implement on the run's agent, a review of it, then verify.
+fn with_a_review() -> Template {
+    let mut template = Template::blank("Reviewed by an agent");
+    template.steps = vec![
+        agent_step("implement", "Implement", None),
+        StepSpec {
+            id: "review".into(),
+            label: "Review".into(),
+            kind: StepKind::Review {
+                of: "implement".into(),
+                on_reject: None,
+                agent: None,
+                prompt: "Review it.".into(),
+                mode: None,
+                options: Default::default(),
+            },
+        },
+        verify_step("implement"),
+    ];
+    template
+}
+
+/// A run of [`with_a_review`] in its review's turn, the prompt sent in the
+/// review's own session.
+fn in_review() -> Rig {
+    let (mut rig, fx) = Rig::start(with_a_review(), None, connected());
+    rig.until(fx, |_, fx| asks_for_session(fx));
+    rig.open(review());
+    assert!(rig.submitted());
+    assert!(rig.drive.run().awaiting_turn());
+    rig
+}
+
+fn verdict(
+    rig: &mut Rig,
+    lane: &Lane,
+    verdict: crate::workflow::Verdict,
+) -> Result<String, String> {
+    rig.drive.verdict(lane, verdict)
+}
+
+#[test]
+fn the_last_verdict_of_the_turn_counts() {
+    use crate::workflow::Verdict;
+    let mut rig = in_review();
+    assert_eq!(
+        verdict(&mut rig, &review(), Verdict::SendBack("More tests.".into())),
+        Ok("Sent back to Implement. The review ends when this turn does.".into())
+    );
+    assert_eq!(
+        verdict(&mut rig, &review(), Verdict::Approve),
+        Ok("Approved. The review ends when this turn does.".into())
+    );
+    let fx = rig.turn_ends("Fine.");
+    let fx = rig.until(fx, |_, fx| names(fx).contains(&"RunCommand"));
+    assert!(names(&fx).contains(&"RunCommand"), "{fx:?}");
+    assert_eq!(rig.drive.run().misses, 0);
+    assert_eq!(rig.drive.run().outputs["review"], "Fine.");
+}
+
+#[test]
+fn a_send_back_without_a_note_is_refused() {
+    use crate::workflow::Verdict;
+    let mut rig = in_review();
+    assert_eq!(
+        verdict(&mut rig, &review(), Verdict::SendBack(" ".into())),
+        Err("A send back needs a note saying what to change.".into())
+    );
+}
+
+#[test]
+fn a_verdict_from_another_lane_is_refused() {
+    use crate::workflow::Verdict;
+    let mut rig = in_review();
+    assert_eq!(
+        verdict(&mut rig, &Lane::Run, Verdict::Approve),
+        Err("No review is waiting on this session.".into())
+    );
+    // Nothing was held: the turn ends without a verdict and is asked again.
+    let fx = rig.turn_ends("Fine.");
+    rig.until(fx, |rig, _| rig.drive.run().misses > 0);
+    assert_eq!(rig.drive.run().misses, 1);
+    assert_eq!(rig.drive.run().current().unwrap().id, "review");
+}
+
+#[test]
+fn a_verdict_after_the_turn_is_refused() {
+    use crate::workflow::Verdict;
+    let mut rig = in_review();
+    // The turn has ended and its work is being read.
+    let fx = rig.turn_ends("Fine.");
+    assert!(names(&fx).contains(&"ReadFacts"), "{fx:?}");
+    assert_eq!(
+        verdict(&mut rig, &review(), Verdict::Approve),
+        Err("No review is waiting on this session.".into())
+    );
+    // And once the run has gone on to verify.
+    let mut rig = in_review();
+    verdict(&mut rig, &review(), Verdict::Approve).unwrap();
+    let fx = rig.turn_ends("Fine.");
+    rig.until(fx, |_, fx| names(fx).contains(&"RunCommand"));
+    assert_eq!(
+        verdict(&mut rig, &review(), Verdict::Approve),
+        Err("No review is waiting on this session.".into())
+    );
+}
+
+#[test]
+fn a_review_runs_the_budget() {
+    let mut rig = in_review();
+    assert!(!rig.drive.waits_on_person(true) && !rig.drive.waits_on_person(false));
+    rig.now += rig.drive.run().template.timeout_limit() + Duration::from_secs(1);
+    let fx = rig.on(Input::Elapsed(Timer::Timeout));
+    assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::TimedOut)));
+}

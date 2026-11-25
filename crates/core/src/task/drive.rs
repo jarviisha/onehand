@@ -31,7 +31,7 @@
 use crate::chat::{Chat, Link};
 use crate::Now;
 
-use crate::workflow::{Action, ApprovalAt, Failure, Pick, Run, Stop};
+use crate::workflow::{Action, ApprovalAt, Failure, Pick, Run, Stop, Verdict};
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
@@ -84,6 +84,10 @@ pub struct RunDrive {
     sent_at: Option<Instant>,
     /// The turn's answer, kept while its work is read.
     answer: Option<String>,
+    /// The last verdict the review's agent gave in the turn under way, with
+    /// the review's visit it was given at. Not kept in the run: a restart
+    /// prompts the review again.
+    verdict: Option<(u32, Verdict)>,
     /// Picks decided and not yet handed to the session, in order.
     picks: Vec<Pick>,
     /// What else the run asked of its session and the link has not made yet,
@@ -145,6 +149,7 @@ impl RunDrive {
             answer_from: 0,
             sent_at: None,
             answer: None,
+            verdict: None,
             picks: Vec::new(),
             asked: Vec::new(),
             noted: None,
@@ -273,6 +278,34 @@ impl RunDrive {
         })
     }
 
+    /// The review's agent, in `lane`'s session, gave `verdict`: held until
+    /// the review's turn ends, the last one given counting. Refused unless
+    /// the run waits on the turn of a review whose lane is `lane`; answered
+    /// with what the agent is told.
+    pub(crate) fn verdict(&mut self, lane: &Lane, verdict: Verdict) -> Result<String, String> {
+        let at = self.run.review_visit().filter(|_| {
+            !self.over
+                && self.held.is_none()
+                && self.answer.is_none()
+                && Lane::at(&self.run) == *lane
+        });
+        let Some(at) = at else {
+            return Err("No review is waiting on this session.".to_string());
+        };
+        let said = match &verdict {
+            Verdict::Approve => "Approved. The review ends when this turn does.".to_string(),
+            Verdict::SendBack(note) if note.trim().is_empty() => {
+                return Err("A send back needs a note saying what to change.".to_string())
+            }
+            Verdict::SendBack(_) => format!(
+                "Sent back to {}. The review ends when this turn does.",
+                self.run.rejects_to_label().unwrap_or_default()
+            ),
+        };
+        self.verdict = Some((at, verdict));
+        Ok(said)
+    }
+
     /// Do `command`, unless the run has finished, which does nothing more.
     fn command_with(
         &mut self,
@@ -334,8 +367,14 @@ impl RunDrive {
             }
             Input::TurnRead(Ok(facts)) => {
                 let answer = self.answer.take().unwrap_or_default();
-                self.advance(chat, now, &mut fx, move |run| {
-                    run.turn_ended(&facts, &answer, now.secs)
+                // Only a verdict given at this visit of the review is its.
+                let verdict = self
+                    .verdict
+                    .take()
+                    .filter(|(at, _)| self.run.review_visit() == Some(*at));
+                self.advance(chat, now, &mut fx, move |run| match verdict {
+                    Some((_, verdict)) => run.reviewed(Some(verdict), &answer, now.secs),
+                    None => run.turn_ended(&facts, &answer, now.secs),
                 })
             }
             Input::NotTaken => self.advance(chat, now, &mut fx, |run| {

@@ -62,6 +62,9 @@ pub(crate) struct Fill<'a> {
     pub(crate) outputs: &'a BTreeMap<String, String>,
     pub(crate) check_output: Option<&'a str>,
     pub(crate) revise: Option<&'a str>,
+    /// The label of the review that asked for the revision; `None` when a
+    /// person did.
+    pub(crate) revise_by: Option<&'a str>,
     /// What the step being revised answered last time, said beside the note.
     pub(crate) revised_answer: Option<&'a str>,
 }
@@ -108,8 +111,9 @@ pub(crate) fn step_prompt(prompt: &str, gates: &[GateKind], place: Place, fill: 
             .revised_answer
             .map(|answer| format!("\n\nWhat you answered before:\n\n{}", quoted(answer)))
             .unwrap_or_default();
+        let by = fill.revise_by.unwrap_or("A person");
         add(format!(
-            "A person asked for changes:\n\n{}{before}",
+            "{by} asked for changes:\n\n{}{before}",
             quoted(note)
         ));
     }
@@ -149,6 +153,7 @@ pub fn first_prompt(template: &Template, brief: &Brief) -> Option<String> {
                 outputs: &BTreeMap::new(),
                 check_output: None,
                 revise: None,
+                revise_by: None,
                 revised_answer: None,
             };
             Some(step_prompt(prompt, gates, template.place, &fill))

@@ -22,6 +22,7 @@ mod setup;
 mod visits;
 
 pub use retry::{Changed, Current, Field, StartWhy, WithCurrent};
+pub use review::Verdict;
 use setup::Marks;
 pub use setup::{Brief, Setup};
 
@@ -282,6 +283,9 @@ pub struct Run {
     pub outputs: BTreeMap<String, String>,
     /// What a person asked to change, until the step it went back to passes.
     pub revise: Option<String>,
+    /// The review that asked for it; `None` when a person did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    revise_by: Option<String>,
     /// What the failed command printed, until the step it went back to passes.
     check_output: Option<String>,
     /// Working time spent, in seconds, for a resumed run's clock.
@@ -323,6 +327,7 @@ impl Run {
             marks: Marks::default(),
             outputs: BTreeMap::new(),
             revise: None,
+            revise_by: None,
             check_output: None,
             spent_secs: 0,
             history: Vec::new(),
@@ -429,6 +434,9 @@ impl Run {
         else {
             return Action::Idle;
         };
+        if step.is_review() {
+            return self.reviewed(None, answer, now);
+        }
         let Some((_, gates, keep_answer)) = review::prompted(&step.kind) else {
             return Action::Idle;
         };
@@ -443,6 +451,7 @@ impl Run {
                 self.outputs.insert(step.id.clone(), answer);
             }
             self.revise = None;
+            self.revise_by = None;
             self.check_output = None;
             return self.enter(self.step + 1, "its gates held", now);
         };
@@ -581,6 +590,7 @@ impl Run {
             return Action::Idle;
         };
         self.revise = Some(note);
+        self.revise_by = None;
         self.enter(back, "sent back to be revised", now)
     }
 
@@ -757,6 +767,7 @@ impl Run {
             outputs: &self.outputs,
             check_output: self.check_output.as_deref(),
             revise: self.revise.as_deref(),
+            revise_by: self.revise_by.as_deref(),
             revised_answer: self
                 .revise
                 .as_ref()
