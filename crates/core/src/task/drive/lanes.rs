@@ -19,8 +19,16 @@ use crate::chat::Chat;
 use crate::control::REVIEW_VERDICT;
 use crate::preflight::{found_late, About};
 use crate::task::Grant;
-use crate::workflow::{Run, Settings, StepSpec, Stop};
+use crate::workflow::{Failure, Run, Settings, StepSpec, Stop};
 use crate::Now;
+
+/// Why a lane's session did not open: its agent is gone from the agent
+/// list, which the preflight would have blocked, or it would not start.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotOpened {
+    AgentGone,
+    Failed,
+}
 
 /// Which session a step works in.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -140,6 +148,13 @@ impl RunDrive {
         &self.lane
     }
 
+    /// Whether `lane`'s session `went`, which said it went, is let go of:
+    /// the run does not work in the lane now, and the lane still holds that
+    /// session (`held`), not one opened since.
+    pub fn forgets(&self, lane: &Lane, held: Option<u64>, went: u64) -> bool {
+        &self.lane != lane && held == Some(went)
+    }
+
     /// The lanes that have a session, the current one first.
     #[cfg(test)]
     pub(crate) fn lanes(&self) -> impl Iterator<Item = &Lane> {
@@ -191,7 +206,7 @@ impl RunDrive {
     pub(super) fn opened(
         &mut self,
         lane: Lane,
-        result: Result<(), String>,
+        result: Result<(), NotOpened>,
         chat: Option<&Chat>,
         now: Now,
         fx: &mut Vec<Effect>,
@@ -204,14 +219,16 @@ impl RunDrive {
             .current()
             .map(|step| step.label.clone())
             .unwrap_or_default();
-        if result.is_err() {
+        if let Err(not) = result {
             let why = match lane.agent(&self.run) {
-                agent if agent.is_empty() => format!("The agent of {label} did not start."),
-                agent => format!("The agent of {label}, {agent}, did not start."),
+                agent if agent.is_empty() => format!("The agent of {label} did not start"),
+                agent => format!("The agent of {label}, {agent}, did not start"),
             };
-            return self.advance(chat, now, fx, move |run| {
-                run.failed(why, found_late(About::Agent), now.secs)
-            });
+            let kind = match not {
+                NotOpened::AgentGone => found_late(About::Agent),
+                NotOpened::Failed => Failure::Other,
+            };
+            return self.advance(chat, now, fx, move |run| run.failed(why, kind, now.secs));
         }
         let Some(chat) = chat else {
             return;

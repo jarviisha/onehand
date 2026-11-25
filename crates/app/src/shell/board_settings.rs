@@ -4,11 +4,8 @@
 use super::Confirm;
 use super::Shell;
 use gpui::{BorrowAppContext as _, Context, Window};
-use onehand_core::project::Board;
+use onehand_core::project::ProjectId;
 use std::path::{Path, PathBuf};
-
-/// The team a board starts with.
-const FIRST_TEAM: u8 = 2;
 
 impl Shell {
     /// Why the board of the project at `root` was not bound, once it was
@@ -34,15 +31,15 @@ impl Shell {
         let Some(id) = self.project_of_row(&root) else {
             return;
         };
-        // Its To do goes with it and cannot be had back: asked first.
-        let name = crate::state::Shared::global(cx)
-            .projects
-            .get(&id)
-            .filter(|project| project.board().is_some_and(|board| !board.todo.is_empty()))
-            .map(|project| project.name.clone());
-        if workflow.is_none()
-            && let Some(name) = name
-        {
+        let Some(workflow) = workflow else {
+            let projects = &crate::state::Shared::global(cx).projects;
+            if !projects.unbinding_asks(&id) {
+                return self.unbind_board(root, window, cx);
+            }
+            let name = projects
+                .get(&id)
+                .map(|p| p.name.clone())
+                .unwrap_or_default();
             let ask = Confirm {
                 id: "remove-board",
                 title: format!("Remove the board from {}?", name).into(),
@@ -56,21 +53,19 @@ impl Shell {
                 shell.unbind_board(root.clone(), window, cx)
             });
             return;
-        }
-        let offered = workflow.map(|workflow| {
-            let template = crate::workflow::templates(cx)
-                .into_iter()
-                .find_map(|entry| entry.template.ok().filter(|t| t.id == workflow));
-            (workflow, template)
+        };
+        let template = crate::control::template(&workflow, cx).ok();
+        let bound = cx.update_global::<crate::state::Shared, _>(|shared, _| {
+            shared.projects.bind_board(&id, template.as_ref())
         });
-        self.unbind_or_bind(root, id, offered, cx);
+        self.bound(root, id, bound, cx);
     }
 
     /// Bind `template`, a copy of the workflow of the board of `project`
     /// just saved, as that board, and say so.
     pub(super) fn board_uses_copy(
         &mut self,
-        project: onehand_core::project::ProjectId,
+        project: ProjectId,
         template: onehand_core::workflow::Template,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -79,75 +74,49 @@ impl Shell {
         let Some((root, name)) = crate::state::Shared::global(cx)
             .projects
             .get(&project)
-            .filter(|p| p.board().is_some())
             .map(|p| (p.path.clone(), p.name.clone()))
         else {
             return;
         };
-        let said = now_uses(&name, &template.name);
         // Passed as written: the list on offer is read again only after.
-        self.unbind_or_bind(
-            root,
-            project,
-            Some((template.id.clone(), Some(template))),
-            cx,
-        );
-        match &self.board_refused {
-            None => gpui_component::WindowExt::push_notification(
-                window,
-                crate::toast::success(said),
-                cx,
-            ),
-            Some((_, why)) => gpui_component::WindowExt::push_notification(
-                window,
-                crate::toast::failed(&format!("Binding the copy to {name}'s board"), why),
-                cx,
-            ),
-        }
+        let Some(bound) = cx.update_global::<crate::state::Shared, _>(|shared, _| {
+            shared.projects.bind_copy(&project, &template)
+        }) else {
+            return;
+        };
+        let said = match &bound {
+            Ok(_) => crate::toast::success(now_uses(&name, &template.name)),
+            Err(why) => crate::toast::failed(&format!("Binding the copy to {name}'s board"), why),
+        };
+        self.bound(root, project, bound, cx);
+        gpui_component::WindowExt::push_notification(window, said, cx);
     }
 
     fn unbind_board(&mut self, root: PathBuf, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(id) = self.project_of_row(&root) {
-            self.unbind_or_bind(root, id, None, cx);
+            let fx = cx.update_global::<crate::state::Shared, _>(|shared, _| {
+                shared.projects.set_board(&id, None)
+            });
+            self.bound(root, id, Ok(fx), cx);
         }
     }
 
-    /// Bind the workflow of id `workflow`, as `template` holds it when it is
-    /// on offer, or none.
-    fn unbind_or_bind(
+    /// Carry out what binding the board of project `id`, at `root`, came to:
+    /// written and its To do looked at, or its refusal left on the page.
+    fn bound(
         &mut self,
         root: PathBuf,
-        id: onehand_core::project::ProjectId,
-        workflow: Option<(String, Option<onehand_core::workflow::Template>)>,
+        id: ProjectId,
+        bound: Result<Vec<onehand_core::project::drive::Effect>, String>,
         cx: &mut Context<Self>,
     ) {
-        let board = match workflow {
-            None => None,
-            Some((workflow, template)) => {
-                if let Err(why) = onehand_core::board::usable(template.as_ref()) {
-                    self.board_refused = Some((root, why));
-                    cx.notify();
-                    return;
-                }
-                let kept = crate::state::Shared::global(cx)
-                    .projects
-                    .get(&id)
-                    .and_then(|project| project.board().cloned());
-                Some(match kept {
-                    Some(board) => Board { workflow, ..board },
-                    None => Board {
-                        workflow,
-                        team: FIRST_TEAM,
-                        todo: Vec::new(),
-                    },
-                })
+        match bound {
+            Ok(fx) => {
+                crate::projects::carry(fx, cx);
+                crate::board::pull_now(&id, cx);
             }
-        };
-        let fx = cx.update_global::<crate::state::Shared, _>(|shared, _| {
-            shared.projects.set_board(&id, board)
-        });
-        crate::projects::carry(fx, cx);
-        crate::board::pull_now(&id, cx);
+            Err(why) => self.board_refused = Some((root, why)),
+        }
         cx.notify();
     }
 
@@ -168,7 +137,7 @@ impl Shell {
 
 /// What a board bound to a copy of its workflow says.
 fn now_uses(project: &str, copy: &str) -> String {
-    format!("{project}'s board now uses {copy}.")
+    format!("{project}'s board now uses {copy}")
 }
 
 #[cfg(test)]

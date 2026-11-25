@@ -158,9 +158,10 @@ A step's session lost while the run is elsewhere is forgotten (it stays in the r
 and the run goes on: the next visit opens a new one, with the note *The session of <step label> was
 gone; a new one was opened.*, its context lost. The current lane's session lost stops the run, as
 the run's own does. A lane that cannot open (the agent no longer in the list, or it did not come
-up) fails the run with *The agent of <step label>, <agent>, did not start.*, without the agent's
-name when the run's own agent is meant. That is a configuration failure, as a session not started
-is: its way out is *Retry with current settings*, not Resume. A first step's lane that cannot open
+up) fails the run with *The agent of <step label>, <agent>, did not start*, without the agent's
+name when the run's own agent is meant. As with a session not started, it is a configuration
+failure only when the agent is no longer in the list, its way out *Retry with current settings*,
+not Resume; one that did not come up is an ordinary failure. A first step's lane that cannot open
 is refused before the run begins, in the generic words of a session not started. The preflight
 blocks a step naming an agent not in the list (*<step label> names <agent>, which is not in the
 agent list.*) and judges that step's settings against its own agent's offer.

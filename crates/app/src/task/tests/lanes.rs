@@ -183,8 +183,19 @@ fn a_missing_step_agent_fails_the_run_when_reached(cx: &mut TestAppContext) {
     assert_eq!(
         task.outcome(),
         Some(Outcome::Failed(
-            "The agent of Review, b, did not start.".into()
+            "The agent of Review, b, did not start".into()
         ))
+    );
+    assert_eq!(
+        task.runs().last().and_then(|run| run.failure),
+        Some(onehand_core::workflow::Failure::Configuration),
+        "an agent gone from the list is the configuration's"
+    );
+    let waits = cx.update(|cx| crate::task::rows(std::slice::from_ref(&work), cx));
+    assert_eq!(
+        waits[0].waits.as_deref(),
+        Some("The agent of Review, b, did not start"),
+        "said on its row as it is in its detail"
     );
     assert!(!holds(&id, cx), "its place let go");
 }

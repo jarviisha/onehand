@@ -435,6 +435,49 @@ fn fill_reaches_a_review_step() {
 }
 
 #[test]
+fn fill_leaves_a_step_naming_its_own_agent() {
+    use crate::workflow::{StepKind, StepSpec};
+    let mut template = prompt_template();
+    let first = template.steps[0].id.clone();
+    template.steps.push(StepSpec {
+        limit: None,
+        id: "own".into(),
+        label: "Own".into(),
+        kind: StepKind::Agent {
+            prompt: "{brief}".into(),
+            gates: Vec::new(),
+            keep_answer: false,
+            mode: None,
+            options: BTreeMap::new(),
+            agent: Some("Codex".into()),
+        },
+    });
+    template.steps.push(StepSpec {
+        limit: None,
+        id: "review".into(),
+        label: "Review".into(),
+        kind: StepKind::Review {
+            of: first,
+            on_reject: None,
+            agent: Some("Codex".into()),
+            prompt: "Look.".into(),
+            mode: None,
+            options: BTreeMap::new(),
+        },
+    });
+    let options = BTreeMap::from([("model".to_string(), "strong".to_string())]);
+    let filled = fill(template, Some("plan"), &options);
+    for step in &filled.steps[1..] {
+        let (StepKind::Agent { mode, options, .. } | StepKind::Review { mode, options, .. }) =
+            &step.kind
+        else {
+            panic!("an agent or a review step")
+        };
+        assert_eq!((mode, options), (&None, &BTreeMap::new()), "{}", step.id);
+    }
+}
+
+#[test]
 fn quick_choices_read_in_words() {
     assert_eq!(when_said("0 9 * * *"), "every day at 09:00");
     assert_eq!(when_said("5 */3 * * *"), "every 3 hours at :05");

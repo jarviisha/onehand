@@ -401,26 +401,18 @@ impl Flow {
         let Some(driven) = self.runs.get_mut(id) else {
             return;
         };
-        let current = driven.run.current_lane() == lane;
         let Some(held) = driven.lanes.get(lane) else {
             return;
         };
         let session = &held.session;
         match effect {
             SessionEffect::Signal(signal) => {
-                let input = match current {
-                    true => link::input_of(&signal, &driven.run, session),
-                    false => link::lane_input_of(&signal, lane, &driven.run, session),
-                };
-                if let Some(input) = input {
+                if let Some(input) = link::said(&signal, lane, &driven.run, session) {
                     self.run_input(id, input);
                 }
             }
             SessionEffect::Changed => {
-                if let Some(input) = current
-                    .then(|| link::notified(&driven.run, session))
-                    .flatten()
-                {
+                if let Some(input) = link::notified(&driven.run, lane, session) {
                     self.run_input(id, input);
                 }
             }

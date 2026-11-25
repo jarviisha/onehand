@@ -1459,13 +1459,26 @@ fn a_lane_that_will_not_open_fails_the_run_for_a_retry() {
     let (mut rig, _) = at_review();
     let fx = rig.on(Input::LaneOpened {
         lane: review(),
-        result: Err("no such command".into()),
+        result: Err(NotOpened::Failed),
     });
     assert_eq!(
         failed(&fx),
-        Some("The agent of Review, Claude, did not start."),
+        Some("The agent of Review, Claude, did not start"),
         "{fx:?}"
     );
+    assert_eq!(
+        rig.drive.run().failed_on(),
+        Some(crate::workflow::Failure::Other)
+    );
+}
+
+#[test]
+fn a_lane_whose_agent_is_gone_fails_the_run_on_its_configuration() {
+    let (mut rig, _) = at_review();
+    rig.on(Input::LaneOpened {
+        lane: review(),
+        result: Err(NotOpened::AgentGone),
+    });
     assert_eq!(
         rig.drive.run().failed_on(),
         Some(crate::workflow::Failure::Configuration)
@@ -1518,11 +1531,11 @@ fn a_run_lane_naming_no_agent_that_will_not_open_says_so_plainly() {
     rig.until(fx, |_, fx| asks_for_session(fx));
     let fx = rig.on(Input::LaneOpened {
         lane: Lane::Run,
-        result: Err("no agent".into()),
+        result: Err(NotOpened::Failed),
     });
     assert_eq!(
         failed(&fx),
-        Some("The agent of Implement did not start."),
+        Some("The agent of Implement did not start"),
         "{fx:?}"
     );
 }

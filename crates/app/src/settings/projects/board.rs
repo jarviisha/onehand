@@ -22,10 +22,7 @@ pub(super) fn board_section(handle: &Entity<Shell>, root: &Path, cx: &App) -> An
         .and_then(|project| project.board().cloned());
     let templates = crate::workflow::templates(cx);
     let name_of = |id: &str| {
-        templates
-            .iter()
-            .filter_map(|entry| entry.template.as_ref().ok())
-            .find(|t| t.id == id)
+        crate::workflow::find(&templates, id)
             .map_or_else(|| format!("{id} (gone)"), |t| t.name.clone())
     };
     let label = bound
@@ -88,14 +85,7 @@ pub(super) fn board_section(handle: &Entity<Shell>, root: &Path, cx: &App) -> An
     // A workflow that is gone has nothing to open.
     let edit = bound
         .as_ref()
-        .filter(|board| {
-            templates.iter().any(|entry| {
-                entry
-                    .template
-                    .as_ref()
-                    .is_ok_and(|t| t.id == board.workflow)
-            })
-        })
+        .filter(|board| crate::workflow::find(&templates, &board.workflow).is_some())
         .zip(project.as_ref())
         .map(|(board, project)| {
             let (handle, workflow, id) =
@@ -152,7 +142,7 @@ fn team_field(handle: &Entity<Shell>, root: &Path, team: u8, cx: &App) -> gpui::
     onehand_ui::field(
         "Team",
         Some(
-            format!("Tasks working at once. Lowering it stops none: no more start until fewer than {team} run.")
+            format!("Tasks working at once. Lowering it stops none: no more start until fewer than {team} run")
                 .into_any_element(),
         ),
         onehand_ui::choice_track(segments, cx),

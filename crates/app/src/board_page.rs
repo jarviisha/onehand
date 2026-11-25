@@ -19,7 +19,7 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::board::BOARD_SHOWN;
-use onehand_core::project::ProjectId;
+use onehand_core::project::{ProjectId, Toward};
 use onehand_core::task::Section;
 use onehand_ui::RowAct;
 use std::collections::{HashMap, HashSet};
@@ -73,6 +73,8 @@ enum Column {
 pub(crate) enum BoardPageEvent {
     /// Show task `id` in full, on the Tasks page.
     OpenTask(String),
+    /// Do to a task what the Tasks page would.
+    Task(crate::tasks_page::TasksPageEvent),
     /// Open the settings of the project at this folder, where its board is
     /// bound.
     ProjectSettings(PathBuf),
@@ -104,16 +106,8 @@ impl BoardPage {
         if self.project.as_ref() != Some(&project) {
             self.rows.clear();
         }
-        let local = Shared::global(cx)
-            .projects
-            .get(&project)
-            .filter(|p| p.host.is_none())
-            .map(|p| {
-                (
-                    p.path.clone(),
-                    onehand_core::project::file::issues_file(&p.id),
-                )
-            });
+        let local = (Shared::global(cx).projects.get(&project))
+            .and_then(|p| onehand_core::board::local(p).ok());
         match local {
             Some((root, file)) => {
                 if self.issues.as_ref().is_none_or(|(at, _)| *at != file) {
@@ -167,17 +161,10 @@ impl BoardPage {
                 onehand_ui::hint("This project has no board", cx),
             );
         };
-        let template = crate::workflow::templates(cx)
-            .into_iter()
-            .find_map(|entry| entry.template.ok().filter(|t| t.id == board.workflow));
-        let refused = match (
-            &project.host,
-            onehand_core::board::usable(template.as_ref()),
-        ) {
-            (Some(_), _) => Some("A board works on a project on this machine.".to_string()),
-            (None, Err(why)) => Some(why),
-            (None, Ok(())) => None,
-        };
+        let template = crate::control::template(&board.workflow, cx).ok();
+        let refused = onehand_core::board::local(&project)
+            .and(onehand_core::board::usable(template.as_ref()).map(|_| ()))
+            .err();
         let line = match &template {
             Some(t) => format!("{} · {} · team of {}", project.name, t.name, board.team),
             None => project.name.clone(),
@@ -223,7 +210,7 @@ impl BoardPage {
         &mut self,
         id: &ProjectId,
         board: &onehand_core::project::Board,
-        steps: Vec<(String, String, Vec<Row>, Option<String>)>,
+        steps: Vec<crate::task::StepColumn>,
         done: Vec<Row>,
         taken: &HashSet<u64>,
         cx: &mut Context<Self>,
@@ -243,8 +230,8 @@ impl BoardPage {
                         .map(|issue| (issue.number(), issue.title().to_string()))
                         .collect();
                 let note = listed.is_empty().then(|| {
-                    "No open issues. Talk one through with an agent; it can write it here \
-                     with create_issue."
+                    "No open issues; talk one through with an agent, which can write it here \
+                     with create_issue"
                         .to_string()
                 });
                 let titles: Vec<Option<String>> = (board.todo.iter().take(BOARD_SHOWN))
@@ -295,7 +282,6 @@ impl BoardPage {
 
         // To do, in the order the team pulls it.
         let last = board.todo.len().saturating_sub(1);
-        let order: Rc<[u64]> = board.todo.iter().copied().collect();
         let drawn = board
             .todo
             .iter()
@@ -304,19 +290,18 @@ impl BoardPage {
             .map(|(at, &n)| {
                 let mut moves = Vec::new();
                 if at > 0 {
-                    moves.push(("Move up", todo_press(id, Todo::Move(n, true))));
+                    moves.push(("Move up", todo_press(id, Todo::Move(n, Toward::Up))));
                 }
                 if at < last {
-                    moves.push(("Move down", todo_press(id, Todo::Move(n, false))));
+                    moves.push(("Move down", todo_press(id, Todo::Move(n, Toward::Down))));
                 }
                 moves.push(("Back to Backlog", todo_press(id, Todo::Drop(n))));
-                let place = (id.clone(), order.clone());
                 self.issue_row(
                     RowKey::Todo(n),
                     n,
                     title_of(at, n),
                     acts(moves),
-                    Some(place),
+                    Some(id.clone()),
                     cx,
                 )
             })
@@ -340,13 +325,19 @@ impl BoardPage {
                 false => style,
             })
             .on_drop(move |drag: &IssueDrag, _, cx| {
-                change_todo(&id, Todo::Place(drag.issue, usize::MAX), cx);
+                change_todo(&id, Todo::Last(drag.issue), cx);
             })
             .into_any_element()
         };
 
         let mut columns = vec![backlog, todo];
-        for (label, head, rows, step) in steps {
+        for crate::task::StepColumn {
+            label,
+            head,
+            rows,
+            step,
+        } in steps
+        {
             let col = self.task_column(&label, head, rows, step, "Nothing at this step", cx);
             columns.push(col);
         }
@@ -395,7 +386,7 @@ impl BoardPage {
 
     /// A row of an issue, in the Backlog or To do: its title over its
     /// number, its acts in its `⋯` and on a right-click, dragged by its
-    /// title. A To do row, given its project and the whole of To do, takes
+    /// title. A To do row, given its project, takes
     /// a dragged issue in just before itself.
     fn issue_row(
         &mut self,
@@ -403,7 +394,7 @@ impl BoardPage {
         number: u64,
         title: String,
         acts: Rc<[RowAct]>,
-        todo: Option<(ProjectId, Rc<[u64]>)>,
+        todo: Option<ProjectId>,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let line = (format!("#{number}"), crate::theme::meta_ink(cx));
@@ -423,46 +414,45 @@ impl BoardPage {
                     cx.new(|_| DragGhost(ghost))
                 },
             );
-            let Some((id, order)) = todo else {
+            let Some(id) = todo else {
                 return row;
             };
             // The row under a drag fills, the issue landing just before it.
             row.drag_over::<IssueDrag>(|style, _, _, cx| style.bg(cx.theme().list_hover))
                 .on_drop(move |drag: &IssueDrag, _, cx| {
-                    if let Some(at) = place_before(&order, drag.issue, number) {
-                        change_todo(&id, Todo::Place(drag.issue, at), cx);
-                    }
+                    change_todo(&id, Todo::Before(drag.issue, number), cx);
                 })
         };
         self.row(key, title, line, acts, None, drags, cx)
     }
 
     /// A row of a task: its title over what it waits on, as the Tasks page
-    /// sorts it, and how it ended or where it is when that is not the
-    /// column it stands in. Pressed, it opens the task.
+    /// sorts it and its detail says it, and where it is when that is not the
+    /// column it stands in. Pressed, it opens the task; its `⋯` and
+    /// right-click offer the Tasks page's acts beside.
     fn task_row(&mut self, column: &str, row: Row, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let attention = row.group.section() == Section::NeedsAttention;
-        let word = match row.group.section() {
-            // Its words say it waits, which *Running* would contradict.
-            Section::Running if row.waits_for_room => None,
-            Section::NeedsAttention => Some("Needs attention"),
-            Section::Running => Some("Running"),
-            Section::Queued => Some("Queued"),
-            Section::Finished => None,
-        };
-        let at = (row.at != column).then_some(row.at.as_str());
-        let said = word
-            .into_iter()
-            .chain(at)
-            .filter(|part| !part.is_empty())
-            .collect::<Vec<_>>()
-            .join(" · ");
-        let ink = match attention {
+        let said = task_line(&row, column);
+        let ink = match row.group.section() == Section::NeedsAttention {
             true => crate::theme::status_ink(cx).warning,
             false => cx.theme().muted_foreground,
         };
         let open = open_task(&row.id, cx);
-        let acts = acts([("Show task", open.clone())]);
+        let page = cx.entity().downgrade();
+        let acts: Rc<[RowAct]> = task_offers(&row)
+            .into_iter()
+            .map(|act| match act {
+                None => RowAct::new("Show task", open.clone()),
+                Some(act) => {
+                    let (event, page) = (act.event(&row), page.clone());
+                    let press: onehand_ui::Press = Rc::new(move |_, _, cx| {
+                        if let Some(event) = event.clone() {
+                            let _ = page.update(cx, |_, cx| cx.emit(BoardPageEvent::Task(event)));
+                        }
+                    });
+                    RowAct::new(act.label(), press)
+                }
+            })
+            .collect();
         self.row(
             RowKey::Task(row.id.clone()),
             row.title,
@@ -628,6 +618,43 @@ fn refusal(
         .into_any_element()
 }
 
+/// The line under a board task's title: needing attention, running or
+/// queued as the Tasks page sorts it, then what it waits on a person for or
+/// why it ended, or else the step it is at when that is not `column`. One
+/// waiting for room says only that, which *Running* would contradict.
+fn task_line(row: &Row, column: &str) -> String {
+    if row.waits_for_room {
+        return row.at.clone();
+    }
+    let word = match row.group.section() {
+        Section::NeedsAttention => Some("Needs attention"),
+        Section::Running => Some("Running"),
+        Section::Queued => Some("Queued"),
+        Section::Finished => None,
+    };
+    let at = match &row.waits {
+        Some(waits) => Some(waits.as_str()),
+        None => (row.at != column).then_some(row.at.as_str()),
+    };
+    word.into_iter()
+        .chain(at)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
+/// What a board task's row offers: the task itself (`None`), then what the
+/// Tasks page's row offers it.
+fn task_offers(row: &Row) -> Vec<Option<crate::tasks_page::TaskAct>> {
+    std::iter::once(None)
+        .chain(
+            crate::tasks_page::task_acts(row, false)
+                .into_iter()
+                .map(Some),
+        )
+        .collect()
+}
+
 /// A row's acts, from their words and presses.
 fn acts<'a>(acts: impl IntoIterator<Item = (&'a str, onehand_ui::Press)>) -> Rc<[RowAct]> {
     acts.into_iter()
@@ -649,12 +676,13 @@ enum Todo {
     /// Put the issue last in To do.
     Add(u64),
     /// Move the issue one place up, or down.
-    Move(u64, bool),
+    Move(u64, Toward),
     /// Put the issue back in the Backlog.
     Drop(u64),
-    /// Put the issue at this place in To do, counted without it; past the
-    /// end, last.
-    Place(u64, usize),
+    /// Put the issue last in To do.
+    Last(u64),
+    /// Put the first issue just before the second in To do.
+    Before(u64, u64),
 }
 
 /// A press making `change` to project `id`'s To do.
@@ -669,42 +697,91 @@ fn todo_press(id: &ProjectId, change: Todo) -> onehand_ui::Press {
 fn change_todo(id: &ProjectId, change: Todo, cx: &mut App) {
     let fx = cx.update_global::<Shared, _>(|shared, _| match change {
         Todo::Add(n) => shared.projects.add_todo(id, n),
-        Todo::Move(n, up) => shared.projects.move_todo(id, n, up),
+        Todo::Move(n, toward) => shared.projects.move_todo(id, n, toward),
         Todo::Drop(n) => shared.projects.drop_todo(id, n),
-        Todo::Place(n, at) => shared.projects.place_todo(id, n, at),
+        Todo::Last(n) => shared.projects.place_todo(id, n, usize::MAX),
+        Todo::Before(n, target) => shared.projects.place_todo_before(id, n, target),
     });
     crate::projects::carry(fx, cx);
     crate::board::pull_now(id, cx);
     cx.refresh_windows();
 }
 
-/// Where in `todo` issue `dragged` goes to stand just before `target`: the
-/// target's place once the dragged issue is taken out. None when dropped on
-/// itself, which moves nothing.
-fn place_before(todo: &[u64], dragged: u64, target: u64) -> Option<usize> {
-    if dragged == target {
-        return None;
-    }
-    todo.iter()
-        .filter(|&&n| n != dragged)
-        .position(|&n| n == target)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::place_before;
+    use super::{task_line, task_offers};
+    use crate::task::Row;
+    use onehand_core::task::Group;
+
+    fn row(group: Group, at: &str, waits: Option<&str>) -> Row {
+        Row {
+            id: "t".into(),
+            title: "Fix it".into(),
+            name: "from the board · Build".into(),
+            at: at.into(),
+            waits: waits.map(str::to_string),
+            waits_for_room: false,
+            project: "/p".into(),
+            group,
+            session: None,
+            resumable: false,
+            stoppable: false,
+            stopping: false,
+        }
+    }
 
     #[test]
-    fn a_drop_on_a_row_lands_just_before_it() {
-        let todo = [1, 2, 3, 4];
-        // From below: the target keeps its place.
-        assert_eq!(place_before(&todo, 4, 2), Some(1));
-        // From above: the target moves up one once the issue is out.
-        assert_eq!(place_before(&todo, 1, 3), Some(1));
-        // Onto the row after itself: its own place, which writes nothing.
-        assert_eq!(place_before(&todo, 2, 3), Some(1));
-        // From the Backlog.
-        assert_eq!(place_before(&todo, 9, 1), Some(0));
-        assert_eq!(place_before(&todo, 3, 3), None);
+    fn a_task_says_what_it_waits_on() {
+        let approval = row(Group::Waiting, "Build", Some("Approving starts Review"));
+        assert_eq!(
+            task_line(&approval, "Build"),
+            "Needs attention · Approving starts Review"
+        );
+        let card = row(
+            Group::Waiting,
+            "Build",
+            Some("The agent asks something in its session"),
+        );
+        assert_eq!(
+            task_line(&card, "Build"),
+            "Needs attention · The agent asks something in its session"
+        );
+        let mut room = row(Group::Running, "Waiting for room at Review", None);
+        room.waits_for_room = true;
+        assert_eq!(task_line(&room, "Review"), "Waiting for room at Review");
+        assert_eq!(
+            task_line(&row(Group::Running, "Build", None), "Build"),
+            "Running"
+        );
+        assert_eq!(
+            task_line(&row(Group::Queued, "Build", None), "Gone"),
+            "Queued · Build"
+        );
+        let failed = row(
+            Group::Ended,
+            "failed",
+            Some("The agent of Build did not start"),
+        );
+        assert_eq!(
+            task_line(&failed, "Build"),
+            "Needs attention · The agent of Build did not start"
+        );
+    }
+
+    #[test]
+    fn a_task_offers_the_tasks_pages_acts() {
+        let labels = |row: &Row| -> Vec<&'static str> {
+            task_offers(row)
+                .into_iter()
+                .map(|act| act.map_or("Show task", |act| act.label()))
+                .collect()
+        };
+        let mut ended = row(Group::Ended, "failed", Some("It failed"));
+        ended.resumable = true;
+        assert_eq!(labels(&ended), ["Show task", "Resume", "Retry…", "Dismiss"]);
+        let mut running = row(Group::Running, "Build", None);
+        running.stoppable = true;
+        assert_eq!(labels(&running), ["Show task", "Stop"]);
+        assert_eq!(labels(&row(Group::Finished, "done", None)), ["Show task"]);
     }
 }

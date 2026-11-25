@@ -21,7 +21,7 @@ use gpui_component::WindowExt as _;
 use onehand_core::Now;
 use onehand_core::chat::Chat;
 use onehand_core::task::drive::link::{self, Joined, Out};
-use onehand_core::task::drive::{Effect, Input, Lane, RunDrive, Signal, Timer};
+use onehand_core::task::drive::{Aim, Effect, Input, Lane, NotOpened, RunDrive, Signal, Timer};
 use onehand_core::task::tasks::{Start, link as tasks_link};
 use onehand_core::task::{Approval, marks};
 use onehand_core::workflow::{Facts, Mark, Run, Verdict, run_command_blocking};
@@ -143,10 +143,7 @@ fn listen(id: &str, lane: &Lane, session: &Entity<ChatSession>, cx: &mut App) ->
             // asking it about, is the link's.
             ChatEvent::Session(signal) => {
                 let chat = &session.read(cx).chat();
-                let input = read(&task, cx, |d| match d.drive.current_lane() == &at {
-                    true => link::input_of(signal, &d.drive, chat),
-                    false => link::lane_input_of(signal, &at, &d.drive, chat),
-                });
+                let input = read(&task, cx, |d| link::said(signal, &at, &d.drive, chat));
                 match input.flatten() {
                     Some(input) => input,
                     None => return,
@@ -171,28 +168,20 @@ fn listen(id: &str, lane: &Lane, session: &Entity<ChatSession>, cx: &mut App) ->
     let (task, at) = (id.to_string(), lane.clone());
     let answered = cx.observe(session, move |session, cx| {
         let chat = &session.read(cx).chat();
-        let input = read(&task, cx, |d| {
-            (d.drive.current_lane() == &at)
-                .then(|| link::notified(&d.drive, chat))
-                .flatten()
-        });
+        let input = read(&task, cx, |d| link::notified(&d.drive, &at, chat));
         if let Some(input) = input.flatten() {
             feed(&task, input, cx);
         }
     });
     // The session went with the run still going: its window or the session
-    // was closed. The run is kept to be resumed, not ended, when it was the
-    // lane the run works in; another lane's is only forgotten.
+    // was closed. What that is to the run is the link's to say.
     let (task, at) = (id.to_string(), lane.clone());
     let release = cx.observe_release(session, move |_, cx| {
         let (task, lane) = (task.clone(), at.clone());
         cx.defer(move |cx| {
-            let current = read(&task, cx, |d| d.drive.current_lane() == &lane);
-            let input = match current {
-                Some(true) | None => Input::SessionGone,
-                Some(false) => Input::LaneGone { lane },
-            };
-            feed(&task, input, cx);
+            if let Some(input) = read(&task, cx, |d| link::gone(&d.drive, lane)) {
+                feed(&task, input, cx);
+            }
         });
     });
     vec![watch, answered, release]
@@ -337,17 +326,14 @@ pub(super) fn with<R>(id: &str, cx: &mut App, act: impl FnOnce(&mut Driven) -> R
 /// Tell task `id`'s run what happened, with its session as it stands, and do
 /// what it says.
 pub(super) fn feed(id: &str, input: Input, cx: &mut App) {
-    // A person's prompt in another lane is read with that lane's session.
-    let lane = match &input {
-        Input::LaneAppended { lane } => Some(lane.clone()),
-        _ => None,
-    };
-    // Another lane's session that went is forgotten, so nothing the run
+    // A person's prompt in another lane is read with that lane's session;
+    // another lane's session that went is forgotten, so nothing the run
     // asks before the lane opens again reaches it, and what it says no
     // longer moves the run.
-    let forget = match &input {
-        Input::LaneGone { lane } => Some(lane.clone()),
-        _ => None,
+    let (lane, forget) = match input.aim() {
+        Aim::Current => (None, None),
+        Aim::Speaks(lane) => (Some(lane.clone()), None),
+        Aim::Gone(lane) => (None, Some(lane.clone())),
     };
     give_in(id, lane, cx, move |run, now| run.handle(input, now));
     if let Some(lane) = forget {
@@ -365,9 +351,10 @@ fn forget_lane(id: &str, lane: Lane, cx: &mut App) {
     let task = id.to_string();
     cx.defer(move |cx| {
         let gone = with(&task, cx, |d| {
-            let still = d.drive.current_lane() != &lane
-                && d.sessions.get(&lane).is_some_and(|held| held.uid == uid);
-            let gone = still.then(|| d.sessions.remove(&lane)).flatten();
+            let held = d.sessions.get(&lane).map(|held| held.uid);
+            let gone = (d.drive.forgets(&lane, held, uid))
+                .then(|| d.sessions.remove(&lane))
+                .flatten();
             if let Some(held) = &gone {
                 d.forgot.push((held.uid, held.session.clone()));
             }
@@ -522,7 +509,14 @@ fn open_session(id: &str, lane: Lane, agent: String, cx: &mut App) {
         if read(&task, cx, |_| ()).is_none() {
             return;
         }
-        let result = open(window, dir, &agent, &grant, cx).map(|(uid, session)| {
+        // An agent gone from the list is the configuration's to answer for;
+        // anything else that kept it from starting is not.
+        let gone = crate::task::facts::lane_spec(&agent, cx).is_err();
+        let opened = open(window, dir, &agent, &grant, cx).map_err(|_| match gone {
+            true => NotOpened::AgentGone,
+            false => NotOpened::Failed,
+        });
+        let result = opened.map(|(uid, session)| {
             let held = Held {
                 uid,
                 session: session.downgrade(),

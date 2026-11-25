@@ -1184,3 +1184,23 @@ fn room_freeing_is_said_whoever_held_it() {
     let fx = tasks.run_ended("2", run, usize::MAX, false, Vec::new(), WINDOW);
     assert_eq!(freed(&fx), [Path::new("/a")], "{fx:?}");
 }
+
+#[test]
+fn room_reads_a_limited_steps_room_by_its_template() {
+    let mut template = crate::workflow::builtin::all()
+        .into_iter()
+        .find(|t| t.id == "builtin:branch")
+        .unwrap();
+    template.steps[0].limit = Some(2);
+    let repo = PathBuf::from("/a");
+    let key = crate::task::rooms::RoomKey::at(&repo, &template, 0).unwrap();
+    assert_eq!(key, room("/a", "builtin:branch", &template.steps[0].id));
+    assert_eq!(crate::task::rooms::RoomKey::at(&repo, &template, 99), None);
+    let mut tasks: TasksDrive<Win> = TasksDrive::default();
+    for task in ["1", "2", "3"] {
+        let _ = tasks.ask_room(task, key.clone(), 2);
+    }
+    let room = tasks.room(&repo, &template, 0).unwrap();
+    assert_eq!((room.limit, room.holding, room.waiting), (2, 2, 1));
+    assert_eq!(tasks.room(&repo, &template, 1), None, "not limited");
+}

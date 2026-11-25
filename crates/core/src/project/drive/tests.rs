@@ -691,9 +691,9 @@ fn add_todo_appends_once() {
 #[test]
 fn move_todo_swaps_neighbours() {
     let (mut d, p) = drive_with_todo(vec![4, 9, 2]);
-    let _ = d.move_todo(&p.id, 2, true);
+    let _ = d.move_todo(&p.id, 2, crate::project::Toward::Up);
     assert_eq!(todo_of(&d, &p), vec![4, 2, 9]);
-    assert!(d.move_todo(&p.id, 4, true).is_empty());
+    assert!(d.move_todo(&p.id, 4, crate::project::Toward::Up).is_empty());
     assert_eq!(todo_of(&d, &p), vec![4, 2, 9]);
 }
 
@@ -745,21 +745,33 @@ fn start_todo_counts_starts_until_they_land() {
     )
     .unwrap();
     let taken = std::collections::HashSet::new();
-    let pull = d.pull(&p.id, 0, None, &issues, None, &taken).unwrap();
+    let flow = worktree_flow(crate::workflow::Place::Worktree);
+    let pull = d
+        .pull(&p.id, &flow, 0, None, &issues, None, &taken)
+        .unwrap();
     assert_eq!(pull.start, [2], "a team of 3 with 2 on their way");
-    let first = d.pull(&p.id, 0, Some((2, 0)), &issues, None, &taken);
+    let room = crate::task::rooms::Room {
+        limit: 2,
+        holding: 0,
+        waiting: 0,
+    };
+    let first = d.pull(&p.id, &flow, 0, Some(room), &issues, None, &taken);
     assert!(
         first.unwrap().start.is_empty(),
         "the 2 on their way fill a first step of 2"
     );
     d.landed(&p.id, 4);
     assert_eq!(
-        d.pull(&p.id, 1, None, &issues, None, &taken).unwrap().start,
+        d.pull(&p.id, &flow, 1, None, &issues, None, &taken)
+            .unwrap()
+            .start,
         [2]
     );
     d.landed(&p.id, 9);
     assert_eq!(
-        d.pull(&p.id, 0, None, &issues, None, &taken).unwrap().start,
+        d.pull(&p.id, &flow, 0, None, &issues, None, &taken)
+            .unwrap()
+            .start,
         [2, 7]
     );
 }
@@ -791,4 +803,95 @@ fn failed_write_puts_board_back() {
         result: Err("disk full".into()),
     });
     assert!(d.get(&p.id).unwrap().board().is_none());
+}
+
+fn worktree_flow(place: crate::workflow::Place) -> crate::workflow::Template {
+    let mut template = crate::workflow::builtin::all()
+        .into_iter()
+        .find(|t| t.id == "builtin:branch")
+        .unwrap();
+    template.place = place;
+    template
+}
+
+#[test]
+fn bind_board_starts_small_and_keeps_what_a_rebind_had() {
+    let (mut d, p) = drive();
+    let flow = worktree_flow(crate::workflow::Place::Worktree);
+    assert!(d.bind_board(&p.id, Some(&flow)).is_ok());
+    let bound = d.get(&p.id).unwrap().board().unwrap().clone();
+    assert_eq!((bound.workflow.as_str(), bound.team), ("builtin:branch", 2));
+    assert!(bound.todo.is_empty());
+    let _ = d.set_board(&p.id, Some(board(vec![4])));
+    let mut copy = flow.clone();
+    copy.id = "copy".into();
+    assert!(d.bind_copy(&p.id, &copy).is_some_and(|bound| bound.is_ok()));
+    let kept = d.get(&p.id).unwrap().board().unwrap().clone();
+    assert_eq!((kept.workflow.as_str(), kept.team), ("copy", 3));
+    assert_eq!(kept.todo, [4]);
+}
+
+#[test]
+fn bind_board_refuses_what_a_board_cannot_run() {
+    let (mut d, p) = drive();
+    assert!(d
+        .bind_board(&p.id, None)
+        .is_err_and(|why| why.contains("gone")));
+    let checkout = worktree_flow(crate::workflow::Place::Checkout);
+    assert!(d.bind_board(&p.id, Some(&checkout)).is_err());
+    assert!(d.get(&p.id).unwrap().board().is_none());
+    assert!(
+        d.bind_copy(&p.id, &checkout).is_none(),
+        "no board to copy for"
+    );
+}
+
+#[test]
+fn unbinding_asks_only_over_a_to_do() {
+    let (d, p) = drive();
+    assert!(!d.unbinding_asks(&p.id));
+    let (d, p) = drive_with_todo(Vec::new());
+    assert!(!d.unbinding_asks(&p.id));
+    let (d, p) = drive_with_todo(vec![4]);
+    assert!(d.unbinding_asks(&p.id));
+}
+
+#[test]
+fn pull_counts_the_first_steps_room_and_refuses_an_unusable_workflow() {
+    let (d, p) = drive_with_todo(vec![2, 7]);
+    let issues: crate::issues::Issues = serde_json::from_str(
+        r#"{"next":10,"issues":[{"number":2,"title":"b"},{"number":7,"title":"c"}]}"#,
+    )
+    .unwrap();
+    let taken = std::collections::HashSet::new();
+    let flow = worktree_flow(crate::workflow::Place::Worktree);
+    let room = crate::task::rooms::Room {
+        limit: 3,
+        holding: 1,
+        waiting: 1,
+    };
+    let pull = d.pull(&p.id, &flow, 0, Some(room), &issues, None, &taken);
+    assert_eq!(
+        pull.unwrap().start,
+        [2],
+        "one left of three, held and waited for"
+    );
+    let checkout = worktree_flow(crate::workflow::Place::Checkout);
+    assert!(d
+        .pull(&p.id, &checkout, 0, None, &issues, None, &taken)
+        .is_none());
+}
+
+#[test]
+fn place_todo_before_lands_just_before_its_target() {
+    let (mut d, p) = drive_with_todo(vec![1, 2, 3, 4]);
+    let _ = d.place_todo_before(&p.id, 4, 2);
+    assert_eq!(todo_of(&d, &p), vec![1, 4, 2, 3]);
+    let _ = d.place_todo_before(&p.id, 9, 1);
+    assert_eq!(todo_of(&d, &p), vec![9, 1, 4, 2, 3], "from the Backlog");
+    assert!(d.place_todo_before(&p.id, 2, 2).is_empty());
+    assert!(
+        d.place_todo_before(&p.id, 2, 7).is_empty(),
+        "no such target"
+    );
 }

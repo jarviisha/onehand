@@ -4,25 +4,39 @@
 
 use crate::connector::Connector;
 use crate::issues::{Issues, LocalIssue};
-use crate::project::{Board, ProjectId};
+use crate::project::{Board, Project, ProjectId};
 use crate::task::{Task, Working};
 use crate::workflow::{Outcome, Place, Stop, Template};
 use std::collections::HashSet;
+use std::path::PathBuf;
 
 /// How many tasks one column of the board draws; the rest are counted.
 pub const BOARD_SHOWN: usize = 50;
 
 /// Whether the board can run `template`: it must exist and work on a
 /// worktree, since several tasks work at once and a checkout holds one.
-pub fn usable(template: Option<&Template>) -> Result<(), String> {
+pub fn usable(template: Option<&Template>) -> Result<&Template, String> {
     let Some(template) = template else {
-        return Err("The board's workflow is gone or cannot be read.".to_string());
+        return Err("The board's workflow is gone or cannot be read".to_string());
     };
     match template.place {
-        Place::Worktree => Ok(()),
+        Place::Worktree => Ok(template),
         Place::Checkout => Err(format!(
-            "A board needs a workflow that works on a worktree: {} works in the checkout.",
+            "A board needs a workflow that works on a worktree: {} works in the checkout",
             template.name
+        )),
+    }
+}
+
+/// Where `project`'s board works: its folder and the file its issues are
+/// kept in. One on a host has no board that works, its issues not kept on
+/// this machine.
+pub fn local(project: &Project) -> Result<(PathBuf, PathBuf), String> {
+    match project.host {
+        Some(_) => Err("A board works on a project on this machine".to_string()),
+        None => Ok((
+            project.path.clone(),
+            crate::project::file::issues_file(&project.id),
         )),
     }
 }
@@ -61,7 +75,7 @@ pub struct Pull {
 /// dropped. One open but not workable now, as a forge's while the forge is
 /// not found, or one a task of the board still holds (`taken`), stays in
 /// To do for a later look.
-pub fn pull(
+pub(crate) fn pull(
     board: &Board,
     running: usize,
     first: Option<(u32, usize)>,

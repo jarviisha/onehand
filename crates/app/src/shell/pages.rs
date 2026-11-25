@@ -132,6 +132,7 @@ impl Shell {
         use crate::board_page::BoardPageEvent as E;
         match event {
             E::OpenTask(id) => self.show_task(id, window, cx),
+            E::Task(event) => self.on_tasks_page(event, window, cx),
             E::ProjectSettings(root) => self.show_project_settings(root.clone(), window, cx),
             E::EditWorkflow { step } => {
                 let Some(project) = self.board_page.read(cx).project().cloned() else {

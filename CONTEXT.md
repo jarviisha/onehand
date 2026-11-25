@@ -159,6 +159,12 @@ A step whose agent judges an earlier step's work and gives a verdict: approve, o
 note. It works in a session of its own, and a send back is a miss. Nobody is waited on.
 _Avoid_: gate (that is onehand's own check), approval on its own (that waits for a person)
 
+**Lane**:
+A run's session for one step, or the run's own session: a step that names its own agent, and every
+review step, works in a lane of its own, keyed by the step. Only the current lane is worked; a
+lane's session that is lost without being the current one is opened again when its step is.
+_Avoid_: thread, track (a board has no lane in the kanban sense: its columns are steps)
+
 **Verdict**:
 What a review step's agent gives, by the tool `review_verdict`: approve, or send back with a note.
 Held until the review's turn ends; the last one given counts.
@@ -264,7 +270,7 @@ _Avoid_: cron job, timer, job
 A project's issues laid out as work: its *Backlog*, its *To do*, a column per step of the
 workflow it is bound to, and what is done. A person moves issues to To do, and a team of tasks of
 that workflow pulls them in order.
-_Avoid_: kanban, card, lane, ticket
+_Avoid_: kanban, card, ticket
 
 **Backlog**:
 The open issues of a project's own tracker that a brief can be made from and no list of the board

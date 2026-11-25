@@ -23,13 +23,13 @@
 //! held beside this one; [`link`] joins them.
 
 use super::queue::Queue;
-use super::rooms::{RoomKey, Rooms};
+use super::rooms::{Room, RoomKey, Rooms};
 use super::work::Act;
 use super::{history, Task, Working};
 use crate::workflow::{Run, Template, WithCurrent};
 use crate::worktree::removal;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 mod begin;
@@ -370,8 +370,20 @@ impl<W: Copy> TasksDrive<W> {
     }
 
     /// How many tasks hold room at `key`, and how many wait for it.
-    pub fn room_at(&self, key: &RoomKey) -> (usize, usize) {
+    pub(crate) fn room_at(&self, key: &RoomKey) -> (usize, usize) {
         self.rooms.at(key)
+    }
+
+    /// The room at `template`'s step at `at`, for runs in `repo`; none when
+    /// the step is not limited.
+    pub fn room(&self, repo: &Path, template: &Template, at: usize) -> Option<Room> {
+        let limit = template.limit_at(at)?;
+        let (holding, waiting) = self.room_at(&RoomKey::at(repo, template, at)?);
+        Some(Room {
+            limit,
+            holding,
+            waiting,
+        })
     }
 
     /// Whether task `id` is running or waiting for its place.

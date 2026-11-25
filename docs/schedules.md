@@ -88,7 +88,9 @@ writing the file, the window holding each project, and each start.
   project, in that project's worktree folder, as the launcher's is, and its session runs on the
   project's row, without moving the rail's selection (which *Run on* offers first).
 - **The agent** is the schedule's for every step that names none; **its mode and settings** are
-  every agent step's that sets none, setting by setting, and a step's own win. What blocks the
+  every agent or review step's that sets none, setting by setting, and a step's own win. A step
+  naming its own agent takes none of them: its lane's mode is the step's own, else its agent's
+  default. A review naming no agent runs on the run's agent and takes them. What blocks the
   launcher's *Run* blocks it, in the preflight's words.
 - **What its sessions may use**: the schedule's tools and labels are copied onto the task, and
   every drive of it gives its session that set (`docs/control.md`), a Resume or a Retry included;

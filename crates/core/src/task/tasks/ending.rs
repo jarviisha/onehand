@@ -164,9 +164,9 @@ impl<W: Copy> TasksDrive<W> {
 
 /// Whether a board task that ended as `outcome` lets the board start the
 /// next of its To do: one done or that a person stopped left the board. One
-/// that ended without finishing is left for a person to look at, and
-/// pulling the next would most likely end it the same way, one after another
-/// until To do is empty.
+/// that ended without finishing is left for a person to look at and pulls
+/// nothing, deliberately: a cause the tasks share would most likely end the
+/// next the same way, one after another until To do is empty.
 fn pulls_next(outcome: Option<&Outcome>) -> bool {
     match outcome {
         Some(Outcome::Done | Outcome::Stopped(Stop::ByPerson | Stop::TakenOver)) => true,

@@ -81,9 +81,13 @@ fn close_issue(root: &Path, file: PathBuf, number: u64, cx: &mut App) {
         number,
         open: false,
     };
-    let answer = move |written: Result<_, String>, _: &mut App| {
+    let at = root.to_path_buf();
+    let answer = move |written: Result<_, String>, cx: &mut App| {
         if let Err(why) = written {
-            eprintln!("onehand: the board's issue #{number} was not closed: {why}");
+            let note = crate::toast::failed(&format!("Closing #{number} on the board"), why);
+            if let Some((window, _)) = crate::windows::holding_root(&at, cx).into_iter().next() {
+                let _ = window.update(cx, |_, window, cx| window.push_notification(note, cx));
+            }
         }
     };
     onehand_issues::write(
@@ -96,14 +100,9 @@ fn close_issue(root: &Path, file: PathBuf, number: u64, cx: &mut App) {
     );
 }
 
-/// Where local project `project` is and where it keeps its issues; none
-/// for one on a host, whose issues are not kept here.
+/// Where project `project`'s board works and where it keeps its issues.
 fn local(project: &ProjectId, cx: &App) -> Option<(PathBuf, PathBuf)> {
-    let project = Shared::global(cx).projects.get(project)?;
-    project.host.is_none().then(|| {
-        let file = onehand_core::project::file::issues_file(&project.id);
-        (project.path.clone(), file)
-    })
+    board::local(Shared::global(cx).projects.get(project)?).ok()
 }
 
 /// The issues in `file`, and the forge serving `root` if any. Blocking.
@@ -141,21 +140,15 @@ fn pull_read(
     let Some((window, shell)) = crate::windows::holding_root(root, cx).into_iter().next() else {
         return;
     };
-    // An unusable workflow is said on the board's page; nothing starts.
     let Ok(template) = crate::control::template(&board.workflow, cx) else {
         return;
     };
-    if board::usable(Some(&template)).is_err() {
-        return;
-    }
     let running = crate::task::board_running(project, cx);
     let taken = crate::task::board_taken(project, cx);
-    // A limited first step lets in no more than it has room for.
-    let first = crate::task::room_at(root, &template, 0, cx)
-        .map(|(limit, holding, waiting)| (limit, holding + waiting));
+    let first = crate::task::room_at(root, &template, 0, cx);
     let Some(pull) = Shared::global(cx)
         .projects
-        .pull(project, running, first, kept, forge, &taken)
+        .pull(project, &template, running, first, kept, forge, &taken)
     else {
         return;
     };

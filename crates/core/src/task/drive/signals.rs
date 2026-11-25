@@ -6,7 +6,7 @@
 //! the run holds on until it lands. A finished run takes no answer at all:
 //! its carrier lets it go, and what the run kept is the task's.
 
-use super::Lane;
+use super::{Lane, NotOpened};
 use crate::connector::{Check, PullRequest};
 use crate::workflow::{CommandResult, Facts, Mark, Outcome};
 use std::path::PathBuf;
@@ -64,7 +64,7 @@ pub enum Input {
     /// `lane`, or why it did not start.
     LaneOpened {
         lane: Lane,
-        result: Result<(), String>,
+        result: Result<(), NotOpened>,
     },
     /// Something landed in the session of `lane`, which is not the current
     /// one. Given with that lane's session, not the current one's.
@@ -76,6 +76,50 @@ pub enum Input {
     LaneGone {
         lane: Lane,
     },
+}
+
+/// Whose session an [`Input`] is read with, and what becomes of it after.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Aim<'a> {
+    /// The current lane's session.
+    Current,
+    /// A person's prompt in another lane: that lane's session.
+    Speaks(&'a Lane),
+    /// That lane's session went: it is forgotten once the run has been told.
+    Gone(&'a Lane),
+}
+
+impl Input {
+    /// Whose session this is read with, so a front end joins the right one.
+    pub fn aim(&self) -> Aim<'_> {
+        match self {
+            Self::Appended
+            | Self::TurnEnded
+            | Self::AwaitingUser
+            | Self::Disconnected
+            | Self::NotTaken
+            | Self::SessionGone
+            | Self::PicksAnswered
+            | Self::RoomGiven
+            | Self::Notified
+            | Self::PickRefused(_)
+            | Self::Pinned(_)
+            | Self::Measured(_)
+            | Self::TurnRead(_)
+            | Self::CommandExited(_)
+            | Self::Pushed(_)
+            | Self::PullRequestFound(_)
+            | Self::PullRequestOpened(_)
+            | Self::LogsRead(_)
+            | Self::MarkedReady(_)
+            | Self::NoForge(_)
+            | Self::Elapsed(_)
+            | Self::Saved(_)
+            | Self::LaneOpened { .. } => Aim::Current,
+            Self::LaneAppended { lane } => Aim::Speaks(lane),
+            Self::LaneGone { lane } => Aim::Gone(lane),
+        }
+    }
 }
 
 /// What a run waits for on a clock. Each has one clock, which arming again

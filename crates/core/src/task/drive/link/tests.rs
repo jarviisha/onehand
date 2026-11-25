@@ -529,4 +529,36 @@ fn a_step_lanes_session_is_named_for_the_task_and_step() {
         heard(&Signal::Appended, &pair),
         Some(Input::LaneAppended { lane: Lane::Run })
     );
+
+    // Routed by the lane it comes from: the review's, current, is heard in
+    // full; the run's own only as that lane's.
+    let review = Lane::Step("review".into());
+    assert_eq!(
+        said(&Signal::TurnEnded, &review, &pair.drive, &lane),
+        Some(Input::TurnEnded)
+    );
+    assert_eq!(
+        said(&Signal::TurnEnded, &run, &pair.drive, &pair.session),
+        None
+    );
+    assert_eq!(notified(&pair.drive, &run, &pair.session), None);
+    // The current lane's own is heeded once it has something to learn.
+    assert_eq!(notified(&pair.drive, &review, &lane), None);
+    pair.drive.here.card = true;
+    assert_eq!(notified(&pair.drive, &review, &lane), Some(Input::Notified));
+    pair.drive.here.card = false;
+    // The current lane's session going ends the run; another's is forgotten,
+    // and only while that lane still holds the session that went.
+    assert_eq!(super::gone(&pair.drive, review.clone()), Input::SessionGone);
+    assert_eq!(
+        super::gone(&pair.drive, Lane::Run),
+        Input::LaneGone { lane: Lane::Run }
+    );
+    assert!(pair.drive.forgets(&run, Some(1), 1));
+    assert!(!pair.drive.forgets(&run, Some(2), 1), "opened again since");
+    assert!(!pair.drive.forgets(&run, None, 1));
+    assert!(
+        !pair.drive.forgets(&review, Some(1), 1),
+        "the lane it works in"
+    );
 }

@@ -20,7 +20,7 @@ on this machine. A project on a host has none: its issues are not kept here.
   first when the form there holds changes not saved. *Settings ▸ Projects ▸ Board* has the same
   *Edit workflow* beside its menu. A built-in workflow opens read-only, with its *Duplicate to
   edit*; that duplicate, saved for the first time, becomes that board's workflow, team and To do
-  kept, and a toast says *<project>'s board now uses <copy name>.* Only a copy of a built-in
+  kept, and a toast says *<project>'s board now uses <copy name>*. Only a copy of a built-in
   workflow rebinds: one of the person's own is edited in place, and a copy of it leaves the board
   as it is. No other board changes, and the page forgets the board on any save, once another
   workflow is opened, or when the form is closed.
@@ -28,7 +28,12 @@ on this machine. A project on a host has none: its issues are not kept here.
 - **The page.** *Board* in a project's dots menu, and the link on the project's page (*Board · N
   running · M to do*), open it. Columns side by side, scrolling sideways: *Backlog*, *To do*, a
   column per step of the workflow, *Done*. Each column draws at most `BOARD_SHOWN` rows and says
-  how many more it left out. A task's row opens it on the Tasks page.
+  how many more it left out. A task's row opens it on the Tasks page, and its `⋯` and right-click
+  offer *Show task* and then what the Tasks page's row offers it (*Open session*, *Stop*, *Resume*,
+  *Retry…*, *Dismiss*, as its state allows). Under its title it says *Needs attention*, *Running*
+  or *Queued* as the Tasks page sorts it, then what it waits on or why it ended in its detail's
+  words (*Approving starts <step>*, *The agent asks something in its session*), or *Waiting for
+  room at <step>* alone when its step is full.
 - **Backlog** is the project's open issues a brief can be made from (`Issues::workable`) that
   are neither in To do nor held by a task of the board (`board::backlog`). A person moves one to
   To do, and back.
@@ -108,8 +113,10 @@ happens when:
 - room frees at a step, whoever held it, so a task of the board held at the first step by another
   workflow's run or by a task of no board still lets a pull go on (`RoomFreed`);
 - a board task ends done, or a person stopped or took it over (`Signal::BoardEnded`, whose
-  `pull` core decides). One that ended without finishing pulls nothing: the next would most
-  likely end the same way, one after another until To do is empty;
+  `pull` core decides). One that ended without finishing pulls nothing, by the owner's choice:
+  a cause the tasks share (an agent gone, a broken workflow, a failing check) would most likely end
+  the next the same way, one after another until To do is empty, so the board waits for a person
+  instead;
 - the tasks are read at boot, and whenever the workflow library is read: at boot and on every
   reload after a workflow is saved or deleted, by a person or a tool, since a board's workflow
   may only now be on offer.

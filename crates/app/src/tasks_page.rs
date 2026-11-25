@@ -47,6 +47,7 @@ pub(crate) struct TasksPage {
 
 /// What the Tasks page asks of the window, which owns tasks' sessions,
 /// retries and worktrees.
+#[derive(Clone)]
 pub(crate) enum TasksPageEvent {
     /// Show session `uid`, in whichever window holds it.
     ShowSession {
@@ -421,26 +422,30 @@ impl TaskAct {
         }
     }
 
+    /// What it asks of the window about the task `row`: none for *Open
+    /// session* on a task with no session.
+    pub(crate) fn event(self, row: &Row) -> Option<TasksPageEvent> {
+        let id = row.id.clone();
+        Some(match self {
+            Self::OpenSession => {
+                let (uid, window) = row.session?;
+                TasksPageEvent::ShowSession { uid, window }
+            }
+            Self::Stop => TasksPageEvent::StopTask(id),
+            Self::Resume => TasksPageEvent::ResumeTask(id),
+            Self::Retry => TasksPageEvent::RetryTask(id),
+            Self::Dismiss => TasksPageEvent::DismissTask(id),
+        })
+    }
+
     /// What a press of it does, for a button or a menu row alike.
     pub(super) fn press(self, row: &Row, cx: &Context<TasksPage>) -> Press {
-        let id = &row.id;
-        match self {
-            Self::OpenSession => {
-                let session = row.session;
-                let page = cx.entity().downgrade();
-                Rc::new(move |_, _, cx| {
-                    if let Some((uid, window)) = session {
-                        let _ = page.update(cx, |_, cx| {
-                            cx.emit(TasksPageEvent::ShowSession { uid, window })
-                        });
-                    }
-                })
+        let (event, page) = (self.event(row), cx.entity().downgrade());
+        Rc::new(move |_, _, cx| {
+            if let Some(event) = event.clone() {
+                let _ = page.update(cx, |_, cx| cx.emit(event));
             }
-            Self::Stop => Rc::new(emit(id, cx, TasksPageEvent::StopTask)),
-            Self::Resume => Rc::new(emit(id, cx, TasksPageEvent::ResumeTask)),
-            Self::Retry => Rc::new(emit(id, cx, TasksPageEvent::RetryTask)),
-            Self::Dismiss => Rc::new(emit(id, cx, TasksPageEvent::DismissTask)),
-        }
+        })
     }
 
     /// The act as a quiet button keyed by `key`.

@@ -200,7 +200,7 @@ fn a_limited_columns_head_says_how_much_of_its_room_is_held(cx: &mut TestAppCont
         crate::task::board(&project, &root, &template, cx)
             .steps
             .into_iter()
-            .map(|(label, head, _, _)| (label, head))
+            .map(|column| (column.label, column.head))
             .collect::<Vec<_>>()
     });
     assert_eq!(heads, [("Do".to_string(), "Do · 1 of 1".to_string())]);

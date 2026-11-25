@@ -155,6 +155,13 @@ impl Board {
     }
 }
 
+/// Which way an issue moves in a board's To do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Toward {
+    Up,
+    Down,
+}
+
 /// Which of a project's folders a path is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Folder {

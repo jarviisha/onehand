@@ -3,6 +3,7 @@
 
 use super::Tasks;
 use gpui::{AnyWindowHandle, App};
+use onehand_core::task::work::{Around, PrSeen, Work, next_action};
 use onehand_core::task::{Group, Origin, Source, Task, sort_listed};
 use onehand_core::workflow::Run;
 use std::path::PathBuf;
@@ -15,6 +16,9 @@ pub(crate) struct Row {
     pub(crate) name: String,
     /// The step it is at while it works, or how it ended.
     pub(crate) at: String,
+    /// What it waits on a person for, or why it ended, in the words its
+    /// detail has; none for a task working or finished.
+    pub(crate) waits: Option<String>,
     /// It works, but waits for room at a full step before going on there.
     pub(crate) waits_for_room: bool,
     /// The project it was started from.
@@ -80,6 +84,20 @@ fn row_of(t: &Tasks, task: &Task) -> Row {
         (None, None) => format!("cut off at {step}"),
         (None, Some(said)) => said,
     };
+    let group = task.group(working);
+    let waits = match group {
+        Group::Waiting | Group::Ended => {
+            let work = Work::of(task, working, None);
+            let around = Around {
+                open: true,
+                session: false,
+                pr: PrSeen::Unread,
+                now: onehand_core::Now::read().secs,
+            };
+            next_action(Some(&work), around).said
+        }
+        Group::Running | Group::Queued | Group::Finished => None,
+    };
     let live = t.live.get(task.id());
     Row {
         id: task.id().to_string(),
@@ -94,9 +112,10 @@ fn row_of(t: &Tasks, task: &Task) -> Row {
             }
         },
         at,
+        waits,
         waits_for_room,
         project: task.setup().repo.clone(),
-        group: task.group(working),
+        group,
         session: live.and_then(|d| Some((d.uid()?, d.window))),
         resumable: task.resumable(),
         stoppable: live.is_some() || t.drive.queue().queued(task.id()),
@@ -152,30 +171,33 @@ pub(crate) fn room_at(
     template: &onehand_core::workflow::Template,
     at: usize,
     cx: &App,
-) -> Option<(u32, usize, usize)> {
-    let limit = template.limit_at(at)?;
-    let key = onehand_core::task::rooms::RoomKey {
-        repo: root.to_path_buf(),
-        workflow: template.id.clone(),
-        step: template.steps[at].id.clone(),
-    };
-    let (holding, waiting) = cx
-        .try_global::<Tasks>()
-        .map_or((0, 0), |t| t.drive.room_at(&key));
-    Some((limit, holding, waiting))
+) -> Option<onehand_core::task::rooms::Room> {
+    // With no tasks kept yet there is no room to count: no limit and no
+    // first-step cap apply before the tasks' drive exists.
+    cx.try_global::<Tasks>()?.drive.room(root, template, at)
 }
 
 /// Project `project`'s board tasks laid over `template`'s steps, each as
 /// the pages list it.
 pub(crate) struct BoardTasks {
-    /// A column per step, by its label, its head, its rows, and its step's
-    /// id while the workflow still has the step; then any step the workflow
-    /// lost. A limited step's head says how much of its room is held.
-    pub(crate) steps: Vec<(String, String, Vec<Row>, Option<String>)>,
+    /// A column per step; then any step the workflow lost.
+    pub(crate) steps: Vec<StepColumn>,
     /// Newest first.
     pub(crate) done: Vec<Row>,
     /// The issues its tasks hold out of the Backlog.
     pub(crate) taken: std::collections::HashSet<u64>,
+}
+
+/// The column of one step of a board's workflow.
+pub(crate) struct StepColumn {
+    /// The step's label, which tells its rows apart.
+    pub(crate) label: String,
+    /// What its head says: a limited step's says how much of its room is
+    /// held.
+    pub(crate) head: String,
+    pub(crate) rows: Vec<Row>,
+    /// The step's id while the workflow still has the step.
+    pub(crate) step: Option<String>,
 }
 
 /// Project `project`'s board tasks in the columns of `template`, as core
@@ -209,13 +231,16 @@ pub(crate) fn board(
                 let at = template.steps.iter().position(|s| s.id == column.step);
                 let room = at.and_then(|at| room_at(root, template, at, cx));
                 let head = match room {
-                    Some((limit, holding, _)) => {
-                        format!("{} · {holding} of {limit}", column.label)
-                    }
+                    Some(room) => format!("{} · {} of {}", column.label, room.holding, room.limit),
                     None => column.label.clone(),
                 };
                 let step = at.map(|_| column.step.clone());
-                (column.label, head, rows(column.tasks), step)
+                StepColumn {
+                    label: column.label,
+                    head,
+                    rows: rows(column.tasks),
+                    step,
+                }
             })
             .collect(),
         done: rows(columns.done),
