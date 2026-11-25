@@ -295,8 +295,7 @@ pub(crate) fn open_step_session(
     agent: &str,
     cx: &mut Context<Shell>,
 ) -> Result<(u64, Entity<crate::chat::session::ChatSession>), String> {
-    let spec = crate::task::facts::lane_spec(agent, cx)
-        .ok_or_else(|| format!("{agent} is not in the agent list"))?;
+    let spec = crate::task::facts::lane_spec(agent, cx)?;
     shell
         .open_off_screen(dir, spec, Vec::new(), cx)
         .ok_or_else(|| SESSION_NOT_STARTED.to_string())

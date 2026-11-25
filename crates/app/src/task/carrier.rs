@@ -304,7 +304,35 @@ pub(super) fn feed(id: &str, input: Input, cx: &mut App) {
         Input::LaneAppended { lane } => Some(lane.clone()),
         _ => None,
     };
+    // Another lane's session that went is forgotten, so nothing the run
+    // asks before the lane opens again reaches it, and what it says no
+    // longer moves the run.
+    let forget = match &input {
+        Input::LaneGone { lane } => Some(lane.clone()),
+        _ => None,
+    };
     give_in(id, lane, cx, move |run, now| run.handle(input, now));
+    if let Some(lane) = forget {
+        forget_lane(id, lane, cx);
+    }
+}
+
+/// Let task `id`'s lane `lane` drop its session, unless the run works in
+/// it now. Deferred: the session's own signal may be what is delivering
+/// this, and its subscription must not be dropped inside it.
+fn forget_lane(id: &str, lane: Lane, cx: &mut App) {
+    let Some(uid) = read(id, cx, |d| d.sessions.get(&lane).map(|held| held.uid)).flatten() else {
+        return;
+    };
+    let task = id.to_string();
+    cx.defer(move |cx| {
+        let gone = with(&task, cx, |d| {
+            let still = d.drive.current_lane() != &lane
+                && d.sessions.get(&lane).is_some_and(|held| held.uid == uid);
+            still.then(|| d.sessions.remove(&lane)).flatten()
+        });
+        drop(gone);
+    });
 }
 
 /// Give task `id`'s run `command`, joined with its session as it stands, and
@@ -438,6 +466,10 @@ fn open_session(id: &str, lane: Lane, agent: String, cx: &mut App) {
     let task = id.to_string();
     // Deferred: the shell opening it may be the one whose update fed the run.
     cx.defer(move |cx| {
+        // A run that ended meanwhile has nothing to open a session for.
+        if read(&task, cx, |_| ()).is_none() {
+            return;
+        }
         let result = open(window, dir, &agent, cx).map(|(uid, session)| {
             if let Some(grant) = &grant {
                 crate::control::grant(uid, grant, cx);
@@ -447,10 +479,14 @@ fn open_session(id: &str, lane: Lane, agent: String, cx: &mut App) {
                 session: session.downgrade(),
                 _subscriptions: listen(&task, &lane, &session, cx),
             };
-            // A lane opened again replaces the one gone, and what listened
-            // to it; dropped once the run is let go.
-            let old = with(&task, cx, |d| d.sessions.insert(lane.clone(), held));
-            drop(old);
+            // A session still held for the lane is not left in the rail
+            // with nothing driving it: it is closed.
+            let old = with(&task, cx, |d| d.sessions.insert(lane.clone(), held)).flatten();
+            if let Some(old) = old.filter(|old| old.session.upgrade().is_some()) {
+                crate::windows::with_shell(window, cx, |shell, window, cx| {
+                    shell.close_finished(old.uid, window, cx)
+                });
+            }
         });
         feed(&task, Input::LaneOpened { lane, result }, cx);
     });

@@ -78,11 +78,12 @@ pub(crate) fn spec_for(agent: Option<&str>, cx: &App) -> Option<AgentSpec> {
 
 /// The agent a lane of a run starts on: the one named `agent`, found by
 /// exact name since a step's agent never falls back, or, `agent` empty, the
-/// first configured, as a run naming none starts.
-pub(crate) fn lane_spec(agent: &str, cx: &App) -> Option<AgentSpec> {
+/// first configured, as a run naming none starts. Says why there is none.
+pub(crate) fn lane_spec(agent: &str, cx: &App) -> Result<AgentSpec, String> {
     let named = (!agent.is_empty()).then_some(agent);
-    let base = config::agent_or_first(&Shared::global(cx).settings.agents, named)?.clone();
-    Some(onehand_core::task::run_spec(base))
+    let base = config::agent_or_first(&Shared::global(cx).settings.agents, named)
+        .ok_or_else(|| format!("{agent} is not in the agent list"))?;
+    Ok(onehand_core::task::run_spec(base.clone()))
 }
 
 /// The mode a lead's worker on agent `agent` starts in.

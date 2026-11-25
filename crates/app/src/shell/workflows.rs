@@ -404,7 +404,7 @@ impl Shell {
         let session = match (&lane, off_screen) {
             (Lane::Step(_), _) => {
                 let agent = lane.agent(&start.run);
-                agent_gone = crate::task::facts::lane_spec(&agent, cx).is_none();
+                agent_gone = crate::task::facts::lane_spec(&agent, cx).is_err();
                 super::open_step_session(self, dir, &agent, cx).ok()
             }
             // Nothing the person is looking at moves: a tool's task is on the

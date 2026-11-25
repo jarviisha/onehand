@@ -5,7 +5,7 @@
 use super::{settings, Asked, Effect, Lane, RunDrive};
 use crate::chat::{Chat, Link};
 use crate::preflight::{found_late, mode_refused, About};
-use crate::workflow::{Action, Outcome, Pick, Stop};
+use crate::workflow::{Action, Outcome, Pick, StepKind, Stop};
 use crate::Now;
 
 /// The longest answer kept from a turn. An answer the length of a book is cut
@@ -102,10 +102,16 @@ impl RunDrive {
 
     /// Tell the transcript the step the run is now in, once per step entered.
     /// A prompt's run has no steps to tell apart, so it says none.
+    /// A step whose prompt goes in another lane is said there, once its
+    /// session is open, not in the lane the run is leaving.
     fn announce_step(&mut self) {
         let fresh = self.noted != Some(self.run.step);
         self.noted = Some(self.run.step);
-        if fresh {
+        let elsewhere = matches!(
+            self.run.current().map(|step| &step.kind),
+            Some(StepKind::Agent { .. })
+        ) && Lane::at(&self.run) != self.lane;
+        if fresh && !elsewhere {
             self.asked.extend(self.step_said().map(Asked::Note));
         }
     }

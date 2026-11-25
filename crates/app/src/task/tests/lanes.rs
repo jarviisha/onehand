@@ -33,9 +33,7 @@ pub(in crate::task) fn open_lane(
     agent: &str,
     cx: &mut App,
 ) -> Result<(u64, Entity<ChatSession>), String> {
-    if crate::task::facts::lane_spec(agent, cx).is_none() {
-        return Err(format!("{agent} is not in the agent list"));
-    }
+    crate::task::facts::lane_spec(agent, cx)?;
     cx.update_default_global::<Lanes, _>(|lanes, _| {
         lanes.asked.push(agent.to_string());
         match lanes.ready.is_empty() {
@@ -184,4 +182,65 @@ fn a_missing_step_agent_fails_the_run_when_reached(cx: &mut TestAppContext) {
         ))
     );
     assert!(!holds(&id, cx), "its place let go");
+}
+
+/// The run's own session disconnects while the review works in its own:
+/// the run forgets it, and coming back opens a new one, so nothing more
+/// lands in the one that went and no uid of it finds the run.
+#[gpui::test]
+fn a_lane_whose_session_went_is_forgotten_and_opened_anew(cx: &mut TestAppContext) {
+    let (work, store) = (repo("lane-went"), temp_dir("store"));
+    let window = app(cx, &store);
+    configure(&["a", "b"], cx);
+    let mut template = reviewed();
+    template.steps.push(step("wrap", "Wrap", None));
+    let id = placed(
+        Task::new("22".into(), template, brief(), setup(&work)),
+        window,
+        cx,
+    );
+    let (first, mut tx, _seen) = carrier::driven(cx, Chat::default());
+    let (review, mut review_tx, _review_seen) = carrier::driven(cx, Chat::default());
+    let (again, mut again_tx, _again_seen) = carrier::driven(cx, Chat::default());
+    cx.update(|cx| {
+        cx.set_global(Lanes {
+            ready: vec![(8, review.clone()), (9, again.clone())],
+            asked: Vec::new(),
+        })
+    });
+    let started = begun(&id, cx);
+    cx.update(|cx| start(7, &first, window, id.clone(), started, cx));
+    cx.run_until_parked();
+    let _requests = carrier::up(&mut tx);
+    cx.run_until_parked();
+    carrier::turn(&mut tx);
+    let _review_requests = carrier::up(&mut review_tx);
+    let mut again_requests = carrier::up(&mut again_tx);
+    until(cx, |cx| task_on(8, cx).is_some());
+    // The run's own session goes, its agent's stream over, while the
+    // review works.
+    drop(tx);
+    until(cx, |cx| task_on(7, cx).is_none());
+    let before = cx.update(|cx| first.read(cx).chat().items.len());
+
+    carrier::turn(&mut review_tx);
+    until(cx, |cx| task_on(9, cx).is_some());
+    cx.run_until_parked();
+    assert_eq!(prompts(&mut again_requests), 1, "Wrap's prompt, anew");
+    let after = cx.update(|cx| first.read(cx).chat().items.len());
+    assert_eq!(after, before, "nothing more in the session that went");
+    assert!(task_on(7, cx).is_none());
+    cx.update(|cx| assert_eq!(cx.global::<Lanes>().asked, ["b", ""]));
+}
+
+/// Let background work land until `done`.
+fn until(cx: &mut TestAppContext, done: impl Fn(&mut TestAppContext) -> bool) {
+    for _ in 0..200 {
+        cx.run_until_parked();
+        if done(cx) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    panic!("never got there");
 }

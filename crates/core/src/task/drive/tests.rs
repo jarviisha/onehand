@@ -73,6 +73,8 @@ struct Rig {
     others: std::collections::BTreeMap<Lane, (Chat, RxOf)>,
     /// Everything every call answered, in order.
     seen: Vec<Effect>,
+    /// Every note said, with the lane whose session it was said in.
+    said: Vec<(Lane, String)>,
 }
 
 impl Rig {
@@ -94,6 +96,7 @@ impl Rig {
             now,
             others: Default::default(),
             seen: fx.clone(),
+            said: Vec::new(),
         };
         // The first session is the first lane's.
         let lane = rig.drive.current_lane().clone();
@@ -156,6 +159,11 @@ impl Rig {
         let picks = self.drive.take_picks();
         let asked = self.drive.take_asked();
         self.asked = asked.clone();
+        for asked in &asked {
+            if let Asked::Note(note) = asked {
+                self.said.push((lane.clone(), note.clone()));
+            }
+        }
         let Some(chat) = self.chat_of_mut(lane) else {
             assert!(picks.is_empty(), "picks with no session: {picks:?}");
             return;
@@ -1511,6 +1519,15 @@ fn a_lane_entered_is_told_its_step() {
         "{:?}",
         rig.asked
     );
+    let review_said: Vec<&Lane> = (rig.said.iter())
+        .filter(|(_, note)| note == "Step 3 of 4: Review")
+        .map(|(lane, _)| lane)
+        .collect();
+    assert_eq!(review_said, [&review()], "said once, in its own lane");
+    // A step in the run's own lane is said there as ever.
+    assert!(rig
+        .said
+        .contains(&(Lane::Run, "Step 2 of 4: Verify".to_string())));
 }
 
 #[test]
