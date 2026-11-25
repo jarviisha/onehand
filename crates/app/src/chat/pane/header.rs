@@ -555,6 +555,7 @@ fn project_menu(
         offload,
         renames,
         settings,
+        board: _,
     }: ProjectFacts,
     pane: Entity<ChatPane>,
 ) -> impl Fn(

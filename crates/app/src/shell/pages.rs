@@ -79,11 +79,7 @@ impl Shell {
         root_idx: usize,
         cx: &App,
     ) -> Option<onehand_core::project::ProjectId> {
-        let root = self.window.workspace.roots.get(root_idx)?;
-        root.local_path()?;
-        let id = root.project.as_ref()?;
-        let project = crate::state::Shared::global(cx).projects.get(id)?;
-        project.board().map(|_| id.clone())
+        crate::projects::board_here(self.window.workspace.roots.get(root_idx)?, cx)
     }
 
     /// Show the board of the project on screen, or say it has none.
@@ -92,7 +88,18 @@ impl Shell {
         match self.board_of_row(at, cx) {
             Some(project) => self.show_board(project, window, cx),
             None => {
-                let note = crate::toast::info("This project has no board");
+                let on_host = self.window.workspace.active_root().is_some_and(|root| {
+                    root.project
+                        .as_ref()
+                        .and_then(|id| crate::state::Shared::global(cx).projects.get(id))
+                        .is_some_and(|p| {
+                            p.board().is_some() && (p.host.is_some() || root.local_path().is_none())
+                        })
+                });
+                let note = crate::toast::info(match on_host {
+                    true => "A board works on a project on this machine",
+                    false => "This project has no board",
+                });
                 gpui_component::WindowExt::push_notification(window, note, cx);
             }
         }

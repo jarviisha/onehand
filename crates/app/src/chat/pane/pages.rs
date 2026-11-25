@@ -105,8 +105,8 @@ impl ChatPane {
         self.empty = page;
     }
 
-    /// Take the caret back before a page leaves the frame: a field on it may
-    /// hold it, and a caret in nothing answers no key.
+    /// Take the focus back before a page leaves the frame: a field or a row
+    /// on it may hold it, and a focus on nothing answers no key.
     pub fn leave_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let holds_fields = match self.shown_page() {
             Some(
@@ -117,7 +117,8 @@ impl ChatPane {
                 | PageKind::Schedules
                 | PageKind::Settings,
             ) => true,
-            // The overview holds no field, and a conversation keeps its own.
+            // The overview holds nothing that takes focus, and a
+            // conversation keeps its own.
             Some(PageKind::Workspace) | None => false,
         };
         if holds_fields {

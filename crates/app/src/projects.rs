@@ -458,3 +458,15 @@ pub(crate) fn of(folder: &Path, cx: &App) -> Option<Project> {
 
 #[cfg(test)]
 mod tests;
+
+/// The project of row `root` whose board this machine runs: one on this
+/// machine with a board bound.
+pub(crate) fn board_here(
+    root: &onehand_core::workspace::ProjectRoot,
+    cx: &App,
+) -> Option<onehand_core::project::ProjectId> {
+    root.local_path()?;
+    let id = root.project.as_ref()?;
+    let project = crate::state::Shared::global(cx).projects.get(id)?;
+    (project.host.is_none() && project.board().is_some()).then(|| id.clone())
+}

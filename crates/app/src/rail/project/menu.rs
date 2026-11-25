@@ -41,6 +41,7 @@ pub(super) fn project_menu(
         offload,
         renames,
         settings,
+        board,
     }: ProjectFacts,
     asks: bool,
     shell: WeakEntity<Shell>,
@@ -50,9 +51,6 @@ pub(super) fn project_menu(
         let away = shell.clone();
         let rename = shell.clone();
         let open_settings = shell.clone();
-        let board = shell
-            .upgrade()
-            .and_then(|s| s.read(cx).board_of_row(root_idx, cx));
         let open_board = shell.clone();
         let (pin, start, split, terminal, copy, refresh, remove) = (
             shell.clone(),
@@ -130,12 +128,14 @@ pub(super) fn project_menu(
                 .ok();
             },
         ))
-        .when_some(board, |menu, board| {
+        .when(board, |menu| {
             menu.item(crate::controls::menu_item("Board").on_click(
                 move |_, window, cx: &mut App| {
                     open_board
                         .update(cx, |shell: &mut Shell, cx| {
-                            shell.show_board(board.clone(), window, cx);
+                            if let Some(board) = shell.board_of_row(root_idx, cx) {
+                                shell.show_board(board, window, cx);
+                            }
                         })
                         .ok();
                 },

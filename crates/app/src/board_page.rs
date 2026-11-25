@@ -131,10 +131,16 @@ impl BoardPage {
     /// and a write to the issues wakes it through the file it holds.
     fn page(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let Some(id) = self.project.clone() else {
-            return onehand_ui::hint("No board shown", cx);
+            return self.frame(
+                head("Board", String::new(), cx),
+                onehand_ui::hint("No board shown", cx),
+            );
         };
         let Some(project) = Shared::global(cx).projects.get(&id).cloned() else {
-            return onehand_ui::hint("This project is no longer kept", cx);
+            return self.frame(
+                head("Board", String::new(), cx),
+                onehand_ui::hint("This project is no longer kept", cx),
+            );
         };
         let Some(board) = project.board().cloned() else {
             return self.frame(
@@ -201,27 +207,17 @@ impl BoardPage {
         taken: &HashSet<u64>,
         cx: &mut Context<Self>,
     ) -> Vec<gpui::AnyElement> {
-        // What is read of the issues, cloned so the rows can be drawn
-        // while the page is borrowed to make their focus handles.
-        let (issues, failed, forge) = match &self.issues {
-            Some((_, held)) => {
-                let kept = held.kept(cx);
-                (kept.issues.clone(), kept.failed.clone(), kept.forge)
-            }
-            None => (None, None, None),
-        };
-        let title_of = |n: u64| {
-            issues
-                .as_ref()
-                .and_then(|issues| issues.get(n))
-                .map_or_else(|| format!("#{n}"), |issue| issue.title().to_string())
-        };
-
-        // The Backlog: what a person may put in To do.
-        let (backlog_rows, backlog_note) = match &issues {
-            Some(issues) => {
+        // What the rows need of the issues, taken out first so the rows can
+        // be drawn while the page is borrowed to make their focus handles.
+        let kept = self.issues.as_ref().map(|(_, held)| held.kept(cx));
+        let (backlog_rows, backlog_note, todo_titles) = match kept {
+            Some(onehand_core::issues::drive::Kept {
+                issues: Some(issues),
+                forge,
+                ..
+            }) => {
                 let listed: Vec<(u64, String)> =
-                    onehand_core::board::backlog(issues, forge, board, taken)
+                    onehand_core::board::backlog(issues, *forge, board, taken)
                         .into_iter()
                         .map(|issue| (issue.number(), issue.title().to_string()))
                         .collect();
@@ -230,15 +226,26 @@ impl BoardPage {
                      with create_issue."
                         .to_string()
                 });
-                (listed, note)
+                let titles: Vec<Option<String>> = (board.todo.iter().take(BOARD_SHOWN))
+                    .map(|&n| issues.get(n).map(|issue| issue.title().to_string()))
+                    .collect();
+                (listed, note, titles)
             }
-            None => (
+            unread => (
                 Vec::new(),
-                Some(match failed {
+                Some(match unread.and_then(|kept| kept.failed.as_ref()) {
                     Some(why) => format!("The issues could not be read: {why}"),
                     None => "Reading the issues…".to_string(),
                 }),
+                Vec::new(),
             ),
+        };
+        let title_of = |at: usize, n: u64| {
+            todo_titles
+                .get(at)
+                .cloned()
+                .flatten()
+                .unwrap_or_else(|| format!("#{n}"))
         };
         let count = backlog_rows.len();
         let drawn = backlog_rows
@@ -267,7 +274,7 @@ impl BoardPage {
                     moves.push(("Move down", todo_press(id, Todo::Move(n, false))));
                 }
                 moves.push(("Back to Backlog", todo_press(id, Todo::Drop(n))));
-                self.issue_row(RowKey::Todo(n), n, title_of(n), acts(moves), cx)
+                self.issue_row(RowKey::Todo(n), n, title_of(at, n), acts(moves), cx)
             })
             .collect();
         let todo = column(
@@ -441,7 +448,8 @@ impl Render for BoardPage {
 
 /// The page's head: its name over the project, its workflow and its team.
 fn head(title: &'static str, line: String, cx: &App) -> gpui::AnyElement {
-    page_head(title, Some(line.into_any_element()), Vec::new(), cx).into_any_element()
+    let line = (!line.is_empty()).then(|| line.into_any_element());
+    page_head(title, line, Vec::new(), cx).into_any_element()
 }
 
 /// A column: a box with its name and count, `rows` capped at
