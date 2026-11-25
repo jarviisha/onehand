@@ -100,8 +100,8 @@ pub struct StepDraft {
     pub target: String,
     /// The step a review sends back to, by id; empty, the one it reviews.
     pub reject: String,
-    /// How many runs may hold the step at once; carried through unedited.
-    pub limit: Option<u32>,
+    /// How many runs may hold the step at once, as typed; empty, no limit.
+    pub limit: Entity<InputState>,
 }
 
 impl StepDraft {
@@ -219,7 +219,11 @@ impl StepDraft {
             id: input(&spec.id, window, cx),
             label: input(&spec.label, window, cx),
             kind,
-            limit: spec.limit,
+            limit: cx.new(|cx| {
+                InputState::new(window, cx)
+                    .placeholder("None")
+                    .default_value(spec.limit.map(|n| n.to_string()).unwrap_or_default())
+            }),
             agent: spec.agent().map(str::to_string),
             // A prompt is the step's whole instruction: it grows with what is
             // written, from a paragraph to most of a screen, and scrolls past
@@ -284,7 +288,7 @@ impl StepDraft {
         StepSpec {
             id: self.id.read(cx).value().trim().to_string(),
             label: self.label.read(cx).value().trim().to_string(),
-            limit: self.limit,
+            limit: self.limit.read(cx).value().trim().parse().ok(),
             kind: match self.kind {
                 Kind::Review => StepKind::Review {
                     of: self.target.clone(),
@@ -431,6 +435,17 @@ impl WorkflowDraft {
                         .into_iter()
                         .map(|id| (Some(at), format!("the option {id} is set twice"))),
                 );
+            }
+        }
+        // A limit that is not a whole number reads as no limit, so it is said
+        // here rather than dropped on save without a word.
+        for (at, step) in self.steps.iter().enumerate() {
+            let limit = step.limit.read(cx).value().trim().to_string();
+            if !limit.is_empty() && limit.parse::<u32>().is_err() {
+                problems.push((
+                    Some(at),
+                    format!("the limit, `{limit}`, is not a whole number"),
+                ));
             }
         }
         problems

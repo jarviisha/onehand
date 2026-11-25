@@ -335,3 +335,69 @@ fn a_review_draft_saves_as_version_2(cx: &mut gpui::TestAppContext) {
     let saved = saved_review(&review_template(None), cx);
     assert_eq!(saved.schema_version, 2);
 }
+
+/// The template a one-step form writes back after its limit field holds
+/// `typed`, if given; the step starts with `limit`.
+fn saved_limit(limit: Option<u32>, typed: Option<&str>, cx: &mut gpui::TestAppContext) -> Template {
+    let dir = crate::shell::rig::folder("step-limit");
+    let (_, _, cx) = crate::shell::rig::shell(cx, dir, vec![crate::shell::rig::nowhere()]);
+    cx.update(|window, cx| {
+        let mut step = named("work", None);
+        step.limit = limit;
+        let template = Template {
+            schema_version: 1,
+            id: "t".into(),
+            version: 1,
+            name: "t".into(),
+            description: String::new(),
+            place: Place::Worktree,
+            misses: 3,
+            timeout: "45m".into(),
+            steps: vec![step],
+        };
+        let draft = WorkflowDraft::load(&template, None, false, window, cx);
+        if let Some(text) = typed {
+            draft.steps[0]
+                .limit
+                .update(cx, |input, cx| input.set_value(text, window, cx));
+        }
+        draft.to_template(cx).unwrap()
+    })
+}
+
+#[gpui::test]
+fn a_drafts_limit_round_trips(cx: &mut gpui::TestAppContext) {
+    let kept = saved_limit(Some(2), None, cx);
+    assert_eq!(kept.steps[0].limit, Some(2));
+    assert_eq!(kept.schema_version, 2);
+    let typed = saved_limit(None, Some(" 3 "), cx);
+    assert_eq!(typed.steps[0].limit, Some(3));
+}
+
+#[gpui::test]
+fn an_empty_limit_writes_no_key(cx: &mut gpui::TestAppContext) {
+    let template = saved_limit(Some(2), Some(""), cx);
+    assert_eq!(template.steps[0].limit, None);
+    assert_eq!(template.schema_version, 1);
+}
+
+#[gpui::test]
+fn a_limit_that_is_not_a_number_is_a_problem(cx: &mut gpui::TestAppContext) {
+    let dir = crate::shell::rig::folder("step-limit");
+    let (_, _, cx) = crate::shell::rig::shell(cx, dir, vec![crate::shell::rig::nowhere()]);
+    cx.update(|window, cx| {
+        let template = Template::blank("t");
+        let mut draft = WorkflowDraft::load(&template, None, false, window, cx);
+        draft.add_step(Kind::Agent, window, cx);
+        let at = draft.steps.len() - 1;
+        draft.steps[at]
+            .limit
+            .update(cx, |input, cx| input.set_value("two", window, cx));
+        let problems = draft.problem_list(cx);
+        assert!(
+            problems
+                .iter()
+                .any(|(step, said)| *step == Some(at) && said.contains("limit"))
+        );
+    });
+}
