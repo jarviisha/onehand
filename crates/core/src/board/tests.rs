@@ -15,30 +15,53 @@ fn numbers(issues: Vec<&LocalIssue>) -> Vec<u64> {
     issues.iter().map(|i| i.number()).collect()
 }
 
+fn none() -> HashSet<u64> {
+    HashSet::new()
+}
+
 #[test]
 fn pull_fills_up_to_team() {
-    let got = pull(&board(2, &[4, 9, 2]), 0, &|_| true);
-    assert_eq!(got.start, [4, 9]);
+    let got = pull(&board(2, &[4, 3, 2]), 0, &five(), None, &none());
+    assert_eq!(got.start, [4, 3]);
     assert!(got.gone.is_empty());
 }
 
 #[test]
 fn pull_none_when_full() {
-    assert!(pull(&board(2, &[4, 9]), 2, &|_| true).start.is_empty());
+    let got = pull(&board(2, &[4, 3]), 2, &five(), None, &none());
+    assert!(got.start.is_empty());
 }
 
 #[test]
 fn pull_after_team_lowered() {
-    let got = pull(&board(1, &[4, 9]), 3, &|_| true);
+    let got = pull(&board(1, &[4, 3]), 3, &five(), None, &none());
     assert!(got.start.is_empty());
     assert!(got.gone.is_empty());
 }
 
+/// Only an issue that is closed or no longer there leaves To do; one that is
+/// open but cannot be worked now, as a forge-synced one while the forge is
+/// not found, waits in To do for the next look.
 #[test]
-fn pull_skips_closed_issue() {
-    let got = pull(&board(2, &[4, 9]), 0, &|n| n != 4);
-    assert_eq!(got.gone, [4]);
-    assert_eq!(got.start, [9]);
+fn pull_drops_only_closed_or_missing_issues() {
+    let kept = issues(
+        r#"{"next":5,"issues":[
+        {"number":1,"title":"mine"},
+        {"number":2,"title":"theirs","imported_from":"github"},
+        {"number":3,"title":"closed","open":false}]}"#,
+    );
+    let got = pull(&board(4, &[3, 2, 9, 1]), 0, &kept, None, &none());
+    assert_eq!(got.gone, [3, 9]);
+    assert_eq!(got.start, [1]);
+}
+
+/// An issue a task of the board still holds is not started twice: it stays
+/// in To do, skipped, until the task gives it up.
+#[test]
+fn pull_skips_an_issue_a_task_holds() {
+    let got = pull(&board(2, &[4, 3, 2]), 0, &five(), None, &HashSet::from([4]));
+    assert_eq!(got.start, [3, 2]);
+    assert!(got.gone.is_empty(), "kept in To do");
 }
 
 fn issues(json: &str) -> Issues {

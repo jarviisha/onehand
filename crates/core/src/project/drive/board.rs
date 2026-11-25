@@ -1,8 +1,10 @@
 //! A project's board: its settings and the issues waiting in To do.
 
 use super::{Effect, ProjectsDrive, Thing, Value};
+use crate::connector::Connector;
+use crate::issues::Issues;
 use crate::project::{Board, ProjectId};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 impl ProjectsDrive {
     /// Give project `id` a board, or take it away with none. Written now;
@@ -93,17 +95,26 @@ impl ProjectsDrive {
     }
 
     /// Which of project `id`'s To do to start while `running` of its board
-    /// tasks work, its starts on their way counted with them; none without
-    /// a board.
+    /// tasks work, its starts on their way counted with them, over its
+    /// `issues` and the issues its tasks hold (`taken`); none without a
+    /// board.
     pub fn pull(
         &self,
         id: &ProjectId,
         running: usize,
-        open: &dyn Fn(u64) -> bool,
+        issues: &Issues,
+        forge: Option<&'static dyn Connector>,
+        taken: &HashSet<u64>,
     ) -> Option<crate::board::Pull> {
         let board = self.projects.get(id)?.board()?;
         let starting = self.starting.get(id).map_or(0, BTreeSet::len);
-        Some(crate::board::pull(board, running + starting, open))
+        Some(crate::board::pull(
+            board,
+            running + starting,
+            issues,
+            forge,
+            taken,
+        ))
     }
 
     fn edit_todo(&mut self, id: &ProjectId, edit: impl FnOnce(&mut Vec<u64>)) -> Vec<Effect> {

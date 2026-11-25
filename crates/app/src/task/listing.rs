@@ -129,6 +129,16 @@ pub(crate) fn board_running(project: &onehand_core::project::ProjectId, cx: &App
     })
 }
 
+/// The issues `project`'s board tasks hold, which its To do does not start.
+pub(crate) fn board_taken(
+    project: &onehand_core::project::ProjectId,
+    cx: &App,
+) -> std::collections::HashSet<u64> {
+    cx.try_global::<Tasks>().map_or_else(Default::default, |t| {
+        onehand_core::board::taken(t.tasks().iter(), project, &|id| t.working(id))
+    })
+}
+
 /// Project `project`'s board tasks laid over `template`'s steps, each as
 /// the pages list it.
 pub(crate) struct BoardTasks {

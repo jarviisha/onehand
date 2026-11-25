@@ -713,12 +713,20 @@ fn start_todo_counts_starts_until_they_land() {
         vec![2, 7],
         "written without them"
     );
-    let pull = d.pull(&p.id, 0, &|_| true).unwrap();
+    let issues: crate::issues::Issues = serde_json::from_str(
+        r#"{"next":10,"issues":[{"number":2,"title":"b"},{"number":7,"title":"c"}]}"#,
+    )
+    .unwrap();
+    let taken = std::collections::HashSet::new();
+    let pull = d.pull(&p.id, 0, &issues, None, &taken).unwrap();
     assert_eq!(pull.start, [2], "a team of 3 with 2 on their way");
     d.landed(&p.id, 4);
-    assert_eq!(d.pull(&p.id, 1, &|_| true).unwrap().start, [2]);
+    assert_eq!(d.pull(&p.id, 1, &issues, None, &taken).unwrap().start, [2]);
     d.landed(&p.id, 9);
-    assert_eq!(d.pull(&p.id, 0, &|_| true).unwrap().start, [2, 7]);
+    assert_eq!(
+        d.pull(&p.id, 0, &issues, None, &taken).unwrap().start,
+        [2, 7]
+    );
 }
 
 #[test]

@@ -29,7 +29,7 @@ pub(crate) fn pull_all(cx: &mut App) {
 }
 
 /// Start as many of `project`'s To do as its team has room for, first
-/// first, and drop from To do what can no longer be worked.
+/// first, and drop from To do what is closed or gone.
 pub(crate) fn pull_now(project: &ProjectId, cx: &mut App) {
     let Some((root, file)) = local(project, cx) else {
         return;
@@ -149,8 +149,11 @@ fn pull_read(
         return;
     }
     let running = crate::task::board_running(project, cx);
-    let open = |n| kept.get(n).is_some_and(|issue| kept.workable(issue, forge));
-    let Some(pull) = Shared::global(cx).projects.pull(project, running, &open) else {
+    let taken = crate::task::board_taken(project, cx);
+    let Some(pull) = Shared::global(cx)
+        .projects
+        .pull(project, running, kept, forge, &taken)
+    else {
         return;
     };
     let fx = cx.update_global::<Shared, _>(|shared, _| {

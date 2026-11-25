@@ -49,24 +49,36 @@ pub fn backlog<'a>(
 pub struct Pull {
     /// Issues to start now, first first.
     pub start: Vec<u64>,
-    /// Issues dropped from To do because they can no longer be worked.
+    /// Issues dropped from To do because they are closed or no longer there.
     pub gone: Vec<u64>,
 }
 
 /// Which of `board`'s To do to start while `running` of its tasks work: as
 /// many as the team has room for, and none when the team is full or was
-/// lowered below what runs. `open` says whether an issue can still be worked.
-pub fn pull(board: &Board, running: usize, open: &dyn Fn(u64) -> bool) -> Pull {
+/// lowered below what runs. An issue closed or no longer in `issues` is
+/// dropped. One open but not workable now, as a forge's while the forge is
+/// not found, or one a task of the board still holds (`taken`), stays in
+/// To do for a later look.
+pub fn pull(
+    board: &Board,
+    running: usize,
+    issues: &Issues,
+    forge: Option<&'static dyn Connector>,
+    taken: &HashSet<u64>,
+) -> Pull {
     let room = usize::from(board.team).saturating_sub(running);
     let mut pull = Pull {
         start: Vec::new(),
         gone: Vec::new(),
     };
-    for &issue in &board.todo {
-        match open(issue) {
-            false => pull.gone.push(issue),
-            true if pull.start.len() < room => pull.start.push(issue),
-            true => {}
+    for &number in &board.todo {
+        let Some(issue) = issues.get(number).filter(|issue| issue.open()) else {
+            pull.gone.push(number);
+            continue;
+        };
+        let ready = issues.workable(issue, forge) && !taken.contains(&number);
+        if ready && pull.start.len() < room {
+            pull.start.push(number);
         }
     }
     pull

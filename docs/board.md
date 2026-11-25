@@ -38,8 +38,10 @@ on this machine. A project on a host has none: its issues are not kept here.
 - **A task that could not start once made** (no agent, no session) fails as an unwatched task does,
   said by its own start and no second toast. It holds its issue in its step's column, and nothing
   is pulled in its place.
-- **An issue that can no longer be worked** (closed, deleted) is dropped from To do at the next
-  look.
+- **An issue closed or deleted** is dropped from To do at the next look, with no word: that is
+  what closing it asks. One still open that cannot be worked now (one kept in step with a forge
+  while the forge is not found) or that a task of the board still holds stays in To do, skipped,
+  for a later look.
 
 ## When it ends
 
@@ -54,7 +56,8 @@ on this machine. A project on a host has none: its issues are not kept here.
 ## When it pulls
 
 `board::pull` decides, over what the carrier read: as many of To do as the team has room for, the
-issues that can no longer be worked dropped. `crates/app/src/board.rs` carries it out. A look
+issues closed or gone dropped, and those not workable now or held by a task (`board::taken`)
+skipped. `crates/app/src/board.rs` carries it out. A look
 happens when:
 
 - To do or the team changes, or a board is bound;
