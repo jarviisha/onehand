@@ -174,13 +174,38 @@ impl<'a> Joined<'a> {
     }
 }
 
+/// What `signal`, from the session of the run's lane `lane`, tells the
+/// run, if anything: heard in full from the lane the run works in now, and
+/// from another only as that lane's.
+pub fn said(
+    signal: &Signal,
+    lane: &Lane,
+    drive: &RunDrive,
+    session: &SessionDrive,
+) -> Option<Input> {
+    match drive.current_lane() == lane {
+        true => input_of(signal, drive, session),
+        false => lane_input_of(signal, lane, drive, session),
+    }
+}
+
+/// The session of the run's lane `lane` went: the run is kept to be
+/// resumed, not ended, when it was the lane the run works in; another
+/// lane's is only forgotten.
+pub fn gone(drive: &RunDrive, lane: Lane) -> Input {
+    match drive.current_lane() == &lane {
+        true => Input::SessionGone,
+        false => Input::LaneGone { lane },
+    }
+}
+
 /// What `signal`, from the session `drive` runs on, tells the run, if
 /// anything.
 ///
 /// A streamed chunk is asked about first, read-only: most of what a session
 /// says is its reply streaming in, and a chunk that cannot move the run must
 /// not tell everything watching the run that it changed.
-pub fn input_of(signal: &Signal, drive: &RunDrive, session: &SessionDrive) -> Option<Input> {
+fn input_of(signal: &Signal, drive: &RunDrive, session: &SessionDrive) -> Option<Input> {
     match signal {
         Signal::Appended => drive.heeds_appended(session).then_some(Input::Appended),
         Signal::TurnEnded => Some(Input::TurnEnded),
@@ -201,7 +226,7 @@ pub fn input_of(signal: &Signal, drive: &RunDrive, session: &SessionDrive) -> Op
 /// current lane, tells the run, if anything: only a person's prompt there,
 /// which takes the run over, and the session going. The rest is a lane the
 /// run is not working in.
-pub fn lane_input_of(
+fn lane_input_of(
     signal: &Signal,
     lane: &Lane,
     drive: &RunDrive,
@@ -223,11 +248,12 @@ pub fn lane_input_of(
     }
 }
 
-/// The session changed in some way: what that tells the run, which is only
-/// something when a card it waits on may have been answered, or work a turn
-/// left running may have settled.
-pub fn notified(drive: &RunDrive, session: &SessionDrive) -> Option<Input> {
-    drive.heeds_notified(session).then_some(Input::Notified)
+/// The session of the run's lane `lane` changed in some way: what that
+/// tells the run, which is only something in the lane it works in, when a
+/// card it waits on may have been answered, or work a turn left running may
+/// have settled.
+pub fn notified(drive: &RunDrive, lane: &Lane, session: &SessionDrive) -> Option<Input> {
+    (drive.current_lane() == lane && drive.heeds_notified(session)).then_some(Input::Notified)
 }
 
 /// The run's prompt, sent to its session: what the session's carrier does

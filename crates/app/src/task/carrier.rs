@@ -143,10 +143,7 @@ fn listen(id: &str, lane: &Lane, session: &Entity<ChatSession>, cx: &mut App) ->
             // asking it about, is the link's.
             ChatEvent::Session(signal) => {
                 let chat = &session.read(cx).chat();
-                let input = read(&task, cx, |d| match d.drive.current_lane() == &at {
-                    true => link::input_of(signal, &d.drive, chat),
-                    false => link::lane_input_of(signal, &at, &d.drive, chat),
-                });
+                let input = read(&task, cx, |d| link::said(signal, &at, &d.drive, chat));
                 match input.flatten() {
                     Some(input) => input,
                     None => return,
@@ -171,28 +168,20 @@ fn listen(id: &str, lane: &Lane, session: &Entity<ChatSession>, cx: &mut App) ->
     let (task, at) = (id.to_string(), lane.clone());
     let answered = cx.observe(session, move |session, cx| {
         let chat = &session.read(cx).chat();
-        let input = read(&task, cx, |d| {
-            (d.drive.current_lane() == &at)
-                .then(|| link::notified(&d.drive, chat))
-                .flatten()
-        });
+        let input = read(&task, cx, |d| link::notified(&d.drive, &at, chat));
         if let Some(input) = input.flatten() {
             feed(&task, input, cx);
         }
     });
     // The session went with the run still going: its window or the session
-    // was closed. The run is kept to be resumed, not ended, when it was the
-    // lane the run works in; another lane's is only forgotten.
+    // was closed. What that is to the run is the link's to say.
     let (task, at) = (id.to_string(), lane.clone());
     let release = cx.observe_release(session, move |_, cx| {
         let (task, lane) = (task.clone(), at.clone());
         cx.defer(move |cx| {
-            let current = read(&task, cx, |d| d.drive.current_lane() == &lane);
-            let input = match current {
-                Some(true) | None => Input::SessionGone,
-                Some(false) => Input::LaneGone { lane },
-            };
-            feed(&task, input, cx);
+            if let Some(input) = read(&task, cx, |d| link::gone(&d.drive, lane)) {
+                feed(&task, input, cx);
+            }
         });
     });
     vec![watch, answered, release]
@@ -365,9 +354,10 @@ fn forget_lane(id: &str, lane: Lane, cx: &mut App) {
     let task = id.to_string();
     cx.defer(move |cx| {
         let gone = with(&task, cx, |d| {
-            let still = d.drive.current_lane() != &lane
-                && d.sessions.get(&lane).is_some_and(|held| held.uid == uid);
-            let gone = still.then(|| d.sessions.remove(&lane)).flatten();
+            let held = d.sessions.get(&lane).map(|held| held.uid);
+            let gone = (d.drive.forgets(&lane, held, uid))
+                .then(|| d.sessions.remove(&lane))
+                .flatten();
             if let Some(held) = &gone {
                 d.forgot.push((held.uid, held.session.clone()));
             }

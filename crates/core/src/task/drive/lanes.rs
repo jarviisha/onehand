@@ -148,6 +148,13 @@ impl RunDrive {
         &self.lane
     }
 
+    /// Whether `lane`'s session `went`, which said it went, is let go of:
+    /// the run does not work in the lane now, and the lane still holds that
+    /// session (`held`), not one opened since.
+    pub fn forgets(&self, lane: &Lane, held: Option<u64>, went: u64) -> bool {
+        &self.lane != lane && held == Some(went)
+    }
+
     /// The lanes that have a session, the current one first.
     #[cfg(test)]
     pub(crate) fn lanes(&self) -> impl Iterator<Item = &Lane> {
