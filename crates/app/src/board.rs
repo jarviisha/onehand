@@ -81,9 +81,13 @@ fn close_issue(root: &Path, file: PathBuf, number: u64, cx: &mut App) {
         number,
         open: false,
     };
-    let answer = move |written: Result<_, String>, _: &mut App| {
+    let at = root.to_path_buf();
+    let answer = move |written: Result<_, String>, cx: &mut App| {
         if let Err(why) = written {
-            eprintln!("onehand: the board's issue #{number} was not closed: {why}");
+            let note = crate::toast::failed(&format!("Closing #{number} on the board"), why);
+            if let Some((window, _)) = crate::windows::holding_root(&at, cx).into_iter().next() {
+                let _ = window.update(cx, |_, window, cx| window.push_notification(note, cx));
+            }
         }
     };
     onehand_issues::write(

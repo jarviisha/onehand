@@ -221,8 +221,8 @@ impl RunDrive {
             .unwrap_or_default();
         if let Err(not) = result {
             let why = match lane.agent(&self.run) {
-                agent if agent.is_empty() => format!("The agent of {label} did not start."),
-                agent => format!("The agent of {label}, {agent}, did not start."),
+                agent if agent.is_empty() => format!("The agent of {label} did not start"),
+                agent => format!("The agent of {label}, {agent}, did not start"),
             };
             let kind = match not {
                 NotOpened::AgentGone => found_late(About::Agent),

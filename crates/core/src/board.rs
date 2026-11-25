@@ -33,7 +33,7 @@ pub fn usable(template: Option<&Template>) -> Result<&Template, String> {
 /// this machine.
 pub fn local(project: &Project) -> Result<(PathBuf, PathBuf), String> {
     match project.host {
-        Some(_) => Err("A board works on a project on this machine.".to_string()),
+        Some(_) => Err("A board works on a project on this machine".to_string()),
         None => Ok((
             project.path.clone(),
             crate::project::file::issues_file(&project.id),
@@ -75,7 +75,7 @@ pub struct Pull {
 /// dropped. One open but not workable now, as a forge's while the forge is
 /// not found, or one a task of the board still holds (`taken`), stays in
 /// To do for a later look.
-pub fn pull(
+pub(crate) fn pull(
     board: &Board,
     running: usize,
     first: Option<(u32, usize)>,

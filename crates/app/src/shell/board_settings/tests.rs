@@ -152,7 +152,7 @@ fn a_duplicate_saved_for_a_board_rebinds_only_that_board(cx: &mut TestAppContext
     assert!(cx.update(|_, cx| shell.read(cx).board_refused.is_none()));
     assert_eq!(
         super::now_uses("a", "Board edit copy"),
-        "a's board now uses Board edit copy."
+        "a's board now uses Board edit copy"
     );
     // Saved again, it binds nothing more and says nothing more.
     let before = notes(cx);

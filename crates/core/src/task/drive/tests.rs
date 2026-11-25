@@ -1463,7 +1463,7 @@ fn a_lane_that_will_not_open_fails_the_run_for_a_retry() {
     });
     assert_eq!(
         failed(&fx),
-        Some("The agent of Review, Claude, did not start."),
+        Some("The agent of Review, Claude, did not start"),
         "{fx:?}"
     );
     assert_eq!(
@@ -1535,7 +1535,7 @@ fn a_run_lane_naming_no_agent_that_will_not_open_says_so_plainly() {
     });
     assert_eq!(
         failed(&fx),
-        Some("The agent of Implement did not start."),
+        Some("The agent of Implement did not start"),
         "{fx:?}"
     );
 }

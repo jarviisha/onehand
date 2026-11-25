@@ -142,7 +142,7 @@ fn team_field(handle: &Entity<Shell>, root: &Path, team: u8, cx: &App) -> gpui::
     onehand_ui::field(
         "Team",
         Some(
-            format!("Tasks working at once. Lowering it stops none: no more start until fewer than {team} run.")
+            format!("Tasks working at once. Lowering it stops none: no more start until fewer than {team} run")
                 .into_any_element(),
         ),
         onehand_ui::choice_track(segments, cx),

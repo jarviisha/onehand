@@ -230,8 +230,8 @@ impl BoardPage {
                         .map(|issue| (issue.number(), issue.title().to_string()))
                         .collect();
                 let note = listed.is_empty().then(|| {
-                    "No open issues. Talk one through with an agent; it can write it here \
-                     with create_issue."
+                    "No open issues; talk one through with an agent, which can write it here \
+                     with create_issue"
                         .to_string()
                 });
                 let titles: Vec<Option<String>> = (board.todo.iter().take(BOARD_SHOWN))
@@ -679,7 +679,7 @@ enum Todo {
     Move(u64, Toward),
     /// Put the issue back in the Backlog.
     Drop(u64),
-    /// Put the issue last in To do, or where it was.
+    /// Put the issue last in To do.
     Last(u64),
     /// Put the first issue just before the second in To do.
     Before(u64, u64),
@@ -760,11 +760,11 @@ mod tests {
         let failed = row(
             Group::Ended,
             "failed",
-            Some("The agent of Build did not start."),
+            Some("The agent of Build did not start"),
         );
         assert_eq!(
             task_line(&failed, "Build"),
-            "Needs attention · The agent of Build did not start."
+            "Needs attention · The agent of Build did not start"
         );
     }
 

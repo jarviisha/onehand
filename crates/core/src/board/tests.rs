@@ -296,6 +296,6 @@ fn a_board_works_only_on_a_project_here() {
     project.host = Some(crate::workspace::HostName("vps".into()));
     assert_eq!(
         local(&project).unwrap_err(),
-        "A board works on a project on this machine."
+        "A board works on a project on this machine"
     );
 }

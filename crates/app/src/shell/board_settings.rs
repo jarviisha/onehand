@@ -137,7 +137,7 @@ impl Shell {
 
 /// What a board bound to a copy of its workflow says.
 fn now_uses(project: &str, copy: &str) -> String {
-    format!("{project}'s board now uses {copy}.")
+    format!("{project}'s board now uses {copy}")
 }
 
 #[cfg(test)]
