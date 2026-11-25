@@ -57,6 +57,7 @@ timeout = "45m"           # working time; waiting on a person does not count
 id = "plan"
 label = "Plan"
 kind = "agent"
+agent = "Codex"           # optional: an agent of its own for this step; else the run's
 mode = "plan"             # agent settings, by the agent's own ids; both optional
 options = { model = "strong", effort = "high" }
 gates = ["answered", "code_unchanged"]
@@ -122,6 +123,42 @@ aimed at it is refused. Every read-check-write of a workflow goes through one lo
 `store::parse` also refuses **a key onehand does not read** (`steps[2].gate`), most likely a typo,
 which a save would otherwise drop without a word; such a file is listed as unreadable too.
 
+### A step's agent
+
+An agent step may name `agent = "<name>"`, an agent from the agent list, and the run works that step
+in a session of that agent. The step is a lane of its own, keyed by the step, not by the agent: two
+steps naming the same agent do not share a session, so a reviewer never judges work in the context
+that wrote it. A step naming an agent has its session opened, unshown (in the rail, never taking
+the pane), on the run's first visit to the step, and kept for the rest of the run; going back to
+the step reuses it, with what it knew. It is named `<task title> · <step label>`. Steps that name
+none share the run's session, named for the task. The first session opened is the first step's, so
+a run whose first step names an agent never opens an unused one.
+
+A step's lane takes its mode from the step's own `mode`, else its agent's default; the run's own
+`mode` applies to the run's session only. What a step that names no setting goes back to, its
+baseline, is what that session had in force when it came up; it is not kept, so a Resume reads it
+from the new session. Only the current lane is worked. A person prompting any of the run's
+sessions takes the whole run over; Stop cancels the current lane's turn; a done schedule or board
+task closes every lane's session.
+
+A step's session lost while the run is elsewhere is forgotten (it stays in the rail, to read why),
+and the run goes on: the next visit opens a new one, with the note *The session of <step label> was
+gone; a new one was opened.*, its context lost. The current lane's session lost stops the run, as
+the run's own does. A lane that cannot open (the agent no longer in the list, or it did not come
+up) fails the run with *The agent of <step label>, <agent>, did not start.*, without the agent's
+name when the run's own agent is meant. That is a configuration failure, as a session not started
+is: its way out is *Retry with current settings*, not Resume. A first step's lane that cannot open
+is refused before the run begins, in the generic words of a session not started. The preflight
+blocks a step naming an agent not in the list (*<step label> names <agent>, which is not in the
+agent list.*) and judges that step's settings against its own agent's offer.
+
+A file whose steps name an agent is written as `schema_version = 2`, any other stays 1, so a file
+nothing new touches reads in an older onehand; an older build lists a version 2 file as unreadable.
+A run's snapshot read by an older build drops the step agents, and runs everything in the run's
+session. The editor's *Agent* picker on an agent step offers *The run's agent*, which writes no key,
+then each agent in the list; one the list no longer holds is shown marked *(not in the agent list)*
+and kept.
+
 ### Agent settings
 
 An agent step may name a `mode` and `options`, a table of config option ids to values. Both are the
@@ -133,7 +170,7 @@ setting a step does not name goes back to what the run started with**, never wha
 left: a *Plan* step in a planning mode must not leave *Implement* unable to edit, so a step runs the
 same whichever step ran before it. None of the shipped workflows names any: model ids differ between
 agents, and they must run on any. On the Workflows page an agent step has an *Agent settings*
-section offering the choices of the agent runs take by default (the first configured), as it was seen to offer them in this process; a muted line under the heading names it
+section offering the choices of the step's agent, else the one runs take by default (the first configured), as it was seen to offer them in this process; a muted line under the heading names it
 (*Choices … offers*). *Mode* is a row of choices in one filled track, *Run's mode* first, then each
 mode offered; each option offered, in the agent's order, is a row named by its id, *Run's value*
 first, then each value (twelve options and twelve values at most, then how many more). A row shows
@@ -527,8 +564,6 @@ is written in full and on disk before its old one goes, and the folder goes once
 - **A run takes its steps in a straight line.** There is no branching on a step's answer, no
   step that runs only sometimes, and no two steps at once; a command's failure going back to an
   earlier step is the only way back, besides a revision.
-- **A step cannot use a different agent from the rest.** One session carries every step; a step
-  sets only that agent's mode and options.
 
 ## Checking it by hand
 

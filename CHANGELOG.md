@@ -69,6 +69,14 @@ minor bump may break any of them.
   ordered To do, one column per step of the workflow, and Done. Moving an issue to To do lets
   onehand start it, in order, while fewer than the team size of the board's tasks run; a done
   task closes its issue. To do is kept through a restart and pulled again.
+- An agent step can name an agent of its own (`agent` in the workflow file, or *Agent* in the
+  editor). The run works that step in a session of that agent, opened in the rail without taking
+  the pane the first time the run reaches the step, kept for the run and named for the task and
+  the step; steps naming none share the run's session. A person prompting any of them takes the
+  run over. A session of a step lost while the run is elsewhere is replaced at the step's next
+  visit, with a note; one that cannot start fails the run, with *Retry with current settings*. The
+  preflight checks every agent a workflow names. A workflow naming a step's agent is saved as
+  schema version 2, which an older build lists as unreadable.
 - An agent step can name the agent's mode and config options (model, effort, fast…), set before
   each visit's first prompt and recorded on the visit. A value the agent does not offer blocks the
   start, or fails the run at that step; it never runs on something else.

@@ -26,7 +26,8 @@ the project whose folder it holds.
 _Avoid_: clone, copy
 
 **Session**:
-One conversation with one agent on one project, carried over the Agent Client Protocol.
+One conversation with one agent on one project, carried over the Agent Client Protocol. A run
+works in one, or in one more for each step that names an agent of its own.
 _Avoid_: chat, thread, tab
 
 **Background work**:
@@ -148,6 +149,12 @@ An agent step's mode and config options (model, effort, whatever else the agent 
 agent's own ids and values. Each visit to the step runs with them; a setting the step does not
 name goes back to what the run started with.
 _Avoid_: agent config, step config
+
+**Step's agent**:
+The agent an agent step names to work it, from the agent list, instead of the run's. The step has a
+session of its own in the run, opened the first time the run reaches it and kept until the run
+ends. Steps naming none share the run's session.
+_Avoid_: role, persona
 
 **Forge step**:
 A step onehand does on the forge itself, never the agent: *push* (the commit the check passed on),

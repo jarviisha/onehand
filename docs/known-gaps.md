@@ -4,6 +4,12 @@ What this build does not do yet, and why: a missing feature nobody wrote down re
 the ones that exist. What workflows and tasks do not do is listed at the end of
 [workflows.md](workflows.md#not-built) and [tasks.md](tasks.md#not-built).
 
+- **A step's session lost while the run is elsewhere takes its context with it.** The run goes on
+  and opens a new session at the step's next visit, saying so in a note, but what the agent knew
+  of the earlier visit is not carried over. A lane's baseline of settings is not kept either: a
+  Resume reads it from the new session.
+- **Resume is not offered for a run whose step's agent will not start.** It fails as a session not
+  started does, a configuration failure whose way out is *Retry with current settings*.
 - **Some status words and the focus ring fall under WCAG AA.** The status hues and the ring are
   the library's, which the app's palette leaves alone. For text: status ink, a tint's words and a
   diff line's sign on some surfaces they land on, held at `HUE_INK` in `crates/app/src/theme.rs`.
