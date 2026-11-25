@@ -13,8 +13,8 @@ pub(super) struct Tool {
     /// Its arguments' schema. The arguments a call may pass are its
     /// `properties`, and no others.
     pub(super) input: Value,
-    /// About a session's workers: an outside program owns none, so it is
-    /// never offered it.
+    /// About a session's workers or its review: an outside program has
+    /// neither, so it is never offered it.
     pub(super) for_sessions_only: bool,
 }
 
@@ -43,11 +43,21 @@ pub(super) fn tool(name: &str) -> Option<&'static Tool> {
     tools().iter().find(|tool| tool.name == name)
 }
 
+/// The tool a review's session ends its review with. Its run grants it, so
+/// it is no schedule's to give.
+pub(crate) const REVIEW_VERDICT: &str = "review_verdict";
+
 /// The tools' names, in the order they are listed: what a schedule may give
 /// its sessions.
 pub fn tool_names() -> &'static [&'static str] {
     static NAMES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
-    NAMES.get_or_init(|| tools().iter().map(|tool| tool.name).collect())
+    NAMES.get_or_init(|| {
+        tools()
+            .iter()
+            .map(|tool| tool.name)
+            .filter(|name| *name != REVIEW_VERDICT)
+            .collect()
+    })
 }
 
 /// Each tool, with its description and input schema.
@@ -64,7 +74,7 @@ fn catalogue() -> Vec<Tool> {
     };
     let project = "A project of the window, by its name or its path";
     // Each: its name, whether it is for a session's agent alone (about its
-    // workers), what it does and its arguments.
+    // workers or its review), what it does and its arguments.
     let tools = [
         (
             "list_projects",
@@ -320,6 +330,22 @@ fn catalogue() -> Vec<Tool> {
             schema(
                 json!({"session": text("The worker's handle, as open_worker answered it")}),
                 &["session"],
+            ),
+        ),
+        (
+            REVIEW_VERDICT,
+            true,
+            "End the review this session was asked for: approve the work, or send it back \
+             with a note saying what to change. Refused unless this session is a review's, \
+             during its review. The review ends when your turn does, and the last verdict \
+             you gave counts",
+            schema(
+                json!({
+                    "verdict": {"type": "string", "enum": ["approve", "send_back"],
+                        "description": "approve, or send_back for changes"},
+                    "note": text("What to change; required for send_back"),
+                }),
+                &["verdict"],
             ),
         ),
     ];

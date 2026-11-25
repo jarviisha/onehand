@@ -9,7 +9,7 @@
 //! here, so no two callers can disagree about what a Stop means.
 
 use super::facts::{self, CommandResult, Facts, Mark};
-use super::prompt::{self, Fill};
+use super::prompt;
 use super::settings::Settings;
 use super::status_checks::Seen;
 use super::template::{Place, StepKind, StepSpec, Template};
@@ -752,29 +752,6 @@ impl Run {
         self.awaiting = Await::Nothing;
         self.outcome = Some(outcome.clone());
         Action::Finish(outcome)
-    }
-
-    /// The prompt that starts the agent step at hand.
-    fn step_prompt(&self) -> String {
-        let Some(StepSpec { id, kind, .. }) = self.current() else {
-            return String::new();
-        };
-        let Some((prompt, gates, _)) = review::prompted(kind) else {
-            return String::new();
-        };
-        let fill = Fill {
-            brief: &self.brief,
-            outputs: &self.outputs,
-            check_output: self.check_output.as_deref(),
-            revise: self.revise.as_deref(),
-            revise_by: self.revise_by.as_deref(),
-            revised_answer: self
-                .revise
-                .as_ref()
-                .and_then(|_| self.outputs.get(id))
-                .map(String::as_str),
-        };
-        prompt::step_prompt(prompt, gates, self.template.place, &fill)
     }
 
     /// The step at hand by id, or `start` before the first move.

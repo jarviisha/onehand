@@ -83,9 +83,21 @@ impl Token {
         Self(drive().mint())
     }
 
-    /// Held by session `uid` from now on.
+    /// Held by session `uid` from now on. A session granted its tools before
+    /// it held this token tells its connections, since a warm agent may have
+    /// listed them while they were nobody's.
     pub(crate) fn claim(&self, uid: u64) {
-        drive().claim(&self.0, uid);
+        let given = {
+            let mut drive = drive();
+            drive.claim(&self.0, uid);
+            !matches!(
+                drive.standing(&Peer::Session(self.0.clone())),
+                Standing::Off
+            )
+        };
+        if given {
+            tell_changed(uid);
+        }
     }
 }
 
@@ -566,6 +578,11 @@ fn perform_now(
         } => workers::turns::send(caller, &session, &text, turn, model, answer, cx),
         Call::CancelTurn { session } => workers::turns::cancel(caller, &session, cx),
         Call::CloseWorker { session } => workers::turns::close(caller, &session, cx),
+        // Only the review asked of the calling session itself.
+        Call::ReviewVerdict { verdict } => {
+            let (uid, _) = caller.ok_or("No review is waiting on this session.")?;
+            crate::task::verdict(uid, verdict, cx)
+        }
         Call::OpenSession {
             project,
             agent,

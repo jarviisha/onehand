@@ -16,7 +16,9 @@
 use super::settings::Picking;
 use super::{Asked, Effect, Input, RunDrive};
 use crate::chat::Chat;
+use crate::control::REVIEW_VERDICT;
 use crate::preflight::{found_late, About};
+use crate::task::Grant;
 use crate::workflow::{Run, Settings, StepSpec, Stop};
 use crate::Now;
 
@@ -68,6 +70,25 @@ impl Lane {
             .map(str::to_string)
             .or_else(|| run.setup.agent.clone())
             .unwrap_or_default()
+    }
+
+    /// What the lane's session may use of onehand's tools, its task given
+    /// `grant`: a review's also gives its verdict, so it is granted that
+    /// before its agent first lists its tools.
+    pub fn grant(&self, run: &Run, grant: &Grant) -> Grant {
+        let review = match self {
+            Self::Run => false,
+            Self::Step(id) => run
+                .template
+                .steps
+                .iter()
+                .any(|s| &s.id == id && s.is_review()),
+        };
+        let mut grant = grant.clone();
+        if review && !grant.tools.iter().any(|t| t == REVIEW_VERDICT) {
+            grant.tools.push(REVIEW_VERDICT.to_string());
+        }
+        grant
     }
 }
 

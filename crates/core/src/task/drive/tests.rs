@@ -1741,3 +1741,22 @@ fn a_send_back_with_nowhere_to_go_is_refused() {
         Err("This review has no step to send the work back to.".into())
     );
 }
+
+#[test]
+fn a_review_lane_is_granted_its_verdict() {
+    use crate::task::Grant;
+    let rig = in_review();
+    let run = rig.drive.run();
+    let given = Grant {
+        tools: vec!["list_issues".into()],
+        labels: vec!["auto".into()],
+    };
+    let review_grant = review().grant(run, &given);
+    assert_eq!(review_grant.tools, ["list_issues", "review_verdict"]);
+    assert_eq!(review_grant.labels, ["auto"]);
+    assert_eq!(
+        review().grant(run, &Grant::default()).tools,
+        ["review_verdict"]
+    );
+    assert_eq!(Lane::Run.grant(run, &given), given);
+}

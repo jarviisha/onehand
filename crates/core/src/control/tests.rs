@@ -277,7 +277,8 @@ fn the_catalogue_lists_every_tool_with_a_schema() {
             "session_state",
             "send_prompt",
             "cancel_turn",
-            "close_worker"
+            "close_worker",
+            "review_verdict"
         ]
     );
     for tool in tools {
@@ -1017,4 +1018,50 @@ fn build_on_host_reads_its_host_and_command_and_an_optional_project() {
         json!({"project": "api", "host": "h", "command": "make"}),
     );
     assert_eq!(named.project(), Some("api"));
+}
+
+#[test]
+fn review_verdict_parses_both_verdicts() {
+    use crate::workflow::Verdict;
+    assert_eq!(
+        session_performs("review_verdict", json!({"verdict": "approve"})),
+        Call::ReviewVerdict {
+            verdict: Verdict::Approve
+        }
+    );
+    assert_eq!(
+        session_performs(
+            "review_verdict",
+            json!({"verdict": "send_back", "note": "Test the empty case."})
+        ),
+        Call::ReviewVerdict {
+            verdict: Verdict::SendBack("Test the empty case.".into())
+        }
+    );
+    assert!(
+        refusal(session_call("review_verdict", json!({"verdict": "maybe"}))).contains("verdict")
+    );
+}
+
+#[test]
+fn a_send_back_needs_a_note() {
+    for args in [
+        json!({"verdict": "send_back"}),
+        json!({"verdict": "send_back", "note": "  "}),
+    ] {
+        assert_eq!(
+            refusal(session_call("review_verdict", args)),
+            "A send back needs a note saying what to change."
+        );
+    }
+}
+
+#[test]
+fn review_verdict_is_for_sessions_only() {
+    assert!(!names_listed(&mut ready(), on).contains(&"review_verdict".to_string()));
+    assert!(
+        refusal(call("review_verdict", json!({"verdict": "approve"}))).contains("review_verdict")
+    );
+    // Not a schedule's to give: only a review's run grants it.
+    assert!(!tool_names().contains(&"review_verdict"));
 }

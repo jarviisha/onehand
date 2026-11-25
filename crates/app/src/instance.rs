@@ -266,8 +266,8 @@ mod tests {
         let mut stream = UnixStream::connect(&socket).unwrap();
         assert!(ask(&mut stream, init)["result"].is_object());
         let list = json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"});
-        // Every tool but those about a session's workers, which an outside
-        // program owns none of.
+        // Every tool but those about a session's workers or its review, which
+        // an outside program has none of.
         let listed: Vec<String> = ask(&mut stream, list)["result"]["tools"]
             .as_array()
             .unwrap()
@@ -280,9 +280,11 @@ mod tests {
             "send_prompt",
             "cancel_turn",
             "close_worker",
+            "review_verdict",
         ] {
             assert!(!listed.contains(&name.to_string()), "{listed:?}");
         }
+        // `review_verdict` is not among the names a schedule may give.
         assert_eq!(listed.len(), onehand_core::control::tool_names().len() - 5);
         let call = json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": {"name": "list_agents", "arguments": {}}});

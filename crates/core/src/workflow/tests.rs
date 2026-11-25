@@ -2300,6 +2300,7 @@ fn a_review_is_prompted_and_its_answer_kept() {
     );
     let text = prompt_of(run.measured(mark("a", "d1"), 0));
     assert!(text.contains("Review the change."), "{text}");
+    assert!(text.trim_end().ends_with(REVIEW_ENDS), "{text}");
     assert_eq!(
         run.reviewed(Some(Verdict::Approve), " Looks right. ", 0),
         Action::RunCommand("make check".into())
@@ -2441,4 +2442,20 @@ fn a_persons_revision_still_says_a_person() {
     let text = prompt_of(run.measured(mark("a", "d1"), 0));
     assert!(text.contains("A person asked for changes:"), "{text}");
     assert!(!text.contains("Review asked"), "{text}");
+}
+
+/// What every review's prompt ends with.
+const REVIEW_ENDS: &str = "When you have judged the work, call review_verdict: approve, or send \
+     it back with a note saying what to change.";
+
+#[test]
+fn only_a_reviews_prompt_says_how_to_end_it() {
+    let (mut run, _) = begin(
+        "1".into(),
+        bare_review(),
+        brief(),
+        setup(Some("make check")),
+    );
+    let text = prompt_of(run.measured(mark("a", "d0"), 0));
+    assert!(!text.contains("review_verdict"), "{text}");
 }

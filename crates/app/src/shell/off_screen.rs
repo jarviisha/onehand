@@ -2,6 +2,7 @@ use super::Shell;
 use crate::state::Shared;
 use gpui::{App, BorrowAppContext, Context, Entity, SharedString, Window};
 use onehand_core::config::AgentSpec;
+use onehand_core::task::Grant;
 use onehand_core::task::tasks::SESSION_NOT_STARTED;
 use onehand_core::workbench::KeptIssues;
 use onehand_core::workspace::drive::StartsOn;
@@ -177,12 +178,27 @@ impl Shell {
         dirs: Vec<PathBuf>,
         cx: &mut Context<Self>,
     ) -> Option<(u64, Entity<crate::chat::session::ChatSession>)> {
+        self.open_off_screen_granted(dir, spec, dirs, &Grant::default(), cx)
+    }
+
+    /// [`Self::open_off_screen`], the session given `grant` of onehand's
+    /// tools before its agent starts: an agent that lists its tools once
+    /// lists them then.
+    pub(crate) fn open_off_screen_granted(
+        &mut self,
+        dir: PathBuf,
+        spec: AgentSpec,
+        dirs: Vec<PathBuf>,
+        grant: &Grant,
+        cx: &mut Context<Self>,
+    ) -> Option<(u64, Entity<crate::chat::session::ChatSession>)> {
         let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
         let project = crate::projects::of(&dir, cx);
         self.window
             .workspace
             .add_run_session(&dir, spec.clone(), uid, project.as_ref())?;
         let folder = self.window.workspace.folder_of(uid)?;
+        crate::control::grant(uid, grant, cx);
         let session = self.chat.update(cx, |pane, cx| {
             pane.open_unshown(uid, folder, None, &spec, dirs, cx)
         });
@@ -288,15 +304,17 @@ impl Shell {
 
 /// Start the session of a run's lane on `dir`, off screen as a step's lane
 /// always is, on the agent named `agent`, or on the first configured when
-/// `agent` is empty. Says why when it did not start.
+/// `agent` is empty, given `grant` before its agent starts. Says why when it
+/// did not start.
 pub(crate) fn open_step_session(
     shell: &mut Shell,
     dir: PathBuf,
     agent: &str,
+    grant: &Grant,
     cx: &mut Context<Shell>,
 ) -> Result<(u64, Entity<crate::chat::session::ChatSession>), String> {
     let spec = crate::task::facts::lane_spec(agent, cx)?;
     shell
-        .open_off_screen(dir, spec, Vec::new(), cx)
+        .open_off_screen_granted(dir, spec, Vec::new(), grant, cx)
         .ok_or_else(|| SESSION_NOT_STARTED.to_string())
 }

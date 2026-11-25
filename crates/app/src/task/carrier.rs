@@ -24,7 +24,7 @@ use onehand_core::task::drive::link::{self, Joined, Out};
 use onehand_core::task::drive::{Effect, Input, Lane, RunDrive, Signal, Timer};
 use onehand_core::task::tasks::{Start, link as tasks_link};
 use onehand_core::task::{Approval, marks};
-use onehand_core::workflow::{Facts, Mark, Run, run_command_blocking};
+use onehand_core::workflow::{Facts, Mark, Run, Verdict, run_command_blocking};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -297,6 +297,24 @@ pub(crate) fn stop(uid: u64, cx: &mut App) {
     }
 }
 
+/// The agent of session `uid` gave `verdict` on the review its run asked of
+/// it: what it is told, or why it was refused. Held until the review's turn
+/// ends, so nothing is carried out now.
+pub(crate) fn verdict(uid: u64, verdict: Verdict, cx: &mut App) -> Result<String, String> {
+    const NONE_WAITING: &str = "No review is waiting on this session.";
+    let id = (cx.try_global::<Tasks>())
+        .and_then(|t| t.task_on(uid))
+        .ok_or(NONE_WAITING)?;
+    with(&id, cx, |d| {
+        let lane = (d.sessions.iter())
+            .find(|(_, held)| held.uid == uid)
+            .map(|(lane, _)| lane.clone())
+            .ok_or(NONE_WAITING)?;
+        Joined::new(&mut d.drive, None).verdict(&lane, verdict)
+    })
+    .unwrap_or(Err(NONE_WAITING.to_string()))
+}
+
 /// A person pressed Stop on task `task`'s run, a check's included.
 pub(super) fn stop_task(task: &str, cx: &mut App) {
     give(task, cx, |run, now| run.stop(now));
@@ -477,16 +495,18 @@ fn perform(id: &str, effects: Vec<Effect>, cx: &mut App) {
 }
 
 /// Open the session of task `id`'s lane `lane`, on agent `agent`, in the
-/// run's window, give it what the task's sessions may use of onehand's
-/// tools, and tell the run how that went.
+/// run's window, given what the lane's session may use of onehand's tools
+/// before its agent starts, and tell the run how that went.
 fn open_session(id: &str, lane: Lane, agent: String, cx: &mut App) {
-    let Some((window, dir)) = read(id, cx, |d| (d.window, d.run().setup.dir.clone())) else {
+    let given = (cx.global::<Tasks>().task(id))
+        .map(|task| task.grant().clone())
+        .unwrap_or_default();
+    let Some((window, dir, grant)) = read(id, cx, |d| {
+        let grant = lane.grant(d.run(), &given);
+        (d.window, d.run().setup.dir.clone(), grant)
+    }) else {
         return;
     };
-    let grant = cx
-        .global::<Tasks>()
-        .task(id)
-        .map(|task| task.grant().clone());
     let task = id.to_string();
     // Deferred: the shell opening it may be the one whose update fed the run.
     cx.defer(move |cx| {
@@ -494,10 +514,7 @@ fn open_session(id: &str, lane: Lane, agent: String, cx: &mut App) {
         if read(&task, cx, |_| ()).is_none() {
             return;
         }
-        let result = open(window, dir, &agent, cx).map(|(uid, session)| {
-            if let Some(grant) = &grant {
-                crate::control::grant(uid, grant, cx);
-            }
+        let result = open(window, dir, &agent, &grant, cx).map(|(uid, session)| {
             let held = Held {
                 uid,
                 session: session.downgrade(),
@@ -536,10 +553,11 @@ fn open_lane(
     window: AnyWindowHandle,
     dir: std::path::PathBuf,
     agent: &str,
+    grant: &onehand_core::task::Grant,
     cx: &mut App,
 ) -> Result<(u64, Entity<ChatSession>), String> {
     crate::windows::with_shell(window, cx, |shell, _, cx| {
-        crate::shell::open_step_session(shell, dir, agent, cx)
+        crate::shell::open_step_session(shell, dir, agent, grant, cx)
     })
     .unwrap_or_else(|| Err("its window is closed".to_string()))
 }

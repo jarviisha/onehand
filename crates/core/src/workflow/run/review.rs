@@ -7,7 +7,8 @@
 //! instead of looping, and a turn that gave no verdict is a miss too.
 
 use super::{Action, Await, Run};
-use crate::workflow::template::{GateKind, StepKind};
+use crate::workflow::prompt::{self, Fill};
+use crate::workflow::template::{GateKind, StepKind, StepSpec};
 
 /// What a review's agent said of the work it reviewed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,7 +22,40 @@ pub enum Verdict {
 const NO_VERDICT: &str =
     "End your review by calling review_verdict: approve, or send back with a note.";
 
+/// What every review's prompt ends with, so its agent knows how to end it.
+const ENDS_A_REVIEW: &str = "When you have judged the work, call review_verdict: approve, or \
+     send it back with a note saying what to change.";
+
 impl Run {
+    /// The prompt that starts the agent step or review at hand.
+    pub(super) fn step_prompt(&self) -> String {
+        let Some(StepSpec { id, kind, .. }) = self.current() else {
+            return String::new();
+        };
+        let Some((prompt, gates, _)) = prompted(kind) else {
+            return String::new();
+        };
+        let fill = Fill {
+            brief: &self.brief,
+            outputs: &self.outputs,
+            check_output: self.check_output.as_deref(),
+            revise: self.revise.as_deref(),
+            revise_by: self.revise_by.as_deref(),
+            revised_answer: self
+                .revise
+                .as_ref()
+                .and_then(|_| self.outputs.get(id))
+                .map(String::as_str),
+        };
+        let mut text = prompt::step_prompt(prompt, gates, self.template.place, &fill);
+        if matches!(kind, StepKind::Review { .. }) {
+            text.push('\n');
+            text.push_str(ENDS_A_REVIEW);
+            text.push('\n');
+        }
+        text
+    }
+
     /// The open visit of the review whose turn the run waits on, which a
     /// verdict is given at; `None` anywhere else.
     pub(crate) fn review_visit(&self) -> Option<u32> {

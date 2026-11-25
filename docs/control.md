@@ -6,7 +6,8 @@ it when Settings allows, or the agent of a session a person has switched on.
 
 **No tool answers a card, a permission or an approval.** Those wait for a person, or are answered
 by the session's own *Cards* level, which only a person sets; no tool is written for them, and a
-session a tool opens starts on *Manual*.
+session a tool opens starts on *Manual*. The one exception is `review_verdict`, which answers only
+the review asked of the calling session itself.
 
 ## The socket
 
@@ -125,6 +126,7 @@ the host answered during a long build too.
 | `send_prompt` | `session`, `text`, `turn`, optional `model` | for a session's agent, gives a worker it opened its next turn, on `model` when named; never listed to an outside program | `turn <n> accepted`, `turn <n> already sent`, or why not |
 | `cancel_turn` | `session` | for a session's agent, cancels the turn a worker it opened runs, as the person's Stop does | `cancelling turn <n>`, or why not |
 | `close_worker` | `session` | for a session's agent, closes a worker it opened, as the person's *Close session* does; never listed to an outside program | `closed`, or why not |
+| `review_verdict` | `verdict`, `approve` or `send_back`; `note`, required for `send_back` | for a session's agent, never listed to an outside program and never a schedule's to give: ends the review its run asked of this session, during that review's turn. The verdict is held until the turn ends, and the last one given counts ([workflows.md](workflows.md)) | `Approved. The review ends when this turn does.`, `Sent back to <step>. The review ends when this turn does.`, or `No review is waiting on this session.` / `A send back needs a note saying what to change.` |
 
 - **A task a tool starts is driven off screen**: its session is in the
   rail (a schedule's that ends done leaves it, `docs/schedules.md`) and the task on the Tasks page,
@@ -170,7 +172,10 @@ it back and says so.
   schedule's task's sessions stand with the schedule's, copied onto the task, and an issue they
   write gets the schedule's labels. Only those tools are listed, and a call to any other is
   refused naming it, whatever asked for it. Switching the session on in the composer gives it all
-  of them; switching it off goes back to the set. See [schedules.md](schedules.md).
+  of them; switching it off goes back to the set. See [schedules.md](schedules.md). A review
+  step's session stands with `review_verdict` added to its task's set, given before its agent
+  starts, so an agent that lists its tools once lists it. A session given its set before it
+  claimed its token, as the warm adapter's is, tells that token's connections once it claims it.
 - **No reconnect.** While the switch is off, `tools/list` is empty and every `tools/call` is
   refused. Switching either way sends `notifications/tools/list_changed` to each of that session's
   connections; an agent that ignores it still cannot call anything while off.

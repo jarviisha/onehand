@@ -21,7 +21,7 @@ mod carrier;
 pub(crate) mod facts;
 mod listing;
 mod place;
-pub(crate) use carrier::{approve, revise, start, stop};
+pub(crate) use carrier::{approve, revise, start, stop, verdict};
 pub(crate) use listing::*;
 pub(crate) use onehand_core::task::tasks::Placed;
 pub(crate) use place::{not_started, start_off_screen, submit};

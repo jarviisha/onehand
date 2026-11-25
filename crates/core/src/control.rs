@@ -8,7 +8,9 @@
 //! answers with the text the caller reads.
 //!
 //! **No tool answers a card, a permission or an approval.** Those wait for a
-//! person, whoever asks; there is nothing here to call for them.
+//! person, whoever asks; there is nothing here to call for them. The one
+//! exception is `review_verdict`, which answers only the review asked of the
+//! calling session itself.
 
 pub mod calls;
 mod catalogue;
@@ -20,7 +22,9 @@ pub mod state;
 pub mod turns;
 pub mod workers;
 
+use crate::workflow::Verdict;
 pub use catalogue::tool_names;
+pub(crate) use catalogue::REVIEW_VERDICT;
 use catalogue::{tool, tools, Tool};
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
@@ -109,6 +113,10 @@ pub enum Call {
     CloseWorker {
         session: String,
     },
+    /// The calling session's agent ends the review asked of it.
+    ReviewVerdict {
+        verdict: Verdict,
+    },
 }
 
 impl Call {
@@ -133,7 +141,8 @@ impl Call {
             | Call::SessionState { .. }
             | Call::SendPrompt { .. }
             | Call::CancelTurn { .. }
-            | Call::CloseWorker { .. } => None,
+            | Call::CloseWorker { .. }
+            | Call::ReviewVerdict { .. } => None,
         }
     }
 }
@@ -270,7 +279,7 @@ pub fn handle(conn: &mut Conn, line: &str, standing: impl Fn(&Peer) -> Standing)
             if !allowed(name) {
                 let why = match standing {
                     _ if outside && for_sessions(name) => {
-                        format!("`{name}` is for a session's agent, about its workers")
+                        format!("`{name}` is for a session's agent")
                     }
                     Standing::Only(_) => format!("`{name}` is not among this session's tools"),
                     _ => "onehand's tools are switched off for this session".to_string(),
@@ -425,6 +434,16 @@ fn parse(name: &str, arguments: &Value) -> Result<Call, String> {
         },
         "close_worker" => Call::CloseWorker {
             session: required("session")?,
+        },
+        "review_verdict" => Call::ReviewVerdict {
+            verdict: match args.get("verdict").and_then(Value::as_str) {
+                Some("approve") => Verdict::Approve,
+                Some("send_back") => match args.get("note").and_then(Value::as_str) {
+                    Some(note) if !note.trim().is_empty() => Verdict::SendBack(note.to_string()),
+                    _ => return Err("A send back needs a note saying what to change.".to_string()),
+                },
+                _ => return Err("`verdict` must be approve or send_back".to_string()),
+            },
         },
         _ => return Err(format!("no tool named `{name}`")),
     })
