@@ -172,11 +172,9 @@ pub(crate) fn room_at(
     at: usize,
     cx: &App,
 ) -> Option<onehand_core::task::rooms::Room> {
-    // With no tasks kept yet, nobody holds room or waits for it.
-    match cx.try_global::<Tasks>() {
-        Some(t) => t.drive.room(root, template, at),
-        None => Tasks::default().drive.room(root, template, at),
-    }
+    // With no tasks kept yet, nobody holds room or waits for it, so no
+    // limit can bite.
+    cx.try_global::<Tasks>()?.drive.room(root, template, at)
 }
 
 /// Project `project`'s board tasks laid over `template`'s steps, each as

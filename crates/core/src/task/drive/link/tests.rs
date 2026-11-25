@@ -542,6 +542,11 @@ fn a_step_lanes_session_is_named_for_the_task_and_step() {
         None
     );
     assert_eq!(notified(&pair.drive, &run, &pair.session), None);
+    // The current lane's own is heeded once it has something to learn.
+    assert_eq!(notified(&pair.drive, &review, &lane), None);
+    pair.drive.here.card = true;
+    assert_eq!(notified(&pair.drive, &review, &lane), Some(Input::Notified));
+    pair.drive.here.card = false;
     // The current lane's session going ends the run; another's is forgotten,
     // and only while that lane still holds the session that went.
     assert_eq!(super::gone(&pair.drive, review.clone()), Input::SessionGone);
