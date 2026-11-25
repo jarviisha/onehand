@@ -287,6 +287,13 @@ impl ControlDrive {
         if let Some(relation) = self.workers.get_mut(&uid) {
             let mut changed = false;
             if relation.conversation.as_ref() != Some(&session_id) {
+                // Another conversation counts its prompts on its own, from
+                // where it stands now: the lead's count in the one before
+                // would hide the person's first prompts here. Only the first
+                // conversation keeps what the lead's turn already counted.
+                if relation.conversation.is_some() {
+                    relation.sent = prompts_sent;
+                }
                 relation.conversation = Some(session_id);
                 changed = true;
             }

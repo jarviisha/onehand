@@ -592,6 +592,22 @@ fn a_worker_the_person_took_is_kept_held() {
     assert!(!drive.last(7).unwrap().person);
 }
 
+/// A worker put on a fresh conversation counts its prompts from nothing, so
+/// the person's first prompt there holds it, however many the lead had sent
+/// in the one before.
+#[test]
+fn a_worker_on_a_new_conversation_is_held_by_the_persons_first_prompt() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    said_conversation(&mut drive, 7, "c7", 3);
+    turn_sent(&mut drive, 7, 2, Some((Intake::Sent, 3)));
+    said_conversation(&mut drive, 7, "c8", 0);
+    assert!(!drive.last(7).unwrap().person, "moving is not a prompt");
+    let fx = said_conversation(&mut drive, 7, "c8", 1);
+    assert!(kept(&fx, 1).unwrap().workers[0].person);
+    assert!(drive.last(7).unwrap().person);
+}
+
 #[test]
 fn a_lead_turn_never_reads_as_the_persons() {
     let mut drive = lead_on();
