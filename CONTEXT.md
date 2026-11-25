@@ -144,6 +144,16 @@ approve what an earlier step answered, or to send it back with a note; a review 
 do that instead; a forge step takes a worktree's branch to the forge.
 _Avoid_: stage, phase, task
 
+**Step limit**:
+How many tasks of one project may be at a step at once, set on the step as `limit`. Past it, a task
+waits for room before the step.
+_Avoid_: WIP, WIP limit, slot, quota
+
+**Room**:
+A place at a limited step: held by a task from the moment it is granted until the task moves to
+another step or ends, and waited for first in first out. Kept in memory only.
+_Avoid_: slot, seat, lock
+
 **Review step**:
 A step whose agent judges an earlier step's work and gives a verdict: approve, or send back with a
 note. It works in a session of its own, and a send back is a miss. Nobody is waited on.

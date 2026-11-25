@@ -174,7 +174,7 @@ impl BoardPage {
             return self.frame(head, body);
         };
 
-        let tasks = crate::task::board(&id, &template, cx);
+        let tasks = crate::task::board(&id, &project.path, &template, cx);
         let mut taken = tasks.taken;
         taken.extend(Shared::global(cx).projects.starting(&id));
         let columns = self.columns(&id, &board, tasks.steps, tasks.done, &taken, cx);
@@ -202,7 +202,7 @@ impl BoardPage {
         &mut self,
         id: &ProjectId,
         board: &onehand_core::project::Board,
-        steps: Vec<(String, Vec<Row>)>,
+        steps: Vec<(String, String, Vec<Row>)>,
         done: Vec<Row>,
         taken: &HashSet<u64>,
         cx: &mut Context<Self>,
@@ -289,18 +289,19 @@ impl BoardPage {
         );
 
         let mut columns = vec![backlog, todo];
-        for (label, rows) in steps {
-            let col = self.task_column(&label, rows, "Nothing at this step", cx);
+        for (label, head, rows) in steps {
+            let col = self.task_column(&label, head, rows, "Nothing at this step", cx);
             columns.push(col);
         }
-        columns.push(self.task_column("Done", done, "Nothing done yet", cx));
+        columns.push(self.task_column("Done", "Done".into(), done, "Nothing done yet", cx));
         columns
     }
 
-    /// A column of tasks.
+    /// A column of tasks under `head`, its rows told apart from `label`.
     fn task_column(
         &mut self,
         label: &str,
+        head: String,
         rows: Vec<Row>,
         empty: &str,
         cx: &mut Context<Self>,
@@ -312,7 +313,7 @@ impl BoardPage {
             .map(|row| self.task_row(label, row, cx))
             .collect();
         column(
-            label.to_string(),
+            head,
             count,
             drawn,
             (count == 0).then(|| empty.to_string()),
@@ -340,6 +341,8 @@ impl BoardPage {
     fn task_row(&mut self, column: &str, row: Row, cx: &mut Context<Self>) -> gpui::AnyElement {
         let attention = row.group.section() == Section::NeedsAttention;
         let word = match row.group.section() {
+            // Its words say it waits, which *Running* would contradict.
+            Section::Running if row.waits_for_room => None,
             Section::NeedsAttention => Some("Needs attention"),
             Section::Running => Some("Running"),
             Section::Queued => Some("Queued"),

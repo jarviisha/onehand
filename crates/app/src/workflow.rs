@@ -13,6 +13,19 @@ pub(crate) struct Workflows {
 
 impl Global for Workflows {}
 
+/// Offer exactly `templates`, as a read of them would.
+#[cfg(test)]
+pub(crate) fn offer(templates: Vec<Template>, cx: &mut App) {
+    let templates = templates
+        .into_iter()
+        .map(|template| Entry {
+            template: Ok(template),
+            file: None,
+        })
+        .collect();
+    cx.update_default_global::<Workflows, _>(|w, _| w.templates = templates);
+}
+
 /// A template on offer: one onehand ships, or one of the person's own files,
 /// read or why it could not be.
 #[derive(Clone)]

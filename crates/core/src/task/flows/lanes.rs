@@ -15,6 +15,7 @@ const NOW: u64 = 1_800_000_000;
 
 fn step(id: &str, label: &str, agent: Option<&str>) -> StepSpec {
     StepSpec {
+        limit: None,
         id: id.into(),
         label: label.into(),
         kind: StepKind::Agent {

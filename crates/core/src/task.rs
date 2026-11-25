@@ -15,6 +15,7 @@ pub mod history;
 mod launch;
 pub mod marks;
 pub mod queue;
+pub mod rooms;
 pub mod tasks;
 pub mod work;
 
@@ -265,6 +266,7 @@ impl Task {
     pub fn check(id: String, command: String, setup: Setup) -> Self {
         let mut template = Template::blank("Check");
         template.steps.push(StepSpec {
+            limit: None,
             id: "check".to_string(),
             label: "Check".to_string(),
             kind: StepKind::Command {

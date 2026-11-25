@@ -186,6 +186,8 @@ fn name(e: &Effect) -> &'static str {
         Effect::Signal(_) => "Signal",
         Effect::Finish { .. } => "Finish",
         Effect::OpenSession { .. } => "OpenSession",
+        Effect::AskRoom { .. } => "AskRoom",
+        Effect::LeaveRoom => "LeaveRoom",
     }
 }
 
@@ -446,6 +448,7 @@ fn run_of(steps: &[(&str, &str, Option<&str>)]) -> (String, Run, Action) {
     run.template.steps = steps
         .iter()
         .map(|(id, label, agent)| crate::workflow::StepSpec {
+            limit: None,
             id: id.to_string(),
             label: label.to_string(),
             kind: crate::workflow::StepKind::Agent {

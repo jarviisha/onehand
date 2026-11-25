@@ -47,6 +47,7 @@ impl RunDrive {
                     "Waiting for approval: Continue or Revise… under the header".to_string(),
                 ));
             }
+            Action::AwaitRoom => self.await_room(true, now, fx),
             Action::Push(commit) => {
                 self.asked.push(Asked::Note(format!(
                     "Pushing {}, which the check passed on",
@@ -86,6 +87,7 @@ impl RunDrive {
                 fx.push(Effect::RunCommand { dir, command });
             }
             Action::Measure if self.sessionless => fx.push(Effect::Measure { dir }),
+            Action::AwaitRoom => self.await_room(false, now, fx),
             Action::Measure
             | Action::Prompt(_)
             | Action::RunCommand(_)
@@ -238,6 +240,7 @@ pub(super) fn ends_run(action: &Action) -> bool {
         | Action::Prompt(_)
         | Action::RunCommand(_)
         | Action::AwaitApproval
+        | Action::AwaitRoom
         | Action::Push(_)
         | Action::OpenPullRequest
         | Action::AwaitStatusChecks { .. }

@@ -19,6 +19,7 @@ use std::time::Duration;
 
 mod forge;
 mod lanes;
+mod rooms;
 pub(super) use forge::connectors;
 pub(super) use lanes::open_lane;
 
@@ -338,6 +339,7 @@ fn one_agent_step() -> Template {
     let mut template = Template::blank("One step");
     template.id = "one-step".into();
     template.steps.push(StepSpec {
+        limit: None,
         id: "do".into(),
         label: "Do".into(),
         kind: StepKind::Agent {

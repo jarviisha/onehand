@@ -97,11 +97,14 @@ impl ProjectsDrive {
     /// Which of project `id`'s To do to start while `running` of its board
     /// tasks work, its starts on their way counted with them, over its
     /// `issues` and the issues its tasks hold (`taken`); none without a
-    /// board.
+    /// board. `first` is its workflow's first step's limit and how many hold
+    /// or wait for room there, when that step is limited; the starts on
+    /// their way are counted there too.
     pub fn pull(
         &self,
         id: &ProjectId,
         running: usize,
+        first: Option<(u32, usize)>,
         issues: &Issues,
         forge: Option<&'static dyn Connector>,
         taken: &HashSet<u64>,
@@ -111,6 +114,12 @@ impl ProjectsDrive {
         Some(crate::board::pull(
             board,
             running + starting,
+            // ponytail: a start counts here only until it lands; a task kept
+            // and not yet asking for room is counted nowhere at the first
+            // step, so a pull then may start one too many. The team cap and
+            // the room ledger still hold, so the cost is a task that waits;
+            // count a landed task until its run first asks if that bites.
+            first.map(|(limit, at)| (limit, at + starting)),
             issues,
             forge,
             taken,

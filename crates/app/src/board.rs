@@ -150,9 +150,12 @@ fn pull_read(
     }
     let running = crate::task::board_running(project, cx);
     let taken = crate::task::board_taken(project, cx);
+    // A limited first step lets in no more than it has room for.
+    let first = crate::task::room_at(root, &template, 0, cx)
+        .map(|(limit, holding, waiting)| (limit, holding + waiting));
     let Some(pull) = Shared::global(cx)
         .projects
-        .pull(project, running, kept, forge, &taken)
+        .pull(project, running, first, kept, forge, &taken)
     else {
         return;
     };

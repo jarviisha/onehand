@@ -14,6 +14,7 @@ impl WorkflowsPage {
     pub(crate) fn new_workflow(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let mut template = Template::blank("");
         template.steps.push(core::StepSpec {
+            limit: None,
             id: "plan".to_string(),
             label: "Plan".to_string(),
             kind: StepKind::Agent {

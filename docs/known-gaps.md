@@ -463,6 +463,10 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   the workflow library is read, and only while a window holds the project; a project no window
   held at those moments waits for the next one. Pulling when a window opens means a look from the
   shell as it is built.
+- **A start landed but not yet asking for room is counted at no step.** A pull counts the starts
+  on their way against the first step's limit only until their task is kept, and the task asks for
+  room a moment later, so a pull in that gap may start one task too many at the first step. The
+  room ledger still holds, so the extra task waits for room; it is not run over the limit.
 - **A board's old workflow's tasks still count after it is changed.** Bound to another workflow,
   the board keeps the tasks the old one started: they hold their issues, count against the team
   and stand in columns named by step ids the new workflow may not have, until they end and are

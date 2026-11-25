@@ -64,6 +64,8 @@ fn name<W>(e: &Effect<W>) -> &'static str {
         Effect::ConfirmRemoval { .. } => "ConfirmRemoval",
         Effect::RemoveWorktree { .. } => "RemoveWorktree",
         Effect::CloseSession { .. } => "CloseSession",
+        Effect::GiveRoom { .. } => "GiveRoom",
+        Effect::RoomFreed { .. } => "RoomFreed",
         Effect::Refresh => "Refresh",
         Effect::Signal(signal) => match signal {
             Signal::Queued { .. } => "Signal::Queued",
@@ -101,12 +103,15 @@ fn task_of<W>(e: &Effect<W>) -> Option<&str> {
         | Effect::Pin { task, .. }
         | Effect::Told { task, .. }
         | Effect::ConfirmRemoval { task, .. }
-        | Effect::RemoveWorktree { task, .. } => Some(task),
+        | Effect::RemoveWorktree { task, .. }
+        | Effect::GiveRoom { task } => Some(task),
         Effect::Cut(start) | Effect::Keep(start) => Some(&start.task),
         Effect::JudgeRemoval(judging) => Some(&judging.task),
-        Effect::Defer(_) | Effect::CloseSession { .. } | Effect::Signal(_) | Effect::Refresh => {
-            None
-        }
+        Effect::Defer(_)
+        | Effect::CloseSession { .. }
+        | Effect::RoomFreed { .. }
+        | Effect::Signal(_)
+        | Effect::Refresh => None,
     }
 }
 
@@ -128,6 +133,8 @@ fn written<W>(e: &Effect<W>) -> Option<&Task> {
         | Effect::ConfirmRemoval { .. }
         | Effect::RemoveWorktree { .. }
         | Effect::CloseSession { .. }
+        | Effect::GiveRoom { .. }
+        | Effect::RoomFreed { .. }
         | Effect::Signal(_)
         | Effect::Refresh => None,
     }
@@ -151,6 +158,8 @@ fn start_of<W>(e: Effect<W>) -> Option<OffScreen<W>> {
         | Effect::ConfirmRemoval { .. }
         | Effect::RemoveWorktree { .. }
         | Effect::CloseSession { .. }
+        | Effect::GiveRoom { .. }
+        | Effect::RoomFreed { .. }
         | Effect::Signal(_)
         | Effect::Refresh => None,
     }
@@ -360,6 +369,8 @@ fn an_ended_run_holds_its_place_until_its_turn_is_over() {
         | Effect::ConfirmRemoval { .. }
         | Effect::RemoveWorktree { .. }
         | Effect::CloseSession { .. }
+        | Effect::GiveRoom { .. }
+        | Effect::RoomFreed { .. }
         | Effect::Signal(_)
         | Effect::Refresh => None,
     });
@@ -789,6 +800,8 @@ fn told<W>(fx: &[Effect<W>]) -> Option<&Placed> {
         | Effect::ConfirmRemoval { .. }
         | Effect::RemoveWorktree { .. }
         | Effect::CloseSession { .. }
+        | Effect::GiveRoom { .. }
+        | Effect::RoomFreed { .. }
         | Effect::Signal(_)
         | Effect::Refresh => None,
     })
@@ -1046,4 +1059,128 @@ fn a_tasks_worktree_removed_is_forgotten_by_its_project() {
     );
     assert!(!said.is_empty(), "written");
     assert!(projects.get(&project.id).unwrap().worktrees.is_empty());
+}
+
+fn room(repo: &str, workflow: &str, step: &str) -> crate::task::rooms::RoomKey {
+    crate::task::rooms::RoomKey {
+        repo: PathBuf::from(repo),
+        workflow: workflow.into(),
+        step: step.into(),
+    }
+}
+
+/// The tasks `fx` gives room to, in order.
+fn given<W>(fx: &[Effect<W>]) -> Vec<&str> {
+    fx.iter()
+        .filter(|e| name(e) == "GiveRoom")
+        .filter_map(task_of)
+        .collect()
+}
+
+#[test]
+fn a_full_step_queues_the_second_task_and_grants_it_when_the_first_leaves() {
+    let mut tasks: TasksDrive<Win> = TasksDrive::default();
+    let key = room("/a", "w", "build");
+    assert_eq!(given(&tasks.ask_room("1", key.clone(), 1)), ["1"]);
+    assert!(given(&tasks.ask_room("2", key.clone(), 1)).is_empty());
+    assert!(given(&tasks.ask_room("3", key.clone(), 1)).is_empty());
+    assert_eq!(tasks.waits_for_room("2"), Some("build"));
+    assert_eq!(tasks.room_at(&key), (1, 2));
+    // Asking again keeps its place.
+    assert!(given(&tasks.ask_room("2", key.clone(), 1)).is_empty());
+    assert_eq!(tasks.room_at(&key), (1, 2));
+
+    // First in, first out.
+    assert_eq!(given(&tasks.leave_room("1")), ["2"]);
+    assert_eq!(tasks.waits_for_room("2"), None);
+    assert_eq!(tasks.waits_for_room("3"), Some("build"));
+    assert_eq!(given(&tasks.leave_room("2")), ["3"]);
+    assert_eq!(tasks.room_at(&key), (1, 0));
+    assert!(given(&tasks.leave_room("2")).is_empty(), "left once");
+}
+
+#[test]
+fn an_ended_holder_frees_its_room() {
+    let mut tasks = TasksDrive::default();
+    tasks.add(titled("1", "First", "/a"));
+    tasks.add(titled("2", "Second", "/b"));
+    let key = room("/a", "w", "build");
+    tasks.ask_room("1", key.clone(), 1);
+    tasks.ask_room("2", key.clone(), 1);
+    let mut run = tasks.task("1").unwrap().runs[0].clone();
+    run.outcome = Some(Outcome::Done);
+    let fx = tasks.run_ended("1", run, usize::MAX, false, Vec::new(), WINDOW);
+    assert_eq!(given(&fx), ["2"], "{fx:?}");
+    assert_eq!(tasks.room_at(&key), (1, 0));
+}
+
+#[test]
+fn a_stopped_waiter_leaves_the_queue() {
+    let mut tasks = TasksDrive::default();
+    tasks.add(titled("1", "First", "/a"));
+    tasks.add(titled("2", "Second", "/b"));
+    tasks.add(titled("3", "Third", "/c"));
+    let key = room("/a", "w", "build");
+    tasks.ask_room("1", key.clone(), 1);
+    tasks.ask_room("2", key.clone(), 1);
+    tasks.ask_room("3", key.clone(), 1);
+    let mut run = tasks.task("2").unwrap().runs[0].clone();
+    run.outcome = Some(Outcome::Stopped(Stop::ByPerson));
+    let fx = tasks.run_ended("2", run, usize::MAX, false, Vec::new(), WINDOW);
+    assert!(given(&fx).is_empty(), "{fx:?}");
+    assert_eq!(tasks.waits_for_room("2"), None);
+    assert_eq!(tasks.room_at(&key), (1, 1));
+    assert_eq!(given(&tasks.leave_room("1")), ["3"], "the next in line");
+}
+
+#[test]
+fn room_is_counted_per_repo_workflow_and_step() {
+    let mut tasks: TasksDrive<Win> = TasksDrive::default();
+    let key = room("/a", "w", "build");
+    tasks.ask_room("1", key.clone(), 1);
+    for (id, other) in [
+        ("2", room("/b", "w", "build")),
+        ("3", room("/a", "v", "build")),
+        ("4", room("/a", "w", "test")),
+    ] {
+        assert_eq!(given(&tasks.ask_room(id, other.clone(), 1)), [id]);
+        assert_eq!(tasks.room_at(&other), (1, 0));
+    }
+    assert_eq!(tasks.room_at(&key), (1, 0));
+    // A limit of two holds two; the asking run's limit is the one used.
+    assert_eq!(given(&tasks.ask_room("5", key.clone(), 2)), ["5"]);
+    assert!(given(&tasks.ask_room("6", key.clone(), 2)).is_empty());
+    assert_eq!(tasks.room_at(&key), (2, 1));
+    // Moving on to another step gives the room up at the first.
+    assert_eq!(
+        given(&tasks.ask_room("1", room("/a", "w", "test"), 2)),
+        ["6", "1"]
+    );
+}
+
+/// Where room freed, whoever held it: a task leaving the step, or ending
+/// while it held room there. A waiter leaving frees none.
+fn freed<W>(fx: &[Effect<W>]) -> Vec<&Path> {
+    fx.iter()
+        .filter_map(|e| match e {
+            Effect::RoomFreed { repo } => Some(repo.as_path()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn room_freeing_is_said_whoever_held_it() {
+    let mut tasks = TasksDrive::default();
+    tasks.add(titled("1", "First", "/a"));
+    tasks.add(titled("2", "Second", "/a"));
+    let key = room("/a", "w", "build");
+    assert!(freed(&tasks.ask_room("1", key.clone(), 2)).is_empty());
+    assert!(freed(&tasks.ask_room("2", key.clone(), 2)).is_empty());
+    assert_eq!(freed(&tasks.leave_room("1")), [Path::new("/a")]);
+    assert!(freed(&tasks.leave_room("1")).is_empty(), "freed once");
+    let mut run = tasks.task("2").unwrap().runs[0].clone();
+    run.outcome = Some(Outcome::Stopped(crate::workflow::Stop::ByPerson));
+    let fx = tasks.run_ended("2", run, usize::MAX, false, Vec::new(), WINDOW);
+    assert_eq!(freed(&fx), [Path::new("/a")], "{fx:?}");
 }

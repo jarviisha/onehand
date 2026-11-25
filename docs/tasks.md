@@ -151,6 +151,11 @@ with no empty run recorded.
 only once its agent's turn is over and its command's process group has exited, never when Stop is
 pressed, so the next task cannot start on work still being written.
 
+**A task waiting for room still holds its place.** It works, not waits on a person: it is at a full
+step (*Waiting for room at <step>*, in its row and its session's notes), sits under *Running*, and
+its budget is paused. It goes on when a task holds room at that step no longer, first in first
+out; the rules are in [workflows.md](workflows.md#the-engine).
+
 Which group a task sits in is never stored: it is worked out from the task's last run, so the page
 and the rail count cannot drift apart.
 

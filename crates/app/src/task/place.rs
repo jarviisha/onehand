@@ -251,6 +251,18 @@ pub(super) fn perform(
             }),
             Effect::Signal(signal) => say(signal, cx),
             Effect::Refresh => cx.refresh_windows(),
+            // Deferred: the run given room may be the one whose effects
+            // are being carried, its drive not to be entered again inside.
+            Effect::GiveRoom { task } => cx.defer(move |cx| {
+                super::carrier::feed(&task, onehand_core::task::drive::Input::RoomGiven, cx)
+            }),
+            // The board of the project there may have room for its To do
+            // again; deferred, as the tasks may be lent while this is said.
+            Effect::RoomFreed { repo } => cx.defer(move |cx| {
+                if let Some(project) = crate::projects::of(&repo, cx) {
+                    crate::board::pull_now(&project.id, cx);
+                }
+            }),
         }
     }
 }

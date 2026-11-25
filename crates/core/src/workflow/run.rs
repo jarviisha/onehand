@@ -18,6 +18,7 @@ use std::collections::BTreeMap;
 
 mod retry;
 mod review;
+mod room;
 mod setup;
 mod visits;
 
@@ -48,6 +49,9 @@ pub enum Action {
     RunCommand(String),
     /// Wait for a person to approve or revise.
     AwaitApproval,
+    /// Wait for room at the step the run is at, which is limited and full:
+    /// [`Run::room_given`] says when it has some.
+    AwaitRoom,
     /// Push this commit as the run's branch and report to
     /// [`Run::forge_done`].
     Push(String),
@@ -201,6 +205,8 @@ enum Await {
     Approval,
     Forge,
     StatusChecks,
+    /// Room at a limited step.
+    Room,
 }
 
 /// One stay at a step: going back to a step is a new visit, never a rewrite
@@ -633,18 +639,12 @@ impl Run {
             return self.enter(self.step, "started", now);
         }
         self.close_visit("interrupted", now);
-        if let Some(step) = self.current().map(|step| step.id.clone()) {
-            self.open_visit(step, now);
-        }
         self.log_here("resumed", now);
-        match (self.current().map(|step| &step.kind), &self.marks.step_from) {
-            (Some(StepKind::Agent { .. } | StepKind::Review { .. }), Some(_)) => {
-                self.awaiting = Await::Turn;
-                Action::Prompt(self.step_prompt())
-            }
-            (Some(_), _) => self.start_step(now),
-            (None, _) => self.finish(Outcome::Done, now),
+        // Nothing of the room it held is kept: it asks again.
+        if self.limit_at(self.step).is_some() {
+            return self.wait_for_room();
         }
+        self.take_up(now)
     }
 
     /// Go to the step at `at`, or end done past the last.
@@ -657,8 +657,11 @@ impl Run {
             self.outcome = Some(Outcome::Done);
             return Action::Finish(Outcome::Done);
         };
+        let wait = self.waits_for_room_at(at);
         self.close_visit(why, now);
-        self.open_visit(to.clone(), now);
+        if !wait {
+            self.open_visit(to.clone(), now);
+        }
         if at > self.furthest {
             self.furthest = at;
             self.misses = 0;
@@ -666,7 +669,10 @@ impl Run {
         self.step = at;
         self.marks.step_from = None;
         self.log(from, to, why, now);
-        self.start_step(now)
+        match wait {
+            true => self.wait_for_room(),
+            false => self.start_step(now),
+        }
     }
 
     /// What the step at hand starts with.

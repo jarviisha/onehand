@@ -142,6 +142,16 @@ impl Flow {
         self.settle();
     }
 
+    /// Start `starting` off screen as a new task, as a tool would, and carry
+    /// out what that says: the task's id.
+    pub(super) fn start(&mut self, starting: crate::task::Starting) -> String {
+        let id = self.new_id();
+        let launch = Launch::off_screen(&[], starting, None, Some("a".into()));
+        self.tasks(|t| t.start_off_screen(id.clone(), launch, WINDOW));
+        self.settle();
+        id
+    }
+
     /// The agent of the session task `id` works in now says `event`.
     pub(super) fn agent(&mut self, id: &str, event: AcpEvent) {
         let driven = self.runs.get_mut(id).expect("a run under way");
@@ -241,6 +251,9 @@ impl Flow {
             | TasksEffect::ConfirmRemoval { .. }
             | TasksEffect::RemoveWorktree { .. } => panic!("these flows remove no worktree"),
             TasksEffect::CloseSession { uids, .. } => self.closed.extend(uids),
+            TasksEffect::GiveRoom { task } => self.run_input(&task, RunInput::RoomGiven),
+            // No board is played in these flows.
+            TasksEffect::RoomFreed { .. } => {}
             TasksEffect::Signal(signal) => self.said.push(format!("{signal:?}")),
             TasksEffect::Refresh => {}
         }
@@ -348,6 +361,8 @@ impl Flow {
                 self.run_input(id, RunInput::Saved(Ok(())));
             }
             RunEffect::Signal(signal) => self.said.push(format!("{signal:?}")),
+            RunEffect::AskRoom { key, limit } => self.tasks(|t| t.ask_room(id, key, limit)),
+            RunEffect::LeaveRoom => self.tasks(|t| t.leave_room(id)),
             RunEffect::Finish { .. } => {
                 let driven = self.runs.remove(id).expect("a run under way");
                 let held = driven.lanes.get(driven.run.current_lane());

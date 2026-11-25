@@ -54,6 +54,13 @@ minor bump may break any of them.
 
 ### Workflows and tasks
 
+- A workflow step can carry a **limit**: at most that many tasks of a project at the step at
+  once. A task that reaches a full step shows *Waiting for room at <step>* on the Tasks page and
+  the board, keeps its place and its worktree, does not spend its working time, and goes on first
+  in first out as room frees. A board's column head reads `<step> · <n> of <limit>`, and the board
+  pulls from To do only while its first step has room. Set it in Settings ▸ Workflows; a file
+  with one is written as schema 2. A restart brings such a run back cut off, and Resume asks for
+  room again.
 - A workflow step can be a **review**: an agent, in a session of its own, judges the work of an
   earlier step and approves it or sends it back with a note. A send back returns the run to that
   step, or to another earlier one the review names, carrying the note, and counts as a miss, so a

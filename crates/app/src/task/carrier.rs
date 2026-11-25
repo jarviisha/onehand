@@ -490,6 +490,14 @@ fn perform(id: &str, effects: Vec<Effect>, cx: &mut App) {
                 agent,
                 name: _,
             } => open_session(id, lane, agent, cx),
+            // Who is given room is the tasks' drive's; it may be this run
+            // itself, told so once this update is over.
+            Effect::AskRoom { key, limit } => {
+                super::with_drive(cx, |t| ((), t.ask_room(id, key, limit)));
+            }
+            Effect::LeaveRoom => {
+                super::with_drive(cx, |t| ((), t.leave_room(id)));
+            }
         }
     }
 }

@@ -21,6 +21,8 @@ mod settings;
 
 /// The least a step's id or label takes before the line wraps under the kind.
 const NAME_MIN: gpui::Rems = gpui::rems(10.);
+/// The Limit field is a few digits wide, so it does not take a name's share.
+const LIMIT_W: gpui::Rems = gpui::rems(6.);
 
 /// What a later step's menus need to know of an earlier one.
 pub(super) struct Earlier {
@@ -352,6 +354,12 @@ pub(super) fn step_panel(
             "Label",
             None,
             text_input(&step.label, cx).tall().disabled(shipped),
+            cx,
+        )))
+        .child(div().flex_none().w(LIMIT_W).child(field(
+            "Limit",
+            None,
+            text_input(&step.limit, cx).tall().disabled(shipped),
             cx,
         )));
 

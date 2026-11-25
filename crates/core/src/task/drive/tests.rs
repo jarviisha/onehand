@@ -254,6 +254,8 @@ fn name(e: &Effect) -> &'static str {
         },
         Effect::Finish { .. } => "Finish",
         Effect::OpenSession { .. } => "OpenSession",
+        Effect::AskRoom { .. } => "AskRoom",
+        Effect::LeaveRoom => "LeaveRoom",
     }
 }
 
@@ -280,7 +282,9 @@ fn finished(fx: &[Effect]) -> Option<&Outcome> {
         | Effect::Refresh
         | Effect::SessionChanged
         | Effect::Signal(_)
-        | Effect::OpenSession { .. } => None,
+        | Effect::OpenSession { .. }
+        | Effect::AskRoom { .. }
+        | Effect::LeaveRoom => None,
     })
 }
 
@@ -923,6 +927,7 @@ fn a_mark_not_pinned_is_told_and_the_run_goes_on() {
 fn forging() -> Rig {
     let mut template = Template::blank("Forge");
     let step = |id: &str, kind| StepSpec {
+        limit: None,
         id: id.into(),
         label: id.into(),
         kind,
@@ -976,7 +981,9 @@ fn forging() -> Rig {
             | Effect::SessionChanged
             | Effect::Signal(_)
             | Effect::Finish { .. }
-            | Effect::OpenSession { .. } => None,
+            | Effect::OpenSession { .. }
+            | Effect::AskRoom { .. }
+            | Effect::LeaveRoom => None,
         });
         fx = rig.on(next.expect("the run moves on to its push"));
     }
@@ -1148,7 +1155,9 @@ fn failing_checks_carry_at_most_three_logs_to_the_repair() {
         | Effect::SessionChanged
         | Effect::Signal(_)
         | Effect::Finish { .. }
-        | Effect::OpenSession { .. } => None,
+        | Effect::OpenSession { .. }
+        | Effect::AskRoom { .. }
+        | Effect::LeaveRoom => None,
     });
     assert_eq!(checks, Some(3), "{fx:?}");
     let logs = vec![
@@ -1187,6 +1196,7 @@ fn a_look_after_the_run_stopped_is_dropped() {
 /// An agent step of `id`, on `agent` when it names one.
 fn agent_step(id: &str, label: &str, agent: Option<&str>) -> StepSpec {
     StepSpec {
+        limit: None,
         id: id.into(),
         label: label.into(),
         kind: StepKind::Agent {
@@ -1202,6 +1212,7 @@ fn agent_step(id: &str, label: &str, agent: Option<&str>) -> StepSpec {
 
 fn verify_step(on_fail: &str) -> StepSpec {
     StepSpec {
+        limit: None,
         id: "verify".into(),
         label: "Verify".into(),
         kind: StepKind::Command {
@@ -1220,6 +1231,7 @@ fn reviewed() -> Template {
         verify_step("implement"),
         agent_step("review", "Review", Some("Claude")),
         StepSpec {
+            limit: None,
             id: "approve".into(),
             label: "Approve".into(),
             kind: StepKind::Approval {
@@ -1277,7 +1289,9 @@ impl Rig {
                 | Effect::SessionChanged
                 | Effect::Signal(_)
                 | Effect::Finish { .. }
-                | Effect::OpenSession { .. } => None,
+                | Effect::OpenSession { .. }
+                | Effect::AskRoom { .. }
+                | Effect::LeaveRoom => None,
             });
             match next {
                 Some(input) => fx = self.on(input),
@@ -1590,6 +1604,7 @@ fn with_a_review() -> Template {
     template.steps = vec![
         agent_step("implement", "Implement", None),
         StepSpec {
+            limit: None,
             id: "review".into(),
             label: "Review".into(),
             kind: StepKind::Review {
@@ -1759,4 +1774,130 @@ fn a_review_lane_is_granted_its_verdict() {
         ["review_verdict"]
     );
     assert_eq!(Lane::Run.grant(run, &given), given);
+}
+
+/// The checkout template with its plan limited to one run at a time.
+fn limited_plan() -> Template {
+    let mut template = checkout();
+    template.steps[0].limit = Some(1);
+    template
+}
+
+/// A run of [`limited_plan`] given room at its plan, prompted.
+fn in_limited_plan() -> Rig {
+    in_limited(limited_plan())
+}
+
+/// A run of `template`, whose first step is limited, given room there and
+/// prompted.
+fn in_limited(template: Template) -> Rig {
+    let (mut rig, _) = Rig::start(template, None, connected());
+    let fx = rig.on(Input::RoomGiven);
+    assert!(names(&fx).contains(&"Pin"), "{fx:?}");
+    rig.on(Input::Pinned(Ok("c0".into())));
+    rig.on(Input::Measured(Ok(mark("a", "d0"))));
+    assert!(rig.submitted());
+    rig
+}
+
+#[test]
+fn a_full_step_waits_with_its_note_and_pauses_the_budget() {
+    let (mut rig, fx) = Rig::start(limited_plan(), None, connected());
+    assert!(
+        fx.contains(&Effect::AskRoom {
+            key: crate::task::rooms::RoomKey {
+                repo: PathBuf::from("/repo"),
+                workflow: "builtin:checkout".into(),
+                step: "plan".into(),
+            },
+            limit: 1,
+        }),
+        "{fx:?}"
+    );
+    assert!(!names(&fx).contains(&"Measure"), "{fx:?}");
+    assert!(rig.drive.run().awaiting_room());
+    assert!(
+        rig.said
+            .iter()
+            .any(|(_, n)| n == "Waiting for room at Plan."),
+        "{:?}",
+        rig.said
+    );
+    // Long past its timeout, it has spent none of it waiting.
+    rig.now.at += Duration::from_secs(365 * 24 * 3600);
+    let fx = rig.on(Input::Elapsed(Timer::Timeout));
+    assert_eq!(names(&fx), ["Arm(Timeout)"], "{fx:?}");
+}
+
+#[test]
+fn room_given_starts_the_step() {
+    let (mut rig, _) = Rig::start(limited_plan(), None, connected());
+    let fx = rig.on(Input::RoomGiven);
+    assert!(
+        names(&fx).contains(&"Pin"),
+        "the visit's start is marked: {fx:?}"
+    );
+    let fx = rig.on(Input::Pinned(Ok("c0".into())));
+    assert!(names(&fx).contains(&"Measure"), "{fx:?}");
+    assert!(!rig.drive.run().awaiting_room());
+    // Given twice, it moves nothing.
+    assert!(rig.on(Input::RoomGiven).is_empty());
+}
+
+#[test]
+fn leaving_a_limited_step_says_so() {
+    let mut rig = in_limited_plan();
+    rig.turn_ends("The plan.");
+    let fx = rig.on(Input::TurnRead(Ok(facts("a", "d0"))));
+    assert_eq!(names(&fx).first(), Some(&"LeaveRoom"), "{fx:?}");
+    assert_eq!(names(&fx).iter().filter(|n| **n == "LeaveRoom").count(), 1);
+}
+
+#[test]
+fn going_back_to_the_step_it_holds_needs_no_room() {
+    let mut rig = in_limited_plan();
+    // No answer: the plan is asked again, in the same step.
+    rig.turn_ends("");
+    let fx = rig.on(Input::TurnRead(Ok(facts("a", "d0"))));
+    assert!(rig.submitted(), "{fx:?}");
+    assert!(
+        !names(&fx).contains(&"AskRoom") && !names(&fx).contains(&"LeaveRoom"),
+        "{fx:?}"
+    );
+    assert!(!rig.drive.run().awaiting_room());
+}
+
+#[test]
+fn a_limited_last_step_leaves_its_room_before_the_run_ends() {
+    let mut template = limited_plan();
+    template.steps.truncate(1);
+    let mut rig = in_limited(template);
+    rig.turn_ends("The plan.");
+    let fx = rig.on(Input::TurnRead(Ok(facts("a", "d0"))));
+    let names = names(&fx);
+    let leave = names.iter().position(|n| *n == "LeaveRoom");
+    let finish = names.iter().position(|n| n.starts_with("Finish"));
+    assert!(leave.is_some() && leave < finish, "{fx:?}");
+}
+
+#[test]
+fn a_resumed_run_at_a_limited_step_asks_again_and_takes_it_up_from_its_mark() {
+    let rig = in_limited_plan();
+    let mut back: Run =
+        serde_json::from_str(&serde_json::to_string(rig.drive.run()).unwrap()).unwrap();
+    let first = back.resume(0);
+    assert_eq!(first, Action::AwaitRoom);
+    // The visit cut off is marked closed first; then it asks for room.
+    let (mut rig, fx) = Rig::start_run(back, first, connected());
+    assert!(!names(&fx).contains(&"AskRoom"), "{fx:?}");
+    let fx = rig.on(Input::Pinned(Ok("c0".into())));
+    assert!(names(&fx).contains(&"AskRoom"), "{fx:?}");
+    assert!(!rig.submitted());
+    // Given room, the new visit is marked and the plan asked again from the
+    // mark it kept, with nothing measured anew.
+    let fx = rig.on(Input::RoomGiven);
+    assert!(names(&fx).contains(&"Pin"), "{fx:?}");
+    let fx = rig.on(Input::Pinned(Ok("c1".into())));
+    assert!(!names(&fx).contains(&"Measure"), "{fx:?}");
+    assert!(rig.submitted(), "{fx:?}");
 }

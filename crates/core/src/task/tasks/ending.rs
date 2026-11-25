@@ -20,7 +20,9 @@ impl<W: Copy> TasksDrive<W> {
         uids: Vec<u64>,
         window: W,
     ) -> Vec<Effect<W>> {
-        let mut fx = Vec::new();
+        // Whatever ended it, the run holds room nowhere now and waits for
+        // none.
+        let mut fx = super::give_room(self.rooms.leave(id));
         let Some(task) = self.task(id) else {
             return fx;
         };

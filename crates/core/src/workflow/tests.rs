@@ -465,6 +465,7 @@ fn validate_names_each_kind_of_problem() {
     has(&t, "Step 3: its label `Plan` is used by an earlier step");
     let mut t = checkout();
     t.steps.push(StepSpec {
+        limit: None,
         id: "push".into(),
         label: "Push".into(),
         kind: StepKind::Push,
@@ -1749,6 +1750,7 @@ fn packaged() -> Template {
     template.id = "packaged".into();
     template.place = Place::Worktree;
     let step = |id: &str, kind: StepKind| StepSpec {
+        limit: None,
         id: id.into(),
         label: id[..1].to_uppercase() + &id[1..],
         kind,
@@ -2232,6 +2234,7 @@ fn a_review_is_checked() {
         panic!("verify follows the review")
     };
     t.steps.push(StepSpec {
+        limit: None,
         id: "after".into(),
         label: "After".into(),
         kind: StepKind::Agent {
@@ -2458,4 +2461,95 @@ fn only_a_reviews_prompt_says_how_to_end_it() {
     );
     let text = prompt_of(run.measured(mark("a", "d0"), 0));
     assert!(!text.contains("review_verdict"), "{text}");
+}
+
+#[test]
+fn a_step_limit_round_trips() {
+    let mut t = checkout();
+    t.steps[0].limit = Some(2);
+    let text = toml::to_string_pretty(&t).unwrap();
+    assert!(text.contains("limit = 2"));
+    assert_eq!(store::parse(&text).unwrap().steps[0].limit, Some(2));
+}
+
+#[test]
+fn a_step_limit_needs_version_2() {
+    let mut t = Template::blank("x");
+    t.steps.push(StepSpec {
+        limit: None,
+        id: "push".into(),
+        label: "Push".into(),
+        kind: StepKind::Push,
+    });
+    assert_eq!(t.schema_version_needed(), 1);
+    t.steps[0].limit = Some(1);
+    assert_eq!(t.schema_version_needed(), 2);
+}
+
+#[test]
+fn a_file_without_limits_stays_version_1() {
+    let t = Template::blank("x");
+    assert!(!toml::to_string(&checkout()).unwrap().contains("limit"));
+    assert_eq!(t.schema_version_needed(), 1);
+}
+
+#[test]
+fn a_zero_limit_is_a_problem() {
+    let mut t = checkout();
+    t.steps[1].limit = Some(0);
+    let all: Vec<String> = validate(&t).iter().map(|p| p.to_string()).collect();
+    assert!(
+        all.iter()
+            .any(|s| s.contains("limit is 0: give at least 1, or leave the key out")),
+        "{all:?}"
+    );
+}
+
+/// The checkout template with its implement step limited to one run.
+fn limited_implement() -> Template {
+    let mut template = checkout();
+    template.steps[2].limit = Some(1);
+    template
+}
+
+#[test]
+fn resume_at_a_limited_step_waits_for_room() {
+    let mut run = at_approval();
+    run.template = limited_implement();
+    assert_eq!(approve(&mut run), Action::AwaitRoom);
+    assert!(run.awaiting_room());
+    assert_eq!(run.current().map(|s| s.id.as_str()), Some("implement"));
+    assert!(
+        run.visits.iter().all(|v| v.ended_at.is_some()),
+        "no visit open"
+    );
+    assert_eq!(run.room_given(0), Action::Measure);
+    assert_eq!(
+        run.visits.last().map(|v| v.step.as_str()),
+        Some("implement")
+    );
+    prompt_of(run.measured(mark("a", "d0"), 0));
+
+    // After a restart it asks for room again before its step goes on, and
+    // then takes it up from the mark it kept.
+    let mut back: Run = serde_json::from_str(&serde_json::to_string(&run).unwrap()).unwrap();
+    assert_eq!(back.resume(0), Action::AwaitRoom);
+    assert!(
+        back.visits.iter().all(|v| v.ended_at.is_some()),
+        "no visit open"
+    );
+    assert!(prompt_of(back.room_given(0)).contains("This step is the change"));
+    assert!(back.visits.last().is_some_and(|v| v.ended_at.is_none()));
+    assert_eq!(back.room_given(0), Action::Idle);
+}
+
+#[test]
+fn a_workflow_without_an_id_is_never_limited() {
+    let mut template = limited_implement();
+    template.steps[0].limit = Some(1);
+    let (_, first) = begin("1".into(), template.clone(), brief(), setup(None));
+    assert_eq!(first, Action::AwaitRoom);
+    template.id = String::new();
+    let (_, first) = begin("1".into(), template, brief(), setup(None));
+    assert_eq!(first, Action::Measure);
 }

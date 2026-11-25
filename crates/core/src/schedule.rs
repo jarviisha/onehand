@@ -286,6 +286,7 @@ pub fn prompt_template() -> Template {
     let mut template = Template::blank("Prompt");
     template.id = crate::workflow::PROMPT_ID.to_string();
     template.steps.push(StepSpec {
+        limit: None,
         id: "prompt".to_string(),
         label: "Prompt".to_string(),
         kind: StepKind::Agent {

@@ -82,6 +82,9 @@ pub fn validate(template: &Template) -> Vec<Problem> {
         } else if earlier.iter().any(|other| other.id == step.id) {
             here(format!("its id `{}` is used by an earlier step", step.id));
         }
+        if step.limit == Some(0) {
+            here("limit is 0: give at least 1, or leave the key out".to_string());
+        }
         let label = step.label.trim();
         if label.is_empty() {
             here("it has no label".to_string());

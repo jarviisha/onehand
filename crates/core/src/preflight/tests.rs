@@ -717,6 +717,7 @@ fn step_settings_findings_are_capped() {
     t.place = Place::Worktree;
     t.steps = (0..10)
         .map(|i| StepSpec {
+            limit: None,
             id: format!("s{i}"),
             label: format!("Step {i}"),
             kind: StepKind::Agent {
