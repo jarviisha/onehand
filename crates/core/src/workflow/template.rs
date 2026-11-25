@@ -56,10 +56,14 @@ fn default_timeout() -> String {
 
 impl Template {
     /// The schema a file of this template must carry: 2 once a step names
-    /// its agent, else 1, so a file nothing new touches stays readable by an
-    /// older onehand.
+    /// its agent or reviews another, else 1, so a file nothing new touches
+    /// stays readable by an older onehand.
     pub fn schema_version_needed(&self) -> u32 {
-        if self.steps.iter().any(|step| step.agent().is_some()) {
+        if self
+            .steps
+            .iter()
+            .any(|step| step.agent().is_some() || step.is_review())
+        {
             2
         } else {
             1
@@ -94,6 +98,7 @@ impl Template {
         self.steps.iter().any(|step| match &step.kind {
             StepKind::Command { command, .. } => command.is_none(),
             StepKind::Agent { .. }
+            | StepKind::Review { .. }
             | StepKind::Approval { .. }
             | StepKind::Push
             | StepKind::PullRequest
@@ -148,6 +153,7 @@ impl Template {
         self.steps.iter().find_map(|step| match &step.kind {
             StepKind::StatusChecks { on_fail, .. } => Some(on_fail.as_str()),
             StepKind::Agent { .. }
+            | StepKind::Review { .. }
             | StepKind::Command { .. }
             | StepKind::Approval { .. }
             | StepKind::Push
@@ -194,16 +200,21 @@ pub struct StepSpec {
 }
 
 impl StepSpec {
-    /// The agent the step names, on an agent step that does.
+    /// The agent the step names, on an agent or review step that does.
     pub fn agent(&self) -> Option<&str> {
         match &self.kind {
-            StepKind::Agent { agent, .. } => agent.as_deref(),
+            StepKind::Agent { agent, .. } | StepKind::Review { agent, .. } => agent.as_deref(),
             StepKind::Command { .. }
             | StepKind::Approval { .. }
             | StepKind::Push
             | StepKind::PullRequest
             | StepKind::StatusChecks { .. } => None,
         }
+    }
+
+    /// Whether an agent judges an earlier step's work here.
+    pub fn is_review(&self) -> bool {
+        matches!(self.kind, StepKind::Review { .. })
     }
 
     /// What the step does, in a line: its kind, then what it checks or runs
@@ -235,6 +246,13 @@ impl StepSpec {
                     .as_deref()
                     .map_or_else(|| "the project's check".to_string(), |c| format!("`{c}`"))
             ),
+            StepKind::Review { of, agent, .. } => {
+                let back = self.kind.rejects_to().unwrap_or(of);
+                let who = agent
+                    .as_ref()
+                    .map_or_else(String::new, |agent| format!(" on {agent}"));
+                format!("Review{who} of {of} · back to {back} when sent back")
+            }
             StepKind::Approval { of } => format!("Approval of {of}"),
             StepKind::Push => "Push · the commit the check passed on".to_string(),
             StepKind::PullRequest => "Pull request · opened as a draft".to_string(),
@@ -278,6 +296,25 @@ pub enum StepKind {
         command: Option<String>,
         on_fail: String,
     },
+    /// Prompt an agent to judge the work of the agent step `of`, in a
+    /// session of its own. Sent back, the run goes to `on_reject`, or to
+    /// `of` when it names none. Its answer is kept, as an agent step's that
+    /// keeps its own.
+    Review {
+        of: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        on_reject: Option<String>,
+        /// The agent of the agent list it runs on, or `None` for the run's.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent: Option<String>,
+        prompt: String,
+        /// As an agent step's mode.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mode: Option<String>,
+        /// As an agent step's options.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        options: BTreeMap<String, String>,
+    },
     /// Wait for a person to approve the answer the step `of` kept, or send
     /// it back with a note.
     Approval { of: String },
@@ -310,7 +347,25 @@ impl StepKind {
     pub(crate) fn sends_back_to(&self) -> Option<&str> {
         match self {
             Self::Command { on_fail, .. } | Self::StatusChecks { on_fail, .. } => Some(on_fail),
-            Self::Agent { .. } | Self::Approval { .. } | Self::Push | Self::PullRequest => None,
+            Self::Agent { .. }
+            | Self::Review { .. }
+            | Self::Approval { .. }
+            | Self::Push
+            | Self::PullRequest => None,
+        }
+    }
+
+    /// The step a review sends back to: the one it names, or the one it
+    /// reviews.
+    pub fn rejects_to(&self) -> Option<&str> {
+        match self {
+            Self::Review { of, on_reject, .. } => Some(on_reject.as_deref().unwrap_or(of)),
+            Self::Agent { .. }
+            | Self::Command { .. }
+            | Self::Approval { .. }
+            | Self::Push
+            | Self::PullRequest
+            | Self::StatusChecks { .. } => None,
         }
     }
 
@@ -339,6 +394,10 @@ impl StepKind {
                 command: Some(command),
                 ..
             } => format!("onehand runs {command}"),
+            Self::Review { agent, .. } => match agent {
+                Some(name) => format!("{name} reviews the work"),
+                None => "an agent reviews the work".to_string(),
+            },
             Self::Approval { .. } => "a person is asked to approve again".to_string(),
             Self::Push => "onehand pushes the commit the check passed on".to_string(),
             Self::PullRequest => "onehand opens a draft pull request".to_string(),
@@ -350,7 +409,10 @@ impl StepKind {
     pub(crate) fn on_forge(&self) -> bool {
         match self {
             Self::Push | Self::PullRequest | Self::StatusChecks { .. } => true,
-            Self::Agent { .. } | Self::Command { .. } | Self::Approval { .. } => false,
+            Self::Agent { .. }
+            | Self::Review { .. }
+            | Self::Command { .. }
+            | Self::Approval { .. } => false,
         }
     }
 }

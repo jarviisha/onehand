@@ -140,7 +140,7 @@ pub(crate) fn step_prompt(prompt: &str, gates: &[GateKind], place: Place, fill: 
 
 /// What the agent is first told by a run of `template` on `brief`: its first
 /// agent step's prompt, filled in as a run fills it. `None` when it has no
-/// agent step.
+/// agent step. A review is never first: it judges an earlier agent step.
 pub fn first_prompt(template: &Template, brief: &Brief) -> Option<String> {
     template.steps.iter().find_map(|step| match &step.kind {
         StepKind::Agent { prompt, gates, .. } => {
@@ -153,7 +153,8 @@ pub fn first_prompt(template: &Template, brief: &Brief) -> Option<String> {
             };
             Some(step_prompt(prompt, gates, template.place, &fill))
         }
-        StepKind::Command { .. }
+        StepKind::Review { .. }
+        | StepKind::Command { .. }
         | StepKind::Approval { .. }
         | StepKind::Push
         | StepKind::PullRequest

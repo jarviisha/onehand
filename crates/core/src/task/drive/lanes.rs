@@ -1,6 +1,8 @@
 //! A run's lanes: the sessions it works its steps in. An agent step that
 //! names its agent works in a session of its own, kept for every visit of
-//! that step; every other step shares the run's own. One lane is worked at
+//! that step, and so does a review, whether it names one or not, so the
+//! work is never judged in the session that wrote it; every other step
+//! shares the run's own. One lane is worked at
 //! a time, so what is kept of a session — the prompts sent, the agent seen
 //! up, the settings put in force — is kept per lane, while the turn's
 //! answer, the clock and the misses are the run's.
@@ -23,7 +25,8 @@ use crate::Now;
 pub enum Lane {
     /// The run's own session, shared by every step naming no agent.
     Run,
-    /// The session of the agent step of this id, which names its agent.
+    /// The session of the step of this id: an agent step naming its agent,
+    /// or a review.
     Step(String),
 }
 
@@ -31,7 +34,7 @@ impl Lane {
     /// The lane `step` works in.
     fn of(step: Option<&StepSpec>) -> Self {
         match step {
-            Some(step) if step.agent().is_some() => Self::Step(step.id.clone()),
+            Some(step) if step.agent().is_some() || step.is_review() => Self::Step(step.id.clone()),
             Some(_) | None => Self::Run,
         }
     }

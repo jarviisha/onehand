@@ -270,3 +270,39 @@ fn a_draft_with_a_step_agent_saves_as_version_2(cx: &mut gpui::TestAppContext) {
     let template = saved(None, Some(Some("Codex")), cx);
     assert_eq!(template.schema_version, 2);
 }
+
+#[gpui::test]
+fn a_review_read_by_the_form_saves_as_it_was(cx: &mut gpui::TestAppContext) {
+    let dir = crate::shell::rig::folder("review-step");
+    let (_, _, cx) = crate::shell::rig::shell(cx, dir, vec![crate::shell::rig::nowhere()]);
+    let review = StepSpec {
+        id: "review".into(),
+        label: "Review".into(),
+        kind: StepKind::Review {
+            of: "work".into(),
+            on_reject: Some("work".into()),
+            agent: Some("Codex".into()),
+            prompt: "Review the change.".into(),
+            mode: Some("plan".into()),
+            options: [("model".to_string(), "strong".to_string())].into(),
+        },
+    };
+    let template = Template {
+        schema_version: 2,
+        id: "t".into(),
+        version: 1,
+        name: "t".into(),
+        description: String::new(),
+        place: Place::Worktree,
+        misses: 3,
+        timeout: "45m".into(),
+        steps: vec![agent_step("work"), review.clone()],
+    };
+    let saved = cx.update(|window, cx| {
+        WorkflowDraft::load(&template, None, false, window, cx)
+            .to_template(cx)
+            .unwrap()
+    });
+    assert_eq!(saved.steps[1], review);
+    assert_eq!(saved.schema_version, 2);
+}

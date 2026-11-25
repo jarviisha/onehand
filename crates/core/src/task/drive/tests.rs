@@ -566,7 +566,8 @@ fn wanting_model() -> Template {
     let mut t = checkout();
     match &mut t.steps[0].kind {
         StepKind::Agent { options, .. } => options.insert("model".into(), "strong".into()),
-        other @ (StepKind::Command { .. }
+        other @ (StepKind::Review { .. }
+        | StepKind::Command { .. }
         | StepKind::Approval { .. }
         | StepKind::Push
         | StepKind::PullRequest

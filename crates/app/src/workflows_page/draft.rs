@@ -95,6 +95,10 @@ pub struct StepDraft {
     /// The step a command or status checks go back to, or an approval
     /// approves, by id.
     pub target: String,
+    /// On a review, the step it reviews and the one it sends back to, by id.
+    /// The form edits a review as an agent step, and writes it back as the
+    /// review it read.
+    pub review: Option<(String, Option<String>)>,
 }
 
 impl StepDraft {
@@ -104,6 +108,7 @@ impl StepDraft {
             cx.new(|cx| InputState::new(window, cx).default_value(text))
         };
         let mut wait = core::DEFAULT_WAIT;
+        let mut review = None;
         let (kind, prompt, gates, keep_answer, mode, options, command, target) = match &spec.kind {
             StepKind::Agent {
                 prompt,
@@ -122,6 +127,26 @@ impl StepDraft {
                 "",
                 "",
             ),
+            StepKind::Review {
+                of,
+                on_reject,
+                agent: _,
+                prompt,
+                mode,
+                options,
+            } => {
+                review = Some((of.clone(), on_reject.clone()));
+                (
+                    Kind::Agent,
+                    prompt.as_str(),
+                    Vec::new(),
+                    false,
+                    mode.clone(),
+                    options.clone(),
+                    "",
+                    "",
+                )
+            }
             StepKind::Command { command, on_fail } => (
                 Kind::Command,
                 "",
@@ -220,6 +245,7 @@ impl StepDraft {
             }),
             wait: input(wait, window, cx),
             target: target.to_string(),
+            review,
         }
     }
 
@@ -254,8 +280,16 @@ impl StepDraft {
         StepSpec {
             id: self.id.read(cx).value().trim().to_string(),
             label: self.label.read(cx).value().trim().to_string(),
-            kind: match self.kind {
-                Kind::Agent => StepKind::Agent {
+            kind: match (self.kind, &self.review) {
+                (Kind::Agent, Some((of, on_reject))) => StepKind::Review {
+                    of: of.clone(),
+                    on_reject: on_reject.clone(),
+                    agent: self.agent.clone(),
+                    prompt: self.prompt.read(cx).value().to_string(),
+                    mode,
+                    options,
+                },
+                (Kind::Agent, None) => StepKind::Agent {
                     prompt: self.prompt.read(cx).value().to_string(),
                     gates: self.gates.clone(),
                     keep_answer: self.keep_answer,
@@ -263,16 +297,16 @@ impl StepDraft {
                     options,
                     agent: self.agent.clone(),
                 },
-                Kind::Command => StepKind::Command {
+                (Kind::Command, _) => StepKind::Command {
                     command: (!command.is_empty()).then_some(command),
                     on_fail: self.target.clone(),
                 },
-                Kind::Approval => StepKind::Approval {
+                (Kind::Approval, _) => StepKind::Approval {
                     of: self.target.clone(),
                 },
-                Kind::Push => StepKind::Push,
-                Kind::PullRequest => StepKind::PullRequest,
-                Kind::StatusChecks => StepKind::StatusChecks {
+                (Kind::Push, _) => StepKind::Push,
+                (Kind::PullRequest, _) => StepKind::PullRequest,
+                (Kind::StatusChecks, _) => StepKind::StatusChecks {
                     on_fail: self.target.clone(),
                     wait: self.wait.read(cx).value().trim().to_string(),
                 },
@@ -641,7 +675,10 @@ pub(super) fn step_facts(at: usize, steps: &[StepSpec]) -> Vec<String> {
                 facts.push("keeps answer".to_string());
             }
         }
-        StepKind::Approval { .. } | StepKind::Push | StepKind::PullRequest => {}
+        StepKind::Review { .. }
+        | StepKind::Approval { .. }
+        | StepKind::Push
+        | StepKind::PullRequest => {}
     }
     facts
 }

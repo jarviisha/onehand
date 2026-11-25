@@ -24,7 +24,8 @@ when each step starts.";
 fn names_settings(kind: &StepKind) -> bool {
     matches!(
         kind,
-        StepKind::Agent { mode, options, .. } if mode.is_some() || !options.is_empty()
+        StepKind::Agent { mode, options, .. } | StepKind::Review { mode, options, .. }
+            if mode.is_some() || !options.is_empty()
     )
 }
 
@@ -47,7 +48,9 @@ pub(super) fn step_settings(
     let mut found = Vec::new();
     let (mut unknown_run, mut unknown_step) = (false, false);
     for (i, step) in template.steps.iter().enumerate() {
-        let StepKind::Agent { mode, options, .. } = &step.kind else {
+        let (StepKind::Agent { mode, options, .. } | StepKind::Review { mode, options, .. }) =
+            &step.kind
+        else {
             continue;
         };
         let own = step_agents.iter().find(|named| named.step == i);

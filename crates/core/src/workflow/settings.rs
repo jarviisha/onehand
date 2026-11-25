@@ -43,7 +43,7 @@ impl Settings {
     /// What a visit to `step` runs with: the step's own over `start`.
     pub fn for_step(step: &StepKind, start: &Settings) -> Settings {
         match step {
-            StepKind::Agent { mode, options, .. } => {
+            StepKind::Agent { mode, options, .. } | StepKind::Review { mode, options, .. } => {
                 let mut merged = start.options.clone();
                 merged.extend(options.clone());
                 Settings {
@@ -64,7 +64,7 @@ impl Settings {
     /// with comes from the run's start.
     pub fn named_by(step: &StepKind) -> Vec<String> {
         match step {
-            StepKind::Agent { mode, options, .. } => mode
+            StepKind::Agent { mode, options, .. } | StepKind::Review { mode, options, .. } => mode
                 .iter()
                 .map(|_| crate::chat::MODE_SELECTOR.to_string())
                 .chain(options.keys().cloned())

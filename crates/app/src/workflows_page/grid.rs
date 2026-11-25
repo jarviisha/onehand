@@ -55,7 +55,7 @@ pub(super) enum Tone {
 /// The tone of a step of kind `kind`.
 pub(super) fn tone(kind: &StepKind) -> Tone {
     match kind {
-        StepKind::Agent { .. } => Tone::Agent,
+        StepKind::Agent { .. } | StepKind::Review { .. } => Tone::Agent,
         StepKind::Command { .. } => Tone::Command,
         StepKind::Approval { .. } => Tone::Approval,
         StepKind::Push => Tone::Forge,

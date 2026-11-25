@@ -50,7 +50,8 @@ pub fn validate(template: &Template) -> Vec<Problem> {
     }
     let commits = template.steps.iter().any(|step| match &step.kind {
         StepKind::Agent { gates, .. } => gates.contains(&GateKind::Committed),
-        StepKind::Command { .. }
+        StepKind::Review { .. }
+        | StepKind::Command { .. }
         | StepKind::Approval { .. }
         | StepKind::Push
         | StepKind::PullRequest
@@ -95,12 +96,20 @@ pub fn validate(template: &Template) -> Vec<Problem> {
                 .find(|other| other.id == id)
                 .map(|other| match &other.kind {
                     StepKind::Agent { keep_answer, .. } => Some(*keep_answer),
-                    StepKind::Command { .. }
+                    StepKind::Review { .. }
+                    | StepKind::Command { .. }
                     | StepKind::Approval { .. }
                     | StepKind::Push
                     | StepKind::PullRequest
                     | StepKind::StatusChecks { .. } => None,
                 })
+        };
+        // Whether an earlier step of this id is a review, which keeps its
+        // answer.
+        let reviewed = |id: &str| {
+            earlier
+                .iter()
+                .any(|other| other.id == id && other.is_review())
         };
         // Whether an earlier step is of the kind `is`.
         let before = |is: fn(&StepKind) -> bool| earlier.iter().any(|other| is(&other.kind));
@@ -110,69 +119,87 @@ pub fn validate(template: &Template) -> Vec<Problem> {
                     .to_string(),
             );
         }
-        match &step.kind {
+        // What an agent is prompted with, on a step that prompts one.
+        let prompted = match &step.kind {
             StepKind::Agent {
                 prompt,
-                gates,
                 mode,
                 options,
-                agent: named,
+                agent,
                 ..
-            } => {
-                if named.as_ref().is_some_and(|named| named.trim().is_empty()) {
-                    here("Name the agent, or leave the key out to use the run's.".to_string());
+            }
+            | StepKind::Review {
+                prompt,
+                mode,
+                options,
+                agent,
+                ..
+            } => Some((prompt, mode, options, agent)),
+            StepKind::Command { .. }
+            | StepKind::Approval { .. }
+            | StepKind::Push
+            | StepKind::PullRequest
+            | StepKind::StatusChecks { .. } => None,
+        };
+        if let Some((prompt, mode, options, named)) = prompted {
+            if named.as_ref().is_some_and(|named| named.trim().is_empty()) {
+                here("Name the agent, or leave the key out to use the run's.".to_string());
+            }
+            if prompt.trim().is_empty() {
+                here("its prompt is empty".to_string());
+            }
+            if mode.as_ref().is_some_and(|mode| mode.trim().is_empty()) {
+                here("its mode is empty".to_string());
+            }
+            for (id, value) in options {
+                if id.trim().is_empty() {
+                    here("an option has no name".to_string());
+                } else if id == "mode" {
+                    here("the mode is set with mode, not among the options".to_string());
+                } else if value.trim().is_empty() {
+                    here(format!("the option {id} has no value"));
                 }
-                if prompt.trim().is_empty() {
-                    here("its prompt is empty".to_string());
-                }
-                if mode.as_ref().is_some_and(|mode| mode.trim().is_empty()) {
-                    here("its mode is empty".to_string());
-                }
-                for (id, value) in options {
-                    if id.trim().is_empty() {
-                        here("an option has no name".to_string());
-                    } else if id == "mode" {
-                        here("the mode is set with mode, not among the options".to_string());
-                    } else if value.trim().is_empty() {
-                        here(format!("the option {id} has no value"));
-                    }
-                }
-                for name in prompt::refs(prompt) {
-                    // A variable only a later step sending this one back
-                    // fills in is always empty without one.
-                    let unfed = SENT_BACK.iter().find(|(var, _)| *var == name).filter(|_| {
-                        !later
-                            .iter()
-                            .any(|other| fills_on_send_back(other, &step.id) == Some(name))
-                    });
-                    if let Some((_, sender)) = unfed {
-                        here(format!(
-                            "its prompt names `{{{name}}}`, but no later {sender} sends it back \
+            }
+            for name in prompt::refs(prompt) {
+                // A variable only a later step sending this one back
+                // fills in is always empty without one.
+                let unfed = SENT_BACK.iter().find(|(var, _)| *var == name).filter(|_| {
+                    !later
+                        .iter()
+                        .any(|other| fills_on_send_back(other, &step.id) == Some(name))
+                });
+                if let Some((_, sender)) = unfed {
+                    here(format!(
+                        "its prompt names `{{{name}}}`, but no later {sender} sends it back \
                              here, so it is always empty"
-                        ));
-                    }
-                    if prompt::NAMES.contains(&name) {
-                        continue;
-                    }
-                    let Some(id) = name.strip_prefix("output.") else {
-                        here(format!(
-                            "its prompt names `{{{name}}}`, which is no variable"
-                        ));
-                        continue;
-                    };
-                    match agent(id) {
-                        Some(Some(true)) => {}
-                        Some(Some(false)) => here(format!(
-                            "its prompt names `{{{name}}}`, but that step keeps no answer"
-                        )),
-                        Some(None) => here(format!(
-                            "its prompt names `{{{name}}}`, which is not an agent step"
-                        )),
-                        None => here(format!(
-                            "its prompt names `{{{name}}}`, which is no earlier step"
-                        )),
-                    }
+                    ));
                 }
+                if prompt::NAMES.contains(&name) {
+                    continue;
+                }
+                let Some(id) = name.strip_prefix("output.") else {
+                    here(format!(
+                        "its prompt names `{{{name}}}`, which is no variable"
+                    ));
+                    continue;
+                };
+                match agent(id) {
+                    Some(Some(true)) => {}
+                    Some(None) if reviewed(id) => {}
+                    Some(Some(false)) => here(format!(
+                        "its prompt names `{{{name}}}`, but that step keeps no answer"
+                    )),
+                    Some(None) => here(format!(
+                        "its prompt names `{{{name}}}`, which is not an agent step"
+                    )),
+                    None => here(format!(
+                        "its prompt names `{{{name}}}`, which is no earlier step"
+                    )),
+                }
+            }
+        }
+        match &step.kind {
+            StepKind::Agent { gates, .. } => {
                 for gate in gates {
                     if !gate.fits(template.place) {
                         here(format!(
@@ -203,6 +230,20 @@ pub fn validate(template: &Template) -> Vec<Problem> {
                     here(format!(
                         "on failure it goes back to `{on_fail}`, which is no earlier agent step"
                     ));
+                }
+            }
+            StepKind::Review { of, on_reject, .. } => {
+                if of.is_empty() {
+                    here("it reviews no step yet: name an earlier agent step in of".to_string());
+                } else if agent(of).flatten().is_none() {
+                    here(format!("of names {of}, which is no earlier agent step"));
+                }
+                if let Some(id) = on_reject.as_deref() {
+                    if agent(id).flatten().is_none() {
+                        here(format!(
+                            "on_reject names {id}, which is no earlier agent step"
+                        ));
+                    }
                 }
             }
             StepKind::Approval { of } if of.is_empty() => {
@@ -258,13 +299,14 @@ pub fn validate(template: &Template) -> Vec<Problem> {
 /// step is called.
 const SENT_BACK: [(&str, &str); 2] = [
     ("check_output", "command or status checks step"),
-    ("revise", "approval"),
+    ("revise", "approval or review"),
 ];
 
 /// The variable `step` fills in when it sends the step `id` back, if it does.
 fn fills_on_send_back(step: &StepSpec, id: &str) -> Option<&'static str> {
     match &step.kind {
         StepKind::Approval { of } => (of == id).then_some("revise"),
+        kind @ StepKind::Review { .. } => (kind.rejects_to() == Some(id)).then_some("revise"),
         kind => (kind.sends_back_to() == Some(id)).then_some("check_output"),
     }
 }

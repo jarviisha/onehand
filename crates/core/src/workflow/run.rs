@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 mod retry;
+mod review;
 mod setup;
 mod visits;
 
@@ -428,10 +429,7 @@ impl Run {
         else {
             return Action::Idle;
         };
-        let StepKind::Agent {
-            gates, keep_answer, ..
-        } = &step.kind
-        else {
+        let Some((_, gates, keep_answer)) = review::prompted(&step.kind) else {
             return Action::Idle;
         };
         let failed = gates
@@ -439,7 +437,7 @@ impl Run {
             .copied()
             .find(|gate| !facts::holds(*gate, facts, &from, answer));
         let Some(gate) = failed else {
-            if *keep_answer {
+            if keep_answer {
                 let answer = answer.trim().to_string();
                 self.visit_output(answer.clone());
                 self.outputs.insert(step.id.clone(), answer);
@@ -630,7 +628,7 @@ impl Run {
         }
         self.log_here("resumed", now);
         match (self.current().map(|step| &step.kind), &self.marks.step_from) {
-            (Some(StepKind::Agent { .. }), Some(_)) => {
+            (Some(StepKind::Agent { .. } | StepKind::Review { .. }), Some(_)) => {
                 self.awaiting = Await::Turn;
                 Action::Prompt(self.step_prompt())
             }
@@ -664,7 +662,7 @@ impl Run {
     /// What the step at hand starts with.
     fn start_step(&mut self, now: u64) -> Action {
         match self.current().map(|step| step.kind.clone()) {
-            Some(StepKind::Agent { .. }) => {
+            Some(StepKind::Agent { .. } | StepKind::Review { .. }) => {
                 self.awaiting = Await::Mark(None);
                 Action::Measure
             }
@@ -748,12 +746,10 @@ impl Run {
 
     /// The prompt that starts the agent step at hand.
     fn step_prompt(&self) -> String {
-        let Some(StepSpec {
-            id,
-            kind: StepKind::Agent { prompt, gates, .. },
-            ..
-        }) = self.current()
-        else {
+        let Some(StepSpec { id, kind, .. }) = self.current() else {
+            return String::new();
+        };
+        let Some((prompt, gates, _)) = review::prompted(kind) else {
             return String::new();
         };
         let fill = Fill {
