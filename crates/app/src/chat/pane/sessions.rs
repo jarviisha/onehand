@@ -179,7 +179,7 @@ impl ChatPane {
             Some(meta) => {
                 let open = self.open_everywhere(cx);
                 if let Err(why) = crate::control::drive().may_resume(&meta.session_id, &open) {
-                    cx.emit(ChatPaneEvent::ResumeRefused(
+                    cx.emit(ChatPaneEvent::SwitchRefused(
                         super::history::resume_refused(why),
                     ));
                     return;

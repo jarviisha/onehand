@@ -224,9 +224,9 @@ pub enum ChatPaneEvent {
     /// work was not thrown away. Reporting a refusal as a failure to save would
     /// send the reader looking for the wrong thing entirely.
     ConversationNotDeleted(String),
-    /// A conversation was not opened in this session, or in a new one, and
-    /// why.
-    ResumeRefused(String),
+    /// A session was not put on another conversation, a past one or a fresh
+    /// one, or a past one was not opened in a new session: why.
+    SwitchRefused(String),
     /// A rename's write failed, its name put back: why.
     RenameFailed(String),
     /// The agent refused a pick, put back to what it last confirmed: why.
@@ -249,6 +249,13 @@ pub enum ChatPaneEvent {
     /// The project page on screen was left, made for another project, or
     /// listed again: what waited on its host may wait no longer.
     PageChanged,
+    /// Session `uid` left its conversation, called `label` where it had a
+    /// name, for a fresh one: on a host, the session it watched there is to
+    /// end.
+    LeftConversation {
+        uid: u64,
+        label: Option<String>,
+    },
     /// Session `uid` is on host session `id`, as its host said.
     Watching {
         uid: u64,

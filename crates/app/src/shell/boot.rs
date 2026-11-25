@@ -252,13 +252,20 @@ impl Shell {
                         crate::toast::failed("Deleting the conversation", why),
                         cx,
                     ),
-                    E::ResumeRefused(why) => {
+                    E::SwitchRefused(why) => {
                         window.push_notification(crate::toast::warning(why), cx)
                     }
                     E::Fork { root, spec } => shell.fork_session(root, spec.clone(), window, cx),
                     E::ForkFailed { uid, why } => {
                         let lead = uid.and_then(crate::control::lead_of);
                         let fx = shell.window.workspace.fork_failed(*uid, lead, why.clone());
+                        shell.carry_workspace(fx, window, cx);
+                    }
+                    E::LeftConversation { uid, label } => {
+                        let label = label
+                            .clone()
+                            .unwrap_or_else(|| shell.session_label(*uid, cx));
+                        let fx = shell.window.workspace.left_on_host(*uid, label);
                         shell.carry_workspace(fx, window, cx);
                     }
                     E::Watching { uid, id } => shell.window.workspace.watching(*uid, id.clone()),

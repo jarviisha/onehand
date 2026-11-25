@@ -6,6 +6,7 @@ use crate::chat::composer::Composer;
 use crate::chat::session::ChatSession;
 use gpui::{App, Context, Entity, Window};
 use onehand_core::chat::drive::{Intake, Origin};
+use onehand_core::completion::OwnCommand;
 
 impl ChatPane {
     /// What Enter does, which depends on whether the popup is open.
@@ -40,7 +41,20 @@ impl ChatPane {
             self.submit_page(cx);
             return;
         };
-        Self::submit_from(&session, &self.composer.clone(), window, cx);
+        // `/clear` alone is the composer's own, not a prompt: the session
+        // starts over, and the field is emptied only once it has.
+        let own = (self.composer.read(cx)).own_command(&session.read(cx).chat().commands, cx);
+        match own {
+            Some(OwnCommand::NewConversation) => {
+                let uid = session.read(cx).chat().uid;
+                drop(session);
+                if self.new_conversation(uid, cx) {
+                    self.composer
+                        .update(cx, |composer, cx| composer.clear(window, cx));
+                }
+            }
+            None => Self::submit_from(&session, &self.composer.clone(), window, cx),
+        }
     }
 
     /// Send what `composer` holds to `session`, or queue it behind the turn

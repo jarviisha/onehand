@@ -592,6 +592,35 @@ fn a_worker_the_person_took_is_kept_held() {
     assert!(!drive.last(7).unwrap().person);
 }
 
+/// A worker put on a fresh conversation counts its prompts from nothing, so
+/// the person's first prompt there holds it, however many the lead had sent
+/// in the one before.
+#[test]
+fn a_worker_on_a_new_conversation_is_held_by_the_persons_first_prompt() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    said_conversation(&mut drive, 7, "c7", 3);
+    turn_sent(&mut drive, 7, 2, Some((Intake::Sent, 3)));
+    said_conversation(&mut drive, 7, "c8", 0);
+    assert!(!drive.last(7).unwrap().person, "moving is not a prompt");
+    let fx = said_conversation(&mut drive, 7, "c8", 1);
+    assert!(kept(&fx, 1).unwrap().workers[0].person);
+    assert!(drive.last(7).unwrap().person);
+}
+
+/// A worker resumed on a past conversation counts from what that one had
+/// sent, so moving there holds nothing and the person's next prompt does.
+#[test]
+fn a_worker_resumed_elsewhere_is_held_by_the_persons_next_prompt() {
+    let mut drive = lead_on();
+    begun(&mut drive);
+    said_conversation(&mut drive, 7, "c7", 1);
+    said_conversation(&mut drive, 7, "past", 5);
+    assert!(!drive.last(7).unwrap().person, "moving is not a prompt");
+    said_conversation(&mut drive, 7, "past", 6);
+    assert!(drive.last(7).unwrap().person);
+}
+
 #[test]
 fn a_lead_turn_never_reads_as_the_persons() {
     let mut drive = lead_on();
@@ -1399,10 +1428,10 @@ fn an_opening_worker_lists_after_the_older_ones() {
 #[test]
 fn a_lead_may_not_leave_its_conversation() {
     let mut drive = lead_on();
-    assert_eq!(drive.may_leave_conversation(1), Ok(()));
+    assert_eq!(drive.may_leave_conversation(1, false), Ok(()));
     let (key, _) = resolves(drive.open_worker(asked("go"), &projects(), None));
     assert_eq!(
-        drive.may_leave_conversation(1),
+        drive.may_leave_conversation(1, false),
         Err(ResumeRefused::LeadsWorkers),
         "one opening"
     );
@@ -1413,12 +1442,28 @@ fn a_lead_may_not_leave_its_conversation() {
     });
     begun(&mut drive);
     assert_eq!(
-        drive.may_leave_conversation(1),
+        drive.may_leave_conversation(1, false),
         Err(ResumeRefused::LeadsWorkers)
     );
-    assert_eq!(drive.may_leave_conversation(7), Ok(()), "a worker");
+    assert_eq!(drive.may_leave_conversation(7, false), Ok(()), "a worker");
     let _ = drive.forget(7);
-    assert_eq!(drive.may_leave_conversation(1), Ok(()));
+    assert_eq!(drive.may_leave_conversation(1, false), Ok(()));
+}
+
+/// No session leaves its conversation while a turn runs there, which leaving
+/// would throw away; a lead is refused for its workers first.
+#[test]
+fn no_session_leaves_its_conversation_mid_turn() {
+    let mut drive = lead_on();
+    assert_eq!(
+        drive.may_leave_conversation(1, true),
+        Err(ResumeRefused::TurnRunning)
+    );
+    begun(&mut drive);
+    assert_eq!(
+        drive.may_leave_conversation(1, true),
+        Err(ResumeRefused::LeadsWorkers)
+    );
 }
 
 #[test]

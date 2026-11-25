@@ -98,6 +98,9 @@ pub(super) enum Act {
     Workflow,
     /// Let this session's agent use onehand's tools, or stop it.
     Control,
+    /// Leave this conversation on disk and start a fresh one in the session,
+    /// which the pane carries out.
+    NewConversation,
 }
 
 impl Act {
@@ -113,7 +116,12 @@ impl Act {
             Self::Effort => Some(super::Overlay::Effort),
             Self::Mode => Some(super::Overlay::Mode),
             Self::Fast => Some(super::Overlay::Fast),
-            Self::Attach | Self::Mention | Self::Command | Self::Workflow | Self::Control => None,
+            Self::Attach
+            | Self::Mention
+            | Self::Command
+            | Self::Workflow
+            | Self::Control
+            | Self::NewConversation => None,
         }
     }
 }

@@ -111,7 +111,7 @@ pub enum SessionPhase {
 
 /// A live session held while its conversation's past ones are chosen from.
 pub struct Held {
-    pub _session: Entity<ChatSession>,
+    pub session: Entity<ChatSession>,
     pub _watch: Subscription,
 }
 
@@ -135,6 +135,18 @@ impl Conversation {
         match &self.phase {
             SessionPhase::Live { session, .. } => Some(session),
             SessionPhase::Opening | SessionPhase::ChoosingHistory { .. } => None,
+        }
+    }
+
+    /// The session held live while a past conversation is chosen, if one is.
+    pub fn held(&self) -> Option<&Entity<ChatSession>> {
+        match &self.phase {
+            SessionPhase::ChoosingHistory {
+                _held: Some(held), ..
+            } => Some(&held.session),
+            SessionPhase::ChoosingHistory { _held: None, .. }
+            | SessionPhase::Opening
+            | SessionPhase::Live { .. } => None,
         }
     }
 
