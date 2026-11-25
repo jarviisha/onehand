@@ -2,7 +2,8 @@
 
 What this build does not do yet, and why: a missing feature nobody wrote down reads as a bug in
 the ones that exist. What workflows and tasks do not do is listed at the end of
-[workflows.md](workflows.md#not-built) and [tasks.md](tasks.md#not-built).
+[workflows.md](workflows.md#not-built), [tasks.md](tasks.md#not-built) and
+[board.md](board.md#not-built).
 
 - **A step's session lost while the run is elsewhere takes its context with it.** The run goes on
   and opens a new session at the step's next visit, saying so in a note, but what the agent knew
@@ -471,3 +472,10 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   the board keeps the tasks the old one started: they hold their issues, count against the team
   and stand in columns named by step ids the new workflow may not have, until they end and are
   dismissed. Leaving them out would mean keeping the workflow on each task and comparing.
+- **Only a copy of a built-in workflow rebinds the board it was opened from.** A copy of the
+  person's own workflow, saved from the board's *Edit workflow*, leaves the board on the original;
+  it is bound in *Settings ▸ Projects ▸ Board*. Their own is edited in place, so a copy of it is
+  taken as a new workflow, not the board's.
+- **Dragging on the board has no edge autoscroll**, as on the rail, and draws no line where the
+  issue will land: the row it lands before fills instead. A row past the board's visible edge has
+  to be scrolled to first.

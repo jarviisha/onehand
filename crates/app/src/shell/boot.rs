@@ -48,6 +48,10 @@ impl Shell {
                     E::Run { workflow, root } => {
                         shell.begin_workflow_on(root, Some(workflow), window, cx)
                     }
+                    E::Duplicated {
+                        for_board,
+                        template,
+                    } => shell.board_uses_copy(for_board.clone(), template.clone(), window, cx),
                 }
             },
         )

@@ -1,10 +1,11 @@
 use super::row::{
-    DragGhost, MAX_BRANCH_W, ProjectDrag, covered_tip, covering, fade_band, faded, hover_fill,
-    key_ring, labelled, menu_button, project_key, row_control, row_inks, row_surfaces,
+    MAX_BRANCH_W, ProjectDrag, covered_tip, covering, fade_band, faded, hover_fill, key_ring,
+    labelled, menu_button, project_key, row_control, row_inks, row_surfaces,
 };
 use super::session::{signal_hint, status_mark};
 use crate::chat::pane::{ProjectFacts, SessionSignal};
 use crate::controls::Named as _;
+use crate::drag::DragGhost;
 use crate::shell::Shell;
 use crate::state::WorkspaceWindow;
 use gpui::prelude::FluentBuilder as _;

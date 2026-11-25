@@ -50,6 +50,16 @@ impl ProjectsDrive {
         })
     }
 
+    /// Put `issue` at place `at` in project `id`'s To do, taking it from where
+    /// it was; `at` counts after that and is held within the list.
+    #[must_use = "its effects are to be carried"]
+    pub fn place_todo(&mut self, id: &ProjectId, issue: u64, at: usize) -> Vec<Effect> {
+        self.edit_todo(id, |todo| {
+            todo.retain(|&n| n != issue);
+            todo.insert(at.min(todo.len()), issue);
+        })
+    }
+
     /// Take `issue` out of project `id`'s To do.
     #[must_use = "its effects are to be carried"]
     pub fn drop_todo(&mut self, id: &ProjectId, issue: u64) -> Vec<Effect> {

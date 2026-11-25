@@ -15,6 +15,16 @@ on this machine. A project on a host has none: its issues are not kept here.
   (`board::usable`). Once bound, *Team* sets how many tasks work at once, 1 to 8, 2 at first.
   Choosing *No board* on a board whose To do is not empty asks first (*Remove the board from
   <project>?*): its To do goes, the issues stay open in no list, and tasks already started run on.
+- **Editing.** The board's head has *Edit workflow*, and a step's column a `⋯` with *Edit step*:
+  both open the Workflows page on the board's workflow, the second with that step open, asking
+  first when the form there holds changes not saved. *Settings ▸ Projects ▸ Board* has the same
+  *Edit workflow* beside its menu. A built-in workflow opens read-only, with its *Duplicate to
+  edit*; that duplicate, saved for the first time, becomes that board's workflow, team and To do
+  kept, and a toast says *<project>'s board now uses <copy name>.* Only a copy of a built-in
+  workflow rebinds: one of the person's own is edited in place, and a copy of it leaves the board
+  as it is. No other board changes, and the page forgets the board on any save, once another
+  workflow is opened, or when the form is closed.
+  A board whose workflow is gone draws no *Edit workflow*.
 - **The page.** *Board* in a project's dots menu, and the link on the project's page (*Board · N
   running · M to do*), open it. Columns side by side, scrolling sideways: *Backlog*, *To do*, a
   column per step of the workflow, *Done*. Each column draws at most `BOARD_SHOWN` rows and says
@@ -24,6 +34,10 @@ on this machine. A project on a host has none: its issues are not kept here.
   To do, and back.
 - **To do** is in the person's order: first pulled first. A person moves an issue up or down in
   it, or back to the Backlog.
+- **Dragging** does what the row menus do, which stay for the keyboard: an issue of the Backlog or
+  To do dropped on a To do row lands just before it, dropped elsewhere on To do lands last, and
+  dropped on the Backlog leaves To do (`ProjectsDrive::place_todo`). A drop that changes nothing
+  writes nothing, and the board pulls after one that does. A task's row does not drag.
 - **A step's column** holds the board's tasks at that step: working, or ended and needing
   attention. A task whose step left the workflow gets a column after the others, named by the
   step's id. A step with a limit says it in its head, `<label> · <n> of <limit>`, with n the
@@ -48,6 +62,26 @@ on this machine. A project on a host has none: its issues are not kept here.
   what closing it asks. One still open that cannot be worked now (one kept in step with a forge
   while the forge is not found) or that a task of the board still holds stays in To do, skipped,
   for a later look.
+
+## Not built
+
+- **One board per project**, and none spanning projects or repositories. A project on a host has
+  none.
+- **No agent runs the board.** Pulling, team size, step limits and sending back are the engine's,
+  decided in core; no coordinator agent dispatches, and no rule lives in a prompt.
+- **Only a person moves an issue to To do.** An agent writes into the Backlog with `create_issue`;
+  no tool moves an issue past it.
+- **The board's tasks are the ones it pulled.** A task started any other way (the launcher, a
+  schedule, `start_issue`, *Run check*) is not on the board, even when it runs the board's
+  workflow, and its issue stays in the Backlog.
+- **No task is dragged between step columns.** A person acts on a board task as on any task: on
+  the Tasks page, approving, sending back, Stop, Retry, Resume, taking over.
+- **No step merges.** The end of the line is a pull request or an approval a person gives;
+  merging is the person's, or a later forge step's.
+- **A task is at one step at a time.** Several agents on a task means one per step, one after
+  another, never several on one step of one task.
+- **A workflow without a step's agent, a review or a limit runs exactly as before**, and so do
+  the shipped workflows, the launcher, *Run check*, schedules and `start_issue`.
 
 ## When it ends
 

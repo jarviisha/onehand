@@ -7,15 +7,19 @@ use gpui::{
     AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
 };
 use gpui_component::StyledExt;
+use gpui_component::button::ButtonVariants as _;
 use onehand_core::project::Board;
-use onehand_ui::ControlSize;
+use onehand_ui::{ControlSize, Tall as _};
 use std::path::Path;
 
 const NO_BOARD: &str = "No board";
 
 pub(super) fn board_section(handle: &Entity<Shell>, root: &Path, cx: &App) -> AnyElement {
     let shell = handle.read(cx);
-    let bound = crate::projects::of(root, cx).and_then(|project| project.board().cloned());
+    let project = crate::projects::of(root, cx);
+    let bound = project
+        .as_ref()
+        .and_then(|project| project.board().cloned());
     let templates = crate::workflow::templates(cx);
     let name_of = |id: &str| {
         templates
@@ -81,6 +85,31 @@ pub(super) fn board_section(handle: &Entity<Shell>, root: &Path, cx: &App) -> An
             },
         )
     };
+    // A workflow that is gone has nothing to open.
+    let edit = bound
+        .as_ref()
+        .filter(|board| {
+            templates.iter().any(|entry| {
+                entry
+                    .template
+                    .as_ref()
+                    .is_ok_and(|t| t.id == board.workflow)
+            })
+        })
+        .zip(project.as_ref())
+        .map(|(board, project)| {
+            let (handle, workflow, id) =
+                (handle.clone(), board.workflow.clone(), project.id.clone());
+            crate::controls::action("board-edit-workflow")
+                .tall()
+                .secondary()
+                .label("Edit workflow")
+                .on_click(move |_, window, cx| {
+                    handle.update(cx, |shell, cx| {
+                        shell.show_workflow(&workflow, None, Some(id.clone()), window, cx)
+                    });
+                })
+        });
     let refusal = shell.board_refusal(root).map(|why| {
         div()
             .text_xs()
@@ -94,7 +123,7 @@ pub(super) fn board_section(handle: &Entity<Shell>, root: &Path, cx: &App) -> An
             .v_flex()
             .gap_2()
             .items_start()
-            .child(picker)
+            .child(div().h_flex().gap_2().child(picker).children(edit))
             .children(refusal),
         cx,
     );

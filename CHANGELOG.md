@@ -83,6 +83,11 @@ minor bump may break any of them.
   ordered To do, one column per step of the workflow, and Done. Moving an issue to To do lets
   onehand start it, in order, while fewer than the team size of the board's tasks run; a done
   task closes its issue. To do is kept through a restart and pulled again.
+- On a project's board, issues drag: from the Backlog to a place in To do, within To do, and back
+  to the Backlog. *Edit workflow* in the board's head, *Edit step* in a step column's `⋯`, and
+  *Edit workflow* in Settings ▸ Projects ▸ Board open the board's workflow on the Workflows page.
+  A built-in workflow's duplicate saved from there becomes that board's workflow, its team and
+  To do kept.
 - An agent step can name an agent of its own (`agent` in the workflow file, or *Agent* in the
   editor). The run works that step in a session of that agent, opened in the rail without taking
   the pane the first time the run reaches the step, kept for the run and named for the task and

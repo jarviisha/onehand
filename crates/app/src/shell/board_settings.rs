@@ -57,7 +57,53 @@ impl Shell {
             });
             return;
         }
-        self.unbind_or_bind(root, id, workflow, cx);
+        let offered = workflow.map(|workflow| {
+            let template = crate::workflow::templates(cx)
+                .into_iter()
+                .find_map(|entry| entry.template.ok().filter(|t| t.id == workflow));
+            (workflow, template)
+        });
+        self.unbind_or_bind(root, id, offered, cx);
+    }
+
+    /// Bind `template`, a copy of the workflow of the board of `project`
+    /// just saved, as that board, and say so.
+    pub(super) fn board_uses_copy(
+        &mut self,
+        project: onehand_core::project::ProjectId,
+        template: onehand_core::workflow::Template,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.board_refused = None;
+        let Some((root, name)) = crate::state::Shared::global(cx)
+            .projects
+            .get(&project)
+            .filter(|p| p.board().is_some())
+            .map(|p| (p.path.clone(), p.name.clone()))
+        else {
+            return;
+        };
+        let said = now_uses(&name, &template.name);
+        // Passed as written: the list on offer is read again only after.
+        self.unbind_or_bind(
+            root,
+            project,
+            Some((template.id.clone(), Some(template))),
+            cx,
+        );
+        match &self.board_refused {
+            None => gpui_component::WindowExt::push_notification(
+                window,
+                crate::toast::success(said),
+                cx,
+            ),
+            Some((_, why)) => gpui_component::WindowExt::push_notification(
+                window,
+                crate::toast::failed(&format!("Binding the copy to {name}'s board"), why),
+                cx,
+            ),
+        }
     }
 
     fn unbind_board(&mut self, root: PathBuf, _: &mut Window, cx: &mut Context<Self>) {
@@ -66,19 +112,18 @@ impl Shell {
         }
     }
 
+    /// Bind the workflow of id `workflow`, as `template` holds it when it is
+    /// on offer, or none.
     fn unbind_or_bind(
         &mut self,
         root: PathBuf,
         id: onehand_core::project::ProjectId,
-        workflow: Option<String>,
+        workflow: Option<(String, Option<onehand_core::workflow::Template>)>,
         cx: &mut Context<Self>,
     ) {
         let board = match workflow {
             None => None,
-            Some(workflow) => {
-                let template = crate::workflow::templates(cx)
-                    .into_iter()
-                    .find_map(|entry| entry.template.ok().filter(|t| t.id == workflow));
+            Some((workflow, template)) => {
                 if let Err(why) = onehand_core::board::usable(template.as_ref()) {
                     self.board_refused = Some((root, why));
                     cx.notify();
@@ -120,3 +165,11 @@ impl Shell {
         cx.notify();
     }
 }
+
+/// What a board bound to a copy of its workflow says.
+fn now_uses(project: &str, copy: &str) -> String {
+    format!("{project}'s board now uses {copy}.")
+}
+
+#[cfg(test)]
+mod tests;

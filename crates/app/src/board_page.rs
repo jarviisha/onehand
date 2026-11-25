@@ -6,13 +6,14 @@
 //! page is.
 
 use crate::controls::Short as _;
+use crate::drag::DragGhost;
 use crate::page_parts::{page_card, page_head, page_top, ruled};
 use crate::state::Shared;
 use crate::task::Row;
 use gpui::{
-    App, BorrowAppContext as _, Context, EventEmitter, FocusHandle, InteractiveElement,
-    IntoElement, ParentElement, Rems, Render, SharedString, StatefulInteractiveElement, Styled,
-    Subscription, Window, div, rems,
+    App, AppContext as _, BorrowAppContext as _, Context, EventEmitter, FocusHandle,
+    InteractiveElement, IntoElement, ParentElement, Rems, Render, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, Subscription, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::ContextMenuExt as _;
@@ -53,6 +54,21 @@ enum RowKey {
     Task(String),
 }
 
+/// An issue row under the pointer, and the column it was taken from. A type
+/// of the board's own, as gpui hands a drop only to a target of its type.
+#[derive(Clone, Copy)]
+struct IssueDrag {
+    issue: u64,
+    from: Column,
+}
+
+/// The columns an issue is dragged between.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Column {
+    Backlog,
+    Todo,
+}
+
 /// What the board page asks of the window.
 pub(crate) enum BoardPageEvent {
     /// Show task `id` in full, on the Tasks page.
@@ -60,6 +76,9 @@ pub(crate) enum BoardPageEvent {
     /// Open the settings of the project at this folder, where its board is
     /// bound.
     ProjectSettings(PathBuf),
+    /// Open the board's workflow on the Workflows page, its step of this id
+    /// open when one is named.
+    EditWorkflow { step: Option<String> },
 }
 
 impl EventEmitter<BoardPageEvent> for BoardPage {}
@@ -132,19 +151,19 @@ impl BoardPage {
     fn page(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let Some(id) = self.project.clone() else {
             return self.frame(
-                head("Board", String::new(), cx),
+                head("Board", String::new(), None, cx),
                 onehand_ui::hint("No board shown", cx),
             );
         };
         let Some(project) = Shared::global(cx).projects.get(&id).cloned() else {
             return self.frame(
-                head("Board", String::new(), cx),
+                head("Board", String::new(), None, cx),
                 onehand_ui::hint("This project is no longer kept", cx),
             );
         };
         let Some(board) = project.board().cloned() else {
             return self.frame(
-                head("Board", project.name.clone(), cx),
+                head("Board", project.name.clone(), None, cx),
                 onehand_ui::hint("This project has no board", cx),
             );
         };
@@ -163,7 +182,9 @@ impl BoardPage {
             Some(t) => format!("{} · {} · team of {}", project.name, t.name, board.team),
             None => project.name.clone(),
         };
-        let head = head("Board", line, cx);
+        // A workflow that is gone has nothing to open; its refusal says so.
+        let edit = template.is_some().then(|| edit_workflow(cx));
+        let head = head("Board", line, edit, cx);
         let (Some(template), None) = (template, refused.clone()) else {
             let body = refusal(
                 refused.unwrap_or_default(),
@@ -202,7 +223,7 @@ impl BoardPage {
         &mut self,
         id: &ProjectId,
         board: &onehand_core::project::Board,
-        steps: Vec<(String, String, Vec<Row>)>,
+        steps: Vec<(String, String, Vec<Row>, Option<String>)>,
         done: Vec<Row>,
         taken: &HashSet<u64>,
         cx: &mut Context<Self>,
@@ -253,13 +274,28 @@ impl BoardPage {
             .take(BOARD_SHOWN)
             .map(|(n, title)| {
                 let acts = acts([("Move to To do", todo_press(id, Todo::Add(n)))]);
-                self.issue_row(RowKey::Backlog(n), n, title, acts, cx)
+                self.issue_row(RowKey::Backlog(n), n, title, acts, None, cx)
             })
             .collect();
-        let backlog = column("Backlog", count, drawn, backlog_note, cx);
+        // Taking an issue out of To do is the one drop the Backlog takes.
+        let backlog = {
+            let id = id.clone();
+            column("Backlog", count, drawn, backlog_note, None, cx)
+                .drag_over::<IssueDrag>(|style, drag, _, cx| match drag.from {
+                    Column::Todo => style.bg(cx.theme().list_hover),
+                    Column::Backlog => style,
+                })
+                .on_drop(move |drag: &IssueDrag, _, cx| {
+                    if drag.from == Column::Todo {
+                        change_todo(&id, Todo::Drop(drag.issue), cx);
+                    }
+                })
+                .into_any_element()
+        };
 
         // To do, in the order the team pulls it.
         let last = board.todo.len().saturating_sub(1);
+        let order: Rc<[u64]> = board.todo.iter().copied().collect();
         let drawn = board
             .todo
             .iter()
@@ -274,35 +310,59 @@ impl BoardPage {
                     moves.push(("Move down", todo_press(id, Todo::Move(n, false))));
                 }
                 moves.push(("Back to Backlog", todo_press(id, Todo::Drop(n))));
-                self.issue_row(RowKey::Todo(n), n, title_of(at, n), acts(moves), cx)
+                let place = (id.clone(), order.clone());
+                self.issue_row(
+                    RowKey::Todo(n),
+                    n,
+                    title_of(at, n),
+                    acts(moves),
+                    Some(place),
+                    cx,
+                )
             })
             .collect();
-        let todo = column(
-            "To do",
-            board.todo.len(),
-            drawn,
-            board
-                .todo
-                .is_empty()
-                .then(|| "Nothing to do; move an issue here from the Backlog".to_string()),
-            cx,
-        );
+        // A drop off its rows puts the issue last. Its rows fill under a
+        // drag, so the column fills only when it has none, or the two fills
+        // would hide the row the issue lands before.
+        let empty = board.todo.is_empty();
+        let todo = {
+            let id = id.clone();
+            column(
+                "To do",
+                board.todo.len(),
+                drawn,
+                empty.then(|| "Nothing to do; move an issue here from the Backlog".to_string()),
+                None,
+                cx,
+            )
+            .drag_over::<IssueDrag>(move |style, _, _, cx| match empty {
+                true => style.bg(cx.theme().list_hover),
+                false => style,
+            })
+            .on_drop(move |drag: &IssueDrag, _, cx| {
+                change_todo(&id, Todo::Place(drag.issue, usize::MAX), cx);
+            })
+            .into_any_element()
+        };
 
         let mut columns = vec![backlog, todo];
-        for (label, head, rows) in steps {
-            let col = self.task_column(&label, head, rows, "Nothing at this step", cx);
+        for (label, head, rows, step) in steps {
+            let col = self.task_column(&label, head, rows, step, "Nothing at this step", cx);
             columns.push(col);
         }
-        columns.push(self.task_column("Done", "Done".into(), done, "Nothing done yet", cx));
+        columns.push(self.task_column("Done", "Done".into(), done, None, "Nothing done yet", cx));
         columns
     }
 
-    /// A column of tasks under `head`, its rows told apart from `label`.
+    /// A column of tasks under `head`, its rows told apart from `label`;
+    /// with the id of the workflow's `step` it stands for, a `⋯` in its head
+    /// opens that step.
     fn task_column(
         &mut self,
         label: &str,
         head: String,
         rows: Vec<Row>,
+        step: Option<String>,
         empty: &str,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
@@ -312,27 +372,69 @@ impl BoardPage {
             .take(BOARD_SHOWN)
             .map(|row| self.task_row(label, row, cx))
             .collect();
+        let more = step.map(|step| {
+            let page = cx.entity().downgrade();
+            let key = format!("board-step-{step}-more");
+            let press: onehand_ui::Press = Rc::new(move |_, _, cx| {
+                let step = Some(step.clone());
+                let _ = page.update(cx, |_, cx| cx.emit(BoardPageEvent::EditWorkflow { step }));
+            });
+            onehand_ui::row_more(key, "Step actions", acts([("Edit step", press)]), cx)
+                .into_any_element()
+        });
         column(
             head,
             count,
             drawn,
             (count == 0).then(|| empty.to_string()),
+            more,
             cx,
         )
+        .into_any_element()
     }
 
     /// A row of an issue, in the Backlog or To do: its title over its
-    /// number, its acts in its `⋯` and on a right-click.
+    /// number, its acts in its `⋯` and on a right-click, dragged by its
+    /// title. A To do row, given its project and the whole of To do, takes
+    /// a dragged issue in just before itself.
     fn issue_row(
         &mut self,
         key: RowKey,
         number: u64,
         title: String,
         acts: Rc<[RowAct]>,
+        todo: Option<(ProjectId, Rc<[u64]>)>,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let line = (format!("#{number}"), crate::theme::meta_ink(cx));
-        self.row(key, title, line, acts, None, cx)
+        let from = match todo {
+            Some(_) => Column::Todo,
+            None => Column::Backlog,
+        };
+        let ghost = SharedString::from(title.clone());
+        let drags = move |row: Stateful<gpui::Div>| {
+            let row = row.on_drag(
+                IssueDrag {
+                    issue: number,
+                    from,
+                },
+                move |_, _, _, cx| {
+                    let ghost = ghost.clone();
+                    cx.new(|_| DragGhost(ghost))
+                },
+            );
+            let Some((id, order)) = todo else {
+                return row;
+            };
+            // The row under a drag fills, the issue landing just before it.
+            row.drag_over::<IssueDrag>(|style, _, _, cx| style.bg(cx.theme().list_hover))
+                .on_drop(move |drag: &IssueDrag, _, cx| {
+                    if let Some(at) = place_before(&order, drag.issue, number) {
+                        change_todo(&id, Todo::Place(drag.issue, at), cx);
+                    }
+                })
+        };
+        self.row(key, title, line, acts, None, drags, cx)
     }
 
     /// A row of a task: its title over what it waits on, as the Tasks page
@@ -367,12 +469,15 @@ impl BoardPage {
             (said, ink),
             acts,
             Some(open),
+            |row| row,
             cx,
         )
     }
 
     /// A row in a column: `title` over `line`, a tab stop whose `⋯` and
     /// right-click offer `acts`; pressing its text runs `open` if it has one.
+    /// `drags` adds what the row does under a drag.
+    #[allow(clippy::too_many_arguments)]
     fn row(
         &mut self,
         key: RowKey,
@@ -380,6 +485,7 @@ impl BoardPage {
         (line, ink): (String, gpui::Hsla),
         acts: Rc<[RowAct]>,
         open: Option<onehand_ui::Press>,
+        drags: impl FnOnce(Stateful<gpui::Div>) -> Stateful<gpui::Div>,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let focus = self.handle(key.clone(), cx);
@@ -405,8 +511,8 @@ impl BoardPage {
             None => text,
         };
         let menu_acts = acts.clone();
-        onehand_ui::row(false, cx)
-            .id(SharedString::from(name.clone()))
+        let row = onehand_ui::row(false, cx).id(SharedString::from(name.clone()));
+        drags(row)
             .group(group.clone())
             .track_focus(&focus)
             .rounded_none()
@@ -449,32 +555,48 @@ impl Render for BoardPage {
     }
 }
 
-/// The page's head: its name over the project, its workflow and its team.
-fn head(title: &'static str, line: String, cx: &App) -> gpui::AnyElement {
+/// The page's head: its name over the project, its workflow and its team,
+/// and `edit` at its end when there is a workflow to open.
+fn head(
+    title: &'static str,
+    line: String,
+    edit: Option<gpui::AnyElement>,
+    cx: &App,
+) -> gpui::AnyElement {
     let line = (!line.is_empty()).then(|| line.into_any_element());
-    page_head(title, line, Vec::new(), cx).into_any_element()
+    page_head(title, line, edit.into_iter().collect(), cx).into_any_element()
 }
 
-/// A column: a box with its name and count, `rows` capped at
-/// [`BOARD_SHOWN`] (said under them when it bites), and `note` where there
-/// is nothing to list.
+/// *Edit workflow*, opening the board's workflow on the Workflows page.
+fn edit_workflow(cx: &Context<BoardPage>) -> gpui::AnyElement {
+    crate::controls::action("board-edit-workflow")
+        .short()
+        .secondary()
+        .label("Edit workflow")
+        .on_click(cx.listener(|_, _, _, cx| cx.emit(BoardPageEvent::EditWorkflow { step: None })))
+        .into_any_element()
+}
+
+/// A column: a box with its name and count, `control` at its head's end,
+/// `rows` capped at [`BOARD_SHOWN`] (said under them when it bites), and
+/// `note` where there is nothing to list.
 fn column(
     title: impl Into<SharedString>,
     count: usize,
     rows: Vec<gpui::AnyElement>,
     note: Option<String>,
+    control: Option<gpui::AnyElement>,
     cx: &App,
-) -> gpui::AnyElement {
+) -> gpui::Div {
     let muted = cx.theme().muted_foreground;
     let muted_line = |text: String| div().text_xs().text_color(muted).child(text);
     let hidden = count.saturating_sub(BOARD_SHOWN);
-    page_card(title.into(), Some(count), None, cx)
+    page_card(title.into(), Some(count), control, cx)
         .flex_none()
         .w(COLUMN_W)
         .children(note.map(muted_line))
         .child(ruled(rows, cx))
         .children((hidden > 0).then(|| muted_line(format!("{hidden} more not shown"))))
-        .into_any_element()
 }
 
 /// Why the board cannot run, in place of its columns, with the way to the
@@ -530,20 +652,59 @@ enum Todo {
     Move(u64, bool),
     /// Put the issue back in the Backlog.
     Drop(u64),
+    /// Put the issue at this place in To do, counted without it; past the
+    /// end, last.
+    Place(u64, usize),
 }
 
-/// A press making `change` to project `id`'s To do: through the projects'
-/// drive, and To do looked at again at once, since the team may have room.
+/// A press making `change` to project `id`'s To do.
 fn todo_press(id: &ProjectId, change: Todo) -> onehand_ui::Press {
     let id = id.clone();
-    Rc::new(move |_, _, cx| {
-        let fx = cx.update_global::<Shared, _>(|shared, _| match change {
-            Todo::Add(n) => shared.projects.add_todo(&id, n),
-            Todo::Move(n, up) => shared.projects.move_todo(&id, n, up),
-            Todo::Drop(n) => shared.projects.drop_todo(&id, n),
-        });
-        crate::projects::carry(fx, cx);
-        crate::board::pull_now(&id, cx);
-        cx.refresh_windows();
-    })
+    Rc::new(move |_, _, cx| change_todo(&id, change, cx))
+}
+
+/// Make `change` to project `id`'s To do, a press's or a drop's: through the
+/// projects' drive, and To do looked at again at once, since the team may
+/// have room.
+fn change_todo(id: &ProjectId, change: Todo, cx: &mut App) {
+    let fx = cx.update_global::<Shared, _>(|shared, _| match change {
+        Todo::Add(n) => shared.projects.add_todo(id, n),
+        Todo::Move(n, up) => shared.projects.move_todo(id, n, up),
+        Todo::Drop(n) => shared.projects.drop_todo(id, n),
+        Todo::Place(n, at) => shared.projects.place_todo(id, n, at),
+    });
+    crate::projects::carry(fx, cx);
+    crate::board::pull_now(id, cx);
+    cx.refresh_windows();
+}
+
+/// Where in `todo` issue `dragged` goes to stand just before `target`: the
+/// target's place once the dragged issue is taken out. None when dropped on
+/// itself, which moves nothing.
+fn place_before(todo: &[u64], dragged: u64, target: u64) -> Option<usize> {
+    if dragged == target {
+        return None;
+    }
+    todo.iter()
+        .filter(|&&n| n != dragged)
+        .position(|&n| n == target)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::place_before;
+
+    #[test]
+    fn a_drop_on_a_row_lands_just_before_it() {
+        let todo = [1, 2, 3, 4];
+        // From below: the target keeps its place.
+        assert_eq!(place_before(&todo, 4, 2), Some(1));
+        // From above: the target moves up one once the issue is out.
+        assert_eq!(place_before(&todo, 1, 3), Some(1));
+        // Onto the row after itself: its own place, which writes nothing.
+        assert_eq!(place_before(&todo, 2, 3), Some(1));
+        // From the Backlog.
+        assert_eq!(place_before(&todo, 9, 1), Some(0));
+        assert_eq!(place_before(&todo, 3, 3), None);
+    }
 }

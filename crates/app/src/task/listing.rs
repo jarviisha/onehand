@@ -168,10 +168,10 @@ pub(crate) fn room_at(
 /// Project `project`'s board tasks laid over `template`'s steps, each as
 /// the pages list it.
 pub(crate) struct BoardTasks {
-    /// A column per step, by its label, its head, and its rows; then any
-    /// step the workflow lost. A limited step's head says how much of its
-    /// room is held.
-    pub(crate) steps: Vec<(String, String, Vec<Row>)>,
+    /// A column per step, by its label, its head, its rows, and its step's
+    /// id while the workflow still has the step; then any step the workflow
+    /// lost. A limited step's head says how much of its room is held.
+    pub(crate) steps: Vec<(String, String, Vec<Row>, Option<String>)>,
     /// Newest first.
     pub(crate) done: Vec<Row>,
     /// The issues its tasks hold out of the Backlog.
@@ -214,7 +214,8 @@ pub(crate) fn board(
                     }
                     None => column.label.clone(),
                 };
-                (column.label, head, rows(column.tasks))
+                let step = at.map(|_| column.step.clone());
+                (column.label, head, rows(column.tasks), step)
             })
             .collect(),
         done: rows(columns.done),

@@ -295,25 +295,6 @@ pub(super) struct SessionDrag {
     pub(super) from: usize,
 }
 
-/// What follows the pointer through a drag: the row's own name, on the
-/// selected fill. `gpui` wants an entity here, so this is the smallest one
-/// that can carry a string.
-pub(super) struct DragGhost(pub(super) SharedString);
-
-impl Render for DragGhost {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .px_2()
-            .py_0p5()
-            .rounded(cx.theme().radius)
-            // Solid, as the ghost floats over whatever it is dragged across.
-            .bg(hover_fill(cx))
-            .text_size(crate::tokens::CHROME_TEXT)
-            .text_color(cx.theme().sidebar_accent_foreground)
-            .child(self.0.clone())
-    }
-}
-
 pub(super) fn ellipsize(s: &str, max: usize) -> SharedString {
     if s.chars().count() <= max {
         return SharedString::from(s.to_string());

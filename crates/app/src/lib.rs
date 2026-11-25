@@ -22,6 +22,7 @@ mod chat;
 mod control;
 mod controls;
 mod dialogs;
+mod drag;
 mod features;
 mod fonts;
 #[cfg(test)]

@@ -2,11 +2,12 @@
 
 use super::model::Item;
 use super::row::{
-    DragGhost, SessionDrag, covered_tip, covering, ellipsize, faded, hover_fill, key_ring,
-    labelled, menu_button, meta_control, on_hover, row_control, row_inks, row_surfaces,
+    SessionDrag, covered_tip, covering, ellipsize, faded, hover_fill, key_ring, labelled,
+    menu_button, meta_control, on_hover, row_control, row_inks, row_surfaces,
 };
 use crate::chat::pane::SessionSignal;
 use crate::controls::Named as _;
+use crate::drag::DragGhost;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
