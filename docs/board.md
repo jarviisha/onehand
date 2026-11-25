@@ -52,6 +52,9 @@ on this machine. A project on a host has none: its issues are not kept here.
   attention*, holding its issue until the person acts on it.
 - **A board task's end, like a schedule's, is unwatched:** it fails without a person looking, so
   it says what it came to on the Tasks page and nothing asks for a window.
+- **A done board task closes its session**, as a schedule's does (`Task::closes_session`): nobody
+  started it by hand, so it leaves the rail, and its conversation stays under past conversations.
+  One that did not finish keeps its session in the rail.
 
 ## When it pulls
 

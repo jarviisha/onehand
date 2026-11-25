@@ -810,3 +810,21 @@ fn only_a_schedules_task_that_is_done_closes_its_session() {
     assert!(!ended(None, Some(Outcome::Done)));
     assert!(!ended(Some(Origin::Tool), Some(Outcome::Done)));
 }
+
+#[test]
+fn a_board_task_that_is_done_closes_its_session() {
+    let board = Origin::Board {
+        project: serde_json::from_str("\"p\"").unwrap(),
+        issue: 7,
+    };
+    let ended = |outcome: Option<Outcome>| {
+        let mut t = task("1");
+        t.origin = Some(board.clone());
+        t.runs[0].outcome = outcome;
+        t.closes_session()
+    };
+    assert!(ended(Some(Outcome::Done)), "nobody started it by hand");
+    assert!(!ended(None), "still running");
+    assert!(!ended(Some(Outcome::Failed("exit 1".into()))));
+    assert!(!ended(Some(Outcome::Stopped(Stop::ByPerson))));
+}

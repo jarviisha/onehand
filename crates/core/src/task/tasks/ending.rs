@@ -34,8 +34,8 @@ impl<W: Copy> TasksDrive<W> {
             }
         }
         self.store_run(id, run, &mut fx);
-        // A finished schedule's session leaves the rail once the run is let
-        // go, so nothing of the run is left listening to it.
+        // A finished schedule's or board's session leaves the rail once the
+        // run is let go, so nothing of the run is left listening to it.
         let closes = uid.filter(|_| self.task(id).is_some_and(Task::closes_session));
         match turn_going {
             true => {

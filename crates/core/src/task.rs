@@ -384,13 +384,17 @@ impl Task {
     }
 
     /// Whether its session leaves the rail now that it ended: a schedule's
-    /// task that is done has nothing left in it to look at, and its
-    /// conversation is still reached from the project's past conversations.
-    /// One that failed, was
-    /// stopped or waits on a person keeps its session where it is.
+    /// or a board's task that is done was started by nobody's hand and has
+    /// nothing left in it to look at, and its conversation is still reached
+    /// from the project's past conversations. One that failed, was stopped
+    /// or waits on a person keeps its session where it is, as does any task
+    /// a person or a tool started.
     pub fn closes_session(&self) -> bool {
-        matches!(self.origin, Some(Origin::Schedule { .. }))
-            && matches!(self.outcome(), Some(Outcome::Done))
+        let unwatched = match self.origin {
+            Some(Origin::Schedule { .. } | Origin::Board { .. }) => true,
+            Some(Origin::Tool) | None => false,
+        };
+        unwatched && matches!(self.outcome(), Some(Outcome::Done))
     }
 
     /// How it ended, as its line in a list; `None` while it has not. A check
