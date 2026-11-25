@@ -97,14 +97,25 @@ impl Driven {
             .collect()
     }
 
+    /// Hold `held` as `lane`'s session; one it replaces that is still alive
+    /// is forgotten, not dropped, so closing the run still closes it.
+    fn keep_replaced(&mut self, lane: Lane, held: Held) {
+        if let Some(old) = self.sessions.insert(lane, held)
+            && old.session.upgrade().is_some()
+        {
+            self.forgot.push((old.uid, old.session));
+        }
+    }
+
     /// Whether session `uid` is one of the run's lanes'.
     pub(super) fn on(&self, uid: u64) -> bool {
         self.sessions.values().any(|held| held.uid == uid)
     }
 
-    /// The run waits on a person: an approval, or a card the agent parked.
-    pub(super) fn waits_on_person(&self) -> bool {
-        self.drive.waits_on_person()
+    /// The run waits on a person at session `uid`: an approval, which marks
+    /// every lane's session, or a card, which exists only in the current one.
+    pub(super) fn waits_on_person(&self, uid: u64) -> bool {
+        self.drive.waits_on_person(self.uid() == Some(uid))
     }
 
     /// Stop was pressed and waits on a command or forge call to land.
@@ -492,13 +503,30 @@ fn open_session(id: &str, lane: Lane, agent: String, cx: &mut App) {
                 session: session.downgrade(),
                 _subscriptions: listen(&task, &lane, &session, cx),
             };
-            // A lane opens only once its session is forgotten, so this
-            // replaces none.
-            let old = with(&task, cx, |d| d.sessions.insert(lane.clone(), held));
-            drop(old);
+            // A lane that came back before its session was forgotten replaces
+            // it; the replaced one stays open, kept with the forgotten.
+            with(&task, cx, |d| d.keep_replaced(lane.clone(), held));
         });
         feed(&task, Input::LaneOpened { lane, result }, cx);
     });
+}
+
+/// Hold `session`, uid `uid`, as task `id`'s lane `lane` again, as a lane
+/// that came back before its old session was forgotten does.
+#[cfg(test)]
+pub(super) fn hold_again(
+    id: &str,
+    lane: Lane,
+    uid: u64,
+    session: &Entity<ChatSession>,
+    cx: &mut App,
+) {
+    let held = Held {
+        uid,
+        session: session.downgrade(),
+        _subscriptions: Vec::new(),
+    };
+    with(id, cx, |d| d.keep_replaced(lane, held));
 }
 
 /// Open a lane's session on the shell of `window`, which says why it did

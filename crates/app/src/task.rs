@@ -269,7 +269,7 @@ pub(crate) fn waits_on_person(uid: u64, cx: &App) -> bool {
     };
     t.task_on(uid)
         .and_then(|id| t.driven(&id))
-        .is_some_and(|d| d.waits_on_person())
+        .is_some_and(|d| d.waits_on_person(uid))
 }
 
 /// What `look` makes of each task, told whether it is working, oldest first.

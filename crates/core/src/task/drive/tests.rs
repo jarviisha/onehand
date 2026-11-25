@@ -347,10 +347,10 @@ fn a_turn_ending_while_a_pin_is_held_is_not_judged() {
 #[test]
 fn an_approval_waits_on_a_person_until_answered() {
     let mut rig = at_approval();
-    assert!(rig.drive.waits_on_person() && !rig.drive.card());
+    assert!(rig.drive.waits_on_person(false) && !rig.drive.card());
     let at = approval_at(&rig);
     rig.approve(at);
-    assert!(!rig.drive.waits_on_person());
+    assert!(!rig.drive.waits_on_person(true));
 }
 
 #[test]
@@ -763,7 +763,9 @@ fn a_failed_turn_fails_the_run_in_its_words() {
 fn a_card_pauses_the_budget() {
     let mut rig = in_turn();
     rig.on(Input::AwaitingUser);
-    assert!(rig.drive.card() && rig.drive.waits_on_person());
+    assert!(
+        rig.drive.card() && rig.drive.waits_on_person(true) && !rig.drive.waits_on_person(false)
+    );
     rig.now += rig.drive.run().template.timeout_limit() * 2;
     let fx = rig.on(Input::Elapsed(Timer::Timeout));
     assert_eq!(finished(&fx), None, "a person is waited on");
@@ -1438,7 +1440,7 @@ fn a_lost_lane_elsewhere_reopens_with_a_note() {
 }
 
 #[test]
-fn a_lane_that_will_not_open_fails_the_run_resumably() {
+fn a_lane_that_will_not_open_fails_the_run_for_a_retry() {
     let (mut rig, _) = at_review();
     let fx = rig.on(Input::LaneOpened {
         lane: review(),

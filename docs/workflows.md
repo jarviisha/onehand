@@ -154,8 +154,8 @@ agent list.*) and judges that step's settings against its own agent's offer.
 
 A file whose steps name an agent is written as `schema_version = 2`, any other stays 1, so a file
 nothing new touches reads in an older onehand; an older build lists a version 2 file as unreadable.
-A run's snapshot read by an older build drops the step agents, and runs everything in the run's
-session. The editor's *Agent* picker on an agent step offers *The run's agent*, which writes no key,
+A run's snapshot carries that version too, so an older build refuses to resume it (*The workflow
+`<name>` no longer validates*) rather than run it without its step agents. The editor's *Agent* picker on an agent step offers *The run's agent*, which writes no key,
 then each agent in the list; one the list no longer holds is shown marked *(not in the agent list)*
 and kept.
 

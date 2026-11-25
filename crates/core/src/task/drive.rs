@@ -196,9 +196,11 @@ impl RunDrive {
         self.pinned
     }
 
-    /// The run waits on a person: an approval, or a card the agent parked.
-    pub fn waits_on_person(&self) -> bool {
-        self.run.awaiting_approval() || self.here.card
+    /// The run waits on a person at a session: an approval, which marks every
+    /// lane's, or a card the agent parked, which is only in the current
+    /// lane's (`current`).
+    pub fn waits_on_person(&self, current: bool) -> bool {
+        self.run.awaiting_approval() || (current && self.here.card)
     }
 
     /// The agent parked a card nobody has answered yet.

@@ -116,9 +116,9 @@ impl RunDrive {
         &self.lane
     }
 
-    /// The lanes that have a session, the current one first: what closing
-    /// the run closes.
-    pub fn lanes(&self) -> impl Iterator<Item = &Lane> {
+    /// The lanes that have a session, the current one first.
+    #[cfg(test)]
+    pub(crate) fn lanes(&self) -> impl Iterator<Item = &Lane> {
         let here = self.here.session.then_some(&self.lane);
         let away = self.away.iter().filter(|(_, state)| state.session);
         here.into_iter().chain(away.map(|(lane, _)| lane))

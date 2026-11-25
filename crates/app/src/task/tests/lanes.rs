@@ -239,6 +239,32 @@ fn a_lane_whose_session_went_is_forgotten_and_opened_anew(cx: &mut TestAppContex
     });
 }
 
+/// A lane that comes back before its old session was forgotten replaces it,
+/// and the replaced session stays among the run's, so it closes with them.
+#[gpui::test]
+fn a_replaced_lane_session_is_kept_to_close(cx: &mut TestAppContext) {
+    let (work, store) = (repo("lane-replaced"), temp_dir("store"));
+    let window = app(cx, &store);
+    configure(&["a"], cx);
+    let id = placed(
+        Task::new("23".into(), reviewed(), brief(), setup(&work)),
+        window,
+        cx,
+    );
+    let (first, _tx, _seen) = carrier::driven(cx, Chat::default());
+    let started = begun(&id, cx);
+    cx.update(|cx| start(7, &first, window, id.clone(), started, cx));
+    cx.run_until_parked();
+    let (second, _tx2, _seen2) = carrier::driven(cx, Chat::default());
+    cx.update(|cx| {
+        crate::task::carrier::hold_again(&id, onehand_core::task::drive::Lane::Run, 9, &second, cx);
+        let t = cx.global::<Tasks>();
+        let mut uids = t.driven(&id).unwrap().uids();
+        uids.sort();
+        assert_eq!(uids, [7, 9], "the replaced session is still the run's");
+    });
+}
+
 /// Let background work land until `done`.
 fn until(cx: &mut TestAppContext, done: impl Fn(&mut TestAppContext) -> bool) {
     for _ in 0..200 {
