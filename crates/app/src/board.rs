@@ -50,9 +50,9 @@ pub(crate) fn pull_now(project: &ProjectId, cx: &mut App) {
 }
 
 /// A board task of `project` on `issue` ended, `done` or not: a finished
-/// one closes an issue the project's own tracker keeps, and the team has
-/// room for the next.
-pub(crate) fn ended(project: &ProjectId, issue: u64, done: bool, cx: &mut App) {
+/// one closes an issue the project's own tracker keeps, and, when core says
+/// to `pull`, the team's room goes to the next.
+pub(crate) fn ended(project: &ProjectId, issue: u64, done: bool, pull: bool, cx: &mut App) {
     if done && let Some((root, file)) = local(project, cx) {
         cx.spawn(async move |cx| {
             let (at, read) = (root.clone(), file.clone());
@@ -71,7 +71,9 @@ pub(crate) fn ended(project: &ProjectId, issue: u64, done: bool, cx: &mut App) {
         })
         .detach();
     }
-    pull_now(project, cx);
+    if pull {
+        pull_now(project, cx);
+    }
 }
 
 fn close_issue(root: &Path, file: PathBuf, number: u64, cx: &mut App) {
@@ -161,6 +163,7 @@ fn pull_read(
         let project = project.clone();
         let (root, template, shell) = (root.to_path_buf(), template.clone(), shell.clone());
         cx.spawn(async move |cx| {
+            let mut made = None;
             let started = async {
                 let file = Some(onehand_core::project::file::issues_file(&project));
                 let brief = cx
@@ -181,9 +184,11 @@ fn pull_read(
                     agent: None,
                     mode: None,
                 };
-                match crate::control::start_task(window, shell, starting, cx).await? {
-                    (_, Placed::Started | Placed::Queued(_)) => Ok(()),
-                    (_, Placed::Refused(why)) => Err(why),
+                let (id, placed) = crate::control::start_task(window, shell, starting, cx).await?;
+                made = Some(id);
+                match placed {
+                    Placed::Started | Placed::Queued(_) => Ok(()),
+                    Placed::Refused(why) => Err(why),
                 }
             }
             .await;
@@ -193,6 +198,9 @@ fn pull_read(
                     // Its task now counts itself, and any place left over
                     // from counting it twice meanwhile is filled.
                     Ok(()) => pull_now(&project, cx),
+                    // Refused once its task was kept: the task holds the
+                    // issue, and its own start already said why.
+                    Err(_) if made.is_some_and(|id| crate::task::task(&id, cx).is_some()) => {}
                     // Out of To do with no task on it, the issue is back in
                     // the Backlog. Nothing is pulled in its place, so a
                     // reason every issue shares is said once, not per issue.

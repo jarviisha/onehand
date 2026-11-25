@@ -32,9 +32,12 @@ on this machine. A project on a host has none: its issues are not kept here.
   when the issue is pulled, started off screen as a schedule's is (`task::start_off_screen`), so
   an issue in To do is not a task and is not on the Tasks page. The Tasks page's row reads *from
   the board · <workflow>*.
-- **A refused pull** (the task could not start) puts the issue back in the Backlog, with a toast
-  naming it and the reason. It is not retried, and nothing is pulled in its place, so a reason
-  every issue shares is said once.
+- **A refused pull** before its task is made (no brief, no worktree, no place) puts the issue back
+  in the Backlog, with a toast naming it and the reason. It is not retried, and nothing is pulled
+  in its place, so a reason every issue shares is said once.
+- **A task that could not start once made** (no agent, no session) fails as an unwatched task does,
+  said by its own start and no second toast. It holds its issue in its step's column, and nothing
+  is pulled in its place.
 - **An issue that can no longer be worked** (closed, deleted) is dropped from To do at the next
   look.
 
@@ -55,7 +58,9 @@ issues that can no longer be worked dropped. `crates/app/src/board.rs` carries i
 happens when:
 
 - To do or the team changes, or a board is bound;
-- a board task ends (`Signal::BoardEnded`);
+- a board task ends done, or a person stopped or took it over (`Signal::BoardEnded`, whose
+  `pull` core decides). One that ended without finishing pulls nothing: the next would most
+  likely end the same way, one after another until To do is empty;
 - the tasks and the workflow library have both been read at boot.
 
 And only while a window holds the project; there is none to start a task from otherwise. Opening

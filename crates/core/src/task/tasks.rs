@@ -137,12 +137,14 @@ pub enum Signal<W> {
     /// A schedule's task ended with nobody necessarily watching: the
     /// schedule's `name`, and how it ended.
     ScheduleEnded { name: String, said: String },
-    /// A board's task ended: it worked issue `issue` of `project`, and
-    /// `done` says whether every step passed.
+    /// A board's task ended: it worked issue `issue` of `project`, `done`
+    /// says whether every step passed, and `pull` whether the board starts
+    /// the next of its To do now.
     BoardEnded {
         project: crate::project::ProjectId,
         issue: u64,
         done: bool,
+        pull: bool,
     },
     /// A dismiss asked for from `window` was not kept, for `why`, and the
     /// task is as it was.

@@ -470,7 +470,8 @@ fn say(signal: Signal<AnyWindowHandle>, cx: &mut App) {
             project,
             issue,
             done,
-        } => crate::board::ended(&project, issue, done, cx),
+            pull,
+        } => crate::board::ended(&project, issue, done, pull, cx),
         Signal::DismissFailed { window, why } => {
             toast(window, crate::toast::failed("Dismissing the task", why), cx)
         }
