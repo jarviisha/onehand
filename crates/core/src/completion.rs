@@ -995,8 +995,14 @@ mod tests {
     fn clear_alone_is_ours_unless_the_agent_has_one() {
         let none: Vec<crate::acp::SlashCommand> = vec![];
         let theirs = vec![cmd("clear", "")];
-        assert_eq!(own_command("/clear", &none), Some(OwnCommand::NewConversation));
-        assert_eq!(own_command("  /clear \n", &none), Some(OwnCommand::NewConversation));
+        assert_eq!(
+            own_command("/clear", &none),
+            Some(OwnCommand::NewConversation)
+        );
+        assert_eq!(
+            own_command("  /clear \n", &none),
+            Some(OwnCommand::NewConversation)
+        );
         assert_eq!(own_command("/clear now", &none), None);
         assert_eq!(own_command("clear", &none), None);
         assert_eq!(own_command("/clear", &theirs), None);

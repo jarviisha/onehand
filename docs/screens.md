@@ -149,7 +149,7 @@ their project, and under the lead again once its conversation is opened.
 ## Agent pane header
 
 Left to right: the conversation's name, medium weight; a dots menu (*Rename…*, *Export as
-Markdown…*; *Resume in this session…*, refused mid-turn, and *Restart the agent*; *Delete
+Markdown…*; *Resume in this session…* and *New conversation*, both refused mid-turn, and *Restart the agent*; *Delete
 conversation* in the danger tint, refused until the first turn ends, and on a host's session *End on
 <host>…* in the danger tint after it); a spacer; *N in background* (only while the session's agent
 has work running in the background: a menu of each item's name, its kind and how long it has run,
@@ -266,7 +266,12 @@ workers*, and *<name> needs you* for the most urgent worker waiting on the perso
 lists the workers above it, each in its state's mark and named as the rail names it, in the order
 the lead opened them; a worker picked there shows in the pane. Beside it stands the subagents'
 chip, when the lead's own turn has any working. A worker's standing is in the header.
-*Run a workflow…* (the `+` menu, the
+The `/` list opens on the composer's own commands under *Composer* (*model*, *effort*, *mode*,
+*fast*, *attach*, *mention*, *clear*), each offered only where it can act; the agent's commands
+follow. *clear*, picked there or sent alone as `/clear`, does what *New conversation* does: the
+conversation stays on disk, to be resumed, and the session starts a fresh one with the same agent
+and project, refused mid-turn and while the session leads workers. Where the agent advertises a
+`clear` of its own, the row is not offered and `/clear` goes to the agent. *Run a workflow…* (the `+` menu, the
 keymap, the Workflows page's *Run…*) opens the launcher, drawn as `docs/workflows.md` describes.
 
 ## Docks

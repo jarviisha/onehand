@@ -447,7 +447,11 @@ mod lifecycle {
         let old = session(&pane, 1, cx).expect("a session");
         type_and_send("/clear now", cx);
         let same = session(&pane, 1, cx).expect("a session");
-        assert_eq!(old.entity_id(), same.entity_id(), "a prompt, not the command");
+        assert_eq!(
+            old.entity_id(),
+            same.entity_id(),
+            "a prompt, not the command"
+        );
 
         type_and_send("/clear", cx);
         let new = session(&pane, 1, cx).expect("a session");

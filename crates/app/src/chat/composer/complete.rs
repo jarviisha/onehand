@@ -253,9 +253,7 @@ impl Composer {
                         window.dispatch_action(Box::new(crate::shell::RunWorkflow), cx)
                     }),
                     (None, Act::Mention) => self.insert_trigger('@', window, cx),
-                    (None, Act::NewConversation) => {
-                        cx.emit(super::ComposerEvent::NewConversation)
-                    }
+                    (None, Act::NewConversation) => cx.emit(super::ComposerEvent::NewConversation),
                     (None, Act::Control) => {
                         let uid = session.read(cx).chat().uid;
                         crate::control::switch(uid, !crate::control::switched_on(uid), cx);

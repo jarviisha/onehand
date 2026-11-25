@@ -47,7 +47,9 @@ impl ChatPane {
         let own = {
             let composer = self.composer.read(cx);
             let chat = session.read(cx).chat();
-            composer.attachments.is_empty()
+            composer
+                .attachments
+                .is_empty()
                 .then(|| onehand_core::completion::own_command(&composer.text(cx), &chat.commands))
                 .flatten()
         };
@@ -56,7 +58,8 @@ impl ChatPane {
                 let uid = session.read(cx).chat().uid;
                 drop(session);
                 if self.new_conversation(uid, cx) {
-                    self.composer.update(cx, |composer, cx| composer.clear(window, cx));
+                    self.composer
+                        .update(cx, |composer, cx| composer.clear(window, cx));
                 }
             }
             None => Self::submit_from(&session, &self.composer.clone(), window, cx),
