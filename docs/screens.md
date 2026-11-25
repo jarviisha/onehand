@@ -535,7 +535,10 @@ room and leaves the terminal as it is.
   the project, its workflow and *team of N*); columns of one width side by side, scrolling sideways:
   *Backlog*, *To do*, a column per step of the workflow, *Done*. Each draws 50 rows and says *N more
   not shown*. A Backlog row's `⋯` offers *Move to To do*, a To do row's *Move up*, *Move down* and
-  *Back to Backlog*, a task's *Show task*. Empty columns say so (*Nothing to do; move an issue here
+  *Back to Backlog*, a task's *Show task*. An issue row also drags, its title following the pointer:
+  onto a To do row it lands just before that row, onto To do elsewhere last, onto the Backlog out
+  of To do; the To do row it lands before fills (the column, when it has no rows; the Backlog,
+  when the issue comes from To do). Task rows do not drag. Empty columns say so (*Nothing to do; move an issue here
   from the Backlog*, *Nothing at this step*, *Nothing done yet*); a board whose workflow cannot run,
   or on a host, says why instead of its columns, and a project with none, *This project has no
   board*.
