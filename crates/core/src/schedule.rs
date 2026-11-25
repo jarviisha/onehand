@@ -302,8 +302,9 @@ pub fn prompt_template() -> Template {
 }
 
 /// `template` with the schedule's `mode` and `options` for every agent or
-/// review step
-/// that sets none of its own, setting by setting: a step's own wins.
+/// review step that sets none of its own, setting by setting: a step's own
+/// wins. A step naming its own agent is left as it is, since its lane takes
+/// that agent's defaults, not the run's.
 pub fn fill(
     mut template: Template,
     mode: Option<&str>,
@@ -311,14 +312,17 @@ pub fn fill(
 ) -> Template {
     for step in &mut template.steps {
         match &mut step.kind {
+            StepKind::Agent { agent: Some(_), .. } | StepKind::Review { agent: Some(_), .. } => {}
             StepKind::Agent {
                 mode: own_mode,
                 options: own,
+                agent: None,
                 ..
             }
             | StepKind::Review {
                 mode: own_mode,
                 options: own,
+                agent: None,
                 ..
             } => {
                 if own_mode.is_none() {
