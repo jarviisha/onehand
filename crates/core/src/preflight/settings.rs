@@ -6,7 +6,7 @@
 //! from what was learned under a different model is left for the run's own
 //! check at that step, the same authority it already is at runtime.
 
-use super::{checkable_finding, finding, mode_refused, About, Change, Finding};
+use super::{checkable_finding, finding, mode_refused, About, Change, Finding, StepAgent};
 use crate::workflow::{option_refused, Offer, StepKind, Template};
 use std::collections::BTreeMap;
 
@@ -29,49 +29,58 @@ fn names_settings(kind: &StepKind) -> bool {
 }
 
 /// Findings for what each agent step's own mode and options the agent does
-/// not offer, against `offered`; one finding for the whole workflow when
-/// nothing of what it offers is known yet, unless `mode_unknown_said` already
-/// said as much for the run's own starting mode. `keeps` and `change` are
-/// the mode check's own, for the kind judged.
+/// not offer: a step naming an agent is judged against that agent's offer in
+/// `step_agents`, any other against `offered`, the run's. One finding for the
+/// whole workflow when what an agent offers is not known yet for a step that
+/// names settings, unless `mode_unknown_said` already said as much for the
+/// run's own starting mode. A step whose agent is not configured is left to
+/// the finding about that. `keeps` and `change` are the mode check's own, for
+/// the kind judged.
 pub(super) fn step_settings(
     template: &Template,
     offered: Option<&Offer>,
+    step_agents: &[StepAgent],
     keeps: &str,
     change: Option<Change>,
     mode_unknown_said: bool,
 ) -> Vec<Finding> {
-    let Some(offer) = offered else {
-        if mode_unknown_said {
-            return Vec::new();
-        }
-        let names_any = template.steps.iter().any(|step| names_settings(&step.kind));
-        return match names_any {
-            true => vec![checkable_finding(
-                About::Settings,
-                NOT_KNOWN_YET.to_string(),
-            )],
-            false => Vec::new(),
+    let mut found = Vec::new();
+    let (mut unknown_run, mut unknown_step) = (false, false);
+    for (i, step) in template.steps.iter().enumerate() {
+        let StepKind::Agent { mode, options, .. } = &step.kind else {
+            continue;
         };
-    };
-    let found = template
-        .steps
-        .iter()
-        .enumerate()
-        .filter_map(|(i, step)| match &step.kind {
-            StepKind::Agent { mode, options, .. } => {
-                Some((i + 1, step.label.as_str(), mode.as_deref(), options))
+        let own = step_agents.iter().find(|named| named.step == i);
+        let offer = match own {
+            Some(named) if !named.configured => continue,
+            Some(named) => named.offered.as_ref(),
+            None => offered,
+        };
+        let Some(offer) = offer else {
+            match own {
+                Some(_) => unknown_step |= names_settings(&step.kind),
+                None => unknown_run |= names_settings(&step.kind),
             }
-            StepKind::Command { .. }
-            | StepKind::Approval { .. }
-            | StepKind::Push
-            | StepKind::PullRequest
-            | StepKind::StatusChecks { .. } => None,
-        })
-        .flat_map(|(n, label, mode, options)| {
-            step_findings(n, label, mode, options, offer, keeps, change)
-        })
-        .collect();
-    cap(found)
+            continue;
+        };
+        found.extend(step_findings(
+            i + 1,
+            &step.label,
+            mode.as_deref(),
+            options,
+            offer,
+            keeps,
+            change,
+        ));
+    }
+    let mut found = cap(found);
+    if unknown_step || (unknown_run && !mode_unknown_said) {
+        found.push(checkable_finding(
+            About::Settings,
+            NOT_KNOWN_YET.to_string(),
+        ));
+    }
+    found
 }
 
 /// One step's own mode and options the agent does not offer, each finding

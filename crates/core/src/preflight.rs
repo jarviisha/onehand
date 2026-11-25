@@ -140,6 +140,18 @@ pub struct Forge {
     pub account: Option<Result<String, String>>,
 }
 
+/// An agent a step of the workflow names, and what is known of it.
+#[derive(Debug, Clone)]
+pub struct StepAgent {
+    /// The step's place in the workflow, from 0.
+    pub step: usize,
+    pub agent: String,
+    /// That agent is among the configured ones.
+    pub configured: bool,
+    /// What it offers, as `Facts::offered` for the run's own agent.
+    pub offered: Option<Offer>,
+}
+
 /// What the app knows when a start is asked for.
 #[derive(Debug, Clone)]
 pub struct Facts {
@@ -154,6 +166,8 @@ pub struct Facts {
     /// What the agent offers, when learned in this process from the spec it
     /// is configured with now; `None` when not known yet.
     pub offered: Option<Offer>,
+    /// One for each agent step that names an agent of its own.
+    pub step_agents: Vec<StepAgent>,
     /// The run has a check command to run.
     pub has_check: bool,
     /// The project is in git.
@@ -200,6 +214,25 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
                 true,
                 format!("The workflow cannot run: {problem}"),
                 Some(Change::At(WORKFLOWS_PAGE)),
+            ));
+        }
+    }
+
+    // Each agent a step names.
+    if let Some(template) = template {
+        for named in facts.step_agents.iter().filter(|named| !named.configured) {
+            let label = template
+                .steps
+                .get(named.step)
+                .map_or("A step", |s| &s.label);
+            found.push(finding(
+                About::Agent,
+                true,
+                format!(
+                    "{label} names {}, which is not in the agent list.",
+                    named.agent
+                ),
+                Some(Change::At("Settings ▸ Agents")),
             ));
         }
     }
@@ -259,6 +292,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
         found.extend(settings::step_settings(
             template,
             facts.offered.as_ref(),
+            &facts.step_agents,
             keeps,
             change,
             mode_unknown,

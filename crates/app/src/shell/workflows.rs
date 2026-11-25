@@ -211,6 +211,7 @@ impl Shell {
         let named = agent;
         let agent = onehand_core::config::agent_or_first(&shared.settings.agents, named);
         let facts = preflight::Facts {
+            step_agents: crate::task::facts::step_agents(&workflow, cx),
             workflow,
             // One named and gone is said by its name, as a Retry's is.
             agent: agent

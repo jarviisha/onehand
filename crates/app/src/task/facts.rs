@@ -4,7 +4,7 @@
 use crate::state::Shared;
 use gpui::App;
 use onehand_core::config::{self, AgentSpec};
-use onehand_core::preflight::{Facts, Forge};
+use onehand_core::preflight::{Facts, Forge, StepAgent};
 use onehand_core::task::Task;
 use onehand_core::workflow::{Current, Field, Setup, Template};
 
@@ -33,6 +33,30 @@ fn forge_named(name: &str, cx: &App) -> Forge {
 /// started as it is configured now; `None` when it has not.
 pub(crate) fn offered(spec: &AgentSpec, cx: &App) -> Option<onehand_core::workflow::Offer> {
     onehand_core::task::offered(spec, &Shared::global(cx).settings.offers_seen)
+}
+
+/// Each agent a step of `workflow` names, found by exact name: a step's agent
+/// never falls back to the first configured.
+pub(crate) fn step_agents(workflow: &Result<Template, String>, cx: &App) -> Vec<StepAgent> {
+    let Ok(template) = workflow else {
+        return Vec::new();
+    };
+    let agents = &Shared::global(cx).settings.agents;
+    template
+        .steps
+        .iter()
+        .enumerate()
+        .filter_map(|(step, spec)| {
+            let name = spec.agent()?;
+            let found = config::agent_or_first(agents, Some(name));
+            Some(StepAgent {
+                step,
+                agent: name.to_string(),
+                configured: found.is_some(),
+                offered: found.and_then(|agent| offered(agent, cx)),
+            })
+        })
+        .collect()
 }
 
 /// The first agent configured, by name: what a task naming none starts.
@@ -76,6 +100,7 @@ pub(crate) fn with_setup(setup: &Setup, workflow: Result<Template, String>, cx: 
         .as_deref()
         .and_then(|name| shared.settings.agents.iter().find(|spec| spec.name == name));
     Facts {
+        step_agents: step_agents(&workflow, cx),
         workflow,
         agent_configured: spec.is_some(),
         offered: spec.and_then(|spec| offered(spec, cx)),

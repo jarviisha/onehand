@@ -19,6 +19,7 @@ fn healthy() -> Facts {
         agent_configured: true,
         mode: None,
         offered: None,
+        step_agents: Vec::new(),
         has_check: true,
         in_git: true,
         forge: Some(Forge {
@@ -743,4 +744,94 @@ fn step_settings_findings_are_capped() {
     let last = findings.last().unwrap();
     assert!(last.blocks);
     assert!(last.text.contains("2 more"), "{}", last.text);
+}
+
+/// The worktree workflow with its first step naming `agent` and, when
+/// given, a `model`.
+fn naming(agent: &str, model: Option<&str>) -> Template {
+    let mut t = worktree();
+    if let StepKind::Agent {
+        agent: named,
+        options,
+        ..
+    } = &mut t.steps[0].kind
+    {
+        *named = Some(agent.into());
+        if let Some(model) = model {
+            options.insert("model".into(), model.into());
+        }
+    } else {
+        panic!("the worktree workflow's first step is not an agent step");
+    }
+    t
+}
+
+fn model_offer(model: &str) -> Offer {
+    Offer {
+        modes: vec!["default".into()],
+        options: vec![("model".into(), vec![model.into()])],
+    }
+}
+
+#[test]
+fn a_step_agent_not_in_the_list_blocks() {
+    let t = naming("Codex", None);
+    let label = t.steps[0].label.clone();
+    let facts = Facts {
+        workflow: Ok(t),
+        step_agents: vec![StepAgent {
+            step: 0,
+            agent: "Codex".into(),
+            configured: false,
+            offered: None,
+        }],
+        ..healthy()
+    };
+    let finding = found(Kind::NewRun, &facts, About::Agent).unwrap();
+    assert!(finding.blocks);
+    assert_eq!(
+        finding.text,
+        format!("{label} names Codex, which is not in the agent list.")
+    );
+    assert_eq!(finding.change, Some(Change::At("Settings ▸ Agents")));
+}
+
+#[test]
+fn a_step_agents_options_are_checked_against_its_own_offer() {
+    let step_agent = |offered| StepAgent {
+        step: 0,
+        agent: "Codex".into(),
+        configured: true,
+        offered,
+    };
+    let facts = |model| Facts {
+        workflow: Ok(naming("Codex", Some(model))),
+        offered: Some(model_offer("a")),
+        step_agents: vec![step_agent(Some(model_offer("b")))],
+        ..healthy()
+    };
+    assert_eq!(found(Kind::NewRun, &facts("b"), About::Settings), None);
+    let finding = found(Kind::NewRun, &facts("a"), About::Settings).unwrap();
+    assert!(finding.blocks);
+    // One whose offer is not known yet is told as the run's own is.
+    let unknown = Facts {
+        step_agents: vec![step_agent(None)],
+        ..facts("a")
+    };
+    let finding = found(Kind::NewRun, &unknown, About::Settings).unwrap();
+    assert!(!finding.blocks && finding.checkable, "{finding:?}");
+}
+
+#[test]
+fn steps_naming_no_agent_check_as_before() {
+    let mut t = worktree();
+    if let StepKind::Agent { options, .. } = &mut t.steps[0].kind {
+        options.insert("model".into(), "a".into());
+    }
+    let facts = Facts {
+        workflow: Ok(t),
+        offered: Some(model_offer("b")),
+        ..healthy()
+    };
+    assert!(found(Kind::NewRun, &facts, About::Settings).unwrap().blocks);
 }
