@@ -250,8 +250,8 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   session**, never inside the lead's conversation.
 - **No tool answers a card, a permission or an approval, and none cuts a worktree.** Both are on
   purpose: only a person answers what an agent parked, or the *Cards* level a person set on that
-  session, and the lead cuts its worktrees with git. The one exception is `review_verdict`, which
-  answers only the review asked of the calling session.
+  session, and the lead cuts its worktrees with git. The one exception, `review_verdict`, is
+  stated in [control.md](control.md).
   The cap of four sessions a session's agent may open is not raised for leads either.
 - **A host terminal's tab gone with a lost connection comes back only when the project is shown
   or the dock opened again.**

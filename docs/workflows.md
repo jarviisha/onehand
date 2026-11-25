@@ -142,8 +142,9 @@ that wrote it. A step naming an agent has its session opened, unshown (in the ra
 the pane), on the run's first visit to the step, and kept for the rest of the run; going back to
 the step reuses it, with what it knew. It is named `<task title> · <step label>`. Steps that name
 none share the run's session, named for the task. A review step always has a lane of its own,
-named for it, whether it names an agent or not, so it never judges in the session that wrote the work. The first session opened is the first step's, so
-a run whose first step names an agent never opens an unused one.
+named for it, whether it names an agent or not, so it never judges in the session that wrote the work. The first
+session opened is the first step's, so a run whose first step names an agent never opens an unused
+one.
 
 A step's lane takes its mode from the step's own `mode`, else its agent's default; the run's own
 `mode` applies to the run's session only. What a step that names no setting goes back to, its
@@ -237,10 +238,10 @@ agent step that keeps its answer; a review whose `of` or `on_reject` is anything
 agent step; a gate that cannot hold where the workflow works (`committed` in
 a checkout, `uncommitted` on a worktree); `code_changed` beside `code_unchanged`; a label used by
 an earlier step; `{check_output}` in a step no later command step sends back to, or `{revise}` in
-one no later approval or review sends back, since either would always be empty (a status checks step sends
-`{check_output}` back too); a worktree workflow with no agent step gated `committed`, whose branch
-could end with nothing on it; a forge step in a checkout workflow; a push with no command step before
-it, a pull request with no push before it, status checks with no pull request before them or an
+one no later approval or review sends back, since either would always be empty (a status checks
+step sends `{check_output}` back too); a worktree workflow with no agent step gated `committed`,
+whose branch could end with nothing on it; a forge step in a checkout workflow; a push with no
+command step before it, a pull request with no push before it, status checks with no pull request before them or an
 `on_fail` that is no earlier agent step, and a `wait` that is not a duration; on an agent step, an
 empty mode, an option with no id or no value, and an option `mode`, which is set as the step's mode.
 `mode` or `options` on any other kind of step is a key onehand does not read there.

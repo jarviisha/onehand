@@ -141,8 +141,7 @@ _Avoid_: attempt, iteration
 A named stretch of a run. An agent step prompts the session and is judged by its gates; a
 command step runs a command in the work, onehand itself; an approval step waits for a person to
 approve what an earlier step answered, or to send it back with a note; a review step has an agent
-do that instead; a forge step takes a
-worktree's branch to the forge.
+do that instead; a forge step takes a worktree's branch to the forge.
 _Avoid_: stage, phase, task
 
 **Review step**:
