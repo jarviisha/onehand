@@ -75,6 +75,16 @@ kind = "approval"
 of = "plan"
 
 [[steps]]
+id = "review"
+label = "Review"
+kind = "review"           # an agent judges an earlier step's work; written as schema_version 2
+of = "implement"          # the earlier agent step it judges
+on_reject = "implement"   # optional, where a send back goes; defaults to `of`
+agent = "Claude"          # optional: an agent of its own; else the run's
+prompt = "Review the change against the brief."
+# `mode` and `options` as an agent step's, both optional
+
+[[steps]]
 id = "verify"
 label = "Verify"
 kind = "command"          # `command = "…"`; left out, the project's check command
@@ -131,7 +141,8 @@ steps naming the same agent do not share a session, so a reviewer never judges w
 that wrote it. A step naming an agent has its session opened, unshown (in the rail, never taking
 the pane), on the run's first visit to the step, and kept for the rest of the run; going back to
 the step reuses it, with what it knew. It is named `<task title> · <step label>`. Steps that name
-none share the run's session, named for the task. The first session opened is the first step's, so
+none share the run's session, named for the task. A review step always has a lane of its own,
+named for it, whether it names an agent or not, so it never judges in the session that wrote the work. The first session opened is the first step's, so
 a run whose first step names an agent never opens an unused one.
 
 A step's lane takes its mode from the step's own `mode`, else its agent's default; the run's own
@@ -222,10 +233,11 @@ It refuses: no name, no steps, an unreadable timeout, an unsupported schema; a s
 lowercase letters, digits, `-` and `_`, or is used twice; an empty label or prompt; a prompt
 variable that is not one; `{output.<id>}` naming anything but an earlier agent step that keeps its
 answer; `on_fail` naming anything but an earlier agent step; an approval of anything but an earlier
-agent step that keeps its answer; a gate that cannot hold where the workflow works (`committed` in
+agent step that keeps its answer; a review whose `of` or `on_reject` is anything but an earlier
+agent step; a gate that cannot hold where the workflow works (`committed` in
 a checkout, `uncommitted` on a worktree); `code_changed` beside `code_unchanged`; a label used by
 an earlier step; `{check_output}` in a step no later command step sends back to, or `{revise}` in
-one no later approval sends back, since either would always be empty (a status checks step sends
+one no later approval or review sends back, since either would always be empty (a status checks step sends
 `{check_output}` back too); a worktree workflow with no agent step gated `committed`, whose branch
 could end with nothing on it; a forge step in a checkout workflow; a push with no command step before
 it, a pull request with no push before it, status checks with no pull request before them or an
@@ -260,6 +272,19 @@ the run's history, capped at 200.
   `code_unchanged` or `uncommitted` is measured again before the carry-on, and the mark keeps both
   fingerprints, because a person working in the same checkout may have made the change; the agent is
   told to undo only its own.
+- **A review step** is prompted as an agent step is, with no gates, and judged by the verdict its
+  agent gave with `review_verdict` ([control.md](control.md)) rather than by the work. onehand ends
+  its prompt with a line naming that tool. The verdict is held until the turn ends (work the turn
+  left running counts as the turn), and the last one given counts. *Approve* goes on. *Send back*
+  is a miss: the run revisits `on_reject` (default `of`), whose prompt carries the note as
+  `{revise}`, or, when it does not name `{revise}`, as `<review label> asked for changes:` and the
+  note, then its earlier answer (a person's *Revise* keeps `A person asked for changes:`). A turn
+  with no verdict is a miss too: the review is asked again, told to end by calling
+  `review_verdict`. Past the workflow's misses the run ends exhausted at the review. The review's
+  own answer is kept as `{output.<id>}`. **A review is not an approval**: nobody is waited on, the
+  run's budget runs while it works, the Tasks page shows it at work, and *Continue* and *Revise…*
+  do not apply to it; a person can still take over or Stop. A verdict from anywhere but that
+  review's own session, at that review's turn, is refused and changes nothing.
 - **A command step** runs its command, or the project's check command. It passes on its exit status
   alone and records the head as `verified_at` when the work has one; failing is a miss and goes
   back to `on_fail` carrying the output. **Its visit keeps how it came out**

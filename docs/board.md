@@ -27,7 +27,9 @@ on this machine. A project on a host has none: its issues are not kept here.
 - **A step's column** holds the board's tasks at that step: working, or ended and needing
   attention. A task whose step left the workflow gets a column after the others, named by the
   step's id. **Done** holds finished ones, newest first. A column can run its own agent: the step
-  names one, and its task works that step in a session of that agent.
+  names one, and its task works that step in a session of that agent. A column whose step is a
+  review sends tasks back on its own: its agent approves, or returns the task to an earlier
+  column with a note, and the task is drawn there again.
 - **Pulling.** When the team has room, the first issue in To do starts a task of the board's
   workflow, the brief made from the issue (`issues::supervised_brief_blocking`). The task is made
   when the issue is pulled, started off screen as a schedule's is (`task::start_off_screen`), so

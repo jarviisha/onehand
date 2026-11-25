@@ -186,21 +186,19 @@ own issues, not a new kind of item.
 
 ### Review steps
 
-- A new step kind, **review**, is an approval played by an agent: it names the step whose work it
-  judges (`of`), the step it sends back to (`on_reject`, defaulting to `of`), an agent and a
-  prompt. Its agent answers **approve**, or **send back** with a note.
-- Sending back is a new visit to the `on_reject` step with the note in its prompt, as a person's
-  *Revise* on an approval step does. Each send back is a miss, so a reviewer and a developer that
-  never agree end the run exhausted under the workflow's allowance.
-- How the agent gives its verdict must not be read from free prose. My call: a tool of onehand's
-  the review step's session is given for that step only (approve, or send back with a note), in
-  the set-of-tools way a schedule's sessions already use; a turn that ends without calling it is a
-  miss. The builder may pick another form that is as unambiguous. The tool is listed for the
-  review step's session from `session/new` and refused outside a visit to its step, rather than
-  added and removed per step: an agent may ignore `notifications/tools/list_changed`
-  (`docs/control.md`), and one that lists tools once would never see it (my call).
-- Gates stay as they are: what onehand reads from git and the transcript. A verdict is a judgment
-  asked of the agent, not a claim about the work, so it does not weaken them.
+Built as `kind = "review"` (`of`, optional `on_reject` defaulting to `of`, optional `agent`,
+`prompt`, `mode`, `options`; schema 2). Its agent answers **approve**, or **send back** with a note,
+by the tool `review_verdict`, which onehand's prompt names in a closing line.
+
+- A review always runs in a lane of its own, so it never judges in the session that wrote the work.
+- The verdict is held until the review's turn ends and the last one counts. A send back is a miss
+  and a new visit to `on_reject`, carrying the note; no verdict is a miss and the review is asked
+  again. Past the workflow's misses the run ends exhausted. A review is not an approval.
+- The tool is given to a review lane's session, with its task's tools, before its agent connects,
+  so an agent that lists tools once sees it. It is refused to an outside program, to a session
+  that is not that review's, and after the turn; a schedule's tools leave it out.
+- Gates stay as they are: a verdict is a judgment asked of the agent, not a claim about the work.
+- The behaviour is written in `docs/workflows.md` and `docs/control.md`.
 
 ### Step limits
 
