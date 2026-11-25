@@ -43,6 +43,10 @@ pub(super) struct Driven {
     drive: RunDrive,
     /// The session of each lane opened; none for a check.
     sessions: BTreeMap<Lane, Held>,
+    /// The sessions of lanes that went and were forgotten, kept on screen
+    /// for a person to read why, and closed with the rest when the run's
+    /// sessions close.
+    forgot: Vec<(u64, WeakEntity<ChatSession>)>,
     /// The window the sessions are in, or the check was asked from.
     pub(super) window: AnyWindowHandle,
     /// Set to call off the step's command, while one is running.
@@ -82,11 +86,14 @@ impl Driven {
             .map(|held| held.uid)
     }
 
-    /// The uids of every lane's session still open.
+    /// The uids of every session the run opened that is still open, the
+    /// forgotten ones' included.
     pub(super) fn uids(&self) -> Vec<u64> {
-        let open = self.sessions.values();
-        open.filter(|held| held.session.upgrade().is_some())
-            .map(|held| held.uid)
+        let held = self.sessions.values().map(|held| (held.uid, &held.session));
+        let forgot = self.forgot.iter().map(|(uid, session)| (*uid, session));
+        held.chain(forgot)
+            .filter(|(_, session)| session.upgrade().is_some())
+            .map(|(uid, _)| uid)
             .collect()
     }
 
@@ -207,6 +214,7 @@ pub(crate) fn start(
     let driven = Driven {
         drive,
         sessions: BTreeMap::from([(lane, held)]),
+        forgot: Vec::new(),
         window,
         command: None,
         _timeout: None,
@@ -242,6 +250,7 @@ pub(crate) fn start_check(task: String, start: Start, window: AnyWindowHandle, c
     let driven = Driven {
         drive,
         sessions: BTreeMap::new(),
+        forgot: Vec::new(),
         window,
         command: None,
         _timeout: None,
@@ -329,7 +338,11 @@ fn forget_lane(id: &str, lane: Lane, cx: &mut App) {
         let gone = with(&task, cx, |d| {
             let still = d.drive.current_lane() != &lane
                 && d.sessions.get(&lane).is_some_and(|held| held.uid == uid);
-            still.then(|| d.sessions.remove(&lane)).flatten()
+            let gone = still.then(|| d.sessions.remove(&lane)).flatten();
+            if let Some(held) = &gone {
+                d.forgot.push((held.uid, held.session.clone()));
+            }
+            gone
         });
         drop(gone);
     });
@@ -479,14 +492,10 @@ fn open_session(id: &str, lane: Lane, agent: String, cx: &mut App) {
                 session: session.downgrade(),
                 _subscriptions: listen(&task, &lane, &session, cx),
             };
-            // A session still held for the lane is not left in the rail
-            // with nothing driving it: it is closed.
-            let old = with(&task, cx, |d| d.sessions.insert(lane.clone(), held)).flatten();
-            if let Some(old) = old.filter(|old| old.session.upgrade().is_some()) {
-                crate::windows::with_shell(window, cx, |shell, window, cx| {
-                    shell.close_finished(old.uid, window, cx)
-                });
-            }
+            // A lane opens only once its session is forgotten, so this
+            // replaces none.
+            let old = with(&task, cx, |d| d.sessions.insert(lane.clone(), held));
+            drop(old);
         });
         feed(&task, Input::LaneOpened { lane, result }, cx);
     });

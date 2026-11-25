@@ -230,7 +230,13 @@ fn a_lane_whose_session_went_is_forgotten_and_opened_anew(cx: &mut TestAppContex
     let after = cx.update(|cx| first.read(cx).chat().items.len());
     assert_eq!(after, before, "nothing more in the session that went");
     assert!(task_on(7, cx).is_none());
-    cx.update(|cx| assert_eq!(cx.global::<Lanes>().asked, ["b", ""]));
+    cx.update(|cx| {
+        assert_eq!(cx.global::<Lanes>().asked, ["b", ""]);
+        // The forgotten session closes with the rest when they close.
+        let mut uids = cx.global::<Tasks>().driven(&id).unwrap().uids();
+        uids.sort();
+        assert_eq!(uids, [7, 8, 9]);
+    });
 }
 
 /// Let background work land until `done`.
