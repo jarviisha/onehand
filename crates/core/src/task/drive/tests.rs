@@ -1785,7 +1785,13 @@ fn limited_plan() -> Template {
 
 /// A run of [`limited_plan`] given room at its plan, prompted.
 fn in_limited_plan() -> Rig {
-    let (mut rig, _) = Rig::start(limited_plan(), None, connected());
+    in_limited(limited_plan())
+}
+
+/// A run of `template`, whose first step is limited, given room there and
+/// prompted.
+fn in_limited(template: Template) -> Rig {
+    let (mut rig, _) = Rig::start(template, None, connected());
     let fx = rig.on(Input::RoomGiven);
     assert!(names(&fx).contains(&"Pin"), "{fx:?}");
     rig.on(Input::Pinned(Ok("c0".into())));
@@ -1859,4 +1865,39 @@ fn going_back_to_the_step_it_holds_needs_no_room() {
         "{fx:?}"
     );
     assert!(!rig.drive.run().awaiting_room());
+}
+
+#[test]
+fn a_limited_last_step_leaves_its_room_before_the_run_ends() {
+    let mut template = limited_plan();
+    template.steps.truncate(1);
+    let mut rig = in_limited(template);
+    rig.turn_ends("The plan.");
+    let fx = rig.on(Input::TurnRead(Ok(facts("a", "d0"))));
+    let names = names(&fx);
+    let leave = names.iter().position(|n| *n == "LeaveRoom");
+    let finish = names.iter().position(|n| n.starts_with("Finish"));
+    assert!(leave.is_some() && leave < finish, "{fx:?}");
+}
+
+#[test]
+fn a_resumed_run_at_a_limited_step_asks_again_and_takes_it_up_from_its_mark() {
+    let rig = in_limited_plan();
+    let mut back: Run =
+        serde_json::from_str(&serde_json::to_string(rig.drive.run()).unwrap()).unwrap();
+    let first = back.resume(0);
+    assert_eq!(first, Action::AwaitRoom);
+    // The visit cut off is marked closed first; then it asks for room.
+    let (mut rig, fx) = Rig::start_run(back, first, connected());
+    assert!(!names(&fx).contains(&"AskRoom"), "{fx:?}");
+    let fx = rig.on(Input::Pinned(Ok("c0".into())));
+    assert!(names(&fx).contains(&"AskRoom"), "{fx:?}");
+    assert!(!rig.submitted());
+    // Given room, the new visit is marked and the plan asked again from the
+    // mark it kept, with nothing measured anew.
+    let fx = rig.on(Input::RoomGiven);
+    assert!(names(&fx).contains(&"Pin"), "{fx:?}");
+    let fx = rig.on(Input::Pinned(Ok("c1".into())));
+    assert!(!names(&fx).contains(&"Measure"), "{fx:?}");
+    assert!(rig.submitted(), "{fx:?}");
 }

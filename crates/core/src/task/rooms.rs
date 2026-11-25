@@ -29,9 +29,6 @@ impl Rooms {
     /// waiting ahead. One already waiting keeps its place; one asking for
     /// another step gives up the room it held.
     pub(crate) fn ask(&mut self, task: &str, key: RoomKey, limit: u32) -> Vec<String> {
-        if self.held.get(task) == Some(&key) {
-            return vec![task.to_string()];
-        }
         if self.waiting.iter().any(|(waiting, _, _)| waiting == task) {
             return Vec::new();
         }

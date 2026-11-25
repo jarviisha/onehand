@@ -175,3 +175,33 @@ fn a_run_sent_back_to_a_full_step_waits_for_it() {
     assert_eq!(flow.tasks.room_at(&key), (1, 0));
     let _ = std::fs::remove_dir_all(project);
 }
+
+#[test]
+fn a_limited_last_step_is_given_on_when_its_run_ends() {
+    let project = repo("flow-rooms-last");
+    let mut template = limited(agent_step("test", "Test", Some(1)));
+    template.steps[0].limit = None;
+    let mut flow = Flow::new(vec![template.clone()], NOW);
+    let first = flow.start(starting(&project, &template, "First"));
+    let second = flow.start(starting(&project, &template, "Second"));
+
+    // Both implement at once; the first reaches the test and holds it.
+    commits(&mut flow, &first);
+    assert!(prompts(&mut flow, &first)
+        .iter()
+        .any(|p| p.starts_with("Test it.")));
+    commits(&mut flow, &second);
+    assert_eq!(flow.tasks.waits_for_room(&second), Some("test"));
+
+    // The first ends: the second is given the test.
+    turn_ends(&mut flow, &first);
+    assert_eq!(
+        flow.tasks.task(&first).unwrap().outcome(),
+        Some(Outcome::Done)
+    );
+    assert_eq!(flow.tasks.waits_for_room(&second), None);
+    assert!(prompts(&mut flow, &second)
+        .iter()
+        .any(|p| p.starts_with("Test it.")));
+    let _ = std::fs::remove_dir_all(project);
+}

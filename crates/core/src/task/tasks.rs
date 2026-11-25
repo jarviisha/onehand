@@ -348,21 +348,21 @@ impl<W: Copy> TasksDrive<W> {
         }
     }
 
-    /// Task `id`'s run arrived at a limited step, `key`, which `limit` runs
+    /// Task `task`'s run arrived at a limited step, `key`, which `limit` runs
     /// may hold at once: it is given room now, or waits in turn.
     pub fn ask_room(&mut self, task: &str, key: RoomKey, limit: u32) -> Vec<Effect<W>> {
         let given = self.rooms.ask(task, key, limit);
         give_room(given)
     }
 
-    /// Task `id`'s run left the step it held room at: whoever waits there
+    /// Task `task`'s run left the step it held room at: whoever waits there
     /// next is given it.
     pub fn leave_room(&mut self, task: &str) -> Vec<Effect<W>> {
         let given = self.rooms.leave(task);
         give_room(given)
     }
 
-    /// The step task `id`'s run waits for room at, by its id, while it waits.
+    /// The step task `task`'s run waits for room at, by its id, while it waits.
     pub fn waits_for_room(&self, task: &str) -> Option<&str> {
         self.rooms.waits(task).map(|key| key.step.as_str())
     }
