@@ -108,8 +108,10 @@ happens when:
 - room frees at a step, whoever held it, so a task of the board held at the first step by another
   workflow's run or by a task of no board still lets a pull go on (`RoomFreed`);
 - a board task ends done, or a person stopped or took it over (`Signal::BoardEnded`, whose
-  `pull` core decides). One that ended without finishing pulls nothing: the next would most
-  likely end the same way, one after another until To do is empty;
+  `pull` core decides). One that ended without finishing pulls nothing, by the owner's choice:
+  a cause the tasks share (an agent gone, a broken workflow, a failing check) would most likely end
+  the next the same way, one after another until To do is empty, so the board waits for a person
+  instead;
 - the tasks are read at boot, and whenever the workflow library is read: at boot and on every
   reload after a workflow is saved or deleted, by a person or a tool, since a board's workflow
   may only now be on offer.
