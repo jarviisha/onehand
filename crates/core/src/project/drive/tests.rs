@@ -698,6 +698,33 @@ fn move_todo_swaps_neighbours() {
 }
 
 #[test]
+fn place_todo_inserts_a_new_issue_at_the_index() {
+    let (mut d, p) = drive_with_todo(vec![4, 9]);
+    let _ = d.place_todo(&p.id, 7, 1);
+    assert_eq!(todo_of(&d, &p), vec![4, 7, 9]);
+}
+
+#[test]
+fn place_todo_moves_an_issue_within_to_do() {
+    let (mut d, p) = drive_with_todo(vec![4, 9, 2]);
+    let _ = d.place_todo(&p.id, 2, 0);
+    assert_eq!(todo_of(&d, &p), vec![2, 4, 9]);
+}
+
+#[test]
+fn place_todo_clamps_past_the_end() {
+    let (mut d, p) = drive_with_todo(vec![4, 9]);
+    let _ = d.place_todo(&p.id, 4, 50);
+    assert_eq!(todo_of(&d, &p), vec![9, 4]);
+}
+
+#[test]
+fn place_todo_to_its_own_place_writes_nothing() {
+    let (mut d, p) = drive_with_todo(vec![4, 9, 2]);
+    assert!(d.place_todo(&p.id, 9, 1).is_empty());
+}
+
+#[test]
 fn take_todo_removes_only_named() {
     let (mut d, p) = drive_with_todo(vec![4, 9, 2]);
     let _ = d.take_todo(&p.id, &[9]);
