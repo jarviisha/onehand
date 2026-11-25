@@ -86,6 +86,12 @@ impl ProjectsDrive {
         }
     }
 
+    /// The issues of project `id`'s To do taken out to start and not yet
+    /// landed: in no list until their task is kept.
+    pub fn starting(&self, id: &ProjectId) -> impl Iterator<Item = u64> + '_ {
+        self.starting.get(id).into_iter().flatten().copied()
+    }
+
     /// Which of project `id`'s To do to start while `running` of its board
     /// tasks work, its starts on their way counted with them; none without
     /// a board.

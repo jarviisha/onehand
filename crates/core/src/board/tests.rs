@@ -221,3 +221,28 @@ fn done_closes_only_local_issue() {
     );
     assert!(!after_end(kept.get(2).unwrap(), false, true));
 }
+
+#[test]
+fn taken_holds_the_issues_of_tasks_on_the_board() {
+    let with = |id: &str, project: &str, issue: u64, outcome: Option<Outcome>| {
+        let mut t = task(id, project, 0, outcome);
+        t.origin = Some(Origin::Board {
+            project: serde_json::from_str(&format!("\"{project}\"")).unwrap(),
+            issue,
+        });
+        t
+    };
+    let mut dismissed = with("6", "p", 6, Some(Outcome::Failed("x".into())));
+    dismissed.dismissed = true;
+    let tasks = [
+        with("1", "p", 1, None),
+        with("2", "p", 2, Some(Outcome::Done)),
+        with("3", "p", 3, Some(Outcome::Failed("x".into()))),
+        with("4", "p", 4, Some(Outcome::Stopped(Stop::ByPerson))),
+        with("5", "q", 5, None),
+        dismissed,
+    ];
+    let project: ProjectId = serde_json::from_str("\"p\"").unwrap();
+    let got = taken(tasks.iter(), &project, &|_| None);
+    assert_eq!(got, HashSet::from([1, 2, 3]));
+}

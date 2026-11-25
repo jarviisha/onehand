@@ -92,6 +92,44 @@ pub fn running<'a>(
         .count()
 }
 
+/// Whether `task` stands on the board, and whether in Done: one working,
+/// ended needing attention or done does; one a person stopped or took over,
+/// or let go, does not.
+fn on_board(task: &Task, working: &dyn Fn(&str) -> Option<Working>) -> Option<bool> {
+    let ended = match working(task.id()) {
+        Some(Working::Queued | Working::Running | Working::Waiting) => None,
+        None => task.outcome(),
+    };
+    if task.dismissed() {
+        return None;
+    }
+    match ended {
+        Some(Outcome::Done) => Some(true),
+        Some(Outcome::Stopped(Stop::ByPerson | Stop::TakenOver)) => None,
+        Some(
+            Outcome::Stopped(Stop::TimedOut | Stop::LinkLost | Stop::Closed)
+            | Outcome::Exhausted { .. }
+            | Outcome::Failed(_),
+        )
+        | None => Some(false),
+    }
+}
+
+/// The issues `project`'s board tasks hold out of the Backlog: those of the
+/// tasks on the board. A task that left it gives its issue back.
+pub fn taken<'a>(
+    tasks: impl Iterator<Item = &'a Task>,
+    project: &ProjectId,
+    working: &dyn Fn(&str) -> Option<Working>,
+) -> HashSet<u64> {
+    tasks
+        .filter_map(|task| match task.board_issue() {
+            Some((of, issue)) if of == project => on_board(task, working).map(|_| issue),
+            Some(_) | None => None,
+        })
+        .collect()
+}
+
 /// The board's columns: a step each, then what is done.
 #[derive(Debug)]
 pub struct Columns<'a> {
@@ -128,25 +166,13 @@ pub fn columns<'a>(
         .collect();
     let mut done = Vec::new();
     for task in tasks {
-        let ended = match working(task.id()) {
-            Some(Working::Queued | Working::Running | Working::Waiting) => None,
-            None => task.outcome(),
-        };
-        if task.dismissed() {
-            continue;
-        }
-        match ended {
-            Some(Outcome::Done) => {
+        match on_board(task, working) {
+            None => continue,
+            Some(true) => {
                 done.push(task);
                 continue;
             }
-            Some(Outcome::Stopped(Stop::ByPerson | Stop::TakenOver)) => continue,
-            Some(
-                Outcome::Stopped(Stop::TimedOut | Stop::LinkLost | Stop::Closed)
-                | Outcome::Exhausted { .. }
-                | Outcome::Failed(_),
-            )
-            | None => {}
+            Some(false) => {}
         }
         let Some(at) = task.runs.last().and_then(|run| run.current()) else {
             continue;
