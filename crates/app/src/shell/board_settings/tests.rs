@@ -194,3 +194,59 @@ fn the_board_is_forgotten_on_another_pick_and_on_close(cx: &mut TestAppContext) 
     assert_eq!(held(cx), None, "the form closed");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[gpui::test]
+fn a_copy_the_board_cannot_use_is_said_and_one_for_a_gone_board_binds_none(
+    cx: &mut TestAppContext,
+) {
+    let dir = folder("board-copy-refused");
+    let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
+    let mut copy = offer_branch(cx);
+    copy.place = onehand_core::workflow::Place::Checkout;
+    let (a, b) = (
+        Project::new(ProjectId::mint(93), None, dir.join("a")),
+        Project::new(ProjectId::mint(94), None, dir.join("b")),
+    );
+    let (ia, ib) = (a.id.clone(), b.id.clone());
+    cx.update(|_, cx| {
+        cx.update_global::<Shared, _>(|shared, _| {
+            shared.projects = ProjectsDrive::new(Projects::from_iter([a, b]), dir.join("projects"));
+            let _ = shared.projects.set_board(
+                &ia,
+                Some(Board {
+                    workflow: BRANCH.into(),
+                    team: 3,
+                    todo: Vec::new(),
+                }),
+            );
+        })
+    });
+    let notes = |cx: &mut VisualTestContext| {
+        use gpui_component::WindowExt as _;
+        cx.update(|window, cx| window.notifications(cx).len())
+    };
+    let bind = |id: &ProjectId, cx: &mut VisualTestContext| {
+        let (id, copy) = (id.clone(), copy.clone());
+        cx.update(|window, cx| {
+            shell.update(cx, |shell, cx| shell.board_uses_copy(id, copy, window, cx))
+        });
+        cx.run_until_parked();
+    };
+    let before = notes(cx);
+    bind(&ia, cx);
+    assert_eq!(notes(cx), before + 1, "the refusal is said");
+    assert!(cx.update(|_, cx| shell.read(cx).board_refused.is_some()));
+    // No board at all: nothing is bound and nothing made.
+    let before = notes(cx);
+    bind(&ib, cx);
+    assert_eq!(notes(cx), before);
+    assert!(cx.update(|_, cx| {
+        Shared::global(cx)
+            .projects
+            .get(&ib)
+            .unwrap()
+            .board()
+            .is_none()
+    }));
+    let _ = std::fs::remove_dir_all(dir);
+}

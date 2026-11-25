@@ -4,7 +4,7 @@
 use gpui::{Context, IntoElement, ParentElement, Render, SharedString, Styled, Window, div};
 use gpui_component::ActiveTheme;
 
-/// The dragged row's own name, on the rail's hover fill. `gpui` wants an
+/// The dragged row's own name, on the sidebar's accent. `gpui` wants an
 /// entity here, so this is the smallest one that can carry a string.
 pub(crate) struct DragGhost(pub(crate) SharedString);
 

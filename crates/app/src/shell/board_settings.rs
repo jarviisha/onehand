@@ -79,6 +79,7 @@ impl Shell {
         let Some((root, name)) = crate::state::Shared::global(cx)
             .projects
             .get(&project)
+            .filter(|p| p.board().is_some())
             .map(|p| (p.path.clone(), p.name.clone()))
         else {
             return;
@@ -91,8 +92,17 @@ impl Shell {
             Some((template.id.clone(), Some(template))),
             cx,
         );
-        if self.board_refused.is_none() {
-            gpui_component::WindowExt::push_notification(window, crate::toast::success(said), cx);
+        match &self.board_refused {
+            None => gpui_component::WindowExt::push_notification(
+                window,
+                crate::toast::success(said),
+                cx,
+            ),
+            Some((_, why)) => gpui_component::WindowExt::push_notification(
+                window,
+                crate::toast::failed(&format!("Binding the copy to {name}'s board"), why),
+                cx,
+            ),
         }
     }
 
