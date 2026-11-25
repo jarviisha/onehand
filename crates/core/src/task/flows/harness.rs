@@ -252,6 +252,8 @@ impl Flow {
             | TasksEffect::RemoveWorktree { .. } => panic!("these flows remove no worktree"),
             TasksEffect::CloseSession { uids, .. } => self.closed.extend(uids),
             TasksEffect::GiveRoom { task } => self.run_input(&task, RunInput::RoomGiven),
+            // No board is played in these flows.
+            TasksEffect::RoomFreed { .. } => {}
             TasksEffect::Signal(signal) => self.said.push(format!("{signal:?}")),
             TasksEffect::Refresh => {}
         }

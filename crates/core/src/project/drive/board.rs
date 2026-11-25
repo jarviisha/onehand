@@ -114,6 +114,11 @@ impl ProjectsDrive {
         Some(crate::board::pull(
             board,
             running + starting,
+            // ponytail: a start counts here only until it lands; a task kept
+            // and not yet asking for room is counted nowhere at the first
+            // step, so a pull then may start one too many. The team cap and
+            // the room ledger still hold, so the cost is a task that waits;
+            // count a landed task until its run first asks if that bites.
             first.map(|(limit, at)| (limit, at + starting)),
             issues,
             forge,

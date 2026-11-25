@@ -497,13 +497,6 @@ fn perform(id: &str, effects: Vec<Effect>, cx: &mut App) {
             }
             Effect::LeaveRoom => {
                 super::with_drive(cx, |t| ((), t.leave_room(id)));
-                // A board's first step may have room for its To do again.
-                let board = cx
-                    .try_global::<Tasks>()
-                    .and_then(|t| t.task(id)?.board_issue().map(|(p, _)| p.clone()));
-                if let Some(project) = board {
-                    cx.defer(move |cx| crate::board::pull_now(&project, cx));
-                }
             }
         }
     }

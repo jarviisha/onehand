@@ -24,29 +24,35 @@ pub(crate) struct Rooms {
 }
 
 impl Rooms {
-    /// `task` asks for room at `key`, where `limit` may hold it: the tasks
-    /// given room now, itself among them when there was room and nobody
-    /// waiting ahead. One already waiting keeps its place; one asking for
-    /// another step gives up the room it held.
-    pub(crate) fn ask(&mut self, task: &str, key: RoomKey, limit: u32) -> Vec<String> {
+    /// `task` asks for room at `key`, where `limit` may hold it: where it
+    /// gave room up, and the tasks given room now, itself among them when
+    /// there was room and nobody waiting ahead. One already waiting keeps
+    /// its place; one asking for another step gives up the room it held.
+    pub(crate) fn ask(
+        &mut self,
+        task: &str,
+        key: RoomKey,
+        limit: u32,
+    ) -> (Option<RoomKey>, Vec<String>) {
         if self.waiting.iter().any(|(waiting, _, _)| waiting == task) {
-            return Vec::new();
+            return (None, Vec::new());
         }
-        self.held.remove(task);
+        let left = self.held.remove(task);
         self.waiting.push((task.to_string(), key, limit));
-        self.grant()
+        (left, self.grant())
     }
 
-    /// `task` holds room nowhere and waits for none: the tasks given the
-    /// room that freed.
-    pub(crate) fn leave(&mut self, task: &str) -> Vec<String> {
-        let held = self.held.remove(task).is_some();
+    /// `task` holds room nowhere and waits for none: where it held room, if
+    /// it did, and the tasks given the room that freed.
+    pub(crate) fn leave(&mut self, task: &str) -> (Option<RoomKey>, Vec<String>) {
+        let held = self.held.remove(task);
         let before = self.waiting.len();
         self.waiting.retain(|(waiting, _, _)| waiting != task);
-        match held || self.waiting.len() != before {
+        let given = match held.is_some() || self.waiting.len() != before {
             true => self.grant(),
             false => Vec::new(),
-        }
+        };
+        (held, given)
     }
 
     /// The step `task` waits for room at, while it waits.

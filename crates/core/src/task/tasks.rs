@@ -254,6 +254,10 @@ pub enum Effect<W> {
     /// Tell task `task`'s run it has room at the full step it waits before:
     /// its [`crate::task::drive::Input::RoomGiven`].
     GiveRoom { task: String },
+    /// A task held room at a step of a workflow in the repository at `repo`
+    /// and no longer does, whatever it was started by: what starts there
+    /// when room is free, as a board's To do, may look again.
+    RoomFreed { repo: PathBuf },
     /// Tell this.
     Signal(Signal<W>),
     /// What the tasks show changed: draw them again.
@@ -351,15 +355,13 @@ impl<W: Copy> TasksDrive<W> {
     /// Task `task`'s run arrived at a limited step, `key`, which `limit` runs
     /// may hold at once: it is given room now, or waits in turn.
     pub fn ask_room(&mut self, task: &str, key: RoomKey, limit: u32) -> Vec<Effect<W>> {
-        let given = self.rooms.ask(task, key, limit);
-        give_room(given)
+        give_room(self.rooms.ask(task, key, limit))
     }
 
     /// Task `task`'s run left the step it held room at: whoever waits there
     /// next is given it.
     pub fn leave_room(&mut self, task: &str) -> Vec<Effect<W>> {
-        let given = self.rooms.leave(task);
-        give_room(given)
+        give_room(self.rooms.leave(task))
     }
 
     /// The step task `task`'s run waits for room at, by its id, while it waits.
@@ -616,14 +618,17 @@ impl<W: Copy> TasksDrive<W> {
 }
 
 /// The runs given room, told so; a redraw when any were, since a task that
-/// waited no longer does.
-fn give_room<W>(given: Vec<String>) -> Vec<Effect<W>> {
+/// waited no longer does; and where room freed, if a hold was let go.
+fn give_room<W>((freed, given): (Option<RoomKey>, Vec<String>)) -> Vec<Effect<W>> {
     let mut fx: Vec<Effect<W>> = given
         .into_iter()
         .map(|task| Effect::GiveRoom { task })
         .collect();
     if !fx.is_empty() {
         fx.push(Effect::Refresh);
+    }
+    if let Some(key) = freed {
+        fx.push(Effect::RoomFreed { repo: key.repo });
     }
     fx
 }

@@ -65,6 +65,7 @@ fn name<W>(e: &Effect<W>) -> &'static str {
         Effect::RemoveWorktree { .. } => "RemoveWorktree",
         Effect::CloseSession { .. } => "CloseSession",
         Effect::GiveRoom { .. } => "GiveRoom",
+        Effect::RoomFreed { .. } => "RoomFreed",
         Effect::Refresh => "Refresh",
         Effect::Signal(signal) => match signal {
             Signal::Queued { .. } => "Signal::Queued",
@@ -106,9 +107,11 @@ fn task_of<W>(e: &Effect<W>) -> Option<&str> {
         | Effect::GiveRoom { task } => Some(task),
         Effect::Cut(start) | Effect::Keep(start) => Some(&start.task),
         Effect::JudgeRemoval(judging) => Some(&judging.task),
-        Effect::Defer(_) | Effect::CloseSession { .. } | Effect::Signal(_) | Effect::Refresh => {
-            None
-        }
+        Effect::Defer(_)
+        | Effect::CloseSession { .. }
+        | Effect::RoomFreed { .. }
+        | Effect::Signal(_)
+        | Effect::Refresh => None,
     }
 }
 
@@ -131,6 +134,7 @@ fn written<W>(e: &Effect<W>) -> Option<&Task> {
         | Effect::RemoveWorktree { .. }
         | Effect::CloseSession { .. }
         | Effect::GiveRoom { .. }
+        | Effect::RoomFreed { .. }
         | Effect::Signal(_)
         | Effect::Refresh => None,
     }
@@ -155,6 +159,7 @@ fn start_of<W>(e: Effect<W>) -> Option<OffScreen<W>> {
         | Effect::RemoveWorktree { .. }
         | Effect::CloseSession { .. }
         | Effect::GiveRoom { .. }
+        | Effect::RoomFreed { .. }
         | Effect::Signal(_)
         | Effect::Refresh => None,
     }
@@ -365,6 +370,7 @@ fn an_ended_run_holds_its_place_until_its_turn_is_over() {
         | Effect::RemoveWorktree { .. }
         | Effect::CloseSession { .. }
         | Effect::GiveRoom { .. }
+        | Effect::RoomFreed { .. }
         | Effect::Signal(_)
         | Effect::Refresh => None,
     });
@@ -795,6 +801,7 @@ fn told<W>(fx: &[Effect<W>]) -> Option<&Placed> {
         | Effect::RemoveWorktree { .. }
         | Effect::CloseSession { .. }
         | Effect::GiveRoom { .. }
+        | Effect::RoomFreed { .. }
         | Effect::Signal(_)
         | Effect::Refresh => None,
     })
@@ -1149,4 +1156,31 @@ fn room_is_counted_per_repo_workflow_and_step() {
         given(&tasks.ask_room("1", room("/a", "w", "test"), 2)),
         ["6", "1"]
     );
+}
+
+/// Where room freed, whoever held it: a task leaving the step, or ending
+/// while it held room there. A waiter leaving frees none.
+fn freed<W>(fx: &[Effect<W>]) -> Vec<&Path> {
+    fx.iter()
+        .filter_map(|e| match e {
+            Effect::RoomFreed { repo } => Some(repo.as_path()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn room_freeing_is_said_whoever_held_it() {
+    let mut tasks = TasksDrive::default();
+    tasks.add(titled("1", "First", "/a"));
+    tasks.add(titled("2", "Second", "/a"));
+    let key = room("/a", "w", "build");
+    assert!(freed(&tasks.ask_room("1", key.clone(), 2)).is_empty());
+    assert!(freed(&tasks.ask_room("2", key.clone(), 2)).is_empty());
+    assert_eq!(freed(&tasks.leave_room("1")), [Path::new("/a")]);
+    assert!(freed(&tasks.leave_room("1")).is_empty(), "freed once");
+    let mut run = tasks.task("2").unwrap().runs[0].clone();
+    run.outcome = Some(Outcome::Stopped(crate::workflow::Stop::ByPerson));
+    let fx = tasks.run_ended("2", run, usize::MAX, false, Vec::new(), WINDOW);
+    assert_eq!(freed(&fx), [Path::new("/a")], "{fx:?}");
 }
