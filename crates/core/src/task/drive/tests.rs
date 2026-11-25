@@ -1699,3 +1699,45 @@ fn a_review_runs_the_budget() {
     let fx = rig.on(Input::Elapsed(Timer::Timeout));
     assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::TimedOut)));
 }
+
+#[test]
+fn a_second_review_visit_starts_without_a_verdict() {
+    use crate::workflow::Verdict;
+    let mut template = with_a_review();
+    template.misses = 3;
+    let (mut rig, fx) = Rig::start(template, None, connected());
+    rig.until(fx, |_, fx| asks_for_session(fx));
+    rig.open(review());
+    verdict(&mut rig, &review(), Verdict::SendBack("More tests.".into())).unwrap();
+    let fx = rig.turn_ends("Not yet.");
+    // Implement again, then the review's second visit.
+    let fx = rig.until(fx, |rig, _| {
+        rig.drive.run().current().unwrap().id == "implement"
+    });
+    rig.until(fx, |rig, _| {
+        let run = rig.drive.run();
+        run.current().unwrap().id == "review" && run.awaiting_turn()
+    });
+    assert_eq!(rig.drive.run().misses, 1);
+    // Its turn gives no verdict: the one of the first visit does not count.
+    let fx = rig.turn_ends("Fine.");
+    rig.until(fx, |rig, _| rig.drive.run().misses > 1);
+    assert_eq!(rig.drive.run().misses, 2);
+    assert_eq!(rig.drive.run().current().unwrap().id, "review");
+}
+
+#[test]
+fn a_send_back_with_nowhere_to_go_is_refused() {
+    use crate::workflow::Verdict;
+    let mut template = with_a_review();
+    if let StepKind::Review { on_reject, .. } = &mut template.steps[1].kind {
+        *on_reject = Some("gone".into());
+    }
+    let (mut rig, fx) = Rig::start(template, None, connected());
+    rig.until(fx, |_, fx| asks_for_session(fx));
+    rig.open(review());
+    assert_eq!(
+        verdict(&mut rig, &review(), Verdict::SendBack("More tests.".into())),
+        Err("This review has no step to send the work back to.".into())
+    );
+}

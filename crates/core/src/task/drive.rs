@@ -297,10 +297,12 @@ impl RunDrive {
             Verdict::SendBack(note) if note.trim().is_empty() => {
                 return Err("A send back needs a note saying what to change.".to_string())
             }
-            Verdict::SendBack(_) => format!(
-                "Sent back to {}. The review ends when this turn does.",
-                self.run.rejects_to_label().unwrap_or_default()
-            ),
+            Verdict::SendBack(_) => match self.run.rejects_to_label() {
+                Some(label) => {
+                    format!("Sent back to {label}. The review ends when this turn does.")
+                }
+                None => return Err("This review has no step to send the work back to.".to_string()),
+            },
         };
         self.verdict = Some((at, verdict));
         Ok(said)
