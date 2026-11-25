@@ -32,7 +32,9 @@ running, what needs me, and what has finished.
 - **A row says where its task came from** when a person did not start it: a schedule's task reads
   with the schedule's name before its workflow's (*Nightly code review · Prompt*), one a tool
   started with *by a tool*. Kept on the task, so it
-  holds after the schedule is renamed or deleted. See [schedules.md](schedules.md).
+  holds after the schedule is renamed or deleted. See [schedules.md](schedules.md). A board's task
+  reads *from the board · <workflow>*, and fails unwatched, as a schedule's does. See
+  [board.md](board.md).
 - **History is bounded:** the most recent 200 finished tasks per project. The page says how many
   older ones were removed since onehand started.
 - **Every box is capped at 50 rows** and says how many more it left out.

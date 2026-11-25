@@ -253,23 +253,21 @@ is built, and each updates `docs/workflows.md`, `docs/tasks.md`, `docs/control.m
 
 ## Decided with the person after the review
 
-- **A board has a team size**: how many of its tasks may run at once, set by the person (for
-  example 4), from step 1. A task in To do starts when a running one finishes, ends or leaves,
-  in the person's order. Step limits (step 4) narrow it per step; they never raise it.
-- **A restart keeps To do and pulls again.** Tasks in To do never started, so they stay where
-  they are, in order, and the board pulls from them again once onehand is open. A task that had
+- **A board has a team size**: how many of its tasks may run at once, 1 to 8, 2 at first, from
+  step 1. An issue in To do is pulled when a running task finishes, ends or leaves, in the
+  person's order. Step limits (step 4) narrow it per step; they never raise it.
+- **A restart keeps To do and pulls again.** To do holds issue numbers, not tasks, so it stays
+  where it is, in order, and the board pulls from it again once onehand is open. A task that had
   started follows today's rule: it comes back interrupted under *Needs attention* and waits for
   the person's Resume, since an agent cut off mid-turn is the person's to look at first. A run
-  waiting for room at a step had started, so it comes back interrupted too. To do's order and
-  its tasks are persisted; the place queue is in memory only (`task/queue.rs`), so this is new.
+  waiting for room at a step had started, so it comes back interrupted too. To do's order is kept in `project.toml`.
 
 ## Left to the builder
 
-- Whether To do is *Queued* with an order and a new reason, or a state of its own.
 - The board's place in the window, its look, and its words, through the `ui` skill.
 - The Backlog's order, and how a task whose step left the workflow is drawn.
 - How Resume, Retry, take over and Stop cover a run with several sessions.
 - The exact form of the review verdict, if not the tool.
 - The column caps' values.
-- What happens to the issue when its task is done (closing it, or leaving it to the pull
-  request's merge on a forge).
+- What happens to the issue when its task is done (built: closed in onehand's own tracker, left
+  to the pull request's merge on a forge).

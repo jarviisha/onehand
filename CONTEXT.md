@@ -233,6 +233,27 @@ how it runs, the tools its agent may use, and when, as a cron expression; it sta
 due time while onehand is open, and once for the times it missed while it was not.
 _Avoid_: cron job, timer, job
 
+**Board**:
+A project's issues laid out as work: its *Backlog*, its *To do*, a column per step of the
+workflow it is bound to, and what is done. A person moves issues to To do, and a team of tasks of
+that workflow pulls them in order.
+_Avoid_: kanban, card, lane, ticket
+
+**Backlog**:
+The open issues of a project's own tracker that a brief can be made from and no list of the board
+holds. An issue goes back to it when its pull is refused or its task is stopped.
+_Avoid_: icebox, inbox
+
+**To do**:
+The issue numbers a person has put in order on a project's board, kept with the project; each is
+made a task when it is pulled, so none is a task before. First is pulled first.
+_Avoid_: queue (that is the places', `task/queue.rs`), ticket
+
+**Team size**:
+How many tasks of a board may work at once, 1 to 8. The board pulls from To do only while fewer
+than that run.
+_Avoid_: concurrency, WIP limit
+
 ## Issues
 
 **Tracker**:

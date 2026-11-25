@@ -39,6 +39,7 @@ The features that span core and app, each as built:
 - [docs/control.md](docs/control.md): the socket beside the instance lock, a second launch, and
   onehand's tools for an outside program or a session's agent.
 - [docs/schedules.md](docs/schedules.md): schedules, the clock, and the tasks they start.
+- [docs/board.md](docs/board.md): a project's board, its Backlog and To do, and how its team pulls them.
 - [docs/hosts.md](docs/hosts.md): host projects, the host service, attaching, builds and the
   journal a host session is read back from.
 

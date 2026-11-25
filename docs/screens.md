@@ -522,6 +522,14 @@ room and leaves the terminal as it is.
   the fields each takes, the expression in the code face and the next three times, or why it does
   not parse in the warning ink; *When it was missed* and *When the last run is still going*, each
   a switch). Problems in a bar along the page's foot, none on a new form nobody has changed.
+- *Board* (a project's, from its dots menu and the link on its project page): a head (*Board*, then
+  the project, its workflow and *team of N*); columns of one width side by side, scrolling sideways:
+  *Backlog*, *To do*, a column per step of the workflow, *Done*. Each draws 50 rows and says *N more
+  not shown*. A Backlog row's `⋯` offers *Move to To do*, a To do row's *Move up*, *Move down* and
+  *Back to Backlog*, a task's *Show task*. Empty columns say so (*Nothing to do; move an issue here
+  from the Backlog*, *Nothing at this step*, *Nothing done yet*); a board whose workflow cannot run,
+  or on a host, says why instead of its columns, and a project with none, *This project has no
+  board*.
 - *Tasks*: a head (*Tasks*), the project picker at the end of the row under it, the two kept in
   place; then four boxes two by two,
   *Needs attention*, *Running*, *Queued*, *Finished*, each with a count, an empty line and a cap,
