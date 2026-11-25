@@ -13,7 +13,6 @@ use onehand_core::chat::Chat;
 use onehand_core::task::Task;
 use onehand_core::workflow::{Outcome, Setup};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 type Up = (
     Entity<ChatSession>,
@@ -77,6 +76,11 @@ fn a_waiting_run_is_said_to_wait_for_room(cx: &mut TestAppContext) {
     assert_eq!(prompts(&mut second), 0, "the second waits, unprompted");
     assert_eq!(at("30", &project, cx), "Do");
     assert_eq!(at("31", &project, cx), "Waiting for room at Do");
+    for id in ["30", "31"] {
+        let _ = std::fs::remove_dir_all(kept(id, cx).setup().dir.clone());
+    }
+    let _ = std::fs::remove_dir_all(project);
+    let _ = std::fs::remove_dir_all(store);
 }
 
 #[gpui::test]
@@ -96,6 +100,11 @@ fn room_given_reaches_the_waiting_run(cx: &mut TestAppContext) {
     assert_eq!(kept("32", cx).outcome(), Some(Outcome::Done));
     assert_eq!(prompts(&mut second), 1);
     assert_eq!(at("33", &project, cx), "Do");
+    for id in ["32", "33"] {
+        let _ = std::fs::remove_dir_all(kept(id, cx).setup().dir.clone());
+    }
+    let _ = std::fs::remove_dir_all(project);
+    let _ = std::fs::remove_dir_all(store);
 }
 
 /// A task the board did not start fills the board's first step, so the
@@ -107,6 +116,7 @@ fn room_freed_by_any_task_makes_the_board_pull(cx: &mut TestAppContext) {
     use gpui::BorrowAppContext as _;
     use onehand_core::project::{Board, Project, ProjectId, Projects, ProjectsDrive};
     let dir = folder("room-freed-pull");
+    cx.executor().allow_parking();
     let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
     let root = dir.join("project");
     std::fs::create_dir_all(&root).unwrap();
@@ -152,8 +162,6 @@ fn room_freed_by_any_task_makes_the_board_pull(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.update(|_, cx| crate::board::pull_now(&id, cx));
     cx.run_until_parked();
-    std::thread::sleep(Duration::from_millis(100));
-    cx.run_until_parked();
     let todo = |cx: &mut gpui::VisualTestContext| {
         cx.update(|_, cx| {
             let projects = &Shared::global(cx).projects;
@@ -169,13 +177,7 @@ fn room_freed_by_any_task_makes_the_board_pull(cx: &mut TestAppContext) {
     cx.update(|_, cx| {
         crate::task::with_drive(cx, |t| ((), t.leave_room("by-hand")));
     });
-    for _ in 0..300 {
-        cx.run_until_parked();
-        if todo(cx) == Some(Vec::new()) {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    cx.run_until_parked();
     assert_eq!(todo(cx), Some(Vec::new()), "the board pulled its To do");
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -202,4 +204,5 @@ fn a_limited_columns_head_says_how_much_of_its_room_is_held(cx: &mut TestAppCont
             .collect::<Vec<_>>()
     });
     assert_eq!(heads, [("Do".to_string(), "Do · 1 of 1".to_string())]);
+    let _ = std::fs::remove_dir_all(store);
 }

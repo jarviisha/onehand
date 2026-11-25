@@ -221,7 +221,7 @@ impl StepDraft {
             kind,
             limit: cx.new(|cx| {
                 InputState::new(window, cx)
-                    .placeholder("None")
+                    .placeholder("No limit")
                     .default_value(spec.limit.map(|n| n.to_string()).unwrap_or_default())
             }),
             agent: spec.agent().map(str::to_string),
