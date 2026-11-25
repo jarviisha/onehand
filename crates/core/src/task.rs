@@ -226,6 +226,11 @@ impl Task {
         &self.source
     }
 
+    /// What its sessions' agent may use of onehand's tools.
+    pub fn grant(&self) -> &Grant {
+        &self.grant
+    }
+
     /// What started it, when that was not a person.
     pub fn origin(&self) -> Option<&Origin> {
         self.origin.as_ref()

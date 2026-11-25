@@ -7,6 +7,7 @@ use gpui::{AppContext as _, Context, Entity, SharedString, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputState, TextareaState};
 use onehand_core::preflight;
+use onehand_core::task::drive::Lane;
 use onehand_core::task::tasks::{Begin, SESSION_NOT_STARTED};
 use onehand_core::task::{Launch, Task};
 use onehand_core::workflow::{Brief, Failure, Setup, Template};
@@ -397,16 +398,24 @@ impl Shell {
         };
         let dir = start.run.setup.dir.clone();
         let mut agent_gone = false;
-        let session = match off_screen {
+        // The first session is the lane of the step the run is at: a step
+        // naming its agent opens its own, unshown wherever the run is.
+        let lane = Lane::at(&start.run);
+        let session = match (&lane, off_screen) {
+            (Lane::Step(_), _) => {
+                let agent = lane.agent(&start.run);
+                agent_gone = crate::task::facts::lane_spec(&agent, cx).is_none();
+                super::open_step_session(self, dir, &agent, cx).ok()
+            }
             // Nothing the person is looking at moves: a tool's task is on the
             // Tasks page and its session in the rail, and the caret stays
             // where it was.
-            true => {
+            (Lane::Run, true) => {
                 let spec = crate::task::facts::spec_for(start.run.setup.agent.as_deref(), cx);
                 agent_gone = spec.is_none();
                 spec.and_then(|spec| self.open_off_screen(dir, spec, Vec::new(), cx))
             }
-            false => {
+            (Lane::Run, false) => {
                 let project = crate::projects::of(&dir, cx);
                 let (idx, fx) = self
                     .window

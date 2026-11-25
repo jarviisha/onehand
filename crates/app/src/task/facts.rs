@@ -76,6 +76,15 @@ pub(crate) fn spec_for(agent: Option<&str>, cx: &App) -> Option<AgentSpec> {
     Some(onehand_core::task::run_spec(base))
 }
 
+/// The agent a lane of a run starts on: the one named `agent`, found by
+/// exact name since a step's agent never falls back, or, `agent` empty, the
+/// first configured, as a run naming none starts.
+pub(crate) fn lane_spec(agent: &str, cx: &App) -> Option<AgentSpec> {
+    let named = (!agent.is_empty()).then_some(agent);
+    let base = config::agent_or_first(&Shared::global(cx).settings.agents, named)?.clone();
+    Some(onehand_core::task::run_spec(base))
+}
+
 /// The mode a lead's worker on agent `agent` starts in.
 pub(crate) fn worker_mode(agent: &str, cx: &App) -> Option<String> {
     config::worker_mode(&Shared::global(cx).settings.agents, agent)

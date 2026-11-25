@@ -40,6 +40,7 @@ pub(crate) use offload::offload_refusal;
 mod issue_work;
 mod issues_page;
 mod off_screen;
+pub(crate) use off_screen::open_step_session;
 mod offload;
 mod page_start;
 mod pages;

@@ -247,8 +247,9 @@ pub enum Effect<W> {
         branch: Option<String>,
         window: W,
     },
-    /// Close session `uid`, in `window`: its finished schedule's task let go.
-    CloseSession { uid: u64, window: W },
+    /// Close sessions `uids`, in `window`: every session of a finished
+    /// schedule's or board's task, let go.
+    CloseSession { uids: Vec<u64>, window: W },
     /// Tell this.
     Signal(Signal<W>),
     /// What the tasks show changed: draw them again.

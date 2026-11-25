@@ -18,7 +18,9 @@ use std::process::Command;
 use std::time::Duration;
 
 mod forge;
+mod lanes;
 pub(super) use forge::connectors;
+pub(super) use lanes::open_lane;
 
 struct Blank;
 

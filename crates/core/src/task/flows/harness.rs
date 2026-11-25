@@ -10,7 +10,7 @@ use crate::chat::drive::{Effect as SessionEffect, SessionDrive};
 use crate::chat::Chat;
 use crate::schedule::drive::{Effect as ScheduleEffect, Input as ScheduleInput, ScheduleDrive};
 use crate::schedule::Schedule;
-use crate::task::drive::{link, Effect as RunEffect, Input as RunInput, RunDrive};
+use crate::task::drive::{link, Effect as RunEffect, Input as RunInput, Lane, RunDrive};
 use crate::task::tasks::link::{self as tasks_link, Seen};
 use crate::task::tasks::{
     Begin, Effect as TasksEffect, Input as TasksInput, Placed, Start, TasksDrive,
@@ -29,19 +29,31 @@ pub(super) const WINDOW: Win = 1;
 
 type Rx = tokio::sync::mpsc::UnboundedReceiver<AcpRequest>;
 
-/// A run under way, its session, and what the session's agent was sent.
+/// A run under way, and the session of each of its lanes.
 pub(super) struct Driven {
     pub(super) run: RunDrive,
+    pub(super) lanes: BTreeMap<Lane, Held>,
+}
+
+/// A lane's session, its uid, and what its agent was sent.
+pub(super) struct Held {
     pub(super) session: SessionDrive,
     pub(super) uid: u64,
-    pub(super) rx: Rx,
+    rx: Rx,
+}
+
+impl Driven {
+    fn current(&mut self) -> Option<&mut Held> {
+        self.lanes.get_mut(self.run.current_lane())
+    }
 }
 
 /// Something one drive said, still to be carried out.
 enum Work {
     Tasks(TasksEffect<Win>),
     Run(String, RunEffect),
-    Session(String, SessionEffect),
+    /// What the session of a task's lane said.
+    Session(String, Lane, SessionEffect),
     Schedule(ScheduleEffect<Win>),
 }
 
@@ -61,6 +73,8 @@ pub(super) struct Flow {
     pub(super) told: Vec<(String, Placed)>,
     /// What a person or the log was told, as the drives said it.
     pub(super) said: Vec<String>,
+    /// The sessions closed, by uid.
+    pub(super) closed: Vec<u64>,
     /// The task the clock's start under way is.
     starting: Option<String>,
     queue: VecDeque<Work>,
@@ -86,6 +100,7 @@ impl Flow {
             runs: BTreeMap::new(),
             told: Vec::new(),
             said: Vec::new(),
+            closed: Vec::new(),
             starting: None,
             queue: VecDeque::new(),
             next_id: 0,
@@ -127,20 +142,33 @@ impl Flow {
         self.settle();
     }
 
-    /// The agent of task `id`'s session says `event`.
+    /// The agent of the session task `id` works in now says `event`.
     pub(super) fn agent(&mut self, id: &str, event: AcpEvent) {
         let driven = self.runs.get_mut(id).expect("a run under way");
-        let (mut fx, _) = driven.session.apply(event, now());
-        fx.extend(driven.session.end_batch());
-        self.queue
-            .extend(fx.into_iter().map(|e| Work::Session(id.to_string(), e)));
+        let lane = driven.run.current_lane().clone();
+        let held = driven.current().expect("a session");
+        let (mut fx, _) = held.session.apply(event, now());
+        fx.extend(held.session.end_batch());
+        self.queue.extend(
+            fx.into_iter()
+                .map(|e| Work::Session(id.to_string(), lane.clone(), e)),
+        );
         self.settle();
     }
 
-    /// What task `id`'s session's agent was sent since this was last asked.
+    /// What the agent of the session task `id` works in now was sent since
+    /// this was last asked.
     pub(super) fn sent(&mut self, id: &str) -> Vec<AcpRequest> {
-        let driven = self.runs.get_mut(id).expect("a run under way");
-        std::iter::from_fn(|| driven.rx.try_recv().ok()).collect()
+        let lane = self.runs[id].run.current_lane().clone();
+        self.sent_in(id, &lane)
+    }
+
+    /// What the agent of task `id`'s `lane` was sent since this was last
+    /// asked.
+    pub(super) fn sent_in(&mut self, id: &str, lane: &Lane) -> Vec<AcpRequest> {
+        let held = self.runs.get_mut(id).expect("a run under way");
+        let held = held.lanes.get_mut(lane).expect("a session in that lane");
+        std::iter::from_fn(|| held.rx.try_recv().ok()).collect()
     }
 
     /// Carry out everything said, and everything that says in turn, until
@@ -150,7 +178,7 @@ impl Flow {
             match work {
                 Work::Tasks(effect) => self.carry_tasks(effect),
                 Work::Run(id, effect) => self.carry_run(&id, effect),
-                Work::Session(id, effect) => self.carry_session(&id, effect),
+                Work::Session(id, lane, effect) => self.carry_session(&id, &lane, effect),
                 Work::Schedule(effect) => self.carry_schedule(effect),
             }
         }
@@ -212,7 +240,7 @@ impl Flow {
             TasksEffect::JudgeRemoval(_)
             | TasksEffect::ConfirmRemoval { .. }
             | TasksEffect::RemoveWorktree { .. } => panic!("these flows remove no worktree"),
-            TasksEffect::CloseSession { .. } => {}
+            TasksEffect::CloseSession { uids, .. } => self.closed.extend(uids),
             TasksEffect::Signal(signal) => self.said.push(format!("{signal:?}")),
             TasksEffect::Refresh => {}
         }
@@ -238,42 +266,60 @@ impl Flow {
                 return self.tasks(|t| t.not_started(&id, why, kind, crate::Now::read()));
             }
         };
-        let (mut session, rx) = session();
+        let mut held = self.held();
         let Start { run, first, pinned } = start;
-        let (run, out) =
-            link::Joined::start(id.clone(), run, first, pinned, now(), Some(&mut session));
-        self.next_uid += 1;
-        self.runs.insert(
+        let (run, out) = link::Joined::start(
             id.clone(),
-            Driven {
-                run,
-                session,
-                uid: self.next_uid,
-                rx,
-            },
+            run,
+            first,
+            pinned,
+            now(),
+            Some(&mut held.session),
         );
-        self.carry_out(&id, out);
+        // The first session is the lane of the step the run starts at.
+        let lane = run.current_lane().clone();
+        let lanes = BTreeMap::from([(lane.clone(), held)]);
+        self.runs.insert(id.clone(), Driven { run, lanes });
+        self.carry_out(&id, &lane, out);
         self.tasks_input(TasksInput::Driven {
             task: id,
             started: Ok(()),
         });
     }
 
+    /// A session whose agent is up, with the next uid.
+    fn held(&mut self) -> Held {
+        let (session, rx) = session();
+        self.next_uid += 1;
+        Held {
+            session,
+            uid: self.next_uid,
+            rx,
+        }
+    }
+
+    /// Tell task `id`'s run `input`, joined with its current lane's session,
+    /// or, a person's prompt in another lane, with that lane's.
     fn run_input(&mut self, id: &str, input: RunInput) {
         let Some(driven) = self.runs.get_mut(id) else {
             return;
         };
-        let out =
-            link::Joined::new(&mut driven.run, Some(&mut driven.session)).handle(input, now());
-        self.carry_out(id, out);
+        let lane = match &input {
+            RunInput::LaneAppended { lane } => lane.clone(),
+            _ => driven.run.current_lane().clone(),
+        };
+        let session = driven.lanes.get_mut(&lane).map(|held| &mut held.session);
+        let out = link::Joined::new(&mut driven.run, session).handle(input, now());
+        self.carry_out(id, &lane, out);
     }
 
-    /// Queue what a joined call said to do: the session's, then the run's.
-    fn carry_out(&mut self, id: &str, out: link::Out) {
+    /// Queue what a joined call said to do: `lane`'s session's, then the
+    /// run's.
+    fn carry_out(&mut self, id: &str, lane: &Lane, out: link::Out) {
         self.queue.extend(
             out.session
                 .into_iter()
-                .map(|e| Work::Session(id.to_string(), e)),
+                .map(|e| Work::Session(id.to_string(), lane.clone(), e)),
         );
         self.queue
             .extend(out.run.into_iter().map(|e| Work::Run(id.to_string(), e)));
@@ -304,10 +350,23 @@ impl Flow {
             RunEffect::Signal(signal) => self.said.push(format!("{signal:?}")),
             RunEffect::Finish { .. } => {
                 let driven = self.runs.remove(id).expect("a run under way");
-                let chat: &Chat = &driven.session;
-                self.tasks(|t| {
-                    tasks_link::finished(t, &driven.run, Some((chat, driven.uid)), WINDOW)
-                });
+                let held = driven.lanes.get(driven.run.current_lane());
+                let chat = held.map(|held| &*held.session as &Chat);
+                let uids = driven.lanes.values().map(|held| held.uid).collect();
+                self.tasks(|t| tasks_link::finished(t, &driven.run, chat, uids, WINDOW));
+            }
+            // As the shell does, the lane's session opened on its agent, up.
+            RunEffect::OpenSession { lane, .. } => {
+                let held = self.held();
+                let driven = self.runs.get_mut(id).expect("a run under way");
+                driven.lanes.insert(lane.clone(), held);
+                self.run_input(
+                    id,
+                    RunInput::LaneOpened {
+                        lane,
+                        result: Ok(()),
+                    },
+                );
             }
             RunEffect::RunCommand { .. }
             | RunEffect::CallOffCommand
@@ -315,30 +374,43 @@ impl Flow {
             | RunEffect::FindPullRequest
             | RunEffect::OpenPullRequest
             | RunEffect::ReadLogs { .. }
-            | RunEffect::MarkReady { .. }
-            | RunEffect::OpenSession { .. } => {
-                panic!("these flows run no command, use no forge and name no agent")
+            | RunEffect::MarkReady { .. } => {
+                panic!("these flows run no command and use no forge")
             }
         }
     }
 
-    fn carry_session(&mut self, id: &str, effect: SessionEffect) {
+    /// Carry `effect` of task `id`'s `lane`'s session: what a lane the run
+    /// is not working in says reaches it only as that lane's.
+    fn carry_session(&mut self, id: &str, lane: &Lane, effect: SessionEffect) {
         let Some(driven) = self.runs.get_mut(id) else {
             return;
         };
+        let current = driven.run.current_lane() == lane;
+        let Some(held) = driven.lanes.get(lane) else {
+            return;
+        };
+        let session = &held.session;
         match effect {
             SessionEffect::Signal(signal) => {
-                if let Some(input) = link::input_of(&signal, &driven.run, &driven.session) {
+                let input = match current {
+                    true => link::input_of(&signal, &driven.run, session),
+                    false => link::lane_input_of(&signal, lane, &driven.run, session),
+                };
+                if let Some(input) = input {
                     self.run_input(id, input);
                 }
             }
             SessionEffect::Changed => {
-                if let Some(input) = link::notified(&driven.run, &driven.session) {
+                if let Some(input) = current
+                    .then(|| link::notified(&driven.run, session))
+                    .flatten()
+                {
                     self.run_input(id, input);
                 }
             }
             SessionEffect::Request(request) => {
-                if let Some(tx) = driven.session.agent_channel() {
+                if let Some(tx) = session.agent_channel() {
                     let _ = tx.send(request);
                 }
             }

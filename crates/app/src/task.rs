@@ -105,11 +105,11 @@ impl Tasks {
         self.live.get(id)
     }
 
-    /// The task whose run is driven on session `uid`, if one is.
+    /// The task whose run is driven on session `uid`, any lane's, if one is.
     fn task_on(&self, uid: u64) -> Option<String> {
         self.live
             .iter()
-            .find(|(_, d)| d.uid() == Some(uid))
+            .find(|(_, d)| d.on(uid))
             .map(|(id, _)| id.clone())
     }
 

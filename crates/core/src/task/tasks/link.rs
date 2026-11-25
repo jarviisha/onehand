@@ -19,21 +19,21 @@ pub fn save_run<W: Copy>(tasks: &mut TasksDrive<W>, run: &RunDrive) -> Option<Ta
     tasks.keep_run(run.task(), run.run().clone())
 }
 
-/// `run` finished, on `session` (`uid`, in `window`) if it had one: what its
-/// task does about it.
+/// `run` finished, its current lane's session `chat` if it had one, on
+/// sessions `uids` in `window`, every lane's: what its task does about it.
 pub fn finished<W: Copy>(
     tasks: &mut TasksDrive<W>,
     run: &RunDrive,
-    session: Option<(&Chat, u64)>,
+    chat: Option<&Chat>,
+    uids: Vec<u64>,
     window: W,
 ) -> Vec<Effect<W>> {
-    let chat = session.map(|(chat, _)| chat);
     tasks.run_ended(
         run.task(),
         run.run().clone(),
         run.pinned(),
         chat.is_some_and(|chat| chat.busy),
-        session.map(|(_, uid)| uid),
+        uids,
         window,
     )
 }
