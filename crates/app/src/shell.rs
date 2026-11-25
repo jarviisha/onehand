@@ -4,7 +4,7 @@
 //! is about the window rather than about one panel.
 
 use crate::chat::ChatPane;
-use crate::settings::{AgentDraft, HostDraft, SettingsPage};
+use crate::settings::{AgentDraft, HostDraft, SettingsPage, TelegramDraft};
 use crate::state::WorkspaceWindow;
 use crate::terminal::TerminalPanel;
 use crate::workbench::Workbench;
@@ -53,6 +53,7 @@ mod sessions;
 mod settings_page;
 pub(crate) use settings_page::apply_appearance;
 mod storage;
+mod telegram;
 mod workbench_slot;
 mod workers;
 mod workflows;
@@ -237,6 +238,8 @@ pub struct Shell {
     agent_form: bool,
     /// The field Settings adds a host by.
     host_draft: HostDraft,
+    /// The fields Settings sets the Telegram bridge up by.
+    telegram_draft: TelegramDraft,
     /// Each project's check command field, by root, made as its project
     /// page comes up.
     check_inputs: HashMap<PathBuf, Entity<InputState>>,

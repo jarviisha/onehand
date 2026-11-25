@@ -237,6 +237,7 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
         .or(only_builds);
     let browsing = draft.browse.as_ref().is_some_and(|browse| browse.loading);
     let browse = draft.browse.clone();
+    let rows = draft.rows.clone();
 
     Dialog::new(cx)
         .w(super::form_width(window))
@@ -333,7 +334,7 @@ pub fn add_host_project(shell: &Shell, window: &Window, cx: &mut Context<Shell>)
                 .children(
                     browse
                         .as_ref()
-                        .map(|browse| folder_list(browse, waits, &shell, cx)),
+                        .map(|browse| folder_list(browse, &rows, waits, &shell, cx)),
                 )
                 // The host's own words, or that the folder is not there: shown
                 // against the names that caused them, which is why the form
@@ -438,7 +439,14 @@ pub(crate) fn host_menu(
 
 /// The folders *Browse* listed, under *Folder*: a press on one makes it
 /// *Folder* and lists it.
-fn folder_list(browse: &Browse, waits: bool, shell: &WeakEntity<Shell>, cx: &App) -> AnyElement {
+fn folder_list(
+    browse: &Browse,
+    focus: &[gpui::FocusHandle],
+    waits: bool,
+    shell: &WeakEntity<Shell>,
+    cx: &App,
+) -> AnyElement {
+    let ring = cx.theme().ring;
     let danger = crate::theme::status_ink(cx).danger;
     let muted = cx.theme().muted_foreground;
     let meta = |line: String| div().text_xs().text_color(muted).truncate().child(line);
@@ -450,7 +458,23 @@ fn folder_list(browse: &Browse, waits: bool, shell: &WeakEntity<Shell>, cx: &App
             .h_flex()
             .items_center()
             .text_size(onehand_ui::tokens::CHROME_TEXT)
+            // A tab stop, `Enter` opening it as a press does, ringed for the
+            // keyboard only.
+            .when_some(focus.get(id), |row, focus| row.track_focus(focus))
+            .border_1()
+            .border_color(gpui::transparent_black())
+            .focus_visible(|row| row.border_color(ring))
             .child(div().min_w_0().truncate().child(name))
+            // The dialog binds `Enter` to its own confirm, which runs before a
+            // focused row's keyboard press; taking that action here, under
+            // it, opens the row instead.
+            .on_action({
+                let (shell, to) = (shell.clone(), to.clone());
+                move |_: &gpui_component::dialog::Confirm, window, cx| {
+                    let to = to.clone();
+                    let _ = shell.update(cx, |shell, cx| shell.browse_to(to, window, cx));
+                }
+            })
             .on_click(move |_: &ClickEvent, window, cx| {
                 let to = to.clone();
                 let _ = shell.update(cx, |shell, cx| shell.browse_to(to, window, cx));

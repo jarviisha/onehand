@@ -483,3 +483,41 @@ fn a_root_of_its_own_never_reads_the_working_directorys_config() {
     );
     assert_eq!(search_order(true, global), [global.to_path_buf()]);
 }
+
+#[test]
+fn a_chat_id_is_a_number_not_yet_allowed() {
+    let allowed = vec!["7".to_string()];
+    assert_eq!(
+        chat_refusal("", &allowed).as_deref(),
+        Some("A chat id is a number")
+    );
+    assert_eq!(
+        chat_refusal("abc", &allowed).as_deref(),
+        Some("A chat id is a number")
+    );
+    assert_eq!(
+        chat_refusal(" 7 ", &allowed).as_deref(),
+        Some("7 is already allowed")
+    );
+    assert_eq!(chat_refusal("-1001", &[]), None);
+}
+
+/// Telegram writes its ids plainly, so one typed with a sign or zeros is
+/// the same chat and kept as Telegram writes it.
+#[test]
+fn a_chat_id_is_kept_as_telegram_writes_it() {
+    assert_eq!(chat_id("+0123").as_deref(), Some("123"));
+    assert_eq!(chat_id(" -1001 ").as_deref(), Some("-1001"));
+    assert_eq!(chat_id("x"), None);
+    assert_eq!(
+        chat_refusal("+7", &["7".to_string()]).as_deref(),
+        Some("7 is already allowed")
+    );
+}
+
+/// Telegram numbers a group below zero.
+#[test]
+fn a_negative_chat_is_a_group() {
+    assert!(is_group_chat("-1001"));
+    assert!(!is_group_chat("42"));
+}

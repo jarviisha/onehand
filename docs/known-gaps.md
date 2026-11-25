@@ -11,8 +11,8 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   and a ring of its own.
 - **Some window behaviour has no automated test**: Settings' drafts kept across leaving the page,
   a failed write said once, and the keyboard handed back when a dialog closes. The app runs
-  window tests through gpui's harness (the terminal dock, the Workbench panel), but none covers
-  these; they are checked by hand.
+  window tests through gpui's harness (the terminal dock, the Workbench panel, dialogs, saves and
+  Settings among them), but none covers these; they are checked by hand.
 - **A submenu's row is lettered a step larger.** The library draws it itself, past `menu_row`,
   at its own size, so *Change scope* in the Plugins mode's ⋯ stands a step over the rows around
   it. Fixing it means submenus of the app's own. For the same reason a group's heading in a menu
@@ -28,12 +28,9 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   number.** Issues an earlier build kept per workspace and per folder were merged into one file
   per project, and an issue of onehand's own whose number was taken took the next one; what named
   it by its old number (another issue's body, a note) still says the old one.
-- **A project onehand keeps is never deleted.** Removing it from a workspace leaves its file in
-  `projects/` in the config directory, so adding its folder again finds its name and the rest
-  back; nothing yet deletes a project, and its file stays when no workspace holds it.
-- **A worker on a folder no project holds makes a project of it.** The folder is placed as any
-  folder added is, and the project it becomes stays in `projects/` once the worker is gone; nothing
-  marks it as made for a worker.
+- **A project onehand keeps is never deleted.** Removing it from a workspace leaves its folder in
+  `projects/` in the config directory, so adding its folder on disk again finds its name and the
+  rest back; nothing yet deletes a project, and its folder there stays when no workspace holds it.
 - **A project folder moved or renamed on disk is not followed.** The project is kept by an id, not
   by its folder, but nothing yet points it at the folder's new place: the moved folder comes back
   as a project of its own.
@@ -46,11 +43,6 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   folders above it.
 - **Dragging a rail row has no edge autoscroll**, and the keyboard's row in the rail is not
   scrolled into view. A project past the bottom of a full rail has to be scrolled to first.
-- **A button whose words are its children is announced as nothing.** The library names a button by
-  its `.label` alone, so the composer's model, effort, mode and branch chips, `tab_select`'s tabs,
-  an ask card's *Skip* and the rail's auto-run pill read on screen and say nothing to a screen
-  reader. Icon-only buttons are named through `named`; these need an `accessibility_label` with
-  the words they draw, or a label in place of their children.
 - **A session's age on the rail starts again at every launch.** It counts from when the session
   took its present state, and that moment is kept in memory only: an archive records when a
   conversation last changed, not when it last changed state.
@@ -84,8 +76,8 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   the same span machinery a drag-selection across blocks would need; the two should be built
   together or not at all.
 - **A lost adapter is reported by the rail's mark and its own transcript alone.** The transcript
-  ends on a *Disconnected* notice with the Restart key, and the remote chat hears of it where one
-  is set up; the conversation header used to carry the same condition in words, and the badge
+  ends on a *Disconnected* notice with the Restart key, a worker's lead counts it in its workers
+  chip, and the remote chat hears of it where one is set up; the conversation header used to carry the same condition in words, and the badge
   that did went with everything else that row was saying twice. It is deliberately kept off the
   desktop too — an agent that has stopped answering is a standing condition rather than news, and
   a notification for one would fire again on every reconnection attempt. So with the rail hidden
@@ -94,15 +86,13 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   the mark back on the header for that one condition — not the whole badge, since what the badge
   otherwise said is on the running line already — or to let this one kind of news reach the desktop
   after all, which means deciding how often it may repeat.
-- **No command palette** (`Ctrl+Shift+P`). It is a feature — a command registry plus a filtered
-  popup — not a keymap entry.
 - **The completion popup has no argument step.** A command that takes one is accepted like any
   other and leaves the caret after it; there is no chip for the chosen command, no trailing chevron
   saying an argument is coming, and no Backspace-returns-to-the-list. `Tab` accepts the highlighted
-  row rather than completing the common prefix. The keys that do work — `Up`/`Down` wrapping,
-  `Enter`, `Esc`, and a click, which go through one router so neither can act where the other
-  cannot — are bound `ChatComposer > Input` and claimed only while a list is open, since gpui's
-  dispatch reaches the focused input before any outer wrapper.
+  row rather than completing the common prefix. `Up`/`Down` wrapping and `Tab` are bound
+  `ChatComposer > Input` and claimed only while a list is open, since gpui's dispatch reaches the
+  focused input before any outer wrapper; `Enter`, `Esc` and a click reach the list through the
+  composer's own handling.
 - **An accepted mention is plain text, not a token.** It inserts the whole path, so a long one is
   as wide as it reads; there is no single-unit deletion and no hover carrying the full path. That
   needs the input to own a span it treats atomically, which `Input` does not offer.
@@ -169,11 +159,13 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   `TextSelectionRun`: a document-wide selection spanning arbitrary elements, which is what
   `TextView` itself is built on, on top of `TextLayout::index_for_position`. It keeps the diff's
   columns, needs no per-message state and steals no focus, and costs one custom element: a hitbox,
-  runs projected from a `TextLayout`, and the highlight painted behind the glyphs.
+  runs projected from a `TextLayout`, and the highlight painted behind the glyphs. For plain text
+  the library already ships that element, `gpui_base::SelectableText`, which joins one selection
+  across elements through `with_handle`; a diff's columns would still need their own.
 - **`path:line:col` tokens in agent prose are not clickable.** The transcript renders prose through
   a cached markdown `TextViewState` and does not scan it for path tokens. Only a tool card's path
   header opens a file, and it carries no line — ACP's diff payload has no hunk offsets, and core
-  does not read a tool call's `locations`. Core holds no parser for
+  reads a tool call's `locations` only as paths, on a permission request, for its Cards level. Core holds no parser for
   these tokens either: the feature is the detection pass, and a parser written ahead of it is a
   guess at an interface nobody has designed.
 - **A fenced code block inside prose has no header, and cannot fold independently.** What the
@@ -269,7 +261,8 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   host.**
 - **Markdown, Neovim, Issues and Plugins are not offered on a host project.** Markdown would need
   its document index walked on the host; Neovim, Issues and Plugins are this machine's.
-- **A host call times out after 30 s**, so a git status slower than that reads as no status.
+- **Most host calls time out after 30 s**, so a git status slower than that reads as no status.
+  A clone waits 15 minutes and a branch mirror's merge 5.
 - **A lost host is attached again by itself only while a session read from the copy or the
   project page's kept list is shown for it,** and by the Workbench for the files it shows. A host
   lost with nothing of that on screen is tried again when something on it is shown, and the rail's
@@ -302,14 +295,15 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   rebuilds here what the host built.
 - **Routed builds go from a Linux machine to a Linux host only.** The shim is POSIX `sh`, and
   another system would compile other code for the same project.
-- **Settings' suggested routed commands are read once per folder per launch,** so a `Cargo.toml`
-  added later is not offered until onehand starts again.
+- **Settings' suggested routed commands are read once per folder per window,** so a `Cargo.toml`
+  added later is not offered until another window opens or onehand starts again.
 - **`build_on_host` builds the project's own folder,** never a worktree: an agent in a worktree
   of its own runs `onehand --build` from its shell. Its answer carries the last 200 lines, not
   the lines as they come, and no tool can stop a build once asked.
 - **Only a build's command has a limit.** Making the folder, the push and the artifacts' way back
   wait as long as ssh does once connected. An agent whose own tool call gives up first leaves the
-  build running, and a second ask is refused as already running until it ends.
+  build running, and a second ask by a tool or `--build` is refused as already running until it
+  ends; a routed command waits for it instead, as long as a build's command may run.
 - **A build's folder on a host is never pruned.** `~/.onehand-build` there keeps one per working
   folder, a removed worktree's included, until a person deletes it.
 - **No page lists builds.** One is seen where it was asked: a terminal, or a tool's answer.
@@ -341,8 +335,8 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
 - **A host whose data directory was wiped can reuse a session id.** A session's copy is matched to
   the host's journal by length alone, so the new one's lines after the old copy's last seq would
   be taken for the old one's. The ids are `<seconds>-<n>`, so a collision is unlikely.
-- **A local and a host project on one path share the rail's state for that path.** Their fold, their
-  place in the order the rail keeps, the keyboard's row and the terminal dock's open state are kept
+- **A local and a host project on one path share the rail's state for that path.** Their fold, the
+  keyboard's row, the session order `Ctrl+Tab` cycles and the terminal dock's open state are kept
   by path alone, so folding one folds the other. Pins and check commands are kept per host and path. The Workbench's per-path state is shared too: removing either project
   forgets, and counts in its unsaved warning, the other's Editor buffers and Files tree, and a
   file reopened from the other side's tab shows that machine's text (a save still goes only to the
@@ -374,16 +368,10 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   starts the agent anyway, so a session closed before it was up leaves one idle agent on the host,
   listed on the project's page and attachable again. Cancelling an open needs a call the host
   service does not take yet.
-- **The rows of the host's sessions on a host or offloaded project's page take no keyboard
-  focus**; they are reached by pointer only. Making each row a tab stop with `Enter` opening it
-  would fix it.
 - **A clone running past 15 minutes reads as failed on the laptop while git may go on.** The
   laptop gives up waiting after `CLONE_WAIT`, but the host service sets no deadline of its own on
   `git clone`, so the clone can finish there, leaving the folder, which the form's next *Clone*
   then refuses as already there. A host-side deadline, or a call to cancel one, would close it.
-- **The folder rows in *Add a project on a host* take no keyboard focus.** They are reached by
-  pointer only, as the Files tree's rows are; *Browse* and the caret are tab stops, the rows are
-  not. Typing the path in the field is the keyboard's way.
 - **The host menu reads a plain subset of `~/.ssh/config`.** An `Include` globs only `*` in the
   file name, not `?` or `[]`, and the hosts of a `Match` block are not offered; an alias ssh would
   resolve that way is typed instead.
@@ -448,10 +436,9 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   - The bodies of `perform_now` that read a window or start async work are the tools' carrier's;
     where a call lands and what it is refused for are core's.
   - The keymap's save goes through `saves::write_config`: the keymap is the front end's.
-  - What a pull request review was read as is kept by the tasks' carrier until its question
-    (`Tasks.reviews`): it holds a connector, which no effect carries.
-  - `submit_told` stays in the tasks' carrier for the app's tests: it needs the carrier's own
-    record of who asked to be told.
+  - Whoever asked to be told where a task's request landed (`start_off_screen`, which onehand's
+    tools call) is kept by the tasks' carrier (`Tasks.told`): it is a channel back to the caller,
+    which no effect carries.
   - `hosts::attach_waiting` waits out a busy host and attaches again in `HostDrive`'s carrier,
     for the terminal dock, the Workbench and the folder list; what a failed attach comes to is
     core's (`HostFailure::after_attach`).

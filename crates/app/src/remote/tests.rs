@@ -173,3 +173,31 @@ fn a_restart_drops_the_old_pump(cx: &mut TestAppContext) {
     cx.update(|cx| receive(line("/sessions"), cx));
     assert_eq!(said(&new), ["No sessions are open."]);
 }
+
+/// A token written starts the bridge again, looking for it.
+#[gpui::test]
+fn a_token_written_starts_the_bridge(cx: &mut TestAppContext) {
+    let _rx = bridge(cx);
+    cx.update(|cx| feed(Input::TokenWritten(Ok(())), cx));
+    assert_eq!(
+        cx.update(|cx| Shared::global(cx).remote.drive.state().clone()),
+        BridgeState::Connecting { retrying: None }
+    );
+    assert!(cx.update(|cx| Shared::global(cx).remote.channel.is_none()));
+}
+
+/// Switched off from Settings, the channel and its pump go at once.
+#[gpui::test]
+fn switching_off_lets_the_channel_go(cx: &mut TestAppContext) {
+    let _rx = bridge(cx);
+    cx.update(|cx| shown(&onehand_core::config::drive::Value::TelegramOn(false), cx));
+    let bridge = cx.update(|cx| {
+        let remote = &Shared::global(cx).remote;
+        (
+            remote.channel.is_none(),
+            remote.pump.is_none(),
+            remote.drive.state().clone(),
+        )
+    });
+    assert_eq!(bridge, (true, true, BridgeState::Off));
+}

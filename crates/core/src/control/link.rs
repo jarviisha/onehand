@@ -12,7 +12,11 @@ pub fn shown(control: &mut ControlDrive, value: &Value) {
         Value::Outside(on) => {
             control.set_outside(*on);
         }
-        Value::Appearance(_) | Value::Agents | Value::Hosts => {}
+        Value::Appearance(_)
+        | Value::Agents
+        | Value::Hosts
+        | Value::TelegramOn(_)
+        | Value::TelegramChats(_) => {}
     }
 }
 

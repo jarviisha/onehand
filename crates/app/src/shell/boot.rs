@@ -2,7 +2,7 @@ use super::drafts::answered;
 use super::settings_page::apply_appearance;
 use super::{CloseGuard, FocusedPanel, Shell, init_keymap};
 use crate::chat::ChatPane;
-use crate::settings::{AgentDraft, HostDraft, SettingsPage};
+use crate::settings::{AgentDraft, HostDraft, SettingsPage, TelegramDraft};
 use crate::state::{Shared, WorkspaceWindow};
 use crate::terminal::TerminalPanel;
 use crate::workbench::Workbench;
@@ -474,6 +474,7 @@ impl Shell {
             agent_draft: AgentDraft::new(window, cx),
             agent_form: false,
             host_draft: HostDraft::new(window, cx),
+            telegram_draft: TelegramDraft::new(window, cx),
             settings_page: SettingsPage::default(),
             settings_project: None,
             page_starts: Default::default(),

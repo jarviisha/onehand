@@ -39,7 +39,7 @@ mod font;
 pub use font::{resolve_monospace, FontConfig};
 
 mod secret;
-pub use secret::secret;
+pub use secret::{remove_secret, secret, write_secret};
 
 mod state;
 pub use state::AppState;
@@ -137,7 +137,7 @@ pub struct RemoteConfig {
 }
 
 /// `[remote.telegram]` — everything about the Telegram bridge **except the
-/// token**, which deliberately has no key here at all. See [`token_sources`].
+/// token**, which deliberately has no key here at all. See [`secret()`].
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TelegramConfig {
@@ -156,8 +156,33 @@ pub struct TelegramConfig {
     /// strings — Telegram numbers its chats, the next channel will not.
     pub allowed_chats: Vec<String>,
     /// The environment variable the bot token is read from, when the default
-    /// name does not suit. See [`token_sources`].
+    /// name does not suit. See [`secret()`].
     pub token_env: Option<String>,
+}
+
+/// Why what was typed cannot be added to the allowed chats: it is not a chat
+/// id, or it is one already allowed. Telegram numbers its chats, a group's
+/// below zero.
+pub fn chat_refusal(typed: &str, allowed: &[String]) -> Option<String> {
+    let Some(id) = chat_id(typed) else {
+        return Some("A chat id is a number".into());
+    };
+    allowed
+        .iter()
+        .any(|listed| listed.trim() == id)
+        .then(|| format!("{id} is already allowed"))
+}
+
+/// Whether `id` is a group: Telegram numbers groups below zero, and a group
+/// admits only the members listed too.
+pub fn is_group_chat(id: &str) -> bool {
+    id.trim().starts_with('-')
+}
+
+/// What was typed as a chat id, as Telegram writes it: `+0123` is chat
+/// `123`, and a list keeping it as typed would never match the chat.
+pub fn chat_id(typed: &str) -> Option<String> {
+    typed.trim().parse::<i64>().ok().map(|id| id.to_string())
 }
 
 /// `[control]` — who may use onehand's tools from outside a window.

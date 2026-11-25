@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 mod host;
+pub(super) use host::focus_rows as host_rows;
 mod offload_box;
 mod worktrees_box;
 
@@ -82,6 +83,10 @@ pub(super) struct EmptyProject {
     /// row is a tab stop, so the keyboard reaches its *Delete…* as the pointer
     /// does.
     pub(super) rows: Vec<FocusHandle>,
+    /// One focus handle per session of its host the page lists, by place, so
+    /// the keyboard opens one with `Enter` as the pointer does; none on a
+    /// page with no host.
+    pub(super) host_rows: Vec<FocusHandle>,
 }
 
 impl EmptyProject {
@@ -595,9 +600,12 @@ impl ChatPane {
             .v_flex()
             .gap_4()
             .w_full()
-            .children(project.host.as_ref().map(|host| {
-                host::host_sessions(host, project.cwd(), &project.listed, project.listing, cx)
-            }))
+            .children(
+                project
+                    .host
+                    .as_ref()
+                    .map(|host| host::host_sessions(host, project, cx)),
+            )
             // An offloaded project's conversations from before it went stay
             // readable here, under the host's.
             .children((project.host.is_none() || project.mirror.is_some()).then_some(history))

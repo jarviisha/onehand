@@ -11,9 +11,12 @@
 //! a bug report, because it holds the agent list. And it is world-readable by
 //! default, because everything else in it is a preference.
 //!
-//! So the token is read and never written, by the rule every credential is
-//! read by ([`onehand_core::config::secret`]): `$ONEHAND_TELEGRAM_TOKEN` (or
-//! the variable `token_env` names) first, then [`token_file`].
+//! So the token is read by the rule every credential is read by
+//! ([`onehand_core::config::secret`]): `$ONEHAND_TELEGRAM_TOKEN` (or the
+//! variable `token_env` names) first, then [`token_file`]. **The one place it
+//! is written is that file**, owner-only, when Settings saves it
+//! ([`onehand_core::config::write_secret`]); it is never written to the
+//! config, never logged and never shown back.
 
 use onehand_core::config::{TelegramConfig, config_dir};
 use onehand_core::remote::TokenSource;

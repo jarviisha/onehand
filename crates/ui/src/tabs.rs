@@ -71,6 +71,8 @@ pub fn tab_select(
         .max_w(TAB_MAX_W)
         .tooltip(hint)
         .dropdown_caret(true)
+        // Children and not `label`, so it truncates; named here instead.
+        .accessibility_label(label.clone())
         .child(gpui::div().min_w_0().truncate().child(label))
 }
 

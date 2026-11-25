@@ -424,6 +424,7 @@ impl AskForm<'_> {
                 crate::controls::action(("ask-skip", idx))
                     .quiet(cx)
                     .short()
+                    .accessibility_label("Skip")
                     .child(labelled("Skip", &super::PinnedSkip, cx))
                     .tooltip_with_action(
                         "Skip this question",
