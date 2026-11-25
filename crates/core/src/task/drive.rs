@@ -50,7 +50,7 @@ use lanes::LaneState;
 pub use lanes::{Lane, NotOpened};
 use pin::{Answer, Held};
 pub(crate) use signals::Asked;
-pub use signals::{Effect, Input, Signal, Timer};
+pub use signals::{Aim, Effect, Input, Signal, Timer};
 
 /// A run under way, on its sessions: one for the run, and one for each
 /// step naming its agent.

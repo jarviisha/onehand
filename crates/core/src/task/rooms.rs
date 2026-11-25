@@ -19,7 +19,7 @@ pub struct RoomKey {
 impl RoomKey {
     /// The room of `template`'s step at `at`, for runs in `repo`; none
     /// past its steps.
-    pub fn at(repo: &Path, template: &Template, at: usize) -> Option<Self> {
+    pub(crate) fn at(repo: &Path, template: &Template, at: usize) -> Option<Self> {
         Some(Self {
             repo: repo.to_path_buf(),
             workflow: template.id.clone(),

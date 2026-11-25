@@ -21,7 +21,7 @@ use gpui_component::WindowExt as _;
 use onehand_core::Now;
 use onehand_core::chat::Chat;
 use onehand_core::task::drive::link::{self, Joined, Out};
-use onehand_core::task::drive::{Effect, Input, Lane, NotOpened, RunDrive, Signal, Timer};
+use onehand_core::task::drive::{Aim, Effect, Input, Lane, NotOpened, RunDrive, Signal, Timer};
 use onehand_core::task::tasks::{Start, link as tasks_link};
 use onehand_core::task::{Approval, marks};
 use onehand_core::workflow::{Facts, Mark, Run, Verdict, run_command_blocking};
@@ -326,17 +326,14 @@ pub(super) fn with<R>(id: &str, cx: &mut App, act: impl FnOnce(&mut Driven) -> R
 /// Tell task `id`'s run what happened, with its session as it stands, and do
 /// what it says.
 pub(super) fn feed(id: &str, input: Input, cx: &mut App) {
-    // A person's prompt in another lane is read with that lane's session.
-    let lane = match &input {
-        Input::LaneAppended { lane } => Some(lane.clone()),
-        _ => None,
-    };
-    // Another lane's session that went is forgotten, so nothing the run
+    // A person's prompt in another lane is read with that lane's session;
+    // another lane's session that went is forgotten, so nothing the run
     // asks before the lane opens again reaches it, and what it says no
     // longer moves the run.
-    let forget = match &input {
-        Input::LaneGone { lane } => Some(lane.clone()),
-        _ => None,
+    let (lane, forget) = match input.aim() {
+        Aim::Current => (None, None),
+        Aim::Speaks(lane) => (Some(lane.clone()), None),
+        Aim::Gone(lane) => (None, Some(lane.clone())),
     };
     give_in(id, lane, cx, move |run, now| run.handle(input, now));
     if let Some(lane) = forget {

@@ -78,6 +78,50 @@ pub enum Input {
     },
 }
 
+/// Whose session an [`Input`] is read with, and what becomes of it after.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Aim<'a> {
+    /// The current lane's session.
+    Current,
+    /// A person's prompt in another lane: that lane's session.
+    Speaks(&'a Lane),
+    /// That lane's session went: it is forgotten once the run has been told.
+    Gone(&'a Lane),
+}
+
+impl Input {
+    /// Whose session this is read with, so a front end joins the right one.
+    pub fn aim(&self) -> Aim<'_> {
+        match self {
+            Self::Appended
+            | Self::TurnEnded
+            | Self::AwaitingUser
+            | Self::Disconnected
+            | Self::NotTaken
+            | Self::SessionGone
+            | Self::PicksAnswered
+            | Self::RoomGiven
+            | Self::Notified
+            | Self::PickRefused(_)
+            | Self::Pinned(_)
+            | Self::Measured(_)
+            | Self::TurnRead(_)
+            | Self::CommandExited(_)
+            | Self::Pushed(_)
+            | Self::PullRequestFound(_)
+            | Self::PullRequestOpened(_)
+            | Self::LogsRead(_)
+            | Self::MarkedReady(_)
+            | Self::NoForge(_)
+            | Self::Elapsed(_)
+            | Self::Saved(_)
+            | Self::LaneOpened { .. } => Aim::Current,
+            Self::LaneAppended { lane } => Aim::Speaks(lane),
+            Self::LaneGone { lane } => Aim::Gone(lane),
+        }
+    }
+}
+
 /// What a run waits for on a clock. Each has one clock, which arming again
 /// replaces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
