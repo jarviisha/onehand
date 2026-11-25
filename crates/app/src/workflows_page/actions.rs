@@ -50,8 +50,12 @@ impl WorkflowsPage {
             return;
         };
         template.name = format!("{} copy", template.name);
-        // A copy of a board's workflow is still for that board.
-        let for_board = self.for_board.clone();
+        // A copy of a board's built-in workflow, the one open, is still for
+        // that board: a built-in one cannot be changed but by a copy. A copy
+        // of any other is the person's own, and leaves the board as it is.
+        let shipped_open =
+            self.picked.as_ref() == Some(pick) && self.draft.as_ref().is_some_and(|d| d.shipped);
+        let for_board = self.for_board.clone().filter(|_| shipped_open);
         self.open_workflow_form(template, None, for_board, window, cx);
     }
 
@@ -332,6 +336,7 @@ impl WorkflowsPage {
         let file = draft.file.clone();
         // A copy's first save, of a board's workflow, binds it to the board.
         let for_board = file.is_none().then(|| self.for_board.clone()).flatten();
+        // Any save of the form ends what it was opened from the board for.
         // Which form this save is for: each form is made anew, with inputs of
         // its own, so its name input says which one it is.
         let form = draft.name.entity_id();
@@ -357,8 +362,8 @@ impl WorkflowsPage {
                             draft.file = Some(path.clone());
                             draft.original = written.clone();
                             page.picked = Some(Pick::Own(path));
+                            page.for_board = None;
                             if let Some(for_board) = for_board {
-                                page.for_board = None;
                                 cx.emit(super::WorkflowsPageEvent::Duplicated {
                                     for_board,
                                     template: written,
@@ -425,6 +430,7 @@ impl WorkflowsPage {
                 if gone.is_ok() && page.picked == Some(Pick::Own(file.clone())) {
                     page.draft = None;
                     page.picked = None;
+                    page.for_board = None;
                 }
                 crate::toast::report(
                     window,

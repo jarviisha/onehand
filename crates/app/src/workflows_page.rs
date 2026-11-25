@@ -137,6 +137,7 @@ impl WorkflowsPage {
     /// Drop the workflow being written, saved or not.
     pub(crate) fn drop_draft(&mut self, cx: &mut Context<Self>) {
         self.draft = None;
+        self.for_board = None;
         cx.notify();
     }
 

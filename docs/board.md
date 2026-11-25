@@ -19,9 +19,11 @@ on this machine. A project on a host has none: its issues are not kept here.
   both open the Workflows page on the board's workflow, the second with that step open, asking
   first when the form there holds changes not saved. *Settings ▸ Projects ▸ Board* has the same
   *Edit workflow* beside its menu. A built-in workflow opens read-only, with its *Duplicate to
-  edit*; a duplicate begun there and saved for the first time becomes that board's workflow,
-  team and To do kept, and a toast says *<project>'s board now uses <copy name>.* No other board
-  changes, and the page forgets the board once another workflow is opened or the form is closed.
+  edit*; that duplicate, saved for the first time, becomes that board's workflow, team and To do
+  kept, and a toast says *<project>'s board now uses <copy name>.* Only a copy of a built-in
+  workflow rebinds: one of the person's own is edited in place, and a copy of it leaves the board
+  as it is. No other board changes, and the page forgets the board on any save, once another
+  workflow is opened, or when the form is closed.
   A board whose workflow is gone draws no *Edit workflow*.
 - **The page.** *Board* in a project's dots menu, and the link on the project's page (*Board · N
   running · M to do*), open it. Columns side by side, scrolling sideways: *Backlog*, *To do*, a

@@ -59,6 +59,16 @@ impl WorkflowsPage {
         }
     }
 
+    /// The board the workflow open was opened from.
+    pub(crate) fn for_board(&self) -> Option<&ProjectId> {
+        self.for_board.as_ref()
+    }
+
+    /// Pick the workflow of id `id`, as its card does.
+    pub(crate) fn pick_id(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.pick(super::pick::Pick::Shipped(id.to_string()), window, cx);
+    }
+
     /// Open a duplicate of the workflow open.
     pub(crate) fn duplicate_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(pick) = self.picked.clone() {

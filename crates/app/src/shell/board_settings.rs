@@ -75,6 +75,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.board_refused = None;
         let Some((root, name)) = crate::state::Shared::global(cx)
             .projects
             .get(&project)
@@ -82,7 +83,7 @@ impl Shell {
         else {
             return;
         };
-        let said = format!("{name}'s board now uses {}.", template.name);
+        let said = now_uses(&name, &template.name);
         // Passed as written: the list on offer is read again only after.
         self.unbind_or_bind(
             root,
@@ -153,6 +154,11 @@ impl Shell {
         crate::board::pull_now(&id, cx);
         cx.notify();
     }
+}
+
+/// What a board bound to a copy of its workflow says.
+fn now_uses(project: &str, copy: &str) -> String {
+    format!("{project}'s board now uses {copy}.")
 }
 
 #[cfg(test)]
