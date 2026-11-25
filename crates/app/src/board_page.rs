@@ -73,6 +73,8 @@ enum Column {
 pub(crate) enum BoardPageEvent {
     /// Show task `id` in full, on the Tasks page.
     OpenTask(String),
+    /// Do to a task what the Tasks page would.
+    Task(crate::tasks_page::TasksPageEvent),
     /// Open the settings of the project at this folder, where its board is
     /// bound.
     ProjectSettings(PathBuf),
@@ -438,31 +440,32 @@ impl BoardPage {
     }
 
     /// A row of a task: its title over what it waits on, as the Tasks page
-    /// sorts it, and how it ended or where it is when that is not the
-    /// column it stands in. Pressed, it opens the task.
+    /// sorts it and its detail says it, and where it is when that is not the
+    /// column it stands in. Pressed, it opens the task; its `⋯` and
+    /// right-click offer the Tasks page's acts beside.
     fn task_row(&mut self, column: &str, row: Row, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let attention = row.group.section() == Section::NeedsAttention;
-        let word = match row.group.section() {
-            // Its words say it waits, which *Running* would contradict.
-            Section::Running if row.waits_for_room => None,
-            Section::NeedsAttention => Some("Needs attention"),
-            Section::Running => Some("Running"),
-            Section::Queued => Some("Queued"),
-            Section::Finished => None,
-        };
-        let at = (row.at != column).then_some(row.at.as_str());
-        let said = word
-            .into_iter()
-            .chain(at)
-            .filter(|part| !part.is_empty())
-            .collect::<Vec<_>>()
-            .join(" · ");
-        let ink = match attention {
+        let said = task_line(&row, column);
+        let ink = match row.group.section() == Section::NeedsAttention {
             true => crate::theme::status_ink(cx).warning,
             false => cx.theme().muted_foreground,
         };
         let open = open_task(&row.id, cx);
-        let acts = acts([("Show task", open.clone())]);
+        let page = cx.entity().downgrade();
+        let acts: Rc<[RowAct]> = task_offers(&row)
+            .into_iter()
+            .map(|act| match act {
+                None => RowAct::new("Show task", open.clone()),
+                Some(act) => {
+                    let (event, page) = (act.event(&row), page.clone());
+                    let press: onehand_ui::Press = Rc::new(move |_, _, cx| {
+                        if let Some(event) = event.clone() {
+                            let _ = page.update(cx, |_, cx| cx.emit(BoardPageEvent::Task(event)));
+                        }
+                    });
+                    RowAct::new(act.label(), press)
+                }
+            })
+            .collect();
         self.row(
             RowKey::Task(row.id.clone()),
             row.title,
@@ -628,6 +631,43 @@ fn refusal(
         .into_any_element()
 }
 
+/// The line under a board task's title: needing attention, running or
+/// queued as the Tasks page sorts it, then what it waits on a person for or
+/// why it ended, or else the step it is at when that is not `column`. One
+/// waiting for room says only that, which *Running* would contradict.
+fn task_line(row: &Row, column: &str) -> String {
+    if row.waits_for_room {
+        return row.at.clone();
+    }
+    let word = match row.group.section() {
+        Section::NeedsAttention => Some("Needs attention"),
+        Section::Running => Some("Running"),
+        Section::Queued => Some("Queued"),
+        Section::Finished => None,
+    };
+    let at = match &row.waits {
+        Some(waits) => Some(waits.as_str()),
+        None => (row.at != column).then_some(row.at.as_str()),
+    };
+    word.into_iter()
+        .chain(at)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
+/// What a board task's row offers: the task itself (`None`), then what the
+/// Tasks page's row offers it.
+fn task_offers(row: &Row) -> Vec<Option<crate::tasks_page::TaskAct>> {
+    std::iter::once(None)
+        .chain(
+            crate::tasks_page::task_acts(row, false)
+                .into_iter()
+                .map(Some),
+        )
+        .collect()
+}
+
 /// A row's acts, from their words and presses.
 fn acts<'a>(acts: impl IntoIterator<Item = (&'a str, onehand_ui::Press)>) -> Rc<[RowAct]> {
     acts.into_iter()
@@ -692,7 +732,81 @@ fn place_before(todo: &[u64], dragged: u64, target: u64) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::place_before;
+    use super::{place_before, task_line, task_offers};
+    use crate::task::Row;
+    use onehand_core::task::Group;
+
+    fn row(group: Group, at: &str, waits: Option<&str>) -> Row {
+        Row {
+            id: "t".into(),
+            title: "Fix it".into(),
+            name: "from the board · Build".into(),
+            at: at.into(),
+            waits: waits.map(str::to_string),
+            waits_for_room: false,
+            project: "/p".into(),
+            group,
+            session: None,
+            resumable: false,
+            stoppable: false,
+            stopping: false,
+        }
+    }
+
+    #[test]
+    fn a_task_says_what_it_waits_on() {
+        let approval = row(Group::Waiting, "Build", Some("Approving starts Review"));
+        assert_eq!(
+            task_line(&approval, "Build"),
+            "Needs attention · Approving starts Review"
+        );
+        let card = row(
+            Group::Waiting,
+            "Build",
+            Some("The agent asks something in its session"),
+        );
+        assert_eq!(
+            task_line(&card, "Build"),
+            "Needs attention · The agent asks something in its session"
+        );
+        let mut room = row(Group::Running, "Waiting for room at Review", None);
+        room.waits_for_room = true;
+        assert_eq!(task_line(&room, "Review"), "Waiting for room at Review");
+        assert_eq!(
+            task_line(&row(Group::Running, "Build", None), "Build"),
+            "Running"
+        );
+        assert_eq!(
+            task_line(&row(Group::Queued, "Build", None), "Gone"),
+            "Queued · Build"
+        );
+        let failed = row(
+            Group::Ended,
+            "failed",
+            Some("The agent of Build did not start."),
+        );
+        assert_eq!(
+            task_line(&failed, "Build"),
+            "Needs attention · The agent of Build did not start."
+        );
+    }
+
+    #[test]
+    fn a_task_offers_the_tasks_pages_acts() {
+        let labels = |row: &Row| -> Vec<&'static str> {
+            task_offers(row)
+                .into_iter()
+                .map(|act| act.map_or("Show task", |act| act.label()))
+                .collect()
+        };
+        let mut ended = row(Group::Ended, "failed", Some("It failed"));
+        ended.resumable = true;
+        assert_eq!(labels(&ended), ["Show task", "Resume", "Retry…", "Dismiss"]);
+        let mut running = row(Group::Running, "Build", None);
+        running.stoppable = true;
+        assert_eq!(labels(&running), ["Show task", "Stop"]);
+        assert_eq!(labels(&row(Group::Finished, "done", None)), ["Show task"]);
+    }
 
     #[test]
     fn a_drop_on_a_row_lands_just_before_it() {

@@ -3,6 +3,7 @@
 
 use super::Tasks;
 use gpui::{AnyWindowHandle, App};
+use onehand_core::task::work::{Around, PrSeen, Work, next_action};
 use onehand_core::task::{Group, Origin, Source, Task, sort_listed};
 use onehand_core::workflow::Run;
 use std::path::PathBuf;
@@ -15,6 +16,9 @@ pub(crate) struct Row {
     pub(crate) name: String,
     /// The step it is at while it works, or how it ended.
     pub(crate) at: String,
+    /// What it waits on a person for, or why it ended, in the words its
+    /// detail has; none for a task working or finished.
+    pub(crate) waits: Option<String>,
     /// It works, but waits for room at a full step before going on there.
     pub(crate) waits_for_room: bool,
     /// The project it was started from.
@@ -80,6 +84,20 @@ fn row_of(t: &Tasks, task: &Task) -> Row {
         (None, None) => format!("cut off at {step}"),
         (None, Some(said)) => said,
     };
+    let group = task.group(working);
+    let waits = match group {
+        Group::Waiting | Group::Ended => {
+            let work = Work::of(task, working, None);
+            let around = Around {
+                open: true,
+                session: false,
+                pr: PrSeen::Unread,
+                now: onehand_core::Now::read().secs,
+            };
+            next_action(Some(&work), around).said
+        }
+        Group::Running | Group::Queued | Group::Finished => None,
+    };
     let live = t.live.get(task.id());
     Row {
         id: task.id().to_string(),
@@ -94,9 +112,10 @@ fn row_of(t: &Tasks, task: &Task) -> Row {
             }
         },
         at,
+        waits,
         waits_for_room,
         project: task.setup().repo.clone(),
-        group: task.group(working),
+        group,
         session: live.and_then(|d| Some((d.uid()?, d.window))),
         resumable: task.resumable(),
         stoppable: live.is_some() || t.drive.queue().queued(task.id()),
