@@ -356,10 +356,15 @@ impl StepKind {
     }
 
     /// The step a review sends back to: the one it names, or the one it
-    /// reviews.
+    /// reviews when it names none or leaves the name empty.
     pub fn rejects_to(&self) -> Option<&str> {
         match self {
-            Self::Review { of, on_reject, .. } => Some(on_reject.as_deref().unwrap_or(of)),
+            Self::Review { of, on_reject, .. } => Some(
+                on_reject
+                    .as_deref()
+                    .filter(|id| !id.is_empty())
+                    .unwrap_or(of),
+            ),
             Self::Agent { .. }
             | Self::Command { .. }
             | Self::Approval { .. }

@@ -139,7 +139,7 @@ impl Run {
                         .into_iter()
                         .filter_map(|name| name.strip_prefix("output."))
                         .chain([of.as_str()])
-                        .chain(step.kind.rejects_to())
+                        .chain(step.kind.rejects_to().filter(|to| to != of))
                         .collect(),
                     StepKind::Approval { of } => vec![of.as_str()],
                     kind => kind.sends_back_to().into_iter().collect(),

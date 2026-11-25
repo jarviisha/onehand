@@ -300,7 +300,8 @@ pub fn prompt_template() -> Template {
     template
 }
 
-/// `template` with the schedule's `mode` and `options` for every agent step
+/// `template` with the schedule's `mode` and `options` for every agent or
+/// review step
 /// that sets none of its own, setting by setting: a step's own wins.
 pub fn fill(
     mut template: Template,
@@ -308,18 +309,29 @@ pub fn fill(
     options: &BTreeMap<String, String>,
 ) -> Template {
     for step in &mut template.steps {
-        if let StepKind::Agent {
-            mode: own_mode,
-            options: own,
-            ..
-        } = &mut step.kind
-        {
-            if own_mode.is_none() {
-                *own_mode = mode.map(str::to_string);
+        match &mut step.kind {
+            StepKind::Agent {
+                mode: own_mode,
+                options: own,
+                ..
             }
-            for (id, value) in options {
-                own.entry(id.clone()).or_insert_with(|| value.clone());
+            | StepKind::Review {
+                mode: own_mode,
+                options: own,
+                ..
+            } => {
+                if own_mode.is_none() {
+                    *own_mode = mode.map(str::to_string);
+                }
+                for (id, value) in options {
+                    own.entry(id.clone()).or_insert_with(|| value.clone());
+                }
             }
+            StepKind::Command { .. }
+            | StepKind::Approval { .. }
+            | StepKind::Push
+            | StepKind::PullRequest
+            | StepKind::StatusChecks { .. } => {}
         }
     }
     template

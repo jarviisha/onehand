@@ -238,7 +238,7 @@ pub fn validate(template: &Template) -> Vec<Problem> {
                 } else if agent(of).flatten().is_none() {
                     here(format!("of names {of}, which is no earlier agent step"));
                 }
-                if let Some(id) = on_reject.as_deref() {
+                if let Some(id) = on_reject.as_deref().filter(|id| !id.is_empty()) {
                     if agent(id).flatten().is_none() {
                         here(format!(
                             "on_reject names {id}, which is no earlier agent step"

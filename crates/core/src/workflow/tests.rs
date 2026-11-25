@@ -2155,6 +2155,11 @@ fn a_review_without_on_reject_sends_back_to_of() {
     *on_reject = Some("plan".into());
     assert_eq!(t.steps[3].kind.rejects_to(), Some("plan"));
     assert_eq!(t.steps[2].kind.rejects_to(), None);
+    // An empty on_reject reads as one left out.
+    let t = with_step(&REVIEW_STEP.replacen("on_reject = \"implement\"", "on_reject = \"\"", 1))
+        .unwrap();
+    assert_eq!(t.steps[3].kind.rejects_to(), Some("implement"));
+    assert!(validate(&t).is_empty(), "{:?}", validate(&t));
 }
 
 #[test]
@@ -2222,8 +2227,7 @@ fn a_review_is_checked() {
         "its prompt names `{revise}`, but no later approval or review sends it back here, so it is always empty",
     );
     // A later step may read what the review answered.
-    let t = with_step(&review("of = \"implement\"\nprompt = \"Look.\"")).unwrap();
-    let mut t = t;
+    let mut t = with_step(&review("of = \"implement\"\nprompt = \"Look.\"")).unwrap();
     let StepKind::Command { .. } = &t.steps[4].kind else {
         panic!("verify follows the review")
     };
@@ -2261,7 +2265,15 @@ fn a_review_fills_revise_in_its_on_reject() {
     };
     *on_reject = Some("plan".into());
     revising(&mut t);
-    assert!(!validate(&t).is_empty());
+    let said: Vec<String> = validate(&t).iter().map(|p| p.said.clone()).collect();
+    assert_eq!(
+        said,
+        vec![
+            "its prompt names `{revise}`, but no later approval or review sends it back here, \
+             so it is always empty"
+                .to_string()
+        ]
+    );
 }
 
 #[test]
