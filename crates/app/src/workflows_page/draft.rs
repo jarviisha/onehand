@@ -83,6 +83,9 @@ pub struct StepDraft {
     pub mode: Entity<InputState>,
     /// An agent step's options picked from what the agent offers, by id.
     pub picked: BTreeMap<String, String>,
+    /// The agent an agent step runs on, by name; `None`, the run's own.
+    /// Kept when it is no longer in the agent list.
+    pub agent: Option<String>,
     /// An agent step's other options, typed, a row each: the option's id,
     /// its value.
     pub options: Vec<(Entity<InputState>, Entity<InputState>)>,
@@ -108,7 +111,7 @@ impl StepDraft {
                 keep_answer,
                 mode,
                 options,
-                ..
+                agent: _,
             } => (
                 Kind::Agent,
                 prompt.as_str(),
@@ -179,7 +182,7 @@ impl StepDraft {
         let prompt = prompt.to_string();
         // An option the agent runs take is known to offer opens as a pick;
         // the rest, or all while nothing is known, as rows to type in.
-        let offered: Vec<String> = run_agent_offer(cx)
+        let offered: Vec<String> = agent_offer(spec.agent(), cx)
             .and_then(|(_, offer)| offer)
             .map(|offer| offer.options.into_iter().map(|(id, _)| id).collect())
             .unwrap_or_default();
@@ -188,6 +191,7 @@ impl StepDraft {
             id: input(&spec.id, window, cx),
             label: input(&spec.label, window, cx),
             kind,
+            agent: spec.agent().map(str::to_string),
             // A prompt is the step's whole instruction: it grows with what is
             // written, from a paragraph to most of a screen, and scrolls past
             // that. Only one step is open at a time, so its height pushes
@@ -257,7 +261,7 @@ impl StepDraft {
                     keep_answer: self.keep_answer,
                     mode,
                     options,
-                    agent: None,
+                    agent: self.agent.clone(),
                 },
                 Kind::Command => StepKind::Command {
                     command: (!command.is_empty()).then_some(command),
@@ -325,6 +329,11 @@ impl WorkflowDraft {
             return;
         }
         for step in &mut self.steps {
+            // A step on an agent of its own is sorted by that one's offer
+            // when it opens, not by the run's.
+            if step.agent.is_some() {
+                continue;
+            }
             let rows = step.option_texts(cx);
             for at in adoptable(&rows, &step.picked, &offer).into_iter().rev() {
                 let (id_field, value_field) = &step.options[at];
@@ -502,10 +511,19 @@ fn option_row(
 pub(super) fn run_agent_offer(
     cx: &App,
 ) -> Option<(onehand_core::config::AgentSpec, Option<core::Offer>)> {
-    let name = crate::task::facts::first_agent(cx)?;
+    agent_offer(None, cx)
+}
+
+/// The agent named `name`, found by exact name, or the run's own when none
+/// is named, and what it was seen to offer; `None` when it is not in the
+/// agent list.
+pub(super) fn agent_offer(
+    name: Option<&str>,
+    cx: &App,
+) -> Option<(onehand_core::config::AgentSpec, Option<core::Offer>)> {
     let spec = onehand_core::config::agent_or_first(
         &crate::state::Shared::global(cx).settings.agents,
-        Some(&name),
+        name,
     )?
     .clone();
     let offer = crate::task::facts::offered(&spec, cx);

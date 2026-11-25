@@ -8,7 +8,7 @@ use std::time::Duration;
 /// The newest template layout this build reads and writes. A file carrying a
 /// higher number was written by a newer onehand, and is refused rather than
 /// read with whatever this build happens to understand of it.
-pub const SCHEMA_VERSION: u32 = 2;
+pub(crate) const SCHEMA_VERSION: u32 = 2;
 
 /// The id of the one-step workflow a schedule's prompt runs as. No library
 /// file takes it: a person's takes its file name, a shipped one `builtin:`.

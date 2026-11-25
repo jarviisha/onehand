@@ -1,14 +1,16 @@
-//! An agent step's settings: the mode its visits run in and the agent's
-//! options they set. A workflow is tied to no agent, so the choices drawn are
-//! those of the agent runs take by default, as it was seen to offer them;
-//! a value it does not offer stays on screen, marked, and any other agent's
-//! options are typed by id. The editor judges no value against an agent, the
+//! An agent step's agent and settings: the agent it runs on, the mode its
+//! visits run in and the agent's options they set. A workflow is tied to no
+//! agent, but a step may name one; the choices drawn are those of the agent
+//! the step runs on (the run's, when it names none), as it was seen to offer
+//! them; a value it does not offer stays on screen, marked, and any other
+//! agent's options are typed by id. The editor judges no value against an agent, the
 //! run's preflight does.
 
-use super::super::draft::{StepDraft, run_agent_offer, set_pick};
+use super::super::draft::{StepDraft, agent_offer, set_pick};
 use super::super::{SHIPPED, WorkflowsPage};
 use crate::controls::Named as _;
 use crate::controls::Quiet as _;
+use crate::controls::Refuses as _;
 use crate::controls::text_input;
 use crate::settings::{about, field, section};
 use gpui::prelude::FluentBuilder as _;
@@ -29,6 +31,97 @@ const OPTIONS_SHOWN: usize = 12;
 /// What picking a choice does: `None` for the run's own value.
 type Pick = crate::controls::SettingPick;
 
+/// The most agents the *Agent* menu lists before it counts the rest.
+const AGENTS_SHOWN: usize = 24;
+
+/// The *Agent* field of step `i`: the run's own, or one of the agent list by
+/// name. A step naming one no longer in the list keeps it, marked.
+pub(super) fn agent_field(
+    handle: &Entity<WorkflowsPage>,
+    i: usize,
+    step: &StepDraft,
+    shipped: bool,
+    cx: &App,
+) -> AnyElement {
+    let agents: Vec<String> = crate::state::Shared::global(cx)
+        .settings
+        .agents
+        .iter()
+        .map(|spec| spec.name.clone())
+        .collect();
+    let gone = step
+        .agent
+        .as_ref()
+        .filter(|name| !agents.contains(name))
+        .map(|name| format!("{name} (not in the agent list)"));
+    let label = match (&step.agent, &gone) {
+        (_, Some(gone)) => gone.clone(),
+        (Some(name), None) => name.clone(),
+        (None, None) => RUNS_AGENT.to_string(),
+    };
+    let trigger = onehand_ui::picker(
+        format!("step-agent-trigger-{i}"),
+        label,
+        step.agent.is_some(),
+        onehand_ui::ControlSize::Tall,
+        cx,
+    );
+    let picker = if shipped {
+        trigger.refuses(Some(SHIPPED)).into_any_element()
+    } else {
+        let (handle, current) = (handle.clone(), step.agent.clone());
+        crate::controls::menu_below(
+            SharedString::from(format!("step-agent-{i}")),
+            trigger,
+            move |mut menu, _, _| {
+                let pick = |to: Option<String>| {
+                    let handle = handle.clone();
+                    move |_: &_, window: &mut Window, cx: &mut App| {
+                        let to = to.clone();
+                        handle.update(cx, |page, cx| {
+                            page.edit_workflow_draft(window, cx, |d, _, _| d.steps[i].agent = to)
+                        });
+                    }
+                };
+                menu = menu.item(
+                    crate::controls::menu_item(RUNS_AGENT)
+                        .checked(current.is_none())
+                        .on_click(pick(None)),
+                );
+                if let Some(gone) = gone.as_ref().zip(current.as_ref()) {
+                    menu = menu.item(
+                        crate::controls::menu_item(gone.0.clone())
+                            .checked(true)
+                            .on_click(pick(Some(gone.1.clone()))),
+                    );
+                }
+                for name in agents.iter().take(AGENTS_SHOWN) {
+                    menu = menu.item(
+                        crate::controls::menu_item(name.clone())
+                            .checked(current.as_ref() == Some(name))
+                            .on_click(pick(Some(name.clone()))),
+                    );
+                }
+                match agents.len().saturating_sub(AGENTS_SHOWN) {
+                    0 => menu,
+                    more => menu.label(SharedString::from(format!("{more} more not shown"))),
+                }
+            },
+        )
+        .into_any_element()
+    };
+    field(
+        "Agent",
+        about("What this step runs on"),
+        div().h_flex().child(picker),
+        cx,
+    )
+    .into_any_element()
+}
+
+/// What a step that names no agent runs on.
+const RUNS_AGENT: &str = "The run's agent";
+
 /// The section on step `i`: what the agent runs take offers as rows of
 /// choices, *Mode* first, then the rows typed by id and *Add option*. While
 /// the agent's offer is not known, *Mode* and the rows are typed, with
@@ -42,11 +135,14 @@ pub(super) fn agent_settings(
     cwd: Option<&Path>,
     cx: &App,
 ) -> AnyElement {
-    let agent = run_agent_offer(cx);
+    let agent = agent_offer(step.agent.as_deref(), cx);
     let offer = agent.as_ref().and_then(|(_, offer)| offer.as_ref());
     let said: SharedString = match (&agent, crate::task::facts::first_agent(cx)) {
         (Some((spec, Some(_))), _) => format!("Choices {} offers", spec.name).into(),
         (Some((spec, None)), _) => format!("What {} offers is not known yet", spec.name).into(),
+        (None, _) if step.agent.is_some() => {
+            "This agent is not in the agent list, so there is nothing to pick from".into()
+        }
         (None, Some(name)) => {
             format!("{name} is not configured; the choices come from the agent runs use").into()
         }

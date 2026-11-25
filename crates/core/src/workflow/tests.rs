@@ -1,3 +1,4 @@
+use super::template::SCHEMA_VERSION;
 use super::*;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
