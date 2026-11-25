@@ -405,6 +405,34 @@ fn fill_keeps_a_steps_own_settings() {
 }
 
 #[test]
+fn fill_reaches_a_review_step() {
+    use crate::workflow::{StepKind, StepSpec};
+    let mut template = prompt_template();
+    template.steps.push(StepSpec {
+        id: "review".into(),
+        label: "Review".into(),
+        kind: StepKind::Review {
+            of: template.steps[0].id.clone(),
+            on_reject: None,
+            agent: None,
+            prompt: "Look.".into(),
+            mode: None,
+            options: BTreeMap::new(),
+        },
+    });
+    let options = BTreeMap::from([("model".to_string(), "strong".to_string())]);
+    let filled = fill(template, Some("plan"), &options);
+    let StepKind::Review {
+        mode, options: own, ..
+    } = &filled.steps[1].kind
+    else {
+        panic!("the second step is the review")
+    };
+    assert_eq!(mode.as_deref(), Some("plan"));
+    assert_eq!(own, &options);
+}
+
+#[test]
 fn quick_choices_read_in_words() {
     assert_eq!(when_said("0 9 * * *"), "every day at 09:00");
     assert_eq!(when_said("5 */3 * * *"), "every 3 hours at :05");

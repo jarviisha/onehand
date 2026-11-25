@@ -2070,3 +2070,392 @@ fn an_empty_step_agent_is_a_problem() {
         "{said:?}"
     );
 }
+
+const REVIEW_STEP: &str = r#"[[steps]]
+id = "review"
+label = "Review"
+kind = "review"
+of = "implement"
+on_reject = "implement"
+agent = "Claude"
+prompt = "Review the change."
+mode = "plan"
+options = { model = "strong" }
+
+"#;
+
+/// The shipped checkout template with `step` (TOML) put before its verify.
+fn with_step(step: &str) -> Result<Template, String> {
+    let text = toml::to_string_pretty(&checkout()).unwrap().replacen(
+        "schema_version = 1",
+        "schema_version = 2",
+        1,
+    );
+    let at = text.find("[[steps]]\nid = \"verify\"").unwrap();
+    store::parse(&format!("{}{step}{}", &text[..at], &text[at..]))
+}
+
+/// The shipped checkout template with a review of implement, naming only
+/// what it must, before its verify.
+fn bare_review() -> Template {
+    with_step(
+        "[[steps]]\nid = \"review\"\nlabel = \"Review\"\nkind = \"review\"\n\
+         of = \"implement\"\nprompt = \"Review the change.\"\n\n",
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_review_step_round_trips() {
+    let t = with_step(REVIEW_STEP).unwrap();
+    let review = &t.steps[3];
+    assert!(review.is_review());
+    assert_eq!(review.agent(), Some("Claude"));
+    let StepKind::Review {
+        of,
+        on_reject,
+        prompt,
+        mode,
+        options,
+        ..
+    } = &review.kind
+    else {
+        panic!("the step is a review")
+    };
+    assert_eq!(of, "implement");
+    assert_eq!(on_reject.as_deref(), Some("implement"));
+    assert_eq!(prompt, "Review the change.");
+    assert_eq!(mode.as_deref(), Some("plan"));
+    assert_eq!(options.get("model").map(String::as_str), Some("strong"));
+    assert_eq!(
+        store::parse(&toml::to_string_pretty(&t).unwrap()).unwrap(),
+        t
+    );
+    assert!(validate(&t).is_empty(), "{:?}", validate(&t));
+
+    // What it does not name, it writes no key for.
+    let text = toml::to_string(&bare_review()).unwrap();
+    assert!(!text.contains("on_reject") && !text.contains("mode") && !text.contains("options"));
+    assert!(bare_review().steps[3].is_review());
+    assert!(!t.steps[2].is_review());
+}
+
+#[test]
+fn a_review_needs_version_2() {
+    assert_eq!(bare_review().schema_version_needed(), 2);
+}
+
+#[test]
+fn a_review_without_on_reject_sends_back_to_of() {
+    assert_eq!(bare_review().steps[3].kind.rejects_to(), Some("implement"));
+    let mut t = with_step(REVIEW_STEP).unwrap();
+    let StepKind::Review { on_reject, .. } = &mut t.steps[3].kind else {
+        panic!("the step is a review")
+    };
+    *on_reject = Some("plan".into());
+    assert_eq!(t.steps[3].kind.rejects_to(), Some("plan"));
+    assert_eq!(t.steps[2].kind.rejects_to(), None);
+    // An empty on_reject reads as one left out.
+    let t = with_step(&REVIEW_STEP.replacen("on_reject = \"implement\"", "on_reject = \"\"", 1))
+        .unwrap();
+    assert_eq!(t.steps[3].kind.rejects_to(), Some("implement"));
+    assert!(validate(&t).is_empty(), "{:?}", validate(&t));
+}
+
+#[test]
+fn a_review_has_a_lane_of_its_own_without_an_agent() {
+    use crate::task::drive::Lane;
+    let mut run = Run::new("1".into(), bare_review(), brief(), setup(None));
+    run.setup.agent = Some("claude".into());
+    run.step = 3;
+    let lane = Lane::at(&run);
+    assert_eq!(lane, Lane::Step("review".into()));
+    assert_eq!(lane.agent(&run), "claude");
+    run.step = 2;
+    assert_eq!(Lane::at(&run), Lane::Run);
+}
+
+#[test]
+fn a_review_is_checked() {
+    let said = |step: &str| -> Vec<String> {
+        validate(&with_step(step).unwrap())
+            .iter()
+            .map(|p| p.said.clone())
+            .collect()
+    };
+    let has = |step: &str, part: &str| {
+        let all = said(step);
+        assert!(all.iter().any(|s| s == part), "{part:?} not in {all:?}");
+    };
+    let review = |rest: &str| {
+        format!("[[steps]]\nid = \"review\"\nlabel = \"Review\"\nkind = \"review\"\n{rest}\n\n")
+    };
+    has(
+        &review("of = \"\"\nprompt = \"Look.\""),
+        "it reviews no step yet: name an earlier agent step in of",
+    );
+    has(
+        &review("of = \"approve\"\nprompt = \"Look.\""),
+        "of names approve, which is no earlier agent step",
+    );
+    has(
+        &review("of = \"verify\"\nprompt = \"Look.\""),
+        "of names verify, which is no earlier agent step",
+    );
+    has(
+        &review("of = \"implement\"\non_reject = \"approve\"\nprompt = \"Look.\""),
+        "on_reject names approve, which is no earlier agent step",
+    );
+    has(
+        &review("of = \"implement\"\nprompt = \" \""),
+        "its prompt is empty",
+    );
+    has(
+        &review("of = \"implement\"\nagent = \" \"\nprompt = \"Look.\""),
+        "Name the agent, or leave the key out to use the run's.",
+    );
+    has(
+        &review("of = \"implement\"\nmode = \"\"\nprompt = \"Look.\""),
+        "its mode is empty",
+    );
+    has(
+        &review("of = \"implement\"\nprompt = \"Look at {nothing}.\""),
+        "its prompt names `{nothing}`, which is no variable",
+    );
+    has(
+        &review("of = \"implement\"\nprompt = \"Look at {revise}.\""),
+        "its prompt names `{revise}`, but no later approval or review sends it back here, so it is always empty",
+    );
+    // A later step may read what the review answered.
+    let mut t = with_step(&review("of = \"implement\"\nprompt = \"Look.\"")).unwrap();
+    let StepKind::Command { .. } = &t.steps[4].kind else {
+        panic!("verify follows the review")
+    };
+    t.steps.push(StepSpec {
+        id: "after".into(),
+        label: "After".into(),
+        kind: StepKind::Agent {
+            prompt: "Read {output.review}.".into(),
+            gates: Vec::new(),
+            keep_answer: false,
+            mode: None,
+            options: BTreeMap::new(),
+            agent: None,
+        },
+    });
+    assert!(validate(&t).is_empty(), "{:?}", validate(&t));
+}
+
+#[test]
+fn a_review_fills_revise_in_its_on_reject() {
+    let revising = |t: &mut Template| {
+        let StepKind::Agent { prompt, .. } = &mut t.steps[2].kind else {
+            panic!("implement is an agent step")
+        };
+        prompt.push_str("\n{revise}");
+    };
+    let mut t = bare_review();
+    revising(&mut t);
+    assert!(validate(&t).is_empty(), "{:?}", validate(&t));
+
+    // A review sending back elsewhere does not fill it.
+    let mut t = with_step(REVIEW_STEP).unwrap();
+    let StepKind::Review { on_reject, .. } = &mut t.steps[3].kind else {
+        panic!("the step is a review")
+    };
+    *on_reject = Some("plan".into());
+    revising(&mut t);
+    let said: Vec<String> = validate(&t).iter().map(|p| p.said.clone()).collect();
+    assert_eq!(
+        said,
+        vec![
+            "its prompt names `{revise}`, but no later approval or review sends it back here, \
+             so it is always empty"
+                .to_string()
+        ]
+    );
+}
+
+#[test]
+fn a_review_is_prompted_and_its_answer_kept() {
+    let (mut run, first) = begin(
+        "1".into(),
+        bare_review(),
+        brief(),
+        setup(Some("make check")),
+    );
+    assert_eq!(first, Action::Measure);
+    prompt_of(run.measured(mark("a", "d0"), 0));
+    assert_eq!(
+        run.turn_ended(&facts("a", false, 0, "d0"), "The plan.", 0),
+        Action::AwaitApproval
+    );
+    assert_eq!(approve(&mut run), Action::Measure);
+    prompt_of(run.measured(mark("a", "d0"), 0));
+    // Implement's turn holds its gates, and the review is entered as an
+    // agent step is.
+    assert_eq!(
+        run.turn_ended(&facts("a", true, 0, "d1"), "", 0),
+        Action::Measure
+    );
+    let text = prompt_of(run.measured(mark("a", "d1"), 0));
+    assert!(text.contains("Review the change."), "{text}");
+    assert!(text.trim_end().ends_with(REVIEW_ENDS), "{text}");
+    assert_eq!(
+        run.reviewed(Some(Verdict::Approve), " Looks right. ", 0),
+        Action::RunCommand("make check".into())
+    );
+    assert_eq!(run.outputs["review"], "Looks right.");
+}
+
+/// A run of [`bare_review`] allowing `misses`, its implement step passed, at
+/// the review's turn.
+fn at_the_review(misses: u32) -> Run {
+    let mut template = bare_review();
+    template.misses = misses;
+    let (mut run, _) = begin("1".into(), template, brief(), setup(Some("make check")));
+    prompt_of(run.measured(mark("a", "d0"), 0));
+    run.turn_ended(&facts("a", false, 0, "d0"), "The plan.", 0);
+    approve(&mut run);
+    implemented(&mut run);
+    run
+}
+
+/// Implement's prompt, and a turn holding its gates: the review is next.
+fn implemented(run: &mut Run) -> String {
+    assert_eq!(run.current().unwrap().id, "implement");
+    let text = prompt_of(run.measured(mark("a", "d0"), 0));
+    assert_eq!(
+        run.turn_ended(&facts("a", true, 0, "d1"), "", 0),
+        Action::Measure
+    );
+    prompt_of(run.measured(mark("a", "d1"), 0));
+    assert_eq!(run.current().unwrap().id, "review");
+    text
+}
+
+#[test]
+fn an_approving_review_goes_on() {
+    let mut run = at_the_review(3);
+    assert_eq!(
+        run.reviewed(Some(Verdict::Approve), "Fine.", 0),
+        Action::RunCommand("make check".into())
+    );
+    assert_eq!(run.misses, 0);
+    assert_eq!(run.outputs["review"], "Fine.");
+    assert!(!run.awaiting_approval(), "a review is not an approval");
+    assert_eq!(run.history.last().unwrap().why, "approved by Review");
+}
+
+#[test]
+fn a_sending_back_review_is_a_miss_and_revisits_on_reject_with_the_note() {
+    let mut run = at_the_review(3);
+    assert_eq!(
+        run.reviewed(
+            Some(Verdict::SendBack("Test the edge.".into())),
+            "Not yet.",
+            0
+        ),
+        Action::Measure
+    );
+    assert_eq!(run.misses, 1);
+    assert_eq!(
+        run.outputs["review"], "Not yet.",
+        "the review's answer is kept"
+    );
+    assert_eq!(run.history.last().unwrap().why, "sent back by Review");
+    let text = implemented(&mut run);
+    assert!(text.contains("Review asked for changes:"), "{text}");
+    assert!(text.contains("> Test the edge."), "{text}");
+    assert!(!text.contains("A person asked"), "{text}");
+    // Once implement passes, the note is done with.
+    assert_eq!(run.revise, None);
+}
+
+#[test]
+fn a_review_without_a_verdict_is_a_miss_and_asks_again() {
+    let mut run = at_the_review(3);
+    let text = prompt_of(run.reviewed(None, "Looks fine.", 0));
+    assert_eq!(
+        text,
+        "End your review by calling review_verdict: approve, or send back with a note."
+    );
+    assert_eq!(run.misses, 1);
+    assert_eq!(run.current().unwrap().id, "review");
+    // A turn ending at a review is judged as one without a verdict.
+    prompt_of(run.turn_ended(&facts("a", true, 0, "d1"), "Fine.", 0));
+    assert_eq!(run.misses, 2);
+    assert_eq!(
+        run.reviewed(Some(Verdict::Approve), "Approved.", 0),
+        Action::RunCommand("make check".into())
+    );
+}
+
+#[test]
+fn reviews_that_never_agree_exhaust_the_run() {
+    let mut run = at_the_review(1);
+    let back = |run: &mut Run| run.reviewed(Some(Verdict::SendBack("Again.".into())), "No.", 0);
+    assert_eq!(back(&mut run), Action::Measure);
+    implemented(&mut run);
+    assert_eq!(
+        back(&mut run),
+        Action::Finish(Outcome::Exhausted {
+            step: "Review".into()
+        })
+    );
+    let mut run = at_the_review(0);
+    assert_eq!(
+        run.reviewed(None, "", 0),
+        Action::Finish(Outcome::Exhausted {
+            step: "Review".into()
+        })
+    );
+}
+
+#[test]
+fn a_verdict_away_from_a_review_changes_nothing() {
+    let mut run = at_approval();
+    assert_eq!(run.reviewed(Some(Verdict::Approve), "", 0), Action::Idle);
+    assert!(run.awaiting_approval());
+}
+
+#[test]
+fn a_persons_revision_still_says_a_person() {
+    // Plan, implement, its review, then a person's approval of implement.
+    let mut template = bare_review();
+    let mut approval = template.steps.remove(1);
+    approval.kind = StepKind::Approval {
+        of: "implement".into(),
+    };
+    template.steps.insert(3, approval);
+    let (mut run, _) = begin("1".into(), template, brief(), setup(Some("make check")));
+    prompt_of(run.measured(mark("a", "d0"), 0));
+    run.turn_ended(&facts("a", false, 0, "d0"), "The plan.", 0);
+    implemented(&mut run);
+    run.reviewed(Some(Verdict::SendBack("Test it.".into())), "", 0);
+    implemented(&mut run);
+    assert_eq!(
+        run.reviewed(Some(Verdict::Approve), "", 0),
+        Action::AwaitApproval
+    );
+    assert_eq!(revise(&mut run, "Smaller."), Action::Measure);
+    let text = prompt_of(run.measured(mark("a", "d1"), 0));
+    assert!(text.contains("A person asked for changes:"), "{text}");
+    assert!(!text.contains("Review asked"), "{text}");
+}
+
+/// What every review's prompt ends with.
+const REVIEW_ENDS: &str = "When you have judged the work, call review_verdict: approve, or send \
+     it back with a note saying what to change.";
+
+#[test]
+fn only_a_reviews_prompt_says_how_to_end_it() {
+    let (mut run, _) = begin(
+        "1".into(),
+        bare_review(),
+        brief(),
+        setup(Some("make check")),
+    );
+    let text = prompt_of(run.measured(mark("a", "d0"), 0));
+    assert!(!text.contains("review_verdict"), "{text}");
+}

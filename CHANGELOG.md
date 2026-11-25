@@ -54,6 +54,13 @@ minor bump may break any of them.
 
 ### Workflows and tasks
 
+- A workflow step can be a **review**: an agent, in a session of its own, judges the work of an
+  earlier step and approves it or sends it back with a note. A send back returns the run to that
+  step, or to another earlier one the review names, carrying the note, and counts as a miss, so a
+  reviewer and a developer who never agree end the run exhausted. A review is not an approval: no
+  person is waited on. Edit one in Settings ▸ Workflows; a file with one is written as schema 2.
+  On a project's board, a column whose step is a review sends tasks back on its own.
+
 - A workflow takes a brief through named steps: agent steps judged by gates onehand checks itself,
   command steps, approvals, and forge steps that push the commit the check passed on, open a draft
   pull request and repair it until its status checks pass. Three ship read-only; the rest are

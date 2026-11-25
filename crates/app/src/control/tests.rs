@@ -3,6 +3,7 @@
 //! the call that asked, an open's deadline comes round and frees its request,
 //! and a token let go leaves nothing listening.
 
+use super::grant as grant_tools;
 use super::*;
 use futures::StreamExt as _;
 use gpui::TestAppContext;
@@ -439,4 +440,78 @@ fn a_recorded_worktree_with_no_row_keeps_its_projects_issues(cx: &mut TestAppCon
     );
     assert_eq!(kept.home, home);
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A review lane's session is granted `review_verdict` before its agent
+/// starts: the session holds its token from the moment it opens, and the
+/// first `tools/list` its agent sends already has it.
+#[gpui::test]
+fn a_review_lane_lists_review_verdict_at_its_first_listing(cx: &mut TestAppContext) {
+    let dir = crate::shell::rig::folder("review-listing");
+    let spec = crate::shell::rig::nowhere();
+    let (_, shell, cx) = crate::shell::rig::shell(cx, dir.join("tasks"), vec![spec]);
+    let grant = onehand_core::task::Grant {
+        tools: vec!["list_issues".into(), "review_verdict".into()],
+        labels: Vec::new(),
+    };
+    let tokens = cx.update(|_, cx| {
+        // A uid no other test's session has: the tools' drive is the
+        // process's, shared by tests running beside this one.
+        cx.update_global::<Shared, _>(|shared, _| while shared.next_uid() < 900_140 {});
+        shell.update(cx, |shell, cx| {
+            let (uid, _) =
+                crate::shell::open_step_session(shell, "/tmp".into(), "nowhere", &grant, cx)
+                    .expect("opened");
+            drive().tokens_of(uid)
+        })
+    });
+    let [token] = tokens.as_slice() else {
+        panic!("{tokens:?}");
+    };
+    let mut conn = control::Conn::default();
+    let line = |method: &str, params: serde_json::Value| {
+        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
+            .to_string()
+    };
+    let hello = line(
+        "initialize",
+        serde_json::json!({"_meta": {"onehand": {"session": token}}}),
+    );
+    control::handle(&mut conn, &hello, standing);
+    let control::Handled::Reply(listed) = control::handle(
+        &mut conn,
+        &line("tools/list", serde_json::json!({})),
+        standing,
+    ) else {
+        panic!("not answered");
+    };
+    assert!(listed.contains("\"review_verdict\""), "{listed}");
+    assert!(listed.contains("\"list_issues\""), "{listed}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A session granted its tools before it held its token, as a warm agent's
+/// is, tells that token's connections once it claims it: the agent may have
+/// listed them while they were not its own yet.
+#[gpui::test]
+fn a_claim_tells_a_granted_sessions_connections(cx: &mut TestAppContext) {
+    let uid = 900_131;
+    let grant = onehand_core::task::Grant {
+        tools: vec!["review_verdict".into()],
+        labels: Vec::new(),
+    };
+    cx.update(|cx| grant_tools(uid, &grant, cx));
+    let token = Token::mint();
+    let (told, mut heard) = futures::channel::mpsc::unbounded();
+    (front().joined)(&token_of(&token), told);
+    token.claim(uid);
+    let note = heard.try_recv().expect("told");
+    assert!(note.contains("list_changed"), "{note}");
+    // One claimed with nothing given is told nothing.
+    let bare = Token::mint();
+    let (told, mut heard) = futures::channel::mpsc::unbounded();
+    (front().joined)(&token_of(&bare), told);
+    bare.claim(900_132);
+    assert!(heard.try_recv().is_err());
+    cx.update(|cx| forget(uid, cx));
 }

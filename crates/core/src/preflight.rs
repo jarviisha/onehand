@@ -358,7 +358,10 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
     let forge_steps = template.is_some_and(|t| {
         t.steps.iter().any(|step| match step.kind {
             StepKind::Push | StepKind::PullRequest | StepKind::StatusChecks { .. } => true,
-            StepKind::Agent { .. } | StepKind::Command { .. } | StepKind::Approval { .. } => false,
+            StepKind::Agent { .. }
+            | StepKind::Review { .. }
+            | StepKind::Command { .. }
+            | StepKind::Approval { .. } => false,
         })
     });
     let refused = match &facts.forge {

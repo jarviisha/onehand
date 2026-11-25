@@ -135,6 +135,12 @@ impl Run {
                         .into_iter()
                         .filter_map(|name| name.strip_prefix("output."))
                         .collect(),
+                    StepKind::Review { prompt, of, .. } => prompt::refs(prompt)
+                        .into_iter()
+                        .filter_map(|name| name.strip_prefix("output."))
+                        .chain([of.as_str()])
+                        .chain(step.kind.rejects_to().filter(|to| to != of))
+                        .collect(),
                     StepKind::Approval { of } => vec![of.as_str()],
                     kind => kind.sends_back_to().into_iter().collect(),
                 };
@@ -167,6 +173,7 @@ impl Run {
             .rposition(|step| match step.kind {
                 StepKind::Command { .. } => true,
                 StepKind::Agent { .. }
+                | StepKind::Review { .. }
                 | StepKind::Approval { .. }
                 | StepKind::Push
                 | StepKind::PullRequest
@@ -276,6 +283,7 @@ impl Run {
         {
             StepKind::Command { command, .. } => command.clone().or_else(|| check.clone()),
             StepKind::Agent { .. }
+            | StepKind::Review { .. }
             | StepKind::Approval { .. }
             | StepKind::Push
             | StepKind::PullRequest

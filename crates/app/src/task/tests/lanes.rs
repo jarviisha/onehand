@@ -21,6 +21,8 @@ use std::path::PathBuf;
 struct Lanes {
     ready: Vec<(u64, Entity<ChatSession>)>,
     asked: Vec<String>,
+    /// The tools each lane was granted as it was opened.
+    granted: Vec<Vec<String>>,
 }
 
 impl Global for Lanes {}
@@ -31,11 +33,13 @@ pub(in crate::task) fn open_lane(
     _: AnyWindowHandle,
     _: PathBuf,
     agent: &str,
+    grant: &onehand_core::task::Grant,
     cx: &mut App,
 ) -> Result<(u64, Entity<ChatSession>), String> {
     crate::task::facts::lane_spec(agent, cx)?;
     cx.update_default_global::<Lanes, _>(|lanes, _| {
         lanes.asked.push(agent.to_string());
+        lanes.granted.push(grant.tools.clone());
         match lanes.ready.is_empty() {
             true => Err("no session to open".to_string()),
             false => Ok(lanes.ready.remove(0)),
@@ -111,7 +115,7 @@ fn a_step_lane_is_found_by_its_uid(cx: &mut TestAppContext) {
     cx.update(|cx| {
         cx.set_global(Lanes {
             ready: vec![(8, review.clone())],
-            asked: Vec::new(),
+            ..Default::default()
         })
     });
     let started = begun(&id, cx);
@@ -205,7 +209,7 @@ fn a_lane_whose_session_went_is_forgotten_and_opened_anew(cx: &mut TestAppContex
     cx.update(|cx| {
         cx.set_global(Lanes {
             ready: vec![(8, review.clone()), (9, again.clone())],
-            asked: Vec::new(),
+            ..Default::default()
         })
     });
     let started = begun(&id, cx);
@@ -275,4 +279,115 @@ fn until(cx: &mut TestAppContext, done: impl Fn(&mut TestAppContext) -> bool) {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     panic!("never got there");
+}
+
+/// Do on the run's agent, then a review of it on `b`.
+fn with_a_review() -> Template {
+    let mut template = Template::blank("Judged");
+    template.id = "judged".into();
+    template.steps = vec![
+        step("do", "Do", None),
+        StepSpec {
+            id: "review".into(),
+            label: "Review".into(),
+            kind: StepKind::Review {
+                of: "do".into(),
+                on_reject: None,
+                agent: Some("b".into()),
+                prompt: "Review it.".into(),
+                mode: None,
+                options: Default::default(),
+            },
+        },
+    ];
+    template
+}
+
+/// What a test holds of a run's two sessions, so they stay open.
+type Held = (
+    Entity<ChatSession>,
+    futures::channel::mpsc::Sender<onehand_core::acp::AcpEvent>,
+    carrier::Seen,
+    Entity<ChatSession>,
+    carrier::Seen,
+);
+
+/// A run of [`with_a_review`] on sessions 7 and 8, at its review's turn,
+/// with what sends to the review's session.
+fn at_the_review(
+    task: &str,
+    cx: &mut TestAppContext,
+) -> (
+    String,
+    futures::channel::mpsc::Sender<onehand_core::acp::AcpEvent>,
+    Held,
+) {
+    let (work, store) = (repo(&format!("verdict-{task}")), temp_dir("store"));
+    let window = app(cx, &store);
+    configure(&["a", "b"], cx);
+    let id = placed(
+        Task::new(task.into(), with_a_review(), brief(), setup(&work)),
+        window,
+        cx,
+    );
+    let (first, mut tx, seen) = carrier::driven(cx, Chat::default());
+    let (review, mut review_tx, review_seen) = carrier::driven(cx, Chat::default());
+    cx.update(|cx| {
+        cx.set_global(Lanes {
+            ready: vec![(8, review.clone())],
+            ..Default::default()
+        })
+    });
+    let started = begun(&id, cx);
+    cx.update(|cx| start(7, &first, window, id.clone(), started, cx));
+    cx.run_until_parked();
+    let _requests = carrier::up(&mut tx);
+    cx.run_until_parked();
+    carrier::turn(&mut tx);
+    let mut review_requests = carrier::up(&mut review_tx);
+    for _ in 0..100 {
+        cx.run_until_parked();
+        if task_on(8, cx).is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    cx.run_until_parked();
+    assert_eq!(prompts(&mut review_requests), 1, "the review's prompt");
+    // The review's lane was granted its verdict as it was opened.
+    let granted = cx.update(|cx| cx.global::<Lanes>().granted.clone());
+    assert_eq!(granted, [vec!["review_verdict".to_string()]]);
+    (id, review_tx, (first, tx, seen, review, review_seen))
+}
+
+/// The review's agent approves from its own session: the run holds the
+/// verdict, and the review's turn ending carries it on to done.
+#[gpui::test]
+fn a_verdict_from_the_review_lane_reaches_its_run(cx: &mut TestAppContext) {
+    use onehand_core::workflow::Verdict;
+    let (id, mut review_tx, _held) = at_the_review("30", cx);
+    let said = cx.update(|cx| crate::task::verdict(8, Verdict::Approve, cx));
+    assert_eq!(
+        said,
+        Ok("Approved. The review ends when this turn does.".into())
+    );
+    carrier::turn(&mut review_tx);
+    settle(cx);
+    assert_eq!(kept(&id, cx).outcome(), Some(Outcome::Done));
+}
+
+/// A verdict from the session that wrote the work, or from one no run
+/// holds, is refused and changes nothing.
+#[gpui::test]
+fn a_verdict_from_the_developer_lane_is_refused(cx: &mut TestAppContext) {
+    use onehand_core::workflow::Verdict;
+    let (id, _review_tx, _held) = at_the_review("31", cx);
+    let refused = Err("No review is waiting on this session.".to_string());
+    for uid in [7, 999] {
+        let said = cx.update(|cx| crate::task::verdict(uid, Verdict::Approve, cx));
+        assert_eq!(said, refused);
+    }
+    let run = cx.update(|cx| cx.global::<Tasks>().driven(&id).unwrap().run().clone());
+    assert_eq!(run.current().unwrap().id, "review");
+    assert!(run.awaiting_turn());
 }

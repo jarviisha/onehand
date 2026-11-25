@@ -166,6 +166,7 @@ fn stand(
             Some(StepKind::StatusChecks { .. }) => Stand::StatusChecks,
             Some(
                 StepKind::Agent { .. }
+                | StepKind::Review { .. }
                 | StepKind::Command { .. }
                 | StepKind::Approval { .. }
                 | StepKind::Push

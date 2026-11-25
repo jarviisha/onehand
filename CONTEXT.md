@@ -140,9 +140,19 @@ _Avoid_: attempt, iteration
 **Step**:
 A named stretch of a run. An agent step prompts the session and is judged by its gates; a
 command step runs a command in the work, onehand itself; an approval step waits for a person to
-approve what an earlier step answered, or to send it back with a note; a forge step takes a
-worktree's branch to the forge.
+approve what an earlier step answered, or to send it back with a note; a review step has an agent
+do that instead; a forge step takes a worktree's branch to the forge.
 _Avoid_: stage, phase, task
+
+**Review step**:
+A step whose agent judges an earlier step's work and gives a verdict: approve, or send back with a
+note. It works in a session of its own, and a send back is a miss. Nobody is waited on.
+_Avoid_: gate (that is onehand's own check), approval on its own (that waits for a person)
+
+**Verdict**:
+What a review step's agent gives, by the tool `review_verdict`: approve, or send back with a note.
+Held until the review's turn ends; the last one given counts.
+_Avoid_: result, decision
 
 **Agent settings**:
 An agent step's mode and config options (model, effort, whatever else the agent names), by the

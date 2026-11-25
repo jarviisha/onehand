@@ -62,6 +62,9 @@ pub(crate) struct Fill<'a> {
     pub(crate) outputs: &'a BTreeMap<String, String>,
     pub(crate) check_output: Option<&'a str>,
     pub(crate) revise: Option<&'a str>,
+    /// The label of the review that asked for the revision; `None` when a
+    /// person did.
+    pub(crate) revise_by: Option<&'a str>,
     /// What the step being revised answered last time, said beside the note.
     pub(crate) revised_answer: Option<&'a str>,
 }
@@ -108,8 +111,9 @@ pub(crate) fn step_prompt(prompt: &str, gates: &[GateKind], place: Place, fill: 
             .revised_answer
             .map(|answer| format!("\n\nWhat you answered before:\n\n{}", quoted(answer)))
             .unwrap_or_default();
+        let by = fill.revise_by.unwrap_or("A person");
         add(format!(
-            "A person asked for changes:\n\n{}{before}",
+            "{by} asked for changes:\n\n{}{before}",
             quoted(note)
         ));
     }
@@ -140,7 +144,7 @@ pub(crate) fn step_prompt(prompt: &str, gates: &[GateKind], place: Place, fill: 
 
 /// What the agent is first told by a run of `template` on `brief`: its first
 /// agent step's prompt, filled in as a run fills it. `None` when it has no
-/// agent step.
+/// agent step. A review is never first: it judges an earlier agent step.
 pub fn first_prompt(template: &Template, brief: &Brief) -> Option<String> {
     template.steps.iter().find_map(|step| match &step.kind {
         StepKind::Agent { prompt, gates, .. } => {
@@ -149,11 +153,13 @@ pub fn first_prompt(template: &Template, brief: &Brief) -> Option<String> {
                 outputs: &BTreeMap::new(),
                 check_output: None,
                 revise: None,
+                revise_by: None,
                 revised_answer: None,
             };
             Some(step_prompt(prompt, gates, template.place, &fill))
         }
-        StepKind::Command { .. }
+        StepKind::Review { .. }
+        | StepKind::Command { .. }
         | StepKind::Approval { .. }
         | StepKind::Push
         | StepKind::PullRequest

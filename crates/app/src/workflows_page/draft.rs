@@ -38,6 +38,7 @@ pub struct WorkflowDraft {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Agent,
+    Review,
     Command,
     Approval,
     Push,
@@ -46,8 +47,9 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub(super) const ALL: [Self; 6] = [
+    pub(super) const ALL: [Self; 7] = [
         Self::Agent,
+        Self::Review,
         Self::Command,
         Self::Approval,
         Self::Push,
@@ -59,6 +61,7 @@ impl Kind {
     pub(super) fn label(self) -> &'static str {
         match self {
             Self::Agent => "Agent",
+            Self::Review => "Review",
             Self::Command => "Command",
             Self::Approval => "Approval",
             Self::Push => "Push",
@@ -92,9 +95,11 @@ pub struct StepDraft {
     pub command: Entity<InputState>,
     /// How long status checks are waited on.
     pub wait: Entity<InputState>,
-    /// The step a command or status checks go back to, or an approval
-    /// approves, by id.
+    /// The step a command or status checks go back to, an approval
+    /// approves, or a review reviews, by id.
     pub target: String,
+    /// The step a review sends back to, by id; empty, the one it reviews.
+    pub reject: String,
 }
 
 impl StepDraft {
@@ -104,6 +109,7 @@ impl StepDraft {
             cx.new(|cx| InputState::new(window, cx).default_value(text))
         };
         let mut wait = core::DEFAULT_WAIT;
+        let mut reject = String::new();
         let (kind, prompt, gates, keep_answer, mode, options, command, target) = match &spec.kind {
             StepKind::Agent {
                 prompt,
@@ -122,6 +128,26 @@ impl StepDraft {
                 "",
                 "",
             ),
+            StepKind::Review {
+                of,
+                on_reject,
+                agent: _,
+                prompt,
+                mode,
+                options,
+            } => {
+                reject = on_reject.clone().unwrap_or_default();
+                (
+                    Kind::Review,
+                    prompt.as_str(),
+                    Vec::new(),
+                    false,
+                    mode.clone(),
+                    options.clone(),
+                    "",
+                    of.as_str(),
+                )
+            }
             StepKind::Command { command, on_fail } => (
                 Kind::Command,
                 "",
@@ -220,6 +246,7 @@ impl StepDraft {
             }),
             wait: input(wait, window, cx),
             target: target.to_string(),
+            reject,
         }
     }
 
@@ -255,6 +282,15 @@ impl StepDraft {
             id: self.id.read(cx).value().trim().to_string(),
             label: self.label.read(cx).value().trim().to_string(),
             kind: match self.kind {
+                Kind::Review => StepKind::Review {
+                    of: self.target.clone(),
+                    on_reject: (!self.reject.is_empty() && self.reject != self.target)
+                        .then(|| self.reject.clone()),
+                    agent: self.agent.clone(),
+                    prompt: self.prompt.read(cx).value().to_string(),
+                    mode,
+                    options,
+                },
                 Kind::Agent => StepKind::Agent {
                     prompt: self.prompt.read(cx).value().to_string(),
                     gates: self.gates.clone(),
@@ -385,7 +421,7 @@ impl WorkflowDraft {
         // The spec holds an option once, so a second row with its id would
         // be lost on save without a word: said here, before that.
         for (at, step) in self.steps.iter().enumerate() {
-            if step.kind == Kind::Agent {
+            if matches!(step.kind, Kind::Agent | Kind::Review) {
                 problems.extend(
                     options_set_twice(&step.picked, &step.option_texts(cx))
                         .into_iter()
@@ -435,6 +471,14 @@ impl WorkflowDraft {
                     mode: None,
                     options: BTreeMap::new(),
                     agent: None,
+                },
+                Kind::Review => StepKind::Review {
+                    of: String::new(),
+                    on_reject: None,
+                    agent: None,
+                    prompt: String::new(),
+                    mode: None,
+                    options: BTreeMap::new(),
                 },
                 Kind::Command => StepKind::Command {
                     command: None,
@@ -641,7 +685,10 @@ pub(super) fn step_facts(at: usize, steps: &[StepSpec]) -> Vec<String> {
                 facts.push("keeps answer".to_string());
             }
         }
-        StepKind::Approval { .. } | StepKind::Push | StepKind::PullRequest => {}
+        StepKind::Review { .. }
+        | StepKind::Approval { .. }
+        | StepKind::Push
+        | StepKind::PullRequest => {}
     }
     facts
 }

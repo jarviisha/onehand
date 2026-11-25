@@ -566,7 +566,8 @@ fn wanting_model() -> Template {
     let mut t = checkout();
     match &mut t.steps[0].kind {
         StepKind::Agent { options, .. } => options.insert("model".into(), "strong".into()),
-        other @ (StepKind::Command { .. }
+        other @ (StepKind::Review { .. }
+        | StepKind::Command { .. }
         | StepKind::Approval { .. }
         | StepKind::Push
         | StepKind::PullRequest
@@ -1581,4 +1582,181 @@ fn an_input_between_a_switch_and_its_lane_opening_sends_the_prompt_once() {
     });
     assert!(rig.chat.prompted_beyond(1));
     assert!(!rig.chat.prompted_beyond(2), "sent once");
+}
+
+/// Implement on the run's agent, a review of it, then verify.
+fn with_a_review() -> Template {
+    let mut template = Template::blank("Reviewed by an agent");
+    template.steps = vec![
+        agent_step("implement", "Implement", None),
+        StepSpec {
+            id: "review".into(),
+            label: "Review".into(),
+            kind: StepKind::Review {
+                of: "implement".into(),
+                on_reject: None,
+                agent: None,
+                prompt: "Review it.".into(),
+                mode: None,
+                options: Default::default(),
+            },
+        },
+        verify_step("implement"),
+    ];
+    template
+}
+
+/// A run of [`with_a_review`] in its review's turn, the prompt sent in the
+/// review's own session.
+fn in_review() -> Rig {
+    let (mut rig, fx) = Rig::start(with_a_review(), None, connected());
+    rig.until(fx, |_, fx| asks_for_session(fx));
+    rig.open(review());
+    assert!(rig.submitted());
+    assert!(rig.drive.run().awaiting_turn());
+    rig
+}
+
+fn verdict(
+    rig: &mut Rig,
+    lane: &Lane,
+    verdict: crate::workflow::Verdict,
+) -> Result<String, String> {
+    rig.drive.verdict(lane, verdict)
+}
+
+#[test]
+fn the_last_verdict_of_the_turn_counts() {
+    use crate::workflow::Verdict;
+    let mut rig = in_review();
+    assert_eq!(
+        verdict(&mut rig, &review(), Verdict::SendBack("More tests.".into())),
+        Ok("Sent back to Implement. The review ends when this turn does.".into())
+    );
+    assert_eq!(
+        verdict(&mut rig, &review(), Verdict::Approve),
+        Ok("Approved. The review ends when this turn does.".into())
+    );
+    let fx = rig.turn_ends("Fine.");
+    let fx = rig.until(fx, |_, fx| names(fx).contains(&"RunCommand"));
+    assert!(names(&fx).contains(&"RunCommand"), "{fx:?}");
+    assert_eq!(rig.drive.run().misses, 0);
+    assert_eq!(rig.drive.run().outputs["review"], "Fine.");
+}
+
+#[test]
+fn a_send_back_without_a_note_is_refused() {
+    use crate::workflow::Verdict;
+    let mut rig = in_review();
+    assert_eq!(
+        verdict(&mut rig, &review(), Verdict::SendBack(" ".into())),
+        Err("A send back needs a note saying what to change.".into())
+    );
+}
+
+#[test]
+fn a_verdict_from_another_lane_is_refused() {
+    use crate::workflow::Verdict;
+    let mut rig = in_review();
+    assert_eq!(
+        verdict(&mut rig, &Lane::Run, Verdict::Approve),
+        Err("No review is waiting on this session.".into())
+    );
+    // Nothing was held: the turn ends without a verdict and is asked again.
+    let fx = rig.turn_ends("Fine.");
+    rig.until(fx, |rig, _| rig.drive.run().misses > 0);
+    assert_eq!(rig.drive.run().misses, 1);
+    assert_eq!(rig.drive.run().current().unwrap().id, "review");
+}
+
+#[test]
+fn a_verdict_after_the_turn_is_refused() {
+    use crate::workflow::Verdict;
+    let mut rig = in_review();
+    // The turn has ended and its work is being read.
+    let fx = rig.turn_ends("Fine.");
+    assert!(names(&fx).contains(&"ReadFacts"), "{fx:?}");
+    assert_eq!(
+        verdict(&mut rig, &review(), Verdict::Approve),
+        Err("No review is waiting on this session.".into())
+    );
+    // And once the run has gone on to verify.
+    let mut rig = in_review();
+    verdict(&mut rig, &review(), Verdict::Approve).unwrap();
+    let fx = rig.turn_ends("Fine.");
+    rig.until(fx, |_, fx| names(fx).contains(&"RunCommand"));
+    assert_eq!(
+        verdict(&mut rig, &review(), Verdict::Approve),
+        Err("No review is waiting on this session.".into())
+    );
+}
+
+#[test]
+fn a_review_runs_the_budget() {
+    let mut rig = in_review();
+    assert!(!rig.drive.waits_on_person(true) && !rig.drive.waits_on_person(false));
+    rig.now += rig.drive.run().template.timeout_limit() + Duration::from_secs(1);
+    let fx = rig.on(Input::Elapsed(Timer::Timeout));
+    assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::TimedOut)));
+}
+
+#[test]
+fn a_second_review_visit_starts_without_a_verdict() {
+    use crate::workflow::Verdict;
+    let mut template = with_a_review();
+    template.misses = 3;
+    let (mut rig, fx) = Rig::start(template, None, connected());
+    rig.until(fx, |_, fx| asks_for_session(fx));
+    rig.open(review());
+    verdict(&mut rig, &review(), Verdict::SendBack("More tests.".into())).unwrap();
+    let fx = rig.turn_ends("Not yet.");
+    // Implement again, then the review's second visit.
+    let fx = rig.until(fx, |rig, _| {
+        rig.drive.run().current().unwrap().id == "implement"
+    });
+    rig.until(fx, |rig, _| {
+        let run = rig.drive.run();
+        run.current().unwrap().id == "review" && run.awaiting_turn()
+    });
+    assert_eq!(rig.drive.run().misses, 1);
+    // Its turn gives no verdict: the one of the first visit does not count.
+    let fx = rig.turn_ends("Fine.");
+    rig.until(fx, |rig, _| rig.drive.run().misses > 1);
+    assert_eq!(rig.drive.run().misses, 2);
+    assert_eq!(rig.drive.run().current().unwrap().id, "review");
+}
+
+#[test]
+fn a_send_back_with_nowhere_to_go_is_refused() {
+    use crate::workflow::Verdict;
+    let mut template = with_a_review();
+    if let StepKind::Review { on_reject, .. } = &mut template.steps[1].kind {
+        *on_reject = Some("gone".into());
+    }
+    let (mut rig, fx) = Rig::start(template, None, connected());
+    rig.until(fx, |_, fx| asks_for_session(fx));
+    rig.open(review());
+    assert_eq!(
+        verdict(&mut rig, &review(), Verdict::SendBack("More tests.".into())),
+        Err("This review has no step to send the work back to.".into())
+    );
+}
+
+#[test]
+fn a_review_lane_is_granted_its_verdict() {
+    use crate::task::Grant;
+    let rig = in_review();
+    let run = rig.drive.run();
+    let given = Grant {
+        tools: vec!["list_issues".into()],
+        labels: vec!["auto".into()],
+    };
+    let review_grant = review().grant(run, &given);
+    assert_eq!(review_grant.tools, ["list_issues", "review_verdict"]);
+    assert_eq!(review_grant.labels, ["auto"]);
+    assert_eq!(
+        review().grant(run, &Grant::default()).tools,
+        ["review_verdict"]
+    );
+    assert_eq!(Lane::Run.grant(run, &given), given);
 }

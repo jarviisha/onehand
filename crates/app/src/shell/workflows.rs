@@ -401,11 +401,12 @@ impl Shell {
         // The first session is the lane of the step the run is at: a step
         // naming its agent opens its own, unshown wherever the run is.
         let lane = Lane::at(&start.run);
+        let grant = lane.grant(&start.run, &grant);
         let session = match (&lane, off_screen) {
             (Lane::Step(_), _) => {
                 let agent = lane.agent(&start.run);
                 agent_gone = crate::task::facts::lane_spec(&agent, cx).is_err();
-                super::open_step_session(self, dir, &agent, cx).ok()
+                super::open_step_session(self, dir, &agent, &grant, cx).ok()
             }
             // Nothing the person is looking at moves: a tool's task is on the
             // Tasks page and its session in the rail, and the caret stays
@@ -413,7 +414,9 @@ impl Shell {
             (Lane::Run, true) => {
                 let spec = crate::task::facts::spec_for(start.run.setup.agent.as_deref(), cx);
                 agent_gone = spec.is_none();
-                spec.and_then(|spec| self.open_off_screen(dir, spec, Vec::new(), cx))
+                spec.and_then(|spec| {
+                    self.open_off_screen_granted(dir, spec, Vec::new(), &grant, cx)
+                })
             }
             (Lane::Run, false) => {
                 let project = crate::projects::of(&dir, cx);
@@ -432,6 +435,8 @@ impl Shell {
             let why = SESSION_NOT_STARTED.to_string();
             return refused(why, Unstarted::NoSession { agent_gone }, window, cx);
         };
+        // Granted again for a session shown at once, which no grant reached
+        // before it started; one that had it already is told nothing new.
         crate::control::grant(uid, &grant, cx);
         // Deferred: the run's carrier reaches into the session and the global
         // the shell is reading from while this runs.

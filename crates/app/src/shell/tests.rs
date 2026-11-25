@@ -1083,13 +1083,15 @@ fn a_step_session_opens_on_its_named_agent_or_says_why_not(cx: &mut gpui::TestAp
     let work = std::fs::canonicalize("/tmp").unwrap();
     let missing = cx.update(|_, cx| {
         shell.update(cx, |shell, cx| {
-            crate::shell::open_step_session(shell, work.clone(), "Codex", cx).map(|(uid, _)| uid)
+            crate::shell::open_step_session(shell, work.clone(), "Codex", &Default::default(), cx)
+                .map(|(uid, _)| uid)
         })
     });
     assert_eq!(missing, Err("Codex is not in the agent list".to_string()));
     let opened = cx.update(|_, cx| {
         shell.update(cx, |shell, cx| {
-            crate::shell::open_step_session(shell, work, "nowhere", cx).map(|(uid, _)| uid)
+            crate::shell::open_step_session(shell, work, "nowhere", &Default::default(), cx)
+                .map(|(uid, _)| uid)
         })
     });
     let uid = opened.expect("opened");

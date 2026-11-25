@@ -9,7 +9,7 @@
 //! here, so no two callers can disagree about what a Stop means.
 
 use super::facts::{self, CommandResult, Facts, Mark};
-use super::prompt::{self, Fill};
+use super::prompt;
 use super::settings::Settings;
 use super::status_checks::Seen;
 use super::template::{Place, StepKind, StepSpec, Template};
@@ -17,10 +17,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 mod retry;
+mod review;
 mod setup;
 mod visits;
 
 pub use retry::{Changed, Current, Field, StartWhy, WithCurrent};
+pub use review::Verdict;
 use setup::Marks;
 pub use setup::{Brief, Setup};
 
@@ -281,6 +283,9 @@ pub struct Run {
     pub outputs: BTreeMap<String, String>,
     /// What a person asked to change, until the step it went back to passes.
     pub revise: Option<String>,
+    /// The review that asked for it; `None` when a person did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    revise_by: Option<String>,
     /// What the failed command printed, until the step it went back to passes.
     check_output: Option<String>,
     /// Working time spent, in seconds, for a resumed run's clock.
@@ -322,6 +327,7 @@ impl Run {
             marks: Marks::default(),
             outputs: BTreeMap::new(),
             revise: None,
+            revise_by: None,
             check_output: None,
             spent_secs: 0,
             history: Vec::new(),
@@ -428,10 +434,10 @@ impl Run {
         else {
             return Action::Idle;
         };
-        let StepKind::Agent {
-            gates, keep_answer, ..
-        } = &step.kind
-        else {
+        if step.is_review() {
+            return self.reviewed(None, answer, now);
+        }
+        let Some((_, gates, keep_answer)) = review::prompted(&step.kind) else {
             return Action::Idle;
         };
         let failed = gates
@@ -439,12 +445,13 @@ impl Run {
             .copied()
             .find(|gate| !facts::holds(*gate, facts, &from, answer));
         let Some(gate) = failed else {
-            if *keep_answer {
+            if keep_answer {
                 let answer = answer.trim().to_string();
                 self.visit_output(answer.clone());
                 self.outputs.insert(step.id.clone(), answer);
             }
             self.revise = None;
+            self.revise_by = None;
             self.check_output = None;
             return self.enter(self.step + 1, "its gates held", now);
         };
@@ -583,6 +590,7 @@ impl Run {
             return Action::Idle;
         };
         self.revise = Some(note);
+        self.revise_by = None;
         self.enter(back, "sent back to be revised", now)
     }
 
@@ -630,7 +638,7 @@ impl Run {
         }
         self.log_here("resumed", now);
         match (self.current().map(|step| &step.kind), &self.marks.step_from) {
-            (Some(StepKind::Agent { .. }), Some(_)) => {
+            (Some(StepKind::Agent { .. } | StepKind::Review { .. }), Some(_)) => {
                 self.awaiting = Await::Turn;
                 Action::Prompt(self.step_prompt())
             }
@@ -664,7 +672,7 @@ impl Run {
     /// What the step at hand starts with.
     fn start_step(&mut self, now: u64) -> Action {
         match self.current().map(|step| step.kind.clone()) {
-            Some(StepKind::Agent { .. }) => {
+            Some(StepKind::Agent { .. } | StepKind::Review { .. }) => {
                 self.awaiting = Await::Mark(None);
                 Action::Measure
             }
@@ -744,30 +752,6 @@ impl Run {
         self.awaiting = Await::Nothing;
         self.outcome = Some(outcome.clone());
         Action::Finish(outcome)
-    }
-
-    /// The prompt that starts the agent step at hand.
-    fn step_prompt(&self) -> String {
-        let Some(StepSpec {
-            id,
-            kind: StepKind::Agent { prompt, gates, .. },
-            ..
-        }) = self.current()
-        else {
-            return String::new();
-        };
-        let fill = Fill {
-            brief: &self.brief,
-            outputs: &self.outputs,
-            check_output: self.check_output.as_deref(),
-            revise: self.revise.as_deref(),
-            revised_answer: self
-                .revise
-                .as_ref()
-                .and_then(|_| self.outputs.get(id))
-                .map(String::as_str),
-        };
-        prompt::step_prompt(prompt, gates, self.template.place, &fill)
     }
 
     /// The step at hand by id, or `start` before the first move.

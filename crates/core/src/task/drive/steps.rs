@@ -109,7 +109,7 @@ impl RunDrive {
         self.noted = Some(self.run.step);
         let elsewhere = matches!(
             self.run.current().map(|step| &step.kind),
-            Some(StepKind::Agent { .. })
+            Some(StepKind::Agent { .. } | StepKind::Review { .. })
         ) && Lane::at(&self.run) != self.lane;
         if fresh && !elsewhere {
             self.asked.extend(self.step_said().map(Asked::Note));

@@ -13,7 +13,7 @@
 use super::{Asked, Effect, Input, Lane, RunDrive};
 use crate::chat::drive::{Code, Effect as SessionEffect, Intake, Origin, SessionDrive, Signal};
 use crate::chat::Chat;
-use crate::workflow::{Action, ApprovalAt, Run};
+use crate::workflow::{Action, ApprovalAt, Run, Verdict};
 use crate::Now;
 
 /// What a joined call says to do: the session's effects first, then the
@@ -82,6 +82,13 @@ impl<'a> Joined<'a> {
     /// A person sent what they read at `at` back with `note`.
     pub fn revise(&mut self, at: ApprovalAt, note: String, now: Now) -> Out {
         self.give(now, |run, chat| run.revise(at, note, chat, now))
+    }
+
+    /// The review's agent, in `lane`'s session, gave `verdict`: what it is
+    /// told, or why it was refused. Held until the review's turn ends, so it
+    /// asks nothing of the session.
+    pub fn verdict(&mut self, lane: &Lane, verdict: Verdict) -> Result<String, String> {
+        self.run.verdict(lane, verdict)
     }
 
     /// A person pressed Stop.
