@@ -11,6 +11,7 @@ fn agent_step(mode: Option<&str>, options: &[(&str, &str)]) -> StepKind {
             .iter()
             .map(|(id, value)| (id.to_string(), value.to_string()))
             .collect(),
+        agent: None,
     }
 }
 

@@ -22,6 +22,7 @@ impl WorkflowsPage {
                 keep_answer: true,
                 mode: None,
                 options: std::collections::BTreeMap::new(),
+                agent: None,
             },
         });
         self.open_workflow_form(template, None, window, cx);

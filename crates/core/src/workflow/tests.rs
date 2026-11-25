@@ -1761,6 +1761,7 @@ fn packaged() -> Template {
                 keep_answer: false,
                 mode: None,
                 options: BTreeMap::new(),
+                agent: None,
             },
         ),
         step(
@@ -2011,4 +2012,60 @@ fn a_template_saved_as_text_goes_over_its_own_file_or_to_a_new_one() {
         .contains("no name"));
     assert_eq!(store::read_blocking(&file).unwrap(), changed);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The shipped checkout template with its first step naming `agent`.
+fn naming(agent: &str) -> Template {
+    let mut t = checkout();
+    let StepKind::Agent { agent: slot, .. } = &mut t.steps[0].kind else {
+        panic!("the first step of checkout() is an agent step")
+    };
+    *slot = Some(agent.to_string());
+    t
+}
+
+#[test]
+fn a_step_names_its_agent_round_trip() {
+    let text = toml::to_string_pretty(&naming("Codex")).unwrap();
+    assert!(text.contains("agent = \"Codex\""));
+    let t = store::parse(&text).unwrap();
+    assert_eq!(t.steps[0].agent(), Some("Codex"));
+    assert_eq!(t.steps[1].agent(), None);
+    assert_eq!(toml::to_string_pretty(&t).unwrap(), text);
+    assert!(t.steps[0].summary().contains("on Codex"));
+    assert!(t.steps[0].kind.does().contains("Codex"));
+}
+
+#[test]
+fn a_file_without_step_agents_stays_version_1() {
+    assert_eq!(checkout().schema_version_needed(), 1);
+    assert_eq!(Template::blank("x").schema_version, 1);
+    assert!(!toml::to_string(&checkout()).unwrap().contains("agent ="));
+}
+
+#[test]
+fn a_step_agent_needs_version_2() {
+    assert_eq!(naming("Codex").schema_version_needed(), 2);
+}
+
+#[test]
+fn version_3_is_unreadable() {
+    let text = toml::to_string_pretty(&naming("Codex")).unwrap().replacen(
+        "schema_version = 1",
+        "schema_version = 3",
+        1,
+    );
+    assert!(store::parse(&text).unwrap_err().contains("newer onehand"));
+}
+
+#[test]
+fn an_empty_step_agent_is_a_problem() {
+    let said: Vec<String> = validate(&naming("  "))
+        .iter()
+        .map(|p| p.said.clone())
+        .collect();
+    assert!(
+        said.contains(&"Name the agent, or leave the key out to use the run's.".to_string()),
+        "{said:?}"
+    );
 }

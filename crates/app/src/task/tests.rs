@@ -344,6 +344,7 @@ fn one_agent_step() -> Template {
             keep_answer: false,
             mode: None,
             options: Default::default(),
+            agent: None,
         },
     });
     template

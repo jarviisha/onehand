@@ -197,6 +197,7 @@ fn to_a_pull_request() -> Template {
                 keep_answer: false,
                 mode: None,
                 options: Default::default(),
+                agent: None,
             },
         ),
         step(

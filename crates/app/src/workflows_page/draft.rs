@@ -108,6 +108,7 @@ impl StepDraft {
                 keep_answer,
                 mode,
                 options,
+                ..
             } => (
                 Kind::Agent,
                 prompt.as_str(),
@@ -256,6 +257,7 @@ impl StepDraft {
                     keep_answer: self.keep_answer,
                     mode,
                     options,
+                    agent: None,
                 },
                 Kind::Command => StepKind::Command {
                     command: (!command.is_empty()).then_some(command),
@@ -346,8 +348,8 @@ impl WorkflowDraft {
         let misses = misses
             .parse()
             .map_err(|_| format!("the misses allowed, `{misses}`, is not a whole number"))?;
-        Ok(Template {
-            schema_version: core::SCHEMA_VERSION,
+        let mut template = Template {
+            schema_version: 1,
             id: self.original.id.clone(),
             version: self.original.version,
             name: self.name.read(cx).value().trim().to_string(),
@@ -356,7 +358,9 @@ impl WorkflowDraft {
             misses,
             timeout: self.timeout.read(cx).value().trim().to_string(),
             steps: self.steps.iter().map(|step| step.to_spec(cx)).collect(),
-        })
+        };
+        template.schema_version = template.schema_version_needed();
+        Ok(template)
     }
 
     /// Everything that keeps the form from being saved, each with the step
@@ -421,6 +425,7 @@ impl WorkflowDraft {
                     keep_answer: false,
                     mode: None,
                     options: BTreeMap::new(),
+                    agent: None,
                 },
                 Kind::Command => StepKind::Command {
                     command: None,

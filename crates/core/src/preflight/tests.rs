@@ -724,6 +724,7 @@ fn step_settings_findings_are_capped() {
                 keep_answer: false,
                 mode: Some("plan".into()),
                 options: BTreeMap::new(),
+                agent: None,
             },
         })
         .collect();

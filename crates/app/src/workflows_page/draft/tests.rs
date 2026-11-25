@@ -10,6 +10,7 @@ fn agent(id: &str, keep_answer: bool) -> StepSpec {
             keep_answer,
             mode: None,
             options: std::collections::BTreeMap::new(),
+            agent: None,
         },
     }
 }
