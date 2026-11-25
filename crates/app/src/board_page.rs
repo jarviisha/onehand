@@ -178,7 +178,7 @@ impl BoardPage {
         ) {
             (Some(_), _) => Some("A board works on a project on this machine.".to_string()),
             (None, Err(why)) => Some(why),
-            (None, Ok(())) => None,
+            (None, Ok(_)) => None,
         };
         let line = match &template {
             Some(t) => format!("{} · {} · team of {}", project.name, t.name, board.team),

@@ -792,3 +792,54 @@ fn failed_write_puts_board_back() {
     });
     assert!(d.get(&p.id).unwrap().board().is_none());
 }
+
+fn worktree_flow(place: crate::workflow::Place) -> crate::workflow::Template {
+    let mut template = crate::workflow::builtin::all()
+        .into_iter()
+        .find(|t| t.id == "builtin:branch")
+        .unwrap();
+    template.place = place;
+    template
+}
+
+#[test]
+fn bind_board_starts_small_and_keeps_what_a_rebind_had() {
+    let (mut d, p) = drive();
+    let flow = worktree_flow(crate::workflow::Place::Worktree);
+    assert!(d.bind_board(&p.id, Some(&flow)).is_ok());
+    let bound = d.get(&p.id).unwrap().board().unwrap().clone();
+    assert_eq!((bound.workflow.as_str(), bound.team), ("builtin:branch", 2));
+    assert!(bound.todo.is_empty());
+    let _ = d.set_board(&p.id, Some(board(vec![4])));
+    let mut copy = flow.clone();
+    copy.id = "copy".into();
+    assert!(d.bind_copy(&p.id, &copy).is_some_and(|bound| bound.is_ok()));
+    let kept = d.get(&p.id).unwrap().board().unwrap().clone();
+    assert_eq!((kept.workflow.as_str(), kept.team), ("copy", 3));
+    assert_eq!(kept.todo, [4]);
+}
+
+#[test]
+fn bind_board_refuses_what_a_board_cannot_run() {
+    let (mut d, p) = drive();
+    assert!(d
+        .bind_board(&p.id, None)
+        .is_err_and(|why| why.contains("gone")));
+    let checkout = worktree_flow(crate::workflow::Place::Checkout);
+    assert!(d.bind_board(&p.id, Some(&checkout)).is_err());
+    assert!(d.get(&p.id).unwrap().board().is_none());
+    assert!(
+        d.bind_copy(&p.id, &checkout).is_none(),
+        "no board to copy for"
+    );
+}
+
+#[test]
+fn unbinding_asks_only_over_a_to_do() {
+    let (d, p) = drive();
+    assert!(!d.unbinding_asks(&p.id));
+    let (d, p) = drive_with_todo(Vec::new());
+    assert!(!d.unbinding_asks(&p.id));
+    let (d, p) = drive_with_todo(vec![4]);
+    assert!(d.unbinding_asks(&p.id));
+}

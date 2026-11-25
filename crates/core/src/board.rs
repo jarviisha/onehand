@@ -14,12 +14,12 @@ pub const BOARD_SHOWN: usize = 50;
 
 /// Whether the board can run `template`: it must exist and work on a
 /// worktree, since several tasks work at once and a checkout holds one.
-pub fn usable(template: Option<&Template>) -> Result<(), String> {
+pub fn usable(template: Option<&Template>) -> Result<&Template, String> {
     let Some(template) = template else {
         return Err("The board's workflow is gone or cannot be read.".to_string());
     };
     match template.place {
-        Place::Worktree => Ok(()),
+        Place::Worktree => Ok(template),
         Place::Checkout => Err(format!(
             "A board needs a workflow that works on a worktree: {} works in the checkout.",
             template.name

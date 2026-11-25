@@ -4,7 +4,11 @@ use super::{Effect, ProjectsDrive, Thing, Value};
 use crate::connector::Connector;
 use crate::issues::Issues;
 use crate::project::{Board, ProjectId};
+use crate::workflow::Template;
 use std::collections::{BTreeSet, HashSet};
+
+/// The team a board starts with.
+const FIRST_TEAM: u8 = 2;
 
 impl ProjectsDrive {
     /// Give project `id` a board, or take it away with none. Written now;
@@ -12,6 +16,47 @@ impl ProjectsDrive {
     #[must_use = "its effects are to be carried"]
     pub fn set_board(&mut self, id: &ProjectId, board: Option<Board>) -> Vec<Effect> {
         self.edit_board(id, false, |_| board)
+    }
+
+    /// Bind `template` as project `id`'s board, as read when it is on offer,
+    /// or none when it is gone or cannot be read: refused, with why, when a
+    /// board cannot run it. A board bound again keeps its team and its To
+    /// do; a new one starts with a small team and nothing to do.
+    pub fn bind_board(
+        &mut self,
+        id: &ProjectId,
+        template: Option<&Template>,
+    ) -> Result<Vec<Effect>, String> {
+        let workflow = crate::board::usable(template)?.id.clone();
+        let board = match self.projects.get(id).and_then(|p| p.board()) {
+            Some(kept) => Board {
+                workflow,
+                ..kept.clone()
+            },
+            None => Board {
+                workflow,
+                team: FIRST_TEAM,
+                todo: Vec::new(),
+            },
+        };
+        Ok(self.set_board(id, Some(board)))
+    }
+
+    /// Bind `copy`, a copy of the workflow of project `id`'s board, as that
+    /// board, as [`Self::bind_board`] does; none when it has no board.
+    pub fn bind_copy(
+        &mut self,
+        id: &ProjectId,
+        copy: &Template,
+    ) -> Option<Result<Vec<Effect>, String>> {
+        self.projects.get(id)?.board()?;
+        Some(self.bind_board(id, Some(copy)))
+    }
+
+    /// Whether taking project `id`'s board away asks a person first: its To
+    /// do goes with it and cannot be had back.
+    pub fn unbinding_asks(&self, id: &ProjectId) -> bool {
+        (self.projects.get(id)).is_some_and(|p| p.board().is_some_and(|b| !b.todo.is_empty()))
     }
 
     /// Set the size of project `id`'s team, kept within 1 to 8; written once
