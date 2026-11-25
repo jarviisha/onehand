@@ -373,6 +373,7 @@ fn fill_keeps_a_steps_own_settings() {
     use crate::workflow::{StepKind, StepSpec};
     let mut template = prompt_template();
     template.steps.push(StepSpec {
+        limit: None,
         id: "own".into(),
         label: "Own".into(),
         kind: StepKind::Agent {
@@ -409,6 +410,7 @@ fn fill_reaches_a_review_step() {
     use crate::workflow::{StepKind, StepSpec};
     let mut template = prompt_template();
     template.steps.push(StepSpec {
+        limit: None,
         id: "review".into(),
         label: "Review".into(),
         kind: StepKind::Review {

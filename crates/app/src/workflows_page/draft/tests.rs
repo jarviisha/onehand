@@ -2,6 +2,7 @@ use super::*;
 
 fn agent(id: &str, keep_answer: bool) -> StepSpec {
     StepSpec {
+        limit: None,
         id: id.to_string(),
         label: id.to_string(),
         kind: StepKind::Agent {
@@ -17,6 +18,7 @@ fn agent(id: &str, keep_answer: bool) -> StepSpec {
 
 fn command(id: &str, on_fail: &str) -> StepSpec {
     StepSpec {
+        limit: None,
         id: id.to_string(),
         label: id.to_string(),
         kind: StepKind::Command {
@@ -285,6 +287,7 @@ fn review_template(on_reject: Option<&str>) -> Template {
             agent_step("work"),
             agent_step("fix"),
             StepSpec {
+                limit: None,
                 id: "review".into(),
                 label: "Review".into(),
                 kind: StepKind::Review {

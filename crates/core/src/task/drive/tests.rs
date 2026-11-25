@@ -923,6 +923,7 @@ fn a_mark_not_pinned_is_told_and_the_run_goes_on() {
 fn forging() -> Rig {
     let mut template = Template::blank("Forge");
     let step = |id: &str, kind| StepSpec {
+        limit: None,
         id: id.into(),
         label: id.into(),
         kind,
@@ -1187,6 +1188,7 @@ fn a_look_after_the_run_stopped_is_dropped() {
 /// An agent step of `id`, on `agent` when it names one.
 fn agent_step(id: &str, label: &str, agent: Option<&str>) -> StepSpec {
     StepSpec {
+        limit: None,
         id: id.into(),
         label: label.into(),
         kind: StepKind::Agent {
@@ -1202,6 +1204,7 @@ fn agent_step(id: &str, label: &str, agent: Option<&str>) -> StepSpec {
 
 fn verify_step(on_fail: &str) -> StepSpec {
     StepSpec {
+        limit: None,
         id: "verify".into(),
         label: "Verify".into(),
         kind: StepKind::Command {
@@ -1220,6 +1223,7 @@ fn reviewed() -> Template {
         verify_step("implement"),
         agent_step("review", "Review", Some("Claude")),
         StepSpec {
+            limit: None,
             id: "approve".into(),
             label: "Approve".into(),
             kind: StepKind::Approval {
@@ -1590,6 +1594,7 @@ fn with_a_review() -> Template {
     template.steps = vec![
         agent_step("implement", "Implement", None),
         StepSpec {
+            limit: None,
             id: "review".into(),
             label: "Review".into(),
             kind: StepKind::Review {

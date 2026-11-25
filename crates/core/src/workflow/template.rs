@@ -56,13 +56,13 @@ fn default_timeout() -> String {
 
 impl Template {
     /// The schema a file of this template must carry: 2 once a step names
-    /// its agent or reviews another, else 1, so a file nothing new touches
+    /// its agent, reviews another or carries a limit, else 1, so a file nothing new touches
     /// stays readable by an older onehand.
     pub fn schema_version_needed(&self) -> u32 {
         if self
             .steps
             .iter()
-            .any(|step| step.agent().is_some() || step.is_review())
+            .any(|step| step.agent().is_some() || step.is_review() || step.limit.is_some())
         {
             2
         } else {
@@ -195,6 +195,9 @@ impl Place {
 pub struct StepSpec {
     pub id: String,
     pub label: String,
+    /// How many runs may hold the step at once; none, no limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
     #[serde(flatten)]
     pub kind: StepKind,
 }

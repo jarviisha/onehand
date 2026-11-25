@@ -338,6 +338,7 @@ fn one_agent_step() -> Template {
     let mut template = Template::blank("One step");
     template.id = "one-step".into();
     template.steps.push(StepSpec {
+        limit: None,
         id: "do".into(),
         label: "Do".into(),
         kind: StepKind::Agent {

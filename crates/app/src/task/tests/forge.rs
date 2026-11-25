@@ -184,6 +184,7 @@ fn to_a_pull_request() -> Template {
     template.id = "to-a-pull-request".into();
     template.place = Place::Worktree;
     let step = |id: &str, kind| StepSpec {
+        limit: None,
         id: id.into(),
         label: id.into(),
         kind,
@@ -219,6 +220,7 @@ fn through_status_checks() -> Template {
     let mut template = to_a_pull_request();
     template.id = "through-status-checks".into();
     template.steps.push(StepSpec {
+        limit: None,
         id: "status-checks".into(),
         label: "status-checks".into(),
         kind: StepKind::StatusChecks {

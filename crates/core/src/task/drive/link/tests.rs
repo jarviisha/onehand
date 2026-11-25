@@ -446,6 +446,7 @@ fn run_of(steps: &[(&str, &str, Option<&str>)]) -> (String, Run, Action) {
     run.template.steps = steps
         .iter()
         .map(|(id, label, agent)| crate::workflow::StepSpec {
+            limit: None,
             id: id.to_string(),
             label: label.to_string(),
             kind: crate::workflow::StepKind::Agent {

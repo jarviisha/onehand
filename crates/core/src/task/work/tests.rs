@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 pub(super) fn step(id: &str, kind: StepKind) -> StepSpec {
     StepSpec {
+        limit: None,
         id: id.into(),
         label: {
             let mut label = id.to_string();

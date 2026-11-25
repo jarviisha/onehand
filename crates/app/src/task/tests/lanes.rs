@@ -49,6 +49,7 @@ pub(in crate::task) fn open_lane(
 
 fn step(id: &str, label: &str, agent: Option<&str>) -> StepSpec {
     StepSpec {
+        limit: None,
         id: id.into(),
         label: label.into(),
         kind: StepKind::Agent {
@@ -288,6 +289,7 @@ fn with_a_review() -> Template {
     template.steps = vec![
         step("do", "Do", None),
         StepSpec {
+            limit: None,
             id: "review".into(),
             label: "Review".into(),
             kind: StepKind::Review {
