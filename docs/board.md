@@ -26,11 +26,13 @@ on this machine. A project on a host has none: its issues are not kept here.
   it, or back to the Backlog.
 - **A step's column** holds the board's tasks at that step: working, or ended and needing
   attention. A task whose step left the workflow gets a column after the others, named by the
-  step's id. **Done** holds finished ones, newest first. A column can run its own agent: the step
+  step's id. A step with a limit says it in its head, `<label> · <n> of <limit>`, with n the
+  tasks holding room there. **Done** holds finished ones, newest first. A column can run its own agent: the step
   names one, and its task works that step in a session of that agent. A column whose step is a
   review sends tasks back on its own: its agent approves, or returns the task to an earlier
   column with a note, and the task is drawn there again.
-- **Pulling.** When the team has room, the first issue in To do starts a task of the board's
+- **Pulling.** When the team has room, and the workflow's first step has room when it is limited
+  (a task waiting for room there is counted, as is a start on its way), the first issue in To do starts a task of the board's
   workflow, the brief made from the issue (`issues::supervised_brief_blocking`). The task is made
   when the issue is pulled, started off screen as a schedule's is (`task::start_off_screen`), so
   an issue in To do is not a task and is not on the Tasks page. The Tasks page's row reads *from
@@ -68,6 +70,8 @@ skipped. `crates/app/src/board.rs` carries it out. A look
 happens when:
 
 - To do or the team changes, or a board is bound;
+- room frees at a step, whoever held it, so a task of the board held at the first step by another
+  workflow's run or by a task of no board still lets a pull go on (`RoomFreed`);
 - a board task ends done, or a person stopped or took it over (`Signal::BoardEnded`, whose
   `pull` core decides). One that ended without finishing pulls nothing: the next would most
   likely end the same way, one after another until To do is empty;
@@ -77,6 +81,9 @@ happens when:
 
 And only while a window holds the project; there is none to start a task from otherwise. Opening
 a window on the project does not pull (see [known-gaps.md](known-gaps.md)).
+
+A run waiting for room still counts toward the team: it holds a worktree and a place. Step limits
+only narrow the pull, never raise the team size.
 
 The starts on their way, issues taken out of To do whose task is not yet kept, are counted as
 running so the team is not overfilled. They live in `ProjectsDrive` (`start_todo`, `landed`) and

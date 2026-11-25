@@ -62,6 +62,7 @@ mode = "plan"             # agent settings, by the agent's own ids; both optiona
 options = { model = "strong", effort = "high" }
 gates = ["answered", "code_unchanged"]
 keep_answer = true
+limit = 2                 # optional: at most 2 tasks of the project at this step at once; written as schema_version 2
 prompt = """
 {brief}
 
@@ -227,6 +228,15 @@ a workflow's TOML, and `save_workflow` takes it back through `store::save_text_b
 parse, validation and name check, going over the person's own file that has its id, else into a
 new one.
 
+### Step limit
+
+`limit` on any step, an integer of at least 1, caps how many tasks of one project run it at once;
+a step without it has no cap. A file using it is written as `schema_version = 2`, as one with a
+step agent or a review is. A limit of 0 is refused (*limit is 0: give at least 1, or leave the key
+out*). The editor's *Limit* field beside the label takes the number; one that is not a whole
+number is a problem of the draft, said and not read as no limit. What waiting for room does is in
+[The engine](#the-engine).
+
 ### Validation
 
 `workflow::validate` is run on every keystroke of the form, before Save, and before a run starts.
@@ -321,6 +331,19 @@ the run's history, capped at 200.
   otherwise. The run is named as well as the visit, because visit ids count from 1 in every run.
   So a window still showing a plan another window had revised, a double press, a press after the
   run was cut off and a press from a view of a run a Retry replaced all approve nothing.
+- **A step with a `limit` has room for that many runs** (`Template::limit_at`). Counted are the
+  tasks of one repository (`setup.repo`) whose run's workflow has the same id and that hold room
+  at that step id; the limit used is the asking run's snapshot's, and a workflow with no id (a run
+  from before ids) is never limited. A run that reaches a full step closes its visit, takes the
+  step with no visit open and waits (`Await::Room`, never persisted); its session is noted
+  `Waiting for room at <label>.` and its budget pauses until it starts. **Room is held** from the
+  moment it is granted until the run moves to another step or ends, however it ends; going back
+  to the step it holds, as a retry of a visit does, asks for nothing new, while any other step
+  that is limited asks for its own. Waiting runs are served first in first out per step, and a
+  run that was already waiting keeps its place. Stop or take over ends a waiting run as it does
+  any, and it leaves the queue (`task::rooms`). **Room is in memory only**: after a restart a run
+  that waited or held room comes back cut off, as every started run does, and its Resume asks for
+  room again before the step starts.
 - **Misses are counted per stretch**: they reset only when the run reaches a step further on than it
   has been, so a command that keeps failing cannot loop with its `on_fail` step forever.
 - **`stopped` never judges the turn** that was under way, whatever the reason: a cut-short turn

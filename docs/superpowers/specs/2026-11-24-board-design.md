@@ -202,11 +202,17 @@ by the tool `review_verdict`, which onehand's prompt names in a closing line.
 
 ### Step limits
 
-- Any step may carry `limit = N`: at most N tasks of the project at that step at once, counted over
-  every task of the project running this workflow (by workflow id). A run that reaches a full step
-  waits before it, said on the task (*Waiting for room at Review*), and starts first in first out
-  as room frees. Waiting for room is not working time and does not count against the timeout.
+- Any step may carry `limit = N` (an integer of at least 1; a file using it is schema 2): at most
+  N tasks at that step at once, counted over the tasks of the same repository whose run has the
+  same workflow id. A run that reaches a full step waits before it, said on the task (*Waiting for
+  room at Review*), and starts first in first out as room frees. It holds room until it moves to
+  another step or ends. Waiting for room is not working time and does not count against the
+  timeout. Room is in memory only: a restart brings a waiting run back cut off, and Resume asks
+  again.
 - A step without a limit has none, as today.
+- The board pulls only while the workflow's first step has room, a waiting run still counts
+  toward the team, and a column head says `<label> · <n> of <limit>`. A pull also follows room
+  freeing at a step.
 
 ### The board screen
 
