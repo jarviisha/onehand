@@ -2,7 +2,7 @@
 //! the transcript, the prompt sent once the agent is up, the command run,
 //! the forge called, the wait begun, the run finished.
 
-use super::{settings, Asked, Effect, RunDrive};
+use super::{settings, Asked, Effect, Lane, RunDrive};
 use crate::chat::{Chat, Link};
 use crate::preflight::{found_late, mode_refused, About};
 use crate::workflow::{Action, Outcome, Pick, Stop};
@@ -30,7 +30,12 @@ impl RunDrive {
         let dir = self.run.setup.dir.clone();
         match action {
             Action::Measure => fx.push(Effect::Measure { dir }),
-            Action::Prompt(text) => self.send(text, chat, now, fx),
+            Action::Prompt(text) => {
+                // A step in another lane is prompted once its session is.
+                if let Some(text) = self.enter_lane(text, fx) {
+                    self.send(text, chat, now, fx);
+                }
+            }
             Action::RunCommand(command) => {
                 self.command = true;
                 self.asked.push(Asked::Note(format!("Running: {command}")));
@@ -134,13 +139,19 @@ impl RunDrive {
         self.asked.push(Asked::Prompt { text, at: fx.len() });
     }
 
-    /// The agent is up, the first time in this session: put it in the run's
-    /// mode before its first prompt.
+    /// The agent is up, the first time in this session: in the run's own
+    /// lane, put it in the run's mode before its first prompt.
     /// Whether the prompt may go: an agent that does not offer the mode fails
     /// the run, since one left in the mode that asks before every edit would
     /// park at the first.
     fn came_up(&mut self, chat: &Chat, now: Now, fx: &mut Vec<Effect>) -> bool {
         if std::mem::replace(&mut self.here.up, true) {
+            return true;
+        }
+        // A step's lane runs in the step's own mode, which its settings put
+        // in force, else in its agent's.
+        if self.lane != Lane::Run {
+            self.here.baseline = Some(chat.in_force());
             return true;
         }
         let Some(mode) = self.run.setup.mode.clone() else {

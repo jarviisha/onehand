@@ -10,7 +10,7 @@
 //! it holds for one call ([`Joined`]), and carries out what comes back
 //! ([`Out`]): the session's effects, then the run's.
 
-use super::{Asked, Effect, Input, RunDrive};
+use super::{Asked, Effect, Input, Lane, RunDrive};
 use crate::chat::drive::{Code, Effect as SessionEffect, Intake, Origin, SessionDrive, Signal};
 use crate::chat::Chat;
 use crate::workflow::{Action, ApprovalAt, Run};
@@ -42,9 +42,10 @@ impl<'a> Joined<'a> {
     /// Start driving `run` on `session`, with `first` as [`Run::resume`]
     /// said: the run's drive, and what starting it says to do.
     ///
-    /// The session is named for the task unless it has a name already, so the
-    /// rail tells runs apart rather than calling each by the opening line of
-    /// its first prompt. Before that prompt the name is only held, and the
+    /// The session is named for the task, and for the step when it is a
+    /// step's lane, unless it has a name already, so the rail tells runs
+    /// apart rather than calling each by the opening line of its first
+    /// prompt. Before that prompt the name is only held, and the
     /// first turn's save writes it.
     pub fn start(
         task: String,
@@ -57,7 +58,7 @@ impl<'a> Joined<'a> {
         let mut out = Out::default();
         if let Some(session) = session.as_deref_mut() {
             if session.custom_title.is_none() {
-                let (named, fx) = session.rename(&run.brief.title);
+                let (named, fx) = session.rename(&Lane::at(&run).name(&run));
                 out.told = named;
                 out.session = fx;
             }
@@ -125,11 +126,24 @@ impl<'a> Joined<'a> {
         }
         let mut refused = Vec::new();
         for asked in asked {
-            out.told = true;
             match asked {
-                Asked::Note(text) => out.session.extend(session.note(text)),
-                Asked::Cancel => out.session.extend(session.stop()),
+                Asked::Name(name) => {
+                    if session.custom_title.is_none() {
+                        let (named, fx) = session.rename(&name);
+                        out.told |= named;
+                        out.session.extend(fx);
+                    }
+                }
+                Asked::Note(text) => {
+                    out.told = true;
+                    out.session.extend(session.note(text));
+                }
+                Asked::Cancel => {
+                    out.told = true;
+                    out.session.extend(session.stop());
+                }
                 Asked::Prompt { text, at } => {
+                    out.told = true;
                     let (answer, said) = submit(session, &text, now);
                     out.session.extend(said);
                     if let Some(input) = answer {
@@ -169,6 +183,32 @@ pub fn input_of(signal: &Signal, drive: &RunDrive, session: &SessionDrive) -> Op
         // Between-turn work, a refused stop, and what a save, a code send or
         // a rename came to move no run.
         Signal::CycleEnded
+        | Signal::StopRefused(_)
+        | Signal::SaveFailed(_)
+        | Signal::CodeFailed(_)
+        | Signal::RenameFailed(_) => None,
+    }
+}
+
+/// What `signal`, from the session of `lane`, which is not the run's
+/// current lane, tells the run, if anything: only a person's prompt there,
+/// which takes the run over, and the session going. The rest is a lane the
+/// run is not working in.
+pub fn lane_input_of(
+    signal: &Signal,
+    lane: &Lane,
+    drive: &RunDrive,
+    session: &SessionDrive,
+) -> Option<Input> {
+    match signal {
+        Signal::Appended => drive
+            .heeds_lane_appended(lane, session)
+            .then(|| Input::LaneAppended { lane: lane.clone() }),
+        Signal::Disconnected(_) => Some(Input::LaneGone { lane: lane.clone() }),
+        Signal::TurnEnded
+        | Signal::AwaitingUser(_)
+        | Signal::PickRefused(_)
+        | Signal::CycleEnded
         | Signal::StopRefused(_)
         | Signal::SaveFailed(_)
         | Signal::CodeFailed(_)

@@ -6,6 +6,7 @@
 //! the run holds on until it lands. A finished run takes no answer at all:
 //! its carrier lets it go, and what the run kept is the task's.
 
+use super::Lane;
 use crate::connector::{Check, PullRequest};
 use crate::workflow::{CommandResult, Facts, Mark, Outcome};
 use std::path::PathBuf;
@@ -57,6 +58,22 @@ pub enum Input {
     Elapsed(Timer),
     /// The run's write landed, or why it did not.
     Saved(Result<(), String>),
+    /// The session [`Effect::OpenSession`] asked for is open and bound to
+    /// `lane`, or why it did not start.
+    LaneOpened {
+        lane: Lane,
+        result: Result<(), String>,
+    },
+    /// Something landed in the session of `lane`, which is not the current
+    /// one. Given with that lane's session, not the current one's.
+    LaneAppended {
+        lane: Lane,
+    },
+    /// The session of `lane`, which is not the current one, disconnected or
+    /// was closed.
+    LaneGone {
+        lane: Lane,
+    },
 }
 
 /// What a run waits for on a clock. Each has one clock, which arming again
@@ -96,6 +113,9 @@ pub(crate) enum Asked {
     Prompt { text: String, at: usize },
     /// Cancel the session's turn. Asked only while one runs.
     Cancel,
+    /// Call the session this, unless it has a name of its own: a lane's
+    /// session, bound.
+    Name(String),
 }
 
 /// What a front end is to do, in the order given.
@@ -169,4 +189,16 @@ pub enum Effect {
     Signal(Signal),
     /// The run is over, as `outcome`: keep it and let its place go.
     Finish { outcome: Outcome },
+    /// Open a session of `agent` named `name`, unshown, for `lane`, and
+    /// report [`Input::LaneOpened`]; from then on the run's calls come with
+    /// it, since `lane` is already the current one. `agent` is empty when
+    /// the run's setup names none, as for the run's first session.
+    ///
+    /// Awaited: the step's prompt waits in its lane for the session. Once
+    /// the run has finished, the session opened is the carrier's to close.
+    OpenSession {
+        lane: Lane,
+        agent: String,
+        name: String,
+    },
 }

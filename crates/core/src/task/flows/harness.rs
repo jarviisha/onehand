@@ -315,7 +315,10 @@ impl Flow {
             | RunEffect::FindPullRequest
             | RunEffect::OpenPullRequest
             | RunEffect::ReadLogs { .. }
-            | RunEffect::MarkReady { .. } => panic!("these flows run no command and use no forge"),
+            | RunEffect::MarkReady { .. }
+            | RunEffect::OpenSession { .. } => {
+                panic!("these flows run no command, use no forge and name no agent")
+            }
         }
     }
 

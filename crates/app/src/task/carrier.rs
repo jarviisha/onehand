@@ -328,6 +328,9 @@ fn perform(id: &str, effects: Vec<Effect>, cx: &mut App) {
                 }
             }
             Effect::Finish { .. } => finish(id, session.as_ref(), cx),
+            // Only a step naming its agent asks for a lane's session, and
+            // opening one is not carried yet: a run that asks waits there.
+            Effect::OpenSession { .. } => {}
         }
     }
 }

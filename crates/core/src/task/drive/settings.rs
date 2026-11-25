@@ -6,7 +6,7 @@
 //! or any pick refused, fails the run at that step. One the step only takes from the start and the agent no longer offers is
 //! left as the agent has it.
 
-use super::{Asked, Effect, RunDrive};
+use super::{Asked, Effect, Lane, RunDrive};
 use crate::chat::{Chat, MODE_SELECTOR};
 use crate::preflight::{found_late, About};
 use crate::workflow::{next, Next, Pick, Settings};
@@ -31,10 +31,14 @@ fn open_visit(d: &RunDrive) -> Option<u32> {
         .map(|v| v.id)
 }
 
-/// What the open visit runs with: its step's own settings over the run's
+/// What the open visit runs with: its step's own settings over its lane's
 /// starting ones, and the groups the step names itself.
 fn wanted(d: &RunDrive) -> (Settings, Vec<String>) {
-    let start = d.run.started_with.clone().unwrap_or_default();
+    let start = match d.current_lane() {
+        Lane::Run => d.run.started_with.clone(),
+        Lane::Step(_) => d.here.baseline.clone(),
+    };
+    let start = start.unwrap_or_default();
     d.run
         .current()
         .map(|step| {

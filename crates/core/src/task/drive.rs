@@ -51,7 +51,8 @@ use pin::{Answer, Held};
 pub(crate) use signals::Asked;
 pub use signals::{Effect, Input, Signal, Timer};
 
-/// A run under way on one session.
+/// A run under way, on its sessions: one for the run, and one for each
+/// step naming its agent.
 pub struct RunDrive {
     /// The task the run is of.
     task: String,
@@ -139,7 +140,7 @@ impl RunDrive {
             held: None,
             waiting: None,
             lane,
-            here: LaneState::default(),
+            here: LaneState::new(chat.is_some()),
             away: BTreeMap::new(),
             answer_from: 0,
             sent_at: None,
@@ -366,6 +367,9 @@ impl RunDrive {
             Input::MarkedReady(ready) => self.marked_ready(ready, chat, now, &mut fx),
             Input::Elapsed(Timer::Checks) => self.look_again(&mut fx),
             Input::NoForge(why) => self.no_forge(why, chat, now, &mut fx),
+            Input::LaneOpened { lane, result } => self.opened(lane, result, chat, now, &mut fx),
+            Input::LaneAppended { lane } => self.appended_in(lane, chat, now, &mut fx),
+            Input::LaneGone { lane } => self.gone(lane, chat, now, &mut fx),
             Input::Saved(Ok(())) => self.save_failed = false,
             Input::Saved(Err(why)) => {
                 if !std::mem::replace(&mut self.save_failed, true) {
@@ -466,7 +470,10 @@ impl RunDrive {
             | Input::MarkedReady(_)
             | Input::NoForge(_)
             | Input::Elapsed(_)
-            | Input::Saved(_) => {}
+            | Input::Saved(_)
+            | Input::LaneOpened { .. }
+            | Input::LaneAppended { .. }
+            | Input::LaneGone { .. } => {}
         }
     }
     /// A person's answer to the approval the run waits on: held while a mark

@@ -185,6 +185,7 @@ fn name(e: &Effect) -> &'static str {
         Effect::SessionChanged => "SessionChanged",
         Effect::Signal(_) => "Signal",
         Effect::Finish { .. } => "Finish",
+        Effect::OpenSession { .. } => "OpenSession",
     }
 }
 
@@ -437,4 +438,92 @@ fn a_runs_session_is_named_for_its_task_unless_it_has_a_name() {
     session.rename("Mine");
     let (pair, _) = Pair::start_on((session, rx), run());
     assert_eq!(pair.session.custom_title.as_deref(), Some("Mine"));
+}
+
+/// A run of `steps`, each an agent step, on the agent each names.
+fn run_of(steps: &[(&str, &str, Option<&str>)]) -> (String, Run, Action) {
+    let (task, mut run, _) = run();
+    run.template.steps = steps
+        .iter()
+        .map(|(id, label, agent)| crate::workflow::StepSpec {
+            id: id.to_string(),
+            label: label.to_string(),
+            kind: crate::workflow::StepKind::Agent {
+                prompt: format!("{label} it."),
+                gates: Vec::new(),
+                keep_answer: false,
+                mode: None,
+                options: Default::default(),
+                agent: agent.map(str::to_string),
+            },
+        })
+        .collect();
+    run.step = 0;
+    let first = run.resume(0);
+    (task, run, first)
+}
+
+#[test]
+fn a_step_lanes_session_is_named_for_the_task_and_step() {
+    // The first session is the first step's lane.
+    let (pair, _) = Pair::start_on(session(), run_of(&[("review", "Review", Some("Claude"))]));
+    let named = pair.session.custom_title.as_deref();
+    assert_eq!(named, Some("Fix the thing · Review"));
+
+    // A lane opened later is named once it is bound.
+    let steps = [
+        ("implement", "Implement", None),
+        ("review", "Review", Some("Claude")),
+    ];
+    let (mut pair, mut fx) = Pair::start_on(session(), run_of(&steps));
+    for _ in 0..12 {
+        if names(&fx).contains(&"OpenSession") {
+            break;
+        }
+        fx = match names(&fx) {
+            n if n.contains(&"Pin") => pair.on(Input::Pinned(Ok("c".into()))),
+            n if n.contains(&"Measure") => pair.on(Input::Measured(Ok(mark("a")))),
+            n if n.contains(&"ReadFacts") => pair.on(Input::TurnRead(Ok(crate::workflow::Facts {
+                head: "a".into(),
+                dirty: false,
+                commits: 0,
+                digest: "d0".into(),
+            }))),
+            _ => pair.agent(AcpEvent::TurnEnded {
+                stop_reason: "end_turn".into(),
+            }),
+        };
+    }
+    assert!(names(&fx).contains(&"OpenSession"), "{fx:?}");
+    let (mut lane, _rx) = session();
+    let out = Joined::new(&mut pair.drive, Some(&mut lane)).handle(
+        Input::LaneOpened {
+            lane: Lane::Step("review".into()),
+            result: Ok(()),
+        },
+        pair.now,
+    );
+    assert!(out.told);
+    assert_eq!(lane.custom_title.as_deref(), Some("Fix the thing · Review"));
+    assert!(lane.busy, "the review's prompt went to its own session");
+    assert_eq!(pair.session.custom_title.as_deref(), Some("Fix the thing"));
+
+    // The run's own session, left, is heard of only for a person's prompt
+    // there and for its going.
+    let run = Lane::Run;
+    let heard =
+        |signal: &Signal, pair: &Pair| lane_input_of(signal, &run, &pair.drive, &pair.session);
+    assert_eq!(heard(&Signal::Appended, &pair), None);
+    assert_eq!(heard(&Signal::TurnEnded, &pair), None);
+    let gone = Signal::Disconnected(crate::chat::drive::Ended::Lost);
+    assert_eq!(
+        heard(&gone, &pair),
+        Some(Input::LaneGone { lane: Lane::Run })
+    );
+    pair.session
+        .prompt("Mine", &[], Origin::Person, Code::Here, now());
+    assert_eq!(
+        heard(&Signal::Appended, &pair),
+        Some(Input::LaneAppended { lane: Lane::Run })
+    );
 }
