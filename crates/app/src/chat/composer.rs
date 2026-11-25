@@ -170,6 +170,9 @@ pub enum ComposerEvent {
     /// Something done to the project's branch from its chip. The pane owns the
     /// way to the shell, which carries it out.
     Branch(BranchAct),
+    /// Start a new conversation in the session on screen. The pane owns the
+    /// session and decides whether it may leave the one it is on.
+    NewConversation,
 }
 
 /// What the branch chip's menu offers.
@@ -291,6 +294,20 @@ impl Composer {
             menu_bounds: Default::default(),
             _subscriptions: vec![subscription],
         }
+    }
+
+    /// What sending would ask of the composer itself rather than of the
+    /// agent, against the commands the agent offers. Staged files mean a
+    /// prompt is being sent, whatever its words.
+    pub fn own_command(
+        &self,
+        advertised: &[onehand_core::acp::SlashCommand],
+        cx: &App,
+    ) -> Option<onehand_core::completion::OwnCommand> {
+        self.attachments
+            .is_empty()
+            .then(|| onehand_core::completion::own_command(&self.text(cx), advertised))
+            .flatten()
     }
 
     pub fn text(&self, cx: &App) -> String {

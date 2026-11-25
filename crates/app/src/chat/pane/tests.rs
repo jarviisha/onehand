@@ -389,6 +389,108 @@ mod lifecycle {
         );
     }
 
+    /// A new conversation puts a fresh session in the live one's place, lets
+    /// the old one go, and carries none of its name over.
+    #[gpui::test]
+    fn a_new_conversation_replaces_the_session_without_its_name(cx: &mut TestAppContext) {
+        let (pane, cx) = pane(cx);
+        open(&pane, 1, cx);
+        let old = session(&pane, 1, cx).expect("a session");
+        let renamed = old
+            .update(cx, |session, cx| session.rename("the old one", cx))
+            .expect("still live");
+        assert!(renamed);
+        let started = pane.update(cx, |pane, cx| pane.new_conversation(1, cx));
+        assert!(started);
+        cx.run_until_parked();
+        let new = session(&pane, 1, cx).expect("a session");
+        assert_ne!(old.entity_id(), new.entity_id());
+        assert!(old.upgrade().is_none(), "the old adapter is let go");
+        let title = new
+            .read_with(cx, |session, _| session.chat().custom_title.clone())
+            .expect("live");
+        assert_eq!(title, None, "the new conversation has no name yet");
+        let nothing = pane.update(cx, |pane, cx| pane.new_conversation(9, cx));
+        assert!(!nothing, "no session, nothing started");
+    }
+
+    /// `/clear` sent alone starts a new conversation and leaves the composer
+    /// empty; with words after it, it is a prompt and the session stays.
+    #[gpui::test]
+    fn clear_sent_alone_starts_a_new_conversation(cx: &mut TestAppContext) {
+        use onehand_core::workspace::drive::StartsOn;
+        let (pane, cx) = pane(cx);
+        cx.update(|window, cx| {
+            pane.update(cx, |pane, cx| {
+                let (root, starts) = (PathBuf::from("/tmp"), StartsOn::Fresh);
+                pane.show(1, root, None, &nowhere(), starts, window, cx)
+            })
+        });
+        cx.run_until_parked();
+        let type_and_send = |text: &'static str, cx: &mut VisualTestContext| {
+            cx.update(|window, cx| {
+                pane.update(cx, |pane, cx| {
+                    pane.composer.update(cx, |composer, cx| {
+                        composer
+                            .state
+                            .update(cx, |state, cx| state.set_value(text, window, cx))
+                    });
+                    pane.submit(window, cx);
+                })
+            });
+            cx.run_until_parked();
+        };
+        let text = |cx: &mut VisualTestContext| {
+            pane.read_with(cx, |pane, cx| pane.composer.read(cx).text(cx))
+        };
+
+        let old = session(&pane, 1, cx).expect("a session");
+        type_and_send("/clear now", cx);
+        let same = session(&pane, 1, cx).expect("a session");
+        assert_eq!(
+            old.entity_id(),
+            same.entity_id(),
+            "a prompt, not the command"
+        );
+
+        type_and_send("/clear", cx);
+        let new = session(&pane, 1, cx).expect("a session");
+        assert_ne!(old.entity_id(), new.entity_id(), "a fresh conversation");
+        assert_eq!(text(cx), "", "the command does not stay in the field");
+    }
+
+    /// The picker's fresh start leaves the conversation held live behind it,
+    /// as a new conversation does, carrying no name over; a picker put up
+    /// before anything connected left nothing.
+    #[gpui::test]
+    fn the_pickers_fresh_start_leaves_what_it_held(cx: &mut TestAppContext) {
+        let (pane, cx) = pane(cx);
+        open(&pane, 1, cx);
+        let live = session(&pane, 1, cx).expect("a session");
+        live.update(cx, |session, cx| session.rename("the old one", cx))
+            .expect("still live");
+        pane.update(cx, |pane, _| {
+            pane.choose_history(1, Some(live.entity_id()), past())
+        });
+        assert!(
+            pane.update(cx, |pane, cx| pane.start_fresh(1, cx)),
+            "it left one"
+        );
+        cx.run_until_parked();
+        let new = session(&pane, 1, cx).expect("a session");
+        assert_ne!(live.entity_id(), new.entity_id());
+        let title = new
+            .read_with(cx, |session, _| session.chat().custom_title.clone())
+            .expect("live");
+        assert_eq!(title, None);
+        let unheld = pane.update(cx, |pane, cx| {
+            pane.conversations.get_mut(&1).expect("open").disconnect();
+            pane.choose_history(1, None, past());
+            pane.start_fresh(1, cx)
+        });
+        assert!(!unheld, "nothing was live to leave");
+    }
+
     /// A restart puts a new session in the old one's place, and the old one
     /// is gone by then; one with nothing live restarts nothing.
     #[gpui::test]

@@ -99,13 +99,16 @@ impl ControlDrive {
         uids
     }
 
-    /// Whether session `uid` may leave its conversation to choose another:
-    /// never while it leads workers, which would be left with no lead, or
-    /// merged past the cap with the ones the other conversation brings back.
-    pub fn may_leave_conversation(&self, uid: u64) -> Result<(), ResumeRefused> {
-        match self.leads_workers(uid) {
-            true => Err(ResumeRefused::LeadsWorkers),
-            false => Ok(()),
+    /// Whether session `uid`, `busy` saying whether a turn runs there, may
+    /// leave its conversation for another or a fresh one: never while it
+    /// leads workers, which would be left with no lead, or merged past the
+    /// cap with the ones the other conversation brings back; and never mid
+    /// turn, which leaving would throw away.
+    pub fn may_leave_conversation(&self, uid: u64, busy: bool) -> Result<(), ResumeRefused> {
+        match (self.leads_workers(uid), busy) {
+            (true, _) => Err(ResumeRefused::LeadsWorkers),
+            (false, true) => Err(ResumeRefused::TurnRunning),
+            (false, false) => Ok(()),
         }
     }
 
@@ -287,6 +290,13 @@ impl ControlDrive {
         if let Some(relation) = self.workers.get_mut(&uid) {
             let mut changed = false;
             if relation.conversation.as_ref() != Some(&session_id) {
+                // Another conversation counts its prompts on its own, from
+                // where it stands now: the lead's count in the one before
+                // would hide the person's first prompts here. Only the first
+                // conversation keeps what the lead's turn already counted.
+                if relation.conversation.is_some() {
+                    relation.sent = prompts_sent;
+                }
                 relation.conversation = Some(session_id);
                 changed = true;
             }

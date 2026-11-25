@@ -107,7 +107,7 @@ impl ChatPane {
                             .primary()
                             .label("Start a new conversation")
                             .on_click(cx.listener(move |pane: &mut Self, _, _, cx| {
-                                pane.start(uid, None, cx);
+                                pane.start_fresh(uid, cx);
                             })),
                     ),
             )
