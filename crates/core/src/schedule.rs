@@ -294,6 +294,7 @@ pub fn prompt_template() -> Template {
             keep_answer: false,
             mode: None,
             options: BTreeMap::new(),
+            agent: None,
         },
     });
     template

@@ -4,4 +4,5 @@
 //! on scratch repositories.
 
 pub(crate) mod harness;
+mod lanes;
 mod schedule;

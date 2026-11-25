@@ -242,9 +242,11 @@ pub(super) fn perform(
             }
             Effect::Defer(input) => cx.defer(move |cx| feed(input, cx)),
             Effect::Told { task, placed } => tell(&task, placed, cx),
-            Effect::CloseSession { uid, window } => cx.defer(move |cx| {
+            Effect::CloseSession { uids, window } => cx.defer(move |cx| {
                 crate::windows::with_shell(window, cx, |shell, window, cx| {
-                    shell.close_finished(uid, window, cx)
+                    for uid in uids {
+                        shell.close_finished(uid, window, cx);
+                    }
                 });
             }),
             Effect::Signal(signal) => say(signal, cx),

@@ -8,7 +8,7 @@ use std::time::Duration;
 /// The newest template layout this build reads and writes. A file carrying a
 /// higher number was written by a newer onehand, and is refused rather than
 /// read with whatever this build happens to understand of it.
-pub const SCHEMA_VERSION: u32 = 1;
+pub(crate) const SCHEMA_VERSION: u32 = 2;
 
 /// The id of the one-step workflow a schedule's prompt runs as. No library
 /// file takes it: a person's takes its file name, a shipped one `builtin:`.
@@ -55,10 +55,21 @@ fn default_timeout() -> String {
 }
 
 impl Template {
+    /// The schema a file of this template must carry: 2 once a step names
+    /// its agent, else 1, so a file nothing new touches stays readable by an
+    /// older onehand.
+    pub fn schema_version_needed(&self) -> u32 {
+        if self.steps.iter().any(|step| step.agent().is_some()) {
+            2
+        } else {
+            1
+        }
+    }
+
     /// An empty template with the defaults filled in, to start a new one from.
     pub fn blank(name: &str) -> Self {
         Self {
-            schema_version: SCHEMA_VERSION,
+            schema_version: 1,
             id: String::new(),
             version: default_version(),
             name: name.to_string(),
@@ -183,14 +194,32 @@ pub struct StepSpec {
 }
 
 impl StepSpec {
+    /// The agent the step names, on an agent step that does.
+    pub fn agent(&self) -> Option<&str> {
+        match &self.kind {
+            StepKind::Agent { agent, .. } => agent.as_deref(),
+            StepKind::Command { .. }
+            | StepKind::Approval { .. }
+            | StepKind::Push
+            | StepKind::PullRequest
+            | StepKind::StatusChecks { .. } => None,
+        }
+    }
+
     /// What the step does, in a line: its kind, then what it checks or runs
     /// and where it leads.
     pub fn summary(&self) -> String {
         match &self.kind {
             StepKind::Agent {
-                gates, keep_answer, ..
+                gates,
+                keep_answer,
+                agent,
+                ..
             } => {
                 let mut parts = vec!["Agent".to_string()];
+                if let Some(agent) = agent {
+                    parts[0] = format!("Agent on {agent}");
+                }
                 if !gates.is_empty() {
                     let gates: Vec<&str> = gates.iter().map(|gate| gate.label()).collect();
                     parts.push(gates.join(", "));
@@ -236,6 +265,10 @@ pub enum StepKind {
         /// first prompt, exactly as the agent sends them.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         options: BTreeMap<String, String>,
+        /// The agent of the agent list this step runs on, or `None` for the
+        /// run's own.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent: Option<String>,
     },
     /// Run a command in the work, onehand itself; `None` runs the project's
     /// check command. A failure goes back to the step `on_fail`, carrying
@@ -285,18 +318,21 @@ impl StepKind {
     /// it: *the agent changes the code*, *onehand runs the check command*.
     pub(crate) fn does(&self) -> String {
         match self {
-            Self::Agent { gates, .. } => {
+            Self::Agent { gates, agent, .. } => {
                 let changes = gates.iter().any(|gate| match gate {
                     GateKind::CodeChanged | GateKind::Committed => true,
                     GateKind::Answered | GateKind::CodeUnchanged | GateKind::Uncommitted => false,
                 });
                 let answers = gates.contains(&GateKind::Answered);
+                let who = match agent {
+                    Some(name) => name.as_str(),
+                    None => "the agent",
+                };
                 match (changes, answers) {
-                    (true, _) => "the agent changes the code",
-                    (false, true) => "the agent answers",
-                    (false, false) => "the agent works",
+                    (true, _) => format!("{who} changes the code"),
+                    (false, true) => format!("{who} answers"),
+                    (false, false) => format!("{who} works"),
                 }
-                .to_string()
             }
             Self::Command { command: None, .. } => "onehand runs the check command".to_string(),
             Self::Command {

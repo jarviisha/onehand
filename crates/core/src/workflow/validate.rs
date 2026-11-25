@@ -116,8 +116,12 @@ pub fn validate(template: &Template) -> Vec<Problem> {
                 gates,
                 mode,
                 options,
+                agent: named,
                 ..
             } => {
+                if named.as_ref().is_some_and(|named| named.trim().is_empty()) {
+                    here("Name the agent, or leave the key out to use the run's.".to_string());
+                }
                 if prompt.trim().is_empty() {
                     here("its prompt is empty".to_string());
                 }

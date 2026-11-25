@@ -2,6 +2,7 @@ use super::Shell;
 use crate::state::Shared;
 use gpui::{App, BorrowAppContext, Context, Entity, SharedString, Window};
 use onehand_core::config::AgentSpec;
+use onehand_core::task::tasks::SESSION_NOT_STARTED;
 use onehand_core::workbench::KeptIssues;
 use onehand_core::workspace::drive::StartsOn;
 use std::path::{Path, PathBuf};
@@ -283,4 +284,19 @@ impl Shell {
         };
         self.chat.read(cx).remote_sessions(about, cx)
     }
+}
+
+/// Start the session of a run's lane on `dir`, off screen as a step's lane
+/// always is, on the agent named `agent`, or on the first configured when
+/// `agent` is empty. Says why when it did not start.
+pub(crate) fn open_step_session(
+    shell: &mut Shell,
+    dir: PathBuf,
+    agent: &str,
+    cx: &mut Context<Shell>,
+) -> Result<(u64, Entity<crate::chat::session::ChatSession>), String> {
+    let spec = crate::task::facts::lane_spec(agent, cx)?;
+    shell
+        .open_off_screen(dir, spec, Vec::new(), cx)
+        .ok_or_else(|| SESSION_NOT_STARTED.to_string())
 }

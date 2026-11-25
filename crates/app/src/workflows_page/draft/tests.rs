@@ -10,6 +10,7 @@ fn agent(id: &str, keep_answer: bool) -> StepSpec {
             keep_answer,
             mode: None,
             options: std::collections::BTreeMap::new(),
+            agent: None,
         },
     }
 }
@@ -209,4 +210,63 @@ fn typed_rows_the_agent_offers_become_picks() {
     // Two rows on one id are left for the person to settle.
     let twice = [row("model", "cheap"), row("model", "strong")];
     assert!(adoptable(&twice, &map(&[]), &offer).is_empty());
+}
+
+fn named(id: &str, agent: Option<&str>) -> StepSpec {
+    let mut step = agent_step(id);
+    if let StepKind::Agent { agent: slot, .. } = &mut step.kind {
+        *slot = agent.map(str::to_string);
+    }
+    step
+}
+
+fn agent_step(id: &str) -> StepSpec {
+    agent(id, false)
+}
+
+/// The template a form on a one-step workflow naming `agent` writes back.
+fn saved(
+    agent: Option<&str>,
+    set: Option<Option<&str>>,
+    cx: &mut gpui::TestAppContext,
+) -> Template {
+    let dir = crate::shell::rig::folder("step-agent");
+    let (_, _, cx) = crate::shell::rig::shell(cx, dir, vec![crate::shell::rig::nowhere()]);
+    cx.update(|window, cx| {
+        let template = Template {
+            schema_version: 1,
+            id: "t".into(),
+            version: 1,
+            name: "t".into(),
+            description: String::new(),
+            place: Place::Worktree,
+            misses: 3,
+            timeout: "45m".into(),
+            steps: vec![named("work", agent)],
+        };
+        let mut draft = WorkflowDraft::load(&template, None, false, window, cx);
+        if let Some(to) = set {
+            draft.steps[0].agent = to.map(str::to_string);
+        }
+        draft.to_template(cx).unwrap()
+    })
+}
+
+#[gpui::test]
+fn a_drafts_step_agent_round_trips(cx: &mut gpui::TestAppContext) {
+    let template = saved(Some("Codex"), None, cx);
+    assert_eq!(template.steps[0].agent(), Some("Codex"));
+}
+
+#[gpui::test]
+fn choosing_the_runs_agent_writes_no_key(cx: &mut gpui::TestAppContext) {
+    let template = saved(Some("Codex"), Some(None), cx);
+    assert_eq!(template.steps[0].agent(), None);
+    assert_eq!(template.schema_version, 1);
+}
+
+#[gpui::test]
+fn a_draft_with_a_step_agent_saves_as_version_2(cx: &mut gpui::TestAppContext) {
+    let template = saved(None, Some(Some("Codex")), cx);
+    assert_eq!(template.schema_version, 2);
 }

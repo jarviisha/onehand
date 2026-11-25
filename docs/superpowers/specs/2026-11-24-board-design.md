@@ -171,24 +171,18 @@ own issues, not a new kind of item.
 
 ### A step's agent
 
-- An agent step may name `agent`, an agent from the agent list (a built-in agent or a declared
-  one), with its agent settings as today. A step that names none uses the run's agent.
+- An agent step may name `agent`, an agent from the agent list, with its agent settings as today.
+  A step that names none uses the run's agent.
 - **A step that names an agent has a session of its own in the run**, keyed by the step, not by
-  the agent (my call): started on its first visit and kept for the rest of the run, so a developer
+  the agent: opened unshown on its first visit and kept for the rest of the run, so a developer
   sent back by a reviewer carries on with what it knew, and a reviewer of the same agent never
-  judges work in the context that wrote it. Steps that name no agent share the run's session, as
-  today. Every session works in the task's place and is named for the task with the step's
-  label, so the rail tells them apart.
-- **This is the deepest change.** One session per run is wired through, not just assumed:
-  `RunDrive` is a run on one session (`task/drive.rs`), `link::Joined` holds one session
-  (`task/drive/link.rs`), the carrier keeps one uid per run (`app/src/task/carrier.rs`),
-  `Tasks::task_on` finds a task by that uid (`app/src/task.rs`), `Setup.agent` is one agent, and
-  the app opens the session before the run is driven (`Begin::Session`, `task/tasks/begin.rs`).
-  A drive asking for a session mid-run is a new effect.
-- Preflight checks every agent the workflow names, not only the run's.
-- Resume, Retry, take over, Stop and the cap on sessions apply to every session of the run; how
-  each maps (for example, which session a take over makes ordinary) is the builder's call, kept in
-  the run's drive.
+  judges work in the context that wrote it. Steps naming none share the run's session. Each is
+  named for the task, with the step's label for a step's own.
+- Only the current lane is worked; a person's prompt in any lane takes the run over; Stop cancels
+  the current lane's turn; closing a done task closes every lane. A lane's session lost while the
+  run is elsewhere is forgotten and reopened at the next visit; the current lane's lost stops the
+  run. A lane that cannot open fails the run as a session not started does.
+- Preflight checks every agent the workflow names. A file naming a step's agent is schema 2.
 
 ### Review steps
 

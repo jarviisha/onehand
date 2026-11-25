@@ -69,6 +69,12 @@ struct Rig {
     asked: Vec<Asked>,
     _rx: tokio::sync::mpsc::UnboundedReceiver<crate::acp::AcpRequest>,
     now: crate::Now,
+    /// The session of every lane but the run's, once opened.
+    others: std::collections::BTreeMap<Lane, (Chat, RxOf)>,
+    /// Everything every call answered, in order.
+    seen: Vec<Effect>,
+    /// Every note said, with the lane whose session it was said in.
+    said: Vec<(Lane, String)>,
 }
 
 impl Rig {
@@ -88,43 +94,92 @@ impl Rig {
             asked: Vec::new(),
             _rx: rx,
             now,
+            others: Default::default(),
+            seen: fx.clone(),
+            said: Vec::new(),
         };
-        rig.play();
+        // The first session is the first lane's.
+        let lane = rig.drive.current_lane().clone();
+        if lane != Lane::Run {
+            let first = std::mem::take(&mut rig.chat);
+            let (_, rx) = connected();
+            rig.others
+                .insert(lane.clone(), (first, std::mem::replace(&mut rig._rx, rx)));
+        }
+        rig.play(&lane);
         (rig, fx)
     }
 
-    fn on(&mut self, input: Input) -> Vec<Effect> {
-        let fx = self.drive.handle(input, Some(&self.chat), self.now);
-        self.play();
+    /// The session of `lane`, when it has one.
+    fn chat_of(&self, lane: &Lane) -> Option<&Chat> {
+        match lane {
+            Lane::Run => Some(&self.chat),
+            Lane::Step(_) => self.others.get(lane).map(|(chat, _)| chat),
+        }
+    }
+
+    fn chat_of_mut(&mut self, lane: &Lane) -> Option<&mut Chat> {
+        match lane {
+            Lane::Run => Some(&mut self.chat),
+            Lane::Step(_) => self.others.get_mut(lane).map(|(chat, _)| chat),
+        }
+    }
+
+    /// Give the run a call with its current lane's session, as the app
+    /// does, and play what it asked of that session there.
+    fn call(
+        &mut self,
+        call: impl FnOnce(&mut RunDrive, Option<&Chat>, Now) -> Vec<Effect>,
+    ) -> Vec<Effect> {
+        let lane = self.drive.current_lane().clone();
+        let chat = match &lane {
+            Lane::Run => Some(&self.chat),
+            Lane::Step(_) => self.others.get(&lane).map(|(chat, _)| chat),
+        };
+        let fx = call(&mut self.drive, chat, self.now);
+        self.play(&lane);
+        self.seen.extend(fx.clone());
         fx
+    }
+
+    fn on(&mut self, input: Input) -> Vec<Effect> {
+        self.call(|drive, chat, now| drive.handle(input, chat, now))
     }
 
     fn approve(&mut self, at: ApprovalAt) -> Vec<Effect> {
-        let fx = self.drive.approve(at, Some(&self.chat), self.now);
-        self.play();
-        fx
+        self.call(|drive, chat, now| drive.approve(at, chat, now))
     }
 
     fn stop(&mut self) -> Vec<Effect> {
-        let fx = self.drive.stop(Some(&self.chat), self.now);
-        self.play();
-        fx
+        self.call(|drive, chat, now| drive.stop(chat, now))
     }
 
-    /// What the app does to the session for an effect.
-    fn play(&mut self) {
+    /// What the app does to `lane`'s session for what the run asked of it.
+    fn play(&mut self, lane: &Lane) {
+        let picks = self.drive.take_picks();
+        let asked = self.drive.take_asked();
+        self.asked = asked.clone();
+        for asked in &asked {
+            if let Asked::Note(note) = asked {
+                self.said.push((lane.clone(), note.clone()));
+            }
+        }
+        let Some(chat) = self.chat_of_mut(lane) else {
+            assert!(picks.is_empty(), "picks with no session: {picks:?}");
+            return;
+        };
         // What the link makes on the session first: the run's mode and picks.
-        for pick in self.drive.take_picks() {
-            self.chat.pick(&pick);
+        for pick in picks {
+            chat.pick(&pick);
         }
         // Then the rest of what it asked of the session, in order.
-        self.asked = self.drive.take_asked();
-        for asked in &self.asked {
+        for asked in &asked {
             match asked {
                 Asked::Prompt { text, .. } => {
-                    assert!(self.chat.submit(text, &[]), "the session took {text:?}");
+                    assert!(chat.submit(text, &[]), "the session took {text:?}");
                 }
-                Asked::Cancel => self.chat.cancel_turn(),
+                Asked::Cancel => chat.cancel_turn(),
+                Asked::Name(name) => chat.custom_title = Some(name.clone()),
                 Asked::Note(_) => {}
             }
         }
@@ -136,7 +191,7 @@ impl Rig {
             .iter()
             .filter_map(|asked| match asked {
                 Asked::Note(note) => Some(note.as_str()),
-                Asked::Prompt { .. } | Asked::Cancel => None,
+                Asked::Prompt { .. } | Asked::Cancel | Asked::Name(_) => None,
             })
             .collect()
     }
@@ -145,17 +200,20 @@ impl Rig {
     fn submitted(&self) -> bool {
         self.asked.iter().any(|asked| match asked {
             Asked::Prompt { .. } => true,
-            Asked::Note(_) | Asked::Cancel => false,
+            Asked::Note(_) | Asked::Cancel | Asked::Name(_) => false,
         })
     }
 
-    /// The agent answers the turn under way with `text`.
+    /// The agent answers the turn under way with `text`, in the current
+    /// lane's session.
     fn turn_ends(&mut self, text: &str) -> Vec<Effect> {
-        self.chat.apply(AcpEvent::AgentChunk {
+        let lane = self.drive.current_lane().clone();
+        let chat = self.chat_of_mut(&lane).expect("the lane has its session");
+        chat.apply(AcpEvent::AgentChunk {
             text: text.into(),
             message: None,
         });
-        self.chat.apply(AcpEvent::TurnEnded {
+        chat.apply(AcpEvent::TurnEnded {
             stop_reason: "end_turn".into(),
         });
         self.on(Input::TurnEnded)
@@ -195,6 +253,7 @@ fn name(e: &Effect) -> &'static str {
             Signal::PinFailed(_) => "Signal(PinFailed)",
         },
         Effect::Finish { .. } => "Finish",
+        Effect::OpenSession { .. } => "OpenSession",
     }
 }
 
@@ -220,7 +279,8 @@ fn finished(fx: &[Effect]) -> Option<&Outcome> {
         | Effect::Save
         | Effect::Refresh
         | Effect::SessionChanged
-        | Effect::Signal(_) => None,
+        | Effect::Signal(_)
+        | Effect::OpenSession { .. } => None,
     })
 }
 
@@ -287,10 +347,10 @@ fn a_turn_ending_while_a_pin_is_held_is_not_judged() {
 #[test]
 fn an_approval_waits_on_a_person_until_answered() {
     let mut rig = at_approval();
-    assert!(rig.drive.waits_on_person() && !rig.drive.card());
+    assert!(rig.drive.waits_on_person(false) && !rig.drive.card());
     let at = approval_at(&rig);
     rig.approve(at);
-    assert!(!rig.drive.waits_on_person());
+    assert!(!rig.drive.waits_on_person(true));
 }
 
 #[test]
@@ -703,7 +763,9 @@ fn a_failed_turn_fails_the_run_in_its_words() {
 fn a_card_pauses_the_budget() {
     let mut rig = in_turn();
     rig.on(Input::AwaitingUser);
-    assert!(rig.drive.card() && rig.drive.waits_on_person());
+    assert!(
+        rig.drive.card() && rig.drive.waits_on_person(true) && !rig.drive.waits_on_person(false)
+    );
     rig.now += rig.drive.run().template.timeout_limit() * 2;
     let fx = rig.on(Input::Elapsed(Timer::Timeout));
     assert_eq!(finished(&fx), None, "a person is waited on");
@@ -912,7 +974,8 @@ fn forging() -> Rig {
             | Effect::Refresh
             | Effect::SessionChanged
             | Effect::Signal(_)
-            | Effect::Finish { .. } => None,
+            | Effect::Finish { .. }
+            | Effect::OpenSession { .. } => None,
         });
         fx = rig.on(next.expect("the run moves on to its push"));
     }
@@ -1083,7 +1146,8 @@ fn failing_checks_carry_at_most_three_logs_to_the_repair() {
         | Effect::Refresh
         | Effect::SessionChanged
         | Effect::Signal(_)
-        | Effect::Finish { .. } => None,
+        | Effect::Finish { .. }
+        | Effect::OpenSession { .. } => None,
     });
     assert_eq!(checks, Some(3), "{fx:?}");
     let logs = vec![
@@ -1117,4 +1181,404 @@ fn a_look_after_the_run_stopped_is_dropped() {
             &[CheckState::Passed]
         )))))
         .is_empty());
+}
+
+/// An agent step of `id`, on `agent` when it names one.
+fn agent_step(id: &str, label: &str, agent: Option<&str>) -> StepSpec {
+    StepSpec {
+        id: id.into(),
+        label: label.into(),
+        kind: StepKind::Agent {
+            prompt: format!("{label} it."),
+            gates: Vec::new(),
+            keep_answer: true,
+            mode: None,
+            options: Default::default(),
+            agent: agent.map(str::to_string),
+        },
+    }
+}
+
+fn verify_step(on_fail: &str) -> StepSpec {
+    StepSpec {
+        id: "verify".into(),
+        label: "Verify".into(),
+        kind: StepKind::Command {
+            command: Some("make check".into()),
+            on_fail: on_fail.into(),
+        },
+    }
+}
+
+/// Implement on the run's agent, verify, then review on Claude, and an
+/// approval that can send the work back to implement.
+fn reviewed() -> Template {
+    let mut template = Template::blank("Reviewed");
+    template.steps = vec![
+        agent_step("implement", "Implement", None),
+        verify_step("implement"),
+        agent_step("review", "Review", Some("Claude")),
+        StepSpec {
+            id: "approve".into(),
+            label: "Approve".into(),
+            kind: StepKind::Approval {
+                of: "implement".into(),
+            },
+        },
+    ];
+    template
+}
+
+fn review() -> Lane {
+    Lane::Step("review".into())
+}
+
+impl Rig {
+    /// Answer what the run asks, as the app would, until `until` holds of
+    /// what the last call answered, the run waits on a person, or it is
+    /// over: what that call answered. A lane's session is not opened here.
+    fn until(
+        &mut self,
+        mut fx: Vec<Effect>,
+        until: impl Fn(&Self, &[Effect]) -> bool,
+    ) -> Vec<Effect> {
+        for _ in 0..40 {
+            // An approval waits on its marks too.
+            let approval = self.drive.run().awaiting_approval() && !names(&fx).contains(&"Pin");
+            if until(self, &fx) || finished(&fx).is_some() || approval {
+                return fx;
+            }
+            if self.submitted() {
+                fx = self.turn_ends("Done.");
+                continue;
+            }
+            // The work changed when the step wants it changed.
+            let changes = matches!(
+                self.drive.run().current().map(|step| &step.kind),
+                Some(StepKind::Agent { gates, .. }) if gates.contains(&crate::workflow::GateKind::CodeChanged)
+            );
+            let digest = if changes { "d2" } else { "d1" };
+            let next = fx.iter().find_map(|e| match e {
+                Effect::Pin { .. } => Some(Input::Pinned(Ok("c".into()))),
+                Effect::Measure { .. } => Some(Input::Measured(Ok(mark("a", "d1")))),
+                Effect::ReadFacts { .. } => Some(Input::TurnRead(Ok(facts("a", digest)))),
+                Effect::RunCommand { .. } => Some(Input::CommandExited(ran(true))),
+                Effect::Defer(input) => Some(input.clone()),
+                Effect::CallOffCommand
+                | Effect::Push { .. }
+                | Effect::FindPullRequest
+                | Effect::OpenPullRequest
+                | Effect::ReadLogs { .. }
+                | Effect::MarkReady { .. }
+                | Effect::Arm { .. }
+                | Effect::Save
+                | Effect::Refresh
+                | Effect::SessionChanged
+                | Effect::Signal(_)
+                | Effect::Finish { .. }
+                | Effect::OpenSession { .. } => None,
+            });
+            match next {
+                Some(input) => fx = self.on(input),
+                None => return fx,
+            }
+        }
+        panic!("the run never got there: {fx:?}")
+    }
+
+    /// Open `lane`'s session, connected, and tell the run.
+    fn open(&mut self, lane: Lane) -> Vec<Effect> {
+        let chat = connected();
+        match &lane {
+            Lane::Run => {
+                self.chat = chat.0;
+                self._rx = chat.1;
+            }
+            Lane::Step(_) => {
+                self.others.insert(lane.clone(), chat);
+            }
+        }
+        self.on(Input::LaneOpened {
+            lane,
+            result: Ok(()),
+        })
+    }
+}
+
+fn asks_for_session(fx: &[Effect]) -> bool {
+    has(fx, |e| matches!(e, Effect::OpenSession { .. }))
+}
+
+/// A reviewed run, its implement step passed and verified, at the review's
+/// prompt: what that call answered.
+fn at_review() -> (Rig, Vec<Effect>) {
+    let (mut rig, fx) = Rig::start(reviewed(), None, connected());
+    let fx = rig.until(fx, |_, fx| asks_for_session(fx));
+    (rig, fx)
+}
+
+#[test]
+fn a_step_naming_an_agent_asks_for_its_session() {
+    let (rig, fx) = at_review();
+    assert!(
+        fx.contains(&Effect::OpenSession {
+            lane: review(),
+            agent: "Claude".into(),
+            name: "Fix the thing · Review".into(),
+        }),
+        "{fx:?}"
+    );
+    assert_eq!(rig.drive.current_lane(), &review());
+    assert!(
+        !rig.submitted(),
+        "nothing is sent before the session is open"
+    );
+    // Only implement's prompt reached the run's session.
+    assert!(!rig.chat.prompted_beyond(1));
+}
+
+#[test]
+fn its_prompt_goes_once_its_session_is_opened() {
+    let (mut rig, _) = at_review();
+    rig.open(review());
+    assert!(rig.submitted());
+    assert!(rig.chat_of(&review()).unwrap().prompted_beyond(0));
+    assert!(!rig.chat.prompted_beyond(1), "not to the run's session");
+    let named = rig.chat_of(&review()).unwrap().custom_title.as_deref();
+    assert_eq!(named, Some("Fix the thing · Review"));
+    let lanes: Vec<&Lane> = rig.drive.lanes().collect();
+    assert_eq!(lanes, [&review(), &Lane::Run]);
+}
+
+#[test]
+fn a_command_step_keeps_the_lane() {
+    let mut template = Template::blank("Reviewed first");
+    template.steps = vec![
+        agent_step("implement", "Implement", None),
+        agent_step("review", "Review", Some("Claude")),
+        verify_step("implement"),
+    ];
+    let (mut rig, fx) = Rig::start(template, None, connected());
+    rig.until(fx, |_, fx| asks_for_session(fx));
+    let fx = rig.open(review());
+    let fx = rig.until(fx, |_, fx| names(fx).contains(&"RunCommand"));
+    assert!(names(&fx).contains(&"RunCommand"), "{fx:?}");
+    assert_eq!(rig.drive.current_lane(), &review());
+    assert!(
+        rig.notes().contains(&"Running: make check"),
+        "{:?}",
+        rig.asked
+    );
+}
+
+#[test]
+fn going_back_reuses_the_lanes_session() {
+    let (mut rig, _) = at_review();
+    let fx = rig.open(review());
+    rig.until(fx, |_, _| false);
+    let at = approval_at(&rig);
+    let fx = rig.call(|drive, chat, now| drive.revise(at, "Again.".into(), chat, now));
+    let fx = rig.until(fx, |rig, _| rig.chat.prompted_beyond(1));
+    assert!(
+        rig.chat.prompted_beyond(1),
+        "implement prompted the run's session again: {fx:?}"
+    );
+    assert_eq!(rig.drive.current_lane(), &Lane::Run);
+    // Only the review's lane was ever opened.
+    let opened = rig
+        .seen
+        .iter()
+        .filter(|e| matches!(e, Effect::OpenSession { .. }));
+    assert_eq!(opened.count(), 1);
+}
+
+#[test]
+fn a_person_prompting_another_lane_takes_the_run_over() {
+    let (mut rig, _) = at_review();
+    rig.open(review());
+    assert!(rig.chat.submit("Mine now", &[]));
+    assert!(rig.drive.heeds_lane_appended(&Lane::Run, &rig.chat));
+    let fx = rig.drive.handle(
+        Input::LaneAppended { lane: Lane::Run },
+        Some(&rig.chat),
+        rig.now,
+    );
+    assert_eq!(
+        finished(&fx),
+        Some(&Outcome::Stopped(Stop::TakenOver)),
+        "{fx:?}"
+    );
+}
+
+#[test]
+fn a_lost_lane_elsewhere_reopens_with_a_note() {
+    let (mut rig, _) = at_review();
+    let fx = rig.open(review());
+    rig.until(fx, |_, _| false);
+    let gone = rig.on(Input::LaneGone { lane: Lane::Run });
+    assert!(finished(&gone).is_none(), "{gone:?}");
+    assert_eq!(rig.drive.lanes().collect::<Vec<_>>(), [&review()]);
+    let at = approval_at(&rig);
+    let fx = rig.call(|drive, chat, now| drive.revise(at, "Again.".into(), chat, now));
+    let fx = rig.until(fx, |_, fx| asks_for_session(fx));
+    assert!(
+        fx.contains(&Effect::OpenSession {
+            lane: Lane::Run,
+            agent: String::new(),
+            name: "Fix the thing".into(),
+        }),
+        "{fx:?}"
+    );
+    rig.open(Lane::Run);
+    assert!(
+        rig.notes()
+            .contains(&"The session of Implement was gone; a new one was opened."),
+        "{:?}",
+        rig.asked
+    );
+    assert!(rig.submitted());
+}
+
+#[test]
+fn a_lane_that_will_not_open_fails_the_run_for_a_retry() {
+    let (mut rig, _) = at_review();
+    let fx = rig.on(Input::LaneOpened {
+        lane: review(),
+        result: Err("no such command".into()),
+    });
+    assert_eq!(
+        failed(&fx),
+        Some("The agent of Review, Claude, did not start."),
+        "{fx:?}"
+    );
+    assert_eq!(
+        rig.drive.run().failed_on(),
+        Some(crate::workflow::Failure::Configuration)
+    );
+}
+
+#[test]
+fn a_run_whose_steps_name_no_agent_never_opens_a_session() {
+    let (mut rig, fx) = Rig::start(checkout(), None, connected());
+    rig.until(fx, |_, _| false);
+    let at = approval_at(&rig);
+    let fx = rig.approve(at);
+    let fx = rig.until(fx, |_, _| false);
+    assert_eq!(
+        finished(&fx),
+        Some(&Outcome::Done),
+        "{:?}",
+        names(&rig.seen)
+    );
+    assert!(!asks_for_session(&rig.seen), "{:?}", rig.seen);
+    assert_eq!(rig.drive.lanes().collect::<Vec<_>>(), [&Lane::Run]);
+}
+
+#[test]
+fn a_step_lane_runs_in_its_agents_mode_not_the_runs() {
+    let mut template = Template::blank("Review first");
+    template.steps = vec![agent_step("review", "Review", Some("Claude"))];
+    let (mut rig, fx) = Rig::start(template, Some("plan"), with_modes(&["default", "plan"]));
+    assert_eq!(rig.drive.current_lane(), &review());
+    assert!(
+        !asks_for_session(&fx),
+        "the first session is the step's: {fx:?}"
+    );
+    rig.on(Input::Pinned(Ok("c0".into())));
+    let fx = rig.on(Input::Measured(Ok(mark("a", "d0"))));
+    assert!(rig.submitted(), "{fx:?}");
+    assert!(!rig.notes().contains(&"Mode plan set"), "{:?}", rig.asked);
+    let chat = rig.chat_of(&review()).unwrap();
+    assert!(!chat.pick_waiting(crate::chat::MODE_SELECTOR));
+}
+
+#[test]
+fn a_run_lane_naming_no_agent_that_will_not_open_says_so_plainly() {
+    let (mut rig, _) = at_review();
+    let fx = rig.open(review());
+    rig.until(fx, |_, _| false);
+    rig.on(Input::LaneGone { lane: Lane::Run });
+    let at = approval_at(&rig);
+    let fx = rig.call(|drive, chat, now| drive.revise(at, "Again.".into(), chat, now));
+    rig.until(fx, |_, fx| asks_for_session(fx));
+    let fx = rig.on(Input::LaneOpened {
+        lane: Lane::Run,
+        result: Err("no agent".into()),
+    });
+    assert_eq!(
+        failed(&fx),
+        Some("The agent of Implement did not start."),
+        "{fx:?}"
+    );
+}
+
+#[test]
+fn a_lane_entered_is_told_its_step() {
+    let (mut rig, _) = at_review();
+    rig.open(review());
+    assert!(
+        rig.notes().contains(&"Step 3 of 4: Review"),
+        "{:?}",
+        rig.asked
+    );
+    let review_said: Vec<&Lane> = (rig.said.iter())
+        .filter(|(_, note)| note == "Step 3 of 4: Review")
+        .map(|(lane, _)| lane)
+        .collect();
+    assert_eq!(review_said, [&review()], "said once, in its own lane");
+    // A step in the run's own lane is said there as ever.
+    assert!(rig
+        .said
+        .contains(&(Lane::Run, "Step 2 of 4: Verify".to_string())));
+}
+
+#[test]
+fn a_person_prompting_the_current_lane_takes_the_run_over() {
+    let (mut rig, _) = at_review();
+    let fx = rig.open(review());
+    rig.until(fx, |_, _| false);
+    let chat = rig.chat_of_mut(&review()).unwrap();
+    assert!(chat.submit("Mine now", &[]));
+    let fx = rig.on(Input::LaneAppended { lane: review() });
+    assert_eq!(
+        finished(&fx),
+        Some(&Outcome::Stopped(Stop::TakenOver)),
+        "{fx:?}"
+    );
+}
+
+#[test]
+fn an_input_between_a_switch_and_its_lane_opening_sends_the_prompt_once() {
+    let (mut rig, _) = at_review();
+    let fx = rig.open(review());
+    rig.until(fx, |_, _| false);
+    let at = approval_at(&rig);
+    let fx = rig.call(|drive, chat, now| drive.revise(at, "Again.".into(), chat, now));
+    let fx = rig.until(fx, |_, fx| {
+        has(fx, |e| {
+            matches!(
+                e,
+                Effect::Defer(Input::LaneOpened {
+                    lane: Lane::Run,
+                    ..
+                })
+            )
+        })
+    });
+    assert_eq!(rig.drive.current_lane(), &Lane::Run);
+    assert!(
+        !rig.chat.prompted_beyond(1),
+        "held until the lane is told of"
+    );
+    // Something lands in the run's session before the deferred call: the
+    // prompt may go then, in that session, but only once.
+    rig.on(Input::Appended);
+    rig.on(Input::Notified);
+    assert!(!rig.chat.prompted_beyond(2), "{fx:?}");
+    rig.on(Input::LaneOpened {
+        lane: Lane::Run,
+        result: Ok(()),
+    });
+    assert!(rig.chat.prompted_beyond(1));
+    assert!(!rig.chat.prompted_beyond(2), "sent once");
 }

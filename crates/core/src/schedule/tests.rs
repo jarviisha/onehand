@@ -381,6 +381,7 @@ fn fill_keeps_a_steps_own_settings() {
             keep_answer: false,
             mode: Some("plan".into()),
             options: BTreeMap::from([("model".to_string(), "cheap".to_string())]),
+            agent: None,
         },
     });
     let options = BTreeMap::from([

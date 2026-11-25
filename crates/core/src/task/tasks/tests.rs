@@ -191,7 +191,7 @@ fn drives<W>(fx: &[Effect<W>], id: &str) -> bool {
 fn ended_done(tasks: &mut TasksDrive<Win>, id: &str) -> Vec<Effect<Win>> {
     let mut run = tasks.task(id).unwrap().runs[0].clone();
     run.outcome = Some(Outcome::Done);
-    let fx = tasks.run_ended(id, run, usize::MAX, false, None, WINDOW);
+    let fx = tasks.run_ended(id, run, usize::MAX, false, Vec::new(), WINDOW);
     assert!(
         has(&fx, |e| *e
             == Effect::Defer(Input::Free {
@@ -331,7 +331,7 @@ fn an_ended_run_holds_its_place_until_its_turn_is_over() {
     let mut run = tasks.task("1").unwrap().runs[0].clone();
     run.resume(0);
     run.stopped(Stop::ByPerson, 0);
-    let fx = tasks.run_ended("1", run, 0, true, Some(7), WINDOW);
+    let fx = tasks.run_ended("1", run, 0, true, vec![7], WINDOW);
     assert!(
         has(&fx, |e| *e
             == Effect::WatchDrain {
@@ -397,7 +397,7 @@ fn a_check_says_how_it_came_out_and_a_stopped_one_says_nothing() {
     tasks.add(check("1", "/work/app"));
     let mut run = tasks.task("1").unwrap().runs[0].clone();
     run.outcome = Some(Outcome::Done);
-    let fx = tasks.run_ended("1", run.clone(), 0, false, None, WINDOW);
+    let fx = tasks.run_ended("1", run.clone(), 0, false, Vec::new(), WINDOW);
     assert!(has(&fx, |e| *e
         == Effect::Signal(Signal::CheckEnded {
             window: WINDOW,
@@ -405,7 +405,7 @@ fn a_check_says_how_it_came_out_and_a_stopped_one_says_nothing() {
             passed: true
         })));
     run.outcome = Some(Outcome::Stopped(Stop::ByPerson));
-    let fx = tasks.run_ended("1", run, 0, false, None, WINDOW);
+    let fx = tasks.run_ended("1", run, 0, false, Vec::new(), WINDOW);
     assert!(!named(&fx, "Signal::CheckEnded"));
 }
 
@@ -428,10 +428,10 @@ fn a_schedules_finished_task_closes_its_session_and_says_so() {
     ask(&mut tasks, "1", "/a");
     let mut run = tasks.task("1").unwrap().runs[0].clone();
     run.outcome = Some(Outcome::Done);
-    let fx = tasks.run_ended("1", run, usize::MAX, false, Some(7), WINDOW);
+    let fx = tasks.run_ended("1", run, usize::MAX, false, vec![7], WINDOW);
     assert!(has(&fx, |e| *e
         == Effect::CloseSession {
-            uid: 7,
+            uids: vec![7],
             window: WINDOW
         }));
     let fx = tasks.handle(Input::Free {
@@ -445,6 +445,31 @@ fn a_schedules_finished_task_closes_its_session_and_says_so() {
                 name: "Nightly".into(),
                 said: said.clone()
             })),
+        "{fx:?}"
+    );
+}
+
+/// A board's task that is done closes the session of every lane it worked.
+#[test]
+fn a_done_board_task_closes_every_lanes_session() {
+    let mut tasks = TasksDrive::default();
+    tasks.add(Task {
+        origin: Some(Origin::Board {
+            project: serde_json::from_str("\"p1\"").unwrap(),
+            issue: 7,
+        }),
+        ..titled("1", "Issue", "/a")
+    });
+    ask(&mut tasks, "1", "/a");
+    let mut run = tasks.task("1").unwrap().runs[0].clone();
+    run.outcome = Some(Outcome::Done);
+    let fx = tasks.run_ended("1", run, usize::MAX, false, vec![7, 8], WINDOW);
+    assert!(
+        has(&fx, |e| *e
+            == Effect::CloseSession {
+                uids: vec![7, 8],
+                window: WINDOW
+            }),
         "{fx:?}"
     );
 }
@@ -483,7 +508,7 @@ fn board_task_end_signals_board_ended() {
         ask(&mut tasks, "1", "/a");
         let mut run = tasks.task("1").unwrap().runs[0].clone();
         run.outcome = Some(outcome);
-        tasks.run_ended("1", run, usize::MAX, false, Some(7), WINDOW);
+        tasks.run_ended("1", run, usize::MAX, false, vec![7], WINDOW);
         let fx = tasks.handle(Input::Free {
             task: "1".into(),
             from: usize::MAX,

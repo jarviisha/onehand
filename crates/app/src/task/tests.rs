@@ -18,7 +18,9 @@ use std::process::Command;
 use std::time::Duration;
 
 mod forge;
+mod lanes;
 pub(super) use forge::connectors;
+pub(super) use lanes::open_lane;
 
 struct Blank;
 
@@ -344,6 +346,7 @@ fn one_agent_step() -> Template {
             keep_answer: false,
             mode: None,
             options: Default::default(),
+            agent: None,
         },
     });
     template

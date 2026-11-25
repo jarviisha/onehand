@@ -458,6 +458,7 @@ pub(super) fn step_panel(
                     cx,
                 ))
                 .child(div().h_flex().child(keep))
+                .child(settings::agent_field(handle, i, step, shipped, cx))
                 .child(settings::agent_settings(handle, i, step, shipped, cwd, cx))
                 .into_any_element()
         }

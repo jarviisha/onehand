@@ -1072,3 +1072,32 @@ fn the_page_sends_what_it_continues(cx: &mut gpui::TestAppContext) {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A step's session opens off screen on the agent it names, found by exact
+/// name; one naming an agent not in the list opens nothing and says why.
+#[gpui::test]
+fn a_step_session_opens_on_its_named_agent_or_says_why_not(cx: &mut gpui::TestAppContext) {
+    let spec = crate::shell::rig::nowhere();
+    let dir = crate::shell::rig::folder("step-session");
+    let (_, shell, cx) = crate::shell::rig::shell(cx, dir.join("tasks"), vec![spec]);
+    let work = std::fs::canonicalize("/tmp").unwrap();
+    let missing = cx.update(|_, cx| {
+        shell.update(cx, |shell, cx| {
+            crate::shell::open_step_session(shell, work.clone(), "Codex", cx).map(|(uid, _)| uid)
+        })
+    });
+    assert_eq!(missing, Err("Codex is not in the agent list".to_string()));
+    let opened = cx.update(|_, cx| {
+        shell.update(cx, |shell, cx| {
+            crate::shell::open_step_session(shell, work, "nowhere", cx).map(|(uid, _)| uid)
+        })
+    });
+    let uid = opened.expect("opened");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let shell = shell.read(cx);
+        assert_ne!(shell.chat.read(cx).viewing(), Some(uid), "not shown");
+        assert!(shell.window.workspace.folder_of(uid).is_some());
+    });
+    let _ = std::fs::remove_dir_all(dir);
+}

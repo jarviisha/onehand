@@ -105,11 +105,11 @@ impl Tasks {
         self.live.get(id)
     }
 
-    /// The task whose run is driven on session `uid`, if one is.
+    /// The task whose run is driven on session `uid`, any lane's, if one is.
     fn task_on(&self, uid: u64) -> Option<String> {
         self.live
             .iter()
-            .find(|(_, d)| d.uid() == Some(uid))
+            .find(|(_, d)| d.on(uid))
             .map(|(id, _)| id.clone())
     }
 
@@ -269,7 +269,7 @@ pub(crate) fn waits_on_person(uid: u64, cx: &App) -> bool {
     };
     t.task_on(uid)
         .and_then(|id| t.driven(&id))
-        .is_some_and(|d| d.waits_on_person())
+        .is_some_and(|d| d.waits_on_person(uid))
 }
 
 /// What `look` makes of each task, told whether it is working, oldest first.

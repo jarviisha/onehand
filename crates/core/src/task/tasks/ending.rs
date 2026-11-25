@@ -8,7 +8,7 @@ use crate::Now;
 
 impl<W: Copy> TasksDrive<W> {
     /// Task `id`'s run ended as `run`, which kept the marks of `from` of its
-    /// boundaries, on session `uid` in `window`, if it had one: keep it, and
+    /// boundaries, on sessions `uids` in `window`, if it had any: keep it, and
     /// let its place go once the work has stopped, which is at once unless
     /// its session's turn still goes (`turn_going`).
     pub fn run_ended(
@@ -17,7 +17,7 @@ impl<W: Copy> TasksDrive<W> {
         run: Run,
         from: usize,
         turn_going: bool,
-        uid: Option<u64>,
+        uids: Vec<u64>,
         window: W,
     ) -> Vec<Effect<W>> {
         let mut fx = Vec::new();
@@ -36,7 +36,7 @@ impl<W: Copy> TasksDrive<W> {
         self.store_run(id, run, &mut fx);
         // A finished schedule's or board's session leaves the rail once the
         // run is let go, so nothing of the run is left listening to it.
-        let closes = uid.filter(|_| self.task(id).is_some_and(Task::closes_session));
+        let closes = !uids.is_empty() && self.task(id).is_some_and(Task::closes_session);
         match turn_going {
             true => {
                 self.draining.insert(id.to_string(), from);
@@ -50,8 +50,8 @@ impl<W: Copy> TasksDrive<W> {
                 from,
             })),
         }
-        if let Some(uid) = closes {
-            fx.push(Effect::CloseSession { uid, window });
+        if closes {
+            fx.push(Effect::CloseSession { uids, window });
         }
         fx
     }

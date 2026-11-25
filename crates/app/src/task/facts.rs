@@ -4,7 +4,7 @@
 use crate::state::Shared;
 use gpui::App;
 use onehand_core::config::{self, AgentSpec};
-use onehand_core::preflight::{Facts, Forge};
+use onehand_core::preflight::{Facts, Forge, StepAgent};
 use onehand_core::task::Task;
 use onehand_core::workflow::{Current, Field, Setup, Template};
 
@@ -35,6 +35,30 @@ pub(crate) fn offered(spec: &AgentSpec, cx: &App) -> Option<onehand_core::workfl
     onehand_core::task::offered(spec, &Shared::global(cx).settings.offers_seen)
 }
 
+/// Each agent a step of `workflow` names, found by exact name: a step's agent
+/// never falls back to the first configured.
+pub(crate) fn step_agents(workflow: &Result<Template, String>, cx: &App) -> Vec<StepAgent> {
+    let Ok(template) = workflow else {
+        return Vec::new();
+    };
+    let agents = &Shared::global(cx).settings.agents;
+    template
+        .steps
+        .iter()
+        .enumerate()
+        .filter_map(|(step, spec)| {
+            let name = spec.agent()?;
+            let found = config::agent_or_first(agents, Some(name));
+            Some(StepAgent {
+                step,
+                agent: name.to_string(),
+                configured: found.is_some(),
+                offered: found.and_then(|agent| offered(agent, cx)),
+            })
+        })
+        .collect()
+}
+
 /// The first agent configured, by name: what a task naming none starts.
 pub(crate) fn first_agent(cx: &App) -> Option<String> {
     config::agent_or_first(&Shared::global(cx).settings.agents, None).map(|spec| spec.name.clone())
@@ -50,6 +74,16 @@ pub(crate) fn spec_for(agent: Option<&str>, cx: &App) -> Option<AgentSpec> {
         .or_else(|| config::agent_or_first(agents, None))?
         .clone();
     Some(onehand_core::task::run_spec(base))
+}
+
+/// The agent a lane of a run starts on: the one named `agent`, found by
+/// exact name since a step's agent never falls back, or, `agent` empty, the
+/// first configured, as a run naming none starts. Says why there is none.
+pub(crate) fn lane_spec(agent: &str, cx: &App) -> Result<AgentSpec, String> {
+    let named = (!agent.is_empty()).then_some(agent);
+    let base = config::agent_or_first(&Shared::global(cx).settings.agents, named)
+        .ok_or_else(|| format!("{agent} is not in the agent list"))?;
+    Ok(onehand_core::task::run_spec(base.clone()))
 }
 
 /// The mode a lead's worker on agent `agent` starts in.
@@ -76,6 +110,7 @@ pub(crate) fn with_setup(setup: &Setup, workflow: Result<Template, String>, cx: 
         .as_deref()
         .and_then(|name| shared.settings.agents.iter().find(|spec| spec.name == name));
     Facts {
+        step_agents: step_agents(&workflow, cx),
         workflow,
         agent_configured: spec.is_some(),
         offered: spec.and_then(|spec| offered(spec, cx)),

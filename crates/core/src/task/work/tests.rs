@@ -21,6 +21,7 @@ pub(super) fn agent() -> StepKind {
         keep_answer: true,
         mode: None,
         options: std::collections::BTreeMap::new(),
+        agent: None,
     }
 }
 
@@ -701,6 +702,7 @@ fn a_step_says_what_it_does() {
         keep_answer: false,
         mode: None,
         options: std::collections::BTreeMap::new(),
+        agent: None,
     };
     assert_eq!(changes.does(), "the agent changes the code");
     let answers = StepKind::Agent {
@@ -709,6 +711,7 @@ fn a_step_says_what_it_does() {
         keep_answer: true,
         mode: None,
         options: std::collections::BTreeMap::new(),
+        agent: None,
     };
     assert_eq!(answers.does(), "the agent answers");
     assert_eq!(
