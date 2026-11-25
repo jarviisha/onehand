@@ -270,7 +270,8 @@ The `/` list opens on the composer's own commands under *Composer* (*model*, *ef
 *fast*, *attach*, *mention*, *clear*), each offered only where it can act; the agent's commands
 follow. *clear*, picked there or sent alone as `/clear`, does what *New conversation* does: the
 conversation stays on disk, to be resumed, and the session starts a fresh one with the same agent
-and project, refused mid-turn and while the session leads workers. Where the agent advertises a
+and project, refused mid-turn and while the session leads workers; on a host, the host session it
+leaves is ended there. Where the agent advertises a
 `clear` of its own, the row is not offered and `/clear` goes to the agent. *Run a workflow…* (the `+` menu, the
 keymap, the Workflows page's *Run…*) opens the launcher, drawn as `docs/workflows.md` describes.
 

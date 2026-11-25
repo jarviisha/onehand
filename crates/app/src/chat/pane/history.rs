@@ -100,11 +100,13 @@ impl ChatPane {
             return false;
         }
         session.update(cx, |session, cx| session.save_meta(cx));
+        let label = session.read(cx).chat().conversation_title();
         drop(session);
         if let Some(conv) = self.conversations.get_mut(&uid) {
             conv.disconnect();
         }
         self.start(uid, None, cx);
+        cx.emit(ChatPaneEvent::LeftConversation { uid, label });
         cx.notify();
         true
     }

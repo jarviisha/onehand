@@ -667,6 +667,26 @@ fn ending_on_a_host_closes_its_watcher_first_and_says_a_failure() {
     assert_eq!(names(&fx), [format!("{failed:?}")]);
 }
 
+/// A session on a host leaving its conversation for a fresh one ends the
+/// host session it watched, keeping the session here, and watches nothing
+/// until its host names the new one; a session of this machine ends nothing.
+#[test]
+fn a_new_conversation_on_a_host_ends_the_one_it_left() {
+    use crate::host::wire::HostSession;
+    let mut drive = bound();
+    let host = HostName("box".into());
+    let _ = drive.open_host_project(&at_on(&host.0, "/srv"));
+    let (watching, _) = drive.watch(HostSession("h-1".into()), Some(spec()), 1);
+    assert_eq!(watching, Ok(1));
+    let fx = drive.left_on_host(1, "Fix".into());
+    assert_eq!(names(&fx), ["EndOnHost(h-1)"]);
+    assert!(drive.locate(1).is_some(), "the session stays");
+    assert_eq!(drive.watched_on(1), None);
+    assert!(drive.left_on_host(1, "Fix".into()).is_empty(), "once");
+    let _ = drive.add_session(Some(spec()), 2, None);
+    assert!(drive.left_on_host(2, "Here".into()).is_empty());
+}
+
 /// What a session is added on is what it starts on when first shown, once;
 /// one added plainly starts fresh, and one closed takes what it was to start
 /// on with it.

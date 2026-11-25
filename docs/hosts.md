@@ -385,6 +385,12 @@ What the page and Settings draw is in [screens.md](screens.md#pages-without-a-se
 - **Detaching never stops anything on the host.** Closing a host session in the window, removing
   its project, or quitting onehand lets go of the watch; the session and its agent run on there,
   and the project's page lists it.
+- **A new conversation ends the one it leaves.** *New conversation* (the conversation's dots menu)
+  or `/clear` on a host session, refused mid-turn, ends the host session it watched without
+  asking (no turn runs, and the conversation stays readable on the project page) and opens a fresh
+  one there in the same session here, which watches nothing until the host names the new one
+  (`WorkspaceDrive::left_on_host`). Otherwise each fresh start would leave another agent running
+  that nothing sends to. A failure is the same toast as *End on <host>…*'s.
 - **Ending one does.** *End on <host>…*, in a host session's `⋯` on the rail, in the
   conversation's dots menu, and on a running row of the project page's *Sessions on <host>* (its
   `⋯` and right-click), asks *End <session> on <host>?* (*Its agent stops there, and a running

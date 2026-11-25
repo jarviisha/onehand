@@ -147,6 +147,24 @@ impl WorkspaceDrive {
         fx
     }
 
+    /// Session `uid`, called `label`, left the conversation it had on its
+    /// host for a fresh one: the host session it watched is ended there, and
+    /// it watches nothing until its host names the new one. Left running, the
+    /// old one would be an agent nobody sends to any more, and every fresh
+    /// start would add another. Nothing for a session of this machine.
+    #[must_use = "its effects are to be carried"]
+    pub fn left_on_host(&mut self, uid: u64, label: String) -> Vec<Effect> {
+        let Some((host, session)) = self.watched_on(uid) else {
+            return Vec::new();
+        };
+        self.watches.remove(&uid);
+        vec![Effect::EndOnHost {
+            host,
+            session,
+            label,
+        }]
+    }
+
     /// A fork did not open, for `why`: its session, if one was added
     /// (`uid`), ends as a closed one does (`lead`, a worker's), and it is
     /// said.

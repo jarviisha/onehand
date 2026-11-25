@@ -252,6 +252,13 @@ impl Shell {
                         let fx = shell.window.workspace.fork_failed(*uid, lead, why.clone());
                         shell.carry_workspace(fx, window, cx);
                     }
+                    E::LeftConversation { uid, label } => {
+                        let label = label
+                            .clone()
+                            .unwrap_or_else(|| shell.session_label(*uid, cx));
+                        let fx = shell.window.workspace.left_on_host(*uid, label);
+                        shell.carry_workspace(fx, window, cx);
+                    }
                     E::Watching { uid, id } => shell.window.workspace.watching(*uid, id.clone()),
                     E::StopWorkflow(uid) => {
                         let uid = *uid;

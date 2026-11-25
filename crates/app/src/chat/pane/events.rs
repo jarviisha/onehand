@@ -249,6 +249,13 @@ pub enum ChatPaneEvent {
     /// The project page on screen was left, made for another project, or
     /// listed again: what waited on its host may wait no longer.
     PageChanged,
+    /// Session `uid` left its conversation, called `label` where it had a
+    /// name, for a fresh one: on a host, the session it watched there is to
+    /// end.
+    LeftConversation {
+        uid: u64,
+        label: Option<String>,
+    },
     /// Session `uid` is on host session `id`, as its host said.
     Watching {
         uid: u64,
