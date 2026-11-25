@@ -3,7 +3,7 @@
 
 use super::{Effect, Input, Signal, TasksDrive, DRAIN_LIMIT};
 use crate::task::{marks, Origin, Source, Task};
-use crate::workflow::{Failure, Outcome, Run};
+use crate::workflow::{Failure, Outcome, Run, Stop};
 use crate::Now;
 
 impl<W: Copy> TasksDrive<W> {
@@ -34,8 +34,8 @@ impl<W: Copy> TasksDrive<W> {
             }
         }
         self.store_run(id, run, &mut fx);
-        // A finished schedule's session leaves the rail once the run is let
-        // go, so nothing of the run is left listening to it.
+        // A finished schedule's or board's session leaves the rail once the
+        // run is let go, so nothing of the run is left listening to it.
         let closes = uid.filter(|_| self.task(id).is_some_and(Task::closes_session));
         match turn_going {
             true => {
@@ -85,7 +85,7 @@ impl<W: Copy> TasksDrive<W> {
     ) -> Vec<Effect<W>> {
         let mut fx = Vec::new();
         let unwatched = self.task(id).is_some_and(|task| match task.origin {
-            Some(Origin::Schedule { .. }) => true,
+            Some(Origin::Schedule { .. } | Origin::Board { .. }) => true,
             Some(Origin::Tool) | None => false,
         });
         match unwatched {
@@ -144,10 +144,36 @@ impl<W: Copy> TasksDrive<W> {
                         said,
                     }));
                 }
+                Some(Origin::Board { project, issue }) => {
+                    let outcome = task.outcome();
+                    fx.push(Effect::Signal(Signal::BoardEnded {
+                        project: project.clone(),
+                        issue: *issue,
+                        done: matches!(outcome, Some(Outcome::Done)),
+                        pull: pulls_next(outcome.as_ref()),
+                    }));
+                }
                 Some(Origin::Tool) | None => {}
             }
         }
         self.release(id, fx);
+    }
+}
+
+/// Whether a board task that ended as `outcome` lets the board start the
+/// next of its To do: one done or that a person stopped left the board. One
+/// that ended without finishing is left for a person to look at, and
+/// pulling the next would most likely end it the same way, one after another
+/// until To do is empty.
+fn pulls_next(outcome: Option<&Outcome>) -> bool {
+    match outcome {
+        Some(Outcome::Done | Outcome::Stopped(Stop::ByPerson | Stop::TakenOver)) => true,
+        Some(
+            Outcome::Stopped(Stop::TimedOut | Stop::LinkLost | Stop::Closed)
+            | Outcome::Exhausted { .. }
+            | Outcome::Failed(_),
+        )
+        | None => false,
     }
 }
 

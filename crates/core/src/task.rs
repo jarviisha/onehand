@@ -173,6 +173,12 @@ pub enum Origin {
     Schedule { id: String, name: String },
     /// One of onehand's tools, called by an agent or a program.
     Tool,
+    /// A project's board, pulling issue `issue` of the project's own issues
+    /// from its To do.
+    Board {
+        project: crate::project::ProjectId,
+        issue: u64,
+    },
 }
 
 /// The tools a task's sessions may use, and the labels an issue they write
@@ -223,6 +229,14 @@ impl Task {
     /// What started it, when that was not a person.
     pub fn origin(&self) -> Option<&Origin> {
         self.origin.as_ref()
+    }
+
+    /// The project and the issue a board pulled it for, when one did.
+    pub fn board_issue(&self) -> Option<(&crate::project::ProjectId, u64)> {
+        match &self.origin {
+            Some(Origin::Board { project, issue }) => Some((project, *issue)),
+            Some(Origin::Schedule { .. } | Origin::Tool) | None => None,
+        }
     }
 
     /// A task of `template` on `brief`, its one run not started.
@@ -370,13 +384,17 @@ impl Task {
     }
 
     /// Whether its session leaves the rail now that it ended: a schedule's
-    /// task that is done has nothing left in it to look at, and its
-    /// conversation is still reached from the project's past conversations.
-    /// One that failed, was
-    /// stopped or waits on a person keeps its session where it is.
+    /// or a board's task that is done was started by nobody's hand and has
+    /// nothing left in it to look at, and its conversation is still reached
+    /// from the project's past conversations. One that failed, was stopped
+    /// or waits on a person keeps its session where it is, as does any task
+    /// a person or a tool started.
     pub fn closes_session(&self) -> bool {
-        matches!(self.origin, Some(Origin::Schedule { .. }))
-            && matches!(self.outcome(), Some(Outcome::Done))
+        let unwatched = match self.origin {
+            Some(Origin::Schedule { .. } | Origin::Board { .. }) => true,
+            Some(Origin::Tool) | None => false,
+        };
+        unwatched && matches!(self.outcome(), Some(Outcome::Done))
     }
 
     /// How it ended, as its line in a list; `None` while it has not. A check

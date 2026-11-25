@@ -63,6 +63,8 @@ pub(crate) fn reload_templates(cx: &mut App) {
                 .collect();
             cx.update_global::<Workflows, _>(|p, _| p.templates = templates);
             cx.refresh_windows();
+            // A board's workflow may only now be on offer.
+            crate::board::pull_all(cx);
         });
     })
     .detach();

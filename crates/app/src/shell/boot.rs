@@ -62,6 +62,15 @@ impl Shell {
             },
         )
         .detach();
+        let board_page = cx.new(crate::board_page::BoardPage::new);
+        cx.subscribe_in(
+            &board_page,
+            window,
+            |shell: &mut Self, _, event: &crate::board_page::BoardPageEvent, window, cx| {
+                shell.on_board_page(event, window, cx)
+            },
+        )
+        .detach();
         let tasks_page = cx.new(crate::tasks_page::TasksPage::new);
         cx.subscribe_in(
             &tasks_page,
@@ -263,6 +272,7 @@ impl Shell {
                     E::TakeHostCode(path) => shell.ask_take_host_code(path.clone(), window, cx),
                     E::UpdateHost(path) => shell.update_host_from_laptop(path.clone(), cx),
                     E::RunCheck => shell.run_check(window, cx),
+                    E::ShowBoard(project) => shell.show_board(project.clone(), window, cx),
                 }
                 // A finished turn also changes what the rail's session dots
                 // say, and the rail is drawn from a query rather than from
@@ -496,6 +506,7 @@ impl Shell {
             offload_locks: HashMap::new(),
             dialog_return: None,
             check_inputs: HashMap::new(),
+            board_refused: None,
             workflow_launcher: None,
             branch_input,
             worktree_branch,
@@ -506,6 +517,7 @@ impl Shell {
             workflows_page,
             schedules_page: crate::schedules_page::SchedulesPage::new(cx),
             tasks_page,
+            board_page,
             workspace_page,
             terminal,
             _pending_save: None,

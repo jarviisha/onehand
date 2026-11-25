@@ -16,6 +16,7 @@ use onehand_core::workspace::HostName;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
+mod board_settings;
 mod boot;
 mod build_hosts;
 mod carry;
@@ -93,6 +94,7 @@ gpui::actions!(
         CycleMode,
         RunWorkflow,
         ShowTasks,
+        ShowBoard,
         ShowSchedules,
         ToggleHostBuilds
     ]
@@ -241,6 +243,9 @@ pub struct Shell {
     /// Each project's check command field, by root, made as its project
     /// page comes up.
     check_inputs: HashMap<PathBuf, Entity<InputState>>,
+    /// Why the workflow last picked as a project's board was refused, and
+    /// for which project's folder.
+    board_refused: Option<(PathBuf, String)>,
     /// Which of its pages Settings is showing: on the shell, with the drafts,
     /// so leaving Settings and coming back finds it where it was.
     ///
@@ -421,6 +426,9 @@ pub struct Shell {
     schedules_page: Entity<crate::schedules_page::SchedulesPage>,
     /// The Tasks page, made once for the same reason.
     tasks_page: Entity<crate::tasks_page::TasksPage>,
+    /// The board page, made once likewise, on whichever project's board
+    /// it last showed.
+    board_page: Entity<crate::board_page::BoardPage>,
     /// The workspace page, made once likewise.
     workspace_page: Entity<crate::workspace_page::WorkspacePage>,
 }

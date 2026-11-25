@@ -50,7 +50,7 @@ fn a_due_schedule_starts_a_task_whose_run_prompts_its_session_and_finishes() {
     let task = flow.tasks.task("t1").expect("kept as a task");
     match &task.origin {
         Some(Origin::Schedule { id, .. }) => assert_eq!(id, "s1"),
-        origin @ (Some(Origin::Tool) | None) => panic!("{origin:?}"),
+        origin @ (Some(Origin::Tool | Origin::Board { .. }) | None) => panic!("{origin:?}"),
     }
     assert_eq!(task.grant.tools, ["list_issues"]);
     assert_eq!(task.setup.agent.as_deref(), Some("a"));

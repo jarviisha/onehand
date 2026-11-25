@@ -26,6 +26,7 @@
 pub mod acp;
 pub mod agent;
 pub mod attachment;
+pub mod board;
 pub mod chat;
 pub mod claude_plugins;
 pub mod completion;

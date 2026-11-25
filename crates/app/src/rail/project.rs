@@ -176,6 +176,7 @@ pub(super) fn project_row(
     // is a local twin's. Its `git status` is read over its attach.
     let status = window_state.git_of(root);
     let mut facts = ProjectFacts::of(root, status.is_some());
+    facts.board = crate::projects::board_here(root, cx).is_some();
     // *Run here again* only while this machine holds the code.
     let away = crate::offload::get(cx, &root.path).filter(|_| root.offload.is_some());
     if facts.offload == Some(true) && !away.is_some_and(crate::offload::Offload::here) {

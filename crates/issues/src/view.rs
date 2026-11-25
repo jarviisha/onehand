@@ -36,7 +36,7 @@ mod tab;
 use detail::{Doing, issue_view};
 use form::{Form, form_view};
 use list::Showing;
-use store::IssuesFile;
+pub(crate) use store::IssuesFile;
 
 /// Write `change` into `file`, of the project at `root`, through the drive
 /// every view of it shares, made outside every view; `answer` hears what it
@@ -51,6 +51,19 @@ pub(crate) fn write_outside(
 ) {
     let shared = IssuesFile::get(root, file, connectors, cx);
     shared.update(cx, |shared, cx| shared.write_outside(change, answer, cx));
+}
+
+/// The file `file`, of the project at `root`, as every view of it holds it:
+/// read now if nothing has read it since something marked it.
+pub(crate) fn held(
+    root: &Path,
+    file: PathBuf,
+    connectors: &'static [&'static dyn Connector],
+    cx: &mut App,
+) -> Entity<IssuesFile> {
+    let shared = IssuesFile::get(root, file, connectors, cx);
+    shared.update(cx, |shared, cx| shared.load_if_stale(cx));
+    shared
 }
 
 /// An Issues view open on one project, for the tests of what writes an

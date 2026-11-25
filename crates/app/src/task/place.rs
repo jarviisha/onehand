@@ -466,6 +466,12 @@ fn say(signal: Signal<AnyWindowHandle>, cx: &mut App) {
         // Ended with nobody necessarily watching: said on the desktop as well
         // as on the Tasks page.
         Signal::ScheduleEnded { name, said } => crate::chat::session::notify_scheduled(name, said),
+        Signal::BoardEnded {
+            project,
+            issue,
+            done,
+            pull,
+        } => crate::board::ended(&project, issue, done, pull, cx),
         Signal::DismissFailed { window, why } => {
             toast(window, crate::toast::failed("Dismissing the task", why), cx)
         }

@@ -15,7 +15,7 @@
 //! (a check command typed, an offload's moves) is written once things have
 //! been still for [`SAVE_DEBOUNCE`].
 
-use super::{MadeBy, Placement, Project, ProjectId, Projects, Worktree};
+use super::{Board, MadeBy, Placement, Project, ProjectId, Projects, Worktree};
 use crate::saving::{Pending, Saves};
 use crate::workspace::{BuildHost, HostName, Offloaded, RoutedCommand};
 use std::collections::{BTreeSet, HashMap};
@@ -38,6 +38,7 @@ pub enum Thing {
     BuildsOn,
     Worktrees,
     WorktreeParent,
+    Board,
     /// The offload of one folder of the project, by its path here.
     Offload(PathBuf),
 }
@@ -53,6 +54,7 @@ pub enum Value {
     BuildsOn(Option<HostName>),
     Worktrees(Vec<Worktree>),
     WorktreeParent(Option<PathBuf>),
+    Board(Option<Board>),
     Offload {
         folder: PathBuf,
         on: Option<Offloaded>,
@@ -149,6 +151,9 @@ pub struct ProjectsDrive {
     /// The worktrees a removal is judging or removing, so a second press on
     /// one is not taken.
     removing: std::collections::HashSet<PathBuf>,
+    /// Each board's issues taken out of To do to start whose task has not
+    /// landed yet. Never written: a start cut off by an exit is just gone.
+    starting: HashMap<ProjectId, BTreeSet<u64>>,
 }
 
 impl Deref for ProjectsDrive {
@@ -169,6 +174,7 @@ impl ProjectsDrive {
             soon: None,
             minted: 0,
             removing: Default::default(),
+            starting: HashMap::new(),
         }
     }
 
@@ -709,6 +715,11 @@ impl ProjectsDrive {
                     project.cards = cards;
                 }
             }
+            Value::Board(board) => {
+                if let Some(project) = self.projects.get_mut(id) {
+                    project.board = board;
+                }
+            }
             Value::WorktreeParent(parent) => {
                 if let Some(project) = self.projects.get_mut(id) {
                     project.worktree_parent = parent;
@@ -779,6 +790,7 @@ impl ProjectsDrive {
     }
 }
 
+mod board;
 mod routes;
 pub use routes::MOST_ROUTES;
 

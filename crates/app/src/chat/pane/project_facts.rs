@@ -22,6 +22,8 @@ pub struct ProjectFacts {
     /// It has settings of its own, kept in Settings: a project whose sessions
     /// run here, a worker's row aside.
     pub settings: bool,
+    /// It has a board this machine runs, so its menu offers it.
+    pub board: bool,
 }
 
 impl ProjectFacts {
@@ -40,6 +42,8 @@ impl ProjectFacts {
             asks: false,
             renames: root.project.is_some(),
             settings: local && !root.transient,
+            // Read from the project store by whoever has it at hand.
+            board: false,
             offload: match (&root.host, &root.offload) {
                 _ if root.transient => None,
                 (Some(_), _) => None,
