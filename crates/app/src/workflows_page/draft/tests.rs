@@ -271,24 +271,9 @@ fn a_draft_with_a_step_agent_saves_as_version_2(cx: &mut gpui::TestAppContext) {
     assert_eq!(template.schema_version, 2);
 }
 
-#[gpui::test]
-fn a_review_read_by_the_form_saves_as_it_was(cx: &mut gpui::TestAppContext) {
-    let dir = crate::shell::rig::folder("review-step");
-    let (_, _, cx) = crate::shell::rig::shell(cx, dir, vec![crate::shell::rig::nowhere()]);
-    let review = StepSpec {
-        id: "review".into(),
-        label: "Review".into(),
-        kind: StepKind::Review {
-            of: "work".into(),
-            on_reject: Some("work".into()),
-            agent: Some("Codex".into()),
-            prompt: "Review the change.".into(),
-            mode: Some("plan".into()),
-            options: [("model".to_string(), "strong".to_string())].into(),
-        },
-    };
-    let template = Template {
-        schema_version: 2,
+fn review_template(on_reject: Option<&str>) -> Template {
+    Template {
+        schema_version: 1,
         id: "t".into(),
         version: 1,
         name: "t".into(),
@@ -296,13 +281,54 @@ fn a_review_read_by_the_form_saves_as_it_was(cx: &mut gpui::TestAppContext) {
         place: Place::Worktree,
         misses: 3,
         timeout: "45m".into(),
-        steps: vec![agent_step("work"), review.clone()],
+        steps: vec![
+            agent_step("work"),
+            agent_step("fix"),
+            StepSpec {
+                id: "review".into(),
+                label: "Review".into(),
+                kind: StepKind::Review {
+                    of: "work".into(),
+                    on_reject: on_reject.map(str::to_string),
+                    agent: Some("Codex".into()),
+                    prompt: "Review the change.".into(),
+                    mode: Some("plan".into()),
+                    options: [("model".to_string(), "strong".to_string())].into(),
+                },
+            },
+        ],
+    }
+}
+
+fn saved_review(template: &Template, cx: &mut gpui::TestAppContext) -> Template {
+    let dir = crate::shell::rig::folder("review-step");
+    let (_, _, cx) = crate::shell::rig::shell(cx, dir, vec![crate::shell::rig::nowhere()]);
+    cx.update(|window, cx| {
+        let draft = WorkflowDraft::load(template, None, false, window, cx);
+        assert!(draft.steps[2].kind == Kind::Review);
+        draft.to_template(cx).unwrap()
+    })
+}
+
+#[gpui::test]
+fn a_review_draft_round_trips(cx: &mut gpui::TestAppContext) {
+    let template = review_template(Some("fix"));
+    let saved = saved_review(&template, cx);
+    assert_eq!(saved.steps, template.steps);
+    assert_eq!(saved.schema_version, 2);
+}
+
+#[gpui::test]
+fn a_review_on_reject_equal_to_of_writes_no_key(cx: &mut gpui::TestAppContext) {
+    let saved = saved_review(&review_template(Some("work")), cx);
+    let StepKind::Review { on_reject, .. } = &saved.steps[2].kind else {
+        panic!("not a review");
     };
-    let saved = cx.update(|window, cx| {
-        WorkflowDraft::load(&template, None, false, window, cx)
-            .to_template(cx)
-            .unwrap()
-    });
-    assert_eq!(saved.steps[1], review);
+    assert_eq!(*on_reject, None);
+}
+
+#[gpui::test]
+fn a_review_draft_saves_as_version_2(cx: &mut gpui::TestAppContext) {
+    let saved = saved_review(&review_template(None), cx);
     assert_eq!(saved.schema_version, 2);
 }

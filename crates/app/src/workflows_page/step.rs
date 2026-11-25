@@ -356,7 +356,7 @@ pub(super) fn step_panel(
         )));
 
     let body = match step.kind {
-        Kind::Agent => {
+        kind @ (Kind::Agent | Kind::Review) => {
             // A prompt too long for the field is written in a dialog the
             // size of a page, at the field's end where the eye leaves it.
             let open_larger = {
@@ -434,9 +434,46 @@ pub(super) fn step_panel(
                             }),
                     )
             };
+            let review = kind == Kind::Review;
             div()
                 .v_flex()
                 .gap_4()
+                .when(review, |col| {
+                    col.child(field(
+                        "Reviews",
+                        None,
+                        div().h_flex().child(step_picker(
+                            handle,
+                            i,
+                            "step-of",
+                            step.target.clone(),
+                            "Pick a step",
+                            None,
+                            agent_ids(earlier),
+                            shipped,
+                            move |d, id| d.steps[i].target = id,
+                            cx,
+                        )),
+                        cx,
+                    ))
+                    .child(field(
+                        "Sends back to",
+                        None,
+                        div().h_flex().child(step_picker(
+                            handle,
+                            i,
+                            "step-reject",
+                            step.reject.clone(),
+                            "The step it reviews",
+                            Some("The step it reviews"),
+                            agent_ids(earlier),
+                            shipped,
+                            move |d, id| d.steps[i].reject = id,
+                            cx,
+                        )),
+                        cx,
+                    ))
+                })
                 .child(field(
                     "Prompt",
                     None,
@@ -451,13 +488,15 @@ pub(super) fn step_panel(
                         .child(div().h_flex().justify_end().child(open_larger)),
                     cx,
                 ))
-                .child(field(
-                    "Gates",
-                    about("Checked when its turn ends"),
-                    div().h_flex().flex_wrap().gap_3().children(gates),
-                    cx,
-                ))
-                .child(div().h_flex().child(keep))
+                .when(!review, |col| {
+                    col.child(field(
+                        "Gates",
+                        about("Checked when its turn ends"),
+                        div().h_flex().flex_wrap().gap_3().children(gates),
+                        cx,
+                    ))
+                    .child(div().h_flex().child(keep))
+                })
                 .child(settings::agent_field(handle, i, step, shipped, cx))
                 .child(settings::agent_settings(handle, i, step, shipped, cwd, cx))
                 .into_any_element()
@@ -485,49 +524,18 @@ pub(super) fn step_panel(
                 .filter(|step| step.agent && (!needs_keep || step.keeps))
                 .map(|step| step.id.clone())
                 .collect();
-            let current = step.target.clone();
-            let target_trigger = onehand_ui::picker(
-                ("step-target-trigger", i),
-                if current.is_empty() {
-                    "Pick a step".to_string()
-                } else {
-                    current.clone()
-                },
-                !current.is_empty(),
-                onehand_ui::ControlSize::Tall,
+            let target = step_picker(
+                handle,
+                i,
+                "step-target",
+                step.target.clone(),
+                "Pick a step",
+                None,
+                choices,
+                shipped,
+                move |d, id| d.steps[i].target = id,
                 cx,
             );
-            let target = if shipped {
-                target_trigger.refuses(Some(SHIPPED)).into_any_element()
-            } else {
-                let handle = handle.clone();
-                crate::controls::menu_below(
-                    ("step-target", i),
-                    target_trigger,
-                    move |mut menu, _, _| {
-                        for id in &choices {
-                            let (handle, id) = (handle.clone(), id.clone());
-                            menu = menu.item(
-                                crate::controls::menu_item(id.clone())
-                                    .checked(id == current)
-                                    .on_click(move |_, window: &mut Window, cx: &mut App| {
-                                        let id = id.clone();
-                                        handle.update(cx, |page, cx| {
-                                            page.edit_workflow_draft(window, cx, move |d, _, _| {
-                                                d.steps[i].target = id
-                                            })
-                                        });
-                                    }),
-                            );
-                        }
-                        if choices.is_empty() {
-                            menu = menu.item(crate::controls::menu_label("No earlier step fits"));
-                        }
-                        menu
-                    },
-                )
-                .into_any_element()
-            };
             div()
                 .v_flex()
                 .gap_4()
@@ -559,4 +567,70 @@ pub(super) fn step_panel(
         .child(names)
         .child(body)
         .into_any_element()
+}
+
+/// The ids of the earlier agent steps, which a review reviews or sends back to.
+fn agent_ids(earlier: &[Earlier]) -> Vec<String> {
+    earlier
+        .iter()
+        .filter(|step| step.agent)
+        .map(|step| step.id.clone())
+        .collect()
+}
+
+/// A picker of one of `choices` (earlier steps, by id), shut with `current`
+/// or `placeholder`; `first`, when given, is an entry before them that picks
+/// the empty id. `set` writes the pick into the draft.
+#[allow(clippy::too_many_arguments)]
+fn step_picker(
+    handle: &Entity<WorkflowsPage>,
+    i: usize,
+    id: &'static str,
+    current: String,
+    placeholder: &'static str,
+    first: Option<&'static str>,
+    choices: Vec<String>,
+    shipped: bool,
+    set: impl Fn(&mut WorkflowDraft, String) + Clone + 'static,
+    cx: &App,
+) -> AnyElement {
+    let trigger = onehand_ui::picker(
+        (SharedString::from(format!("{id}-trigger")), i),
+        if current.is_empty() {
+            placeholder.to_string()
+        } else {
+            current.clone()
+        },
+        !current.is_empty(),
+        onehand_ui::ControlSize::Tall,
+        cx,
+    );
+    if shipped {
+        return trigger.refuses(Some(SHIPPED)).into_any_element();
+    }
+    let handle = handle.clone();
+    crate::controls::menu_below((id, i), trigger, move |mut menu, _, _| {
+        let entries = first
+            .map(|label| (label.to_string(), String::new()))
+            .into_iter()
+            .chain(choices.iter().map(|id| (id.clone(), id.clone())));
+        for (label, pick) in entries {
+            let (handle, set) = (handle.clone(), set.clone());
+            menu = menu.item(
+                crate::controls::menu_item(label)
+                    .checked(pick == current)
+                    .on_click(move |_, window: &mut Window, cx: &mut App| {
+                        let (pick, set) = (pick.clone(), set.clone());
+                        handle.update(cx, |page, cx| {
+                            page.edit_workflow_draft(window, cx, move |d, _, _| set(d, pick))
+                        });
+                    }),
+            );
+        }
+        if choices.is_empty() {
+            menu = menu.item(crate::controls::menu_label("No earlier step fits"));
+        }
+        menu
+    })
+    .into_any_element()
 }
