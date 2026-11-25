@@ -171,7 +171,7 @@ pub(crate) fn room_at(
     template: &onehand_core::workflow::Template,
     at: usize,
     cx: &App,
-) -> Option<(u32, usize, usize)> {
+) -> Option<onehand_core::task::rooms::Room> {
     let limit = template.limit_at(at)?;
     let key = onehand_core::task::rooms::RoomKey {
         repo: root.to_path_buf(),
@@ -181,7 +181,11 @@ pub(crate) fn room_at(
     let (holding, waiting) = cx
         .try_global::<Tasks>()
         .map_or((0, 0), |t| t.drive.room_at(&key));
-    Some((limit, holding, waiting))
+    Some(onehand_core::task::rooms::Room {
+        limit,
+        holding,
+        waiting,
+    })
 }
 
 /// Project `project`'s board tasks laid over `template`'s steps, each as
@@ -228,9 +232,7 @@ pub(crate) fn board(
                 let at = template.steps.iter().position(|s| s.id == column.step);
                 let room = at.and_then(|at| room_at(root, template, at, cx));
                 let head = match room {
-                    Some((limit, holding, _)) => {
-                        format!("{} · {holding} of {limit}", column.label)
-                    }
+                    Some(room) => format!("{} · {} of {}", column.label, room.holding, room.limit),
                     None => column.label.clone(),
                 };
                 let step = at.map(|_| column.step.clone());

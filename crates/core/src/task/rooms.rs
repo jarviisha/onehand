@@ -15,6 +15,15 @@ pub struct RoomKey {
     pub step: String,
 }
 
+/// The room at a limited step: its limit, how many tasks hold room there
+/// and how many wait for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Room {
+    pub limit: u32,
+    pub holding: usize,
+    pub waiting: usize,
+}
+
 /// Which task holds room where, and which wait for some.
 #[derive(Debug, Default)]
 pub(crate) struct Rooms {

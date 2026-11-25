@@ -745,21 +745,33 @@ fn start_todo_counts_starts_until_they_land() {
     )
     .unwrap();
     let taken = std::collections::HashSet::new();
-    let pull = d.pull(&p.id, 0, None, &issues, None, &taken).unwrap();
+    let flow = worktree_flow(crate::workflow::Place::Worktree);
+    let pull = d
+        .pull(&p.id, &flow, 0, None, &issues, None, &taken)
+        .unwrap();
     assert_eq!(pull.start, [2], "a team of 3 with 2 on their way");
-    let first = d.pull(&p.id, 0, Some((2, 0)), &issues, None, &taken);
+    let room = crate::task::rooms::Room {
+        limit: 2,
+        holding: 0,
+        waiting: 0,
+    };
+    let first = d.pull(&p.id, &flow, 0, Some(room), &issues, None, &taken);
     assert!(
         first.unwrap().start.is_empty(),
         "the 2 on their way fill a first step of 2"
     );
     d.landed(&p.id, 4);
     assert_eq!(
-        d.pull(&p.id, 1, None, &issues, None, &taken).unwrap().start,
+        d.pull(&p.id, &flow, 1, None, &issues, None, &taken)
+            .unwrap()
+            .start,
         [2]
     );
     d.landed(&p.id, 9);
     assert_eq!(
-        d.pull(&p.id, 0, None, &issues, None, &taken).unwrap().start,
+        d.pull(&p.id, &flow, 0, None, &issues, None, &taken)
+            .unwrap()
+            .start,
         [2, 7]
     );
 }
@@ -842,4 +854,30 @@ fn unbinding_asks_only_over_a_to_do() {
     assert!(!d.unbinding_asks(&p.id));
     let (d, p) = drive_with_todo(vec![4]);
     assert!(d.unbinding_asks(&p.id));
+}
+
+#[test]
+fn pull_counts_the_first_steps_room_and_refuses_an_unusable_workflow() {
+    let (d, p) = drive_with_todo(vec![2, 7]);
+    let issues: crate::issues::Issues = serde_json::from_str(
+        r#"{"next":10,"issues":[{"number":2,"title":"b"},{"number":7,"title":"c"}]}"#,
+    )
+    .unwrap();
+    let taken = std::collections::HashSet::new();
+    let flow = worktree_flow(crate::workflow::Place::Worktree);
+    let room = crate::task::rooms::Room {
+        limit: 3,
+        holding: 1,
+        waiting: 1,
+    };
+    let pull = d.pull(&p.id, &flow, 0, Some(room), &issues, None, &taken);
+    assert_eq!(
+        pull.unwrap().start,
+        [2],
+        "one left of three, held and waited for"
+    );
+    let checkout = worktree_flow(crate::workflow::Place::Checkout);
+    assert!(d
+        .pull(&p.id, &checkout, 0, None, &issues, None, &taken)
+        .is_none());
 }

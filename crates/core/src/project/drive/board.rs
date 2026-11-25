@@ -4,6 +4,7 @@ use super::{Effect, ProjectsDrive, Thing, Value};
 use crate::connector::Connector;
 use crate::issues::Issues;
 use crate::project::{Board, ProjectId};
+use crate::task::rooms::Room;
 use crate::workflow::Template;
 use std::collections::{BTreeSet, HashSet};
 
@@ -152,19 +153,23 @@ impl ProjectsDrive {
     /// Which of project `id`'s To do to start while `running` of its board
     /// tasks work, its starts on their way counted with them, over its
     /// `issues` and the issues its tasks hold (`taken`); none without a
-    /// board. `first` is its workflow's first step's limit and how many hold
-    /// or wait for room there, when that step is limited; the starts on
-    /// their way are counted there too.
+    /// board, or when its workflow, `template`, is one a board cannot run,
+    /// which its page says. `first` is the room at the workflow's first
+    /// step, when that step is limited: those holding or waiting for it, and
+    /// the starts on their way, leave the rest.
+    #[allow(clippy::too_many_arguments)]
     pub fn pull(
         &self,
         id: &ProjectId,
+        template: &Template,
         running: usize,
-        first: Option<(u32, usize)>,
+        first: Option<Room>,
         issues: &Issues,
         forge: Option<&'static dyn Connector>,
         taken: &HashSet<u64>,
     ) -> Option<crate::board::Pull> {
         let board = self.projects.get(id)?.board()?;
+        crate::board::usable(Some(template)).ok()?;
         let starting = self.starting.get(id).map_or(0, BTreeSet::len);
         Some(crate::board::pull(
             board,
@@ -174,7 +179,7 @@ impl ProjectsDrive {
             // step, so a pull then may start one too many. The team cap and
             // the room ledger still hold, so the cost is a task that waits;
             // count a landed task until its run first asks if that bites.
-            first.map(|(limit, at)| (limit, at + starting)),
+            first.map(|room| (room.limit, room.holding + room.waiting + starting)),
             issues,
             forge,
             taken,

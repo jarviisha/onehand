@@ -141,21 +141,15 @@ fn pull_read(
     let Some((window, shell)) = crate::windows::holding_root(root, cx).into_iter().next() else {
         return;
     };
-    // An unusable workflow is said on the board's page; nothing starts.
     let Ok(template) = crate::control::template(&board.workflow, cx) else {
         return;
     };
-    if board::usable(Some(&template)).is_err() {
-        return;
-    }
     let running = crate::task::board_running(project, cx);
     let taken = crate::task::board_taken(project, cx);
-    // A limited first step lets in no more than it has room for.
-    let first = crate::task::room_at(root, &template, 0, cx)
-        .map(|(limit, holding, waiting)| (limit, holding + waiting));
+    let first = crate::task::room_at(root, &template, 0, cx);
     let Some(pull) = Shared::global(cx)
         .projects
-        .pull(project, running, first, kept, forge, &taken)
+        .pull(project, &template, running, first, kept, forge, &taken)
     else {
         return;
     };
