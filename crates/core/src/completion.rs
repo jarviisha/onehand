@@ -293,6 +293,38 @@ pub fn commands(
     (rows, held)
 }
 
+/// The name of onehand's own command for a fresh conversation in the session.
+///
+/// Borrowed from the terminal agents that already answer to it. Claude Code's
+/// adapter does not advertise its own `/clear`, since starting over is the
+/// client's to do, so without this the name a person types out of habit goes
+/// to an agent that cannot act on it.
+pub const CLEAR: &str = "clear";
+
+/// A command the composer carries out itself rather than sending.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OwnCommand {
+    /// Leave this conversation on disk and start a fresh one in the same
+    /// session.
+    NewConversation,
+}
+
+/// Whether `/clear` is onehand's to answer: only while the agent offers no
+/// command of that name, because an agent's own `clear` knows what clearing
+/// means for it and is the one the person asked for.
+pub fn offers_clear(advertised: &[crate::acp::SlashCommand]) -> bool {
+    !advertised.iter().any(|c| c.name == CLEAR)
+}
+
+/// What `text`, about to be sent, asks of the composer itself, if anything.
+///
+/// The command alone, and nothing after it: `/clear the cache` is a prompt
+/// that happens to start with the word.
+pub fn own_command(text: &str, advertised: &[crate::acp::SlashCommand]) -> Option<OwnCommand> {
+    let name = text.trim().strip_prefix('/')?;
+    (name == CLEAR && offers_clear(advertised)).then_some(OwnCommand::NewConversation)
+}
+
 /// Which of the three things an `@` row offers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MentionKind {
@@ -957,5 +989,18 @@ mod tests {
         let (text, caret) = apply("/he", 3, &trig, "help");
         assert_eq!(text, "/help ");
         assert_eq!(caret, "/help ".len());
+    }
+
+    #[test]
+    fn clear_alone_is_ours_unless_the_agent_has_one() {
+        let none: Vec<crate::acp::SlashCommand> = vec![];
+        let theirs = vec![cmd("clear", "")];
+        assert_eq!(own_command("/clear", &none), Some(OwnCommand::NewConversation));
+        assert_eq!(own_command("  /clear \n", &none), Some(OwnCommand::NewConversation));
+        assert_eq!(own_command("/clear now", &none), None);
+        assert_eq!(own_command("clear", &none), None);
+        assert_eq!(own_command("/clear", &theirs), None);
+        assert!(offers_clear(&none));
+        assert!(!offers_clear(&theirs));
     }
 }
