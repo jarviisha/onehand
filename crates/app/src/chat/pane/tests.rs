@@ -414,6 +414,47 @@ mod lifecycle {
         assert!(!nothing, "no session, nothing started");
     }
 
+    /// `/clear` sent alone starts a new conversation and leaves the composer
+    /// empty; with words after it, it is a prompt and the session stays.
+    #[gpui::test]
+    fn clear_sent_alone_starts_a_new_conversation(cx: &mut TestAppContext) {
+        use onehand_core::workspace::drive::StartsOn;
+        let (pane, cx) = pane(cx);
+        cx.update(|window, cx| {
+            pane.update(cx, |pane, cx| {
+                let (root, starts) = (PathBuf::from("/tmp"), StartsOn::Fresh);
+                pane.show(1, root, None, &nowhere(), starts, window, cx)
+            })
+        });
+        cx.run_until_parked();
+        let type_and_send = |text: &'static str, cx: &mut VisualTestContext| {
+            cx.update(|window, cx| {
+                pane.update(cx, |pane, cx| {
+                    pane.composer.update(cx, |composer, cx| {
+                        composer
+                            .state
+                            .update(cx, |state, cx| state.set_value(text, window, cx))
+                    });
+                    pane.submit(window, cx);
+                })
+            });
+            cx.run_until_parked();
+        };
+        let text = |cx: &mut VisualTestContext| {
+            pane.read_with(cx, |pane, cx| pane.composer.read(cx).text(cx))
+        };
+
+        let old = session(&pane, 1, cx).expect("a session");
+        type_and_send("/clear now", cx);
+        let same = session(&pane, 1, cx).expect("a session");
+        assert_eq!(old.entity_id(), same.entity_id(), "a prompt, not the command");
+
+        type_and_send("/clear", cx);
+        let new = session(&pane, 1, cx).expect("a session");
+        assert_ne!(old.entity_id(), new.entity_id(), "a fresh conversation");
+        assert_eq!(text(cx), "", "the command does not stay in the field");
+    }
+
     /// A restart puts a new session in the old one's place, and the old one
     /// is gone by then; one with nothing live restarts nothing.
     #[gpui::test]

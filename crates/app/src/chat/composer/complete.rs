@@ -54,6 +54,12 @@ fn act_rows(query: &str, session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
         Act::Effort => effort_action(session, cx).is_some(),
         Act::Mode => mode_action(session, cx).is_some(),
         Act::Fast => fast_action(session, cx).is_some(),
+        // Not while a turn runs, which leaving the conversation would throw
+        // away; and not where the agent has a `clear` of its own.
+        Act::NewConversation => {
+            let chat = session.read(cx).chat();
+            !chat.busy && onehand_core::completion::offers_clear(&chat.commands)
+        }
         Act::Attach | Act::Mention | Act::Command | Act::Workflow | Act::Control => true,
     };
     // Hoisted, for the reason the folder run hoists its own: inside the filter
@@ -73,6 +79,11 @@ fn act_rows(query: &str, session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
             "mention",
             "Put an @ in the prompt to name a file",
             Act::Mention,
+        ),
+        (
+            onehand_core::completion::CLEAR,
+            "Start a new conversation in this session",
+            Act::NewConversation,
         ),
     ]
     .into_iter()
@@ -242,6 +253,9 @@ impl Composer {
                         window.dispatch_action(Box::new(crate::shell::RunWorkflow), cx)
                     }),
                     (None, Act::Mention) => self.insert_trigger('@', window, cx),
+                    (None, Act::NewConversation) => {
+                        cx.emit(super::ComposerEvent::NewConversation)
+                    }
                     (None, Act::Control) => {
                         let uid = session.read(cx).chat().uid;
                         crate::control::switch(uid, !crate::control::switched_on(uid), cx);

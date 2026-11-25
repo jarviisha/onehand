@@ -170,6 +170,9 @@ pub enum ComposerEvent {
     /// Something done to the project's branch from its chip. The pane owns the
     /// way to the shell, which carries it out.
     Branch(BranchAct),
+    /// Start a new conversation in the session on screen. The pane owns the
+    /// session and decides whether it may leave the one it is on.
+    NewConversation,
 }
 
 /// What the branch chip's menu offers.
