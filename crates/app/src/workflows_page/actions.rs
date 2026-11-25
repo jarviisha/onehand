@@ -336,7 +336,6 @@ impl WorkflowsPage {
         let file = draft.file.clone();
         // A copy's first save, of a board's workflow, binds it to the board.
         let for_board = file.is_none().then(|| self.for_board.clone()).flatten();
-        // Any save of the form ends what it was opened from the board for.
         // Which form this save is for: each form is made anew, with inputs of
         // its own, so its name input says which one it is.
         let form = draft.name.entity_id();
@@ -362,6 +361,8 @@ impl WorkflowsPage {
                             draft.file = Some(path.clone());
                             draft.original = written.clone();
                             page.picked = Some(Pick::Own(path));
+                            // Any save of the form ends what it was opened
+                            // from the board for.
                             page.for_board = None;
                             if let Some(for_board) = for_board {
                                 cx.emit(super::WorkflowsPageEvent::Duplicated {
