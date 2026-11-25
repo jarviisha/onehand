@@ -296,6 +296,20 @@ impl Composer {
         }
     }
 
+    /// What sending would ask of the composer itself rather than of the
+    /// agent, against the commands the agent offers. Staged files mean a
+    /// prompt is being sent, whatever its words.
+    pub fn own_command(
+        &self,
+        advertised: &[onehand_core::acp::SlashCommand],
+        cx: &App,
+    ) -> Option<onehand_core::completion::OwnCommand> {
+        self.attachments
+            .is_empty()
+            .then(|| onehand_core::completion::own_command(&self.text(cx), advertised))
+            .flatten()
+    }
+
     pub fn text(&self, cx: &App) -> String {
         self.state.read(cx).value().to_string()
     }

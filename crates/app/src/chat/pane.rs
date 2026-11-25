@@ -378,11 +378,7 @@ impl ChatPane {
                     // is already absolute -- everything staged here arrives
                     // from the picker, the clipboard or a drop.
                     ComposerEvent::OpenFile(path) => cx.emit(ChatPaneEvent::OpenFile(path.clone())),
-                    ComposerEvent::NewConversation => {
-                        if let Some(uid) = pane.active {
-                            pane.new_conversation(uid, cx);
-                        }
-                    }
+                    ComposerEvent::NewConversation => pane.new_conversation_on_screen(cx),
                     // The branch chip's menu, carried out by the shell as the
                     // rail's own entries are.
                     ComposerEvent::Branch(act) => cx.emit(ChatPaneEvent::Project(match act {

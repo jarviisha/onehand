@@ -54,11 +54,15 @@ fn act_rows(query: &str, session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
         Act::Effort => effort_action(session, cx).is_some(),
         Act::Mode => mode_action(session, cx).is_some(),
         Act::Fast => fast_action(session, cx).is_some(),
-        // Not while a turn runs, which leaving the conversation would throw
-        // away; and not where the agent has a `clear` of its own.
+        // Not where leaving the conversation is refused, mid-turn or while
+        // the session leads workers, nor where the agent has a `clear` of
+        // its own.
         Act::NewConversation => {
             let chat = session.read(cx).chat();
-            !chat.busy && onehand_core::completion::offers_clear(&chat.commands)
+            onehand_core::completion::offers_clear(&chat.commands)
+                && crate::control::drive()
+                    .may_leave_conversation(chat.uid, chat.busy)
+                    .is_ok()
         }
         Act::Attach | Act::Mention | Act::Command | Act::Workflow | Act::Control => true,
     };

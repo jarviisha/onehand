@@ -243,7 +243,7 @@ impl Shell {
                         crate::toast::failed("Deleting the conversation", why),
                         cx,
                     ),
-                    E::ResumeRefused(why) => {
+                    E::SwitchRefused(why) => {
                         window.push_notification(crate::toast::warning(why), cx)
                     }
                     E::Fork { root, spec } => shell.fork_session(root, spec.clone(), window, cx),

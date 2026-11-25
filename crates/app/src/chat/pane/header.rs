@@ -463,32 +463,18 @@ impl ChatPane {
                         // exactly as a restart does, and a menu that has to be
                         // opened twice to be believed is a worse warning than an
                         // item that will not go.
-                        match busy {
-                            true => crate::controls::menu_still(|_, _| {
-                                div().child("Resume in this session…")
-                            }),
-                            false => crate::controls::menu_item("Resume in this session…"),
-                        }
-                        .disabled(busy)
-                        .on_click(move |_, _, cx: &mut App| {
-                            history.update(cx, |pane: &mut Self, cx| pane.show_history(cx));
-                        }),
+                        idle_only("Resume in this session…", busy).on_click(
+                            move |_, _, cx: &mut App| {
+                                history.update(cx, |pane: &mut Self, cx| pane.show_history(cx));
+                            },
+                        ),
                     )
                     .item(
                         // Refused mid-turn for the reason the resume above it
                         // is: leaving the conversation throws the turn away.
-                        match busy {
-                            true => {
-                                crate::controls::menu_still(|_, _| div().child("New conversation"))
-                            }
-                            false => crate::controls::menu_item("New conversation"),
-                        }
-                        .disabled(busy)
-                        .on_click(move |_, _, cx: &mut App| {
+                        idle_only("New conversation", busy).on_click(move |_, _, cx: &mut App| {
                             fresh.update(cx, |pane: &mut Self, cx| {
-                                if let Some(uid) = pane.active {
-                                    pane.new_conversation(uid, cx);
-                                }
+                                pane.new_conversation_on_screen(cx)
                             });
                         }),
                     )
@@ -663,6 +649,16 @@ fn ran_for(elapsed: std::time::Duration) -> String {
         0 => "now".to_string(),
         m => format!("{m}m"),
     }
+}
+
+/// A menu row that leaves the conversation, refused while a turn runs: still,
+/// so the pointer promises no press, and disabled.
+fn idle_only(label: &'static str, busy: bool) -> gpui_component::menu::PopupMenuItem {
+    match busy {
+        true => crate::controls::menu_still(move |_, _| div().child(label)),
+        false => crate::controls::menu_item(label),
+    }
+    .disabled(busy)
 }
 
 #[cfg(test)]

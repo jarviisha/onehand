@@ -330,6 +330,8 @@ pub enum ResumeRefused {
     LeadsWorkers,
     /// A session of some window already has that conversation open.
     AlreadyOpen,
+    /// A turn runs in it, which leaving would throw away.
+    TurnRunning,
 }
 
 /// A worker gone, as its handle still reads to the lead it had.

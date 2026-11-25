@@ -42,17 +42,8 @@ impl ChatPane {
             return;
         };
         // `/clear` alone is the composer's own, not a prompt: the session
-        // starts over, and the field is emptied only once it has. Staged
-        // files mean a prompt is being sent, whatever its words.
-        let own = {
-            let composer = self.composer.read(cx);
-            let chat = session.read(cx).chat();
-            composer
-                .attachments
-                .is_empty()
-                .then(|| onehand_core::completion::own_command(&composer.text(cx), &chat.commands))
-                .flatten()
-        };
+        // starts over, and the field is emptied only once it has.
+        let own = (self.composer.read(cx)).own_command(&session.read(cx).chat().commands, cx);
         match own {
             Some(OwnCommand::NewConversation) => {
                 let uid = session.read(cx).chat().uid;

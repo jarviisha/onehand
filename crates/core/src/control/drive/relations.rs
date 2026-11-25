@@ -99,13 +99,16 @@ impl ControlDrive {
         uids
     }
 
-    /// Whether session `uid` may leave its conversation to choose another:
-    /// never while it leads workers, which would be left with no lead, or
-    /// merged past the cap with the ones the other conversation brings back.
-    pub fn may_leave_conversation(&self, uid: u64) -> Result<(), ResumeRefused> {
-        match self.leads_workers(uid) {
-            true => Err(ResumeRefused::LeadsWorkers),
-            false => Ok(()),
+    /// Whether session `uid`, `busy` saying whether a turn runs there, may
+    /// leave its conversation for another or a fresh one: never while it
+    /// leads workers, which would be left with no lead, or merged past the
+    /// cap with the ones the other conversation brings back; and never mid
+    /// turn, which leaving would throw away.
+    pub fn may_leave_conversation(&self, uid: u64, busy: bool) -> Result<(), ResumeRefused> {
+        match (self.leads_workers(uid), busy) {
+            (true, _) => Err(ResumeRefused::LeadsWorkers),
+            (false, true) => Err(ResumeRefused::TurnRunning),
+            (false, false) => Ok(()),
         }
     }
 

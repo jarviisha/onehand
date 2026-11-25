@@ -224,9 +224,9 @@ pub enum ChatPaneEvent {
     /// work was not thrown away. Reporting a refusal as a failure to save would
     /// send the reader looking for the wrong thing entirely.
     ConversationNotDeleted(String),
-    /// A conversation was not opened in this session, or in a new one, and
-    /// why.
-    ResumeRefused(String),
+    /// A session was not put on another conversation, a past one or a fresh
+    /// one, or a past one was not opened in a new session: why.
+    SwitchRefused(String),
     /// A rename's write failed, its name put back: why.
     RenameFailed(String),
     /// The agent refused a pick, put back to what it last confirmed: why.

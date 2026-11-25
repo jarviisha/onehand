@@ -459,6 +459,38 @@ mod lifecycle {
         assert_eq!(text(cx), "", "the command does not stay in the field");
     }
 
+    /// The picker's fresh start leaves the conversation held live behind it,
+    /// as a new conversation does, carrying no name over; a picker put up
+    /// before anything connected left nothing.
+    #[gpui::test]
+    fn the_pickers_fresh_start_leaves_what_it_held(cx: &mut TestAppContext) {
+        let (pane, cx) = pane(cx);
+        open(&pane, 1, cx);
+        let live = session(&pane, 1, cx).expect("a session");
+        live.update(cx, |session, cx| session.rename("the old one", cx))
+            .expect("still live");
+        pane.update(cx, |pane, _| {
+            pane.choose_history(1, Some(live.entity_id()), past())
+        });
+        assert!(
+            pane.update(cx, |pane, cx| pane.start_fresh(1, cx)),
+            "it left one"
+        );
+        cx.run_until_parked();
+        let new = session(&pane, 1, cx).expect("a session");
+        assert_ne!(live.entity_id(), new.entity_id());
+        let title = new
+            .read_with(cx, |session, _| session.chat().custom_title.clone())
+            .expect("live");
+        assert_eq!(title, None);
+        let unheld = pane.update(cx, |pane, cx| {
+            pane.conversations.get_mut(&1).expect("open").disconnect();
+            pane.choose_history(1, None, past());
+            pane.start_fresh(1, cx)
+        });
+        assert!(!unheld, "nothing was live to leave");
+    }
+
     /// A restart puts a new session in the old one's place, and the old one
     /// is gone by then; one with nothing live restarts nothing.
     #[gpui::test]

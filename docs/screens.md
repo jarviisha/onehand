@@ -149,10 +149,11 @@ their project, and under the lead again once its conversation is opened.
 ## Agent pane header
 
 Left to right: the conversation's name, medium weight; a dots menu (*Rename…*, *Export as
-Markdown…*; *Resume in this session…* and *New conversation*, both refused mid-turn, and *Restart the agent*; *Delete
-conversation* in the danger tint, refused until the first turn ends, and on a host's session *End on
-<host>…* in the danger tint after it); a spacer; *N in background* (only while the session's agent
-has work running in the background: a menu of each item's name, its kind and how long it has run,
+Markdown…*; *Resume in this session…* and *New conversation*, both refused mid-turn, and
+*Restart the agent*; *Delete conversation* in the danger tint, refused until the first turn ends,
+and on a host's session *End on <host>…* in the danger tint after it); a spacer; *N in background*
+(only while the session's agent has work running in the background: a menu of each item's name,
+its kind and how long it has run,
 each row stopping that one item and never the turn, 12 listed and then *N more*; when an item ends,
 the transcript keeps a notice of how and after how long: *Background work finished after 2m 14s: npm
 test*, an error when it failed, *interrupted* when the agent went away first); past conversations
@@ -270,10 +271,12 @@ The `/` list opens on the composer's own commands under *Composer* (*model*, *ef
 *fast*, *attach*, *mention*, *clear*), each offered only where it can act; the agent's commands
 follow. *clear*, picked there or sent alone as `/clear`, does what *New conversation* does: the
 conversation stays on disk, to be resumed, and the session starts a fresh one with the same agent
-and project, refused mid-turn and while the session leads workers; on a host, the host session it
-leaves is ended there. Where the agent advertises a
-`clear` of its own, the row is not offered and `/clear` goes to the agent. *Run a workflow…* (the `+` menu, the
-keymap, the Workflows page's *Run…*) opens the launcher, drawn as `docs/workflows.md` describes.
+and project; on a host, the host session it leaves is ended there. The row is not offered
+mid-turn or while the session leads workers, and `/clear` sent then is refused with a toast (*Wait
+for the turn to end first*), its words kept in the field rather than queued. Where the agent
+advertises a `clear` of its own, the row is not offered and `/clear` goes to the agent.
+*Run a workflow…* (the `+` menu, the keymap, the Workflows page's *Run…*) opens the launcher,
+drawn as `docs/workflows.md` describes.
 
 ## Docks
 

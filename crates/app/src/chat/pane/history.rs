@@ -25,13 +25,14 @@ impl ChatPane {
         let Some(uid) = self.active else {
             return;
         };
-        if let Err(why) = crate::control::drive().may_leave_conversation(uid) {
-            cx.emit(ChatPaneEvent::ResumeRefused(resume_refused(why)));
-            return;
-        }
         let Some(conv) = self.conversations.get(&uid) else {
             return;
         };
+        let busy = conv.session().is_some_and(|s| s.read(cx).chat().busy);
+        if let Err(why) = crate::control::drive().may_leave_conversation(uid, busy) {
+            cx.emit(ChatPaneEvent::SwitchRefused(resume_refused(why)));
+            return;
+        }
         // Its name and settings, written alone: this can come mid-turn, when
         // a line written would be a step not yet finished.
         let live = conv.session().cloned();
@@ -89,14 +90,9 @@ impl ChatPane {
         let Some(session) = self.session_of(uid).cloned() else {
             return false;
         };
-        if let Err(why) = crate::control::drive().may_leave_conversation(uid) {
-            cx.emit(ChatPaneEvent::ResumeRefused(resume_refused(why)));
-            return false;
-        }
-        if session.read(cx).chat().busy {
-            cx.emit(ChatPaneEvent::ResumeRefused(
-                "Wait for the turn to end before starting a new conversation".to_string(),
-            ));
+        let busy = session.read(cx).chat().busy;
+        if let Err(why) = crate::control::drive().may_leave_conversation(uid, busy) {
+            cx.emit(ChatPaneEvent::SwitchRefused(resume_refused(why)));
             return false;
         }
         session.update(cx, |session, cx| session.save_meta(cx));
@@ -109,6 +105,32 @@ impl ChatPane {
         cx.emit(ChatPaneEvent::LeftConversation { uid, label });
         cx.notify();
         true
+    }
+
+    /// [`Self::new_conversation`] on the session on screen.
+    pub(super) fn new_conversation_on_screen(&mut self, cx: &mut Context<Self>) {
+        if let Some(uid) = self.active {
+            self.new_conversation(uid, cx);
+        }
+    }
+
+    /// The picker's *Start a new conversation* on `uid`, answering whether it
+    /// left a conversation that was live.
+    ///
+    /// Leaving one held live is leaving it as *New conversation* does, and on
+    /// a host the session it watched there is ended the same way. A picker
+    /// put up as a session first opens left nothing, and a host session it
+    /// was opened to watch is not ended for it.
+    pub(super) fn start_fresh(&mut self, uid: u64, cx: &mut Context<Self>) -> bool {
+        let left = (self.conversations.get(&uid))
+            .and_then(|conv| conv.held())
+            .map(|held| held.read(cx).chat().conversation_title());
+        self.start(uid, None, cx);
+        let leaves = left.is_some();
+        if let Some(label) = left {
+            cx.emit(ChatPaneEvent::LeftConversation { uid, label });
+        }
+        leaves
     }
 
     /// Put `uid` on choosing from `past`, holding the session live on it if
@@ -126,10 +148,7 @@ impl ChatPane {
             return;
         }
         let held = match std::mem::replace(&mut conv.phase, SessionPhase::Opening) {
-            SessionPhase::Live { session, _watch } => Some(Held {
-                _session: session,
-                _watch,
-            }),
+            SessionPhase::Live { session, _watch } => Some(Held { session, _watch }),
             SessionPhase::Opening | SessionPhase::ChoosingHistory { .. } => None,
         };
         conv.phase = SessionPhase::ChoosingHistory { past, _held: held };
@@ -349,6 +368,7 @@ pub(super) fn resume_refused(why: ResumeRefused) -> String {
             "This session leads workers; close them or the session first"
         }
         ResumeRefused::AlreadyOpen => "This conversation is already open in a session",
+        ResumeRefused::TurnRunning => "Wait for the turn to end first",
     }
     .to_string()
 }
