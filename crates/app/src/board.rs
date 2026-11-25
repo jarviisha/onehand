@@ -96,14 +96,9 @@ fn close_issue(root: &Path, file: PathBuf, number: u64, cx: &mut App) {
     );
 }
 
-/// Where local project `project` is and where it keeps its issues; none
-/// for one on a host, whose issues are not kept here.
+/// Where project `project`'s board works and where it keeps its issues.
 fn local(project: &ProjectId, cx: &App) -> Option<(PathBuf, PathBuf)> {
-    let project = Shared::global(cx).projects.get(project)?;
-    project.host.is_none().then(|| {
-        let file = onehand_core::project::file::issues_file(&project.id);
-        (project.path.clone(), file)
-    })
+    board::local(Shared::global(cx).projects.get(project)?).ok()
 }
 
 /// The issues in `file`, and the forge serving `root` if any. Blocking.

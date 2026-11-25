@@ -286,3 +286,16 @@ fn taken_holds_the_issues_of_tasks_on_the_board() {
     let got = taken(tasks.iter(), &project, &|_| None);
     assert_eq!(got, HashSet::from([1, 2, 3]));
 }
+
+#[test]
+fn a_board_works_only_on_a_project_here() {
+    let mut project = Project::new(ProjectId::mint(1), None, "/code/a".into());
+    let (root, file) = local(&project).unwrap();
+    assert_eq!(root, PathBuf::from("/code/a"));
+    assert_eq!(file, crate::project::file::issues_file(&project.id));
+    project.host = Some(crate::workspace::HostName("vps".into()));
+    assert_eq!(
+        local(&project).unwrap_err(),
+        "A board works on a project on this machine."
+    );
+}

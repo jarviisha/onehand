@@ -106,16 +106,8 @@ impl BoardPage {
         if self.project.as_ref() != Some(&project) {
             self.rows.clear();
         }
-        let local = Shared::global(cx)
-            .projects
-            .get(&project)
-            .filter(|p| p.host.is_none())
-            .map(|p| {
-                (
-                    p.path.clone(),
-                    onehand_core::project::file::issues_file(&p.id),
-                )
-            });
+        let local = (Shared::global(cx).projects.get(&project))
+            .and_then(|p| onehand_core::board::local(p).ok());
         match local {
             Some((root, file)) => {
                 if self.issues.as_ref().is_none_or(|(at, _)| *at != file) {
@@ -172,14 +164,9 @@ impl BoardPage {
         let template = crate::workflow::templates(cx)
             .into_iter()
             .find_map(|entry| entry.template.ok().filter(|t| t.id == board.workflow));
-        let refused = match (
-            &project.host,
-            onehand_core::board::usable(template.as_ref()),
-        ) {
-            (Some(_), _) => Some("A board works on a project on this machine.".to_string()),
-            (None, Err(why)) => Some(why),
-            (None, Ok(_)) => None,
-        };
+        let refused = onehand_core::board::local(&project)
+            .and(onehand_core::board::usable(template.as_ref()).map(|_| ()))
+            .err();
         let line = match &template {
             Some(t) => format!("{} · {} · team of {}", project.name, t.name, board.team),
             None => project.name.clone(),
