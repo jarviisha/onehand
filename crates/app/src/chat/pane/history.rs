@@ -74,6 +74,41 @@ impl ChatPane {
         .detach();
     }
 
+    /// Leave `uid`'s conversation on disk and start a fresh one in the same
+    /// session, answering whether it started.
+    ///
+    /// The picker's *Start a new conversation*, without the picker: the same
+    /// refusals *Resume in this session…* has, and the name and settings of
+    /// the conversation left written on the way out.
+    ///
+    /// **The live session is taken apart first.** Connecting over a live
+    /// session carries its names into the replacement, which is right for a
+    /// restart and wrong here: a fresh conversation named for the last one
+    /// reads as the last one still running.
+    pub(super) fn new_conversation(&mut self, uid: u64, cx: &mut Context<Self>) -> bool {
+        let Some(session) = self.session_of(uid).cloned() else {
+            return false;
+        };
+        if let Err(why) = crate::control::drive().may_leave_conversation(uid) {
+            cx.emit(ChatPaneEvent::ResumeRefused(resume_refused(why)));
+            return false;
+        }
+        if session.read(cx).chat().busy {
+            cx.emit(ChatPaneEvent::ResumeRefused(
+                "Wait for the turn to end before starting a new conversation".to_string(),
+            ));
+            return false;
+        }
+        session.update(cx, |session, cx| session.save_meta(cx));
+        drop(session);
+        if let Some(conv) = self.conversations.get_mut(&uid) {
+            conv.disconnect();
+        }
+        self.start(uid, None, cx);
+        cx.notify();
+        true
+    }
+
     /// Put `uid` on choosing from `past`, holding the session live on it if
     /// it is still the one `live` names.
     pub(super) fn choose_history(

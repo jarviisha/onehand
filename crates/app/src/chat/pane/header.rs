@@ -437,6 +437,7 @@ impl ChatPane {
                     let danger = crate::theme::status_ink(cx).danger;
                     let (rename, export, history) = (this.clone(), this.clone(), this.clone());
                     let (restart, remove, end) = (this.clone(), this.clone(), this.clone());
+                    let fresh = this.clone();
                     let archive = archive.clone();
                     let on_host = on_host.clone();
                     menu.item(crate::controls::menu_item("Rename…").on_click(
@@ -471,6 +472,24 @@ impl ChatPane {
                         .disabled(busy)
                         .on_click(move |_, _, cx: &mut App| {
                             history.update(cx, |pane: &mut Self, cx| pane.show_history(cx));
+                        }),
+                    )
+                    .item(
+                        // Refused mid-turn for the reason the resume above it
+                        // is: leaving the conversation throws the turn away.
+                        match busy {
+                            true => {
+                                crate::controls::menu_still(|_, _| div().child("New conversation"))
+                            }
+                            false => crate::controls::menu_item("New conversation"),
+                        }
+                        .disabled(busy)
+                        .on_click(move |_, _, cx: &mut App| {
+                            fresh.update(cx, |pane: &mut Self, cx| {
+                                if let Some(uid) = pane.active {
+                                    pane.new_conversation(uid, cx);
+                                }
+                            });
                         }),
                     )
                     .item(

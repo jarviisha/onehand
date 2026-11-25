@@ -389,6 +389,31 @@ mod lifecycle {
         );
     }
 
+    /// A new conversation puts a fresh session in the live one's place, lets
+    /// the old one go, and carries none of its name over.
+    #[gpui::test]
+    fn a_new_conversation_replaces_the_session_without_its_name(cx: &mut TestAppContext) {
+        let (pane, cx) = pane(cx);
+        open(&pane, 1, cx);
+        let old = session(&pane, 1, cx).expect("a session");
+        let renamed = old
+            .update(cx, |session, cx| session.rename("the old one", cx))
+            .expect("still live");
+        assert!(renamed);
+        let started = pane.update(cx, |pane, cx| pane.new_conversation(1, cx));
+        assert!(started);
+        cx.run_until_parked();
+        let new = session(&pane, 1, cx).expect("a session");
+        assert_ne!(old.entity_id(), new.entity_id());
+        assert!(old.upgrade().is_none(), "the old adapter is let go");
+        let title = new
+            .read_with(cx, |session, _| session.chat().custom_title.clone())
+            .expect("live");
+        assert_eq!(title, None, "the new conversation has no name yet");
+        let nothing = pane.update(cx, |pane, cx| pane.new_conversation(9, cx));
+        assert!(!nothing, "no session, nothing started");
+    }
+
     /// A restart puts a new session in the old one's place, and the old one
     /// is gone by then; one with nothing live restarts nothing.
     #[gpui::test]
