@@ -290,10 +290,11 @@ fn short(commit: &str) -> &str {
     &commit[..commit.len().min(10)]
 }
 
-/// The whole of the answer to the prompt sent at `from` items, cut at
+/// The answer to the prompt sent at `from` items, what the agent said last,
+/// cut at
 /// [`ANSWER_MAX`] characters.
 fn turn_answer(chat: &Chat, from: usize) -> String {
-    let prose = chat.prose_since(from);
+    let prose = chat.answer_since(from);
     match prose.char_indices().nth(ANSWER_MAX) {
         Some((cut, _)) => format!("{}\n\n(cut at {ANSWER_MAX} characters)", &prose[..cut]),
         None => prose,

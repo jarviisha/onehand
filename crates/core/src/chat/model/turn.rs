@@ -632,16 +632,26 @@ impl Chat {
         last_paragraph(&self.turn_prose(target)).to_string()
     }
 
-    /// What the agent said in the items from `from` on, joined: the answer to
-    /// a prompt sent when the transcript held `from` items.
+    /// The answer to a prompt sent when the transcript held `from` items:
+    /// what the agent said last, its words since its last tool or other work,
+    /// joined. What it said on the way, between its work, is not the answer.
     ///
     /// Counted from where the prompt went rather than back from the last
     /// item, so a turn that said nothing answers nothing instead of reading
     /// as the turn before it.
-    pub fn prose_since(&self, from: usize) -> String {
-        self.items
-            .get(from..)
-            .unwrap_or_default()
+    pub fn answer_since(&self, from: usize) -> String {
+        let items = self.items.get(from..).unwrap_or_default();
+        let last = items
+            .iter()
+            .rposition(|it| matches!(it, ChatItem::Agent(_)));
+        let Some(last) = last else {
+            return String::new();
+        };
+        let first = items[..last]
+            .iter()
+            .rposition(|it| !matches!(it, ChatItem::Agent(_)))
+            .map_or(0, |at| at + 1);
+        items[first..=last]
             .iter()
             .filter_map(|it| match it {
                 ChatItem::Agent(md) => Some(md.source.as_str()),

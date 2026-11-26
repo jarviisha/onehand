@@ -289,6 +289,10 @@ the run's history, capped at 200.
   `code_unchanged` or `uncommitted` is measured again before the carry-on, and the mark keeps both
   fingerprints, because a person working in the same checkout may have made the change; the agent is
   told to undo only its own.
+  **A step's answer is what its agent said last** (`Chat::answer_since`): the words after its last
+  tool call or other work, the paragraphs of that stretch joined, cut at `ANSWER_MAX` characters.
+  What it said on its way, between its work, is not the answer, so `{output.<id>}`, the `answered`
+  gate and what *Review…* shows read the result, not the narration.
 - **A review step** is prompted as an agent step is, with no gates, and judged by the verdict its
   agent gave with `review_verdict` ([control.md](control.md)) rather than by the work. onehand ends
   its prompt with a line naming that tool. The verdict is held until the turn ends (work the turn
