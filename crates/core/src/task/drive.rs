@@ -137,9 +137,7 @@ impl RunDrive {
         let limit = run
             .template
             .timeout_limit()
-            // Until the clock learns no limit: a century stands for none.
-            .unwrap_or(Duration::from_secs(100 * 365 * 24 * 3600))
-            .saturating_sub(Duration::from_secs(run.spent_secs));
+            .map(|limit| limit.saturating_sub(Duration::from_secs(run.spent_secs)));
         let lane = Lane::at(&run);
         let mut drive = Self {
             task,
@@ -158,7 +156,7 @@ impl RunDrive {
             picks: Vec::new(),
             asked: Vec::new(),
             noted: None,
-            budget: Budget::start(limit, now.at),
+            budget: Budget::start(limit, now.at, false),
             after_work: false,
             command: false,
             forging: None,
@@ -169,10 +167,10 @@ impl RunDrive {
             sessionless: chat.is_none(),
         };
         let mut fx = Vec::new();
-        if !drive.sessionless {
+        if let Some(after) = limit.filter(|_| !drive.sessionless) {
             fx.push(Effect::Arm {
                 timer: Timer::Timeout,
-                after: limit,
+                after,
             });
         }
         drive.act(first, chat, now, &mut fx);
@@ -250,8 +248,7 @@ impl RunDrive {
 
     /// Working time spent on the run, sessions before this one included.
     pub fn spent_secs(&self, now: Now) -> u64 {
-        let used = self.budget.limit().saturating_sub(self.budget.left(now.at));
-        self.spent_before + used.as_secs()
+        self.spent_before + self.budget.spent(now.at).as_secs()
     }
 
     /// A person approved what they read at `at`. Held while a mark is
@@ -350,7 +347,7 @@ impl RunDrive {
                 {
                     self.after_work = false;
                     if self.run.awaiting_turn() && self.held.is_none() {
-                        self.after_turn(chat, &mut fx);
+                        self.after_turn(chat, now, &mut fx);
                     }
                 }
             }
@@ -429,16 +426,14 @@ impl RunDrive {
             // The run's timeout: when it has run out, look again, since time
             // spent waiting on a person did not count; end the run once
             // nothing is left.
-            Input::Elapsed(Timer::Timeout) => {
-                let left = self.budget.left(now.at);
-                match left.is_zero() {
-                    true => self.cut(Stop::TimedOut, chat, now, &mut fx),
-                    false => fx.push(Effect::Arm {
-                        timer: Timer::Timeout,
-                        after: left,
-                    }),
-                }
-            }
+            Input::Elapsed(Timer::Timeout) => match self.budget.left(now.at) {
+                Some(left) if left.is_zero() => self.cut(Stop::TimedOut, chat, now, &mut fx),
+                Some(left) => fx.push(Effect::Arm {
+                    timer: Timer::Timeout,
+                    after: left,
+                }),
+                None => {}
+            },
         }
         fx
     }
@@ -492,7 +487,7 @@ impl RunDrive {
             // What the agent left running is part of the step: a build in the
             // background, a subagent, and what it says once they are done.
             Input::TurnEnded if judge_turn && self.step_at_work(chat) => self.after_work = true,
-            Input::TurnEnded if judge_turn => self.after_turn(chat, fx),
+            Input::TurnEnded if judge_turn => self.after_turn(chat, now, fx),
             Input::TurnEnded => {}
             // A person answers the card; the clock waits for them.
             Input::AwaitingUser => {

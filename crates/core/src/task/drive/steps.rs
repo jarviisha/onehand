@@ -27,6 +27,12 @@ impl RunDrive {
         if !ends_run(&action) {
             self.announce_step();
         }
+        // The clock counts the agent's work on a step and nothing else: it
+        // stands still for whatever onehand does next, and goes on when a
+        // prompt is handed over.
+        if !matches!(action, Action::Prompt(_)) {
+            self.budget.pause(now.at);
+        }
         let dir = self.run.setup.dir.clone();
         match action {
             Action::Measure => fx.push(Effect::Measure { dir }),
@@ -42,7 +48,6 @@ impl RunDrive {
                 fx.push(Effect::RunCommand { dir, command });
             }
             Action::AwaitApproval => {
-                self.budget.pause(now.at);
                 self.asked.push(Asked::Note(
                     "Waiting for approval: Continue or Revise… under the header".to_string(),
                 ));
@@ -61,7 +66,6 @@ impl RunDrive {
                 self.open_pull_request(fx);
             }
             Action::AwaitStatusChecks { wait, pushed } => {
-                self.budget.pause(now.at);
                 self.asked.push(Asked::Note(
                     "Waiting for the pull request's status checks".to_string(),
                 ));
@@ -150,6 +154,7 @@ impl RunDrive {
         self.here.sent += 1;
         self.answer_from = chat.items.len();
         self.sent_at = Some(now.at);
+        self.budget.resume(now.at);
         self.asked.push(Asked::Prompt { text, at: fx.len() });
     }
 
@@ -197,7 +202,9 @@ impl RunDrive {
     }
 
     /// A turn the run sent ended: read the work, then let the engine judge it.
-    pub(super) fn after_turn(&mut self, chat: &Chat, fx: &mut Vec<Effect>) {
+    pub(super) fn after_turn(&mut self, chat: &Chat, now: Now, fx: &mut Vec<Effect>) {
+        // The agent is done with the step: what follows is onehand's.
+        self.budget.pause(now.at);
         let Some(from) = self.run.marks.step_from.clone() else {
             return;
         };

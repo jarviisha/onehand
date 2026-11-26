@@ -430,16 +430,77 @@ fn the_budget_does_not_run_while_a_person_is_waited_on() {
     assert!(names(&fx).contains(&"Arm(Timeout)"), "{fx:?}");
 }
 
+/// The run's first prompt, sent: the clock runs from here.
+fn prompted() -> Rig {
+    let (mut rig, _) = Rig::start(checkout(), None, connected());
+    rig.on(Input::Pinned(Ok("c0".into())));
+    rig.on(Input::Measured(Ok(mark("a", "d0"))));
+    assert!(rig.submitted());
+    rig
+}
+
 #[test]
 fn the_clock_ends_the_run_once_nothing_is_left() {
-    let (mut rig, _) = Rig::start(checkout(), None, connected());
+    let mut rig = prompted();
     rig.now += rig.drive.run().template.timeout_limit().unwrap() + Duration::from_secs(1);
     let fx = rig.on(Input::Elapsed(Timer::Timeout));
-    // Held behind the first pin, as every ending is; it wins once it lands.
-    let fx = match finished(&fx) {
-        Some(_) => fx,
-        None => rig.on(Input::Pinned(Ok("c0".into()))),
+    assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::TimedOut)));
+}
+
+/// A workflow with no limit arms no timer, and a timer that fires anyway
+/// ends nothing, however long the run has worked.
+#[test]
+fn an_unlimited_run_arms_no_timer_and_never_times_out() {
+    let mut template = checkout();
+    template.timeout = "none".into();
+    let (mut rig, fx) = Rig::start(template, None, connected());
+    assert!(!names(&fx).contains(&"Arm(Timeout)"), "{fx:?}");
+    rig.on(Input::Pinned(Ok("c0".into())));
+    rig.on(Input::Measured(Ok(mark("a", "d0"))));
+    rig.now += Duration::from_secs(60 * 60 * 24 * 3);
+    let fx = rig.on(Input::Elapsed(Timer::Timeout));
+    assert_eq!(finished(&fx), None, "{fx:?}");
+}
+
+/// Pinning the mark and measuring the work before the first prompt is
+/// onehand's, not the agent's: none of it is counted.
+#[test]
+fn the_clock_does_not_run_before_the_first_prompt() {
+    let (mut rig, _) = Rig::start(checkout(), None, connected());
+    rig.now += Duration::from_secs(90);
+    rig.on(Input::Pinned(Ok("c0".into())));
+    rig.now += Duration::from_secs(90);
+    rig.on(Input::Measured(Ok(mark("a", "d0"))));
+    assert_eq!(rig.drive.run().spent_secs, 0);
+}
+
+/// A command step is bounded by its own limit; the run's clock stands
+/// still while it runs.
+#[test]
+fn a_command_does_not_spend_the_clock() {
+    let (mut rig, fx) = checking();
+    assert!(names(&fx).contains(&"RunCommand"), "{fx:?}");
+    rig.now += Duration::from_secs(600);
+    rig.on(Input::CommandExited(ran(true)));
+    assert_eq!(rig.drive.run().spent_secs, 0);
+}
+
+/// A run come back with more spent than its limit runs out at once, from
+/// its first prompt.
+#[test]
+fn a_run_resumed_over_its_limit_times_out_at_once() {
+    let mut run = prompted().drive.run().clone();
+    run.spent_secs = run.template.timeout_limit().unwrap().as_secs() + 1;
+    let first = run.resume(0);
+    let (mut rig, fx) = Rig::start_run(run, first, connected());
+    assert!(names(&fx).contains(&"Arm(Timeout)"), "{fx:?}");
+    let fx = match names(&fx).contains(&"Pin") {
+        true => rig.on(Input::Pinned(Ok("c0".into()))),
+        false => fx,
     };
+    let _ = fx;
+    rig.on(Input::Measured(Ok(mark("a", "d0"))));
+    let fx = rig.on(Input::Elapsed(Timer::Timeout));
     assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::TimedOut)));
 }
 
@@ -490,11 +551,20 @@ fn the_step_is_announced_once_per_step() {
 
 #[test]
 fn spent_time_is_folded_into_what_is_saved() {
-    let (mut rig, _) = Rig::start(checkout(), None, connected());
+    let mut rig = prompted();
     rig.now += Duration::from_secs(90);
-    let fx = rig.on(Input::Pinned(Ok("c0".into())));
-    assert!(names(&fx).contains(&"Save"));
-    assert_eq!(rig.drive.run().spent_secs, 90);
+    let fx = rig.turn_ends("The plan.");
+    assert!(names(&fx).contains(&"ReadFacts"), "{fx:?}");
+    let fx = rig.on(Input::TurnRead(Ok(facts("a", "d0"))));
+    assert!(names(&fx).contains(&"Pin"), "{fx:?}");
+    rig.now += Duration::from_secs(30);
+    let fx = rig.on(Input::Pinned(Ok("c1".into())));
+    assert!(names(&fx).contains(&"Save"), "{fx:?}");
+    assert_eq!(
+        rig.drive.run().spent_secs,
+        90,
+        "the pin after the turn is not counted"
+    );
 }
 
 // ── Sending, coming up, settings ─────────────────────────────────────────
