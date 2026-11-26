@@ -25,7 +25,10 @@ The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_R
    - `<onehand>` is the binary of the running onehand, which is not on `PATH`: the `cargo` shim
      in `route-shims/` under the config directory names it on its `exec` line.
 2. **Start**: `scripts/session.sh up [BIN]`. It does five things:
-   - keeps the binary it was given, for `restart` and `palette`, and starts at 1600x1000;
+   - takes the binary: a BIN given to `up`, `restart` or `palette` is kept for the commands
+     after it until `down` forgets it; with none given and none kept, the repo's
+     `target/debug/onehand`. A missing one is said by its path before anything starts;
+   - starts at 1600x1000;
    - seeds the data root on the first run: a git project `proj` whose check command is `true`,
      and two agents, *Mock Work* and *Mock UI*;
    - builds the virtual pointer;
@@ -34,7 +37,8 @@ The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_R
      afresh on every `up`, since an app started on a held one can panic;
    - starts the app and waits for its window.
 
-   Done when it returns 0. A non-zero exit prints the app's or sway's log tail.
+   Done when it returns 0. A non-zero exit prints the app's or sway's log tail. `restart` and
+   `palette` refuse when the session's sway is not running.
 3. **Drive**, one action at a time, and look after each:
    - `scripts/drive.sh shot NAME` writes `$DRIVE_ROOT/NAME.png`. **Read the screenshot** before
      the next action, and take every coordinate from what is on it.
@@ -45,17 +49,20 @@ The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_R
      a press.
    - `type TEXT` types into the field that has focus; click the field first.
    - `key -k Escape` passes `wtype` arguments.
-   - `drive.sh alive` after any action that could crash. It prints the panic and backtrace if the
-     app is gone.
+   - `drive.sh alive` after any action that could crash. If the app is gone it prints the panic
+     and backtrace and exits 1.
    - `drive.sh size W [H]` sets the window's size in output pixels (H defaults to 1000), live.
-     The narrowest the window goes is 720 wide (`WINDOW_MIN`, `crates/app/src/shell/boot/open.rs`).
+     The narrowest the window goes is 720 wide (`WINDOW_MIN`, `crates/app/src/shell/boot/open.rs`);
+     a narrower width or a zero height is refused.
    - `session.sh palette light|dark` draws the app light or dark. The choice is read at boot, so
      the app starts again, its data kept and its view lost.
    - `drive.sh matrix NAME [STEPS]` pictures one view in both palettes and at each width of
      `$DRIVE_WIDTHS` (default `720 1600`), narrowest last: `NAME-<width>-<palette>.png`. After
      each palette it reaches the view again by running STEPS at 1600 wide, then narrows the
-     window. STEPS is a bash file of `$DRIVE …` lines, keys before clicks, its coordinates read
-     off a 1600-wide screenshot:
+     window. It runs light, then dark, and leaves the app dark at 1600 wide. STEPS is a bash
+     file of `$DRIVE …` lines, keys before clicks, its coordinates read off a 1600-wide
+     screenshot. A step that fails stops the matrix, saying its line, and so does the app
+     dying, with its log's tail:
 
      ```bash
      $DRIVE key -M ctrl -k comma -m ctrl   # Settings
