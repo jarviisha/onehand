@@ -188,3 +188,65 @@ pub(crate) fn repo_with_worktree(dir: &std::path::Path) -> (PathBuf, PathBuf) {
         std::fs::canonicalize(wt).unwrap(),
     )
 }
+
+/// The next session started here takes its events from the returned
+/// channel.
+pub(crate) fn canned(
+    cx: &mut VisualTestContext,
+) -> futures::channel::mpsc::Sender<onehand_core::acp::AcpEvent> {
+    use gpui::BorrowAppContext as _;
+    let (tx, rx) = futures::channel::mpsc::channel(64);
+    cx.update(|_, cx| {
+        cx.update_global::<Shared, _>(|shared, _| {
+            shared
+                .canned
+                .push_back(onehand_io::acp::Events::from_channel(rx))
+        })
+    });
+    tx
+}
+
+/// Open a session of `agent` on `dir` and put it on screen, its agent the
+/// canned one handed back, already up.
+pub(crate) fn shown_session(
+    shell: &Entity<crate::shell::Shell>,
+    dir: PathBuf,
+    agent: AgentSpec,
+    cx: &mut VisualTestContext,
+) -> (
+    u64,
+    futures::channel::mpsc::Sender<onehand_core::acp::AcpEvent>,
+    tokio::sync::mpsc::UnboundedReceiver<onehand_core::acp::AcpRequest>,
+) {
+    let mut events = canned(cx);
+    let uid = cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| {
+            let (uid, _) = shell
+                .open_off_screen(dir, agent, Vec::new(), cx)
+                .expect("a session");
+            shell.show_session(uid, window, cx);
+            uid
+        })
+    });
+    let requests = crate::chat::session::tests::carrier::up(&mut events);
+    cx.run_until_parked();
+    (uid, events, requests)
+}
+
+/// Step the conversation pane's zoom in `steps` times, as its key does.
+pub(crate) fn zoom_pane(
+    shell: &Entity<crate::shell::Shell>,
+    steps: usize,
+    cx: &mut VisualTestContext,
+) {
+    cx.update(|_, cx| {
+        let pane = shell.read(cx).chat.clone();
+        pane.update(cx, |pane, cx| {
+            for _ in 0..steps {
+                pane.zoom_mut().zoom_in();
+            }
+            cx.notify();
+        })
+    });
+    cx.run_until_parked();
+}

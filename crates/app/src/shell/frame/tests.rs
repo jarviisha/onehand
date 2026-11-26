@@ -28,18 +28,15 @@ fn every_menu_item_is_a_command() {
 
 mod strain {
     use crate::shell::Shell;
-    use crate::shell::boot::open::WINDOW_MIN;
     use crate::shell::rig::strain::{
-        SHORT, assert_inside, assert_one_height, bounds, long, same, unbroken, width,
+        NARROWEST, SHORT, WIDE, assert_inside, assert_one_height, bounds, long, same, unbroken,
+        width,
     };
     use crate::shell::rig::{folder, shell};
     use gpui::{Bounds, Entity, Pixels, TestAppContext, VisualTestContext, px};
 
-    /// A wide screen's width.
-    const WIDE: Pixels = px(1920.);
-
     /// The widths the window takes: its least, and a wide screen's.
-    const WIDTHS: [Pixels; 2] = [WINDOW_MIN.width, WIDE];
+    const WIDTHS: [Pixels; 2] = [NARROWEST, WIDE];
 
     fn rename(shell: &Entity<Shell>, name: &str, cx: &mut VisualTestContext) {
         cx.update(|window, cx| {
@@ -99,7 +96,7 @@ mod strain {
     fn a_long_workspace_name_leaves_the_toggles_in_place_in_the_narrowest_window(
         cx: &mut TestAppContext,
     ) {
-        toggles_stay_put(&[WINDOW_MIN.width, WIDE], cx);
+        toggles_stay_put(&[NARROWEST, WIDE], cx);
     }
 
     fn palette_stays_put(widths: &[Pixels], cx: &mut TestAppContext) {
@@ -138,7 +135,7 @@ mod strain {
     #[gpui::test]
     #[ignore = "a name of about fifteen characters moves the palette in the narrowest window; the fix waits for a decision"]
     fn the_palette_stays_put_whatever_the_name_in_the_narrowest_window(cx: &mut TestAppContext) {
-        palette_stays_put(&[WINDOW_MIN.width, WIDE], cx);
+        palette_stays_put(&[NARROWEST, WIDE], cx);
     }
 
     #[gpui::test]

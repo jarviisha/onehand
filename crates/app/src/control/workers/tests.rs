@@ -7,9 +7,9 @@
 
 use super::super::{Token, drive, perform};
 use crate::chat::session::tests::carrier::up;
-use crate::shell::rig::{folder, repo_with_worktree, shell};
+use crate::shell::rig::{canned, folder, repo_with_worktree, shell};
 use crate::state::Shared;
-use futures::channel::{mpsc, oneshot};
+use futures::channel::oneshot;
 use gpui::{BorrowAppContext as _, TestAppContext, VisualTestContext};
 use onehand_core::acp::{AcpEvent, AcpRequest};
 use onehand_core::config::AgentSpec;
@@ -22,20 +22,6 @@ fn agent() -> AgentSpec {
         command: "true".into(),
         ..Default::default()
     }
-}
-
-/// The next session started here takes its events from the returned
-/// channel.
-fn canned(cx: &mut VisualTestContext) -> mpsc::Sender<AcpEvent> {
-    let (tx, rx) = mpsc::channel(64);
-    cx.update(|_, cx| {
-        cx.update_global::<Shared, _>(|shared, _| {
-            shared
-                .canned
-                .push_back(onehand_io::acp::Events::from_channel(rx))
-        })
-    });
-    tx
 }
 
 /// A lead session on `/tmp`, switched on, and a token that speaks for it.
