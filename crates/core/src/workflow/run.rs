@@ -329,6 +329,10 @@ pub struct Run {
     pub pull_request: Option<PrOpened>,
     #[serde(skip)]
     awaiting: Await,
+    /// An extend's prompt, held while the run waits for room at the step it
+    /// ran out at: sent once the room is given, in the same visit.
+    #[serde(skip)]
+    extend_text: Option<String>,
 }
 
 impl Run {
@@ -358,6 +362,7 @@ impl Run {
             failure: None,
             pull_request: None,
             awaiting: Await::Nothing,
+            extend_text: None,
         }
     }
 
@@ -655,11 +660,17 @@ impl Run {
         let more = super::template::said_duration(by);
         self.extended_secs += by.as_secs();
         self.log_here(&format!("extended by {more}"), now);
-        self.awaiting = Await::Turn;
-        Action::Prompt(format!(
+        let text = format!(
             "You ran out of time at {label}. You have {more} more. \
              Carry on with the step from where you were."
-        ))
+        );
+        // The room it held went when it came to rest: it asks again first.
+        if self.limit_at(self.step).is_some() {
+            self.extend_text = Some(text);
+            return self.wait_for_room();
+        }
+        self.awaiting = Await::Turn;
+        Action::Prompt(text)
     }
 
     /// The run is to stop, for `stop`. **Never judges the turn** that was

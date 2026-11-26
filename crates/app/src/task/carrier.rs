@@ -277,6 +277,20 @@ pub(crate) fn extend(approval: Approval, cx: &mut App) {
     give(&approval.task, cx, move |run, now| run.extend(at, now));
 }
 
+/// Extend pressed on a board task out of time, as `approval` names it, whose
+/// team has no place: it waits for one.
+pub(crate) fn queue_extend(approval: Approval, cx: &mut App) {
+    let at = approval.at;
+    give(&approval.task, cx, move |run, now| {
+        run.queue_extend(at, now)
+    });
+}
+
+/// Task `task`'s extend, waiting for a place, was given one: it goes on.
+pub(crate) fn give_place(task: &str, cx: &mut App) {
+    give(task, cx, |run, now| run.give_place(now));
+}
+
 /// A person sent what they read, as `approval` names it, back with `note`.
 pub(crate) fn revise(approval: Approval, note: String, cx: &mut App) {
     let at = approval.at;
@@ -495,6 +509,17 @@ fn perform(id: &str, effects: Vec<Effect>, cx: &mut App) {
             }
             Effect::LeaveRoom => {
                 super::with_drive(cx, |t| ((), t.leave_room(id)));
+            }
+            // A board task at rest left a place on its team: the board looks
+            // again.
+            Effect::Rested => {
+                let board = super::task(id, cx)
+                    .and_then(|task| task.board_issue().map(|(project, _)| project.clone()));
+                if let Some(project) = board {
+                    // Waiting extends first, whether or not the pull can run.
+                    crate::board::give_places(&project, cx);
+                    crate::board::pull_now(&project, cx);
+                }
             }
         }
     }

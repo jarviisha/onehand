@@ -80,6 +80,9 @@ fn row_of(t: &Tasks, task: &Task) -> Row {
         .map_or_else(String::new, |step| step.label.clone());
     let waits_for_room = working.is_some() && t.drive.waits_for_room(task.id()).is_some();
     let at = match (working, task.ended_said()) {
+        (Some(_), _) if t.extend_asked(task.id()).is_some() => {
+            "Waiting for a team place".to_string()
+        }
         (Some(_), _) if waits_for_room => format!("Waiting for room at {step}"),
         (Some(_), _) => step,
         (None, None) if step.is_empty() => "cut off".to_string(),
@@ -122,7 +125,8 @@ fn row_of(t: &Tasks, task: &Task) -> Row {
         resumable: task.resumable(),
         stoppable: live.is_some() || t.drive.queue().queued(task.id()),
         stopping: t.stopping(task.id()),
-        extendable: live.is_some_and(|d| d.run().awaiting_extend()),
+        extendable: live.is_some_and(|d| d.run().awaiting_extend())
+            && t.extend_asked(task.id()).is_none(),
     }
 }
 
@@ -148,11 +152,21 @@ pub(crate) fn is_working(id: &str, cx: &App) -> bool {
     cx.try_global::<Tasks>().is_some_and(|t| t.busy(id))
 }
 
-/// How many of `project`'s board tasks are queued, running or waiting on a
-/// person.
+/// How many of `project`'s board tasks hold a place on its team.
 pub(crate) fn board_running(project: &onehand_core::project::ProjectId, cx: &App) -> usize {
     cx.try_global::<Tasks>().map_or(0, |t| {
-        onehand_core::board::running(t.tasks().iter(), project, &|id| t.working(id))
+        onehand_core::board::running(t.tasks().iter(), project, &|id| t.holds_team(id))
+    })
+}
+
+/// `project`'s board tasks whose extend waits for a team place, first
+/// asked first.
+pub(crate) fn board_extends_waiting(
+    project: &onehand_core::project::ProjectId,
+    cx: &App,
+) -> Vec<String> {
+    cx.try_global::<Tasks>().map_or(Vec::new(), |t| {
+        onehand_core::board::extends_waiting(t.tasks().iter(), project, &|id| t.extend_asked(id))
     })
 }
 

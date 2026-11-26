@@ -84,6 +84,20 @@ impl<'a> Joined<'a> {
         self.give(now, |run, chat| run.extend(at, chat, now))
     }
 
+    /// Extend pressed on a board task at `at` whose team has no place: it
+    /// waits for one.
+    pub fn queue_extend(&mut self, at: ApprovalAt, now: Now) -> Out {
+        self.give(now, |run, _| run.queue_extend(at, now))
+    }
+
+    /// The extend waiting for a place, given one: extend it.
+    pub fn give_place(&mut self, now: Now) -> Out {
+        self.give(now, |run, chat| match run.take_queued_extend() {
+            Some(at) => run.extend(at, chat, now),
+            None => Vec::new(),
+        })
+    }
+
     /// A person sent what they read at `at` back with `note`.
     pub fn revise(&mut self, at: ApprovalAt, note: String, now: Now) -> Out {
         self.give(now, |run, chat| run.revise(at, note, chat, now))

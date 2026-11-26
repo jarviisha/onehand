@@ -747,7 +747,7 @@ fn start_todo_counts_starts_until_they_land() {
     let taken = std::collections::HashSet::new();
     let flow = worktree_flow(crate::workflow::Place::Worktree);
     let pull = d
-        .pull(&p.id, &flow, 0, None, &issues, None, &taken)
+        .pull(&p.id, &flow, 0, 0, None, &issues, None, &taken)
         .unwrap();
     assert_eq!(pull.start, [2], "a team of 3 with 2 on their way");
     let room = crate::task::rooms::Room {
@@ -755,21 +755,33 @@ fn start_todo_counts_starts_until_they_land() {
         holding: 0,
         waiting: 0,
     };
-    let first = d.pull(&p.id, &flow, 0, Some(room), &issues, None, &taken);
+    let first = d.pull(&p.id, &flow, 0, 0, Some(room), &issues, None, &taken);
     assert!(
         first.unwrap().start.is_empty(),
         "the 2 on their way fill a first step of 2"
     );
     d.landed(&p.id, 4);
     assert_eq!(
-        d.pull(&p.id, &flow, 1, None, &issues, None, &taken)
+        d.pull(&p.id, &flow, 1, 0, None, &issues, None, &taken)
             .unwrap()
             .start,
         [2]
     );
+    assert!(
+        d.pull(&p.id, &flow, 1, 1, None, &issues, None, &taken)
+            .unwrap()
+            .start
+            .is_empty(),
+        "one running, one on its way and an extend waiting fill a team of 3"
+    );
+    assert_eq!(
+        d.extends_given(&p.id, 1, &["a".to_string(), "b".to_string()]),
+        ["a"],
+        "a team of 3, one running and one on its way, has one place for an extend"
+    );
     d.landed(&p.id, 9);
     assert_eq!(
-        d.pull(&p.id, &flow, 0, None, &issues, None, &taken)
+        d.pull(&p.id, &flow, 0, 0, None, &issues, None, &taken)
             .unwrap()
             .start,
         [2, 7]
@@ -870,7 +882,7 @@ fn pull_counts_the_first_steps_room_and_refuses_an_unusable_workflow() {
         holding: 1,
         waiting: 1,
     };
-    let pull = d.pull(&p.id, &flow, 0, Some(room), &issues, None, &taken);
+    let pull = d.pull(&p.id, &flow, 0, 0, Some(room), &issues, None, &taken);
     assert_eq!(
         pull.unwrap().start,
         [2],
@@ -878,7 +890,7 @@ fn pull_counts_the_first_steps_room_and_refuses_an_unusable_workflow() {
     );
     let checkout = worktree_flow(crate::workflow::Place::Checkout);
     assert!(d
-        .pull(&p.id, &checkout, 0, None, &issues, None, &taken)
+        .pull(&p.id, &checkout, 0, 0, None, &issues, None, &taken)
         .is_none());
 }
 

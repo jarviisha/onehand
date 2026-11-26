@@ -21,7 +21,7 @@ mod carrier;
 pub(crate) mod facts;
 mod listing;
 mod place;
-pub(crate) use carrier::{approve, extend, revise, start, stop, verdict};
+pub(crate) use carrier::{approve, give_place, revise, start, stop, verdict};
 pub(crate) use listing::*;
 pub(crate) use onehand_core::task::tasks::Placed;
 pub(crate) use place::{not_started, start_off_screen, submit};
@@ -117,6 +117,16 @@ impl Tasks {
     /// under way waiting on a person, its drive's.
     fn working(&self, id: &str) -> Option<Working> {
         self.seen().working(id)
+    }
+
+    /// Whether task `id` holds a place on its board's team.
+    fn holds_team(&self, id: &str) -> bool {
+        self.seen().holds_team(id)
+    }
+
+    /// When task `id`'s extend asked for a place, while it waits for one.
+    fn extend_asked(&self, id: &str) -> Option<u64> {
+        self.live.get(id)?.drive().queued_extend_at()
     }
 
     /// Every task and the runs under way, to read.
@@ -239,6 +249,31 @@ pub(crate) fn review_of(id: &str, cx: &App) -> Option<UnderReview> {
     UnderReview::of(cx.try_global::<Tasks>()?.driven(id)?.run())
 }
 
+/// Extend the run that ran out of time at what `approval` names. A board's
+/// task asks its team for a place first, given at once when there is one;
+/// any other goes on at once.
+pub(crate) fn extend(approval: onehand_core::task::Approval, cx: &mut App) {
+    // A run not yet at rest still holds its place: it goes on in it.
+    let holds = cx
+        .try_global::<Tasks>()
+        .is_some_and(|t| t.holds_team(&approval.task));
+    let board = task(&approval.task, cx)
+        .and_then(|task| task.board_issue().map(|(project, _)| project.clone()))
+        .filter(|project| {
+            crate::state::Shared::global(cx)
+                .projects
+                .get(project)
+                .is_some_and(|p| p.board().is_some())
+        });
+    match board.filter(|_| !holds) {
+        Some(project) => {
+            carrier::queue_extend(approval, cx);
+            crate::board::give_places(&project, cx);
+        }
+        None => carrier::extend(approval, cx),
+    }
+}
+
 /// Extend task `id`'s run, which ran out of time, where it waits now.
 pub(crate) fn extend_task(id: &str, cx: &mut App) {
     let at = cx
@@ -276,7 +311,10 @@ pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
         },
         at: run.step,
         review: UnderReview::of(run),
-        out_of_time: run.out_of_time_at(),
+        // Pressed already, it waits for a team place.
+        out_of_time: run
+            .out_of_time_at()
+            .filter(|_| driven.drive().queued_extend_at().is_none()),
         stopping: driven.stopping(),
     })
 }

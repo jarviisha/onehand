@@ -647,3 +647,62 @@ fn a_run_out_of_time_waits_and_extend_carries_on(cx: &mut TestAppContext) {
             .is_some_and(|s| s.out_of_time.is_none())
     );
 }
+
+/// An extend waiting for a team place reads as queued, saying so, and once
+/// given its place the run carries on in the same session.
+#[gpui::test]
+fn an_extend_waiting_for_a_place_is_queued_and_carries_on_once_given_one(cx: &mut TestAppContext) {
+    let (work, store) = (repo("agent-out-of-time-place"), temp_dir("store"));
+    let window = app(cx, &store);
+    let mut template = one_agent_step();
+    // The run's clock reads the real time; the executor's only fires the timer.
+    template.timeout = "1s".into();
+    let id = placed(
+        Task::new("13".into(), template, brief(), setup(&work)),
+        window,
+        cx,
+    );
+    let (session, mut tx, _seen) = carrier::driven(cx, Chat::default());
+    let started = begun(&id, cx);
+    cx.update(|cx| start(10, &session, window, id.clone(), started, cx));
+    cx.run_until_parked();
+    let mut requests = carrier::up(&mut tx);
+    cx.run_until_parked();
+    assert!(requests.try_recv().is_ok(), "the step's prompt");
+    std::thread::sleep(Duration::from_millis(1100));
+    cx.executor().advance_clock(Duration::from_secs(2));
+    cx.run_until_parked();
+    tx.try_send(onehand_core::acp::AcpEvent::TurnEnded {
+        stop_reason: "cancelled".into(),
+    })
+    .unwrap();
+    settle(cx);
+    let at = cx
+        .update(|cx| super::shown(10, cx))
+        .and_then(|s| s.out_of_time)
+        .expect("out of time");
+    cx.update(|cx| {
+        super::carrier::queue_extend(
+            onehand_core::task::Approval {
+                task: id.clone(),
+                at,
+            },
+            cx,
+        )
+    });
+    settle(cx);
+    let row = cx.update(|cx| {
+        super::rows(std::slice::from_ref(&work), cx)
+            .into_iter()
+            .find(|row| row.id == id)
+            .unwrap()
+    });
+    assert_eq!(row.group, Group::Queued);
+    assert_eq!(row.at, "Waiting for a team place");
+    let _ = std::iter::from_fn(|| requests.try_recv().ok()).count();
+    cx.update(|cx| super::carrier::give_place(&id, cx));
+    settle(cx);
+    let prompted = std::iter::from_fn(|| requests.try_recv().ok())
+        .any(|r| matches!(r, onehand_core::acp::AcpRequest::Prompt { .. }));
+    assert!(prompted, "given its place, it carries on");
+}

@@ -44,12 +44,12 @@ impl RunDrive {
     }
 
     /// Say the run left the step it held room at, once it is at another, is
-    /// waiting for room anew, or is over.
+    /// waiting for room anew, is over, or rests out of time.
     pub(super) fn left_room(&mut self, fx: &mut Vec<Effect>) {
         let Some(at) = self.room else {
             return;
         };
-        if at != self.run.step || self.run.awaiting_room() || self.run.over() {
+        if at != self.run.step || self.run.awaiting_room() || self.run.over() || self.rested {
             self.room = None;
             fx.push(Effect::LeaveRoom);
         }

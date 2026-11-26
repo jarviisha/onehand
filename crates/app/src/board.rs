@@ -49,6 +49,19 @@ pub(crate) fn pull_now(project: &ProjectId, cx: &mut App) {
     .detach();
 }
 
+/// Give the places `project`'s team has to the extends waiting for one, first
+/// asked first.
+pub(crate) fn give_places(project: &ProjectId, cx: &mut App) {
+    let running = crate::task::board_running(project, cx);
+    let waiting = crate::task::board_extends_waiting(project, cx);
+    let given = Shared::global(cx)
+        .projects
+        .extends_given(project, running, &waiting);
+    for task in given {
+        crate::task::give_place(&task, cx);
+    }
+}
+
 /// A board task of `project` on `issue` ended, `done` or not: a finished
 /// one closes an issue the project's own tracker keeps, and, when core says
 /// to `pull`, the team's room goes to the next.
@@ -134,6 +147,8 @@ fn pull_read(
     else {
         return;
     };
+    // Extends waiting for a place are first in line, and need no window.
+    give_places(project, cx);
     // ponytail: with no window holding the project nothing is pulled until
     // To do or the team changes, a board task ends or the app starts again;
     // pull when a window opens on the project if that proves too late.
@@ -144,12 +159,12 @@ fn pull_read(
         return;
     };
     let running = crate::task::board_running(project, cx);
+    let extends = crate::task::board_extends_waiting(project, cx).len();
     let taken = crate::task::board_taken(project, cx);
     let first = crate::task::room_at(root, &template, 0, cx);
-    let Some(pull) = Shared::global(cx)
-        .projects
-        .pull(project, &template, running, first, kept, forge, &taken)
-    else {
+    let Some(pull) = Shared::global(cx).projects.pull(
+        project, &template, running, extends, first, kept, forge, &taken,
+    ) else {
         return;
     };
     let fx = cx.update_global::<Shared, _>(|shared, _| {

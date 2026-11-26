@@ -363,6 +363,8 @@ impl Flow {
             RunEffect::Signal(signal) => self.said.push(format!("{signal:?}")),
             RunEffect::AskRoom { key, limit } => self.tasks(|t| t.ask_room(id, key, limit)),
             RunEffect::LeaveRoom => self.tasks(|t| t.leave_room(id)),
+            // The board that pulls on it is the app's.
+            RunEffect::Rested => {}
             RunEffect::Finish { .. } => {
                 let driven = self.runs.remove(id).expect("a run under way");
                 let held = driven.lanes.get(driven.run.current_lane());

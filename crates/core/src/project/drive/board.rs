@@ -168,7 +168,8 @@ impl ProjectsDrive {
     }
 
     /// Which of project `id`'s To do to start while `running` of its board
-    /// tasks work, its starts on their way counted with them, over its
+    /// tasks work, its starts on their way and `extends_waiting` extends
+    /// waiting for a place counted with them, over its
     /// `issues` and the issues its tasks hold (`taken`); none without a
     /// board, or when its workflow, `template`, is one a board cannot run,
     /// which its page says. `first` is the room at the workflow's first
@@ -180,6 +181,7 @@ impl ProjectsDrive {
         id: &ProjectId,
         template: &Template,
         running: usize,
+        extends_waiting: usize,
         first: Option<Room>,
         issues: &Issues,
         forge: Option<&'static dyn Connector>,
@@ -190,7 +192,9 @@ impl ProjectsDrive {
         let starting = self.starting.get(id).map_or(0, BTreeSet::len);
         Some(crate::board::pull(
             board,
-            running + starting,
+            // An extend waiting for a place is first in line: To do gets
+            // only what is left after it.
+            running + starting + extends_waiting,
             // ponytail: a start counts here only until it lands; a task kept
             // and not yet asking for room is counted nowhere at the first
             // step, so a pull then may start one too many. The team cap and
@@ -201,6 +205,17 @@ impl ProjectsDrive {
             forge,
             taken,
         ))
+    }
+
+    /// Which of the extends `waiting` for a place on project `id`'s team are
+    /// given one while `running` of its tasks hold places: its starts on
+    /// their way hold theirs too. None without a board.
+    pub fn extends_given(&self, id: &ProjectId, running: usize, waiting: &[String]) -> Vec<String> {
+        let Some(board) = self.projects.get(id).and_then(|p| p.board()) else {
+            return Vec::new();
+        };
+        let starting = self.starting.get(id).map_or(0, BTreeSet::len);
+        crate::board::extends_given(board, running + starting, waiting)
     }
 
     fn edit_todo(&mut self, id: &ProjectId, edit: impl FnOnce(&mut Vec<u64>)) -> Vec<Effect> {

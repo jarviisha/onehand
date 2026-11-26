@@ -19,7 +19,7 @@ running, what needs me, and what has finished.
   | *Needs attention*, waiting | a live run waiting for approval, out of time, or on a card its session parked; it keeps its place | Extend (out of time only), Open session, Stop |
   | *Needs attention*, ended | a run that ended exhausted, failed, timed out or interrupted; its place is free | Resume (interrupted only), Retry, Dismiss |
   | *Running* | the one run working in each place | Open session, Stop |
-  | *Queued* | tasks waiting for their place to be free | Stop |
+  | *Queued* | tasks waiting for their place to be free, and a board's task out of time whose Extend waits for a team place | Stop |
   | *Finished* | done, stopped by a person, taken over, dismissed | none on its row; Retry in its detail |
 
 - **Every entry in *Needs attention* comes with an action**, and it stays until a person takes one.

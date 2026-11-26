@@ -111,17 +111,40 @@ pub fn after_end(issue: &LocalIssue, synced: bool, done: bool) -> bool {
     done && !synced && issue.open()
 }
 
-/// How many of `project`'s board tasks work: those the app says are doing
-/// something. One cut off by a restart is not.
+/// How many of `project`'s board tasks hold a place on its team: those
+/// `holds` says do. One cut off by a restart does not, nor one out of time at
+/// rest or waiting for a place.
 pub fn running<'a>(
     tasks: impl Iterator<Item = &'a Task>,
     project: &ProjectId,
-    working: &dyn Fn(&str) -> Option<Working>,
+    holds: &dyn Fn(&str) -> bool,
 ) -> usize {
     tasks
         .filter(|task| task.board_issue().is_some_and(|(of, _)| of == project))
-        .filter(|task| working(task.id()).is_some())
+        .filter(|task| holds(task.id()))
         .count()
+}
+
+/// Which of the extends `waiting` for a place on `board`'s team, oldest first,
+/// are given one while `running` hold places: as many as there is room for.
+pub fn extends_given(board: &Board, running: usize, waiting: &[String]) -> Vec<String> {
+    let room = usize::from(board.team).saturating_sub(running);
+    waiting.iter().take(room).cloned().collect()
+}
+
+/// `project`'s board tasks whose extend waits for a place, by when each
+/// asked (`asked`), first first.
+pub fn extends_waiting<'a>(
+    tasks: impl Iterator<Item = &'a Task>,
+    project: &ProjectId,
+    asked: &dyn Fn(&str) -> Option<u64>,
+) -> Vec<String> {
+    let mut waiting: Vec<(u64, String)> = tasks
+        .filter(|task| task.board_issue().is_some_and(|(of, _)| of == project))
+        .filter_map(|task| Some((asked(task.id())?, task.id().to_string())))
+        .collect();
+    waiting.sort();
+    waiting.into_iter().map(|(_, id)| id).collect()
 }
 
 /// Whether `task` stands on the board, and whether in Done: one working,

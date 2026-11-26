@@ -84,6 +84,10 @@ impl<'a, W: Copy> Seen<'a, W> {
     /// that waits on a person (an approval, or a card), its drive's.
     pub fn working(&self, id: &str) -> Option<Working> {
         match (self.tasks.working(id), self.run(id)) {
+            // An extend waiting for a team place is queued, as a start is.
+            (Some(Working::Running), Some(run)) if run.queued_extend_at().is_some() => {
+                Some(Working::Queued)
+            }
             (Some(Working::Running), Some(run)) if run.waits_on_person(true) => {
                 Some(Working::Waiting)
             }
@@ -91,6 +95,12 @@ impl<'a, W: Copy> Seen<'a, W> {
                 working
             }
         }
+    }
+
+    /// Whether task `id` holds a place on its board's team: it works, and
+    /// is neither at rest out of time nor waiting for a place.
+    pub fn holds_team(&self, id: &str) -> bool {
+        self.working(id).is_some() && !self.run(id).is_some_and(|run| run.gives_place())
     }
 
     /// Whether task `id` is queued, running or waiting on a person.
