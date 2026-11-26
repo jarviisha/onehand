@@ -116,9 +116,10 @@ contract path below and no reviewer.
 
 **The author first.** Build the app and drive the changed view with the `drive` skill's
 `matrix`: both palettes, at the narrowest width the view's region allows and a wide one. The
-scripts cannot drag, so a dock is pictured at the width the window gives it, and at a 720-wide
-window the Workbench no longer stands beside the conversation but takes the pane as a tab: a
-dock's own narrowest width beside the conversation goes under what the reviewer could not see.
+scripts cannot drag, so a dock is pictured at the width the window gives it, and where the
+window cannot hold the conversation beside the narrowest useful Workbench (at 720 wide), the
+Workbench takes the whole area under a way back to the conversation: a dock's own narrowest
+width beside the conversation goes under what the reviewer could not see.
 Picture the states the change touches (a long name, an empty list, a hover) with more steps
 files. Read each picture yourself first.
 
@@ -179,14 +180,14 @@ Take the path the diff needs; neither path's evidence proves the other complete.
    `cargo test -p <crate> --locked` for every other crate touched,
    `make clippy CLIPPY_EXTRA="-- -D warnings"` and `make fmt`. Quote any failure.
 2. **Picture and review**, as *The reviewer* says, or say why it was skipped.
-3. **Answer [checklist.md](checklist.md)**: each item yes, no (its file and line) or n/a (why),
-   after reading the rule the item names. Items 5, 8 and 9, which a picture can show, cite the
-   reviewer's lines from step 2 rather than your own judgment; item 17 stays the owner's own
-   checks, named.
-4. **Carry the documents** in the same change: what a screen holds or its order to
+3. **Carry the documents** in the same change: what a screen holds or its order to
    `docs/screens.md` (or the feature's own document); a principle, the frame, the transcript or a
    visual rule to `DESIGN.md`, which gets at most one line per new region; a pattern or a
    behaviour to `docs/ui-patterns.md`; a token or a builder to tokens.md or catalog.md.
+4. **Answer [checklist.md](checklist.md)**: each item yes, no (its file and line) or n/a (why),
+   after reading the rule the item names. Items 5, 8 and 9, which a picture can show, cite the
+   reviewer's lines from step 2 rather than your own judgment; item 17 stays the owner's own
+   checks, named.
 5. **Compare peers and report**: the same-role component compared, the shared builder or tokens
    checked, a changed shared default's callers inspected; failures, fixes, remaining gaps and
    checks run. Report what was pictured and what the reviewer found; passing tests are not
