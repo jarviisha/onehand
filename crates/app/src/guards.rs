@@ -244,6 +244,9 @@ fn documents() -> Vec<(String, String)> {
 }
 
 #[cfg(test)]
+mod visual;
+
+#[cfg(test)]
 mod tests {
     use super::{documents, sources, ui_sources, workspace_root, workspace_sources};
 
