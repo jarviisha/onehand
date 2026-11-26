@@ -168,6 +168,9 @@ impl<'a> Joined<'a> {
                     out.told = true;
                     out.session.extend(session.stop());
                 }
+                Asked::StopBackground(id) => {
+                    out.session.extend(session.stop_background(&id));
+                }
                 Asked::Prompt { text, at } => {
                     out.told = true;
                     let (answer, said) = submit(session, &text, now);

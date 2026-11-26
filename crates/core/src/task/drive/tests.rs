@@ -188,6 +188,7 @@ impl Rig {
                     assert!(chat.submit(text, &[]), "the session took {text:?}");
                 }
                 Asked::Cancel => chat.cancel_turn(),
+                Asked::StopBackground(id) => chat.stop_background(id),
                 Asked::Name(name) => chat.custom_title = Some(name.clone()),
                 Asked::Note(_) => {}
             }
@@ -200,7 +201,10 @@ impl Rig {
             .iter()
             .filter_map(|asked| match asked {
                 Asked::Note(note) => Some(note.as_str()),
-                Asked::Prompt { .. } | Asked::Cancel | Asked::Name(_) => None,
+                Asked::Prompt { .. }
+                | Asked::Cancel
+                | Asked::StopBackground(_)
+                | Asked::Name(_) => None,
             })
             .collect()
     }
@@ -209,7 +213,7 @@ impl Rig {
     fn submitted(&self) -> bool {
         self.asked.iter().any(|asked| match asked {
             Asked::Prompt { .. } => true,
-            Asked::Note(_) | Asked::Cancel | Asked::Name(_) => false,
+            Asked::Note(_) | Asked::Cancel | Asked::StopBackground(_) | Asked::Name(_) => false,
         })
     }
 
@@ -2475,4 +2479,41 @@ fn an_extend_before_rest_at_a_limited_step_keeps_its_room() {
         "{fx:?}"
     );
     assert!(rig.submitted(), "{fx:?}");
+}
+
+// A stopped run's work left running.
+
+/// A run stopped stops the background work its turn started; work from
+/// before the run is the person's and is left alone.
+#[test]
+fn a_stopped_run_stops_the_background_work_it_started() {
+    use crate::acp::BackgroundReport;
+    let spawned = |id: &str| {
+        AcpEvent::Background(BackgroundReport::Spawned {
+            id: id.into(),
+            name: "cargo test".into(),
+            kind: "shell".into(),
+        })
+    };
+    let (mut chat, rx) = connected();
+    // When the session was told, as the app's session drive sets it.
+    chat.tell_time(crate::Now::read());
+    chat.apply(spawned("before"));
+    std::thread::sleep(Duration::from_millis(2));
+    let (mut rig, _) = Rig::start(checkout(), None, (chat, rx));
+    rig.on(Input::Pinned(Ok("c0".into())));
+    rig.on(Input::Measured(Ok(mark("a", "d0"))));
+    assert!(rig.submitted());
+    rig.chat.tell_time(rig.now);
+    rig.chat.apply(spawned("mine"));
+    rig.stop();
+    let stopped: Vec<&str> = rig
+        .asked
+        .iter()
+        .filter_map(|a| match a {
+            Asked::StopBackground(id) => Some(id.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(stopped, ["mine"]);
 }

@@ -419,7 +419,11 @@ command runs, the run holds the flag that calls it off (`process::output_until`)
 the command's whole process group is killed, and the run is said to be stopped only once the
 command has exited, so a stopped run never leaves a build or a test writing to the work. A
 command called off before it started is never started. The first reason given is the one the run
-ends with.
+ends with. **A run a person stopped, or stopped out of time, stops the background work its turns
+started** (`RunDrive::stop_left_work`, the session's `stop_background`): a build or a test the agent
+left running would otherwise go on in the work for nobody. Background work from before the run is
+left alone, and so is everything when the run was taken over, since a person now drives the session,
+or its session went.
 
 A prompt asked for before the adapter is up waits for the link. When the agent first comes up in a
 session, a run whose setup names a mode (`Setup::mode`) has its agent put in that mode before the first

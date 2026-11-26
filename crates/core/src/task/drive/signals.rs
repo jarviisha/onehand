@@ -159,6 +159,9 @@ pub(crate) enum Asked {
     Prompt { text: String, at: usize },
     /// Cancel the session's turn. Asked only while one runs.
     Cancel,
+    /// Stop this piece of the agent's background work: the run started it,
+    /// and the run was stopped.
+    StopBackground(String),
     /// Call the session this, unless it has a name of its own: a lane's
     /// session, bound.
     Name(String),
