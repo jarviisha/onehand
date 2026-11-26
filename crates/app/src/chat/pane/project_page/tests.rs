@@ -109,10 +109,11 @@ fn past_the_cap_the_page_says_how_many_more(cx: &mut TestAppContext) {
     bounds(cx, "home-hidden");
 }
 
-/// The zooms and the widths the rows are drawn at, every one but the
-/// narrowest window at 150%.
-const DRAWN: &[(&str, usize, &[Pixels])] =
-    &[("100", 0, &[NARROWEST, WIDE]), ("150", TO_150, &[WIDE])];
+/// The zooms and the widths the rows are drawn at.
+const DRAWN: &[(&str, usize, &[Pixels])] = &[
+    ("100", 0, &[NARROWEST, WIDE]),
+    ("150", TO_150, &[NARROWEST, WIDE]),
+];
 
 fn rows_hold(
     name: &str,
@@ -186,18 +187,6 @@ fn one_history_row_keeps_its_height_and_its_trailing_slot(cx: &mut TestAppContex
 #[gpui::test]
 fn every_history_row_keeps_its_height_and_its_trailing_slot(cx: &mut TestAppContext) {
     rows_hold("strain-home-full", 913_020, HOME_ROWS + 1, DRAWN, cx);
-}
-
-#[gpui::test]
-#[ignore = "at 150% in the narrowest window a row's actions stand past its end, whatever its title; the fix waits for a decision"]
-fn a_history_row_keeps_its_trailing_slot_zoomed_in_the_narrowest_window(cx: &mut TestAppContext) {
-    rows_hold(
-        "strain-home-zoomed",
-        913_050,
-        1,
-        &[("150", TO_150, &[NARROWEST])],
-        cx,
-    );
 }
 
 /// Scroll the page's box to its end, from a point inside it.

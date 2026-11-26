@@ -559,11 +559,20 @@ impl ChatPane {
                                 .text_color(muted)
                                 .child(format!("Continued from {earlier}"))
                         }))
-                        .child(div().flex_none().text_xs().text_color(muted).child(format!(
-                            "{} · {}",
-                            count_of(meta.item_count, "item"),
-                            meta.agent
-                        )))
+                        // Its facts give way after the title does, so the
+                        // row's ⋯ keeps its place at the row's end.
+                        .child(
+                            div()
+                                .min_w_0()
+                                .truncate()
+                                .text_xs()
+                                .text_color(muted)
+                                .child(format!(
+                                    "{} · {}",
+                                    count_of(meta.item_count, "item"),
+                                    meta.agent
+                                )),
+                        )
                         .on_click(
                             cx.listener(move |_: &mut Self, _, _, cx| cx.emit(resumed.event())),
                         )
