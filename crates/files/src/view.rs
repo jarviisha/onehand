@@ -360,12 +360,8 @@ fn rows(
     let on_click = std::rc::Rc::new(on_click);
     let muted = cx.theme().muted_foreground;
 
-    div()
-        .id("file-tree")
+    let column = div()
         .v_flex()
-        .size_full()
-        .py(TREE_PAD_Y)
-        .overflow_y_scroll()
         .children(rows.into_iter().enumerate().map(|(i, row)| {
             let entry = row.entry;
             let click = on_click.clone();
@@ -455,7 +451,13 @@ fn rows(
                     .text_color(muted)
                     .child(format!("{left_out} more not shown")),
             )
-        })
+        });
+    div()
+        .id("file-tree")
+        .size_full()
+        .py(TREE_PAD_Y)
+        .overflow_y_scroll()
+        .child(column)
 }
 
 #[cfg(test)]

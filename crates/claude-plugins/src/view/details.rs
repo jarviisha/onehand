@@ -151,35 +151,38 @@ fn details(plugin: &Plugin, cx: &App) -> AnyElement {
     div()
         .id("plugin-details")
         .size_full()
-        .v_flex()
-        .gap_4()
         .overflow_y_scroll()
-        .children(
-            inventory
-                .description
-                .clone()
-                .map(|text| div().text_size(onehand_ui::tokens::CHROME_TEXT).child(text)),
-        )
         .child(
             div()
-                .text_xs()
-                .text_color(muted)
-                .child(match &plugin.version {
-                    Some(version) => format!("{origin} · {version}"),
-                    None => origin,
-                }),
+                .v_flex()
+                .gap_4()
+                .children(
+                    inventory
+                        .description
+                        .clone()
+                        .map(|text| div().text_size(onehand_ui::tokens::CHROME_TEXT).child(text)),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(muted)
+                        .child(match &plugin.version {
+                            Some(version) => format!("{origin} · {version}"),
+                            None => origin,
+                        }),
+                )
+                .when(inventory.cut, |body| {
+                    body.child(div().text_xs().text_color(muted).child(
+                        "Not every file was read — the folder is larger than the walk allows, so \
+                         what is listed here is not all of it.",
+                    ))
+                })
+                .children(section("Skills", &inventory.skills))
+                .children(section("Commands", &inventory.commands))
+                .children(section("Agents", &inventory.agents))
+                .children(section("MCP servers", &inventory.mcp))
+                .children(hooks),
         )
-        .when(inventory.cut, |body| {
-            body.child(div().text_xs().text_color(muted).child(
-                "Not every file was read — the folder is larger than the walk allows, so \
-                 what is listed here is not all of it.",
-            ))
-        })
-        .children(section("Skills", &inventory.skills))
-        .children(section("Commands", &inventory.commands))
-        .children(section("Agents", &inventory.agents))
-        .children(section("MCP servers", &inventory.mcp))
-        .children(hooks)
         .into_any_element()
 }
 

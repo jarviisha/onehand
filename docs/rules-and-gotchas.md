@@ -101,6 +101,7 @@ Review the uncovered part when changing the relevant area:
 | No flag is only ever lowered | Finds a `bool` field assigned `false` somewhere and `true` nowhere, across every first-party crate | A flag raised through a struct literal, a constructor or a method the scan does not read as an assignment |
 | An archived conversation is adopted in one place | Finds the model's loader called anywhere but `ChatSession::adopt` | A loader reached through an alias |
 | An atomic write is written in one place | Counts the files containing `fs::rename(` and insists on one, `config::write_atomic`'s | A rename spelled another way, or reached through another API |
+| A scrolling box is not a flex column | Finds `.v_flex()` or `.flex_col()` in the builder chain of an `overflow_y_scroll` or `overflow_scroll` call, in UI sources: the call's line, its head and the calls at its indent, stepping over the lines that close an argument | A flex set through a helper, a variable or `.map`, or on a line that also opens a nested element |
 | Theme, bounded rendering, module size and the UI contract | Dedicated tests cover individual behaviours; no source guard scans the visual rules (colour, size, corner, controls, icons, motion) | All of them, by review; nothing synchronizes documentation with code |
 
 Keep the checks that catch real regressions. Add a targeted check when a concrete failure
@@ -209,6 +210,15 @@ justifies it, and describe its limits rather than treating a source scan as a Ru
   This cost a round trip once: the transcript sat against the left edge while the composer, centred
   inside an ordinary flex column, sat in the middle of the panel, and the two halves disagreeing was
   the only symptom.
+- **A scrolling box is never itself a flex column.** A flex column fits its children to its
+  height first, shrinking each down to its minimum, and only what is left over scrolls. A child that
+  clips (`truncate`, `line_clamp`, `overflow_hidden`) or says `min_h_0` has a minimum of nothing, so
+  it is squeezed away while the scrollbar still shows. The Issues list lost its titles this way once
+  it outgrew its dock, under rows that kept their one line of meta. Leave the scroller a plain box
+  and put the `v_flex` inside it: the column is as tall as its rows, so nothing has to give. A
+  scroller whose handle scrolls to an item (`scroll_to_item`) needs its rows as direct children,
+  so it holds them in the plain box itself, which stacks them at their own height but takes no gap
+  and collapses two vertical margins that meet into one. `guards::tests::a_scrolling_box_is_not_a_flex_column` scans for it.
 - **Text selection spans the whole window.** gpui-component registers every selectable block with
   one window-wide selection, and a drag ends on whatever block is under the pointer or nearest above
   it, so a drag begun in the conversation ran into the Workbench's Markdown and back. Its only

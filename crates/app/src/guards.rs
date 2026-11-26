@@ -698,6 +698,112 @@ mod tests {
         );
     }
 
+    /// A box that scrolls on y is never itself a flex column.
+    ///
+    /// A flex column fits its children to its height *before* anything
+    /// overflows, shrinking each down to its minimum, and only what is left
+    /// over scrolls. A child that clips (`truncate`, `line_clamp`,
+    /// `overflow_hidden`) or says `min_h_0` has a minimum of nothing, so it is
+    /// squeezed away while the bar still shows: the issue list lost its titles
+    /// that way, under rows that kept their one line of meta. The scroller is
+    /// a plain box with the column inside it, as tall as its rows; one whose
+    /// handle scrolls to an item holds its rows in the plain box itself.
+    ///
+    /// A scan of builder chains: the scroll call's own line, and the lines at
+    /// its indent up to the chain's head and down to its end, stepping over
+    /// the closing lines of a call's arguments. A flex set through a helper, a
+    /// variable or `.map`, or on a line that also opens a nested element
+    /// (`.child(div().v_flex()`), is not seen.
+    #[test]
+    fn a_scrolling_box_is_not_a_flex_column() {
+        // The detail box scrolls on both axes, and its column is what lets a
+        // long line stand wider than the box (`items_start`); its one child
+        // is a column with no clip, which cannot shrink.
+        const ALLOWED: &[(&str, &str)] = &[("parts.rs", "\"detail-scroll\"")];
+        let indent = |line: &str| line.len() - line.trim_start().len();
+        // A call of this element's that makes it a column, or a head that
+        // starts it as one: `v_flex()`, `div().v_flex()`, or a whole chain on
+        // one line. A call line is read from its start only, since what
+        // follows may be a nested element of its own (`.child(div().v_flex()`).
+        let names_flex = |line: &str| {
+            let t = line.trim();
+            match t.starts_with('.') {
+                true => t.starts_with(".v_flex()") || t.starts_with(".flex_col()"),
+                false => t.contains("v_flex()") || t.contains(".flex_col()"),
+            }
+        };
+        // A line that only closes what an argument opened, inside the chain.
+        let closes = |t: &str| t.starts_with('}') || t.starts_with(')');
+        let mut scrollers = 0;
+        let mut offenders = Vec::new();
+        for (path, source) in ui_sources() {
+            let lines: Vec<&str> = source.lines().collect();
+            for (i, line) in lines.iter().enumerate() {
+                let t = line.trim();
+                if t.starts_with("//")
+                    || !(t.contains(".overflow_y_scroll()") || t.contains(".overflow_scroll()"))
+                {
+                    continue;
+                }
+                scrollers += 1;
+                let at = indent(line);
+                let mut chain = vec![*line];
+                // A chain written on one line is its own head and its own end.
+                if t.starts_with('.') {
+                    // Up to the chain's head, the first line at this indent or
+                    // shallower that is not a call.
+                    for above in lines[..i].iter().rev() {
+                        let a = above.trim();
+                        if a.is_empty() || a.starts_with("//") || indent(above) > at {
+                            continue;
+                        }
+                        if indent(above) == at && closes(a) {
+                            continue;
+                        }
+                        chain.push(*above);
+                        if !a.starts_with('.') || indent(above) < at {
+                            break;
+                        }
+                    }
+                    if !t.ends_with(';') {
+                        for below in &lines[i + 1..] {
+                            let b = below.trim();
+                            if b.is_empty() || b.starts_with("//") || indent(below) > at {
+                                continue;
+                            }
+                            if indent(below) == at && closes(b) {
+                                continue;
+                            }
+                            if indent(below) < at || !b.starts_with('.') {
+                                break;
+                            }
+                            chain.push(*below);
+                            if b.ends_with(';') {
+                                break;
+                            }
+                        }
+                    }
+                }
+                let allowed = ALLOWED
+                    .iter()
+                    .any(|(file, id)| path.ends_with(file) && chain.iter().any(|l| l.contains(id)));
+                if !allowed && chain.iter().any(|l| names_flex(l)) {
+                    offenders.push(format!("{path}:{}", i + 1));
+                }
+            }
+        }
+        assert!(
+            scrollers > 10,
+            "found {scrollers} scrolling boxes -- this scan has stopped scanning"
+        );
+        assert!(
+            offenders.is_empty(),
+            "a scrolling box that is a flex column at {offenders:?}: its clipping children \
+             shrink to nothing instead of scrolling. Drop the flex from the scroller and put \
+             the column inside it."
+        );
+    }
+
     /// The first item code in `line`, if it holds one.
     ///
     /// A code is a capital `D` or `P` (the decision and finding registers),

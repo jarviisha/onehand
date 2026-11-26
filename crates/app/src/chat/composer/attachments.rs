@@ -399,7 +399,6 @@ impl Composer {
 
         let list = div()
             .id("attachment-manager")
-            .v_flex()
             .w_full()
             .min_h_0()
             .max_h(room)
